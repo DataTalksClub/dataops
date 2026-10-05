@@ -236,7 +236,6 @@ export function createOperationsOverview(context) {
     if (view === "sponsors") return "Sponsors";
     if (view === "newsletter") return "Newsletter";
     if (view === "calendar") return "Calendar";
-    if (view === "mailing-exports") return "Mailing exports";
     if (view === "review") return "Review";
     return "Home";
   }

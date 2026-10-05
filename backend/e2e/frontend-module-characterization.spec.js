@@ -36,7 +36,6 @@ let baseURL;
 const VISIBLE_ROUTE_HEADINGS = {
   Newsletter: "Newsletter planner",
   Calendar: "Operations calendar",
-  "Mailing exports": "Mailing-list exports",
 };
 
 async function expectVisibleRouteHeading(page, routeTitle) {
@@ -224,7 +223,6 @@ test.describe("pre-refactor frontend module characterization", () => {
       ["/calendar", "Calendar", ".calendar-surface"],
       ["/bookkeeping", "Bookkeeping", ".bookkeeping-surface"],
       ["/sponsors", "Sponsors", ".sponsor-crm-surface"],
-      ["/mailing-exports", "Mailing exports", ".mailing-exports-surface"],
       ["/review", "Document review", ".review-surface"],
       ["/processes", "Docs", ".ops-surface-docs"],
       ["/admin", "Admin", ".ops-surface-admin"],
@@ -273,7 +271,7 @@ test.describe("pre-refactor frontend module characterization", () => {
     const context = await ownedContext(browser, { width: 1440, height: 900 });
     const page = await context.newPage();
     const errors = observeErrors(page);
-    for (const hash of ["#/unknown", "#/cards?taskId=orphan", "#/tasks?date=2026-02-30", "#/tasks?taskId=%E0%A4%A"]) {
+    for (const hash of ["#/unknown", "#/mailing-exports", "#/cards?taskId=orphan", "#/tasks?date=2026-02-30", "#/tasks?taskId=%E0%A4%A"]) {
       await page.goto(`${baseURL}/${hash}`);
       await expect(page).toHaveURL(`${baseURL}/#/`);
       await expect(page.locator(".operations-home-daily")).toBeVisible();
@@ -305,7 +303,6 @@ test.describe("pre-refactor frontend module characterization", () => {
       "/calendar",
       "/bookkeeping",
       "/sponsors",
-      "/mailing-exports",
       "/processes",
       "/review",
       "/admin",

@@ -105,7 +105,6 @@ const VISIBLE_ROUTE_HEADINGS = {
   Home: 'Today',
   Newsletter: 'Newsletter planner',
   Calendar: 'Operations calendar',
-  'Mailing exports': 'Mailing-list exports',
 };
 
 async function expectVisibleRouteHeading(page, routeTitle) {
@@ -144,7 +143,6 @@ test.describe('issue 156 canonical route and operator parity', () => {
       [`/#/sponsors?bookingId=${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
       ['/#/newsletter', 'Newsletter'],
       ['/#/calendar', 'Calendar'],
-      ['/#/mailing-exports', 'Mailing exports'],
       ['/#/processes', 'Docs'],
       ['/#/review', 'Document review'],
       ['/#/admin', 'Admin'],
@@ -161,6 +159,8 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.evaluate(() => { window.location.hash = '#/tasks?date=2026-02-30'; });
     await expect(page).toHaveURL(/\/#\/$/);
     await page.evaluate(() => { window.location.hash = '#/unknown?x=%3Cimg%3E'; });
+    await expect(page).toHaveURL(/\/#\/$/);
+    await page.evaluate(() => { window.location.hash = '#/mailing-exports'; });
     await expect(page).toHaveURL(/\/#\/$/);
     await page.evaluate(() => { window.location.hash = '#/cards?taskId=orphan'; });
     await expect(page).toHaveURL(/\/#\/$/);

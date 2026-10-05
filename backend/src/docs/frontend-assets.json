@@ -41,7 +41,6 @@
     "src/surfaces/finance/bookkeeping-format.js",
     "src/surfaces/finance/invoices.js",
     "src/surfaces/finance/index.js",
-    "src/surfaces/finance/mailing.js",
     "src/surfaces/finance/shared.js",
     "src/surfaces/finance/sponsor-alerts.js",
     "src/surfaces/finance/sponsor-communications.js",

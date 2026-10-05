@@ -79,8 +79,6 @@ const AUTHENTICATED_ROUTES: RouteCase[] = [
   { method: 'POST', path: '/api/newsletter-slots', body: {} },
   { method: 'GET', path: '/api/calendar-items' },
   { method: 'POST', path: '/api/calendar-items', body: {} },
-  { method: 'GET', path: '/api/mailing-exports' },
-  { method: 'POST', path: '/api/mailing-exports', body: {} },
   { method: 'GET', path: '/api/conversational/execution-attempts/some-attempt' },
   { method: 'GET', path: '/api/conversational/identity-bindings?channel=telegram' },
   { method: 'POST', path: '/api/conversational/identity-bindings', body: {} },

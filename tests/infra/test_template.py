@@ -592,7 +592,7 @@ def test_conversational_execution_schedules_transform_with_exact_rules_permissio
             assert "- Arn" in permission
 
 
-def test_six_schedules_are_explicit_identity_stable_resources_with_exact_behavior():
+def test_five_schedules_are_explicit_identity_stable_resources_with_exact_behavior():
     template = _load_template()
     parameters = template["Parameters"]
     resources = template["Resources"]
@@ -648,14 +648,6 @@ def test_six_schedules_are_explicit_identity_stable_resources_with_exact_behavio
             "target_id": "BackendFunctionDailyBackendExportLambdaTarget",
             "input": '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"export"}}',
         },
-        "BackendFunctionDailyMailingExport": {
-            "target": "BackendTargetFunctionName",
-            "description": "Request or advance configured mailing-list exports once per day.",
-            "expression": "cron(0 9 * * ? *)",
-            "state": "ENABLED",
-            "target_id": "BackendFunctionDailyMailingExportLambdaTarget",
-            "input": '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"mailing-export"}}',
-        },
     }
     for rule_id, expected in schedules.items():
         target = {
@@ -700,9 +692,17 @@ def test_six_schedules_are_explicit_identity_stable_resources_with_exact_behavio
 def test_processed_template_keeps_baseline_resource_identity_inventory():
     sam_binary = shutil.which("sam")
     assert sam_binary, "AWS SAM CLI is required for the transform contract test"
-    baseline_sha = "6236865e509c0e142d364e6c56f7856d8f932076"
-    baseline = subprocess.run(
-        ["git", "show", f"{baseline_sha}:infra/template.full.yaml"],
+    identity_sha = "6236865e509c0e142d364e6c56f7856d8f932076"
+    origin_main_sha = "0e274de9727635be70a8291d47d6337f543b6e58"
+    identity_source = subprocess.run(
+        ["git", "show", f"{identity_sha}:infra/template.full.yaml"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    origin_main_source = subprocess.run(
+        ["git", "show", f"{origin_main_sha}:infra/template.full.yaml"],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
@@ -712,32 +712,43 @@ def test_processed_template_keeps_baseline_resource_identity_inventory():
     scratch_root.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="sam-identity-migration-", dir=scratch_root) as scratch_name:
         scratch_dir = Path(scratch_name)
-        baseline_path = scratch_dir / "baseline.yaml"
+        identity_path = scratch_dir / "identity.yaml"
+        origin_main_path = scratch_dir / "origin-main.yaml"
         candidate_path = scratch_dir / "candidate.yaml"
-        baseline_path.write_text(baseline, encoding="utf-8")
+        identity_path.write_text(identity_source, encoding="utf-8")
+        origin_main_path.write_text(origin_main_source, encoding="utf-8")
         candidate_path.write_text(TEMPLATE.read_text(encoding="utf-8"), encoding="utf-8")
-        baseline_processed = _load_translated_template(sam_binary, baseline_path, scratch_dir)
+        identity_processed = _load_translated_template(sam_binary, identity_path, scratch_dir)
+        origin_main_processed = _load_translated_template(sam_binary, origin_main_path, scratch_dir)
         candidate_processed = _load_translated_template(sam_binary, candidate_path, scratch_dir)
 
-    assert set(candidate_processed["Resources"]) == set(baseline_processed["Resources"])
-    assert candidate_processed["Conditions"] == baseline_processed["Conditions"]
-    assert candidate_processed["Outputs"] == baseline_processed["Outputs"]
-    migrated = {
-        "ConversationalExecutionWorkerFunctionExecutionRecovery",
-        "ConversationalExecutionWorkerFunctionExecutionRecoveryPermission",
-        "ConversationalExecutionWorkerFunctionExecutionHealthPulse",
-        "ConversationalExecutionWorkerFunctionExecutionHealthPulsePermission",
-        "ConversationalResultDispatcherFunctionResultDelivery",
-        "ConversationalResultDispatcherFunctionResultDeliveryPermission",
-        "BackendFunctionDailyBackendCron",
-        "BackendFunctionDailyBackendCronPermission",
-        "BackendFunctionDailyBackendExport",
-        "BackendFunctionDailyBackendExportPermission",
+    deleted = {
+        "MailingExportsBucket",
+        "MailingExportsBucketPolicy",
         "BackendFunctionDailyMailingExport",
         "BackendFunctionDailyMailingExportPermission",
     }
-    for logical_id in set(candidate_processed["Resources"]) - migrated:
-        assert candidate_processed["Resources"][logical_id] == baseline_processed["Resources"][logical_id], logical_id
+    assert deleted <= set(identity_processed["Resources"])
+    assert deleted <= set(origin_main_processed["Resources"])
+    assert set(candidate_processed["Resources"]) == set(origin_main_processed["Resources"]) - deleted
+    assert candidate_processed["Conditions"] == origin_main_processed["Conditions"]
+    assert candidate_processed["Outputs"] == origin_main_processed["Outputs"]
+    # BackendFunction IAM/env and its generated role change with this deletion.
+    # Remaining origin/main resources stay identical; do not add a dummy
+    # EventBridge rule.
+    for logical_id in set(candidate_processed["Resources"]) - {"BackendFunction", "BackendFunctionRole"}:
+        assert candidate_processed["Resources"][logical_id] == origin_main_processed["Resources"][logical_id], logical_id
+    candidate_rules = {
+        name
+        for name, resource in candidate_processed["Resources"].items()
+        if resource["Type"] == "AWS::Events::Rule"
+    }
+    origin_main_rules = {
+        name
+        for name, resource in origin_main_processed["Resources"].items()
+        if resource["Type"] == "AWS::Events::Rule"
+    }
+    assert candidate_rules == origin_main_rules - {"BackendFunctionDailyMailingExport"}
     rule_targets = {
         "ConversationalExecutionWorkerFunctionExecutionRecovery": (
             "ConversationalExecutionWorkerFunction",
@@ -753,10 +764,9 @@ def test_processed_template_keeps_baseline_resource_identity_inventory():
         ),
         "BackendFunctionDailyBackendCron": ("BackendFunction", "BackendTargetFunctionName"),
         "BackendFunctionDailyBackendExport": ("BackendFunction", "BackendTargetFunctionName"),
-        "BackendFunctionDailyMailingExport": ("BackendFunction", "BackendTargetFunctionName"),
     }
     for rule_id, (function_id, target_parameter) in rule_targets.items():
-        before_rule = baseline_processed["Resources"][rule_id]
+        before_rule = identity_processed["Resources"][rule_id]
         after_rule = candidate_processed["Resources"][rule_id]
         assert before_rule["Type"] == after_rule["Type"] == "AWS::Events::Rule"
         for property_name in ("Description", "ScheduleExpression", "State"):
@@ -771,7 +781,7 @@ def test_processed_template_keeps_baseline_resource_identity_inventory():
         assert function_id not in str(after_target["Arn"])
 
         permission_id = f"{rule_id}Permission"
-        before_permission = baseline_processed["Resources"][permission_id]
+        before_permission = identity_processed["Resources"][permission_id]
         after_permission = candidate_processed["Resources"][permission_id]
         assert before_permission["Type"] == after_permission["Type"] == "AWS::Lambda::Permission"
         assert {
@@ -1364,43 +1374,34 @@ def test_email_document_storage_is_private_retained_and_prefix_scoped():
     assert "s3:*" not in backend
 
 
-def test_mailing_export_storage_schedule_and_dapier_credential_are_private_and_least_privilege():
+def test_mailing_export_capability_is_removed_from_template_and_deploy():
     template = TEMPLATE.read_text(encoding="utf-8")
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
-    bucket = _resource_block(template, "MailingExportsBucket")
-    policy = _resource_block(template, "MailingExportsBucketPolicy")
     backend = _resource_block(template, "BackendFunction")
 
-    assert "DeletionPolicy: Retain" in bucket
-    assert "UpdateReplacePolicy: Retain" in bucket
-    assert "SSEAlgorithm: AES256" in bucket
-    assert "BlockPublicAcls: true" in bucket
-    assert "IgnorePublicAcls: true" in bucket
-    assert "BlockPublicPolicy: true" in bucket
-    assert "RestrictPublicBuckets: true" in bucket
-    assert "VersioningConfiguration: { Status: Enabled }" in bucket
-    assert "AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }" in bucket
-    assert "NoncurrentVersionExpiration: { NoncurrentDays: 365 }" in bucket
-    assert '"aws:SecureTransport": false' in policy
-    assert "DATAOPS_MAILING_EXPORTS_CONFIG: !Ref MailingExportsConfig" in backend
-    assert "DATAOPS_MAILING_EXPORTS_BUCKET: !Ref MailingExportsBucket" in backend
-    assert "Resource: !Sub ${MailingExportsBucket.Arn}/*" in backend
-    assert "Action: [s3:GetObject, s3:PutObject]" in backend
-    assert "DATAOPS_DAPIER_CREDENTIALS_TABLE: !Ref DapierCredentialsTableName" in backend
-    assert "Action: [dynamodb:GetItem]" in backend
-    assert "Resource: !Ref DapierCredentialsTableArn" in backend
-    assert "dynamodb:LeadingKeys: [mailchimp]" in backend
+    for name in (
+        "MailingExportsBucket",
+        "MailingExportsBucketPolicy",
+        "MailingExportsConfig",
+        "DapierCredentialsTableName",
+        "DapierCredentialsTableArn",
+        "BackendFunctionDailyMailingExport",
+        "BackendFunctionDailyMailingExportPermission",
+    ):
+        assert f"{name}:" not in template
+    assert "DATAOPS_MAILING_EXPORTS_CONFIG" not in backend
+    assert "DATAOPS_MAILING_EXPORTS_BUCKET" not in backend
+    assert "DATAOPS_DAPIER_CREDENTIALS_TABLE" not in backend
+    assert "dynamodb:LeadingKeys: [mailchimp]" not in backend
+    assert '"dataopsAction":"mailing-export"' not in template
     assert "MailchimpSecretArn" not in template
     assert "HasMailchimpSecret" not in template
-    mailing_export = _resource_block(template, "BackendFunctionDailyMailingExport")
-    assert '"dataopsAction":"mailing-export"' in mailing_export
-    assert "DAPIER_CREDENTIALS_TABLE_NAME: ${{ vars.DAPIER_CREDENTIALS_TABLE_NAME }}" in workflow
-    assert "DAPIER_CREDENTIALS_TABLE_ARN: ${{ vars.DAPIER_CREDENTIALS_TABLE_ARN }}" in workflow
-    assert 'if [ -z "$DAPIER_CREDENTIALS_TABLE_NAME" ] || [ -z "$DAPIER_CREDENTIALS_TABLE_ARN" ]' in workflow
-    assert "MAILING_EXPORTS_CONFIG: ${{ vars.MAILING_EXPORTS_CONFIG }}" in workflow
-    assert "ParameterKey=DapierCredentialsTableName,ParameterValue=$DAPIER_CREDENTIALS_TABLE_NAME" in workflow
-    assert "ParameterKey=DapierCredentialsTableArn,ParameterValue=$DAPIER_CREDENTIALS_TABLE_ARN" in workflow
-    assert "ParameterKey=MailingExportsConfig,ParameterValue=$MAILING_EXPORTS_CONFIG" in workflow
+    assert "DAPIER_CREDENTIALS_TABLE_NAME" not in workflow
+    assert "DAPIER_CREDENTIALS_TABLE_ARN" not in workflow
+    assert "MAILING_EXPORTS_CONFIG" not in workflow
+    assert "ParameterKey=DapierCredentialsTableName" not in workflow
+    assert "ParameterKey=DapierCredentialsTableArn" not in workflow
+    assert "ParameterKey=MailingExportsConfig" not in workflow
 
 
 def test_no_old_two_function_resources_remain():
@@ -1570,8 +1571,8 @@ def test_deploy_workflow_projects_private_templates_through_the_deployed_lambda(
         "$body.users.created + $body.users.updated + $body.users.unchanged == 3",
         "$body.templates.total == 11",
         "$body.templates.created + $body.templates.updated + $body.templates.unchanged == 11",
-        "$body.recurring.total == 7",
-        "$body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 7",
+        "$body.recurring.total == 6",
+        "$body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 6",
         "$body.recurring.repairedTasks",
     ):
         assert exact_total in deploy

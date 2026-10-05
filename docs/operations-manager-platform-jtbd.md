@@ -431,7 +431,6 @@ Recurring work from current sources:
 - Monthly tax report.
 - Daily or near-daily Slack invite handling from Airtable.
 - Daily review of new Trello/cards/tasks from historical spreadsheet behavior.
-- Weekly Mailchimp mailing list backup.
 - Monthly Slack dump.
 - Periodic sponsor performance follow-up.
 - Periodic checking of invoices, receipts, Dropbox folders, and bookkeeping
@@ -846,7 +845,6 @@ The operator should expect recurring weekly work:
 - Prepare and follow up on sponsored content.
 - Review active events for upcoming reminders.
 - Handle book-of-the-week activities when active.
-- Back up Mailchimp mailing list if this recurring task is configured.
 
 Acceptance criteria:
 
@@ -1114,7 +1112,7 @@ The first meaningful version should not be "docs plus search". It should be:
 - Surface cron generation failures.
 - Add recurring source badges on tasks.
 - Add operations defaults for newsletter, social media, tax report, Slack invite
-  handling, Mailchimp backup, and Slack dump.
+  handling, and Slack dump.
 
 ### Phase 5: Integrate docs and assistant into execution
 

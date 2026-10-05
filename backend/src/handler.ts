@@ -3,7 +3,6 @@ import { route } from './router';
 import { getClient } from './db/client';
 import { runCron } from './cron/runner';
 import { writePortableExportArchive } from './export/archive';
-import { runConfiguredMailingExports } from './mailingExports/service';
 import { sanitizeJsonResponse } from './responsePrivacy';
 import type { CronRunnerResult } from './cron/runner';
 import type { LambdaEvent, LambdaResponse } from './types';
@@ -285,11 +284,6 @@ async function handleInvocation(
           archive_size_bytes: result.archiveSizeBytes,
         }),
       };
-    }
-    if (detail?.dataopsAction === 'mailing-export') {
-      const runKey = typeof detail.runKey === 'string' ? detail.runKey : new Date().toISOString().slice(0, 10);
-      const exports = await runConfiguredMailingExports(client!, runKey);
-      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ exports }) };
     }
     return runCron(client!);
   }

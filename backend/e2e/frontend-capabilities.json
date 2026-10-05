@@ -1238,60 +1238,6 @@
       ]
     },
     {
-      "id": "mailing-exports",
-      "surface": "Mailing exports",
-      "route": "/#/mailing-exports",
-      "apiBoundaries": [
-        "/api/mailing-exports"
-      ],
-      "roleIds": [
-        "operator",
-        "admin"
-      ],
-      "states": [
-        {
-          "id": "mailing-exports.no-configs",
-          "kind": "empty",
-          "description": "No configurations renders honestly.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "mailing-exports.ready",
-          "kind": "ready",
-          "description": "A configured export renders without invoking an external provider.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "mailing-exports.running",
-          "kind": "loading",
-          "description": "A running export exposes honest progress and history.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "mailing-exports.completed",
-          "kind": "ready",
-          "description": "A completed export persists its safe result and history.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "mailing-exports.failed",
-          "kind": "error",
-          "description": "A failed export preserves honest status and history.",
-          "coverage": {
-            "status": "runtime"
-          }
-        }
-      ]
-    },
-    {
       "id": "process-docs",
       "surface": "Process Docs and search",
       "route": "/#/processes",

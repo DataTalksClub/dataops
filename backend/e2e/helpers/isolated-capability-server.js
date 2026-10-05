@@ -194,14 +194,6 @@ async function startIsolatedCapabilityServer(server, tmpRoot, options = {}) {
     SKIP_AUTH: 'false',
     SPONSOR_FINANCE_ENABLED: 'true',
     WORK_ENGINE_AUTH_MODE: 'portal',
-    DATAOPS_MAILING_EXPORTS_CONFIG: server.noMailingConfig ? '[]' : JSON.stringify([{
-      account: 'Synthetic audience account',
-      credentialId: 'mailchimp',
-      enabled: true,
-      id: 'synthetic-disabled-provider',
-      provider: 'mailchimp',
-      scopeLabel: 'All synthetic audiences',
-    }]),
   }, options);
 }
 

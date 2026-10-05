@@ -18,8 +18,6 @@ import {
   setBookkeepingArchiveUploaderForTests,
   setBookkeepingStorageForTests,
 } from '../src/routes/bookkeeping';
-import { setMailingExportDependenciesForTests } from '../src/routes/mailingExports';
-import { MailingExportProviderError } from '../src/mailingExports/mailchimp';
 import { KnowledgeStore, knowledgeStoreConfigFromEnv } from '../src/docs/knowledgeStore';
 import {configureOperatingModelStoreForTests} from '../src/routes/operatingModel';
 import {MemoryS3} from '../tests/helpers/knowledge';
@@ -44,7 +42,6 @@ type E2eRouteFault = {
   remaining?: number;
 };
 let e2eRouteFaults: E2eRouteFault[] = [];
-let e2eMailingProviderMode: 'pending' | 'complete' | 'fail' = 'pending';
 
 function listeningPort(): number {
   const address = server.address();
@@ -102,30 +99,6 @@ function configureBookkeepingStorage(): void {
 }
 
 configureBookkeepingStorage();
-setMailingExportDependenciesForTests({
-  provider: {
-    minimumIntervalMs: 0,
-    async requestExport() {
-      if (e2eMailingProviderMode === 'fail') throw new MailingExportProviderError('provider-api', 'Synthetic local provider failure');
-      return e2eMailingProviderMode === 'complete'
-        ? { status: 'completed', providerJobId: 'synthetic-local-job', downloadUrl: 'local://synthetic-export', filename: 'synthetic-export.zip' }
-        : { status: 'pending', providerJobId: 'synthetic-local-job' };
-    },
-    async checkExport() {
-      if (e2eMailingProviderMode === 'fail') throw new MailingExportProviderError('provider-api', 'Synthetic local provider failure');
-      return e2eMailingProviderMode === 'complete'
-        ? { status: 'completed', providerJobId: 'synthetic-local-job', downloadUrl: 'local://synthetic-export', filename: 'synthetic-export.zip' }
-        : { status: 'pending', providerJobId: 'synthetic-local-job' };
-    },
-    async download() {
-      return Buffer.from([0x50, 0x4b, 0x05, 0x06]);
-    },
-  },
-  async store(key) {
-    return `local://synthetic-e2e/${encodeURIComponent(key)}`;
-  },
-  log() {},
-});
 
 function configureOfflineDocsStore(): void {
   if (process.env.DTC_OFFLINE !== '1') return;
@@ -237,20 +210,6 @@ const server = http.createServer(async (req, res) => {
     }
     res.writeHead(405);
     res.end();
-    return;
-  }
-
-  if (parsed.pathname === '/__e2e__/mailing-provider' && req.method === 'POST') {
-    let mode: unknown;
-    try { mode = JSON.parse(body || '{}').mode; } catch { mode = null; }
-    if (!['pending', 'complete', 'fail'].includes(String(mode))) {
-      res.writeHead(400, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Invalid synthetic provider mode' }));
-      return;
-    }
-    e2eMailingProviderMode = mode as typeof e2eMailingProviderMode;
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ mode: e2eMailingProviderMode }));
     return;
   }
 

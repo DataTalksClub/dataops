@@ -104,9 +104,6 @@ jobs:
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN: ${{ secrets.EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN }}
-      DAPIER_CREDENTIALS_TABLE_NAME: ${{ vars.DAPIER_CREDENTIALS_TABLE_NAME }}
-      DAPIER_CREDENTIALS_TABLE_ARN: ${{ vars.DAPIER_CREDENTIALS_TABLE_ARN }}
-      MAILING_EXPORTS_CONFIG: ${{ vars.MAILING_EXPORTS_CONFIG }}
       CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED }}
       SPONSOR_FINANCE_ENABLED: ${{ vars.SPONSOR_FINANCE_ENABLED }}
       CONVERSATIONAL_EXECUTION_ENABLED: ${{ vars.CONVERSATIONAL_EXECUTION_ENABLED }}
@@ -232,12 +229,7 @@ jobs:
             echo "Required email-document intake secret ARN is not configured" >&2
             exit 1
           fi
-          if [ -z "$DAPIER_CREDENTIALS_TABLE_NAME" ] || [ -z "$DAPIER_CREDENTIALS_TABLE_ARN" ]; then
-            echo "Required Dapier credentials table name/ARN are not configured" >&2
-            exit 1
-          fi
           : "${EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX:=transfer/}"
-          : "${MAILING_EXPORTS_CONFIG:=[]}"
           : "${CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED:=false}"
           : "${SPONSOR_FINANCE_ENABLED:=false}"
           : "${CONVERSATIONAL_EXECUTION_ENABLED:=false}"
@@ -339,9 +331,6 @@ jobs:
               "ParameterKey=EmailDocumentExternalSourceBucketName,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET" \
               "ParameterKey=EmailDocumentExternalSourcePrefix,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX" \
               "ParameterKey=EmailDocumentExternalSourceKmsKeyArn,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN" \
-              "ParameterKey=DapierCredentialsTableName,ParameterValue=$DAPIER_CREDENTIALS_TABLE_NAME" \
-              "ParameterKey=DapierCredentialsTableArn,ParameterValue=$DAPIER_CREDENTIALS_TABLE_ARN" \
-              "ParameterKey=MailingExportsConfig,ParameterValue=$MAILING_EXPORTS_CONFIG" \
               "ParameterKey=ConversationalTelegramIngressEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED" \
               "ParameterKey=SponsorFinanceEnabled,ParameterValue=$SPONSOR_FINANCE_ENABLED" \
               "ParameterKey=DataOpsEnvironment,ParameterValue=sandbox" \
@@ -420,9 +409,9 @@ jobs:
               and ([$body.templates.created, $body.templates.updated, $body.templates.unchanged] | all(.[]; nonnegative_integer))
               and ($body.templates.created + $body.templates.updated + $body.templates.unchanged == $body.templates.total)
               and ($body.recurring | keys == ["created", "repairedTasks", "skipped", "total", "updated"])
-              and ($body.recurring.total == 7)
+              and ($body.recurring.total == 6)
               and ([$body.recurring.created, $body.recurring.updated, $body.recurring.skipped, $body.recurring.repairedTasks] | all(.[]; nonnegative_integer))
-              and ($body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 7)
+              and ($body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 6)
             )
           ' "$seed_response" >/dev/null; then
             echo "Runtime seed did not confirm the users, authored-template reconciliation, and recurring-config contract" >&2

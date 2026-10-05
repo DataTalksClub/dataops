@@ -30,7 +30,6 @@ const servers = {
   session: { userId: '15900000-0000-4000-8000-000000000013', role: 'admin' },
   disabled: { userId: '15900000-0000-4000-8000-000000000014', role: 'admin', disabled: true },
   expired: { userId: '15900000-0000-4000-8000-000000000015', role: 'admin', sessionLifetimeSeconds: '-1' },
-  noMailingConfig: { userId: '15900000-0000-4000-8000-000000000016', role: 'admin', noMailingConfig: true },
   emptyDocs: { userId: '15900000-0000-4000-8000-000000000018', role: 'admin', noSyntheticDocs: true },
   qualityAdmin: {
     userId: '15900000-0000-4000-8000-000000000019',
@@ -1068,48 +1067,6 @@ test.describe('canonical frontend capability behavior', () => {
     ]);
   });
 
-  test('mailing exports run deterministic configured history without an external provider write', async ({ browser }, testInfo) => {
-    const noConfig = await portalContext(browser, servers.noMailingConfig);
-    const noConfigPage = await noConfig.newPage();
-    await noConfigPage.goto('/#/mailing-exports');
-    const noConfigState = noConfigPage.locator('[data-export-state="no-config"]');
-    await expect(noConfigState).toContainText('No export configurations');
-    await expect(noConfigState).toContainText('No secret values belong in the portal.');
-    await noConfig.close();
-
-    const { context, page } = await portalPage(browser);
-    await page.goto('/#/mailing-exports');
-    await expect(page.getByText('Synthetic audience account')).toBeVisible();
-    await expect(page.locator('.mailing-export-card[data-export-state="empty"]')).toBeVisible();
-    await expect(page.getByText('No export runs yet')).toBeVisible();
-    await page.getByRole('button', { name: 'Start daily export' }).click();
-    await expect(page.locator('.mailing-export-card[data-export-state="pending"]')).toBeVisible();
-    await expect(page.locator('.mailing-export-history')).toContainText('Synthetic audience account · pending');
-
-    expect((await context.request.post('/__e2e__/mailing-provider', { data: { mode: 'fail' } })).status()).toBe(200);
-    await page.getByRole('button', { name: 'Advance / retry' }).click();
-    await expect(page.getByRole('status')).toContainText('Could not advance export: HTTP 502 Bad Gateway');
-    await page.getByRole('button', { name: 'Refresh' }).click();
-    await expect(page.locator('.mailing-export-card[data-export-state="failed"]')).toBeVisible();
-    await expect(page.locator('.mailing-export-error')).toContainText('provider-api · The provider export API failed');
-    expect(await page.locator('.mailing-export-card').textContent()).not.toContain('apiKey');
-
-    expect((await context.request.post('/__e2e__/mailing-provider', { data: { mode: 'complete' } })).status()).toBe(200);
-    await page.getByRole('button', { name: 'Advance / retry' }).click();
-    await expect(page.locator('.mailing-export-card[data-export-state="completed"]')).toBeVisible();
-    await expect(page.locator('.mailing-export-card dl div', { hasText: 'Artifact' }).locator('dd')).toContainText('mailing-export-');
-    await expect(page.getByRole('button', { name: 'Download ZIP' })).toBeVisible();
-    await page.reload();
-    await expect(page.locator('.mailing-export-card[data-export-state="completed"]')).toBeVisible();
-    await expect(page.locator('.mailing-export-history')).toContainText('Synthetic audience account · completed');
-    await context.close();
-    recordCapabilityEvidence(testInfo, [{
-      route: '/#/mailing-exports',
-      roleId: 'admin',
-      stateIds: ['mailing-exports.no-configs', 'mailing-exports.ready', 'mailing-exports.running', 'mailing-exports.completed', 'mailing-exports.failed'],
-    }]);
-  });
-
   test('Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely', async ({ browser }, testInfo) => {
     test.setTimeout(120_000);
     const empty = await portalContext(browser, servers.emptyDocs, {
@@ -1667,7 +1624,7 @@ test.describe('canonical frontend capability behavior', () => {
   });
 
   test('capability recovery states stay JSON-safe and reloadable across retained routes', async ({ browser }, testInfo) => {
-    const { context, page } = await portalPage(browser, servers.noMailingConfig);
+    const { context, page } = await portalPage(browser, servers.admin);
     await page.goto('/#/notifications');
     await expect(page.locator('.work-bell-empty')).toHaveText('No active notifications.');
     const notificationTaskResponse = await context.request.post('/api/tasks', { data: {

@@ -307,12 +307,10 @@ async function handlePrivateDownload(id: string, client: DynamoDBDocumentClient)
   const artifact = await getArtifact(client, id);
   if (!artifact) return jsonResponse(404, { error: 'Artifact not found' });
   const emailBucket = process.env.EMAIL_DOCUMENTS_BUCKET || '';
-  const mailingBucket = process.env.DATAOPS_MAILING_EXPORTS_BUCKET || '';
   const prefix = (process.env.EMAIL_DOCUMENT_DESTINATION_PREFIX || 'artifacts/').replace(/^\/+|\/+$/g, '');
   const match = /^s3:\/\/([^/]+)\/(.+)$/.exec(artifact.storageUri || '');
   const emailDocument = artifact.dataClass === 'sensitive' && match?.[1] === emailBucket && match[2].startsWith(`${prefix}/`);
-  const mailingExport = artifact.dataClass === 'private' && match?.[1] === mailingBucket && match[2].startsWith('mailing-exports/');
-  if (!match || (!emailDocument && !mailingExport)) {
+  if (!match || !emailDocument) {
     return jsonResponse(409, { error: 'Private download is not available for this artifact' });
   }
   artifactS3Client ||= new S3Client({});

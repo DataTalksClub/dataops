@@ -153,15 +153,6 @@ Parameters:
     Default: 60
     MinValue: 1
     MaxValue: 10000
-  MailingExportsConfig:
-    Type: String
-    Default: '[]'
-  DapierCredentialsTableName:
-    Type: String
-    Description: Physical name of the Dapier-owned credentials table.
-  DapierCredentialsTableArn:
-    Type: String
-    Description: ARN of the Dapier-owned credentials table for least-privilege GetItem access.
   NewsletterOpenAlertLeadDays:
     Type: Number
     Default: 14
@@ -972,37 +963,6 @@ Resources:
             Principal: "*"
             Action: "s3:*"
             Resource: [!GetAtt EmailDocumentsBucket.Arn, !Sub "${EmailDocumentsBucket.Arn}/*"]
-            Condition: { Bool: { "aws:SecureTransport": false } }
-
-  MailingExportsBucket:
-    Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      BucketEncryption: { ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }] }
-      PublicAccessBlockConfiguration: { BlockPublicAcls: true, IgnorePublicAcls: true, BlockPublicPolicy: true, RestrictPublicBuckets: true }
-      VersioningConfiguration: { Status: Enabled }
-      LifecycleConfiguration:
-        Rules:
-          - Id: AbortIncompleteUploads
-            Status: Enabled
-            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }
-          - Id: RetainNoncurrentExports
-            Status: Enabled
-            NoncurrentVersionExpiration: { NoncurrentDays: 365 }
-
-  MailingExportsBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref MailingExportsBucket
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: DenyInsecureTransport
-            Effect: Deny
-            Principal: "*"
-            Action: s3:*
-            Resource: [!GetAtt MailingExportsBucket.Arn, !Sub "${MailingExportsBucket.Arn}/*"]
             Condition: { Bool: { "aws:SecureTransport": false } }
 
   DataOpsTasksTable:
@@ -2091,13 +2051,6 @@ Resources:
                 - !Ref AWS::NoValue
         - Statement:
             Effect: Allow
-            Action: [dynamodb:GetItem]
-            Resource: !Ref DapierCredentialsTableArn
-            Condition:
-              ForAllValues:StringEquals:
-                dynamodb:LeadingKeys: [mailchimp]
-        - Statement:
-            Effect: Allow
             Action:
               - s3:PutObject
             Resource:
@@ -2106,10 +2059,6 @@ Resources:
             Effect: Allow
             Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject, s3:DeleteObject, s3:DeleteObjectVersion, s3:HeadObject]
             Resource: !Sub ${BookkeepingDocumentsBucket.Arn}/*
-        - Statement:
-            Effect: Allow
-            Action: [s3:GetObject, s3:PutObject]
-            Resource: !Sub ${MailingExportsBucket.Arn}/*
         - Statement:
             Effect: Allow
             Action: [s3:GetObject]
@@ -2170,9 +2119,6 @@ Resources:
           EMAIL_DOCUMENT_DESTINATION_PREFIX: !Ref EmailDocumentDestinationPrefix
           EMAIL_DOCUMENT_RECIPIENT_ROUTES: !Ref EmailDocumentRecipientRoutes
           EMAIL_DOCUMENT_RATE_LIMIT: !Ref EmailDocumentRateLimit
-          DATAOPS_MAILING_EXPORTS_CONFIG: !Ref MailingExportsConfig
-          DATAOPS_MAILING_EXPORTS_BUCKET: !Ref MailingExportsBucket
-          DATAOPS_DAPIER_CREDENTIALS_TABLE: !Ref DapierCredentialsTableName
           TELEGRAM_INTEGRATION_SECRET_NAME: !Ref TelegramIntegrationSecretName
           CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: !Ref ConversationalTelegramIngressEnabled
           CONVERSATIONAL_EXECUTION_ENABLED: !Ref ConversationalExecutionEnabled
@@ -2260,25 +2206,6 @@ Resources:
       FunctionName: !Ref BackendTargetFunctionName
       Principal: events.amazonaws.com
       SourceArn: !GetAtt BackendFunctionDailyBackendExport.Arn
-
-  BackendFunctionDailyMailingExport:
-    Type: AWS::Events::Rule
-    Properties:
-      Description: Request or advance configured mailing-list exports once per day.
-      ScheduleExpression: cron(0 9 * * ? *)
-      State: ENABLED
-      Targets:
-        - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackendTargetFunctionName}
-          Id: BackendFunctionDailyMailingExportLambdaTarget
-          Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"mailing-export"}}'
-
-  BackendFunctionDailyMailingExportPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref BackendTargetFunctionName
-      Principal: events.amazonaws.com
-      SourceArn: !GetAtt BackendFunctionDailyMailingExport.Arn
 
   KnowledgeWorkerFunction:
     Type: AWS::Serverless::Function

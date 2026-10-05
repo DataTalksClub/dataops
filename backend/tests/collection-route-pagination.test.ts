@@ -6,7 +6,6 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { route } from '../src/router';
 import { createCard } from '../src/db/cards';
 import { createFile } from '../src/db/files';
-import { createMailingExport } from '../src/db/mailingExports';
 import {
   createNotification,
   listAllNotifications,
@@ -15,32 +14,22 @@ import {
 import { createTask } from '../src/db/tasks';
 import { createUserWithId } from '../src/db/users';
 import { TABLE_TASKS } from '../src/db/tableNames';
-import type { MailingExportJob } from '../src/mailingExports/types';
 import type { LambdaEvent, LambdaResponse } from '../src/types';
 import { truncateTestTables, useTestDatabase } from './helpers/db';
 
 const TEST_SECRET = 'synthetic-collection-route-pagination-secret';
-const MAILING_CONFIG = {
-  id: 'synthetic-mailing-config',
-  provider: 'mailchimp',
-  account: 'Synthetic account',
-  scopeLabel: 'Synthetic mailing scope',
-  credentialId: 'mailchimp',
-};
 
 const environment = {
   NODE_ENV: process.env.NODE_ENV,
   SKIP_AUTH: process.env.SKIP_AUTH,
   IS_LOCAL: process.env.IS_LOCAL,
   WORK_ENGINE_PORTAL_SECRET: process.env.WORK_ENGINE_PORTAL_SECRET,
-  DATAOPS_MAILING_EXPORTS_CONFIG: process.env.DATAOPS_MAILING_EXPORTS_CONFIG,
 };
 
 process.env.NODE_ENV = 'test';
 process.env.SKIP_AUTH = 'true';
 process.env.IS_LOCAL = 'true';
 process.env.WORK_ENGINE_PORTAL_SECRET = TEST_SECRET;
-process.env.DATAOPS_MAILING_EXPORTS_CONFIG = JSON.stringify([MAILING_CONFIG]);
 
 let client: DynamoDBDocumentClient;
 
@@ -59,7 +48,6 @@ after(() => {
   restoreEnvironmentVariable('SKIP_AUTH');
   restoreEnvironmentVariable('IS_LOCAL');
   restoreEnvironmentVariable('WORK_ENGINE_PORTAL_SECRET');
-  restoreEnvironmentVariable('DATAOPS_MAILING_EXPORTS_CONFIG');
 });
 
 function request(
@@ -133,25 +121,6 @@ function notificationData(index: number, overrides: Record<string, unknown> = {}
   };
 }
 
-function mailingExportData(index: number): MailingExportJob {
-  const id = `mailing-export-${String(index).padStart(3, '0')}`;
-  const requestedAt = new Date(Date.UTC(2026, 7, 1, 0, index)).toISOString();
-  return {
-    id,
-    configId: MAILING_CONFIG.id,
-    runKey: `synthetic-run-${index}`,
-    provider: 'mailchimp',
-    account: 'Synthetic account',
-    scopeLabel: 'Synthetic mailing scope',
-    status: 'completed',
-    requestedAt,
-    createdAt: requestedAt,
-    updatedAt: requestedAt,
-    leaseOwner: 'synthetic-private-lease-owner',
-    leaseExpiresAt: 1_999_999_999_999,
-  };
-}
-
 function ceilingTask(id: string, sequence: number): Record<string, unknown> {
   return {
     id,
@@ -169,7 +138,7 @@ type CollectionRow = Record<string, unknown>;
 
 async function collectPages(
   path: string,
-  envelopeKey: 'cards' | 'files' | 'notifications' | 'exports',
+  envelopeKey: 'cards' | 'files' | 'notifications',
   query: Record<string, string>,
   inspect?: (body: Record<string, unknown>, page: CollectionRow[]) => void,
 ): Promise<CollectionRow[]> {
@@ -336,32 +305,6 @@ describe('collection route pagination', () => {
     assert.strictEqual((await listUndismissedNotifications(client)).length, 0);
     assert.strictEqual((await listAllNotifications(client)).length, total);
   });
-
-  it('continues Mailing Exports and omits lease fields from every nested page', async () => {
-    const total = 31;
-    for (let index = 0; index < total; index += 1) {
-      await createMailingExport(client, mailingExportData(index));
-    }
-
-    const exports = await collectPages(
-      '/api/mailing-exports',
-      'exports',
-      { limit: '5' },
-      (body, page) => {
-        const configs = body.configs;
-        assert.ok(Array.isArray(configs));
-        assert.strictEqual((configs as CollectionRow[]).some((config) => 'credentialId' in config), false);
-        for (const item of page) {
-          assert.strictEqual('leaseOwner' in item, false);
-          assert.strictEqual('leaseExpiresAt' in item, false);
-        }
-      },
-    );
-    assert.strictEqual(exports.length, total);
-    assert.deepStrictEqual(ids(exports), new Set(
-      Array.from({ length: total }, (_, index) => `mailing-export-${String(index).padStart(3, '0')}`),
-    ));
-  });
 });
 
 describe('collection route pagination rejection envelopes', () => {
@@ -369,12 +312,12 @@ describe('collection route pagination rejection envelopes', () => {
     await truncateTestTables(client);
   });
 
-  it('returns the same sanitized 400 response for invalid cursors and limits on all four GET collections', async () => {
+  it('returns the same sanitized 400 response for invalid cursors and limits on remaining GET collections', async () => {
     const expected = {
       error: 'Invalid pagination input',
       code: 'invalid_pagination_input',
     };
-    const paths = ['/api/cards', '/api/files', '/api/notifications', '/api/mailing-exports'];
+    const paths = ['/api/cards', '/api/files', '/api/notifications'];
 
     for (const path of paths) {
       for (const query of [{ cursor: 'not a cursor' }, { limit: '0' }]) {

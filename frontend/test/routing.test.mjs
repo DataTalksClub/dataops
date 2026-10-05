@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, test } from "node:test";
 
 import {
   ENTITY_VOCABULARY,
   TASKS_SECTIONS,
+  WORKSPACE_HASH_BY_VIEW,
   WORKSPACE_ROUTE_DEFINITIONS,
   canonicalWorkspaceUrl,
   isRealIsoDate,
@@ -13,12 +17,24 @@ import {
   workspaceRouteFor,
 } from "../src/core/workspace.js";
 
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const browserLocation = (hash = "") => ({ pathname: "/", search: "", hash });
 
 describe("canonical workspace routing", () => {
   test("directly imports routing from the production workspace module", () => {
     assert.equal(typeof parseWorkspaceHash, "function");
     assert.equal(typeof canonicalWorkspaceUrl, "function");
+  });
+
+  test("Operations nav and hash map no longer include mailing exports", () => {
+    const markup = readFileSync(path.join(repoRoot, "frontend/index.html"), "utf8");
+    assert.doesNotMatch(markup, /mailing-exports-nav-button/);
+    assert.doesNotMatch(markup, /data-workspace-view="mailing-exports"/);
+    assert.doesNotMatch(markup, />Mailing exports</);
+    for (const view of ["bookkeeping", "sponsors", "newsletter", "calendar", "review"]) {
+      assert.match(markup, new RegExp(`data-workspace-view="${view}"`));
+    }
+    assert.equal(Object.hasOwn(WORKSPACE_HASH_BY_VIEW, "mailing-exports"), false);
   });
 
   test("retains every top-level and nested workspace route", () => {
@@ -39,7 +55,6 @@ describe("canonical workspace routing", () => {
       "/sponsors",
       "/newsletter",
       "/calendar",
-      "/mailing-exports",
       "/processes",
       "/review",
       "/admin",
@@ -96,6 +111,7 @@ describe("canonical workspace routing", () => {
       ["#/tasks?date=2026-02-30", "invalid date"],
       ["#/tasks?taskId=%E0%A4%A", "malformed encoding"],
       ["#/unknown", "unknown path"],
+      ["#/mailing-exports", "unknown path"],
     ];
     for (const [hash, reason] of cases) {
       assert.deepEqual(parseWorkspaceHash(hash, browserLocation(hash)), { invalid: true, reason }, hash);
