@@ -792,8 +792,8 @@ body.sidebar-collapsed .sidebar {
 .workspace-nav-submenu {
   display: grid;
   gap: 2px;
+  /* 30px inset + subnav 10px padding aligns nested labels with parent text. */
   margin: 0 0 4px 30px;
-  padding-left: 10px;
 }
 
 .workspace-subnav-button {

@@ -134,6 +134,33 @@ test('grouped navigation and scoped search remain usable in both themes and resp
       await expect(page.locator(`[data-tasks-section="${section}"]`)).toBeVisible();
       expect((await page.locator(`[data-tasks-section="${section}"]`).boundingBox()).height).toBeGreaterThanOrEqual(44);
     }
+    const indent = await page.evaluate(() => {
+      function textLeft(element) {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+          if (!node.textContent.trim()) continue;
+          const start = node.textContent.search(/\S/);
+          const range = document.createRange();
+          range.setStart(node, start);
+          range.setEnd(node, start + 1);
+          return range.getBoundingClientRect().left;
+        }
+        return element.getBoundingClientRect().left;
+      }
+      const parent = textLeft(document.querySelector('#operations-home-button span:not(.workspace-nav-icon)'));
+      const icon = document.querySelector('#operations-home-button .workspace-nav-icon').getBoundingClientRect();
+      return {
+        parent,
+        iconRight: icon.right,
+        nested: [...document.querySelectorAll('#tasks-nav-submenu .workspace-subnav-button')].map(textLeft),
+      };
+    });
+    expect(indent.nested).toHaveLength(6);
+    for (const x of indent.nested) {
+      expect(Math.abs(x - indent.parent)).toBeLessThanOrEqual(2);
+      expect(x).toBeGreaterThan(indent.iconRight - 1);
+    }
     await page.locator('#docs-nav-button').scrollIntoViewIfNeeded();
     await expect(page.locator('#docs-nav-button')).toBeInViewport();
     await page.screenshot({ path: path.join(screenshots, `navigation-bottom-${theme}.png`) });

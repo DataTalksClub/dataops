@@ -260,3 +260,87 @@ describe("shell ownership contract", () => {
     assert.doesNotMatch(styles, /display: none !important;\n\}\n\n\.editor-view \.save-state/);
   });
 });
+
+function firstCssRuleBody(styles, selector) {
+  const uncommented = styles.replace(/\/\*[\s\S]*?\*\//g, "");
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = uncommented.match(new RegExp(`(?:^|[\\s}])${escaped}\\s*\\{([^}]+)\\}`));
+  assert.ok(match, `missing ${selector} rule`);
+  return match[1];
+}
+
+function cssDeclarations(body) {
+  const declarations = {};
+  for (const part of body.split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const colon = trimmed.indexOf(":");
+    if (colon === -1) continue;
+    declarations[trimmed.slice(0, colon).trim()] = trimmed.slice(colon + 1).trim();
+  }
+  return declarations;
+}
+
+function cssPx(value) {
+  if (!value || value === "0") return 0;
+  const match = /^(-?\d+(?:\.\d+)?)px$/.exec(value);
+  assert.ok(match, `expected a px length, got ${JSON.stringify(value)}`);
+  return Number(match[1]);
+}
+
+function boxSidePx(declarations, kind, side) {
+  const longhand = declarations[`${kind}-${side}`];
+  if (longhand) return cssPx(longhand);
+  const inline = side === "left" ? declarations[`${kind}-inline-start`] : null;
+  if (inline) return cssPx(inline);
+  const shorthand = declarations[kind];
+  if (!shorthand) return 0;
+  const parts = shorthand.split(/\s+/);
+  if (parts.length === 1) return cssPx(parts[0]);
+  if (parts.length === 2 || parts.length === 3) {
+    return cssPx(side === "left" || side === "right" ? parts[1] : parts[0]);
+  }
+  const index = { top: 0, right: 1, bottom: 2, left: 3 }[side];
+  return cssPx(parts[index]);
+}
+
+describe("workspace nested nav indent contract", () => {
+  test("nested Tasks labels share the parent-text column, not an extra 10px inset", () => {
+    const styles = read("frontend/src/styles.css");
+    const submenu = cssDeclarations(firstCssRuleBody(styles, ".workspace-nav-submenu"));
+    const submenuLeft = boxSidePx(submenu, "margin", "left") + boxSidePx(submenu, "padding", "left");
+    assert.equal(
+      submenuLeft,
+      30,
+      ".workspace-nav-submenu left inset must total 30px, not 40px from combining margin-left: 30px with padding-left: 10px",
+    );
+
+    const parent = cssDeclarations(firstCssRuleBody(styles, ".workspace-nav-button"));
+    const icon = cssDeclarations(firstCssRuleBody(styles, ".workspace-nav-icon"));
+    const nested = cssDeclarations(firstCssRuleBody(styles, ".workspace-subnav-button"));
+    const parentTextColumn =
+      boxSidePx(parent, "padding", "left") + cssPx(icon.width) + cssPx(parent.gap);
+    const nestedTextColumn = submenuLeft + boxSidePx(nested, "padding", "left");
+    assert.equal(parentTextColumn, 40);
+    assert.equal(nestedTextColumn, parentTextColumn);
+    assert.equal(cssPx(nested["font-size"]), 13);
+    assert.equal(nested.color, "var(--dk-text-muted)");
+    assert.match(
+      firstCssRuleBody(styles, ".workspace-subnav-button:hover"),
+      /background:\s*var\(--dk-bg-hover\)/,
+    );
+    assert.match(
+      firstCssRuleBody(styles, ".workspace-subnav-button.is-active"),
+      /background:\s*var\(--dk-accent-soft\)/,
+    );
+    assert.match(
+      styles,
+      /@media \(max-width: 820px\) \{[\s\S]*?\.workspace-subnav-button \{\s*min-height: 44px;/,
+    );
+    assert.doesNotMatch(styles, /#tasks-nav-submenu/);
+    assert.match(
+      read("frontend/index.html"),
+      /id="tasks-nav-submenu" class="workspace-nav-submenu"/,
+    );
+  });
+});
