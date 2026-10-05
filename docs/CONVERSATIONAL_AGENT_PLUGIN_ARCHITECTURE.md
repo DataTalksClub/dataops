@@ -625,8 +625,7 @@ The following are supporting infrastructure rather than operator intentions:
 - file records;
 - audit events;
 - notifications;
-- authentication sessions;
-- mailing-list exports.
+- authentication sessions.
 
 The runtime should manage these automatically. They should not appear in the
 plugin catalog. The agent should work in terms of an SOP, podcast document,

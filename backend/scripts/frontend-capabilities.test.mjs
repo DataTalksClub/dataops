@@ -72,10 +72,6 @@ const REQUIRED = {
     route: "/#/calendar",
     states: ["empty", "populated", "create-edit-reload", "overlays-alerts", "week-date-navigation", "validation", "conflict", "failure"],
   },
-  "mailing-exports": {
-    route: "/#/mailing-exports",
-    states: ["no-configs", "ready", "running", "completed", "failed"],
-  },
   "process-docs": {
     route: "/#/processes",
     states: [
@@ -120,7 +116,6 @@ const REQUIRED_APIS = {
   sponsors: ["/api/sponsor-crm/*"],
   newsletter: ["/api/newsletter-slots"],
   calendar: ["/api/calendar-items"],
-  "mailing-exports": ["/api/mailing-exports"],
   "process-docs": ["/docs", "/search", "/content/*", "/docs/registry", "/docs/backlinks"],
   "document-review": ["/api/document-reviews", "/docs", "/content/*"],
   admin: ["/docs/process-quality", "/knowledge/status", "/knowledge/publication"],
@@ -168,7 +163,6 @@ const REQUIRED_ROUTE_SET = [
   "/#/sponsors?bookingId=<id>",
   "/#/newsletter",
   "/#/calendar",
-  "/#/mailing-exports",
   "/#/processes",
   "/#/review",
   "/#/admin",

@@ -153,7 +153,6 @@ const {
   getRenderCalendarSurface: () => renderCalendarSurface,
   getRenderDocsSurface: () => renderDocsSurface,
   getRenderInboxSurface: () => renderInboxSurface,
-  getRenderMailingExportsSurface: () => renderMailingExportsSurface,
   getRenderNewsletterSurface: () => renderNewsletterSurface,
   getRenderOperationsHome: () => renderOperationsHome,
   getRenderOperatingModel: () => operatingModelSurface?.renderOperatingModel || (() => undefined),
@@ -198,7 +197,6 @@ const {
 const {
   canLeaveFinanceSurface,
   renderBookkeepingSurface,
-  renderMailingExportsSurface,
   renderSponsorCrmSurface,
 } = createFinanceSurface({
   documentList,

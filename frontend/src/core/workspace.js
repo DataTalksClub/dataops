@@ -11,7 +11,6 @@ export const WORKSPACE_HASH_BY_VIEW = Object.freeze({
   sponsors: "/sponsors",
   newsletter: "/newsletter",
   calendar: "/calendar",
-  "mailing-exports": "/mailing-exports",
   review: "/review",
 });
 
@@ -56,11 +55,6 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   },
   "/newsletter": { view: "newsletter", tasksSection: "queue", params: [] },
   "/calendar": { view: "calendar", tasksSection: "queue", params: [] },
-  "/mailing-exports": {
-    view: "mailing-exports",
-    tasksSection: "queue",
-    params: [],
-  },
   "/processes": {
     view: "docs",
     tasksSection: "queue",

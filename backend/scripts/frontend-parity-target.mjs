@@ -46,7 +46,6 @@ Object.assign(process.env, {
   AUTH_LOGOUT_URL: 'https://portal.example.test/',
   AUTH_SESSION_LIFETIME_SECONDS: '3600',
   SPONSOR_FINANCE_ENABLED: 'true',
-  MAILING_EXPORTS_CONFIG: JSON.stringify([{ id: 'parity-mailing', account: 'Synthetic audience', provider: 'mailchimp', scopeLabel: 'Synthetic members', enabled: true }]),
   CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: 'false',
   CONVERSATIONAL_EXECUTION_ENABLED: 'false',
   CONVERSATIONAL_ENABLED_PLUGINS: 'none',

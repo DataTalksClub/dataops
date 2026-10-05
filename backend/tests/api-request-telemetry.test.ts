@@ -90,7 +90,6 @@ const OPERATIONAL_API_ALIASES: ReadonlyArray<readonly [
   ['/api/files', '/work/api/files', 'files'],
   ['/api/health', '/work/api/health', 'health_auth_team'],
   ['/api/intake', '/work/api/intake', 'intake'],
-  ['/api/mailing-exports', '/work/api/mailing-exports', 'mailing_exports'],
   ['/api/me', '/work/api/me', 'health_auth_team'],
   ['/api/newsletter-slots', '/work/api/newsletter-slots', 'calendar_newsletter'],
   ['/api/notifications', '/work/api/notifications', 'notifications'],
@@ -431,7 +430,7 @@ describe('portal API request telemetry', () => {
       ['/api/newsletter-slots/slot-fourteen', 'calendar_newsletter'],
       ['/api/bookkeeping/entry-fifteen', 'bookkeeping'],
       ['/api/sponsor-crm/bookings/booking-sixteen/communications', 'sponsor_crm'],
-      ['/api/mailing-exports/export-seventeen', 'mailing_exports'],
+      ['/api/mailing-exports/export-seventeen', 'other'],
       ['/api/conversational/readiness', 'conversational_telegram'],
       ['/api/webhook/telegram', 'conversational_telegram'],
       ['/api/webhook/email', 'email_documents'],
@@ -452,7 +451,7 @@ describe('portal API request telemetry', () => {
   });
 
   it('maps every operational work API alias to its canonical route family', () => {
-    assert.strictEqual(OPERATIONAL_API_ALIASES.length, 27);
+    assert.strictEqual(OPERATIONAL_API_ALIASES.length, 26);
     for (const [canonicalPath, workAliasPath, family] of OPERATIONAL_API_ALIASES) {
       assert.strictEqual(classifyApiRouteFamily(canonicalPath), family, canonicalPath);
       assert.strictEqual(classifyApiRouteFamily(workAliasPath), family, workAliasPath);

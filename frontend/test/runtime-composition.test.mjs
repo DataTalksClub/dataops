@@ -62,7 +62,6 @@ function createSurfaceHarness(options = {}) {
       "docs",
       "home",
       "inbox",
-      "mailing-exports",
       "newsletter",
       "review",
       "sponsors",
@@ -97,7 +96,6 @@ function createSurfaceHarness(options = {}) {
     getRenderCalendarSurface: () => renders.calendar,
     getRenderDocsSurface: () => renders.docs,
     getRenderInboxSurface: () => renders.inbox,
-    getRenderMailingExportsSurface: () => renders["mailing-exports"],
     getRenderNewsletterSurface: () => renders.newsletter,
     getRenderOperationsHome: () => renders.home,
     getRenderReviewSurface: () => renders.review,
@@ -225,8 +223,8 @@ describe("runtime surface composition", () => {
       ["sponsors", "sponsors"],
       ["newsletter", "newsletter"],
       ["calendar", "calendar"],
-      ["mailing-exports", "mailing-exports"],
       ["review", "review"],
+      ["mailing-exports", "home"],
       ["unknown", "home"],
     ]) {
       harness.workspaceState.activeWorkspaceView = view;

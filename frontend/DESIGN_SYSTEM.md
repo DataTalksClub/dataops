@@ -126,7 +126,7 @@ dakit and are identical in meaning.
   primary navigation list.
 - Navigation has three visible named groups: Daily work (`Today`, `My Plan`,
   `Inbox`, `Tasks`), Operations (`Newsletter`, `Calendar`, `Sponsors`,
-  `Bookkeeping`, `Mailing exports`, `Review`), and Knowledge (`Operating Model`,
+  `Bookkeeping`, `Review`), and Knowledge (`Operating Model`,
   `Process Docs`). Keep every destination visible; do not add a More menu.
 - Global search precedes navigation in both DOM and visual order. Its persistent
   accessible name and scope hint explain that it searches work and process docs.

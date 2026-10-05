@@ -155,7 +155,6 @@ const test = baseTest.extend({
     const server = {
       userId: ADMIN_ID,
       role: 'admin',
-      noMailingConfig: true,
       documents: [['capability.md', syntheticSop]],
     };
     const reportServerFailure = (body) => {

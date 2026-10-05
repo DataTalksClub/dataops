@@ -6316,8 +6316,7 @@ body[data-workspace-view="device"] .document-list {
 }
 
 body[data-workspace-view="bookkeeping"] .document-list,
-body[data-workspace-view="sponsors"] .document-list,
-body[data-workspace-view="mailing-exports"] .document-list {
+body[data-workspace-view="sponsors"] .document-list {
   width: 100%;
   max-width: 1180px;
 }
@@ -6331,14 +6330,12 @@ body[data-workspace-view="calendar"] .document-list {
 }
 
 .bookkeeping-surface,
-.sponsor-crm-surface,
-.mailing-exports-surface {
+.sponsor-crm-surface {
   gap: 20px;
 }
 
 .bookkeeping-header,
 .crm-header,
-.mailing-exports-surface > header,
 .planner-header,
 .ops-surface-admin .ops-surface-header,
 .ops-surface-users .ops-surface-header,
@@ -6350,7 +6347,6 @@ body[data-workspace-view="calendar"] .document-list {
 
 .bookkeeping-header h2,
 .crm-header h2,
-.mailing-exports-surface > header h2,
 .planner-heading h1 {
   color: var(--dk-text-heading);
   font-weight: 650;
@@ -6359,7 +6355,6 @@ body[data-workspace-view="calendar"] .document-list {
 
 .bookkeeping-header > div,
 .crm-header > div,
-.mailing-exports-surface > header > div,
 .planner-heading,
 .ops-surface-admin .ops-surface-header,
 .ops-surface-users .ops-surface-header,
@@ -6369,7 +6364,6 @@ body[data-workspace-view="calendar"] .document-list {
 
 .bookkeeping-header > div > p:last-child,
 .crm-header > div > p:last-child,
-.mailing-exports-surface > header p,
 .planner-heading > p:last-child,
 .ops-surface-admin .ops-surface-header p,
 .ops-surface-users .ops-surface-header p,
@@ -6381,27 +6375,23 @@ body[data-workspace-view="calendar"] .document-list {
 
 .surface-actions,
 .bookkeeping-header > button,
-.mailing-exports-surface > header > button,
 .planner-header > .primary-button {
   flex: 0 0 auto;
 }
 
 .surface-actions button,
 .bookkeeping-header > button,
-.mailing-exports-surface > header > button,
 .planner-header > .primary-button {
   white-space: nowrap;
 }
 
 .bookkeeping-surface .surface-status,
-.sponsor-crm-surface > .surface-status,
-.mailing-exports-surface > [role="status"] {
+.sponsor-crm-surface > .surface-status {
   margin: -8px 0 0;
 }
 
 .bookkeeping-surface .surface-status[role="status"],
-.sponsor-crm-surface > .surface-status,
-.mailing-exports-surface > [role="status"] {
+.sponsor-crm-surface > .surface-status {
   display: flex;
   min-height: 38px;
   align-items: center;
@@ -6468,7 +6458,6 @@ body[data-workspace-view="calendar"] .document-list {
 .status-label,
 .finance-status,
 .evidence-state,
-.mailing-export-status,
 .ops-user-badge {
   border-color: var(--dk-info-border);
   background: var(--dk-info-bg);
@@ -6606,8 +6595,7 @@ body[data-workspace-view="calendar"] .document-list {
 
 .bookkeeping-entry-dialog,
 .bookkeeping-delete-dialog,
-.sponsor-crm-surface .surface-dialog,
-.mailing-exports-surface .surface-dialog {
+.sponsor-crm-surface .surface-dialog {
   border-radius: var(--dk-radius-lg);
 }
 
@@ -6857,185 +6845,6 @@ body[data-workspace-view="calendar"] .document-list {
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
   padding: 14px 16px;
-}
-
-/* Mailing exports: configuration cards and durable history share one reading
-   order, with the next safe action always at the bottom of each card. */
-.mailing-exports-surface {
-  display: grid;
-  min-width: 0;
-}
-
-.mailing-exports-surface > header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.mailing-exports-surface > header h2 {
-  margin: 0 0 5px;
-  font-size: var(--dk-text-page);
-  line-height: 1.2;
-}
-
-.mailing-exports-surface > header p {
-  margin: 0;
-  max-width: 700px;
-}
-
-.mailing-exports-surface [data-configs] {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.mailing-export-card {
-  display: grid;
-  min-width: 0;
-  gap: 16px;
-  overflow: hidden;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
-  padding: 18px;
-}
-
-.mailing-export-card > header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-  border-bottom: 1px solid var(--dk-border-default);
-  padding-bottom: 14px;
-}
-
-.mailing-export-card > header > div {
-  min-width: 0;
-}
-
-.mailing-export-card h3 {
-  margin: 0;
-  color: var(--dk-text-heading);
-  font-size: 17px;
-}
-
-.mailing-export-card > header p,
-.mailing-export-card > p,
-.mailing-export-history span {
-  margin: 3px 0 0;
-  color: var(--dk-text-muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.mailing-export-status {
-  flex: 0 0 auto;
-  border-color: var(--dk-border-default);
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-muted);
-  text-transform: capitalize;
-}
-
-.mailing-export-card[data-export-state="completed"] .mailing-export-status {
-  border-color: var(--dk-success-border);
-  background: var(--dk-success-bg);
-  color: var(--dk-success-text);
-}
-
-.mailing-export-card[data-export-state="failed"] .mailing-export-status {
-  border-color: var(--dk-danger-border);
-  background: var(--dk-danger-bg);
-  color: var(--dk-danger-text);
-}
-
-.mailing-export-card[data-export-state="pending"] .mailing-export-status,
-.mailing-export-card[data-export-state="requested"] .mailing-export-status {
-  border-color: var(--dk-warning-border);
-  background: var(--dk-warning-bg);
-  color: var(--dk-warning-text);
-}
-
-.mailing-export-card dl {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  margin: 0;
-  overflow: hidden;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-border-default);
-}
-
-.mailing-export-card dl > div {
-  min-width: 0;
-  background: var(--dk-bg-surface);
-  padding: 10px 12px;
-}
-
-.mailing-export-card dt {
-  color: var(--dk-text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.mailing-export-card dd {
-  margin: 3px 0 0;
-  overflow-wrap: anywhere;
-  color: var(--dk-text-heading);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.mailing-export-error {
-  border: 1px solid var(--dk-danger-border);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-danger-bg);
-  color: var(--dk-danger-text) !important;
-  padding: 10px 12px;
-}
-
-.mailing-export-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  border-top: 1px solid var(--dk-border-default);
-  padding-top: 14px;
-}
-
-.mailing-exports-surface > section {
-  overflow: hidden;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
-}
-
-.mailing-exports-surface > section h3 {
-  margin: 0;
-  border-bottom: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-heading);
-  padding: 14px 18px;
-  font-size: 16px;
-}
-
-.mailing-export-history {
-  display: grid;
-  gap: 2px;
-  padding: 12px 18px;
-}
-
-.mailing-export-history + .mailing-export-history {
-  border-top: 1px solid var(--dk-border-default);
-}
-
-.mailing-export-history strong {
-  color: var(--dk-text-heading);
-  font-size: 13px;
 }
 
 /* Newsletter and Calendar: the planner controls should feel like one
@@ -8046,7 +7855,6 @@ body[data-workspace-view="home"] .home-attention-row:hover {
   body[data-workspace-view="device"] .document-list,
   body[data-workspace-view="bookkeeping"] .document-list,
   body[data-workspace-view="sponsors"] .document-list,
-  body[data-workspace-view="mailing-exports"] .document-list,
   body[data-workspace-view="newsletter"] .document-list,
   body[data-workspace-view="calendar"] .document-list {
     max-width: none;
@@ -8054,7 +7862,6 @@ body[data-workspace-view="home"] .home-attention-row:hover {
 
   .bookkeeping-header,
   .crm-header,
-  .mailing-exports-surface > header,
   .planner-header {
     display: grid;
     gap: 14px;
@@ -8063,14 +7870,12 @@ body[data-workspace-view="home"] .home-attention-row:hover {
 
   .bookkeeping-header h2,
   .crm-header h2,
-  .mailing-exports-surface > header h2,
   .planner-heading h1 {
     font-size: 24px;
   }
 
   .surface-actions,
   .bookkeeping-header > button,
-  .mailing-exports-surface > header > button,
   .planner-header > .primary-button {
     justify-self: start;
   }
@@ -8186,18 +7991,6 @@ body[data-workspace-view="home"] .home-attention-row:hover {
 
   .finance-panel {
     padding: 14px;
-  }
-
-  .mailing-exports-surface [data-configs] {
-    grid-template-columns: 1fr;
-  }
-
-  .mailing-export-card {
-    padding: 14px;
-  }
-
-  .mailing-export-card dl {
-    grid-template-columns: 1fr;
   }
 
   .newsletter-filters .planner-filter-fields,
@@ -8360,8 +8153,7 @@ body[data-workspace-view="home"] .home-attention-row:hover {
 
 @media (max-width: 560px) {
   .newsletter-filters .planner-filter-fields,
-  .calendar-controls .planner-filter-fields,
-  .mailing-export-card dl {
+  .calendar-controls .planner-filter-fields {
     grid-template-columns: 1fr;
   }
 
@@ -8387,8 +8179,7 @@ body[data-workspace-view="home"] .home-attention-row:hover {
     grid-template-columns: 1fr;
   }
 
-  .ops-quality-row-head,
-  .mailing-export-card > header {
+  .ops-quality-row-head {
     align-items: flex-start;
   }
 
@@ -13226,7 +13017,6 @@ body[data-workspace-view="tasks"] .ops-queue-group.is-empty .ops-empty {
    per page); the eyebrow carries the section, the H1 the page name. */
 .operating-model-header h1,
 .bookkeeping-header h1,
-.mailing-exports-surface > header h1,
 .crm-header h1,
 .review-header-copy h1 {
   margin: 0;
@@ -13266,7 +13056,6 @@ body[data-workspace-view="tasks"] .ops-queue-group.is-empty .ops-empty {
 @media (max-width: 820px) {
   .newsletter-surface button,
   .calendar-surface button,
-  .mailing-exports-surface button,
   .bookkeeping-surface button:not(.primary-button, .quiet-button, .danger-button),
   .sponsor-crm-surface button:not(.primary-button, .quiet-button, .danger-button) {
     min-height: 44px;
@@ -13448,19 +13237,6 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
 .task-panel-body input[type="file"]::file-selector-button:hover {
   border-color: var(--dk-border-control-hover);
   background: var(--dk-bg-hover);
-}
-
-/* Mailing exports: honest states inside the panels carry the same inset as
-   the panel header instead of sitting flush against the border. */
-.mailing-exports-surface .honest-state {
-  display: grid;
-  gap: 3px;
-  padding: 12px 18px;
-}
-
-.mailing-exports-surface .honest-state p {
-  margin: 0;
-  color: var(--dk-text-muted);
 }
 
 /* Sponsors: the booking queue column is narrow on desktop, so the row
@@ -13660,10 +13436,8 @@ body:not([data-workspace-view="docs"]) #filters-section {
      statement month input, and the ledger row actions included. */
   .bookkeeping-surface input:not([type="checkbox"], [type="radio"]),
   .sponsor-crm-surface input:not([type="checkbox"], [type="radio"]),
-  .mailing-exports-surface input:not([type="checkbox"], [type="radio"]),
   .bookkeeping-surface .row-actions button,
-  .sponsor-crm-surface .row-actions button,
-  .mailing-exports-surface .row-actions button {
+  .sponsor-crm-surface .row-actions button {
     min-height: 44px;
   }
 
@@ -13718,12 +13492,6 @@ body:not([data-workspace-view="docs"]) #filters-section {
 .crm-booking-row .row-actions {
   flex: 0 0 auto;
   margin-left: auto;
-}
-
-/* Run history entries sit inside the card's padded body, aligned with the
-   header copy above them. */
-.mailing-export-history {
-  padding: 0 16px 12px;
 }
 
 /* The queue footer's "View all tasks" is a 44px control on mobile, but its

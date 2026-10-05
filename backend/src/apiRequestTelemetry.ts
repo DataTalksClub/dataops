@@ -19,7 +19,6 @@ export type ApiRouteFamily =
   | 'calendar_newsletter'
   | 'bookkeeping'
   | 'sponsor_crm'
-  | 'mailing_exports'
   | 'conversational_telegram'
   | 'email_documents'
   | 'docs_content_search'
@@ -87,7 +86,6 @@ const ROUTE_FAMILIES: ReadonlyArray<readonly [ApiRouteFamily, string]> = [
   ['bookkeeping', '/api/bookkeeping'],
   ['recurring', '/api/cron'],
   ['sponsor_crm', '/api/sponsor-crm'],
-  ['mailing_exports', '/api/mailing-exports'],
   ['conversational_telegram', '/api/conversational'],
   ['operating_model', '/api/operating-model'],
   ['operating_model', '/api/my-plan'],

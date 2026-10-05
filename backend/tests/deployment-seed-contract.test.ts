@@ -11,7 +11,7 @@ function response(templateTotal: number) {
   return { statusCode: 200, body: JSON.stringify({
     users: { processed: 3, created: 0, updated: 0, unchanged: 3 },
     templates: { total: templateTotal, created: 0, updated: 0, unchanged: templateTotal },
-    recurring: { total: 7, created: 0, updated: 0, skipped: 7, repairedTasks: 0 },
+    recurring: { total: 6, created: 0, updated: 0, skipped: 6, repairedTasks: 0 },
   }) };
 }
 function accepted(value: unknown) {
@@ -32,7 +32,7 @@ test('deploy seed gate rejects malformed counts and incomplete reconciliation', 
     { templates: { total: 24, created: -1, updated: 0, unchanged: 25 } },
     { templates: { total: '24', created: 0, updated: 0, unchanged: 24 } },
     { recurring: { total: 8, created: 0, updated: 0, skipped: 8, repairedTasks: 0 } },
-    { recurring: { total: 7, created: 0, updated: 0, skipped: 7 } },
+    { recurring: { total: 6, created: 0, updated: 0, skipped: 6 } },
     { templates: { total: 24, created: 0, updated: 0, unchanged: 24, unexpected: 1 } },
   ];
   for (const changes of invalid) {
