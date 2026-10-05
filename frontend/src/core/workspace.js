@@ -1,5 +1,4 @@
 export const WORKSPACE_HASH_BY_VIEW = Object.freeze({
-  home: "/",
   "operating-model": "/operating-model",
   docs: "/processes",
   admin: "/admin",
@@ -13,7 +12,7 @@ export const WORKSPACE_HASH_BY_VIEW = Object.freeze({
 });
 
 export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
-  "/": { view: "home", tasksSection: "queue", params: [] },
+  "/": { view: "tasks", tasksSection: "queue", params: [] },
   "/operating-model": { view: "operating-model", tasksSection: "queue", params: ["section", "entityId"] },
   "/tasks": {
     view: "tasks",
@@ -41,8 +40,7 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
     params: ["templateId"],
   },
   "/recurring": { view: "tasks", tasksSection: "recurring", params: [] },
-  "/artifacts": { view: "tasks", tasksSection: "artifacts", params: [] },
-  "/notifications": { view: "home", tasksSection: "queue", params: [] },
+  "/notifications": { view: "tasks", tasksSection: "queue", params: [] },
   "/bookkeeping": { view: "bookkeeping", tasksSection: "queue", params: [] },
   "/sponsors": {
     view: "sponsors",
@@ -72,7 +70,6 @@ export const TASKS_SECTIONS = Object.freeze([
   Object.freeze(["templates", "Templates"]),
   Object.freeze(["recurring", "Recurring"]),
   Object.freeze(["assistants", "Assistants"]),
-  Object.freeze(["artifacts", "Artifacts"]),
 ]);
 
 export const ENTITY_VOCABULARY = Object.freeze({
@@ -90,7 +87,6 @@ export function tasksSectionTitle(section, archiveVisible = false) {
     templates: "Templates",
     recurring: "Recurring",
     assistants: "Assistants",
-    artifacts: "Artifacts",
   };
   return titles[section] || "Work Queue";
 }
@@ -104,11 +100,10 @@ export function workspaceHashPath(view, tasksSection = "queue") {
         templates: "/templates",
         recurring: "/recurring",
         assistants: "/assistants",
-        artifacts: "/artifacts",
       }[tasksSection] || "/tasks"
     );
   }
-  return WORKSPACE_HASH_BY_VIEW[view] || "/";
+  return WORKSPACE_HASH_BY_VIEW[view] || "/tasks";
 }
 
 export function isRealIsoDate(value) {
@@ -215,7 +210,7 @@ export function workspaceRouteFor(path, params = {}, location) {
   return parseWorkspaceHash(visible.slice(visible.indexOf("#")), location);
 }
 
-// Pure task, Card, proof, and Home view-model helpers.
+// Pure task, Card, proof, and work view-model helpers.
 export const CARD_BOARD_COLUMNS = Object.freeze([
   Object.freeze({ stage: "preparation", label: "Preparation" }),
   Object.freeze({ stage: "announced", label: "Announced" }),
@@ -311,19 +306,7 @@ export function isoDayDistance(value, today) {
   if (!target || !origin) return 0;
   return Math.round((target.getTime() - origin.getTime()) / 86400000);
 }
-
-export function formatHomeCalendarDate(value) {
-  const date = parseIsoDateValue(value);
-  if (!date) return value || "";
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "UTC",
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  }).format(date);
-}
-
-export function formatHomeShortDate(value) {
+export function formatShortDate(value) {
   const date = parseIsoDateValue(value);
   if (!date) return value || "";
   return new Intl.DateTimeFormat("en-GB", {
@@ -424,7 +407,7 @@ export function formatRecurringRunLabel(isoDate, today = todayIsoDate()) {
     timeZone: "UTC",
     weekday: "short",
   }).format(date);
-  return `${weekday} ${formatHomeShortDate(isoDate)}`;
+  return `${weekday} ${formatShortDate(isoDate)}`;
 }
 
 export function describeRecurringRun(cronExpression, today = todayIsoDate()) {
@@ -435,29 +418,6 @@ export function describeRecurringRun(cronExpression, today = todayIsoDate()) {
     nextLabel: formatRecurringRunLabel(nextDate, today),
   };
 }
-
-export function formatHomeTaskTiming(item, today) {
-  if (item.priority === "missing-proof") return "Proof required";
-  const value = String(
-    item.priority === "follow-up"
-      ? item.followUpDate
-      : item.dueDate || item.followUpDate || "",
-  ).slice(0, 10);
-  if (!value)
-    return "Open task";
-  const days = isoDayDistance(value, today);
-  if (item.priority === "follow-up") {
-    if (days === 0) return "Follow up today";
-    if (days < 0)
-      return `Follow-up ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`;
-  }
-  if (days === 0) return "Due today";
-  if (days === -1) return "Due yesterday";
-  if (days === 1) return "Due tomorrow";
-  if (days < 0) return `${Math.abs(days)} days overdue`;
-  return `Due ${formatHomeShortDate(value)}`;
-}
-
 export function formatTaskDateMeta(value, today) {
   const date = String(value || "").slice(0, 10);
   if (!date) return "";
@@ -465,7 +425,7 @@ export function formatTaskDateMeta(value, today) {
   if (date === addDaysIso(today, -1)) return "Yesterday";
   if (date === addDaysIso(today, 1)) return "Tomorrow";
   // Every surface shows human dates; the ISO input never leaks through.
-  const short = formatHomeShortDate(date);
+  const short = formatShortDate(date);
   return date.slice(0, 4) === String(today || "").slice(0, 4)
     ? short
     : `${short} ${date.slice(0, 4)}`;
@@ -482,44 +442,7 @@ export function cardAnchorTone(value, today = todayIsoDate()) {
   return isBeforeIsoDate(date, today) ? "past" : "upcoming";
 }
 
-export function buildHomeAttentionItems(model) {
-  const byId = (id) => model.lanes.find((lane) => lane.id === id)?.items || [];
-  const groups = [
-    ["overdue", byId("overdue")],
-    ["follow-up", byId("followups")],
-    ["today", byId("today")],
-    ["missing-proof", byId("missing-proof")],
-  ];
-  const seen = new Set();
-  const items = [];
-  for (const [priority, group] of groups) {
-    const prioritized = [...group].sort((left, right) => {
-      const leftDate =
-        priority === "follow-up"
-          ? left.followUpDate
-          : left.dueDate || left.followUpDate || "9999-12-31";
-      const rightDate =
-        priority === "follow-up"
-          ? right.followUpDate
-          : right.dueDate || right.followUpDate || "9999-12-31";
-      return (
-        compareIsoDate(leftDate, rightDate) ||
-        String(left.title || "").localeCompare(String(right.title || ""))
-      );
-    });
-    for (const item of prioritized) {
-      const key =
-        item.taskId ||
-        `${item.title}:${item.dueDate || item.followUpDate || ""}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      items.push({ ...item, priority });
-    }
-  }
-  return items;
-}
-
-export function deriveHomeWorkState(snapshot, options = {}) {
+export function deriveScopedWorkState(snapshot, options = {}) {
   const work = snapshot && typeof snapshot === "object" ? snapshot : {};
   const today = options.today || todayIsoDate();
   const selectedOwnerId = String(options.selectedOwnerId || "");

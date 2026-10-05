@@ -10,7 +10,7 @@ const {
 } = require('./helpers/isolated-capability-server');
 
 const screenshots = path.resolve(__dirname, '../../.tmp/screenshots/issue-245');
-const TASK_SECTIONS = ['queue', 'workflows', 'templates', 'recurring', 'assistants', 'artifacts'];
+const TASK_SECTIONS = ['queue', 'workflows', 'templates', 'recurring', 'assistants'];
 let server;
 
 test.beforeAll(async () => {
@@ -34,22 +34,16 @@ async function useTheme(page, dark) {
 async function openWorkspace(page) {
   await setupPageWithAuth(page);
   const response = await page.goto(`${server.baseURL}/#/`);
-  assertOwnedServerResponse(server, response, 'issue-245 home');
-  await expect(page.locator('.operations-home[data-operations-work-loaded="true"]')).toBeVisible();
-}
-
-async function expandTasks(page) {
-  const toggle = page.locator('#tasks-nav-button');
-  if (await toggle.getAttribute('aria-expanded') !== 'true') {
-    await toggle.click();
-  }
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  assertOwnedServerResponse(server, response, 'issue-245 queue');
+  await expect(page.locator('.ops-queue-board')).toBeVisible();
+  // The Tasks sections are first-class rows, so they need no expansion.
   for (const section of TASK_SECTIONS) {
     await expect(page.locator(`[data-tasks-section="${section}"]`)).toBeVisible();
   }
+  await expect(page.locator('#tasks-nav-submenu')).toHaveCount(0);
 }
 
-async function nestedTasksLabelAlignment(page) {
+async function tasksLabelAlignment(page) {
   return page.evaluate(() => {
     function textLeft(element) {
       const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
@@ -65,24 +59,33 @@ async function nestedTasksLabelAlignment(page) {
       return element.getBoundingClientRect().left;
     }
 
-    const parentLabel = document.querySelector('#operations-home-button span:not(.workspace-nav-icon)');
-    const parentIcon = document.querySelector('#operations-home-button .workspace-nav-icon').getBoundingClientRect();
+    // Every nav row is one shape: an icon, then a label. Tasks sections are
+    // measured against a non-Tasks destination to prove the shared column.
+    const rowText = (row) => ({
+      icon: row.querySelector('.workspace-nav-icon')?.getBoundingClientRect(),
+      labelX: textLeft(row),
+    });
+    const queue = rowText(document.querySelector('[data-tasks-section="queue"]'));
+    const newsletter = rowText(document.querySelector('[data-workspace-view="newsletter"]'));
     return {
-      parentX: textLeft(parentLabel),
-      iconLeft: parentIcon.left,
-      iconRight: parentIcon.right,
-      nestedXs: [...document.querySelectorAll('#tasks-nav-submenu .workspace-subnav-button')].map(textLeft),
+      labelsX: [...document.querySelectorAll('[data-tasks-section]')].map((row) => rowText(row).labelX),
+      queueIcon: queue.icon,
+      queueLabelX: queue.labelX,
+      newsletterIcon: newsletter.icon,
+      newsletterLabelX: newsletter.labelX,
     };
   });
 }
 
-function expectNestedLabelsAlignWithParentText(indent) {
-  expect(indent.nestedXs).toHaveLength(6);
-  for (const x of indent.nestedXs) {
-    expect(Math.abs(x - indent.parentX)).toBeLessThanOrEqual(2);
-    expect(x).toBeGreaterThan(indent.iconRight - 1);
-    expect(x).toBeGreaterThan(indent.iconLeft + 8);
+function expectTasksLabelsShareTheNavColumn(indent) {
+  expect(indent.labelsX).toHaveLength(5);
+  for (const x of indent.labelsX) {
+    // Tasks rows align with the other destinations, not with an extra inset.
+    expect(Math.abs(x - indent.newsletterLabelX)).toBeLessThanOrEqual(2);
+    expect(x).toBeGreaterThan(indent.newsletterIcon.right - 1);
+    expect(x).toBeGreaterThan(indent.newsletterIcon.left + 8);
   }
+  expect(Math.abs(indent.queueLabelX - indent.labelsX[0])).toBeLessThanOrEqual(2);
 }
 
 async function shotSidebar(page, name) {
@@ -92,12 +95,11 @@ async function shotSidebar(page, name) {
   });
 }
 
-test('nested Tasks labels align with parent Daily work labels', async ({ page }) => {
+test('first-class Tasks labels align with every other workspace destination', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 900 });
   await openWorkspace(page);
-  await expandTasks(page);
-  expectNestedLabelsAlignWithParentText(await nestedTasksLabelAlignment(page));
+  expectTasksLabelsShareTheNavColumn(await tasksLabelAlignment(page));
   await useTheme(page, false);
   await shotSidebar(page, 'desktop-1440-light');
   await useTheme(page, true);
@@ -112,12 +114,12 @@ test('nested Tasks labels align with parent Daily work labels', async ({ page })
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Open workspace' }).click();
-  await expandTasks(page);
   for (const section of TASK_SECTIONS) {
+    await expect(page.locator(`[data-tasks-section="${section}"]`)).toBeVisible();
     expect((await page.locator(`[data-tasks-section="${section}"]`).boundingBox()).height)
       .toBeGreaterThanOrEqual(44);
   }
-  expectNestedLabelsAlignWithParentText(await nestedTasksLabelAlignment(page));
+  expectTasksLabelsShareTheNavColumn(await tasksLabelAlignment(page));
   await useTheme(page, false);
   await shotSidebar(page, 'mobile-390-light');
   await useTheme(page, true);

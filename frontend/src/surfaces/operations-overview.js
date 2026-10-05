@@ -219,12 +219,10 @@ export function createOperationsOverview(context) {
     openTaskPanel,
     resolveDocReference,
     showWorkspaceSurface,
-    state,
     tasksSectionTitle,
   } = context;
 
   function operationsViewTitle(view, tasksSection, archiveVisible = false) {
-    if (view === "home") return "Today";
     if (view === "operating-model") return "Operating Model";
     if (view === "tasks") return tasksSectionTitle(tasksSection, archiveVisible);
     if (view === "docs") return "Docs";
@@ -235,7 +233,7 @@ export function createOperationsOverview(context) {
     if (view === "newsletter") return "Newsletter";
     if (view === "calendar") return "Calendar";
     if (view === "review") return "Review";
-    return "Home";
+    return tasksSectionTitle(tasksSection, archiveVisible);
   }
 
   function surfaceDescription(view) {
@@ -249,8 +247,6 @@ export function createOperationsOverview(context) {
         "Create, edit, pause, and delete the schedules that generate recurring tasks.",
       assistants:
         "Review assistant jobs that prepare work for your cards.",
-      artifacts:
-        "Review proof and operational outputs linked to cards and tasks.",
       processes:
         "SOPs, templates, and references are contextual support for work.",
       search:
@@ -342,10 +338,10 @@ export function createOperationsOverview(context) {
     }
     operationsRecurringSnapshot =
       normalizeOperationsRecurringSnapshot(snapshot);
-    if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
+    if (options.rerender && isOperationsWorkspaceVisible()) refreshDocuments();
   }
 
-  function isOperationsHomeVisible() {
+  function isOperationsWorkspaceVisible() {
     return (
       body.dataset.view === "library" &&
       !knowledgeState.selectedFolder &&
@@ -392,7 +388,7 @@ export function createOperationsOverview(context) {
     const body = document.createElement("span");
     body.textContent = runtime?.connected
       ? "Some /work/api calls failed. Loaded tasks remain visible, and unavailable parts are not replaced with fake data."
-      : "Operations Home could not load Card and Task data. Templates and internal Processes remain available from their dedicated views.";
+      : "The workspace could not load Card and Task data. Templates and internal Processes remain available from their dedicated views.";
     section.append(title, body);
 
     if (errors.length > 0) {
@@ -405,113 +401,6 @@ export function createOperationsOverview(context) {
       section.append(list);
     }
 
-    return section;
-  }
-
-  function renderOperationsFutureSections(sections) {
-    const wrap = document.createElement("section");
-    wrap.className = "ops-section ops-future-section";
-    wrap.setAttribute("aria-label", "Future operations inputs");
-
-    const header = document.createElement("div");
-    header.className = "ops-section-header";
-    const title = document.createElement("h3");
-    title.textContent = "Incoming And Quality Signals";
-    header.append(title);
-    wrap.append(header);
-
-    const grid = document.createElement("div");
-    grid.className = "ops-future-grid";
-    for (const section of sections || []) {
-      const card = document.createElement("article");
-      card.className = "ops-future-card";
-      const cardTitle = document.createElement("strong");
-      cardTitle.textContent = section.title;
-      const status = document.createElement("small");
-      status.textContent = section.status;
-      const body = document.createElement("span");
-      body.textContent = section.body;
-      card.append(cardTitle, status, body);
-      grid.append(card);
-    }
-    wrap.append(grid);
-    return wrap;
-  }
-
-  function renderProcessQualityHomeSection(quality) {
-    const section = document.createElement("section");
-    section.className = "ops-section ops-process-quality";
-    section.setAttribute("aria-label", "Process quality");
-
-    const header = document.createElement("div");
-    header.className = "ops-section-header";
-    const title = document.createElement("h3");
-    title.textContent = "Process Quality";
-    const meta = document.createElement("span");
-    if (!quality.loaded) meta.textContent = "Report unavailable";
-    else if (quality.activeWorkLoaded)
-      meta.textContent = `${quality.activeBlockingCount} active blockers`;
-    else meta.textContent = "Active impact unknown";
-    header.append(title, meta);
-
-    const drilldown = document.createElement("button");
-    drilldown.type = "button";
-    drilldown.className = "ops-quick-btn";
-    drilldown.textContent = "Open drill-down";
-    drilldown.addEventListener("click", () =>
-      showWorkspaceSurface("processes"),
-    );
-    header.append(drilldown);
-    section.append(header);
-
-    if (!quality.loaded) {
-      section.append(
-        renderHonestState(
-          "Process quality could not load",
-          quality.errors[0] || "Validation could not run in this environment.",
-        ),
-      );
-      return section;
-    }
-    if (!quality.activeWorkLoaded) {
-      section.append(
-        renderHonestState(
-          "Active-work impact cannot be confirmed",
-          "Live Task and Card data is unavailable. Template and Process Doc findings below are maintainer warnings, not confirmed production blockers.",
-        ),
-      );
-    } else if (quality.activeFindings.length === 0) {
-      section.append(
-        renderHonestState(
-          "No active process blockers",
-          "Loaded Tasks and active Cards have no unresolved internal Process Doc or proof-guidance blockers.",
-        ),
-      );
-    }
-
-    const list = document.createElement("div");
-    list.className = "ops-quality-list";
-    const findings = quality.visibleHomeFindings;
-    if (findings.length === 0) {
-      list.append(
-        renderHonestState(
-          "No process quality findings",
-          "The deterministic report returned no findings for Templates or Process Docs.",
-        ),
-      );
-    } else {
-      for (const finding of findings) {
-        const displayFinding = quality.activeWorkLoaded
-          ? finding
-          : {
-              ...finding,
-              severity:
-                finding.severity === "blocking" ? "warning" : finding.severity,
-            };
-        list.append(renderQualityFindingRow(displayFinding));
-      }
-    }
-    section.append(list);
     return section;
   }
 
@@ -611,63 +500,6 @@ export function createOperationsOverview(context) {
       showWorkspaceSurface("templates");
   }
 
-  function renderOperationalSurfaceStates() {
-    const wrap = document.createElement("section");
-    wrap.className = "ops-section ops-future-section";
-    wrap.setAttribute("aria-label", "Operational surface states");
-    const header = document.createElement("div");
-    header.className = "ops-section-header";
-    const title = document.createElement("h3");
-    title.textContent = "Assistant, Artifact, And Search States";
-    header.append(title);
-    wrap.append(header);
-
-    const grid = document.createElement("div");
-    grid.className = "ops-future-grid";
-    const states = [
-      state.assistantSnapshot.loaded
-        ? [
-            "Assistants",
-            `${state.assistantSnapshot.jobs.length} real job rows loaded.`,
-          ]
-        : [
-            "Assistants",
-            "Not connected; #30/#44 job lifecycle is not represented with fake rows.",
-          ],
-      state.artifactSnapshot.loaded
-        ? [
-            "Artifacts",
-            `${state.artifactSnapshot.artifacts.length} artifact rows loaded from /work/api/artifacts.`,
-          ]
-        : [
-            "Artifacts",
-            "Cross-workflow artifact index not connected; task/workflow artifacts still appear in context.",
-          ],
-      [
-        "Search",
-        "Connected through /search with partial-source states when work APIs are unavailable.",
-      ],
-    ];
-    for (const [stateTitle, stateBody] of states) {
-      const card = document.createElement("article");
-      card.className = "ops-future-card";
-      const strong = document.createElement("strong");
-      strong.textContent = stateTitle;
-      const status = document.createElement("small");
-      status.textContent =
-        stateBody.startsWith("Not connected") ||
-        stateBody.startsWith("Docs-only")
-          ? "Not connected yet"
-          : "Connected";
-      const body = document.createElement("span");
-      body.textContent = stateBody;
-      card.append(strong, status, body);
-      grid.append(card);
-    }
-    wrap.append(grid);
-    return wrap;
-  }
-
   function renderOperationsLane(lane) {
     const section = document.createElement("section");
     section.className = `ops-lane ops-lane-${lane.id}`;
@@ -762,13 +594,10 @@ export function createOperationsOverview(context) {
     referenceCountLabel,
     renderDocsAvailabilityState,
     renderHonestState,
-    renderOperationalSurfaceStates,
-    renderOperationsFutureSections,
     renderOperationsLane,
     renderOperationsLaneItem,
     renderOperationsReference,
     renderOperationsRuntimeState,
-    renderProcessQualityHomeSection,
     renderQualityFindingRow,
     renderSurfaceHeader,
     surfaceDescription,

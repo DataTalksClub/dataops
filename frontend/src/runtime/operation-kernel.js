@@ -17,7 +17,6 @@ export function createOperationKernel(context) {
     resolveDocReference,
     showWorkspaceSurface,
     tasksSectionTitle,
-    workspaceState,
   } = context;
   const model = createOperationsModel({
     basename,
@@ -33,7 +32,6 @@ export function createOperationKernel(context) {
     openTaskPanel,
     resolveDocReference,
     showWorkspaceSurface,
-    state: workspaceState.overviewState,
     tasksSectionTitle,
   });
   return { ...model, ...overview };

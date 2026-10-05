@@ -30,7 +30,7 @@
   <body data-view="library">
     <div class="mobile-topbar">
       <button id="mobile-menu-button" class="icon-button" type="button" aria-label="Open workspace" aria-controls="sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-      <span id="mobile-title">Today</span>
+      <span id="mobile-title">Work Queue</span>
       <button id="mobile-work-bell-button" class="quiet-button work-bell-button mobile-work-bell-button" type="button" title="Notifications" aria-label="Notifications">
         <span class="work-bell-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></span>
         <span class="work-bell-count" aria-hidden="true">0</span>
@@ -57,19 +57,12 @@
         </form>
 
         <nav class="workspace-nav" aria-label="DataOps workspace">
-          <h2 class="workspace-nav-label">Daily work</h2>
-          <button id="operations-home-button" class="workspace-nav-button is-active" type="button" data-workspace-view="home"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg></span><span>Today</span></button>
-          <div id="tasks-nav-group" class="workspace-nav-group">
-            <button id="tasks-nav-button" class="workspace-nav-button workspace-nav-parent" type="button" aria-expanded="false" aria-controls="tasks-nav-submenu"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5Z"/><path d="m8 9 1.5 1.5L12 8M8 15l1.5 1.5L12 14M14 9h2M14 15h2"/></svg></span><span>Tasks</span><svg class="workspace-nav-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
-            <div id="tasks-nav-submenu" class="workspace-nav-submenu" aria-label="Task views" hidden>
-              <button class="workspace-subnav-button" type="button" data-tasks-section="queue">Queue</button>
-              <button class="workspace-subnav-button" type="button" data-tasks-section="workflows">Cards</button>
-              <button class="workspace-subnav-button" type="button" data-tasks-section="templates">Templates</button>
-              <button class="workspace-subnav-button" type="button" data-tasks-section="recurring">Recurring</button>
-              <button class="workspace-subnav-button" type="button" data-tasks-section="assistants">Assistants</button>
-              <button class="workspace-subnav-button" type="button" data-tasks-section="artifacts">Artifacts</button>
-            </div>
-          </div>
+          <h2 class="workspace-nav-label">Tasks</h2>
+          <button class="workspace-nav-button is-active" type="button" data-tasks-section="queue"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5Z"/><path d="m8 9 1.5 1.5L12 8M8 15l1.5 1.5L12 14M14 9h2M14 15h2"/></svg></span><span>Queue</span></button>
+          <button class="workspace-nav-button" type="button" data-tasks-section="workflows"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5Z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span><span>Cards</span></button>
+          <button class="workspace-nav-button" type="button" data-tasks-section="templates"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6Z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg></span><span>Templates</span></button>
+          <button class="workspace-nav-button" type="button" data-tasks-section="recurring"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 9V7l2 2M20 15v2l-2-2"/><path d="M4 7h11a3 3 0 0 1 3 3M20 17H9a3 3 0 0 1-3-3"/><path d="M20 7v0M4 17v0"/></svg></span><span>Recurring</span></button>
+          <button class="workspace-nav-button" type="button" data-tasks-section="assistants"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></span><span>Assistants</span></button>
           <h2 class="workspace-nav-label">Operations</h2>
           <button id="newsletter-nav-button" class="workspace-nav-button" type="button" data-workspace-view="newsletter"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><span>Newsletter</span></button>
           <button id="calendar-nav-button" class="workspace-nav-button" type="button" data-workspace-view="calendar"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M7 14h2M11 14h2M15 14h2M7 18h2M11 18h2"/></svg></span><span>Calendar</span></button>

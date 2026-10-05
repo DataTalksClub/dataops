@@ -11,7 +11,6 @@ import {
   createOperationsModel,
   currentOperatorIdFromPayload,
   docsAvailabilityView,
-  emptyOperationsArtifactSnapshot,
   emptyOperationsAssistantSnapshot,
   emptyOperationsDocsSnapshot,
   emptyOperationsQualitySnapshot,
@@ -101,7 +100,6 @@ describe("app shared operations domain characterization", () => {
       "operationItemFromCard",
       "summarizeWorkflowTemplate",
       "buildOperationsReferenceLinks",
-      "renderProcessQualityHomeSection",
       "renderOperationsRuntimeState",
       "renderOperationsLane",
       "renderOperationsReference",
@@ -197,11 +195,6 @@ describe("app shared operations domain characterization", () => {
     assert.deepEqual(emptyOperationsRecurringSnapshot(), {
       loaded: false,
       recurringConfigs: [],
-      errors: [],
-    });
-    assert.deepEqual(emptyOperationsArtifactSnapshot(), {
-      loaded: false,
-      artifacts: [],
       errors: [],
     });
     assert.deepEqual(emptyOperationsAssistantSnapshot(), {
@@ -435,12 +428,11 @@ describe("app shared operations domain characterization", () => {
       showWorkspaceSurface() {},
       state: {
         assistantSnapshot: { loaded: true, jobs: [{}, {}] },
-        artifactSnapshot: { loaded: false, artifacts: [] },
         qualitySnapshot: { loaded: true, findings: [{}] },
       },
       tasksSectionTitle: workspace.tasksSectionTitle,
     });
-    assert.equal(functions.operationsViewTitle("home"), "Today");
+    assert.equal(functions.operationsViewTitle("tasks", "queue"), "Work Queue");
     assert.equal(functions.operationsViewTitle("tasks", "templates"), "Templates");
     assert.match(functions.surfaceDescription("queue"), /What needs you, grouped by urgency/);
     assert.equal(functions.referenceCountLabel("calendar", 1), "1 calendar item");
@@ -460,7 +452,6 @@ describe("app shared operations domain characterization", () => {
       showWorkspaceSurface: (view) => opened.push(["surface", view]),
       state: {
         assistantSnapshot: { loaded: false, jobs: [] },
-        artifactSnapshot: { loaded: false, artifacts: [] },
         qualitySnapshot: { loaded: false, findings: [] },
       },
       tasksSectionTitle: workspace.tasksSectionTitle,
@@ -619,10 +610,10 @@ describe("app shared operations domain characterization", () => {
     assert.notEqual(empty.children[1].textContent, unavailable.children[1].textContent);
   });
 
-  test("retains isolated browser coverage for assembled Home, Tasks, errors, and mobile safety", () => {
+  test("retains isolated browser coverage for the assembled queue, Tasks, errors, and mobile safety", () => {
     assert.match(
       browserCharacterization,
-      /shell, Home, and account scope retain their primary DOM and interactions/,
+      /shell, the Tasks queue, and account scope retain their primary DOM and interactions/,
     );
     assert.match(
       browserCharacterization,

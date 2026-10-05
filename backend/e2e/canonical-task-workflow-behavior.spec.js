@@ -123,7 +123,14 @@ function isExpectedReloadAbort(entry, cardId) {
     `/work/api/cards/${encodeURIComponent(cardId)}`,
     '/work/api/notifications?limit=100',
   ]);
-  return exactReloadReads.has(`${url.pathname}${url.search}`);
+  if (exactReloadReads.has(`${url.pathname}${url.search}`)) return true;
+  // Queue background collection refreshes cut by the deliberate reload. The
+  // query carries dynamic dates, so match by collection shape: item reads
+  // (/work/api/tasks/<id>, /work/api/cards/<id>) stay strict.
+  if (url.pathname === '/work/api/tasks') return true;
+  if (url.pathname === '/work/api/cards' && url.search === '?limit=100') return true;
+  if (url.pathname === '/work/api/users') return true;
+  return false;
 }
 
 function expectNoUnexpectedBrowserErrors(entries, conflictTaskId, cardId, markers) {
@@ -181,7 +188,7 @@ const test = baseTest.extend({
       page = await context.newPage();
       installServerExitDiagnostics(context, server, testInfo);
       await page.goto('/#/');
-      await expect(page.getByRole('heading', { name: 'Today', exact: true }).first()).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Work Queue', exact: true }).first()).toBeVisible();
       await use({ context, page, server });
     } finally {
       if (context && !context.isClosed()) {
@@ -258,18 +265,13 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
   test('Tasks queue persists create, waiting recovery, and selected update', async ({ taskWorkflowPortal }, testInfo) => {
     const { context, page, server: ownedServer } = taskWorkflowPortal;
     await page.goto('/#/tasks');
-    for (const [heading, empty] of [
-      ['Overdue', 'Nothing is overdue. Work that passes its due date will surface here first.'],
-      ['Follow-ups due', 'No follow-ups are due. Tasks you promised to revisit will appear here.'],
-      ['Today', 'Nothing is due today. Work due later will appear here as its date arrives.'],
-      ['Missing proof', 'No missing proof work. Tasks that need a link or artifact will surface here.'],
-      ['Waiting', 'No waiting work. Tasks blocked on other people will appear here.'],
-      ['Done / history', 'No completed work yet.'],
-    ]) {
-      const group = page.locator('.ops-queue-group', { has: page.getByRole('heading', { name: heading, exact: true }) });
-      await expect(group.locator('header span')).toHaveText('0');
-      await expect(group.locator('.ops-empty')).toHaveText(empty);
-    }
+    // One queue, no per-lane group cards. Fresh and empty, the queue states
+    // its emptiness once (the page summary) and renders no board rows.
+    await expect(page.locator('.ops-work-queue')).toBeVisible();
+    await expect(page.locator('[data-summary-id="tasks-queue"]')).toContainText('No tasks are open in this queue.');
+    await expect(page.locator('.ops-queue-row')).toHaveCount(0);
+    await expect(page.locator('.ops-queue-board')).toHaveCount(0);
+    await expect(page.locator('.ops-queue-group')).toHaveCount(0);
 
     await page.goto('/#/');
     const quickTitle = unique('Synthetic quick task');
@@ -338,7 +340,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     expect(proofResponse.status()).toBe(201);
     const proofTask = await json(proofResponse);
 
-    await expect(page.locator('.operations-home[data-operations-work-loaded="true"]')).toHaveCount(1);
+    await expect(page.locator('.ops-queue-board')).toHaveCount(1);
     await openProofTask(page, proofTask.id, card.id, proofTitle);
     const complete = page.locator('#task-panel').getByRole('button', { name: 'Mark done' });
     await expect(complete).toBeDisabled();
@@ -667,7 +669,6 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     recordCapabilityEvidence(testInfo, [
       { route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.blocked', 'tasks.done'] },
       { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.empty', 'workflows.active', 'workflows.staged', 'workflows.completed'] },
-      { route: '/#/artifacts', roleId: 'admin', stateIds: ['artifacts.not-found'] },
     ]);
   });
 });

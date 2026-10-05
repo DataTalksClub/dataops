@@ -156,7 +156,7 @@ function createHarness(options = {}) {
   api = createTasksSurface({
     addBeforeUnloadListener() {},
     allWorkTasks: (snapshot) => snapshot.tasks || [],
-    buildOperationsHomeModel: () => model,
+    buildOperationsWorkModel: () => model,
     cardsHeaderViewModel,
     compareIsoDate,
     confirmDialog: options.confirmDialog || (async () => true),
@@ -178,7 +178,7 @@ function createHarness(options = {}) {
     isArchivedWorkCard,
     isFollowUpDueTask,
     isOpenWorkTask,
-    isOperationsHomeVisible: () => true,
+    isOperationsWorkspaceVisible: () => true,
     isTaskDueToday,
     isTaskOverdue,
     isWaitingOrFollowUpTask,
@@ -212,7 +212,6 @@ function createHarness(options = {}) {
     refreshOperationsWorkSnapshot: async (refreshOptions = {}) => {
       if (options.refreshWork) await options.refreshWork(refreshOptions);
     },
-    renderArtifactsSurface: () => honestState("Artifacts", "Artifacts index"),
     renderAssistantsSurface: () => honestState("Assistants", "Assistant jobs"),
     renderEntityLoadState: (root, entity) => {
       const marker = new FakeElement("p");

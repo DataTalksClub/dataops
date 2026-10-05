@@ -24,8 +24,6 @@
   --card-content-inset: calc(var(--card-padding-x) + var(--card-border-width));
 }
 
-
-
 /* The dakit tokens remap every shared role under [data-theme="dark"]; the
    inline boot script sets that attribute before first paint. The DataOps-local
    aliases above resolve to dakit semantic roles, so no hand dark values are
@@ -215,46 +213,6 @@ textarea:focus {
   background: var(--dk-accent-soft);
   color: var(--dk-accent-default);
   font-weight: 600;
-}.workspace-nav-group {
-  display: grid;
-  gap: 2px;
-}.workspace-nav-parent {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) 16px;
-}.workspace-nav-chevron {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: transform 140ms ease;
-}.workspace-nav-parent[aria-expanded="true"] .workspace-nav-chevron {
-  transform: rotate(180deg);
-}.workspace-nav-submenu {
-  display: grid;
-  gap: 2px;
-  /* 30px inset + subnav 10px padding aligns nested labels with parent text. */
-  margin: 0 0 4px 30px;
-}.workspace-subnav-button {
-  width: 100%;
-  min-height: 32px;
-  border: 0;
-  border-radius: var(--dk-radius-md);
-  background: transparent;
-  color: var(--dk-text-muted);
-  padding: 5px 10px;
-  text-align: left;
-  font-size: 13px;
-}.workspace-subnav-button:hover {
-  background: var(--dk-bg-hover);
-  color: var(--dk-text-primary);
-}.workspace-subnav-button.is-active {
-  background: var(--dk-accent-soft);
-  color: var(--dk-accent-default);
-  font-weight: 600;
-}.workspace-nav-icon {
   display: inline-grid;
   width: 20px;
   flex: 0 0 20px;
@@ -262,8 +220,7 @@ textarea:focus {
 }.workspace-nav-icon svg,
 .mobile-topbar svg,
 .toolbar-actions svg,
-.work-bell-icon svg,
-.home-quick-action svg {
+.work-bell-icon svg {
   width: 20px;
   height: 20px;
   fill: none;
@@ -492,10 +449,6 @@ body[data-view="create"] .editor-view {
 }.document-list {
   max-width: 760px;
   margin: 0 auto;
-}body[data-workspace-view="home"] .document-list.is-operations-home {
-  width: 100%;
-  max-width: none;
-  margin: 0;
 }body[data-workspace-view="tasks"] .document-list.is-operations-home {
   width: 100%;
   min-width: 0;
@@ -506,257 +459,15 @@ body[data-view="create"] .editor-view {
   width: 100%;
   gap: 24px;
   justify-items: center;
-}.home-daily-header,
-.home-status-strip,
-.ops-runtime-state {
+}.ops-runtime-state {
   width: min(var(--content-width), 100%);
-}.home-daily-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px 16px;
-  border-bottom: 1px solid var(--dk-border-default);
-  padding-bottom: 20px;
-}.home-daily-header > div:first-child {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}.home-daily-header h1 {
-  margin: 0;
-  color: var(--dk-text-heading);
-  font-size: var(--dk-text-page);
-  font-weight: 650;
-  letter-spacing: -0.025em;
-  line-height: 1.15;
-}.home-daily-header time {
-  display: block;
-  color: var(--dk-text-muted);
-  font-size: 13px;
-  line-height: 1.4;
-}.home-purpose {
-  margin: 0;
-  color: var(--dk-text-muted);
-  font-size: 13px;
-  line-height: 1.4;
-}/* Carried debt: quantified overdue pressure next to the day headline. */.home-debt-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: fit-content;
-  margin: 6px 0 0;
-  border: 1px solid var(--dk-warning-border);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-warning-bg);
-  color: var(--dk-warning-text);
-  padding: 6px 12px;
-  font-size: 12px;
-  line-height: 1.2;
-}.home-debt-chip strong {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}.home-quick-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}.home-quick-action,
-.home-task-action,
-.home-view-all {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 32px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-primary);
-  padding: 5px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}.home-quick-action:hover,
-.home-task-action:hover,
-.home-view-all:hover {
-  border-color: var(--dk-border-control-hover);
-  background: var(--dk-bg-hover);
-}.home-quick-action-primary {
-  border-color: var(--dk-accent-default);
-  background: var(--dk-accent-default);
-  color: var(--dk-text-on-accent);
-}.home-quick-action-primary:hover {
-  border-color: var(--dk-accent-hover);
-  background: var(--dk-accent-hover);
-}/* Segmented attention strip: three counted segments with status dots. */.home-status-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  overflow: hidden;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
-}.home-status-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  min-height: 58px;
-  padding: 10px 14px;
-}.home-status-item + .home-status-item {
-  border-left: 1px solid var(--dk-border-default);
-}.home-status-item span {
-  color: var(--dk-text-muted);
-  font-weight: 500;
-}.home-status-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-}.home-status-text {
-  display: inline-flex;
-  min-width: 0;
-}.home-status-text-short {
-  display: none;
-}.home-status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--dk-text-faint);
-}.home-status-overdue .home-status-dot {
-  background: var(--dk-danger-text);
-}.home-status-today .home-status-dot {
-  background: var(--attention-due);
-}.home-status-waiting .home-status-dot {
-  background: var(--attention-due);
-}.home-status-missing-proof .home-status-dot {
-  background: var(--attention-due);
-}/* Dots carry the urgency: red is overdue, warning is work that needs
-   you today (due, follow-up due, or blocked on proof). */.home-status-item strong {
-  color: var(--dk-text-heading);
-  font-family: var(--dk-font-mono);
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 1.2;
-}.home-status-item[data-state="unavailable"] span,
-.home-status-item[data-state="unavailable"] strong {
-  color: var(--dk-text-faint);
-}.home-attention {
-  width: min(var(--content-width), 100%);
-  justify-self: center;
-  overflow: hidden;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
-}.home-attention > header,
-.home-attention > footer {
-  display: flex;
-  align-items: center;
-  min-height: 46px;
-  background: var(--dk-bg-muted);
-  padding: 10px 16px;
-}.home-attention > header {
-  border-bottom: 1px solid var(--dk-border-default);
-}.home-attention > header h3 {
-  margin: 0;
-  color: var(--dk-text-heading);
-  font-size: 14px;
-  font-weight: 600;
-}.home-attention > footer {
-  justify-content: flex-end;
-  border-top: 1px solid var(--dk-border-default);
-}.home-attention-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}/* Attention rows: the work, its card, the honest timing, and one action —
-   urgency reads through the dot and the timing text, not an edge stripe. */.home-attention-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(150px, 190px) minmax(120px, 148px) 76px;
-  gap: 14px;
-  align-items: center;
-  min-height: 56px;
-  padding: 12px 16px 12px 0;
-}.home-attention-row + .home-attention-row {
-  border-top: 1px solid var(--dk-border-default);
-}.home-attention-row:hover {
-  background: var(--dk-bg-hover);
-}.home-task-content {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}.home-task-content strong {
-  overflow: hidden;
-  color: var(--dk-text-heading);
-  display: -webkit-box;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}.home-task-context {
-  overflow: hidden;
-  color: var(--dk-text-muted);
-  font-size: 12px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}.home-task-card,
-.home-task-state time {
-  overflow: hidden;
-  color: var(--dk-text-muted);
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}/* Timings are quantities: overdue debt renders in the mono ramp. */.home-task-state time {
-  font-family: var(--dk-font-mono);
-  font-size: 12px;
-}.home-attention-overdue .home-task-state time,
-.home-attention-missing-proof .home-task-state time {
-  color: var(--dk-danger-text);
-  font-weight: 500;
-}.home-attention-follow-up .home-task-state time {
-  color: var(--attention-due);
-  font-weight: 500;
-}.home-task-action {
-  min-width: 0;
-  min-height: 28px;
-  padding: 2px 10px;
-  font-size: 12px;
-  background: var(--dk-bg-muted);
-}.home-view-all {
-  min-height: 32px;
-  border-color: transparent;
-  background: transparent;
-  color: var(--dk-text-link);
-  padding-block: 5px;
-}.home-view-all::after {
-  content: "";
-  flex: none;
-  width: 16px;
-  height: 16px;
-  background: currentcolor;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
-}.home-view-all:hover {
-  border-color: transparent;
-  background: transparent;
-  color: var(--dk-text-link-hover);
-  text-decoration: underline;
-}.home-attention-empty,
-.empty-state,
+}.empty-state,
 .ops-runtime-state {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
   color: var(--dk-text-muted);
   padding: 14px 16px;
-}.home-attention-empty {
-  display: grid;
-  gap: 6px;
-  justify-items: start;
 }.ops-runtime-state {
   display: grid;
   gap: 4px;
@@ -821,14 +532,6 @@ body[data-view="create"] .editor-view {
 }.surface-summary-retry[disabled],
 .quick-form-retry[disabled] {
   opacity: 0.7;
-}/* The Home strip lays its counts out in three columns; the summary explains
-   all three, so it spans them instead of taking one count's place. */.home-status-strip > .surface-summary {
-  grid-column: 1 / -1;
-  border: 0;
-  border-bottom: 1px solid var(--dk-border-default);
-  border-radius: 0;
-  background: transparent;
-  width: 100%;
 }.form-feedback {
   display: grid;
   gap: 4px;
@@ -1589,10 +1292,6 @@ body[data-view="create"] .editor-view {
   gap: 8px;
   border-bottom: 0;
   background: var(--dk-bg-muted);
-}body[data-workspace-view="home"] #knowledge-section {
-  display: none;
-}body[data-workspace-view="home"] #filters-section {
-  display: none;
 }.task-modal,
 .diff-modal,
 .confirm-modal,
@@ -3873,102 +3572,6 @@ body[data-workspace-view="sponsors"] .document-list {
     text-align: left;
   }.operations-home {
     gap: 14px;
-  }/* Mobile triage deck (1d): one decision per card, honest counts up top,
-     and every control at the 44px target floor. */.home-daily-header {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }.home-daily-header h1 {
-    display: block;
-    font-size: 22px;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
-  }.home-daily-header time {
-    color: var(--dk-text-muted);
-    font-size: 13px;
-    font-weight: 400;
-  }.home-quick-actions {
-    display: flex;
-    flex-wrap: wrap;
-    /* Left-aligned with the content column: centered creation controls
-       floated in no-man's land between the intro and the queue. */
-    justify-content: flex-start;
-  }.home-quick-action {
-    min-height: 44px;
-  }.home-status-item {
-    display: grid;
-    justify-items: center;
-    gap: 2px;
-    min-height: 60px;
-    padding: 8px 4px;
-    text-align: center;
-  }.home-status-item span {
-    font-size: 12px;
-  }/* Short segment labels keep the three numerals on one baseline. */.home-status-text-long {
-    display: none;
-  }.home-status-text-short {
-    display: inline;
-  }.home-status-item strong {
-    font-size: 20px;
-  }/* Four segments across 390px squeeze labels against the dividers; a 2x2
-     grid keeps the strip's segmented language with room to breathe. */.home-status-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }.home-status-item:nth-child(2n + 1) {
-    border-left: 0;
-  }.home-status-item:nth-child(n + 3) {
-    border-top: 1px solid var(--dk-border-default);
-  }.home-attention {
-    width: 100%;
-  }.home-attention > header,
-.home-attention > footer {
-    min-height: 48px;
-    padding: 8px 14px;
-  }.home-attention-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 12px;
-  }.home-attention-row,
-.home-attention-row + .home-attention-row {
-    border: 1px solid var(--dk-border-default);
-    border-radius: var(--dk-radius-md);
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-    min-height: 0;
-    padding: 12px 14px;
-  }.home-attention-row:hover {
-    background: var(--dk-bg-surface);
-  }.home-task-content {
-    display: flex;
-    gap: 4px;
-  }.home-task-content strong {
-    display: block;
-    overflow: visible;
-    overflow-wrap: anywhere;
-    font-size: 15px;
-    line-height: 1.3;
-    -webkit-line-clamp: unset;
-  }.home-task-context,
-.home-task-card {
-    overflow: visible;
-    overflow-wrap: anywhere;
-    white-space: normal;
-    line-height: 1.45;
-  }.home-task-state time {
-    overflow: visible;
-    overflow-wrap: anywhere;
-    white-space: normal;
-    font-size: 13px;
-  }.home-task-action {
-    justify-self: stretch;
-    width: 100%;
-    min-height: 44px;
-    padding: 8px 18px;
-    font-size: 14px;
-  }.home-attention-expand,
-.home-view-all {
-    min-height: 44px;
   }.task-modal-panel,
 .diff-panel,
 .quick-form-panel {
@@ -4165,13 +3768,7 @@ body[data-workspace-view="sponsors"] .library-view {
   }
 }
 
-@media (max-width: 420px) {.newsletter-filters .planner-filter-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }.newsletter-filters .planner-filter-fields label:last-child { grid-column: 1 / -1; }.calendar-alert { display: grid; grid-template-columns: minmax(0, 1fr) auto; }.calendar-alert button { align-self: center; }.calendar-content-header { display: grid; gap: 4px; }.newsletter-slot-row { grid-template-columns: minmax(0, 1fr); }.newsletter-slot-actions { grid-column: 1; }.newsletter-slot-title { align-items: start; }.planner-form-grid { grid-template-columns: minmax(0, 1fr); }.planner-field-wide { grid-column: 1; }.home-quick-action {
-    padding-inline: 12px;
-  }.home-status-item {
-    gap: 1px;
-  }.home-status-item span {
-    font-size: 12px;
-  }.bookkeeping-filters,
+@media (max-width: 420px) {.newsletter-filters .planner-filter-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }.newsletter-filters .planner-filter-fields label:last-child { grid-column: 1 / -1; }.calendar-alert { display: grid; grid-template-columns: minmax(0, 1fr) auto; }.calendar-alert button { align-self: center; }.calendar-content-header { display: grid; gap: 4px; }.newsletter-slot-row { grid-template-columns: minmax(0, 1fr); }.newsletter-slot-actions { grid-column: 1; }.newsletter-slot-title { align-items: start; }.planner-form-grid { grid-template-columns: minmax(0, 1fr); }.planner-field-wide { grid-column: 1; }.bookkeeping-filters,
 .crm-filters {
     grid-template-columns: 1fr;
   }.bookkeeping-filters details {
@@ -5067,104 +4664,20 @@ body[data-workspace-view="sponsors"] .document-list {
 }.ops-reference-link span {
   color: var(--dk-text-muted);
   font-size: 12px;
-}/* Today remains the scan-first operational overview. */body[data-workspace-view="home"] .operations-home-daily {
-  gap: 16px;
-}body[data-workspace-view="home"] .home-daily-header {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  border: 0;
-  padding-bottom: 4px;
-}.home-purpose {
-  margin: 10px 0 0;
-  color: var(--dk-text-muted);
-  font-size: 14px;
-  line-height: 1.5;
 }
 
 /* The desktop header centers its two columns; on one mobile column that
    would center the title and creation controls in no-man's land. */
-@media (max-width: 820px) {body[data-workspace-view="home"] .home-daily-header {
-    align-items: stretch;
-  }
-}body[data-workspace-view="home"] .home-attention > header {
-  min-height: 60px;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-}body[data-workspace-view="home"] .home-attention > header h3 {
-  font-size: 16px;
-}.home-attention-count {
-  margin: 0;
-  color: var(--dk-text-muted);
-  font-size: 12px;
-}.home-attention > footer {
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
-}.home-attention > footer .home-view-all {
-  margin-left: auto;
-}/* Long titles and contexts wrap inside the queue columns instead of
-   clipping; the marker edge keeps the row scannable. */body[data-workspace-view="home"] .home-task-content strong {
-  display: block;
-  overflow: visible;
-  overflow-wrap: anywhere;
-}body[data-workspace-view="home"] .home-task-context,
-body[data-workspace-view="home"] .home-task-card,
-body[data-workspace-view="home"] .home-task-state time {
-  overflow: visible;
-  overflow-wrap: anywhere;
-  white-space: normal;
-  line-height: 1.45;
-}body[data-workspace-view="home"] .home-attention-row:hover {
-  background: var(--dk-bg-hover);
-}/* Quiet contextual links after the queue (1a): a question and its answer. */.home-next-destinations {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 20px;
-  width: min(var(--content-width), 100%);
-}.home-next-destinations > span {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  color: var(--dk-text-muted);
-  font-size: 13px;
-}.home-next-destinations button {
-  border: 0;
-  background: none;
-  padding: 4px 2px;
-  color: var(--dk-text-link);
-  font-size: 13px;
-  font-weight: 500;
-}.home-next-destinations button:hover {
-  color: var(--dk-text-link-hover);
-  text-decoration: underline;
-}
+
 
 @media (max-width: 820px) {#sidebar-close-button {
     flex: 0 0 44px;
     width: 44px;
     min-height: 44px;
     padding: 10px;
-  }.workspace-subnav-button {
-    min-height: 44px;
   }.search-form input {
     min-height: 44px;
     background-position: 10px 50%, 21px 28px;
-  }body[data-workspace-view="home"] .operations-home-daily {
-    gap: 12px;
-  }.home-purpose {
-    margin-top: 6px;
-    font-size: 13px;
-  }body[data-workspace-view="home"] .home-attention > header {
-    min-height: 60px;
-    align-content: center;
-  }.home-next-destinations {
-    flex-direction: column;
-    gap: 0;
-    width: min(var(--content-width), 100%);
-  }.home-next-destinations button {
-    min-height: 44px;
-    text-align: left;
   }
 }.assistant-workspace {
   min-width: 0;
@@ -5428,7 +4941,7 @@ body[data-workspace-view="calendar"] .document-list {
    Queue, Cards, Templates, Recurring, Assistants, and Artifacts share the same
    operator rhythm: a quiet page header, raised work panels, compact metadata,
    and an explicit next action. Keep this block at the end so the task surfaces
-   can evolve without disturbing the shared shell or other routes. */body[data-workspace-view="tasks"] .operations-home:not(.operations-home-daily) {
+   can evolve without disturbing the shared shell or other routes. */body[data-workspace-view="tasks"] .operations-home {
   --task-content-width: 72rem;
   --task-panel-radius: 12px;
   display: grid;
@@ -5437,7 +4950,7 @@ body[data-workspace-view="calendar"] .document-list {
   margin-inline: auto;
   gap: 20px;
   justify-items: stretch;
-}body[data-workspace-view="tasks"] .operations-home:not(.operations-home-daily) > * {
+}body[data-workspace-view="tasks"] .operations-home > * {
   min-width: 0;
   width: 100%;
 }body[data-workspace-view="tasks"] .operations-home.ops-surface-queue,
@@ -6761,7 +6274,7 @@ body[data-workspace-view="tasks"] .runtime-template-layout {
   }
 }
 
-@media (max-width: 760px) {body[data-workspace-view="tasks"] .operations-home:not(.operations-home-daily) {
+@media (max-width: 760px) {body[data-workspace-view="tasks"] .operations-home {
     gap: 16px;
   }body[data-workspace-view="tasks"] .ops-work-queue {
     grid-template-columns: 1fr;
@@ -8562,12 +8075,7 @@ body[data-workspace-view="tasks"] .quick-form-label input:not([type="checkbox"])
 body[data-workspace-view="tasks"] .quick-form-label select,
 body[data-workspace-view="tasks"] .quick-form > .task-action-btn,
 body[data-workspace-view="tasks"] .recurring-form-footer button,
-.home-quick-action,
-.home-task-action,
-.home-view-all {
-    min-width: 44px;
-    min-height: 44px;
-  }body[data-workspace-view="tasks"] .quick-form-label.quick-form-checkbox input {
+body[data-workspace-view="tasks"] .quick-form-label.quick-form-checkbox input {
     box-sizing: border-box;
     width: 44px;
     height: 44px;
@@ -9200,13 +8708,7 @@ body[data-workspace-view] .task-modal-panel button,
   margin-left: auto;
 }
 
-/* The queue footer's "View all tasks" is a 44px control on mobile, but its
-   transparent styling painted it as a bare text link. Give it the same quiet
-   bordered treatment as its "Show N more" sibling. */
-@media (max-width: 820px) {.home-attention > footer .home-view-all {
-    border: 1px solid var(--dk-border-default);
-    background: var(--dk-bg-muted);
-  }.ops-quality-row {
+.ops-quality-row {
     min-height: 44px;
   }.operating-model-card .quiet-button {
     min-height: 44px;

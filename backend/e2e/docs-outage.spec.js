@@ -232,21 +232,24 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     ]);
   });
 
-  test('Home and search attribute the outage to process documents', async ({ browser }) => {
+  test('Process Docs and search attribute the outage to process documents', async ({ browser }) => {
     const context = await portalContext(browser, servers.outage, { viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     const entries = observeErrors(page);
 
-    await page.goto('/#/');
-    await expect(page.locator('.operations-home-daily')).toBeVisible();
-    const banner = page.locator('.operations-home-daily [data-docs-state="unavailable"]');
+    await page.goto('/#/processes');
+    await expect(page.locator('.ops-surface-docs')).toBeVisible();
+    const banner = page.locator('.ops-surface-docs [data-docs-state="unavailable"]');
     await expect(banner).toHaveCount(1);
     await expect(banner.locator('strong')).toHaveText('Process documents are unavailable');
     await expect(banner).toContainText(OUTAGE_MESSAGE_PREFIX);
-    // Work content keeps its own independent state next to the docs banner.
-    await expect(page.locator('.home-status-strip')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Needs your attention' })).toBeVisible();
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'home-outage.png'), fullPage: true });
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'processes-outage.png'), fullPage: true });
+
+    // The work queue keeps its own independent state during a docs outage.
+    await page.goto('/#/');
+    await expect(page).toHaveURL(`${servers.outage.baseURL}/#/`);
+    await expect(page.locator('.ops-work-queue')).toBeVisible();
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'queue-during-docs-outage.png'), fullPage: true });
 
     await page.locator('#search-input').fill('schedule');
     const sourceState = page.locator('.search-source-state');
@@ -261,7 +264,7 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     await context.close();
   });
 
-  test('a bookmarked document URL shows the outage instead of silently rendering Home', async ({ browser }) => {
+  test('a bookmarked document URL shows the outage instead of silently rendering the queue', async ({ browser }) => {
     const context = await portalContext(browser, servers.outage, { viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     const entries = observeErrors(page);
@@ -273,8 +276,8 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     await expect(outage).toContainText(OUTAGE_MESSAGE_PREFIX);
     await expect(page).toHaveURL(`${servers.outage.baseURL}${DEEP_LINK_PATH}`);
     await expect(page.locator('body')).toHaveAttribute('data-view', 'editor');
-    // The operator is looking at the document view, not silently at Home.
-    await expect(page.locator('.operations-home-daily')).toBeHidden();
+    // The operator is looking at the document view, not silently at the queue.
+    await expect(page.locator('.ops-work-queue')).toBeHidden();
     await expect(page.locator('#editor')).toBeDisabled();
     await expect(page.locator('#editor-save-button')).toBeDisabled();
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'editor-outage.png'), fullPage: true });
@@ -337,12 +340,12 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     // An empty corpus is not a failure: the plain #190 assertion must hold.
     expect(docsErrors.map(describeEntry)).toEqual([]);
 
-    const homePage = await context.newPage();
-    const homeErrors = observeErrors(homePage);
-    // Gate the Home check on the real bootstrap response, armed before the
+    const queuePage = await context.newPage();
+    const queueErrors = observeErrors(queuePage);
+    // Gate the queue check on the real bootstrap response, armed before the
     // navigation. The sidebar skeleton cannot gate anything: its section is
     // unconditionally display:none, so waiting for it to hide is a tautology.
-    const homeCatalogLoaded = homePage.waitForResponse(
+    const queueCatalogLoaded = queuePage.waitForResponse(
       (response) => {
         const url = new URL(response.url());
         return response.request().method() === 'GET'
@@ -351,16 +354,13 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
           && response.status() === 200;
       },
     );
-    await homePage.goto('/#/');
-    await homeCatalogLoaded;
-    await expect(homePage.locator('.operations-home-daily')).toBeVisible();
-    // Home repaints after its own bootstrap resolves, so this marker proves a
-    // post-bootstrap render happened before absence is asserted.
-    await expect(
-      homePage.locator('.operations-home-daily[data-operations-work-loaded="true"]'),
-    ).toBeVisible();
-    await expect(homePage.locator('[data-docs-state]')).toHaveCount(0);
-    expect(homeErrors.map(describeEntry)).toEqual([]);
+    await queuePage.goto('/#/');
+    await queueCatalogLoaded;
+    // The queue repaints after its own bootstrap resolves; an empty corpus is
+    // not a docs failure, so the queue must show no docs state at all.
+    await expect(queuePage.locator('.ops-work-queue')).toBeVisible();
+    await expect(queuePage.locator('[data-docs-state]')).toHaveCount(0);
+    expect(queueErrors.map(describeEntry)).toEqual([]);
 
     await context.close();
   });

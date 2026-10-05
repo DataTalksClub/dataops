@@ -1,7 +1,7 @@
 export function createProcessDocsSurface(context, services) {
   const {
     basename,
-    buildOperationsHomeModel,
+    buildOperationsWorkModel,
     buildOperationsReferenceLinks,
     buildProcessQualityModel,
     documentList,
@@ -24,7 +24,7 @@ export function createProcessDocsSurface(context, services) {
 
   function renderDocsSurface(documents) {
     const visibleDocuments = Array.isArray(documents) ? documents : [];
-    const model = buildOperationsHomeModel(visibleDocuments, {
+    const model = buildOperationsWorkModel(visibleDocuments, {
       draftPaths: listDraftPaths(),
       workSnapshot: getOperationsWorkSnapshot(),
       recurringSnapshot: getOperationsRecurringSnapshot(),

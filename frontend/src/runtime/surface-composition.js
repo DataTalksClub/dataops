@@ -124,7 +124,6 @@ export function createSurfaceComposition(context) {
     getRenderCalendarSurface,
     getRenderDocsSurface,
     getRenderNewsletterSurface,
-    getRenderOperationsHome,
     getRenderOperatingModel,
     getRenderReviewSurface,
     getRenderSponsorCrmSurface,
@@ -138,9 +137,7 @@ export function createSurfaceComposition(context) {
     request,
     searchInput,
     setTimeoutImpl,
-    tasksNavButton,
     tasksNavSectionButtons,
-    tasksNavSubmenu,
     tasksFromWorkPayload,
     windowConsole,
     workspaceHashPath,
@@ -151,7 +148,6 @@ export function createSurfaceComposition(context) {
   function renderOperationsWorkspace(documents) {
     syncWorkspaceNav();
     const view = workspaceState.activeWorkspaceView;
-    if (view === "home") return getRenderOperationsHome()(documents);
     if (view === "operating-model") return getRenderOperatingModel()();
     if (view === "tasks") {
       return getRenderTasksSurface()(
@@ -168,10 +164,10 @@ export function createSurfaceComposition(context) {
     if (view === "newsletter") return getRenderNewsletterSurface()();
     if (view === "calendar") return getRenderCalendarSurface()();
     if (view === "review") return getRenderReviewSurface()(documents);
-    return getRenderOperationsHome()(documents);
+    return getRenderTasksSurface()(documents, "queue");
   }
 
-  function isOperationsHomeVisible() {
+  function isOperationsWorkspaceVisible() {
     return (
       body.dataset.view === "library" &&
       !getKnowledgeSelectedFolder() &&
@@ -213,7 +209,7 @@ export function createSurfaceComposition(context) {
     }
     workspaceState.recurringSnapshot =
       context.getNormalizeOperationsRecurringSnapshot()(snapshot);
-    if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
+    if (options.rerender && isOperationsWorkspaceVisible()) refreshDocuments();
   }
 
   async function canLeaveCurrentDocument() {
@@ -227,31 +223,14 @@ export function createSurfaceComposition(context) {
     templates: "templates",
     recurring: "recurring",
     assistants: "assistants",
-    artifacts: "artifacts",
   };
 
   function legacyViewToTasksSection(view) {
     return tasksSectionByLegacyView[view] || null;
   }
 
-  async function showOperationsHome(options = {}) {
-    if (!(await canLeaveCurrentDocument())) return undefined;
-    return navigateCanonicalWorkspace(
-      "/",
-      {},
-      {
-        history:
-          options.updateUrl === false
-            ? "none"
-            : options.replace
-              ? "replace"
-              : "push",
-      },
-    ).ready;
-  }
-
   async function showWorkspaceSurface(view, options = {}) {
-    const nextView = view || "home";
+    const nextView = view || "tasks";
     if (!(await canLeaveCurrentDocument())) return undefined;
     const tasksSection = legacyViewToTasksSection(nextView);
     const path = tasksSection
@@ -278,49 +257,20 @@ export function createSurfaceComposition(context) {
     body.dataset.workspaceView = activeView;
     searchInput.placeholder = "Search work and docs";
     for (const button of workspaceNavButtons) {
-      const active =
-        (button.dataset.workspaceView || "home") === activeView;
+      const active = button.dataset.workspaceView === activeView;
       button.classList.toggle("is-active", active);
       if (active) button.setAttribute("aria-current", "page");
       else button.removeAttribute("aria-current");
     }
     const tasksActive = activeView === "tasks";
-    let tasksSectionActive = false;
     for (const button of tasksNavSectionButtons) {
       const active =
         tasksActive &&
         button.dataset.tasksSection === workspaceState.activeTasksSection;
       button.classList.toggle("is-active", active);
-      if (active) {
-        button.setAttribute("aria-current", "page");
-        tasksSectionActive = true;
-      } else {
-        button.removeAttribute("aria-current");
-      }
+      if (active) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
     }
-    // One selection signal: the leaf row carries the tint and aria-current;
-    // the parent Tasks row speaks through its expanded chevron instead of
-    // lighting up beside its own child.
-    const tasksParentActive = tasksActive && !tasksSectionActive;
-    tasksNavButton?.classList.toggle("is-active", tasksParentActive);
-    if (tasksParentActive) {
-      tasksNavButton?.setAttribute("aria-current", "page");
-    } else {
-      tasksNavButton?.removeAttribute("aria-current");
-    }
-    if (tasksActive) {
-      setTasksNavExpanded(true);
-    } else {
-      // Accordion behavior: the Tasks group follows the active route instead
-      // of leaking expansion state across unrelated routes.
-      setTasksNavExpanded(false);
-    }
-  }
-
-  function setTasksNavExpanded(expanded) {
-    if (!tasksNavButton || !tasksNavSubmenu) return;
-    tasksNavButton.setAttribute("aria-expanded", String(expanded));
-    tasksNavSubmenu.hidden = !expanded;
   }
 
   function setView(view) {
@@ -370,14 +320,12 @@ export function createSurfaceComposition(context) {
     cleanPath,
     debounce,
     escapeHtml,
-    isOperationsHomeVisible,
+    isOperationsWorkspaceVisible,
     legacyViewToTasksSection,
     refreshOperationsRecurringSnapshot,
     renderOperationsWorkspace,
     setRouteTitle,
-    setTasksNavExpanded,
     setView,
-    showOperationsHome,
     showWorkspaceSurface,
     syncWorkspaceNav,
     workApiUrl,

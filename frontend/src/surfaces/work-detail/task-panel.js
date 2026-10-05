@@ -67,7 +67,7 @@ export function createTaskPanel(context) {
         ? {
             path: "/",
             params: {},
-            restoreFocus: { kind: "home-task", id: taskId },
+            restoreFocus: { kind: "queue-task", id: taskId },
           }
         : null;
     let target = taskRouteParams(taskId);

@@ -308,44 +308,45 @@ function boxSidePx(declarations, kind, side) {
   return cssPx(parts[index]);
 }
 
-describe("workspace nested nav indent contract", () => {
-  test("nested Tasks labels share the parent-text column, not an extra 10px inset", () => {
+describe("workspace nav layout contract", () => {
+  test("Tasks sections are first-class nav rows, not a nested submenu", () => {
     const styles = read("frontend/src/styles.css");
-    const submenu = cssDeclarations(firstCssRuleBody(styles, ".workspace-nav-submenu"));
-    const submenuLeft = boxSidePx(submenu, "margin", "left") + boxSidePx(submenu, "padding", "left");
-    assert.equal(
-      submenuLeft,
-      30,
-      ".workspace-nav-submenu left inset must total 30px, not 40px from combining margin-left: 30px with padding-left: 10px",
-    );
+    const html = read("frontend/index.html");
 
-    const parent = cssDeclarations(firstCssRuleBody(styles, ".workspace-nav-button"));
-    const icon = cssDeclarations(firstCssRuleBody(styles, ".workspace-nav-icon"));
-    const nested = cssDeclarations(firstCssRuleBody(styles, ".workspace-subnav-button"));
-    const parentTextColumn =
-      boxSidePx(parent, "padding", "left") + cssPx(icon.width) + cssPx(parent.gap);
-    const nestedTextColumn = submenuLeft + boxSidePx(nested, "padding", "left");
-    assert.equal(parentTextColumn, 40);
-    assert.equal(nestedTextColumn, parentTextColumn);
-    assert.equal(cssPx(nested["font-size"]), 13);
-    assert.equal(nested.color, "var(--dk-text-muted)");
+    // Every Tasks destination is a top-level nav button with an icon, level
+    // with Newsletter and Calendar.
+    for (const [section, label] of [
+      ["queue", "Queue"],
+      ["workflows", "Cards"],
+      ["templates", "Templates"],
+      ["recurring", "Recurring"],
+      ["assistants", "Assistants"],
+    ]) {
+      assert.match(
+        html,
+        new RegExp(
+          `class="workspace-nav-button[^"]*"[^>]*data-tasks-section="${section}"[^>]*>` +
+            `[^<]*<span class="workspace-nav-icon"`,
+        ),
+        `${label} must be a first-class nav button with an icon`,
+      );
+      assert.match(html, new RegExp(`</span><span>${label}</span></button>`));
+    }
+
+    // The queue is the landing page, so it carries the initial selection.
     assert.match(
-      firstCssRuleBody(styles, ".workspace-subnav-button:hover"),
-      /background:\s*var\(--dk-bg-hover\)/,
+      html,
+      /class="workspace-nav-button is-active"[^>]*data-tasks-section="queue"/,
     );
-    assert.match(
-      firstCssRuleBody(styles, ".workspace-subnav-button.is-active"),
-      /background:\s*var\(--dk-accent-soft\)/,
-    );
-    assert.match(
-      styles,
-      /@media \(max-width: 820px\) \{[\s\S]*?\.workspace-subnav-button \{\s*min-height: 44px;/,
-    );
-    assert.doesNotMatch(styles, /#tasks-nav-submenu/);
-    assert.match(
-      read("frontend/index.html"),
-      /id="tasks-nav-submenu" class="workspace-nav-submenu"/,
-    );
+    assert.match(html, /<h2 class="workspace-nav-label">Tasks<\/h2>/);
+
+    // The collapsible group and the Artifacts tab are gone from both the
+    // markup and the stylesheet.
+    assert.doesNotMatch(html, /workspace-nav-submenu|workspace-subnav-button/);
+    assert.doesNotMatch(html, /data-tasks-section="artifacts"/);
+    assert.doesNotMatch(styles, /workspace-nav-submenu|workspace-subnav-button/);
+    assert.doesNotMatch(styles, /workspace-nav-group|workspace-nav-parent/);
+    assert.doesNotMatch(styles, /workspace-nav-chevron/);
   });
 
   test("app CSS never uses a colored single-edge accent", () => {

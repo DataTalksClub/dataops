@@ -351,15 +351,15 @@ describe("Work Detail surface boundary", () => {
     });
   });
 
-  test("returns a Home task to its originating action with focus restored", async () => {
+  test("returns a Queue task to its originating action with focus restored", async () => {
     const harness = createHarness({
       route: { path: "/", params: new URLSearchParams(), invalid: false },
     });
 
-    await harness.api.openTaskPanel("home-task");
+    await harness.api.openTaskPanel("queue-task");
     harness.setRoute({
       path: "/tasks",
-      params: new URLSearchParams("taskId=home-task"),
+      params: new URLSearchParams("taskId=queue-task"),
       invalid: false,
     });
     await harness.api.closeTaskPanel();
@@ -368,8 +368,8 @@ describe("Work Detail surface boundary", () => {
     assert.equal(close.path, "/");
     assert.deepEqual(close.params, {});
     assert.deepEqual(close.options.restoreFocus, {
-      kind: "home-task",
-      id: "home-task",
+      kind: "queue-task",
+      id: "queue-task",
     });
   });
 
