@@ -1585,7 +1585,7 @@ test.describe('canonical frontend capability behavior', () => {
     test.setTimeout(90_000);
     const { context, page } = await portalPage(browser);
     await page.goto('/#/inbox');
-    await expect(page.getByText('No matching intake')).toBeVisible();
+    await expect(page.getByText('Nothing to triage')).toBeVisible();
     const capture = page.locator('.intake-panel').filter({ hasText: 'Capture a new intake item' });
     await capture.locator('summary').click();
     await capture.getByRole('button', { name: 'Capture intake' }).click();
@@ -1602,11 +1602,9 @@ test.describe('canonical frontend capability behavior', () => {
     await capture.locator('[data-intake-create-note]').fill('A duplicate public-safe request');
     await capture.getByRole('button', { name: 'Capture intake' }).click();
     await expect(page.locator('.intake-row', { hasText: duplicateTitle })).toBeVisible();
-    await page.locator('.intake-row', { hasText: duplicateTitle }).click();
-    const detail = page.locator('.intake-detail');
-    await detail.getByText('Resolution actions').click();
-    await detail.locator('summary').filter({ hasText: 'Mark duplicate' }).click();
-    const duplicateAction = detail.locator('[data-intake-submit="mark-duplicate"]').locator('xpath=ancestor::details[1]');
+    await page.locator('.intake-row', { hasText: duplicateTitle }).locator('.intake-row-main').click();
+    const detail = page.locator('.intake-row.is-selected .intake-detail');
+    const duplicateAction = detail.locator('[data-intake-action="mark-duplicate"]');
     await duplicateAction.getByLabel('Reason').fill('Same synthetic upstream request');
     await duplicateAction.getByRole('button', { name: 'Mark duplicate' }).click();
     await expect(detail.getByRole('alert')).toHaveText('Duplicate of is required.');
@@ -1618,7 +1616,7 @@ test.describe('canonical frontend capability behavior', () => {
     await setFaults(context.request, [{ method: 'POST', path: `/api/intake/${duplicateId}/mark-duplicate`, status: 409 }]);
     await duplicateAction.getByRole('button', { name: 'Mark duplicate' }).click();
     await expect(detail.getByRole('alert')).toContainText('Synthetic route failure (409)');
-    const retryDuplicateAction = detail.locator('[data-intake-submit="mark-duplicate"]').locator('xpath=ancestor::details[1]');
+    const retryDuplicateAction = detail.locator('[data-intake-action="mark-duplicate"]');
     await expect(retryDuplicateAction.getByLabel('Reason')).toHaveValue('Same synthetic upstream request');
     await clearFaults(context.request);
     await expect(retryDuplicateAction.getByRole('button', { name: 'Mark duplicate' })).toBeVisible();
@@ -1631,9 +1629,7 @@ test.describe('canonical frontend capability behavior', () => {
     } });
     const archiveItem = (await json(archiveResponse)).item;
     await page.goto(`/#/inbox?intakeId=${archiveItem.id}`);
-    await detail.getByText('Resolution actions').click();
-    await detail.locator('summary').filter({ hasText: 'Archive item' }).click();
-    const archiveAction = detail.locator('[data-intake-submit="archive"]').locator('xpath=ancestor::details[1]');
+    const archiveAction = page.locator('.intake-row.is-selected [data-intake-action="archive"]');
     await archiveAction.getByLabel('Reason').fill('Synthetic retention complete');
     await archiveAction.getByRole('button', { name: 'Archive item' }).click();
     await expect(detail).toContainText('This item is archived and read-only');

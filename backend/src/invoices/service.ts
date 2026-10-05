@@ -6,9 +6,11 @@ import { getIntakeItem, updateIntakeItem } from '../db/intake';
 import { getArtifact } from '../db/artifacts';
 import { putBookkeepingItem, updateBookkeepingTransaction } from '../db/bookkeeping';
 import { extractInvoiceText, pdfText, type InvoiceHints } from './extract';
+import { isInvoiceIntakeRoute } from './intakeRoute';
 import { missingEvidence, type Invoice, type InvoiceFields } from './model';
 import { createInvoice, getInvoice, listInvoices, saveInvoice, claimInvoice, reserveSheetRow, approveInvoice } from './store';
 import { officialProviders, publicationConfig, marker, sheetValues, type Providers } from './providers';
+import type { IntakeHistoryEvent, IntakeItem } from '../types';
 let s3 = new S3Client({});
 let providerFactory: (()=>Promise<Providers>) | undefined;
 let textExtractor = pdfText;
@@ -70,11 +72,25 @@ export async function reextractInvoice(client:DynamoDBDocumentClient,record:Invo
   if(upgraded===record) throw new Error('reextract-found-no-new-fields');
   return upgraded;
 }
+export async function resolveInvoiceIntakeForInbox(client:DynamoDBDocumentClient,intake:IntakeItem) {
+  const now=new Date().toISOString();
+  const history:IntakeHistoryEvent[]=Array.isArray(intake.history)?intake.history.slice():[];
+  if(!history.some(event=>event.action==='handed-off-to-finance')) {
+    history.push({id:randomUUID(),action:'handed-off-to-finance',reason:'Forwarded invoice is Finance review work',createdAt:now});
+  }
+  return updateIntakeItem(client,intake.id,{
+    status:'archived',
+    archivedAt:intake.archivedAt || now,
+    resolutionReason:intake.resolutionReason || 'Handed off to Finance for invoice review',
+    blockedReason:null,
+    history,
+  });
+}
+
 export async function processInvoiceIntake(client:DynamoDBDocumentClient,intakeItemId:string) {
   const intake=await getIntakeItem(client,intakeItemId);
   if(!intake) throw new Error('intake-not-found');
-  const route=String(intake.metadata?.recipientRoute || '');
-  if(!['invoice','receipts','invoice-attachment','invoice-pdf'].includes(route)) throw new Error('not-invoice-intake');
+  if(!isInvoiceIntakeRoute(intake.metadata?.recipientRoute)) throw new Error('not-invoice-intake');
   const items:Invoice[]=[];const issues:string[]=[];
   for(const ref of intake.artifactRefs || []) {
     const artifact=await getArtifact(client,ref.artifactId);
@@ -99,7 +115,19 @@ export async function processInvoiceIntake(client:DynamoDBDocumentClient,intakeI
     items.push(await createInvoice(client,record));
   }
   if(!items.length && !issues.length) issues.push('No documents: forward an invoice PDF or a rendered receipt');
-  await updateIntakeItem(client,intake.id,{metadata:{...intake.metadata,invoiceReviewIds:items.map(item=>item.id),invoiceProcessingIssues:issues}});
+  const now=new Date().toISOString();
+  const history:IntakeHistoryEvent[]=Array.isArray(intake.history)?intake.history.slice():[];
+  if(!history.some(event=>event.action==='handed-off-to-finance')) {
+    history.push({id:randomUUID(),action:'handed-off-to-finance',reason:'Forwarded invoice is Finance review work',metadata:{invoiceReviewIds:items.map(item=>item.id)},createdAt:now});
+  }
+  await updateIntakeItem(client,intake.id,{
+    metadata:{...intake.metadata,invoiceReviewIds:items.map(item=>item.id),invoiceProcessingIssues:issues},
+    status:'archived',
+    archivedAt:intake.archivedAt || now,
+    resolutionReason:intake.resolutionReason || 'Handed off to Finance for invoice review',
+    blockedReason:null,
+    history,
+  });
   return {items,issues};
 }
 export async function readiness() {

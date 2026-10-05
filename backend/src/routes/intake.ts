@@ -9,6 +9,7 @@ import {
   listIntakeItems,
   updateIntakeItem,
 } from '../db/intake';
+import { isInvoiceRouteIntake } from '../invoices/intakeRoute';
 import { dismissIntakeFollowUpNotifications } from '../db/notifications';
 import {
   createTask,
@@ -598,7 +599,7 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
 
   if (method === 'GET' && reqPath === '/api/intake') {
     const params = event.queryStringParameters || {};
-    const items = await listIntakeItems(client, {
+    const items = (await listIntakeItems(client, {
       status: params.status,
       source: params.source,
       ownerId: params.ownerId,
@@ -615,7 +616,7 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
       standaloneOnly: params.standaloneOnly,
       from: params.from,
       to: params.to,
-    });
+    })).filter((item) => !isInvoiceRouteIntake(item));
     return jsonResponse(200, { items });
   }
 

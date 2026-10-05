@@ -2,6 +2,7 @@ import { createCollectionLoader } from "../../core/collection-loader.js";
 import { berlinIsoDate } from "../../core/workspace.js";
 import { renderDataSummary } from "../operations-overview.js";
 import { createIntakeCaptureSurface } from "./inbox-capture.js";
+import { isInvoiceRouteIntake } from "./inbox-finance.js";
 
 export function createInboxSurface(context) {
   const {
@@ -53,21 +54,8 @@ export function createInboxSurface(context) {
 
   function intakeMatchesFilter(item, filter) {
     const status = String(item?.status || "new");
-    const followUp = String(item?.followUpAt || "").slice(0, 10);
     const assistantReady = item?.assistantReadiness?.status === "ready";
-    if (filter === "new") return status === "new";
-    if (filter === "blocked") return status === "blocked";
-    if (filter === "due")
-      return (
-        status === "blocked" &&
-        !(item.taskIds || []).length &&
-        followUp &&
-        followUp <= todayIsoDate()
-      );
-    if (filter === "future")
-      return status === "blocked" && followUp > todayIsoDate();
-    if (filter === "assistant-ready") return assistantReady;
-    if (filter === "resolved")
+    if (filter === "dismissed")
       return [
         "attached",
         "converted",
@@ -75,8 +63,12 @@ export function createInboxSurface(context) {
         "duplicate",
         "archived",
       ].includes(status);
-    if (filter === "all") return true;
-    return status === "new" || status === "blocked" || assistantReady;
+    return (
+      status === "new" ||
+      status === "blocked" ||
+      status === "triaged" ||
+      assistantReady
+    );
   }
 
   function formatIntakeDate(value) {
@@ -95,23 +87,17 @@ export function createInboxSurface(context) {
         }).format(date);
   }
 
-  // Meta says what changes the triage decision. Defaults (manual, normal,
-  // internal) are quiet; only the exceptional facts and the captured date stay.
   function intakeMeta(item) {
     return [
-      item.source && item.source !== "manual" ? item.source : "",
-      item.priority && item.priority !== "normal"
-        ? `${item.priority} priority`
+      item.source || "unknown",
+      item.sourceReceivedAt
+        ? `Captured ${formatIntakeDate(item.sourceReceivedAt)}`
         : "",
-      item.dataClass && item.dataClass !== "internal" ? item.dataClass : "",
       item.status === "blocked" && item.waitingFor
         ? `waiting for ${item.waitingFor}`
         : "",
       item.status === "blocked" && item.followUpAt
         ? `follow up ${formatIntakeDate(item.followUpAt)}`
-        : "",
-      item.sourceReceivedAt
-        ? `Captured ${formatIntakeDate(item.sourceReceivedAt)}`
         : "",
     ]
       .filter(Boolean)
@@ -163,14 +149,6 @@ export function createInboxSurface(context) {
     };
   }
 
-  function intakeDisclosureChain(details) {
-    const disclosures = [];
-    for (let node = details; node; node = node.parentElement) {
-      if (node.tagName === "DETAILS") disclosures.push(node);
-    }
-    return disclosures;
-  }
-
   function clearIntakeDraft(item, action) {
     if (
       state.intakeMutation.itemId !== item.id ||
@@ -193,34 +171,22 @@ export function createInboxSurface(context) {
 
   function bindIntakeDraft(item, button) {
     const action = button.dataset.intakeSubmit;
-    const details = button.closest("details");
-    if (!details) return;
-    const disclosureChain = intakeDisclosureChain(details);
+    const form = button.closest("[data-intake-action]");
+    if (!form) return;
     const mutation =
       state.intakeMutation.itemId === item.id &&
       state.intakeMutation.action === action
         ? state.intakeMutation
         : null;
     if (mutation) {
-      for (const disclosure of disclosureChain) disclosure.open = true;
-      for (const field of details.querySelectorAll("input,select,textarea")) {
+      for (const field of form.querySelectorAll("input,select,textarea")) {
         if (Object.hasOwn(mutation.values || {}, field.name)) {
           field.value = mutation.values[field.name];
         }
       }
     }
-    details.addEventListener("toggle", () => {
-      if (details.open) {
-        rememberIntakeDraft(item, action, details);
-      } else clearIntakeDraft(item, action);
-    });
-    for (const ancestor of disclosureChain.slice(1)) {
-      ancestor.addEventListener("toggle", () => {
-        if (!ancestor.open) clearIntakeDraft(item, action);
-      });
-    }
-    for (const field of details.querySelectorAll("input,select,textarea")) {
-      const capture = () => rememberIntakeDraft(item, action, details, field);
+    for (const field of form.querySelectorAll("input,select,textarea")) {
+      const capture = () => rememberIntakeDraft(item, action, form, field);
       field.addEventListener("input", capture);
       field.addEventListener("change", capture);
       field.addEventListener("focus", capture);
@@ -233,15 +199,10 @@ export function createInboxSurface(context) {
           state.intakeMutation.action !== action
         )
           return;
-        const field = [...details.querySelectorAll("input,select,textarea")].find(
+        const field = [...form.querySelectorAll("input,select,textarea")].find(
           (candidate) => candidate.name === focus.field,
         );
-        if (
-          !field?.isConnected ||
-          field.offsetParent === null ||
-          disclosureChain.some((disclosure) => !disclosure.open)
-        )
-          return;
+        if (!field?.isConnected || field.offsetParent === null) return;
         field.focus();
         if (
           typeof field.setSelectionRange === "function" &&
@@ -289,7 +250,7 @@ export function createInboxSurface(context) {
     const intakeItems =
       intakeResult.status === "fulfilled" &&
       Array.isArray(intakeResult.value?.items)
-        ? intakeResult.value.items
+        ? intakeResult.value.items.filter((item) => !isInvoiceRouteIntake(item))
         : [];
     if (
       intakeResult.status === "fulfilled" &&
@@ -403,18 +364,33 @@ export function createInboxSurface(context) {
     return status;
   }
 
+  function rememberFinanceHandoff(item) {
+    state.intake.financeHandoff = item;
+    state.intake.selectedId = item.id;
+    state.workspaceEntity = {
+      kind: "intake",
+      id: item.id,
+      status: "finance-owned",
+    };
+  }
+
   async function resolveIntakeRouteEntity(route, token) {
     await refreshIntakeSnapshot({ token });
     if (!isWorkspaceRouteFresh(token)) return;
     const intakeId = route.params.get("intakeId");
     if (!intakeId) {
       state.workspaceEntity = null;
+      state.intake.financeHandoff = null;
+      state.intake.selectedId = null;
       renderInboxSurface();
       return;
     }
     let item = state.intake.items.find(
       (candidate) => candidate.id === intakeId,
     );
+    if (!item && state.intake.financeHandoff?.id === intakeId) {
+      item = state.intake.financeHandoff;
+    }
     if (!item) {
       state.workspaceEntity = {
         kind: "intake",
@@ -428,12 +404,9 @@ export function createInboxSurface(context) {
         );
         if (!isWorkspaceRouteFresh(token)) return;
         item = payload.item || payload;
-        state.intake.items = [
-          item,
-          ...state.intake.items.filter((candidate) => candidate.id !== item.id),
-        ];
       } catch (error) {
         if (!isWorkspaceRouteFresh(token)) return;
+        state.intake.financeHandoff = null;
         state.workspaceEntity = {
           kind: "intake",
           id: intakeId,
@@ -443,6 +416,18 @@ export function createInboxSurface(context) {
         renderInboxSurface();
         return;
       }
+    }
+    if (isInvoiceRouteIntake(item)) {
+      rememberFinanceHandoff(item);
+      renderInboxSurface();
+      return;
+    }
+    state.intake.financeHandoff = null;
+    if (!state.intake.items.some((candidate) => candidate.id === item.id)) {
+      state.intake.items = [
+        item,
+        ...state.intake.items.filter((candidate) => candidate.id !== item.id),
+      ];
     }
     state.workspaceEntity = { kind: "intake", id: intakeId, status: "ready" };
     state.intake.selectedId = intakeId;
@@ -478,7 +463,7 @@ export function createInboxSurface(context) {
     wrap.append(
       renderSurfaceHeader(
         "Inbox",
-        "Capture raw operational inputs, then triage them into executable work.",
+        "Untriaged inputs not already owned by another surface. Convert a note into a task, attach it to existing work, or dismiss it. Forwarded invoices are reviewed in Finance.",
       ),
     );
     const inboxErrors = [
@@ -509,13 +494,18 @@ export function createInboxSurface(context) {
         loading: "Fetching intake items and Card relationships.",
         unavailable: "Inbox is unavailable; no intake rows are shown until it reloads.",
         partial: "Inbox items are loaded, but some Card relationships are unavailable.",
-        empty: "No intake items have been captured yet.",
+        empty: "Nothing to triage. Forwarded invoices are reviewed in Finance, not Inbox.",
         ready: `${state.intake.items.length} intake item${state.intake.items.length === 1 ? "" : "s"} loaded.`,
       },
       retryLabel: "Retry loading Inbox",
       onRetry: retryInbox,
     });
-    if (inboxSummary.dataset.summaryState !== "ready") wrap.append(inboxSummary);
+    if (
+      inboxSummary.dataset.summaryState !== "ready" &&
+      inboxSummary.dataset.summaryState !== "empty"
+    ) {
+      wrap.append(inboxSummary);
+    }
     wrap.append(renderManualIntakeForm());
 
     const filters = document.createElement("nav");
@@ -523,13 +513,7 @@ export function createInboxSurface(context) {
     filters.setAttribute("aria-label", "Inbox filters");
     for (const [id, label] of [
       ["actionable", "Actionable"],
-      ["new", "New"],
-      ["blocked", "Blocked"],
-      ["due", "Due"],
-      ["future", "Future"],
-      ["assistant-ready", "Assistant-ready"],
-      ["resolved", "Resolved"],
-      ["all", "All"],
+      ["dismissed", "Dismissed"],
     ]) {
       const button = document.createElement("button");
       button.type = "button";
@@ -560,120 +544,82 @@ export function createInboxSurface(context) {
       intakeMatchesFilter(item, state.intake.filter),
     );
     const selected =
+      filtered.find((item) => item.id === state.intake.selectedId) ||
       state.intake.items.find((item) => item.id === state.intake.selectedId) ||
       null;
-    state.intake.selectedId = selected?.id || null;
-    const layout = document.createElement("div");
-    layout.className = "intake-layout";
-    layout.classList.toggle("has-selected-intake", Boolean(selected));
-    layout.append(renderIntakeQueue(filtered), renderIntakeDetail(selected));
-    wrap.append(layout);
+    if (selected && isInvoiceRouteIntake(selected)) {
+      rememberFinanceHandoff(selected);
+    }
+    const financeItem =
+      state.intake.financeHandoff &&
+      isInvoiceRouteIntake(state.intake.financeHandoff)
+        ? state.intake.financeHandoff
+        : null;
+    wrap.append(renderIntakeList(filtered, selected, financeItem));
     documentList.replaceChildren(wrap);
     if (selected && isMobileShell()) {
       scheduleAnimationFrame(() => {
-        const detail = documentList.querySelector(".intake-detail");
-        if (detail && state.intake.selectedId === selected.id)
-          detail.scrollIntoView({ block: "start" });
+        const row = documentList.querySelector(".intake-row.is-selected");
+        if (row && state.intake.selectedId === selected.id)
+          row.scrollIntoView({ block: "start" });
       });
     }
   }
 
-  function renderIntakeQueue(items) {
+  function renderIntakeList(items, selected, financeItem) {
     const panel = document.createElement("section");
     panel.className = "intake-panel intake-queue";
-    const title = document.createElement("h3");
-    title.textContent = "Inbox queue";
-    panel.append(title);
-    if (!items.length) {
+    if (
+      state.workspaceEntity?.kind === "intake" &&
+      ["not-found", "error"].includes(state.workspaceEntity.status)
+    ) {
+      const missing = document.createElement("div");
+      missing.className = "intake-detail intake-detail-empty";
+      renderEntityLoadState(missing, {
+        ...state.workspaceEntity,
+        retry: () =>
+          navigateCanonicalWorkspace(
+            getActiveWorkspaceRoute().path,
+            getActiveWorkspaceRoute().params,
+            { history: "none" },
+          ),
+        returnToList: () => {
+          navigateCanonicalWorkspace("/inbox");
+        },
+      });
+      panel.append(missing);
+    }
+    if (financeItem) panel.append(renderIntakeItem(financeItem, true));
+    const visible = [...items];
+    if (
+      selected &&
+      !isInvoiceRouteIntake(selected) &&
+      !visible.some((item) => item.id === selected.id)
+    ) {
+      visible.unshift(selected);
+    }
+    if (!visible.length && !financeItem) {
       panel.append(
         renderHonestState(
-          "No matching intake",
-          "Choose another filter or capture a new item.",
+          state.intake.filter === "dismissed"
+            ? "No dismissed intake"
+            : "Nothing to triage",
+          state.intake.filter === "dismissed"
+            ? "Actionable items stay in the default list."
+            : "Forwarded invoices are reviewed in Finance, not Inbox.",
         ),
       );
       return panel;
     }
-    for (const item of items) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `intake-row intake-${item.status || "new"} ${item.id === state.intake.selectedId ? "is-selected" : ""}`;
-      button.innerHTML = `
-        <span aria-hidden="true" class="intake-row-marker"></span>
-        <span>
-          <strong>${escapeHtml(item.title || "Untitled intake")}</strong>
-          <small>${escapeHtml(intakeMeta(item))}</small>
-          <span>${escapeHtml(String(item.summary || "").slice(0, 180))}</span>
-        </span>
-        ${["assistant ready", "blocked"].includes(intakeStatusLabel(item))
-          ? `<em>${escapeHtml(intakeStatusLabel(item))}</em>`
-          : ""}
-      `;
-      button.addEventListener("click", () => {
-        navigateCanonicalWorkspace("/inbox", { intakeId: item.id });
-      });
-      panel.append(button);
+    for (const item of visible) {
+      panel.append(renderIntakeItem(item, item.id === selected?.id));
     }
     return panel;
   }
 
-  function intakeRefList(label, values) {
-    const items = (values || []).filter(Boolean);
-    const references = items.length
-      ? items
-          .map((value) => {
-            const title =
-              typeof value === "string"
-                ? value
-                : value.title ||
-                  value.filename ||
-                  value.url ||
-                  value.normalizedUrl ||
-                  value.artifactId ||
-                  value.fileId ||
-                  "reference";
-            return `<code>${escapeHtml(title)}</code>`;
-          })
-          .join(" ")
-      : "None";
-    return `
-      <div class="intake-reference-group">
-        <strong>${escapeHtml(label)}</strong>
-        <span>${references}</span>
-      </div>
-    `;
-  }
-
-  function renderIntakeDetail(item) {
-    const panel = document.createElement("section");
-    panel.className = "intake-panel intake-detail";
-    if (!item) panel.classList.add("intake-detail-empty");
-    if (!item) {
-      if (
-        state.workspaceEntity?.kind === "intake" &&
-        ["not-found", "error"].includes(state.workspaceEntity.status)
-      ) {
-        renderEntityLoadState(panel, {
-          ...state.workspaceEntity,
-          retry: () =>
-            navigateCanonicalWorkspace(
-              getActiveWorkspaceRoute().path,
-              getActiveWorkspaceRoute().params,
-              { history: "none" },
-            ),
-          returnToList: () => {
-            navigateCanonicalWorkspace("/inbox");
-          },
-        });
-        return panel;
-      }
-      panel.append(
-        renderHonestState(
-          "Intake detail",
-          "Select an intake item to triage it into a Task or Card.",
-        ),
-      );
-      return panel;
-    }
+  function renderIntakeItem(item, expanded) {
+    const row = document.createElement("article");
+    row.className = `intake-row intake-${item.status || "new"} ${expanded ? "is-selected" : ""}`;
     const cardOptions = [
       `<option value="">No card</option>`,
       ...state.intake.cards.map(
@@ -684,6 +630,40 @@ export function createInboxSurface(context) {
         `,
       ),
     ].join("");
+    const main = document.createElement("button");
+    main.type = "button";
+    main.className = "intake-row-main";
+    main.dataset.openIntakeItem = item.id;
+    const marker = document.createElement("span");
+    marker.setAttribute("aria-hidden", "true");
+    marker.className = "intake-row-marker";
+    const copy = document.createElement("span");
+    const title = document.createElement("strong");
+    title.textContent = item.title || "Untitled intake";
+    const meta = document.createElement("small");
+    meta.textContent = intakeMeta(item);
+    copy.append(title, meta);
+    main.append(marker, copy);
+    const statusLabel = intakeStatusLabel(item);
+    if (["assistant ready", "blocked"].includes(statusLabel)) {
+      const status = document.createElement("em");
+      status.textContent = statusLabel;
+      main.append(status);
+    }
+    const detail = document.createElement("div");
+    detail.className = "intake-detail";
+    detail.innerHTML = `
+      ${intakeActionMarkup(item, cardOptions, { compact: !expanded })}
+      ${expanded ? renderIntakeExpandedContext(item) : ""}
+    `;
+    row.append(main, detail);
+    bindIntakeItem(row, item);
+    return row;
+  }
+
+  function renderIntakeExpandedContext(item) {
+    if (isInvoiceRouteIntake(item)) return "";
+    const history = renderIntakeHistoryMarkup(item.history || []);
     const taskRelationships =
       (item.taskIds || [])
         .map(
@@ -704,51 +684,13 @@ export function createInboxSurface(context) {
           `,
         )
         .join(" ") || "None";
-    const assistantRelationships =
-      (item.assistantJobIds || [])
-        .map(
-          (id) => `
-            <button type="button" data-open-intake-assistant="${escapeHtml(id)}">
-              Assistant job ${escapeHtml(id)}
-            </button>
-          `,
-        )
-        .join(" ") || "None";
-    const history = renderIntakeHistoryMarkup(item.history || []);
-    const actionMarkup = intakeActionMarkup(item, cardOptions);
-    panel.innerHTML = `
-      <header>
-        <div>
-          <h3>${escapeHtml(item.title || "Untitled intake")}</h3>
-          <small>${escapeHtml(intakeMeta(item))}</small>
-        </div>
-        <div class="intake-detail-heading-actions">
-          <span class="intake-status">${escapeHtml(intakeStatusLabel(item))}</span>
-          <button type="button" data-close-intake>Return to Inbox</button>
-        </div>
-      </header>
-      <section>
-        <h4>Intake context</h4>
-        <p>${escapeHtml(item.summary || "")}</p>
-        <small>
-          Raw bodies and binaries remain behind storage references; this excerpt is not task proof.
-        </small>
-      </section>
-      ${actionMarkup}
-      <section>
-        <h4>Relationships</h4>
+    return `
+      <section class="intake-expanded-context">
         <div><strong>Tasks:</strong> ${taskRelationships}</div>
         <div><strong>Cards:</strong> ${cardRelationships}</div>
-        <div><strong>Assistants:</strong> ${assistantRelationships}</div>
       </section>
-      <section>
-        <h4>Links, files, and artifacts</h4>
-        ${intakeRefList("Links", item.linkRefs)}
-        ${intakeRefList("Files", item.fileRefs)}
-        ${intakeRefList("Artifacts", item.artifactRefs)}
-      </section>
-      <section aria-labelledby="intake-history-heading">
-        <h4 id="intake-history-heading">
+      <section aria-labelledby="intake-history-heading-${escapeHtml(item.id)}">
+        <h4 id="intake-history-heading-${escapeHtml(item.id)}">
           History <small>(newest first)</small>
         </h4>
         <ol class="intake-history">
@@ -756,54 +698,61 @@ export function createInboxSurface(context) {
         </ol>
       </section>
     `;
+  }
 
-    panel.querySelector("[data-close-intake]").addEventListener("click", () => {
-      navigateCanonicalWorkspace("/inbox");
+  function bindIntakeItem(row, item) {
+    const detail = row.querySelector(".intake-detail") || row;
+    row.querySelector("[data-open-intake-item]")?.addEventListener("click", () => {
+      if (state.intake.selectedId === item.id) {
+        navigateCanonicalWorkspace("/inbox");
+        return;
+      }
+      navigateCanonicalWorkspace("/inbox", { intakeId: item.id });
     });
-
-    panel
+    detail.querySelector("[data-open-finance]")?.addEventListener("click", () => {
+      navigateCanonicalWorkspace("/bookkeeping");
+    });
+    detail
       .querySelectorAll("[data-open-intake-task]")
       .forEach((button) =>
         button.addEventListener("click", () =>
           openTaskPanel(button.dataset.openIntakeTask),
         ),
       );
-    panel
+    detail
       .querySelectorAll("[data-open-intake-card]")
       .forEach((button) =>
         button.addEventListener("click", () =>
           openCardPanel(button.dataset.openIntakeCard),
         ),
       );
-    panel.querySelectorAll("[data-open-intake-assistant]").forEach((button) =>
+    detail.querySelectorAll("[data-open-intake-assistant]").forEach((button) =>
       button.addEventListener("click", () => {
         navigateCanonicalWorkspace("/assistants", {
           assistantJobId: button.dataset.openIntakeAssistant,
         });
       }),
     );
-    panel
-      .querySelectorAll("[data-intake-submit]")
-      .forEach((button) => {
-        bindIntakeDraft(item, button);
-        button.addEventListener("click", () =>
-          submitIntakeAction(panel, item, button.dataset.intakeSubmit),
-        );
-      });
-    panel.querySelectorAll("[data-intake-reload]").forEach((button) => {
+    detail.querySelectorAll("[data-intake-submit]").forEach((button) => {
+      bindIntakeDraft(item, button);
+      button.addEventListener("click", () =>
+        submitIntakeAction(detail, item, button.dataset.intakeSubmit),
+      );
+    });
+    detail.querySelectorAll("[data-intake-reload]").forEach((button) => {
       button.addEventListener("click", () => {
         void context.reloadIntakeAction(item);
       });
     });
-    panel.querySelectorAll("[data-intake-discard]").forEach((button) => {
+    detail.querySelectorAll("[data-intake-discard]").forEach((button) => {
       button.addEventListener("click", () => context.discardIntakeAction(item));
     });
     if (state.intakeMutation.itemId === item.id && state.intakeMutation.error) {
-      const error = panel.querySelector("[data-intake-inline-error]");
+      const error = detail.querySelector("[data-intake-inline-error]");
       const focusField = state.intakeMutation.focus?.field;
       scheduleAnimationFrame(() => {
         const target = focusField
-          ? [...panel.querySelectorAll("input,select,textarea")].find(
+          ? [...detail.querySelectorAll("input,select,textarea")].find(
               (field) => field.name === focusField,
             )
           : error;
@@ -811,7 +760,6 @@ export function createInboxSurface(context) {
         if (fallback?.isConnected) fallback.focus();
       });
     }
-    return panel;
   }
 
   return {

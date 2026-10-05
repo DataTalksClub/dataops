@@ -1,4 +1,5 @@
-import { processInvoiceIntake } from '../invoices/service';
+import { isInvoiceIntakeRoute } from '../invoices/intakeRoute';
+import { processInvoiceIntake, resolveInvoiceIntakeForInbox } from '../invoices/service';
 import { createHash, timingSafeEqual } from 'crypto';
 import { CopyObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
@@ -341,7 +342,7 @@ export async function handleEmailDocumentIntake(event: LambdaEvent, client: Dyna
     audit('idempotency-conflict', credential, correlation, documents.length);
     return safeError(409, 'idempotency-conflict', 'idempotency-conflict', 'Message identity was already used with different immutable content');
   }
-  if (existing?.status === 'new' && (existing.artifactRefs || []).length === documents.length) {
+  if (existing && emailDocumentsAlreadyImported(existing, documents)) {
     audit('duplicate', credential, correlation, documents.length);
     return response(200, { status: 'duplicate', intakeItemId: existing.id, artifacts: publicArtifacts(existing.artifactRefs || []) });
   }
@@ -404,7 +405,7 @@ export async function handleEmailDocumentIntake(event: LambdaEvent, client: Dyna
     audit('idempotency-conflict', credential, correlation, documents.length);
     return safeError(409, 'idempotency-conflict', 'idempotency-conflict', 'Message identity was already used with different immutable content');
   }
-  if (!reservation.created && item.status === 'new' && (item.artifactRefs || []).length === documents.length) {
+  if (!reservation.created && emailDocumentsAlreadyImported(item, documents)) {
     audit('duplicate', credential, correlation, documents.length);
     return response(200, { status: 'duplicate', intakeItemId: item.id, artifacts: publicArtifacts(item.artifactRefs || []) });
   }
@@ -427,7 +428,7 @@ export async function handleEmailDocumentIntake(event: LambdaEvent, client: Dyna
   try {
     item = await updateIntakeItem(client, item.id, {
       artifactRefs: refs,
-      status: failures.length ? 'blocked' : 'new',
+      status: failures.length ? 'blocked' : isInvoiceIntakeRoute(recipientRoute) ? 'archived' : 'new',
       blockedReason: failures.length ? 'One or more email documents require an exact retry' : null,
       history: [...(item.history || []), {
         id: crypto.randomUUID(),
@@ -444,12 +445,22 @@ export async function handleEmailDocumentIntake(event: LambdaEvent, client: Dyna
     audit('partial-failure', credential, correlation, documents.length, failures.length);
     return response(207, { status: 'partial-failure', intakeItemId: item.id, artifacts: publicArtifacts(refs), failures });
   }
-  if (['invoice','receipts','invoice-attachment','invoice-pdf'].includes(recipientRoute)) {
+  if (isInvoiceIntakeRoute(recipientRoute) && !failures.length) {
     try { await processInvoiceIntake(client, item.id); }
     catch { /* Import acknowledgement remains distinct from review/publication. Reprocess from Finance. */ }
+    const latest = await getIntakeItem(client, item.id);
+    if (latest && latest.status !== 'archived') {
+      try { await resolveInvoiceIntakeForInbox(client, latest); }
+      catch { /* Inbox resolution is best-effort after a successful import. */ }
+    }
   }
   audit(reservation.created ? 'accepted' : 'resumed', credential, correlation, documents.length);
   return response(reservation.created ? 202 : 200, { status: reservation.created ? 'accepted' : 'duplicate', intakeItemId: item.id, artifacts: publicArtifacts(refs) });
+}
+
+function emailDocumentsAlreadyImported(item: IntakeItem | null, documents: EmailDocument[]): boolean {
+  if (!item || item.status === 'blocked') return false;
+  return (item.artifactRefs || []).length === documents.length;
 }
 
 async function importDocumentWithClient(item: IntakeItem, document: EmailDocument, index: number, rules: SourceRule[], client: DynamoDBDocumentClient): Promise<ArtifactRecord> {

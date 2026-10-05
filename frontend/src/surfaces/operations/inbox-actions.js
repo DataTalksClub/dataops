@@ -2,6 +2,7 @@ import {
   reportFieldValidation,
   setFieldError,
 } from "../operations-overview.js";
+import { isInvoiceRouteIntake } from "./inbox-finance.js";
 
 export function createInboxActions(context) {
   const {
@@ -35,7 +36,7 @@ export function createInboxActions(context) {
   } = context;
   const { refreshIntakeSnapshot, renderInboxSurface } = context;
 
-  function intakeActionMarkup(item, cardOptions) {
+  function intakeActionMarkup(item, cardOptions, options = {}) {
     const status = String(item.status || "new");
     const due =
       status === "blocked" &&
@@ -50,18 +51,17 @@ export function createInboxActions(context) {
         : { values: {}, error: "", status: "" };
     const values = mutation.values || {};
     const value = (name, fallback = "") => escapeHtml(values[name] ?? fallback);
-    const disclosure = (
+    const actionForm = (
       action,
       label,
       fields,
       primary = false,
       destructive = false,
     ) => `
-      <details
-        class="intake-action-disclosure ${primary ? "is-primary" : ""} ${destructive ? "is-destructive" : ""}"
-        ${mutation.action === action ? "open" : ""}
+      <div
+        class="intake-action ${primary ? "is-primary" : ""} ${destructive ? "is-destructive" : ""}"
+        data-intake-action="${action}"
       >
-        <summary>${escapeHtml(label)}</summary>
         <div class="intake-action-fields">
           ${fields}
           <button
@@ -73,8 +73,17 @@ export function createInboxActions(context) {
             ${escapeHtml(mutation.busy && mutation.action === action ? `${label}…` : label)}
           </button>
         </div>
-      </details>
+      </div>
     `;
+    if (isInvoiceRouteIntake(item)) {
+      return `
+        <section class="intake-finance-handoff">
+          <h4>This is Finance work</h4>
+          <p>Forwarded invoices and receipts are reviewed in Finance, not converted into tasks.</p>
+          <button type="button" class="primary-button" data-open-finance>Open Finance</button>
+        </section>
+      `;
+    }
     if (resolved) {
       return `
         <section class="intake-resolution-summary">
@@ -99,7 +108,7 @@ export function createInboxActions(context) {
             : "";
       const createAssistant =
         item.assistantReadiness?.status === "ready" && !assistantJobId
-          ? disclosure(
+          ? actionForm(
               "prepare-assistant",
               "Create assistant draft",
               `
@@ -125,30 +134,13 @@ export function createInboxActions(context) {
         ${intakeMutationFeedback(item)}
       `;
     }
-    const convert = disclosure(
+    const convert = actionForm(
       "convert-task",
       "Convert to task",
-      `
-        <label>
-          Task date
-          <input name="date" type="date" value="${value("date", todayIsoDate())}">
-        </label>
-        <label>
-          Assignee
-          <input
-            name="assigneeId"
-            value="${value("assigneeId", item.assigneeId || "")}"
-            placeholder="User id"
-          >
-        </label>
-        <label>
-          Card
-          <select name="cardId">${cardOptions}</select>
-        </label>
-      `,
+      "",
       true,
     );
-    const attach = disclosure(
+    const attach = actionForm(
       "attach",
       "Attach to existing work",
       `
@@ -166,7 +158,7 @@ export function createInboxActions(context) {
         </label>
       `,
     );
-    const block = disclosure(
+    const block = actionForm(
       "block",
       "Block and schedule follow-up",
       `
@@ -189,7 +181,7 @@ export function createInboxActions(context) {
         </label>
       `,
     );
-    const follow = disclosure(
+    const follow = actionForm(
       "follow-up-sent",
       "Record follow-up sent",
       `
@@ -209,7 +201,7 @@ export function createInboxActions(context) {
       `,
       due,
     );
-    const response = disclosure(
+    const response = actionForm(
       "response-received",
       "Record response received",
       `
@@ -220,7 +212,7 @@ export function createInboxActions(context) {
       `,
       status === "blocked" && !due,
     );
-    const assistant = disclosure(
+    const assistant = actionForm(
       "prepare-assistant",
       "Prepare assistant input",
       `
@@ -246,52 +238,44 @@ export function createInboxActions(context) {
         <input name="reason" value="${value("reason")}" required>
       </label>
     `;
-    const destructive = `
-      <details class="intake-secondary-actions">
-        <summary>Resolution actions</summary>
-        ${disclosure(
-          "mark-duplicate",
-          "Mark duplicate",
-          `
-            <label>
-              Duplicate of
-              <input
-                name="duplicateOfIntakeItemId"
-                value="${value("duplicateOfIntakeItemId")}"
-                required
-              >
-            </label>
-            ${reasonField}
-          `,
-          false,
-          true,
-        )}
-        ${disclosure("ignore", "Ignore item", reasonField, false, true)}
-        ${disclosure("archive", "Archive item", reasonField, false, true)}
-      </details>
-    `;
-    const otherActions =
-      status === "blocked"
+    const otherActions = options.compact
+      ? status === "blocked"
+        ? due
+          ? follow
+          : response
+        : convert
+      : status === "blocked"
         ? `
           ${due ? follow : response}
-          <details class="intake-secondary-actions">
-            <summary>Other valid actions</summary>
-            ${due ? response : follow}
-          </details>
+          ${due ? response : follow}
         `
         : `
           ${convert}
-          <details class="intake-secondary-actions">
-            <summary>Other valid actions</summary>
-            ${attach}
-            ${block}
-            ${assistant}
-          </details>
-          ${destructive}
+          ${attach}
+          ${block}
+          ${assistant}
+          ${actionForm(
+            "mark-duplicate",
+            "Mark duplicate",
+            `
+              <label>
+                Duplicate of
+                <input
+                  name="duplicateOfIntakeItemId"
+                  value="${value("duplicateOfIntakeItemId")}"
+                  required
+                >
+              </label>
+              ${reasonField}
+            `,
+            false,
+            true,
+          )}
+          ${actionForm("ignore", "Ignore item", reasonField, false, true)}
+          ${actionForm("archive", "Archive item", reasonField, false, true)}
         `;
     return `
       <section class="intake-next-actions">
-        <h4>Next action</h4>
         ${otherActions}
         ${intakeMutationFeedback(item)}
       </section>
@@ -329,22 +313,23 @@ export function createInboxActions(context) {
 
   async function submitIntakeAction(panel, item, action) {
     if (state.intakeMutation.busy) return;
-    const details = panel
+    const form = panel
       .querySelector(`[data-intake-submit="${cssEscape(action)}"]`)
-      ?.closest("details");
-    if (!details) return;
-    details.querySelectorAll("[aria-invalid]").forEach((field) => {
+      ?.closest("[data-intake-action]");
+    if (!form) return;
+    form.querySelectorAll("[aria-invalid]").forEach((field) => {
       field.removeAttribute("aria-invalid");
       setFieldError(field, "");
     });
     const values = Object.fromEntries(
-      [...details.querySelectorAll("input,select,textarea")].map((field) => [
+      [...form.querySelectorAll("input,select,textarea")].map((field) => [
         field.name,
         field.value.trim(),
       ]),
     );
+    if (action === "convert-task") values.date = values.date || todayIsoDate();
     const missing = [
-      ...details.querySelectorAll(
+      ...form.querySelectorAll(
         "input[required],select[required],textarea[required]",
       ),
     ].find((field) => !values[field.name]);
@@ -551,6 +536,7 @@ export function createInboxActions(context) {
         block: "Blocked for a response",
         attached: "Attached to work",
         "converted-to-task": "Converted to task",
+        "handed-off-to-finance": "Handed off to Finance",
         duplicate: "Marked as duplicate",
         blocked: "Blocked for a response",
         "follow-up-sent": "Follow-up sent",

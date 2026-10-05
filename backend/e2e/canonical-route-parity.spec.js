@@ -169,21 +169,21 @@ test.describe('issue 156 canonical route and operator parity', () => {
   test('keeps Inbox open, close, Back, and Forward behavior canonical', async ({ page, request }) => {
     const fixture = await createFixtures(request);
     await page.goto('/#/inbox');
-    await page.locator('.intake-row', { hasText: fixture.intake.title }).click();
+    await page.locator('.intake-row', { hasText: fixture.intake.title }).locator('.intake-row-main').click();
     await expect(page).toHaveURL(new RegExp(`/#/inbox\\?intakeId=${fixture.intake.id}$`));
-    await page.locator('[data-close-intake]').click();
+    await page.locator('.intake-row.is-selected .intake-row-main').click();
     await expect(page).toHaveURL(/\/#\/inbox$/);
     await page.goBack();
-    await expect(page.locator('.intake-detail h3')).toHaveText(fixture.intake.title);
+    await expect(page.locator('.intake-row.is-selected')).toContainText(fixture.intake.title);
     await page.goForward();
-    await expect(page.locator('.intake-detail .ops-honest-state')).toBeVisible();
+    await expect(page.locator('.intake-row.is-selected')).toHaveCount(0);
   });
 
   test('keeps exact entities honest, filtered intake exact, and task/workflow mismatch recoverable', async ({ page, request }, testInfo) => {
     const fixture = await createFixtures(request);
     await page.goto(`/#/inbox?intakeId=${fixture.filteredOut.id}`);
-    await expect(page.locator('.intake-detail h3')).toHaveText(fixture.filteredOut.title);
-    await expect(page.locator('.intake-row', { hasText: fixture.filteredOut.title })).toHaveCount(0);
+    await expect(page.locator('.intake-row.is-selected')).toContainText(fixture.filteredOut.title);
+    await expect(page.locator('.intake-row.is-selected')).toContainText('read-only');
     await page.goto(`/#/cards?cardId=${fixture.contextCard.id}&taskId=${fixture.task.id}`);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.task.id);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.contextCard.id);
@@ -668,34 +668,36 @@ test.describe('issue 156 canonical route and operator parity', () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/#/inbox?intakeId=${fixture.blocked.id}`);
-    await expect(page.locator('.intake-action-disclosure.is-primary > summary')).toHaveText('Record follow-up sent');
-    await expect(page.locator('time[datetime]').first()).toBeVisible();
+    const blockedRow = page.locator('.intake-row.is-selected');
+    await expect(blockedRow.getByRole('button', { name: 'Record follow-up sent' })).toBeVisible();
+    await expect(blockedRow.locator('time[datetime]').first()).toBeVisible();
     await expectNoSeriousA11y(page, '.ops-inbox');
     await page.screenshot({ path: path.join(SHOTS, 'desktop-inbox-blocked-actions-history-1440x900.png'), fullPage: true });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`/#/inbox?intakeId=${fixture.intake.id}`);
-    await expect(page.locator('.intake-action-disclosure.is-primary > summary')).toHaveText('Convert to task');
-    await expect(page.locator('.intake-detail h3')).toBeInViewport();
-    await expect(page.locator('.intake-action-disclosure.is-primary > summary')).toBeInViewport();
+    const selected = page.locator('.intake-row.is-selected');
+    await expect(selected.getByRole('button', { name: 'Convert to task' })).toBeVisible();
+    await expect(selected).toBeInViewport();
+    await expect(selected.getByRole('button', { name: 'Convert to task' })).toBeInViewport();
     await expectNoHorizontalOverflow(page);
     await expectNoSeriousA11y(page, '.ops-inbox');
     await page.screenshot({ path: path.join(SHOTS, 'mobile-inbox-new-primary-390x844.png') });
     await page.goto(`/#/inbox?intakeId=${triaged.id}`);
-    await expect(page.locator('.intake-action-disclosure.is-primary > summary')).toHaveText('Convert to task');
+    await expect(page.locator('.intake-row.is-selected').getByRole('button', { name: 'Convert to task' })).toBeVisible();
     await page.goto(`/#/inbox?intakeId=${futureBlocked.id}`);
-    await expect(page.locator('.intake-action-disclosure.is-primary > summary')).toHaveText('Record response received');
+    await expect(page.locator('.intake-row.is-selected').getByRole('button', { name: 'Record response received' })).toBeVisible();
     await page.goto(`/#/inbox?intakeId=${attached.id}`);
-    await expect(page.getByRole('button', { name: 'Continue task' })).toBeVisible();
+    await expect(page.locator('.intake-row.is-selected').getByRole('button', { name: 'Continue task' })).toBeVisible();
     await page.goto(`/#/inbox?intakeId=${converted.id}`);
-    await expect(page.getByRole('button', { name: 'Continue task' })).toBeVisible();
+    await expect(page.locator('.intake-row.is-selected').getByRole('button', { name: 'Continue task' })).toBeVisible();
     await page.goto(`/#/inbox?intakeId=${assistantReady.id}`);
-    await expect(page.locator('.intake-action-disclosure.is-primary > summary')).toHaveText('Create assistant draft');
+    await expect(page.locator('.intake-row.is-selected').getByRole('button', { name: 'Create assistant draft' })).toBeVisible();
     await page.goto(`/#/inbox?intakeId=${resolved.id}`);
-    await expect(page.locator('.intake-resolution-summary')).toContainText('read-only');
-    await expect(page.locator('[data-intake-submit]')).toHaveCount(0);
+    await expect(page.locator('.intake-row.is-selected .intake-resolution-summary')).toContainText('read-only');
+    await expect(page.locator('.intake-row.is-selected [data-intake-submit]')).toHaveCount(0);
     await page.goto(`/#/inbox?intakeId=${fixture.blocked.id}`);
-    await page.locator('.intake-action-disclosure.is-primary > summary').click();
+    await expect(page.locator('.intake-row.is-selected').getByRole('button', { name: 'Record follow-up sent' })).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await expectNoSeriousA11y(page, '.ops-inbox');
     await page.screenshot({ path: path.join(SHOTS, 'mobile-inbox-blocked-follow-up-history-390x844.png') });

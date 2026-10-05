@@ -66,6 +66,7 @@
     "src/surfaces/operations/device.js",
     "src/surfaces/operations/inbox-actions.js",
     "src/surfaces/operations/inbox-capture.js",
+    "src/surfaces/operations/inbox-finance.js",
     "src/surfaces/operations/inbox.js",
     "src/surfaces/operations/index.js",
     "src/surfaces/planning.js",

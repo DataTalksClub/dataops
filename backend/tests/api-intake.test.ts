@@ -194,6 +194,52 @@ describe('intake API', () => {
     assert.ok(persisted?.history.some((event) => event.action === 'archived'));
   });
 
+  it('excludes invoice-route email documents from the Inbox list and still returns the source record', async () => {
+    const invoice = JSON.parse((await request('POST', '/api/intake', {
+      source: 'email',
+      title: 'Synthetic forwarded receipt',
+      note: 'Public-safe invoice-route fixture',
+      metadata: { recipientRoute: 'invoice' },
+    })).body).item;
+    const receipts = JSON.parse((await request('POST', '/api/intake', {
+      source: 'email',
+      title: 'Synthetic receipts mailbox',
+      note: 'Public-safe receipts-route fixture',
+      metadata: { recipientRoute: 'receipts' },
+    })).body).item;
+    const attachment = JSON.parse((await request('POST', '/api/intake', {
+      source: 'email',
+      title: 'Synthetic invoice attachment mailbox',
+      note: 'Public-safe invoice-attachment fixture',
+      metadata: { recipientRoute: 'invoice-attachment' },
+    })).body).item;
+    const pdfRoute = JSON.parse((await request('POST', '/api/intake', {
+      source: 'email',
+      title: 'Synthetic invoice PDF mailbox',
+      note: 'Public-safe invoice-pdf fixture',
+      metadata: { recipientRoute: 'invoice-pdf' },
+    })).body).item;
+    const adHoc = JSON.parse((await request('POST', '/api/intake', {
+      source: 'manual',
+      title: 'Ad-hoc operator note',
+      note: 'This stays in Inbox',
+    })).body).item;
+
+    const list = await request('GET', '/api/intake');
+    assert.strictEqual(list.statusCode, 200);
+    const ids = JSON.parse(list.body).items.map((item: { id: string }) => item.id);
+    assert.ok(ids.includes(adHoc.id));
+    assert.ok(!ids.includes(invoice.id));
+    assert.ok(!ids.includes(receipts.id));
+    assert.ok(!ids.includes(attachment.id));
+    assert.ok(!ids.includes(pdfRoute.id));
+
+    const detail = await request('GET', `/api/intake/${invoice.id}`);
+    assert.strictEqual(detail.statusCode, 200);
+    assert.strictEqual(JSON.parse(detail.body).item.id, invoice.id);
+    assert.strictEqual(JSON.parse(detail.body).item.metadata.recipientRoute, 'invoice');
+  });
+
   it('requires a concrete follow-up path when blocking intake and exposes due standalone lookup', async () => {
     const due = JSON.parse((await request('POST', '/api/intake', {
       title: 'Due blocked intake',

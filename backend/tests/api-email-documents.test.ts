@@ -127,7 +127,9 @@ describe('POST /api/v1/intake/email-documents', () => {
     assert.strictEqual(s3.copies.length, 1);
     const item = (await listIntakeItems(await getClient(), { source: 'email' })).find((candidate) => candidate.id === JSON.parse(first.body).intakeItemId);
     assert.strictEqual(item?.artifactRefs.length, 1);
+    assert.strictEqual(item?.status, 'archived');
     assert.strictEqual(item?.history.filter((entry) => entry.action === 'email-document-completed').length, 1);
+    assert.ok(item?.history.some((entry) => entry.action === 'handed-off-to-finance'));
 
     const conflict = request('concurrent-109', [attachment('concurrent.pdf')]);
     conflict.body = conflict.body.replace('Mail concurrent-109', 'Changed subject');
@@ -148,8 +150,9 @@ describe('POST /api/v1/intake/email-documents', () => {
     assert.strictEqual(JSON.parse(retry.body).artifacts.length, 2);
     assert.strictEqual(s3.copies.length, 2);
     const item = (await listIntakeItems(await getClient(), { source: 'email' })).find((candidate) => candidate.id === JSON.parse(retry.body).intakeItemId);
-    assert.strictEqual(item?.status, 'new');
+    assert.strictEqual(item?.status, 'archived');
     assert.strictEqual(item?.blockedReason, undefined);
+    assert.ok(item?.history.some((entry) => entry.action === 'handed-off-to-finance'));
   });
 
   it('repairs a missing intake link from the completed artifact after the transfer source is gone', async () => {
@@ -177,8 +180,9 @@ describe('POST /api/v1/intake/email-documents', () => {
     assert.strictEqual(JSON.parse(retry.body).artifacts.length, 1);
     assert.strictEqual(s3.copies.length, 1);
     const item = (await listIntakeItems(realClient, { source: 'email' })).find((candidate) => candidate.id === JSON.parse(retry.body).intakeItemId);
-    assert.strictEqual(item?.status, 'new');
+    assert.strictEqual(item?.status, 'archived');
     assert.strictEqual(item?.artifactRefs.length, 1);
+    assert.ok(item?.history.some((entry) => entry.action === 'handed-off-to-finance'));
   });
 
   it('rejects authentication, schema, payload, allowlist, metadata, and object limits without unsafe persistence', async () => {
@@ -325,5 +329,35 @@ describe('POST /api/v1/intake/email-documents', () => {
     const result = await handler({ httpMethod: 'GET', path: `/api/artifacts/${artifactId}/download` }, {});
     assert.strictEqual(result.statusCode, 200);
     assert.deepStrictEqual(JSON.parse(result.body), { downloadUrl: 'https://signed.example.test/private', expiresIn: 300 });
+  });
+
+  it('hands invoice-route mail to Finance and keeps exact replay out of Inbox', async () => {
+    s3.add('finance-handoff.pdf');
+    const event = request('finance-handoff-244', [attachment('finance-handoff.pdf')], 'invoice');
+    const accepted = await handler(event, {});
+    assert.strictEqual(accepted.statusCode, 202);
+    const intakeItemId = JSON.parse(accepted.body).intakeItemId;
+    const stored = (await listIntakeItems(await getClient(), { source: 'email' })).find((candidate) => candidate.id === intakeItemId);
+    assert.strictEqual(stored?.status, 'archived');
+    assert.strictEqual(stored?.resolutionReason, 'Handed off to Finance for invoice review');
+    assert.ok(stored?.history.some((entry) => entry.action === 'handed-off-to-finance'));
+
+    const inbox = await handler({ httpMethod: 'GET', path: '/api/intake', headers: { 'x-user-id': 'operator-test' } }, {});
+    assert.strictEqual(inbox.statusCode, 200);
+    assert.ok(!JSON.parse(inbox.body).items.some((item: { id: string }) => item.id === intakeItemId));
+
+    const detail = await handler({ httpMethod: 'GET', path: `/api/intake/${intakeItemId}`, headers: { 'x-user-id': 'operator-test' } }, {});
+    assert.strictEqual(detail.statusCode, 200);
+    assert.strictEqual(JSON.parse(detail.body).item.status, 'archived');
+
+    const replay = await handler(event, {});
+    assert.strictEqual(replay.statusCode, 200);
+    assert.strictEqual(JSON.parse(replay.body).status, 'duplicate');
+    const afterReplay = (await listIntakeItems(await getClient(), { source: 'email' })).find((candidate) => candidate.id === intakeItemId);
+    assert.strictEqual(afterReplay?.status, 'archived');
+    assert.strictEqual(
+      afterReplay?.history.filter((entry) => entry.action === 'email-document-completed').length,
+      1,
+    );
   });
 });

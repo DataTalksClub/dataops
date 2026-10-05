@@ -55,9 +55,10 @@ function selectorDataset(selector) {
 }
 
 function intakeDetails(action) {
-  const details = decorateLazyQueries(new FakeElement("details"));
-  const fieldValues =
-    {
+  const details = decorateLazyQueries(new FakeElement("div"));
+  details.dataset.intakeAction = action;
+  details.setAttribute("data-intake-action", action);
+  const fieldValues = {
       attach: { taskId: "task-existing", cardId: "", note: "Attach safely" },
       "convert-task": {
         date: "2026-08-12",
@@ -113,20 +114,6 @@ function intakeDetails(action) {
     fields.map((field) => [field.name, field]),
   );
   details.append(...fields);
-  if (
-    [
-      "attach",
-      "block",
-      "prepare-assistant",
-      "mark-duplicate",
-      "ignore",
-      "archive",
-    ].includes(action)
-  ) {
-    const outer = decorateLazyQueries(new FakeElement("details"));
-    outer.className = "intake-secondary-actions";
-    outer.append(details);
-  }
   return details;
 }
 
@@ -170,7 +157,9 @@ function decorateLazyQueries(element) {
           intakeDetailsByAction.get(data.value) || intakeDetails(data.value);
         intakeDetailsByAction.set(data.value, details);
         created.closest = (candidate) =>
-          candidate === "details" ? details : null;
+          candidate === "[data-intake-action]" || candidate === "details"
+            ? details
+            : null;
       }
     }
     if (selector.includes("data-intake-create-class"))
@@ -199,7 +188,10 @@ function decorateLazyQueries(element) {
         const details =
           intakeDetailsByAction.get(match[1]) || intakeDetails(match[1]);
         intakeDetailsByAction.set(match[1], details);
-        node.closest = (selector) => (selector === "details" ? details : null);
+        node.closest = (selector) =>
+          selector === "[data-intake-action]" || selector === "details"
+            ? details
+            : null;
       }
       return node;
     });
@@ -881,13 +873,14 @@ describe("Operations surface boundary", () => {
     assert.equal(retry.disabled, true);
   });
 
-  test("filters Inbox new, blocked, and resolved items while preserving canonical detail navigation", async () => {
+  test("filters Inbox actionable and dismissed items as a single list", async () => {
     const items = [
-      { id: "new-1", title: "New request", status: "new" },
+      { id: "new-1", title: "New request", status: "new", source: "manual" },
       {
         id: "blocked-1",
         title: "Waiting request",
         status: "blocked",
+        source: "telegram",
         waitingFor: "Sponsor",
         followUpAt: "2026-08-10",
       },
@@ -895,6 +888,7 @@ describe("Operations surface boundary", () => {
         id: "resolved-1",
         title: "Archived request",
         status: "archived",
+        source: "manual",
         resolutionReason: "Historical",
       },
     ];
@@ -904,27 +898,81 @@ describe("Operations surface boundary", () => {
         intake: {
           ...operationState().intake,
           items,
-          filter: "new",
+          filter: "actionable",
         },
       },
     });
     harness.api.renderInboxSurface();
-    assert.equal(findAllByClass(harness.documentList, "intake-row").length, 1);
-    await findByText(harness.documentList, "Blocked", "button").click();
-    assert.equal(harness.state.intake.filter, "blocked");
+    assert.equal(findAllByClass(harness.documentList, "intake-row").length, 2);
+    assert.match(harness.documentList.textContent, /Untriaged inputs/);
+    assert.equal(harness.documentList.querySelector(".intake-layout"), null);
+    assert.equal(
+      harness.documentList.querySelector(".intake-action-disclosure"),
+      null,
+    );
+    await findByText(harness.documentList, "Dismissed", "button").click();
+    assert.equal(harness.state.intake.filter, "dismissed");
     assert.deepEqual(harness.navigations.at(-1), {
       path: "/inbox",
       params: {},
       options: {},
     });
 
-    harness.state.intake.filter = "resolved";
+    harness.state.intake.filter = "dismissed";
     harness.state.intake.selectedId = "resolved-1";
     harness.api.renderInboxSurface();
+    assert.equal(findAllByClass(harness.documentList, "intake-row").length, 1);
     const detail = harness.documentList.querySelector(".intake-detail");
     assert.match(detail.innerHTML, /This item is archived and read-only/);
     assert.match(detail.innerHTML, /Historical/);
     assert.doesNotMatch(detail.innerHTML, /Convert to task/);
+  });
+
+  test("keeps invoice-route intake out of the Inbox list and points deep links to Finance", async () => {
+    const invoice = {
+      id: "invoice-1",
+      title: "Synthetic forwarded receipt",
+      status: "new",
+      source: "email",
+      metadata: { recipientRoute: "invoice" },
+    };
+    const note = {
+      id: "note-1",
+      title: "Ad-hoc operator note",
+      status: "new",
+      source: "manual",
+      sourceReceivedAt: "2026-08-12T10:00:00.000Z",
+    };
+    const harness = createOperationsHarness({
+      state: {
+        ...operationState(),
+        intake: {
+          ...operationState().intake,
+          items: [note],
+          financeHandoff: invoice,
+          selectedId: invoice.id,
+        },
+        workspaceEntity: {
+          kind: "intake",
+          id: invoice.id,
+          status: "finance-owned",
+        },
+      },
+    });
+    harness.api.renderInboxSurface();
+    const titles = findAllByClass(harness.documentList, "intake-row").map(
+      (row) => row.textContent,
+    );
+    assert.ok(titles.some((text) => text.includes("Ad-hoc operator note")));
+    const details = findAllByClass(harness.documentList, "intake-detail")
+      .map((node) => node.innerHTML)
+      .join("\n");
+    assert.match(details, /This is Finance work/);
+    assert.match(details, /Open Finance/);
+    const finance = findAllByClass(harness.documentList, "intake-detail").find(
+      (node) => /This is Finance work/.test(node.innerHTML),
+    );
+    assert.doesNotMatch(finance.innerHTML, /Convert to task/);
   });
 
   test("reads Inbox captured moments on the Berlin business day, not the UTC date", async () => {
@@ -951,13 +999,13 @@ describe("Operations surface boundary", () => {
               followUpAt: "2026-08-15",
             },
           ],
-          filter: "all",
+          filter: "actionable",
         },
       },
     });
     harness.api.renderInboxSurface();
     const rows = findAllByClass(harness.documentList, "intake-row")
-      .map((row) => row.innerHTML)
+      .map((row) => row.textContent)
       .join("\n");
     assert.match(rows, /Captured 13 Aug/);
     assert.doesNotMatch(rows, /Captured 12 Aug/);
@@ -1070,7 +1118,7 @@ describe("Operations surface boundary", () => {
 
     harness.state.intake = {
       ...harness.state.intake,
-      filter: "blocked",
+      filter: "dismissed",
       cardsLoaded: true,
       cardsComplete: true,
       cardsError: "",
@@ -1079,7 +1127,7 @@ describe("Operations surface boundary", () => {
     surface = harness.documentList;
     summary = surface.querySelector('[data-summary-id="inbox"]');
     assert.equal(summary, null, "successful loads do not repeat in a READY sentence");
-    assert.ok(findByText(surface, "No matching intake", "strong"));
+    assert.ok(findByText(surface, "No dismissed intake", "strong"));
 
     harness.state.intake.filter = "actionable";
     harness.state.intake.selectedId = item.id;
@@ -1089,7 +1137,7 @@ describe("Operations surface boundary", () => {
       .querySelector(".intake-detail")
       .querySelectorAll("[data-intake-submit]")
       .find((button) => button.dataset.intakeSubmit === "block");
-    const details = block.closest("details");
+    const details = block.closest("[data-intake-action]");
     details.fields.reason.value = "Waiting for confirmation";
     const firstAttempt = block.click();
     await nextTicks();
@@ -1134,7 +1182,7 @@ describe("Operations surface boundary", () => {
       .querySelector(".intake-detail")
       .querySelectorAll("[data-intake-submit]")
       .find((button) => button.dataset.intakeSubmit === "block");
-    const details = block.closest("details");
+    const details = block.closest("[data-intake-action]");
     assert.ok((block.listeners.get("click") || []).length > 0);
     assert.equal(details.fields.reason.value, "");
     await block.click();
@@ -1160,7 +1208,7 @@ describe("Operations surface boundary", () => {
       .querySelector(".intake-detail")
       .querySelectorAll("[data-intake-submit]")
       .find((button) => button.dataset.intakeSubmit === "block");
-    block.closest("details").fields.reason.value = "Still waiting";
+    block.closest("[data-intake-action]").fields.reason.value = "Still waiting";
     await block.click();
     assert.equal(
       harness.state.intakeMutation.error,
@@ -1196,19 +1244,14 @@ describe("Operations surface boundary", () => {
     const initialBlock = initialDetail
       .querySelectorAll("[data-intake-submit]")
       .find((button) => button.dataset.intakeSubmit === "block");
-    const initialDisclosure = initialBlock.closest("details");
-    const initialDisclosureGroup = initialDisclosure.parentElement;
-    initialDisclosureGroup.open = true;
-    await initialDisclosureGroup.dispatch("toggle");
-    initialDisclosure.open = true;
-    await initialDisclosure.dispatch("toggle");
-    initialDisclosure.fields.reason.value = "Need exact confirmation";
-    initialDisclosure.fields.waitingFor.value = "Named reviewer";
-    initialDisclosure.fields.followUpAt.value = "2026-08-19";
-    await initialDisclosure.fields.reason.dispatch("input");
-    await initialDisclosure.fields.waitingFor.dispatch("input");
-    await initialDisclosure.fields.followUpAt.dispatch("focus");
-    await initialDisclosure.fields.followUpAt.dispatch("change");
+    const initialForm = initialBlock.closest("[data-intake-action]");
+    initialForm.fields.reason.value = "Need exact confirmation";
+    initialForm.fields.waitingFor.value = "Named reviewer";
+    initialForm.fields.followUpAt.value = "2026-08-19";
+    await initialForm.fields.reason.dispatch("input");
+    await initialForm.fields.waitingFor.dispatch("input");
+    await initialForm.fields.followUpAt.dispatch("focus");
+    await initialForm.fields.followUpAt.dispatch("change");
 
     await harness.api.refreshIntakeSnapshot({ rerender: true });
 
@@ -1217,21 +1260,15 @@ describe("Operations surface boundary", () => {
     const refreshedBlock = refreshedDetail
       .querySelectorAll("[data-intake-submit]")
       .find((button) => button.dataset.intakeSubmit === "block");
-    const refreshedDisclosure = refreshedBlock.closest("details");
-    const refreshedDisclosureGroup = refreshedDisclosure.parentElement;
+    const refreshedForm = refreshedBlock.closest("[data-intake-action]");
+    assert.equal(refreshedForm.dataset.intakeAction, "block");
     assert.equal(
-      refreshedDisclosureGroup.classList.contains("intake-secondary-actions"),
-      true,
-    );
-    assert.equal(refreshedDisclosureGroup.open, true);
-    assert.equal(refreshedDisclosure.open, true);
-    assert.equal(
-      refreshedDisclosure.fields.reason.value,
+      refreshedForm.fields.reason.value,
       "Need exact confirmation",
     );
-    assert.equal(refreshedDisclosure.fields.waitingFor.value, "Named reviewer");
-    assert.equal(refreshedDisclosure.fields.followUpAt.value, "2026-08-19");
-    assert.equal(refreshedDisclosure.fields.followUpAt.focused, true);
+    assert.equal(refreshedForm.fields.waitingFor.value, "Named reviewer");
+    assert.equal(refreshedForm.fields.followUpAt.value, "2026-08-19");
+    assert.equal(refreshedForm.fields.followUpAt.focused, true);
 
     await refreshedBlock.click();
     const mutation = harness.requests.find(

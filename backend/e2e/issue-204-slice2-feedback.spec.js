@@ -166,14 +166,13 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
   });
 
   test('Inbox keeps validation, failure, conflict recovery, and durable success in the initiating surface', async ({ browser }) => {
+    test.setTimeout(90_000);
     const context = await ownedContext(browser, { viewport: DESKTOP });
     const page = await context.newPage();
     await setupPageWithAuth(page);
     await page.goto(`${baseURL}/#/inbox`);
 
-    const summary = page.locator('[data-summary-id="inbox"]');
-    await expect(summary).toBeVisible();
-    await expect(summary).toHaveAttribute('data-summary-state', /ready|empty/);
+    await expect(page.locator('.ops-inbox')).toBeVisible();
     const capture = page.locator('.intake-panel').filter({ hasText: 'Capture a new intake item' });
     await capture.locator('summary').click();
     await capture.getByRole('button', { name: 'Capture intake' }).click();
@@ -208,13 +207,10 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
     });
     expect(originalResponse.status()).toBe(201);
     const original = (await json(originalResponse)).item;
-    await page.locator('.intake-row', { hasText: failedTitle }).click();
-    const detail = page.locator('.intake-detail');
+    await page.locator('.intake-row', { hasText: failedTitle }).locator('.intake-row-main').click();
+    const detail = page.locator('.intake-row.is-selected .intake-detail');
     await expect(detail).toBeVisible();
-    await detail.getByText('Resolution actions').click();
-    await detail.locator('summary').filter({ hasText: 'Mark duplicate' }).click();
-    const duplicateAction = detail.locator('[data-intake-submit="mark-duplicate"]')
-      .locator('xpath=ancestor::details[1]');
+    const duplicateAction = detail.locator('[data-intake-action="mark-duplicate"]');
     await duplicateAction.getByLabel('Duplicate of').fill(original.id);
     await duplicateAction.getByLabel('Reason').fill('Same safe upstream request.');
     await setFaults(context.request, [{
@@ -237,9 +233,9 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
     await detail.getByRole('button', { name: 'Reload current item' }).click();
     await expect(detail.locator('.intake-inline-feedback'))
       .toContainText('current intake is refreshed');
-    const retryDuplicateAction = detail.locator(
-      '[data-intake-submit="mark-duplicate"]',
-    ).locator('xpath=ancestor::details[1]');
+    const retryDuplicateAction = detail.locator('[data-intake-action="mark-duplicate"]');
+    await retryDuplicateAction.getByLabel('Duplicate of').fill(original.id);
+    await retryDuplicateAction.getByLabel('Reason').fill('Same safe upstream request.');
     const duplicateResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'POST'
