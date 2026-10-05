@@ -42,6 +42,20 @@ No backwards compatibility:
 - If a change cannot be made atomically, say so and propose the sequencing
   instead of leaving a permanent compatibility layer behind.
 
+Commits and worktrees:
+
+- Land work on `main` as focused commits: one logical change per commit,
+  each verified before it lands. Do not bundle unrelated changes to "get
+  them in".
+- The checkout is shared with other sessions. Never sweep another
+  session's uncommitted work into your commit. Stage only your own hunks;
+  when a file contains both your edits and someone else's, commit
+  hunk-by-hunk and leave their work untouched in the working tree.
+- Verify isolated work in an isolated worktree under `.tmp/worktrees/`,
+  then delete the worktree when the work has landed
+  (`git worktree remove`). Stale worktrees on old bases rot: their
+  uncommitted diffs silently diverge from `main` and cannot land cleanly.
+
 Operational knowledge boundary:
 
 - `DataTalksClub/dataops` stays public and owns product/runtime code, CI/CD,
