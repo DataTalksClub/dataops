@@ -6291,6 +6291,20 @@ body[data-workspace-view="tasks"] .workflow-summary-top .card-stage-static {
   min-width: 0;
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
+}/* Card link rows stay one line tall: restate over the generic
+   .task-required-link label/input grid at matching specificity. */
+body[data-workspace-view="tasks"] .workflow-links-section .task-required-link {
+  gap: 8px;
+  padding: 4px 10px;
+}body[data-workspace-view="tasks"] .workflow-links-section .task-required-link label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}body[data-workspace-view="tasks"] .workflow-links-section .task-required-link input[type="url"] {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  min-height: 30px;
 }body[data-workspace-view="tasks"] .workflow-references-section .task-history-event {
   background: var(--dk-bg-muted);
 }body[data-workspace-view="tasks"] .quick-form-panel {
