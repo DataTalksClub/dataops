@@ -31,22 +31,10 @@ export class BookkeepingItemLockedError extends Error {
     this.name = "BookkeepingItemLockedError";
   }
 }
-const claimKey = (kind: "document" | "transaction", id: string) =>
-  `SPONSOR_FINANCE_CLAIM#${kind}#${id}`;
-async function assertNotClaimed(
-  client: DynamoDBDocumentClient,
-  kind: "document" | "transaction",
-  id: string,
-) {
-  const existing = await client.send(
-    new GetCommand({
-      TableName: TABLE_BOOKKEEPING,
-      Key: { PK: claimKey(kind, id), SK: claimKey(kind, id) },
-      ConsistentRead: true,
-    }),
-  );
-  if (existing.Item) throw new BookkeepingItemLockedError();
-}
+const isConditionalMutationFailure = (error: unknown) =>
+  ((error as Error).name === "TransactionCanceledException" ||
+    (error as Error).name === "ConditionalCheckFailedException" ||
+    (error as Error).message === "Conditional check failed");
 
 const key = (kind: string, id: string) => `${kind.toUpperCase()}#${id}`;
 const documentKey = (id: string) => key("document", id);
@@ -234,20 +222,19 @@ export async function deleteBookkeepingItem(
 ) {
   const existing = await getBookkeepingItem(client, kind, id);
   if (existing) {
-    if (kind === "bookkeeping")
-      await assertNotClaimed(client, "transaction", id);
-    if (kind === "document") await assertNotClaimed(client, "document", id);
     try {
-      await client.send(
-        new DeleteCommand({
-          TableName: TABLE_BOOKKEEPING,
-          Key: { PK: key(kind, id), SK: key(kind, id) },
-          ConditionExpression: "updatedAt = :updatedAt",
-          ExpressionAttributeValues: { ":updatedAt": existing.updatedAt },
-        }),
-      );
+      await transact(client, {
+        TransactItems: [{
+          Delete: {
+            TableName: TABLE_BOOKKEEPING,
+            Key: { PK: key(kind, id), SK: key(kind, id) },
+            ConditionExpression: "updatedAt = :updatedAt",
+            ExpressionAttributeValues: { ":updatedAt": existing.updatedAt },
+          },
+        }],
+      });
     } catch (error) {
-      if ((error as Error).name === "ConditionalCheckFailedException")
+      if (isConditionalMutationFailure(error))
         throw new BookkeepingItemLockedError();
       throw error;
     }
@@ -262,7 +249,6 @@ export async function updateBookkeepingTransaction(
   value: Record<string, unknown>,
 ) {
   const now = new Date().toISOString();
-  await assertNotClaimed(client, "transaction", id);
   const names: Record<string, string> = {};
   const values: Record<string, unknown> = { ":expected": expectedUpdatedAt, ":now": now };
   const sets = Object.entries(value)
@@ -273,18 +259,20 @@ export async function updateBookkeepingTransaction(
       return `#field${index} = :value${index}`;
     });
   try {
-    await client.send(
-      new UpdateCommand({
-        TableName: TABLE_BOOKKEEPING,
-        Key: { PK: key("bookkeeping", id), SK: key("bookkeeping", id) },
-        UpdateExpression: `SET ${sets.join(", ")}, updatedAt = :now`,
-        ConditionExpression: "updatedAt = :expected",
-        ExpressionAttributeNames: names,
-        ExpressionAttributeValues: values,
-      }),
-    );
+    await transact(client, {
+      TransactItems: [{
+        Update: {
+          TableName: TABLE_BOOKKEEPING,
+          Key: { PK: key("bookkeeping", id), SK: key("bookkeeping", id) },
+          UpdateExpression: `SET ${sets.join(", ")}, updatedAt = :now`,
+          ConditionExpression: "updatedAt = :expected",
+          ExpressionAttributeNames: names,
+          ExpressionAttributeValues: values,
+        },
+      }],
+    });
   } catch (error) {
-    if ((error as Error).name === "ConditionalCheckFailedException")
+    if (isConditionalMutationFailure(error))
       throw new BookkeepingItemLockedError();
     throw error;
   }
