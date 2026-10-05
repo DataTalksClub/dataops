@@ -2904,7 +2904,7 @@ body[data-workspace-view="sponsors"] .document-list {
   overflow-y: auto;
   align-content: start;
   gap: 0;
-  padding: 0 18px 20px;
+  padding: 0 14px 16px;
 }.workflow-modal-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -2994,9 +2994,16 @@ body[data-workspace-view="sponsors"] .document-list {
   margin: 0;
   color: var(--dk-text-muted);
   font-size: 12px;
+}.workflow-next-task > span {
+  white-space: nowrap;
 }.workflow-next-task strong {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
   color: var(--dk-text-primary);
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }.workflow-detail-summary .ops-card-chips {
   display: flex;
   grid-column: 1 / -1;
@@ -3011,7 +3018,26 @@ body[data-workspace-view="sponsors"] .document-list {
   font-size: 11px;
 }.workflow-description {
   grid-column: 1 / -1;
-  color: var(--dk-text-primary);
+  color: var(--dk-text-muted);
+}.workflow-description-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}.workflow-description.is-clamped .workflow-description-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}.workflow-description-toggle {
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  color: var(--dk-text-link);
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+}.workflow-description-toggle:hover {
+  text-decoration: underline;
 }.workflow-detail-section {
   display: grid;
   gap: 10px;
@@ -3025,13 +3051,15 @@ body[data-workspace-view="sponsors"] .document-list {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
-  padding: 12px;
+  padding: 8px 10px;
 }.card-template-update-heading,
 .card-template-update-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}.card-template-update-heading strong {
+  font-size: 12px;
 }.card-template-update-status,
 .card-template-update-summary,
 .card-template-update-message,
@@ -3108,18 +3136,26 @@ body[data-workspace-view="sponsors"] .document-list {
   border: var(--card-border-width) solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
-  padding: 8px var(--card-padding-x);
+  padding: 4px var(--card-padding-x);
 }.card-link-label {
-  display: grid;
-  gap: 3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
   color: var(--dk-text-primary);
 }.card-link-name {
+  flex: 0 0 auto;
+  max-width: 40%;
+  overflow: hidden;
   color: var(--dk-text-muted);
   font-size: 11px;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }.workflow-links-section .card-link-input {
-  width: 100%;
+  flex: 1;
+  width: auto;
+  min-width: 0;
   min-height: 30px;
   border-color: transparent;
   background: transparent;
@@ -3151,9 +3187,9 @@ body[data-workspace-view="sponsors"] .document-list {
   display: grid;
   gap: 6px;
 }.card-task-group-title {
-  margin-top: 8px;
+  margin-top: 4px;
   color: var(--dk-text-muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -3161,12 +3197,12 @@ body[data-workspace-view="sponsors"] .document-list {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) minmax(120px, auto);
   align-items: center;
-  gap: 10px;
-  min-height: 44px;
+  gap: 8px;
+  min-height: 34px;
   border: var(--card-border-width) solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
-  padding: 8px var(--card-padding-x);
+  padding: 4px var(--card-padding-x);
   box-shadow: none;
   transition:
     border-color 0.12s ease,
@@ -3215,16 +3251,12 @@ body[data-workspace-view="sponsors"] .document-list {
   line-height: 1.6;
 }.workflow-references-section .task-history-list {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }.workflow-references-section .task-history-event {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
-  padding: 7px 10px;
-}.workflow-assistant-note {
-  margin: 2px 0 0;
-  color: var(--dk-text-muted);
-  font-size: 12px;
+  padding: 4px 8px;
 }.workflow-references-section .task-follow-up-row,
 .workflow-references-section .task-history .task-follow-up-row {
   display: grid;
@@ -3232,7 +3264,7 @@ body[data-workspace-view="sponsors"] .document-list {
   gap: 8px;
 }.workflow-references-section .task-follow-up-row input {
   width: 100%;
-  min-height: 40px;
+  min-height: 32px;
 }.editor-view,
 .create-view {
   width: min(760px, 100%);
@@ -5891,8 +5923,8 @@ body[data-workspace-view="tasks"] .workflow-modal-panel .task-panel-body {
   min-width: 0;
   overflow-y: auto;
   align-content: start;
-  gap: 14px;
-  padding: 18px 20px 24px;
+  gap: 10px;
+  padding: 10px 14px 16px;
   scrollbar-gutter: stable;
 }body[data-workspace-view="tasks"] .task-panel-body > *,
 body[data-workspace-view="tasks"] .workflow-modal-main > * {
@@ -6208,49 +6240,50 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3 {
   height: min(860px, calc(100vh - 32px));
   max-height: calc(100vh - 32px);
 }body[data-workspace-view="tasks"] .workflow-modal-panel > .task-panel-header {
+  min-height: 52px;
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
-  padding: 16px 20px;
+  padding: 10px 16px;
 }body[data-workspace-view="tasks"] .workflow-modal-panel > .task-panel-header strong {
-  font-size: 19px;
+  font-size: 16px;
 }body[data-workspace-view="tasks"] .workflow-modal-layout {
-  gap: 16px;
+  gap: 12px;
 }body[data-workspace-view="tasks"] .workflow-modal-main {
-  gap: 14px;
+  gap: 10px;
 }body[data-workspace-view="tasks"] .workflow-detail-summary {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
-  padding: 14px;
+  padding: 10px;
 }body[data-workspace-view="tasks"] .workflow-summary-top {
   gap: 8px;
 }body[data-workspace-view="tasks"] .workflow-summary-top .workflow-stage-field {
   margin-left: auto;
 }body[data-workspace-view="tasks"] .workflow-summary-top .card-stage-select,
 body[data-workspace-view="tasks"] .workflow-summary-top .card-stage-static {
-  min-height: 40px;
+  min-height: 34px;
   border: 1px solid var(--dk-border-default);
   background: var(--dk-bg-page);
 }body[data-workspace-view="tasks"] .workflow-detail-section {
-  gap: 10px;
+  gap: 8px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
-  padding: 14px;
+  padding: 10px 12px;
 }body[data-workspace-view="tasks"] .workflow-detail-section > .task-history-label {
-  font-size: 13px;
+  font-size: 12px;
 }body[data-workspace-view="tasks"] .card-template-update {
   border-color: var(--dk-info-border);
   background: var(--dk-info-bg);
 }body[data-workspace-view="tasks"] .card-checklist-item {
-  min-height: 50px;
+  min-height: 36px;
   border-radius: var(--dk-radius-md);
-  padding-block: 10px;
+  padding-block: 4px;
 }body[data-workspace-view="tasks"] .card-checklist-item > input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   accent-color: var(--dk-accent-default);
 }body[data-workspace-view="tasks"] .card-checklist-label {
   font-size: 13px;
@@ -6260,10 +6293,6 @@ body[data-workspace-view="tasks"] .workflow-summary-top .card-stage-static {
   background: var(--dk-bg-muted);
 }body[data-workspace-view="tasks"] .workflow-references-section .task-history-event {
   background: var(--dk-bg-muted);
-}body[data-workspace-view="tasks"] .workflow-assistant-note {
-  border: 1px solid var(--dk-info-border);
-  background: var(--dk-info-bg);
-  padding: 8px 10px;
 }body[data-workspace-view="tasks"] .quick-form-panel {
   width: min(640px, calc(100vw - 40px));
   max-height: min(820px, calc(100vh - 32px));
@@ -8777,3 +8806,6 @@ body[data-workspace-view] .task-modal-panel button,
 }.knowledge-history-panel { max-width: 1100px; padding-bottom: 20px; }.history-search-form { display: flex; gap: 12px; align-items: end; padding: 16px 20px; }.history-search-form label { display: grid; gap: 6px; flex: 1; }.history-search-form input { width: 100%; min-width: 0; }#history-status { padding: 0 20px; }#history-versions { overflow: auto; padding: 0 20px; max-height: 32vh; }.history-version { padding: 12px 0; border-bottom: 1px solid var(--dk-border-default); }.history-version p { margin: 6px 0; }.history-version code { display: block; overflow-wrap: anywhere; font-size: 12px; margin-bottom: 8px; }.history-version button { margin-right: 8px; }#history-comparison:not([hidden]) { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 0 20px; overflow: auto; }#history-comparison section { min-width: 0; }#history-comparison pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; overflow: auto; }#lint-section { display: flex; align-items: center; gap: 12px; padding: 12px 20px 0; }
 @media (max-width: 600px) {.history-search-form { flex-direction: column; align-items: stretch; }#history-comparison:not([hidden]) { grid-template-columns: 1fr; }
 }/* Restoring a historical version confirms above the history dialog. */#confirm-modal { z-index: 90; }
+@media (max-width: 820px) {/* The compact Card detail is desktop-dense; restore the 44px touch
+     floors and the larger checklist checkbox on mobile. */body[data-workspace-view="tasks"] .card-checklist-item { min-height: 44px; }body[data-workspace-view="tasks"] .card-checklist-item > input[type="checkbox"] { width: 18px; height: 18px; }.workflow-references-section .task-follow-up-row input { min-height: 44px; }
+}

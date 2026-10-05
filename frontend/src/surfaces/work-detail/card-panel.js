@@ -361,7 +361,21 @@ export function createCardPanel(context) {
       progress.total > 0
         ? `${progress.done}/${progress.total} tasks`
         : "No tasks loaded";
-    summaryTop.append(countRow, stageLabel);
+    const flagRow = document.createElement("div");
+    flagRow.className = "workflow-card-flags";
+    for (const flag of [
+      { count: progress.overdue, label: "overdue", tone: "danger" },
+      { count: progress.waiting, label: "waiting", tone: "info" },
+      { count: progress.missingProof, label: "missing proof", tone: "warning" },
+    ].filter((flag) => Number(flag.count) > 0)) {
+      const chip = document.createElement("small");
+      chip.className = `workflow-card-flag is-${flag.tone}`;
+      chip.textContent = `${flag.count} ${flag.label}`;
+      flagRow.append(chip);
+    }
+    summaryTop.append(countRow);
+    if (flagRow.children.length > 0) summaryTop.append(flagRow);
+    summaryTop.append(stageLabel);
     meta.append(summaryTop);
 
     // Progress bar
@@ -379,20 +393,6 @@ export function createCardPanel(context) {
       meta.append(bar);
     }
 
-    const flagRow = document.createElement("div");
-    flagRow.className = "workflow-card-flags";
-    for (const flag of [
-      { count: progress.overdue, label: "overdue", tone: "danger" },
-      { count: progress.waiting, label: "waiting", tone: "info" },
-      { count: progress.missingProof, label: "missing proof", tone: "warning" },
-    ].filter((flag) => Number(flag.count) > 0)) {
-      const chip = document.createElement("small");
-      chip.className = `workflow-card-flag is-${flag.tone}`;
-      chip.textContent = `${flag.count} ${flag.label}`;
-      flagRow.append(chip);
-    }
-    if (flagRow.children.length > 0) meta.append(flagRow);
-
     if (progress.nextDueTask) {
       const nextRow = document.createElement("p");
       nextRow.className = "workflow-next-task";
@@ -404,15 +404,33 @@ export function createCardPanel(context) {
         ? `${workTaskTitle(progress.nextDueTask)} · ${formatCardAnchorLabel(nextDate, today)}`
         : workTaskTitle(progress.nextDueTask);
       appendBreakableText(nextValue, nextText);
+      nextValue.title = nextText;
       nextRow.append(nextLabel, nextValue);
       meta.append(nextRow);
     }
 
-    if (card.description) {
+    const description = displayCardDescription(card.description);
+    if (description) {
       const descRow = document.createElement("div");
       descRow.className = "workflow-description";
-      appendBreakableText(descRow, card.description);
-      meta.append(descRow);
+      const descText = document.createElement("p");
+      descText.className = "workflow-description-text";
+      appendBreakableText(descText, description);
+      descRow.append(descText);
+      if (description.length > cardDescriptionClampLimit) {
+        descRow.classList.add("is-clamped");
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "workflow-description-toggle";
+        toggle.textContent = "Show more";
+        toggle.addEventListener("click", () => {
+          const clamped = descRow.classList.toggle("is-clamped");
+          toggle.textContent = clamped ? "Show more" : "Show less";
+        });
+        meta.append(descRow, toggle);
+      } else {
+        meta.append(descRow);
+      }
     }
     main.append(meta);
     const templateUpdate = renderCardTemplateUpdate(card, data);
@@ -562,16 +580,9 @@ export function createCardPanel(context) {
     if (!refsList.children.length) {
       const empty = document.createElement("div");
       empty.className = "task-history-event";
-      empty.textContent = "No internal Process Docs linked to this Card.";
+      empty.textContent = "No process docs linked.";
       refsList.append(empty);
     }
-
-    const assistantState = document.createElement("p");
-    assistantState.className = "workflow-assistant-note";
-    assistantState.textContent = state.assistantSnapshot.loaded
-      ? "Assistant jobs are available from the Assistants surface when linked to this Card."
-      : "Assistant jobs are not connected to this Card.";
-    refsSection.append(assistantState);
 
     // Add artifact/reference link form
     const addRow = document.createElement("div");
@@ -940,6 +951,16 @@ export function createCardPanel(context) {
       taskId: task.id,
     }).ready;
   }
+
+  // Migration provenance is import bookkeeping, not operator content — keep it
+  // out of the rendered Card detail without touching the stored description.
+  function displayCardDescription(value) {
+    return String(value ?? "")
+      .replace(/\s*Migration provenance:[\s\S]*$/, "")
+      .trim();
+  }
+
+  const cardDescriptionClampLimit = 220;
 
   // Keep long operator-provided values breakable in the narrow Card modal
   // without changing the value that is saved or the accessible text.
