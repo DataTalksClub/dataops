@@ -820,14 +820,6 @@ export function createOperationsModel({
   function buildOperationsFutureSections() {
     return [
       {
-        id: "inbox",
-        title: "Inbox",
-        status: "Not connected yet",
-        body:
-          "Telegram, email, manual notes, files, and assistant-ready inputs " +
-          "will land here when the durable inbox model ships in #31.",
-      },
-      {
         id: "assistant-jobs",
         title: "Assistant Jobs",
         status: "Not connected yet",

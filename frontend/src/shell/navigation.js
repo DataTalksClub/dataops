@@ -11,7 +11,6 @@ export function createNavigationShell(context) {
     folderPathFromLocation,
     getAssistantQueueState,
     getDocsAvailability,
-    getIntakeSurfaceState,
     getKnowledgeState,
     getTasksSectionForLegacyView,
     historyRef,
@@ -35,7 +34,6 @@ export function createNavigationShell(context) {
     requestAnimationFrameImpl,
     resetCardPanel,
     resetTaskPanel,
-    resolveIntakeRouteEntity,
     resolveTaskQueueRouteContext,
     resolveTemplateRouteEntity,
     searchInput,
@@ -83,7 +81,6 @@ export function createNavigationShell(context) {
   function beginDocumentNavigation() {
     activeRouteToken += 1;
     activeRoute = null;
-    clearIntakeDraftForRoute(null);
     resetTaskPanel();
     resetCardPanel();
     closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
@@ -189,9 +186,6 @@ export function createNavigationShell(context) {
     pendingLegacyRoute = { ...route, token };
     workspaceEntityState = null;
     if (route.view === "tasks") setActiveTasksSection(route.tasksSection);
-    clearIntakeDraftForRoute(route);
-    getIntakeSurfaceState().intake.selectedId =
-      route.path === "/inbox" ? route.params.get("intakeId") : null;
     getAssistantQueueState().selectedJobId =
       route.tasksSection === "assistants"
         ? route.params.get("assistantJobId")
@@ -238,48 +232,8 @@ export function createNavigationShell(context) {
     if (route.path === "/notifications") openWorkBellPanel();
   }
 
-  function clearIntakeDraftForRoute(route) {
-    const intakeState = getIntakeSurfaceState();
-    const mutation = intakeState.intakeMutation;
-    const assistantMutation = intakeState.assistantMutation;
-    if (
-      assistantMutation?.target &&
-      assistantMutation.routeToken !== undefined &&
-      assistantMutation.routeToken !== activeRouteToken
-    ) {
-      intakeState.assistantMutation = {
-        target: "",
-        action: "",
-        values: {},
-        error: "",
-        busy: false,
-        status: "",
-        phase: "idle",
-        routeToken: activeRouteToken,
-      };
-    }
-    if (!mutation.itemId) return;
-    const nextItemId =
-      route?.path === "/inbox" ? route.params.get("intakeId") : null;
-    if (nextItemId === mutation.itemId) return;
-    intakeState.intakeMutation = {
-      itemId: "",
-      action: "",
-      values: {},
-      focus: null,
-      error: "",
-      busy: false,
-      status: "",
-      phase: "idle",
-      routeToken: activeRouteToken,
-    };
-  }
-
   function hydrateWorkspaceRoute(route, token) {
     const jobs = [];
-    if (route.path === "/inbox") {
-      jobs.push(resolveIntakeRouteEntity(route, token));
-    }
     if (route.path === "/tasks") {
       jobs.push(resolveTaskQueueRouteContext(route, token));
     }

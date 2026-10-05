@@ -218,7 +218,7 @@ export function createAssistantsSurface(context) {
   }
 
   // Status text stays quiet context; only a state that demands a decision
-  // (approval or recovery) earns an attention chip, matching the Inbox rule.
+  // (approval or recovery) earns an attention chip.
   function assistantStatusTone(job) {
     if (job.status === "waiting_approval") return "is-attention";
     if (["failed", "rejected"].includes(job.status)) return "is-danger";

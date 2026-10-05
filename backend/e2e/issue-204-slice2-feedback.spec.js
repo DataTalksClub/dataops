@@ -1,4 +1,4 @@
-// Issue 204 slice 2: Inbox and Assistants own their mutation feedback.
+// Issue 204 slice 2: Assistants own their mutation feedback.
 // Browser assertions target the visible surface that initiated each operation;
 // the shell status cluster is not used for migrated flows.
 const { test, expect } = require('@playwright/test');
@@ -163,104 +163,6 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
 
   test.afterAll(async () => {
     await stopOwnedTestServer(server);
-  });
-
-  test('Inbox keeps validation, failure, conflict recovery, and durable success in the initiating surface', async ({ browser }) => {
-    test.setTimeout(90_000);
-    const context = await ownedContext(browser, { viewport: DESKTOP });
-    const page = await context.newPage();
-    await setupPageWithAuth(page);
-    await page.goto(`${baseURL}/#/inbox`);
-
-    await expect(page.locator('.ops-inbox')).toBeVisible();
-    const capture = page.locator('.intake-panel').filter({ hasText: 'Capture a new intake item' });
-    await capture.locator('summary').click();
-    await capture.getByRole('button', { name: 'Capture intake' }).click();
-    await expect(capture.locator('.intake-create-feedback .form-feedback-error'))
-      .toContainText('Add a note or title before capturing intake');
-
-    const failedTitle = `Slice 2 retained intake ${Date.now()}`;
-    await capture.locator('[data-intake-create-title]').fill(failedTitle);
-    await capture.locator('[data-intake-create-note]').fill('Retain this safe intake input.');
-    await setFaults(context.request, [{ method: 'POST', path: '/api/intake', status: 503 }]);
-    await capture.getByRole('button', { name: 'Capture intake' }).click();
-    await expect(capture.locator('.intake-create-feedback .form-feedback-error'))
-      .toContainText('Synthetic route failure (503)');
-    await expect(capture.locator('[data-intake-create-title]')).toHaveValue(failedTitle);
-    await expect(capture.getByRole('button', { name: 'Capture intake' })).toBeEnabled();
-    await screenshot(page, 'inbox-capture-failure-desktop-1440x900');
-
-    await clearFaults(context.request);
-    await capture.getByRole('button', { name: 'Capture intake' }).click();
-    await expect(page.locator('.intake-row', { hasText: failedTitle })).toBeVisible();
-    await expect(capture.locator('.form-feedback-status'))
-      .toContainText('visible in the refreshed Inbox');
-    await screenshot(page, 'inbox-capture-success-desktop-1440x900');
-
-    const originalResponse = await context.request.post('/api/intake', {
-      data: {
-        source: 'manual',
-        title: `Slice 2 duplicate source ${Date.now()}`,
-        note: 'Original safe request for conflict recovery.',
-        dataClass: 'internal',
-      },
-    });
-    expect(originalResponse.status()).toBe(201);
-    const original = (await json(originalResponse)).item;
-    await page.locator('.intake-row', { hasText: failedTitle }).locator('.intake-row-main').click();
-    const detail = page.locator('.intake-row.is-selected .intake-detail');
-    await expect(detail).toBeVisible();
-    const duplicateAction = detail.locator('[data-intake-action="mark-duplicate"]');
-    await duplicateAction.getByLabel('Duplicate of').fill(original.id);
-    await duplicateAction.getByLabel('Reason').fill('Same safe upstream request.');
-    await setFaults(context.request, [{
-      method: 'POST',
-      path: `/api/intake/${new URLSearchParams(new URL(page.url()).hash.split('?')[1]).get('intakeId')}/mark-duplicate`,
-      status: 409,
-    }]);
-    await duplicateAction.getByRole('button', { name: 'Mark duplicate' }).click();
-    await expect(detail.locator('.intake-inline-feedback[role="alert"]'))
-      .toContainText('Synthetic route failure (409)');
-    await expect(duplicateAction.getByLabel('Reason')).toHaveValue('Same safe upstream request.');
-    await expect(detail.getByRole('button', { name: 'Reload current item' })).toBeVisible();
-    await screenshot(
-      page,
-      'inbox-conflict-recovery-desktop-1440x900',
-      detail.locator('.intake-inline-feedback'),
-    );
-
-    await clearFaults(context.request);
-    await detail.getByRole('button', { name: 'Reload current item' }).click();
-    await expect(detail.locator('.intake-inline-feedback'))
-      .toContainText('current intake is refreshed');
-    const retryDuplicateAction = detail.locator('[data-intake-action="mark-duplicate"]');
-    await retryDuplicateAction.getByLabel('Duplicate of').fill(original.id);
-    await retryDuplicateAction.getByLabel('Reason').fill('Same safe upstream request.');
-    const duplicateResponse = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return response.request().method() === 'POST'
-        && url.pathname.endsWith('/api/intake/'
-          + new URLSearchParams(new URL(page.url()).hash.split('?')[1]).get('intakeId')
-          + '/mark-duplicate')
-        && response.status() === 200;
-    });
-    await retryDuplicateAction.getByRole('button', { name: 'Mark duplicate' }).click();
-    await duplicateResponse;
-    await expect(detail).toContainText('This item is duplicate and read-only');
-    await expect(detail.locator('.intake-history')).toContainText('Marked as duplicate');
-
-    await page.setViewportSize(MOBILE);
-    await page.goto(`${baseURL}/#/inbox`);
-    // A fully loaded Inbox states nothing: the summary only renders for
-    // loading/empty/partial/failure, so the queue itself proves readiness.
-    await expect(page.locator('.ops-inbox')).toBeVisible();
-    await expectNoHorizontalOverflow(page);
-    const mobileCapture = page.locator('.intake-panel').filter({ hasText: 'Capture a new intake item' });
-    await mobileCapture.locator('summary').click();
-    await expectTouchTarget(mobileCapture.getByRole('button', { name: 'Capture intake' }));
-    await expectTouchTarget(page.locator('.intake-filter-bar button').first());
-    await screenshot(page, 'inbox-queue-mobile-390x844');
-    await context.close();
   });
 
   test('Assistants keeps creation and lifecycle conflict feedback in the initiating surface', async ({ browser }) => {

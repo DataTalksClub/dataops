@@ -28,22 +28,6 @@ async function createFixtures(request, referenceTime = Date.now()) {
   const task = await (await request.post('/api/tasks', {
     data: { description: `Route task ${id}`, date: '2026-08-11', cardId: card.id },
   })).json();
-  const intake = (await (await request.post('/api/intake', {
-    data: { source: 'manual', title: `New intake ${id}`, note: 'Synthetic operator context', dataClass: 'internal' },
-  })).json()).item;
-  const blocked = (await (await request.post('/api/intake', {
-    data: { source: 'manual', title: `Blocked intake ${id}`, note: 'Waiting on a synthetic reply', dataClass: 'internal' },
-  })).json()).item;
-  await request.post(`/api/intake/${blocked.id}/block`, {
-    data: { reason: 'Need a response', waitingFor: 'Synthetic partner', followUpAt: `${offsetBusinessDate(referenceTime, -2)}T09:00:00.000Z` },
-  });
-  await request.post(`/api/intake/${blocked.id}/follow-up-sent`, {
-    data: { note: 'Sent a synthetic reminder', nextFollowUpAt: `${offsetBusinessDate(referenceTime, -1)}T09:00:00.000Z`, channel: 'email' },
-  });
-  const filteredOut = (await (await request.post('/api/intake', {
-    data: { source: 'manual', title: `Archived intake ${id}`, note: 'Genuinely outside the actionable filter', dataClass: 'internal' },
-  })).json()).item;
-  await request.post(`/api/intake/${filteredOut.id}/archive`, { data: { reason: 'Synthetic filtered-out route evidence' } });
   const assistant = (await (await request.post('/api/assistant-jobs', {
     data: { assistantType: 'podcast', title: `Route assistant ${id}`, cardId: card.id, inputRefs: [{ type: 'card', id: card.id }], approvalRequired: true, maxAttempts: 2 },
   })).json()).job;
@@ -54,7 +38,7 @@ async function createFixtures(request, referenceTime = Date.now()) {
   const booking = await (await request.post('/api/sponsor-crm/bookings', {
     data: { organizationId: organization.id, slotType: 'main', status: 'inquiry', plannedPublicationDate: '2026-09-01' },
   })).json();
-  return { id, card, contextCard, task, intake, blocked, filteredOut, assistant, template: templates[0], booking };
+  return { id, card, contextCard, task, assistant, template: templates[0], booking };
 }
 
 async function setRouteFaults(request, faults) {
@@ -131,7 +115,6 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const fixture = await createFixtures(request);
     const routes = [
       ['/#/', 'Home'],
-      [`/#/inbox?intakeId=${encodeURIComponent(fixture.intake.id)}`, 'Inbox'],
       [`/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&cardId=${encodeURIComponent(fixture.card.id)}&contextCardId=${encodeURIComponent(fixture.contextCard.id)}`, 'Work Queue'],
       [`/#/cards?cardId=${encodeURIComponent(fixture.card.id)}&taskId=${encodeURIComponent(fixture.task.id)}`, 'Cards'],
       [`/#/assistants?assistantJobId=${encodeURIComponent(fixture.assistant.id)}`, 'Assistants'],
@@ -166,38 +149,17 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page).toHaveURL(/\/#\/$/);
   });
 
-  test('keeps Inbox open, close, Back, and Forward behavior canonical', async ({ page, request }) => {
+  test('keeps exact entities honest and task/workflow mismatch recoverable', async ({ page, request }, testInfo) => {
     const fixture = await createFixtures(request);
-    await page.goto('/#/inbox');
-    await page.locator('.intake-row', { hasText: fixture.intake.title }).locator('.intake-row-main').click();
-    await expect(page).toHaveURL(new RegExp(`/#/inbox\\?intakeId=${fixture.intake.id}$`));
-    await page.locator('.intake-row.is-selected .intake-row-main').click();
-    await expect(page).toHaveURL(/\/#\/inbox$/);
-    await page.goBack();
-    await expect(page.locator('.intake-row.is-selected')).toContainText(fixture.intake.title);
-    await page.goForward();
-    await expect(page.locator('.intake-row.is-selected')).toHaveCount(0);
-  });
-
-  test('keeps exact entities honest, filtered intake exact, and task/workflow mismatch recoverable', async ({ page, request }, testInfo) => {
-    const fixture = await createFixtures(request);
-    await page.goto(`/#/inbox?intakeId=${fixture.filteredOut.id}`);
-    await expect(page.locator('.intake-row.is-selected')).toContainText(fixture.filteredOut.title);
-    await expect(page.locator('.intake-row.is-selected')).toContainText('read-only');
     await page.goto(`/#/cards?cardId=${fixture.contextCard.id}&taskId=${fixture.task.id}`);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.task.id);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.contextCard.id);
     recordCapabilityEvidence(testInfo, [
-      { route: '/#/inbox?intakeId=<id>', roleId: 'admin', stateIds: ['inbox.filtered-exact'] },
       { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.mismatch'] },
     ]);
   });
 
   test('keeps every stale entity route recoverable', async ({ page }, testInfo) => {
-    await page.goto('/#/inbox?intakeId=stale-intake');
-    await expect(page.locator('.entity-route-not-found:visible')).toContainText('stale-intake');
-    await expect(page.locator('.entity-route-not-found:visible')).toBeFocused();
-
     for (const [route, id] of [
       ['tasks?taskId=stale-task', 'stale-task'],
       ['cards?cardId=stale-workflow', 'stale-workflow'],
@@ -210,7 +172,6 @@ test.describe('issue 156 canonical route and operator parity', () => {
       await expect(page.locator('button:visible', { hasText: 'Retry' }).first()).toBeVisible();
     }
     recordCapabilityEvidence(testInfo, [
-      { route: '/#/inbox?intakeId=<id>', roleId: 'admin', stateIds: ['inbox.stale-not-found'] },
       { route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.stale-not-found'] },
       { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.not-found'] },
       { route: '/#/assistants?assistantJobId=<id>', roleId: 'admin', stateIds: ['assistants.stale-not-found'] },
@@ -299,28 +260,6 @@ test.describe('issue 156 canonical route and operator parity', () => {
 
   test('keeps relationship, notification, search, and panel close routes synchronized', async ({ page, request }, testInfo) => {
     const fixture = await createFixtures(request);
-    const linked = (await (await request.post('/api/intake', {
-      data: { source: 'manual', title: `Linked intake ${fixture.id}`, note: 'Cross-surface relationship evidence', dataClass: 'internal' },
-    })).json()).item;
-    await request.post(`/api/intake/${linked.id}/attach`, { data: { taskIds: [fixture.task.id], cardIds: [fixture.card.id] } });
-
-    await page.goto(`/#/inbox?intakeId=${linked.id}`);
-    await page.getByRole('button', { name: `Task ${fixture.task.id}` }).click();
-    await expect(page).toHaveURL(new RegExp(`/#/tasks\\?taskId=${fixture.task.id}$`));
-    await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
-    await expectNoSeriousA11y(page, '#task-panel');
-    await page.locator('#task-panel-close').click();
-    await expect(page).toHaveURL(/\/#\/tasks$/);
-    await expect(page.locator('#task-panel')).toBeHidden();
-
-    await page.goto(`/#/inbox?intakeId=${linked.id}`);
-    await page.getByRole('button', { name: fixture.card.title }).click();
-    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}$`));
-    await expect(page.locator('#card-panel-title')).toHaveText(fixture.card.title);
-    await expectNoSeriousA11y(page, '#card-panel');
-    await page.locator('#card-panel-close').click();
-    await expect(page).toHaveURL(/\/#\/cards$/);
-    await expect(page.locator('#card-panel')).toBeHidden();
 
     await page.goto(`/#/tasks?taskId=${fixture.task.id}`);
     await page.locator('.task-detail-meta button', { hasText: fixture.card.title }).click();
@@ -637,75 +576,6 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expectVisibleRouteHeading(page, 'Assistants');
     await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
     await clearRouteFaults(request);
-  });
-
-  test('provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence', async ({ page, request }, testInfo) => {
-    const referenceTime = Date.now();
-    const fixture = await createFixtures(request, referenceTime);
-    const createStateIntake = async (label) => (await (await request.post('/api/intake', {
-      data: { source: 'manual', title: `${label} ${fixture.id}`, note: `Synthetic ${label.toLowerCase()} context`, dataClass: 'internal' },
-    })).json()).item;
-    const triaged = await createStateIntake('Triaged intake');
-    await request.put(`/api/intake/${triaged.id}`, { data: { status: 'triaged' } });
-    const attached = await createStateIntake('Attached intake');
-    await request.post(`/api/intake/${attached.id}/attach`, { data: { taskIds: [fixture.task.id], cardIds: [fixture.card.id] } });
-    const convertedSource = await createStateIntake('Converted intake');
-    const converted = (await (await request.post(`/api/intake/${convertedSource.id}/convert-task`, {
-      data: { date: '2026-08-11', cardId: fixture.card.id },
-    })).json()).item;
-    const assistantReadySource = await createStateIntake('Assistant-ready intake');
-    const assistantReady = (await (await request.post(`/api/intake/${assistantReadySource.id}/prepare-assistant`, {
-      data: { assistantType: 'podcast', createJob: false },
-    })).json()).item;
-    const resolvedSource = await createStateIntake('Resolved intake');
-    const resolved = (await (await request.post(`/api/intake/${resolvedSource.id}/ignore`, {
-      data: { reason: 'Synthetic resolved-state evidence' },
-    })).json()).item;
-    const futureBlockedSource = await createStateIntake('Future blocked intake');
-    const futureBlocked = (await (await request.post(`/api/intake/${futureBlockedSource.id}/block`, {
-      data: { reason: 'Future synthetic wait', waitingFor: 'Synthetic partner', followUpAt: `${offsetBusinessDate(referenceTime, 2)}T09:00:00.000Z` },
-    })).json()).item;
-
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(`/#/inbox?intakeId=${fixture.blocked.id}`);
-    const blockedRow = page.locator('.intake-row.is-selected');
-    await expect(blockedRow.getByRole('button', { name: 'Record follow-up sent' })).toBeVisible();
-    await expect(blockedRow.locator('time[datetime]').first()).toBeVisible();
-    await expectNoSeriousA11y(page, '.ops-inbox');
-    await page.screenshot({ path: path.join(SHOTS, 'desktop-inbox-blocked-actions-history-1440x900.png'), fullPage: true });
-
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`/#/inbox?intakeId=${fixture.intake.id}`);
-    const selected = page.locator('.intake-row.is-selected');
-    await expect(selected.getByRole('button', { name: 'Convert to task' })).toBeVisible();
-    await expect(selected).toBeInViewport();
-    await expect(selected.getByRole('button', { name: 'Convert to task' })).toBeInViewport();
-    await expectNoHorizontalOverflow(page);
-    await expectNoSeriousA11y(page, '.ops-inbox');
-    await page.screenshot({ path: path.join(SHOTS, 'mobile-inbox-new-primary-390x844.png') });
-    await page.goto(`/#/inbox?intakeId=${triaged.id}`);
-    await expect(page.locator('.intake-row.is-selected').getByRole('button', { name: 'Convert to task' })).toBeVisible();
-    await page.goto(`/#/inbox?intakeId=${futureBlocked.id}`);
-    await expect(page.locator('.intake-row.is-selected').getByRole('button', { name: 'Record response received' })).toBeVisible();
-    await page.goto(`/#/inbox?intakeId=${attached.id}`);
-    await expect(page.locator('.intake-row.is-selected').getByRole('button', { name: 'Continue task' })).toBeVisible();
-    await page.goto(`/#/inbox?intakeId=${converted.id}`);
-    await expect(page.locator('.intake-row.is-selected').getByRole('button', { name: 'Continue task' })).toBeVisible();
-    await page.goto(`/#/inbox?intakeId=${assistantReady.id}`);
-    await expect(page.locator('.intake-row.is-selected').getByRole('button', { name: 'Create assistant draft' })).toBeVisible();
-    await page.goto(`/#/inbox?intakeId=${resolved.id}`);
-    await expect(page.locator('.intake-row.is-selected .intake-resolution-summary')).toContainText('read-only');
-    await expect(page.locator('.intake-row.is-selected [data-intake-submit]')).toHaveCount(0);
-    await page.goto(`/#/inbox?intakeId=${fixture.blocked.id}`);
-    await expect(page.locator('.intake-row.is-selected').getByRole('button', { name: 'Record follow-up sent' })).toBeVisible();
-    await expectNoHorizontalOverflow(page);
-    await expectNoSeriousA11y(page, '.ops-inbox');
-    await page.screenshot({ path: path.join(SHOTS, 'mobile-inbox-blocked-follow-up-history-390x844.png') });
-    recordCapabilityEvidence(testInfo, [{
-      route: '/#/inbox?intakeId=<id>',
-      roleId: 'admin',
-      stateIds: ['inbox.new', 'inbox.triaged', 'inbox.blocked-due', 'inbox.blocked-future', 'inbox.attached', 'inbox.converted', 'inbox.assistant-ready', 'inbox.ignored'],
-    }]);
   });
 
   test('captures deterministic Task and stale-entity diagnostics at desktop and mobile sizes', async ({ page, request }) => {

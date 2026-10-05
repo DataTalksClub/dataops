@@ -225,9 +225,7 @@ export function createOperationsOverview(context) {
 
   function operationsViewTitle(view, tasksSection, archiveVisible = false) {
     if (view === "home") return "Today";
-    if (view === "my-plan") return "My Plan";
     if (view === "operating-model") return "Operating Model";
-    if (view === "inbox") return "Inbox";
     if (view === "tasks") return tasksSectionTitle(tasksSection, archiveVisible);
     if (view === "docs") return "Docs";
     if (view === "admin") return "Admin";
@@ -617,7 +615,7 @@ export function createOperationsOverview(context) {
     const header = document.createElement("div");
     header.className = "ops-section-header";
     const title = document.createElement("h3");
-    title.textContent = "Assistant, Artifact, Inbox, And Search States";
+    title.textContent = "Assistant, Artifact, And Search States";
     header.append(title);
     wrap.append(header);
 
@@ -642,10 +640,6 @@ export function createOperationsOverview(context) {
             "Artifacts",
             "Cross-workflow artifact index not connected; task/workflow artifacts still appear in context.",
           ],
-      [
-        "Inbox",
-        "Not connected; #31 raw Telegram/email/manual intake is not represented with fake rows.",
-      ],
       [
         "Search",
         "Connected through /search with partial-source states when work APIs are unavailable.",

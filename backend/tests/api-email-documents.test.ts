@@ -7,11 +7,21 @@ import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
+import { ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { TABLE_INTAKE } from '../src/db/tableNames';
+import { ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { TABLE_INTAKE } from '../src/db/tableNames';
 import { getArtifact, listArtifacts } from '../src/db/artifacts';
-import { listIntakeItems } from '../src/db/intake';
+import { getIntakeItem } from '../src/db/intake';
 import { resetEmailDocumentIntakeStateForTests, setEmailDocumentIntakeClientsForTests } from '../src/routes/emailDocuments';
 import { setArtifactDownloadSignerForTests } from '../src/routes/artifacts';
 import { route } from '../src/router';
+
+
+async function scanIntakeItems(client: Awaited<ReturnType<typeof getClient>>) {
+  const result = await client.send(new ScanCommand({ TableName: TABLE_INTAKE }));
+  return (result.Items || []) as Array<Record<string, unknown>>;
+}
 
 const SECRET = 'email-documents-test-secret';
 const HASH_A = `sha256:${'a'.repeat(64)}`;
@@ -93,7 +103,7 @@ describe('POST /api/v1/intake/email-documents', () => {
     assert.strictEqual(result.statusCode, 202);
     const body = JSON.parse(result.body);
     assert.deepStrictEqual(body.artifacts, []);
-    const item = (await listIntakeItems(await getClient(), { source: 'email' })).find((candidate) => candidate.id === body.intakeItemId);
+    const item = await getIntakeItem(await getClient(), body.intakeItemId);
     assert.strictEqual(item?.dataClass, 'sensitive');
     assert.strictEqual(item?.status, 'new');
     assert.deepStrictEqual(item?.artifactRefs, []);
@@ -125,7 +135,7 @@ describe('POST /api/v1/intake/email-documents', () => {
     assert.deepStrictEqual([first.statusCode, second.statusCode].sort(), [200, 202]);
     assert.strictEqual(JSON.parse(first.body).intakeItemId, JSON.parse(second.body).intakeItemId);
     assert.strictEqual(s3.copies.length, 1);
-    const item = (await listIntakeItems(await getClient(), { source: 'email' })).find((candidate) => candidate.id === JSON.parse(first.body).intakeItemId);
+    const item = await getIntakeItem(await getClient(), JSON.parse(first.body).intakeItemId);
     assert.strictEqual(item?.artifactRefs.length, 1);
     assert.strictEqual(item?.status, 'archived');
     assert.strictEqual(item?.history.filter((entry) => entry.action === 'email-document-completed').length, 1);
@@ -149,7 +159,7 @@ describe('POST /api/v1/intake/email-documents', () => {
     assert.strictEqual(retry.statusCode, 200);
     assert.strictEqual(JSON.parse(retry.body).artifacts.length, 2);
     assert.strictEqual(s3.copies.length, 2);
-    const item = (await listIntakeItems(await getClient(), { source: 'email' })).find((candidate) => candidate.id === JSON.parse(retry.body).intakeItemId);
+    const item = await getIntakeItem(await getClient(), JSON.parse(retry.body).intakeItemId);
     assert.strictEqual(item?.status, 'archived');
     assert.strictEqual(item?.blockedReason, undefined);
     assert.ok(item?.history.some((entry) => entry.action === 'handed-off-to-finance'));
@@ -179,14 +189,14 @@ describe('POST /api/v1/intake/email-documents', () => {
     assert.strictEqual(retry.statusCode, 200);
     assert.strictEqual(JSON.parse(retry.body).artifacts.length, 1);
     assert.strictEqual(s3.copies.length, 1);
-    const item = (await listIntakeItems(realClient, { source: 'email' })).find((candidate) => candidate.id === JSON.parse(retry.body).intakeItemId);
+    const item = await getIntakeItem(realClient, JSON.parse(retry.body).intakeItemId);
     assert.strictEqual(item?.status, 'archived');
     assert.strictEqual(item?.artifactRefs.length, 1);
     assert.ok(item?.history.some((entry) => entry.action === 'handed-off-to-finance'));
   });
 
   it('rejects authentication, schema, payload, allowlist, metadata, and object limits without unsafe persistence', async () => {
-    const beforeCount = (await listIntakeItems(await getClient())).length;
+    const beforeCount = (await scanIntakeItems(await getClient())).length;
     const unauthorized = request('unauthorized-109'); unauthorized.headers['x-dataops-intake-secret'] = 'wrong';
     const wrongResult = await handler(unauthorized, {});
     assert.strictEqual(wrongResult.statusCode, 401);
@@ -233,7 +243,7 @@ describe('POST /api/v1/intake/email-documents', () => {
     assert.strictEqual((await handler(uppercaseChecksum, {})).statusCode, 400);
     const oversized = request('oversized-109'); oversized.body = 'x'.repeat(256 * 1024 + 1);
     assert.strictEqual((await handler(oversized, {})).statusCode, 413);
-    assert.strictEqual((await listIntakeItems(await getClient())).length, beforeCount);
+    assert.strictEqual((await scanIntakeItems(await getClient())).length, beforeCount);
 
     s3.add('mismatch.pdf');
     const mismatch = await handler(request('mismatch-109', [{ ...attachment('mismatch.pdf'), sizeBytes: 999 }]), {});
@@ -249,17 +259,17 @@ describe('POST /api/v1/intake/email-documents', () => {
     assert.strictEqual(outside.statusCode, 400);
     assert.strictEqual(JSON.parse(outside.body).failures[0].code, 'source-not-allowed');
     assert.strictEqual(s3.copies.length, 0);
-    assert.strictEqual((await listIntakeItems(await getClient())).length, beforeCount);
+    assert.strictEqual((await scanIntakeItems(await getClient())).length, beforeCount);
   });
 
   it('returns configuration errors without attempting persistence', async () => {
     delete process.env.EMAIL_DOCUMENT_INTAKE_SECRET;
     delete process.env.EMAIL_DOCUMENT_INTAKE_SECRET_NAME;
-    const beforeCount = (await listIntakeItems(await getClient())).length;
+    const beforeCount = (await scanIntakeItems(await getClient())).length;
     const result = await handler(request('not-configured-109'), {});
     assert.strictEqual(result.statusCode, 503);
     assert.strictEqual(JSON.parse(result.body).error.code, 'authentication-not-configured');
-    assert.strictEqual((await listIntakeItems(await getClient())).length, beforeCount);
+    assert.strictEqual((await scanIntakeItems(await getClient())).length, beforeCount);
   });
 
   it('refreshes a rotated secret on mismatch and throttles by non-secret credential id', async () => {
@@ -337,23 +347,17 @@ describe('POST /api/v1/intake/email-documents', () => {
     const accepted = await handler(event, {});
     assert.strictEqual(accepted.statusCode, 202);
     const intakeItemId = JSON.parse(accepted.body).intakeItemId;
-    const stored = (await listIntakeItems(await getClient(), { source: 'email' })).find((candidate) => candidate.id === intakeItemId);
+    const stored = await getIntakeItem(await getClient(), intakeItemId);
     assert.strictEqual(stored?.status, 'archived');
     assert.strictEqual(stored?.resolutionReason, 'Handed off to Finance for invoice review');
     assert.ok(stored?.history.some((entry) => entry.action === 'handed-off-to-finance'));
 
-    const inbox = await handler({ httpMethod: 'GET', path: '/api/intake', headers: { 'x-user-id': 'operator-test' } }, {});
-    assert.strictEqual(inbox.statusCode, 200);
-    assert.ok(!JSON.parse(inbox.body).items.some((item: { id: string }) => item.id === intakeItemId));
-
-    const detail = await handler({ httpMethod: 'GET', path: `/api/intake/${intakeItemId}`, headers: { 'x-user-id': 'operator-test' } }, {});
-    assert.strictEqual(detail.statusCode, 200);
-    assert.strictEqual(JSON.parse(detail.body).item.status, 'archived');
-
+    // The operator Inbox list API is removed; Finance and the CLI read the
+    // intake row through the data layer, which stays the source of record.
     const replay = await handler(event, {});
     assert.strictEqual(replay.statusCode, 200);
     assert.strictEqual(JSON.parse(replay.body).status, 'duplicate');
-    const afterReplay = (await listIntakeItems(await getClient(), { source: 'email' })).find((candidate) => candidate.id === intakeItemId);
+    const afterReplay = await getIntakeItem(await getClient(), intakeItemId);
     assert.strictEqual(afterReplay?.status, 'archived');
     assert.strictEqual(
       afterReplay?.history.filter((entry) => entry.action === 'email-document-completed').length,

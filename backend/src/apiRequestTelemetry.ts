@@ -13,7 +13,6 @@ export type ApiRouteFamily =
   | 'files'
   | 'artifacts'
   | 'assistant_jobs_social_drafts'
-  | 'intake'
   | 'users_tokens'
   | 'notifications'
   | 'calendar_newsletter'
@@ -64,7 +63,6 @@ const REQUEST_METHODS = new Set([
 const ROUTE_FAMILIES: ReadonlyArray<readonly [ApiRouteFamily, string]> = [
   ['email_documents', '/api/v1/intake/email-documents'],
   ['conversational_telegram', '/api/webhook/telegram'],
-  ['email_documents', '/api/webhook/email'],
   ['health_auth_team', '/api/health'],
   ['health_auth_team', '/api/auth'],
   ['health_auth_team', '/api/me'],
@@ -77,7 +75,6 @@ const ROUTE_FAMILIES: ReadonlyArray<readonly [ApiRouteFamily, string]> = [
   ['artifacts', '/api/artifacts'],
   ['assistant_jobs_social_drafts', '/api/assistant-jobs'],
   ['assistant_jobs_social_drafts', '/api/assistant-social-drafts'],
-  ['intake', '/api/intake'],
   ['users_tokens', '/api/users'],
   ['users_tokens', '/api/tokens'],
   ['notifications', '/api/notifications'],

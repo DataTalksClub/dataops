@@ -533,14 +533,8 @@ describe("runtime and shell production behavior", () => {
     state.docsSnapshot = docs;
     assert.equal(state.homeSurfaceState.docsSnapshot, docs);
 
-    const intake = { loaded: true, selectedId: "intake-1" };
-    const mutation = { itemId: "intake-1", busy: true };
     const queue = { filter: "all", selectedJobId: "job-1" };
-    state.operationsSurfaceState.intake = intake;
-    state.intakeMutation = mutation;
     state.assistantQueue = queue;
-    assert.equal(state.intake, intake);
-    assert.equal(state.operationsSurfaceState.intakeMutation, mutation);
     assert.equal(state.operationsSurfaceState.assistantQueue, queue);
 
     const filters = { severity: "error" };

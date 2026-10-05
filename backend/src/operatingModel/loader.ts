@@ -13,8 +13,6 @@ import type {
   RoadmapSessionDefinition,
   SystemDefinition,
 } from './types';
-import type { Template } from '../types';
-import { templateFromYaml } from '../templates/yamlTemplates';
 
 type Row = Record<string, string>;
 type Dict = Record<string, unknown>;
@@ -152,27 +150,4 @@ export async function loadOperatingModelSnapshot(
       id: path.split('/').pop() || path, label: path.split('/').pop() || path, href: `/knowledge-files/${path}`,
     })),
   };
-}
-
-export async function loadRoadmapSessionTemplate(
-  templateType: string,
-  definitionRevision: string,
-  actorId: string,
-  store = new KnowledgeStore(knowledgeStoreConfigFromEnv()),
-): Promise<Template> {
-  if (!/^operating-model-w\d{2}$/.test(templateType)) throw new Error('Invalid roadmap template type');
-  const sourcePath = `workflow-templates/${templateType}.yaml`;
-  const document = yaml.load(await store.readFile(sourcePath));
-  if (!document || typeof document !== 'object' || Array.isArray(document)) throw new Error('Invalid roadmap template');
-  const runtime = templateFromYaml(document as Dict) as unknown as Template;
-  if (!runtime.taskDefinitions?.length || runtime.type !== templateType) throw new Error('Invalid roadmap template');
-  runtime.id = `workflow.${templateType}`;
-  runtime.version = 1;
-  runtime.createdAt = new Date().toISOString();
-  runtime.updatedAt = runtime.createdAt;
-  runtime.sourcePath = sourcePath;
-  runtime.sourceRevision = definitionRevision;
-  runtime.defaultAssigneeId = actorId;
-  runtime.taskDefinitions = runtime.taskDefinitions.map((task) => ({ ...task, assigneeId: actorId }));
-  return runtime;
 }

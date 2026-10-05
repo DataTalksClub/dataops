@@ -123,11 +123,9 @@ export function createSurfaceComposition(context) {
     getRenderBookkeepingSurface,
     getRenderCalendarSurface,
     getRenderDocsSurface,
-    getRenderInboxSurface,
     getRenderNewsletterSurface,
     getRenderOperationsHome,
     getRenderOperatingModel,
-    getRenderMyPlan,
     getRenderReviewSurface,
     getRenderSponsorCrmSurface,
     getRenderTasksSurface,
@@ -154,7 +152,6 @@ export function createSurfaceComposition(context) {
     syncWorkspaceNav();
     const view = workspaceState.activeWorkspaceView;
     if (view === "home") return getRenderOperationsHome()(documents);
-    if (view === "my-plan") return getRenderMyPlan()();
     if (view === "operating-model") return getRenderOperatingModel()();
     if (view === "tasks") {
       return getRenderTasksSurface()(
@@ -162,7 +159,6 @@ export function createSurfaceComposition(context) {
         workspaceState.activeTasksSection,
       );
     }
-    if (view === "inbox") return getRenderInboxSurface()();
     if (view === "docs") return getRenderDocsSurface()(documents);
     if (view === "admin") return getRenderAdminSurfaceView()(documents);
     if (view === "users") return context.getRenderUsersSurfaceView()();

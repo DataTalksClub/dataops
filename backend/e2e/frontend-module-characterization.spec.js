@@ -216,7 +216,6 @@ test.describe("pre-refactor frontend module characterization", () => {
       ["/tasks", "Work Queue", ".ops-work-queue"],
       ["/templates", "Templates", ".runtime-template-inspector"],
       ["/recurring", "Recurring", ".ops-recurring-section"],
-      ["/inbox", "Inbox", ".ops-inbox"],
       ["/assistants", "Assistants", ".assistant-workspace"],
       ["/artifacts", "Artifacts", '[aria-label="Artifacts"]'],
       ["/newsletter", "Newsletter", ".newsletter-surface"],
@@ -291,7 +290,6 @@ test.describe("pre-refactor frontend module characterization", () => {
     const errors = observeErrors(page);
     const routes = [
       "/",
-      "/inbox",
       "/tasks",
       "/cards",
       "/cards/archive",

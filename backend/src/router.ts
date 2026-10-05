@@ -12,9 +12,7 @@ import { handleAssistantJobRoutes } from './routes/assistantJobs';
 import { handleSocialDraftAssistantRoutes } from './assistant/socialDraftAssistant';
 import { handleDocsRoutes, isDocsDomainEnabled, isDocsRoute } from './docs';
 import { handlePortal, serveCanonicalFrontend } from './docs/portal';
-import { handleIntakeRoutes } from './routes/intake';
 import { handleTelegramWebhook } from './routes/telegram';
-import { handleEmailWebhook } from './routes/email';
 import { handleEmailDocumentIntake } from './routes/emailDocuments';
 import { handleNotificationRoutes } from './routes/notifications';
 import { handleCronRoutes } from './routes/cron';
@@ -1460,11 +1458,6 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     // ── Assistant, artifact, and file routes ──────────────────────
 
-    if (reqPath.startsWith('/api/intake')) {
-      const result = await handleIntakeRoutes(event, client);
-      if (result) return result;
-    }
-
     if (reqPath.startsWith('/api/assistant-jobs')) {
       const result = await handleAssistantJobRoutes(event, client);
       if (result) return result;
@@ -1480,7 +1473,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (result) return result;
     }
 
-    if (reqPath === '/api/operating-model' || reqPath === '/api/my-plan' || reqPath.startsWith('/api/my-plan/sessions/')) {
+    if (reqPath === '/api/operating-model') {
       const result = await handleOperatingModelRoutes(event, client);
       if (result) return result;
     }
@@ -1542,12 +1535,6 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     if (reqPath.startsWith('/api/cron')) {
       const result = await handleCronRoutes(reqPath, method);
       if (result) return result;
-    }
-
-    // ── Email webhook ───────────────────────────────────────────
-
-    if (method === 'POST' && reqPath === '/api/webhook/email') {
-      return await handleEmailWebhook(event, client);
     }
 
     // ── Docs domain (seam — stubs, flag-gated) ──────────────────

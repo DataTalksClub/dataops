@@ -152,11 +152,9 @@ const {
   getRenderBookkeepingSurface: () => renderBookkeepingSurface,
   getRenderCalendarSurface: () => renderCalendarSurface,
   getRenderDocsSurface: () => renderDocsSurface,
-  getRenderInboxSurface: () => renderInboxSurface,
   getRenderNewsletterSurface: () => renderNewsletterSurface,
   getRenderOperationsHome: () => renderOperationsHome,
   getRenderOperatingModel: () => operatingModelSurface?.renderOperatingModel || (() => undefined),
-  getRenderMyPlan: () => operatingModelSurface?.renderMyPlan || (() => undefined),
   getRenderReviewSurface: () =>
     reviewSurface?.renderReviewSurface || (() => undefined),
   getRenderSponsorCrmSurface: () => renderSponsorCrmSurface,
@@ -585,12 +583,9 @@ const {
 });
 
 const {
-  refreshIntakeSnapshot,
   refreshOperationsArtifactSnapshot,
   refreshOperationsAssistantSnapshot,
   renderArtifactsSurface, renderAssistantsSurface, renderDeviceSurfaceView,
-  renderInboxSurface,
-  resolveIntakeRouteEntity,
 } = createOperationsSurface({
   assistantJobsFromPayload,
   cssEscape: (value) => CSS.escape(value),
@@ -841,7 +836,6 @@ navigationShell = createNavigationShell({
   folderPathFromLocation,
   getAssistantQueueState: () => workspaceState.assistantQueue,
   getDocsAvailability: () => workspaceState.docsSnapshot,
-  getIntakeSurfaceState: () => operationsSurfaceState,
   getKnowledgeState: () => knowledgeState,
   getTasksSectionForLegacyView: legacyViewToTasksSection,
   historyRef: history,
@@ -872,7 +866,6 @@ navigationShell = createNavigationShell({
   requestAnimationFrameImpl: requestAnimationFrame,
   resetCardPanel,
   resetTaskPanel,
-  resolveIntakeRouteEntity,
   resolveTaskQueueRouteContext,
   resolveTemplateRouteEntity,
   searchInput,
