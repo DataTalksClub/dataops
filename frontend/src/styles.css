@@ -7339,6 +7339,7 @@ body[data-view="library"] .library-view {
   display: block;
   max-width: 100%;
   height: auto;
+  margin: 12px 0;
 }.block-section-body table,
 .block-prose-body table,
 .block-step-body table,
