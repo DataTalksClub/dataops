@@ -21,7 +21,7 @@ function createSurfaceHarness(options = {}) {
   searchInput.value = options.searchValue || "";
   const tasksNavButton = element("button");
   const tasksNavSubmenu = element();
-  const workspaceNavButtons = ["home", "inbox", "docs"].map((view) => {
+  const workspaceNavButtons = ["home", "docs"].map((view) => {
     const button = element("button");
     button.dataset.workspaceView = view;
     return button;
@@ -61,7 +61,6 @@ function createSurfaceHarness(options = {}) {
       "calendar",
       "docs",
       "home",
-      "inbox",
       "newsletter",
       "review",
       "sponsors",
@@ -95,7 +94,6 @@ function createSurfaceHarness(options = {}) {
     getRenderBookkeepingSurface: () => renders.bookkeeping,
     getRenderCalendarSurface: () => renders.calendar,
     getRenderDocsSurface: () => renders.docs,
-    getRenderInboxSurface: () => renders.inbox,
     getRenderNewsletterSurface: () => renders.newsletter,
     getRenderOperationsHome: () => renders.home,
     getRenderReviewSurface: () => renders.review,
@@ -215,7 +213,6 @@ describe("runtime surface composition", () => {
     for (const [view, expected] of [
       ["home", "home"],
       ["tasks", "tasks"],
-      ["inbox", "inbox"],
       ["docs", "docs"],
       ["admin", "admin"],
       ["users", "users"],

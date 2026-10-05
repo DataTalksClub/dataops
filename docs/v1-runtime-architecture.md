@@ -299,7 +299,6 @@ The frontend should evolve toward:
 - Operations Home
 - Workflows
 - Tasks
-- Inbox
 - Assistants
 - Knowledge
 - Templates

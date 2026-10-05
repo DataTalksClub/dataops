@@ -98,13 +98,11 @@ export function createFeedbackShell({
     const returnButton = documentRef.createElement("button");
     returnButton.type = "button";
     const destination =
-      kind === "intake"
-        ? "Inbox"
-        : kind === "template"
-          ? "templates"
-          : kind === "card" || kind === "task/card"
-            ? "cards"
-            : `${kind}s`;
+      kind === "template"
+        ? "templates"
+        : kind === "card" || kind === "task/card"
+          ? "cards"
+          : `${kind}s`;
     returnButton.textContent = `Return to ${destination}`;
     returnButton.addEventListener("click", returnToList);
     actions.append(retryButton, returnButton);

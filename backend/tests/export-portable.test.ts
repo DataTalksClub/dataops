@@ -27,7 +27,7 @@ import { appendAssistantJobEvent, createAssistantJob, updateAssistantJob } from 
 import { createCard, getCard, updateCard } from '../src/db/cards';
 import { createArtifact } from '../src/db/artifacts';
 import { createFile } from '../src/db/files';
-import { createIntakeItem } from '../src/db/intake';
+import { createIntakeItemIfAbsent } from '../src/db/intake';
 import { createNotification } from '../src/db/notifications';
 import { createRecurringConfig } from '../src/db/recurring';
 import { createTask, updateTask } from '../src/db/tasks';
@@ -126,10 +126,6 @@ describe('portable execution data export', () => {
       anchorDate: '2026-06-27',
       templateId: template.id,
       sourceDocIds: ['workflow.definition.example'],
-      operatingModelSource: {
-        kind: 'roadmap-session', roadmapId: '2026-q4', sessionId: 'W01',
-        documentId: 'reference.session.w01', definitionRevision: 'revision-1',
-      },
       emoji: template.emoji,
       status: 'active',
       artifactRefs: [{ artifactId: 'artifact-card-ref', type: 'document' }],
@@ -267,7 +263,7 @@ describe('portable execution data export', () => {
       metadata: { source: 'operator' },
     });
     await updateAssistantJob(client, assistantJob.id, { outputArtifactIds: [artifact.id] });
-    const intake = await createIntakeItem(client, {
+    const intake = (await createIntakeItemIfAbsent(client, {
       id: 'intake-export',
       source: 'manual',
       sourceMessageId: 'manual-export-1',
@@ -303,8 +299,8 @@ describe('portable execution data export', () => {
         actorId: user.id,
         createdAt: '2026-06-20T10:05:00.000Z',
       }],
-    });
-    const blockedIntake = await createIntakeItem(client, {
+    })).item;
+    const blockedIntake = (await createIntakeItemIfAbsent(client, {
       id: 'intake-export-blocked',
       source: 'manual',
       sourceMessageId: 'manual-export-blocked-1',
@@ -331,7 +327,7 @@ describe('portable execution data export', () => {
         metadata: { waitingFor: 'Requester', followUpAt: '2026-06-21T09:00:00.000Z' },
         createdAt: '2026-06-20T10:35:00.000Z',
       }],
-    });
+    })).item;
     await updateTask(client, task.id, {
       expectedVersion: task.version,
       patch: {
@@ -458,7 +454,6 @@ describe('portable execution data export', () => {
     assert.match(cardsJsonl, /"action":"card-completed"/);
     assert.match(cardsJsonl, /"emoji":"🧭"/);
     assert.match(cardsJsonl, /"source_doc_ids":\["workflow.definition.example"\]/);
-    assert.match(cardsJsonl, /"operating_model_source":\{"kind":"roadmap-session","roadmapId":"2026-q4","sessionId":"W01"/);
 
     const templatesJsonl = await fs.readFile(path.join(exportDir, 'templates.jsonl'), 'utf8');
     assert.match(templatesJsonl, /"phases":\[\{"id":"preparation","name":"Preparation","stage":"preparation"\}\]/);

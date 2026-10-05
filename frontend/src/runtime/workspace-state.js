@@ -39,25 +39,6 @@ export function createWorkspaceState(context) {
   // Docs availability starts as `loading`: the bootstrap `GET /docs` has not
   // answered yet, and a pending request is not an outage.
   let docsSnapshot = emptyOperationsDocsSnapshot();
-  let intake = {
-    filter: "actionable",
-    selectedId: null,
-    items: [],
-    cards: [],
-    loaded: false,
-    error: "",
-  };
-  let intakeMutation = {
-    itemId: "",
-    action: "",
-    values: {},
-    focus: null,
-    error: "",
-    busy: false,
-    status: "",
-    phase: "idle",
-    routeToken: 0,
-  };
   let assistantMutation = {
     target: "",
     action: "",
@@ -150,18 +131,6 @@ export function createWorkspaceState(context) {
     },
     set assistantSnapshot(snapshot) {
       assistantSnapshot = snapshot;
-    },
-    get intake() {
-      return intake;
-    },
-    set intake(snapshot) {
-      intake = snapshot;
-    },
-    get intakeMutation() {
-      return intakeMutation;
-    },
-    set intakeMutation(snapshot) {
-      intakeMutation = snapshot;
     },
     get assistantMutation() {
       return assistantMutation;
@@ -267,18 +236,6 @@ export function createWorkspaceState(context) {
     },
     set docsSnapshot(snapshot) {
       docsSnapshot = snapshot;
-    },
-    get intake() {
-      return intake;
-    },
-    set intake(snapshot) {
-      intake = snapshot;
-    },
-    get intakeMutation() {
-      return intakeMutation;
-    },
-    set intakeMutation(snapshot) {
-      intakeMutation = snapshot;
     },
     get qualityFilters() {
       return qualityFilters;

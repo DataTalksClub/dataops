@@ -89,7 +89,6 @@ const OPERATIONAL_API_ALIASES: ReadonlyArray<readonly [
   ['/api/cron', '/work/api/cron', 'recurring'],
   ['/api/files', '/work/api/files', 'files'],
   ['/api/health', '/work/api/health', 'health_auth_team'],
-  ['/api/intake', '/work/api/intake', 'intake'],
   ['/api/me', '/work/api/me', 'health_auth_team'],
   ['/api/newsletter-slots', '/work/api/newsletter-slots', 'calendar_newsletter'],
   ['/api/notifications', '/work/api/notifications', 'notifications'],
@@ -101,7 +100,6 @@ const OPERATIONAL_API_ALIASES: ReadonlyArray<readonly [
   ['/api/tokens', '/work/api/tokens', 'users_tokens'],
   ['/api/users', '/work/api/users', 'users_tokens'],
   ['/api/v1/intake/email-documents', '/work/api/v1/intake/email-documents', 'email_documents'],
-  ['/api/webhook/email', '/work/api/webhook/email', 'email_documents'],
   ['/api/webhook/telegram', '/work/api/webhook/telegram', 'conversational_telegram'],
   ['/api/calendar-items', '/work/api/calendar-items', 'calendar_newsletter'],
 ];
@@ -228,8 +226,10 @@ describe('portal API request telemetry', () => {
   });
 
   it('classifies equivalent API Gateway and Function URL route-caught 500s identically', async () => {
-    const previousSecret = process.env.WEBHOOK_EMAIL_SECRET;
-    delete process.env.WEBHOOK_EMAIL_SECRET;
+    const previousSecret = process.env.EMAIL_DOCUMENT_INTAKE_SECRET;
+    delete process.env.EMAIL_DOCUMENT_INTAKE_SECRET;
+    const previousSecretName = process.env.EMAIL_DOCUMENT_INTAKE_SECRET_NAME;
+    delete process.env.EMAIL_DOCUMENT_INTAKE_SECRET_NAME;
     const common = {
       body: '{"payload":"payload-secret-marker-209","documentName":"document-name-secret-209"}',
       headers: {
@@ -242,12 +242,12 @@ describe('portal API request telemetry', () => {
     };
     const apiGateway = httpEvent({
       httpMethod: 'POST',
-      path: '/api/webhook/email',
+      path: '/api/v1/intake/email-documents',
       ...common,
     });
     const functionUrl = {
-      requestContext: { http: { method: 'POST', path: '/api/webhook/email' } },
-      rawPath: '/api/webhook/email',
+      requestContext: { http: { method: 'POST', path: '/api/v1/intake/email-documents' } },
+      rawPath: '/api/v1/intake/email-documents',
       ...common,
     };
 
@@ -276,7 +276,7 @@ describe('portal API request telemetry', () => {
         assertEmfRecord(record, {
           routeFamily: 'email_documents',
           method: 'POST',
-          statusCode: 500,
+          statusCode: 503,
           requestId: CONTEXT.awsRequestId,
           errorClass: 'route_handled',
         });
@@ -287,10 +287,14 @@ describe('portal API request telemetry', () => {
       }
 
       for (const response of [apiResponse!, urlResponse!]) {
-        assert.strictEqual(response.statusCode, 500);
+        assert.strictEqual(response.statusCode, 503);
         assert.strictEqual(response.headers!['x-dataops-request-id'], CONTEXT.awsRequestId);
         assert.deepStrictEqual(JSON.parse(response.body), {
-          error: 'Webhook not configured',
+          status: 'configuration-error',
+          error: {
+            code: 'authentication-not-configured',
+            message: 'Email document authentication is not configured',
+          },
           requestId: CONTEXT.awsRequestId,
         });
       }
@@ -307,8 +311,10 @@ describe('portal API request telemetry', () => {
         assert.ok(!telemetry.includes(forbidden));
       }
     } finally {
-      if (previousSecret === undefined) delete process.env.WEBHOOK_EMAIL_SECRET;
-      else process.env.WEBHOOK_EMAIL_SECRET = previousSecret;
+      if (previousSecret === undefined) delete process.env.EMAIL_DOCUMENT_INTAKE_SECRET;
+      else process.env.EMAIL_DOCUMENT_INTAKE_SECRET = previousSecret;
+      if (previousSecretName === undefined) delete process.env.EMAIL_DOCUMENT_INTAKE_SECRET_NAME;
+      else process.env.EMAIL_DOCUMENT_INTAKE_SECRET_NAME = previousSecretName;
     }
   });
 
@@ -421,7 +427,6 @@ describe('portal API request telemetry', () => {
       ['/api/artifacts/artifact-six', 'artifacts'],
       ['/api/assistant-jobs/job-seven', 'assistant_jobs_social_drafts'],
       ['/api/assistant-social-drafts/draft-eight', 'assistant_jobs_social_drafts'],
-      ['/api/intake/item-nine', 'intake'],
       ['/api/v1/intake/email-documents', 'email_documents'],
       ['/api/users/user-ten', 'users_tokens'],
       ['/api/tokens/token-eleven', 'users_tokens'],
@@ -433,7 +438,6 @@ describe('portal API request telemetry', () => {
       ['/api/mailing-exports/export-seventeen', 'other'],
       ['/api/conversational/readiness', 'conversational_telegram'],
       ['/api/webhook/telegram', 'conversational_telegram'],
-      ['/api/webhook/email', 'email_documents'],
       ['/docs/document-name-secret-209.md', 'docs_content_search'],
       ['/search', 'docs_content_search'],
       ['/content/images/image-eighteen.png', 'docs_content_search'],
@@ -451,7 +455,7 @@ describe('portal API request telemetry', () => {
   });
 
   it('maps every operational work API alias to its canonical route family', () => {
-    assert.strictEqual(OPERATIONAL_API_ALIASES.length, 26);
+    assert.strictEqual(OPERATIONAL_API_ALIASES.length, 24);
     for (const [canonicalPath, workAliasPath, family] of OPERATIONAL_API_ALIASES) {
       assert.strictEqual(classifyApiRouteFamily(canonicalPath), family, canonicalPath);
       assert.strictEqual(classifyApiRouteFamily(workAliasPath), family, workAliasPath);

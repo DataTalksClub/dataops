@@ -1,5 +1,5 @@
 import { isInvoiceIntakeRoute } from '../invoices/intakeRoute';
-import { processInvoiceIntake, resolveInvoiceIntakeForInbox } from '../invoices/service';
+import { processInvoiceIntake, resolveInvoiceIntakeAfterImport } from '../invoices/service';
 import { createHash, timingSafeEqual } from 'crypto';
 import { CopyObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
@@ -450,8 +450,8 @@ export async function handleEmailDocumentIntake(event: LambdaEvent, client: Dyna
     catch { /* Import acknowledgement remains distinct from review/publication. Reprocess from Finance. */ }
     const latest = await getIntakeItem(client, item.id);
     if (latest && latest.status !== 'archived') {
-      try { await resolveInvoiceIntakeForInbox(client, latest); }
-      catch { /* Inbox resolution is best-effort after a successful import. */ }
+      try { await resolveInvoiceIntakeAfterImport(client, latest); }
+      catch { /* Resolving the intake row is best-effort after a successful import. */ }
     }
   }
   audit(reservation.created ? 'accepted' : 'resumed', credential, correlation, documents.length);

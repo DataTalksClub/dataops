@@ -18,7 +18,6 @@ const frontendAssets = JSON.parse(readFileSync(
 const fixedTime = new Date('2026-08-12T10:15:00.000Z');
 const states = [
   'home-ready',
-  'inbox-blocked-detail',
   'task-proof-waiting-return',
   'workflow-detail',
   'assistant-detail-baseline',
@@ -196,10 +195,6 @@ async function navigateState(page, baseURL, state) {
     const home = page.locator('.operations-home-daily');
     await home.waitFor({ state: 'visible' });
     await page.locator('.operations-home-daily[data-operations-work-loaded="true"]').waitFor();
-  } else if (state === 'inbox-blocked-detail') {
-    await page.goto(`${baseURL}/#/inbox?intakeId=parity-intake`);
-    await settle(page);
-    await page.locator('.intake-row-main strong').filter({ hasText: 'Synthetic blocked intake' }).waitFor();
   } else if (state === 'task-proof-waiting-return') {
     await page.goto(`${baseURL}/#/tasks?taskId=parity-task&date=2026-08-12&cardId=parity-workflow&contextCardId=parity-return`);
     await settle(page);

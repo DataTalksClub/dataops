@@ -254,7 +254,6 @@ describe("app shell coordinator characterization", () => {
       "if (taskId) prepareTaskPanel(taskId)",
     ]);
     for (const routePath of [
-      "/inbox",
       "/tasks",
       "/templates",
       "/assistants",

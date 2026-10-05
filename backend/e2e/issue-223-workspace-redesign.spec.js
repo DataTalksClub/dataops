@@ -79,7 +79,7 @@ test('attention expansion preserves priorities, exact task return and planning j
   await page.goForward();
   await expect(page.locator('.home-attention-row')).toHaveCount(8);
   await expect(page.locator('.home-task-action').nth(7)).toBeFocused();
-  for (const [name, route, view = route] of [['My Plan', 'my-plan'], ['Inbox', 'inbox'], ['Process Docs', 'processes', 'docs']]) {
+  for (const [name, route, view = route] of [['Process Docs', 'processes', 'docs']]) {
     await page.locator('.home-next-destinations').getByRole('button', { name: new RegExp(name) }).click();
     await expect(page).toHaveURL(new RegExp(`#/${route}`));
     await page.reload();
@@ -204,7 +204,4 @@ test('empty and partial sources keep useful destinations and recover through ret
   await page.unroute('**/work/api/cards**');
   await page.getByRole('button', { name: 'Retry loading work: Today' }).click();
   await expect(page.locator('.home-status-strip .surface-summary')).toHaveCount(0);
-  await page.locator('.home-next-destinations').getByRole('button', { name: /Inbox/ }).click();
-  await expect(page).toHaveURL(/#\/inbox/);
-  await page.screenshot({ path: path.join(screenshots, 'inbox-desktop.png') });
 });

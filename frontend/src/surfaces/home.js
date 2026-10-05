@@ -273,8 +273,6 @@ export function createHomeSurface(context) {
     // Plain quiet links: rhetorical questions were hand-holding copy, and
     // three of them stacked on mobile pushed the work down a full screen.
     for (const [label, route] of [
-      ["My Plan", "/my-plan"],
-      ["Inbox", "/inbox"],
       ["Process Docs", "/processes"],
     ]) {
       const action = document.createElement("button");

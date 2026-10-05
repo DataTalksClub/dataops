@@ -4,17 +4,17 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSyn
 import { dirname, join, resolve } from 'node:path';
 const scratch=resolve(__dirname,'../../.tmp/model-tests');
 function tmpdir():string {mkdirSync(scratch,{recursive:true});return scratch;}
-import {syntheticKnowledge} from './helpers/knowledge';
 import {configureOperatingModelStoreForTests,handleOperatingModelRoutes} from '../src/routes/operatingModel';
+import {syntheticKnowledge} from './helpers/knowledge';
+import { createCardFromDefinition, DefinitionCardConflictError } from '../src/db/templates';
+import type { Template } from '../src/types';
 
 import { KnowledgeStore } from '../src/docs/knowledgeStore';
 import { loadOperatingModelSnapshot, parseCsv } from '../src/operatingModel/loader';
-import { createCardFromDefinition, DefinitionCardConflictError } from '../src/db/templates';
 import { getClient } from '../src/db/client';
 import { createTables } from '../scripts/local-dynamodb';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import type { Template } from '../src/types';
 
 function write(root: string, path: string, body: string): void {
   const target = join(root, path);
@@ -74,26 +74,6 @@ describe('operating model definition projection', () => {
       const fresh=await handleOperatingModelRoutes({path:'/api/operating-model',httpMethod:'GET'},client);
       const next=JSON.parse(fresh!.body).model;assert.notEqual(next.revision,previous.revision);assert.equal(next.roadmap.sessions[0].checklist[0].title,'Updated decision');
       assert.match(await pinned.readFile(templatePath),/name: Decide/);
-      const stale=await handleOperatingModelRoutes({path:'/api/my-plan/sessions/W01',httpMethod:'POST',body:JSON.stringify({expectedDefinitionRevision:previous.revision,anchorDate:'2026-09-10'})},client);
-      assert.equal(stale?.statusCode,409);
-      let injected=false;
-      configureOperatingModelStoreForTests(()=>{
-        const requestStore=new KnowledgeStore({bucket:fixture.store.bucket,client:fixture.s3 as any,cacheDir:join(root,'cache'),offline:false});
-        const originalPin=requestStore.pin.bind(requestStore);
-        requestStore.pin=async()=>{
-          const publication=await originalPin();
-          if(!injected) {injected=true;await fixture.store.publish([{path:templatePath,bytes:Buffer.from(files[templatePath]).toString().replace('Decide','Concurrent next decision')}],fixture.store.revision,'actor','Mid-request publication');}
-          return publication;
-        };
-        return requestStore;
-      });
-      const coherent=await handleOperatingModelRoutes({path:'/api/my-plan/sessions/W01',httpMethod:'POST',body:JSON.stringify({expectedDefinitionRevision:next.revision,anchorDate:'2026-09-10'})},client);
-      assert.equal(coherent?.statusCode,201);
-      const created=JSON.parse(coherent!.body);
-      assert.equal(created.card.operatingModelSource.definitionRevision,next.revision);
-      assert.equal(created.tasks[0].description,'Updated decision');
-      const subsequent=await handleOperatingModelRoutes({path:'/api/operating-model',httpMethod:'GET'},client);
-      assert.equal(JSON.parse(subsequent!.body).model.roadmap.sessions[0].checklist[0].title,'Concurrent next decision');
 
 
     } finally {
@@ -113,7 +93,6 @@ describe('operating model definition projection', () => {
     } as Template;
     const create = () => createCardFromDefinition(client, {
       id: 'operating-model-test-card', title: 'W01', anchorDate: '2026-09-10', ownerId: 'actor-1',
-      operatingModelSource: { kind: 'roadmap-session', roadmapId: '2026-q4', sessionId: 'W01', documentId: 'reference.session', definitionRevision: 'revision-1' },
     }, template, '2026-09-10', (ref) => `operating-model-test-${ref}`);
     const results = await Promise.allSettled([create(), create()]);
     assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);

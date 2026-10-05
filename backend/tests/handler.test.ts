@@ -17,7 +17,6 @@ describe('handler', () => {
     assert.ok(result.body.includes('<title>DataOps</title>'));
     assert.ok(result.body.includes('id="document-list"'));
     assert.ok(result.body.includes('data-workspace-view="home"'));
-    assert.ok(result.body.includes('data-workspace-view="inbox"'));
     // Tasks is a nav group with a section submenu, not a flat workspace-view button.
     assert.ok(result.body.includes('id="tasks-nav-button"'));
     assert.ok(result.body.includes('data-tasks-section="queue"'));

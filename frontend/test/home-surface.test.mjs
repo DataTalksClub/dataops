@@ -418,7 +418,7 @@ describe("Home surface production behavior", () => {
     assert.equal(root.querySelectorAll(".home-attention-row").length, 6);
     const destinations = root.querySelector(".home-next-destinations").querySelectorAll("button");
     for (const destination of destinations) await destination.click();
-    assert.deepEqual(harness.calls.navigations, ["/my-plan", "/inbox", "/processes"]);
+    assert.deepEqual(harness.calls.navigations, ["/processes"]);
   });
 
   test("renders attention urgency with retained cues and no hidden badges", async () => {

@@ -81,19 +81,6 @@ function createNavigationHarness(options = {}) {
       this.replaced.push({ state, url });
     },
   };
-  const intake = { selectedId: null };
-  const intakeSurfaceState = {
-    intake,
-    intakeMutation: options.intakeMutation || {
-      itemId: "",
-      action: "",
-      values: {},
-      focus: null,
-      error: "",
-      busy: false,
-      status: "",
-    },
-  };
   const assistantQueue = { selectedJobId: null };
   const knowledge = {
     allDocuments: options.documents || [],
@@ -118,7 +105,6 @@ function createNavigationHarness(options = {}) {
     getAssistantQueueState: () => assistantQueue,
     getDocsAvailability: () =>
       options.docsAvailability || emptyOperationsDocsSnapshot(),
-    getIntakeSurfaceState: () => intakeSurfaceState,
     getKnowledgeState: () => knowledge,
     getTasksSectionForLegacyView: (view) =>
       ({
@@ -155,7 +141,6 @@ function createNavigationHarness(options = {}) {
     requestAnimationFrameImpl: (callback) => callback(),
     resetCardPanel: () => calls.push(["reset-card"]),
     resetTaskPanel: () => calls.push(["reset-task"]),
-    resolveIntakeRouteEntity: async (...args) => calls.push(["resolve-intake", ...args]),
     resolveTaskQueueRouteContext: async (...args) => calls.push(["resolve-queue", ...args]),
     resolveTemplateRouteEntity: async (...args) => calls.push(["resolve-template", ...args]),
     searchInput,
@@ -182,8 +167,6 @@ function createNavigationHarness(options = {}) {
     document,
     documentList,
     history,
-    intake,
-    intakeSurfaceState,
     knowledge,
     location,
     nestedTask,
@@ -229,7 +212,6 @@ describe("canonical navigation shell behavior", () => {
 
   test("hydrates only the APIs owned by each canonical route", async () => {
     const cases = [
-      ["/inbox", { intakeId: "intake-1" }, "resolve-intake"],
       ["/tasks", { taskId: "task-1" }, "resolve-queue"],
       ["/templates", { templateId: "template-1" }, "resolve-template"],
       ["/assistants", { assistantJobId: "job-1" }, "assistants"],
@@ -242,7 +224,6 @@ describe("canonical navigation shell behavior", () => {
       const harness = createNavigationHarness();
       await harness.shell.navigateCanonicalWorkspace(path, params).ready;
       assert.equal(harness.calls.some(([name]) => name === expected), true, path);
-      if (path === "/inbox") assert.equal(harness.intake.selectedId, "intake-1");
       if (path === "/assistants") {
         assert.equal(harness.assistantQueue.selectedJobId, "job-1");
       }
@@ -369,61 +350,6 @@ describe("canonical navigation shell behavior", () => {
     assert.equal(harness.shell.isWorkspaceRouteFresh(priorToken), false);
     assert.equal(harness.calls.filter(([name]) => name === "reset-task").length, 2);
     assert.equal(harness.calls.filter(([name]) => name === "reset-card").length, 2);
-  });
-
-  test("keeps an Inbox draft on same-item refresh and discards it across navigation", async () => {
-    const harness = createNavigationHarness({
-      intakeMutation: {
-        itemId: "intake-draft",
-        action: "block",
-        values: { reason: "Waiting for review" },
-        focus: { field: "reason" },
-        error: "",
-        busy: false,
-        status: "",
-      },
-    });
-
-    await harness.shell.navigateCanonicalWorkspace(
-      "/inbox",
-      { intakeId: "intake-draft" },
-      { hydrate: false },
-    ).ready;
-    assert.equal(harness.intakeSurfaceState.intakeMutation.action, "block");
-
-    await harness.shell.navigateCanonicalWorkspace("/tasks", {}, {
-      hydrate: false,
-    }).ready;
-    assert.deepEqual(harness.intakeSurfaceState.intakeMutation, {
-      itemId: "",
-      action: "",
-      values: {},
-      focus: null,
-      error: "",
-      busy: false,
-      status: "",
-      phase: "idle",
-      routeToken: 2,
-    });
-
-    await harness.shell.navigateCanonicalWorkspace(
-      "/inbox",
-      { intakeId: "intake-draft" },
-      { hydrate: false },
-    ).ready;
-    assert.equal(harness.intakeSurfaceState.intakeMutation.itemId, "");
-
-    harness.intakeSurfaceState.intakeMutation = {
-      itemId: "intake-draft",
-      action: "block",
-      values: { reason: "Second draft" },
-      focus: null,
-      error: "",
-      busy: false,
-      status: "",
-    };
-    harness.shell.beginDocumentNavigation();
-    assert.equal(harness.intakeSurfaceState.intakeMutation.itemId, "");
   });
 
   test("normalizes malformed Home URLs and opens known document or folder URLs", async () => {

@@ -70,8 +70,6 @@ const AUTHENTICATED_ROUTES: RouteCase[] = [
   { method: 'POST', path: '/api/assistant-jobs', body: {} },
   { method: 'GET', path: '/api/assistant-social-drafts' },
   { method: 'POST', path: '/api/assistant-social-drafts', body: {} },
-  { method: 'GET', path: '/api/intake' },
-  { method: 'POST', path: '/api/intake', body: {} },
   { method: 'GET', path: '/api/bookkeeping' },
   { method: 'GET', path: '/api/sponsor-crm/sponsors' },
   { method: 'POST', path: '/api/sponsor-crm/sponsors', body: {} },
@@ -85,7 +83,6 @@ const AUTHENTICATED_ROUTES: RouteCase[] = [
   { method: 'GET', path: '/api/conversational/readiness' },
   { method: 'POST', path: '/api/cron/run', body: {} },
   { method: 'POST', path: '/api/cron/export', body: {} },
-  { method: 'POST', path: '/api/webhook/email', body: {} },
   // A path with no handler must still be refused before the router can reveal
   // whether it exists.
   { method: 'GET', path: '/api/definitely-not-a-route' },

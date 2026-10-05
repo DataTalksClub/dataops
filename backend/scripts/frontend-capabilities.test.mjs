@@ -24,10 +24,6 @@ const REQUIRED = {
     states: ["operator-ready", "admin-ready", "desktop-focus-close", "mobile-focus-close", "logout"],
   },
   home: { route: "/#/", states: ["loading", "empty", "ready", "partial-failure"] },
-  inbox: {
-    route: "/#/inbox?intakeId=<id>",
-    states: ["empty", "filtered-exact", "new", "triaged", "blocked-due", "blocked-future", "attached", "converted", "assistant-ready", "duplicate", "ignored", "archived", "validation", "conflict", "server-failure", "stale-not-found"],
-  },
   tasks: {
     route: "/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
     states: ["empty", "waiting", "blocked", "done", "create-select-update", "file-proof", "combined-context", "sop-link", "stale-not-found", "conflict", "failure"],
@@ -104,7 +100,6 @@ const REQUIRED_APIS = {
   session: ["/api/me", "/api/*", "/work/api/*"],
   settings: ["/api/me", "/logout"],
   home: ["/api/tasks", "/api/cards", "/api/notifications", "/docs/process-quality"],
-  inbox: ["/api/intake"],
   tasks: ["/api/tasks", "/api/files", "/api/artifacts", "/docs", "/content/*"],
   workflows: ["/api/cards", "/api/tasks", "/api/artifacts"],
   templates: ["/api/templates", "/api/cards"],
@@ -151,7 +146,6 @@ const REQUIRED_STATE_ROLE_OVERRIDES = {
 };
 const REQUIRED_ROUTE_SET = [
   "/#/",
-  "/#/inbox?intakeId=<id>",
   "/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
   "/#/cards?cardId=<id>&taskId=<id>",
   "/#/assistants?assistantJobId=<id>",
