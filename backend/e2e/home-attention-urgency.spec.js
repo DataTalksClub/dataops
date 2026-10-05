@@ -123,7 +123,7 @@ async function expectAttentionRowsDoNotOverlap(page) {
         className: row.className,
         controls: [
           ...row.querySelectorAll(
-            '.home-task-marker, strong, time, button',
+            'strong, time, button',
           ),
         ].map((control) => {
           const rect = control.getBoundingClientRect();
@@ -136,8 +136,7 @@ async function expectAttentionRowsDoNotOverlap(page) {
             top: rect.top,
             width: rect.width,
           };
-          // The aria-hidden marker glyph is decorative and hidden at mobile
-          // widths; only rendered or text-bearing controls are urgency cues.
+          // Timing text and the row action are the urgency cues.
         }).filter((control) => control.height > 0 || control.width > 0 || control.text),
       }),
     );
@@ -242,7 +241,7 @@ test.describe('issue 201 Home attention urgency', () => {
       await expect(row).toHaveCount(1);
       await expect(row).toHaveClass(new RegExp(`home-attention-${item.className}`));
       await expect(row.locator('strong')).toHaveText(item.task.description);
-      await expect(row.locator('.home-task-marker')).toBeVisible();
+      await expect(row.locator('.home-task-marker')).toHaveCount(0);
       await expect(row.locator('.home-task-state time')).toHaveText(item.text);
       await expect(row.getByRole('button', {
         name: `${item.action}: ${item.task.description}`,

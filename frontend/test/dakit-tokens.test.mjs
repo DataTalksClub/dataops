@@ -13,6 +13,10 @@ function read(relativePath) {
   return readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
 
+function uncommentCss(styles) {
+  return styles.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
 describe("dakit adoption contract", () => {
   test("the vendored tokens are a byte-copy of the dakit build output", (t) => {
     const upstream = path.join(repoRoot, "../dakit/dist/tokens.css");
@@ -56,5 +60,21 @@ describe("dakit adoption contract", () => {
           + " the deployed handler 404s anything the manifest does not list",
       );
     }
+  });
+
+  test("app CSS uses dakit semantic roles, not primitive ramps", () => {
+    const styles = uncommentCss(read("frontend/src/styles.css"));
+    assert.doesNotMatch(
+      styles,
+      /var\(--dk-(?:gray|blue|green|amber|red)-\d+\)/,
+    );
+    assert.match(
+      styles,
+      /--attention-due:\s*var\(--dk-warning-text\)/,
+    );
+    assert.match(
+      styles,
+      /--attention-waiting:\s*var\(--dk-text-faint\)/,
+    );
   });
 });

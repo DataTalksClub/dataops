@@ -516,8 +516,7 @@ describe("Home surface production behavior", () => {
       const timing = row.querySelector(".home-task-state time");
       assert.equal(timing.textContent, item.text);
       assert.equal(timing.dateTime || "", item.date);
-      const marker = row.querySelector(".home-task-marker");
-      assert.equal(marker.getAttribute("aria-hidden"), "true");
+      assert.equal(row.querySelector(".home-task-marker"), null);
       const button = findByText(row, item.action, "button");
       assert.equal(button.getAttribute("aria-label"), `${item.action}: ${item.title}`);
       await button.click();

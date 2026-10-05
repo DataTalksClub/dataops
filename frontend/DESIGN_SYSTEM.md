@@ -60,10 +60,12 @@ roles (`--dk-bg-page`, `--dk-text-muted`, `--dk-accent-default`, `--dk-*`
 status triplets) directly. Do not hardcode hex values or introduce a second
 token vocabulary.
 
-`frontend/src/styles.css` defines only DataOps-local roles dakit does not
-have yet (the `attention-*` ramp, layout metrics, card alignment). The table
-below keeps the old portal names for reference; each role's values now live in
-dakit and are identical in meaning.
+`frontend/src/styles.css` defines only DataOps-local aliases and metrics
+dakit does not have yet (layout widths, card alignment). The `attention-*`
+aliases map onto dakit semantic roles (`--dk-warning-text`, `--dk-text-faint`)
+so the app never references primitive ramps. The table below keeps the old
+portal names for reference; each role's values now live in dakit and are
+identical in meaning.
 
 ### Neutral palette
 
@@ -152,6 +154,10 @@ dakit and are identical in meaning.
   Never add a left border, inset stripe, colored rail, or other edge accent to
   selected navigation. One selection signal is enough and keeps the navigation
   calm in both themes.
+- Status and selection never live on one edge. Cards, plan sessions, queue
+  groups, inbox rows, home attention rows, and callouts use the same 1px even
+  `--dk-border-default` (or a status triplet's full perimeter). Status is a
+  badge, dot, or timing text; selection is `--dk-accent-soft` fill.
 - The top toolbar owns global actions such as notifications, help, identity,
   and account access. Page-specific editor controls appear only on pages that
   need them.

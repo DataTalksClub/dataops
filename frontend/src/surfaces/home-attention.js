@@ -115,10 +115,6 @@ export function createHomeAttentionView({
     const row = document.createElement("li");
     row.className = `home-attention-row home-attention-${item.priority}`;
 
-    const marker = document.createElement("span");
-    marker.className = "home-task-marker";
-    marker.setAttribute("aria-hidden", "true");
-
     const content = document.createElement("div");
     content.className = "home-task-content";
     const title = document.createElement("strong");
@@ -155,7 +151,7 @@ export function createHomeAttentionView({
     action.setAttribute("aria-label", `${action.textContent}: ${item.title}`);
     action.addEventListener("click", () => openTaskPanel(item.taskId));
 
-    row.append(marker, content, card, state, action);
+    row.append(content, card, state, action);
     return row;
   }
 

@@ -261,8 +261,12 @@ describe("shell ownership contract", () => {
   });
 });
 
+function uncommentCss(styles) {
+  return styles.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
 function firstCssRuleBody(styles, selector) {
-  const uncommented = styles.replace(/\/\*[\s\S]*?\*\//g, "");
+  const uncommented = uncommentCss(styles);
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = uncommented.match(new RegExp(`(?:^|[\\s}])${escaped}\\s*\\{([^}]+)\\}`));
   assert.ok(match, `missing ${selector} rule`);
@@ -341,6 +345,31 @@ describe("workspace nested nav indent contract", () => {
     assert.match(
       read("frontend/index.html"),
       /id="tasks-nav-submenu" class="workspace-nav-submenu"/,
+    );
+  });
+
+  test("app CSS never uses a colored single-edge accent", () => {
+    const styles = uncommentCss(read("frontend/src/styles.css"));
+    assert.doesNotMatch(
+      styles,
+      /border-(?:left|top)(?:-width)?:\s*[2-9]px/,
+    );
+    assert.doesNotMatch(
+      styles,
+      /box-shadow:\s*inset\s+(?:[1-9]px\s+0|0\s+[1-9]px)/,
+    );
+    assert.doesNotMatch(
+      styles,
+      /border-(?:top|left|right|bottom)-color:\s*var\(--(?:dk-(?:danger|warning|success|info|accent)|attention)-/,
+    );
+    assert.doesNotMatch(styles, /\.(?:home-task-marker|intake-row-marker)\b/);
+    assert.match(
+      firstCssRuleBody(styles, 'body[data-workspace-view="tasks"] .ops-queue-group'),
+      /border:\s*1px solid var\(--dk-border-default\)/,
+    );
+    assert.doesNotMatch(
+      firstCssRuleBody(styles, 'body[data-workspace-view="tasks"] .ops-queue-group'),
+      /border-top:/,
     );
   });
 });
