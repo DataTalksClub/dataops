@@ -14,7 +14,7 @@ systems:
   - github
 related_docs:
   - docs/architecture.md
-  - docs/operations-manager-platform-jtbd.md
+  - docs/operations-manager-platform-jtbd/part-1-user-context-and-daily-loop.md
   - docs/repository-structure-recommendation.md
 ---
 
