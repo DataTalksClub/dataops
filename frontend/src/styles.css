@@ -2684,8 +2684,10 @@ body[data-workspace-view="sponsors"] .document-list {
   min-width: 0;
   align-items: flex-start;
   overflow-x: auto;
+  /* No scrollbar-gutter: the board never scrolls vertically, so a reserved
+     gutter only shaved the columns short of the header's right edge. The
+     narrow-screen horizontal scrollbar eats height below, not width. */
   padding: 2px 4px 20px;
-  scrollbar-gutter: stable;
 }.workflow-board-column {
   display: grid;
   align-content: start;
