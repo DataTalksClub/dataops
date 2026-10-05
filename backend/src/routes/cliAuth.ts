@@ -18,6 +18,11 @@ import type { LambdaEvent, LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
+/** Only the two credential-free device operations may precede authentication. */
+export function isAnonymousDeviceRequest(method: string, path: string): boolean {
+  return method === 'POST' && (path === '/api/auth/device' || path === '/api/auth/device/token');
+}
+
 function json(statusCode: number, body: unknown): LambdaResponse {
   return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
 }

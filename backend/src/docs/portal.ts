@@ -21,6 +21,7 @@ import {resolveInteractiveActor} from '../identity/actor';
 import { authErrorPage, browserAuthConfigured, browserUser, handleCallback, logout, startLogin, unauthenticatedApi } from '../auth/browserAuth';
 import { RUNTIME_ROOT } from '../runtimePaths';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { isAnonymousDeviceRequest } from '../routes/cliAuth';
 import { handleDocsRoutes, isDocsRoute } from './contentApi';
 import { DEPLOYED_FRONTEND_FILES } from './frontendAssets';
 import {
@@ -294,6 +295,9 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
     };
   }
   if (path === '/api/health') return { authorized: false };
+  // Starting and polling a device grant establish no identity. The router's
+  // existing device handlers validate the request and require browser approval.
+  if (isAnonymousDeviceRequest(method, path)) return { authorized: false };
 
   const authEnabled = browserAuthConfigured();
   const user = authEnabled ? await browserUser(event, client) : null;

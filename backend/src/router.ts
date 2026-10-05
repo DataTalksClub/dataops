@@ -61,7 +61,7 @@ import { CardNotFoundError, getCard, getCardConsistent } from './db/cards';
 import { getTemplate } from './db/templates';
 import { getArtifact, listArtifacts } from './db/artifacts';
 import { getApiToken, touchApiToken } from './db/cliAuth';
-import { handleCliAuthRoutes } from './routes/cliAuth';
+import { handleCliAuthRoutes, isAnonymousDeviceRequest } from './routes/cliAuth';
 import { listFilesByTask } from './db/files';
 import type { ArtifactRef, LambdaEvent, LambdaResponse, Task, TaskHistoryAction, TaskHistoryEvent, TaskStatus } from './types';
 
@@ -74,13 +74,10 @@ const AUTH_EXEMPT_PATHS = new Set([
   '/',
   '/api/health',
   '/api/auth/login',
-  // A device login has no credential yet: the CLI starts the grant and polls
-  // for its result. Both are throttled and bounded by a 10 minute expiry.
-  '/api/auth/device',
-  '/api/auth/device/token',
 ]);
 
 function isAuthExempt(method: string, path: string): boolean {
+  if (isAnonymousDeviceRequest(method, path)) return true;
   if (AUTH_EXEMPT_PATHS.has(path)) return true;
   if (method === 'POST' && path === '/api/v1/intake/email-documents') return true;
   if (method === 'POST' && path === '/api/webhook/telegram') return true;
