@@ -23,7 +23,7 @@ test.describe('Git-authored runtime templates', () => {
     await expect(page.getByRole('heading', { name: /Synthetic Git-authored workflow/ })).toBeVisible();
     await expect(page.getByText('workflow-templates/synthetic-git-workflow.yaml')).toBeVisible();
     await expect(page.getByText('0123456789ab')).toBeVisible();
-    await expect(page.getByText(/private knowledge repository/)).toBeVisible();
+    await expect(page.getByText('This definition is projected from reviewed YAML.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'New runtime template' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Save template' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Delete template' })).toHaveCount(0);
