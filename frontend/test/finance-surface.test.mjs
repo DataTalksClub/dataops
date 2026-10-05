@@ -755,6 +755,16 @@ describe("Finance surface boundary", () => {
                 category: "Taxes",
                 entryType: "Tax",
               },
+              {
+                id: "entry-5",
+                transactionDate: "2026-08-20",
+                counterparty: "Cloud Sponsor",
+                description: "Grant payment",
+                amount: "40.00",
+                currency: "EUR",
+                category: "Sponsorship",
+                entryType: "Grant income",
+              },
             ],
           };
         if (path.endsWith("/documents"))
@@ -790,11 +800,24 @@ describe("Finance surface boundary", () => {
     assert.match(surface.innerHTML, /Record and review the ledger/);
     assert.match(surface.innerHTML, /Match transaction evidence/);
     assert.match(surface.innerHTML, /Prepare the monthly package/);
-    // Income and expenses stay separate; untyped and odd-typed entries land
-    // in their own visible bucket instead of a mixed sum.
+    // The forwarded-invoice intake sits below the monthly package instead of
+    // opening the page, and its recovery form stays behind a collapsed
+    // disclosure.
+    assert.ok(
+      surface.innerHTML.indexOf("data-invoice-review") >
+        surface.innerHTML.indexOf("Prepare the monthly package"),
+      "invoice intake renders below the monthly-package section",
+    );
+    assert.match(
+      surface.querySelector("[data-invoice-review]").innerHTML,
+      /<details>\s*<summary>Process a received intake<\/summary>/,
+    );
+    // Types containing "income" count as income whatever their wording;
+    // every other typed entry is an expense; only untyped rows are
+    // unclassified. No mixed income+expenses sum.
     assert.equal(
       surface.querySelector(".bookkeeping-totals").textContent,
-      "EUR Income 200.00 · EUR Expenses 125.50 · EUR Unclassified 30.00",
+      "EUR Income 240.00 · EUR Expenses 145.50 · EUR Unclassified 10.00",
     );
     // The page opens quiet: the download-expiry note lives next to the
     // download actions, not as a permanent strip.
@@ -805,6 +828,9 @@ describe("Finance surface boundary", () => {
     const ledger = surface.querySelector(".bookkeeping-ledger").innerHTML;
     assert.match(ledger, /Provider One/);
     assert.match(ledger, /-125\.50 EUR/);
+    // Typed non-income rows carry the expense sign; income rows stay positive.
+    assert.match(ledger, /-20\.00 EUR/);
+    assert.match(ledger, /40\.00 EUR/);
     assert.match(ledger, /Referenced/);
     assert.match(ledger, /Provider Two/);
     assert.match(
@@ -825,7 +851,10 @@ describe("Finance surface boundary", () => {
     const typeOptions = surface.querySelector("[data-entry-type]").innerHTML;
     assert.match(typeOptions, /value="expense"/);
     assert.match(typeOptions, /value="income"/);
-    assert.match(typeOptions, /value="tax"/);
+    // Distinct stored wording seeds the choice list verbatim so editing keeps
+    // it, including types the classifier reads as income.
+    assert.match(typeOptions, /value="Tax"/);
+    assert.match(typeOptions, /value="Grant income"/);
     const evidence = surface.querySelector(".bookkeeping-documents").innerHTML;
     assert.match(evidence, /Downloads are private and expire after five minutes/);
     assert.match(evidence, /invoice-august\.pdf/);

@@ -50,7 +50,6 @@ export function createBookkeepingSurface(context) {
         </div>
         <button class="primary-button" data-bookkeeping-add>Add entry</button>
       </header>
-      <section class="bookkeeping-section invoice-review-section" data-invoice-review></section>
       <nav class="bookkeeping-job-nav" aria-label="Bookkeeping jobs">
         <a href="#bookkeeping-ledger"
           ><span>1</span><strong>Record ledger</strong
@@ -209,6 +208,7 @@ export function createBookkeepingSurface(context) {
           </button>
         </div>
       </section>
+      <section class="bookkeeping-section invoice-review-section" data-invoice-review></section>
       <dialog class="surface-dialog bookkeeping-entry-dialog">
         <form method="dialog" novalidate>
           <header>
@@ -489,6 +489,10 @@ export function createBookkeepingSurface(context) {
     }
     // Category suggestions and type options stay seeded from the ledger so
     // the dialog cannot grow duplicate vocabularies like "Income"/"income".
+    // Types seed from the raw stored values, deduped case-insensitively, so
+    // editing keeps whatever wording the ledger already uses; classification
+    // itself is entryDirection's job.
+    let entryTypeChoices = ["", "expense", "income"];
     function refreshVocabulary() {
       const categories = [
         ...new Set(
@@ -498,13 +502,19 @@ export function createBookkeepingSurface(context) {
       surface.querySelector("[data-category-options]").innerHTML = categories
         .map((category) => html`<option value="${escapeHtml(category)}"></option>`)
         .join("");
-      const typeOptions = ["", "expense", "income"];
+      const typeChoices = ["", "expense", "income"];
       entries.forEach((e) => {
-        const direction = entryDirection(e);
-        if (direction && !typeOptions.includes(direction))
-          typeOptions.push(direction);
+        const stored = String(e.entryType || "").trim();
+        if (
+          stored &&
+          !typeChoices.some(
+            (option) => option.toLowerCase() === stored.toLowerCase(),
+          )
+        )
+          typeChoices.push(stored);
       });
-      surface.querySelector("[data-entry-type]").innerHTML = typeOptions
+      entryTypeChoices = typeChoices;
+      surface.querySelector("[data-entry-type]").innerHTML = typeChoices
         .map((option) =>
           html`<option value="${escapeHtml(option)}">
             ${escapeHtml(
@@ -724,10 +734,24 @@ export function createBookkeepingSurface(context) {
         Object.keys(item).forEach((k) => {
           if (form.elements[k]) form.elements[k].value = item[k] || "";
         });
-        // Selects only accept their option values; normalize the stored
-        // direction (e.g. "Expense") onto the seeded lowercase options and
-        // keep untyped entries unclassified instead of guessing.
-        form.elements.entryType.value = entryDirection(item);
+        // Selects only accept their option values; match the stored type
+        // case-insensitively onto the seeded options, keep untyped entries
+        // unclassified instead of guessing, and preserve stored wording that
+        // is not seeded by adding its option first.
+        const storedType = String(item.entryType || "").trim();
+        const seededType = entryTypeChoices.find(
+          (option) => option.toLowerCase() === storedType.toLowerCase(),
+        );
+        if (!seededType && storedType) {
+          entryTypeChoices.push(storedType);
+          surface
+            .querySelector("[data-entry-type]")
+            .insertAdjacentHTML(
+              "beforeend",
+              `<option value="${escapeHtml(storedType)}">${escapeHtml(storedType)}</option>`,
+            );
+        }
+        form.elements.entryType.value = seededType || storedType;
         entryDialog.querySelector("h3").textContent = "Edit ledger entry";
         openDialog(entryDialog);
       }

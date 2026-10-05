@@ -3370,9 +3370,11 @@ body[data-workspace-view="sponsors"] .document-list {
 }
 
 .bookkeeping-download-hint {
-  margin: 0 0 8px;
+  /* Matches the document-row padding so the note aligns with the actions. */
+  margin: 0;
   color: var(--dk-text-muted);
   font-size: 12px;
+  padding: 0 18px 8px;
 }
 
 .bookkeeping-upload {

@@ -20,8 +20,14 @@ export const FIELD_LABELS = {
   comment: "Comment",
 };
 
+// Observable classification from the groomed #243 contract: a type that
+// contains "income" (case-insensitive) is income, any other non-empty type is
+// an expense, and only entries without a type stay unclassified.
 export function entryDirection(entry) {
-  return String(entry.entryType || "").trim().toLowerCase();
+  const type = String(entry.entryType || "").trim().toLowerCase();
+  if (!type) return "";
+  if (type.includes("income")) return "income";
+  return "expense";
 }
 
 // Ledger dates read as short human dates; the year is kept when it is not
