@@ -10,6 +10,6 @@ storage outside Git.
 
 This document is split into three parts:
 
-- [Part 1: Ownership principles and the repository map](docs/repository-structure-recommendation/part-1-ownership-and-repository-map.md)
-- [Part 2: What lives where and directory layouts](docs/repository-structure-recommendation/part-2-directory-layouts.md)
-- [Part 3: Product navigation, transition plan, and the implementation goal](docs/repository-structure-recommendation/part-3-navigation-transition-and-goal.md)
+- [Part 1: Ownership principles and the repository map](repository-structure-recommendation/part-1-ownership-and-repository-map.md)
+- [Part 2: What lives where and directory layouts](repository-structure-recommendation/part-2-directory-layouts.md)
+- [Part 3: Product navigation, transition plan, and the implementation goal](repository-structure-recommendation/part-3-navigation-transition-and-goal.md)
