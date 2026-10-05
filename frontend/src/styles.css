@@ -5200,7 +5200,7 @@ body[data-workspace-view="tasks"] .task-context-state p {
   color: var(--dk-text-faint);
   font-size: 14px;
 }body[data-workspace-view="tasks"] .ops-queue-history[open] summary::after {
-  content: "\u2013";
+  content: "–";
 }body[data-workspace-view="tasks"] .ops-queue-history summary:hover {
   background: var(--dk-bg-hover);
   color: var(--dk-text-heading);
