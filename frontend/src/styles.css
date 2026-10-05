@@ -9233,12 +9233,16 @@ body[data-workspace-view] .task-modal-panel button,
   margin-left: auto;
 }
 
-.ops-quality-row {
-    min-height: 44px;
-  }.operating-model-card .quiet-button {
+@media (max-width: 820px) {
+  .ops-quality-row {
     min-height: 44px;
   }
-}/* Operating-model hub: stat cards are flex columns with the View CTA held
+
+  .operating-model-card .quiet-button {
+    min-height: 44px;
+  }
+}
+/* Operating-model hub: stat cards are flex columns with the View CTA held
    to the card bottom, so every View in a row shares one baseline. */.operating-model-card {
   display: flex;
   flex-direction: column;
