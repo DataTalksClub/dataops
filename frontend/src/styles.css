@@ -7,12 +7,11 @@
      role; the few roles dakit does not have yet keep their DataOps values
      here until they are promoted into dakit's semantic layer. */
 
-  /* Operational-dashboard attention ramp: overdue pressure reads red (it
-     rides dakit's danger role so both themes stay in sync), due reads
-     amber, waiting reads gray. Aliased to dakit's primitive ramps so both
-     themes stay in sync through the shared build. */
-  --attention-due: var(--dk-amber-500);
-  --attention-waiting: var(--dk-gray-400);
+  /* Operational-dashboard attention aliases: due reads warning, waiting
+     reads quiet. They ride dakit's semantic roles, so both themes stay in
+     sync through the shared build and no primitive ramp leaks into app CSS. */
+  --attention-due: var(--dk-warning-text);
+  --attention-waiting: var(--dk-text-faint);
 
   --content-width: 56rem;
   --mobile-header-height: 64px;
@@ -28,10 +27,9 @@
 
 
 /* The dakit tokens remap every shared role under [data-theme="dark"]; the
-   inline boot script sets that attribute before first paint. Only the
-   DataOps-local roles still need a hand dark value here. */:root[data-theme="dark"] {
-  --attention-due: var(--dk-amber-400);
-}html,
+   inline boot script sets that attribute before first paint. The DataOps-local
+   aliases above resolve to dakit semantic roles, so no hand dark values are
+   needed here. */html,
 body {
   min-height: 100%;
   margin: 0;
@@ -634,10 +632,8 @@ body[data-view="create"] .editor-view {
   background: var(--attention-due);
 }.home-status-missing-proof .home-status-dot {
   background: var(--attention-due);
-}/* Dots mirror the row markers: red is overdue, amber is work that needs
-   you today (due, follow-up due, or blocked on proof). */.home-attention-today .home-task-marker {
-  background: var(--attention-due);
-}.home-status-item strong {
+}/* Dots carry the urgency: red is overdue, warning is work that needs
+   you today (due, follow-up due, or blocked on proof). */.home-status-item strong {
   color: var(--dk-text-heading);
   font-family: var(--dk-font-mono);
   font-size: 20px;
@@ -674,10 +670,10 @@ body[data-view="create"] .editor-view {
   margin: 0;
   padding: 0;
   list-style: none;
-}/* Attention rows: a 3px marker column, the work, its card, the honest
-   timing, and one action — the operator scans the marker edge first. */.home-attention-row {
+}/* Attention rows: the work, its card, the honest timing, and one action —
+   urgency reads through the dot and the timing text, not an edge stripe. */.home-attention-row {
   display: grid;
-  grid-template-columns: 3px minmax(0, 1fr) minmax(150px, 190px) minmax(120px, 148px) 76px;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 190px) minmax(120px, 148px) 76px;
   gap: 14px;
   align-items: center;
   min-height: 56px;
@@ -686,17 +682,6 @@ body[data-view="create"] .editor-view {
   border-top: 1px solid var(--dk-border-default);
 }.home-attention-row:hover {
   background: var(--dk-bg-hover);
-}.home-task-marker {
-  align-self: stretch;
-  width: 3px;
-  border-radius: 0;
-  background: var(--attention-waiting);
-}.home-attention-overdue .home-task-marker {
-  background: var(--dk-danger-text);
-}.home-attention-follow-up .home-task-marker {
-  background: var(--attention-due);
-}.home-attention-missing-proof .home-task-marker {
-  background: var(--attention-due);
 }.home-task-content {
   display: flex;
   flex-direction: column;
@@ -1585,7 +1570,7 @@ body[data-view="create"] .editor-view {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--dk-gray-0);
+  background: var(--dk-bg-page);
   transition: transform 140ms ease;
 }.settings-theme-toggle[aria-pressed="true"] .settings-toggle-track {
   background: var(--dk-accent-default);
@@ -3947,8 +3932,6 @@ body[data-workspace-view="sponsors"] .document-list {
   }.home-attention-row,
 .home-attention-row + .home-attention-row {
     border: 1px solid var(--dk-border-default);
-    border-left-width: 3px;
-    border-left-color: var(--attention-waiting);
     border-radius: var(--dk-radius-md);
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
@@ -3956,14 +3939,6 @@ body[data-workspace-view="sponsors"] .document-list {
     padding: 12px 14px;
   }.home-attention-row:hover {
     background: var(--dk-bg-surface);
-  }.home-attention-row.home-attention-overdue {
-    border-left-color: var(--dk-danger-text);
-  }.home-attention-row.home-attention-follow-up,
-.home-attention-row.home-attention-missing-proof,
-.home-attention-row.home-attention-today {
-    border-left-color: var(--attention-due);
-  }.home-task-marker {
-    display: none;
   }.home-task-content {
     display: flex;
     gap: 4px;
@@ -4605,8 +4580,6 @@ body[data-workspace-view="sponsors"] .document-list {
   min-height: 132px;
   padding: 9px;
   transition: background-color 120ms ease;
-}.calendar-day.is-today {
-  box-shadow: inset 0 3px 0 var(--dk-accent-default);
 }.calendar-day-heading time {
   font-variant-numeric: tabular-nums;
 }.calendar-day-items {
@@ -5617,21 +5590,8 @@ body[data-workspace-view="tasks"] .task-context-state p {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--dk-border-default);
-  border-top: 3px solid var(--dk-border-strong);
   border-radius: var(--task-panel-radius);
   background: var(--dk-bg-surface);
-}body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="overdue"] {
-  border-top-color: var(--dk-danger-text);
-}body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="follow-ups-due"] {
-  border-top-color: var(--dk-warning-text);
-}body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="missing-proof"] {
-  border-top-color: var(--dk-info-text);
-}body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="waiting"] {
-  border-top-color: var(--dk-warning-text);
-}body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="today"] {
-  border-top-color: var(--dk-accent-default);
-}body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="done-history"] {
-  border-top-color: var(--dk-success-text);
 }body[data-workspace-view="tasks"] .ops-queue-group > header {
   display: flex;
   align-items: center;
@@ -6270,7 +6230,7 @@ body[data-workspace-view="tasks"] .assistant-artifacts {
 }body[data-workspace-view="tasks"] .assistant-timeline li {
   display: grid;
   gap: 2px;
-  border-left: 2px solid var(--dk-border-strong);
+  border: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
   padding: 8px 10px;
 }body[data-workspace-view="tasks"] .assistant-timeline strong {
@@ -6717,7 +6677,7 @@ body[data-workspace-view="tasks"] .workflow-summary-top .card-stage-static {
 }body[data-workspace-view="tasks"] .workflow-references-section .task-history-event {
   background: var(--dk-bg-muted);
 }body[data-workspace-view="tasks"] .workflow-assistant-note {
-  border-left: 2px solid var(--dk-info-text);
+  border: 1px solid var(--dk-info-border);
   background: var(--dk-info-bg);
   padding: 8px 10px;
 }body[data-workspace-view="tasks"] .quick-form-panel {
@@ -7164,9 +7124,6 @@ body[data-view="library"] .library-view {
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
-}.ops-quality-row.ops-quality-blocking,
-.ops-quality-row.ops-quality-error {
-  box-shadow: inset 3px 0 0 var(--dk-danger-text);
 }.ops-quality-row.ops-quality-blocking .ops-quality-row-head span,
 .ops-quality-row.ops-quality-error .ops-quality-row-head span {
   border-color: var(--dk-danger-border);
@@ -8716,11 +8673,6 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
 }body[data-workspace-view="tasks"] .ops-queue-meta .ops-queue-chip.is-attention {
   color: var(--attention-due);
   font-weight: 500;
-}/* Attention ramp for queue lanes: waiting is quiet gray, not amber; missing
-   proof reads as due-attention (amber), not information blue. */body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="waiting"] {
-  border-top-color: var(--attention-waiting);
-}body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="missing-proof"] {
-  border-top-color: var(--attention-due);
 }/* Waiting chips on the cards board follow the same gray. */.ops-card-meta [data-status="waiting"],
 [data-status="waiting"].planner-status,
 .planner-status.is-waiting {
