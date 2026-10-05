@@ -632,6 +632,116 @@ describe("Tasks surface boundary", () => {
     assert.equal(findAllByClass(documentList, "cards-archive-grid").length, 2);
   });
 
+  test("filters the board by the Template each Card was created from", async () => {
+    const active = [
+      {
+        id: "news-1",
+        title: "Newsletter card",
+        stage: "preparation",
+        anchorDate: "2026-08-10",
+        templateId: "tpl-news",
+      },
+      {
+        id: "news-2",
+        title: "Second newsletter card",
+        stage: "announced",
+        anchorDate: "2026-08-11",
+        templateId: "tpl-news",
+      },
+      {
+        id: "pod-1",
+        title: "Podcast card",
+        stage: "after-event",
+        anchorDate: "2026-08-03",
+        templateId: "tpl-podcast",
+      },
+    ];
+    const { api, documentList, state, requests } = createHarness({
+      route: { path: "/cards", params: new URLSearchParams() },
+      workSnapshot: {
+        activeCards: active,
+        cards: active,
+        cardTasks: { "news-1": [], "news-2": [], "pod-1": [] },
+      },
+      request: async () => ({
+        templates: [
+          { id: "tpl-news", name: "Weekly email" },
+          { id: "tpl-podcast", name: "Podcast episode" },
+        ],
+      }),
+    });
+
+    api.renderTasksSurface([], "workflows");
+    // Template display names load from the same listing the create-card form
+    // uses; the first render falls back to short ids until it answers.
+    assert.deepEqual(
+      requests.map((request) => request.url),
+      ["/api/templates"],
+    );
+    await nextTicks();
+    api.renderTasksSurface([], "workflows");
+    const filterSelect = documentList.querySelector(
+      ".workflow-board-filter select",
+    );
+    assert.equal(filterSelect.value, "");
+    assert.deepEqual(
+      filterSelect.children.map((option) => option.textContent),
+      ["All templates", "Podcast episode", "Weekly email"],
+    );
+
+    filterSelect.value = "tpl-news";
+    filterSelect.dispatch("change");
+    api.renderTasksSurface([], "workflows");
+    assert.deepEqual(
+      findAllByClass(documentList, "workflow-board-card").map(
+        (card) => card.dataset.cardId,
+      ),
+      ["news-1", "news-2"],
+    );
+    assert.match(documentList.textContent, /2 cards of 3 shown/);
+
+    // A snapshot refresh that leaves no Card behind the chosen Template
+    // heals the filter back to "All templates" instead of an empty board.
+    const survivor = [active[2]];
+    state.workSnapshot.activeCards = survivor;
+    state.workSnapshot.cards = survivor;
+    api.renderTasksSurface([], "workflows");
+    const healedSelect = documentList.querySelector(
+      ".workflow-board-filter select",
+    );
+    assert.equal(healedSelect.value, "");
+    assert.equal(
+      findAllByClass(documentList, "workflow-board-card").length,
+      1,
+    );
+  });
+
+  test("drops the template filter control when no Card carries a Template", () => {
+    const active = [
+      {
+        id: "plain",
+        title: "Imported card",
+        stage: "preparation",
+        anchorDate: "2026-08-10",
+      },
+    ];
+    const { api, documentList, requests } = createHarness({
+      route: { path: "/cards", params: new URLSearchParams() },
+      workSnapshot: {
+        activeCards: active,
+        cards: active,
+        cardTasks: { plain: [] },
+      },
+    });
+
+    api.renderTasksSurface([], "workflows");
+    assert.equal(
+      findAllByClass(documentList, "workflow-board-filters").length,
+      0,
+    );
+    assert.deepEqual(requests, []);
+  });
+
   test("does not present incomplete Cards or archive collections as empty", () => {
     const { api, documentList, setRoute } = createHarness({
       route: { path: "/cards", params: new URLSearchParams() },

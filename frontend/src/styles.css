@@ -2642,6 +2642,29 @@ body[data-workspace-view="sponsors"] .document-list {
 }.workflow-board-actions .quiet-button[aria-pressed="true"] {
   border-color: var(--dk-border-control-hover);
   background: var(--dk-bg-hover);
+}.workflow-board-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  width: min(100%, var(--cards-board-width));
+  justify-self: center;
+  padding: 0 4px;
+}.workflow-board-filters[hidden] {
+  display: none;
+}.workflow-board-filter {
+  display: grid;
+  gap: 5px;
+  color: var(--dk-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}.workflow-board-filter select {
+  min-width: 220px;
+  min-height: 36px;
+}.workflow-board-filter-count {
+  align-self: center;
+  color: var(--dk-text-muted);
+  font-size: 12px;
 }.cards-archive-month {
   display: grid;
   gap: 8px;
