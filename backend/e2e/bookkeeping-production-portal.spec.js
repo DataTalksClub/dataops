@@ -60,7 +60,9 @@ test.describe("production portal bookkeeping", () => {
     await entryForm
       .getByLabel("Description")
       .fill("Synthetic browser evidence");
-    await entryForm.locator("input[name=\"amount\"]").fill("20.00");
+    // The label text carries the required mark and, after the empty save
+    // above, the field-level validation note, so match by prefix.
+    await entryForm.getByLabel(/^Amount/).fill("20.00");
     await entryForm.getByLabel("Category").fill("synthetic-testing");
     await entryForm.getByRole("button", { name: "Save" }).click();
     const createdRow = page.getByRole("row").filter({
