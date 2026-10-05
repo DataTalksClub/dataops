@@ -241,9 +241,6 @@ async function openWorkspace(page, hash) {
 test("captures Knowledge family after screenshots", async ({ page }) => {
   test.setTimeout(180_000);
   await page.route("**/api/operating-model", (route) => route.fulfill({ json: { model } }));
-  await page.route("**/api/my-plan", (route) => route.fulfill({
-    json: { revision: model.revision, freshness: "current", sessions: [session] },
-  }));
 
   await page.setViewportSize(DESKTOP);
   await openWorkspace(page, "#/processes");
@@ -309,8 +306,4 @@ test("captures Knowledge family after screenshots", async ({ page }) => {
   await page.setViewportSize(MOBILE);
   await screenshot(page, "operating-model-functions-mobile-390-light");
 
-  await page.setViewportSize(DESKTOP);
-  await page.goto(`${server.baseURL}/#/my-plan`);
-  await expect(page.getByRole("heading", { name: "My Plan" })).toBeVisible();
-  await screenshot(page, "my-plan-desktop-1440-light");
 });

@@ -72,7 +72,7 @@ export async function reextractInvoice(client:DynamoDBDocumentClient,record:Invo
   if(upgraded===record) throw new Error('reextract-found-no-new-fields');
   return upgraded;
 }
-export async function resolveInvoiceIntakeForInbox(client:DynamoDBDocumentClient,intake:IntakeItem) {
+export async function resolveInvoiceIntakeAfterImport(client:DynamoDBDocumentClient,intake:IntakeItem) {
   const now=new Date().toISOString();
   const history:IntakeHistoryEvent[]=Array.isArray(intake.history)?intake.history.slice():[];
   if(!history.some(event=>event.action==='handed-off-to-finance')) {

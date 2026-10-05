@@ -85,7 +85,6 @@ const ROUTE_FAMILIES: ReadonlyArray<readonly [ApiRouteFamily, string]> = [
   ['sponsor_crm', '/api/sponsor-crm'],
   ['conversational_telegram', '/api/conversational'],
   ['operating_model', '/api/operating-model'],
-  ['operating_model', '/api/my-plan'],
 ];
 
 const ROUTE_FAMILY_VALUES = new Set<string>(
