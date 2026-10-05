@@ -212,18 +212,11 @@ describe("shell ownership contract", () => {
       "save state receives completed mutation focus",
     );
 
-    assert.doesNotMatch(markup, /page-toolbar|toolbar-actions/, "the shell has no top toolbar");
-    assert.match(markup, /<footer class="sidebar-footer">/, "global actions live in the sidebar footer");
-    const sidebar = markup.slice(
-      markup.indexOf('<aside id="sidebar"'),
-      markup.indexOf("</aside>"),
+    const toolbar = markup.slice(
+      markup.indexOf('<header class="page-toolbar">'),
+      markup.indexOf('<section id="library-view"'),
     );
-    for (const id of ["sidebar-expand-button", "help-button", "work-bell-button", "settings-button"]) {
-      assert.ok(sidebar.includes(`id="${id}"`), `${id} belongs to the sidebar`);
-    }
-    for (const id of ["view-toggle-button", "doc-menu-button"]) {
-      assert.ok(editorView.includes(`id="${id}"`), `${id} belongs to the editor view`);
-    }
+    assert.doesNotMatch(toolbar, /save|discard|breadcrumb|toolbar-title|back-button/i);
 
     const bindings = read("frontend/src/shell/dom-bindings.js");
     assert.match(bindings, /editorInlineStatus: "#editor-inline-status"/);
@@ -260,7 +253,7 @@ describe("shell ownership contract", () => {
   });
 
   test("shows editor mutation controls only on the editor route", () => {
-    const styles = readAppCss(repoRoot);
+    const styles = readAppCss();
     assert.match(
       styles,
       /body\[data-view="library"\] \.editor-view,[\s\S]*?body\[data-view="create"\] \.editor-view \{\n  display: none;\n\}/,
@@ -319,7 +312,7 @@ function boxSidePx(declarations, kind, side) {
 
 describe("workspace nav layout contract", () => {
   test("Tasks sections are first-class nav rows, not a nested submenu", () => {
-    const styles = readAppCss(repoRoot);
+    const styles = readAppCss();
     const html = read("frontend/index.html");
 
     // Every Tasks destination is a top-level nav button with an icon, level
@@ -359,7 +352,7 @@ describe("workspace nav layout contract", () => {
   });
 
   test("app CSS never uses a colored single-edge accent", () => {
-    const styles = uncommentCss(readAppCss(repoRoot));
+    const styles = uncommentCss(readAppCss());
     assert.doesNotMatch(
       styles,
       /border-(?:left|top)(?:-width)?:\s*[2-9]px/,

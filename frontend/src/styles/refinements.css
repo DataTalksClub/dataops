@@ -1,0 +1,441 @@
+   These additions stay at the end of the sheet so the route-specific visual
+   language can evolve without changing shared shell primitives. */body[data-workspace-view="admin"] .document-list,
+body[data-workspace-view="users"] .document-list,
+body[data-workspace-view="device"] .document-list {
+  width: 100%;
+  max-width: 1040px;
+}body[data-workspace-view="bookkeeping"] .document-list,
+body[data-workspace-view="sponsors"] .document-list {
+  width: 100%;
+  max-width: 1180px;
+}body[data-workspace-view="newsletter"] .document-list {
+  max-width: 980px;
+}body[data-workspace-view="calendar"] .document-list {
+  max-width: 1240px;
+}.bookkeeping-surface,
+.sponsor-crm-surface {
+  gap: 20px;
+}.bookkeeping-header,
+.crm-header,
+.planner-header,
+.ops-surface-admin .ops-surface-header,
+.ops-surface-users .ops-surface-header,
+.ops-surface-device .ops-surface-header {
+  min-width: 0;
+  border-bottom: 1px solid var(--dk-border-default);
+  padding: 4px 0 20px;
+}.bookkeeping-header h2,
+.crm-header h2,
+.planner-heading h1 {
+  color: var(--dk-text-heading);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}.bookkeeping-header > div,
+.crm-header > div,
+.planner-heading,
+.ops-surface-admin .ops-surface-header,
+.ops-surface-users .ops-surface-header,
+.ops-surface-device .ops-surface-header {
+  min-width: 0;
+}.bookkeeping-header > div > p:last-child,
+.crm-header > div > p:last-child,
+.planner-heading > p:last-child,
+.ops-surface-admin .ops-surface-header p,
+.ops-surface-users .ops-surface-header p,
+.ops-surface-device .ops-surface-header p {
+  max-width: 720px;
+  color: var(--dk-text-muted);
+  line-height: 1.55;
+}.surface-actions,
+.bookkeeping-header > button,
+.planner-header > .primary-button {
+  flex: 0 0 auto;
+}.surface-actions button,
+.bookkeeping-header > button,
+.planner-header > .primary-button {
+  white-space: nowrap;
+}.bookkeeping-surface .surface-status,
+.sponsor-crm-surface > .surface-status {
+  margin: -8px 0 0;
+}.bookkeeping-surface .surface-status[role="status"],
+.sponsor-crm-surface > .surface-status {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  border-color: var(--dk-info-border);
+  background: var(--dk-info-bg);
+  color: var(--dk-info-text);
+}/* An empty status renders nothing; messages fill it when there is news. */.bookkeeping-surface .surface-status[role="status"]:empty {
+  display: none;
+}.bookkeeping-monthlens {
+  border-radius: var(--dk-radius-md);
+}.bookkeeping-counter,
+.bookkeeping-package-ready {
+  border-radius: var(--dk-radius-md);
+}.worklist-classify select,
+.bookkeeping-lens-month input {
+  background-color: var(--dk-bg-surface);
+}.bookkeeping-section,
+.crm-master,
+.crm-detail-pane,
+.crm-directory,
+.crm-alerts {
+  border-radius: var(--dk-radius-md);
+}.section-header {
+  min-width: 0;
+  padding: 16px 18px;
+}.section-header > div {
+  min-width: 0;
+}.section-header h3 {
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}.section-header p:last-child {
+  max-width: 640px;
+  font-size: 13px;
+  line-height: 1.45;
+}.section-count,
+.status-label,
+.finance-status,
+.evidence-state,
+.ops-user-badge {
+  border-color: var(--dk-info-border);
+  background: var(--dk-info-bg);
+  color: var(--dk-info-text);
+}.bookkeeping-filters,
+.crm-filters,
+.bookkeeping-upload {
+  background: var(--dk-bg-muted);
+}.bookkeeping-filters input,
+.bookkeeping-filters select,
+.bookkeeping-upload input,
+.bookkeeping-upload select,
+.crm-filters input,
+.crm-filters select {
+  background-color: var(--dk-bg-surface);
+}.bookkeeping-filters input[type="search"] {
+  min-width: 0;
+}.bookkeeping-table-wrap tbody tr {
+  transition: background-color 120ms ease;
+}.bookkeeping-table-wrap tbody tr:hover td {
+  background: var(--dk-bg-hover);
+}.bookkeeping-table-wrap th:first-child,
+.bookkeeping-table-wrap td:first-child {
+  padding-left: 18px;
+}.bookkeeping-table-wrap th:last-child,
+.bookkeeping-table-wrap td:last-child {
+  padding-right: 18px;
+}.bookkeeping-table-wrap td:first-child,
+.bookkeeping-table-wrap td:nth-child(2) {
+  color: var(--dk-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}.bookkeeping-table-wrap td strong {
+  color: var(--dk-text-heading);
+  font-size: 13px;
+}.bookkeeping-table-wrap .row-actions {
+  justify-content: flex-end;
+}.bookkeeping-upload {
+  grid-template-columns: minmax(240px, 1.5fr) repeat(3, minmax(140px, 0.8fr));
+  padding: 18px;
+}.bookkeeping-upload .bookkeeping-file {
+  min-height: 72px;
+  align-content: center;
+  border: 1px dashed var(--dk-border-strong);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  padding: 10px 12px;
+}.bookkeeping-upload .bookkeeping-file input[type="file"] {
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+}.bookkeeping-document-row,
+.crm-directory-row,
+.crm-booking-row,
+.crm-alerts .crm-card,
+.booking-detail-section .crm-card {
+  padding: 14px 18px;
+  transition: background-color 120ms ease;
+}.bookkeeping-document-row:hover,
+.crm-directory-row:hover,
+.crm-booking-row:hover,
+.crm-alerts .crm-card:hover,
+.booking-detail-section .crm-card:hover {
+  background: var(--dk-bg-hover);
+}.bookkeeping-document-row > div:first-child,
+.crm-directory-row > div:first-child,
+.crm-booking-row > div:first-child {
+  min-width: 0;
+}.bookkeeping-document-row strong,
+.crm-directory-row strong,
+.crm-booking-row strong {
+  color: var(--dk-text-heading);
+}.bookkeeping-document-row p,
+.crm-directory-row p,
+.crm-booking-row p {
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}.bookkeeping-private-statements {
+  margin: 18px;
+  background: var(--dk-bg-muted);
+}.bookkeeping-private-statements [data-private-statements] {
+  color: var(--dk-text-primary);
+}.bookkeeping-package {
+  align-items: end;
+  background: var(--dk-bg-muted);
+  padding: 18px;
+}.bookkeeping-package label {
+  width: min(260px, 100%);
+}.bookkeeping-entry-dialog,
+.bookkeeping-delete-dialog,
+.sponsor-crm-surface .surface-dialog {
+  border-radius: var(--dk-radius-lg);
+}.dialog-fields label input,
+.dialog-fields label select,
+.dialog-fields label textarea {
+  background-color: var(--dk-bg-surface);
+}.bookkeeping-actions,
+.sponsor-crm-surface .surface-dialog form > footer {
+  justify-content: flex-start;
+}/* Sponsor CRM: a clear booking queue beside one inspectable record. */.sponsor-crm-surface .crm-layout {
+  grid-template-columns: minmax(320px, 0.72fr) minmax(0, 1.55fr);
+  gap: 20px;
+}.crm-master .section-header,
+.crm-directory .section-header,
+.crm-alerts .section-header {
+  padding: 16px 18px;
+}.crm-filters {
+  padding: 14px 18px;
+}.crm-booking-list {
+  display: grid;
+}.crm-booking-row {
+  min-height: 84px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}.crm-booking-row[aria-current="true"] {
+  background: var(--dk-accent-soft);
+}.crm-booking-row .status-label {
+  margin-left: 4px;
+  vertical-align: middle;
+}.crm-booking-row .row-actions {
+  margin-top: 0;
+}.crm-booking-row .row-actions button:first-child {
+  border-color: var(--dk-info-border);
+  background: var(--dk-accent-soft);
+  color: var(--dk-accent-default);
+}.crm-support-grid {
+  gap: 20px;
+}.crm-directory-row .row-actions,
+.crm-alerts .crm-card .row-actions {
+  flex: 0 0 auto;
+}.crm-alerts .crm-card {
+  display: grid;
+  align-items: start;
+  gap: 6px;
+}.crm-alerts .crm-card strong {
+  color: var(--dk-text-heading);
+  line-height: 1.4;
+}.crm-alerts .crm-card button {
+  justify-self: start;
+}.booking-detail-header {
+  padding: 20px 22px;
+  background: var(--dk-bg-muted);
+}.booking-detail-header > div {
+  min-width: 0;
+}.booking-detail-header h2 {
+  font-size: 28px;
+}.booking-detail-header > div > p:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}.booking-back {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--dk-text-link) !important;
+  padding-left: 0 !important;
+}.booking-back:hover {
+  color: var(--dk-text-link-hover) !important;
+  text-decoration: underline;
+}.booking-section-nav {
+  background: var(--dk-bg-surface);
+  padding: 8px;
+}.booking-section-nav button {
+  min-height: 38px;
+  font-size: 13px;
+}.booking-detail-section {
+  padding: 22px;
+}.booking-detail-section > header {
+  margin-bottom: 16px;
+}.booking-overview-list,
+.finance-panel dl {
+  border-radius: var(--dk-radius-md);
+}.booking-overview-list > div,
+.finance-panel dl > div {
+  min-height: 64px;
+  padding: 13px 14px;
+}.booking-overview-list dd,
+.finance-panel dd {
+  line-height: 1.35;
+}.booking-notes,
+.finance-recovery {
+  line-height: 1.5;
+}.finance-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  padding: 18px;
+}.finance-panel > header {
+  align-items: center;
+  margin-bottom: 0;
+}.finance-panel > header > div {
+  min-width: 0;
+}.finance-panel > header h3 {
+  font-size: 18px;
+}.finance-panel dl {
+  margin: 0;
+}.finance-panel > p,
+.finance-payments,
+.finance-actions {
+  margin-top: 0;
+}.finance-payments {
+  border-top: 1px solid var(--dk-border-default);
+  padding-top: 12px;
+}.finance-payments p {
+  color: var(--dk-text-primary);
+  font-size: 13px;
+}.finance-actions {
+  padding-top: 4px;
+}.booking-detail-section [data-crm-communications] {
+  display: grid;
+  gap: 10px;
+}.booking-detail-section [data-crm-communications] .honest-state {
+  margin: 0;
+}.crm-card {
+  border-radius: var(--dk-radius-md);
+}.crm-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}.crm-card header span:not([hidden]) {
+  color: var(--dk-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}.crm-card[data-communication-state="outcome_unknown"],
+.crm-card[data-communication-state="rejected"] {
+  border-color: var(--dk-danger-border);
+  background: var(--dk-danger-bg);
+}.crm-card[data-communication-state="delivered"],
+.crm-card[data-communication-state="accepted"] {
+  border-color: var(--dk-success-border);
+}.crm-card[data-communication-state="disabled"],
+.crm-card[data-communication-state="awaiting_review"] {
+  border-color: var(--dk-warning-border);
+  background: var(--dk-warning-bg);
+}.crm-history {
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-muted);
+  padding: 14px 16px;
+}/* Newsletter and Calendar: the planner controls should feel like one
+   instrument panel, while the content remains a calm list/grid below it. */.planner-header {
+  padding-bottom: 22px;
+}.planner-heading h1 {
+  font-size: 34px;
+}.newsletter-filters,
+.calendar-controls {
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-muted);
+  padding: 16px;
+}.newsletter-filters .planner-filter-fields,
+.calendar-controls .planner-filter-fields {
+  min-width: 0;
+}.planner-filter-fields label,
+.calendar-layers legend {
+  letter-spacing: 0.01em;
+}.planner-filter-fields input,
+.planner-filter-fields select {
+  background-color: var(--dk-bg-surface);
+}.calendar-period-actions {
+  min-height: 36px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  padding: 2px;
+}.calendar-period-actions button {
+  border-color: transparent;
+  background: transparent;
+}.calendar-period-actions button:hover {
+  border-color: var(--dk-border-default);
+  background: var(--dk-bg-hover);
+}.calendar-layers {
+  align-content: center;
+  border-left: 1px solid var(--dk-border-default);
+  padding-left: 16px;
+}.calendar-grid {
+  border-radius: var(--dk-radius-md);
+}.calendar-weekdays strong {
+  padding: 9px 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}.calendar-day {
+  min-height: 132px;
+  padding: 9px;
+  transition: background-color 120ms ease;
+}.calendar-day-heading time {
+  font-variant-numeric: tabular-nums;
+}.calendar-day-items {
+  gap: 5px;
+}.calendar-activity,
+.calendar-overlay,
+.calendar-holiday {
+  min-height: 30px;
+  border-radius: var(--dk-radius-md);
+  padding: 5px 7px;
+}.calendar-activity:hover,
+.calendar-overlay:hover {
+  transform: translateY(-1px);
+}.calendar-content-header {
+  margin-bottom: 12px;
+}.calendar-content-header h3 {
+  font-size: 20px;
+  letter-spacing: -0.015em;
+}.newsletter-schedule {
+  gap: 16px;
+}.newsletter-period {
+  border-radius: var(--dk-radius-md);
+}.newsletter-period > header {
+  min-height: 48px;
+  padding: 10px 16px;
+}.newsletter-period h3 {
+  font-size: 15px;
+}.newsletter-slot-row {
+  min-height: 82px;
+  padding: 16px;
+  transition: background-color 120ms ease;
+}.newsletter-slot-row:hover {
+  background: var(--dk-bg-hover);
+}.newsletter-slot-date time {
+  font-variant-numeric: tabular-nums;
+}.newsletter-slot-title h4 {
+  min-width: 0;
+}.newsletter-slot-actions a,
+.newsletter-slot-actions button {
+  min-height: 34px;
+}.planner-alert {
+  border-radius: var(--dk-radius-md);
+}.planner-alert.is-danger {
+  border-color: var(--dk-danger-border);
+  background: var(--dk-danger-bg);
+  color: var(--dk-danger-text);
+}.planner-alert.is-info {
+  border-color: var(--dk-info-border);
+  background: var(--dk-info-bg);
+  color: var(--dk-info-text);
+}.planner-dialog {
+  border-radius: var(--dk-radius-lg);
+}/* Admin, Users, and Device use the same low-chrome operations frame as the

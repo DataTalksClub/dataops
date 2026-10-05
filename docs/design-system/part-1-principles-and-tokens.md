@@ -77,7 +77,7 @@ New shared components must use `--dk-*` roles — surfacing, text, borders,
 accent, status triplets, focus, type, space, radius, and control sizes — and
 must not introduce a project-local color vocabulary. DataOps-local roles
 (the `attention-*` ramp and layout metrics) live in the `:root` block of
-`frontend/src/styles/tokens-local.css` until promoted into dakit.
+`frontend/src/styles/base.css` until promoted into dakit.
 
 ### Color Tokens
 
@@ -263,6 +263,6 @@ Layer rules:
 | `--do-color-danger` | `--danger` | `#e74c3c`, `#b71c1c` | Normalize destructive/error states. |
 | `--do-color-warning` | `#a96400` use in portal waiting states | `#e67e22`, `#fff3cd`, `#7a4f01` | Use waiting/follow-up tokens. |
 | `--do-shadow-panel` | `--shadow` | `box-shadow: 0 1px 3px ...` cards | Reserve strong shadows for overlays. |
-| `--do-card-padding-x` | `--card-padding-x` | per-component paddings | Live in `frontend/src/styles/tokens-local.css`; adopt for every card-like surface. |
+| `--do-card-padding-x` | `--card-padding-x` | per-component paddings | Live in `frontend/src/styles/base.css`; adopt for every card-like surface. |
 | `--do-card-content-inset` | `--card-content-inset` | none yet | Used by board column and archive month headers to align with card content. |
 

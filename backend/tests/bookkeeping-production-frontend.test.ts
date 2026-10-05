@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import path from 'path';
 import { readFileSync } from 'node:fs';
 import { handler } from '../src/handler';
+import { DEPLOYED_FRONTEND_FILE_LIST } from '../src/docs/frontendAssets';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
@@ -40,7 +41,6 @@ describe('production portal bookkeeping frontend', () => {
 
   it('serves the complete bookkeeping operator surface and responsive styles', async () => {
     const finance = await invoke('/src/surfaces/finance/bookkeeping.js');
-    const css = await invoke('/src/styles.css');
 
     // This suite exists to prove that the authenticated portal serves the real
     // `frontend/` artifact rather than a stub or a stale copy. Asserting the
@@ -63,11 +63,27 @@ describe('production portal bookkeeping frontend', () => {
     // a data-integrity regression rather than a rename.
     assert.ok(!finance.body.includes('/documents/upload'), 'retired non-atomic upload route must stay absent');
 
-    assert.equal(css.statusCode, 200);
-    assert.equal(
-      css.body,
-      readFileSync(path.join(frontendRoot, 'src', 'styles.css'), 'utf8'),
-      'the portal must serve the real stylesheet, byte for byte',
-    );
+    // Every stylesheet the entry HTML links must be declared by the canonical
+    // asset manifest (the deployed handler 404s anything it does not list)
+    // and served byte for byte from disk, so the split stylesheet set cannot
+    // ship a deployed portal that loads only some of its styles.
+    const html = readFileSync(path.join(frontendRoot, 'index.html'), 'utf8');
+    const linkedStylesheets = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map((match) => match[1]);
+    assert.ok(linkedStylesheets.length > 0, 'the entry HTML must link the app stylesheets');
+    for (const href of linkedStylesheets) {
+      const manifestPath = href.slice(1);
+      assert.ok(
+        DEPLOYED_FRONTEND_FILE_LIST.includes(manifestPath),
+        `${href} is linked from index.html but missing from the frontend asset manifest`,
+      );
+      const css = await invoke(href);
+      assert.equal(css.statusCode, 200);
+      assert.match(css.headers?.['Content-Type'] || '', /css/);
+      assert.equal(
+        css.body,
+        readFileSync(path.join(frontendRoot, ...manifestPath.split('/')), 'utf8'),
+        `the portal must serve ${href}, byte for byte`,
+      );
+    }
   });
 });

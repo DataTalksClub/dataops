@@ -169,17 +169,17 @@ describe('deterministic canonical frontend artifact verifier', () => {
     for (const [payload, pattern] of [
       [{ version: 2, files: allowlist.map(([source]) => source) }, /version must be 1/],
       [{ version: 1, files: [] }, /non-empty array/],
-      [{ version: 1, files: ['index.html', 'src/app.js', 'src/styles.css', 'src/../escape.js'] }, /must be normalized/],
-      [{ version: 1, files: ['index.html', 'src/app.js', 'src/styles.css', 'src/app.js'] }, /Duplicate/],
-      [{ version: 1, files: ['index.html', 'src/app.js', 'src/styles.css', 'src/data.json'] }, /Unsupported.*extension/],
-      [{ version: 1, files: ['index.html', 'src/app.js', 'src/styles.css'], extra: true }, /schema only permits/],
+      [{ version: 1, files: ['index.html', 'src/app.js', 'src/styles/base.css', 'src/../escape.js'] }, /must be normalized/],
+      [{ version: 1, files: ['index.html', 'src/app.js', 'src/styles/base.css', 'src/app.js'] }, /Duplicate/],
+      [{ version: 1, files: ['index.html', 'src/app.js', 'src/styles/base.css', 'src/data.json'] }, /Unsupported.*extension/],
+      [{ version: 1, files: ['index.html', 'src/app.js', 'src/styles/base.css'], extra: true }, /schema only permits/],
     ]) {
       writeFileSync(manifestPath, JSON.stringify(payload));
       assert.throws(() => readFrontendAssetManifest(manifestPath), pattern);
     }
     const target = join(root, 'real-manifest.json');
     const link = join(root, 'linked-manifest.json');
-    writeFileSync(target, JSON.stringify({ version: 1, files: ['index.html', 'src/app.js', 'src/styles.css'] }));
+    writeFileSync(target, JSON.stringify({ version: 1, files: ['index.html', 'src/app.js', 'src/styles/base.css'] }));
     symlinkSync(target, link);
     assert.throws(() => readFrontendAssetManifest(link), /non-symlink/);
   });

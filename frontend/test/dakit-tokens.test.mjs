@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, test } from "node:test";
 
-import { importedStyleSheets, readAppCss } from "./support/app-css.mjs";
+import { readAppCss, uncommentCss } from "./support/app-css.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -13,10 +13,6 @@ const repoRoot = path.resolve(
 
 function read(relativePath) {
   return readFileSync(path.join(repoRoot, relativePath), "utf8");
-}
-
-function uncommentCss(styles) {
-  return styles.replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
 describe("dakit adoption contract", () => {
@@ -50,8 +46,26 @@ describe("dakit adoption contract", () => {
       .map((match) => match[1]);
     assert.deepEqual(
       links,
-      ["/src/dakit/tokens.css", "/src/dakit/dakit.css", "/src/styles.css"],
-      "index.html must load the dakit tokens, then the dakit bundle, then the app stylesheet",
+      [
+        "/src/dakit/tokens.css",
+        "/src/dakit/dakit.css",
+        "/src/styles/base.css",
+        "/src/styles/review.css",
+        "/src/styles/chrome.css",
+        "/src/styles/finance.css",
+        "/src/styles/operations.css",
+        "/src/styles/cards.css",
+        "/src/styles/planner.css",
+        "/src/styles/responsive.css",
+        "/src/styles/refinements.css",
+        "/src/styles/admin.css",
+        "/src/styles/tasks-boards.css",
+        "/src/styles/tasks-panels.css",
+        "/src/styles/knowledge.css",
+        "/src/styles/editor.css",
+        "/src/styles/overrides.css",
+      ],
+      "index.html must load the dakit tokens, then the dakit bundle, then the app stylesheets in slice order",
     );
 
     const manifest = JSON.parse(read("backend/src/docs/frontend-assets.json"));
@@ -62,19 +76,10 @@ describe("dakit adoption contract", () => {
           + " the deployed handler 404s anything the manifest does not list",
       );
     }
-    const imported = importedStyleSheets(path.join(repoRoot, "frontend/src/styles.css"));
-    assert.ok(imported.length > 0, "frontend/src/styles.css must import per-surface stylesheets");
-    for (const rel of imported) {
-      const asset = `src/${path.posix.normalize(rel.replace(/^\.\//, ""))}`;
-      assert.ok(
-        manifest.files.includes(asset),
-        `backend/src/docs/frontend-assets.json must serve imported stylesheet ${asset}`,
-      );
-    }
   });
 
   test("app CSS uses dakit semantic roles, not primitive ramps", () => {
-    const styles = uncommentCss(readAppCss(repoRoot));
+    const styles = uncommentCss(readAppCss());
     assert.doesNotMatch(
       styles,
       /var\(--dk-(?:gray|blue|green|amber|red)-\d+\)/,

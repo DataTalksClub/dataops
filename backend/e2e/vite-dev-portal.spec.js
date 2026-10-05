@@ -381,7 +381,7 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     const loadCountBeforeCss = loadCount;
 
     fs.appendFileSync(
-      path.join(stack.roots.frontendRoot, 'src', 'styles.css'),
+      path.join(stack.roots.frontendRoot, 'src', 'styles', 'overrides.css'),
       '\nbody { --issue-165-css-hmr: 165; }\n',
     );
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).getPropertyValue('--issue-165-css-hmr').trim())).toBe('165');

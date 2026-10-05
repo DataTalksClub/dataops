@@ -11,7 +11,25 @@ export const FRONTEND_ASSET_MANIFEST_PATH = resolve(
 );
 
 const ALLOWED_EXTENSIONS = new Set(['.css', '.html', '.js', '.woff2']);
-const REQUIRED_FILES = ['index.html', 'src/app.js', 'src/styles.css'];
+const REQUIRED_FILES = [
+  'index.html',
+  'src/app.js',
+  'src/styles/base.css',
+  'src/styles/review.css',
+  'src/styles/chrome.css',
+  'src/styles/finance.css',
+  'src/styles/operations.css',
+  'src/styles/cards.css',
+  'src/styles/planner.css',
+  'src/styles/responsive.css',
+  'src/styles/refinements.css',
+  'src/styles/admin.css',
+  'src/styles/tasks-boards.css',
+  'src/styles/tasks-panels.css',
+  'src/styles/knowledge.css',
+  'src/styles/editor.css',
+  'src/styles/overrides.css',
+];
 
 export function readFrontendAssetManifest(path = FRONTEND_ASSET_MANIFEST_PATH) {
   let payload;

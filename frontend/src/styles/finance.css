@@ -1,3 +1,7 @@
+body[data-workspace-view="sponsors"] .document-list {
+  width: 100%;
+  max-width: 1120px;
+}.bookkeeping-surface,
 .sponsor-crm-surface {
   display: grid;
   min-width: 0;
@@ -807,7 +811,3 @@
   color: var(--dk-text-primary);
   font: inherit;
 }/* Non-Home routes remain structurally usable while their redesign is pending. */.ops-surface,
-.ops-section,
-.ops-lane,
-.ops-card,
-.assistant-card,

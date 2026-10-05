@@ -18,7 +18,7 @@ const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     if (url.pathname === "/fixture") {
       res.setHeader("content-type", "text/html");
-      res.end('<html><head><link rel="stylesheet" href="/src/dakit/tokens.css"><link rel="stylesheet" href="/src/dakit/dakit.css"><link rel="stylesheet" href="/src/styles.css"></head><body data-workspace-view="bookkeeping"><main id="finance"></main></body></html>');
+      res.end('<html><head><link rel="stylesheet" href="/src/dakit/tokens.css"><link rel="stylesheet" href="/src/dakit/dakit.css"><link rel="stylesheet" href="/src/styles/base.css"><link rel="stylesheet" href="/src/styles/review.css"><link rel="stylesheet" href="/src/styles/chrome.css"><link rel="stylesheet" href="/src/styles/finance.css"><link rel="stylesheet" href="/src/styles/operations.css"><link rel="stylesheet" href="/src/styles/cards.css"><link rel="stylesheet" href="/src/styles/planner.css"><link rel="stylesheet" href="/src/styles/responsive.css"><link rel="stylesheet" href="/src/styles/refinements.css"><link rel="stylesheet" href="/src/styles/admin.css"><link rel="stylesheet" href="/src/styles/tasks-boards.css"><link rel="stylesheet" href="/src/styles/tasks-panels.css"><link rel="stylesheet" href="/src/styles/knowledge.css"><link rel="stylesheet" href="/src/styles/editor.css"><link rel="stylesheet" href="/src/styles/overrides.css"></head><body data-workspace-view="bookkeeping"><main id="finance"></main></body></html>');
       return;
     }
     const file = path.resolve(root, `.${url.pathname}`);

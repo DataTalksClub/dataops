@@ -1,0 +1,365 @@
+
+@media (max-width: 820px) {body {
+    overflow: auto;
+  }.desktop-only {
+    display: none !important;
+  }.mobile-only {
+    display: inline-flex !important;
+  }.mobile-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto 44px;
+    align-items: center;
+    gap: 4px;
+    height: var(--mobile-header-height);
+    border-bottom: 1px solid var(--dk-border-default);
+    background: var(--dk-bg-surface);
+    padding: 0 8px;
+  }.mobile-topbar .icon-button,
+.mobile-topbar .quiet-button,
+.mobile-topbar .account-button {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+  }.mobile-account-button {
+    width: 44px;
+  }/* The bell holds the 44px control grid on mobile: the count rides as an
+     overlay badge instead of stretching the button wide next to the avatar. */.mobile-work-bell-button {
+    position: relative;
+    width: 44px;
+    justify-content: center;
+  }.mobile-topbar .mobile-work-bell-button .work-bell-count {
+    position: absolute;
+    top: 3px;
+    right: 1px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    font-size: 10px;
+  }#mobile-title {
+    overflow: hidden;
+    color: var(--dk-text-heading);
+    font-size: 17px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }.app-shell {
+    display: block;
+    height: auto;
+    min-height: calc(100vh - var(--mobile-header-height));
+  }.sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 50;
+    width: min(310px, 86vw);
+    height: 100vh;
+    transform: translateX(-102%);
+    transition: transform 160ms ease;
+    box-shadow: var(--dk-shadow-overlay);
+  }body.sidebar-open .sidebar {
+    transform: translateX(0);
+  }.sidebar-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    display: block;
+    background: var(--dk-bg-backdrop);
+  }.workspace-nav-button {
+    min-height: 48px;
+  }.page-shell {
+    display: block;
+    height: auto;
+    min-height: calc(100vh - var(--mobile-header-height));
+    overflow: visible;
+  }body[data-view="library"] .page-toolbar {
+    display: none;
+  }.view {
+    overflow: visible;
+  }.library-view {
+    padding: 14px 14px 28px;
+  }.newsletter-surface,
+.calendar-surface { gap: 16px; }.planner-header { display: grid; gap: 12px; padding-bottom: 16px; }.planner-heading h1 { font-size: var(--dk-text-xl); }.planner-heading > p:last-child { margin-top: 4px; font-size: 13px; }.planner-header > .primary-button,
+.calendar-period-actions button,
+.newsletter-slot-actions button,
+.planner-alert button,
+.planner-form-actions button { min-height: 44px; }.planner-header > .primary-button { width: fit-content; margin-top: 0; }.calendar-controls { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 14px; }.calendar-period-actions { flex-wrap: wrap; }.calendar-period-actions button { flex: 1 1 auto; }.planner-filter-fields,
+.calendar-controls .planner-filter-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }.planner-filter-fields input,
+.planner-filter-fields select { min-height: 44px; }.calendar-layers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }.calendar-layers legend { grid-column: 1 / -1; }.calendar-layers label { min-height: 30px; white-space: normal; }.calendar-layers input { width: 20px; height: 20px; }.planner-load-state { margin-top: -4px; }.planner-alert { align-items: start; }.calendar-content-header { align-items: start; }.calendar-grid { grid-template-columns: minmax(0, 1fr); }.calendar-weekdays { display: none; }.calendar-day,
+.calendar-day:nth-of-type(7n),
+.calendar-day:nth-last-child(-n + 7) {
+    display: grid;
+    grid-template-columns: 78px minmax(0, 1fr);
+    gap: 10px;
+    min-height: 64px;
+    border-right: 0;
+    border-bottom: 1px solid var(--dk-border-default);
+    padding: 9px 10px;
+  }.calendar-day:last-child { border-bottom: 0; }.calendar-day-heading { display: block; margin: 0; }.calendar-day-heading time { display: grid; font-size: 13px; }.calendar-mobile-weekday { display: inline; color: var(--dk-text-muted); font-size: 11px; text-transform: uppercase; }.iso-week { display: block; margin-top: 4px; }.calendar-activity,
+.calendar-overlay,
+.calendar-holiday { padding: 6px 8px; }.calendar-activity span,
+.calendar-overlay span,
+.calendar-holiday > span { font-size: 12px; white-space: normal; }.newsletter-slot-row { grid-template-columns: 104px minmax(0, 1fr); align-items: start; gap: 10px 14px; }.newsletter-slot-actions { grid-column: 2; flex-wrap: wrap; }.newsletter-slot-actions a { display: inline-flex; min-height: 44px; align-items: center; }.planner-dialog { width: 100%; max-width: none; min-height: 100vh; max-height: 100vh; margin: 0; border: 0; border-radius: 0; }.planner-dialog form { min-height: 100vh; }.planner-form-actions { margin-top: auto; }body[data-workspace-view="tasks"] .library-view {
+    overflow-x: hidden;
+  }.workflow-board-header {
+    align-items: flex-start;
+  }.workflow-board-header h1 {
+    font-size: 22px;
+  }.workflow-board-header p {
+    max-width: 220px;
+  }.workflow-board-actions .primary-button {
+    min-height: 44px;
+  }.ops-workflows-grid {
+    grid-template-columns: repeat(3, minmax(272px, 78vw));
+    scroll-snap-type: x proximity;
+  }.workflow-board-column {
+    min-width: 0;
+    scroll-snap-align: start;
+  }.workflow-modal-panel {
+    width: 100%;
+    height: 100vh;
+    max-height: 100vh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }.workflow-modal-panel > .task-panel-header {
+    min-height: 60px;
+  }.workflow-modal-layout {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }.workflow-modal-sidebar {
+    position: static;
+    grid-row: 1;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }.workflow-sidebar-heading {
+    grid-column: 1 / -1;
+  }.workflow-detail-summary {
+    grid-template-columns: 1fr;
+  }.workflow-references-section .task-follow-up-row,
+.workflow-references-section .task-history .task-follow-up-row {
+    grid-template-columns: 1fr;
+  }.card-checklist-item {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }.card-checklist-date {
+    grid-column: 2;
+    text-align: left;
+  }.operations-home {
+    gap: 14px;
+  }.task-modal-panel,
+.diff-panel,
+.quick-form-panel {
+    width: 100%;
+    max-height: 100vh;
+    min-height: 100vh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }.work-bell-panel,
+.settings-menu {
+    inset: 0;
+    z-index: 60;
+    width: 100%;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }.work-bell-header {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    min-height: var(--mobile-header-height);
+    padding: 0 8px;
+  }.work-bell-header strong {
+    grid-column: 2;
+    grid-row: 1;
+    text-align: center;
+  }.overlay-close-button {
+    grid-column: 1;
+    grid-row: 1;
+    width: 44px;
+    min-height: 44px;
+  }.work-bell-action {
+    min-height: 44px;
+  }body[data-workspace-view="bookkeeping"] .library-view,
+body[data-workspace-view="sponsors"] .library-view {
+    padding: 16px 14px 28px;
+  }.bookkeeping-surface,
+.sponsor-crm-surface {
+    gap: 16px;
+  }.bookkeeping-header,
+.crm-header,
+.section-header,
+.booking-detail-header,
+.finance-panel > header {
+    display: grid;
+  }.bookkeeping-header h2,
+.crm-header h2 {
+    font-size: 22px;
+  }.bookkeeping-header .primary-button,
+.crm-header button,
+.section-header button,
+.booking-detail-header button,
+.bookkeeping-surface button,
+.sponsor-crm-surface button {
+    min-height: 44px;
+  }.surface-actions {
+    align-items: stretch;
+  }.bookkeeping-filters {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }.bookkeeping-filters details {
+    grid-column: 1 / -1;
+  }.bookkeeping-filter-more {
+    position: static;
+    width: 100%;
+    grid-template-columns: 1fr;
+    margin-top: 8px;
+    box-shadow: none;
+  }.bookkeeping-table-wrap {
+    overflow: visible;
+  }.bookkeeping-table-wrap table,
+.bookkeeping-table-wrap tbody,
+.bookkeeping-table-wrap tr,
+.bookkeeping-table-wrap td {
+    display: block;
+    width: 100%;
+  }.bookkeeping-table-wrap thead {
+    display: none;
+  }.bookkeeping-table-wrap tr {
+    border-bottom: 1px solid var(--dk-border-default);
+    padding: 10px 14px;
+  }.bookkeeping-table-wrap tr:last-child {
+    border-bottom: 0;
+  }.bookkeeping-table-wrap td {
+    display: grid;
+    grid-template-columns: minmax(106px, 0.42fr) minmax(0, 1fr);
+    gap: 10px;
+    border: 0;
+    padding: 4px 0;
+    overflow-wrap: anywhere;
+  }.bookkeeping-table-wrap td::before {
+    color: var(--dk-text-muted);
+    content: attr(data-label);
+    font-size: 12px;
+    font-weight: 600;
+  }.bookkeeping-table-wrap td:last-child {
+    margin-top: 4px;
+  }.bookkeeping-table-wrap td:last-child .row-actions {
+    justify-content: flex-start;
+  }.bookkeeping-monthlens {
+    padding: 12px 14px;
+  }/* Counters wrap two-up instead of squeezing into one row. */.bookkeeping-counter {
+    flex: 1 1 40%;
+    min-width: 0;
+  }.worklist-row {
+    display: grid;
+    gap: 8px;
+  }.worklist-row .row-actions {
+    justify-content: flex-start;
+  }.bookkeeping-upload {
+    grid-template-columns: 1fr;
+  }.bookkeeping-transaction-link {
+    grid-column: auto;
+  }.bookkeeping-document-row,
+.crm-directory-row,
+.crm-alerts .crm-card,
+.booking-detail-section .crm-card {
+    display: grid;
+  }.bookkeeping-document-row .row-actions,
+.crm-directory-row .row-actions {
+    justify-content: flex-start;
+  }.bookkeeping-package {
+    display: grid;
+  }.bookkeeping-package label {
+    width: 100%;
+  }.crm-layout,
+.crm-support-grid {
+    display: block;
+  }.crm-detail-pane,
+.sponsor-crm-surface.has-booking-detail > .crm-header,
+.sponsor-crm-surface.has-booking-detail > .surface-status,
+.sponsor-crm-surface.has-booking-detail .crm-master,
+.sponsor-crm-surface.has-booking-detail > .crm-support-grid {
+    display: none;
+  }.sponsor-crm-surface.has-booking-detail .crm-detail-pane {
+    display: block;
+    overflow: visible;
+    border: 0;
+  }.crm-master {
+    width: 100%;
+  }.crm-support-grid > section {
+    margin-top: 16px;
+  }.booking-detail-header {
+    padding: 0 0 16px;
+  }.booking-section-nav {
+    top: var(--mobile-header-height);
+    gap: 2px;
+    margin-inline: -14px;
+    padding-inline: 8px;
+  }.booking-section-nav button {
+    min-width: 0;
+    padding-inline: 4px !important;
+    font-size: 12px;
+  }.booking-detail-section {
+    margin-inline: -14px;
+    scroll-margin-top: 120px;
+    padding: 16px 14px;
+  }.booking-overview-list,
+.finance-panel dl,
+.communication-preview {
+    grid-template-columns: 1fr;
+  }.booking-overview-list > div,
+.finance-panel dl > div,
+.booking-overview-list > div:nth-last-child(-n + 2),
+.finance-panel dl > div:nth-last-child(-n + 2) {
+    border-right: 0;
+    border-bottom: 1px solid var(--dk-border-default);
+  }.booking-overview-list > div:last-child,
+.finance-panel dl > div:last-child {
+    border-bottom: 0;
+  }.surface-dialog,
+.surface-dialog-wide,
+.exact-review-dialog {
+    width: 100%;
+    max-width: none;
+    max-height: 100vh;
+    min-height: 100vh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }.surface-dialog form {
+    min-height: 100vh;
+    max-height: 100vh;
+  }.surface-dialog form > header,
+.surface-dialog form > footer,
+.dialog-fields {
+    padding-inline: 14px;
+  }.surface-dialog form > footer button {
+    min-height: 44px;
+  }.booking-form-grid,
+.bookkeeping-entry-fields {
+    grid-template-columns: 1fr;
+  }.span-all {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 420px) {.newsletter-filters .planner-filter-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }.newsletter-filters .planner-filter-fields label:last-child { grid-column: 1 / -1; }.calendar-alert { display: grid; grid-template-columns: minmax(0, 1fr) auto; }.calendar-alert button { align-self: center; }.calendar-content-header { display: grid; gap: 4px; }.newsletter-slot-row { grid-template-columns: minmax(0, 1fr); }.newsletter-slot-actions { grid-column: 1; }.newsletter-slot-title { align-items: start; }.planner-form-grid { grid-template-columns: minmax(0, 1fr); }.planner-field-wide { grid-column: 1; }.bookkeeping-filters,
+.crm-filters {
+    grid-template-columns: 1fr;
+  }.bookkeeping-filters details {
+    grid-column: auto;
+  }.bookkeeping-table-wrap td {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }.booking-section-nav button {
+    font-size: 11px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {*,
+*::before,
+*::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}/* Finance and Operations surface refinement.
