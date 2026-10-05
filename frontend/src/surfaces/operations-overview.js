@@ -280,7 +280,7 @@ export function createOperationsOverview(context) {
     return countLabel(count, singular, category);
   }
 
-  function renderSurfaceHeader(titleText, descriptionText, kickerText = "") {
+  function renderSurfaceHeader(titleText, descriptionText = "", kickerText = "") {
     const header = document.createElement("section");
     header.className = "ops-surface-header";
     if (kickerText) {
@@ -291,9 +291,12 @@ export function createOperationsOverview(context) {
     }
     const title = document.createElement("h1");
     title.textContent = titleText;
-    const description = document.createElement("p");
-    description.textContent = descriptionText;
-    header.append(title, description);
+    header.append(title);
+    if (descriptionText) {
+      const description = document.createElement("p");
+      description.textContent = descriptionText;
+      header.append(description);
+    }
     return header;
   }
 

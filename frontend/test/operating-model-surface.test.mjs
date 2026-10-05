@@ -206,6 +206,58 @@ test("stale definitions and saved plan remain visible and duplicate add is suppr
 });
 
 
+test("hub is a named map without kicker, explainer, or chevron buttons", async () => {
+  const { root, surface } = harness(async (url) => {
+    if (url === "/api/operating-model") return { model: model() };
+    throw new Error(`Unexpected URL ${url}`);
+  }, "operating-model");
+  surface.renderOperatingModel();
+  await nextTicks();
+  assert.ok(findByText(root, "Operating Model", "h1"));
+  assert.equal(findByText(root, "Company system"), undefined);
+  assert.equal(
+    findByText(root, "See how business units, accountable functions, systems, gaps, and lifecycles fit together."),
+    undefined,
+  );
+  const functions = findByText(root, "Functions", "h3");
+  assert.ok(functions);
+  assert.equal(functions.parentElement.tagName, "BUTTON");
+  assert.equal(findByText(root, "Open Functions", "button"), undefined);
+  assert.equal(root.querySelector(".operating-model-open"), null);
+  assert.equal(findByText(root, "Open source document"), undefined);
+});
+
+test("section uses a title-cased family name and definition rows", async () => {
+  const { root, surface } = harness(async (url) => {
+    if (url === "/api/operating-model") {
+      return {
+        model: {
+          ...model(),
+          functions: [{
+            name: "Editorial",
+            outcome: "Publish on time",
+            managerTitle: "Editorial lead",
+            currentCoverage: "Partial coverage",
+            documentId: "function.editorial",
+          }],
+        },
+      };
+    }
+    throw new Error(`Unexpected URL ${url}`);
+  }, "operating-model", "section=functions");
+  surface.renderOperatingModel();
+  await nextTicks();
+  assert.ok(findByText(root, "Functions", "h1"));
+  assert.equal(findByText(root, "functions", "h1"), undefined);
+  assert.equal(findByText(root, "1 current definitions"), undefined);
+  assert.ok(findByText(root, "Editorial", "h3"));
+  assert.ok(findByText(root, "Publish on time"));
+  assert.ok(findByText(root, "Editorial lead · Partial coverage"));
+  assert.equal(findByText(root, "Accountable seat"), undefined);
+  assert.equal(findByText(root, "Open source document"), undefined);
+  assert.ok(findByText(root, "Overview", "button"));
+});
+
 test("plan Retry suppresses duplicate clicks while its request is pending", async () => {
   let attempts = 0;
   let finish;

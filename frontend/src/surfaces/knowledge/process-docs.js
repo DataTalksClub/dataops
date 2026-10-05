@@ -1,5 +1,6 @@
 export function createProcessDocsSurface(context, services) {
   const {
+    basename,
     buildOperationsHomeModel,
     buildOperationsReferenceLinks,
     buildProcessQualityModel,
@@ -18,9 +19,8 @@ export function createProcessDocsSurface(context, services) {
     renderSurfaceHeader,
     setRouteTitle,
     showCreate,
-    surfaceDescription,
   } = context;
-  const { refreshDocuments } = services;
+  const { openDocument, refreshDocuments } = services;
 
   function renderDocsSurface(documents) {
     const visibleDocuments = Array.isArray(documents) ? documents : [];
@@ -35,9 +35,7 @@ export function createProcessDocsSurface(context, services) {
     setRouteTitle("Docs");
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-docs";
-    // No page eyebrow: the sidebar already names the destination, and an
-    // uppercase kicker over the title is the admin-template tell.
-    const header = renderSurfaceHeader("Docs", surfaceDescription("processes"));
+    const header = renderSurfaceHeader("Docs");
     const createButton = document.createElement("button");
     createButton.type = "button";
     createButton.className = "primary-button ops-docs-create";
@@ -59,19 +57,75 @@ export function createProcessDocsSurface(context, services) {
         getOperationsWorkSnapshot(),
       );
 
-    // Docs is the surface where an unreachable corpus is most easily mistaken
-    // for an empty one, so the availability state sits above Quality Findings.
     const docsState = renderCatalogState(documents);
     if (docsState) section.append(docsState);
 
-    section.append(renderProcessQualityDrilldown(quality));
+    const catalog = renderDocumentCatalog(documents);
+    if (catalog) section.append(catalog);
 
+    const findings = renderProcessQualityDrilldown(quality);
+    if (findings) section.append(findings);
+
+    const projectDocs = renderProjectDocs(documents);
+    if (projectDocs) section.append(projectDocs);
+    return section;
+  }
+
+  function renderDocumentCatalog(documents) {
+    const visibleDocuments = Array.isArray(documents) ? documents : [];
+    if (visibleDocuments.length === 0) return null;
+    const list = document.createElement("section");
+    list.className = "ops-docs-catalog";
+    list.setAttribute("aria-label", "Process documents");
+    for (const doc of visibleDocuments) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "ops-docs-catalog-row";
+      const title = document.createElement("strong");
+      title.textContent = doc.title || basename(doc.path);
+      const meta = document.createElement("span");
+      meta.textContent = catalogMeta(doc);
+      row.append(title, meta);
+      row.addEventListener("click", () => openDocument(doc.path));
+      list.append(row);
+    }
+    return list;
+  }
+
+  function catalogMeta(doc) {
+    const type = humanizeDocType(doc.doc_type);
+    const domain = doc.domain ? String(doc.domain) : "";
+    const summary = String(doc.summary || doc.description || "").trim();
+    const parts = [];
+    if (type) parts.push(type);
+    if (domain && domain.toLowerCase() !== type.toLowerCase()) parts.push(domain);
+    if (!type && !domain && summary) parts.push(summary);
+    else if (summary && parts.length === 0) parts.push(summary);
+    return parts.join(" · ");
+  }
+
+  function humanizeDocType(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (raw.toLowerCase() === "sop") return "SOP";
+    return raw.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  function renderProjectDocs(documents) {
+    const refs = (buildOperationsReferenceLinks(documents) || []).filter(
+      (ref) => ref.href && !ref.path,
+    );
+    if (refs.length === 0) return null;
+    const wrap = document.createElement("details");
+    wrap.className = "ops-project-docs";
+    const summary = document.createElement("summary");
+    summary.textContent = "Project docs";
+    wrap.append(summary);
     const grid = document.createElement("div");
     grid.className = "ops-reference-grid";
-    for (const ref of buildOperationsReferenceLinks(documents))
-      grid.append(renderOperationsReference(ref));
-    section.append(grid);
-    return section;
+    for (const ref of refs) grid.append(renderOperationsReference(ref));
+    wrap.append(grid);
+    return wrap;
   }
 
   function renderCatalogState(documents) {
@@ -122,7 +176,7 @@ export function createProcessDocsSurface(context, services) {
 
   function renderCatalogNotice(title, body, state, detail) {
     const node = renderHonestState(title, body);
-    node.classList.add("ops-docs-state");
+    node.className = `${node.className} ops-docs-state`.trim();
     node.dataset.docsState = state;
     if (detail) {
       const note = document.createElement("small");
@@ -145,47 +199,21 @@ export function createProcessDocsSurface(context, services) {
   }
 
   function renderProcessQualityDrilldown(quality) {
-    const wrap = document.createElement("section");
+    if (!quality?.loaded || Number(quality.totalFindings || 0) === 0) return null;
+
+    const wrap = document.createElement("details");
     wrap.className = "ops-section ops-quality-drilldown";
-    wrap.setAttribute("aria-label", "Process quality drill-down");
-    wrap.dataset.qualityState = quality.loaded ? "loaded" : "unavailable";
+    wrap.setAttribute("aria-label", "Process quality findings");
+    wrap.dataset.qualityState = "loaded";
 
-    const header = document.createElement("div");
-    header.className = "ops-section-header";
-    const title = document.createElement("h3");
-    title.textContent = "Quality Findings";
-    const meta = document.createElement("span");
-    meta.className = "ops-section-meta";
-    if (quality.loaded) {
-      if (quality.totalFindings === 0) {
-        // A clean report states it once — in the drill-down's honest row —
-        // so the header meta stays quiet instead of echoing it.
-        meta.textContent = "";
-      } else {
-        // The counts are quantities, so they carry the mono accent.
-        const total = document.createElement("strong");
-        total.className = "ops-count";
-        total.textContent = String(quality.totalFindings);
-        const blocking = document.createElement("strong");
-        blocking.className = "ops-count";
-        blocking.textContent = String(quality.summary?.blocking || 0);
-        meta.append(total, " findings · ", blocking, " blocking");
-      }
-    } else {
-      meta.textContent = "Report unavailable";
-    }
-    header.append(title, meta);
-    wrap.append(header);
+    const summary = document.createElement("summary");
+    summary.className = "ops-quality-summary";
+    const total = document.createElement("strong");
+    total.className = "ops-count";
+    total.textContent = String(quality.totalFindings);
+    summary.append(total, ` finding${quality.totalFindings === 1 ? "" : "s"}`);
+    wrap.append(summary);
 
-    if (!quality.loaded) {
-      wrap.append(
-        markLiveState(renderHonestState(
-          "Process quality report unavailable",
-          quality.errors[0] || "Validation could not run.",
-        ), "unavailable"),
-      );
-      return wrap;
-    }
     if (!quality.activeWorkLoaded) {
       wrap.append(
         markLiveState(renderHonestState(
@@ -261,11 +289,6 @@ export function createProcessDocsSurface(context, services) {
       label.append(select);
       filters.append(label);
     }
-    // Mobile keeps the whole capped findings feed between the operator and a
-    // trailing filter row, so the form becomes a disclosure anchored under
-    // the section header; desktop keeps the always-visible filter row. The
-    // surface rebuilds on every filter change, so the open state lives in
-    // the filter state and the summary names how many filters are active.
     const disclosure = document.createElement("details");
     disclosure.className = "ops-quality-filters-disclosure";
     const compact = isCompactViewport();
@@ -343,7 +366,6 @@ export function createProcessDocsSurface(context, services) {
       document.defaultView?.matchMedia?.("(max-width: 820px)")?.matches,
     );
   }
-
 
   return { renderDocsSurface, renderProcessesSurface };
 }

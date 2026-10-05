@@ -71,8 +71,8 @@ export function createKnowledgeReferences(context, services) {
     if (items.length === 0) return null;
     const wrap = document.createElement("aside");
     wrap.className = "block-related";
-    const head = document.createElement("h3");
-    head.textContent = `Related docs (${items.length})`;
+    const head = document.createElement("h2");
+    head.textContent = "Related";
     wrap.append(head);
     const list = document.createElement("ul");
     for (const related of items) {
@@ -80,9 +80,11 @@ export function createKnowledgeReferences(context, services) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "block-related-row";
-      button.textContent = related;
-      button.title = "Open related doc";
-      button.addEventListener("click", () => openDocument(resolveRelatedPath(related)));
+      const path = resolveRelatedPath(related);
+      const doc = resolveDocReference(path);
+      button.textContent = doc?.title || basename(path);
+      button.title = doc?.title || basename(path);
+      button.addEventListener("click", () => openDocument(path));
       item.append(button);
       list.append(item);
     }

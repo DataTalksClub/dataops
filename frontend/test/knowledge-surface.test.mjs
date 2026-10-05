@@ -89,7 +89,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function surfaceHeader(title, description, kicker = "") {
+function surfaceHeader(title, description = "", kicker = "") {
   const header = new FakeElement("header");
   if (kicker) {
     const eyebrow = new FakeElement("p");
@@ -97,11 +97,14 @@ function surfaceHeader(title, description, kicker = "") {
     eyebrow.textContent = kicker;
     header.append(eyebrow);
   }
-  const heading = new FakeElement("h3");
+  const heading = new FakeElement("h1");
   heading.textContent = title;
-  const detail = new FakeElement("p");
-  detail.textContent = description;
-  header.append(heading, detail);
+  header.append(heading);
+  if (description) {
+    const detail = new FakeElement("p");
+    detail.textContent = description;
+    header.append(detail);
+  }
   return header;
 }
 
@@ -618,15 +621,14 @@ describe("Knowledge surface boundary", () => {
       ),
       false,
     );
-    // The outage state precedes the quality drill-down on the surface.
     const surface = outage.elements.documentList.children[0].children[1];
     assert.deepEqual(
       surface.children.map((child) => child.className),
-      [
-        "ops-honest-state ops-docs-state",
-        "ops-section ops-quality-drilldown",
-        "ops-reference-grid",
-      ],
+      ["ops-honest-state ops-docs-state"],
+    );
+    assert.equal(
+      outage.elements.documentList.querySelector(".ops-quality-drilldown"),
+      null,
     );
 
     const emptyCorpus = createKnowledgeHarness({
@@ -779,7 +781,7 @@ describe("Knowledge surface boundary", () => {
 
     harness.api.renderDocsSurface(documents);
     assert.equal(
-      findByText(harness.elements.documentList, "Docs", "h3").textContent,
+      findByText(harness.elements.documentList, "Docs", "h1").textContent,
       "Docs",
     );
     assert.equal(
@@ -787,9 +789,6 @@ describe("Knowledge surface boundary", () => {
       true,
     );
     assert.equal(harness.routeTitles.at(-1), "Docs");
-    // The header subtitle already says that processes support work; the
-    // surface does not repeat the same idea as a banner. There is no page
-    // eyebrow either: the sidebar names the destination.
     assert.equal(
       findByText(
         harness.elements.documentList,
@@ -799,7 +798,15 @@ describe("Knowledge surface boundary", () => {
       undefined,
     );
     assert.ok(
+      findByText(harness.elements.documentList, "Newsletter process", "strong"),
+    );
+    assert.equal(
+      harness.elements.documentList.querySelector(".ops-quality-drilldown"),
+      null,
+    );
+    assert.equal(
       findByText(harness.elements.documentList, "Process catalog", "a"),
+      undefined,
     );
     assert.equal(
       harness.elements.documentList.querySelector("[data-docs-state]"),
@@ -1616,8 +1623,9 @@ describe("Knowledge surface boundary", () => {
     const related = harness.api.renderRelatedDocsBlock({
       related_docs: ["../policies/review.md"],
     });
-    assert.ok(findByText(related, "Related docs (1)", "h3"));
-    assert.ok(findByText(related, "../policies/review.md", "button"));
+    assert.ok(findByText(related, "Related", "h2"));
+    assert.ok(findByText(related, "review.md", "button"));
+    assert.equal(findByText(related, "../policies/review.md", "button"), undefined);
 
     await harness.api.fetchBacklinksForCurrentDoc();
     assert.equal(host.hidden, false);

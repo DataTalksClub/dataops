@@ -54,9 +54,10 @@ export function createEditorMarkdown(context, services) {
   }
 
   function stripLeadingHeading(md) {
-    // Sections include their visible ## Heading line first; drop it because
-    // the block header already shows the name.
-    return md.replace(/^##\s+[^\n]*\n+/, "");
+    // Drop a duplicated body title. The reader already shows the document or
+    // section name in its own heading, so a leading # or ## must not render
+    // again. Display-only: the SOP parser still sees the original markdown.
+    return md.replace(/^#{1,2}\s+[^\n]*\n+/, "");
   }
 
   // ---------- Minimal markdown renderer for block bodies ----------

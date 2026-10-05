@@ -91,7 +91,6 @@ export function createDocumentRenderer(context, services) {
     const loomBlock = renderLoomBlock(fm);
     blocks.push(renderTitleBlock(fm));
     blocks.push(renderFrontmatterBlock(fm));
-    blocks.push(renderRelatedDocsBlock(fm));
     blocks.push(renderWarningsBlock());
     if (Object.keys(sections).length === 0) {
       // Plain markdown (template, reference, etc.) — render the body as one
@@ -102,6 +101,7 @@ export function createDocumentRenderer(context, services) {
       wrap.append(renderMarkdown(stripLeadingHeading(body)));
       blocks.push(wrap);
       blocks.push(loomBlock);
+      blocks.push(renderRelatedDocsBlock(fm));
       renderedView.replaceChildren(...blocks.filter(Boolean));
       return;
     }
@@ -126,6 +126,7 @@ export function createDocumentRenderer(context, services) {
       blocks.push(renderSectionBlock(name, sec));
     }
 
+    blocks.push(renderRelatedDocsBlock(fm));
     const backlinksHost = document.createElement("section");
     backlinksHost.className = "block-backlinks";
     backlinksHost.id = "backlinks-host";
@@ -166,13 +167,6 @@ export function createDocumentRenderer(context, services) {
       showHint: false,
     });
     wrap.append(h1);
-    const stats = computeDocStats();
-    if (stats) {
-      const meta = document.createElement("div");
-      meta.className = "block-title-stats";
-      meta.textContent = stats;
-      wrap.append(meta);
-    }
     return wrap;
   }
 
@@ -225,24 +219,48 @@ export function createDocumentRenderer(context, services) {
     const row = document.createElement("div");
     row.className = "fm-row";
 
-    if (fm.doc_type) row.append(pill("type", fm.doc_type));
-    if (Array.isArray(fm.systems)) {
-      for (const s of fm.systems) row.append(pill("system", s));
-    }
-    if (Array.isArray(fm.tags)) {
-      for (const t of fm.tags) row.append(pill("tag", t));
-    }
+    const line = document.createElement("p");
+    line.className = "fm-meta";
+    line.textContent = formatFrontmatterMeta(fm);
+    row.append(line);
 
     const editBtn = document.createElement("button");
     editBtn.type = "button";
-    editBtn.className = "fm-edit";
-    editBtn.textContent = row.children.length ? "Edit" : "+ Metadata";
+    editBtn.className = "quiet-button fm-edit";
+    editBtn.textContent = "Edit metadata";
     editBtn.title = "Edit doc metadata";
     editBtn.addEventListener("click", () => toggleFrontmatterEditor(wrap, fm));
     row.append(editBtn);
 
     wrap.append(row);
     return wrap;
+  }
+
+  function formatFrontmatterMeta(fm) {
+    const type = humanizeDocType(fm.doc_type);
+    const systems = Array.isArray(fm.systems) ? fm.systems : [];
+    const tags = Array.isArray(fm.tags) ? fm.tags : [];
+    const seen = new Set();
+    const parts = [];
+    const remember = (value) => {
+      const key = String(value || "").trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      parts.push(value);
+    };
+    remember(type);
+    for (const value of systems) remember(value);
+    for (const value of tags) remember(value);
+    const stats = computeDocStats();
+    if (stats) parts.push(stats);
+    return parts.join(" · ");
+  }
+
+  function humanizeDocType(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (raw.toLowerCase() === "sop") return "SOP";
+    return raw.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   function toggleFrontmatterEditor(wrap, fm) {
@@ -446,9 +464,6 @@ export function createDocumentRenderer(context, services) {
 
     const header = document.createElement("header");
     header.className = "block-section-header";
-    const label = document.createElement("span");
-    label.className = "block-section-label";
-    label.textContent = "Section";
     const title = document.createElement("h2");
     title.textContent =
       headingFromBody(section.body_md) || humanSectionName(name);
@@ -462,7 +477,7 @@ export function createDocumentRenderer(context, services) {
       multiline: false,
       editorClass: "block-section-title-editor",
     });
-    header.append(label, title);
+    header.append(title);
     block.append(header);
 
     const body = document.createElement("div");
