@@ -232,7 +232,7 @@ def validate_goal_reference_set(repo_root: Path) -> list[str]:
     text = path.read_text(encoding="utf-8", errors="replace")
     refs = _code_refs_after_heading(text, "## Reference Files")
     violations: list[str] = []
-    required = {"docs/operations-manager-platform-jtbd.md"}
+    required = {"docs/operations-manager-platform-jtbd/"}
     missing_refs = sorted(required - set(refs))
     for ref in missing_refs:
         violations.append(f".goal-v1.md: required V1 goal reference is missing from Reference Files: {ref}")
@@ -246,9 +246,18 @@ def validate_goal_reference_set(repo_root: Path) -> list[str]:
 
 
 def validate_jtbd_reference_set(repo_root: Path) -> list[str]:
-    path = repo_root / "docs" / "operations-manager-platform-jtbd.md"
-    text = path.read_text(encoding="utf-8", errors="replace")
-    refs = _code_refs_after_heading(text, "## Source Material Used")
+    jtbd_dir = repo_root / "docs" / "operations-manager-platform-jtbd"
+    part_paths = sorted(jtbd_dir.glob("part-*.md"))
+    violations: list[str] = []
+    if not part_paths:
+        return [
+            "docs/operations-manager-platform-jtbd/: no part-*.md files found;"
+            " the JTBD spec is split into that parts directory"
+        ]
+    refs: list[str] = []
+    for part_path in part_paths:
+        text = part_path.read_text(encoding="utf-8", errors="replace")
+        refs.extend(_code_refs_after_heading(text, "## Source Material Used"))
     violations: list[str] = []
     required = {
         "backend/docs/specs.md",
@@ -262,14 +271,14 @@ def validate_jtbd_reference_set(repo_root: Path) -> list[str]:
     }
     missing_refs = sorted(required - set(refs))
     for ref in missing_refs:
-        violations.append(f"docs/operations-manager-platform-jtbd.md: required source reference is missing: {ref}")
+        violations.append(f"docs/operations-manager-platform-jtbd/: required source reference is missing: {ref}")
     for ref in refs:
         if "*" in ref:
             if not list(repo_root.glob(ref)):
-                violations.append(f"docs/operations-manager-platform-jtbd.md: glob reference has no matches: {ref}")
+                violations.append(f"docs/operations-manager-platform-jtbd/: glob reference has no matches: {ref}")
             continue
         if not (repo_root / ref).exists():
-            violations.append(f"docs/operations-manager-platform-jtbd.md: source reference target not found: {ref}")
+            violations.append(f"docs/operations-manager-platform-jtbd/: source reference target not found: {ref}")
     return violations
 
 

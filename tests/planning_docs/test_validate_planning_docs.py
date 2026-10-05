@@ -82,7 +82,8 @@ def test_internal_markdown_links_fail_when_target_is_missing(tmp_path):
 def test_goal_reference_set_fails_when_repo_path_is_missing(tmp_path):
     shutil.copy(REPO_ROOT / ".goal-v1.md", tmp_path / ".goal-v1.md")
     (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "operations-manager-platform-jtbd.md").write_text("# JTBD\n", encoding="utf-8")
+    (tmp_path / "docs" / "operations-manager-platform-jtbd").mkdir()
+    (tmp_path / "docs" / "operations-manager-platform-jtbd" / "part-1-user-context-and-daily-loop.md").write_text("# JTBD\n", encoding="utf-8")
 
     violations = validate_planning_docs.validate_goal_reference_set(tmp_path)
 
