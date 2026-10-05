@@ -8,7 +8,7 @@ import { getClient } from "../src/db/client";
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from "../scripts/local-dynamodb";
 import { TABLE_BOOKKEEPING } from "../scripts/local-dynamodb";
-import { setBookkeepingArchiveUploaderForTests, setBookkeepingStorageForTests } from "../src/routes/bookkeeping";
+import { setBookkeepingArchiveUploaderForTests, setBookkeepingStorageForTests } from "../src/routes/bookkeepingShared";
 import { putBookkeepingItem } from "../src/db/bookkeeping";
 
 const invoke = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>

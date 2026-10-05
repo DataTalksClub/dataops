@@ -3,18 +3,24 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { sha256 } from '../conversation/execution';
 import { defaultExecutionRegistry } from '../conversation/executionDefaults';
 import {
-  getProposalVersion,
-  manuallyResolveAttempt,
-} from '../conversation/executionRepository';
+  getProposalVersion
+} from '../conversation/proposalTransactions';
+import {
+  manuallyResolveAttempt
+} from '../conversation/attemptLifecycle';
 import {
   reconcileAttempt,
   type WorkerDependencies,
 } from '../conversation/executionWorker';
 import {
-  appendConversationAuditEvent,
-  getConversation,
-  getExecutionAttempt,
-} from '../conversation/repository';
+  getConversation
+} from '../conversation/conversations';
+import {
+  getExecutionAttempt
+} from '../conversation/executionAttemptRecords';
+import {
+  appendConversationAuditEvent
+} from '../conversation/conversationEvents';
 import { canonicalJson } from '../conversation/pluginRegistry';
 import { candidateFromTypefullySpec } from '../conversation/typefullySpec';
 import {

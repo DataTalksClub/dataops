@@ -3,13 +3,15 @@ import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-sec
 import { getClient } from '../db/client';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import {
-  adapterDependenciesFromConfig,
-  conversationalTelegramConfig,
-  handleConversationalTelegramWebhook,
   MAX_UPDATE_BYTES,
   safeEqual,
   type TelegramAdapterDependencies,
-} from '../conversation/telegramAdapter';
+} from '../conversation/telegramProtocol';
+import {
+  adapterDependenciesFromConfig,
+  conversationalTelegramConfig,
+  handleConversationalTelegramWebhook,
+} from '../conversation/telegramWebhook';
 import { conversationalRolloutSnapshot } from '../conversation/rollout';
 import {
   emitConversationalMetric,

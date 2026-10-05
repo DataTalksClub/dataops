@@ -10,35 +10,45 @@ import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createUserWithId } from '../src/db/users';
 import {
-  appendConversationAuditEvent,
-  appendConversationEvent,
   cleanupDeletedConversation,
-  compareAndSetExecutionAttempt,
-  compareAndSetPresentation,
   createChannelBinding,
   createConversation,
-  createExecutionAttempt,
-  createIdentityBinding,
-  createPresentation,
   getChannelBinding,
-  getCheckpoint,
   getConversation,
+  listOwnerConversations,
+  markConversationDeleted
+} from '../src/conversation/conversations';
+import {
+  createIdentityBinding,
   getIdentityBinding,
-  getPluginDraft,
+  listIdentityBindings,
+  revokeIdentityBinding
+} from '../src/conversation/identityBindings';
+import {
+  compareAndSetPresentation,
+  createPresentation,
   getPresentationByTokenHash,
   insertProposalVersion,
-  listConversationEvents,
-  listIdentityBindings,
-  listOwnerConversations,
   listProposalRelationships,
-  listProposalVersions,
-  listRecoveryCandidates,
-  markConversationDeleted,
-  putConversationalPrivatePayload,
-  revokeIdentityBinding,
+  listProposalVersions
+} from '../src/conversation/proposalRecords';
+import {
+  compareAndSetExecutionAttempt,
+  createExecutionAttempt,
+  listRecoveryCandidates
+} from '../src/conversation/executionAttemptRecords';
+import {
+  putConversationalPrivatePayload
+} from '../src/conversation/privatePayloads';
+import {
+  appendConversationAuditEvent,
+  appendConversationEvent,
+  getCheckpoint,
+  getPluginDraft,
+  listConversationEvents,
   saveCheckpoint,
-  savePluginDraft,
-} from '../src/conversation/repository';
+  savePluginDraft
+} from '../src/conversation/conversationEvents';
 import {
   expiryFrom,
   validateConversationalRecord,
@@ -49,7 +59,8 @@ import {
   type ProposalPresentation,
   type ProposalVersion,
 } from '../src/conversation/types';
-import { writePortableExport, validatePortableExport, dryRunImport } from '../src/export/portable';
+import { writePortableExport } from '../src/export/portable';
+import { validatePortableExport, dryRunImport } from '../src/export/portableValidate';
 import { writePortableExportArchive, writeRestoreEvidence } from '../src/export/archive';
 import { validateConversationalEntities } from '../src/conversation/portable';
 
@@ -857,7 +868,21 @@ describe('conversational state persistence', () => {
   });
 
   it('uses no request-path table scans', async () => {
-    const source = await fs.readFile(path.join(__dirname, '..', 'src', 'conversation', 'repository.ts'), 'utf8');
-    assert.doesNotMatch(source, /ScanCommand/);
+    const modules = [
+      'conversationActions.ts',
+      'conversationEvents.ts',
+      'conversationStorage.ts',
+      'conversations.ts',
+      'executionAttemptRecords.ts',
+      'identityBindings.ts',
+      'privatePayloads.ts',
+      'proposalRecords.ts',
+      'resultNotifications.ts',
+      'skillLoadReceipts.ts',
+    ];
+    for (const module of modules) {
+      const source = await fs.readFile(path.join(__dirname, '..', 'src', 'conversation', module), 'utf8');
+      assert.doesNotMatch(source, /ScanCommand/, `${module} must not use ScanCommand`);
+    }
   });
 });

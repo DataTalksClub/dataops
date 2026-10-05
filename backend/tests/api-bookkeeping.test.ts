@@ -4,7 +4,7 @@ import { handler } from '../src/handler';
 import { createTables } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { setBookkeepingArchiveUploaderForTests, setBookkeepingStorageForTests } from '../src/routes/bookkeeping';
+import { setBookkeepingArchiveUploaderForTests, setBookkeepingStorageForTests } from '../src/routes/bookkeepingShared';
 import { putBookkeepingItem } from '../src/db/bookkeeping';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createSession } from '../src/db/sessions';

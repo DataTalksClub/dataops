@@ -14,7 +14,8 @@ import { createNotification } from '../../src/db/notifications';
 import { createTask } from '../../src/db/tasks';
 import { createTemplate } from '../../src/db/templates';
 import { createUser } from '../../src/db/users';
-import { dryRunImport, writePortableExport } from '../../src/export/portable';
+import { dryRunImport } from '../../src/export/portableValidate';
+import { writePortableExport } from '../../src/export/portable';
 
 describe('dry-run import', () => {
   let client: DynamoDBDocumentClient;

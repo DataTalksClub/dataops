@@ -36,9 +36,9 @@ import { createUser } from '../src/db/users';
 import {
   ENTITY_SPECS,
   setPortableExportClockForTests,
-  validatePortableExport,
   writePortableExport,
 } from '../src/export/portable';
+import { validatePortableExport } from '../src/export/portableValidate';
 
 async function documentedRequiredLayouts(markdownPath: string): Promise<string[][]> {
   const markdown = await fs.readFile(markdownPath, 'utf8');

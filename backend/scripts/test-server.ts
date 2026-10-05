@@ -17,7 +17,7 @@ import { createTemplate, deleteTemplate, updateTemplate } from '../src/db/templa
 import {
   setBookkeepingArchiveUploaderForTests,
   setBookkeepingStorageForTests,
-} from '../src/routes/bookkeeping';
+} from '../src/routes/bookkeepingShared';
 import { KnowledgeStore, knowledgeStoreConfigFromEnv } from '../src/docs/knowledgeStore';
 import {configureOperatingModelStoreForTests} from '../src/routes/operatingModel';
 import {MemoryS3} from '../tests/helpers/knowledge';

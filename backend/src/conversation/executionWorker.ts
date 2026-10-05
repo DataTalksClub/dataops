@@ -1,19 +1,23 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import {
+  getApprovalPermission,
+  getCanonicalTarget
+} from './executionPermissions';
+import {
+  getProposalVersion
+} from './proposalTransactions';
+import {
   claimQueuedAttempt,
   finalizeAttempt,
-  getApprovalPermission,
-  getCanonicalTarget,
-  getProposalVersion,
   markDispatchStarted,
   queryDueAttempts,
   reclaimDispatchedAttempt,
   reconcileUnknownAttempt,
   releaseUndispatchedAttempt,
   requeueUndispatchedAttempt,
-  type DispatchStateGuard,
-} from './executionRepository';
+  type DispatchStateGuard
+} from './attemptLifecycle';
 import { TYPEFULLY_PERMISSION } from './typefullyPlugin';
 import {
   ExecutorRegistry,
@@ -24,11 +28,17 @@ import {
   type ReconciliationResult,
 } from './execution';
 import {
-  appendConversationAuditEvent,
-  getChannelBinding,
-  getExecutionAttempt,
-  getIdentityBinding,
-} from './repository';
+  getChannelBinding
+} from './conversations';
+import {
+  getIdentityBinding
+} from './identityBindings';
+import {
+  getExecutionAttempt
+} from './executionAttemptRecords';
+import {
+  appendConversationAuditEvent
+} from './conversationEvents';
 import {
   expiryFrom,
   validateSafeExecutionReceipt,

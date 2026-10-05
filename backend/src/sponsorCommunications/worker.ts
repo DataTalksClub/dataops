@@ -11,14 +11,9 @@ import { getClient } from '../db/client';
 import { TABLE_SPONSOR_CRM, TABLE_USERS } from '../db/tableNames';
 import { getCrmRecord } from '../db/sponsorCrm';
 import { derivedStatus, normalizeEmail, payloadDeleteAt, suppressionKey, validateSendConfig } from './core';
-import {
-  assertSuppressionCoverage,
-  getCurrentConfig,
-  getPrivatePayload,
-  getSponsorItem,
-  reconcileAbandonedSponsorPayloads,
-  sponsorItemKey,
-} from './repository';
+import { getPrivatePayload, getSponsorItem, sponsorItemKey } from './repository';
+import { assertSuppressionCoverage, getCurrentConfig } from './repositoryConfig';
+import { reconcileAbandonedSponsorPayloads } from './repositoryMaintenance';
 import { loadHmacKeyring } from './secrets';
 import { drainPendingSponsorEventSet, reconcilePendingSponsorEvents } from './sesEvents';
 import type { SponsorSendAttempt } from './types';

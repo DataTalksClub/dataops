@@ -13,28 +13,38 @@ import {
 import { createUserWithId, updateUser } from '../src/db/users';
 import {
   createChannelBinding,
-  createConversation,
+  createConversation
+} from '../src/conversation/conversations';
+import {
   createIdentityBinding,
-  createPresentation,
-  getExecutionAttempt,
   getIdentityBinding,
+  revokeIdentityBinding
+} from '../src/conversation/identityBindings';
+import {
+  createPresentation,
   getPresentationByTokenHash,
   listProposalRelationships,
-  listProposalVersions,
-  compareAndSetExecutionAttempt,
-  revokeIdentityBinding,
-} from '../src/conversation/repository';
+  listProposalVersions
+} from '../src/conversation/proposalRecords';
+import {
+  getExecutionAttempt,
+  compareAndSetExecutionAttempt
+} from '../src/conversation/executionAttemptRecords';
+import {
+  putApprovalPermission,
+  putCanonicalTarget
+} from '../src/conversation/executionPermissions';
 import {
   atomicApproval,
-  atomicStorePresentedProposal,
+  atomicStorePresentedProposal
+} from '../src/conversation/proposalTransactions';
+import {
   claimQueuedAttempt,
   finalizeAttempt,
   markDispatchStarted,
-  putApprovalPermission,
-  putCanonicalTarget,
   reclaimDispatchedAttempt,
-  requeueUndispatchedAttempt,
-} from '../src/conversation/executionRepository';
+  requeueUndispatchedAttempt
+} from '../src/conversation/attemptLifecycle';
 import {
   ApprovalUnavailableError,
   ExecutorRegistry,

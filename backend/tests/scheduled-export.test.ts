@@ -11,7 +11,7 @@ import { createTables } from '../scripts/local-dynamodb';
 import { createTask } from '../src/db/tasks';
 import { handleCronRoutes } from '../src/routes/cron';
 import { extractExportArchive } from '../src/export/archive';
-import { validatePortableExport } from '../src/export/portable';
+import { validatePortableExport } from '../src/export/portableValidate';
 
 describe('scheduled export route (POST /api/cron/export)', () => {
   let client: DynamoDBDocumentClient;

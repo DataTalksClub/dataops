@@ -14,7 +14,8 @@ import {
   sha256,
   suppressionKey,
 } from './core';
-import { getCurrentConfig, getPrivatePayload, getSponsorItem, sponsorItemKey } from './repository';
+import { getPrivatePayload, getSponsorItem, sponsorItemKey } from './repository';
+import { getCurrentConfig } from './repositoryConfig';
 import { loadHmacKeyring } from './secrets';
 import type { SanitizedSesEvent, SponsorSendAttempt } from './types';
 

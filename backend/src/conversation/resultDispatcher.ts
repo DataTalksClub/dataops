@@ -1,14 +1,20 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import {
+  getChannelBinding
+} from './conversations';
+import {
+  getIdentityBinding
+} from './identityBindings';
+import {
+  getConversationalPrivatePayload
+} from './privatePayloads';
+import {
   claimResultNotification,
   expireDispatchingResultNotification,
   finishResultNotification,
-  getChannelBinding,
-  getConversationalPrivatePayload,
-  getIdentityBinding,
-  listResultNotifications,
-} from './repository';
+  listResultNotifications
+} from './resultNotifications';
 import type { ResultNotification } from './types';
 import { safeTypefullyEditUrl } from './typefullyPlugin';
 import { getUser } from '../db/users';

@@ -6,16 +6,24 @@ import { useFixedDate } from './helpers/fixed-date';
 import { getClient } from '../src/db/client';
 import { createTables, TABLE_CONVERSATIONAL_STATE } from '../scripts/local-dynamodb';
 import {
-  appendConversationOutbound,
-  consumeConversationalActionAndAppend,
   createConversation,
-  getConversation,
-  getConversationEventByIdempotency,
+  getConversation
+} from '../src/conversation/conversations';
+import {
+  transitionIdentityBindingWithAudit
+} from '../src/conversation/identityBindings';
+import {
   getConversationalPrivatePayload,
-  putConversationalPrivatePayload,
-  transitionStagedMediaAndAppend,
-  transitionIdentityBindingWithAudit,
-} from '../src/conversation/repository';
+  putConversationalPrivatePayload
+} from '../src/conversation/privatePayloads';
+import {
+  appendConversationOutbound,
+  getConversationEventByIdempotency
+} from '../src/conversation/conversationEvents';
+import {
+  consumeConversationalActionAndAppend,
+  transitionStagedMediaAndAppend
+} from '../src/conversation/conversationActions';
 import {
   expiryFrom,
   type ConversationEvent,

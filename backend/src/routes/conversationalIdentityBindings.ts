@@ -5,8 +5,8 @@ import { getUser } from '../db/users';
 import {
   getIdentityBinding,
   listIdentityBindingsByChannel,
-  transitionIdentityBindingWithAudit,
-} from '../conversation/repository';
+  transitionIdentityBindingWithAudit
+} from '../conversation/identityBindings';
 import { expiryFrom, type IdentityBinding, type IdentityBindingAudit } from '../conversation/types';
 import type { LambdaEvent, LambdaResponse } from '../types';
 

@@ -10,14 +10,20 @@ import {
 } from './pluginRegistry';
 import {
   approvalScopeDigest,
-  getApprovalPermission,
-  getProposalVersion,
-  type DispatchStateGuard,
-} from './executionRepository';
+  getApprovalPermission
+} from './executionPermissions';
 import {
-  getConversationalPrivatePayload,
-  getPluginDraft,
-} from './repository';
+  getProposalVersion
+} from './proposalTransactions';
+import {
+  type DispatchStateGuard
+} from './attemptLifecycle';
+import {
+  getConversationalPrivatePayload
+} from './privatePayloads';
+import {
+  getPluginDraft
+} from './conversationEvents';
 import type {
   CapabilityExecutor,
   ExecutorPreflightRequest,

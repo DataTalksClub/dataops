@@ -19,10 +19,8 @@ import {
   writePortableExportArchive,
   writeRestoreEvidence,
 } from '../src/export/archive';
-import {
-  setPortableExportClockForTests,
-  validatePortableExport,
-} from '../src/export/portable';
+import { setPortableExportClockForTests } from '../src/export/portable';
+import { validatePortableExport } from '../src/export/portableValidate';
 
 function projectTmpDir(name: string): string {
   return path.join(__dirname, '..', '..', '.tmp', 'exports', `${name}-${Date.now()}-${Math.random().toString(16).slice(2)}`);

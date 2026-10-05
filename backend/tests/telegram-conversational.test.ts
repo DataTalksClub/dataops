@@ -14,13 +14,19 @@ import { createUserWithId, updateUser } from '../src/db/users';
 import {
   createConversation,
   getChannelBinding,
-  getConversationEventByIdempotency,
-  getConversationalPrivatePayload,
-  getIdentityBinding,
-  listConversationEvents,
   listOwnerConversations,
-  replaceChannelBinding,
-} from '../src/conversation/repository';
+  replaceChannelBinding
+} from '../src/conversation/conversations';
+import {
+  getIdentityBinding
+} from '../src/conversation/identityBindings';
+import {
+  getConversationalPrivatePayload
+} from '../src/conversation/privatePayloads';
+import {
+  getConversationEventByIdempotency,
+  listConversationEvents
+} from '../src/conversation/conversationEvents';
 import {
   GroqWhisperClient,
   reapOrphanMedia,
@@ -30,12 +36,14 @@ import {
 } from '../src/conversation/telegramMedia';
 import {
   HttpTelegramClient,
-  TelegramNotSentError,
-  adapterDependenciesFromConfig,
-  conversationalTelegramConfig,
   type CoreInput,
   type TelegramCoreRuntime,
-} from '../src/conversation/telegramAdapter';
+} from '../src/conversation/telegramProtocol';
+import { TelegramNotSentError } from '../src/conversation/telegramOutbound';
+import {
+  adapterDependenciesFromConfig,
+  conversationalTelegramConfig,
+} from '../src/conversation/telegramWebhook';
 import { handleConversationalIdentityBindingRoutes } from '../src/routes/conversationalIdentityBindings';
 import { handleTelegramWebhook, resetTelegramConfigCache } from '../src/routes/telegram';
 import { expiryFrom, type Conversation, type JsonValue } from '../src/conversation/types';

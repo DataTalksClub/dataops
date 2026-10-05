@@ -7,7 +7,7 @@ import { handler } from '../src/handler';
 import { stopLocal } from '../scripts/local-dynamodb';
 import { useTestDatabase } from './helpers/db';
 import { extractExportArchive } from '../src/export/archive';
-import { validatePortableExport } from '../src/export/portable';
+import { validatePortableExport } from '../src/export/portableValidate';
 
 describe('handler - EventBridge scheduled events', () => {
   before(async () => {

@@ -14,24 +14,40 @@ import { createTables, TABLE_CONVERSATIONAL_STATE, TABLE_USERS } from '../script
 import { createUserWithId } from '../src/db/users';
 import {
   createChannelBinding,
-  createConversation,
-  createIdentityBinding,
-  getConversationalPrivatePayload,
-  getExecutionAttempt,
-  getPluginDraft,
+  createConversation
+} from '../src/conversation/conversations';
+import {
+  createIdentityBinding
+} from '../src/conversation/identityBindings';
+import {
   getPresentationByTokenHash,
-  getResultNotification,
-  listProposalVersions,
-  putConversationalPrivatePayload,
-  savePluginDraft,
-} from '../src/conversation/repository';
+  listProposalVersions
+} from '../src/conversation/proposalRecords';
+import {
+  getExecutionAttempt
+} from '../src/conversation/executionAttemptRecords';
+import {
+  getConversationalPrivatePayload,
+  putConversationalPrivatePayload
+} from '../src/conversation/privatePayloads';
+import {
+  getPluginDraft,
+  savePluginDraft
+} from '../src/conversation/conversationEvents';
+import {
+  getResultNotification
+} from '../src/conversation/resultNotifications';
 import {
   approvalScopeDigest,
+  putApprovalPermission
+} from '../src/conversation/executionPermissions';
+import {
+  getProposalVersion
+} from '../src/conversation/proposalTransactions';
+import {
   claimQueuedAttempt,
-  getProposalVersion,
-  markDispatchStarted,
-  putApprovalPermission,
-} from '../src/conversation/executionRepository';
+  markDispatchStarted
+} from '../src/conversation/attemptLifecycle';
 import { ExecutorRegistry, sha256 } from '../src/conversation/execution';
 import {
   processAttempt,

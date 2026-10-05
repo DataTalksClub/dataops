@@ -18,22 +18,30 @@ import {
 } from '../scripts/local-dynamodb';
 import { createUserWithId } from '../src/db/users';
 import {
-  createIdentityBinding,
-  getConversationalPrivatePayload,
-  getExecutionAttempt,
-  getResultNotification,
-} from '../src/conversation/repository';
+  createIdentityBinding
+} from '../src/conversation/identityBindings';
 import {
-  getProposalVersion,
-  putApprovalPermission,
-} from '../src/conversation/executionRepository';
+  getExecutionAttempt
+} from '../src/conversation/executionAttemptRecords';
+import {
+  getConversationalPrivatePayload
+} from '../src/conversation/privatePayloads';
+import {
+  getResultNotification
+} from '../src/conversation/resultNotifications';
+import {
+  putApprovalPermission
+} from '../src/conversation/executionPermissions';
+import {
+  getProposalVersion
+} from '../src/conversation/proposalTransactions';
 import { ExecutorRegistry } from '../src/conversation/execution';
 import { processAttempt } from '../src/conversation/executionWorker';
 import {
-  handleConversationalTelegramWebhook,
   type AdapterConfig,
   type TelegramAdapterDependencies,
-} from '../src/conversation/telegramAdapter';
+} from '../src/conversation/telegramProtocol';
+import { handleConversationalTelegramWebhook } from '../src/conversation/telegramWebhook';
 import type {
   PhotoDescriber,
   TelegramClient,

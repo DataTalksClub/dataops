@@ -4,7 +4,7 @@ import assert from 'node:assert';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
-import { MAX_UPDATE_BYTES } from '../src/conversation/telegramAdapter';
+import { MAX_UPDATE_BYTES } from '../src/conversation/telegramProtocol';
 import {
   MAX_MAINTENANCE_REPLY_DEADLINE_MS,
   handleTelegramWebhook,

@@ -2,14 +2,18 @@ import { createHash, randomBytes, randomUUID } from 'crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import {
+  getConversation
+} from './conversations';
+import {
   consumeSkillLoadReceipt,
   createSkillLoadReceipt,
-  getConversation,
   getSkillLoadReceipt,
   saveContextReceipt,
-  storeSkillLoadResult,
-} from './repository';
-import { getApprovalPermission } from './executionRepository';
+  storeSkillLoadResult
+} from './skillLoadReceipts';
+import {
+  getApprovalPermission
+} from './executionPermissions';
 import { expiryFrom, type JsonValue, type SkillLoadReceipt, type StoredContextReceipt } from './types';
 import {
   ContextAssembler,

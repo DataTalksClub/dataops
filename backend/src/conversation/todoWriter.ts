@@ -17,7 +17,7 @@ import {
   type ExecutorResult,
   type ReconciliationResult,
 } from './execution';
-import { getExecutionAttempt } from './repository';
+import { getExecutionAttempt } from './executionAttemptRecords';
 import type { ProposalSpec, SafeExecutionReceipt } from './types';
 import {
   TODO_ACTION,

@@ -8,11 +8,17 @@ import { createTables } from '../scripts/local-dynamodb';
 import { createUserWithId } from '../src/db/users';
 import {
   createChannelBinding,
-  createConversation,
-  createIdentityBinding,
-  listProposalVersions,
-} from '../src/conversation/repository';
-import { putApprovalPermission } from '../src/conversation/executionRepository';
+  createConversation
+} from '../src/conversation/conversations';
+import {
+  createIdentityBinding
+} from '../src/conversation/identityBindings';
+import {
+  listProposalVersions
+} from '../src/conversation/proposalRecords';
+import {
+  putApprovalPermission
+} from '../src/conversation/executionPermissions';
 import { ExecutorRegistry } from '../src/conversation/execution';
 import { FakeCapabilityExecutor } from '../src/conversation/executionWorker';
 import {

@@ -18,16 +18,18 @@ import {
   type HmacKeyring,
 } from '../src/sponsorCommunications/core';
 import {
-  addSuppression,
-  approveDraft,
-  cancelQueuedAttempt,
   getDraft,
   getPrivatePayload,
   listBookingCommunications,
-  reconcileAbandonedSponsorPayloads,
   storeDraft,
-  type ApprovalInput,
 } from '../src/sponsorCommunications/repository';
+import {
+  approveDraft,
+  cancelQueuedAttempt,
+  type ApprovalInput,
+} from '../src/sponsorCommunications/repositoryApprovals';
+import { addSuppression } from '../src/sponsorCommunications/repositoryConfig';
+import { reconcileAbandonedSponsorPayloads } from '../src/sponsorCommunications/repositoryMaintenance';
 import { executeAttempt, leaseAttempt, processDueSponsorSends } from '../src/sponsorCommunications/worker';
 import { ingestSanitizedSesEvent } from '../src/sponsorCommunications/sesEvents';
 import { handleSponsorCommunicationRoutes } from '../src/routes/sponsorCommunications';

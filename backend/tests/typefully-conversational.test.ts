@@ -2,7 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { approvalScopeDigest } from '../src/conversation/executionRepository';
+import {
+  approvalScopeDigest
+} from '../src/conversation/executionPermissions';
 import {
   canonicalProposalSpec,
   proposalHashesAreValid,

@@ -1,4 +1,4 @@
-import { validatePortableExport } from '../src/export/portable';
+import { validatePortableExport } from '../src/export/portableValidate';
 import { resolveProjectPath } from './project-path';
 
 async function main(): Promise<void> {

@@ -15,24 +15,28 @@ import {
   type SendConfig,
 } from '../sponsorCommunications/core';
 import {
-  addSuppression,
   anchorPayloadRetention,
-  approveDraft,
-  assertSuppressionCoverage,
-  cancelQueuedAttempt,
-  getCurrentConfig,
   getDraft,
   getPrivatePayload,
   getSponsorItem,
   listBookingCommunications,
   nextDraftVersion,
-  putConfig,
-  reconcileAttempt,
-  removeSuppression,
   revokePresentation,
   storeDraft,
   storePresentation,
 } from '../sponsorCommunications/repository';
+import {
+  approveDraft,
+  cancelQueuedAttempt,
+  reconcileAttempt,
+} from '../sponsorCommunications/repositoryApprovals';
+import {
+  addSuppression,
+  assertSuppressionCoverage,
+  getCurrentConfig,
+  putConfig,
+  removeSuppression,
+} from '../sponsorCommunications/repositoryConfig';
 import { evaluateCommunicationSuggestions } from '../sponsorCommunications/suggestions';
 import { loadHmacKeyring, loadTemplateSet, renderTemplate } from '../sponsorCommunications/secrets';
 import type {

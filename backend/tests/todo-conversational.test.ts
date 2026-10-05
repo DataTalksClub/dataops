@@ -21,13 +21,23 @@ import { createUserWithId } from '../src/db/users';
 import {
   createChannelBinding,
   createConversation,
-  createIdentityBinding,
-  getChannelBinding,
-  getExecutionAttempt,
-  getConversationalPrivatePayload,
-  getResultNotification,
-} from '../src/conversation/repository';
-import { putApprovalPermission } from '../src/conversation/executionRepository';
+  getChannelBinding
+} from '../src/conversation/conversations';
+import {
+  createIdentityBinding
+} from '../src/conversation/identityBindings';
+import {
+  getExecutionAttempt
+} from '../src/conversation/executionAttemptRecords';
+import {
+  getConversationalPrivatePayload
+} from '../src/conversation/privatePayloads';
+import {
+  getResultNotification
+} from '../src/conversation/resultNotifications';
+import {
+  putApprovalPermission
+} from '../src/conversation/executionPermissions';
 import {
   approvePresentation,
   ExecutorRegistry,

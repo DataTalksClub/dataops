@@ -1,6 +1,9 @@
 import { createHash } from 'crypto';
 
-import { approvalScopeDigest, type ApprovalPermission } from './executionRepository';
+import {
+  approvalScopeDigest,
+  type ApprovalPermission
+} from './executionPermissions';
 import type { JsonValue, PluginDraft, ProposalSpec } from './types';
 import {
   TODO_ACTION,

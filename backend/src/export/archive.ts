@@ -12,11 +12,11 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   EXPORT_FORMAT_VERSION,
   SCHEMA_VERSION,
-  dryRunImport,
-  validatePortableExport,
   writePortableExport,
 } from './portable';
-import type { DryRunImportResult, Manifest, PortableExportResult, ValidationResult } from './portable';
+import { dryRunImport, validatePortableExport } from './portableValidate';
+import type { Manifest, PortableExportResult } from './portable';
+import type { DryRunImportResult, ValidationResult } from './portableValidate';
 
 interface ExportArchiveConfig {
   bucket?: string;

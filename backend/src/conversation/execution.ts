@@ -3,23 +3,33 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { CORE_PERMISSION_VALUES, canonicalJson, isStrictJsonValue } from './pluginRegistry';
 import {
+  getApprovalPermission,
+  getCanonicalTarget
+} from './executionPermissions';
+import {
   atomicApproval,
   atomicStorePresentedProposal,
-  getApprovalPermission,
-  getCanonicalTarget,
   getProposalVersion,
-  markProposalConflicted,
-  type DispatchStateGuard,
-} from './executionRepository';
+  markProposalConflicted
+} from './proposalTransactions';
+import {
+  type DispatchStateGuard
+} from './attemptLifecycle';
+import {
+  getChannelBinding
+} from './conversations';
+import {
+  getIdentityBinding
+} from './identityBindings';
 import {
   compareAndSetPresentation,
-  getChannelBinding,
-  getExecutionAttempt,
-  getIdentityBinding,
   getPresentationByTokenHash,
   listProposalRelationships,
-  listProposalVersions,
-} from './repository';
+  listProposalVersions
+} from './proposalRecords';
+import {
+  getExecutionAttempt
+} from './executionAttemptRecords';
 import {
   expiryFrom,
   validateConversationalRecord,
