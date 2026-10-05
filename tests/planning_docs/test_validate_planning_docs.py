@@ -79,17 +79,6 @@ def test_internal_markdown_links_fail_when_target_is_missing(tmp_path):
     assert violations == ["doc.md: link target not found: missing.md"]
 
 
-def test_process_controls_fail_when_required_gate_is_missing(tmp_path):
-    process_dir = tmp_path / "docs"
-    process_dir.mkdir()
-    (process_dir / "PROCESS.md").write_text("# Process\nNo lifecycle here.\n", encoding="utf-8")
-
-    violations = validate_planning_docs.validate_process_controls(tmp_path)
-
-    assert any("software engineer does not commit before review" in violation for violation in violations)
-    assert any("no stylint requirement for internal process docs" in violation for violation in violations)
-
-
 def test_goal_reference_set_fails_when_repo_path_is_missing(tmp_path):
     shutil.copy(REPO_ROOT / ".goal-v1.md", tmp_path / ".goal-v1.md")
     (tmp_path / "docs").mkdir()

@@ -27,48 +27,7 @@ Technology direction:
 - Package management: `npm` for TypeScript, `uv` for Python tooling
   (content validation, podcast assistant)
 
-## Working Process
-
-Read `docs/PROCESS.md` before working on issues.
-
-Follow the lifecycle:
-
-```text
-PM groom -> implement -> tester verify -> PM accept -> commit -> merge -> push -> on-call check
-```
-
-When launching subagents for this workflow, use high-capability/high-reasoning
-settings by default unless the user explicitly asks for a cheaper or lower
-reasoning run.
-
-Subagents should inherit the model and reasoning settings from the main session
-by default. Omit model and reasoning overrides when spawning them unless the
-user explicitly requests a different configuration.
-
-Treat "continue where we stopped" as a prompt to check `docs/PROCESS.md`,
-inspect the current issue/worktree/process state, and resume the next pipeline
-step.
-
-Keep every Git worktree inside this repository. The canonical location is
-`.tmp/worktrees/<descriptive-name>` (for example,
-`.tmp/worktrees/issue-217-identity-stable`). Never create sibling worktrees in
-`../`, under `~/git`, in `/tmp`, or anywhere else outside the `dataops` project
-root. When launching an agent in a worktree, give it the exact project-local
-path. Audit and remove obsolete worktrees instead of leaving them behind.
-
-Interpret requests for a "todo list widget", "todo widget", or similar wording
-as a request to show or update the agent's in-chat task/plan widget. Do not file
-a product issue or implement repository UI for such a request unless the user
-explicitly names a product surface or asks for application code.
-
-Commit regularly and always:
-
-- Commit working increments as you go rather than leaving a large uncommitted
-  tree at the end of a session. A passing checkpoint is worth committing.
-- Commit your own work even when another session is working in the same tree;
-  stage your paths explicitly instead of `git add -A`, and never commit another
-  session's staged index as if it were yours.
-- Finish a task with the work committed, not just described.
+## Engineering Rules
 
 No backwards compatibility:
 
@@ -82,10 +41,6 @@ No backwards compatibility:
   read both the old and the new format.
 - If a change cannot be made atomically, say so and propose the sequencing
   instead of leaving a permanent compatibility layer behind.
-
-This repo uses GitHub Issues in `DataTalksClub/dataops` as the work tracker.
-The orchestrator files raw user requests as issues with `needs grooming`, then
-role agents move each issue through the pipeline.
 
 Operational knowledge boundary:
 
@@ -104,7 +59,6 @@ Operational knowledge boundary:
 Current planning docs:
 
 - `docs/MERGE_PLAN.md`
-- `docs/PROCESS.md`
 - `PORTAL_ANALYSIS.md`
 - `PROJECT_PLAN.md`
 
@@ -154,5 +108,5 @@ Initial source systems:
 - `../datatasks`
 - `../podcast-assistant`
 
-Do not modify those source repos while working in `dataops` unless the issue
+Do not modify those source repos while working in `dataops` unless the task
 explicitly asks for it.

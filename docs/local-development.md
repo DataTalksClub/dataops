@@ -1,6 +1,6 @@
 ---
 title: "Local Development"
-summary: "Developer command plan for local DataOps V1 work and role-agent handoff."
+summary: "Developer command plan for local DataOps V1 work."
 doc_type: reference
 tags:
   - development
@@ -17,13 +17,11 @@ related_docs:
 
 This is the top-level command plan for DataOps V1 development. Use it to choose
 the smallest correct local verification command for a narrow change, and the
-broader command set before role-agent handoff, commit, or deployment-adjacent
-work.
+broader command set before commit or deployment-adjacent work.
 
 The commands here are source-of-truth wrappers or package-local commands from:
 
 - root `Makefile`
-- `docs/PROCESS.md`
 - root `package.json`
 - `work-engine/package.json`
 - `assistants/podcast/pyproject.toml`
@@ -187,7 +185,7 @@ available to dedicated clients and are validated independently.
 | `frontend/**` | Docs app tests for served portal behavior; focused browser/manual check of changed pages. | Screenshots for changed UI flows. Work-engine E2E if the UI crosses `/work/*` operator flows. |
 | `backend/**` | Backend tests, typecheck, and build. | Search-index build for search/content behavior; SAM validation/build for dependency, packaging, or Lambda runtime changes; E2E for changed operator flows. |
 | `assistants/podcast/**` | DataOps podcast assistant module pytest command. | `[HUMAN]` or opt-in integration checks for Telegram, Groq, live Heru, Codex, or Claude. |
-| `.github/workflows/**` | Inspect changed workflow paths and commands; run the nearest local equivalent. | For deployment workflow changes, SAM validation and a clear On-Call follow-up after push. |
+| `.github/workflows/**` | Inspect changed workflow paths and commands; run the nearest local equivalent. | For deployment workflow changes, SAM validation. |
 | `infra/template.full.yaml`, `infra/sam-build/**`, or `samconfig.toml` | SAM template validation. | `make sam-build` when package/build behavior changes. Production deploy remains CI/OIDC after `main` is pushed. |
 | root `pyproject.toml` or `uv.lock` | `uv lock --check`; root import smoke check; relevant root pytest command. | Package-local lock checks and canonical Lambda/assistant/work-engine commands when proving boundaries for deployment-relevant metadata changes. |
 | root `package.json` | Affected root wrapper command and underlying package-local command. | Work-engine tests/typecheck/build when wrappers target work-engine. |
@@ -311,8 +309,8 @@ npm run dev:work-engine
 npm run seed:work-engine
 ```
 
-The package-local commands remain canonical because CI and role-agent issue
-specs usually name them directly.
+The package-local commands remain canonical because CI usually names them
+directly.
 
 The Makefile also exposes the local seed wrapper:
 
@@ -390,7 +388,7 @@ and deploys the `dataops-v1` stack.
 
 Local AWS deploys, live stack mutation, real cache refreshes, Telegram delivery,
 OAuth flows, sponsor/client-facing messages, and destructive restore or
-migration checks are `[HUMAN]` unless a groomed issue explicitly scopes them.
+migration checks need explicit human approval and scoping.
 
 ## Focused Verification By Work Type
 
@@ -513,10 +511,10 @@ build, a handler smoke test, SAM validation, SAM build, and then deploys through
 GitHub Actions OIDC.
 
 `.github/workflows/validate-dataops-content.yml` runs for `content/**` and the
-workflow itself. The workflow also still has a `pull_request` trigger, although
-the DataOps process uses local merges to `main` rather than GitHub PRs. It
+workflow itself. The workflow also still has a `pull_request` trigger even
+though merges go to `main` locally. It
 builds and smoke-tests the search index. On push, if content changed, it uses
 GitHub Actions OIDC to refresh the deployed docs cache.
 
-On-Call Engineer owns CI/CD monitoring after `main` is pushed. The orchestrator
-should launch On-Call rather than manually watching GitHub Actions.
+After `main` is pushed, GitHub Actions deploys; check the run there if
+something looks broken.

@@ -34,7 +34,6 @@ Use this target structure after the merge:
 ```text
 dataops/
   docs/                  repo process, architecture, merge notes
-  .claude/agents/         role-agent instructions for the issue pipeline
   content/                DataTalks.Club process docs from dtc-operations
   frontend/               shared portal frontend
   backend/                Python backend copied from dtc-operations Lambda app
@@ -145,7 +144,7 @@ Add one top-level `Makefile` later to wrap common commands.
 
 ## Merge Phases
 
-### Phase 0: Repo and Process Setup
+### Phase 0: Repo Setup
 
 Outcome: `DataTalksClub/dataops` is ready for issue-driven work.
 
@@ -153,9 +152,6 @@ Tasks:
 
 - Create public GitHub repo.
 - Add planning docs.
-- Add `docs/PROCESS.md`.
-- Add role-agent instructions.
-- Add labels for the GitHub issue pipeline.
 - File initial merge issues.
 
 ### Phase 1: Import DTC Operations
@@ -268,16 +264,15 @@ Do not start this phase before Phase 4 succeeds.
 
 Create these as the first issues in `DataTalksClub/dataops`:
 
-1. Set up process docs and role-agent workflow.
-2. Import DTC Operations into `dataops`.
-3. Keep DTC Operations docs app running from merged repo.
-4. Import DataTasks into `work-engine/`.
-5. Add document registry IDs and resolver.
-6. Add task-to-process-doc links.
-7. Import Podcast Assistant into `assistants/podcast/`.
-8. Define Podcast workflow.
-9. Build Podcast end-to-end slice.
-10. Add first portal dashboard.
+1. Import DTC Operations into `dataops`.
+2. Keep DTC Operations docs app running from merged repo.
+3. Import DataTasks into `work-engine/`.
+4. Add document registry IDs and resolver.
+5. Add task-to-process-doc links.
+6. Import Podcast Assistant into `assistants/podcast/`.
+7. Define Podcast workflow.
+8. Build Podcast end-to-end slice.
+9. Add first portal dashboard.
 
 ## Key Decisions
 
@@ -293,9 +288,6 @@ Use `DataTalksClub/dataops` as the new public repo.
 ### Issues
 
 Use GitHub Issues in `DataTalksClub/dataops`.
-
-The orchestrator files raw issues from user input. The user does not need to
-write issue specs manually.
 
 ### First Workflow
 

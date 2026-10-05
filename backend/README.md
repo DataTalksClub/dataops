@@ -373,4 +373,3 @@ never fall back to `system`, `portal-admin`, a requested owner, or an assignee.
 ## Docs
 
 - [Imported source product specification](docs/specs.md)
-- [Imported source development process](docs/PROCESS.md)

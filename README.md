@@ -89,7 +89,6 @@ See `docs/TARGET_ARCHITECTURE.md` for the target layout and design rationale.
 - [Portal Analysis](PORTAL_ANALYSIS.md)
 - [Shared Project Plan](PROJECT_PLAN.md)
 - [Merge Plan](docs/MERGE_PLAN.md)
-- [Development Process](docs/PROCESS.md)
 
 ## Running locally
 

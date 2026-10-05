@@ -63,58 +63,6 @@ TASK_DEFINITIONS_TABLE_HEADERS = {
     "| # | Ref ID | Offset | Task | Requirements | Instructions |",
     "| # | Ref ID | Phase | Offset | Owner | Operator action | Context | Proof / closure | Waiting / follow-up |",
 }
-PROCESS_CONTROLS = {
-    "orchestrator intake with needs grooming": [
-        "orchestrator files",
-        "needs grooming",
-        "orchestrator does not groom inline",
-    ],
-    "pm grooming owns scope and tests": [
-        "product manager",
-        "groom",
-        "acceptance criteria",
-        "test scenarios",
-    ],
-    "software engineer does not commit before review": [
-        "software engineer",
-        "does not commit",
-        "tester",
-        "pm acceptance",
-    ],
-    "tester runs real verification and screenshots": [
-        "tester",
-        "real tests",
-        "screenshots",
-        "verifies every acceptance criterion",
-    ],
-    "pm acceptance from user perspective": [
-        "product manager performs final acceptance",
-        "user perspective",
-    ],
-    "local merge to main": [
-        "local merge",
-        "main",
-        "no prs",
-    ],
-    "push main": [
-        "push",
-        "origin main",
-    ],
-    "on-call ci/cd monitoring": [
-        "on-call",
-        "monitors ci/cd",
-    ],
-    "no pull request merge workflow": [
-        "never use",
-        "gh pr create",
-        "gh pr merge",
-    ],
-    "no stylint requirement for internal process docs": [
-        "internal process docs",
-        "stylint",
-        "explicitly asks",
-    ],
-}
 
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*]\((?P<target>[^)]+)\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(?P<title>.+?)\s*#*\s*$", re.MULTILINE)
@@ -167,7 +115,6 @@ def validate(repo_root: Path) -> list[str]:
     violations.extend(validate_frontmatter_related_docs(repo_root))
     violations.extend(validate_goal_reference_set(repo_root))
     violations.extend(validate_jtbd_reference_set(repo_root))
-    violations.extend(validate_process_controls(repo_root))
     violations.extend(validate_doc_registry(repo_root))
     violations.extend(validate_task_templates(repo_root))
     violations.extend(validate_makefile_help(repo_root))
@@ -323,17 +270,6 @@ def validate_jtbd_reference_set(repo_root: Path) -> list[str]:
             continue
         if not (repo_root / ref).exists():
             violations.append(f"docs/operations-manager-platform-jtbd.md: source reference target not found: {ref}")
-    return violations
-
-
-def validate_process_controls(repo_root: Path) -> list[str]:
-    text = (repo_root / "docs" / "PROCESS.md").read_text(encoding="utf-8", errors="replace")
-    normalized = _normalize_text(text)
-    violations: list[str] = []
-    for control, phrases in PROCESS_CONTROLS.items():
-        missing = [phrase for phrase in phrases if phrase not in normalized]
-        if missing:
-            violations.append(f"docs/PROCESS.md: missing lifecycle control '{control}' ({', '.join(missing)})")
     return violations
 
 
@@ -658,12 +594,6 @@ def _strings(value: object) -> list[str]:
     if isinstance(value, str):
         return [value.strip().strip('"').strip("'")] if value.strip() else []
     return [str(value).strip()]
-
-
-def _normalize_text(text: str) -> str:
-    text = text.replace("`", "")
-    text = re.sub(r"\s+", " ", text)
-    return text.lower()
 
 
 def _corpus_path(content_root: Path, path: Path) -> str:

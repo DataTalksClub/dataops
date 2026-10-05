@@ -12,7 +12,7 @@ help:
 	@printf '%-28s %s\n' 'make dev-frontend' 'Run a static frontend server in the foreground on port 5173.'
 	@printf '%-28s %s\n' 'make dev' 'Run the consolidated backend (frontend + docs + work) on port 3000.'
 	@printf '%-28s %s\n' 'make dev-compose' 'Run the current Docker Compose portal stack in the foreground.'
-	@printf '%-28s %s\n' 'make validate-planning-docs' 'Run planning/process docs contract validation.'
+	@printf '%-28s %s\n' 'make validate-planning-docs' 'Run planning docs contract validation.'
 	@printf '%-28s %s\n' 'make sop-lint FILES=...' 'Lint marked SOP files; FILES is required.'
 	@printf '%-28s %s\n' 'make test-frontend-unit' 'Run fast frontend routing and work-model unit tests.'
 	@printf '%-28s %s\n' 'make test-frontend-coverage' 'Run frontend unit tests with all production modules in coverage.'
