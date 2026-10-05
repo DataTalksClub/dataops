@@ -1995,6 +1995,7 @@ Resources:
             Effect: Allow
             Action:
               - dynamodb:TransactWriteItems
+              - dynamodb:ConditionCheckItem
             Resource:
               - !GetAtt DataOpsSponsorCrmTable.Arn
               - !GetAtt DataOpsBookkeepingTable.Arn
@@ -2003,6 +2004,7 @@ Resources:
             Effect: Allow
             Action:
               - dynamodb:TransactWriteItems
+              - dynamodb:ConditionCheckItem
             Resource:
               - !GetAtt DataOpsCalendarTable.Arn
               - !GetAtt DataOpsConversationalStateTable.Arn
