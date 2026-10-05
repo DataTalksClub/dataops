@@ -17,6 +17,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import {
   acquireLock,
+  assertRequiredNodeVersion,
   artifactInventory,
   copyIsolatedBuildWorkspace,
   copyIsolatedArtifact,
@@ -35,22 +36,34 @@ const repoRoot = resolve(import.meta.dirname, '..', '..');
 const testRoot = join(repoRoot, '.tmp', 'issue-185');
 
 function writeFixtureArtifact(destination, contents = 'handler bytes') {
-  mkdirSync(join(destination, 'dist'), { recursive: true });
-  writeFileSync(join(destination, 'dist', 'handler.js'), contents);
+  const payload = join(destination, 'payload');
+  mkdirSync(join(payload, 'dist'), { recursive: true });
+  writeFileSync(join(payload, 'dist', 'handler.js'), contents);
+  writeFileSync(join(payload, '.dataops-sam-bundle.json'), `${JSON.stringify({
+    schemaVersion: 1,
+    format: 'dataops-sam-esbuild',
+    bundledOutputs: ['dist/handler.js'],
+    inputs: ['backend/src/handler.ts'],
+  })}\n`);
   const manifest = {
     schemaVersion: 1,
     format: 'dataops-sam-esbuild',
-    buildFormatVersion: 'dataops-sam-esbuild-v3-invoice-pdf',
+    buildFormatVersion: 'dataops-sam-esbuild-v3-identity-stable',
     target: 'node24',
     fingerprint: 'fixture',
-    bundledOutputs: ['dist/handler.js'],
-    inputs: ['backend/src/handler.ts'],
-    files: [],
+    toolchain: { node: '20.20.2', platform: process.platform, architecture: process.arch },
+    files: artifactInventory(payload),
   };
-  writeFileSync(join(destination, '.dataops-sam-bundle.json'), `${JSON.stringify(manifest)}\n`);
-  manifest.files = artifactInventory(destination);
-  writeFileSync(join(destination, '.dataops-sam-bundle.json'), `${JSON.stringify(manifest)}\n`);
+  writeFileSync(join(destination, 'build-metadata.json'), `${JSON.stringify(manifest)}\n`);
 }
+
+test('SAM artifact builder requires the canonical exact Node version', () => {
+  assert.equal(assertRequiredNodeVersion('v20.20.2'), '20.20.2');
+  assert.throws(
+    () => assertRequiredNodeVersion('24.13.1'),
+    /requires Node\.js 20\.20\.2; actual version is 24\.13\.1/,
+  );
+});
 
 test('concurrent SAM function builds publish one complete shared artifact', async () => {
   mkdirSync(testRoot, { recursive: true });
@@ -92,9 +105,13 @@ test('SAM function copies are complete and isolated from one another', () => {
     writeFileSync(join(first, 'dist', 'handler.js'), 'mutated first copy');
 
     assert.equal(readFileSync(join(second, 'dist', 'handler.js'), 'utf8'), 'handler bytes');
-    assert.equal(readFileSync(join(cache, 'dist', 'handler.js'), 'utf8'), 'handler bytes');
-    assert.equal(readValidManifest(first), null);
-    assert.ok(readValidManifest(second));
+    assert.equal(readFileSync(join(cache, 'payload', 'dist', 'handler.js'), 'utf8'), 'handler bytes');
+    assert.notDeepEqual(artifactInventory(first), artifactInventory(second));
+    assert.deepEqual(artifactInventory(second), readValidManifest(cache).files);
+    assert.equal(existsSync(join(first, 'build-metadata.json')), false);
+    assert.equal(existsSync(join(second, 'build-metadata.json')), false);
+    assert.equal(existsSync(join(first, '.dataops-sam-bundle.json')), true);
+    assert.equal(existsSync(join(second, '.dataops-sam-bundle.json')), true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -150,10 +167,10 @@ test('extra or corrupt cache files are never accepted as a warm artifact', () =>
     mkdirSync(artifact);
     writeFixtureArtifact(artifact);
     assert.ok(readValidManifest(artifact));
-    writeFileSync(join(artifact, 'unexpected.js'), 'not declared by the manifest');
+    writeFileSync(join(artifact, 'payload', 'unexpected.js'), 'not declared by the manifest');
     assert.equal(readValidManifest(artifact), null);
-    rmSync(join(artifact, 'unexpected.js'));
-    writeFileSync(join(artifact, 'dist', 'handler.js'), 'corrupt bytes');
+    rmSync(join(artifact, 'payload', 'unexpected.js'));
+    writeFileSync(join(artifact, 'payload', 'dist', 'handler.js'), 'corrupt bytes');
     assert.equal(readValidManifest(artifact), null);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -294,8 +311,8 @@ test('different fingerprints build in independent mutable directories', async ()
     assert.equal(second.built, true);
     assert.equal(destinations.length, 2);
     assert.notEqual(destinations[0], destinations[1]);
-    assert.equal(readFileSync(join(first.cache, 'dist', 'handler.js'), 'utf8'), 'a');
-    assert.equal(readFileSync(join(second.cache, 'dist', 'handler.js'), 'utf8'), 'b');
+    assert.equal(readFileSync(join(first.cache, 'payload', 'dist', 'handler.js'), 'utf8'), 'a');
+    assert.equal(readFileSync(join(second.cache, 'payload', 'dist', 'handler.js'), 'utf8'), 'b');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
