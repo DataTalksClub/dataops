@@ -36,6 +36,7 @@ export function createKnowledgeSurface(context) {
   Object.assign(
     api,
     createProcessDocsSurface(context, {
+      openDocument: invoke("openDocument"),
       refreshDocuments: invoke("refreshDocuments"),
     }),
   );

@@ -17,7 +17,8 @@ export function createProcedureRenderer(context, services, editorState) {
   const showFeedback = editorFeedbackFor(context);
 
   function appendProcedureChildren(container, procedure) {
-    container.append(renderTodoBlock(procedure));
+    const todos = renderTodoBlock(procedure);
+    if (todos) container.append(todos);
 
     const groups = Array.isArray(procedure.groups) ? procedure.groups : [];
     if (groups.length) {
@@ -27,14 +28,12 @@ export function createProcedureRenderer(context, services, editorState) {
         ? procedure.flat_steps
         : [];
       for (const s of flatSteps) container.append(renderStepBlock(s, procedure));
-      container.append(makeAddStepButton(procedure, null));
     }
 
     const prose = Array.isArray(procedure.prose) ? procedure.prose : [];
     prose.forEach((p, idx) =>
       container.append(renderProseBlock(p, idx, procedure)),
     );
-    container.append(makeAddProseButton(procedure));
   }
 
   function makeAddGroupButton(procedure) {
@@ -82,14 +81,7 @@ export function createProcedureRenderer(context, services, editorState) {
     head.append(addBtn);
     block.append(head);
 
-    if (todos.length === 0) {
-      block.classList.add("is-empty");
-      const empty = document.createElement("div");
-      empty.className = "block-todo-empty";
-      empty.textContent = "No TODOs yet.";
-      block.append(empty);
-      return block;
-    }
+    if (todos.length === 0) return null;
 
     const list = document.createElement("ul");
     todos.forEach((t, idx) => {
@@ -192,7 +184,6 @@ export function createProcedureRenderer(context, services, editorState) {
 
     for (const s of group.steps || [])
       block.append(renderStepBlock(s, procedure));
-    if (procedure) block.append(makeAddStepButton(procedure, group));
     return block;
   }
 
@@ -239,74 +230,18 @@ export function createProcedureRenderer(context, services, editorState) {
     const header = document.createElement("header");
     header.className = "block-step-header";
 
-    if (procedure) {
-      const handle = document.createElement("span");
-      handle.className = "block-step-drag";
-      handle.title = "Drag to reorder";
-      handle.setAttribute("aria-label", "Drag step to reorder");
-      handle.textContent = "⋮⋮";
-      handle.draggable = true;
-      handle.addEventListener("dragstart", (event) =>
-        onStepDragStart(event, step, block, procedure),
-      );
-      handle.addEventListener("dragend", onStepDragEnd);
-      header.append(handle);
-    }
-
     const numChip = document.createElement("span");
     numChip.className = "block-step-num";
     numChip.textContent = String(step.rendered_number ?? step.id);
     header.append(numChip);
 
-    const label = document.createElement("span");
-    label.className = "block-step-label";
-    label.textContent = "Step";
-    header.append(label);
-
     const attrs = step.attrs || {};
-    if (attrs.action) header.append(pill("action", attrs.action));
-    if (attrs.tool) header.append(pill("tool", attrs.tool));
-    if (Array.isArray(attrs.systems)) {
-      for (const sys of attrs.systems) header.append(pill("system", sys));
-    }
-
-    for (const w of documentState.currentWarnings) {
-      if (!w.startsWith(`step id=${step.id}:`)) continue;
-      const chip = document.createElement("span");
-      chip.className = "block-step-warning";
-      chip.title = w;
-      chip.textContent = "⚠";
-      header.append(chip);
-    }
-
-    if (procedure) {
-      const spacer = document.createElement("span");
-      spacer.className = "block-step-spacer";
-      header.append(spacer);
-
-      const attrBtn = document.createElement("button");
-      attrBtn.type = "button";
-      attrBtn.className = "block-step-attr";
-      attrBtn.title = "Edit step attributes";
-      attrBtn.setAttribute("aria-label", "Edit step attributes");
-      attrBtn.textContent = "⚙";
-      attrBtn.addEventListener("click", (event) => {
-        event.stopPropagation();
-        toggleStepAttrEditor(block, step, procedure);
-      });
-      header.append(attrBtn);
-
-      const delBtn = document.createElement("button");
-      delBtn.type = "button";
-      delBtn.className = "block-step-delete";
-      delBtn.title = "Delete step";
-      delBtn.setAttribute("aria-label", "Delete step");
-      delBtn.textContent = "×";
-      delBtn.addEventListener("click", (event) => {
-        event.stopPropagation();
-        deleteStep(procedure, step);
-      });
-      header.append(delBtn);
+    const action = attrs.action || attrs.tool;
+    if (action) {
+      const actionText = document.createElement("span");
+      actionText.className = "block-step-action";
+      actionText.textContent = action;
+      header.append(actionText);
     }
 
     block.append(header);
@@ -329,7 +264,6 @@ export function createProcedureRenderer(context, services, editorState) {
     for (const embed of extractVideoEmbeds(step.body_md || "")) {
       block.append(renderVideoEmbed(embed));
     }
-    if (procedure) block.append(makeAddScreenshotButton(step, procedure));
     return block;
   }
 
@@ -391,6 +325,8 @@ export function createProcedureRenderer(context, services, editorState) {
     btn.textContent = "+ Add screenshot";
     const input = document.createElement("input");
     input.type = "file";
+    input.className = "visually-hidden";
+    input.setAttribute("aria-label", "Choose screenshot");
     input.accept = "image/png,image/jpeg,image/gif,image/webp,image/svg+xml";
     input.addEventListener("change", () => {
       const file = input.files && input.files[0];

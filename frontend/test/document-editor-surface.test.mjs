@@ -941,16 +941,20 @@ describe("Document Editor surface boundary", () => {
     await harness.api.enterRenderedMode();
     assert.equal(harness.elements.editorView.dataset.mode, "rendered");
     assert.ok(findByText(harness.elements.renderedView, "Run newsletter", "h1"));
-    assert.ok(findByText(harness.elements.renderedView, "sop", "span"));
-    assert.ok(findByText(harness.elements.renderedView, "mailing", "span"));
+    assert.ok(
+      findByText(harness.elements.renderedView, "SOP · mailing · weekly · 1 step"),
+    );
+    assert.ok(findByText(harness.elements.renderedView, "Edit metadata", "button"));
+    assert.equal(findByText(harness.elements.renderedView, "Section"), undefined);
+    assert.equal(
+      findAllByClass(harness.elements.renderedView.querySelector(".fm-block"), "fm-pill").length,
+      0,
+    );
     assert.ok(findByText(harness.elements.renderedView, "Summary", "h2"));
     assert.ok(findByText(harness.elements.renderedView, "Procedure", "h2"));
     assert.equal(
       findAllByClass(harness.elements.renderedView, "block-step").length,
       1,
-    );
-    assert.ok(
-      findByText(harness.elements.renderedView, "1 step", "div"),
     );
     const stepMarkdown = findAllByClass(
       harness.elements.renderedView,
@@ -977,7 +981,9 @@ describe("Document Editor surface boundary", () => {
     });
 
     await harness.api.enterRenderedMode();
+    assert.ok(findByText(harness.elements.renderedView, "Guide", "h1"));
     const renderedMarkdown = harness.elements.renderedView.querySelector(".md");
+    assert.equal(/<h1[\s>]/i.test(renderedMarkdown.innerHTML), false);
     assert.match(
       renderedMarkdown.innerHTML,
       /data-doc-path="content\/processes\/related\.md"/,

@@ -1960,6 +1960,7 @@ Resources:
         - Statement:
             Effect: Allow
             Action:
+              - dynamodb:ConditionCheckItem
               - dynamodb:DeleteItem
               - dynamodb:GetItem
               - dynamodb:PutItem

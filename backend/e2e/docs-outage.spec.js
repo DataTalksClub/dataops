@@ -219,13 +219,10 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     await expect(outage).toContainText('DTC_CACHE_ROOT');
     await expect(page.locator('[data-docs-state="empty"]')).toHaveCount(0);
     await expect(page.getByText('No process documents yet')).toHaveCount(0);
-    // The outage state precedes the quality panel an operator would otherwise
-    // misread as the only problem.
+    await expect(page.locator('.ops-quality-drilldown')).toHaveCount(0);
     const order = await page.locator('.ops-processes-surface > *').evaluateAll((nodes) =>
       nodes.map((node) => node.dataset.docsState || node.className));
-    expect(order.indexOf('unavailable')).toBeLessThan(
-      order.findIndex((value) => String(value).includes('ops-quality-drilldown')),
-    );
+    expect(order[0]).toBe('unavailable');
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'processes-outage.png'), fullPage: true });
 
     expectOnlyDeliberateDocsOutage(entries);
@@ -332,7 +329,7 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     const empty = docsPage.locator('.ops-surface-docs [data-docs-state="empty"]');
     await expect(empty).toBeVisible();
     await expect(empty.locator('strong')).toHaveText('No process documents yet');
-    await expect(empty).toContainText('the process-document corpus contains no documents');
+    await expect(empty).toContainText('Publish one and it will appear here.');
     await expect(docsPage.locator('[data-docs-state="unavailable"]')).toHaveCount(0);
     await expect(docsPage.getByText('Process documents are unavailable')).toHaveCount(0);
     await expect(docsPage.getByText(OUTAGE_MESSAGE_PREFIX)).toHaveCount(0);
@@ -377,7 +374,7 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     // The surface must list this run's own corpus first. Without that proof
     // "neither state renders" would also be true before the catalog loaded.
     await expect(
-      docsPage.locator('.ops-surface-docs .ops-reference-link', { hasText: FIXTURE_DOC_TITLE }),
+      docsPage.locator('.ops-surface-docs .ops-docs-catalog-row', { hasText: FIXTURE_DOC_TITLE }),
     ).toBeVisible();
     await expect(docsPage.locator('[data-docs-state]')).toHaveCount(0);
     expect(docsErrors.map(describeEntry)).toEqual([]);
