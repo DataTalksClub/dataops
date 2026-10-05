@@ -11,7 +11,7 @@ import { createSession } from '../src/db/sessions';
 import { createHash } from 'crypto';
 import { Readable } from 'stream';
 
-const invoke=(method:string,path:string,body?:unknown,headers?:Record<string,string>)=>handler({httpMethod:method,path,headers:headers||{},body:body===undefined?null:JSON.stringify(body)},{});
+const invoke=(method:string,path:string,body?:unknown,headers?:Record<string,string>,query?:Record<string,string>)=>handler({httpMethod:method,path,headers:headers||{},body:body===undefined?null:JSON.stringify(body),queryStringParameters:query||null},{});
 const valid={transactionDate:'2026-07-01',counterparty:'Synthetic Vendor',description:'Synthetic service',amount:'10.25',currency:'EUR',sourceType:'manual'};
 describe('bookkeeping API',()=>{
   let client:DynamoDBDocumentClient;
@@ -29,6 +29,23 @@ describe('bookkeeping API',()=>{
     const duplicate=await invoke('POST','/api/bookkeeping/links',{documentId:receipt.id,transactionId:transaction.id,coverageType:'evidence'});assert.equal(duplicate.statusCode,200);assert.equal(JSON.parse(duplicate.body).id,JSON.parse(link.body).id);
     const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-08'});assert.equal(snapshot.statusCode,201);const report=JSON.parse(snapshot.body).report;assert.deepEqual(report.transactionIds,[transaction.id]);assert.equal(report.documentIds.length,3);
     const retry=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-08'});assert.equal(retry.statusCode,200);assert.equal(JSON.parse(retry.body).report.id,report.id);
+  });
+  it('records VAT amounts and keeps tax and health-insurance entries out of monthly snapshots',async()=>{
+    const bad=await invoke('POST','/api/bookkeeping/transactions',{...valid,description:'bad vat',vatAmount:'-1',vatCurrency:'eur'});assert.equal(bad.statusCode,400);assert.deepEqual(JSON.parse(bad.body).fields.sort(),['vatAmount','vatCurrency']);
+    const income=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-05',description:'VAT income',entryType:'income',vatAmount:'19.00',vatCurrency:'EUR'})).body);
+    await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-06',description:'VAT expense',entryType:'expense',vatAmount:'7.00',vatCurrency:'EUR'});
+    await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-07',description:'Income tax payment',category:'Taxes',entryType:'expense',amount:'100.00'});
+    await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-08',description:'Health insurance premium',category:'Health Insurance',entryType:'expense'});
+    const setup=await invoke('POST','/api/bookkeeping/accounts/setup');
+    for(const account of JSON.parse(setup.body).accounts) await putBookkeepingItem(client,'document',{documentType:'bank-statement',status:'active',accountId:account.id,statementMonth:'2026-09',originalFilename:'synthetic.pdf',contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(`synthetic-vat-${account.id}`).digest('hex'),s3Key:`documents/${account.id}`});
+    const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-09'});assert.equal(snapshot.statusCode,201);
+    const report=JSON.parse(snapshot.body).report;
+    assert.equal(report.reconciliation.excludedTransactionCount,2);
+    assert.deepEqual(report.transactionIds.length,2);
+    const vat=await invoke('GET','/api/bookkeeping/reports/vat',undefined,undefined,{year:'2026'});assert.equal(vat.statusCode,200);
+    assert.deepEqual(JSON.parse(vat.body).months,[{month:'2026-09',currency:'EUR',outputVat:19,inputVat:7,net:12,transactionCount:2}]);
+    const emptyYear=await invoke('GET','/api/bookkeeping/reports/vat',undefined,undefined,{year:'2027'});assert.deepEqual(JSON.parse(emptyYear.body).months,[]);
+    assert.equal((await invoke('GET','/api/bookkeeping/reports/vat',undefined,undefined,{year:'20x6'})).statusCode,400);
   });
   it('validates PDF upload content and never returns object keys',async()=>{
     process.env.BOOKKEEPING_DOCUMENTS_BUCKET='synthetic-private-bucket';process.env.BOOKKEEPING_DOCUMENTS_KMS_KEY='synthetic-key';process.env.BOOKKEEPING_UPLOAD_URL_SECONDS='-1';

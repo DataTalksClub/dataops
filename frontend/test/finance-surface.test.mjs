@@ -756,6 +756,8 @@ describe("Finance surface boundary", () => {
             ],
           };
         if (path.endsWith("/accounts")) return { items: [] };
+        if (path.endsWith("/reports/vat"))
+          return { months: [], transactions: [] };
         throw new Error(`Unexpected request: ${url}`);
       },
     });
@@ -775,6 +777,11 @@ describe("Finance surface boundary", () => {
     assert.match(ledger, /Referenced/);
     assert.match(ledger, /Provider Two/);
     assert.match(ledger, /Missing/);
+    assert.match(ledger, /VAT/);
+    assert.match(
+      surface.querySelector("[data-vat-summary]").innerHTML,
+      /No VAT recorded in 2026/,
+    );
     const evidence = surface.querySelector(".bookkeeping-documents").innerHTML;
     assert.match(evidence, /invoice-august\.pdf/);
     assert.match(evidence, /matched to 1 entry/);
@@ -820,8 +827,25 @@ describe("Finance surface boundary", () => {
           };
         if (path.endsWith("/links") || path.endsWith("/accounts"))
           return { items: [] };
+        if (path.endsWith("/reports/vat"))
+          return {
+            months: [
+              {
+                month: "2026-08",
+                currency: "EUR",
+                outputVat: 19.0,
+                inputVat: 4.2,
+                net: 14.8,
+                transactionCount: 3,
+              },
+            ],
+            transactions: [],
+          };
         if (path.endsWith("/reports/snapshot"))
-          return { report: { id: "report-1" }, warnings: {} };
+          return {
+            report: { id: "report-1", reconciliation: { excludedTransactionCount: 2 } },
+            warnings: {},
+          };
         if (path.endsWith("/reports/report-1/archive"))
           return { downloadUrl: "https://private.test/monthly.zip" };
         throw new Error(`Unexpected request: ${url}`);
@@ -875,6 +899,10 @@ describe("Finance surface boundary", () => {
       month: "2026-08",
       privateDocumentIds: ["private-statement-1"],
     });
+    assert.equal(
+      surface.querySelector("[data-bookkeeping-status]").textContent,
+      "Snapshot ready. 2 tax/health-insurance entries kept out of the package.",
+    );
     assert.equal(
       calls.some(({ path }) => path.endsWith("/reports/report-1/archive")),
       true,

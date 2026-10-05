@@ -3429,6 +3429,37 @@ body[data-workspace-view="sponsors"] .document-list {
   width: 220px;
 }
 
+.bookkeeping-vat .section-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px 16px;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.bookkeeping-vat h4 {
+  color: var(--dk-text-heading);
+  font-size: 15px;
+  margin-bottom: 2px;
+}
+
+.bookkeeping-vat .section-header p {
+  max-width: 640px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--dk-text-muted);
+}
+
+.bookkeeping-vat .section-header label {
+  width: 180px;
+}
+
+.bookkeeping-vat-summary {
+  padding: 0 18px 16px;
+}
+
 .crm-layout {
   display: grid;
   grid-template-columns: minmax(300px, 0.72fr) minmax(0, 1.55fr);

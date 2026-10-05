@@ -194,6 +194,25 @@ export function createBookkeepingSurface(context) {
           <legend>Optional private-account statements</legend>
           <div data-private-statements>No eligible private statements.</div>
         </fieldset>
+        <section class="bookkeeping-vat" aria-labelledby="bookkeeping-vat-heading">
+          <header class="section-header">
+            <div>
+              <h4 id="bookkeeping-vat-heading">VAT summary</h4>
+              <p>
+                Value-added tax recorded on income and expense entries. Tax and
+                health-insurance entries stay out of the monthly package but
+                their VAT payments appear here.
+              </p>
+            </div>
+            <label
+              >VAT year
+              <select data-vat-year><option value="">All years</option></select></label
+            >
+          </header>
+          <div class="bookkeeping-vat-summary" data-vat-summary aria-live="polite">
+            Loading VAT summary…
+          </div>
+        </section>
         <div class="bookkeeping-package">
           <label>Report month <input type="month" data-report-month /></label
           ><button class="primary-button" data-report>
@@ -224,6 +243,12 @@ export function createBookkeepingSurface(context) {
             ><label
               >Currency
               <input name="currency" maxlength="3" value="EUR" /></label
+            ><label
+              >VAT amount
+              <input name="vatAmount" inputmode="decimal" /></label
+            ><label
+              >VAT currency
+              <input name="vatCurrency" maxlength="3" /></label
             ><label>Category <input name="category" /></label
             ><label>Type <input name="entryType" /></label
             ><label class="span-all"
@@ -335,6 +360,7 @@ export function createBookkeepingSurface(context) {
                   <th>Paid</th>
                   <th>Provider / description</th>
                   <th>Amount</th>
+                  <th>VAT</th>
                   <th>Category / type</th>
                   <th>Evidence</th>
                   <th><span class="visually-hidden">Actions</span></th>
@@ -357,6 +383,13 @@ export function createBookkeepingSurface(context) {
                         </td>
                         <td data-label="Amount" class="ledger-amount">
                           ${escapeHtml(`${e.amount} ${e.currency}`)}
+                        </td>
+                        <td data-label="VAT" class="ledger-vat">
+                          ${escapeHtml(
+                            e.vatAmount
+                              ? `${e.vatAmount} ${e.vatCurrency || e.currency}`
+                              : "—",
+                          )}
                         </td>
                         <td data-label="Category / type">
                           ${escapeHtml([e.category, e.entryType].filter(Boolean).join(" / ") || "—")}
@@ -456,6 +489,63 @@ export function createBookkeepingSurface(context) {
               .join("")
           : "No eligible private statements.";
     }
+    async function renderVat() {
+      const yearSelect = surface.querySelector("[data-vat-year]");
+      const summary = surface.querySelector("[data-vat-summary]");
+      const year = yearSelect.value;
+      summary.textContent = "Loading VAT summary…";
+      await safeAction(async () => {
+        const vat = await api(
+          `/reports/vat${year ? `?year=${encodeURIComponent(year)}` : ""}`,
+        );
+        const months = vat.months || [];
+        summary.innerHTML = months.length
+          ? html`<div class="bookkeeping-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>Currency</th>
+                    <th>Output VAT</th>
+                    <th>Input VAT</th>
+                    <th>Net</th>
+                    <th>Entries</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${months
+                    .map(
+                      (m) =>
+                        html`<tr>
+                          <td data-label="Month">${escapeHtml(m.month)}</td>
+                          <td data-label="Currency">${escapeHtml(m.currency)}</td>
+                          <td data-label="Output VAT" class="ledger-amount">
+                            ${m.outputVat.toFixed(2)}
+                          </td>
+                          <td data-label="Input VAT" class="ledger-amount">
+                            ${m.inputVat.toFixed(2)}
+                          </td>
+                          <td data-label="Net" class="ledger-amount">
+                            ${m.net.toFixed(2)}
+                          </td>
+                          <td data-label="Entries">${m.transactionCount}</td>
+                        </tr>`,
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>`
+          : html`<div class="honest-state">
+              <strong>
+                No VAT recorded${year ? ` in ${escapeHtml(year)}` : ""}
+              </strong>
+              <p>
+                Set a VAT amount on income or expense entries to build the VAT
+                report.
+              </p>
+            </div>`;
+      }, "Could not load VAT summary");
+    }
     try {
       const result = await api("/transactions");
       entries = result.items || [];
@@ -470,6 +560,12 @@ export function createBookkeepingSurface(context) {
           "beforeend",
           years.map((y) => html`<option>${y}</option>`).join(""),
         );
+      const vatYears = surface.querySelector("[data-vat-year]");
+      vatYears.insertAdjacentHTML(
+        "beforeend",
+        years.map((y) => html`<option>${y}</option>`).join(""),
+      );
+      vatYears.value = years[0] || "";
       surface
         .querySelector("[data-transaction]")
         .insertAdjacentHTML(
@@ -485,6 +581,7 @@ export function createBookkeepingSurface(context) {
         );
       renderLedger();
       await refreshEvidence();
+      await renderVat();
     } catch (error) {
       ledger.textContent = `Could not load bookkeeping: ${error.message}`;
       surface.querySelector(".bookkeeping-documents").textContent =
@@ -494,6 +591,9 @@ export function createBookkeepingSurface(context) {
     surface
       .querySelectorAll("[data-filter]")
       .forEach((el) => el.addEventListener("input", renderLedger));
+    surface
+      .querySelector("[data-vat-year]")
+      .addEventListener("change", renderVat);
     surface
       .querySelector("[data-bookkeeping-add]")
       .addEventListener("click", () => {
@@ -555,6 +655,8 @@ export function createBookkeepingSurface(context) {
           return;
         }
         data.currency = data.currency.toUpperCase();
+        if (data.vatCurrency)
+          data.vatCurrency = data.vatCurrency.toUpperCase();
         const id = form.elements.id.value;
         const saved = await api(`/transactions${id ? `/${id}` : ""}`, {
           method: id ? "PUT" : "POST",
@@ -695,9 +797,18 @@ export function createBookkeepingSurface(context) {
           method: "POST",
           body: JSON.stringify({ month, privateDocumentIds }),
         });
-        status.textContent = snapshot.warnings?.missingEvidence
-          ? `${snapshot.warnings.missingEvidence} missing-evidence warning(s).`
-          : "Snapshot ready.";
+        const excluded =
+          snapshot.report?.reconciliation?.excludedTransactionCount;
+        status.textContent = [
+          snapshot.warnings?.missingEvidence
+            ? `${snapshot.warnings.missingEvidence} missing-evidence warning(s).`
+            : "Snapshot ready.",
+          excluded
+            ? `${excluded} tax/health-insurance ${excluded === 1 ? "entry" : "entries"} kept out of the package.`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
         const archive = await api(`/reports/${snapshot.report.id}/archive`, {
           method: "POST",
         });

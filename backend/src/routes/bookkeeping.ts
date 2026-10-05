@@ -15,6 +15,8 @@ import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import {
   addDocumentReportReference,
+  BookkeepingItemLockedError,
+  isReportExemptTransaction,
   activateDocument,
   createDocumentLink,
   deleteBookkeepingItem,
@@ -62,6 +64,8 @@ const allowed = [
   "amount",
   "currency",
   "amountEur",
+  "vatAmount",
+  "vatCurrency",
   "statementRef",
   "quantity",
   "comment",
@@ -137,6 +141,16 @@ function validateTransaction(input: Record<string, unknown>, partial = false) {
     (typeof input.amountEur !== "string" || !MONEY.test(input.amountEur))
   )
     errors.push("amountEur");
+  if (
+    input.vatAmount != null &&
+    (typeof input.vatAmount !== "string" || !MONEY.test(input.vatAmount))
+  )
+    errors.push("vatAmount");
+  if (
+    input.vatCurrency != null &&
+    (typeof input.vatCurrency !== "string" || !CURRENCY.test(input.vatCurrency))
+  )
+    errors.push("vatCurrency");
   if (
     (!partial || input.currency !== undefined) &&
     (typeof input.currency !== "string" || !CURRENCY.test(input.currency))
@@ -268,8 +282,13 @@ export async function handleBookkeepingRoutes(
         return (await deleteBookkeepingItem(client, "bookkeeping", match[1]))
           ? { statusCode: 204, headers: {}, body: "" }
           : json(404, { error: "Not found" });
-      } catch {
-        return json(409, { error: "Transaction is locked or changed" });
+      } catch (error) {
+        if (error instanceof BookkeepingItemLockedError)
+          return json(409, { error: "Transaction is locked or changed" });
+        console.error(
+          JSON.stringify({ message: "bookkeeping transaction delete failed", error: String(error) }),
+        );
+        return json(503, { error: "Transaction delete failed" });
       }
     }
     if ((method === "POST" && !match[1]) || (method === "PUT" && match[1])) {
@@ -291,8 +310,13 @@ export async function handleBookkeepingRoutes(
         try {
           const updated = await updateBookkeepingTransaction(client, match[1], String(previous!.updatedAt), value);
           return json(200, updated);
-        } catch {
-          return json(409, { error: "Transaction is locked or changed" });
+        } catch (error) {
+          if (error instanceof BookkeepingItemLockedError)
+            return json(409, { error: "Transaction is locked or changed" });
+          console.error(
+            JSON.stringify({ message: "bookkeeping transaction update failed", error: String(error) }),
+          );
+          return json(503, { error: "Transaction update failed" });
         }
       }
       const result = await putBookkeepingItem(
@@ -702,9 +726,15 @@ export async function handleBookkeepingRoutes(
         error: "Missing required business statements",
         missingAccountIds: missing.map((a) => a.id),
       });
-    const transactions = (
+    const monthTransactions = (
       await listBookkeepingItems(client, "bookkeeping")
     ).filter((t) => String(t.transactionDate).startsWith(month));
+    const excludedTransactions = monthTransactions.filter(
+      isReportExemptTransaction,
+    );
+    const transactions = monthTransactions.filter(
+      (t) => !isReportExemptTransaction(t),
+    );
     const links = await listBookkeepingItems(client, "link");
     const linkedIds = new Set(
       links
@@ -744,10 +774,11 @@ export async function handleBookkeepingRoutes(
             documentIds: includedDocs.map((d) => d.id),
             reconciliation: {
               transactionCount: transactions.length,
+              excludedTransactionCount: excludedTransactions.length,
               documentCount: includedDocs.length,
               businessStatementCount: accounts.length,
             },
-            snapshotVersion: 1,
+            snapshotVersion: 2,
           },
           `report#${month}`,
         )
@@ -772,6 +803,50 @@ export async function handleBookkeepingRoutes(
             ),
         ).length,
       },
+    });
+  }
+  if (path === "/api/bookkeeping/reports/vat" && method === "GET") {
+    const year = event.queryStringParameters?.year;
+    if (year != null && !/^\d{4}$/.test(String(year)))
+      return json(400, { error: "Invalid year" });
+    const withVat = (await listBookkeepingItems(client, "bookkeeping")).filter(
+      (t) => typeof t.vatAmount === "string" && MONEY.test(t.vatAmount),
+    );
+    const selected = year
+      ? withVat.filter((t) =>
+          String(t.transactionDate).startsWith(String(year)),
+        )
+      : withVat;
+    type VatBucket = {
+      month: string;
+      currency: string;
+      outputVat: number;
+      inputVat: number;
+      net: number;
+      transactionCount: number;
+    };
+    const months = new Map<string, VatBucket>();
+    for (const t of selected) {
+      const month = String(t.transactionDate).slice(0, 7);
+      const currency = String(t.vatCurrency || t.currency || "EUR");
+      const bucket = months.get(`${month}#${currency}`) || {
+        month,
+        currency,
+        outputVat: 0,
+        inputVat: 0,
+        net: 0,
+        transactionCount: 0,
+      };
+      const amount = Number(t.vatAmount);
+      if (t.entryType === "income") bucket.outputVat += amount;
+      else bucket.inputVat += amount;
+      bucket.net = Math.round((bucket.outputVat - bucket.inputVat) * 100) / 100;
+      bucket.transactionCount += 1;
+      months.set(`${month}#${currency}`, bucket);
+    }
+    return json(200, {
+      months: [...months.values()].sort((a, b) => b.month.localeCompare(a.month)),
+      transactions: selected,
     });
   }
   const archive = path.match(/^\/api\/bookkeeping\/reports\/([^/]+)\/archive$/);
@@ -824,6 +899,8 @@ export async function handleBookkeepingRoutes(
       "amount",
       "currency",
       "amountEur",
+      "vatAmount",
+      "vatCurrency",
       "category",
       "entryType",
       "statementRef",

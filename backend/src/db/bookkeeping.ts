@@ -16,6 +16,38 @@ export type BookkeepingItem = Record<string, unknown> & {
   updatedAt: string;
 };
 
+// Payment categories tracked in the ledger but kept out of the accountant's
+// monthly package: they are settled from private money and reported separately.
+export const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance"]);
+export function isReportExemptTransaction(item: Readonly<Record<string, unknown>>) {
+  return REPORT_EXEMPT_CATEGORIES.has(String(item.category || ""));
+}
+
+// Raised when a conditional mutation loses its optimistic-concurrency race or
+// the item is claimed by sponsor finance, as opposed to an unexpected failure.
+export class BookkeepingItemLockedError extends Error {
+  constructor() {
+    super("Bookkeeping item is claimed or changed");
+    this.name = "BookkeepingItemLockedError";
+  }
+}
+const claimKey = (kind: "document" | "transaction", id: string) =>
+  `SPONSOR_FINANCE_CLAIM#${kind}#${id}`;
+async function assertNotClaimed(
+  client: DynamoDBDocumentClient,
+  kind: "document" | "transaction",
+  id: string,
+) {
+  const existing = await client.send(
+    new GetCommand({
+      TableName: TABLE_BOOKKEEPING,
+      Key: { PK: claimKey(kind, id), SK: claimKey(kind, id) },
+      ConsistentRead: true,
+    }),
+  );
+  if (existing.Item) throw new BookkeepingItemLockedError();
+}
+
 const key = (kind: string, id: string) => `${kind.toUpperCase()}#${id}`;
 const documentKey = (id: string) => key("document", id);
 const hashKey = (sha256: string) => `DOCUMENT_HASH#${sha256}`;
@@ -201,17 +233,25 @@ export async function deleteBookkeepingItem(
   id: string,
 ) {
   const existing = await getBookkeepingItem(client, kind, id);
-  if (existing)
-    await transact(client, {
-      TransactItems: [{
-        Delete: {
+  if (existing) {
+    if (kind === "bookkeeping")
+      await assertNotClaimed(client, "transaction", id);
+    if (kind === "document") await assertNotClaimed(client, "document", id);
+    try {
+      await client.send(
+        new DeleteCommand({
           TableName: TABLE_BOOKKEEPING,
           Key: { PK: key(kind, id), SK: key(kind, id) },
           ConditionExpression: "updatedAt = :updatedAt",
           ExpressionAttributeValues: { ":updatedAt": existing.updatedAt },
-        },
-      }],
-    });
+        }),
+      );
+    } catch (error) {
+      if ((error as Error).name === "ConditionalCheckFailedException")
+        throw new BookkeepingItemLockedError();
+      throw error;
+    }
+  }
   return existing;
 }
 
@@ -222,6 +262,7 @@ export async function updateBookkeepingTransaction(
   value: Record<string, unknown>,
 ) {
   const now = new Date().toISOString();
+  await assertNotClaimed(client, "transaction", id);
   const names: Record<string, string> = {};
   const values: Record<string, unknown> = { ":expected": expectedUpdatedAt, ":now": now };
   const sets = Object.entries(value)
@@ -231,18 +272,22 @@ export async function updateBookkeepingTransaction(
       values[`:value${index}`] = child;
       return `#field${index} = :value${index}`;
     });
-  await transact(client, {
-    TransactItems: [{
-      Update: {
+  try {
+    await client.send(
+      new UpdateCommand({
         TableName: TABLE_BOOKKEEPING,
         Key: { PK: key("bookkeeping", id), SK: key("bookkeeping", id) },
         UpdateExpression: `SET ${sets.join(", ")}, updatedAt = :now`,
         ConditionExpression: "updatedAt = :expected",
         ExpressionAttributeNames: names,
         ExpressionAttributeValues: values,
-      },
-    }],
-  });
+      }),
+    );
+  } catch (error) {
+    if ((error as Error).name === "ConditionalCheckFailedException")
+      throw new BookkeepingItemLockedError();
+    throw error;
+  }
   return getBookkeepingItem(client, "bookkeeping", id);
 }
 

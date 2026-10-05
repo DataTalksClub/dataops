@@ -60,7 +60,7 @@ test.describe("production portal bookkeeping", () => {
     await entryForm
       .getByLabel("Description")
       .fill("Synthetic browser evidence");
-    await entryForm.getByLabel("Amount").fill("20.00");
+    await entryForm.getByLabel("Amount", { exact: true }).fill("20.00");
     await entryForm.getByLabel("Category").fill("synthetic-testing");
     await entryForm.getByRole("button", { name: "Save" }).click();
     const createdRow = page.getByRole("row").filter({
