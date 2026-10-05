@@ -237,7 +237,7 @@ test.describe("pre-refactor frontend module characterization", () => {
         // suite would pass just as happily against an empty or wrongly pointed
         // content root.
         await expect(
-          page.locator(".ops-surface-docs .ops-reference-link", { hasText: FIXTURE_DOC_TITLE }),
+          page.locator(".ops-surface-docs .ops-docs-catalog-row", { hasText: FIXTURE_DOC_TITLE }),
         ).toBeVisible();
         await page.screenshot({ path: path.join(SCREENSHOT_DIR, "processes.png"), fullPage: true });
       }
