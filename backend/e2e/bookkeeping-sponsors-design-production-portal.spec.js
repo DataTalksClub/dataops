@@ -30,10 +30,10 @@ async function expectPalette(page, dark) {
   const palette = await page.evaluate(() => {
     const style = getComputedStyle(document.body);
     return {
-      page: style.getPropertyValue("--page-bg").trim(),
-      surface: style.getPropertyValue("--surface-bg").trim(),
-      border: style.getPropertyValue("--border-muted").trim(),
-      text: style.getPropertyValue("--text-primary").trim(),
+      page: style.getPropertyValue("--dk-bg-page").trim(),
+      surface: style.getPropertyValue("--dk-bg-surface").trim(),
+      border: style.getPropertyValue("--dk-border-default").trim(),
+      text: style.getPropertyValue("--dk-text-primary").trim(),
     };
   });
   expect(palette).toEqual(dark
