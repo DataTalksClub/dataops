@@ -1,11 +1,11 @@
 ---
 name: loom-to-sop
-description: Turn a screen recording (Loom share link) into draft SOP documents in the dataops-knowledge repository — one SOP per distinct process, each step backed by a screenshot from the video. Use when the user shares a recording URL and asks to document it as a process document, SOP, or process docs.
+description: Turn a screen recording (Loom share link) into SOP documents in the dataops-knowledge repository — one SOP per distinct process, each step backed by a screenshot from the video. Use when the user shares a recording URL and asks to document it as a process document, SOP, or process docs.
 ---
 
 # Loom to SOP
 
-Convert a task recording into draft SOPs in `../dataops-knowledge`. The
+Convert a task recording into SOPs in `../dataops-knowledge`. The
 human-facing procedure this packages is
 `content/07-internal-operations/manage-systems-library/sops/draft-an-sop-from-a-recorded-task.md`
 in dataops-knowledge; both describe the same pipeline, so keep them aligned when
@@ -67,7 +67,9 @@ rules:
   `sop.finance.bookkeeping.get-invoices-from-mailchimp`
 - `source:` = the recording share URL, and the same URL under
   `training_assets:` (a `loom:` frontmatter key is rejected as deprecated debt)
-- `status: proposed` until reviewed
+- `status: active` with real `last_reviewed_at`/`next_review_at` dates - SOPs ship
+  directly; the review cycle (`review-due` once `next_review_at` passes) is the
+  review queue
 - filename = kebab-case of the title (`align_document_filenames.py` enforces it)
 
 Write steps that stand without the video; fold rules the presenter narrates
@@ -86,8 +88,10 @@ uv run --with pyyaml --with jsonschema python -m unittest discover -s tests
 ```
 
 Fix every finding that names the new drafts; pre-existing failures elsewhere are
-reported, not fixed. Then hand the drafts to the review-and-publication
-procedure (`create-and-publish-an-sop.md` in the same directory).
+reported, not fixed. Then publish through the portal (`POST /knowledge/publish` or a save in the document
+editor): the portal reads its own S3 store, not GitHub - a git push alone never goes
+live, and the daily store-to-GitHub mirror deletes managed `content/` files that were
+never published to the store.
 
 ## Gotchas
 
