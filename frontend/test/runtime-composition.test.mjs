@@ -19,9 +19,7 @@ function createSurfaceHarness(options = {}) {
   const mobileTitle = element();
   const searchInput = element("input");
   searchInput.value = options.searchValue || "";
-  const tasksNavButton = element("button");
-  const tasksNavSubmenu = element();
-  const workspaceNavButtons = ["home", "docs"].map((view) => {
+  const workspaceNavButtons = ["tasks", "docs"].map((view) => {
     const button = element("button");
     button.dataset.workspaceView = view;
     return button;
@@ -60,7 +58,6 @@ function createSurfaceHarness(options = {}) {
       "bookkeeping",
       "calendar",
       "docs",
-      "home",
       "newsletter",
       "review",
       "sponsors",
@@ -95,7 +92,6 @@ function createSurfaceHarness(options = {}) {
     getRenderCalendarSurface: () => renders.calendar,
     getRenderDocsSurface: () => renders.docs,
     getRenderNewsletterSurface: () => renders.newsletter,
-    getRenderOperationsHome: () => renders.home,
     getRenderReviewSurface: () => renders.review,
     getRenderSponsorCrmSurface: () => renders.sponsors,
     getRenderTasksSurface: () => renders.tasks,
@@ -121,9 +117,7 @@ function createSurfaceHarness(options = {}) {
       return timer;
     },
     tasksFromWorkPayload: (payload) => payload,
-    tasksNavButton,
     tasksNavSectionButtons,
-    tasksNavSubmenu,
     windowConsole: {
       warn: (message) => calls.push(["warn", message]),
     },
@@ -148,9 +142,7 @@ function createSurfaceHarness(options = {}) {
     setFinanceLeave(value) {
       financeLeave = value;
     },
-    tasksNavButton,
     tasksNavSectionButtons,
-    tasksNavSubmenu,
     workspaceNavButtons,
     workspaceState,
   };
@@ -211,7 +203,6 @@ describe("runtime surface composition", () => {
     const harness = createSurfaceHarness();
     const documents = [{ path: "content/process.md" }];
     for (const [view, expected] of [
-      ["home", "home"],
       ["tasks", "tasks"],
       ["docs", "docs"],
       ["admin", "admin"],
@@ -221,15 +212,22 @@ describe("runtime surface composition", () => {
       ["newsletter", "newsletter"],
       ["calendar", "calendar"],
       ["review", "review"],
-      ["mailing-exports", "home"],
-      ["unknown", "home"],
     ]) {
       harness.workspaceState.activeWorkspaceView = view;
       harness.composition.renderOperationsWorkspace(documents);
       assert.equal(harness.calls.at(-1)[0], `render:${expected}`);
-      if (["home", "tasks", "docs", "admin", "review"].includes(view)) {
+      if (["tasks", "docs", "admin", "review"].includes(view)) {
         assert.equal(harness.calls.at(-1)[1], documents);
       }
+    }
+
+    // An unrecognized view falls back to the work queue rather than to a page
+    // that no longer exists.
+    for (const view of ["mailing-exports", "unknown"]) {
+      harness.workspaceState.activeWorkspaceView = view;
+      harness.composition.renderOperationsWorkspace(documents);
+      assert.equal(harness.calls.at(-1)[0], "render:tasks");
+      assert.equal(harness.calls.at(-1)[2], "queue");
     }
   });
 
@@ -296,7 +294,10 @@ describe("runtime surface composition", () => {
       "workflows",
     );
     assert.equal(harness.composition.legacyViewToTasksSection("other"), null);
-    assert.equal(await harness.composition.showOperationsHome(), "ready:/");
+    assert.equal(
+      await harness.composition.showWorkspaceSurface(),
+      "ready:/tasks",
+    );
     assert.equal(
       await harness.composition.showWorkspaceSurface("templates", {
         params: { templateId: "template-1" },
@@ -311,7 +312,7 @@ describe("runtime surface composition", () => {
       "ready:/docs",
     );
     assert.deepEqual(harness.navigation, [
-      { path: "/", params: {}, options: { history: "push" } },
+      { path: "/tasks", params: {}, options: { history: "push" } },
       {
         path: "/tasks/templates",
         params: { templateId: "template-1" },
@@ -321,17 +322,13 @@ describe("runtime surface composition", () => {
     ]);
   });
 
-  test("synchronizes top-level and nested navigation state", () => {
+  test("synchronizes top-level and Tasks-section navigation state", () => {
     const harness = createSurfaceHarness({ view: "tasks", tasksSection: "cards" });
     harness.composition.syncWorkspaceNav();
     assert.equal(harness.body.dataset.workspaceView, "tasks");
     assert.equal(harness.searchInput.placeholder, "Search work and docs");
-    // One selection signal: the leaf row carries is-active and aria-current;
-    // the parent Tasks row speaks through its expanded chevron only.
-    assert.equal(harness.tasksNavButton.classList.contains("is-active"), false);
-    assert.equal(harness.tasksNavButton.getAttribute("aria-current"), null);
-    assert.equal(harness.tasksNavButton.getAttribute("aria-expanded"), "true");
-    assert.equal(harness.tasksNavSubmenu.hidden, false);
+    // The Tasks sections are first-class rows, so exactly one carries the
+    // selection signal and no parent row sits beside them.
     assert.equal(
       harness.tasksNavSectionButtons[1].getAttribute("aria-current"),
       "page",
@@ -340,20 +337,28 @@ describe("runtime surface composition", () => {
       harness.tasksNavSectionButtons[1].classList.contains("is-active"),
       true,
     );
+    for (const [index, button] of harness.tasksNavSectionButtons.entries()) {
+      if (index === 1) continue;
+      assert.equal(button.getAttribute("aria-current"), null);
+      assert.equal(button.classList.contains("is-active"), false);
+    }
 
-    // A tasks route with no matching section falls back to the parent row.
+    // A tasks route with no matching section selects no row rather than
+    // inventing one.
     harness.workspaceState.activeTasksSection = "unknown-section";
     harness.composition.syncWorkspaceNav();
-    assert.equal(harness.tasksNavButton.classList.contains("is-active"), true);
-    assert.equal(harness.tasksNavButton.getAttribute("aria-current"), "page");
+    for (const button of harness.tasksNavSectionButtons) {
+      assert.equal(button.getAttribute("aria-current"), null);
+      assert.equal(button.classList.contains("is-active"), false);
+    }
 
-    harness.workspaceState.activeWorkspaceView = "home";
+    harness.workspaceState.activeWorkspaceView = "docs";
     harness.composition.syncWorkspaceNav();
     assert.equal(harness.searchInput.placeholder, "Search work and docs");
-    assert.equal(harness.workspaceNavButtons[0].getAttribute("aria-current"), "page");
-    assert.equal(harness.tasksNavButton.getAttribute("aria-current"), null);
-    harness.composition.setTasksNavExpanded(false);
-    assert.equal(harness.tasksNavSubmenu.hidden, true);
+    assert.equal(harness.workspaceNavButtons[1].getAttribute("aria-current"), "page");
+    for (const button of harness.tasksNavSectionButtons) {
+      assert.equal(button.getAttribute("aria-current"), null);
+    }
   });
 
   test("updates shell copy and keeps shared path and HTML helpers deterministic", () => {

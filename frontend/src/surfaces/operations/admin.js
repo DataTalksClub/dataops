@@ -9,7 +9,7 @@ import { mountIntakeRecovery } from "../finance/invoices.js";
 export function createAdminSurface(context) {
   const {
     apiUrl,
-    buildOperationsHomeModel,
+    buildOperationsWorkModel,
     currentOperatorIdFromPayload,
     documentList,
     getActiveWorkspaceView,
@@ -46,7 +46,7 @@ export function createAdminSurface(context) {
   const userRowErrors = new Map();
 
   function renderAdminSurfaceView(documents) {
-    const model = buildOperationsHomeModel(documents, {
+    const model = buildOperationsWorkModel(documents, {
       draftPaths: listDraftPaths(),
       workSnapshot: getOperationsWorkSnapshot(),
       recurringSnapshot: getOperationsRecurringSnapshot(),
@@ -499,7 +499,7 @@ export function createAdminSurface(context) {
       [
         "Recurring config",
         `${recurringCount} recurring ${recurringCount === 1 ? "configuration" : "configurations"} loaded; ` +
-          "generated tasks appear in Home and the Work Queue.",
+          "generated tasks appear in the Work Queue.",
         () => showWorkspaceSurface("templates"),
       ],
       [

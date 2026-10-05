@@ -4,7 +4,7 @@ export function createNotificationsShell({
   closeSettingsMenu,
   documentRef,
   encodeURIComponentImpl,
-  formatHomeShortDate,
+  formatShortDate,
   formatTaskDateMeta,
   HTMLElementClass,
   isWorkspaceRouteFresh,
@@ -62,7 +62,7 @@ export function createNotificationsShell({
     if (relative === "Today") return "Due today";
     if (relative === "Yesterday") return "Due yesterday";
     if (relative === "Tomorrow") return "Due tomorrow";
-    return relative ? `Due ${formatHomeShortDate(date)}` : "";
+    return relative ? `Due ${formatShortDate(date)}` : "";
   }
 
   function notificationUrgencyClass(notification) {
@@ -256,7 +256,7 @@ export function createNotificationsShell({
         meta.textContent = notificationDueLabel(notification.dueAt);
       } else if (notification.createdAt) {
         const date = String(notification.createdAt).slice(0, 10);
-        meta.textContent = `Added ${formatHomeShortDate(date)}`;
+        meta.textContent = `Added ${formatShortDate(date)}`;
       }
       item.append(meta);
       const actions = documentRef.createElement("div");

@@ -289,9 +289,6 @@ const SLICE1_MOBILE_ORDINARY_SELECTORS = [
   'body[data-workspace-view="tasks"] .quick-form-label select',
   'body[data-workspace-view="tasks"] .quick-form > .task-action-btn',
   'body[data-workspace-view="tasks"] .recurring-form-footer button',
-  ".home-quick-action",
-  ".home-task-action",
-  ".home-view-all",
 ];
 
 function extractBalancedBlock(source, openIndex) {

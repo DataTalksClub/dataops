@@ -147,13 +147,20 @@ test.describe("pre-refactor frontend module characterization", () => {
     await stopOwnedTestServer(server);
   });
 
-  test("shell, Home, and account scope retain their primary DOM and interactions; keeps fixed-width sidebar and accessible drawer flows", async ({ browser }) => {
+  test("shell, the Tasks queue, and account scope retain their primary DOM and interactions; keeps fixed-width sidebar and accessible drawer flows", async ({ browser }) => {
     const context = await ownedContext(browser, { width: 1440, height: 900 });
     const page = await context.newPage();
     const errors = observeErrors(page);
     await page.goto(`${baseURL}/#/`);
-    await expect(page.locator(".operations-home-daily")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Needs your attention" })).toBeVisible();
+    await expect(page).toHaveURL(`${baseURL}/#/`);
+    await expect(page.locator(".ops-work-queue")).toBeVisible();
+    // Tasks sections are first-class nav destinations beside Operations.
+    for (const label of ["Queue", "Cards", "Templates", "Recurring", "Assistants"]) {
+      await expect(
+        page.locator(`.workspace-nav-button[data-tasks-section]:has-text("${label}")`),
+      ).toHaveCount(1);
+    }
+    await expect(page.locator("[data-tasks-section='artifacts']")).toHaveCount(0);
     await page.getByRole("button", { name: "New task" }).click();
     await expect(page.locator(".quick-form-overlay")).toBeVisible();
     await page.locator(".quick-form-overlay").getByRole("button", { name: "Close" }).click();
@@ -266,14 +273,14 @@ test.describe("pre-refactor frontend module characterization", () => {
     await context.close();
   });
 
-  test("invalid hashes recover to Home and unknown programmatic navigation is a no-op", async ({ browser }) => {
+  test("invalid hashes recover to the Tasks queue and unknown programmatic navigation is a no-op", async ({ browser }) => {
     const context = await ownedContext(browser, { width: 1440, height: 900 });
     const page = await context.newPage();
     const errors = observeErrors(page);
     for (const hash of ["#/unknown", "#/mailing-exports", "#/cards?taskId=orphan", "#/tasks?date=2026-02-30", "#/tasks?taskId=%E0%A4%A"]) {
       await page.goto(`${baseURL}/${hash}`);
       await expect(page).toHaveURL(`${baseURL}/#/`);
-      await expect(page.locator(".operations-home-daily")).toBeVisible();
+      await expect(page.locator(".ops-work-queue")).toBeVisible();
     }
     const before = page.url();
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("workspace:navigate", {
