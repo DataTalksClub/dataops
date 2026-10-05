@@ -191,7 +191,9 @@ class FakeElement {
     this.focused = true;
   }
 
-  scrollIntoView() {}
+  scrollIntoView() {
+    this.scrolled = true;
+  }
 
   closest() {
     return null;
@@ -733,6 +735,26 @@ describe("Finance surface boundary", () => {
                 amount: "10.00",
                 currency: "EUR",
               },
+              {
+                id: "entry-3",
+                transactionDate: "2026-08-10",
+                counterparty: "Sponsor GmbH",
+                description: "Sponsorship payment",
+                amount: "200.00",
+                currency: "EUR",
+                category: "Sponsorship",
+                entryType: "income",
+              },
+              {
+                id: "entry-4",
+                transactionDate: "2026-08-15",
+                counterparty: "Finanzamt",
+                description: "Tax payment",
+                amount: "20.00",
+                currency: "EUR",
+                category: "Taxes",
+                entryType: "Tax",
+              },
             ],
           };
         if (path.endsWith("/documents"))
@@ -768,24 +790,241 @@ describe("Finance surface boundary", () => {
     assert.match(surface.innerHTML, /Record and review the ledger/);
     assert.match(surface.innerHTML, /Match transaction evidence/);
     assert.match(surface.innerHTML, /Prepare the monthly package/);
+    // Income and expenses stay separate; untyped and odd-typed entries land
+    // in their own visible bucket instead of a mixed sum.
     assert.equal(
       surface.querySelector(".bookkeeping-totals").textContent,
-      "EUR 135.50",
+      "EUR Income 200.00 · EUR Expenses 125.50 · EUR Unclassified 30.00",
+    );
+    // The page opens quiet: the download-expiry note lives next to the
+    // download actions, not as a permanent strip.
+    assert.equal(
+      surface.querySelector("[data-bookkeeping-status]").textContent,
+      "",
     );
     const ledger = surface.querySelector(".bookkeeping-ledger").innerHTML;
     assert.match(ledger, /Provider One/);
+    assert.match(ledger, /-125\.50 EUR/);
     assert.match(ledger, /Referenced/);
     assert.match(ledger, /Provider Two/);
-    assert.match(ledger, /Missing/);
+    assert.match(
+      ledger,
+      /<button type="button" class="evidence-state is-missing" data-attach-evidence="entry-2">Missing<\/button>/,
+    );
     assert.match(ledger, /VAT/);
     assert.match(
       surface.querySelector("[data-vat-summary]").innerHTML,
       /No VAT recorded in 2026/,
     );
+    // Dialog vocabularies are seeded from the ledger, odd cases included.
+    const categoryOptions = surface.querySelector(
+      "[data-category-options]",
+    ).innerHTML;
+    assert.match(categoryOptions, /<option value="Services"><\/option>/);
+    assert.match(categoryOptions, /<option value="Sponsorship"><\/option>/);
+    const typeOptions = surface.querySelector("[data-entry-type]").innerHTML;
+    assert.match(typeOptions, /value="expense"/);
+    assert.match(typeOptions, /value="income"/);
+    assert.match(typeOptions, /value="tax"/);
     const evidence = surface.querySelector(".bookkeeping-documents").innerHTML;
+    assert.match(evidence, /Downloads are private and expire after five minutes/);
     assert.match(evidence, /invoice-august\.pdf/);
     assert.match(evidence, /matched to 1 entry/);
     assert.match(evidence, /Unlink Provider One/);
+    // Directions with nothing in them drop out instead of reading 0.00.
+    // Kept last: it filters the shared harness and must not skew the
+    // assertions above.
+    filters[2].value = "expense";
+    await filters[2].dispatch("input");
+    assert.equal(
+      surface.querySelector(".bookkeeping-totals").textContent,
+      "EUR Expenses 125.50",
+    );
+  });
+
+  test("keeps the entry dialog typed, seeded, and locally validated", async () => {
+    const savedBodies = [];
+    let rejectSave = false;
+    const pdfInput = new FakeElement("input");
+    const transactionSelect = new FakeElement("select");
+    const evidenceSection = new FakeElement("section");
+    const { document, finance } = createHarness({
+      setupSurface: (surface) => {
+        surface.setQuery("[data-pdf]", pdfInput);
+        surface.setQuery("[data-transaction]", transactionSelect);
+        surface.setQuery("#bookkeeping-evidence", evidenceSection);
+      },
+      request: async (url, options = {}) => {
+        const path = requestPath(url);
+        if (path.endsWith("/transactions")) {
+          if (options.method === "POST" || options.method === "PUT") {
+            if (rejectSave) {
+              const error = new Error("Validation failed");
+              error.payload = { fields: ["currency"] };
+              throw error;
+            }
+            savedBodies.push(JSON.parse(options.body));
+            return {
+              id: "entry-new",
+              transactionDate: "2026-08-05",
+              counterparty: "Provider Three",
+              description: "Another thing",
+              amount: "125.50",
+              currency: "EUR",
+              entryType: "expense",
+            };
+          }
+          return {
+            items: [
+              {
+                id: "entry-1",
+                transactionDate: "2026-08-01",
+                counterparty: "Provider One",
+                description: "Operations support",
+                amount: "125.50",
+                currency: "EUR",
+                category: "Services",
+                entryType: "Expense",
+              },
+              {
+                id: "entry-2",
+                transactionDate: "2026-08-03",
+                counterparty: "Provider Two",
+                description: "Unmatched item",
+                amount: "10.00",
+                currency: "EUR",
+              },
+            ],
+          };
+        }
+        if (path.endsWith("/documents") || path.endsWith("/links"))
+          return { items: [] };
+        if (path.endsWith("/accounts"))
+          return {
+            items: [{ id: "account-1", displayName: "Finom", kind: "business" }],
+          };
+        if (path.endsWith("/reports/vat"))
+          return { months: [], transactions: [] };
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+
+    await finance.renderBookkeepingSurface();
+    const surface = document.surface;
+    const entryDialog = surface.querySelector(".bookkeeping-entry-dialog");
+    const form = entryDialog.querySelector("form");
+    // Accounts already exist, so the setup action shows its done state.
+    assert.equal(surface.querySelector("[data-setup-accounts]").disabled, true);
+    assert.equal(
+      surface.querySelector("[data-setup-accounts]").textContent,
+      "Business accounts ready",
+    );
+
+    await surface.querySelector("[data-bookkeeping-add]").dispatch("click");
+    assert.equal(entryDialog.open, true);
+    assert.equal(form.elements.entryType.value, "expense");
+
+    form.formEntries = [
+      ["transactionDate", "2026-08-05"],
+      ["counterparty", "Provider Three"],
+      ["description", "Another thing"],
+      ["amount", "-5"],
+      ["currency", "eur"],
+      ["entryType", "expense"],
+    ];
+    await surface.querySelector("[data-save]").dispatch("click");
+    await settle();
+    // A negative amount is caught locally with the direction convention;
+    // the API is not called.
+    assert.match(
+      surface.querySelector("[data-form-error]").textContent,
+      /Amount must be a positive number/,
+    );
+    assert.equal(
+      form.elements.amount.getAttribute("aria-invalid"),
+      "true",
+    );
+    assert.equal(savedBodies.length, 0);
+
+    form.formEntries = [
+      ["transactionDate", "2026-08-05"],
+      ["counterparty", "Provider Three"],
+      ["description", "Another thing"],
+      ["amount", "125.50"],
+      ["currency", "eur"],
+      ["entryType", "expense"],
+    ];
+    rejectSave = true;
+    await surface.querySelector("[data-save]").dispatch("click");
+    await settle();
+    assert.match(
+      surface.querySelector("[data-form-error]").textContent,
+      /The API rejected: Currency\. Fix the highlighted fields/,
+    );
+    assert.equal(
+      form.elements.currency.getAttribute("aria-invalid"),
+      "true",
+    );
+
+    rejectSave = false;
+    await surface.querySelector("[data-save]").dispatch("click");
+    await settle();
+    assert.equal(entryDialog.open, false);
+    assert.equal(savedBodies.length, 1);
+    assert.deepEqual(savedBodies[0], {
+      transactionDate: "2026-08-05",
+      counterparty: "Provider Three",
+      description: "Another thing",
+      amount: "125.50",
+      currency: "EUR",
+      entryType: "expense",
+    });
+
+    // Editing an entry whose stored direction differs only in case keeps it
+    // selectable on the seeded lowercase options.
+    await surface.querySelector(".bookkeeping-ledger").dispatch("click", {
+      target: {
+        closest: (selector) =>
+          selector === "[data-edit]" ? { dataset: { edit: "entry-1" } } : null,
+      },
+    });
+    await settle();
+    assert.equal(entryDialog.open, true);
+    assert.equal(form.elements.entryType.value, "expense");
+    assert.equal(
+      entryDialog.querySelector("h3").textContent,
+      "Edit ledger entry",
+    );
+
+    // Untyped entries stay unclassified when edited instead of silently
+    // becoming expenses.
+    await surface.querySelector(".bookkeeping-ledger").dispatch("click", {
+      target: {
+        closest: (selector) =>
+          selector === "[data-edit]" ? { dataset: { edit: "entry-2" } } : null,
+      },
+    });
+    await settle();
+    assert.equal(form.elements.entryType.value, "");
+
+    // The "Missing" chip is an action: it preselects the transaction,
+    // brings the evidence upload into view, and focuses the PDF input.
+    await surface.querySelector(".bookkeeping-ledger").dispatch("click", {
+      target: {
+        closest: (selector) =>
+          selector === "[data-attach-evidence]"
+            ? { dataset: { attachEvidence: "entry-1" } }
+            : null,
+      },
+    });
+    await settle();
+    assert.equal(transactionSelect.value, "entry-1");
+    assert.equal(evidenceSection.scrolled, true);
+    assert.equal(pdfInput.focused, true);
+    assert.match(
+      surface.querySelector("[data-bookkeeping-status]").textContent,
+      /Attach evidence for Provider One/,
+    );
   });
 
   test("validates bookkeeping entry and month before mutation, then builds the selected monthly package", async () => {
@@ -901,7 +1140,7 @@ describe("Finance surface boundary", () => {
     });
     assert.equal(
       surface.querySelector("[data-bookkeeping-status]").textContent,
-      "Snapshot ready. 2 tax/health-insurance entries kept out of the package.",
+      "Snapshot ready. 2 tax/health-insurance entries kept out of the package. Download link expires after five minutes.",
     );
     assert.equal(
       calls.some(({ path }) => path.endsWith("/reports/report-1/archive")),

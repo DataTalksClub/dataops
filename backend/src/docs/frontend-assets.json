@@ -36,6 +36,7 @@
     "src/surfaces/document-editor/review-media.js",
     "src/surfaces/document-editor/structured-editor.js",
     "src/surfaces/finance/bookkeeping.js",
+    "src/surfaces/finance/bookkeeping-format.js",
     "src/surfaces/finance/invoices.js",
     "src/surfaces/finance/index.js",
     "src/surfaces/finance/mailing.js",

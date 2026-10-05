@@ -3259,19 +3259,20 @@ body[data-workspace-view="sponsors"] .document-list {
   transform: rotate(90deg);
 }
 
+/* Extra filters open in flow and push the ledger down instead of
+   overlaying table rows. */
+.bookkeeping-filters details[open] {
+  grid-column: 1 / -1;
+}
+
 .bookkeeping-filter-more {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 10;
   display: grid;
-  width: 360px;
-  grid-template-columns: 1fr 1fr;
+  width: auto;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-lg);
   background: var(--dk-bg-surface);
-  box-shadow: var(--dk-shadow-overlay);
   padding: 12px;
 }
 
@@ -3335,6 +3336,43 @@ body[data-workspace-view="sponsors"] .document-list {
   border-color: var(--dk-success-border);
   background: var(--dk-success-bg);
   color: var(--dk-success-text);
+}
+
+/* The "Missing" evidence chip is a button; restate the chip skin above the
+   generic bookkeeping button rule rather than relying on source order. */
+.bookkeeping-surface .bookkeeping-ledger button.evidence-state {
+  min-height: 22px;
+  padding: 2px 8px;
+  border-color: var(--dk-danger-border);
+  border-radius: var(--dk-radius-full);
+  background: var(--dk-bg-surface);
+  color: var(--dk-danger-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bookkeeping-surface .bookkeeping-ledger button.evidence-state:hover {
+  border-color: var(--dk-danger-border);
+  background: var(--dk-danger-bg);
+  color: var(--dk-danger-text);
+}
+
+.dialog-fields .required-mark {
+  color: var(--dk-danger-text);
+  font-style: normal;
+}
+
+.dialog-fields .field-hint {
+  margin: 0;
+  color: var(--dk-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.bookkeeping-download-hint {
+  margin: 0 0 8px;
+  color: var(--dk-text-muted);
+  font-size: 12px;
 }
 
 .bookkeeping-upload {
@@ -6370,6 +6408,11 @@ body[data-workspace-view="calendar"] .document-list {
   border-color: var(--dk-info-border);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
+}
+
+/* An empty status renders nothing; messages fill it when there is news. */
+.bookkeeping-surface .surface-status[role="status"]:empty {
+  display: none;
 }
 
 .bookkeeping-job-nav {

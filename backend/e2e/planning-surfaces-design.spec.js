@@ -65,12 +65,12 @@ async function expectExactPalette(page, dark) {
   const palette = await page.evaluate(() => {
     const style = getComputedStyle(document.body);
     return {
-      page: style.getPropertyValue("--page-bg").trim(),
-      surface: style.getPropertyValue("--surface-bg").trim(),
-      muted: style.getPropertyValue("--surface-muted").trim(),
-      border: style.getPropertyValue("--border-muted").trim(),
-      text: style.getPropertyValue("--text-primary").trim(),
-      heading: style.getPropertyValue("--text-heading").trim(),
+      page: style.getPropertyValue("--dk-bg-page").trim(),
+      surface: style.getPropertyValue("--dk-bg-surface").trim(),
+      muted: style.getPropertyValue("--dk-bg-muted").trim(),
+      border: style.getPropertyValue("--dk-border-default").trim(),
+      text: style.getPropertyValue("--dk-text-primary").trim(),
+      heading: style.getPropertyValue("--dk-text-heading").trim(),
     };
   });
   expect(palette).toEqual(dark

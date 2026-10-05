@@ -1,5 +1,11 @@
 import { mountInvoiceReview } from "./invoices.js";
 import { html } from "./shared.js";
+import {
+  entryDirection,
+  FIELD_LABELS,
+  ledgerDate,
+  MONEY_PATTERN,
+} from "./bookkeeping-format.js";
 
 function focusFirstUsableControl(dialog) {
   const control = dialog.querySelector(
@@ -29,21 +35,6 @@ export function createBookkeepingSurface(context) {
     workApiUrl,
   } = context;
 
-  // Ledger dates read as short human dates; the year is kept when it is not
-  // the current one, since a finance ledger spans years.
-  function ledgerDate(value) {
-    const iso = String(value || "").slice(0, 10);
-    const parsed = new Date(`${iso}T00:00:00Z`);
-    if (Number.isNaN(parsed.getTime())) return value || "";
-    const sameYear = iso.slice(0, 4) === String(new Date().getFullYear());
-    return new Intl.DateTimeFormat("en-GB", {
-      day: "numeric",
-      month: "short",
-      ...(sameYear ? {} : { year: "numeric" }),
-      timeZone: "UTC",
-    }).format(parsed);
-  }
-
   async function renderBookkeepingSurface() {
     documentList.replaceChildren();
     const surface = document.createElement("section");
@@ -72,9 +63,7 @@ export function createBookkeepingSurface(context) {
           ><small>Review package</small></a
         >
       </nav>
-      <p data-bookkeeping-status class="surface-status" role="status">
-        Private downloads expire after five minutes.
-      </p>
+      <p data-bookkeeping-status class="surface-status" role="status"></p>
       <section
         id="bookkeeping-ledger"
         class="bookkeeping-section bookkeeping-ledger-section"
@@ -226,32 +215,57 @@ export function createBookkeepingSurface(context) {
             <p class="surface-eyebrow">Ledger record</p>
             <h3>Bookkeeping entry</h3>
             <p>
-              Required fields describe the transaction. Payment and
+              Fields marked * are required. Amounts are positive; the Type
+              field records whether money moves in or out. Payment and
               classification details may be added later.
             </p>
           </header>
           <div class="dialog-fields bookkeeping-entry-fields">
             <input type="hidden" name="id" /><label
-              >Transaction date
+              ><span class="label-text">Transaction date
+              <span class="required-mark" aria-hidden="true">*</span></span>
               <input name="transactionDate" type="date" /></label
             ><label>Paid date <input name="paidDate" type="date" /></label
             ><label class="span-all"
-              >Provider / payee <input name="counterparty" /></label
+              ><span class="label-text">Provider / payee
+              <span class="required-mark" aria-hidden="true">*</span></span>
+              <input name="counterparty" /></label
             ><label class="span-all"
-              >Description <input name="description" /></label
-            ><label>Amount <input name="amount" inputmode="decimal" /></label
+              ><span class="label-text">Description
+              <span class="required-mark" aria-hidden="true">*</span></span>
+              <input name="description" /></label
             ><label
-              >Currency
+              ><span class="label-text">Amount
+              <span class="required-mark" aria-hidden="true">*</span></span>
+              <input name="amount" inputmode="decimal" /></label
+            ><label
+              ><span class="label-text">Currency
+              <span class="required-mark" aria-hidden="true">*</span></span>
               <input name="currency" maxlength="3" value="EUR" /></label
+            ><label
+              >Type
+              <select name="entryType" data-entry-type>
+                <option value="">Unclassified</option>
+                <option value="expense">Expense — money out</option>
+                <option value="income">Income — money in</option>
+              </select></label
             ><label
               >VAT amount
               <input name="vatAmount" inputmode="decimal" /></label
             ><label
               >VAT currency
               <input name="vatCurrency" maxlength="3" /></label
-            ><label>Category <input name="category" /></label
-            ><label>Type <input name="entryType" /></label
-            ><label class="span-all"
+            ><label
+              >Category
+              <input name="category" list="bookkeeping-category-options" /></label
+            ><datalist
+              id="bookkeeping-category-options"
+              data-category-options
+            ></datalist>
+            <small class="field-hint span-all"
+              >Enter amounts as positive numbers; Type sets the direction.</small
+            >
+            <label class="span-all"
               >Statement / reference <input name="statementRef"
             /></label>
             <p class="span-all" role="alert" data-form-error></p>
@@ -285,7 +299,8 @@ export function createBookkeepingSurface(context) {
 
     let entries = [],
       documents = [],
-      links = [];
+      links = [],
+      accounts = [];
     const ledger = surface.querySelector(".bookkeeping-ledger"),
       totals = surface.querySelector(".bookkeeping-totals"),
       entryDialog = surface.querySelector(".bookkeeping-entry-dialog"),
@@ -312,6 +327,38 @@ export function createBookkeepingSurface(context) {
       link.target = "_blank";
       link.rel = "noopener";
       link.click();
+    }
+    function clearFieldErrors() {
+      form.querySelectorAll(".field-error").forEach((note) => note.remove());
+      form
+        .querySelectorAll("[aria-invalid]")
+        .forEach((field) => field.removeAttribute("aria-invalid"));
+      surface.querySelector("[data-form-error]").textContent = "";
+    }
+    // Messages render inside the failing field's label so the operator sees
+    // which value to fix; the summary repeats the first one for convenience.
+    function showFieldErrors(errors) {
+      let firstField = null;
+      errors.forEach(({ name, message }) => {
+        const field = form.elements[name];
+        if (!field) return;
+        field.setAttribute("aria-invalid", "true");
+        const label = field.closest?.("label");
+        if (label) {
+          let note = label.querySelector(".field-error");
+          if (!note) {
+            note = document.createElement("small");
+            note.className = "field-error";
+            label.append(note);
+          }
+          note.textContent = message;
+        }
+        if (!firstField) {
+          firstField = field;
+          surface.querySelector("[data-form-error]").textContent = message;
+        }
+      });
+      firstField?.focus();
     }
     function renderLedger() {
       const filters = Object.fromEntries(
@@ -344,12 +391,29 @@ export function createBookkeepingSurface(context) {
               .includes(filters.search.toLowerCase())),
       );
       const sums = {};
-      shown.forEach(
-        (e) => (sums[e.currency] = (sums[e.currency] || 0) + Number(e.amount)),
-      );
+      shown.forEach((e) => {
+        const bucket = (sums[e.currency] ??= {
+          income: 0,
+          expense: 0,
+          unclassified: 0,
+        });
+        const amount = Number(e.amount);
+        const direction = entryDirection(e);
+        if (direction === "income") bucket.income += amount;
+        else if (direction === "expense") bucket.expense += amount;
+        else bucket.unclassified += amount;
+      });
       totals.textContent =
         Object.entries(sums)
-          .map(([currency, amount]) => `${currency} ${amount.toFixed(2)}`)
+          .flatMap(([currency, s]) => [
+            ...(s.income ? [`${currency} Income ${s.income.toFixed(2)}`] : []),
+            ...(s.expense
+              ? [`${currency} Expenses ${s.expense.toFixed(2)}`]
+              : []),
+            ...(s.unclassified
+              ? [`${currency} Unclassified ${s.unclassified.toFixed(2)}`]
+              : []),
+          ])
           .join(" · ") || "No filtered total";
       ledger.innerHTML = shown.length
         ? html`<div class="bookkeeping-table-wrap">
@@ -382,7 +446,9 @@ export function createBookkeepingSurface(context) {
                           ><small>${escapeHtml(e.description)}</small>
                         </td>
                         <td data-label="Amount" class="ledger-amount">
-                          ${escapeHtml(`${e.amount} ${e.currency}`)}
+                          ${escapeHtml(
+                            `${entryDirection(e) === "expense" ? "-" : ""}${e.amount} ${e.currency}`,
+                          )}
                         </td>
                         <td data-label="VAT" class="ledger-vat">
                           ${escapeHtml(
@@ -395,10 +461,9 @@ export function createBookkeepingSurface(context) {
                           ${escapeHtml([e.category, e.entryType].filter(Boolean).join(" / ") || "—")}
                         </td>
                         <td data-label="Evidence">
-                          <span
-                            class="evidence-state ${e.statementRef ? "is-attached" : ""}"
-                            >${escapeHtml(e.statementRef ? "Referenced" : "Missing")}</span
-                          >
+                          ${e.statementRef
+                            ? `<span class="evidence-state is-attached">Referenced</span>`
+                            : `<button type="button" class="evidence-state is-missing" data-attach-evidence="${escapeHtml(e.id)}">Missing</button>`}
                         </td>
                         <td data-label="Actions">
                           <div class="row-actions">
@@ -422,6 +487,39 @@ export function createBookkeepingSurface(context) {
             <p>Adjust filters or add the first entry.</p>
           </div>`;
     }
+    // Category suggestions and type options stay seeded from the ledger so
+    // the dialog cannot grow duplicate vocabularies like "Income"/"income".
+    function refreshVocabulary() {
+      const categories = [
+        ...new Set(
+          entries.map((e) => String(e.category || "").trim()).filter(Boolean),
+        ),
+      ].sort((a, b) => a.localeCompare(b));
+      surface.querySelector("[data-category-options]").innerHTML = categories
+        .map((category) => html`<option value="${escapeHtml(category)}"></option>`)
+        .join("");
+      const typeOptions = ["", "expense", "income"];
+      entries.forEach((e) => {
+        const direction = entryDirection(e);
+        if (direction && !typeOptions.includes(direction))
+          typeOptions.push(direction);
+      });
+      surface.querySelector("[data-entry-type]").innerHTML = typeOptions
+        .map((option) =>
+          html`<option value="${escapeHtml(option)}">
+            ${escapeHtml(
+              option === "expense"
+                ? "Expense — money out"
+                : option === "income"
+                  ? "Income — money in"
+                  : option === ""
+                    ? "Unclassified"
+                    : option,
+            )}
+          </option>`,
+        )
+        .join("");
+    }
     async function refreshEvidence() {
       const [docResult, linkResult, accountResult] = await Promise.all([
         api("/documents"),
@@ -430,13 +528,20 @@ export function createBookkeepingSurface(context) {
       ]);
       documents = docResult.items || [];
       links = linkResult.items || [];
+      accounts = accountResult.items || [];
+      refreshVocabulary();
+      const setupButton = surface.querySelector("[data-setup-accounts]");
+      setupButton.disabled = accounts.length > 0;
+      if (accounts.length)
+        setupButton.textContent = "Business accounts ready";
       surface.querySelector("[data-account]").innerHTML = html`<option value="">
           No account
         </option>
         ${(accountResult.items || []).map((a) => html`<option value="${escapeHtml(a.id)}">${escapeHtml(a.displayName)} (${escapeHtml(a.kind)})</option>`).join("")}`;
       surface.querySelector(".bookkeeping-documents").innerHTML =
         documents.length
-          ? documents
+          ? `<p class="bookkeeping-download-hint">Downloads are private and expire after five minutes.</p>` +
+            documents
               .map((d) => {
                 const documentLinks = links.filter(
                   (l) => l.documentId === d.id,
@@ -599,21 +704,30 @@ export function createBookkeepingSurface(context) {
       .addEventListener("click", () => {
         form.reset();
         form.elements.currency.value = "EUR";
+        form.elements.entryType.value = "expense";
         entryDialog.querySelector("h3").textContent = "Add ledger entry";
         openDialog(entryDialog);
       });
     form.addEventListener("input", (event) => {
-      event.target.removeAttribute("aria-invalid");
+      const field = event.target;
+      field.removeAttribute("aria-invalid");
+      field.closest?.("label")?.querySelector(".field-error")?.remove();
       surface.querySelector("[data-form-error]").textContent = "";
     });
     ledger.addEventListener("click", (event) => {
       const edit = event.target.closest("[data-edit]")?.dataset.edit,
-        del = event.target.closest("[data-delete]")?.dataset.delete;
+        del = event.target.closest("[data-delete]")?.dataset.delete,
+        attach = event.target.closest("[data-attach-evidence]")
+          ?.dataset.attachEvidence;
       if (edit) {
         const item = entries.find((e) => e.id === edit);
         Object.keys(item).forEach((k) => {
           if (form.elements[k]) form.elements[k].value = item[k] || "";
         });
+        // Selects only accept their option values; normalize the stored
+        // direction (e.g. "Expense") onto the seeded lowercase options and
+        // keep untyped entries unclassified instead of guessing.
+        form.elements.entryType.value = entryDirection(item);
         entryDialog.querySelector("h3").textContent = "Edit ledger entry";
         openDialog(entryDialog);
       }
@@ -625,46 +739,78 @@ export function createBookkeepingSurface(context) {
           item?.counterparty || "This ledger entry";
         openDialog(dialog);
       }
+      if (attach) {
+        const item = entries.find((e) => e.id === attach);
+        surface.querySelector("[data-transaction]").value = attach;
+        surface
+          .querySelector("#bookkeeping-evidence")
+          .scrollIntoView({ block: "start" });
+        surface.querySelector("[data-pdf]").focus();
+        status.textContent = `Attach evidence for ${item?.counterparty || "this entry"}.`;
+      }
     });
     surface.querySelector("[data-save]").addEventListener("click", (event) => {
       event.preventDefault();
       safeAction(async () => {
+        clearFieldErrors();
         const data = Object.fromEntries(
-          [...new FormData(form)].filter(([, v]) => v !== ""),
+          [...new FormData(form)]
+            .map(([key, value]) => [key, String(value).trim()])
+            .filter(([, v]) => v !== ""),
         );
-        const missing = [
+        const errors = [
           "transactionDate",
           "counterparty",
           "description",
           "amount",
           "currency",
-        ].find((k) => !data[k]);
-        if (missing) {
-          const requiredFieldLabels = {
-            transactionDate: "Transaction date",
-            counterparty: "Provider / payee",
-            description: "Description",
-            amount: "Amount",
-            currency: "Currency",
-          };
-          const field = form.elements[missing];
-          field.setAttribute("aria-invalid", "true");
-          field.focus();
-          surface.querySelector("[data-form-error]").textContent =
-            `${requiredFieldLabels[missing]} is required.`;
+        ]
+          .filter((name) => !data[name])
+          .map((name) => ({
+            name,
+            message: `${FIELD_LABELS[name]} is required.`,
+          }));
+        for (const name of ["amount", "vatAmount"])
+          if (data[name] !== undefined && !MONEY_PATTERN.test(data[name]))
+            errors.push({
+              name,
+              message: `${FIELD_LABELS[name]} must be a positive number — no minus sign or currency symbol. The Type field records the direction.`,
+            });
+        if (errors.length) {
+          showFieldErrors(errors);
           return;
         }
         data.currency = data.currency.toUpperCase();
         if (data.vatCurrency)
           data.vatCurrency = data.vatCurrency.toUpperCase();
+        if (data.entryType)
+          data.entryType = data.entryType.toLowerCase();
         const id = form.elements.id.value;
-        const saved = await api(`/transactions${id ? `/${id}` : ""}`, {
-          method: id ? "PUT" : "POST",
-          body: JSON.stringify(data),
-        });
+        let saved;
+        try {
+          saved = await api(`/transactions${id ? `/${id}` : ""}`, {
+            method: id ? "PUT" : "POST",
+            body: JSON.stringify(data),
+          });
+        } catch (error) {
+          const rejected = error?.payload?.fields;
+          if (Array.isArray(rejected) && rejected.length) {
+            showFieldErrors(
+              rejected.map((name) => ({
+                name,
+                message: `${FIELD_LABELS[name] || name} was rejected. Fix this field and save again.`,
+              })),
+            );
+            surface.querySelector("[data-form-error]").textContent =
+              `The API rejected: ${rejected.map((name) => FIELD_LABELS[name] || name).join(", ")}. Fix the highlighted fields and save again.`;
+            return;
+          }
+          throw error;
+        }
         entries = id
           ? entries.map((e) => (e.id === id ? saved : e))
           : [saved, ...entries];
+        refreshVocabulary();
         entryDialog.close();
         renderLedger();
       }, "Could not save entry");
@@ -806,6 +952,7 @@ export function createBookkeepingSurface(context) {
           excluded
             ? `${excluded} tax/health-insurance ${excluded === 1 ? "entry" : "entries"} kept out of the package.`
             : "",
+          "Download link expires after five minutes.",
         ]
           .filter(Boolean)
           .join(" ");
