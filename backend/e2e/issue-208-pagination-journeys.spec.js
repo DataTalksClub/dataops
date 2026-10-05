@@ -181,7 +181,7 @@ test.describe('issue 208 paginated collections', () => {
     const status = page.locator('.intake-card-status');
     await expect(status).toContainText('More Card relationships are available, but loading failed');
     await expect(status).toContainText('Inbox Cards continuation offline');
-    await expect(page.locator('.intake-detail h3')).toHaveText('Inbox pagination item');
+    await expect(page.locator('.intake-row-main strong')).toHaveText('Inbox pagination item');
     await captureDesktopAndMobile(page, 'inbox-cards-continuation-failure');
 
     continuationOnline = true;
