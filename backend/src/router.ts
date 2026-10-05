@@ -61,6 +61,7 @@ import { CardNotFoundError, getCard, getCardConsistent } from './db/cards';
 import { getTemplate } from './db/templates';
 import { getArtifact, listArtifacts } from './db/artifacts';
 import { getApiToken, touchApiToken } from './db/cliAuth';
+import { handleInvoiceReader } from './auth/invoiceReader';
 import { handleCliAuthRoutes, isAnonymousDeviceRequest } from './routes/cliAuth';
 import { listFilesByTask } from './db/files';
 import type { ArtifactRef, LambdaEvent, LambdaResponse, Task, TaskHistoryAction, TaskHistoryEvent, TaskStatus } from './types';
@@ -678,6 +679,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // credential. Preserve it only in the explicit test auth bypass; all real
     // requests must replace it with an identity established below.
     if (!skipAuth) deleteHeader(event.headers, 'x-user-id');
+    const serviceResponse = await handleInvoiceReader(event, client);
+    if (serviceResponse) return serviceResponse;
     const verifiedInteractiveUserId = browserUserId || portalUserId;
     if (verifiedInteractiveUserId) {
       if (!event.headers) event.headers = {};

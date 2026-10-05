@@ -76,6 +76,7 @@ export function resolveProfile(options = {}) {
     tokenId: profile.tokenId || "",
     expiresAt: profile.expiresAt || "",
     user: profile.user || null,
+    kind: profile.kind || "user",
     source: "file",
   };
 }

@@ -99,6 +99,7 @@ jobs:
       # 30 days in seconds
       AUTH_SESSION_LIFETIME_SECONDS: 2592000
       INVOICE_PUBLICATION_CONFIG: ${{ secrets.INVOICE_PUBLICATION_CONFIG }}
+      INVOICE_READER_TOKEN_SHA256: ${{ secrets.INVOICE_READER_TOKEN_SHA256 }}
       EMAIL_DOCUMENT_INTAKE_SECRET_ARN: ${{ secrets.EMAIL_DOCUMENT_INTAKE_SECRET_ARN }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX }}
@@ -333,6 +334,7 @@ jobs:
               "ParameterKey=AuthLogoutUrl,ParameterValue=$AUTH_LOGOUT_URL" \
               "ParameterKey=AuthSessionLifetimeSeconds,ParameterValue=$AUTH_SESSION_LIFETIME_SECONDS" \
               "ParameterKey=InvoicePublicationConfig,ParameterValue=$INVOICE_PUBLICATION_CONFIG_ENCODED" \
+              "ParameterKey=InvoiceReaderTokenSha256,ParameterValue=$INVOICE_READER_TOKEN_SHA256" \
               "ParameterKey=EmailDocumentIntakeSecretArn,ParameterValue=$EMAIL_DOCUMENT_INTAKE_SECRET_ARN" \
               "ParameterKey=EmailDocumentExternalSourceBucketName,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET" \
               "ParameterKey=EmailDocumentExternalSourcePrefix,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX" \

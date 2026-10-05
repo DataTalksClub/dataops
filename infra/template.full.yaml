@@ -112,6 +112,12 @@ Parameters:
     Default: ""
     NoEcho: true
     Description: Optional base64-encoded private JSON broker and invoice destination configuration
+  InvoiceReaderTokenSha256:
+    Type: String
+    Default: ""
+    NoEcho: true
+    AllowedPattern: "^([a-f0-9]{64})?$"
+    Description: SHA256 digest of the deployment-managed read-only invoice service credential; empty disables access
   EmailDocumentIntakeSecretArn:
     Type: String
     Description: ARN of the pre-created email document intake secret
@@ -2154,6 +2160,7 @@ Resources:
           WORK_ENGINE_AUTH_MODE: portal
           WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}/work-engine/portal-secret
           INVOICE_PUBLICATION_SECRET_NAME: !If [HasInvoicePublicationConfig, !Ref InvoicePublicationSecret, ""]
+          INVOICE_READER_TOKEN_SHA256: !Ref InvoiceReaderTokenSha256
           EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn
           EMAIL_DOCUMENTS_BUCKET: !Ref EmailDocumentsBucket
           EMAIL_DOCUMENTS_KMS_KEY: !Ref EmailDocumentsKey

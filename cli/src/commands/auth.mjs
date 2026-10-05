@@ -1,4 +1,5 @@
 import { hostname, userInfo } from "node:os";
+import { readFileSync } from "node:fs";
 
 import { ApiError, createClient } from "../api.mjs";
 import {
@@ -27,6 +28,23 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 export async function login(args, io) {
   const url = args.url || process.env.DATAOPS_URL || resolveProfile().url;
+  if (args.serviceTokenStdin !== undefined) {
+    if (args.serviceTokenStdin !== true) throw new Error("Pass the service token through stdin, never as an argument.");
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname))) {
+      throw new Error("Service credentials require HTTPS outside local development.");
+    }
+    const token = readFileSync(0, "utf8").trim();
+    if (!/^dops_svc_[a-f0-9]{64}$/.test(token)) throw new Error("Invalid service credential.");
+    const serviceClient = createClient({ url, token });
+    const identity = await serviceClient.get("/api/me");
+    if (identity.service?.id !== "invoice-reader" || identity.service.scopes?.join(" ") !== "invoices:read") {
+      throw new Error("The credential is not an invoice reader service credential.");
+    }
+    saveProfile(serviceClient.base, { token, kind: "service", label: identity.service.id, expiresAt: null });
+    io.print(`Service credential configured for ${serviceClient.base} (invoices:read).`);
+    return identity;
+  }
   const client = createClient({ url });
   const label = args.label || defaultLabel();
 
@@ -110,6 +128,11 @@ export async function logout(args, io) {
     );
   }
   const client = createClient(profile);
+  if (profile.kind === "service") {
+    deleteProfile(profile.url);
+    io.print("Removed the local service credential. Rotate or disable its deployment digest to revoke server access.");
+    return { status: "signed-out" };
+  }
   // Revoke server-side first: deleting only the local copy leaves a live
   // credential behind.
   try {
@@ -134,7 +157,7 @@ export async function whoami(args, io) {
   const result = await client.get("/api/me");
   if (args.json) return result;
   const user = result.user || {};
-  io.print(`${user.name || "unknown"} <${user.email || "unknown"}>`);
+  io.print(result.service ? `${result.service.id} (${result.service.scopes.join(", ")})` : `${user.name || "unknown"} <${user.email || "unknown"}>`);
   io.print(`portal: ${client.base}`);
   io.print(
     `credential: ${profile.source === "environment" ? "DATAOPS_TOKEN" : credentialsPath()}`,
