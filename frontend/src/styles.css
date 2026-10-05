@@ -5529,19 +5529,24 @@ body[data-workspace-view="tasks"] .runtime-template-definition dd:nth-last-of-ty
   color: var(--dk-text-muted);
   font-size: 11px;
   white-space: nowrap;
-}body[data-workspace-view="tasks"] .runtime-mobile-back {
-  width: fit-content;
-  min-height: 34px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-primary);
-  padding: 5px 10px;
-  font-size: 12px;
-  font-weight: 650;
-}body[data-workspace-view="tasks"] .runtime-mobile-back:hover {
-  border-color: var(--dk-border-control-hover);
-  background: var(--dk-bg-hover);
+/* The list and the pane sit side by side above 920px, so on desktop this
+   control offered a "back" to a list that was already visible. It belongs to
+   the stacked layout, where selecting a Template hides the list. */
+@media (max-width: 920px) {body[data-workspace-view="tasks"] .runtime-mobile-back {
+    display: block;
+    width: fit-content;
+    min-height: 34px;
+    border: 1px solid var(--dk-border-default);
+    border-radius: var(--dk-radius-md);
+    background: var(--dk-bg-muted);
+    color: var(--dk-text-primary);
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 650;
+  }body[data-workspace-view="tasks"] .runtime-mobile-back:hover {
+    border-color: var(--dk-border-control-hover);
+    background: var(--dk-bg-hover);
+  }
 }body[data-workspace-view="tasks"] .runtime-template-support {
   min-width: 0;
 }body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header {

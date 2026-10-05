@@ -282,7 +282,7 @@ export function createTemplatesSurface(context) {
       const name = document.createElement("strong");
       name.textContent = task.description || task.refId || "Untitled task";
       const meta = document.createElement("span");
-      meta.textContent = `${Number(task.offsetDays || 0) >= 0 ? "+" : ""}${Number(task.offsetDays || 0)} days`;
+      meta.textContent = dayOffsetLabel(task.offsetDays);
       item.append(name, meta);
       tasks.append(item);
     }
@@ -499,6 +499,17 @@ export function createTemplatesSurface(context) {
     definition.textContent = value || "None";
     if (valueClass) definition.className = valueClass;
     list.append(term, definition);
+  }
+
+  // Day offsets read as a position in a run, not a signed integer: one day
+  // ahead is "+1 day", and a step that has to happen beforehand says so rather
+  // than rendering "-5 days" with no hint of what the sign meant.
+  function dayOffsetLabel(offsetDays) {
+    const days = Number(offsetDays || 0);
+    if (days === 0) return "Day 0";
+    if (days > 0) return `+${days} ${days === 1 ? "day" : "days"}`;
+    const magnitude = Math.abs(days);
+    return `${magnitude} ${magnitude === 1 ? "day" : "days"} before`;
   }
 
   async function resolveTemplateRouteEntity(route, token) {
