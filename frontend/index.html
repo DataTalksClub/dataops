@@ -66,7 +66,10 @@
         </header>
 
         <form id="search-form" class="search-form" role="search" aria-label="Workspace search">
-          <input id="search-input" type="search" autocomplete="off" aria-label="Search work and docs" aria-describedby="search-scope" placeholder="Search work and docs">
+          <span class="search-input-wrap">
+            <span class="search-form-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 4 4"/></svg></span>
+            <input id="search-input" type="search" autocomplete="off" aria-label="Search work and docs" aria-describedby="search-scope" placeholder="Search work and docs">
+          </span>
           <span id="search-scope" class="search-scope">Tasks, cards and process docs</span>
         </form>
 
