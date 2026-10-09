@@ -1475,7 +1475,58 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(harness.errors, []);
   });
 
+  test("renders description link dumps as subheadings with real anchors", async () => {
+    const card = {
+      id: "card-desc-links",
+      version: 1,
+      title: "Link Card",
+      status: "active",
+      stage: "preparation",
+      taskCount: 0,
+      openTaskCount: 0,
+      references: [],
+      description:
+        'Overview docs:- [Process documents](https://docs.google.com/document/d/ABC123/edit "") - ' +
+        '[Newsletter](https://docs.google.com/document/d/XYZ789/edit "") ' +
+        "Links:- Sponsorship document: TODO - X link: TODO",
+    };
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method)
+          return card;
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [] };
+        if (url === `/api/artifacts?cardId=${card.id}`)
+          return { artifacts: [] };
+        return {};
+      },
+    });
 
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    const anchors = harness.cardPanelBody.querySelectorAll(".card-inline-link");
+    assert.equal(anchors.length, 2);
+    assert.equal(
+      anchors[0].getAttribute("href"),
+      "https://docs.google.com/document/d/ABC123/edit",
+    );
+    assert.equal(anchors[0].textContent, "Process documents");
+    assert.equal(
+      anchors[1].getAttribute("href"),
+      "https://docs.google.com/document/d/XYZ789/edit",
+    );
+    const subtitles = harness.cardPanelBody.querySelectorAll(
+      ".workflow-description-subtitle",
+    );
+    assert.deepEqual(
+      subtitles.map((subtitle) => subtitle.textContent),
+      ["Overview docs:", "Links:"],
+    );
+    assert.ok(
+      !harness.cardPanelBody.textContent.includes("[Process documents]("),
+    );
+    assert.deepEqual(harness.errors, []);
+  });
 
 
 

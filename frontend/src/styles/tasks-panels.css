@@ -1425,6 +1425,13 @@ body[data-workspace-view="tasks"] .runtime-template-definition dd {
 }
 
 @media (prefers-reduced-motion: reduce) {body[data-workspace-view="tasks"] .entity-route-loading {
+}body[data-workspace-view="tasks"] .workflow-description-subtitle {
+  margin: 10px 0 2px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--dk-text-muted);
+}body[data-workspace-view="tasks"] .workflow-description-subtitle:first-child {
+  margin-top: 0;
 }body[data-workspace-view="tasks"] .card-task-owner {
   display: inline-flex;
   align-items: center;

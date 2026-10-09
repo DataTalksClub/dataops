@@ -11,9 +11,36 @@ export function displayCardDescription(value) {
     .trim();
 }
 
+const cardLinkPattern = /\[([^\]]+)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/;
+const cardLinkPatternGlobal = /\[([^\]]+)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
+
+function appendInlineLinks(lineEl, lineContent) {
+  let lastIndex = 0;
+  cardLinkPatternGlobal.lastIndex = 0;
+  let match;
+  while ((match = cardLinkPatternGlobal.exec(lineContent)) !== null) {
+    if (match.index > lastIndex) {
+      appendBreakableText(lineEl, lineContent.slice(lastIndex, match.index));
+    }
+    const label = match[1];
+    const rawUrl = match[2];
+    const cleanUrl = rawUrl.replace(/[\s"'\u200c\u200b]+$/, "").replace(/^["']/, "").trim();
+    const a = document.createElement("a");
+    a.className = "card-inline-link";
+    a.setAttribute("href", cleanUrl);
+    a.target = "_blank";
+    a.rel = "noopener";
+    appendBreakableText(a, label);
+    lineEl.append(a);
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < lineContent.length) {
+    appendBreakableText(lineEl, lineContent.slice(lastIndex));
+  }
+}
+
 export function renderFormattedDescription(container, description) {
-  const hasLinks = /\[([^\]]+)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/.test(description);
-  if (!hasLinks) {
+  if (!cardLinkPattern.test(description)) {
     const p = document.createElement("p");
     p.className = "workflow-description-text";
     appendBreakableText(p, description);
@@ -26,33 +53,39 @@ export function renderFormattedDescription(container, description) {
     const rawLine = lines[i];
     const trimmed = rawLine.trim();
     if (!trimmed && i > 0 && !lines[i - 1].trim()) continue;
+    if (!/^[-*]\s+/.test(trimmed) && trimmed.includes(":-") && cardLinkPattern.test(trimmed)) {
+      // Template-generated "Label:- item - item" dump: split into a
+      // subheading plus bulleted items with real links. A "Label:" trailing
+      // a link ("[Newsletter](url) Links:") starts its own segment, and
+      // "Label:- item" normalizes to a heading plus items.
+      const pieces = trimmed.split(/(?<=\) )(?=[A-Z][a-z]+:)/);
+      for (const piece of pieces) {
+        const normalized = piece.replaceAll(":- ", ": - ");
+        for (const segment of normalized.split(" - ")) {
+          const text = segment.trim();
+          if (!text) continue;
+          if (text.endsWith(":")) {
+            const heading = document.createElement("div");
+            heading.className = "workflow-description-subtitle";
+            appendBreakableText(heading, text);
+            container.append(heading);
+            continue;
+          }
+          const bullet = document.createElement("div");
+          bullet.className = "workflow-description-bullet";
+          appendInlineLinks(bullet, text);
+          if (bullet.textContent || bullet.children.length > 0) {
+            container.append(bullet);
+          }
+        }
+      }
+      continue;
+    }
     const isBullet = /^[-*]\s+/.test(trimmed);
     const lineContent = isBullet ? trimmed.replace(/^[-*]\s+/, "") : rawLine;
     const lineEl = document.createElement(isBullet ? "div" : "p");
     lineEl.className = isBullet ? "workflow-description-bullet" : "workflow-description-text";
-
-    let lastIndex = 0;
-    const linkRegex = /\[([^\]]+)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
-    let match;
-    while ((match = linkRegex.exec(lineContent)) !== null) {
-      if (match.index > lastIndex) {
-        appendBreakableText(lineEl, lineContent.slice(lastIndex, match.index));
-      }
-      const label = match[1];
-      const rawUrl = match[2];
-      const cleanUrl = rawUrl.replace(/[\s"'\u200c\u200b]+$/, "").replace(/^["']/, "").trim();
-      const a = document.createElement("a");
-      a.className = "card-inline-link";
-      a.href = cleanUrl;
-      a.target = "_blank";
-      a.rel = "noopener";
-      appendBreakableText(a, label);
-      lineEl.append(a);
-      lastIndex = match.index + match[0].length;
-    }
-    if (lastIndex < lineContent.length) {
-      appendBreakableText(lineEl, lineContent.slice(lastIndex));
-    }
+    appendInlineLinks(lineEl, lineContent);
     if (lineEl.textContent || lineEl.children.length > 0) {
       container.append(lineEl);
     }
