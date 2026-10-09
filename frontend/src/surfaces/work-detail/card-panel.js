@@ -433,10 +433,34 @@ export function createCardPanel(context) {
       const checklistSection = document.createElement("div");
       checklistSection.className =
         "task-history workflow-detail-section workflow-checklist-section";
+      const checklistHeader = document.createElement("div");
+      checklistHeader.className = "card-checklist-header";
       const checklistLabel = document.createElement("div");
       checklistLabel.className = "task-history-label";
       checklistLabel.textContent = "Tasks";
-      checklistSection.append(checklistLabel);
+      checklistHeader.append(checklistLabel);
+      if (progress.total > 0) {
+        const percent = document.createElement("span");
+        percent.className = "card-checklist-percent";
+        percent.textContent = `${progress.percent}%`;
+        checklistHeader.append(percent);
+      }
+      checklistSection.append(checklistHeader);
+
+      if (progress.total > 0) {
+        const bar = document.createElement("div");
+        bar.className = `ops-progress${progress.percent >= 100 ? " is-complete" : ""}`;
+        bar.setAttribute("role", "progressbar");
+        bar.setAttribute("aria-label", progress.label);
+        bar.setAttribute("aria-valuemin", "0");
+        bar.setAttribute("aria-valuemax", "100");
+        bar.setAttribute("aria-valuenow", String(progress.percent));
+        const fill = document.createElement("i");
+        fill.style.width = `${progress.percent}%`;
+        bar.append(fill);
+        checklistSection.append(bar);
+      }
+
       const list = document.createElement("div");
       list.className = "task-history-list";
       for (const group of workflowTaskGroups(tasks, today)) {

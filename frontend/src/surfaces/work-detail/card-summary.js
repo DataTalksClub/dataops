@@ -173,20 +173,6 @@ export function createCardSummary(context) {
   summaryTop.append(stageLabel);
   meta.append(summaryTop);
 
-  if (progress.total > 0) {
-    const bar = document.createElement("div");
-    bar.className = `ops-progress${progress.percent >= 100 ? " is-complete" : ""}`;
-    bar.setAttribute("role", "progressbar");
-    bar.setAttribute("aria-label", progress.label);
-    bar.setAttribute("aria-valuemin", "0");
-    bar.setAttribute("aria-valuemax", "100");
-    bar.setAttribute("aria-valuenow", String(progress.percent));
-    const fill = document.createElement("i");
-    fill.style.width = `${progress.percent}%`;
-    bar.append(fill);
-    meta.append(bar);
-  }
-
   if (progress.nextDueTask) {
     const nextRow = document.createElement("p");
     nextRow.className = "workflow-next-task";
