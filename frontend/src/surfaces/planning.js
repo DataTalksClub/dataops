@@ -97,13 +97,43 @@ export function createPlanningSurface(context) {
                   stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
               </button>
             </div>
-            <h1 id="calendar-surface-title" class="calendar-period-title" data-period-heading>Calendar</h1>
+            <div class="calendar-picker-container">
+              <h1 id="calendar-surface-title" class="calendar-heading-wrapper">
+                <button type="button" class="calendar-period-btn" data-picker-toggle aria-haspopup="dialog" aria-expanded="false" title="Choose month and year">
+                  <span class="calendar-period-title" data-period-heading>Calendar</span>
+                  <svg class="calendar-period-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+              </h1>
+              <div class="calendar-month-picker-popover" data-picker-popover hidden role="dialog" aria-label="Choose month and year">
+                <div class="calendar-picker-year-nav">
+                  <button type="button" class="calendar-picker-year-btn" data-picker-prev-year aria-label="Previous year">‹</button>
+                  <span class="calendar-picker-year-label" data-picker-year>2026</span>
+                  <button type="button" class="calendar-picker-year-btn" data-picker-next-year aria-label="Next year">›</button>
+                </div>
+                <div class="calendar-picker-months-grid" role="grid" aria-label="Months">
+                  ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+                    .map((m, i) => `<button type="button" class="calendar-picker-month-btn" data-picker-month="${i}">${m}</button>`)
+                    .join("")}
+                </div>
+                <div class="calendar-picker-foot">
+                  <button type="button" class="calendar-picker-today-btn" data-picker-current-month>Current month</button>
+                </div>
+              </div>
+            </div>
           </div>
-          <button class="primary-button calendar-add-button" data-add>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            <span>Add activity</span>
-          </button>
+          <div class="calendar-header-actions">
+            <select data-view aria-label="Calendar view" hidden>
+              <option value="month" selected>Month</option>
+              <option value="week">Week</option>
+            </select>
+            <button class="primary-button calendar-add-button" data-add>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              <span>Add activity</span>
+            </button>
+          </div>
         </div>
       </header>
       <p class="planner-load-state" role="status">Loading calendar…</p>
@@ -111,27 +141,18 @@ export function createPlanningSurface(context) {
       <div data-calendar></div>
       <footer class="calendar-footer-controls" aria-label="Calendar controls">
         <div class="calendar-footer-controls-bar">
-          <div class="planner-filter-fields">
+          <div class="calendar-filter-section">
+            <span class="calendar-control-label">Filter:</span>
             <label class="calendar-select-label" title="Filter by activity type">
               <select data-type aria-label="Activity type">
                 <option value="">All activities</option>
                 ${activityTypeOptions}
               </select>
             </label>
-            <label class="calendar-select-label" title="Select view">
-              <select data-view aria-label="Calendar view">
-                <option value="month">Month</option>
-                <option value="week">Week</option>
-              </select>
-            </label>
           </div>
           <div class="calendar-layers" role="toolbar" aria-label="Show on calendar">
-            <span class="calendar-layers-title">Layers:</span>
-            <label class="calendar-layer-chip is-activities">
-              <input data-layer="activities" type="checkbox" checked>
-              <span class="chip-dot"></span>
-              <span>Activities</span>
-            </label>
+            <span class="calendar-control-label">Show:</span>
+            <input data-layer="activities" type="checkbox" checked hidden>
             <label class="calendar-layer-chip is-public">
               <input data-layer="public" type="checkbox" checked>
               <span class="chip-dot"></span>
@@ -237,30 +258,23 @@ export function createPlanningSurface(context) {
       if (periodHeadingEl) periodHeadingEl.textContent = periodLabel;
       const weekdayHeadings = [
         '<strong class="calendar-week-heading" aria-label="Week number">Week</strong>',
-        ...["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        ...["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
           .map((day) => `<strong>${day}</strong>`),
       ].join("");
       let html = `
         <div class="calendar-content-header calendar-footer-meta">
           <div>
             <h3 class="calendar-period">${periodLabel}</h3>
-            <p>${isWeek ? "Seven-day planning view" : "Month overview"} · ISO week numbers · Europe/Berlin</p>
+            <p>${isWeek ? "Five-day planning view" : "Month overview"} · Europe/Berlin · Monday–Friday · ISO week numbers</p>
           </div>
           <span class="planner-count">${visibleItems.length} ${visibleItems.length === 1 ? "activity" : "activities"}</span>
         </div>
-        <p class="calendar-mobile-hint">Swipe each week horizontally to see all seven days.</p>
+        <p class="calendar-mobile-hint">Swipe each week horizontally to see all five days.</p>
       `;
-      if (!visibleItems.length) {
-        html = `
-          <div class="calendar-empty">
-            <strong>No matching activities</strong>
-            <p>Adjust the activity filter or add an activity. Holiday and newsletter layers remain visible.</p>
-          </div>
-        ` + html;
-      }
       let weekMarkup = "";
-      let dayIndex = 0;
       for (let dateValue = new Date(`${from}T00:00:00Z`); dateValue <= new Date(`${to}T00:00:00Z`); dateValue.setUTCDate(dateValue.getUTCDate() + 1)) {
+        const dayOfWeek = dateValue.getUTCDay();
+        if (dayOfWeek === 0 || dayOfWeek === 6) continue;
         const date = iso(dateValue),
           isOutside = !isWeek && dateValue.getUTCMonth() !== cursor.getUTCMonth(),
           isToday = date === todayIsoDate(),
@@ -307,7 +321,7 @@ export function createPlanningSurface(context) {
               <span>${escapeHtml(overlay.label)}</span>
             </a>
           `).join("");
-        if (dayIndex % 7 === 0) {
+        if (dayOfWeek === 1) {
           const currentWeek = weekNumber(dateValue);
           weekMarkup += `
             <div class="calendar-week">
@@ -334,8 +348,10 @@ export function createPlanningSurface(context) {
             </div>
           </section>
         `;
-        if (dayIndex % 7 === 6) weekMarkup += `</div>`;
-        dayIndex += 1;
+        if (dayOfWeek === 5) weekMarkup += `</div>`;
+      }
+      if (weekMarkup && !weekMarkup.trimEnd().endsWith("</div>")) {
+        weekMarkup += `</div>`;
       }
       grid.innerHTML = `
         <div class="calendar-grid">
@@ -419,6 +435,105 @@ export function createPlanningSurface(context) {
       cursor = parseIsoDateValue(todayIsoDate());
       load();
     };
+
+    const pickerToggle = surface.querySelector("[data-picker-toggle]"),
+      pickerPopover = surface.querySelector("[data-picker-popover]"),
+      pickerYearLabel = surface.querySelector("[data-picker-year]"),
+      pickerPrevYear = surface.querySelector("[data-picker-prev-year]"),
+      pickerNextYear = surface.querySelector("[data-picker-next-year]"),
+      pickerCurrentMonth = surface.querySelector("[data-picker-current-month]"),
+      pickerMonthBtns = surface.querySelectorAll("[data-picker-month]");
+
+    let pickerYear = cursor.getUTCFullYear();
+
+    function updatePickerState() {
+      if (!pickerPopover || pickerPopover.hidden) return;
+      if (pickerYearLabel) pickerYearLabel.textContent = String(pickerYear);
+      const today = parseIsoDateValue(todayIsoDate());
+      const selectedYear = cursor.getUTCFullYear();
+      const selectedMonth = cursor.getUTCMonth();
+      const todayYear = today.getUTCFullYear();
+      const todayMonth = today.getUTCMonth();
+
+      pickerMonthBtns.forEach((btn) => {
+        const monthIndex = Number(btn.dataset.pickerMonth);
+        const isSelected = pickerYear === selectedYear && monthIndex === selectedMonth;
+        const isCurrent = pickerYear === todayYear && monthIndex === todayMonth;
+        btn.classList.toggle("is-selected", isSelected);
+        btn.classList.toggle("is-current", isCurrent);
+      });
+    }
+
+    function openPicker() {
+      pickerYear = cursor.getUTCFullYear();
+      updatePickerState();
+      pickerPopover.hidden = false;
+      pickerToggle?.setAttribute("aria-expanded", "true");
+    }
+
+    function closePicker() {
+      if (pickerPopover && !pickerPopover.hidden) {
+        pickerPopover.hidden = true;
+        pickerToggle?.setAttribute("aria-expanded", "false");
+      }
+    }
+
+    if (pickerToggle) {
+      pickerToggle.onclick = (e) => {
+        e.stopPropagation();
+        pickerPopover?.hidden ? openPicker() : closePicker();
+      };
+    }
+
+    if (pickerPrevYear) {
+      pickerPrevYear.onclick = (e) => {
+        e.stopPropagation();
+        pickerYear -= 1;
+        updatePickerState();
+      };
+    }
+
+    if (pickerNextYear) {
+      pickerNextYear.onclick = (e) => {
+        e.stopPropagation();
+        pickerYear += 1;
+        updatePickerState();
+      };
+    }
+
+    pickerMonthBtns.forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const monthIndex = Number(btn.dataset.pickerMonth);
+        cursor = new Date(Date.UTC(pickerYear, monthIndex, 1));
+        const viewSelect = surface.querySelector("[data-view]");
+        if (viewSelect) viewSelect.value = "month";
+        closePicker();
+        load();
+      };
+    });
+
+    if (pickerCurrentMonth) {
+      pickerCurrentMonth.onclick = (e) => {
+        e.stopPropagation();
+        cursor = parseIsoDateValue(todayIsoDate());
+        const viewSelect = surface.querySelector("[data-view]");
+        if (viewSelect) viewSelect.value = "month";
+        closePicker();
+        load();
+      };
+    }
+
+    surface.addEventListener("click", (e) => {
+      if (pickerPopover && !pickerPopover.contains(e.target) && !pickerToggle?.contains(e.target)) {
+        closePicker();
+      }
+    });
+
+    surface.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closePicker();
+    });
+
     surface.querySelector("[data-view]").onchange = load;
     surface.querySelector("[data-type]").onchange = render;
     surface.querySelectorAll("[data-layer]").forEach((control) => { control.onchange = render; });

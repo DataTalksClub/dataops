@@ -20,6 +20,19 @@ class TestElement {
     this.children = [];
     this.checked = false;
     this.className = "";
+    this.classList = {
+      classes: new Set(),
+      add: (...tokens) => tokens.forEach((t) => this.classList.classes.add(t)),
+      remove: (...tokens) => tokens.forEach((t) => this.classList.classes.delete(t)),
+      toggle: (token, force) => {
+        const has = this.classList.classes.has(token);
+        const should = force !== undefined ? Boolean(force) : !has;
+        if (should) this.classList.classes.add(token);
+        else this.classList.classes.delete(token);
+        return should;
+      },
+      contains: (token) => this.classList.classes.has(token),
+    };
     this.dataset = {};
     this.disabled = false;
     this.hidden = false;
@@ -164,7 +177,38 @@ function createCalendarDom() {
   for (const selector of ["[data-prev]", "[data-today]", "[data-next]", "[data-add]", "[data-cancel]"]) {
     surface.setQuery(selector, new TestElement("button"));
   }
-  return { alerts, dialog, form, grid, layers, status, surface, type, view };
+  const pickerToggle = surface.setQuery("[data-picker-toggle]", new TestElement("button"));
+  const pickerPopover = surface.setQuery("[data-picker-popover]", new TestElement("div"));
+  pickerPopover.hidden = true;
+  const pickerYear = surface.setQuery("[data-picker-year]", new TestElement("span"));
+  pickerYear.textContent = "2026";
+  const pickerPrevYear = surface.setQuery("[data-picker-prev-year]", new TestElement("button"));
+  const pickerNextYear = surface.setQuery("[data-picker-next-year]", new TestElement("button"));
+  const pickerCurrentMonth = surface.setQuery("[data-picker-current-month]", new TestElement("button"));
+  const monthBtns = Array.from({ length: 12 }, (_, i) => {
+    const btn = new TestElement("button");
+    btn.dataset.pickerMonth = String(i);
+    return btn;
+  });
+  surface.setQueryAll("[data-picker-month]", monthBtns);
+  return {
+    alerts,
+    dialog,
+    form,
+    grid,
+    layers,
+    pickerCurrentMonth,
+    pickerMonthBtns: monthBtns,
+    pickerNextYear,
+    pickerPopover,
+    pickerPrevYear,
+    pickerToggle,
+    pickerYear,
+    status,
+    surface,
+    type,
+    view,
+  };
 }
 
 function createNewsletterDom() {
@@ -316,11 +360,12 @@ describe("Planning surface production behavior", () => {
     await harness.surface.renderCalendarSurface();
     await nextTicks();
     assert.match(dom.status.textContent, /Newsletter dates are temporarily unavailable/);
-    assert.match(dom.grid.innerHTML, /No matching activities/);
+    assert.doesNotMatch(dom.grid.innerHTML, /No matching activities/);
+    assert.match(dom.grid.innerHTML, /0 activities/);
 
     dom.type.value = "webinar";
     dom.type.onchange();
-    assert.match(dom.grid.innerHTML, /No matching activities/);
+    assert.match(dom.grid.innerHTML, /0 activities/);
     dom.layers[0].checked = false;
     dom.layers[0].onchange();
     assert.match(dom.grid.innerHTML, /0 activities/);
@@ -328,7 +373,7 @@ describe("Planning surface production behavior", () => {
     dom.view.value = "week";
     await dom.view.onchange();
     await nextTicks();
-    assert.match(dom.grid.innerHTML, /Seven-day planning view/);
+    assert.match(dom.grid.innerHTML, /Five-day planning view/);
     await dom.surface.querySelector("[data-next]").onclick();
     await nextTicks();
     await dom.surface.querySelector("[data-prev]").onclick();
@@ -350,6 +395,22 @@ describe("Planning surface production behavior", () => {
       "2026-08-10",
       "2026-08-16",
     );
+
+    assert.equal(dom.pickerPopover.hidden, true);
+    dom.pickerToggle.onclick({ stopPropagation() {} });
+    assert.equal(dom.pickerPopover.hidden, false);
+    assert.equal(dom.pickerToggle.getAttribute("aria-expanded"), "true");
+
+    dom.pickerNextYear.onclick({ stopPropagation() {} });
+    assert.equal(dom.pickerYear.textContent, "2027");
+
+    dom.pickerPrevYear.onclick({ stopPropagation() {} });
+    assert.equal(dom.pickerYear.textContent, "2026");
+
+    dom.pickerMonthBtns[11].onclick({ stopPropagation() {} });
+    assert.equal(dom.pickerPopover.hidden, true);
+    await nextTicks();
+    assert.match(dom.grid.innerHTML, /December 2026/);
   });
 
   test("creates, edits, and dismisses Calendar data through canonical mutation contracts", async () => {
