@@ -373,9 +373,8 @@ body[data-workspace-view="sponsors"] .document-list {
   border-color: var(--dk-border-default);
   background: var(--dk-bg-hover);
 }.calendar-layers {
-  align-content: center;
-  border-left: 1px solid var(--dk-border-default);
-  padding-left: 16px;
+  border: 0;
+  padding: 0;
 }.calendar-grid {
   border-radius: var(--dk-radius-md);
 }.calendar-weekdays strong {
@@ -387,19 +386,19 @@ body[data-workspace-view="sponsors"] .document-list {
 }.calendar-week-number {
   padding: 9px 4px;
 }.calendar-day {
-  min-height: 132px;
-  padding: 9px;
+  min-height: 120px;
+  padding: 8px;
   transition: background-color 120ms ease;
 }.calendar-day-heading time {
   font-variant-numeric: tabular-nums;
 }.calendar-day-items {
-  gap: 5px;
+  gap: 3px;
 }.calendar-activity,
 .calendar-overlay,
 .calendar-holiday {
-  min-height: 30px;
-  border-radius: var(--dk-radius-md);
-  padding: 5px 7px;
+  min-height: 22px;
+  border-radius: var(--dk-radius-sm);
+  padding: 2.5px 6px;
 }.calendar-activity:hover,
 .calendar-overlay:hover {
   transform: translateY(-1px);

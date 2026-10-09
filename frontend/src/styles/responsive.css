@@ -84,7 +84,7 @@
 .planner-alert button,
 .planner-form-actions button { min-height: 44px; }.planner-header > .primary-button { width: fit-content; margin-top: 0; }.calendar-controls { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 14px; }.calendar-period-actions { flex-wrap: wrap; }.calendar-period-actions button { flex: 1 1 auto; }.planner-filter-fields,
 .calendar-controls .planner-filter-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }.planner-filter-fields input,
-.planner-filter-fields select { min-height: 44px; }.calendar-layers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }.calendar-layers legend { grid-column: 1 / -1; }.calendar-layers label { min-height: 30px; white-space: normal; }.calendar-layers input { width: 20px; height: 20px; }.planner-load-state { margin-top: -4px; }.planner-alert { align-items: start; }.calendar-content-header { align-items: start; }.calendar-grid { grid-template-columns: minmax(0, 1fr); }.calendar-weekdays { display: none; }.calendar-day,
+.planner-filter-fields select { min-height: 44px; }.calendar-layers { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }.calendar-layers label { min-height: 32px; white-space: nowrap; }.planner-load-state { margin-top: -4px; }.planner-alert { align-items: start; }.calendar-content-header { align-items: start; }.calendar-grid { grid-template-columns: minmax(0, 1fr); }.calendar-weekdays { display: none; }.calendar-day,
 .calendar-day:nth-of-type(7n),
 .calendar-day:nth-last-child(-n + 7) {
     display: grid;

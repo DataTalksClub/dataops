@@ -83,39 +83,67 @@ export function createPlanningSurface(context) {
     surface.className = "calendar-surface";
     surface.setAttribute("aria-labelledby", "calendar-surface-title");
     surface.innerHTML = `
-      <header class="planner-header">
-        <div class="planner-heading">
-          <p class="planner-eyebrow">Planning</p>
-          <h1 id="calendar-surface-title">Operations calendar</h2>
-          <p>Coordinate public activities, holidays, and newsletter dates. Europe/Berlin · Monday–Sunday.</p>
+      <header class="planner-header calendar-header-bar">
+        <div class="calendar-header-main">
+          <div class="calendar-nav-group">
+            <button type="button" class="calendar-today-btn" data-today>Today</button>
+            <div class="calendar-nav-arrows" role="group" aria-label="Change calendar period">
+              <button type="button" class="calendar-nav-arrow" data-prev aria-label="Previous period" title="Previous period">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              </button>
+              <button type="button" class="calendar-nav-arrow" data-next aria-label="Next period" title="Next period">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+            </div>
+            <h1 id="calendar-surface-title" class="calendar-period-title" data-period-heading>Calendar</h1>
+          </div>
+          <div class="calendar-controls-group">
+            <div class="planner-filter-fields">
+              <label class="calendar-select-label" title="Filter by activity type">
+                <select data-type aria-label="Activity type">
+                  <option value="">All activities</option>
+                  ${activityTypeOptions}
+                </select>
+              </label>
+              <label class="calendar-select-label" title="Select view">
+                <select data-view aria-label="Calendar view">
+                  <option value="month">Month</option>
+                  <option value="week">Week</option>
+                </select>
+              </label>
+            </div>
+            <button class="primary-button calendar-add-button" data-add>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              <span>Add activity</span>
+            </button>
+          </div>
         </div>
-        <button class="primary-button" data-add>Add activity</button>
+        <div class="calendar-controls" aria-label="Calendar controls">
+          <div class="calendar-layers" role="toolbar" aria-label="Show on calendar">
+            <span class="calendar-layers-title">Layers:</span>
+            <label class="calendar-layer-chip is-activities">
+              <input data-layer="activities" type="checkbox" checked>
+              <span class="chip-dot"></span>
+              <span>Activities</span>
+            </label>
+            <label class="calendar-layer-chip is-public">
+              <input data-layer="public" type="checkbox" checked>
+              <span class="chip-dot"></span>
+              <span>Public holidays</span>
+            </label>
+            <label class="calendar-layer-chip is-school">
+              <input data-layer="school" type="checkbox" checked>
+              <span class="chip-dot"></span>
+              <span>School holidays</span>
+            </label>
+            <label class="calendar-layer-chip is-overlay">
+              <input data-layer="overlay" type="checkbox" checked>
+              <span class="chip-dot"></span>
+              <span>Newsletter dates</span>
+            </label>
+          </div>
+        </div>
       </header>
-      <div class="calendar-controls" aria-label="Calendar controls">
-        <div class="calendar-period-actions" role="group" aria-label="Change calendar period">
-          <button type="button" data-prev aria-label="Previous period">Previous</button>
-          <button type="button" data-today>Today</button>
-          <button type="button" data-next aria-label="Next period">Next</button>
-        </div>
-        <div class="planner-filter-fields">
-          <label>Plan by
-            <select data-view><option value="month">Month</option><option value="week">Week</option></select>
-          </label>
-          <label>Activity type
-            <select data-type>
-              <option value="">All activities</option>
-              ${activityTypeOptions}
-            </select>
-          </label>
-        </div>
-        <fieldset class="calendar-layers">
-          <legend>Show on calendar</legend>
-          <label><input data-layer="activities" type="checkbox" checked> Activities</label>
-          <label><input data-layer="public" type="checkbox" checked> Public holidays</label>
-          <label><input data-layer="school" type="checkbox" checked> School holidays</label>
-          <label><input data-layer="overlay" type="checkbox" checked> Newsletter dates</label>
-        </fieldset>
-      </div>
       <p class="planner-load-state" role="status">Loading calendar…</p>
       <div class="planner-alerts" data-alerts></div>
       <div data-calendar></div>
@@ -200,6 +228,8 @@ export function createPlanningSurface(context) {
         periodLabel = isWeek
           ? `Week of ${new Date(`${from}T00:00:00Z`).toLocaleDateString("en", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}`
           : cursor.toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });
+      const periodHeadingEl = surface.querySelector("[data-period-heading]");
+      if (periodHeadingEl) periodHeadingEl.textContent = periodLabel;
       const weekdayHeadings = [
         '<strong class="calendar-week-heading" aria-label="Week number">Week</strong>',
         ...["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -209,7 +239,7 @@ export function createPlanningSurface(context) {
         <div class="calendar-content-header">
           <div>
             <h3 class="calendar-period">${periodLabel}</h3>
-            <p>${isWeek ? "Seven-day planning view" : "Month overview"} · ISO week numbers</p>
+            <p>${isWeek ? "Seven-day planning view" : "Month overview"} · ISO week numbers · Europe/Berlin</p>
           </div>
           <span class="planner-count">${visibleItems.length} ${visibleItems.length === 1 ? "activity" : "activities"}</span>
         </div>
@@ -248,8 +278,9 @@ export function createPlanningSurface(context) {
               : holiday.kind === "school-free-day"
                 ? "School-free day"
                 : "School holiday";
+            const isPublic = holiday.kind === "berlin-public-holiday";
             return `
-              <span class="calendar-holiday">
+              <span class="calendar-holiday ${isPublic ? "is-public" : "is-school"}" title="${escapeHtml(holiday.name)} (${kind})">
                 <small>${kind}</small>
                 <span>${escapeHtml(holiday.name)}</span>
               </span>
@@ -259,13 +290,14 @@ export function createPlanningSurface(context) {
             <button
               class="calendar-activity ${plannerStatusClass(item.status)}"
               data-edit="${escapeHtml(item.id)}"
+              title="${escapeHtml(item.title)} (${escapeHtml(plannerLabel(item.activityType))})"
             >
               <small>${escapeHtml(plannerLabel(item.activityType))}</small>
               <span>${escapeHtml(item.title)}</span>
             </button>
           `).join(""),
           overlayMarkup = dayOverlays.map((overlay) => `
-            <a class="calendar-overlay" href="${escapeHtml(overlay.href || "#")}">
+            <a class="calendar-overlay" href="${escapeHtml(overlay.href || "#")}" title="${escapeHtml(overlay.label)}">
               <small>Newsletter</small>
               <span>${escapeHtml(overlay.label)}</span>
             </a>
@@ -286,7 +318,8 @@ export function createPlanningSurface(context) {
           >
             <div class="calendar-day-heading">
               <time datetime="${date}">
-                <span class="calendar-mobile-weekday">${weekday}</span>${compactDate}
+                <span class="calendar-mobile-weekday">${weekday}</span>
+                <span class="calendar-day-date${isToday ? " is-today-badge" : ""}">${compactDate}</span>
               </time>
             </div>
             <div class="calendar-day-items">
