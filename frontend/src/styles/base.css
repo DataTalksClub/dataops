@@ -22,24 +22,12 @@
   --card-border-width: 1px;
   --card-padding-x: 12px;
   --card-content-inset: calc(var(--card-padding-x) + var(--card-border-width));
-
-  /* Modal dim, light: Trello-style low-contrast overlay — the page steps
-     down behind the dialog instead of blacking out, so the panel reads as
-     the brightest plane. Portal-side until promoted into the dakit tokens. */
-  --dk-bg-backdrop: rgba(15, 23, 42, 0.5);
 }
 
 /* The dakit tokens remap every shared role under [data-theme="dark"]; the
    inline boot script sets that attribute before first paint. The DataOps-local
    aliases above resolve to dakit semantic roles, so no hand dark values are
-   needed here. */
-
-/* Modal dim, dark: a half-veil instead of the vendored 0.7 near-black, so
-   the dimmed page keeps its color and the dialog separates by surface step,
-   border, and shadow — Trello-style — in this theme too. */
-:root[data-theme="dark"] {
-  --dk-bg-backdrop: rgba(1, 4, 9, 0.5);
-}
+   needed here. Backdrop dim is --dk-bg-backdrop from the vendored tokens. */
 
 html,
 body {
