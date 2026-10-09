@@ -257,7 +257,6 @@ describe("app shell coordinator characterization", () => {
       "/tasks",
       "/templates",
       "/assistants",
-      "/artifacts",
       "/users",
       "/cards",
       "/cards/archive",
@@ -372,12 +371,12 @@ describe("app shell coordinator characterization", () => {
   });
 
   test("keeps isolated browser pointers for shell interaction and invalid-route recovery", () => {
-    assert.match(browserCharacterization, /shell, Home, and account scope retain their primary DOM and interactions/);
+    assert.match(browserCharacterization, /shell, the Tasks queue, and account scope retain their primary DOM and interactions/);
     assert.match(browserCharacterization, /keeps fixed-width sidebar and accessible drawer flows/);
     assert.match(browserCharacterization, /locator\("#sidebar-resize"\)\)\.toHaveCount\(0\)/);
     assert.match(browserCharacterization, /locator\("#settings-button"\)\.click\(\)/);
     assert.match(browserCharacterization, /locator\("#sidebar-collapse-button"\)\.click\(\)/);
-    assert.match(browserCharacterization, /invalid hashes recover to Home and unknown programmatic navigation is a no-op/);
+    assert.match(browserCharacterization, /invalid hashes recover to the Tasks queue and unknown programmatic navigation is a no-op/);
     assert.match(browserCharacterization, /toHaveURL\(`\$\{baseURL\}\/\#\/`\)/);
     assert.match(browserCharacterization, /expect\(errors\)\.toEqual\(\[\]\)/);
   });
