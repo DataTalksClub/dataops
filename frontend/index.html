@@ -55,6 +55,9 @@
 
     <main class="app-shell">
       <aside id="sidebar" class="sidebar" aria-label="Workspace navigation">
+        <div class="sidebar-rail">
+          <button id="sidebar-expand-button" class="icon-button sidebar-toggle-button" type="button" aria-label="Show sidebar" title="Show sidebar" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5"/></svg></button>
+        </div>
         <header class="workspace-header">
           <button id="sidebar-close-button" class="icon-button mobile-only" type="button" aria-label="Close workspace"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
           <div class="workspace-mark" aria-hidden="true">D</div>
@@ -129,25 +132,15 @@
           </fieldset>
         </details>
 
+        <footer class="sidebar-footer">
+          <button id="help-button" class="workspace-nav-button sidebar-tool-button" type="button" title="Help" aria-label="Help"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.4 2.4 0 1 1 3.8 2c-1 .7-1.6 1.2-1.6 2.5M12 17h.01"/></svg></span><span>Help</span></button>
+          <button id="work-bell-button" class="workspace-nav-button sidebar-tool-button" type="button" title="Notifications" aria-label="Notifications"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></span><span>Notifications</span><span class="work-bell-count" aria-hidden="true">0</span></button>
+          <button id="settings-button" class="account-button sidebar-account-button" type="button" title="Account" aria-label="Account" aria-haspopup="true" aria-expanded="false"><span class="account-avatar" data-account-menu-avatar aria-hidden="true">?</span><span class="account-button-name" data-account-menu-name>Account</span><svg class="account-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
+        </footer>
+
       </aside>
 
       <section class="page-shell">
-        <header class="page-toolbar">
-          <div class="page-context">
-            <button id="sidebar-expand-button" class="icon-button sidebar-toggle-button desktop-only" type="button" aria-label="Show sidebar" title="Show sidebar" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5"/></svg></button>
-          </div>
-          <div class="toolbar-actions">
-            <button id="work-bell-button" class="quiet-button work-bell-button" type="button" title="Notifications" aria-label="Notifications">
-              <span class="work-bell-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></span>
-              <span class="work-bell-count" aria-hidden="true">0</span>
-            </button>
-            <button id="help-button" class="icon-button home-help-button" type="button" title="Help" aria-label="Help"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.4 2.4 0 1 1 3.8 2c-1 .7-1.6 1.2-1.6 2.5M12 17h.01"/></svg></button>
-            <button id="settings-button" class="account-button desktop-account-button" type="button" title="Account" aria-label="Account" aria-haspopup="true" aria-expanded="false"><span class="account-avatar" data-account-menu-avatar aria-hidden="true">?</span><span class="account-button-name" data-account-menu-name>Account</span><svg class="account-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
-            <button id="view-toggle-button" class="quiet-button" type="button" hidden>View</button>
-            <button id="doc-menu-button" class="quiet-button" type="button" hidden title="Doc actions"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg></button>
-          </div>
-        </header>
-
         <section id="library-view" class="view library-view">
           <div id="document-list" class="document-list" aria-label="Documents"></div>
           <section id="task-panel" class="task-modal diff-modal" aria-label="Task actions" hidden>
@@ -177,6 +170,10 @@
           <div id="doc-state" class="doc-state" hidden></div>
           <textarea id="document-title" class="document-title" rows="1" disabled aria-label="Document title"></textarea>
           <div id="document-path" class="document-path">No document selected</div>
+          <div class="editor-doc-tools">
+            <button id="view-toggle-button" class="quiet-button" type="button" hidden>View</button>
+            <button id="doc-menu-button" class="quiet-button" type="button" hidden title="Doc actions"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg></button>
+          </div>
           <textarea id="editor" class="markdown-editor" spellcheck="true" disabled placeholder="Open a document from the sidebar or create a new page."></textarea>
           <div id="rendered-view" class="rendered-view" aria-live="polite"></div>
           <section id="changes-section" class="changes-section" aria-labelledby="changes-title" hidden>

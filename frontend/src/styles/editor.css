@@ -52,7 +52,12 @@
 .custom-select-option.is-selected {
   background: var(--dk-accent-soft);
   color: var(--dk-accent-default);
-}/* Reader and editor --------------------------------------------------------- */.editor-view {
+}/* Reader and editor --------------------------------------------------------- */.editor-doc-tools {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 0;
+}.editor-view {
   display: grid;
   align-content: start;
   width: min(100%, 900px);

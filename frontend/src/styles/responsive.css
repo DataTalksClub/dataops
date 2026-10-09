@@ -73,8 +73,6 @@
     height: auto;
     min-height: calc(100vh - var(--mobile-header-height));
     overflow: visible;
-  }body[data-view="library"] .page-toolbar {
-    display: none;
   }.view {
     overflow: visible;
   }.library-view {

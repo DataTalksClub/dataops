@@ -1,10 +1,11 @@
+.work-bell-panel,
 .settings-menu {
   position: fixed;
-  top: 58px;
-  right: 16px;
+  left: 12px;
+  bottom: 148px;
   z-index: 30;
   width: min(380px, calc(100vw - 32px));
-  max-height: calc(100vh - 80px);
+  max-height: calc(100vh - 168px);
   overflow: auto;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-lg);

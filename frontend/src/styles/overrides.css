@@ -1,12 +1,5 @@
 
-@media (max-width: 820px) {body[data-view="editor"] .page-toolbar .work-bell-button,
-body[data-view="editor"] .page-toolbar .home-help-button,
-body[data-view="editor"] .page-toolbar .desktop-account-button {
-    display: none;
-  }body[data-view="editor"] .page-toolbar .toolbar-actions {
-    width: 100%;
-    justify-content: flex-end;
-  }.task-modal,
+@media (max-width: 820px) {.task-modal,
 .diff-modal,
 .quick-form-overlay {
     padding: 0;
@@ -191,32 +184,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
 }/* My Plan anchors to the same document column in every state, so the page
    origin does not move when the operating model is unavailable. */
 
-/* Queue meta reads as quiet context, not pill spam: plain muted facts
-   separated by dots, with proof requirements as the only attention chip. */.ops-queue-meta .ops-queue-chip {
-  border: 0;
-  border-radius: 0;
-  background: none;
-  padding: 0;
-  color: var(--dk-text-muted);
-  font-size: 12px;
-  font-weight: 400;
-}.ops-queue-meta .ops-queue-chip + .ops-queue-chip::before {
-  content: "· ";
-  color: var(--dk-text-faint);
-}.ops-queue-meta .ops-queue-chip.is-attention {
-  color: var(--attention-due);
-  font-weight: 500;
-}/* Tasks-view queue meta: the quiet fact style must win over the legacy
-   tasks-view pill rules. */body[data-workspace-view="tasks"] .ops-queue-meta .ops-queue-chip {
-  border: 0;
-  border-radius: 0;
-  background: none;
-  padding: 0;
-  font-size: 12px;
-}body[data-workspace-view="tasks"] .ops-queue-meta .ops-queue-chip.is-attention {
-  color: var(--attention-due);
-  font-weight: 500;
-}/* Waiting chips on the cards board follow the same gray. */.ops-card-meta [data-status="waiting"],
+/* Waiting chips on the cards board follow the same gray. */.ops-card-meta [data-status="waiting"],
 [data-status="waiting"].planner-status,
 .planner-status.is-waiting {
   border-color: var(--attention-waiting);
@@ -237,14 +205,6 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
   border-color: var(--attention-waiting);
   background: var(--dk-bg-muted);
   color: var(--dk-text-muted);
-}/* Overdue debt timing in the queue reads as mono pressure in the ramp red,
-   matching Home's attention rows. */.ops-queue-meta .ops-queue-chip.is-debt {
-  font-family: var(--dk-font-mono);
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--dk-danger-text);
-}body[data-workspace-view="tasks"] .ops-queue-meta .ops-queue-chip.is-debt {
-  color: var(--dk-danger-text);
 }/* Assistant queue rows: status text stays quiet context; only a state that
    demands a decision earns a chip (amber approval, red recovery). */body[data-workspace-view="tasks"] .assistant-job-row em {
   align-self: start;
@@ -271,14 +231,6 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
 }/* Authored template revisions are machine quantities: mono accent. */.runtime-template-definition dd.runtime-template-mono {
   font-family: var(--dk-font-mono);
   font-size: 12px;
-}/* Overdue debt timing in the queue reads as mono pressure in the ramp red,
-   matching Home's attention rows. */.ops-queue-meta .ops-queue-chip.is-debt {
-  font-family: var(--dk-font-mono);
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--dk-danger-text);
-}body[data-workspace-view="tasks"] .ops-queue-meta .ops-queue-chip.is-debt {
-  color: var(--dk-danger-text);
 }/* Assistant queue rows: status text stays quiet context; only a state that
    demands a decision earns a chip (amber approval, red recovery). */body[data-workspace-view="tasks"] .assistant-job-row em {
   align-self: start;

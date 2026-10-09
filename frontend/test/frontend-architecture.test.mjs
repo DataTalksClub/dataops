@@ -212,11 +212,18 @@ describe("shell ownership contract", () => {
       "save state receives completed mutation focus",
     );
 
-    const toolbar = markup.slice(
-      markup.indexOf('<header class="page-toolbar">'),
-      markup.indexOf('<section id="library-view"'),
+    assert.doesNotMatch(markup, /page-toolbar|toolbar-actions/, "the shell has no top toolbar");
+    assert.match(markup, /<footer class="sidebar-footer">/, "global actions live in the sidebar footer");
+    const sidebar = markup.slice(
+      markup.indexOf('<aside id="sidebar"'),
+      markup.indexOf("</aside>"),
     );
-    assert.doesNotMatch(toolbar, /save|discard|breadcrumb|toolbar-title|back-button/i);
+    for (const id of ["sidebar-expand-button", "help-button", "work-bell-button", "settings-button"]) {
+      assert.ok(sidebar.includes(`id="${id}"`), `${id} belongs to the sidebar`);
+    }
+    for (const id of ["view-toggle-button", "doc-menu-button"]) {
+      assert.ok(editorView.includes(`id="${id}"`), `${id} belongs to the editor view`);
+    }
 
     const bindings = read("frontend/src/shell/dom-bindings.js");
     assert.match(bindings, /editorInlineStatus: "#editor-inline-status"/);
