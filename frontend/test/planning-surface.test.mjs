@@ -343,7 +343,7 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /calendar-week-number/);
     assert.match(dom.grid.innerHTML, /<small class="iso-week">\d+<\/small>/);
     assert.doesNotMatch(dom.grid.innerHTML, /<small class="iso-week">ISO \d+<\/small>/);
-    expectCalendarRange(harness.requests[0], "2026-07-27", "2026-09-06");
+    expectCalendarRange(harness.requests[0], "2026-08-03", "2026-09-06");
   });
 
   test("keeps Calendar usable when overlays fail and exposes filter and period controls", async () => {
@@ -410,6 +410,14 @@ describe("Planning surface production behavior", () => {
     await nextTicks();
     assert.equal(dom.surface.querySelector("[data-period-heading]").textContent, "December 2026");
     assert.match(dom.grid.innerHTML, /December 1, 2026/);
+
+    // Test November 2026: Nov 1 is Sunday (weekend), so Mon Oct 26–Fri Oct 30 must NOT be shown
+    dom.pickerToggle.onclick({ stopPropagation() {} });
+    dom.pickerMonthBtns[10].onclick({ stopPropagation() {} });
+    await nextTicks();
+    assert.equal(dom.surface.querySelector("[data-period-heading]").textContent, "November 2026");
+    assert.doesNotMatch(dom.grid.innerHTML, /Monday, October 26, 2026/);
+    assert.match(dom.grid.innerHTML, /Monday, November 2, 2026/);
   });
 
   test("creates, edits, and dismisses Calendar data through canonical mutation contracts", async () => {
