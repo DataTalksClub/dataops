@@ -239,7 +239,8 @@ test.describe('issue 208 paginated collections', () => {
       });
     });
 
-    await page.goto(`${BASE_URL}/#/notifications`);
+    await page.goto(`${BASE_URL}/#/`);
+    await page.locator('#work-bell-button').click();
     const messages = page.locator('.work-bell-item-message span:not([aria-hidden])');
     await expect(messages).toHaveText([
       'Notification page one newer',

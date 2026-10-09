@@ -663,7 +663,7 @@
     {
       "id": "notifications",
       "surface": "Notifications",
-      "route": "/#/notifications",
+      "route": "/#/ (Notifications panel)",
       "apiBoundaries": [
         "/api/notifications",
         "/api/tasks"

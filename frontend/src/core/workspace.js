@@ -40,7 +40,6 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
     params: ["templateId"],
   },
   "/recurring": { view: "tasks", tasksSection: "recurring", params: [] },
-  "/notifications": { view: "tasks", tasksSection: "queue", params: [] },
   "/bookkeeping": { view: "bookkeeping", tasksSection: "queue", params: [] },
   "/sponsors": {
     view: "sponsors",

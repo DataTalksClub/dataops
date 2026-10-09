@@ -22,7 +22,8 @@ test.describe('canonical DataOps frontend', () => {
     await expect(page.getByRole('heading', { name: 'Recurring', exact: true })).toBeVisible();
     await expect(page.locator('[data-tasks-section="recurring"]')).toHaveAttribute('aria-current', 'page');
 
-    await page.goto('/#/notifications');
+    await page.goto('/#/');
+    await page.locator('#work-bell-button').click();
     await expect(page.locator('#work-bell-panel')).toBeVisible();
 
     expect((await request.get('/public/app.js')).status()).toBe(404);

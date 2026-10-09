@@ -12,12 +12,9 @@ export function createApplicationShells(context) {
     formatTaskDateMeta,
     HTMLElementClass,
     isOperationsWorkspaceVisible,
-    isWorkspaceRouteFresh,
     isoDayDistance,
     localStorageRef,
-    navigateCanonicalWorkspace,
     openTaskPanel,
-    parseWorkspaceHash,
     requestAnimationFrameImpl,
     refreshDocuments,
     request,
@@ -66,16 +63,13 @@ export function createApplicationShells(context) {
     formatShortDate,
     formatTaskDateMeta,
     HTMLElementClass,
-    isWorkspaceRouteFresh,
     isoDayDistance,
-    navigateCanonicalWorkspace,
     openTaskPanel,
-    parseWorkspaceHash,
     requestAnimationFrameImpl,
     request,
     todayIsoDate,
     workApiUrl,
   });
-  notifications.bindToggle(canLeaveCurrentDocument);
+  notifications.bindToggle();
   return { account, notifications, preferences };
 }

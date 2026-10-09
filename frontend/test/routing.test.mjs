@@ -47,7 +47,6 @@ describe("canonical workspace routing", () => {
       "/assistants",
       "/templates",
       "/recurring",
-      "/notifications",
       "/bookkeeping",
       "/sponsors",
       "/newsletter",

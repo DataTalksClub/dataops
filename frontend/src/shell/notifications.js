@@ -7,11 +7,8 @@ export function createNotificationsShell({
   formatShortDate,
   formatTaskDateMeta,
   HTMLElementClass,
-  isWorkspaceRouteFresh,
   isoDayDistance,
-  navigateCanonicalWorkspace,
   openTaskPanel,
-  parseWorkspaceHash,
   requestAnimationFrameImpl,
   request,
   todayIsoDate,
@@ -104,16 +101,6 @@ export function createNotificationsShell({
 
   function closeWorkBellPanel(options = {}) {
     if (workBellPanel.hidden) return;
-    const route = parseWorkspaceHash();
-    if (
-      options.updateUrl !== false &&
-      route &&
-      !route.invalid &&
-      route.path === "/notifications"
-    ) {
-      navigateCanonicalWorkspace("/");
-      return;
-    }
     workBellPanel.hidden = true;
     pendingDismissFocusId = "";
     panelRenderVersion += 1;
@@ -267,7 +254,7 @@ export function createNotificationsShell({
         open.className = "work-bell-action work-bell-action-primary";
         open.textContent = "Open task";
         open.addEventListener("click", () => {
-          closeWorkBellPanel({ updateUrl: false });
+          closeWorkBellPanel();
           openTaskPanel(notification.taskId);
         });
         actions.append(open);
@@ -378,29 +365,34 @@ export function createNotificationsShell({
     renderWorkBellPanel();
   }
 
-  async function refreshWorkBell(options = {}) {
-    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
+  async function refreshWorkBell() {
     const snapshot = await notificationLoader.load();
-    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
     notificationState = snapshot;
     locallyDismissedIds.clear();
     syncWorkBellIndicators();
     if (!workBellPanel.hidden) renderWorkBellPanel();
   }
 
-  function bindToggle(canLeaveCurrentDocument) {
-    const toggle = async () => {
+  function bindToggle() {
+    const toggle = () => {
       if (workBellPanel.hidden) {
-        if (!(await canLeaveCurrentDocument())) return false;
-        await navigateCanonicalWorkspace("/notifications").ready;
-        return true;
+        closeSettingsMenu();
+        openWorkBellPanel();
+        void refreshWorkBell();
+        return;
       }
       closeWorkBellPanel();
-      return true;
     };
     workBellButton.addEventListener("click", toggle);
     mobileWorkBellButton?.addEventListener("click", toggle);
-    workBellClose.addEventListener("click", closeWorkBellPanel);
+    workBellClose.addEventListener("click", () => closeWorkBellPanel());
+    documentRef.addEventListener("click", (event) => {
+      if (workBellPanel.hidden) return;
+      if (workBellPanel.contains(event.target)) return;
+      if (workBellButton.contains(event.target)) return;
+      if (mobileWorkBellButton?.contains(event.target)) return;
+      closeWorkBellPanel({ restoreFocus: false });
+    });
   }
 
   return {

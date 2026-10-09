@@ -59,7 +59,7 @@ const REQUIRED = {
     states: ["loading", "empty", "list", "exact-detail", "deep-link-reload", "stale-not-found", "unavailable"],
   },
   notifications: {
-    route: "/#/notifications",
+    route: "/#/ (Notifications panel)",
     states: ["empty", "task-linked", "dismiss-success", "dismiss-failure", "counts-update"],
   },
   bookkeeping: {
@@ -158,7 +158,6 @@ const REQUIRED_ROUTE_SET = [
   "/#/assistants?assistantJobId=<id>",
   "/#/templates?templateId=<id>",
   "/#/recurring",
-  "/#/notifications",
   "/#/bookkeeping",
   "/#/sponsors?bookingId=<id>",
   "/#/newsletter",
@@ -228,9 +227,14 @@ test("frontend capability matrix has the canonical schema, routes, APIs, roles, 
   }
 
   const retainedRoutes = matrix.capabilities
-    .filter((capability) => capability.route.startsWith("/#/") && capability.id !== "settings")
+    .filter(
+      (capability) =>
+        capability.route.startsWith("/#/") &&
+        capability.id !== "settings" &&
+        capability.id !== "notifications",
+    )
     .map((capability) => capability.route);
-  assert.deepEqual(sorted(retainedRoutes), sorted(REQUIRED_ROUTE_SET), "all 15 retained routes must be classified exactly once");
+  assert.deepEqual(sorted(retainedRoutes), sorted(REQUIRED_ROUTE_SET), "all 14 retained routes must be classified exactly once");
   // /# is the Tasks queue, so the queue owns the landing-page evidence.
   assert.ok(
     matrix.capabilities

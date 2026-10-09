@@ -257,7 +257,6 @@ describe("app shell coordinator characterization", () => {
       "/tasks",
       "/templates",
       "/assistants",
-      "/notifications",
       "/users",
       "/cards",
       "/cards/archive",

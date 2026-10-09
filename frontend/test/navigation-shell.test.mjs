@@ -121,7 +121,6 @@ function createNavigationHarness(options = {}) {
       calls.push(["hydrate-task", id, token, value]),
     locationRef: location,
     openDocument: async (...args) => calls.push(["open-doc", ...args]),
-    openWorkBellPanel: () => calls.push(["open-bell"]),
     parseWorkspaceHash: (hash) => parseWorkspaceHash(hash, location),
     prepareCardPanel: (id) => calls.push(["prepare-card", id]),
     prepareTaskPanel: (id) => calls.push(["prepare-task", id]),
@@ -133,7 +132,6 @@ function createNavigationHarness(options = {}) {
     refreshOperationsAssistantSnapshot: async (value) => calls.push(["assistants", value]),
     refreshReviewSnapshot: async (value) => calls.push(["review", value]),
     refreshUsersSurface: async (value) => calls.push(["users", value]),
-    refreshWorkBell: async (value) => calls.push(["refresh-bell", value]),
     renderWorkspaceNav: () => ({
       activeTasksSection: active.tasksSection,
       activeWorkspaceView: active.view,
@@ -215,7 +213,6 @@ describe("canonical navigation shell behavior", () => {
       ["/tasks", { taskId: "task-1" }, "resolve-queue"],
       ["/templates", { templateId: "template-1" }, "resolve-template"],
       ["/assistants", { assistantJobId: "job-1" }, "assistants"],
-      ["/notifications", {}, "refresh-bell"],
       ["/review", {}, "review"],
       ["/users", {}, "users"],
     ];
@@ -225,9 +222,6 @@ describe("canonical navigation shell behavior", () => {
       assert.equal(harness.calls.some(([name]) => name === expected), true, path);
       if (path === "/assistants") {
         assert.equal(harness.assistantQueue.selectedJobId, "job-1");
-      }
-      if (path === "/notifications") {
-        assert.equal(harness.calls.some(([name]) => name === "open-bell"), true);
       }
     }
 

@@ -215,8 +215,9 @@ async function navigateState(page, baseURL, state) {
     await page.getByText('workflow-templates/parity-template.yaml').waitFor();
     result.mutation = 'non-mutating-template-projection';
   } else if (state === 'notifications-dismissed') {
-    await page.goto(`${baseURL}/#/notifications`);
+    await page.goto(`${baseURL}/#/`);
     await settle(page);
+    await page.locator('#work-bell-button').click();
     const items = page.locator('.work-bell-item');
     await items.first().waitFor();
     for (let guard = 0; guard < 20; guard += 1) {

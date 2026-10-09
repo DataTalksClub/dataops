@@ -1530,7 +1530,8 @@ test.describe('canonical frontend capability behavior', () => {
 
   test('capability recovery states stay JSON-safe and reloadable across retained routes', async ({ browser }, testInfo) => {
     const { context, page } = await portalPage(browser, servers.admin);
-    await page.goto('/#/notifications');
+    await page.goto('/#/');
+    await page.locator('#work-bell-button').click();
     await expect(page.locator('.work-bell-empty')).toHaveText('No active notifications.');
     const notificationTaskResponse = await context.request.post('/api/tasks', { data: {
       description: unique('Synthetic notification retry'), date: '2026-08-11', status: 'waiting',
@@ -1543,6 +1544,7 @@ test.describe('canonical frontend capability behavior', () => {
     const notification = notifications.find((item) => item.taskId === notificationTask.id);
     expect(notification).toBeTruthy();
     await page.reload();
+    await page.locator('#work-bell-button').click();
     const notificationRow = page.locator('.work-bell-item', {
       has: page.locator(`button[data-dismiss-notification="${notification.id}"]`),
     });
@@ -1574,7 +1576,7 @@ test.describe('canonical frontend capability behavior', () => {
 
     await context.close();
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/notifications',
+      route: '/#/ (Notifications panel)',
       roleId: 'admin',
       stateIds: ['notifications.empty', 'notifications.dismiss-failure'],
     }]);

@@ -120,7 +120,6 @@ test.describe('issue 156 canonical route and operator parity', () => {
       [`/#/assistants?assistantJobId=${encodeURIComponent(fixture.assistant.id)}`, 'Assistants'],
       [`/#/templates?templateId=${encodeURIComponent(fixture.template.id)}`, 'Templates'],
       ['/#/recurring', 'Recurring'],
-      ['/#/notifications', 'Work Queue'],
       ['/#/bookkeeping', 'Bookkeeping'],
       [`/#/sponsors?bookingId=${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
       ['/#/newsletter', 'Newsletter'],
@@ -282,15 +281,16 @@ test.describe('issue 156 canonical route and operator parity', () => {
     expect(dueResponse.ok()).toBe(true);
     const duePayload = await dueResponse.json();
     const dueTask = duePayload.task || duePayload;
-    await page.goto('/#/notifications');
+    await page.goto('/#/');
+    await page.locator('#work-bell-button').click();
     const notice = page.locator('.work-bell-item', { hasText: dueTask.description });
     await notice.getByRole('button', { name: 'Open task' }).click();
     await expect(page).toHaveURL(new RegExp(`/#/tasks\\?taskId=${dueTask.id}$`));
     await page.locator('#task-panel-close').click();
     await expect(page).toHaveURL(/\/#\/tasks$/);
-    await page.goto('/#/notifications');
+    await page.locator('#work-bell-button').click();
     await page.locator('#work-bell-close').click();
-    await expect(page).toHaveURL(/\/#\/$/);
+    await expect(page).toHaveURL(/\/#\/tasks$/);
 
     await page.goto('/#/');
     await page.locator('#search-input').fill(fixture.assistant.title);
@@ -300,7 +300,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page).toHaveURL(new RegExp(`/#/assistants\\?assistantJobId=${fixture.assistant.id}$`));
     await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/notifications',
+      route: '/#/ (Notifications panel)',
       roleId: 'admin',
       stateIds: ['notifications.task-linked'],
     }]);
@@ -327,7 +327,8 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const mobileCount = page.locator('#mobile-work-bell-button .work-bell-count');
 
     const initialTask = await createDueTask('Initial count notification');
-    await page.goto('/#/notifications');
+    await page.goto('/#/');
+    await page.locator('#work-bell-button').click();
     const initialItem = page.locator('.work-bell-item', { hasText: initialTask.description });
     await expect(initialItem).toBeVisible();
     const initialNotifications = (await (await request.get('/api/notifications')).json()).notifications.items;
@@ -340,6 +341,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     expect(retryNotification).toBeTruthy();
     expect(refreshedNotifications.length).toBe(initialNotifications.length + 1);
     await page.reload();
+    await page.locator('#work-bell-button').click();
     const retryItem = page.locator('.work-bell-item', { hasText: retryTask.description });
     await expect(retryItem).toBeVisible();
     await expect(desktopCount).toHaveText(String(refreshedNotifications.length));
@@ -358,7 +360,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(mobileCount).toHaveText(String(refreshedNotifications.length));
     const afterFailure = (await (await request.get('/api/notifications')).json()).notifications.items;
     expect(afterFailure.some((item) => item.id === retryNotification.id)).toBe(true);
-    await expect(page).toHaveURL(/\/#\/notifications$/);
+    await expect(page.locator('#work-bell-panel')).toBeVisible();
 
     await clearRouteFaults(request);
     await retryItem.getByRole('button', { name: /Dismiss notification/ }).click();
@@ -367,10 +369,9 @@ test.describe('issue 156 canonical route and operator parity', () => {
     expect(afterSuccess.some((item) => item.id === retryNotification.id)).toBe(false);
     await expect(desktopCount).toHaveText(String(afterSuccess.length));
     await expect(mobileCount).toHaveText(String(afterSuccess.length));
-    await expect(page).toHaveURL(/\/#\/notifications$/);
     await expect(page.locator('#work-bell-panel')).toBeVisible();
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/notifications',
+      route: '/#/ (Notifications panel)',
       roleId: 'admin',
       stateIds: ['notifications.counts-update'],
     }]);
@@ -611,7 +612,8 @@ test.describe('issue 156 canonical route and operator parity', () => {
     expect(notification).toBeTruthy();
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/#/notifications');
+    await page.goto('/#/');
+    await page.locator('#work-bell-button').click();
     const notificationItem = page.locator('.work-bell-item', { hasText: dueTask.description });
     await expect(notificationItem.getByRole('button', { name: /Dismiss notification/ })).toBeVisible();
     await expectNoSeriousA11y(page, '#work-bell-panel');
@@ -622,11 +624,11 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.screenshot({ path: path.join(SHOTS, 'mobile-notification-dismiss-390x844.png') });
     await notificationItem.getByRole('button', { name: /Dismiss notification/ }).click();
     await expect(notificationItem).toHaveCount(0);
-    await expect(page).toHaveURL(/\/#\/notifications$/);
+    await expect(page.locator('#work-bell-panel')).toBeVisible();
     const apiAfterDismiss = await (await request.get('/api/notifications')).json();
     expect(apiAfterDismiss.notifications.items.some((item) => item.id === notification.id)).toBe(false);
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/notifications',
+      route: '/#/ (Notifications panel)',
       roleId: 'admin',
       stateIds: ['notifications.dismiss-success'],
     }]);

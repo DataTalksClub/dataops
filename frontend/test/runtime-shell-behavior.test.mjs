@@ -317,7 +317,6 @@ function createNotificationHarness(options = {}) {
   );
   attachDocument(document, ...document.roots);
   const requests = [];
-  const navigations = [];
   const openedTasks = [];
   const shell = createNotificationsShell({
     closeSettingsMenu() {},
@@ -327,18 +326,12 @@ function createNotificationHarness(options = {}) {
     formatTaskDateMeta: (date) =>
       ({ "2026-08-12": "Yesterday", "2026-08-13": "Today", "2026-08-14": "Tomorrow" })[date] || "Later",
     HTMLElementClass: FakeElement,
-    isWorkspaceRouteFresh: options.isWorkspaceRouteFresh || (() => true),
     isoDayDistance: (date) =>
       Math.round(
         (new Date(`${date}T00:00:00Z`) - new Date("2026-08-13T00:00:00Z")) /
           86400000,
       ),
-    navigateCanonicalWorkspace: (path) => {
-      navigations.push(path);
-      return { ready: Promise.resolve() };
-    },
     openTaskPanel: (id) => openedTasks.push(id),
-    parseWorkspaceHash: options.parseWorkspaceHash || (() => ({ path: "/" })),
     requestAnimationFrameImpl:
       options.requestAnimationFrameImpl || ((callback) => callback()),
     request: async (url, requestOptions = {}) => {
@@ -357,7 +350,6 @@ function createNotificationHarness(options = {}) {
     document,
     mobile,
     mobileCount,
-    navigations,
     openedTasks,
     panel,
     requests,
@@ -772,24 +764,39 @@ describe("runtime and shell production behavior", () => {
     assert.equal(harness.requests.at(-1).options.method, "PUT");
 
     payload = { notifications: { items: [] } };
-    await harness.shell.refreshWorkBell({ token: "stale" });
+    await harness.shell.refreshWorkBell();
     assert.equal(harness.desktopCount.textContent, "0");
     harness.shell.openWorkBellPanel();
     assert.equal(harness.body.textContent.includes("all caught up"), false);
     assert.match(harness.body.children[0].innerHTML, /all caught up/);
   });
 
-  test("keeps notification failures retryable and does not overwrite a newer route", async () => {
-    let fresh = false;
-    const stale = createNotificationHarness({
-      isWorkspaceRouteFresh: () => fresh,
+  test("opens the bell panel in place and closes it on outside clicks", async () => {
+    const harness = createNotificationHarness({
       request: async () => ({
-        notifications: { items: [{ id: "ignored" }] },
+        notifications: { items: [{ id: "notification-1", message: "Review task" }] },
       }),
     });
-    await stale.shell.refreshWorkBell({ token: "old" });
-    assert.equal(stale.desktopCount.textContent, "");
+    harness.shell.bindToggle();
+    await harness.desktop.click();
+    await nextTicks();
+    assert.equal(harness.panel.hidden, false);
+    assert.match(harness.requests.at(-1).url, /api\/notifications\?/);
 
+    await harness.document.emit("click", { target: harness.panel });
+    assert.equal(harness.panel.hidden, false);
+    await harness.document.emit("click", { target: harness.desktop });
+    assert.equal(harness.panel.hidden, false);
+    await harness.document.emit("click", { target: new FakeElement("div") });
+    assert.equal(harness.panel.hidden, true);
+
+    await harness.desktop.click();
+    assert.equal(harness.panel.hidden, false);
+    await harness.mobile.click();
+    assert.equal(harness.panel.hidden, true);
+  });
+
+  test("keeps notification failures retryable", async () => {
     let failDismiss = true;
     const harness = createNotificationHarness({
       request: async (_url, options) => {

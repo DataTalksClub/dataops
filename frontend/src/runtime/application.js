@@ -248,12 +248,9 @@ const {
   formatTaskDateMeta,
   HTMLElementClass: HTMLElement,
   isOperationsWorkspaceVisible,
-  isWorkspaceRouteFresh,
   isoDayDistance,
   localStorageRef: localStorage,
-  navigateCanonicalWorkspace,
   openTaskPanel: (...args) => openTaskPanel(...args),
-  parseWorkspaceHash,
   requestAnimationFrameImpl: requestAnimationFrame,
   refreshDocuments,
   request,
@@ -812,7 +809,6 @@ navigationShell = createNavigationShell({
   hydrateTaskPanel,
   locationRef: window.location,
   openDocument,
-  openWorkBellPanel,
   operationsViewTitle,
   parseWorkspaceHash,
   prepareCardPanel,
@@ -821,7 +817,6 @@ navigationShell = createNavigationShell({
   refreshOperationsAssistantSnapshot,
   refreshReviewSnapshot: (...args) => reviewSurface.refreshReviewSnapshot(...args),
   refreshUsersSurface,
-  refreshWorkBell,
   restoreDocumentFilters,
   renderWorkspaceNav: () => {
     syncWorkspaceNav();

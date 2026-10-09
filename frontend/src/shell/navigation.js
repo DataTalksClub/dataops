@@ -19,7 +19,6 @@ export function createNavigationShell(context) {
     hydrateTaskPanel,
     locationRef,
     openDocument,
-    openWorkBellPanel,
     parseWorkspaceHash,
     prepareCardPanel,
     prepareTaskPanel,
@@ -27,7 +26,6 @@ export function createNavigationShell(context) {
     refreshOperationsAssistantSnapshot,
     refreshReviewSnapshot,
     refreshUsersSurface,
-    refreshWorkBell,
     restoreDocumentFilters,
     renderWorkspaceNav,
     requestAnimationFrameImpl,
@@ -81,7 +79,7 @@ export function createNavigationShell(context) {
     activeRoute = null;
     resetTaskPanel();
     resetCardPanel();
-    closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
+    closeWorkBellPanel({ restoreFocus: false });
   }
 
   function replaceWithWorkQueue() {
@@ -192,7 +190,7 @@ export function createNavigationShell(context) {
     setTaskRouteContextFromRoute(route);
     resetTaskPanel();
     resetCardPanel();
-    closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
+    closeWorkBellPanel({ restoreFocus: false });
     closeSettingsMenu();
 
     const requestedView =
@@ -227,7 +225,6 @@ export function createNavigationShell(context) {
     const taskId = route.params.get("taskId");
     if (cardId) prepareCardPanel(cardId);
     if (taskId) prepareTaskPanel(taskId);
-    if (route.path === "/notifications") openWorkBellPanel();
   }
 
   function hydrateWorkspaceRoute(route, token) {
@@ -241,7 +238,6 @@ export function createNavigationShell(context) {
     if (route.path === "/assistants") {
       jobs.push(refreshOperationsAssistantSnapshot({ rerender: true, token }));
     }
-    if (route.path === "/notifications") jobs.push(refreshWorkBell({ token }));
     if (route.path === "/review" && typeof refreshReviewSnapshot === "function") {
       jobs.push(refreshReviewSnapshot({ rerender: true, token }));
     }
