@@ -382,6 +382,10 @@ body[data-workspace-view="sponsors"] .document-list {
   padding: 9px 10px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}.calendar-weekdays strong.calendar-week-heading {
+  padding: 9px 4px;
+}.calendar-week-number {
+  padding: 9px 4px;
 }.calendar-day {
   min-height: 132px;
   padding: 9px;

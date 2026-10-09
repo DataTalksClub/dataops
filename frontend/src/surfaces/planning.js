@@ -200,9 +200,11 @@ export function createPlanningSurface(context) {
         periodLabel = isWeek
           ? `Week of ${new Date(`${from}T00:00:00Z`).toLocaleDateString("en", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}`
           : cursor.toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });
-      const weekdayHeadings = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        .map((day) => `<strong>${day}</strong>`)
-        .join("");
+      const weekdayHeadings = [
+        '<strong class="calendar-week-heading" aria-label="Week number">Week</strong>',
+        ...["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+          .map((day) => `<strong>${day}</strong>`),
+      ].join("");
       let html = `
         <div class="calendar-content-header">
           <div>
@@ -227,7 +229,6 @@ export function createPlanningSurface(context) {
         const date = iso(dateValue),
           isOutside = !isWeek && dateValue.getUTCMonth() !== cursor.getUTCMonth(),
           isToday = date === todayIsoDate(),
-          week = dateValue.getUTCDay() === 1 ? `<small class="iso-week">ISO ${weekNumber(dateValue)}</small>` : "",
           dayItems = visibleItems.filter((item) => item.startKey.slice(0, 10) <= date && item.endKey.slice(0, 10) >= date),
           dayHolidays = holidays.filter((holiday) => (
             holiday.startDate <= date
@@ -269,7 +270,15 @@ export function createPlanningSurface(context) {
               <span>${escapeHtml(overlay.label)}</span>
             </a>
           `).join("");
-        if (dayIndex % 7 === 0) weekMarkup += `<div class="calendar-week">`;
+        if (dayIndex % 7 === 0) {
+          const currentWeek = weekNumber(dateValue);
+          weekMarkup += `
+            <div class="calendar-week">
+              <div class="calendar-week-number" aria-label="Week ${currentWeek}">
+                <small class="iso-week">ISO ${currentWeek}</small>
+              </div>
+          `;
+        }
         weekMarkup += `
           <section
             class="calendar-day${isOutside ? " is-outside" : ""}${isToday ? " is-today" : ""}"
@@ -279,7 +288,6 @@ export function createPlanningSurface(context) {
               <time datetime="${date}">
                 <span class="calendar-mobile-weekday">${weekday}</span>${compactDate}
               </time>
-              ${week}
             </div>
             <div class="calendar-day-items">
               ${holidayMarkup}

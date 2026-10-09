@@ -54,13 +54,22 @@
     padding: 8px;
   }body[data-workspace-view="calendar"] .calendar-week {
     display: grid;
-    grid-template-columns: repeat(7, minmax(112px, 1fr));
+    grid-template-columns: 48px repeat(7, minmax(112px, 1fr));
     width: 100%;
     min-width: 0;
     overflow-x: auto;
     border-bottom: 1px solid var(--dk-border-default);
     scrollbar-width: thin;
     scroll-snap-type: x proximity;
+  }body[data-workspace-view="calendar"] .calendar-week-number {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    min-width: 48px;
+    border-right: 1px solid var(--dk-border-default);
+    border-bottom: 0;
+    background: var(--dk-bg-muted);
+    padding: 9px 4px;
   }body[data-workspace-view="calendar"] .calendar-day,
 body[data-workspace-view="calendar"] .calendar-day:nth-of-type(7n),
 body[data-workspace-view="calendar"] .calendar-day:nth-last-child(-n + 7) {

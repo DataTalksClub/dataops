@@ -296,6 +296,8 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /Newsletter 42/);
     assert.match(dom.alerts.innerHTML, /Activity overlaps a public holiday/);
     assert.match(dom.grid.innerHTML, /ISO week numbers/);
+    assert.match(dom.grid.innerHTML, /calendar-week-heading/);
+    assert.match(dom.grid.innerHTML, /calendar-week-number/);
     expectCalendarRange(harness.requests[0], "2026-07-27", "2026-09-06");
   });
 
