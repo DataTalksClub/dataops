@@ -809,5 +809,4 @@ body[data-workspace-view="sponsors"] .document-list {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--dk-text-primary);
-  font: inherit;
-}/* Non-Home routes remain structurally usable while their redesign is pending. */.ops-surface,
+}
