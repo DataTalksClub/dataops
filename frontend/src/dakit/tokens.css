@@ -109,6 +109,11 @@
   --dk-info-bg: #edf5ff;
   --dk-info-border: rgba(49, 95, 143, 0.22);
   --dk-shadow-overlay: 0 8px 24px rgba(15, 23, 42, 0.16);
+  --dk-gap-control: 12px;
+  --dk-gap-block: 16px;
+  --dk-gap-section: 24px;
+  --dk-pad-cell: 8px 12px;
+  --dk-pad-panel: 16px;
 }
 :root[data-theme="dark"] {
   --dk-bg-page: #0d1117;

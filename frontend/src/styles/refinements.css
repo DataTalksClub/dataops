@@ -439,6 +439,5 @@ body[data-workspace-view="sponsors"] .document-list {
   border-color: var(--dk-info-border);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
-}.planner-dialog {
-  border-radius: var(--dk-radius-lg);
-}/* Admin, Users, and Device use the same low-chrome operations frame as the
+}
+/* Admin, Users, and Device use the same low-chrome operations frame as the

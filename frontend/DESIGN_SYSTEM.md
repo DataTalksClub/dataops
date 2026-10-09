@@ -324,7 +324,11 @@ operator's decision. Do not add a pill to every row by default.
 - Popover: lightweight global or row action, anchored to its trigger; Escape
   closes and focus returns to the trigger.
 - Modal: focused confirmation or task detail that should interrupt the page;
-  backdrop, Escape, focus trap, and focus restoration are required.
+  backdrop, Escape, focus trap, and focus restoration are required. Build it
+  as `<dialog class="dk-dialog">` with the vendored `dakit-dialogs.js` loaded
+  once per page: clicking the backdrop closes the dialog, and the backdrop is
+  `--dk-bg-backdrop` in both themes (a dark scrim, never a theme-inverted
+  wash) so the panel stays low-contrast against the page, Trello-style.
 - Sheet: persistent comparative detail on desktop; becomes a full-screen page
   on mobile.
 - Toast: brief feedback only. Errors requiring a decision remain in the

@@ -147,12 +147,13 @@ export function createPlanningSurface(context) {
       <p class="planner-load-state" role="status">Loading calendar…</p>
       <div class="planner-alerts" data-alerts></div>
       <div data-calendar></div>
-      <dialog class="planner-dialog">
+      <dialog class="dk-dialog" style="--dk-dialog-width: 620px">
         <form>
-          <header>
-            <h3>Calendar activity</h3>
+          <div class="dk-dialog__head"><div>
+            <h2>Calendar activity</h2>
             <p>Add the timing and planning context operators need.</p>
-          </header>
+          </div></div>
+          <div class="dk-dialog__body">
           <input name="id" type="hidden">
           <input name="version" type="hidden">
           <div class="planner-form-grid">
@@ -169,10 +170,11 @@ export function createPlanningSurface(context) {
             <label class="planner-field-wide">Planning notes <textarea name="notes" maxlength="2000" rows="4"></textarea></label>
           </div>
           <p class="planner-form-error" role="alert"></p>
-          <footer class="planner-form-actions">
+          </div>
+          <div class="dk-dialog__foot">
             <button class="primary-button">Save activity</button>
             <button type="button" data-cancel>Cancel</button>
-          </footer>
+          </div>
         </form>
       </dialog>`;
     documentList.append(surface);
@@ -507,12 +509,13 @@ export function createPlanningSurface(context) {
       <p class="planner-load-state" role="status">Loading newsletter slots…</p>
       <div class="planner-alerts" data-alerts></div>
       <div class="newsletter-schedule" data-slots>Loading slots…</div>
-      <dialog class="planner-dialog">
+      <dialog class="dk-dialog" style="--dk-dialog-width: 620px">
         <form method="dialog">
-          <header>
-            <h3>Newsletter slot</h3>
+          <div class="dk-dialog__head"><div>
+            <h2>Newsletter slot</h2>
             <p>Keep the publication plan and booking context together.</p>
-          </header>
+          </div></div>
+          <div class="dk-dialog__body">
           <input name="id" type="hidden">
           <input name="version" type="hidden">
           <div class="planner-form-grid">
@@ -529,10 +532,11 @@ export function createPlanningSurface(context) {
             <label class="planner-field-wide">Planning note <textarea name="planningNote" rows="4"></textarea></label>
           </div>
           <p class="planner-form-error" role="alert"></p>
-          <footer class="planner-form-actions">
+          </div>
+          <div class="dk-dialog__foot">
             <button class="primary-button" data-save>Save slot</button>
             <button value="cancel">Cancel</button>
-          </footer>
+          </div>
         </form>
       </dialog>`;
     documentList.append(surface);

@@ -98,7 +98,7 @@
 .calendar-overlay,
 .calendar-holiday { padding: 6px 8px; }.calendar-activity span,
 .calendar-overlay span,
-.calendar-holiday > span { font-size: 12px; white-space: normal; }.newsletter-slot-row { grid-template-columns: 104px minmax(0, 1fr); align-items: start; gap: 10px 14px; }.newsletter-slot-actions { grid-column: 2; flex-wrap: wrap; }.newsletter-slot-actions a { display: inline-flex; min-height: 44px; align-items: center; }.planner-dialog { width: 100%; max-width: none; min-height: 100vh; max-height: 100vh; margin: 0; border: 0; border-radius: 0; }.planner-dialog form { min-height: 100vh; }.planner-form-actions { margin-top: auto; }body[data-workspace-view="tasks"] .library-view {
+.calendar-holiday > span { font-size: 12px; white-space: normal; }.newsletter-slot-row { grid-template-columns: 104px minmax(0, 1fr); align-items: start; gap: 10px 14px; }.newsletter-slot-actions { grid-column: 2; flex-wrap: wrap; }.newsletter-slot-actions a { display: inline-flex; min-height: 44px; align-items: center; }body[data-workspace-view="tasks"] .library-view {
     overflow-x: hidden;
   }.workflow-board-header {
     align-items: flex-start;

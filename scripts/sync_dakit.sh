@@ -26,6 +26,12 @@ fi
 sed 's|\.\./fonts/|../assets/fonts/|g' "$DAKIT_DIR/dist/dakit.css" \
   > frontend/src/dakit/dakit.css
 
+# The dialog-dismissal helper ships as plain JS; vendored as-is.
+cp "$DAKIT_DIR/dist/dialogs.js" frontend/src/dakit/dakit-dialogs.js
+
+# Tokens stay separately linked from the page head; keep the copy current.
+cp "$DAKIT_DIR/dist/tokens.css" frontend/src/dakit/tokens.css
+
 {
   echo "Vendored from dakit ($(git -C "$DAKIT_DIR" rev-parse --short HEAD) $(git -C "$DAKIT_DIR" log -1 --format=%cs))."
   echo "Do not edit; regenerate with scripts/sync_dakit.sh after rebuilding dakit."

@@ -9,6 +9,7 @@ export function createEditorReviewMedia(context, services, editorState) {
   let lightboxReturnFocus = null;
   const diffClose = diffModal?.querySelector?.("[data-diff-close]");
   const lightboxClose = lightbox?.querySelector?.("[data-lightbox-close]");
+  const lightboxBackdrop = lightbox?.querySelector?.(".lightbox-backdrop");
   const overlayFocusableSelector =
     'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
@@ -34,6 +35,7 @@ export function createEditorReviewMedia(context, services, editorState) {
 
   diffClose?.addEventListener("click", closeDiff);
   lightboxClose?.addEventListener("click", closeLightbox);
+  lightboxBackdrop?.addEventListener("click", closeLightbox);
   diffModal?.addEventListener("keydown", trapOverlayFocus);
   lightbox?.addEventListener("keydown", trapOverlayFocus);
 
