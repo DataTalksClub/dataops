@@ -89,10 +89,12 @@ export function createPlanningSurface(context) {
             <button type="button" class="calendar-today-btn" data-today>Today</button>
             <div class="calendar-nav-arrows" role="group" aria-label="Change calendar period">
               <button type="button" class="calendar-nav-arrow" data-prev aria-label="Previous period" title="Previous period">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
               </button>
               <button type="button" class="calendar-nav-arrow" data-next aria-label="Next period" title="Next period">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
               </button>
             </div>
             <h1 id="calendar-surface-title" class="calendar-period-title" data-period-heading>Calendar</h1>
@@ -113,7 +115,8 @@ export function createPlanningSurface(context) {
               </label>
             </div>
             <button class="primary-button calendar-add-button" data-add>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
               <span>Add activity</span>
             </button>
           </div>
