@@ -2,7 +2,6 @@ import {
   cardAnchorTone,
   compareIsoDate,
   dedupeWorkTasks,
-  describeRecurringRun,
   formatCardAnchorLabel,
   formatTaskDateMeta,
   isActiveWorkCard,
@@ -375,19 +374,17 @@ export function createOperationsModel({
     const configs = recurringConfigsFromPayload(
       snapshot.recurringConfigs || snapshot.configs || [],
     );
-    const today = todayIsoDate();
+    // The server owns the schedule: it computes the cadence and the next run
+    // date, so clients render those values instead of predicting them.
     const normalized = configs
       .filter((config) => config && typeof config === "object")
-      .map((config) => {
-        const run = describeRecurringRun(config.cronExpression || "", today);
-        return {
-          ...config,
-          enabled: config.enabled !== false,
-          scheduleLabel: run.summary,
-          nextRunDate: run.nextDate,
-          nextRunLabel: run.nextLabel,
-        };
-      })
+      .map((config) => ({
+        ...config,
+        enabled: config.enabled !== false,
+        scheduleLabel: config.scheduleLabel || "",
+        nextRunDate: config.nextRunDate || "",
+        nextRunLabel: config.nextRunLabel || "",
+      }))
       .sort((left, right) => {
         if (left.enabled !== right.enabled) return left.enabled ? -1 : 1;
         return recurringTitle(left).localeCompare(recurringTitle(right));

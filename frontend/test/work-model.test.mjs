@@ -18,7 +18,6 @@ import {
   isTaskOverdue,
   isWaitingOrFollowUpTask,
   isoDayDistance,
-  nextRecurringRunDate,
   parseIsoDateValue,
   partitionCardsByArchive,
   summarizeCardProgress,
@@ -46,8 +45,6 @@ describe("frontend work model", () => {
     assert.equal(isoDayDistance("2026-03-01", "2026-02-28"), 1);
     assert.equal(formatShortDate("2026-08-05"), "5 Aug");
     assert.equal(formatCardMonthLabel("2026-07-31T18:00:00.000Z"), "July 2026");
-    assert.equal(nextRecurringRunDate("0 9 * * 1", "2026-02-28"), "2026-03-02");
-    assert.equal(nextRecurringRunDate("0 9 * * 1", "2026-12-31"), "2027-01-04");
     assert.equal(formatShortDate("2027-01-04"), "4 Jan");
   });
 
@@ -113,7 +110,6 @@ describe("frontend work model", () => {
     assert.equal(isFollowUpDueTask(followUpTask, berlinToday), true);
     assert.equal(addDaysIso(berlinToday, -1), "2026-07-30");
     assert.equal(isoDayDistance("2026-07-31", berlinToday), 0);
-    assert.equal(nextRecurringRunDate("0 9 * * *", berlinToday), "2026-07-31");
   });
 
   test("classifies open, done, due, overdue, waiting, and follow-up tasks", () => {

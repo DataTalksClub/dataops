@@ -7,9 +7,11 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 const configDir = mkdtempSync(path.join(tmpdir(), "dataops-cli-"));
 process.env.DATAOPS_CONFIG_DIR = configDir;
 
+const globalFetch = globalThis.fetch;
+
 const { parseArgs, run } = await import("../src/cli.mjs");
 const { createClient, ApiError } = await import("../src/api.mjs");
-const { describeSchedule } = await import("../src/commands/recurring.mjs");
+const { list } = await import("../src/commands/recurring.mjs");
 const { credentialsPath, resolveProfile, saveProfile } =
   await import("../src/config.mjs");
 
@@ -218,11 +220,45 @@ describe("device login", () => {
 });
 
 describe("recurring commands", () => {
-  test("renders cron in the same words the Recurring tab uses", () => {
-    assert.equal(describeSchedule("0 9 * * 1"), "every Monday at 09:00");
-    assert.equal(describeSchedule("30 6 * * *"), "every day at 06:30");
-    assert.equal(describeSchedule("0 9 15 * *"), "monthly on day 15 at 09:00");
-    assert.equal(describeSchedule("*/5 * * * *"), "*/5 * * * *");
+  test("renders the cadence and next run the API reports, verbatim", async () => {
+    saveProfile("https://portal.test", { token: "dops_abc", tokenId: "id-1" });
+    globalThis.fetch = fakeFetch({
+      "/api/recurring": {
+        body: {
+          recurringConfigs: [
+            {
+              id: "11111111-2222-3333-4444-555555555555",
+              description: "Weekly newsletter",
+              cronExpression: "0 9 * * 1",
+              enabled: true,
+              scheduleLabel: "Every Monday at 09:00",
+              nextRunLabel: "Mon 17 Aug",
+            },
+            {
+              id: "66666666-2222-3333-4444-555555555555",
+              description: "Old export",
+              cronExpression: "0 9 * * 2",
+              enabled: false,
+              scheduleLabel: "Every Tuesday at 09:00",
+            },
+            {
+              id: "77777777-2222-3333-4444-555555555555",
+              description: "Unlabelled range",
+              cronExpression: "0 9 * * 1-5",
+            },
+          ],
+        },
+      },
+    });
+    const io = captureIo();
+    await list({ url: "https://portal.test", _: [] }, { print: io.log });
+
+    assert.deepEqual(io.out, [
+      "11111111  active   Weekly newsletter  (Every Monday at 09:00 - next Mon 17 Aug)",
+      "66666666  paused   Old export  (Every Tuesday at 09:00 - paused)",
+      "77777777  active   Unlabelled range  (0 9 * * 1-5)",
+    ]);
+    globalThis.fetch = globalFetch;
   });
 
   test("rejects a cron expression that is not five fields", async () => {

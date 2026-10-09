@@ -228,6 +228,41 @@ describe("app shared operations domain characterization", () => {
     assert.deepEqual(plain(model.errors), ["partial source"]);
   });
 
+  test("serves the recurring schedule the server computed instead of recalculating it", () => {
+    const model = operationsModel().normalizeOperationsRecurringSnapshot({
+      loaded: true,
+      recurringConfigs: [
+        {
+          id: "weekly",
+          description: "Weekly newsletter",
+          cronExpression: "0 9 * * 1",
+          nextRunDate: "2026-08-17",
+          lastRunAt: "2026-08-10T06:00:00.000Z",
+          lastRunOutcome: "succeeded",
+          scheduleLabel: "Every Monday at 09:00",
+          nextRunLabel: "Mon 17 Aug",
+        },
+      ],
+    });
+
+    const [config] = model.configs;
+    assert.equal(config.scheduleLabel, "Every Monday at 09:00");
+    assert.equal(config.nextRunDate, "2026-08-17");
+    assert.equal(config.nextRunLabel, "Mon 17 Aug");
+    assert.equal(config.lastRunOutcome, "succeeded");
+    assert.equal(config.lastRunAt, "2026-08-10T06:00:00.000Z");
+
+    // A payload from an older server carries no schedule, so the row falls back
+    // to the raw expression instead of inventing a next run.
+    const missing = operationsModel().normalizeOperationsRecurringSnapshot({
+      loaded: true,
+      recurringConfigs: [{ id: "bare", cronExpression: "0 9 * * 1" }],
+    });
+    assert.equal(missing.configs[0].scheduleLabel, "");
+    assert.equal(missing.configs[0].nextRunDate, "");
+    assert.equal(missing.configs[0].nextRunLabel, "");
+  });
+
   test("derives per-lane work state, counts, maps, ordering, and partial truth", () => {
     const functions = operationsModel();
     const snapshot = functions.normalizeOperationsWorkSnapshot(

@@ -11,7 +11,6 @@ let quickFormTitleSequence = 0;
 
 export function createQuickTaskActions(context) {
   const {
-    describeRecurringRun,
     getActiveWorkspaceRouteToken,
     isWorkspaceRouteFresh,
     openCardPanel,
@@ -474,10 +473,9 @@ export function createQuickTaskActions(context) {
       monthDay.label.hidden = mode !== "monthly";
       timeInput.label.hidden = mode === "custom";
       cronInput.label.hidden = mode !== "custom";
-      const run = describeRecurringRun(currentCron(), todayIsoDate());
-      preview.textContent = run.nextDate
-        ? `${run.summary} - next task ${run.nextLabel}`
-        : run.summary || "Choose a schedule.";
+      // The form cannot know the next run: the server computes it from the
+      // schedule it stores, so the preview echoes the cron it will send.
+      preview.textContent = currentCron() || "Choose a schedule.";
     };
     for (const control of [
       repeat.input,

@@ -1,7 +1,7 @@
 import {
   addDaysIso, canonicalWorkspaceUrl,
   cardAnchorTone, cardsHeaderViewModel, compareIsoDate, dedupeWorkTasks,
-  describeRecurringRun, formatCardAnchorLabel,
+  formatCardAnchorLabel,
   formatShortDate,
   formatTaskDateMeta, groupCardItemsByMonth, groupCardItemsByStage,
   hasApprovedArtifactEvidence, hasTaskFileEvidence, isActiveWorkCard,
@@ -492,7 +492,6 @@ const {
   confirmDialog,
   countLabel,
   debounce,
-  describeRecurringRun,
   documentList,
   escapeHtml,
   formatTaskDateMeta,

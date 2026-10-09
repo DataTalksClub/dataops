@@ -1,16 +1,6 @@
 import { createClient } from "../api.mjs";
 import { resolveProfile } from "../config.mjs";
 
-const WEEKDAYS = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
-
 function client(args) {
   const profile = resolveProfile(args);
   if (!profile.token) throw new Error("Not signed in. Run `dataops login`.");
@@ -22,24 +12,11 @@ function configsFrom(payload) {
   return payload?.recurringConfigs || payload?.configs || [];
 }
 
-/** Same plain-English rendering the Recurring tab shows. */
-export function describeSchedule(cronExpression) {
-  const parts = String(cronExpression || "")
-    .trim()
-    .split(/\s+/);
-  if (parts.length !== 5) return String(cronExpression || "no schedule");
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-  if (month !== "*" || !/^\d+$/.test(minute) || !/^\d+$/.test(hour))
-    return cronExpression;
-  const time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-  if (dayOfMonth === "*" && dayOfWeek === "*") return `every day at ${time}`;
-  if (dayOfMonth === "*" && /^\d$/.test(dayOfWeek)) {
-    return `every ${WEEKDAYS[Number(dayOfWeek)]} at ${time}`;
-  }
-  if (/^\d+$/.test(dayOfMonth) && dayOfWeek === "*") {
-    return `monthly on day ${dayOfMonth} at ${time}`;
-  }
-  return cronExpression;
+/** Cadence and next run as the API reports them, never a client-side guess. */
+function scheduleLine(config) {
+  const cadence = config.scheduleLabel || config.cronExpression || "no schedule";
+  if (config.enabled === false) return `${cadence} - paused`;
+  return config.nextRunLabel ? `${cadence} - next ${config.nextRunLabel}` : cadence;
 }
 
 function requireCron(value) {
@@ -79,7 +56,7 @@ export async function list(args, io) {
         String(config.id).slice(0, 8),
         config.enabled === false ? "paused " : "active ",
         config.description,
-        `(${describeSchedule(config.cronExpression)})`,
+        `(${scheduleLine(config)})`,
       ].join("  "),
     );
   }
@@ -98,7 +75,7 @@ export async function create(args, io) {
   if (args.json) return result;
   const config = result.recurringConfig || result;
   io.print(
-    `Created ${config.id} - ${config.description} (${describeSchedule(config.cronExpression)}).`,
+    `Created ${config.id} - ${config.description} (${scheduleLine(config)}).`,
   );
   return result;
 }
@@ -128,7 +105,7 @@ export async function edit(args, io) {
   if (args.json) return result;
   const updated = result.recurringConfig || result;
   io.print(
-    `Updated ${config.id} - ${updated.description} (${describeSchedule(updated.cronExpression)}).`,
+    `Updated ${config.id} - ${updated.description} (${scheduleLine(updated)}).`,
   );
   return result;
 }

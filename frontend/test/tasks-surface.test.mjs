@@ -5,7 +5,6 @@ import {
   cardAnchorTone,
   cardsHeaderViewModel,
   compareIsoDate,
-  describeRecurringRun,
   formatCardAnchorLabel,
   formatTaskDateMeta,
   groupCardItemsByMonth,
@@ -79,6 +78,21 @@ function recurringSnapshot(configs) {
     loaded: true,
     recurringConfigs: configs,
   });
+}
+
+/** A config as the API returns it, with the schedule fields the server owns. */
+function serverSchedule(config) {
+  const cron = config.cronExpression || "0 9 * * *";
+  const labels = {
+    "0 9 * * 1": ["Every Monday at 09:00", "2026-08-17", "Mon 17 Aug"],
+    "0 9 * * 2": ["Every Tuesday at 09:00", "2026-08-18", "Tue 18 Aug"],
+  };
+  const [scheduleLabel, nextRunDate, nextRunLabel] = labels[cron] || [
+    "Every day at 09:00",
+    "2026-08-12",
+    "Today",
+  ];
+  return { ...config, scheduleLabel, nextRunDate, nextRunLabel };
 }
 
 function baseModel(overrides = {}) {
@@ -162,7 +176,6 @@ function createHarness(options = {}) {
     confirmDialog: options.confirmDialog || (async () => true),
     countLabel,
     debounce: (callback) => callback,
-    describeRecurringRun,
     documentList,
     escapeHtml,
     formatTaskDateMeta,
@@ -1195,12 +1208,11 @@ describe("Tasks surface boundary", () => {
 
   test("renders Recurring empty/list states and maps pause plus protected-delete guidance", async () => {
     const recurring = recurringSnapshot([
-      {
+      serverSchedule({
         id: "recurring-1",
         description: "Weekly newsletter",
         cronExpression: "0 9 * * 1",
-        enabled: true,
-      },
+      }),
     ]);
     const calls = [];
     const harness = createHarness({
@@ -1248,18 +1260,17 @@ describe("Tasks surface boundary", () => {
     const harness = createHarness({
       model: baseModel({
         recurring: recurringSnapshot([
-          {
+          serverSchedule({
             id: "active-schedule",
             description: "Active schedule",
             cronExpression: "0 9 * * 1",
-            enabled: true,
-          },
-          {
+          }),
+          serverSchedule({
             id: "paused-schedule",
             description: "Paused schedule",
             cronExpression: "0 9 * * 2",
             enabled: false,
-          },
+          }),
         ]),
       }),
     });
@@ -1282,13 +1293,12 @@ describe("Tasks surface boundary", () => {
   });
 
   test("creates and edits recurring schedules from the Recurring tab", async () => {
-    const config = {
+    const config = serverSchedule({
       id: "recurring-1",
       description: "Weekly newsletter",
       cronExpression: "0 9 * * 1",
       assigneeId: "user-grace",
-      enabled: true,
-    };
+    });
     const harness = createHarness({
       model: baseModel({ recurring: recurringSnapshot([config]) }),
       workSnapshot: {
@@ -1339,7 +1349,9 @@ describe("Tasks surface boundary", () => {
     assert.equal(editSelects[0].value, "weekly");
     assert.equal(editSelects[1].value, "1");
     assert.equal(editSelects.at(-1).value, "user-grace");
-    assert.match(editOverlay.textContent, /Every Monday at 09:00/);
+    // The preview echoes the cron that will be sent; the next run is the
+    // server's to compute once it stores the schedule.
+    assert.match(editOverlay.textContent, /0 9 \* \* 1/);
     editInputs[0].value = "Weekly newsletter prep";
     await submitQuickForm(editOverlay);
     await nextTicks();
@@ -1354,12 +1366,11 @@ describe("Tasks surface boundary", () => {
   });
 
   test("manages focus and dialog semantics for recurring create and edit forms", async () => {
-    const config = {
+    const config = serverSchedule({
       id: "recurring-focus",
       description: "Focus-safe schedule",
       cronExpression: "0 9 * * 1",
-      enabled: true,
-    };
+    });
     const harness = createHarness({
       model: baseModel({ recurring: recurringSnapshot([config]) }),
     });
@@ -1700,12 +1711,11 @@ describe("Tasks surface boundary", () => {
   });
 
   test("refreshes a stale Recurring row mutation without replacing the current view", async () => {
-    const config = {
+    const config = serverSchedule({
       id: "recurring-stale",
       description: "Weekly newsletter",
       cronExpression: "0 9 * * 1",
-      enabled: true,
-    };
+    });
     let releaseRequest;
     let completeMutation;
     const refreshes = [];
