@@ -1425,6 +1425,20 @@ body[data-workspace-view="tasks"] .runtime-template-definition dd {
 }
 
 @media (prefers-reduced-motion: reduce) {body[data-workspace-view="tasks"] .entity-route-loading {
+}body[data-workspace-view="tasks"] .card-task-owner {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 1px;
+  cursor: default;
+}body[data-workspace-view="tasks"] .card-task-owner-avatar {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+}
+
     animation: none;
   }body[data-workspace-view="tasks"] .ops-queue-row,
 body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card,

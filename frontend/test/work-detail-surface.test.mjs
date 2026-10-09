@@ -1402,7 +1402,78 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(harness.errors, []);
   });
 
+  test("shows the Task owner on every checklist row, defaulting to Grace", async () => {
+    const card = {
+      id: "card-owners",
+      version: 1,
+      title: "Owner Card",
+      status: "active",
+      stage: "preparation",
+      taskCount: 3,
+      openTaskCount: 3,
+      references: [],
+    };
+    const assigned = {
+      id: "card-owner-assigned",
+      cardId: card.id,
+      version: 1,
+      taskHistory: [],
+      description: "Fill up the Podcast block",
+      status: "todo",
+      assigneeId: "user-valeriia",
+    };
+    const mentioned = {
+      id: "card-owner-mentioned",
+      cardId: card.id,
+      version: 1,
+      taskHistory: [],
+      description: "Ping Valeriia to fill her blocks",
+      status: "todo",
+    };
+    const general = {
+      id: "card-owner-general",
+      cardId: card.id,
+      version: 1,
+      taskHistory: [],
+      description: "Schedule the newsletter send",
+      status: "todo",
+    };
+    const harness = createHarness({
+      cards: [card],
+      workSnapshot: {
+        usersById: new Map([
+          ["user-grace", { id: "user-grace", name: "Grace" }],
+          ["user-valeriia", { id: "user-valeriia", name: "Valeriia" }],
+        ]),
+      },
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method)
+          return card;
+        if (url === `/api/tasks?cardId=${card.id}`)
+          return { tasks: [assigned, mentioned, general] };
+        if (url === `/api/artifacts?cardId=${card.id}`)
+          return { artifacts: [] };
+        return {};
+      },
+    });
 
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    const owners = harness.cardPanelBody.querySelectorAll(".card-task-owner");
+    assert.equal(owners.length, 3);
+    assert.equal(owners[0].getAttribute("aria-label"), "Assigned to Valeriia");
+    assert.equal(
+      owners[0].querySelector(".card-task-owner-avatar").textContent,
+      "V",
+    );
+    assert.equal(owners[1].getAttribute("aria-label"), "Assigned to Valeriia");
+    assert.equal(owners[2].getAttribute("aria-label"), "Assigned to Grace");
+    assert.equal(
+      owners[2].querySelector(".card-task-owner-avatar").textContent,
+      "G",
+    );
+    assert.deepEqual(harness.errors, []);
+  });
 
 
 

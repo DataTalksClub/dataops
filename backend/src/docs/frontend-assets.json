@@ -89,6 +89,7 @@
     "src/surfaces/tasks/recurring.js",
     "src/surfaces/tasks/templates.js",
     "src/surfaces/work-detail/card-actions.js",
+    "src/surfaces/work-detail/card-display.js",
     "src/surfaces/work-detail/card-panel.js",
     "src/surfaces/work-detail/card-summary.js",
     "src/surfaces/work-detail/index.js",

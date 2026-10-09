@@ -1,31 +1,12 @@
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { createCardActions } from "./card-actions.js";
+import {
+  humanLinkName,
+  ownerAvatar,
+  resolveChecklistOwnerName,
+} from "./card-display.js";
 import { appendBreakableText, createCardSummary } from "./card-summary.js";
 
-function humanLinkName(name) {
-  if (!name || !/^https?:\/\//i.test(name)) return name;
-  try {
-    const url = new URL(name);
-    const domain = url.hostname.replace(/^www\./, "");
-    const path = url.pathname.replace(/\/$/, "");
-    if (!path || path === "") return domain;
-    if (domain.includes("google.com") && path.includes("/document/")) {
-      return `Google doc (${domain})`;
-    }
-    if (domain.includes("luma.com")) {
-      return `Luma event (${domain}${path})`;
-    }
-    if (domain.includes("meetup.com")) {
-      return `Meetup event (${domain})`;
-    }
-    if (domain.includes("linkedin.com")) {
-      return `LinkedIn (${domain}${path})`;
-    }
-    return `${domain}${path.length > 28 ? path.slice(0, 25) + "…" : path}`;
-  } catch {
-    return name;
-  }
-}
 export function createCardPanel(context) {
   const {
     cardAnchorTone,
@@ -724,7 +705,16 @@ export function createCardPanel(context) {
       if (missingArtifact) badge.textContent += "artifact review missing";
       dateMeta.append(badge);
     }
-    row.append(checkbox, label, dateMeta);
+    row.append(checkbox, label);
+    const ownerName = resolveChecklistOwnerName(
+      task,
+      state.workSnapshot.usersById,
+      workTaskTitle,
+    );
+    if (ownerName) {
+      row.append(ownerAvatar(ownerName));
+    }
+    row.append(dateMeta);
     return row;
   }
 
