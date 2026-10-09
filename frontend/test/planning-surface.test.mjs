@@ -298,6 +298,8 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /ISO week numbers/);
     assert.match(dom.grid.innerHTML, /calendar-week-heading/);
     assert.match(dom.grid.innerHTML, /calendar-week-number/);
+    assert.match(dom.grid.innerHTML, /<small class="iso-week">\d+<\/small>/);
+    assert.doesNotMatch(dom.grid.innerHTML, /<small class="iso-week">ISO \d+<\/small>/);
     expectCalendarRange(harness.requests[0], "2026-07-27", "2026-09-06");
   });
 

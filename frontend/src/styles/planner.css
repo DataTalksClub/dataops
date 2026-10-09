@@ -262,7 +262,7 @@
 .planner-failure p { margin: 2px 0 0; color: var(--dk-text-muted); }.planner-failure { border-color: var(--dk-danger-border); background: var(--dk-danger-bg); }.planner-failure strong { color: var(--dk-danger-text); }.calendar-grid {
   display: grid;
   min-width: 0;
-  grid-template-columns: 56px repeat(7, minmax(0, 1fr));
+  grid-template-columns: 44px repeat(7, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
@@ -328,7 +328,7 @@
   font-weight: 700;
   font-size: 11px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-}.calendar-mobile-weekday { display: none; }.iso-week { color: var(--dk-text-muted); font-size: 10px; font-weight: 600; white-space: nowrap; }.calendar-day-items { display: grid; min-width: 0; gap: 4px; }.calendar-activity,
+}.calendar-mobile-weekday { display: none; }.iso-week { color: var(--dk-text-muted); font-size: 11px; font-weight: 600; white-space: nowrap; }.calendar-day-items { display: grid; min-width: 0; gap: 4px; }.calendar-activity,
 .calendar-overlay,
 .calendar-holiday {
   display: flex;

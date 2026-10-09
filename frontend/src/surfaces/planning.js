@@ -312,7 +312,7 @@ export function createPlanningSurface(context) {
           weekMarkup += `
             <div class="calendar-week">
               <div class="calendar-week-number" aria-label="Week ${currentWeek}">
-                <small class="iso-week">ISO ${currentWeek}</small>
+                <small class="iso-week">${currentWeek}</small>
               </div>
           `;
         }
