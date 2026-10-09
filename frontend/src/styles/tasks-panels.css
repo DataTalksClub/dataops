@@ -1,4 +1,4 @@
-}/* Recurring ---------------------------------------------------------------- */body[data-workspace-view="tasks"] .ops-surface-recurring {
+/* Recurring ---------------------------------------------------------------- */body[data-workspace-view="tasks"] .ops-surface-recurring {
   width: 100%;
   border: 0;
   border-radius: 0;
@@ -917,4 +917,4 @@ body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card,
 body[data-workspace-view="tasks"] .workflow-board-card .ops-progress i {
     transition: none;
   }
-}/* Process Docs and document editor -----------------------------------------
+}
