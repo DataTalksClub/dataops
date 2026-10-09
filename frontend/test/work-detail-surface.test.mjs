@@ -1479,7 +1479,67 @@ describe("Work Detail surface boundary", () => {
 
 
 
+  test("lists Card artifacts above the Tasks checklist", async () => {
+    const card = {
+      id: "card-artifacts-first",
+      version: 1,
+      title: "Artifact Card",
+      status: "active",
+      stage: "preparation",
+      taskCount: 1,
+      openTaskCount: 1,
+      references: [],
+    };
+    const task = {
+      id: "card-artifacts-task",
+      cardId: card.id,
+      version: 1,
+      taskHistory: [],
+      description: "Checklist item below the artifacts",
+      status: "todo",
+    };
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method)
+          return card;
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [task] };
+        if (url === `/api/artifacts?cardId=${card.id}`) {
+          return {
+            artifacts: [
+              {
+                id: "artifact-1",
+                title: "Sponsor proof document",
+                storageUri: "https://files.example/sponsor-proof",
+                status: "approved",
+              },
+            ],
+          };
+        }
+        return {};
+      },
+    });
 
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    const main = harness.cardPanelBody.querySelector(".workflow-modal-main");
+    const order = main.children.map((child) => child.className);
+    const artifactsIndex = order.findIndex((names) =>
+      names.includes("workflow-artifacts-section"),
+    );
+    const tasksIndex = order.findIndex((names) =>
+      names.includes("workflow-checklist-section"),
+    );
+    assert.ok(artifactsIndex !== -1);
+    assert.ok(tasksIndex !== -1);
+    assert.ok(artifactsIndex < tasksIndex);
+    assert.match(main.textContent, /Sponsor proof document/);
+    const refs = harness.cardPanelBody.querySelector(
+      ".workflow-references-section",
+    );
+    assert.ok(!refs.textContent.includes("Sponsor proof document"));
+    assert.deepEqual(harness.errors, []);
+  });
 
   test("keeps evidence registration failures in the Task panel and recovers with retained fields", async () => {
     const task = {

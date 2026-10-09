@@ -408,6 +408,38 @@ export function createCardPanel(context) {
       main.append(linksSection);
     }
 
+    // Card artifacts (always shown, with register capability) sit above the
+    // checklist: proof first, then the work that remains.
+    {
+      const artifactsSection = document.createElement("div");
+      artifactsSection.className =
+        "task-history workflow-detail-section workflow-artifacts-section";
+      artifactsSection.append(
+        renderArtifactList({
+          ownerType: "card",
+          ownerId: card.id,
+          artifacts,
+          required: false,
+          onRefresh: async () => {
+            const token = getActiveWorkspaceRouteToken();
+            if (!routeIsFresh(token) || detail.activeCardPanelId !== card.id) {
+              return false;
+            }
+            const refreshedArtifacts = await loadArtifactsForCard(card.id);
+            if (!routeIsFresh(token) || detail.activeCardPanelId !== card.id) {
+              return false;
+            }
+            detail.activeCardPanelData = {
+              ...detail.activeCardPanelData,
+              artifacts: refreshedArtifacts,
+            };
+            renderCardPanel({ preserveDrafts: true });
+            return refreshedArtifacts;
+          },
+        }),
+      );
+      main.append(artifactsSection);
+    }
 
     // Task checklist
     if (tasks.length > 0) {
@@ -572,30 +604,6 @@ export function createCardPanel(context) {
     );
     addRow.append(nameInput, urlInput, addBtn);
     refsSection.append(addRow);
-    refsSection.append(
-      renderArtifactList({
-        ownerType: "card",
-        ownerId: card.id,
-        artifacts,
-        required: false,
-        onRefresh: async () => {
-          const token = getActiveWorkspaceRouteToken();
-          if (!routeIsFresh(token) || detail.activeCardPanelId !== card.id) {
-            return false;
-          }
-          const refreshedArtifacts = await loadArtifactsForCard(card.id);
-          if (!routeIsFresh(token) || detail.activeCardPanelId !== card.id) {
-            return false;
-          }
-          detail.activeCardPanelData = {
-            ...detail.activeCardPanelData,
-            artifacts: refreshedArtifacts,
-          };
-          renderCardPanel({ preserveDrafts: true });
-          return refreshedArtifacts;
-        },
-      }),
-    );
     main.append(refsSection);
     if (preserveDrafts) restoreCardPanelDrafts(capturedDrafts);
     if (feedbackClaimedFocus && detail.activeCardPanelFeedback?.focusSelector) {
