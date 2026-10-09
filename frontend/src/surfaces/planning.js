@@ -99,29 +99,32 @@ export function createPlanningSurface(context) {
             </div>
             <h1 id="calendar-surface-title" class="calendar-period-title" data-period-heading>Calendar</h1>
           </div>
-          <div class="calendar-controls-group">
-            <div class="planner-filter-fields">
-              <label class="calendar-select-label" title="Filter by activity type">
-                <select data-type aria-label="Activity type">
-                  <option value="">All activities</option>
-                  ${activityTypeOptions}
-                </select>
-              </label>
-              <label class="calendar-select-label" title="Select view">
-                <select data-view aria-label="Calendar view">
-                  <option value="month">Month</option>
-                  <option value="week">Week</option>
-                </select>
-              </label>
-            </div>
-            <button class="primary-button calendar-add-button" data-add>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              <span>Add activity</span>
-            </button>
-          </div>
+          <button class="primary-button calendar-add-button" data-add>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span>Add activity</span>
+          </button>
         </div>
-        <div class="calendar-controls" aria-label="Calendar controls">
+      </header>
+      <p class="planner-load-state" role="status">Loading calendar…</p>
+      <div class="planner-alerts" data-alerts></div>
+      <div data-calendar></div>
+      <footer class="calendar-footer-controls" aria-label="Calendar controls">
+        <div class="calendar-footer-controls-bar">
+          <div class="planner-filter-fields">
+            <label class="calendar-select-label" title="Filter by activity type">
+              <select data-type aria-label="Activity type">
+                <option value="">All activities</option>
+                ${activityTypeOptions}
+              </select>
+            </label>
+            <label class="calendar-select-label" title="Select view">
+              <select data-view aria-label="Calendar view">
+                <option value="month">Month</option>
+                <option value="week">Week</option>
+              </select>
+            </label>
+          </div>
           <div class="calendar-layers" role="toolbar" aria-label="Show on calendar">
             <span class="calendar-layers-title">Layers:</span>
             <label class="calendar-layer-chip is-activities">
@@ -146,10 +149,7 @@ export function createPlanningSurface(context) {
             </label>
           </div>
         </div>
-      </header>
-      <p class="planner-load-state" role="status">Loading calendar…</p>
-      <div class="planner-alerts" data-alerts></div>
-      <div data-calendar></div>
+      </footer>
       <dialog class="dk-dialog" style="--dk-dialog-width: 620px">
         <form>
           <div class="dk-dialog__head"><div>
@@ -241,7 +241,7 @@ export function createPlanningSurface(context) {
           .map((day) => `<strong>${day}</strong>`),
       ].join("");
       let html = `
-        <div class="calendar-content-header">
+        <div class="calendar-content-header calendar-footer-meta">
           <div>
             <h3 class="calendar-period">${periodLabel}</h3>
             <p>${isWeek ? "Seven-day planning view" : "Month overview"} · ISO week numbers · Europe/Berlin</p>
@@ -251,12 +251,12 @@ export function createPlanningSurface(context) {
         <p class="calendar-mobile-hint">Swipe each week horizontally to see all seven days.</p>
       `;
       if (!visibleItems.length) {
-        html += `
+        html = `
           <div class="calendar-empty">
             <strong>No matching activities</strong>
             <p>Adjust the activity filter or add an activity. Holiday and newsletter layers remain visible.</p>
           </div>
-        `;
+        ` + html;
       }
       let weekMarkup = "";
       let dayIndex = 0;
@@ -338,11 +338,11 @@ export function createPlanningSurface(context) {
         dayIndex += 1;
       }
       grid.innerHTML = `
-        ${html}
         <div class="calendar-grid">
           <div class="calendar-weekdays">${weekdayHeadings}</div>
           <div class="calendar-weeks">${weekMarkup}</div>
         </div>
+        ${html}
       `;
     }
 
