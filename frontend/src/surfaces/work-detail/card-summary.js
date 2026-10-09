@@ -3,6 +3,47 @@
 // Card description.
 export const cardDescriptionClampLimit = 450;
 
+// Template display names ride with the runtime template listing, not the
+// Card payload. One cached fetch per Template keeps the detail panel honest
+// without refetching on every open.
+const templateLinkCache = new Map();
+
+export function renderCardTemplateLink(
+  { navigateCanonicalWorkspace, request, workApiUrl },
+  templateId,
+) {
+  const row = document.createElement("div");
+  row.className = "card-template-link-row";
+  const link = document.createElement("button");
+  link.type = "button";
+  link.className = "card-template-link";
+  const labelFor = (cached) =>
+    cached
+      ? `${cached.emoji ? `${cached.emoji} ` : ""}${cached.name} · View template`
+      : "View template";
+  link.textContent = labelFor(templateLinkCache.get(templateId));
+  link.addEventListener("click", () =>
+    navigateCanonicalWorkspace("/templates", { templateId }),
+  );
+  row.append(link);
+  if (!templateLinkCache.has(templateId)) {
+    request(workApiUrl(`/api/templates/${encodeURIComponent(templateId)}`)).then(
+      (payload) => {
+        const template = payload?.template || payload || {};
+        templateLinkCache.set(templateId, {
+          name: String(template.name || template.title || "Template"),
+          emoji: String(template.emoji || ""),
+        });
+        if (link.isConnected) {
+          link.textContent = labelFor(templateLinkCache.get(templateId));
+        }
+      },
+      () => {},
+    );
+  }
+  return row;
+}
+
 // Migration provenance is import bookkeeping, not operator content — keep it
 // out of the rendered Card detail without touching the stored description.
 export function displayCardDescription(value) {

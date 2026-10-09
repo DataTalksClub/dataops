@@ -681,6 +681,7 @@ export function createOperationsModel({
       summary: summaryParts.join(" - "),
       meta: progress ? progress.label : relationshipLabel,
       cardId: card.id,
+      templateId: String(card.templateId || ""),
       anchorDate,
       completedAt: card.completedAt || "",
       anchorLabel: formatCardAnchorLabel(anchorDate, today),

@@ -197,6 +197,43 @@
   font-variant-numeric: tabular-nums;
   line-height: 1.5;
   white-space: nowrap;
+}.workflow-card-template {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-full);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}.workflow-card-template:hover {
+  border-color: var(--dk-border-strong);
+  color: var(--dk-text-primary);
+}.card-template-link-row {
+  display: flex;
+  justify-content: flex-start;
+}.card-template-link {
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-full);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}.card-template-link:hover {
+  border-color: var(--dk-border-strong);
+  color: var(--dk-text-primary);
 }.workflow-card-anchor.is-today {
   border-color: var(--dk-info-border);
   background: var(--dk-info-bg);

@@ -210,6 +210,7 @@ function createHarness(options = {}) {
       const progress = summarizeCardProgress(card, tasks, "2026-08-12");
       return {
         cardId: card.id,
+        templateId: card.templateId || "",
         title: card.title,
         stage: card.stage,
         risk: progress.risk,
@@ -907,6 +908,61 @@ describe("Tasks surface boundary", () => {
       findAllByClass(documentList, "workflow-board-card").length,
       1,
     );
+  });
+
+  test("badges each card with its source Template and links the badge", async () => {
+    const active = [
+      {
+        id: "news-1",
+        title: "Weekly email #298 - Astronomer",
+        stage: "preparation",
+        anchorDate: "2026-10-20",
+        templateId: "tpl-news",
+      },
+      {
+        id: "plain",
+        title: "Untagged card",
+        stage: "preparation",
+        anchorDate: "2026-08-10",
+      },
+    ];
+    const { api, documentList, navigations, openedCards } = createHarness({
+      route: { path: "/cards", params: new URLSearchParams() },
+      workSnapshot: {
+        activeCards: active,
+        cards: active,
+        cardTasks: { "news-1": [], plain: [] },
+      },
+      request: async () => ({
+        templates: [
+          { id: "tpl-news", name: "Newsletter", emoji: "📰", type: "newsletter" },
+        ],
+      }),
+    });
+
+    api.renderTasksSurface([], "workflows");
+    await nextTicks();
+    api.renderTasksSurface([], "workflows");
+
+    const cards = findAllByClass(documentList, "workflow-board-card");
+    const news = cards.find((card) => card.dataset.cardId === "news-1");
+    const plain = cards.find((card) => card.dataset.cardId === "plain");
+    const [badge] = findAllByClass(news, "workflow-card-template");
+    assert.equal(badge.textContent, "📰 Newsletter");
+    assert.equal(badge.title, "View Newsletter template");
+    assert.equal(badge.dataset.templateType, "newsletter");
+    assert.equal(
+      findAllByClass(plain, "workflow-card-template").length,
+      0,
+    );
+
+    await badge.dispatch("click", { stopPropagation() {} });
+    assert.deepEqual(navigations.at(-1), {
+      path: "/templates",
+      params: { templateId: "tpl-news" },
+      options: {},
+    });
+    assert.deepEqual(openedCards, []);
   });
 
   test("drops the template filter control when no Card carries a Template", () => {
