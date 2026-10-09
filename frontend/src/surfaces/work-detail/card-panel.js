@@ -23,6 +23,7 @@ export function createCardPanel(context) {
     hasApprovedArtifactEvidence,
     hasTaskFileEvidence,
     isArchivedWorkCard,
+    isParkedWorkCard,
     isWorkspaceRouteFresh,
     labelizeWorkValue,
     loadArtifactsForCard,
@@ -56,7 +57,7 @@ export function createCardPanel(context) {
 
   function openCardPanel(cardId) {
     const card = state.workSnapshot.cardsById?.get(cardId);
-    const path = isArchivedWorkCard(card) ? "/cards/archive" : "/cards";
+    const path = isArchivedWorkCard(card) || isParkedWorkCard(card) ? "/cards/archive" : "/cards";
     return navigateCanonicalWorkspace(path, { cardId: cardId }).ready;
   }
 
@@ -351,8 +352,11 @@ export function createCardPanel(context) {
       detail,
       formatCardAnchorLabel,
       isArchivedWorkCard,
+      isParkedWorkCard,
       labelizeWorkValue,
+      parkCardPanel,
       progress,
+      resumeCardPanel,
       state,
       today,
       updateCardStage,
@@ -948,7 +952,7 @@ export function createCardPanel(context) {
   async function navigateTaskToWorkflow(task) {
     if (!task?.cardId) return;
     const card = state.workSnapshot.cardsById?.get(task.cardId);
-    const path = isArchivedWorkCard(card) ? "/cards/archive" : "/cards";
+    const path = isArchivedWorkCard(card) || isParkedWorkCard(card) ? "/cards/archive" : "/cards";
     await navigateCanonicalWorkspace(path, {
       cardId: task.cardId,
       taskId: task.id,
@@ -959,8 +963,10 @@ export function createCardPanel(context) {
     addCardReference,
     applyCardTemplateUpdate,
     discardCardIntent,
+    parkCardPanel,
     reloadCardIntent,
     reloadCardTemplateUpdate,
+    resumeCardPanel,
     retryCardIntent,
     reviewLatestCard,
     saveCardLink,

@@ -48,7 +48,7 @@ Fields:
 - anchorDate: YYYY-MM-DD, required
 - description: string, optional (may contain markdown links)
 - templateId: string, optional
-- status: "active" or "archived" - defaults to "active"
+- status: "active", "parked", or "archived" - defaults to "active" (parked cards keep open work in the parked Archive category; archived cards are done)
 - stage: "preparation", "announced", "after-event", or "done" - defaults to "preparation"
 - emoji: string, optional (inherited from template)
 - references: array of { name: string, url: string }, optional (fixed links inherited from template - process docs, server links)
@@ -142,6 +142,8 @@ All endpoints accept and return JSON. All endpoints are auth-gated - unauthentic
 - `POST /api/cards` - create a card (body: { title, anchorDate, description?, templateId?, emoji?, references?, cardLinks?, tags? })
 - `GET /api/cards/:id` - get a single card
 - `PUT /api/cards/:id` - update a card (body: subset of { title, description, anchorDate, status, stage, emoji, references, cardLinks, tags })
+- `POST /api/cards/:id/park` - park an active card (body: { expectedVersion })
+- `POST /api/cards/:id/resume` - resume a parked card to the board (body: { expectedVersion })
 - `PUT /api/cards/:id/archive` - archive a card
 - `DELETE /api/cards/:id` - permanently delete (only archived cards)
 - `GET /api/cards/:id/tasks` - list all tasks for a card

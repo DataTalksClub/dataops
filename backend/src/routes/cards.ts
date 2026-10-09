@@ -1,10 +1,13 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   CardNotFoundError,
+  CardStatusTransitionError,
   CardVersionConflictError,
   createCard,
   getCard,
   getCardConsistent,
+  parkCard,
+  resumeCard,
   updateCard,
   listCardsPage,
 } from '../db/cards';
@@ -360,6 +363,12 @@ async function handleCardRoutes(
       return await handleCardTasks(method, id, client, event);
     }
 
+    // Route: /api/cards/:id/park and /api/cards/:id/resume
+    const parkMatch = suffix.match(/^\/([^/]+)\/(park|resume)\/?$/);
+    if (parkMatch) {
+      return await handleParkResume(method, parkMatch[1], parkMatch[2] as 'park' | 'resume', rawBody, client, event);
+    }
+
     // Route: /api/cards/:id
     const idMatch = suffix.match(/^\/([^/]+)\/?$/);
     if (idMatch) {
@@ -386,6 +395,13 @@ async function handleCardRoutes(
         expectedVersion: err.expectedVersion,
         currentVersion: currentCard.version,
         currentCard,
+      });
+    }
+    if (err instanceof CardStatusTransitionError) {
+      return json(422, {
+        error: err.message,
+        code: 'card-status-transition',
+        status: err.status,
       });
     }
     console.error('Card route error:', err);
@@ -677,6 +693,45 @@ async function handleCollection(
 }
 
 /**
+ * Handle explicit park/resume transitions between the board and the parked
+ * Archive category. Parking keeps the stage and the Task counters; resuming
+ * restores the board. Task-count completion still owns the done Archive.
+ */
+async function handleParkResume(
+  method: string,
+  id: string,
+  action: 'park' | 'resume',
+  rawBody: string | null,
+  client: DynamoDBDocumentClient,
+  event: LambdaEvent,
+): Promise<LambdaResponse> {
+  if (method !== 'POST') {
+    return { statusCode: 405, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Method not allowed' }) };
+  }
+  const updateActor = await resolveInteractiveActor(client, event, 'work-write');
+  if (!updateActor.ok) return updateActor.response;
+  const actor = updateActor.actor;
+  let body: Record<string, unknown>;
+  try {
+    body = JSON.parse(rawBody || '');
+  } catch {
+    return json(400, { error: 'Invalid JSON' });
+  }
+  if (!Number.isInteger(body.expectedVersion) || (body.expectedVersion as number) < 1) {
+    return json(400, { error: 'expectedVersion must be an integer greater than or equal to 1' });
+  }
+  const existing = await getCardConsistent(client, id);
+  if (!existing) return json(404, { error: 'Card not found' });
+  if (!mayAdministerCard(actor, existing)) {
+    return workAdminForbidden('Administering this Card requires its owner or an admin');
+  }
+  const card = action === 'park'
+    ? await parkCard(client, id, body.expectedVersion as number)
+    : await resumeCard(client, id, body.expectedVersion as number);
+  return json(200, { card: await projectCard(new TeamDirectory(client), card) });
+}
+
+/**
  * Handle /api/cards/:id single resource routes (GET, PUT, DELETE).
  */
 async function handleSingle(
@@ -777,7 +832,7 @@ async function handleSingle(
         body: JSON.stringify({ error: `Invalid stage value. Must be one of: ${VALID_STAGES.join(', ')}` }),
       };
     }
-    if (body.stage !== undefined && existing.status !== 'active') {
+    if (body.stage !== undefined && existing.status !== 'active' && existing.status !== 'parked') {
       return json(400, { error: 'stage is system-owned while a Card is completed' });
     }
 

@@ -59,6 +59,18 @@ class CardNotFoundError extends Error {
   }
 }
 
+class CardStatusTransitionError extends Error {
+  readonly cardId: string;
+  readonly status: string;
+
+  constructor(cardId: string, status: string) {
+    super(`Card ${cardId} with status ${status} cannot take that transition`);
+    this.name = 'CardStatusTransitionError';
+    this.cardId = cardId;
+    this.status = status;
+  }
+}
+
 const ACTIVE_CARD_STAGES = new Set<ActiveCardStage>([
   'preparation',
   'announced',
@@ -85,6 +97,8 @@ function cleanItem(item: Record<string, unknown> | undefined): Card | null {
   const active = rest.status === 'active'
     && isActiveCardStage(rest.stage)
     && (taskCount === 0 || openTaskCount > 0);
+  const parked = rest.status === 'parked'
+    && isActiveCardStage(rest.stage);
   const completed = rest.status === 'archived'
     && rest.stage === 'done'
     && taskCount > 0
@@ -102,11 +116,11 @@ function cleanItem(item: Record<string, unknown> | undefined): Card | null {
     || !Number.isInteger(openTaskCount)
     || openTaskCount < 0
     || openTaskCount > taskCount
-    || (!active && !completed)
+    || (!active && !parked && !completed)
   ) {
     throw new Error(`Card ${String(rest.id || PK || 'unknown')} is not in the canonical lifecycle shape`);
   }
-  if (active && (
+  if ((active || parked) && (
     rest.completedAt !== undefined
     || rest.completedBy !== undefined
     || rest.activeStageBeforeCompletion !== undefined
@@ -237,9 +251,12 @@ async function updateCard(
   expressionAttrValues[':nextVersion'] = mutation.expectedVersion + 1;
   const conditionParts = ['attribute_exists(PK)', '#version = :expectedVersion'];
   if (mutation.patch.stage !== undefined) {
+    // Stage stays operator-owned while a Card is on the board or parked;
+    // only a completed Card owns its stage.
     expressionAttrNames['#status'] = 'status';
     expressionAttrValues[':activeStatus'] = 'active';
-    conditionParts.push('#status = :activeStatus');
+    expressionAttrValues[':parkedStatus'] = 'parked';
+    conditionParts.push('#status IN (:activeStatus, :parkedStatus)');
   }
 
   try {
@@ -262,6 +279,62 @@ async function updateCard(
     }
     throw error;
   }
+}
+
+/**
+ * Move a Card between the board and the parked Archive category. Parking
+ * keeps the stage and the Task counters; resuming restores the board. Only
+ * the stated source status may take the transition: a stale caller sees a
+ * version conflict when the Card moved, and a status error when it moved
+ * somewhere else first.
+ */
+async function transitionCardStatus(
+  client: DynamoDBDocumentClient,
+  id: string,
+  expectedVersion: number,
+  from: 'active' | 'parked',
+  to: 'parked' | 'active',
+): Promise<Card> {
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+    throw new TypeError('expectedVersion must be an integer greater than or equal to 1');
+  }
+  const current = await getCardConsistent(client, id);
+  if (!current) throw new CardNotFoundError(id);
+  if (current.version !== expectedVersion) throw new CardVersionConflictError(id, expectedVersion);
+  if (current.status !== from) throw new CardStatusTransitionError(id, current.status);
+  const now = new Date().toISOString();
+  try {
+    const result = await client.send(new UpdateCommand({
+      TableName: TABLE_CARDS,
+      Key: cardKey(id),
+      UpdateExpression: 'SET #status = :nextStatus, #version = :nextVersion, #updatedAt = :now',
+      ConditionExpression: 'attribute_exists(PK) AND #version = :expectedVersion AND #status = :expectedStatus',
+      ExpressionAttributeNames: { '#status': 'status', '#version': 'version', '#updatedAt': 'updatedAt' },
+      ExpressionAttributeValues: {
+        ':nextStatus': to,
+        ':nextVersion': expectedVersion + 1,
+        ':now': now,
+        ':expectedVersion': expectedVersion,
+        ':expectedStatus': from,
+      },
+      ReturnValues: 'ALL_NEW',
+    }));
+    return cleanItem(result.Attributes as Record<string, unknown>) as Card;
+  } catch (error) {
+    if ((error as { name?: string })?.name !== 'ConditionalCheckFailedException') throw error;
+    const refreshed = await getCardConsistent(client, id);
+    if (!refreshed) throw new CardNotFoundError(id);
+    if (refreshed.version !== expectedVersion) throw new CardVersionConflictError(id, expectedVersion);
+    throw new CardStatusTransitionError(id, refreshed.status);
+  }
+}
+
+async function parkCard(client: DynamoDBDocumentClient, id: string, expectedVersion: number): Promise<Card> {
+  return transitionCardStatus(client, id, expectedVersion, 'active', 'parked');
+}
+
+async function resumeCard(client: DynamoDBDocumentClient, id: string, expectedVersion: number): Promise<Card> {
+  return transitionCardStatus(client, id, expectedVersion, 'parked', 'active');
 }
 
 /**
@@ -348,10 +421,13 @@ export {
   getCardConsistent,
   updateCard,
   updateCardAdditive,
+  parkCard,
+  resumeCard,
   listCards,
   listCardsPage,
   CardVersionConflictError,
   CardNotFoundError,
+  CardStatusTransitionError,
   isActiveCardStage,
   cardKey,
 };

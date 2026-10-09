@@ -554,14 +554,31 @@ export function isArchivedWorkCard(card) {
   );
 }
 
+export function isParkedWorkCard(card) {
+  if (!card || typeof card !== "object") return false;
+  return (
+    Number.isInteger(card.version) && card.version >= 1 &&
+    Number.isInteger(card.taskCount) && card.taskCount >= 0 &&
+    Number.isInteger(card.openTaskCount) && card.openTaskCount >= 0 &&
+    card.openTaskCount <= card.taskCount &&
+    card.status === "parked" &&
+    ["preparation", "announced", "after-event"].includes(card.stage) &&
+    card.completedAt === undefined &&
+    card.completedBy === undefined &&
+    card.activeStageBeforeCompletion === undefined
+  );
+}
+
 export function partitionCardsByArchive(cards) {
   const active = [];
   const archived = [];
+  const parked = [];
   for (const card of cards || []) {
     if (isArchivedWorkCard(card)) archived.push(card);
+    else if (isParkedWorkCard(card)) parked.push(card);
     else if (isActiveWorkCard(card)) active.push(card);
   }
-  return { active, archived };
+  return { active, archived, parked };
 }
 
 export function compareCardItemsByAnchor(left, right) {
@@ -581,10 +598,10 @@ export function formatCardMonthLabel(value) {
   }).format(date);
 }
 
-export function groupCardItemsByMonth(items) {
+export function groupCardItemsByMonth(items, dateKey = "completedAt") {
   const ordered = [...(items || [])].sort((left, right) => {
-    const leftDate = String(left?.completedAt || "");
-    const rightDate = String(right?.completedAt || "");
+    const leftDate = String(left?.[dateKey] || "");
+    const rightDate = String(right?.[dateKey] || "");
     if (leftDate !== rightDate) {
       // Newest first, undated last.
       if (!leftDate) return 1;
@@ -595,13 +612,13 @@ export function groupCardItemsByMonth(items) {
   });
   const groups = [];
   for (const item of ordered) {
-    const key = String(item?.completedAt || "").slice(0, 7) || "undated";
+    const key = String(item?.[dateKey] || "").slice(0, 7) || "undated";
     const last = groups.at(-1);
     if (last && last.key === key) last.items.push(item);
     else
       groups.push({
         key,
-        label: formatCardMonthLabel(item?.completedAt),
+        label: formatCardMonthLabel(item?.[dateKey]),
         items: [item],
       });
   }
@@ -624,16 +641,21 @@ export function cardsHeaderViewModel({
   archiveVisible,
   activeCount,
   archivedCount,
+  parkedCount = 0,
 }) {
+  const parked = Number(parkedCount) || 0;
+  const archiveSummary = parked > 0
+    ? `${countLabel(archivedCount, "done card")} · ${countLabel(parked, "parked card")} · completed work remains available`
+    : `${countLabel(archivedCount, "done card")} · completed work remains available`;
   return {
     title: tasksSectionTitle("workflows", archiveVisible),
     eyebrow: "Task board",
     summary: archiveVisible
-      ? `${countLabel(archivedCount, "archived card")} · completed work remains available`
+      ? archiveSummary
       : `${countLabel(activeCount, "active card")} · open a card to see its tasks`,
     archiveAction: archiveVisible
       ? "Back to board"
-      : `Archive (${archivedCount})`,
+      : `Archive (${archivedCount + parked})`,
     archiveRoute: archiveVisible ? "/cards" : "/cards/archive",
     createVisible: !archiveVisible,
   };

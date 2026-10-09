@@ -14,6 +14,7 @@ import {
   isCanonicalWorkTask,
   isFollowUpDueTask,
   isOpenWorkTask,
+  isParkedWorkCard,
   isTaskDueToday,
   isTaskOverdue,
   isWaitingOrFollowUpTask,
@@ -240,10 +241,17 @@ describe("frontend work model", () => {
       { id: "invalid-done-status", stage: "after-event", status: "done" },
       { id: "impossible-empty-archive", version: 2, stage: "done", status: "archived", taskCount: 0, openTaskCount: 0, completedAt: "2026-08-13T12:00:00.000Z", completedBy: "operator", activeStageBeforeCompletion: "after-event" },
       { id: "archived", version: 2, stage: "done", status: "archived", taskCount: 1, openTaskCount: 0, completedAt: "2026-08-13T12:00:00.000Z", completedBy: "operator", activeStageBeforeCompletion: "after-event" },
+      { id: "parked", version: 2, taskCount: 2, openTaskCount: 1, stage: "announced", status: "parked" },
+      { id: "parked-done-shape", version: 2, taskCount: 1, openTaskCount: 0, stage: "done", status: "parked" },
     ];
     const partition = partitionCardsByArchive(cards);
     assert.deepEqual(partition.active.map((card) => card.id), ["prep", "announced", "after"]);
     assert.deepEqual(partition.archived.map((card) => card.id), ["archived"]);
+    assert.deepEqual(partition.parked.map((card) => card.id), ["parked"]);
+    assert.equal(isParkedWorkCard(cards.find((card) => card.id === "parked")), true);
+    assert.equal(isParkedWorkCard(cards.find((card) => card.id === "parked-done-shape")), false);
+    assert.equal(isParkedWorkCard(cards.find((card) => card.id === "archived")), false);
+    assert.equal(isActiveWorkCard(cards.find((card) => card.id === "parked")), false);
     assert.equal(isActiveWorkCard(cards[0]), true);
     assert.equal(isActiveWorkCard(cards.find((card) => card.id === "impossible-active")), false);
     assert.equal(isArchivedWorkCard(cards.find((card) => card.id === "invalid-done-stage")), false);

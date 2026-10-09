@@ -55,11 +55,15 @@ export function createCardActions(context) {
     }
     const expected = intent.kind === "stage"
       ? { stage: intent.payload.stage }
-      : intent.kind === "reference"
-        ? { references: intent.payload.references }
-        : intent.kind === "card-link"
-          ? { cardLinks: intent.payload.cardLinks }
-          : {};
+      : intent.kind === "park"
+        ? { status: "parked" }
+        : intent.kind === "resume"
+          ? { status: "active" }
+          : intent.kind === "reference"
+            ? { references: intent.payload.references }
+            : intent.kind === "card-link"
+              ? { cardLinks: intent.payload.cardLinks }
+              : {};
     return Object.entries(expected).every(([field, value]) =>
       sameValue(card[field], value),
     );
@@ -210,13 +214,24 @@ export function createCardActions(context) {
       intent.payload = payload;
       detail.activeCardPanelConflict = null;
       renderCardPanel({ preserveDrafts: true });
-      const response = await request(
-        workApiUrl(`/api/cards/${encodeURIComponent(intent.cardId)}`),
-        {
-          method: "PUT",
-          body: JSON.stringify({ ...intent.payload, expectedVersion }),
-        },
-      );
+      // Park and resume move a Card between the board and the parked Archive
+      // category through their own transitions; every other intent is a field
+      // patch on the Card itself.
+      const response = intent.action
+        ? await request(
+          workApiUrl(`/api/cards/${encodeURIComponent(intent.cardId)}/${intent.action}`),
+          {
+            method: "POST",
+            body: JSON.stringify({ expectedVersion }),
+          },
+        )
+        : await request(
+          workApiUrl(`/api/cards/${encodeURIComponent(intent.cardId)}`),
+          {
+            method: "PUT",
+            body: JSON.stringify({ ...intent.payload, expectedVersion }),
+          },
+        );
       const updatedCard = response && (response.card || response);
       if (!updatedCard?.id || updatedCard.id !== intent.cardId) {
         throw new Error("Card response is not in the canonical versioned shape");
@@ -390,6 +405,38 @@ export function createCardActions(context) {
     );
   }
 
+  async function parkCardPanel(cardId) {
+    await submitCardIntent(
+      {
+        cardId,
+        kind: "park",
+        action: "park",
+        label: "Park card",
+        payload: {},
+        pendingMessage: "Parking the Card…",
+        successMessage: "Card is parked and saved in the refreshed Card.",
+        errorPrefix: "Could not park card",
+      },
+      detail.activeCardPanelData?.card?.version,
+    );
+  }
+
+  async function resumeCardPanel(cardId) {
+    await submitCardIntent(
+      {
+        cardId,
+        kind: "resume",
+        action: "resume",
+        label: "Resume card",
+        payload: {},
+        pendingMessage: "Resuming the Card…",
+        successMessage: "Card is back on the board in the refreshed Card.",
+        errorPrefix: "Could not resume card",
+      },
+      detail.activeCardPanelData?.card?.version,
+    );
+  }
+
   async function saveCardLink(cardId, currentLinks, linkName, linkValue) {
     const updatedLinks = (currentLinks || []).map((link) =>
       (link.name || link.label) === linkName
@@ -421,8 +468,10 @@ export function createCardActions(context) {
     addCardReference,
     applyCardTemplateUpdate,
     discardCardIntent,
+    parkCardPanel,
     reloadCardIntent,
     reloadCardTemplateUpdate,
+    resumeCardPanel,
     retryCardIntent,
     reviewLatestCard,
     saveCardLink,

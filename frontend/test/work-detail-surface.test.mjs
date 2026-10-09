@@ -8,6 +8,7 @@ import {
   hasTaskFileEvidence,
   isArchivedWorkCard,
   isOpenWorkTask,
+  isParkedWorkCard,
   summarizeCardProgress,
   taskDate,
   taskProofState,
@@ -156,6 +157,7 @@ function createHarness(options = {}) {
     hasApprovedArtifactEvidence,
     hasTaskFileEvidence,
     isArchivedWorkCard,
+    isParkedWorkCard,
     isOpenWorkTask,
     isWorkspaceRouteFresh: (token) => fresh && token === routeToken,
     labelizeWorkValue: (value) =>
@@ -3122,5 +3124,70 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(navigations, [
       { path: "/templates", params: { templateId: "tpl-news" } },
     ]);
+  });
+
+  test("parks an active Card and resumes a parked Card through the panel", async () => {
+    const active = {
+      id: "card-park",
+      version: 1,
+      title: "Park me",
+      status: "active",
+      stage: "preparation",
+      taskCount: 1,
+      openTaskCount: 1,
+      references: [],
+    };
+    const parked = {
+      id: "card-resume",
+      version: 3,
+      title: "Resume me",
+      status: "parked",
+      stage: "announced",
+      taskCount: 1,
+      openTaskCount: 1,
+      references: [],
+    };
+    const writes = [];
+    const harness = createHarness({
+      cards: [active, parked],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${active.id}` && !requestOptions.method) return active;
+        if (url === `/api/cards/${parked.id}` && !requestOptions.method) return parked;
+        if (url === `/api/cards/${active.id}/park` && requestOptions.method === "POST") {
+          writes.push({ url, body: JSON.parse(requestOptions.body) });
+          return { card: { ...active, status: "parked", version: 2 } };
+        }
+        if (url === `/api/cards/${parked.id}/resume` && requestOptions.method === "POST") {
+          writes.push({ url, body: JSON.parse(requestOptions.body) });
+          return { card: { ...parked, status: "active", version: 4 } };
+        }
+        return {};
+      },
+    });
+
+    harness.api.prepareCardPanel(active.id);
+    await harness.api.hydrateCardPanel(active.id, 1);
+    const parkButton = findByText(harness.cardPanelBody, "Park", "button");
+    assert.ok(parkButton);
+    await parkButton.click();
+    assert.deepEqual(writes, [
+      { url: `/api/cards/${active.id}/park`, body: { expectedVersion: 1 } },
+    ]);
+    const parkedFeedback = await waitFor(
+      () => harness.cardPanelBody.querySelector('[data-card-mutation-feedback="success"]'),
+      "Card park success feedback",
+    );
+    assert.match(parkedFeedback.textContent, /parked/);
+
+    harness.api.prepareCardPanel(parked.id);
+    await harness.api.hydrateCardPanel(parked.id, 1);
+    assert.match(harness.cardPanelBody.textContent, /Parked/);
+    const resumeButton = findByText(harness.cardPanelBody, "Resume", "button");
+    assert.ok(resumeButton);
+    await resumeButton.click();
+    assert.deepEqual(writes[1], {
+      url: `/api/cards/${parked.id}/resume`,
+      body: { expectedVersion: 3 },
+    });
   });
 });

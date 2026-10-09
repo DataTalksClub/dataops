@@ -416,7 +416,11 @@ export interface Card {
   /** Number of attached Tasks in todo or waiting state. */
   openTaskCount: number;
   stage: 'preparation' | 'announced' | 'after-event' | 'done';
-  status: 'active' | 'archived';
+  /**
+   * `active` Cards sit on the board, `parked` Cards are set aside with open
+   * work remaining (a second Archive category), and `archived` Cards are done.
+   */
+  status: 'active' | 'parked' | 'archived';
   completedAt?: string;
   completedBy?: string;
   activeStageBeforeCompletion?: 'preparation' | 'announced' | 'after-event';

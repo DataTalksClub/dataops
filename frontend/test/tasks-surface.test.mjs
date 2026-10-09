@@ -12,6 +12,7 @@ import {
   isArchivedWorkCard,
   isFollowUpDueTask,
   isOpenWorkTask,
+  isParkedWorkCard,
   isTaskDueToday,
   isTaskOverdue,
   isWaitingOrFollowUpTask,
@@ -190,6 +191,7 @@ function createHarness(options = {}) {
     groupCardItemsByMonth,
     groupCardItemsByStage,
     isArchivedWorkCard,
+    isParkedWorkCard,
     isFollowUpDueTask,
     isOpenWorkTask,
     isOperationsWorkspaceVisible: () => true,
@@ -823,6 +825,70 @@ describe("Tasks surface boundary", () => {
       ["recent", "old"],
     );
     assert.equal(findAllByClass(documentList, "cards-archive-grid").length, 2);
+  });
+
+  test("splits the archive into Done and Parked categories", async () => {
+    const done = {
+      id: "done-1",
+      version: 2,
+      title: "Done card",
+      status: "archived",
+      stage: "done",
+      taskCount: 1,
+      openTaskCount: 0,
+      anchorDate: "2026-08-01",
+      completedAt: "2026-08-05T10:00:00.000Z",
+      completedBy: "operator",
+      activeStageBeforeCompletion: "after-event",
+    };
+    const parked = {
+      id: "parked-1",
+      version: 2,
+      title: "Parked card",
+      status: "parked",
+      stage: "announced",
+      taskCount: 2,
+      openTaskCount: 1,
+      anchorDate: "2026-09-01",
+    };
+    const { api, documentList } = createHarness({
+      route: { path: "/cards/archive", params: new URLSearchParams() },
+      workSnapshot: {
+        activeCards: [],
+        cards: [done, parked],
+        cardTasks: { "done-1": [], "parked-1": [] },
+        cardsComplete: true,
+      },
+    });
+
+    api.renderTasksSurface([], "workflows");
+    const tabs = findAllByClass(documentList, "archive-category-tab");
+    assert.deepEqual(
+      tabs.map((tab) => tab.textContent),
+      ["Done (1)", "Parked (1)"],
+    );
+    assert.equal(tabs[0].getAttribute("aria-selected"), "true");
+    assert.deepEqual(
+      findAllByClass(documentList, "workflow-board-card").map(
+        (card) => card.dataset.cardId,
+      ),
+      ["done-1"],
+    );
+
+    await tabs[1].dispatch("click");
+    api.renderTasksSurface([], "workflows");
+    assert.equal(
+      findAllByClass(documentList, "archive-category-tab")[1].getAttribute("aria-selected"),
+      "true",
+    );
+    assert.deepEqual(
+      findAllByClass(documentList, "workflow-board-card").map(
+        (card) => card.dataset.cardId,
+      ),
+      ["parked-1"],
+    );
+    const [month] = findAllByClass(documentList, "cards-archive-month-title");
+    assert.match(month.textContent, /September 2026/);
   });
 
   test("filters the board by the Template each Card was created from", async () => {

@@ -13,6 +13,7 @@ export function createTaskPanel(context) {
     getCurrentOperator,
     hasApprovedArtifactEvidence,
     isArchivedWorkCard,
+    isParkedWorkCard,
     isWorkspaceRouteFresh,
     labelizeWorkValue,
     loadArtifactsForTask,
@@ -75,7 +76,7 @@ export function createTaskPanel(context) {
       const expected = state.workSnapshot.cardsById?.get(
         options.expectedCardId,
       );
-      const path = isArchivedWorkCard(expected) ? "/cards/archive" : "/cards";
+      const path = isArchivedWorkCard(expected) || isParkedWorkCard(expected) ? "/cards/archive" : "/cards";
       target = { path, params: { cardId: options.expectedCardId, taskId } };
     }
     return navigateCanonicalWorkspace(target.path, target.params).ready;

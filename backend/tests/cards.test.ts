@@ -5,10 +5,13 @@ import { PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import {
+  CardStatusTransitionError,
   CardVersionConflictError,
   createCard,
   getCard,
   listCards,
+  parkCard,
+  resumeCard,
   updateCard,
   updateCardAdditive,
 } from '../src/db/cards';
@@ -209,5 +212,52 @@ describe('Cards data layer', () => {
       }));
       await assert.rejects(getCard(client, malformedId), /not in the canonical lifecycle shape/);
     }
+  });
+
+  describe('parked Archive category', () => {
+    it('parks an active Card keeping its stage and counters', async () => {
+      const created = await createCard(client, { title: 'Park me', anchorDate: '2026-09-10', stage: 'announced' });
+      const parked = await parkCard(client, created.id, created.version);
+      assert.deepEqual(
+        { version: parked.version, stage: parked.stage, status: parked.status },
+        { version: 2, stage: 'announced', status: 'parked' },
+      );
+      assert.equal(parked.completedAt, undefined);
+      const reloaded = await getCard(client, created.id);
+      assert.equal(reloaded?.status, 'parked');
+    });
+
+    it('resumes a parked Card back to the board', async () => {
+      const created = await createCard(client, { title: 'Resume me', anchorDate: '2026-09-10' });
+      const parked = await parkCard(client, created.id, created.version);
+      const resumed = await resumeCard(client, created.id, parked.version);
+      assert.deepEqual(
+        { version: resumed.version, stage: resumed.stage, status: resumed.status },
+        { version: 3, stage: 'preparation', status: 'active' },
+      );
+    });
+
+    it('rejects parking a parked Card and resuming an active Card', async () => {
+      const created = await createCard(client, { title: 'Double transition', anchorDate: '2026-09-10' });
+      await assert.rejects(resumeCard(client, created.id, created.version), CardStatusTransitionError);
+      const parked = await parkCard(client, created.id, created.version);
+      await assert.rejects(parkCard(client, created.id, parked.version), CardStatusTransitionError);
+    });
+
+    it('rejects park and resume on stale versions and missing Cards', async () => {
+      const created = await createCard(client, { title: 'Stale park', anchorDate: '2026-09-10' });
+      await assert.rejects(parkCard(client, created.id, created.version + 1), CardVersionConflictError);
+      await assert.rejects(resumeCard(client, 'card-does-not-exist', 1), /was not found/);
+    });
+
+    it('keeps stage operator-owned while a Card is parked', async () => {
+      const created = await createCard(client, { title: 'Parked stage', anchorDate: '2026-09-10' });
+      const parked = await parkCard(client, created.id, created.version);
+      const staged = await updateCard(client, created.id, {
+        expectedVersion: parked.version,
+        patch: { stage: 'announced' },
+      });
+      assert.deepEqual({ stage: staged.stage, status: staged.status }, { stage: 'announced', status: 'parked' });
+    });
   });
 });

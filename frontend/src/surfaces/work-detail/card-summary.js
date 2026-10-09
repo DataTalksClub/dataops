@@ -167,8 +167,11 @@ export function createCardSummary(context) {
     detail,
     formatCardAnchorLabel,
     isArchivedWorkCard,
+    isParkedWorkCard,
     labelizeWorkValue,
+    parkCardPanel,
     progress,
+    resumeCardPanel,
     state,
     today,
     updateCardStage,
@@ -245,6 +248,34 @@ export function createCardSummary(context) {
   summaryTop.append(countRow);
   if (flagRow.children.length > 0) summaryTop.append(flagRow);
   summaryTop.append(stageLabel);
+  // Parking moves an active Card to the parked Archive category keeping its
+  // stage and Tasks; resume returns it to the board. Done Cards stay put.
+  const mutationBusy =
+    detail.activeCardMutationBusy ||
+    detail.activeTaskMutationBusy ||
+    detail.activeCardTemplateBusy;
+  if (isParkedWorkCard?.(card)) {
+    const parkedChip = document.createElement("span");
+    parkedChip.className = "workflow-card-flag is-info";
+    parkedChip.textContent = "Parked";
+    summaryTop.append(parkedChip);
+    const resume = document.createElement("button");
+    resume.type = "button";
+    resume.className = "quiet-button";
+    resume.textContent = detail.activeCardPanelDraft?.kind === "resume" ? "Resuming…" : "Resume";
+    resume.disabled = mutationBusy;
+    resume.addEventListener("click", () => resumeCardPanel?.(card.id));
+    summaryTop.append(resume);
+  } else if (!isArchivedWorkCard(card)) {
+    const park = document.createElement("button");
+    park.type = "button";
+    park.className = "quiet-button";
+    park.textContent = detail.activeCardPanelDraft?.kind === "park" ? "Parking…" : "Park";
+    park.title = "Move to the parked Archive category";
+    park.disabled = mutationBusy;
+    park.addEventListener("click", () => parkCardPanel?.(card.id));
+    summaryTop.append(park);
+  }
   meta.append(summaryTop);
 
   if (progress.nextDueTask) {
