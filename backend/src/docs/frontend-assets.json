@@ -7,6 +7,7 @@
     "src/assets/fonts/ibm-plex-mono-500.woff2",
     "src/assets/fonts/inter-var.woff2",
     "src/core/collection-loader.js",
+    "src/core/identity.js",
     "src/core/operations-model.js",
     "src/core/workspace.js",
     "src/core/work-model.js",

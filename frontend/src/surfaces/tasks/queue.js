@@ -1,9 +1,10 @@
+import { personInitials } from "../../core/identity.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 
 // One queue, not one section per state. Every open task the snapshot knows
-// about lands in the same list, sorted by urgency; the source chip on each
-// row says where the task came from, so triage reads one column top to
-// bottom instead of six boxed lanes.
+// about lands in the same list, sorted by urgency. The list is a checklist
+// read as a table: a completion mark, the task, where it came from (its card
+// or ad hoc), when it is due, and whose it is. Nothing else earns a line.
 const QUEUE_VISIBLE_LIMIT = 25;
 const HISTORY_VISIBLE_LIMIT = 12;
 
@@ -24,7 +25,6 @@ export function createTaskQueue(context) {
     resolveAssigneeLabel,
     state,
     taskDate,
-    taskNextActionLabel,
     taskProofState,
     taskSourceLabel,
     todayIsoDate,
@@ -177,9 +177,25 @@ export function createTaskQueue(context) {
   function renderQueueRows(openTasks, today, cardsById) {
     const rows = document.createElement("div");
     rows.className = "ops-queue-list";
+    rows.append(renderQueueHeader());
     for (const entry of openTasks.slice(0, QUEUE_VISIBLE_LIMIT))
       rows.append(renderWorkQueueRow(entry.task, today, cardsById));
     return rows;
+  }
+
+  // The columns, named once. Without headings the eye reads the card title
+  // column as the task title and the whole thing stays confusing, which is
+  // the problem the table layout exists to fix.
+  function renderQueueHeader() {
+    const header = document.createElement("div");
+    header.className = "ops-queue-head";
+    header.setAttribute("aria-hidden", "true");
+    for (const label of ["", "Task", "Where", "Due", "Who"]) {
+      const cell = document.createElement("span");
+      cell.textContent = label;
+      header.append(cell);
+    }
+    return header;
   }
 
   // Past the cap the list keeps its full order and grows downward; the
@@ -378,13 +394,15 @@ export function createTaskQueue(context) {
   // The one place a task names where it came from. Card membership wins
   // (the card is what the operator can open); recurring schedules and
   // explicit import sources follow; everything else is hand-made ad hoc
-  // work.
-  function taskSourceChip(task, cardsById) {
+  // work. The label is the bare origin — the column heading already says
+  // where, so a card cell carries the card's name, not "Card · name".
+  function taskOrigin(task, cardsById) {
     if (task.cardId) {
       const card = cardsById.get(String(task.cardId));
       return {
-        label: card ? `Card · ${workCardTitle(card)}` : "Card",
+        label: card ? workCardTitle(card) : "Card",
         kind: "card",
+        title: card ? workCardTitle(card) : "Card",
       };
     }
     const source = taskSourceLabel(task);
@@ -394,84 +412,133 @@ export function createTaskQueue(context) {
     return { label: source, kind: "other" };
   }
 
+  // Ownership reads as a face, not a sentence. The avatar carries the
+  // teammate's initials; the full name stays available as the accessible
+  // label so the queue never hides who owns the work behind two letters.
+  function taskOwnerCell(task) {
+    const cell = document.createElement("span");
+    cell.className = "ops-queue-owner";
+    if (!task.assigneeId) {
+      cell.dataset.assignee = "none";
+      cell.textContent = "—";
+      cell.title = "Unassigned";
+      cell.setAttribute("aria-label", "Unassigned");
+      return cell;
+    }
+    const name = resolveAssigneeLabel(task.assigneeId);
+    const avatar = document.createElement("span");
+    avatar.className = "account-avatar ops-queue-avatar";
+    avatar.setAttribute("aria-hidden", "true");
+    avatar.textContent = personInitials(name);
+    cell.dataset.assignee = "named";
+    cell.append(avatar);
+    cell.title = name;
+    cell.setAttribute("aria-label", `Assigned to ${name}`);
+    return cell;
+  }
+
+  // One due cell: how late, in the fewest words the state allows. A debt
+  // reads as plain machine days ("67d"), a due-today as the word, and
+  // anything else as a short date. Proof-blocked work never reaches a
+  // completion claim here; the row's blocker note carries that.
+  function taskDueCell(task, today) {
+    const cell = document.createElement("span");
+    cell.className = "ops-queue-due";
+    const due = String(task.date || "").slice(0, 10);
+    const debt = isOpenWorkTask(task) ? overdueDays(due, today) : 0;
+    if (debt > 0) {
+      cell.dataset.due = "overdue";
+      cell.textContent = `${debt}d late`;
+      cell.title = `${debt} day${debt === 1 ? "" : "s"} past due`;
+      return cell;
+    }
+    if (!task.date) {
+      cell.dataset.due = "none";
+      cell.textContent = "—";
+      return cell;
+    }
+    cell.dataset.due = due === today ? "today" : "later";
+    cell.textContent =
+      due === today ? "Today" : queueDueLabel(task.date, today);
+    return cell;
+  }
+
+  // The blocker note is the only second line a row earns, and only when the
+  // task is genuinely stuck: waiting on someone, or missing proof. A task
+  // with nothing blocking it is one line, so the list scans as a checklist
+  // rather than a wall of "Next: Mark done".
+  function taskBlockerNote(task, today) {
+    const proof = taskProofState(task);
+    if (task.status === "done") return null;
+    if (task.waitingFor) {
+      const note = document.createElement("small");
+      note.className = "ops-queue-note is-waiting";
+      note.textContent = `Waiting for ${task.waitingFor}${
+        task.followUpAt ? ` · ${queueDueLabel(task.followUpAt, today)}` : ""
+      }`;
+      return note;
+    }
+    if (!proof.ok) {
+      const note = document.createElement("small");
+      note.className = "ops-queue-note is-blocked";
+      note.textContent = `Needs ${proof.label.replace(/^Missing proof:\s*/i, "")}`;
+      return note;
+    }
+    if (isFollowUpDueTask(task, today)) {
+      const note = document.createElement("small");
+      note.className = "ops-queue-note";
+      note.textContent = `Follow up ${queueShortDate(task.followUpAt)}`;
+      return note;
+    }
+    return null;
+  }
+
   function renderWorkQueueRow(task, today, cardsById) {
     if (!isCanonicalWorkTask(task)) {
       throw new Error("Task payload is not in the canonical versioned shape");
     }
+    const origin = taskOrigin(task, cardsById);
+    const owner = taskOwnerCell(task);
     const button = document.createElement("button");
     button.type = "button";
     button.className = "ops-queue-row";
     button.dataset.taskId = task.id;
-    button.setAttribute("aria-label", `Open task ${workTaskTitle(task)}`);
-    button.addEventListener("click", () => openTaskPanel(task.id));
-    const title = document.createElement("strong");
-    title.textContent = workTaskTitle(task);
-    const meta = document.createElement("div");
-    meta.className = "ops-queue-meta";
-    // The source chip leads the meta line: where a task came from is the
-    // first triage fact. Due moment and ownership follow as quiet facts;
-    // defaults (no proof, todo status) stay quiet instead of pill-spamming
-    // every row.
-    const source = taskSourceChip(task, cardsById);
-    const sourceChip = document.createElement("span");
-    sourceChip.className = "ops-queue-chip is-source";
-    sourceChip.dataset.source = source.kind;
-    sourceChip.textContent = source.label;
-    meta.append(sourceChip);
-    const proof = taskProofState(task);
-    const due = String(task.date || "").slice(0, 10);
-    const debt = isOpenWorkTask(task) ? overdueDays(due, today) : 0;
-    for (const [value, attention, debtTiming] of [
+    button.dataset.source = origin.kind;
+    button.setAttribute(
+      "aria-label",
       [
-        debt > 0
-          ? `${"■".repeat(Math.min(debt, 5))} ${debt} day${debt === 1 ? "" : "s"} overdue`
-          : task.date
-            ? `Due ${queueDueLabel(task.date, today)}`
-            : "",
-        debt === 0 && Boolean(task.date) && due === today,
-        debt > 0,
-      ],
-      [
-        task.assigneeId
-          ? `Owner ${resolveAssigneeLabel(task.assigneeId)}`
-          : "Unassigned",
-        false,
-        false,
-      ],
-    ]) {
-      if (!value) continue;
-      const chip = document.createElement("span");
-      chip.className = [
-        "ops-queue-chip",
-        attention ? "is-attention" : "",
-        debtTiming ? "is-debt" : "",
+        `Open task ${workTaskTitle(task)}`,
+        origin.kind === "card" ? `from card ${origin.label}` : origin.label,
+        task.date ? `due ${String(task.date).slice(0, 10)}` : "",
+        owner.getAttribute("aria-label") || "",
       ]
         .filter(Boolean)
-        .join(" ");
-      chip.textContent = value;
-      meta.append(chip);
-    }
-    if (task.status === "waiting") {
-      const waitingChip = document.createElement("span");
-      waitingChip.className = "ops-queue-chip is-waiting";
-      waitingChip.textContent = "Waiting";
-      meta.append(waitingChip);
-    }
-    // The summary names the real blocker: proof-blocked work never claims
-    // "Mark done" as its next step, and follow-up moments stay human.
-    const summary = document.createElement("small");
-    summary.textContent = task.status === "done"
-      ? "Completed."
-      : !proof.ok
-        ? `Proof needed: ${proof.label.replace(/^Missing proof:\s*/i, "")}`
-        : task.waitingFor
-          ? `Waiting for ${task.waitingFor}${task.followUpAt ? ` · follow up ${queueShortDate(task.followUpAt)}` : ""}`
-          : `Next: ${taskNextActionLabel(task, today)}`;
-    const open = document.createElement("span");
-    open.className = "ops-queue-row-open";
-    open.setAttribute("aria-hidden", "true");
-    open.textContent = "Open";
-    button.append(title, meta, summary, open);
+        .join(", "),
+    );
+    button.addEventListener("click", () => openTaskPanel(task.id));
+
+    // Checklist mark: the row's one completion affordance reads as the box
+    // you would tick in any checklist, so the queue scans as work to do
+    // rather than as records to open.
+    const mark = document.createElement("span");
+    mark.className = "ops-queue-mark";
+    mark.setAttribute("aria-hidden", "true");
+
+    const main = document.createElement("span");
+    main.className = "ops-queue-main";
+    const title = document.createElement("strong");
+    title.textContent = workTaskTitle(task);
+    main.append(title);
+    const note = taskBlockerNote(task, today);
+    if (note) main.append(note);
+
+    const originCell = document.createElement("span");
+    originCell.className = "ops-queue-origin";
+    originCell.dataset.source = origin.kind;
+    originCell.textContent = origin.label;
+    originCell.title = origin.title;
+
+    button.append(mark, main, originCell, taskDueCell(task, today), owner);
     return button;
   }
 

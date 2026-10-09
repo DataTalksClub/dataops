@@ -1,14 +1,7 @@
+import { personInitials } from "../core/identity.js";
+
 export function accountInitials(name) {
-  const parts = String(name || "")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (parts.length === 0) return "?";
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
+  return personInitials(name);
 }
 
 export function currentOperatorFromPayload(payload) {
@@ -37,10 +30,11 @@ export function createAccountShell({
   closeNotifications,
   documentRef,
   fetchImpl,
+  getActiveWorkspaceView,
   historyButton,
   knowledgeStatusButton,
   HTMLElementClass,
-  isOperationsWorkspaceVisible,
+  isOperationsHomeVisible,
   locationRef,
   refreshDocuments,
   showWorkspaceSurface,
@@ -220,7 +214,10 @@ export function createAccountShell({
         identityState.selectedOwnerId = String(member.id);
         renderAccountIdentity();
         closeSettingsMenu();
-        if (isOperationsWorkspaceVisible()) {
+        if (
+          getActiveWorkspaceView() === "home" &&
+          isOperationsHomeVisible()
+        ) {
           refreshDocuments();
         }
       });

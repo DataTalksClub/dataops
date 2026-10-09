@@ -60,7 +60,6 @@ export function createTasksSurface(context) {
     surfaceDescription,
     summarizeCardProgress,
     taskDate,
-    taskNextActionLabel,
     taskProofState,
     taskSourceLabel,
     tasksSectionTitle,

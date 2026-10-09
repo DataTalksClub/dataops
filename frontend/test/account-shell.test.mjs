@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import {
-  accountInitials,
   createAccountShell,
   currentOperatorFromPayload,
   localPreviewActor,
 } from "../src/shell/account.js";
+import { personInitials } from "../src/core/identity.js";
 import { FakeDocument, FakeElement } from "./support/fake-dom.mjs";
 
 class AccountDocument extends FakeDocument {
@@ -136,7 +136,7 @@ function createAccountHarness(options = {}) {
     historyButton,
     knowledgeStatusButton,
     HTMLElementClass: FakeElement,
-    isOperationsWorkspaceVisible: () => options.workspaceVisible ?? true,
+    isOperationsHomeVisible: () => options.homeVisible ?? true,
     locationRef,
     refreshDocuments: () => refreshes.push("refresh"),
     showWorkspaceSurface: (surface) => shown.push(surface),
@@ -184,9 +184,9 @@ const members = [
 
 describe("account identity and work-scope behavior", () => {
   test("normalizes initials, authenticated payloads, and local preview actors", () => {
-    assert.equal(accountInitials(" Alexey   Grigorev "), "AG");
-    assert.equal(accountInitials("Grace"), "G");
-    assert.equal(accountInitials(""), "?");
+    assert.equal(personInitials(" Alexey   Grigorev "), "AG");
+    assert.equal(personInitials("Grace"), "G");
+    assert.equal(personInitials(""), "?");
     assert.equal(currentOperatorFromPayload({ user: members[0] }), members[0]);
     assert.equal(currentOperatorFromPayload({ actor: members[1] }), members[1]);
     assert.deepEqual(currentOperatorFromPayload({ id: "direct" }), {

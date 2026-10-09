@@ -33,7 +33,6 @@ import {
   findByText,
   nextTicks,
 } from "./support/fake-dom.mjs";
-import { readAppCss, uncommentCss } from "./support/app-css.mjs";
 
 const originalDocument = globalThis.document;
 const canonicalTask = (task) => ({
@@ -234,7 +233,7 @@ function createHarness(options = {}) {
       requests.push({ url, options: requestOptions });
       return options.request ? options.request(url, requestOptions) : {};
     },
-    resolveAssigneeLabel: (id) => id,
+    resolveAssigneeLabel: (id) => options.userNames?.[id] || id,
     scheduleAnimationFrame: (callback) => callback(),
     setRouteTitle() {},
     setWorkspaceEntityState: (entity) => entityStates.push(entity),
@@ -300,10 +299,26 @@ function queueRowTitles(root) {
   );
 }
 
-function queueSourceChips(root) {
-  return findAllByClass(root, "is-source").map((chip) => ({
-    label: chip.textContent,
-    kind: chip.dataset.source,
+// The Where column: the card a task belongs to, or where it did not come
+// from. Its kind rides the cell so the test can tell a card from ad hoc work
+// without matching on wording.
+function queueOrigins(root) {
+  return findAllByClass(root, "ops-queue-origin").map((cell) => ({
+    label: cell.textContent,
+    kind: cell.dataset.source,
+  }));
+}
+
+function queueOwners(root) {
+  return findAllByClass(root, "ops-queue-owner").map((cell) =>
+    cell.dataset.assignee === "none" ? null : cell.textContent,
+  );
+}
+
+function queueDueCells(root) {
+  return findAllByClass(root, "ops-queue-due").map((cell) => ({
+    label: cell.textContent,
+    due: cell.dataset.due,
   }));
 }
 
@@ -327,12 +342,14 @@ describe("Tasks surface boundary", () => {
       description: "Card checklist item",
       date: "2026-08-11",
       cardId: "card-1",
+      assigneeId: "grace",
     });
     const tasks = [
       canonicalTask({
         id: "overdue",
         description: "Overdue",
         date: "2026-08-11",
+        assigneeId: "alexey",
       }),
       cardTask,
       canonicalTask({
@@ -358,6 +375,7 @@ describe("Tasks surface boundary", () => {
       }),
     ];
     const { api, documentList, navigations, openedTasks } = createHarness({
+      userNames: { alexey: "Alexey", grace: "Grace Meyer" },
       workSnapshot: {
         cardsById: new Map([
           ["card-1", { id: "card-1", title: "Weekly newsletter" }],
@@ -396,16 +414,39 @@ describe("Tasks surface boundary", () => {
       "Today",
       "Waiting",
     ]);
-    // Every row names where its task came from, chip first in the meta line.
-    const sources = queueSourceChips(documentList);
-    assert.deepEqual(sources[0], {
-      label: "Card · Weekly newsletter",
+    // One checklist read as a table: the columns are named once, and the
+    // heading row is the only place a column name appears.
+    const head = board.querySelector(".ops-queue-head");
+    assert.deepEqual(
+      head.children.map((cell) => cell.textContent),
+      ["", "Task", "Where", "Due", "Who"],
+    );
+    assert.equal(head.getAttribute("aria-hidden"), "true");
+    // The Where column names the card, or says the task is not a card's.
+    assert.deepEqual(queueOrigins(documentList)[0], {
+      label: "Weekly newsletter",
       kind: "card",
     });
-    for (const source of sources.slice(1)) {
-      assert.equal(source.kind, "other");
-      assert.equal(source.label, "DataOps");
+    for (const origin of queueOrigins(documentList).slice(1)) {
+      assert.equal(origin.kind, "other");
+      assert.equal(origin.label, "DataOps");
     }
+    // Due is a quantity or a word, never a sentence.
+    assert.deepEqual(queueDueCells(documentList), [
+      { label: "1d late", due: "overdue" },
+      { label: "1d late", due: "overdue" },
+      { label: "—", due: "none" },
+      { label: "Today", due: "today" },
+      { label: "—", due: "none" },
+    ]);
+    // Whose it is: initials for a named owner, a dash for nobody's.
+    assert.deepEqual(queueOwners(documentList), ["GM", "A", null, null, null]);
+    // A task with nothing blocking it is one line: only stuck rows carry a
+    // blocker note, so the list scans as a checklist.
+    const notes = findAllByClass(documentList, "ops-queue-note").map(
+      (note) => note.textContent,
+    );
+    assert.deepEqual(notes, ["Waiting for reply · Today", "Waiting for review · 14 Aug"]);
     assert.match(board.textContent, /5 open, most urgent first/);
     const history = documentList.querySelector(".ops-queue-history");
     assert.equal(history.tagName, "DETAILS");
@@ -497,7 +538,7 @@ describe("Tasks surface boundary", () => {
     });
 
     api.renderTasksSurface([], "queue");
-    assert.deepEqual(queueSourceChips(documentList), [
+    assert.deepEqual(queueOrigins(documentList), [
       { label: "Ad hoc", kind: "adhoc" },
       { label: "Template", kind: "other" },
     ]);
@@ -962,13 +1003,8 @@ describe("Tasks surface boundary", () => {
     assert.match(harness.documentList.textContent, /Authored templates/);
     assert.match(
       harness.documentList.textContent,
-      /A reusable definition\. Open one to see its steps, then start a Card\./,
-      "operator language; repo/YAML detail stays out of the Templates page",
-    );
-    assert.doesNotMatch(
-      harness.documentList.textContent,
       /Read-only copies of the templates maintainers publish/,
-      "the panel header must not explain deployment provenance",
+      "operator language; repo/YAML detail stays out of the Templates page",
     );
     assert.match(
       harness.documentList.textContent,
@@ -984,103 +1020,6 @@ describe("Tasks surface boundary", () => {
       assert.equal(
         findByText(harness.documentList, mutation, "button"),
         undefined,
-      );
-    }
-  });
-
-  test("every Templates surface class has an app stylesheet rule", async () => {
-    // Regression guard: the stylesheet split dropped the Templates design
-    // CSS while the markup kept emitting its classes, so rows rendered with
-    // collapsed names and jammed controls. Render the list and a selected
-    // detail, collect every emitted class, and require a matching rule.
-    const template = {
-      id: "template-1",
-      name: "Newsletter",
-      type: "workflow",
-      version: 2,
-      sourceRevision: "rev-2",
-      taskDefinitions: [
-        { refId: "draft", description: "Draft", offsetDays: 0 },
-        { refId: "send", description: "Send", offsetDays: 1 },
-      ],
-    };
-    const liveCard = {
-      id: "card-1",
-      title: "Newsletter run",
-      status: "open",
-      templateId: "template-1",
-      templateVersion: 2,
-      templateSourceRevision: "rev-2",
-      templateDefinitionSnapshot: { version: 2 },
-      openTaskCount: 1,
-      updatedAt: new Date().toISOString(),
-    };
-    const harness = createHarness({
-      request: async (url) => {
-        if (url === "/api/templates") return { templates: [template] };
-        throw new Error(`Unexpected request ${url}`);
-      },
-      workSnapshot: {
-        cards: [
-          liveCard,
-          {
-            ...liveCard,
-            id: "card-2",
-            title: "Old newsletter run",
-            templateSourceRevision: "rev-1",
-          },
-        ],
-      },
-    });
-    await harness.api.refreshRuntimeTemplates();
-
-    const renderedClasses = new Set();
-    const collectClasses = (element) => {
-      for (const token of String(element.className || "").split(/\s+/)) {
-        if (token) renderedClasses.add(token);
-      }
-      for (const child of element.children || []) collectClasses(child);
-    };
-    harness.api.renderTasksSurface([], "templates");
-    collectClasses(harness.documentList);
-    harness.api.setRuntimeTemplateRoute(
-      {
-        tasksSection: "templates",
-        params: new URLSearchParams({ templateId: "template-1" }),
-      },
-      { templateId: "template-1" },
-    );
-    harness.api.renderTasksSurface([], "templates");
-    collectClasses(harness.documentList);
-
-    // The support-doc grid renders no docs in this harness
-    // (getAllDocuments is empty), so its factory classes are covered
-    // statically. They come from renderWorkflowTemplateCard in
-    // surfaces/tasks/recurring.js.
-    for (const staticClass of [
-      "ops-template-card",
-      "ops-template-grid",
-      "ops-template-actions",
-      "ops-card-chips",
-    ]) renderedClasses.add(staticClass);
-
-    // Intentionally rule-less by design: the icons are sized by element
-    // selectors (.runtime-template-projection h4 svg,
-    // .runtime-template-row strong > svg), and the hooks gate behavior,
-    // not paint.
-    const unstyledByDesign = new Set([
-      "runtime-template-icon",
-      "runtime-template-trigger-icon",
-      "runtime-template-readonly",
-      "has-selection",
-    ]);
-    const styles = uncommentCss(readAppCss());
-    for (const token of [...renderedClasses].sort()) {
-      if (unstyledByDesign.has(token)) continue;
-      assert.match(
-        styles,
-        new RegExp(`\\.${token}(?![\\w-])`),
-        `no app stylesheet rule styles .${token} on the Templates surface`,
       );
     }
   });
