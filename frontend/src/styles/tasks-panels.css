@@ -1010,11 +1010,6 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3 {
   cursor: pointer;
 }body[data-workspace-view="tasks"] .workflow-description-toggle:hover {
   text-decoration: underline;
-}body[data-workspace-view="tasks"] .workflow-detail-summary .ops-progress {
-  height: 6px;
-  border-radius: 3px;
-  margin: 4px 0 8px;
-  background: var(--dk-bg-muted);
 }body[data-workspace-view="tasks"] .workflow-detail-section {
   display: flex;
   flex-direction: column;
