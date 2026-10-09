@@ -601,6 +601,9 @@ describe("Planning surface production behavior", () => {
           return {
             settings: {
               connectionId: "google-calendar",
+              filterNonSlotHours: true,
+              filterDtcPlaceholders: true,
+              filterTransparent: true,
               filterLunch: true,
               filterRoutines: true,
               filterFitness: true,
@@ -634,12 +637,18 @@ describe("Planning surface production behavior", () => {
 
     assert.equal(dom.settingsDialog.open, true);
     assert.equal(dom.settingsForm.elements.connectionId.value, "google-calendar");
+    assert.equal(dom.settingsForm.elements.filterNonSlotHours.checked, true);
+    assert.equal(dom.settingsForm.elements.filterDtcPlaceholders.checked, true);
+    assert.equal(dom.settingsForm.elements.filterTransparent.checked, true);
     assert.equal(dom.settingsForm.elements.filterLunch.checked, true);
     assert.equal(dom.settingsForm.elements.filterBusy.checked, false);
     assert.equal(dom.settingsForm.elements.customKeywords.value, "dentist");
 
     // Modify settings and submit
     dom.settingsForm.elements.connectionId.value = "work-calendar";
+    dom.settingsForm.elements.filterNonSlotHours.checked = false;
+    dom.settingsForm.elements.filterDtcPlaceholders.checked = false;
+    dom.settingsForm.elements.filterTransparent.checked = false;
     dom.settingsForm.elements.filterLunch.checked = false;
     dom.settingsForm.elements.filterBusy.checked = true;
     dom.settingsForm.elements.customKeywords.value = "dentist\nhaircut";
@@ -652,6 +661,9 @@ describe("Planning surface production behavior", () => {
     assert.ok(putCall);
     const sent = JSON.parse(putCall.body);
     assert.equal(sent.connectionId, "work-calendar");
+    assert.equal(sent.filterNonSlotHours, false);
+    assert.equal(sent.filterDtcPlaceholders, false);
+    assert.equal(sent.filterTransparent, false);
     assert.equal(sent.filterLunch, false);
     assert.equal(sent.filterBusy, true);
     assert.deepEqual(sent.customKeywords, ["dentist", "haircut"]);

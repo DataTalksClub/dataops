@@ -137,6 +137,89 @@ describe('Alexey calendar overlay and filtering', () => {
         }),
         false,
       );
+
+      // DTC event placeholder blocks
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('DTC event block', { filterDtcPlaceholders: true }),
+        true,
+      );
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('DataTalks.Club event', { filterDtcPlaceholders: true }),
+        true,
+      );
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('DTC event', { filterDtcPlaceholders: true }),
+        true,
+      );
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('DTC event block', { filterDtcPlaceholders: false }),
+        false,
+      );
+
+      // Transparent events (free/non-blocking)
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('Stay at #402 Prenzlauer Berg', { filterTransparent: true }, { transparency: 'transparent' }),
+        true,
+      );
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('Flight to Helsinki', { filterTransparent: true }, { transparency: 'transparent' }),
+        false,
+      );
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('AI Conference Berlin', { filterTransparent: true }, { transparency: 'transparent' }),
+        false,
+      );
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('Stay at #402 Prenzlauer Berg', { filterTransparent: false }, { transparency: 'transparent' }),
+        false,
+      );
+
+      // Operational event slot filtering (Midday 11:30–14:00, Evening 16:30–18:30)
+      // Morning event (10:00–11:00 Berlin time) outside operational event slots:
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent(
+          'Internal standup',
+          { filterNonSlotHours: true },
+          { startIso: '2026-10-13T10:00:00+02:00', endIso: '2026-10-13T11:00:00+02:00' },
+        ),
+        true,
+      );
+      // When filterNonSlotHours is false, morning event is kept:
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent(
+          'Internal standup',
+          { filterNonSlotHours: false },
+          { startIso: '2026-10-13T10:00:00+02:00', endIso: '2026-10-13T11:00:00+02:00' },
+        ),
+        false,
+      );
+      // Midday event (12:30–13:30 Berlin time) is kept:
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent(
+          'Lunch discussion',
+          { filterNonSlotHours: true, filterLunch: false },
+          { startIso: '2026-10-13T12:30:00+02:00', endIso: '2026-10-13T13:30:00+02:00' },
+        ),
+        false,
+      );
+      // Evening event (17:00–18:00 Berlin time) is kept:
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent(
+          'Evening podcast recording',
+          { filterNonSlotHours: true },
+          { startIso: '2026-10-13T17:00:00+02:00', endIso: '2026-10-13T18:00:00+02:00' },
+        ),
+        false,
+      );
+      // All-day blockers bypass slot window filtering:
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent(
+          'Vacation',
+          { filterNonSlotHours: true },
+          { isAllDay: true },
+        ),
+        false,
+      );
     });
   });
 

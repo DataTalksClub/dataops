@@ -23,27 +23,75 @@ export interface DapierConnectionOption {
   title: string;
 }
 
+export interface AlexeyCalendarEventContext {
+  transparency?: string;
+  isAllDay?: boolean;
+  startIso?: string;
+  endIso?: string;
+}
+
+export function formatBerlinTime(isoString: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Berlin',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(isoString));
+}
+
+export function formatBerlinDate(isoString: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Berlin',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(isoString));
+  const get = (type: string) => parts.find((p) => p.type === type)!.value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+export function overlapsOperationalSlotWindow(startIso: string, endIso: string): boolean {
+  try {
+    const startTime = formatBerlinTime(startIso);
+    const endTime = formatBerlinTime(endIso);
+    // Midday window: 11:30 to 14:00 Berlin time (centering on 12:30 lunch slot)
+    const overlapsMidday = startTime < '14:00' && endTime > '11:30';
+    // Evening window: 16:30 to 18:30 Berlin time (centering on 17:00 evening slot)
+    const overlapsEvening = startTime < '18:30' && endTime > '16:30';
+    return overlapsMidday || overlapsEvening;
+  } catch {
+    return true;
+  }
+}
+
 export function shouldFilterAlexeyCalendarEvent(
   summary: string | null | undefined,
-  settings: Partial<CalendarOverlaySettings> = DEFAULT_CALENDAR_OVERLAY_SETTINGS
+  settings: Partial<CalendarOverlaySettings> = DEFAULT_CALENDAR_OVERLAY_SETTINGS,
+  context?: AlexeyCalendarEventContext
 ): boolean {
-  if (!summary) return false;
-  const s = summary.trim();
-  if (!s) return false;
+  const s = (summary || '').trim();
 
   const filterLunch = settings.filterLunch ?? DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterLunch;
   const filterRoutines = settings.filterRoutines ?? DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterRoutines;
   const filterFitness = settings.filterFitness ?? DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterFitness;
   const filterCampaigns = settings.filterCampaigns ?? DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterCampaigns;
   const filterBusy = settings.filterBusy ?? DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterBusy;
+  const filterNonSlotHours = settings.filterNonSlotHours ?? DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterNonSlotHours;
+  const filterDtcPlaceholders = settings.filterDtcPlaceholders ?? DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterDtcPlaceholders;
+  const filterTransparent = settings.filterTransparent ?? DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterTransparent;
   const customKeywords = settings.customKeywords || [];
+
+  // Standalone DTC event placeholders in Google Calendar (e.g. "DTC event block")
+  if (filterDtcPlaceholders && /^(dtc event block|datatalks\.club event|dtc event)$/i.test(s)) {
+    return true;
+  }
 
   // Standalone lunch and lunch-break blocks
   if (filterLunch && /^(lunch|lunchtime|lunch break|обед|обед на осткройце|нина обед)$/i.test(s)) {
     return true;
   }
 
-  // Personal routines, household, chores, school
+  // Personal routines, household, chores, school, birthdays
   if (filterRoutines) {
     const routinePatterns = [
       /^morning\s*no$/i,
@@ -55,6 +103,7 @@ export function shouldFilterAlexeyCalendarEvent(
       /brazilian nut/i,
       /restart claude/i,
       /^password$/i,
+      /birthday|др$/i,
     ];
     if (routinePatterns.some((pattern) => pattern.test(s))) return true;
   }
@@ -80,7 +129,7 @@ export function shouldFilterAlexeyCalendarEvent(
   }
 
   // Custom keywords / phrases (case-insensitive substring match)
-  if (customKeywords.length > 0) {
+  if (customKeywords.length > 0 && s) {
     const lower = s.toLowerCase();
     for (const kw of customKeywords) {
       const trimmed = kw.trim().toLowerCase();
@@ -90,28 +139,22 @@ export function shouldFilterAlexeyCalendarEvent(
     }
   }
 
+  // Transparent (free/non-blocking) events (unless flights/conferences/vacations)
+  if (filterTransparent && context?.transparency === 'transparent') {
+    if (!/(flight|conference|vacation|trip)/i.test(s)) {
+      return true;
+    }
+  }
+
+  // Filter out events outside operational event windows (Midday 11:30–14:00 and Evening 16:30–18:30)
+  // All-day blockers (Vacation, Conference, Travel) are always kept.
+  if (filterNonSlotHours && context && !context.isAllDay) {
+    if (context.startIso && context.endIso && !overlapsOperationalSlotWindow(context.startIso, context.endIso)) {
+      return true;
+    }
+  }
+
   return false;
-}
-
-
-function formatBerlinTime(isoString: string): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Berlin',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(isoString));
-}
-
-function formatBerlinDate(isoString: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Berlin',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(isoString));
-  const get = (type: string) => parts.find((p) => p.type === type)!.value;
-  return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
 function adjustAllDayEndDate(start: string, end?: string): string {
@@ -258,9 +301,16 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
 
       for (const event of events) {
         if (event.status === 'cancelled') continue;
-        if (shouldFilterAlexeyCalendarEvent(event.summary, activeSettings)) continue;
+        const isAllDay = !!event.start?.date;
+        const context: AlexeyCalendarEventContext = {
+          transparency: event.transparency,
+          isAllDay,
+          startIso: event.start?.dateTime || event.start?.date,
+          endIso: event.end?.dateTime || event.end?.date,
+        };
+        if (shouldFilterAlexeyCalendarEvent(event.summary, activeSettings, context)) continue;
 
-        const summary = (event.summary || '').trim() || 'Unavailable';
+        const summary = (event.summary || '').trim() || '(No title)';
         let startDate: string;
         let endDate: string;
         let label: string;

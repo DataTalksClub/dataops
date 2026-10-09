@@ -52,6 +52,9 @@ export interface CalendarOverlaySettings {
   filterFitness: boolean;
   filterCampaigns: boolean;
   filterBusy: boolean;
+  filterNonSlotHours: boolean;
+  filterDtcPlaceholders: boolean;
+  filterTransparent: boolean;
   customKeywords: string[];
   updatedAt?: string;
   updatedBy?: string;
@@ -64,6 +67,9 @@ export const DEFAULT_CALENDAR_OVERLAY_SETTINGS: CalendarOverlaySettings = {
   filterFitness: true,
   filterCampaigns: true,
   filterBusy: false,
+  filterNonSlotHours: true,
+  filterDtcPlaceholders: true,
+  filterTransparent: true,
   customKeywords: [],
 };
 
@@ -85,6 +91,9 @@ export async function getCalendarOverlaySettings(client: DynamoDBDocumentClient)
     filterFitness: typeof data.filterFitness === 'boolean' ? data.filterFitness : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterFitness,
     filterCampaigns: typeof data.filterCampaigns === 'boolean' ? data.filterCampaigns : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterCampaigns,
     filterBusy: typeof data.filterBusy === 'boolean' ? data.filterBusy : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterBusy,
+    filterNonSlotHours: typeof data.filterNonSlotHours === 'boolean' ? data.filterNonSlotHours : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterNonSlotHours,
+    filterDtcPlaceholders: typeof data.filterDtcPlaceholders === 'boolean' ? data.filterDtcPlaceholders : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterDtcPlaceholders,
+    filterTransparent: typeof data.filterTransparent === 'boolean' ? data.filterTransparent : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterTransparent,
     customKeywords: Array.isArray(data.customKeywords) ? data.customKeywords.filter((k: any) => typeof k === 'string' && k.trim()) : [],
     updatedAt: data.updatedAt as string | undefined,
     updatedBy: data.updatedBy as string | undefined,
@@ -104,6 +113,9 @@ export async function saveCalendarOverlaySettings(
     filterFitness: typeof input.filterFitness === 'boolean' ? input.filterFitness : current.filterFitness,
     filterCampaigns: typeof input.filterCampaigns === 'boolean' ? input.filterCampaigns : current.filterCampaigns,
     filterBusy: typeof input.filterBusy === 'boolean' ? input.filterBusy : current.filterBusy,
+    filterNonSlotHours: typeof input.filterNonSlotHours === 'boolean' ? input.filterNonSlotHours : current.filterNonSlotHours,
+    filterDtcPlaceholders: typeof input.filterDtcPlaceholders === 'boolean' ? input.filterDtcPlaceholders : current.filterDtcPlaceholders,
+    filterTransparent: typeof input.filterTransparent === 'boolean' ? input.filterTransparent : current.filterTransparent,
     customKeywords: Array.isArray(input.customKeywords)
       ? input.customKeywords
           .filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
