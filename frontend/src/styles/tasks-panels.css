@@ -1424,7 +1424,39 @@ body[data-workspace-view="tasks"] .runtime-template-definition dd {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {body[data-workspace-view="tasks"] .entity-route-loading {
+/* Card modal loading skeleton, description subtitles, and task owners -- */
+body[data-workspace-view="tasks"] .card-loading-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 6px 0;
+}body[data-workspace-view="tasks"] .card-loading-block {
+  border-radius: var(--dk-radius-sm);
+  background: linear-gradient(90deg, var(--dk-bg-muted), var(--dk-bg-hover), var(--dk-bg-muted));
+  background-size: 220% 100%;
+  animation: task-state-shimmer 1.5s ease-in-out infinite;
+}body[data-workspace-view="tasks"] .card-loading-title {
+  height: 22px;
+  width: 55%;
+}body[data-workspace-view="tasks"] .card-loading-row {
+  display: flex;
+  gap: 8px;
+}body[data-workspace-view="tasks"] .card-loading-chip {
+  height: 22px;
+  width: 88px;
+  border-radius: var(--dk-radius-full);
+}body[data-workspace-view="tasks"] .card-loading-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}body[data-workspace-view="tasks"] .card-loading-line {
+  height: 14px;
+}body[data-workspace-view="tasks"] .card-loading-line:nth-child(2) {
+  width: 92%;
+}body[data-workspace-view="tasks"] .card-loading-line:nth-child(3) {
+  width: 78%;
+}body[data-workspace-view="tasks"] .card-loading-line:nth-child(4) {
+  width: 64%;
 }body[data-workspace-view="tasks"] .workflow-description-subtitle {
   margin: 10px 0 2px;
   font-size: 12px;
@@ -1446,6 +1478,8 @@ body[data-workspace-view="tasks"] .runtime-template-definition dd {
   font-size: 10px;
 }
 
+@media (prefers-reduced-motion: reduce) {body[data-workspace-view="tasks"] .entity-route-loading,
+body[data-workspace-view="tasks"] .card-loading-block {
     animation: none;
   }body[data-workspace-view="tasks"] .ops-queue-row,
 body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card,

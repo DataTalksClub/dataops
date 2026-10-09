@@ -132,6 +132,34 @@ export function createCardPanel(context) {
   }
 
   function renderEntityLoadingState(container, kind, id) {
+    if (kind === "card") {
+      const skeleton = document.createElement("div");
+      skeleton.className = "card-loading-skeleton";
+      skeleton.setAttribute("role", "status");
+      skeleton.setAttribute("aria-label", "Loading card");
+      const title = document.createElement("div");
+      title.className = "card-loading-block card-loading-title";
+      title.setAttribute("aria-hidden", "true");
+      const chips = document.createElement("div");
+      chips.className = "card-loading-row";
+      chips.setAttribute("aria-hidden", "true");
+      for (let i = 0; i < 3; i++) {
+        const chip = document.createElement("div");
+        chip.className = "card-loading-block card-loading-chip";
+        chips.append(chip);
+      }
+      const rows = document.createElement("div");
+      rows.className = "card-loading-rows";
+      rows.setAttribute("aria-hidden", "true");
+      for (let i = 0; i < 4; i++) {
+        const row = document.createElement("div");
+        row.className = "card-loading-block card-loading-line";
+        rows.append(row);
+      }
+      skeleton.append(title, chips, rows);
+      container.replaceChildren(skeleton);
+      return;
+    }
     const loadingState = document.createElement("section");
     loadingState.className = "entity-route-state entity-route-loading";
     loadingState.setAttribute("role", "status");

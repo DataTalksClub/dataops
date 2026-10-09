@@ -1528,7 +1528,31 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(harness.errors, []);
   });
 
+  test("shows a loading skeleton before the Card content arrives", async () => {
+    const card = {
+      id: "card-loading",
+      version: 1,
+      title: "Loading Card",
+      status: "active",
+      stage: "preparation",
+      taskCount: 0,
+      openTaskCount: 0,
+      references: [],
+    };
+    const harness = createHarness({ cards: [card] });
 
+    harness.api.prepareCardPanel(card.id);
+    const skeleton = harness.cardPanelBody.querySelector(
+      ".card-loading-skeleton",
+    );
+    assert.ok(skeleton);
+    assert.equal(skeleton.getAttribute("role"), "status");
+    assert.equal(
+      skeleton.querySelectorAll(".card-loading-block").length > 3,
+      true,
+    );
+    assert.deepEqual(harness.errors, []);
+  });
 
   test("lists Card artifacts above the Tasks checklist", async () => {
     const card = {
@@ -2879,7 +2903,11 @@ describe("Work Detail surface boundary", () => {
     await reload;
 
     assert.equal(harness.cardPanelTitle.textContent, "Loading card...");
-    assert.equal(harness.cardPanelBody.textContent, "Loading card new-card…");
+    const loading = harness.cardPanelBody.querySelector(
+      ".card-loading-skeleton",
+    );
+    assert.ok(loading);
+    assert.equal(loading.getAttribute("role"), "status");
   });
 
   test("does not apply a stale Card artifact refresh to a re-entered panel", async () => {
@@ -2933,7 +2961,11 @@ describe("Work Detail surface boundary", () => {
     await registration;
 
     assert.equal(harness.cardPanelTitle.textContent, "Loading card...");
-    assert.equal(harness.cardPanelBody.textContent, "Loading card new-card…");
+    const loading = harness.cardPanelBody.querySelector(
+      ".card-loading-skeleton",
+    );
+    assert.ok(loading);
+    assert.equal(loading.getAttribute("role"), "status");
   });
 
   test("registers Card references and registers plus approves external artifacts", async () => {
