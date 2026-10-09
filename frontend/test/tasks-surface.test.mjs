@@ -33,6 +33,7 @@ import {
   findByText,
   nextTicks,
 } from "./support/fake-dom.mjs";
+import { readAppCss, uncommentCss } from "./support/app-css.mjs";
 
 const originalDocument = globalThis.document;
 const canonicalTask = (task) => ({
@@ -983,6 +984,103 @@ describe("Tasks surface boundary", () => {
       assert.equal(
         findByText(harness.documentList, mutation, "button"),
         undefined,
+      );
+    }
+  });
+
+  test("every Templates surface class has an app stylesheet rule", async () => {
+    // Regression guard: the stylesheet split dropped the Templates design
+    // CSS while the markup kept emitting its classes, so rows rendered with
+    // collapsed names and jammed controls. Render the list and a selected
+    // detail, collect every emitted class, and require a matching rule.
+    const template = {
+      id: "template-1",
+      name: "Newsletter",
+      type: "workflow",
+      version: 2,
+      sourceRevision: "rev-2",
+      taskDefinitions: [
+        { refId: "draft", description: "Draft", offsetDays: 0 },
+        { refId: "send", description: "Send", offsetDays: 1 },
+      ],
+    };
+    const liveCard = {
+      id: "card-1",
+      title: "Newsletter run",
+      status: "open",
+      templateId: "template-1",
+      templateVersion: 2,
+      templateSourceRevision: "rev-2",
+      templateDefinitionSnapshot: { version: 2 },
+      openTaskCount: 1,
+      updatedAt: new Date().toISOString(),
+    };
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") return { templates: [template] };
+        throw new Error(`Unexpected request ${url}`);
+      },
+      workSnapshot: {
+        cards: [
+          liveCard,
+          {
+            ...liveCard,
+            id: "card-2",
+            title: "Old newsletter run",
+            templateSourceRevision: "rev-1",
+          },
+        ],
+      },
+    });
+    await harness.api.refreshRuntimeTemplates();
+
+    const renderedClasses = new Set();
+    const collectClasses = (element) => {
+      for (const token of String(element.className || "").split(/\s+/)) {
+        if (token) renderedClasses.add(token);
+      }
+      for (const child of element.children || []) collectClasses(child);
+    };
+    harness.api.renderTasksSurface([], "templates");
+    collectClasses(harness.documentList);
+    harness.api.setRuntimeTemplateRoute(
+      {
+        tasksSection: "templates",
+        params: new URLSearchParams({ templateId: "template-1" }),
+      },
+      { templateId: "template-1" },
+    );
+    harness.api.renderTasksSurface([], "templates");
+    collectClasses(harness.documentList);
+
+    // The support-doc grid renders no docs in this harness
+    // (getAllDocuments is empty), so its factory classes are covered
+    // statically. They come from renderWorkflowTemplateCard in
+    // surfaces/tasks/recurring.js.
+    for (const staticClass of [
+      "ops-template-card",
+      "ops-template-grid",
+      "ops-template-actions",
+      "ops-card-chips",
+    ]) renderedClasses.add(staticClass);
+
+    // Intentionally rule-less by design: the icons are sized by element
+    // selectors (.runtime-template-projection h4 svg,
+    // .runtime-template-row strong > svg), and the hooks gate behavior,
+    // not paint.
+    const unstyledByDesign = new Set([
+      "runtime-template-icon",
+      "runtime-template-trigger-icon",
+      "runtime-template-readonly",
+      "has-selection",
+    ]);
+    const styles = uncommentCss(readAppCss());
+    for (const token of [...renderedClasses].sort()) {
+      if (unstyledByDesign.has(token)) continue;
+      assert.match(
+        styles,
+        new RegExp(`\\.${token}(?![\\w-])`),
+        `no app stylesheet rule styles .${token} on the Templates surface`,
       );
     }
   });
