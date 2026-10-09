@@ -1332,6 +1332,84 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(harness.errors, []);
   });
 
+  test("keeps a completed Task in the list, struck through, instead of moving it away", async () => {
+    const card = {
+      id: "card-complete-stays",
+      version: 1,
+      title: "Stay Card",
+      status: "active",
+      stage: "preparation",
+      taskCount: 2,
+      openTaskCount: 2,
+      references: [],
+    };
+    const first = {
+      id: "card-complete-first",
+      cardId: card.id,
+      version: 1,
+      taskHistory: [],
+      description: "First checklist item",
+      status: "todo",
+    };
+    const second = {
+      id: "card-complete-second",
+      cardId: card.id,
+      version: 1,
+      taskHistory: [],
+      description: "Second checklist item",
+      status: "todo",
+    };
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method)
+          return card;
+        if (url === `/api/tasks?cardId=${card.id}`)
+          return { tasks: [first, second] };
+        if (url === `/api/artifacts?cardId=${card.id}`)
+          return { artifacts: [] };
+        if (url === `/api/tasks/${first.id}` && requestOptions.method === "PUT") {
+          return { ...first, status: "done", version: 2, cardId: card.id };
+        }
+        return {};
+      },
+    });
+
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    const rows = () =>
+      harness.cardPanelBody.querySelectorAll(".card-checklist-item");
+    assert.equal(rows().length, 2);
+    await rows()[0].querySelector('input[type="checkbox"]').dispatch("change");
+    const doneRow = await waitFor(() => {
+      const items = rows();
+      if (items.length !== 2) return null;
+      const last = items[items.length - 1];
+      const box = last.querySelector('input[type="checkbox"]');
+      return box.checked && last.querySelector(".card-checklist-label.is-done")
+        ? last
+        : null;
+    }, "completed Task sinking struck through to the end of the list");
+    assert.match(doneRow.textContent, /First checklist item/);
+    assert.equal(
+      rows()[0].querySelector('input[type="checkbox"]').checked,
+      false,
+    );
+    assert.equal(
+      rows()[0].querySelector(".card-checklist-label.is-done"),
+      null,
+    );
+    assert.deepEqual(harness.errors, []);
+  });
+
+
+
+
+
+
+
+
+
   test("keeps evidence registration failures in the Task panel and recovers with retained fields", async () => {
     const task = {
       id: "task-evidence-failure",

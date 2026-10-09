@@ -26,7 +26,6 @@ function humanLinkName(name) {
     return name;
   }
 }
-
 export function createCardPanel(context) {
   const {
     cardAnchorTone,
@@ -428,6 +427,7 @@ export function createCardPanel(context) {
       main.append(linksSection);
     }
 
+
     // Task checklist
     if (tasks.length > 0) {
       const checklistSection = document.createElement("div");
@@ -463,11 +463,23 @@ export function createCardPanel(context) {
 
       const list = document.createElement("div");
       list.className = "task-history-list";
-      const groups = workflowTaskGroups(tasks, today).filter(
-        (group) => group.tasks.length > 0,
+      // Completed Tasks stay in place, struck through, instead of jumping to
+      // a Done section: sortCardChecklistTasks already orders done last, so
+      // the open and done groups concatenate back into stable global order.
+      // Only Waiting keeps its own titled group.
+      const allGroups = workflowTaskGroups(tasks, today);
+      const waitingGroup = allGroups.find(
+        (group) => group.title === "Waiting / follow-up",
       );
-      for (const group of groups) {
-        if (groups.length > 1) {
+      const mainTasks = allGroups
+        .filter((group) => group !== waitingGroup)
+        .flatMap((group) => group.tasks);
+      const displayGroups = [
+        { title: "", tasks: mainTasks },
+        ...(waitingGroup && waitingGroup.tasks.length > 0 ? [waitingGroup] : []),
+      ].filter((group) => group.tasks.length > 0);
+      for (const group of displayGroups) {
+        if (displayGroups.length > 1 && group.title) {
           const groupTitle = document.createElement("div");
           groupTitle.className = "card-task-group-title";
           groupTitle.textContent = `${group.title} (${group.tasks.length})`;
