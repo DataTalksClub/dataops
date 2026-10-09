@@ -10,15 +10,16 @@ import {
   getRecurringConfig,
   updateRecurringConfig,
   deleteRecurringConfig,
-  countRecurringConfigReferences,
+  countRecurringConfigRuns,
+  listRecurringRuns,
+  recordRecurringRun,
   listRecurringConfigs,
   listEnabledRecurringConfigs,
   generateRecurringTasks,
-  cronMatchesDate,
-  matchCronField,
 } from '../src/db/recurring';
-import { createNotification } from '../src/db/notifications';
-import { createTask, getTask } from '../src/db/tasks';
+import { nextMatchingDate } from '../src/cron/cronMatch';
+import { berlinDate } from '../src/sponsorFinance/core';
+import { getTask } from '../src/db/tasks';
 
 describe('Recurring configs data layer', () => {
   let client: DynamoDBDocumentClient;
@@ -34,75 +35,11 @@ describe('Recurring configs data layer', () => {
     await stopLocal();
   });
 
-  // ── Cron matching unit tests ─────────────────────────────────────
-
-  describe('matchCronField', () => {
-    it('matches wildcard * for any value', () => {
-      assert.strictEqual(matchCronField('*', 0), true);
-      assert.strictEqual(matchCronField('*', 15), true);
-      assert.strictEqual(matchCronField('*', 31), true);
-    });
-
-    it('matches a specific number', () => {
-      assert.strictEqual(matchCronField('3', 3), true);
-      assert.strictEqual(matchCronField('3', 4), false);
-      assert.strictEqual(matchCronField('15', 15), true);
-    });
-
-    it('matches comma-separated values', () => {
-      assert.strictEqual(matchCronField('1,3,5', 1), true);
-      assert.strictEqual(matchCronField('1,3,5', 3), true);
-      assert.strictEqual(matchCronField('1,3,5', 5), true);
-      assert.strictEqual(matchCronField('1,3,5', 2), false);
-    });
-
-    it('matches step values (*/N)', () => {
-      assert.strictEqual(matchCronField('*/2', 0), true);
-      assert.strictEqual(matchCronField('*/2', 2), true);
-      assert.strictEqual(matchCronField('*/2', 4), true);
-      assert.strictEqual(matchCronField('*/2', 1), false);
-      assert.strictEqual(matchCronField('*/2', 3), false);
-    });
-  });
-
-  describe('cronMatchesDate', () => {
-    it('matches daily cron: * * * * * (every day)', () => {
-      const d = new Date('2028-01-15T00:00:00Z');
-      assert.strictEqual(cronMatchesDate('0 9 * * *', d), true);
-    });
-
-    it('matches weekly cron: 0 9 * * 3 (Wednesdays)', () => {
-      // 2028-02-02 is a Wednesday
-      const wed = new Date('2028-02-02T00:00:00Z');
-      assert.strictEqual(cronMatchesDate('0 9 * * 3', wed), true);
-
-      // 2028-02-01 is a Tuesday
-      const tue = new Date('2028-02-01T00:00:00Z');
-      assert.strictEqual(cronMatchesDate('0 9 * * 3', tue), false);
-    });
-
-    it('matches monthly cron: 0 9 15 * * (15th of every month)', () => {
-      const d15 = new Date('2028-06-15T00:00:00Z');
-      assert.strictEqual(cronMatchesDate('0 9 15 * *', d15), true);
-
-      const d14 = new Date('2028-06-14T00:00:00Z');
-      assert.strictEqual(cronMatchesDate('0 9 15 * *', d14), false);
-    });
-
-    it('matches specific month and day: 0 9 25 12 * (Dec 25th)', () => {
-      const xmas = new Date('2028-12-25T00:00:00Z');
-      assert.strictEqual(cronMatchesDate('0 9 25 12 *', xmas), true);
-
-      const notXmas = new Date('2028-11-25T00:00:00Z');
-      assert.strictEqual(cronMatchesDate('0 9 25 12 *', notXmas), false);
-    });
-
-    it('rejects expressions with wrong number of fields', () => {
-      const d = new Date('2028-01-15T00:00:00Z');
-      assert.strictEqual(cronMatchesDate('0 9 * *', d), false);
-      assert.strictEqual(cronMatchesDate('0 9 * * * *', d), false);
-    });
-  });
+  function shiftIsoDate(isoDate: string, days: number): string {
+    const next = new Date(`${isoDate}T00:00:00Z`);
+    next.setUTCDate(next.getUTCDate() + days);
+    return next.toISOString().split('T')[0];
+  }
 
   // ── CRUD tests ──────────────────────────────────────────────────
 
@@ -206,30 +143,159 @@ describe('Recurring configs data layer', () => {
     assert.strictEqual(result, null);
   });
 
-  it('countRecurringConfigReferences finds generated task and notification relationships', async () => {
+  it('persists the next matching civil date as the next run', async () => {
     const created = await createRecurringConfig(client, {
-      description: 'Referenced recurring config',
+      description: 'Daily run',
       cronExpression: '0 9 * * *',
     });
 
-    await createTask(client, {
-      description: 'Generated recurring task',
+    assert.strictEqual(created.nextRunDate, berlinDate());
+    const fetched = await getRecurringConfig(client, created.id);
+    assert.strictEqual(fetched!.nextRunDate, berlinDate());
+
+    // Changing the schedule recomputes the run. A weekday that has to be walked
+    // to is still a date the daily pass will honour.
+    await new Promise((r) => setTimeout(r, 10));
+    const weekday = await updateRecurringConfig(client, created.id, {
+      cronExpression: '0 9 * * 4',
+    });
+    assert.strictEqual(weekday!.nextRunDate, nextMatchingDate('0 9 * * 4'));
+    assert.strictEqual(new Date(`${weekday!.nextRunDate}T00:00:00Z`).getUTCDay(), 4);
+  });
+
+  it('leaves the next run date alone when the schedule did not change', async () => {
+    const created = await createRecurringConfig(client, {
+      description: 'Stable next run',
+      cronExpression: '0 9 * * *',
+    });
+
+    const renamed = await updateRecurringConfig(client, created.id, {
+      description: 'Renamed',
+    });
+
+    assert.strictEqual(renamed!.nextRunDate, created.nextRunDate);
+  });
+
+  it('records the last outcome of a firing on the config', async () => {
+    await disableAllConfigs();
+
+    const created = await createRecurringConfig(client, {
+      description: 'Outcome tracking',
+      cronExpression: '0 9 * * *',
+    });
+
+    const today = berlinDate();
+    const first = await generateRecurringTasks(client, today, today);
+    assert.strictEqual(first.generated.length, 1);
+    const afterFirst = await getRecurringConfig(client, created.id);
+    assert.strictEqual(afterFirst!.lastRunOutcome, 'succeeded');
+    assert.ok(afterFirst!.lastRunAt);
+    assert.strictEqual(
+      afterFirst!.nextRunDate,
+      nextMatchingDate('0 9 * * *', new Date(`${shiftIsoDate(today, 1)}T12:00:00Z`)),
+    );
+
+    // Idempotent replay still counts as a run, and the ledger row is replaced.
+    const second = await generateRecurringTasks(client, today, today);
+    assert.strictEqual(second.generated.length, 0);
+    assert.strictEqual(second.skipped, 1);
+    const afterSecond = await getRecurringConfig(client, created.id);
+    assert.strictEqual(afterSecond!.lastRunOutcome, 'succeeded');
+
+    assert.strictEqual(await countRecurringConfigRuns(client, created.id), 1);
+  });
+
+  it('a backfill over past dates leaves the next run at today or later', async () => {
+    await disableAllConfigs();
+
+    const created = await createRecurringConfig(client, {
+      description: 'Backfill next run',
+      cronExpression: '0 9 * * *',
+    });
+
+    const today = berlinDate();
+    const result = await generateRecurringTasks(client, shiftIsoDate(today, -3), shiftIsoDate(today, -1));
+    assert.strictEqual(result.generated.length, 3);
+
+    const after = await getRecurringConfig(client, created.id);
+    assert.strictEqual(after!.lastRunOutcome, 'succeeded');
+    assert.ok(after!.nextRunDate >= today);
+    assert.strictEqual(
+      after!.nextRunDate,
+      nextMatchingDate('0 9 * * *', new Date(`${today}T12:00:00Z`)),
+    );
+  });
+
+  it('pre-generating a future range leaves the next run at the first match from today', async () => {
+    await disableAllConfigs();
+
+    const created = await createRecurringConfig(client, {
+      description: 'Future pre-generate next run',
+      cronExpression: '0 9 * * *',
+    });
+
+    const today = berlinDate();
+    const result = await generateRecurringTasks(client, shiftIsoDate(today, 7), shiftIsoDate(today, 9));
+    assert.strictEqual(result.generated.length, 3);
+
+    // The days between today and the range still belong to the daily pass.
+    const after = await getRecurringConfig(client, created.id);
+    assert.strictEqual(
+      after!.nextRunDate,
+      nextMatchingDate('0 9 * * *', new Date(`${today}T12:00:00Z`)),
+    );
+  });
+
+  it('countRecurringConfigRuns counts ledger rows only for the config asked about', async () => {
+    const created = await createRecurringConfig(client, {
+      description: 'Ledger owner',
+      cronExpression: '0 9 * * *',
+    });
+    const other = await createRecurringConfig(client, {
+      description: 'Ledger bystander',
+      cronExpression: '0 9 * * *',
+    });
+
+    await recordRecurringRun(client, {
+      configId: created.id,
       date: '2027-01-10',
-      source: 'recurring',
-      recurringConfigId: created.id,
+      outcome: 'succeeded',
+      generatedTaskIds: [],
     });
-    await createNotification(client, {
-      type: 'recurring-due',
-      message: 'Generated recurring task due',
-      recurringConfigId: created.id,
-      metadata: { recurringConfigId: created.id },
+    await recordRecurringRun(client, {
+      configId: created.id,
+      date: '2027-01-11',
+      outcome: 'failed',
+      generatedTaskIds: [],
+    });
+    await recordRecurringRun(client, {
+      configId: other.id,
+      date: '2027-01-10',
+      outcome: 'succeeded',
+      generatedTaskIds: [],
     });
 
-    const references = await countRecurringConfigReferences(client, created.id);
+    assert.strictEqual(await countRecurringConfigRuns(client, created.id), 2);
+    assert.strictEqual(await countRecurringConfigRuns(client, other.id), 1);
+    assert.strictEqual(await countRecurringConfigRuns(client, 'not-a-config'), 0);
+  });
 
-    assert.strictEqual(references.tasks, 1);
-    assert.strictEqual(references.notifications, 1);
-    assert.strictEqual(references.total, 2);
+  it('countRecurringConfigRuns does not read generated tasks as history', async () => {
+    const created = await createRecurringConfig(client, {
+      description: 'Conflicting config id',
+      cronExpression: '0 9 * * *',
+    });
+
+    // The ledger prefix must not be reachable by prefixing a config id that
+    // extends past the '#<date>' separator.
+    await recordRecurringRun(client, {
+      configId: `${created.id}0`,
+      date: '2027-01-10',
+      outcome: 'succeeded',
+      generatedTaskIds: [],
+    });
+
+    assert.strictEqual(await countRecurringConfigRuns(client, created.id), 0);
   });
 
   it('listRecurringConfigs returns all configs', async () => {
@@ -343,6 +409,86 @@ describe('Recurring configs data layer', () => {
     assert.deepStrictEqual(dates, ['2027-06-15', '2027-07-15', '2027-08-15']);
 
     await updateRecurringConfig(client, config.id, { enabled: false });
+  });
+
+  it('generateRecurringTasks honours day-of-week ranges the matcher now supports (cron: 0 9 * * 1-5)', async () => {
+    await disableAllConfigs();
+
+    const config = await createRecurringConfig(client, {
+      description: 'Gen weekday report',
+      cronExpression: '0 9 * * 1-5',
+    });
+
+    // 2027-06-01 is a Tuesday and 2027-06-05 a Saturday, so the week has five
+    // weekdays, not six.
+    const result = await generateRecurringTasks(client, '2027-06-01', '2027-06-07');
+
+    assert.strictEqual(result.generated.length, 5);
+    const dates = result.generated.map((t) => t.date).sort();
+    assert.deepStrictEqual(dates, [
+      '2027-06-01',
+      '2027-06-02',
+      '2027-06-03',
+      '2027-06-04',
+      '2027-06-07',
+    ]);
+
+    await updateRecurringConfig(client, config.id, { enabled: false });
+  });
+
+  it('records a failed firing and still generates for every other config', async () => {
+    await disableAllConfigs();
+
+    const failing = await createRecurringConfig(client, {
+      description: 'Throws on creation',
+      cronExpression: '0 9 * * *',
+    });
+    const healthy = await createRecurringConfig(client, {
+      description: 'Creates fine',
+      cronExpression: '0 9 * * *',
+    });
+
+    // Only the generated task write for the failing config is rejected; every
+    // other command still reaches the table.
+    const failTaskWrites = {
+      send: (command: { input?: Record<string, unknown> }) => {
+        const item = command.input?.Item as { description?: string } | undefined;
+        if (item?.description === 'Throws on creation') {
+          return Promise.reject(new Error('dynamodb capacity exceeded'));
+        }
+        return client.send(command as never);
+      },
+    } as unknown as DynamoDBDocumentClient;
+
+    const today = berlinDate();
+    const result = await generateRecurringTasks(failTaskWrites, today, today);
+
+    assert.strictEqual(result.generated.length, 1);
+    assert.strictEqual(result.generated[0].description, 'Creates fine');
+    assert.strictEqual(result.failures, 1);
+
+    const failedRuns = await listRecurringRuns(client, failing.id);
+    assert.strictEqual(failedRuns.length, 1);
+    assert.strictEqual(failedRuns[0].date, today);
+    assert.strictEqual(failedRuns[0].outcome, 'failed');
+    assert.deepStrictEqual(failedRuns[0].generatedTaskIds, []);
+
+    const failedConfig = await getRecurringConfig(client, failing.id);
+    assert.strictEqual(failedConfig!.lastRunOutcome, 'failed');
+    assert.strictEqual(failedConfig!.nextRunDate, failing.nextRunDate);
+
+    const healthyRuns = await listRecurringRuns(client, healthy.id);
+    assert.strictEqual(healthyRuns.length, 1);
+    assert.strictEqual(healthyRuns[0].outcome, 'succeeded');
+    assert.strictEqual(healthyRuns[0].generatedTaskIds.length, 1);
+    const healthyConfig = await getRecurringConfig(client, healthy.id);
+    assert.strictEqual(
+      healthyConfig!.nextRunDate,
+      nextMatchingDate('0 9 * * *', new Date(`${shiftIsoDate(today, 1)}T12:00:00Z`)),
+    );
+
+    await updateRecurringConfig(client, failing.id, { enabled: false });
+    await updateRecurringConfig(client, healthy.id, { enabled: false });
   });
 
   it('generateRecurringTasks is idempotent -- no duplicates on second call', async () => {

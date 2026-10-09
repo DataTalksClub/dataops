@@ -560,6 +560,9 @@ export interface Template {
 
 // --- Recurring ---
 
+/** What one firing of a recurring schedule did: work or no work, success or not. */
+export type RecurringRunOutcome = 'succeeded' | 'failed';
+
 export interface RecurringConfig {
   id: string;
   description: string;
@@ -574,8 +577,21 @@ export interface RecurringConfig {
   requiresFile?: boolean;
   tags?: string[];
   enabled: boolean;
+  /** First civil date the schedule matches, recomputed whenever it is written. */
+  nextRunDate?: string;
+  lastRunAt?: string;
+  lastRunOutcome?: RecurringRunOutcome;
   createdAt: string;
   updatedAt: string;
+}
+
+/** One config's one firing, kept so a schedule with history cannot be deleted. */
+export interface RecurringRun {
+  configId: string;
+  date: string;
+  outcome: RecurringRunOutcome;
+  generatedTaskIds: string[];
+  createdAt: string;
 }
 
 // --- User ---

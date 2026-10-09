@@ -3,7 +3,9 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createCardFromTemplate, listTemplates, instantiateTemplate } from '../db/templates';
 import { listCards } from '../db/cards';
 import { createNotification } from '../db/notifications';
-import { generateRecurringTasks, cronMatchesDate } from '../db/recurring';
+import { generateRecurringTasks } from '../db/recurring';
+import { emitRecurringCronMetrics } from './recurringMetrics';
+import { cronMatchesDate } from './cronMatch';
 import type { Template, Card } from '../types';
 import { evaluateSponsorBookingAlerts } from '../sponsorCrm/alerts';
 import { evaluateSponsorFinanceAlerts } from '../sponsorFinance/alerts';
@@ -22,6 +24,7 @@ export interface CronRunnerResult {
   recurring: {
     generated: string[];
     skipped: number;
+    failures: number;
   };
   failures: number;
 }
@@ -77,6 +80,7 @@ async function runCron(
   let failures = 0;
   const recurringGenerated: string[] = [];
   let recurringSkipped = 0;
+  let recurringFailures = 0;
 
   const sponsorAutomations = [
     ['sponsor booking alerts', sponsorEvaluators.bookingAlerts],
@@ -104,6 +108,8 @@ async function runCron(
   try {
     const recurringResult = await generateRecurringTasks(client, todayDate, todayDate);
     recurringSkipped = recurringResult.skipped;
+    recurringFailures = recurringResult.failures;
+    failures += recurringFailures;
     for (const task of recurringResult.generated) {
       recurringGenerated.push(task.id);
       const notificationData: Record<string, unknown> = {
@@ -124,11 +130,17 @@ async function runCron(
     }
   } catch (err: unknown) {
     failures++;
+    recurringFailures++;
     await createNotification(client, {
       type: 'automation-failure',
       message: `Recurring task generation failed for ${todayDate}: ${(err as Error).message}`,
       dueAt: todayDate,
     });
+  } finally {
+    // The function's error metrics cannot see a pass that never ran, so the
+    // pass reports itself: no datapoint means a missed day, and a datapoint
+    // carrying a failure count says the recurring schedules are broken.
+    emitRecurringCronMetrics({ passes: 1, failures: recurringFailures });
   }
 
   for (const template of autoTemplates) {
@@ -231,7 +243,7 @@ async function runCron(
     created,
     skipped: skipped + recurringSkipped,
     templates: { created, skipped, recovered },
-    recurring: { generated: recurringGenerated, skipped: recurringSkipped },
+    recurring: { generated: recurringGenerated, skipped: recurringSkipped, failures: recurringFailures },
     failures,
   };
 }

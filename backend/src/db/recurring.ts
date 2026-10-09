@@ -7,9 +7,11 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_NOTIFICATIONS, TABLE_TASKS } from './tableNames';
+import { TABLE_TASKS } from './tableNames';
 import { createTask } from './tasks';
-import type { RecurringConfig, Task } from '../types';
+import { cronMatchesDate, nextMatchingDate } from '../cron/cronMatch';
+import { berlinDate } from '../sponsorFinance/core';
+import type { RecurringConfig, RecurringRun, RecurringRunOutcome, Task } from '../types';
 
 /**
  * Strip DynamoDB key attributes (PK, SK) from an item.
@@ -20,54 +22,28 @@ function cleanItem(item: Record<string, unknown> | undefined): RecurringConfig |
   return rest as unknown as RecurringConfig;
 }
 
-/**
- * Match a single cron field value against a date value.
- * Supports: '*' (any), specific numbers, comma-separated lists, and step values (N).
- */
-function matchCronField(fieldExpr: string, value: number): boolean {
-  // Wildcard matches everything
-  if (fieldExpr === '*') return true;
+function recurringRunKey(configId: string, date: string): { PK: string; SK: string } {
+  const key = `RECURRINGRUN#${configId}#${date}`;
+  return { PK: key, SK: key };
+}
 
-  // Step value: */N
-  if (fieldExpr.startsWith('*/')) {
-    const step = parseInt(fieldExpr.slice(2), 10);
-    if (isNaN(step) || step <= 0) return false;
-    return value % step === 0;
-  }
-
-  // Comma-separated list: 1,3,5
-  const parts = fieldExpr.split(',');
-  for (const part of parts) {
-    const num = parseInt(part.trim(), 10);
-    if (!isNaN(num) && num === value) return true;
-  }
-
-  return false;
+function addDaysToIsoDate(isoDate: string, days: number): string {
+  const next = new Date(`${isoDate}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next.toISOString().split('T')[0];
 }
 
 /**
- * Check if a date matches a cron expression.
- * Cron format: minute hour day-of-month month day-of-week
- * For date-level matching, only day-of-month (field 3), month (field 4),
- * and day-of-week (field 5) matter.
+ * The civil date the next run is walked from. A range that reaches today ends
+ * the walk after the range, so the daily pass never replays what it just did.
+ * A manual backfill or a pre-generated future range instead leaves the next
+ * run at the first match from today: the range neither strands the label in
+ * the past nor skips over work the daily pass has not generated yet.
  */
-function cronMatchesDate(cronExpression: string, date: Date): boolean {
-  const fields = cronExpression.trim().split(/\s+/);
-  if (fields.length !== 5) return false;
-
-  const dayOfMonth = fields[2];
-  const month = fields[3];
-  const dayOfWeek = fields[4];
-
-  const dateDay = date.getUTCDate();
-  const dateMonth = date.getUTCMonth() + 1; // JS months are 0-based
-  const dateDow = date.getUTCDay(); // 0=Sunday
-
-  return (
-    matchCronField(dayOfMonth, dateDay) &&
-    matchCronField(month, dateMonth) &&
-    matchCronField(dayOfWeek, dateDow)
-  );
+function nextRunBase(startDate: string, endDate: string): string {
+  const today = berlinDate();
+  if (startDate > today || endDate < today) return today;
+  return addDaysToIsoDate(endDate, 1);
 }
 
 /**
@@ -85,6 +61,7 @@ async function createRecurringConfig(client: DynamoDBDocumentClient, data: Recor
     updatedAt: now,
     enabled: true,
     ...data,
+    nextRunDate: nextMatchingDate(String(data.cronExpression || '')),
   };
 
   await client.send(
@@ -117,6 +94,9 @@ async function getRecurringConfig(client: DynamoDBDocumentClient, id: string): P
 async function updateRecurringConfig(client: DynamoDBDocumentClient, id: string, updates: Record<string, unknown>): Promise<RecurringConfig | null> {
   const now = new Date().toISOString();
   const fields: Record<string, unknown> = { ...updates, updatedAt: now };
+  if (updates.cronExpression !== undefined && updates.nextRunDate === undefined) {
+    fields.nextRunDate = nextMatchingDate(String(updates.cronExpression));
+  }
 
   const expressionParts: string[] = [];
   const expressionAttrNames: Record<string, string> = {};
@@ -158,38 +138,53 @@ async function deleteRecurringConfig(client: DynamoDBDocumentClient, id: string)
   );
 }
 
-async function countRecurringConfigReferences(client: DynamoDBDocumentClient, id: string): Promise<{ tasks: number; notifications: number; total: number }> {
-  const taskResult = await client.send(
+async function listRecurringRuns(client: DynamoDBDocumentClient, configId: string): Promise<RecurringRun[]> {
+  const result = await client.send(
     new ScanCommand({
       TableName: TABLE_TASKS,
-      Select: 'COUNT',
-      FilterExpression: 'begins_with(PK, :taskPrefix) AND recurringConfigId = :configId',
+      FilterExpression: 'begins_with(PK, :runPrefix)',
       ExpressionAttributeValues: {
-        ':taskPrefix': 'TASK#',
-        ':configId': id,
+        ':runPrefix': `RECURRINGRUN#${configId}#`,
       },
     })
   );
 
-  const notificationResult = await client.send(
-    new ScanCommand({
-      TableName: TABLE_NOTIFICATIONS,
-      Select: 'COUNT',
-      FilterExpression:
-        'begins_with(PK, :notificationPrefix) AND (recurringConfigId = :configId OR #metadata.recurringConfigId = :configId)',
-      ExpressionAttributeNames: {
-        '#metadata': 'metadata',
-      },
-      ExpressionAttributeValues: {
-        ':notificationPrefix': 'NOTIFICATION#',
-        ':configId': id,
-      },
+  return (result.Items || []).map((item) => {
+    const { PK, SK, ...rest } = item as Record<string, unknown>;
+    return rest as unknown as RecurringRun;
+  });
+}
+
+async function countRecurringConfigRuns(client: DynamoDBDocumentClient, configId: string): Promise<number> {
+  return (await listRecurringRuns(client, configId)).length;
+}
+
+/**
+ * Append one ledger row per config per date the daily pass fired it. The row is
+ * keyed by that pair, so re-running the same date replaces the row instead of
+ * accumulating one entry per attempt.
+ */
+async function recordRecurringRun(
+  client: DynamoDBDocumentClient,
+  run: { configId: string; date: string; outcome: RecurringRunOutcome; generatedTaskIds: string[] },
+): Promise<void> {
+  const { PK, SK } = recurringRunKey(run.configId, run.date);
+  const item: RecurringRun & { PK: string; SK: string } = {
+    PK,
+    SK,
+    configId: run.configId,
+    date: run.date,
+    outcome: run.outcome,
+    generatedTaskIds: run.generatedTaskIds,
+    createdAt: new Date().toISOString(),
+  };
+
+  await client.send(
+    new PutCommand({
+      TableName: TABLE_TASKS,
+      Item: item,
     })
   );
-
-  const tasks = taskResult.Count || 0;
-  const notifications = notificationResult.Count || 0;
-  return { tasks, notifications, total: tasks + notifications };
 }
 
 /**
@@ -276,12 +271,21 @@ function recurringTaskDefaults(config: RecurringConfig): Record<string, unknown>
 /**
  * Generate concrete task instances from enabled recurring configs for a date range.
  * Uses cron expression matching to determine which dates each config should generate tasks for.
+ *
+ * Each config that fired leaves a ledger row and its own outcome on the config,
+ * so the daily pass records what happened even when a config generated nothing.
+ * A config that throws does not stop the others.
  */
-async function generateRecurringTasks(client: DynamoDBDocumentClient, startDate: string, endDate: string): Promise<{ generated: Task[]; skipped: number }> {
+async function generateRecurringTasks(
+  client: DynamoDBDocumentClient,
+  startDate: string,
+  endDate: string,
+): Promise<{ generated: Task[]; skipped: number; failures: number }> {
   const configs = await listEnabledRecurringConfigs(client);
 
   const generated: Task[] = [];
   let skipped = 0;
+  let failures = 0;
 
   // Build list of dates in range
   const dates: string[] = [];
@@ -294,36 +298,67 @@ async function generateRecurringTasks(client: DynamoDBDocumentClient, startDate:
   }
 
   for (const config of configs) {
-    for (const dateStr of dates) {
-      const d = new Date(dateStr + 'T00:00:00Z');
+    const generatedTaskIds: string[] = [];
+    let firedDate: string | null = null;
+    let outcome: RecurringRunOutcome | null = null;
 
-      const matches = cronMatchesDate(config.cronExpression, d);
+    try {
+      for (const dateStr of dates) {
+        const d = new Date(dateStr + 'T00:00:00Z');
 
-      if (!matches) continue;
+        const matches = cronMatchesDate(config.cronExpression, d);
 
-      // Idempotency check
-      const exists = await recurringTaskExists(client, config.id, dateStr);
-      if (exists) {
-        skipped++;
-        continue;
+        if (!matches) continue;
+        firedDate = dateStr;
+
+        // Idempotency check
+        const exists = await recurringTaskExists(client, config.id, dateStr);
+        if (exists) {
+          skipped++;
+          continue;
+        }
+
+        // Create the task
+        const taskData: Record<string, unknown> = {
+          ...recurringTaskDefaults(config),
+          description: config.description,
+          date: dateStr,
+          status: 'todo',
+          source: 'recurring',
+          recurringConfigId: config.id,
+        };
+
+        const task = await createTask(client, taskData);
+        generatedTaskIds.push(task.id);
+        generated.push(task);
       }
-
-      // Create the task
-      const taskData: Record<string, unknown> = {
-        ...recurringTaskDefaults(config),
-        description: config.description,
-        date: dateStr,
-        status: 'todo',
-        source: 'recurring',
-        recurringConfigId: config.id,
-      };
-
-      const task = await createTask(client, taskData);
-      generated.push(task);
+      outcome = firedDate === null ? null : 'succeeded';
+    } catch (err: unknown) {
+      outcome = 'failed';
+      failures++;
+      console.error(`Recurring generation failed for config ${config.id}:`, (err as Error).message);
     }
+
+    if (!outcome) continue;
+
+    await recordRecurringRun(client, {
+      configId: config.id,
+      date: firedDate || endDate,
+      outcome,
+      generatedTaskIds,
+    });
+    await updateRecurringConfig(client, config.id, {
+      lastRunAt: new Date().toISOString(),
+      lastRunOutcome: outcome,
+      // Noon UTC is the same Berlin civil date whatever the offset, so the walk
+      // starts from the day after the range instead of replaying it.
+      ...(outcome === 'succeeded'
+        ? { nextRunDate: nextMatchingDate(config.cronExpression, new Date(`${nextRunBase(startDate, endDate)}T12:00:00Z`)) }
+        : {}),
+    });
   }
 
-  return { generated, skipped };
+  return { generated, skipped, failures };
 }
 
 export {
@@ -331,11 +366,11 @@ export {
   getRecurringConfig,
   updateRecurringConfig,
   deleteRecurringConfig,
-  countRecurringConfigReferences,
+  countRecurringConfigRuns,
+  listRecurringRuns,
+  recordRecurringRun,
   listRecurringConfigs,
   listEnabledRecurringConfigs,
   generateRecurringTasks,
   recurringTaskDefaults,
-  cronMatchesDate,
-  matchCronField,
 };

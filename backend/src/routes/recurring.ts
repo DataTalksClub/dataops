@@ -5,10 +5,13 @@ import {
   getRecurringConfig,
   updateRecurringConfig,
   deleteRecurringConfig,
-  countRecurringConfigReferences,
+  countRecurringConfigRuns,
   listRecurringConfigs,
   generateRecurringTasks,
 } from '../db/recurring';
+import { recurringConfigView } from '../cron/scheduleView';
+import { parseCronExpression } from '../cron/cronMatch';
+import { berlinDate } from '../sponsorFinance/core';
 import { getUser } from '../db/users';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
@@ -49,11 +52,11 @@ async function requireRecurringAdmin(
 }
 
 /**
- * Validate that a cron expression has exactly 5 space-separated fields.
+ * Accept only syntax the generator honours. A schedule that parses but cannot
+ * run would otherwise render a next run the daily pass never produces.
  */
 function isValidCronExpression(expr: string): boolean {
-  const fields = expr.trim().split(/\s+/);
-  return fields.length === 5;
+  return parseCronExpression(expr) !== null;
 }
 
 /**
@@ -152,7 +155,8 @@ async function handleCollection(
   event: LambdaEvent,
 ): Promise<LambdaResponse> {
   if (method === 'GET') {
-    const recurringConfigs = await listRecurringConfigs(client);
+    const today = berlinDate();
+    const recurringConfigs = (await listRecurringConfigs(client)).map((config) => recurringConfigView(config, today));
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
@@ -196,7 +200,7 @@ async function handleCollection(
     return {
       statusCode: 201,
       headers: JSON_HEADERS,
-      body: JSON.stringify({ recurringConfig }),
+      body: JSON.stringify({ recurringConfig: recurringConfigView(recurringConfig, berlinDate()) }),
     };
   }
 
@@ -229,7 +233,7 @@ async function handleSingle(
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
-      body: JSON.stringify({ recurringConfig }),
+      body: JSON.stringify({ recurringConfig: recurringConfigView(recurringConfig, berlinDate()) }),
     };
   }
 
@@ -293,10 +297,17 @@ async function handleSingle(
     }
 
     const recurringConfig = await updateRecurringConfig(client, id, updates);
+    if (!recurringConfig) {
+      return {
+        statusCode: 404,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: 'Recurring config not found' }),
+      };
+    }
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
-      body: JSON.stringify({ recurringConfig }),
+      body: JSON.stringify({ recurringConfig: recurringConfigView(recurringConfig, berlinDate()) }),
     };
   }
 
@@ -313,8 +324,8 @@ async function handleSingle(
       };
     }
 
-    const references = await countRecurringConfigReferences(client, id);
-    if (references.total > 0) {
+    const runs = await countRecurringConfigRuns(client, id);
+    if (runs > 0) {
       return {
         statusCode: 409,
         headers: JSON_HEADERS,
@@ -322,7 +333,7 @@ async function handleSingle(
           error: 'Recurring config has generated history and cannot be deleted. Pause or disable it instead to preserve generated tasks and notifications.',
           code: 'recurring_config_has_generated_history',
           recurringConfigId: id,
-          references,
+          references: { runs },
         }),
       };
     }
@@ -408,7 +419,11 @@ async function handleGenerate(method: string, rawBody: string | null, client: Dy
   return {
     statusCode: 200,
     headers: JSON_HEADERS,
-    body: JSON.stringify({ generated: result.generated, skipped: result.skipped }),
+    body: JSON.stringify({
+      generated: result.generated,
+      skipped: result.skipped,
+      failures: result.failures,
+    }),
   };
 }
 

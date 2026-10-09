@@ -134,6 +134,43 @@ describe('API -- Recurring', () => {
       assert.ok(body.error.toLowerCase().includes('cron'));
     });
 
+    it('rejects cron syntax the daily pass would silently ignore', async () => {
+      const res = await invoke('POST', '/api/recurring', {
+        description: 'Unsupported cron',
+        cronExpression: '0 9 ? * MON',
+      });
+
+      assert.strictEqual(res.statusCode, 400);
+      const body = JSON.parse(res.body);
+      assert.ok(body.error.toLowerCase().includes('cron'));
+
+      const outOfRange = await invoke('POST', '/api/recurring', {
+        description: 'Out of range cron',
+        cronExpression: '0 25 * * 9',
+      });
+
+      assert.strictEqual(outOfRange.statusCode, 400);
+    });
+
+    it('accepts a cron range the day-granular generator honours', async () => {
+      const res = await invoke('POST', '/api/recurring', {
+        description: 'Mondays only',
+        cronExpression: '0 9 * * 1',
+      });
+
+      assert.strictEqual(res.statusCode, 201);
+      const body = JSON.parse(res.body);
+      assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(body.recurringConfig.nextRunDate));
+      assert.strictEqual(
+        new Date(`${body.recurringConfig.nextRunDate}T00:00:00Z`).getUTCDay(),
+        1,
+      );
+      assert.strictEqual(body.recurringConfig.lastRunAt, undefined);
+      assert.strictEqual(body.recurringConfig.lastRunOutcome, undefined);
+      assert.strictEqual(body.recurringConfig.scheduleLabel, 'Every Monday at 09:00');
+      assert.ok(body.recurringConfig.nextRunLabel.length > 0);
+    });
+
     it('rejects old schedule field -- returns 400 requiring cronExpression', async () => {
       const res = await invoke('POST', '/api/recurring', {
         description: 'Old style',
@@ -345,11 +382,38 @@ describe('API -- Recurring', () => {
       const body = JSON.parse(res.body);
       assert.strictEqual(body.code, 'recurring_config_has_generated_history');
       assert.strictEqual(body.recurringConfigId, created.id);
-      assert.strictEqual(body.references.tasks, 1);
+      assert.strictEqual(body.references.runs, 1);
       assert.ok(body.error.includes('Pause or disable'));
 
       const getRes = await invoke('GET', `/api/recurring/${created.id}`);
       assert.strictEqual(getRes.statusCode, 200);
+      assert.strictEqual(JSON.parse(getRes.body).recurringConfig.lastRunOutcome, 'succeeded');
+      assert.strictEqual(
+        JSON.parse(getRes.body).recurringConfig.scheduleLabel,
+        'Every day at 09:00',
+      );
+      assert.ok(JSON.parse(getRes.body).recurringConfig.nextRunDate);
+      await updateRecurringConfig(client, created.id, { enabled: false });
+    });
+
+    it('returns 409 when the config fired but generated nothing new', async () => {
+      await disableAllConfigs(client);
+      const created = await createRecurringConfig(client, {
+        description: 'Replay blocked by run history',
+        cronExpression: '0 9 * * 1',
+      });
+
+      for (const _ of [0, 1]) {
+        const generateRes = await invoke('POST', '/api/recurring/generate', {
+          startDate: '2031-04-07',
+          endDate: '2031-04-07',
+        });
+        assert.strictEqual(generateRes.statusCode, 200);
+      }
+
+      const res = await invoke('DELETE', `/api/recurring/${created.id}`);
+      assert.strictEqual(res.statusCode, 409);
+      assert.strictEqual(JSON.parse(res.body).references.runs, 1);
       await updateRecurringConfig(client, created.id, { enabled: false });
     });
 

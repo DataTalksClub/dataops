@@ -12,6 +12,22 @@ import { createRecurringConfig, updateRecurringConfig } from '../src/db/recurrin
 import { deleteTask, listTasksByCard, listTasksByDate } from '../src/db/tasks';
 import { runCron, formatAnchorDate } from '../src/cron/runner';
 
+/** Captures the EMF records the pass writes, so tests can read the metric it emits. */
+function captureRecurringMetrics() {
+  const original = console.log;
+  const records: string[] = [];
+  console.log = (line: unknown) => {
+    const text = String(line);
+    if (text.includes('DataOps/Recurring')) records.push(text);
+  };
+  return {
+    records,
+    done: () => {
+      console.log = original;
+    },
+  };
+}
+
 describe('Cron runner', () => {
   let client: DynamoDBDocumentClient;
   let port: number;
@@ -159,6 +175,58 @@ describe('Cron runner', () => {
     assert.strictEqual((await listTasksByCard(client, cards[0].id)).length, 1);
 
     await updateRecurringConfig(client, recurring.id, { enabled: false });
+  });
+
+  it('reports the daily recurrent pass to CloudWatch as one embedded metric', async () => {
+    // 2031-06-15 is a Sunday, so a schedule on it is the only one that fires.
+    const passDay = new Date('2031-06-15T08:00:00Z');
+
+    const cleanRuns = captureRecurringMetrics();
+    try {
+      await runCron(client, passDay);
+    } finally {
+      cleanRuns.done();
+    }
+    assert.strictEqual(cleanRuns.records.length, 1);
+
+    const clean = JSON.parse(cleanRuns.records[0]);
+    assert.strictEqual(clean._aws.CloudWatchMetrics[0].Namespace, 'DataOps/Recurring');
+    assert.deepStrictEqual(
+      clean._aws.CloudWatchMetrics[0].Metrics.map((entry: { Name: string }) => entry.Name),
+      ['CronPass', 'CronFailure'],
+    );
+    assert.strictEqual(clean.Component, 'recurring-generation');
+    assert.strictEqual(clean.CronPass, 1);
+    assert.strictEqual(clean.CronFailure, 0);
+
+    const sunday = await createRecurringConfig(client, {
+      description: 'Sunday report',
+      cronExpression: '0 9 * * 0',
+    });
+    // Only this config's generated task is rejected; the rest still runs.
+    const failTaskWrites = {
+      send: (command: { input?: Record<string, unknown> }) => {
+        const item = command.input?.Item as { description?: string } | undefined;
+        if (item?.description === 'Sunday report') {
+          return Promise.reject(new Error('dynamodb capacity exceeded'));
+        }
+        return client.send(command as never);
+      },
+    } as unknown as DynamoDBDocumentClient;
+
+    const failedRuns = captureRecurringMetrics();
+    try {
+      const failed = await runCron(failTaskWrites, passDay);
+      assert.strictEqual(failed.recurring.generated.length, 0);
+      assert.strictEqual(failed.recurring.failures, 1);
+    } finally {
+      failedRuns.done();
+    }
+
+    assert.strictEqual(failedRuns.records.length, 1);
+    assert.strictEqual(JSON.parse(failedRuns.records[0]).CronFailure, 1);
+
+    await updateRecurringConfig(client, sunday.id, { enabled: false });
   });
 
   it('does not generate paused recurring configs or paused automatic template triggers', async () => {
