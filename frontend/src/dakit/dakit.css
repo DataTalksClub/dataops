@@ -74,7 +74,7 @@
   --dk-bg-hover: #eef1f4;
   --dk-bg-raised: #ffffff;
   --dk-bg-inset: rgba(36, 41, 47, 0.06);
-  --dk-bg-backdrop: rgba(15, 23, 42, 0.5);
+  --dk-bg-backdrop: rgba(15, 23, 42, 0.4);
   --dk-text-primary: #24292f;
   --dk-text-heading: #0f172a;
   --dk-text-muted: #57606a;
@@ -122,7 +122,7 @@
   --dk-bg-hover: #293038;
   --dk-bg-raised: #32383f;
   --dk-bg-inset: rgba(230, 237, 243, 0.07);
-  --dk-bg-backdrop: rgba(1, 4, 9, 0.7);
+  --dk-bg-backdrop: rgba(1, 4, 9, 0.5);
   --dk-text-primary: #e6edf3;
   --dk-text-heading: #f0f6fc;
   --dk-text-muted: #9198a1;
@@ -469,7 +469,6 @@ code, kbd, samp { font-family: var(--dk-font-mono); font-size: 0.92em; backgroun
   gap: var(--dk-gap-control);
   padding: var(--dk-space-4) var(--dk-space-5);
   border-bottom: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-muted);
 }
 .dk-dialog__head h2 { min-width: 0; font-size: var(--dk-text-lg); font-weight: var(--dk-weight-semibold); overflow-wrap: anywhere; }
 .dk-dialog__head > div { min-width: 0; display: grid; gap: var(--dk-space-1); }
@@ -494,10 +493,12 @@ code, kbd, samp { font-family: var(--dk-font-mono); font-size: 0.92em; backgroun
   gap: var(--dk-gap-control);
   padding: var(--dk-space-3) var(--dk-space-5);
   border-top: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-muted);
 }
 .dk-dialog__foot > .dk-button--danger:first-child,
 .dk-dialog__foot > .dk-dialog__start { margin-right: auto; }
+
+/* One flat sheet: controls share the panel surface instead of an inset fill. */
+.dk-dialog :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]) { background: var(--dk-bg-surface); }
 
 @media (max-width: 820px) {
   .dk-dialog {

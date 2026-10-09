@@ -74,7 +74,7 @@
   --dk-bg-hover: #eef1f4;
   --dk-bg-raised: #ffffff;
   --dk-bg-inset: rgba(36, 41, 47, 0.06);
-  --dk-bg-backdrop: rgba(15, 23, 42, 0.5);
+  --dk-bg-backdrop: rgba(15, 23, 42, 0.4);
   --dk-text-primary: #24292f;
   --dk-text-heading: #0f172a;
   --dk-text-muted: #57606a;
@@ -122,7 +122,7 @@
   --dk-bg-hover: #293038;
   --dk-bg-raised: #32383f;
   --dk-bg-inset: rgba(230, 237, 243, 0.07);
-  --dk-bg-backdrop: rgba(1, 4, 9, 0.7);
+  --dk-bg-backdrop: rgba(1, 4, 9, 0.5);
   --dk-text-primary: #e6edf3;
   --dk-text-heading: #f0f6fc;
   --dk-text-muted: #9198a1;
