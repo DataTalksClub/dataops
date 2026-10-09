@@ -2310,6 +2310,54 @@ Resources:
       TreatMissingData: breaching
       AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
 
+  RecurringCronErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-recurring-cron-errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{Name: FunctionName, Value: !Ref BackendFunction}]
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  RecurringCronPassMissedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-recurring-cron-pass-missed
+      Namespace: DataOps/Recurring
+      MetricName: CronPass
+      Dimensions: [{ Name: Component, Value: recurring-generation }]
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  RecurringCronFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-recurring-cron-failure
+      Namespace: DataOps/Recurring
+      MetricName: CronFailure
+      Dimensions: [{ Name: Component, Value: recurring-generation }]
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
 Outputs:
   ConversationalRolloutAlarmTopicArn:
     Value: !Ref ConversationalRolloutAlarmTopic
