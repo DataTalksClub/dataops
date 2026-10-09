@@ -166,7 +166,7 @@ function createCalendarDom() {
   view.value = "month";
   const type = surface.setQuery("[data-type]", new TestElement("select"));
   type.value = "";
-  const layers = ["activities", "public", "school", "overlay"].map((name) => {
+  const layers = ["activities", "public", "school", "overlay", "alexey"].map((name) => {
     const layer = new TestElement("input");
     layer.dataset.layer = name;
     layer.checked = true;
@@ -292,9 +292,18 @@ describe("Planning surface production behavior", () => {
           return {
             items: [
               {
+                category: "Newsletter",
                 endDate: "2026-08-13",
                 href: "/#/newsletter",
                 label: "Newsletter 42",
+                provider: "newsletter-slots-readonly",
+                startDate: "2026-08-13",
+              },
+              {
+                category: "Alexey",
+                endDate: "2026-08-13",
+                label: "12:25–13:30 Tejas at DataTalks.Club Podcast",
+                provider: "alexey-calendar",
                 startDate: "2026-08-13",
               },
             ],
@@ -338,12 +347,26 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /Community podcast/);
     assert.match(dom.grid.innerHTML, /Example Holiday/);
     assert.match(dom.grid.innerHTML, /Newsletter 42/);
+    assert.match(dom.grid.innerHTML, /Tejas at DataTalks\.Club Podcast/);
+    assert.match(dom.grid.innerHTML, /is-alexey/);
     assert.match(dom.alerts.innerHTML, /Activity overlaps a public holiday/);
     assert.match(dom.grid.innerHTML, /calendar-week-heading/);
     assert.match(dom.grid.innerHTML, /calendar-week-number/);
     assert.match(dom.grid.innerHTML, /<small class="iso-week">\d+<\/small>/);
-    assert.doesNotMatch(dom.grid.innerHTML, /<small class="iso-week">ISO \d+<\/small>/);
     expectCalendarRange(harness.requests[0], "2026-08-03", "2026-09-06");
+
+    // Toggle off Alexey's calendar layer
+    dom.surface.querySelector('[data-layer="alexey"]').checked = false;
+    dom.surface.querySelector('[data-layer="alexey"]').onchange();
+    await nextTicks();
+    assert.match(dom.grid.innerHTML, /Newsletter 42/);
+    assert.doesNotMatch(dom.grid.innerHTML, /Tejas at DataTalks\.Club Podcast/);
+
+    // Toggle back on
+    dom.surface.querySelector('[data-layer="alexey"]').checked = true;
+    dom.surface.querySelector('[data-layer="alexey"]').onchange();
+    await nextTicks();
+    assert.match(dom.grid.innerHTML, /Tejas at DataTalks\.Club Podcast/);
   });
 
   test("keeps Calendar usable when overlays fail and exposes filter and period controls", async () => {

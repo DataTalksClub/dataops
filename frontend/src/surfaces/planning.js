@@ -170,6 +170,11 @@ export function createPlanningSurface(context) {
               <span class="chip-dot"></span>
               <span>Newsletter dates</span>
             </label>
+            <label class="calendar-layer-chip is-alexey">
+              <input data-layer="alexey" type="checkbox" checked>
+              <span class="chip-dot"></span>
+              <span>Alexey's calendar</span>
+            </label>
           </div>
         </div>
       </footer>
@@ -254,7 +259,8 @@ export function createPlanningSurface(context) {
         showActivities = surface.querySelector('[data-layer="activities"]').checked,
         showPublic = surface.querySelector('[data-layer="public"]').checked,
         showSchool = surface.querySelector('[data-layer="school"]').checked,
-        showOverlay = surface.querySelector('[data-layer="overlay"]').checked,
+        showOverlay = surface.querySelector('[data-layer="overlay"]')?.checked ?? true,
+        showAlexey = surface.querySelector('[data-layer="alexey"]')?.checked ?? true,
         type = surface.querySelector("[data-type]").value,
         visibleItems = showActivities ? items.filter((item) => !type || item.activityType === type) : [],
         periodLabel = isWeek
@@ -283,7 +289,11 @@ export function createPlanningSurface(context) {
               || (holiday.kind !== "berlin-public-holiday" && showSchool)
             )
           )),
-          dayOverlays = showOverlay ? overlays.filter((overlay) => overlay.startDate <= date && overlay.endDate >= date) : [],
+          dayOverlays = overlays.filter((overlay) => {
+            if (overlay.startDate > date || overlay.endDate < date) return false;
+            if (overlay.provider === "alexey-calendar") return showAlexey;
+            return showOverlay;
+          }),
           fullDate = dateValue.toLocaleDateString("en", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }),
           compactDate = dateValue.toLocaleDateString("en", { day: "numeric", month: "short", timeZone: "UTC" }),
           weekday = dateValue.toLocaleDateString("en", { weekday: "short", timeZone: "UTC" }),
@@ -311,12 +321,18 @@ export function createPlanningSurface(context) {
               <span>${escapeHtml(item.title)}</span>
             </button>
           `).join(""),
-          overlayMarkup = dayOverlays.map((overlay) => `
-            <a class="calendar-overlay" href="${escapeHtml(overlay.href || "#")}" title="${escapeHtml(overlay.label)}">
-              <small>Newsletter</small>
-              <span>${escapeHtml(overlay.label)}</span>
-            </a>
-          `).join("");
+          overlayMarkup = dayOverlays.map((overlay) => {
+            const isAlexey = overlay.provider === "alexey-calendar";
+            const category = overlay.category || (isAlexey ? "Alexey" : "Newsletter");
+            const hrefAttr = overlay.href ? `href="${escapeHtml(overlay.href)}"` : "";
+            const tag = overlay.href ? "a" : "span";
+            return `
+              <${tag} class="calendar-overlay ${isAlexey ? "is-alexey" : "is-newsletter"}" ${hrefAttr} title="${escapeHtml(overlay.label)}">
+                <small>${escapeHtml(category)}</small>
+                <span>${escapeHtml(overlay.label)}</span>
+              </${tag}>
+            `;
+          }).join("");
         if (dayOfWeek === 1) {
           const currentWeek = weekNumber(dateValue);
           weekMarkup += `
