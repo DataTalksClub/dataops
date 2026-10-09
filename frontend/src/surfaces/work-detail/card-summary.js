@@ -1,7 +1,7 @@
 // The compact summary head of the Card detail modal: stage control, date and
 // flag chips on one row, the progress bar, the next-up line, and the clamped
 // Card description.
-export const cardDescriptionClampLimit = 220;
+export const cardDescriptionClampLimit = 450;
 
 // Migration provenance is import bookkeeping, not operator content — keep it
 // out of the rendered Card detail without touching the stored description.
@@ -9,6 +9,54 @@ export function displayCardDescription(value) {
   return String(value ?? "")
     .replace(/\s*Migration provenance:[\s\S]*$/, "")
     .trim();
+}
+
+export function renderFormattedDescription(container, description) {
+  const hasLinks = /\[([^\]]+)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/.test(description);
+  if (!hasLinks) {
+    const p = document.createElement("p");
+    p.className = "workflow-description-text";
+    appendBreakableText(p, description);
+    container.append(p);
+    return;
+  }
+
+  const lines = description.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+    if (!trimmed && i > 0 && !lines[i - 1].trim()) continue;
+    const isBullet = /^[-*]\s+/.test(trimmed);
+    const lineContent = isBullet ? trimmed.replace(/^[-*]\s+/, "") : rawLine;
+    const lineEl = document.createElement(isBullet ? "div" : "p");
+    lineEl.className = isBullet ? "workflow-description-bullet" : "workflow-description-text";
+
+    let lastIndex = 0;
+    const linkRegex = /\[([^\]]+)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
+    let match;
+    while ((match = linkRegex.exec(lineContent)) !== null) {
+      if (match.index > lastIndex) {
+        appendBreakableText(lineEl, lineContent.slice(lastIndex, match.index));
+      }
+      const label = match[1];
+      const rawUrl = match[2];
+      const cleanUrl = rawUrl.replace(/[\s"'\u200c\u200b]+$/, "").replace(/^["']/, "").trim();
+      const a = document.createElement("a");
+      a.className = "card-inline-link";
+      a.href = cleanUrl;
+      a.target = "_blank";
+      a.rel = "noopener";
+      appendBreakableText(a, label);
+      lineEl.append(a);
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < lineContent.length) {
+      appendBreakableText(lineEl, lineContent.slice(lastIndex));
+    }
+    if (lineEl.textContent || lineEl.children.length > 0) {
+      container.append(lineEl);
+    }
+  }
 }
 
 // Keep long operator-provided values breakable in the narrow Card modal
@@ -20,12 +68,19 @@ export function appendBreakableText(element, value) {
     return;
   }
   let chunk = "";
+  let nonSpaceCount = 0;
   for (const character of text) {
     chunk += character;
-    if (/[/?#&=._:-]/.test(character) || chunk.length >= 24) {
+    if (/\s/.test(character)) {
+      nonSpaceCount = 0;
+    } else {
+      nonSpaceCount++;
+    }
+    if (/[/?#&=._:-]/.test(character) || nonSpaceCount >= 24) {
       element.append(document.createTextNode(chunk));
       element.append(document.createElement("wbr"));
       chunk = "";
+      nonSpaceCount = 0;
     }
   }
   if (chunk) element.append(document.createTextNode(chunk));
@@ -150,12 +205,18 @@ export function createCardSummary(context) {
 
   const description = displayCardDescription(card.description);
   if (description) {
+    const descSection = document.createElement("div");
+    descSection.className = "workflow-detail-section workflow-description-section";
+    const descLabel = document.createElement("div");
+    descLabel.className = "task-history-label";
+    descLabel.textContent = "Description";
+    descSection.append(descLabel);
+
     const descRow = document.createElement("div");
     descRow.className = "workflow-description";
-    const descText = document.createElement("p");
-    descText.className = "workflow-description-text";
-    appendBreakableText(descText, description);
-    descRow.append(descText);
+    renderFormattedDescription(descRow, description);
+    descSection.append(descRow);
+
     if (description.length > cardDescriptionClampLimit) {
       descRow.classList.add("is-clamped");
       const toggle = document.createElement("button");
@@ -166,10 +227,9 @@ export function createCardSummary(context) {
         const clamped = descRow.classList.toggle("is-clamped");
         toggle.textContent = clamped ? "Show more" : "Show less";
       });
-      meta.append(descRow, toggle);
-    } else {
-      meta.append(descRow);
+      descSection.append(toggle);
     }
+    meta.append(descSection);
   }
   return meta;
 }

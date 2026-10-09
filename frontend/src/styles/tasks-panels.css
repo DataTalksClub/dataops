@@ -961,6 +961,55 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3 {
   white-space: normal;
   word-break: break-word;
   line-height: 1.45;
+}body[data-workspace-view="tasks"] .workflow-description {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dk-text-primary);
+  width: 100%;
+  box-sizing: border-box;
+}body[data-workspace-view="tasks"] .workflow-description-text {
+  margin: 0 0 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+  font-size: 13.5px;
+  color: var(--dk-text-primary);
+  text-align: left;
+}body[data-workspace-view="tasks"] .workflow-description-bullet {
+  position: relative;
+  padding-left: 18px;
+  margin: 3px 0;
+  line-height: 1.5;
+  font-size: 13.5px;
+  color: var(--dk-text-primary);
+  text-align: left;
+}body[data-workspace-view="tasks"] .workflow-description-bullet::before {
+  content: "•";
+  position: absolute;
+  left: 4px;
+  color: var(--dk-text-muted);
+  font-size: 14px;
+}body[data-workspace-view="tasks"] .card-inline-link {
+  color: var(--dk-text-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-word;
+}body[data-workspace-view="tasks"] .card-inline-link:hover {
+  color: var(--dk-accent-hover, #58a6ff);
+}body[data-workspace-view="tasks"] .workflow-description-toggle {
+  align-self: flex-start;
+  margin-top: 4px;
+  border: none;
+  background: transparent;
+  color: var(--dk-text-link);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 0;
+  cursor: pointer;
+}body[data-workspace-view="tasks"] .workflow-description-toggle:hover {
+  text-decoration: underline;
 }body[data-workspace-view="tasks"] .workflow-detail-summary .ops-progress {
   height: 6px;
   border-radius: 3px;

@@ -423,31 +423,42 @@
   font-size: 11px;
 }.workflow-description {
   grid-column: 1 / -1;
-  color: var(--dk-text-muted);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dk-text-primary);
 }.workflow-description-text {
   margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--dk-text-primary);
 }.workflow-description.is-clamped .workflow-description-text {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 4;
   overflow: hidden;
+  white-space: pre-wrap;
 }.workflow-description-toggle {
-  justify-self: start;
+  align-self: flex-start;
+  margin-top: 4px;
   border: 0;
   background: transparent;
   color: var(--dk-text-link);
-  padding: 0;
-  font-size: 11px;
-  font-weight: 600;
+  padding: 2px 0;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
 }.workflow-description-toggle:hover {
   text-decoration: underline;
 }.workflow-detail-section {
-  display: grid;
-  gap: 10px;
-  border-top: 0;
-  padding-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid var(--dk-border-default);
+  padding-top: 18px;
 }.workflow-detail-section > .task-history-label {
   color: var(--dk-text-heading);
   font-size: 14px;
