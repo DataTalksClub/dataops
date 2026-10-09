@@ -1,4 +1,4 @@
-}.workflow-board-header h1,
+.workflow-board-header h1,
 .workflow-board-header p {
   margin: 0;
 }.workflow-board-header h1 {
@@ -106,17 +106,17 @@
 }.workflow-column-header h3 {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   margin: 0;
   color: var(--dk-text-heading);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-transform: none;
 }.workflow-column-header h3::before {
   content: "";
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: var(--dk-radius-full);
   background: var(--dk-text-faint);
 }.workflow-board-column[data-stage="preparation"] .workflow-column-header h3::before {
@@ -127,14 +127,16 @@
   background: var(--dk-success-text);
 }.workflow-column-header span {
   display: grid;
-  min-width: 24px;
-  min-height: 24px;
+  min-width: 22px;
+  min-height: 22px;
   place-items: center;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-full);
   background: var(--dk-bg-surface);
   color: var(--dk-text-muted);
   font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }.workflow-board-list {
   display: grid;
   gap: 8px;
@@ -150,21 +152,23 @@
   display: grid;
   gap: 8px;
   width: 100%;
-  border: var(--card-border-width) solid var(--dk-border-default);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
   color: var(--dk-text-primary);
   padding: 10px var(--card-padding-x) 12px;
   text-align: left;
-  box-shadow: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
   transition:
-    border-color 0.12s ease,
-    background 0.12s ease;
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
 }.ops-workflow-card.workflow-board-card:hover {
   border-color: var(--dk-border-strong);
-  background: var(--dk-bg-hover);
-  box-shadow: none;
-  transform: none;
+  background: var(--dk-bg-surface);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transform: translateY(-1px);
 }.workflow-card-header {
   display: flex;
   align-items: center;
@@ -690,4 +694,4 @@
   margin-top: 16px;
 }.rendered-view {
   color: var(--dk-text-primary);
-}/* Newsletter and Calendar planning surfaces */body[data-workspace-view="newsletter"] .document-list { width: 100%; max-width: 920px; }body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 1180px; }.newsletter-surface,
+}/* Newsletter and Calendar planning surfaces */body[data-workspace-view="newsletter"] .document-list { width: 100%; max-width: 920px; }body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 1180px; }.newsletter-surface { display: grid; min-width: 0; gap: 20px; }
