@@ -369,11 +369,18 @@ body[data-workspace-view="tasks"] .assistant-job-row:focus-visible {
   transition: width 240ms ease;
 }body[data-workspace-view="tasks"] .cards-archive-month-title {
   padding-inline: 4px;
-}/* Templates ---------------------------------------------------------------- */body[data-workspace-view="tasks"] .ops-split-surface {
+}
+/* Templates ----------------------------------------------------------------
+   One object type, one dominant action. The pane hierarchy runs: Template name
+   (20px) > row name and block headings (14-15px) > facts (12px) > provenance
+   (11px). Provenance sits at the foot because only maintainers read it, and the
+   unselected pane stays quiet so the list keeps the page's attention. */
+body[data-workspace-view="tasks"] .ops-split-surface {
   display: grid;
-  gap: 16px;
+  gap: 20px;
   min-width: 0;
-}body[data-workspace-view="tasks"] .runtime-template-inspector,
+}
+body[data-workspace-view="tasks"] .runtime-template-inspector,
 body[data-workspace-view="tasks"] .runtime-template-support > .ops-section {
   min-width: 0;
   overflow: hidden;
@@ -381,7 +388,11 @@ body[data-workspace-view="tasks"] .runtime-template-support > .ops-section {
   border-radius: var(--task-panel-radius);
   background: var(--dk-bg-surface);
   padding: 0;
-}body[data-workspace-view="tasks"] .runtime-template-inspector > .ops-section-header,
+}
+
+/* Panel header: names the set and, on the right, the number that tells the
+   operator whether the list is worth scrolling. */
+body[data-workspace-view="tasks"] .runtime-template-inspector > .ops-section-header,
 body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header {
   display: flex;
   align-items: start;
@@ -389,82 +400,624 @@ body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header 
   gap: 16px;
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
-  padding: 14px 16px;
-}body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header > div,
+  padding: 13px 16px;
+}
+body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header > div,
 body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header > div {
   display: grid;
   min-width: 0;
   gap: 3px;
-}body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header h3,
+}
+body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header h3,
 body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header h3 {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 15px;
-}body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header span,
+  font-weight: var(--dk-weight-semibold);
+}
+body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header span,
 body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header span,
 body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header > span {
   min-width: 0;
   color: var(--dk-text-muted);
   font-size: 12px;
   line-height: 1.45;
-}body[data-workspace-view="tasks"] .runtime-template-search {
+}
+
+/* Toolbar. Count, order, then filter, in the order the operator reaches for
+   them. Search grows so the list below is as wide as its content. */
+body[data-workspace-view="tasks"] .runtime-template-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  border-bottom: 1px solid var(--dk-border-default);
+  padding: 10px 14px;
+}
+body[data-workspace-view="tasks"] .runtime-template-result-count {
+  margin-right: auto;
+  color: var(--dk-text-muted);
+  font-size: 12px;
+  font-weight: var(--dk-weight-medium);
+}
+body[data-workspace-view="tasks"] .runtime-template-sort {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dk-text-muted);
+  font-size: 12px;
+}
+body[data-workspace-view="tasks"] .runtime-template-sort select {
+  min-height: 32px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-primary);
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 12px;
+}
+body[data-workspace-view="tasks"] .runtime-template-search {
   display: block;
-  /* A search input filters one list; full-container width read as a
-     second primary bar. */
-  width: min(400px, calc(100% - 32px));
-  min-height: 42px;
-  margin: 16px;
-}body[data-workspace-view="tasks"] .runtime-template-layout {
-  display: grid;
-  grid-template-columns: minmax(230px, 0.72fr) minmax(0, 1.28fr);
+  flex: 1 1 200px;
+  width: auto;
   min-width: 0;
+  max-width: 320px;
+  min-height: 34px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(0, 1.15fr);
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .runtime-template-layout:not(.is-detail) {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* Nothing selected: the pane holds one line of hint, so the list takes the
+   whole panel. A row of short facts stretched across that width would be mostly
+   empty, so the list goes two-up and keeps a comfortable measure. */
+body[data-workspace-view="tasks"] .runtime-template-layout:not(.is-detail) .runtime-template-list {
+  max-height: none;
+  overflow: hidden;
+  border-right: 0;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+}
+body[data-workspace-view="tasks"] .runtime-template-layout:not(.is-detail) .runtime-template-row {
+  border-right: 1px solid var(--dk-border-default);
+}
+body[data-workspace-view="tasks"]
+  .runtime-template-layout:not(.is-detail) .runtime-template-projection {
+  grid-column: 1;
   border-top: 1px solid var(--dk-border-default);
-}body[data-workspace-view="tasks"] .runtime-template-list {
+  padding: 12px 16px;
+}
+/* The hint is one line, so it reads as one line. */
+body[data-workspace-view="tasks"]
+  .runtime-template-layout:not(.is-detail) .runtime-template-empty {
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  justify-content: start;
+  justify-items: start;
+  gap: 8px;
+  text-align: left;
+}
+body[data-workspace-view="tasks"]
+  .runtime-template-layout:not(.is-detail) .runtime-template-empty-glyph svg {
+  width: 16px;
+  height: 16px;
+}
+body[data-workspace-view="tasks"] .runtime-template-list {
   display: grid;
   align-content: start;
   min-width: 0;
-  max-height: 620px;
+  max-height: 640px;
   overflow: auto;
   border-right: 1px solid var(--dk-border-default);
-}body[data-workspace-view="tasks"] .runtime-template-row {
+}
+
+/* Row: name, then the facts that change the decision, then the consequence.
+   The whole row is the control, so hover and focus both say so. */
+body[data-workspace-view="tasks"] .runtime-template-row {
   display: grid;
-  gap: 5px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name name"
+    "meta meta"
+    "summary open";
+  align-items: baseline;
+  gap: 6px 12px;
   width: 100%;
   min-width: 0;
-  min-height: 72px;
   border: 0;
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-surface);
   color: var(--dk-text-primary);
-  padding: 13px 14px;
+  padding: 12px 14px 12px 15px;
   text-align: left;
-}body[data-workspace-view="tasks"] .runtime-template-row:hover,
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+body[data-workspace-view="tasks"] .runtime-template-row:hover {
+  background: var(--dk-bg-hover);
+}
+/* Selection and hover used to paint the same fill, so the operator could not
+   tell which Template the pane was describing. Selection now takes the tinted
+   ground plus accented, heavier name, matching how the sidebar marks the
+   active route; hover only lifts the ground. The app has no coloured edge
+   accents by contract, so there is no rail. */
 body[data-workspace-view="tasks"] .runtime-template-row.is-selected {
   background: var(--dk-accent-soft);
-}body[data-workspace-view="tasks"] .runtime-template-row strong,
-body[data-workspace-view="tasks"] .runtime-template-row span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}body[data-workspace-view="tasks"] .runtime-template-row strong {
+}
+body[data-workspace-view="tasks"] .runtime-template-row.is-selected strong {
+  color: var(--dk-accent-default);
+  font-weight: var(--dk-weight-bold);
+}
+body[data-workspace-view="tasks"] .runtime-template-row strong {
+  grid-area: name;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--dk-text-heading);
-  font-size: 13px;
-}/* The row glyph is a stroke icon, not a character: it must not join the
-   inline text layout (inline SVG next to ellipsised text paints unreliably). */body[data-workspace-view="tasks"] .runtime-template-row strong svg {
+  font-size: 14px;
+  font-weight: var(--dk-weight-medium);
+  line-height: 1.3;
+}
+body[data-workspace-view="tasks"] .runtime-template-row strong > svg {
   flex: none;
-}body[data-workspace-view="tasks"] .runtime-template-row span {
+  color: var(--dk-text-faint);
+}
+body[data-workspace-view="tasks"] .runtime-template-row.is-selected strong > svg {
+  color: var(--dk-accent-default);
+}
+
+/* Facts read as quiet context separated by dots, matching the work queue, so a
+   row of nine Templates stays scannable instead of pill-spamming. */
+body[data-workspace-view="tasks"] .runtime-template-meta {
+  grid-area: meta;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 0;
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .runtime-template-chip {
+  max-width: 100%;
+  overflow: hidden;
   color: var(--dk-text-muted);
-  font-size: 11px;
-}body[data-workspace-view="tasks"] .runtime-template-projection {
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body[data-workspace-view="tasks"] .runtime-template-chip + .runtime-template-chip::before {
+  content: "\00b7";
+  margin: 0 6px;
+  color: var(--dk-text-faint);
+}
+body[data-workspace-view="tasks"] .runtime-template-chip.is-attention {
+  color: var(--attention-due);
+  font-weight: var(--dk-weight-medium);
+}
+body[data-workspace-view="tasks"] .runtime-template-row small {
+  grid-area: summary;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dk-text-faint);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+}
+body[data-workspace-view="tasks"] .runtime-template-row-open {
+  grid-area: open;
+  display: none;
+  color: var(--dk-text-link);
+  font-size: 12px;
+  font-weight: var(--dk-weight-medium);
+  white-space: nowrap;
+}
+body[data-workspace-view="tasks"] .runtime-template-row:hover .runtime-template-row-open,
+body[data-workspace-view="tasks"] .runtime-template-row:focus-visible .runtime-template-row-open {
+  display: block;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-projection {
   display: grid;
   align-content: start;
   min-width: 0;
-  gap: 16px;
+  max-height: 640px;
+  overflow: auto;
+  gap: 20px;
   background: var(--dk-bg-surface);
   padding: 18px;
+}
+body[data-workspace-view="tasks"] .runtime-template-projection > header {
+  position: sticky;
+  top: -18px;
+  z-index: 1;
+  margin: -18px -18px 0;
+  padding: 18px;
+  background: var(--dk-bg-surface);
+}
+
+/* Unselected detail. This pane is scaffolding, so it says the minimum and
+   stays quiet; it never competes with the row the operator is reading. */
+@media (max-width: 920px) {body[data-workspace-view="tasks"]
+    .runtime-template-projection.runtime-template-empty {
+    display: none;
+  }
+}
+body[data-workspace-view="tasks"] .runtime-template-empty {
+  align-content: center;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+}
+body[data-workspace-view="tasks"] .runtime-template-empty-glyph {
+  color: var(--dk-text-faint);
+  opacity: 0.6;
+}
+body[data-workspace-view="tasks"] .runtime-template-empty p {
+  margin: 0;
+  color: var(--dk-text-muted);
+  font-size: 13px;
+  font-weight: var(--dk-weight-medium);
+}
+body[data-workspace-view="tasks"] .runtime-template-empty > span:last-child {
+  color: var(--dk-text-faint);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-projection > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .runtime-template-projection > header > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+body[data-workspace-view="tasks"] .runtime-template-projection h4,
+body[data-workspace-view="tasks"] .runtime-template-projection p {
+  min-width: 0;
+  margin: 0;
+}
+body[data-workspace-view="tasks"] .runtime-template-projection h4 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  overflow-wrap: anywhere;
+  color: var(--dk-text-heading);
+  font-size: 20px;
+  font-weight: var(--dk-weight-bold);
+  line-height: 1.2;
+}
+body[data-workspace-view="tasks"] .runtime-template-projection h4 svg {
+  flex: none;
+  color: var(--dk-text-faint);
+}
+body[data-workspace-view="tasks"] .runtime-template-projection > header p {
+  color: var(--dk-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+body[data-workspace-view="tasks"] .runtime-template-projection .primary-button {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Block headings tie the pane together; they sit above the facts they label. */
+body[data-workspace-view="tasks"] .runtime-template-block {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .runtime-template-block > h5 {
+  margin: 0;
+  color: var(--dk-text-heading);
+  font-size: 13px;
+  font-weight: var(--dk-weight-semibold);
+}
+body[data-workspace-view="tasks"] .runtime-template-block > p {
+  color: var(--dk-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* The three numbers that decide whether to start a run, stated once at the top
+   of the pane instead of being re-read from the rows. */
+body[data-workspace-view="tasks"] .runtime-template-facts {
+  display: grid;
+  grid-template-rows: auto auto;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+  /* Deliberately not a clip container. The pane is height-capped, and a clipped
+     grid item's automatic minimum size is zero, which collapsed this strip to
+     its borders. The outer corners are rounded on the cells instead. */
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+}
+body[data-workspace-view="tasks"] .runtime-template-facts > :first-child {
+  border-start-start-radius: var(--dk-radius-md);
+  border-start-end-radius: var(--dk-radius-md);
+}
+body[data-workspace-view="tasks"] .runtime-template-facts > :last-child {
+  border-end-start-radius: var(--dk-radius-md);
+  border-end-end-radius: var(--dk-radius-md);
+}
+body[data-workspace-view="tasks"] .runtime-template-facts dt {
+  border-bottom: 1px solid var(--dk-border-default);
+  border-right: 1px solid var(--dk-border-default);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: var(--dk-weight-medium);
+}
+body[data-workspace-view="tasks"] .runtime-template-facts dd {
+  min-width: 0;
+  margin: 0;
+  border-right: 1px solid var(--dk-border-default);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-heading);
+  padding: 9px 10px;
+  font-size: 16px;
+  font-weight: var(--dk-weight-semibold);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+/* A fact with nothing to report must not wear the weight of a real number. */
+body[data-workspace-view="tasks"] .runtime-template-facts dd.is-quiet {
+  color: var(--dk-text-faint);
+  font-size: 13px;
+  font-weight: var(--dk-weight-medium);
+}
+body[data-workspace-view="tasks"] .runtime-template-facts dd.is-attention {
+  color: var(--attention-due);
+}
+
+/* Steps read as an ordered run, so the sequence and the day offset are both
+   legible without counting rows. */
+body[data-workspace-view="tasks"] .runtime-template-readonly-tasks {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  list-style: none;
+  counter-reset: runtime-template-step;
+}
+body[data-workspace-view="tasks"] .runtime-template-readonly-tasks li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border-top: 1px solid var(--dk-border-default);
+  padding: 9px 11px;
+}
+body[data-workspace-view="tasks"] .runtime-template-readonly-tasks li:first-child {
+  border-top: 0;
+}
+body[data-workspace-view="tasks"] .runtime-template-readonly-tasks li::before {
+  counter-increment: runtime-template-step;
+  content: counter(runtime-template-step);
+  flex: none;
+  width: 18px;
+  color: var(--dk-text-faint);
+  font-family: var(--dk-font-mono);
+  font-size: 11px;
+  font-weight: var(--dk-weight-medium);
+}
+body[data-workspace-view="tasks"] .runtime-template-readonly-tasks li strong {
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--dk-text-primary);
+  font-size: 13px;
+  font-weight: var(--dk-weight-medium);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+body[data-workspace-view="tasks"] .runtime-template-readonly-tasks li span {
+  flex: 0 0 auto;
+  color: var(--dk-text-muted);
+  font-family: var(--dk-font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* Live Cards: the pane names what is already running so the expensive review
+   step is only worth taking when something is actually behind. */
+body[data-workspace-view="tasks"] .runtime-template-live-cards {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  list-style: none;
+}
+body[data-workspace-view="tasks"] .runtime-template-live-cards li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--dk-border-default);
+  padding: 8px 11px;
+}
+body[data-workspace-view="tasks"] .runtime-template-live-cards li:first-child {
+  border-top: 0;
+}
+body[data-workspace-view="tasks"] .runtime-template-live-cards strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dk-text-primary);
+  font-size: 12px;
+  font-weight: var(--dk-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body[data-workspace-view="tasks"] .runtime-template-live-cards span {
+  flex: 0 0 auto;
+  color: var(--dk-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+body[data-workspace-view="tasks"] .runtime-template-live-cards span.is-attention {
+  color: var(--attention-due);
+  font-weight: var(--dk-weight-medium);
+}
+body[data-workspace-view="tasks"] .runtime-template-live-cards-more {
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+  font-size: 11px;
+}
+
+/* Provenance is maintainer detail: last, quietest, and monospaced where it is
+   literal. */
+body[data-workspace-view="tasks"] .runtime-template-provenance {
+  gap: 8px;
+  border-top: 1px solid var(--dk-border-default);
+  padding-top: 14px;
+}
+body[data-workspace-view="tasks"] .runtime-template-provenance > p {
+  color: var(--dk-text-faint);
+  font-size: 11px;
+}
+body[data-workspace-view="tasks"] .runtime-template-definition {
+  display: grid;
+  grid-template-columns: minmax(76px, 0.32fr) minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  overflow: hidden;
+}
+body[data-workspace-view="tasks"] .runtime-template-definition dt,
+body[data-workspace-view="tasks"] .runtime-template-definition dd {
+  min-width: 0;
+  margin: 0;
+  border-bottom: 1px solid var(--dk-border-default);
+  padding: 7px 10px;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+body[data-workspace-view="tasks"] .runtime-template-definition dt {
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-faint);
+  font-weight: var(--dk-weight-medium);
+}
+body[data-workspace-view="tasks"] .runtime-template-definition dd {
+  color: var(--dk-text-muted);
+}
+body[data-workspace-view="tasks"] .runtime-template-definition dt:nth-last-of-type(1),
+body[data-workspace-view="tasks"] .runtime-template-definition dd:nth-last-of-type(1) {
+  border-bottom: 0;
+}
+
+/* The back control belongs to the stacked layout only. It used to render on
+   desktop, directly above the pane the list was already showing beside it. */
+body[data-workspace-view="tasks"] .runtime-mobile-back {
+  display: none;
+}
+@media (max-width: 920px) {body[data-workspace-view="tasks"] .runtime-mobile-back {
+    display: block;
+    width: fit-content;
+    min-height: 34px;
+    border: 1px solid var(--dk-border-default);
+    border-radius: var(--dk-radius-md);
+    background: var(--dk-bg-muted);
+    color: var(--dk-text-primary);
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: var(--dk-weight-semibold);
+  }body[data-workspace-view="tasks"] .runtime-mobile-back:hover {
+    border-color: var(--dk-border-control-hover);
+    background: var(--dk-bg-hover);
+  }
+}
+
+/* Stacked layout: the pane is the page. Capping it would put a nested scroll
+   inside a scrolling page, and a sticky header would eat the viewport. */
+@media (max-width: 920px) {body[data-workspace-view="tasks"] .runtime-template-projection {
+    max-height: none;
+    overflow: visible;
+  }body[data-workspace-view="tasks"] .runtime-template-projection > header {
+    position: static;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+body[data-workspace-view="tasks"] .runtime-template-support {
+  min-width: 0;
+}
+/* Nothing published: a quiet footnote under the Templates, not a second panel
+   of equal weight with an empty body. */
+body[data-workspace-view="tasks"] .runtime-template-support.is-empty {
+  border-top: 1px solid var(--dk-border-default);
+  padding-top: 14px;
+}
+body[data-workspace-view="tasks"] .runtime-template-support.is-empty p {
+  margin: 0;
+  color: var(--dk-text-faint);
+  font-size: 12px;
+}
+body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header {
+  border-bottom: 1px solid var(--dk-border-default);
+}
+body[data-workspace-view="tasks"] .ops-template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  padding: 14px;
+}
+body[data-workspace-view="tasks"] .ops-template-card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-muted);
+  padding: 12px 13px;
+}
+body[data-workspace-view="tasks"] .ops-template-card > strong {
+  color: var(--dk-text-primary);
+  font-size: 13px;
+  font-weight: var(--dk-weight-semibold);
+  overflow-wrap: anywhere;
+}
+body[data-workspace-view="tasks"] .ops-template-card > span {
+  color: var(--dk-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+body[data-workspace-view="tasks"] .ops-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .ops-card-chips small {
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-full);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-muted);
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: var(--dk-weight-semibold);
+}
+body[data-workspace-view="tasks"] .ops-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: auto;
+  padding-top: 4px;
 }
