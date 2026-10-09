@@ -337,24 +337,6 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
 .calendar-surface .calendar-controls {
     order: 9;
   }
-}/* Every queue row shows its one affordance: the whole row opens the task. */.ops-queue-row-open {
-  margin-left: auto;
-  color: var(--dk-text-link);
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}.ops-queue-row:hover .ops-queue-row-open,
-.ops-queue-row:focus-visible .ops-queue-row-open {
-  text-decoration: underline;
-}/* Every queue row shows its one affordance: the whole row opens the task. */.ops-queue-row-open {
-  margin-left: auto;
-  color: var(--dk-text-link);
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}.ops-queue-row:hover .ops-queue-row-open,
-.ops-queue-row:focus-visible .ops-queue-row-open {
-  text-decoration: underline;
 }/* Page titles are the document H1 on every surface (SCOPE: one clear H1
    per page); the eyebrow carries the section, the H1 the page name. */.bookkeeping-header h1,
 .crm-header h1,

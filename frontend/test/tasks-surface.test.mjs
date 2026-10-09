@@ -128,6 +128,7 @@ function createHarness(options = {}) {
   const navigations = [];
   const openedTasks = [];
   const openedCards = [];
+  const undoToasts = [];
   const entityStates = [];
   const documentRefreshes = [];
   let route = options.route || {
@@ -251,6 +252,7 @@ function createHarness(options = {}) {
     setRouteTitle() {},
     setWorkspaceEntityState: (entity) => entityStates.push(entity),
     shellBody,
+    showUndoToast: (message, action) => undoToasts.push({ message, action }),
     sortWorkTasks: (tasks) => tasks,
     state,
     surfaceDescription: (section) => `${section} surface`,
@@ -275,6 +277,7 @@ function createHarness(options = {}) {
     navigations,
     openedCards,
     openedTasks,
+    undoToasts,
     documentRefreshes,
     requests,
     shellBody,
@@ -520,6 +523,140 @@ describe("Tasks surface boundary", () => {
       "Task 28",
       "Task 29",
     ]);
+  });
+
+  test("ticking a queue checkbox marks the task done, refreshes, and offers undo", async () => {
+    const task = canonicalTask({
+      id: "tickable",
+      description: "Tick me",
+      date: "2026-08-12",
+    });
+    const refreshed = [];
+    const {
+      api,
+      documentList,
+      openedTasks,
+      requests,
+      undoToasts,
+    } = createHarness({
+      taskRouteContext: {
+        date: "",
+        tasks: [task],
+        cardId: "",
+        filterCard: null,
+        contextCardId: "",
+        contextCard: null,
+        failures: [],
+      },
+      workSnapshot: {
+        todayTasks: [{ ...task, status: "done", version: 2 }],
+      },
+      request: async (url) => {
+        if (url === "/api/tasks/tickable")
+          return { ...task, status: "done", version: 2 };
+        return {};
+      },
+      refreshWork: async (refreshOptions) => refreshed.push(refreshOptions),
+    });
+
+    api.renderTasksSurface([], "queue");
+    // The row is a group now: the title opens the task, the tick completes
+    // it. Ticking never opens the panel as a side effect.
+    const row = findAllByClass(documentList, "ops-queue-row")[0];
+    assert.equal(row.tagName, "DIV");
+    const open = findAllByClass(documentList, "ops-queue-main")[0];
+    await open.dispatch("click");
+    assert.deepEqual(openedTasks, ["tickable"]);
+
+    const input = findAllByClass(documentList, "ops-queue-check-input")[0];
+    assert.equal(input.disabled, false);
+    assert.equal(input.getAttribute("aria-label"), "Mark Tick me as done");
+    await input.dispatch("change");
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "/api/tasks/tickable");
+    assert.deepEqual(JSON.parse(requests[0].options.body), {
+      status: "done",
+      expectedVersion: 1,
+    });
+    assert.deepEqual(refreshed, [{ rerender: true }]);
+    assert.equal(undoToasts.length, 1);
+    assert.equal(undoToasts[0].message, "Task marked done.");
+
+    // Undo reopens with the refreshed snapshot version, then refreshes.
+    await undoToasts[0].action();
+    assert.equal(requests.length, 2);
+    assert.deepEqual(JSON.parse(requests[1].options.body), {
+      status: "todo",
+      expectedVersion: 2,
+    });
+    assert.deepEqual(refreshed, [{ rerender: true }, { rerender: true }]);
+  });
+
+  test("a failed queue tick restores the checkbox and names the failure", async () => {
+    const task = canonicalTask({
+      id: "flaky",
+      description: "Flaky",
+      date: "2026-08-12",
+    });
+    const { api, documentList, requests, undoToasts } = createHarness({
+      taskRouteContext: {
+        date: "",
+        tasks: [task],
+        cardId: "",
+        filterCard: null,
+        contextCardId: "",
+        contextCard: null,
+        failures: [],
+      },
+      request: async () => {
+        throw new Error("request failed");
+      },
+    });
+
+    api.renderTasksSurface([], "queue");
+    const input = findAllByClass(documentList, "ops-queue-check-input")[0];
+    await input.dispatch("change");
+    assert.equal(requests.length, 1);
+    assert.equal(undoToasts.length, 0);
+    assert.equal(input.disabled, false);
+    assert.equal(input.checked, false);
+    assert.match(input.title, /Could not update task/);
+  });
+
+  test("a blocked queue checkbox is disabled with reasons and sends nothing", async () => {
+    const blocked = canonicalTask({
+      id: "blocked",
+      description: "Needs link",
+      date: "2026-08-12",
+      requiredLinkName: "PR link",
+    });
+    const waiting = canonicalTask({
+      id: "waiting",
+      description: "Waiting",
+      status: "waiting",
+      waitingFor: "reply",
+      followUpAt: "2026-08-14",
+    });
+    const { api, documentList, requests } = createHarness({
+      taskRouteContext: {
+        date: "",
+        tasks: [blocked, waiting],
+        cardId: "",
+        filterCard: null,
+        contextCardId: "",
+        contextCard: null,
+        failures: [],
+      },
+    });
+
+    api.renderTasksSurface([], "queue");
+    const labels = findAllByClass(documentList, "ops-queue-check");
+    const inputs = findAllByClass(documentList, "ops-queue-check-input");
+    assert.equal(inputs.length, 2);
+    for (const input of inputs) assert.equal(input.disabled, true);
+    assert.match(labels[0].title, /Fill in PR link/);
+    assert.match(labels[1].title, /Waiting for reply/);
+    assert.equal(requests.length, 0);
   });
 
   test("marks ad hoc and card sources distinctly from imported sources", () => {

@@ -533,6 +533,7 @@ const {
   setRouteTitle,
   setWorkspaceEntityState,
   shellBody: body,
+  showUndoToast,
   sortWorkTasks,
   state: tasksSurfaceState,
   surfaceDescription,

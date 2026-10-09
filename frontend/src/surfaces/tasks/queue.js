@@ -22,12 +22,16 @@ export function createTaskQueue(context) {
     navigateCanonicalWorkspace,
     openCardPanel,
     openTaskPanel,
+    refreshOperationsWorkSnapshot,
+    request,
     resolveAssigneeLabel,
+    showUndoToast,
     state,
     taskDate,
     taskProofState,
     taskSourceLabel,
     todayIsoDate,
+    workApiUrl,
     workCardTitle,
     workTaskTitle,
   } = context;
@@ -391,6 +395,130 @@ export function createTaskQueue(context) {
     );
   }
 
+  // One in-flight toggle per task. The toggle outlives neither its render
+  // nor its response: a double activation cannot send two competing versions,
+  // and a rerender mid-flight still renders the pending task as busy.
+  const queuePendingToggles = new Set();
+
+  function findQueueTask(taskId) {
+    const work = state.workSnapshot;
+    const candidates = [
+      ...(Array.isArray(work.todayTasks) ? work.todayTasks : []),
+      ...(Array.isArray(work.overdueTasks) ? work.overdueTasks : []),
+      ...(Array.isArray(work.waitingTasks) ? work.waitingTasks : []),
+      ...Object.values(work.cardTasks || {}).flatMap((cardTasks) =>
+        Array.isArray(cardTasks) ? cardTasks : [],
+      ),
+    ];
+    return candidates.find((task) => task?.id === taskId) || null;
+  }
+
+  async function putQueueTaskStatus(taskId, status, expectedVersion) {
+    const updated = await request(
+      workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`),
+      {
+        method: "PUT",
+        body: JSON.stringify({ status, expectedVersion }),
+      },
+    );
+    if (!isCanonicalWorkTask(updated)) {
+      throw new Error("Task payload is not in the canonical versioned shape");
+    }
+    return updated;
+  }
+
+  // The checkbox is the real thing: checking it marks the task done through
+  // the same versioned PUT the panels use, then the refreshed snapshot moves
+  // the row into history. A failed toggle restores the box and says why, so
+  // the queue never silently swallows the operator's tick.
+  async function toggleQueueTask(task, input) {
+    if (queuePendingToggles.has(task.id)) return;
+    queuePendingToggles.add(task.id);
+    input.disabled = true;
+    input.checked = true;
+    try {
+      await putQueueTaskStatus(task.id, "done", task.version);
+      await refreshOperationsWorkSnapshot({ rerender: true });
+      queuePendingToggles.delete(task.id);
+      showUndoToast("Task marked done.", () => reopenQueueTask(task.id));
+    } catch (err) {
+      queuePendingToggles.delete(task.id);
+      if (input.isConnected) {
+        input.disabled = false;
+        input.checked = false;
+        input.title = `Could not update task: ${err?.message || "request failed"}`;
+      }
+    }
+  }
+
+  async function reopenQueueTask(taskId) {
+    const current = findQueueTask(taskId);
+    if (!current || !Number.isInteger(current.version)) return;
+    try {
+      await putQueueTaskStatus(taskId, "todo", current.version);
+    } finally {
+      await refreshOperationsWorkSnapshot({ rerender: true });
+    }
+  }
+
+  // Whether the checkbox does anything. Proof-blocked and waiting tasks keep
+  // a disabled box that names its reasons — the same gate the card checklist
+  // and the task panel enforce — so ticking it is never a dead click.
+  function queueToggleBlockers(task) {
+    const reasons = [];
+    if (task.status === "waiting") {
+      reasons.push(
+        task.waitingFor ? `Waiting for ${task.waitingFor}` : "Waiting task",
+      );
+      return reasons;
+    }
+    const proof = taskProofState(task);
+    if (proof.ok) return reasons;
+    for (const missing of proof.missing) {
+      if (missing === "required file") reasons.push("Upload required file");
+      else if (missing === "approved artifact")
+        reasons.push("Approve an attached artifact");
+      else reasons.push(`Fill in ${missing}`);
+    }
+    return reasons;
+  }
+
+  // Row-level urgency for the checkbox. Overdue and due-today are the
+  // only states that change the box; everything else scans as plain work.
+  function queueUrgency(task, today) {
+    const due = String(task.date || "").slice(0, 10);
+    if (isOpenWorkTask(task) && overdueDays(due, today) > 0) return "overdue";
+    if (due && due === today) return "today";
+    return "later";
+  }
+
+  function renderQueueToggle(task) {
+    const label = document.createElement("label");
+    label.className = "ops-queue-check";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.className = "ops-queue-check-input";
+    input.setAttribute("aria-label", `Mark ${workTaskTitle(task)} as done`);
+    const blockers = queueToggleBlockers(task);
+    if (blockers.length > 0) {
+      input.disabled = true;
+      // The tooltip lives on the label: the visible box is its child, and a
+      // tooltip on the input alone would not surface when hovering the box.
+      label.title = blockers.join("; ");
+    } else {
+      if (queuePendingToggles.has(task.id)) {
+        input.disabled = true;
+        input.checked = true;
+      }
+      input.addEventListener("change", () => toggleQueueTask(task, input));
+    }
+    const box = document.createElement("span");
+    box.className = "ops-queue-box";
+    box.setAttribute("aria-hidden", "true");
+    label.append(input, box);
+    return label;
+  }
+
   // The one place a task names where it came from. Card membership wins
   // (the card is what the operator can open); recurring schedules and
   // explicit import sources follow; everything else is hand-made ad hoc
@@ -499,38 +627,41 @@ export function createTaskQueue(context) {
     }
     const origin = taskOrigin(task, cardsById);
     const owner = taskOwnerCell(task);
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "ops-queue-row";
-    button.dataset.taskId = task.id;
-    button.dataset.source = origin.kind;
-    button.setAttribute(
-      "aria-label",
-      [
-        `Open task ${workTaskTitle(task)}`,
-        origin.kind === "card" ? `from card ${origin.label}` : origin.label,
-        task.date ? `due ${String(task.date).slice(0, 10)}` : "",
-        owner.getAttribute("aria-label") || "",
-      ]
-        .filter(Boolean)
-        .join(", "),
-    );
-    button.addEventListener("click", () => openTaskPanel(task.id));
+    // The row is a group, not a button: the checkbox toggles completion and
+    // the title opens the task, so nesting both inside one button would make
+    // every tick also open the panel. Mouse users still get the whole row —
+    // the row's own click opens the task unless the tick took the click.
+    // tabindex -1 keeps the row a focus-restore target when the task panel
+    // closes without ever becoming a tab stop; the two controls own keys.
+    const row = document.createElement("div");
+    row.className = "ops-queue-row";
+    row.dataset.taskId = task.id;
+    row.dataset.source = origin.kind;
+    // Urgency rides the row so the checkbox can carry it: overdue and
+    // due-today rows read as such before any text is parsed. Purely visual —
+    // ordering already happened above, so this never changes what renders.
+    row.dataset.urgency = queueUrgency(task, today);
+    row.tabIndex = -1;
+    row.addEventListener("click", (event) => {
+      if (event.target?.closest?.("button, input, label, a")) return;
+      openTaskPanel(task.id);
+    });
 
-    // Checklist mark: the row's one completion affordance reads as the box
-    // you would tick in any checklist, so the queue scans as work to do
-    // rather than as records to open.
-    const mark = document.createElement("span");
-    mark.className = "ops-queue-mark";
-    mark.setAttribute("aria-hidden", "true");
+    const toggle = renderQueueToggle(task);
 
-    const main = document.createElement("span");
-    main.className = "ops-queue-main";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "ops-queue-main";
+    open.setAttribute("aria-label", `Open task ${workTaskTitle(task)}`);
+    open.addEventListener("click", () => openTaskPanel(task.id));
+
     const title = document.createElement("strong");
     title.textContent = workTaskTitle(task);
-    main.append(title);
+    // Titles truncate to one line; the full name stays one hover away.
+    title.title = workTaskTitle(task);
+    open.append(title);
     const note = taskBlockerNote(task, today);
-    if (note) main.append(note);
+    if (note) open.append(note);
 
     const originCell = document.createElement("span");
     originCell.className = "ops-queue-origin";
@@ -538,8 +669,8 @@ export function createTaskQueue(context) {
     originCell.textContent = origin.label;
     originCell.title = origin.title;
 
-    button.append(mark, main, originCell, taskDueCell(task, today), owner);
-    return button;
+    row.append(toggle, open, originCell, taskDueCell(task, today), owner);
+    return row;
   }
 
   return { renderWorkQueueSurface };

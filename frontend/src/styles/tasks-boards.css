@@ -74,10 +74,12 @@ body[data-workspace-view="tasks"] .operations-home .ops-empty {
   background: var(--dk-bg-surface);
 }body[data-workspace-view="tasks"] .ops-queue-board[data-load-state="unavailable"] {
   padding: 14px 16px;
-}body[data-workspace-view="tasks"] .ops-queue-total {
+}/* The count line is a quiet caption on the board's own surface, not a second
+gray bar: the column heading below stays the one gray band, so the top of the
+board reads as one summary followed by one header rather than two headers. */body[data-workspace-view="tasks"] .ops-queue-total {
   margin: 0;
   border-bottom: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-muted);
+  background: var(--dk-bg-surface);
   color: var(--dk-text-muted);
   padding: 10px 14px;
   font-size: 12px;
@@ -146,12 +148,12 @@ body[data-workspace-view="tasks"] .task-context-state p {
   min-width: 0;
 }/* One grid definition shared by the heading row and every task row, so the
    columns line up without a second set of hand-tuned widths. The mark column
-   is fixed because it is a square; Where and Due are bounded so a long card
-   name cannot push the date off the row; Task takes whatever is left. */
+   is fixed because it is a square; Where is bounded so a long card name
+   cannot squeeze the task itself; Task takes whatever is left. */
 body[data-workspace-view="tasks"] .ops-queue-head,
 body[data-workspace-view="tasks"] .ops-queue-row {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) minmax(0, 15rem) 5.5rem 34px;
+  grid-template-columns: 18px minmax(0, 1fr) minmax(0, 11rem) 5.5rem 34px;
   gap: 12px;
   align-items: center;
   min-width: 0;
@@ -164,34 +166,104 @@ body[data-workspace-view="tasks"] .ops-queue-row {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}body[data-workspace-view="tasks"] .ops-queue-row {
-  width: 100%;
-  border: 0;
+}/* Heading labels sit over their columns: Due over the right-aligned date,
+   Who over the centered face. Without this the eye cannot trust the grid. */
+body[data-workspace-view="tasks"] .ops-queue-head span:nth-child(4) {
+  text-align: right;
+}body[data-workspace-view="tasks"] .ops-queue-head span:nth-child(5) {
+  text-align: center;
+}/* A row is a group of two controls plus three read-only cells: the tick
+   completes the task, the title opens it, and the whole row answers a mouse
+   click for the title. One grid row, so every column still lines up with the
+   heading above it. */
+body[data-workspace-view="tasks"] .ops-queue-row {
   border-top: 1px solid var(--dk-border-default);
   background: var(--dk-bg-surface);
   color: var(--dk-text-primary);
   padding: 8px 14px;
-  text-align: left;
   transition: background 140ms ease;
+  cursor: pointer;
 }body[data-workspace-view="tasks"] .ops-queue-head + .ops-queue-row {
   border-top: 0;
 }body[data-workspace-view="tasks"] .ops-queue-row:hover {
   background: var(--dk-bg-hover);
-}/* The checklist mark: the row's one completion affordance. An unchecked
-   box says "work to do" before any text is read; a blocker hollows it rather
-   than filling it, so a stuck task never looks finished. */
-body[data-workspace-view="tasks"] .ops-queue-mark {
+}/* The tick: a real checkbox wearing the checklist box. The input itself is
+   visually hidden but stays the focusable, keyboard-operable control; the box
+   beside it is the only thing painted. The label carries padding beyond the
+   box so the tick is a forgiving touch target without moving the grid. */
+body[data-workspace-view="tasks"] .ops-queue-check {
+  display: grid;
+  position: relative;
+  place-items: center;
+  margin: -6px;
+  padding: 6px;
+  cursor: pointer;
+}body[data-workspace-view="tasks"] .ops-queue-check:has(input:disabled) {
+  cursor: not-allowed;
+}body[data-workspace-view="tasks"] .ops-queue-check-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}body[data-workspace-view="tasks"] .ops-queue-box {
   display: block;
   width: 15px;
   height: 15px;
   border: 1.5px solid var(--dk-border-strong);
   border-radius: var(--dk-radius-sm);
-}body[data-workspace-view="tasks"] .ops-queue-row:hover .ops-queue-mark {
+  background: transparent;
+  transition: border-color 140ms ease, background 140ms ease;
+}body[data-workspace-view="tasks"] .ops-queue-row:hover .ops-queue-box {
   border-color: var(--dk-text-muted);
+}body[data-workspace-view="tasks"] .ops-queue-check-input:checked + .ops-queue-box {
+  border-color: var(--dk-accent-default);
+  background: var(--dk-accent-default);
+  color: var(--dk-bg-surface);
+}body[data-workspace-view="tasks"] .ops-queue-check-input:checked + .ops-queue-box::after {
+  content: "✓";
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}body[data-workspace-view="tasks"] .ops-queue-check-input:disabled + .ops-queue-box {
+  opacity: 0.55;
+}body[data-workspace-view="tasks"] .ops-queue-row:hover .ops-queue-check-input:disabled + .ops-queue-box {
+  border-color: var(--dk-border-strong);
+}body[data-workspace-view="tasks"] .ops-queue-check-input:focus-visible + .ops-queue-box {
+  outline: 3px solid var(--dk-focus-ring);
+  outline-offset: 2px;
+}/* The box carries urgency so the flat list still scans: overdue rows show a
+   red box, due-today an amber one, everything else the quiet default. */
+body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="overdue"] .ops-queue-box {
+  border-color: var(--dk-danger-text);
+}body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="overdue"]:hover .ops-queue-box {
+  border-color: var(--dk-danger-text);
+}body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="today"] .ops-queue-box {
+  border-color: var(--attention-due);
+}body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="today"]:hover .ops-queue-box {
+  border-color: var(--attention-due);
 }body[data-workspace-view="tasks"] .ops-queue-main {
   display: grid;
   min-width: 0;
   gap: 1px;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}body[data-workspace-view="tasks"] .ops-queue-main:hover strong,
+body[data-workspace-view="tasks"] .ops-queue-main:focus-visible strong {
+  text-decoration: underline;
+}body[data-workspace-view="tasks"] .ops-queue-main:focus-visible {
+  outline: 3px solid var(--dk-focus-ring);
+  outline-offset: 2px;
 }body[data-workspace-view="tasks"] .ops-queue-row strong {
   overflow: hidden;
   color: var(--dk-text-heading);
@@ -208,6 +280,8 @@ body[data-workspace-view="tasks"] .ops-queue-mark {
   white-space: nowrap;
 }body[data-workspace-view="tasks"] .ops-queue-note.is-blocked {
   color: var(--dk-warning-text);
+}body[data-workspace-view="tasks"] .ops-queue-note.is-waiting {
+  color: var(--dk-info-text);
 }/* Where the task came from. A card names the card; work that belongs to no
    card says so plainly instead of rendering an empty column. */
 body[data-workspace-view="tasks"] .ops-queue-origin {
@@ -267,7 +341,7 @@ body[data-workspace-view="tasks"] .ops-queue-owner {
 }body[data-workspace-view="tasks"] .ops-queue-history summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 10px;
   min-height: 40px;
   color: var(--dk-text-muted);
@@ -280,6 +354,7 @@ body[data-workspace-view="tasks"] .ops-queue-owner {
   display: none;
 }body[data-workspace-view="tasks"] .ops-queue-history summary::after {
   content: "+";
+  margin-left: 2px;
   color: var(--dk-text-faint);
   font-size: 14px;
 }body[data-workspace-view="tasks"] .ops-queue-history[open] summary::after {
@@ -289,6 +364,7 @@ body[data-workspace-view="tasks"] .ops-queue-owner {
   color: var(--dk-text-heading);
 }body[data-workspace-view="tasks"] .ops-queue-history summary span[data-queue-count] {
   min-width: 22px;
+  margin-left: auto;
   color: var(--dk-text-muted);
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -339,10 +415,10 @@ body[data-workspace-view="tasks"] .ops-queue-owner {
     gap: 2px 10px;
     min-height: 44px;
     padding: 9px 14px;
-  }body[data-workspace-view="tasks"] .ops-queue-mark {
+  }body[data-workspace-view="tasks"] .ops-queue-check {
     grid-area: mark;
     align-self: start;
-    margin-top: 2px;
+    margin-top: -4px;
   }body[data-workspace-view="tasks"] .ops-queue-main {
     grid-area: main;
   }body[data-workspace-view="tasks"] .ops-queue-owner {
