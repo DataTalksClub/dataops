@@ -315,8 +315,8 @@ describe("operations calendar", () => {
       html = await fs.readFile(path.join(frontend, "index.html"), "utf8"),
       app = await fs.readFile(path.join(frontend, "src/surfaces/planning.js"), "utf8");
     assert.match(html, /data-workspace-view="calendar"/);
-    assert.match(app, /Europe\/Berlin · Monday–Sunday/);
-    assert.match(app, /ISO week/);
+    assert.match(app, /Europe\/Berlin/);
+    assert.match(app, /iso-week/);
     for (const id of ["data-view", "data-type", "data-layer", "data-alerts", "data-calendar"])
       assert.ok(app.includes(id));
     assert.match(app, /\/api\/calendar-items/);

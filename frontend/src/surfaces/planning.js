@@ -106,6 +106,7 @@ export function createPlanningSurface(context) {
                   </svg>
                 </button>
               </h1>
+              <span class="calendar-timezone-badge">Europe/Berlin time</span>
               <div class="calendar-month-picker-popover" data-picker-popover hidden role="dialog" aria-label="Choose month and year">
                 <div class="calendar-picker-year-nav">
                   <button type="button" class="calendar-picker-year-btn" data-picker-prev-year aria-label="Previous year">‹</button>
@@ -261,16 +262,6 @@ export function createPlanningSurface(context) {
         ...["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
           .map((day) => `<strong>${day}</strong>`),
       ].join("");
-      let html = `
-        <div class="calendar-content-header calendar-footer-meta">
-          <div>
-            <h3 class="calendar-period">${periodLabel}</h3>
-            <p>${isWeek ? "Five-day planning view" : "Month overview"} · Europe/Berlin · Monday–Friday · ISO week numbers</p>
-          </div>
-          <span class="planner-count">${visibleItems.length} ${visibleItems.length === 1 ? "activity" : "activities"}</span>
-        </div>
-        <p class="calendar-mobile-hint">Swipe each week horizontally to see all five days.</p>
-      `;
       let weekMarkup = "";
       for (let dateValue = new Date(`${from}T00:00:00Z`); dateValue <= new Date(`${to}T00:00:00Z`); dateValue.setUTCDate(dateValue.getUTCDate() + 1)) {
         const dayOfWeek = dateValue.getUTCDay();
@@ -358,7 +349,6 @@ export function createPlanningSurface(context) {
           <div class="calendar-weekdays">${weekdayHeadings}</div>
           <div class="calendar-weeks">${weekMarkup}</div>
         </div>
-        ${html}
       `;
     }
 

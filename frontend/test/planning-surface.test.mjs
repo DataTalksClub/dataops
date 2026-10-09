@@ -339,7 +339,6 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /Example Holiday/);
     assert.match(dom.grid.innerHTML, /Newsletter 42/);
     assert.match(dom.alerts.innerHTML, /Activity overlaps a public holiday/);
-    assert.match(dom.grid.innerHTML, /ISO week numbers/);
     assert.match(dom.grid.innerHTML, /calendar-week-heading/);
     assert.match(dom.grid.innerHTML, /calendar-week-number/);
     assert.match(dom.grid.innerHTML, /<small class="iso-week">\d+<\/small>/);
@@ -360,20 +359,19 @@ describe("Planning surface production behavior", () => {
     await harness.surface.renderCalendarSurface();
     await nextTicks();
     assert.match(dom.status.textContent, /Newsletter dates are temporarily unavailable/);
-    assert.doesNotMatch(dom.grid.innerHTML, /No matching activities/);
-    assert.match(dom.grid.innerHTML, /0 activities/);
+    assert.match(dom.surface.innerHTML, /Europe\/Berlin time/);
 
     dom.type.value = "webinar";
     dom.type.onchange();
-    assert.match(dom.grid.innerHTML, /0 activities/);
+    assert.equal(dom.grid.querySelectorAll(".calendar-item").length, 0);
     dom.layers[0].checked = false;
     dom.layers[0].onchange();
-    assert.match(dom.grid.innerHTML, /0 activities/);
+    assert.equal(dom.grid.querySelectorAll(".calendar-item").length, 0);
 
     dom.view.value = "week";
     await dom.view.onchange();
     await nextTicks();
-    assert.match(dom.grid.innerHTML, /Five-day planning view/);
+    assert.match(dom.surface.querySelector("[data-period-heading]").textContent, /Week of/);
     await dom.surface.querySelector("[data-next]").onclick();
     await nextTicks();
     await dom.surface.querySelector("[data-prev]").onclick();
@@ -410,7 +408,8 @@ describe("Planning surface production behavior", () => {
     dom.pickerMonthBtns[11].onclick({ stopPropagation() {} });
     assert.equal(dom.pickerPopover.hidden, true);
     await nextTicks();
-    assert.match(dom.grid.innerHTML, /December 2026/);
+    assert.equal(dom.surface.querySelector("[data-period-heading]").textContent, "December 2026");
+    assert.match(dom.grid.innerHTML, /December 1, 2026/);
   });
 
   test("creates, edits, and dismisses Calendar data through canonical mutation contracts", async () => {
