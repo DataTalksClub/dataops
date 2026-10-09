@@ -1059,6 +1059,14 @@ body[data-workspace-view="tasks"] .card-checklist-header > .task-history-label {
   transition: width 0.3s ease;
 }body[data-workspace-view="tasks"] .workflow-checklist-section .ops-progress.is-complete > i {
   background: var(--dk-success-text);
+}body[data-workspace-view="tasks"] .card-task-group-title {
+  margin: 10px 0 2px;
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--dk-text-muted);
+  text-transform: none;
+  letter-spacing: normal;
 }body[data-workspace-view="tasks"] .card-template-update {
   border-color: var(--dk-info-border);
   background: var(--dk-info-bg);

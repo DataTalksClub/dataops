@@ -463,20 +463,18 @@ export function createCardPanel(context) {
 
       const list = document.createElement("div");
       list.className = "task-history-list";
-      for (const group of workflowTaskGroups(tasks, today)) {
-        const groupTitle = document.createElement("div");
-        groupTitle.className = "card-task-group-title";
-        groupTitle.textContent = `${group.title} (${group.tasks.length})`;
-        list.append(groupTitle);
-        if (group.tasks.length === 0) {
-          const empty = document.createElement("div");
-          empty.className = "task-history-event";
-          empty.textContent = group.empty;
-          list.append(empty);
-        } else {
-          for (const task of group.tasks)
-            list.append(renderCardChecklistItem(task, card.id, today));
+      const groups = workflowTaskGroups(tasks, today).filter(
+        (group) => group.tasks.length > 0,
+      );
+      for (const group of groups) {
+        if (groups.length > 1) {
+          const groupTitle = document.createElement("div");
+          groupTitle.className = "card-task-group-title";
+          groupTitle.textContent = `${group.title} (${group.tasks.length})`;
+          list.append(groupTitle);
         }
+        for (const task of group.tasks)
+          list.append(renderCardChecklistItem(task, card.id, today));
       }
       checklistSection.append(list);
       main.append(checklistSection);
