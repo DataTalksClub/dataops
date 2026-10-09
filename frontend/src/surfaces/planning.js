@@ -231,6 +231,24 @@ export function createPlanningSurface(context) {
               </label>
             </div>
             <div class="calendar-settings-group">
+              <strong>Operational event slot focus</strong>
+              <span class="calendar-settings-hint">Focus strictly on operational availability slots and all-day blockers per SOP:</span>
+              <div class="calendar-settings-checkboxes">
+                <label class="calendar-settings-checkbox">
+                  <input type="checkbox" name="filterNonSlotHours">
+                  <span>Focus on operational event slots <small>(Lunch 11:30–14:00 & Evening 16:30–18:30 + all-day blockers)</small></span>
+                </label>
+                <label class="calendar-settings-checkbox">
+                  <input type="checkbox" name="filterDtcPlaceholders">
+                  <span>Filter DTC placeholder blocks <small>(DTC event block)</small></span>
+                </label>
+                <label class="calendar-settings-checkbox">
+                  <input type="checkbox" name="filterTransparent">
+                  <span>Filter transparent / free events <small>(Hotel stays, campaign periods; preserves flights/travel)</small></span>
+                </label>
+              </div>
+            </div>
+            <div class="calendar-settings-group">
               <strong>Filter out preset categories</strong>
               <span class="calendar-settings-hint">Selected categories are removed from the calendar view:</span>
               <div class="calendar-settings-checkboxes">
@@ -671,6 +689,9 @@ export function createPlanningSurface(context) {
           if (res.settings) {
             const s = res.settings;
             if (settingsForm.elements.connectionId) settingsForm.elements.connectionId.value = s.connectionId || "google-calendar";
+            if (settingsForm.elements.filterNonSlotHours) settingsForm.elements.filterNonSlotHours.checked = s.filterNonSlotHours !== false;
+            if (settingsForm.elements.filterDtcPlaceholders) settingsForm.elements.filterDtcPlaceholders.checked = s.filterDtcPlaceholders !== false;
+            if (settingsForm.elements.filterTransparent) settingsForm.elements.filterTransparent.checked = s.filterTransparent !== false;
             if (settingsForm.elements.filterLunch) settingsForm.elements.filterLunch.checked = s.filterLunch !== false;
             if (settingsForm.elements.filterRoutines) settingsForm.elements.filterRoutines.checked = s.filterRoutines !== false;
             if (settingsForm.elements.filterFitness) settingsForm.elements.filterFitness.checked = s.filterFitness !== false;
@@ -705,6 +726,9 @@ export function createPlanningSurface(context) {
             .filter(Boolean);
           const body = {
             connectionId: settingsForm.elements.connectionId?.value?.trim() || "google-calendar",
+            filterNonSlotHours: Boolean(settingsForm.elements.filterNonSlotHours?.checked),
+            filterDtcPlaceholders: Boolean(settingsForm.elements.filterDtcPlaceholders?.checked),
+            filterTransparent: Boolean(settingsForm.elements.filterTransparent?.checked),
             filterLunch: Boolean(settingsForm.elements.filterLunch?.checked),
             filterRoutines: Boolean(settingsForm.elements.filterRoutines?.checked),
             filterFitness: Boolean(settingsForm.elements.filterFitness?.checked),
