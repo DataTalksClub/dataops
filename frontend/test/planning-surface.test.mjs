@@ -191,6 +191,12 @@ function createCalendarDom() {
     return btn;
   });
   surface.setQueryAll("[data-picker-month]", monthBtns);
+  const settingsBtn = surface.setQuery("[data-calendar-settings]", new TestElement("button"));
+  const settingsDialog = surface.setQuery("[data-settings-dialog]", new TestElement("dialog"));
+  const settingsForm = settingsDialog.setQuery("form", new TestElement("form"));
+  settingsForm.setQuery('[data-settings-error]', new TestElement("p"));
+  const settingsCancel = settingsDialog.setQuery("[data-settings-cancel]", new TestElement("button"));
+  const connectionsDatalist = settingsDialog.setQuery("#dapier-calendar-connections", new TestElement("datalist"));
   return {
     alerts,
     dialog,
@@ -204,6 +210,10 @@ function createCalendarDom() {
     pickerPrevYear,
     pickerToggle,
     pickerYear,
+    settingsBtn,
+    settingsCancel,
+    settingsDialog,
+    settingsForm,
     status,
     surface,
     type,
@@ -572,6 +582,79 @@ describe("Planning surface production behavior", () => {
     await nextTicks();
     assert.match(dom.status.textContent, /Calendar offline/);
     assert.match(dom.grid.innerHTML, /Calendar unavailable/);
+  });
+
+  test("configures and saves calendar overlay settings and connection", async () => {
+    const dom = createCalendarDom();
+    const calls = [];
+    const harness = createPlanningHarness({
+      calendar: dom,
+      request: async (url, options = {}) => {
+        const u = String(url);
+        calls.push({ url: u, method: options.method || "GET", body: options.body });
+        if (u.includes("/api/calendar-items/settings") && options.method === "PUT") {
+          return {
+            settings: JSON.parse(options.body),
+          };
+        }
+        if (u.includes("/api/calendar-items/settings")) {
+          return {
+            settings: {
+              connectionId: "google-calendar",
+              filterLunch: true,
+              filterRoutines: true,
+              filterFitness: true,
+              filterCampaigns: true,
+              filterBusy: false,
+              customKeywords: ["dentist"],
+            },
+            connections: [
+              { connectionId: "google-calendar", title: "google-calendar (primary)" },
+              { connectionId: "work-calendar", title: "work-calendar (work)" },
+            ],
+          };
+        }
+        if (u.includes("/overlays")) {
+          return { items: [] };
+        }
+        return {
+          alerts: [],
+          holidays: [],
+          items: [],
+        };
+      },
+    });
+
+    await harness.surface.renderCalendarSurface();
+    await nextTicks();
+
+    // Click settings button
+    await dom.settingsBtn.onclick();
+    await nextTicks();
+
+    assert.equal(dom.settingsDialog.open, true);
+    assert.equal(dom.settingsForm.elements.connectionId.value, "google-calendar");
+    assert.equal(dom.settingsForm.elements.filterLunch.checked, true);
+    assert.equal(dom.settingsForm.elements.filterBusy.checked, false);
+    assert.equal(dom.settingsForm.elements.customKeywords.value, "dentist");
+
+    // Modify settings and submit
+    dom.settingsForm.elements.connectionId.value = "work-calendar";
+    dom.settingsForm.elements.filterLunch.checked = false;
+    dom.settingsForm.elements.filterBusy.checked = true;
+    dom.settingsForm.elements.customKeywords.value = "dentist\nhaircut";
+
+    await dom.settingsForm.onsubmit({ preventDefault() {} });
+    await nextTicks();
+
+    assert.equal(dom.settingsDialog.open, false);
+    const putCall = calls.find((c) => c.method === "PUT" && c.url.includes("/api/calendar-items/settings"));
+    assert.ok(putCall);
+    const sent = JSON.parse(putCall.body);
+    assert.equal(sent.connectionId, "work-calendar");
+    assert.equal(sent.filterLunch, false);
+    assert.equal(sent.filterBusy, true);
+    assert.deepEqual(sent.customKeywords, ["dentist", "haircut"]);
   });
 
   test("renders grouped Newsletter slots, safe booking labels, links, and alerts", async () => {

@@ -321,4 +321,34 @@ describe("operations calendar", () => {
       assert.ok(app.includes(id));
     assert.match(app, /\/api\/calendar-items/);
   });
+  it("exposes GET and PUT /api/calendar-items/settings for overlay configuration", async () => {
+    let response = await invoke("GET", "/api/calendar-items/settings");
+    assert.equal(response.statusCode, 200);
+    const initial = parse(response);
+    assert.ok(initial.settings);
+    assert.equal(initial.settings.connectionId, "google-calendar");
+    assert.equal(initial.settings.filterLunch, true);
+    assert.ok(Array.isArray(initial.connections));
+
+    response = await invoke("PUT", "/api/calendar-items/settings", {
+      connectionId: "work-calendar",
+      filterLunch: false,
+      filterBusy: true,
+      customKeywords: ["dentist", "haircut"],
+    });
+    assert.equal(response.statusCode, 200);
+    const updated = parse(response).settings;
+    assert.equal(updated.connectionId, "work-calendar");
+    assert.equal(updated.filterLunch, false);
+    assert.equal(updated.filterBusy, true);
+    assert.deepEqual(updated.customKeywords, ["dentist", "haircut"]);
+
+    response = await invoke("GET", "/api/calendar-items/settings");
+    assert.equal(response.statusCode, 200);
+    const persisted = parse(response).settings;
+    assert.equal(persisted.connectionId, "work-calendar");
+    assert.equal(persisted.filterLunch, false);
+    assert.equal(persisted.filterBusy, true);
+    assert.deepEqual(persisted.customKeywords, ["dentist", "haircut"]);
+  });
 });

@@ -175,10 +175,17 @@ export function createPlanningSurface(context) {
               <span class="chip-dot"></span>
               <span>Alexey's calendar</span>
             </label>
+            <button type="button" class="calendar-layer-settings-btn" data-calendar-settings title="Configure overlay filters & connection">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+              <span>Settings</span>
+            </button>
           </div>
         </div>
       </footer>
-      <dialog class="dk-dialog" style="--dk-dialog-width: 620px">
+      <dialog class="dk-dialog" data-activity-dialog style="--dk-dialog-width: 620px">
         <form>
           <div class="dk-dialog__head"><div>
             <h2>Calendar activity</h2>
@@ -205,6 +212,62 @@ export function createPlanningSurface(context) {
           <div class="dk-dialog__foot">
             <button class="primary-button">Save activity</button>
             <button type="button" data-cancel>Cancel</button>
+          </div>
+        </form>
+      </dialog>
+      <dialog class="dk-dialog calendar-settings-dialog" data-settings-dialog style="--dk-dialog-width: 520px">
+        <form data-settings-form>
+          <div class="dk-dialog__head"><div>
+            <h2>Alexey's calendar overlay settings</h2>
+            <p>Configure which Google Calendar connection to use and filter out personal routines.</p>
+          </div></div>
+          <div class="dk-dialog__body">
+            <div class="calendar-settings-group">
+              <label class="calendar-settings-field">
+                <strong>Dapier calendar connection</strong>
+                <span class="calendar-settings-hint">Select a connected calendar or enter a custom connection ID</span>
+                <input name="connectionId" list="dapier-calendar-connections" required autocomplete="off" placeholder="google-calendar">
+                <datalist id="dapier-calendar-connections"></datalist>
+              </label>
+            </div>
+            <div class="calendar-settings-group">
+              <strong>Filter out preset categories</strong>
+              <span class="calendar-settings-hint">Selected categories are removed from the calendar view:</span>
+              <div class="calendar-settings-checkboxes">
+                <label class="calendar-settings-checkbox">
+                  <input type="checkbox" name="filterLunch">
+                  <span>Lunch and meal breaks <small>(Lunch, обед, lunch break)</small></span>
+                </label>
+                <label class="calendar-settings-checkbox">
+                  <input type="checkbox" name="filterRoutines">
+                  <span>Personal routines & chores <small>(Morning no, домашка, меню, ручки, bills)</small></span>
+                </label>
+                <label class="calendar-settings-checkbox">
+                  <input type="checkbox" name="filterFitness">
+                  <span>Fitness & health <small>(BEAT81, physio, dental)</small></span>
+                </label>
+                <label class="calendar-settings-checkbox">
+                  <input type="checkbox" name="filterCampaigns">
+                  <span>Marketing campaign windows <small>(campaign window)</small></span>
+                </label>
+                <label class="calendar-settings-checkbox">
+                  <input type="checkbox" name="filterBusy">
+                  <span>Busy / private blocks <small>(Busy, занято)</small></span>
+                </label>
+              </div>
+            </div>
+            <div class="calendar-settings-group">
+              <label class="calendar-settings-field">
+                <strong>Custom filter keywords</strong>
+                <span class="calendar-settings-hint">Events containing any of these keywords (case-insensitive) will be hidden. Separate with commas or newlines.</span>
+                <textarea name="customKeywords" rows="3" placeholder="e.g. haircut, dentist, school run"></textarea>
+              </label>
+            </div>
+            <p class="planner-form-error" data-settings-error role="alert"></p>
+          </div>
+          <div class="dk-dialog__foot">
+            <button class="primary-button" type="submit">Save settings</button>
+            <button type="button" data-settings-cancel>Cancel</button>
           </div>
         </form>
       </dialog>`;
@@ -587,6 +650,79 @@ export function createPlanningSurface(context) {
         form.querySelector('[role="alert"]').textContent = `Could not save activity: ${error.message}`;
       }
     };
+
+    const settingsDialog = surface.querySelector("[data-settings-dialog]"),
+      settingsForm = settingsDialog?.querySelector("form"),
+      settingsBtn = surface.querySelector("[data-calendar-settings]"),
+      settingsError = settingsDialog?.querySelector("[data-settings-error]"),
+      connectionsDatalist = settingsDialog?.querySelector("#dapier-calendar-connections");
+
+    if (settingsBtn && settingsDialog && settingsForm) {
+      settingsBtn.onclick = async () => {
+        if (settingsError) settingsError.textContent = "";
+        settingsBtn.disabled = true;
+        try {
+          const res = await api("/settings");
+          if (connectionsDatalist && Array.isArray(res.connections)) {
+            connectionsDatalist.innerHTML = res.connections
+              .map((c) => `<option value="${escapeHtml(c.connectionId)}">${escapeHtml(c.title)}</option>`)
+              .join("");
+          }
+          if (res.settings) {
+            const s = res.settings;
+            if (settingsForm.elements.connectionId) settingsForm.elements.connectionId.value = s.connectionId || "google-calendar";
+            if (settingsForm.elements.filterLunch) settingsForm.elements.filterLunch.checked = s.filterLunch !== false;
+            if (settingsForm.elements.filterRoutines) settingsForm.elements.filterRoutines.checked = s.filterRoutines !== false;
+            if (settingsForm.elements.filterFitness) settingsForm.elements.filterFitness.checked = s.filterFitness !== false;
+            if (settingsForm.elements.filterCampaigns) settingsForm.elements.filterCampaigns.checked = s.filterCampaigns !== false;
+            if (settingsForm.elements.filterBusy) settingsForm.elements.filterBusy.checked = Boolean(s.filterBusy);
+            if (settingsForm.elements.customKeywords) settingsForm.elements.customKeywords.value = (s.customKeywords || []).join("\n");
+          }
+          settingsDialog.showModal();
+        } catch (err) {
+          if (settingsError) settingsError.textContent = `Could not load settings: ${err.message}`;
+          settingsDialog.showModal();
+        } finally {
+          settingsBtn.disabled = false;
+        }
+      };
+
+      const settingsCancelBtn = settingsDialog.querySelector("[data-settings-cancel]");
+      if (settingsCancelBtn) {
+        settingsCancelBtn.onclick = () => settingsDialog.close();
+      }
+
+      settingsForm.onsubmit = async (e) => {
+        e.preventDefault();
+        if (settingsError) settingsError.textContent = "";
+        const submitBtn = settingsForm.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+        try {
+          const rawKeywords = settingsForm.elements.customKeywords?.value || "";
+          const customKeywords = rawKeywords
+            .split(/[\n,]+/)
+            .map((k) => k.trim())
+            .filter(Boolean);
+          const body = {
+            connectionId: settingsForm.elements.connectionId?.value?.trim() || "google-calendar",
+            filterLunch: Boolean(settingsForm.elements.filterLunch?.checked),
+            filterRoutines: Boolean(settingsForm.elements.filterRoutines?.checked),
+            filterFitness: Boolean(settingsForm.elements.filterFitness?.checked),
+            filterCampaigns: Boolean(settingsForm.elements.filterCampaigns?.checked),
+            filterBusy: Boolean(settingsForm.elements.filterBusy?.checked),
+            customKeywords,
+          };
+          await api("/settings", { method: "PUT", body: JSON.stringify(body) });
+          settingsDialog.close();
+          load();
+        } catch (err) {
+          if (settingsError) settingsError.textContent = `Could not save settings: ${err.message}`;
+        } finally {
+          if (submitBtn) submitBtn.disabled = false;
+        }
+      };
+    }
+
     load();
   }
 
