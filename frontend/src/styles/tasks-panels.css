@@ -779,66 +779,108 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3 {
   border-color: var(--dk-border-control-hover);
   background: var(--dk-bg-hover);
 }body[data-workspace-view="tasks"] .workflow-modal-panel {
-  width: min(900px, calc(100vw - 40px));
+  width: min(840px, calc(100vw - 40px));
   height: min(860px, calc(100vh - 32px));
   max-height: calc(100vh - 32px);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-lg);
+  background: var(--dk-bg-surface);
+  box-shadow: var(--dk-shadow-overlay);
 }body[data-workspace-view="tasks"] .workflow-modal-panel > .task-panel-header {
-  min-height: 52px;
+  min-height: 54px;
   border-bottom: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-muted);
-  padding: 10px 16px;
+  background: var(--dk-bg-surface);
+  padding: 12px 20px;
 }body[data-workspace-view="tasks"] .workflow-modal-panel > .task-panel-header strong {
-  font-size: 16px;
+  font-size: 18px;
+  font-weight: 600;
 }body[data-workspace-view="tasks"] .workflow-modal-layout {
-  gap: 12px;
+  gap: 16px;
 }body[data-workspace-view="tasks"] .workflow-modal-main {
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }body[data-workspace-view="tasks"] .workflow-detail-summary {
   display: grid;
-  gap: 8px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  padding: 10px;
+  gap: 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
 }body[data-workspace-view="tasks"] .workflow-summary-top {
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
 }body[data-workspace-view="tasks"] .workflow-summary-top .workflow-stage-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
 }body[data-workspace-view="tasks"] .workflow-summary-top .card-stage-select,
 body[data-workspace-view="tasks"] .workflow-summary-top .card-stage-static {
-  min-height: 34px;
-  border: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-page);
-}body[data-workspace-view="tasks"] .workflow-detail-section {
-  gap: 8px;
+  min-height: 32px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
-  padding: 10px 12px;
+  font-size: 13px;
+  padding: 4px 10px;
+}body[data-workspace-view="tasks"] .workflow-detail-summary .ops-progress {
+  height: 6px;
+  border-radius: 3px;
+  margin: 4px 0 8px;
+  background: var(--dk-bg-muted);
+}body[data-workspace-view="tasks"] .workflow-detail-section {
+  display: grid;
+  gap: 8px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
 }body[data-workspace-view="tasks"] .workflow-detail-section > .task-history-label {
-  font-size: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dk-text-heading);
 }body[data-workspace-view="tasks"] .card-template-update {
   border-color: var(--dk-info-border);
   background: var(--dk-info-bg);
 }body[data-workspace-view="tasks"] .card-checklist-item {
-  min-height: 36px;
+  min-height: 32px;
+  border: none;
   border-radius: var(--dk-radius-md);
-  padding-block: 4px;
+  background: transparent;
+  padding: 6px 8px;
+  transition: background 0.12s ease;
+}body[data-workspace-view="tasks"] .card-checklist-item:hover {
+  background: var(--dk-bg-hover);
+  border-color: transparent;
 }body[data-workspace-view="tasks"] .card-checklist-item > input[type="checkbox"] {
   width: 16px;
   height: 16px;
+  margin-top: 2px;
   accent-color: var(--dk-accent-default);
+  cursor: pointer;
 }body[data-workspace-view="tasks"] .card-checklist-label {
-  font-size: 13px;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--dk-text-primary);
+  cursor: pointer;
+}body[data-workspace-view="tasks"] .card-checklist-label.is-done {
+  color: var(--dk-text-muted);
+  text-decoration: line-through;
 }body[data-workspace-view="tasks"] .card-link-row {
   min-width: 0;
+  border: none;
   border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-}/* Card link rows stay one line tall: restate over the generic
-   .task-required-link label/input grid at matching specificity. */
-body[data-workspace-view="tasks"] .workflow-links-section .task-required-link {
-  gap: 8px;
-  padding: 4px 10px;
+  background: transparent;
+  padding: 4px 8px;
+  transition: background 0.12s ease;
+}body[data-workspace-view="tasks"] .card-link-row:hover {
+  background: var(--dk-bg-hover);
+}body[data-workspace-view="tasks"] .workflow-links-section .task-required-link {
+  gap: 10px;
+  padding: 6px 12px;
 }body[data-workspace-view="tasks"] .workflow-links-section .task-required-link label {
   display: flex;
   align-items: center;
@@ -847,9 +889,14 @@ body[data-workspace-view="tasks"] .workflow-links-section .task-required-link {
   flex: 1;
   width: auto;
   min-width: 0;
-  min-height: 30px;
+  min-height: 28px;
 }body[data-workspace-view="tasks"] .workflow-references-section .task-history-event {
-  background: var(--dk-bg-muted);
+  border: none;
+  border-radius: var(--dk-radius-md);
+  background: transparent;
+  padding: 4px 8px;
+}body[data-workspace-view="tasks"] .workflow-references-section .task-history-event:hover {
+  background: var(--dk-bg-hover);
 }body[data-workspace-view="tasks"] .quick-form-panel {
   width: min(640px, calc(100vw - 40px));
   max-height: min(820px, calc(100vh - 32px));
