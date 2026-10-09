@@ -48,6 +48,9 @@ Before any restore, make sure both layers are active:
 2. **Portable export archive** - an application-level JSONL snapshot bundled as
    a retained offsite archive that does not depend on DynamoDB internals. This
    is the migration path to Postgres or another store.
+3. **Raw DynamoDB dump** - a daily gzip NDJSON copy of every application table
+   under `dynamo-backups/` in the same archive bucket. Use it to inspect or
+   replay items. It is not the portable restore format.
 
 ## On-Demand Backup Procedure
 

@@ -101,6 +101,14 @@ Parameters:
     Type: Number
     Default: 365
     MinValue: 90
+  DynamoBackupPrefix:
+    Type: String
+    Default: dynamo-backups
+    AllowedPattern: "^[a-zA-Z0-9_.\\/-]+$"
+  DynamoBackupRetentionDays:
+    Type: Number
+    Default: 90
+    MinValue: 30
   TypefullySocialSetAlexey:
     Type: Number
     Default: 0
@@ -1444,6 +1452,13 @@ Resources:
             Status: Enabled
             Prefix: !Sub ${ExportArchivePrefix}/
             NoncurrentVersionExpirationInDays: !Ref ExportArchiveRetentionDays
+          - Id: ExpireRawDynamoBackups
+            Status: Enabled
+            Prefix: !Sub ${DynamoBackupPrefix}/
+            ExpirationInDays: !Ref DynamoBackupRetentionDays
+            NoncurrentVersionExpirationInDays: !Ref DynamoBackupRetentionDays
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
       Tags:
         - Key: Project
           Value: DataOps
@@ -2056,6 +2071,7 @@ Resources:
               - s3:PutObject
             Resource:
               - !Sub ${DataOpsExportArchiveBucket.Arn}/${ExportArchivePrefix}/*
+              - !Sub ${DataOpsExportArchiveBucket.Arn}/${DynamoBackupPrefix}/*
         - Statement:
             Effect: Allow
             Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject, s3:DeleteObject, s3:DeleteObjectVersion, s3:HeadObject]
@@ -2098,6 +2114,7 @@ Resources:
           BOOKKEEPING_DOCUMENTS_KMS_KEY: !Ref BookkeepingDocumentsKey
           DATAOPS_EXPORT_ARCHIVE_BUCKET: !Ref DataOpsExportArchiveBucket
           DATAOPS_EXPORT_ARCHIVE_PREFIX: !Ref ExportArchivePrefix
+          DATAOPS_DYNAMO_BACKUP_PREFIX: !Ref DynamoBackupPrefix
           KNOWLEDGE_BUCKET: !Ref KnowledgeBucketName
           AUTH_BASE_URL: !Ref AuthBaseUrl
           AUTH_ISSUER: !Ref AuthIssuer
@@ -2207,6 +2224,25 @@ Resources:
       FunctionName: !Ref BackendTargetFunctionName
       Principal: events.amazonaws.com
       SourceArn: !GetAtt BackendFunctionDailyBackendExport.Arn
+
+  BackendFunctionDailyDynamoBackup:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Dump every DataOps DynamoDB table to the retained archive bucket once per day.
+      ScheduleExpression: cron(0 9 * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackendTargetFunctionName}
+          Id: BackendFunctionDailyDynamoBackupLambdaTarget
+          Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"dynamo-backup"}}'
+
+  BackendFunctionDailyDynamoBackupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackendTargetFunctionName
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BackendFunctionDailyDynamoBackup.Arn
 
   KnowledgeWorkerFunction:
     Type: AWS::Serverless::Function
@@ -2430,6 +2466,9 @@ Outputs:
   DataOpsExportArchivePrefix:
     Description: Prefix used for portable execution export archives
     Value: !Ref ExportArchivePrefix
+  DataOpsDynamoBackupPrefix:
+    Description: Prefix used for raw daily DynamoDB dumps
+    Value: !Ref DynamoBackupPrefix
   BackendFunctionName:
     Description: DataOps single backend Lambda function
     Value: !Ref BackendFunction
