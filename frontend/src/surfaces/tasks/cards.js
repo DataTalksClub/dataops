@@ -175,9 +175,13 @@ export function createCardsSurface(context) {
     return section;
   }
 
+  function templateMeta(templateId) {
+    return templateLabels.get(templateId) || null;
+  }
+
   function templateLabel(templateId) {
     return (
-      templateLabels.get(templateId) || `Template ${templateId.slice(0, 8)}`
+      templateMeta(templateId)?.name || `Template ${templateId.slice(0, 8)}`
     );
   }
 
@@ -226,9 +230,9 @@ export function createCardsSurface(context) {
     return filters;
   }
 
-  // Display names come from the same /api/templates listing the create-card
-  // form uses. Until it answers, options fall back to a short id; one refresh
-  // swaps the labels in when the listing arrives.
+  // Display names (and badge emoji) come from the same /api/templates
+  // listing the create-card form uses. Until it answers, options fall back
+  // to a short id; one refresh swaps the labels in when the listing arrives.
   async function loadTemplateLabels() {
     let payload;
     try {
@@ -244,11 +248,15 @@ export function createCardsSurface(context) {
         .filter((template) => template && template.id)
         .map((template) => [
           String(template.id),
-          String(template.name || template.title || template.id),
+          {
+            name: String(template.name || template.title || template.id),
+            emoji: String(template.emoji || ""),
+            type: String(template.type || ""),
+          },
         ]),
     );
     const improved = [...next].some(
-      ([id, name]) => templateLabels.get(id) !== name,
+      ([id, meta]) => templateLabels.get(id)?.name !== meta.name,
     );
     templateLabels = next;
     if (improved) refreshDocuments();
@@ -323,9 +331,33 @@ export function createCardsSurface(context) {
     card.type = "button";
     card.className = `ops-workflow-card workflow-board-card ops-risk-${item.risk || "low"}`;
     card.dataset.cardId = item.cardId;
-    card.setAttribute("aria-label", `Open card ${item.title}`);
+    const templateId = String(item.templateId || "");
+    const template = templateId ? templateMeta(templateId) : null;
+    const templateName = templateId ? templateLabel(templateId) : "";
+    card.setAttribute(
+      "aria-label",
+      templateName ? `Open ${templateName} card ${item.title}` : `Open card ${item.title}`,
+    );
     if (item.meta) card.title = item.meta;
     card.addEventListener("click", () => openCardPanel(item.cardId));
+
+    // The Template badge replaces the legacy `[Tag]` title prefix: the card
+    // shows which Template it was created from, and opens it on click. The
+    // badge waits for the template listing so it never flashes a raw id.
+    if (template) {
+      const badge = document.createElement("span");
+      badge.className = "workflow-card-template";
+      if (template.type) badge.dataset.templateType = template.type;
+      badge.textContent = template.emoji
+        ? `${template.emoji} ${templateName}`
+        : templateName;
+      badge.title = `View ${templateName} template`;
+      badge.addEventListener("click", (event) => {
+        event.stopPropagation();
+        navigateCanonicalWorkspace("/templates", { templateId });
+      });
+      card.append(badge);
+    }
 
     const header = document.createElement("span");
     header.className = "workflow-card-header";

@@ -3090,4 +3090,37 @@ describe("Work Detail surface boundary", () => {
     await missing.entityStates.at(-1).returnToList();
     assert.equal(missing.navigations.at(-1).params.has("taskId"), false);
   });
+
+  test("links the Card detail panel to its source Template", async () => {
+    const { renderCardTemplateLink } = await import(
+      "../src/surfaces/work-detail/card-summary.js"
+    );
+    globalThis.document = new FakeDocument(
+      new FakeElement("main"),
+      new FakeElement("body"),
+    );
+    const navigations = [];
+    const row = renderCardTemplateLink(
+      {
+        navigateCanonicalWorkspace: (path, params) => {
+          navigations.push({ path, params });
+          return { ready: Promise.resolve() };
+        },
+        request: async () => ({
+          template: { id: "tpl-news", name: "Newsletter", emoji: "📰" },
+        }),
+        workApiUrl: (path) => path,
+      },
+      "tpl-news",
+    );
+    assert.equal(row.className, "card-template-link-row");
+    const [link] = row.children;
+    assert.equal(link.textContent, "View template");
+    await nextTicks();
+    assert.equal(link.textContent, "📰 Newsletter · View template");
+    await link.dispatch("click");
+    assert.deepEqual(navigations, [
+      { path: "/templates", params: { templateId: "tpl-news" } },
+    ]);
+  });
 });

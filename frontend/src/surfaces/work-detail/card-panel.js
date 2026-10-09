@@ -5,7 +5,11 @@ import {
   ownerAvatar,
   resolveChecklistOwnerName,
 } from "./card-display.js";
-import { appendBreakableText, createCardSummary } from "./card-summary.js";
+import {
+  appendBreakableText,
+  createCardSummary,
+  renderCardTemplateLink,
+} from "./card-summary.js";
 
 export function createCardPanel(context) {
   const {
@@ -354,6 +358,17 @@ export function createCardPanel(context) {
       updateCardStage,
       workTaskTitle,
     });
+    // The board badge replaces the legacy `[Tag]` title prefix; the detail
+    // panel carries the same Template link as a real button, above the
+    // stage/date summary.
+    if (card.templateId) {
+      main.append(
+        renderCardTemplateLink(
+          { navigateCanonicalWorkspace, request, workApiUrl },
+          card.templateId,
+        ),
+      );
+    }
     main.append(meta);
     const templateUpdate = renderCardTemplateUpdate(card, data);
     if (templateUpdate) main.append(templateUpdate);
