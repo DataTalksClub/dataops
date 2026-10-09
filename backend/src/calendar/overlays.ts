@@ -19,7 +19,12 @@ export type CalendarOverlayProvider = {
 const providers: CalendarOverlayProvider[] = [];
 
 export function registerCalendarOverlayProvider(provider: CalendarOverlayProvider) {
-  if (!providers.some((p) => p.name === provider.name)) providers.push(provider);
+  const existingIndex = providers.findIndex((p) => p.name === provider.name);
+  if (existingIndex >= 0) {
+    providers[existingIndex] = provider;
+  } else {
+    providers.push(provider);
+  }
 }
 
 export async function projectCalendarOverlays(from: string, to: string): Promise<CalendarOverlayItem[]> {

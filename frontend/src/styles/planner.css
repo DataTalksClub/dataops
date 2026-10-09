@@ -666,3 +666,93 @@
 .newsletter-slot-actions { min-width: 0; }.newsletter-slot-date { display: grid; gap: 2px; }.newsletter-slot-date time { color: var(--dk-text-heading); font-size: 13px; font-weight: 600; }.newsletter-slot-date small,
 .newsletter-slot-main > small { color: var(--dk-text-muted); font-size: 12px; }.newsletter-slot-title { display: flex; min-width: 0; align-items: center; gap: 8px; }.newsletter-slot-title h4 { overflow: hidden; color: var(--dk-text-heading); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }.newsletter-slot-main p { margin-top: 2px; color: var(--dk-text-muted); font-size: 12px; }.newsletter-slot-main > small { display: block; overflow: hidden; margin-top: 3px; text-overflow: ellipsis; white-space: nowrap; }.planner-status { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 22px; border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-full); background: var(--dk-bg-muted); color: var(--dk-text-muted); padding: 1px 7px; font-size: 11px; font-weight: 600; }.planner-status.is-success { border-color: var(--dk-success-border); background: var(--dk-success-bg); color: var(--dk-success-text); }.planner-status.is-warning { border-color: var(--dk-warning-border); background: var(--dk-warning-bg); color: var(--dk-warning-text); }.planner-status.is-info { border-color: var(--dk-info-border); background: var(--dk-info-bg); color: var(--dk-info-text); }.planner-status.is-danger { border-color: var(--dk-danger-border); background: var(--dk-danger-bg); color: var(--dk-danger-text); }.newsletter-slot-actions { display: flex; align-items: center; gap: 10px; }.newsletter-slot-actions a { font-size: 12px; font-weight: 600; white-space: nowrap; }.planner-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }.planner-field-wide { grid-column: 1 / -1; }.planner-form-grid input,
 .planner-form-grid select { min-height: 38px; }.planner-form-grid textarea { resize: vertical; }.planner-form-error { min-height: 0; color: var(--dk-danger-text); font-size: 12px; }.planner-form-error:not(:empty) { padding-bottom: 14px; }
+
+.calendar-layer-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-full);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: all 120ms ease;
+  line-height: 1;
+}
+.calendar-layer-settings-btn:hover {
+  border-color: var(--dk-border-strong);
+  background: var(--dk-bg-hover);
+  color: var(--dk-text-primary);
+}
+.calendar-settings-dialog {
+  max-width: 520px;
+}
+.calendar-settings-group {
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.calendar-settings-group > strong {
+  font-size: 13px;
+  color: var(--dk-text-heading);
+}
+.calendar-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.calendar-settings-field strong {
+  font-size: 13px;
+  color: var(--dk-text-heading);
+}
+.calendar-settings-hint {
+  font-size: 12px;
+  color: var(--dk-text-muted);
+  line-height: 1.4;
+}
+.calendar-settings-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.calendar-settings-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--dk-text-primary);
+  cursor: pointer;
+}
+.calendar-settings-checkbox input {
+  margin-top: 3px;
+  cursor: pointer;
+}
+.calendar-settings-checkbox small {
+  color: var(--dk-text-muted);
+  font-size: 11px;
+}
+.calendar-settings-field input,
+.calendar-settings-field textarea {
+  width: 100%;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-sm);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-primary);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.calendar-settings-field input:focus,
+.calendar-settings-field textarea:focus {
+  outline: none;
+  border-color: var(--dk-accent, #3b82f6);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+

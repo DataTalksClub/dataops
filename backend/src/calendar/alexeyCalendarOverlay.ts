@@ -1,41 +1,98 @@
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { CalendarOverlayItem, CalendarOverlayProvider } from './overlays';
+import {
+  CalendarOverlaySettings,
+  DEFAULT_CALENDAR_OVERLAY_SETTINGS,
+  getCalendarOverlaySettings,
+} from '../db/calendar';
 
 export interface AlexeyCalendarConfig {
+  client?: DynamoDBDocumentClient;
   brokerUrl?: string;
   brokerCredential?: string;
   agent?: string;
   connectionId?: string;
   accountId?: string;
+  settings?: CalendarOverlaySettings;
 }
 
-export function shouldFilterAlexeyCalendarEvent(summary: string | null | undefined): boolean {
+export interface DapierConnectionOption {
+  connectionId: string;
+  provider: string;
+  title: string;
+}
+
+export function shouldFilterAlexeyCalendarEvent(
+  summary: string | null | undefined,
+  settings: Partial<CalendarOverlaySettings> = DEFAULT_CALENDAR_OVERLAY_SETTINGS
+): boolean {
   if (!summary) return false;
   const s = summary.trim();
   if (!s) return false;
 
+  const filterLunch = settings.filterLunch ?? DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterLunch;
+  const filterRoutines = settings.filterRoutines ?? DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterRoutines;
+  const filterFitness = settings.filterFitness ?? DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterFitness;
+  const filterCampaigns = settings.filterCampaigns ?? DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterCampaigns;
+  const filterBusy = settings.filterBusy ?? DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterBusy;
+  const customKeywords = settings.customKeywords || [];
+
   // Standalone lunch and lunch-break blocks
-  if (/^(lunch|lunchtime|lunch break|обед|обед на осткройце|нина обед)$/i.test(s)) return true;
+  if (filterLunch && /^(lunch|lunchtime|lunch break|обед|обед на осткройце|нина обед)$/i.test(s)) {
+    return true;
+  }
 
-  // Personal routines, household, chores, fitness, school, marketing campaign windows
-  const routinePatterns = [
-    /^morning\s*no$/i,
-    /campaign window/i,
-    /^домашка/i,
-    /^меню$/i,
-    /^ручки$/i,
-    /^аркаша/i,
-    /заплатить за квартиру/i,
-    /brazilian nut/i,
-    /restart claude/i,
-    /^password$/i,
-    /beat81/i,
-    /^физио$/i,
-    /zahnreinigung/i,
-  ];
+  // Personal routines, household, chores, school
+  if (filterRoutines) {
+    const routinePatterns = [
+      /^morning\s*no$/i,
+      /^домашка/i,
+      /^меню$/i,
+      /^ручки$/i,
+      /^аркаша/i,
+      /заплатить за квартиру/i,
+      /brazilian nut/i,
+      /restart claude/i,
+      /^password$/i,
+    ];
+    if (routinePatterns.some((pattern) => pattern.test(s))) return true;
+  }
 
-  return routinePatterns.some((pattern) => pattern.test(s));
+  // Fitness / health
+  if (filterFitness) {
+    const fitnessPatterns = [
+      /beat81/i,
+      /^физио$/i,
+      /zahnreinigung/i,
+    ];
+    if (fitnessPatterns.some((pattern) => pattern.test(s))) return true;
+  }
+
+  // Marketing campaign windows
+  if (filterCampaigns && /campaign window/i.test(s)) {
+    return true;
+  }
+
+  // Busy blocks
+  if (filterBusy && /^(busy|занято|busy block)$/i.test(s)) {
+    return true;
+  }
+
+  // Custom keywords / phrases (case-insensitive substring match)
+  if (customKeywords.length > 0) {
+    const lower = s.toLowerCase();
+    for (const kw of customKeywords) {
+      const trimmed = kw.trim().toLowerCase();
+      if (trimmed && lower.includes(trimmed)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
+
 
 function formatBerlinTime(isoString: string): string {
   return new Intl.DateTimeFormat('en-GB', {
@@ -74,14 +131,70 @@ export function setAlexeyCalendarProviderClientsForTests(value: { secrets?: Secr
   fetcher = value.fetch || fetch;
 }
 
+export async function fetchDapierConnections(config?: AlexeyCalendarConfig): Promise<DapierConnectionOption[]> {
+  const brokerUrl = (config?.brokerUrl || process.env.DAPIER_BASE_URL || 'https://dapier.dtcdev.click').replace(/\/$/, '');
+  let credential = config?.brokerCredential || process.env.DAPIER_API_TOKEN;
+
+  if (!credential) {
+    const secretName = process.env.DAPIER_API_TOKEN_SECRET_NAME || 'personal-scheduler/dapier-api-token';
+    try {
+      const res = await secretClient.send(new GetSecretValueCommand({ SecretId: secretName }));
+      if (res.SecretString) {
+        const parsed = JSON.parse(res.SecretString);
+        credential = parsed.api_token || parsed.token;
+      }
+    } catch {
+      // Secrets manager not configured or inaccessible
+    }
+  }
+
+  const fallback: DapierConnectionOption[] = [
+    { connectionId: 'google-calendar', provider: 'google', title: 'google-calendar' },
+  ];
+
+  if (!credential) {
+    return fallback;
+  }
+
+  try {
+    const res = await fetcher(`${brokerUrl}/api/agent/connections`, {
+      headers: { Authorization: `Bearer ${credential}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return fallback;
+    const data = (await res.json()) as { connections?: Array<{ connection_id: string; provider: string; account_title?: string; verified_account_id?: string }> };
+    if (!data.connections || !Array.isArray(data.connections)) return fallback;
+    return data.connections.map((c) => ({
+      connectionId: c.connection_id,
+      provider: c.provider,
+      title: `${c.connection_id}${c.verified_account_id || c.account_title ? ` (${c.verified_account_id || c.account_title})` : ''}`,
+    }));
+  } catch {
+    return fallback;
+  }
+}
+
 export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOverlayProvider {
   return {
     name: 'alexey-calendar',
     async project(from: string, to: string): Promise<CalendarOverlayItem[]> {
+      let activeSettings = config?.settings;
+      if (!activeSettings && config?.client) {
+        try {
+          activeSettings = await getCalendarOverlaySettings(config.client);
+        } catch {
+          // fallback to defaults if table query fails
+        }
+      }
+      if (!activeSettings) {
+        activeSettings = DEFAULT_CALENDAR_OVERLAY_SETTINGS;
+      }
+
       const brokerUrl = (config?.brokerUrl || process.env.DAPIER_BASE_URL || 'https://dapier.dtcdev.click').replace(/\/$/, '');
       const agent = config?.agent || process.env.DAPIER_AGENT || 'personal-scheduler';
-      const connectionId = config?.connectionId || process.env.DAPIER_CALENDAR_CONNECTION || 'google-calendar';
+      const connectionId = config?.connectionId || activeSettings.connectionId || process.env.DAPIER_CALENDAR_CONNECTION || 'google-calendar';
       let credential = config?.brokerCredential || process.env.DAPIER_API_TOKEN;
+
 
       if (!credential) {
         const secretName = process.env.DAPIER_API_TOKEN_SECRET_NAME || 'personal-scheduler/dapier-api-token';
@@ -145,7 +258,7 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
 
       for (const event of events) {
         if (event.status === 'cancelled') continue;
-        if (shouldFilterAlexeyCalendarEvent(event.summary)) continue;
+        if (shouldFilterAlexeyCalendarEvent(event.summary, activeSettings)) continue;
 
         const summary = (event.summary || '').trim() || 'Unavailable';
         let startDate: string;

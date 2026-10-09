@@ -44,3 +44,85 @@ export async function updateCalendarItem(client:DynamoDBDocumentClient,old:Calen
 export async function deleteCalendarItem(client:DynamoDBDocumentClient,old:CalendarItem){if(process.env.NODE_ENV!=='test'){await client.send(new TransactWriteCommand({TransactItems:[{Delete:{TableName:TABLE_CALENDAR,Key:{PK:pk(old.id),SK:'META'},ConditionExpression:'#v=:v',ExpressionAttributeNames:{'#v':'version'},ExpressionAttributeValues:{':v':old.version}}},...projections(old).map(p=>({Delete:{TableName:TABLE_CALENDAR,Key:{PK:p.PK,SK:p.SK}}}))]}));return;} await client.send(new DeleteCommand({TableName:TABLE_CALENDAR,Key:{PK:pk(old.id),SK:'META'},ConditionExpression:'#v=:v',ExpressionAttributeNames:{'#v':'version'},ExpressionAttributeValues:{':v':old.version}}));for(const p of projections(old))await client.send(new DeleteCommand({TableName:TABLE_CALENDAR,Key:{PK:p.PK,SK:p.SK}})); }
 export async function dismissCalendarAlert(client:DynamoDBDocumentClient,fingerprint:string,actor:string){const key=`ALERT#${createHash('sha256').update(fingerprint).digest('hex')}`;await client.send(new PutCommand({TableName:TABLE_CALENDAR,Item:{PK:key,SK:key,fingerprint,dismissedBy:actor,dismissedAt:new Date().toISOString()}}));}
 export async function isCalendarAlertDismissed(client:DynamoDBDocumentClient,fingerprint:string){const key=`ALERT#${createHash('sha256').update(fingerprint).digest('hex')}`;return !!(await client.send(new GetCommand({TableName:TABLE_CALENDAR,Key:{PK:key,SK:key}}))).Item;}
+
+export interface CalendarOverlaySettings {
+  connectionId: string;
+  filterLunch: boolean;
+  filterRoutines: boolean;
+  filterFitness: boolean;
+  filterCampaigns: boolean;
+  filterBusy: boolean;
+  customKeywords: string[];
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export const DEFAULT_CALENDAR_OVERLAY_SETTINGS: CalendarOverlaySettings = {
+  connectionId: 'google-calendar',
+  filterLunch: true,
+  filterRoutines: true,
+  filterFitness: true,
+  filterCampaigns: true,
+  filterBusy: false,
+  customKeywords: [],
+};
+
+const SETTINGS_PK = 'CONFIG#alexey-calendar';
+
+export async function getCalendarOverlaySettings(client: DynamoDBDocumentClient): Promise<CalendarOverlaySettings> {
+  const result = await client.send(new GetCommand({
+    TableName: TABLE_CALENDAR,
+    Key: { PK: SETTINGS_PK, SK: SETTINGS_PK },
+  }));
+  if (!result.Item) {
+    return { ...DEFAULT_CALENDAR_OVERLAY_SETTINGS };
+  }
+  const { PK, SK, ...data } = result.Item;
+  return {
+    connectionId: typeof data.connectionId === 'string' && data.connectionId ? data.connectionId : DEFAULT_CALENDAR_OVERLAY_SETTINGS.connectionId,
+    filterLunch: typeof data.filterLunch === 'boolean' ? data.filterLunch : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterLunch,
+    filterRoutines: typeof data.filterRoutines === 'boolean' ? data.filterRoutines : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterRoutines,
+    filterFitness: typeof data.filterFitness === 'boolean' ? data.filterFitness : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterFitness,
+    filterCampaigns: typeof data.filterCampaigns === 'boolean' ? data.filterCampaigns : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterCampaigns,
+    filterBusy: typeof data.filterBusy === 'boolean' ? data.filterBusy : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterBusy,
+    customKeywords: Array.isArray(data.customKeywords) ? data.customKeywords.filter((k: any) => typeof k === 'string' && k.trim()) : [],
+    updatedAt: data.updatedAt as string | undefined,
+    updatedBy: data.updatedBy as string | undefined,
+  };
+}
+
+export async function saveCalendarOverlaySettings(
+  client: DynamoDBDocumentClient,
+  input: Partial<CalendarOverlaySettings>,
+  actor: string
+): Promise<CalendarOverlaySettings> {
+  const current = await getCalendarOverlaySettings(client);
+  const updated: CalendarOverlaySettings = {
+    connectionId: typeof input.connectionId === 'string' && input.connectionId.trim() ? input.connectionId.trim().slice(0, 128) : current.connectionId,
+    filterLunch: typeof input.filterLunch === 'boolean' ? input.filterLunch : current.filterLunch,
+    filterRoutines: typeof input.filterRoutines === 'boolean' ? input.filterRoutines : current.filterRoutines,
+    filterFitness: typeof input.filterFitness === 'boolean' ? input.filterFitness : current.filterFitness,
+    filterCampaigns: typeof input.filterCampaigns === 'boolean' ? input.filterCampaigns : current.filterCampaigns,
+    filterBusy: typeof input.filterBusy === 'boolean' ? input.filterBusy : current.filterBusy,
+    customKeywords: Array.isArray(input.customKeywords)
+      ? input.customKeywords
+          .filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
+          .map((k) => k.trim().slice(0, 100))
+          .slice(0, 100)
+      : current.customKeywords,
+    updatedAt: new Date().toISOString(),
+    updatedBy: actor,
+  };
+
+  await client.send(new PutCommand({
+    TableName: TABLE_CALENDAR,
+    Item: {
+      PK: SETTINGS_PK,
+      SK: SETTINGS_PK,
+      ...updated,
+    },
+  }));
+
+  return updated;
+}
+

@@ -78,6 +78,159 @@ describe('Alexey calendar overlay and filtering', () => {
         );
       }
     });
+
+    it('respects configurable filter toggles and custom keywords', () => {
+      // With filterLunch disabled, lunch is kept
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('Lunch', { filterLunch: false }),
+        false,
+      );
+
+      // With filterRoutines disabled, morning no is kept
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('Morning no', { filterRoutines: false }),
+        false,
+      );
+
+      // With filterFitness disabled, Beat81 is kept
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('BEAT81 workout', { filterFitness: false }),
+        false,
+      );
+
+      // With filterCampaigns disabled, campaign window is kept
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('Campaign window', { filterCampaigns: false }),
+        false,
+      );
+
+      // With filterBusy enabled, busy is filtered out
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('Busy', { filterBusy: true }),
+        true,
+      );
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('Занято', { filterBusy: true }),
+        true,
+      );
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('Busy', { filterBusy: false }),
+        false,
+      );
+
+      // Custom keywords
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('Visit dentist for checkup', {
+          customKeywords: ['dentist', 'haircut'],
+        }),
+        true,
+      );
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('Quick Haircut appointment', {
+          customKeywords: ['dentist', 'haircut'],
+        }),
+        true,
+      );
+      assert.equal(
+        shouldFilterAlexeyCalendarEvent('Team planning session', {
+          customKeywords: ['dentist', 'haircut'],
+        }),
+        false,
+      );
+    });
+  });
+
+  describe('fetchDapierConnections and configurable provider', () => {
+    it('discovers Dapier calendar connections using token', async () => {
+      const { fetchDapierConnections } = await import('../src/calendar/alexeyCalendarOverlay');
+      const mockFetch: typeof fetch = async (input) => {
+        if (String(input).endsWith('/api/agent/connections')) {
+          return new Response(
+            JSON.stringify({
+              connections: [
+                {
+                  connection_id: 'google-calendar',
+                  provider: 'google',
+                  account_title: 'alexey.s.grigoriev@gmail.com',
+                },
+                {
+                  connection_id: 'work-calendar',
+                  provider: 'google',
+                  account_title: 'alexey@datatalks.club',
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      setAlexeyCalendarProviderClientsForTests({ fetch: mockFetch });
+      const conns = await fetchDapierConnections({ brokerCredential: 'token' });
+      assert.equal(conns.length, 2);
+      assert.equal(conns[0].connectionId, 'google-calendar');
+      assert.equal(conns[1].connectionId, 'work-calendar');
+    });
+
+    it('applies custom settings passed in provider config to filter and connection', async () => {
+      let requestedConnectionId: string | undefined;
+      const mockFetch: typeof fetch = async (input, init = {}) => {
+        const url = String(input);
+        if (url.endsWith('/api/agent/token')) {
+          const body = JSON.parse(String(init.body));
+          requestedConnectionId = body.connection_id;
+          return new Response(
+            JSON.stringify({ access_token: 'custom-token' }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('googleapis.com')) {
+          return new Response(
+            JSON.stringify({
+              items: [
+                {
+                  id: 'evt-custom-1',
+                  summary: 'Lunch',
+                  status: 'confirmed',
+                  start: { dateTime: '2026-10-13T12:00:00+02:00' },
+                  end: { dateTime: '2026-10-13T13:00:00+02:00' },
+                },
+                {
+                  id: 'evt-custom-2',
+                  summary: 'Secret Project meeting',
+                  status: 'confirmed',
+                  start: { dateTime: '2026-10-13T14:00:00+02:00' },
+                  end: { dateTime: '2026-10-13T15:00:00+02:00' },
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      setAlexeyCalendarProviderClientsForTests({ fetch: mockFetch });
+      const provider = alexeyCalendarOverlay({
+        brokerCredential: 'test-token',
+        settings: {
+          connectionId: 'work-calendar',
+          filterLunch: false, // Lunch should now be kept!
+          filterRoutines: true,
+          filterFitness: true,
+          filterCampaigns: true,
+          filterBusy: false,
+          customKeywords: ['Secret Project'], // This meeting should now be filtered out!
+        },
+      });
+
+      const items = await provider.project('2026-10-01', '2026-10-31');
+      assert.equal(requestedConnectionId, 'work-calendar');
+      assert.equal(items.length, 1);
+      assert.equal(items[0].id, 'alexey-calendar:evt-custom-1');
+      assert.equal(items[0].label, '12:00–13:00 Lunch');
+    });
   });
 
   describe('alexeyCalendarOverlay provider', () => {
