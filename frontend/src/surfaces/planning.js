@@ -239,8 +239,12 @@ export function createPlanningSurface(context) {
 
     function bounds() {
       if (surface.querySelector("[data-view]").value === "week") return [iso(monday(cursor)), iso(sunday(cursor))];
-      const first = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), 1)),
-        last = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 0));
+      const year = cursor.getUTCFullYear(), month = cursor.getUTCMonth();
+      const first = new Date(Date.UTC(year, month, 1));
+      const day = first.getUTCDay();
+      if (day === 0) first.setUTCDate(2);
+      else if (day === 6) first.setUTCDate(3);
+      const last = new Date(Date.UTC(year, month + 1, 0));
       return [iso(monday(first)), iso(sunday(last))];
     }
 
