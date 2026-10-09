@@ -234,6 +234,10 @@
   border-color: var(--dk-info-border);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
+}.workflow-card-flag.is-success {
+  border-color: var(--dk-success-border);
+  background: var(--dk-success-bg);
+  color: var(--dk-success-text);
 }.ops-workflow-card small {
   color: var(--dk-text-muted);
   font-size: 11px;

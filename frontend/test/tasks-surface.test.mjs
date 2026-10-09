@@ -937,6 +937,54 @@ describe("Tasks surface boundary", () => {
     );
   });
 
+  test("marks a fully completed Card with a completion flag instead of an empty last line", async () => {
+    const active = [
+      {
+        id: "done-card",
+        title: "Done",
+        stage: "after-event",
+        anchorDate: "2026-08-10",
+      },
+    ];
+    const { api, documentList } = createHarness({
+      route: { path: "/cards", params: new URLSearchParams() },
+      workSnapshot: {
+        activeCards: active,
+        cards: active,
+        cardTasks: {
+          "done-card": [
+            canonicalTask({
+              id: "a",
+              description: "Done first",
+              status: "done",
+              date: "2026-08-01",
+            }),
+            canonicalTask({
+              id: "b",
+              description: "Done second",
+              status: "done",
+              date: "2026-08-02",
+            }),
+          ],
+        },
+      },
+    });
+
+    api.renderTasksSurface([], "workflows");
+    const [card] = findAllByClass(documentList, "workflow-board-card");
+    assert.equal(
+      findAllByClass(card, "workflow-card-count")[0].textContent,
+      "2/2 tasks",
+    );
+    assert.deepEqual(
+      findAllByClass(card, "workflow-card-flag").map((flag) => [
+        flag.className,
+        flag.textContent,
+      ]),
+      [["workflow-card-flag is-success", "completion"]],
+    );
+  });
+
   test("restores Template route state for found, list, and not-found entities", async () => {
     const template = {
       id: "template-1",

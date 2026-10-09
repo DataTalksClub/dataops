@@ -307,11 +307,15 @@ export function createCardsSurface(context) {
 
   function cardFlags(progress) {
     if (!progress) return [];
-    return [
+    const flags = [
       { count: progress.overdue, label: "overdue", tone: "danger" },
       { count: progress.waiting, label: "waiting", tone: "waiting" },
       { count: progress.missingProof, label: "missing proof", tone: "warning" },
     ].filter((flag) => Number(flag.count) > 0);
+    if (Number(progress.total) > 0 && Number(progress.percent) >= 100) {
+      flags.push({ count: 0, label: "completion", tone: "success" });
+    }
+    return flags;
   }
 
   function renderWorkflowSurfaceCard(item) {
@@ -382,7 +386,9 @@ export function createCardsSurface(context) {
       for (const flag of flags) {
         const chip = document.createElement("span");
         chip.className = `workflow-card-flag is-${flag.tone}`;
-        chip.textContent = `${flag.count} ${flag.label}`;
+        chip.textContent = Number(flag.count) > 0
+          ? `${flag.count} ${flag.label}`
+          : flag.label;
         flagRow.append(chip);
       }
       card.append(flagRow);
