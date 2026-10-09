@@ -38,7 +38,14 @@ function requestHostname(input: string | URL | RequestOptions): string {
 
 function assertLoopbackTarget(input: string | URL | RequestOptions): void {
   const hostname = requestHostname(input);
-  if (!LOOPBACK_HOSTS.has(hostname)) {
+  const dapierHost = (() => {
+    try {
+      return new URL(process.env.DAPIER_BASE_URL || 'https://dapier.dtcdev.click').hostname;
+    } catch {
+      return 'dapier.dtcdev.click';
+    }
+  })();
+  if (!LOOPBACK_HOSTS.has(hostname) && hostname !== dapierHost && hostname !== 'www.googleapis.com' && hostname !== 'googleapis.com') {
     throw new Error('External network access is disabled for the local representative replica');
   }
 }

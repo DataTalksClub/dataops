@@ -441,7 +441,7 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-}.calendar-layer-chip.is-activities .chip-dot { background: #10b981; }.calendar-layer-chip.is-public .chip-dot { background: #ef4444; }.calendar-layer-chip.is-school .chip-dot { background: #f59e0b; }.calendar-layer-chip.is-overlay .chip-dot { background: #a855f7; }.calendar-layer-chip:has(input:checked) {
+}.calendar-layer-chip.is-activities .chip-dot { background: #10b981; }.calendar-layer-chip.is-public .chip-dot { background: #ef4444; }.calendar-layer-chip.is-school .chip-dot { background: #f59e0b; }.calendar-layer-chip.is-overlay .chip-dot { background: #3b82f6; }.calendar-layer-chip.is-alexey .chip-dot { background: #a855f7; }.calendar-layer-chip:has(input:checked) {
   background: var(--dk-bg-muted);
   border-color: var(--dk-border-strong);
   color: var(--dk-text-heading);
@@ -642,13 +642,23 @@
   background: rgba(59, 130, 246, 0.25);
   color: #bfdbfe;
 }.calendar-overlay {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.14);
+  color: #93c5fd;
+}.calendar-overlay small {
+  background: rgba(59, 130, 246, 0.25);
+  color: #bfdbfe;
+}.calendar-overlay:hover {
+  background: rgba(59, 130, 246, 0.22);
+  border-color: rgba(59, 130, 246, 0.55);
+}.calendar-overlay.is-alexey {
   border-color: rgba(168, 85, 247, 0.35);
   background: rgba(168, 85, 247, 0.14);
   color: #d8b4fe;
-}.calendar-overlay small {
+}.calendar-overlay.is-alexey small {
   background: rgba(168, 85, 247, 0.25);
   color: #e9d5ff;
-}.calendar-overlay:hover {
+}.calendar-overlay.is-alexey:hover {
   background: rgba(168, 85, 247, 0.22);
   border-color: rgba(168, 85, 247, 0.55);
 }.newsletter-schedule { display: grid; gap: 20px; }.newsletter-period { overflow: hidden; border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-md); background: var(--dk-bg-surface); }.newsletter-period > header { display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--dk-border-default); background: var(--dk-bg-muted); padding: 8px 14px; }.newsletter-period h3 { color: var(--dk-text-heading); font-size: 14px; font-weight: 600; }.newsletter-period > header span { color: var(--dk-text-muted); font-size: 12px; }.newsletter-slot-row { display: grid; min-width: 0; grid-template-columns: 132px minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 14px; }.newsletter-slot-row + .newsletter-slot-row { border-top: 1px solid var(--dk-border-default); }.newsletter-slot-date,
