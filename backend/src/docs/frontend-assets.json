@@ -95,7 +95,6 @@
     "src/surfaces/work-detail/task-actions.js",
     "src/surfaces/work-detail/task-evidence.js",
     "src/dakit/dakit.css",
-    "src/dakit/dakit-dialogs.js",
     "src/dakit/tokens.css",
     "src/surfaces/work-detail/task-panel.js"
   ]
