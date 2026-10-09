@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { GetCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
-import { createCard, getCard, updateCard } from '../src/db/cards';
+import { createCard, getCard, parkCard, updateCard } from '../src/db/cards';
 import {
   CardLifecycleConflictError,
   createTask,
@@ -326,5 +326,62 @@ describe('Card lifecycle aggregate', () => {
       /requires 101 transaction items; maximum is 100/,
     );
     assert.equal(await getCard(client, 'oversized-template-card'), null);
+  });
+
+  it('keeps a parked Card parked across Task changes until its work finishes', async () => {
+    const created = await createCard(client, { title: 'Parked aggregate', anchorDate: '2026-09-11' });
+    const first = await createTask(client, { description: 'First', date: '2026-09-11', cardId: created.id });
+    const second = await createTask(client, { description: 'Second', date: '2026-09-12', cardId: created.id });
+    const parked = await parkCard(client, created.id, (await getCard(client, created.id))!.version);
+    assert.equal(parked.status, 'parked');
+
+    await updateTask(client, first.id, {
+      expectedVersion: first.version,
+      patch: { status: 'done' },
+      actorId: 'operator-one',
+      triggerKind: 'task-completed',
+    });
+    const stillParked = await getCard(client, created.id);
+    assert.deepEqual(
+      { status: stillParked?.status, stage: stillParked?.stage, openTaskCount: stillParked?.openTaskCount },
+      { status: 'parked', stage: 'preparation', openTaskCount: 1 },
+    );
+
+    await updateTask(client, second.id, {
+      expectedVersion: second.version,
+      patch: { status: 'done' },
+      actorId: 'operator-one',
+      triggerKind: 'task-completed',
+    });
+    const completed = await getCard(client, created.id);
+    assert.deepEqual(
+      { status: completed?.status, stage: completed?.stage, openTaskCount: completed?.openTaskCount },
+      { status: 'archived', stage: 'done', openTaskCount: 0 },
+    );
+  });
+
+  it('reopens a parked Card in place instead of restoring it to the board', async () => {
+    const created = await createCard(client, { title: 'Parked reopen', anchorDate: '2026-09-11' });
+    const first = await createTask(client, { description: 'First', date: '2026-09-11', cardId: created.id });
+    await createTask(client, { description: 'Second', date: '2026-09-12', cardId: created.id });
+    await parkCard(client, created.id, (await getCard(client, created.id))!.version);
+    const done = await updateTask(client, first.id, {
+      expectedVersion: first.version,
+      patch: { status: 'done' },
+      actorId: 'operator-one',
+      triggerKind: 'task-completed',
+    });
+    const reopened = await updateTask(client, done.id, {
+      expectedVersion: done.version,
+      patch: { status: 'todo' },
+      actorId: 'operator-one',
+      triggerKind: 'task-reopened',
+    });
+    assert.equal(reopened.status, 'todo');
+    const card = await getCard(client, created.id);
+    assert.deepEqual(
+      { status: card?.status, stage: card?.stage, openTaskCount: card?.openTaskCount },
+      { status: 'parked', stage: 'preparation', openTaskCount: 2 },
+    );
   });
 });

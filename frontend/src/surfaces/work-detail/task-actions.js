@@ -8,6 +8,7 @@ export function createTaskActions(context) {
     getActiveWorkspaceRoute,
     getActiveWorkspaceRouteToken = () => 0,
     isArchivedWorkCard,
+    isParkedWorkCard,
     isWorkspaceRouteFresh,
     loadArtifactsForTask,
     navigateCanonicalWorkspace,
@@ -374,15 +375,17 @@ export function createTaskActions(context) {
         || detail.activeCardPanelId === card.id
       )
     ) {
-      const archived = isArchivedWorkCard(card);
-      const route = archived ? "/cards/archive" : "/cards";
+      const inArchiveView = isArchivedWorkCard(card) || isParkedWorkCard(card);
+      const route = inArchiveView ? "/cards/archive" : "/cards";
       const navigation = navigateCanonicalWorkspace(route, {
         cardId: card.id,
         taskId,
       });
       await navigation.ready;
       if (!routeIsFresh(navigation.token)) return;
-      if (!archived && status !== "done") {
+      // A reopened Task restores a done Card to the board; a parked Card
+      // stays parked, so only the board case names a restored stage.
+      if (!inArchiveView && status !== "done") {
         showUndoToast(
           `Task reopened. Card restored to ${String(card.stage).replace("-", " ")}.`,
           () => updateTaskStatus(taskId, "done", updated.version),

@@ -6,6 +6,7 @@ export function createCardsSurface(context) {
     groupCardItemsByMonth,
     groupCardItemsByStage,
     isArchivedWorkCard,
+    isParkedWorkCard,
     navigateCanonicalWorkspace,
     openCardPanel,
     openQuickWorkflowForm,
@@ -24,6 +25,9 @@ export function createCardsSurface(context) {
   let templateFilter = "";
   let templateLabels = new Map();
   let templateLabelsRequested = false;
+  // The Archive view holds two categories: done Cards and parked Cards with
+  // open work remaining. The selected tab survives re-renders like the filter.
+  let archiveCategory = "done";
 
   function renderWorkflowsSurface(model) {
     const section = document.createElement("section");
@@ -33,12 +37,17 @@ export function createCardsSurface(context) {
     const archivedCards = (state.workSnapshot.cards || []).filter(
       isArchivedWorkCard,
     );
+    const parkedCards = (state.workSnapshot.cards || []).filter(
+      isParkedWorkCard,
+    );
     const archiveVisible = getActiveWorkspaceRoute()?.path === "/cards/archive";
-    const displayedCards = archiveVisible ? archivedCards : cards;
+    const archiveCards = archiveCategory === "parked" ? parkedCards : archivedCards;
+    const displayedCards = archiveVisible ? archiveCards : cards;
     const headerModel = cardsHeaderViewModel({
       archiveVisible,
       activeCount: cards.length,
       archivedCount: archivedCards.length,
+      parkedCount: parkedCards.length,
     });
     const header = document.createElement("header");
     header.className = "workflow-board-header";
@@ -74,39 +83,75 @@ export function createCardsSurface(context) {
     header.append(heading, actions);
     section.append(header);
 
-    if (displayedCards.length === 0) {
+    if (displayedCards.length === 0 && !archiveVisible) {
       const sourceComplete =
         state.workSnapshot.cardsComplete === true;
-      if (archiveVisible) {
-        section.append(
-          renderHonestState(
-            sourceComplete ? "Archive is empty" : "Archive availability is unknown",
-            sourceComplete
-              ? "Cards appear here after all of their Tasks are complete."
-              : "Card collection data is incomplete, so remaining archived Cards cannot be ruled out.",
-          ),
-        );
-      } else {
-        const loaded = Boolean(state.workSnapshot.cardsLoaded);
-        // The honest state is the board's one empty statement; empty stage
-        // columns would only restate it per column.
-        section.append(
-          renderHonestState(
-            sourceComplete ? "No active cards" : "Card availability is unknown",
-            sourceComplete
-              ? "Create a card from a Template when new work arrives."
-              : loaded
-                ? "The loaded page has no active Cards, but remaining pages have not been evaluated."
-                : "Live card data is unavailable.",
-          ),
-        );
-      }
+      const loaded = Boolean(state.workSnapshot.cardsLoaded);
+      // The honest state is the board's one empty statement; empty stage
+      // columns would only restate it per column.
+      section.append(
+        renderHonestState(
+          sourceComplete ? "No active cards" : "Card availability is unknown",
+          sourceComplete
+            ? "Create a card from a Template when new work arrives."
+            : loaded
+              ? "The loaded page has no active Cards, but remaining pages have not been evaluated."
+              : "Live card data is unavailable.",
+        ),
+      );
       return section;
+    }
+
+    function renderArchiveCategoryTabs() {
+      const tabs = document.createElement("div");
+      tabs.className = "workflow-archive-tabs";
+      tabs.setAttribute("role", "tablist");
+      tabs.setAttribute("aria-label", "Archive categories");
+      for (
+        const [category, label, count] of [
+          ["done", "Done", archivedCards.length],
+          ["parked", "Parked", parkedCards.length],
+        ]
+      ) {
+        const tab = document.createElement("button");
+        tab.type = "button";
+        tab.className = "archive-category-tab";
+        tab.setAttribute("role", "tab");
+        tab.setAttribute("aria-selected", String(archiveCategory === category));
+        tab.textContent = `${label} (${count})`;
+        tab.addEventListener("click", () => {
+          if (archiveCategory !== category) {
+            archiveCategory = category;
+            refreshDocuments();
+          }
+        });
+        tabs.append(tab);
+      }
+      return tabs;
     }
 
     const today = todayIsoDate();
     if (archiveVisible) {
-      const archiveItems = archivedCards.map((card) =>
+      section.append(renderArchiveCategoryTabs());
+      const parked = archiveCategory === "parked";
+      if (archiveCards.length === 0) {
+        const sourceComplete =
+          state.workSnapshot.cardsComplete === true;
+        section.append(
+          renderHonestState(
+            sourceComplete
+              ? parked ? "No parked cards" : "Archive is empty"
+              : "Archive availability is unknown",
+            sourceComplete
+              ? parked
+                ? "Cards appear here after an active Card is parked. Resume returns them to the board."
+                : "Cards appear here after all of their Tasks are complete."
+              : `Card collection data is incomplete, so remaining ${parked ? "parked" : "archived"} Cards cannot be ruled out.`,
+          ),
+        );
+        return section;
+      }
+      const archiveItems = archiveCards.map((card) =>
         operationItemFromCard(
           card,
           state.workSnapshot.cardTasks[card.id] || [],
@@ -117,7 +162,7 @@ export function createCardsSurface(context) {
           },
         ),
       );
-      for (const group of groupCardItemsByMonth(archiveItems)) {
+      for (const group of groupCardItemsByMonth(archiveItems, parked ? "anchorDate" : "completedAt")) {
         const month = document.createElement("section");
         month.className = "cards-archive-month";
         const monthTitle = document.createElement("h3");

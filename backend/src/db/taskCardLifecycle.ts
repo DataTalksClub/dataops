@@ -227,6 +227,18 @@ function applyCardAggregateDelta(
     next.completedAt = now;
     next.completedBy = actorId;
     action = 'card-completed';
+  } else if (card.status === 'parked' && shouldComplete) {
+    // Finishing parked work completes it: the done Archive owns finished
+    // Cards wherever they finish.
+    next.activeStageBeforeCompletion = isActiveCardStage(card.stage) ? card.stage : 'preparation';
+    next.stage = 'done';
+    next.status = 'archived';
+    next.completedAt = now;
+    next.completedBy = actorId;
+    action = 'card-completed';
+  } else if (card.status === 'parked') {
+    // Reopened or added Tasks keep a parked Card parked: only an explicit
+    // resume returns it to the board.
   } else if (card.status === 'archived' && !shouldComplete) {
     next.stage = isActiveCardStage(card.activeStageBeforeCompletion)
       ? card.activeStageBeforeCompletion

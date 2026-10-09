@@ -1017,4 +1017,43 @@ describe('API — Cards', () => {
       assert.strictEqual((tasksByRef.get('after') as any).date, utcDateString(2));
     });
   });
+
+  describe('POST /api/cards/:id/park and /resume', () => {
+    it('parks an active card and resumes it to the board', async () => {
+      const created = await createCard(client, { title: 'Route park', anchorDate: utcDateString() });
+      const parked = await invoke('POST', `/api/cards/${created.id}/park`, { expectedVersion: 1 });
+      assert.strictEqual(parked.statusCode, 200);
+      assert.strictEqual(JSON.parse(parked.body).card.status, 'parked');
+
+      const resumed = await invoke('POST', `/api/cards/${created.id}/resume`, { expectedVersion: 2 });
+      assert.strictEqual(resumed.statusCode, 200);
+      assert.strictEqual(JSON.parse(resumed.body).card.status, 'active');
+    });
+
+    it('rejects parking a parked card and resuming an active card with 422', async () => {
+      const created = await createCard(client, { title: 'Route double', anchorDate: utcDateString() });
+      const resumeActive = await invoke('POST', `/api/cards/${created.id}/resume`, { expectedVersion: 1 });
+      assert.strictEqual(resumeActive.statusCode, 422);
+      assert.strictEqual(JSON.parse(resumeActive.body).code, 'card-status-transition');
+
+      assert.strictEqual((await invoke('POST', `/api/cards/${created.id}/park`, { expectedVersion: 1 })).statusCode, 200);
+      const parkParked = await invoke('POST', `/api/cards/${created.id}/park`, { expectedVersion: 2 });
+      assert.strictEqual(parkParked.statusCode, 422);
+    });
+
+    it('returns 409 on stale versions and 404 for missing cards', async () => {
+      const created = await createCard(client, { title: 'Route stale', anchorDate: utcDateString() });
+      const stale = await invoke('POST', `/api/cards/${created.id}/park`, { expectedVersion: 99 });
+      assert.strictEqual(stale.statusCode, 409);
+      const missing = await invoke('POST', '/api/cards/card-missing/park', { expectedVersion: 1 });
+      assert.strictEqual(missing.statusCode, 404);
+    });
+
+    it('rejects non-POST methods and invalid bodies', async () => {
+      const created = await createCard(client, { title: 'Route invalid', anchorDate: utcDateString() });
+      assert.strictEqual((await invoke('GET', `/api/cards/${created.id}/park`)).statusCode, 405);
+      const noVersion = await invoke('POST', `/api/cards/${created.id}/park`, {});
+      assert.strictEqual(noVersion.statusCode, 400);
+    });
+  });
 });

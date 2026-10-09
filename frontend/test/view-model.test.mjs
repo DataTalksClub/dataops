@@ -32,11 +32,26 @@ describe("Cards renderer view models", () => {
     }), {
       title: "Card archive",
       eyebrow: "Task board",
-      summary: "1 archived card · completed work remains available",
+      summary: "1 done card · completed work remains available",
       archiveAction: "Back to board",
       archiveRoute: "/cards",
       createVisible: false,
     });
+  });
+
+  test("counts parked cards alongside done cards in the archive heading", () => {
+    assert.deepEqual(cardsHeaderViewModel({
+      archiveVisible: true,
+      activeCount: 3,
+      archivedCount: 1,
+      parkedCount: 2,
+    }).summary, "1 done card · 2 parked cards · completed work remains available");
+    assert.deepEqual(cardsHeaderViewModel({
+      archiveVisible: false,
+      activeCount: 3,
+      archivedCount: 1,
+      parkedCount: 2,
+    }).archiveAction, "Archive (3)");
   });
 
   test("keeps unknown and completed stages out of the three-column board", () => {
