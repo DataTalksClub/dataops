@@ -1054,32 +1054,105 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3 {
 }body[data-workspace-view="tasks"] .card-checklist-label.is-done {
   color: var(--dk-text-muted);
   text-decoration: line-through;
-}body[data-workspace-view="tasks"] .card-link-row {
-  min-width: 0;
-  border: none;
+  opacity: 0.7;
+}body[data-workspace-view="tasks"] .workflow-links-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}body[data-workspace-view="tasks"] .card-link-row,
+body[data-workspace-view="tasks"] .workflow-links-section .task-required-link {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
-  background: transparent;
-  padding: 4px 8px;
-  transition: background 0.12s ease;
-}body[data-workspace-view="tasks"] .card-link-row:hover {
+  background: var(--dk-bg-surface);
+  padding: 8px 12px;
+  transition: all 0.12s ease;
+}body[data-workspace-view="tasks"] .card-link-row:hover,
+body[data-workspace-view="tasks"] .workflow-links-section .task-required-link:hover {
   background: var(--dk-bg-hover);
-}body[data-workspace-view="tasks"] .workflow-links-section .task-required-link {
-  gap: 10px;
-  padding: 6px 12px;
+  border-color: var(--dk-border-strong);
 }body[data-workspace-view="tasks"] .workflow-links-section .task-required-link label {
   display: flex;
-  align-items: center;
-  gap: 8px;
-}body[data-workspace-view="tasks"] .workflow-links-section .task-required-link input[type="url"] {
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  gap: 4px;
   flex: 1;
-  width: auto;
   min-width: 0;
+  margin: 0;
+}body[data-workspace-view="tasks"] .card-link-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dk-text-heading);
+  text-align: left;
+  line-height: 1.35;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}body[data-workspace-view="tasks"] .card-link-name::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  background-color: var(--dk-text-muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'%3E%3C/path%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'%3E%3C/path%3E%3C/svg%3E") no-repeat center / contain;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'%3E%3C/path%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'%3E%3C/path%3E%3C/svg%3E") no-repeat center / contain;
+}body[data-workspace-view="tasks"] .workflow-links-section .task-required-link input[type="url"] {
+  width: 100%;
+  box-sizing: border-box;
   min-height: 28px;
+  height: 28px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-sm);
+  background: var(--dk-bg-page);
+  color: var(--dk-text-primary);
+  font-size: 11.5px;
+  font-family: var(--dk-font-mono, monospace);
+  padding: 3px 8px;
+  text-overflow: ellipsis;
+  text-align: left;
+  outline: none;
+  transition: border-color 0.15s ease;
+}body[data-workspace-view="tasks"] .workflow-links-section .task-required-link input[type="url"]:focus {
+  border-color: var(--dk-accent-default);
+  color: var(--dk-text-primary);
+}body[data-workspace-view="tasks"] .card-link-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-sm);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.12s ease;
+  flex-shrink: 0;
+}body[data-workspace-view="tasks"] .card-link-open:hover {
+  background: var(--dk-bg-hover);
+  border-color: var(--dk-border-strong);
+  color: var(--dk-text-heading);
 }body[data-workspace-view="tasks"] .workflow-references-section .task-history-event {
   border: none;
   border-radius: var(--dk-radius-md);
   background: transparent;
-  padding: 4px 8px;
+  padding: 6px 10px;
 }body[data-workspace-view="tasks"] .workflow-references-section .task-history-event:hover {
   background: var(--dk-bg-hover);
 }body[data-workspace-view="tasks"] .quick-form-panel {

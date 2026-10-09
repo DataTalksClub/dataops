@@ -2,6 +2,31 @@ import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { createCardActions } from "./card-actions.js";
 import { appendBreakableText, createCardSummary } from "./card-summary.js";
 
+function humanLinkName(name) {
+  if (!name || !/^https?:\/\//i.test(name)) return name;
+  try {
+    const url = new URL(name);
+    const domain = url.hostname.replace(/^www\./, "");
+    const path = url.pathname.replace(/\/$/, "");
+    if (!path || path === "") return domain;
+    if (domain.includes("google.com") && path.includes("/document/")) {
+      return `Google doc (${domain})`;
+    }
+    if (domain.includes("luma.com")) {
+      return `Luma event (${domain}${path})`;
+    }
+    if (domain.includes("meetup.com")) {
+      return `Meetup event (${domain})`;
+    }
+    if (domain.includes("linkedin.com")) {
+      return `LinkedIn (${domain}${path})`;
+    }
+    return `${domain}${path.length > 28 ? path.slice(0, 25) + "…" : path}`;
+  } catch {
+    return name;
+  }
+}
+
 export function createCardPanel(context) {
   const {
     cardAnchorTone,
@@ -334,16 +359,30 @@ export function createCardPanel(context) {
       linksLabel.className = "task-history-label";
       linksLabel.textContent = "Links";
       linksSection.append(linksLabel);
+      const seenUrls = new Set();
       for (const link of card.cardLinks) {
         const linkName = link.name || link.label || "Link";
-        const linkUrl = link.url || "";
+        const rawUrl = link.url || "";
+        const linkUrl = String(rawUrl)
+          .replace(/[\s"'\u200c\u200b]+$/, "")
+          .replace(/^["']/, "")
+          .trim();
+        // If a named link already displayed this exact URL, skip the duplicate raw-url item
+        if (
+          linkUrl &&
+          seenUrls.has(linkUrl) &&
+          (linkName === rawUrl || linkName === linkUrl || /^https?:\/\//i.test(linkName))
+        ) {
+          continue;
+        }
+        if (linkUrl) seenUrls.add(linkUrl);
         const wrap = document.createElement("div");
         wrap.className = "task-required-link card-link-row";
         const label = document.createElement("label");
         label.className = "card-link-label";
         const name = document.createElement("span");
         name.className = "card-link-name";
-        appendBreakableText(name, linkName);
+        appendBreakableText(name, humanLinkName(linkName));
         const input = document.createElement("input");
         input.type = "url";
         input.className = "card-link-input";
