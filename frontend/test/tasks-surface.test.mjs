@@ -21,6 +21,7 @@ import {
   taskProofState,
   tasksFromWorkPayload,
   tasksSectionTitle,
+  workCardSubtitle,
   workCardTitle,
   workTaskTitle,
 } from "../src/core/workspace.js";
@@ -214,6 +215,7 @@ function createHarness(options = {}) {
         cardId: card.id,
         templateId: card.templateId || "",
         title: card.title,
+        subtitle: workCardSubtitle(card),
         stage: card.stage,
         risk: progress.risk,
         meta: progress.label,
@@ -826,6 +828,46 @@ describe("Tasks surface boundary", () => {
       ["recent", "old"],
     );
     assert.equal(findAllByClass(documentList, "cards-archive-grid").length, 2);
+  });
+
+  test("shows people and sponsors under the card title", () => {
+    const active = [
+      {
+        id: "pod",
+        title: "Playbook",
+        stage: "announced",
+        anchorDate: "2026-08-17",
+        people: ["Tony Zeljkovic", "Juan Manuel Perafan"],
+      },
+      {
+        id: "news",
+        title: "Weekly email #298",
+        stage: "preparation",
+        anchorDate: "2026-10-20",
+        sponsor: "Astronomer",
+      },
+      {
+        id: "plain",
+        title: "Untitled work",
+        stage: "preparation",
+        anchorDate: "2026-08-10",
+      },
+    ];
+    const { api, documentList } = createHarness({
+      route: { path: "/cards", params: new URLSearchParams() },
+      workSnapshot: {
+        activeCards: active,
+        cards: active,
+        cardTasks: { pod: [], news: [], plain: [] },
+      },
+    });
+
+    api.renderTasksSurface([], "workflows");
+    const subtitles = findAllByClass(documentList, "workflow-card-subtitle");
+    assert.deepEqual(
+      subtitles.map((subtitle) => subtitle.textContent),
+      ["Astronomer", "Tony Zeljkovic, Juan Manuel Perafan"],
+    );
   });
 
   test("splits the archive into Done and Parked categories", async () => {

@@ -1056,4 +1056,52 @@ describe('API — Cards', () => {
       assert.strictEqual(noVersion.statusCode, 400);
     });
   });
+
+  describe('PUT /api/cards/:id people and sponsor fields', () => {
+    it('stores people, sponsor, and secondarySponsors', async () => {
+      const created = await createCard(client, { title: 'People card', anchorDate: utcDateString() });
+      const res = await invoke('PUT', `/api/cards/${created.id}`, {
+        expectedVersion: 1,
+        people: ['Tony Zeljkovic', 'Juan Manuel Perafan'],
+        sponsor: 'Astronomer',
+        secondarySponsors: ['Snowplow'],
+      });
+      assert.strictEqual(res.statusCode, 200);
+      assert.deepStrictEqual(JSON.parse(res.body).card.people, ['Tony Zeljkovic', 'Juan Manuel Perafan']);
+      assert.strictEqual(JSON.parse(res.body).card.sponsor, 'Astronomer');
+      assert.deepStrictEqual(JSON.parse(res.body).card.secondarySponsors, ['Snowplow']);
+    });
+
+    it('clears the sponsor with null and rejects malformed values', async () => {
+      const created = await createCard(client, { title: 'Sponsor card', anchorDate: utcDateString(), sponsor: 'Acme' });
+      const cleared = await invoke('PUT', `/api/cards/${created.id}`, { expectedVersion: 1, sponsor: null });
+      assert.strictEqual(cleared.statusCode, 200);
+      assert.strictEqual(JSON.parse(cleared.body).card.sponsor, undefined);
+
+      for (const body of [
+        { expectedVersion: 2, people: 'Tony' },
+        { expectedVersion: 2, people: [''] },
+        { expectedVersion: 2, sponsor: '' },
+        { expectedVersion: 2, sponsor: 42 },
+        { expectedVersion: 2, secondarySponsors: [null] },
+      ]) {
+        const res = await invoke('PUT', `/api/cards/${created.id}`, body);
+        assert.strictEqual(res.statusCode, 400);
+      }
+    });
+  });
+
+  describe('POST /api/cards people and sponsor fields', () => {
+    it('accepts people and sponsor at creation', async () => {
+      const res = await invoke('POST', '/api/cards', {
+        title: 'New event',
+        anchorDate: utcDateString(),
+        people: ['Irina Krotova'],
+        sponsor: 'Snowplow',
+      });
+      assert.strictEqual(res.statusCode, 201);
+      assert.deepStrictEqual(JSON.parse(res.body).card.people, ['Irina Krotova']);
+      assert.strictEqual(JSON.parse(res.body).card.sponsor, 'Snowplow');
+    });
+  });
 });

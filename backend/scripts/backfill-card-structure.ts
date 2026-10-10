@@ -2,11 +2,16 @@
  * One-off backfill: move structure out of legacy Card titles.
  *
  * Trello-imported Cards carry a `[Tag]` prefix (the source Template), an
- * event/issue date inside the title, and a sometimes-stale `anchorDate`.
+ * event/issue date inside the title, a trailing person segment on event
+ * Cards (`- Tony Zeljkovic`), a trailing sponsor segment on newsletter
+ * Cards (`- Astronomer`), and a sometimes-stale `anchorDate`.
  * For each Card this script:
  * - assigns `templateId` from the `[Tag]` when the Card has none,
  * - corrects `anchorDate` from the date embedded in the title,
- * - rewrites `title` to the remainder (tag prefix and date token removed).
+ * - moves the person segment to `people` and the sponsor segment to
+ *   `sponsor`,
+ * - rewrites `title` to the remainder (tag, date, and person/sponsor
+ *   segments removed).
  *
  * Usage against local dynalite (dev server stopped first):
  *   tsx scripts/backfill-card-structure.ts [--dry-run] [--apply]
@@ -30,6 +35,8 @@ interface PlannedChange {
   title?: { from: string; to: string };
   anchorDate?: { from: string; to: string };
   templateId?: { from: string | null; to: string };
+  people?: { from: string[]; to: string[] };
+  sponsor?: { from: string | null; to: string };
 }
 
 async function main(): Promise<void> {
@@ -50,6 +57,8 @@ async function main(): Promise<void> {
     if (patch.templateId) change.templateId = { from: card.templateId ?? null, to: patch.templateId };
     if (patch.anchorDate) change.anchorDate = { from: String(card.anchorDate || ''), to: patch.anchorDate };
     if (patch.title) change.title = { from: String(card.title || ''), to: patch.title };
+    if (patch.people) change.people = { from: card.people || [], to: patch.people };
+    if (patch.sponsor) change.sponsor = { from: card.sponsor ?? null, to: patch.sponsor };
     planned.push(change);
   }
 
@@ -61,6 +70,8 @@ async function main(): Promise<void> {
     titles: planned.filter((change) => change.title).length,
     anchorDates: planned.filter((change) => change.anchorDate).length,
     templateIds: planned.filter((change) => change.templateId).length,
+    people: planned.filter((change) => change.people).length,
+    sponsors: planned.filter((change) => change.sponsor).length,
     applied: false,
   };
 
@@ -77,6 +88,8 @@ async function main(): Promise<void> {
     if (change.templateId) patch.templateId = change.templateId.to;
     if (change.anchorDate) patch.anchorDate = change.anchorDate.to;
     if (change.title) patch.title = change.title.to;
+    if (change.people) patch.people = change.people.to;
+    if (change.sponsor) patch.sponsor = change.sponsor.to;
     await updateCard(client, card.id, { expectedVersion: card.version, patch });
     applied += 1;
   }

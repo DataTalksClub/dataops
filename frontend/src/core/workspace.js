@@ -493,6 +493,21 @@ export function workCardTitle(card) {
   return card.title || card.name || card.id || "Untitled card";
 }
 
+export function workCardSubtitle(card) {
+  if (!card || typeof card !== "object") return "";
+  const people = Array.isArray(card.people)
+    ? card.people.filter((name) => typeof name === "string" && name.trim().length > 0)
+    : [];
+  if (people.length > 0) return people.join(", ");
+  const sponsors = [
+    ...(typeof card.sponsor === "string" && card.sponsor.trim() ? [card.sponsor.trim()] : []),
+    ...(Array.isArray(card.secondarySponsors)
+      ? card.secondarySponsors.filter((name) => typeof name === "string" && name.trim().length > 0)
+      : []),
+  ];
+  return sponsors.join(", ");
+}
+
 export function taskDate(task) {
   if (!task || !task.date) return "";
   return String(task.date).slice(0, 10);

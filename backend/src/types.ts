@@ -400,6 +400,12 @@ export interface Card {
   templateDefinitionSnapshot?: TemplateCardDefinitionSnapshot;
   /** Source documents inherited from the runtime template at instantiation. */
   sourceDocIds?: string[];
+  /** People named by the Card: speakers and guests on event Cards. */
+  people?: string[];
+  /** Main sponsor of a newsletter Card. */
+  sponsor?: string;
+  /** Additional sponsors beyond the main one. */
+  secondarySponsors?: string[];
   references?: CardLink[];
   cardLinks?: CardLink[];
   emoji?: string;

@@ -3,11 +3,12 @@
  *
  * Trello-imported Cards carry structure inside a free-text title:
  * a `[Tag]` prefix naming the source Template, an event date
- * (`2026-AUG-17`) or a newsletter issue date (`(12OCT 2026)`), and the
- * remaining human title. The board renders the Template as a badge and the
- * date as the anchor chip, so the stored title keeps only the remainder.
- * Person/sponsor extraction is a later slice; this module only strips the
- * tag and the date and reports what it found.
+ * (`2026-AUG-17`) or a newsletter issue date (`(12OCT 2026)`), a trailing
+ * person segment on event Cards (`- Tony Zeljkovic & Juan Manuel Perafan`)
+ * or sponsor segment on newsletter Cards (`- Astronomer`), and the remaining
+ * human title. The board renders the Template as a badge, the date as the
+ * anchor chip, and the person/sponsor as a subtitle, so the stored title
+ * keeps only the topic remainder.
  */
 
 export interface ParsedCardTitle {
@@ -17,7 +18,11 @@ export interface ParsedCardTitle {
   templateType: string | null;
   /** ISO date parsed from the title, e.g. "2026-10-12". */
   date: string | null;
-  /** Title with the tag prefix and the date token removed and tidied. */
+  /** People parsed from the trailing person segment of event Cards. */
+  people: string[];
+  /** Sponsor parsed from the trailing sponsor segment of newsletter Cards. */
+  sponsor: string | null;
+  /** Title with tag, date, and person/sponsor segments removed and tidied. */
   cleanTitle: string;
 }
 
@@ -101,30 +106,97 @@ export function templateTypeForTag(tag: string): string | null {
 
 function tidySeparators(value: string): string {
   // `Launch- Alexey` and `Q&A- Ivan` read as ` - `; hyphenated words such as
-  // `Pre-Course` (no spaces at all) are left alone for the person-extraction
-  // slice to handle.
+  // `Pre-Course` (no spaces at all) are left for the glued person split.
   return value
     .replace(/(\S)\s+-\s*(\S)/g, '$1 - $2')
     .replace(/(\S)\s*-\s+(\S)/g, '$1 - $2');
+}
+
+/** Template types whose trailing `- Person` segment names people. */
+const PERSON_TEMPLATE_TYPES = new Set([
+  'podcast',
+  'webinar',
+  'workshop',
+  'maven-ll',
+  'office-hours',
+  'oss',
+  'book-of-the-week',
+]);
+
+/** Trello template placeholders carry no real person. */
+const PLACEHOLDER_PEOPLE = new Set([
+  'name', 'names', 'speaker', 'speakers', 'author', 'authors',
+  'guest', 'guests', 'host', 'hosts', 'topic',
+]);
+
+function tidyName(value: string): string {
+  return value
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\(\s+/g, '(')
+    .replace(/\s+\)/g, ')')
+    .trim();
+}
+
+/** Split `Topic - Person` off the last spaced separator. */
+function splitSpacedTrailer(value: string): { head: string; tail: string } | null {
+  const index = value.lastIndexOf(' - ');
+  if (index <= 0) return null;
+  const head = value.slice(0, index).trim();
+  const tail = value.slice(index + 3).trim();
+  if (!head || !tail) return null;
+  return { head, tail };
+}
+
+/**
+ * Split `Products-Radovan Bacovic`: a glued dash whose tail is two or more
+ * capitalized words reads as a person, while hyphenated words (`Pre-Course`)
+ * never match and stay intact.
+ */
+function splitGluedTrailer(value: string): { head: string; tail: string } | null {
+  const match = value.match(/^(.*)-([A-ZÀ-Þ][^-]* [^-]*)$/u);
+  if (!match) return null;
+  const head = match[1].trim();
+  const tail = tidyName(match[2]);
+  if (!head || !tail) return null;
+  return { head, tail };
+}
+
+function splitTrailer(value: string): { head: string; tail: string } | null {
+  return splitSpacedTrailer(value) || splitGluedTrailer(value);
+}
+
+function splitPeople(tail: string): string[] {
+  return tail
+    .split(/\s*(?:&|,|\band\b)\s*/i)
+    .map(tidyName)
+    .filter((name) => name.length > 0 && !PLACEHOLDER_PEOPLE.has(name.toLowerCase()));
 }
 
 export interface CardStructurePatch {
   templateId?: string;
   anchorDate?: string;
   title?: string;
+  people?: string[];
+  sponsor?: string;
 }
 
 export interface StructuredCardShape {
   templateId?: string | null;
   anchorDate?: string;
   title?: string | null;
+  people?: string[];
+  sponsor?: string | null;
+}
+
+function samePeople(left: string[] | undefined, right: string[]): boolean {
+  return JSON.stringify(left || []) === JSON.stringify(right);
 }
 
 /**
  * Decide the backfill patch for one Card. Returns null when nothing should
- * change. An existing `templateId` is never overwritten, and titles are only
- * rewritten when the tag names a known Template (so unknown tags keep their
- * full title instead of losing the prefix).
+ * change. Existing `templateId`, `people`, and `sponsor` values are never
+ * overwritten, and titles are only rewritten when the tag names a known
+ * Template (so unknown tags keep their full title instead of losing parts).
  */
 export function planCardStructureUpdate(
   card: StructuredCardShape,
@@ -147,6 +219,12 @@ export function planCardStructureUpdate(
   }
   if (parsed.tag && parsed.templateType && parsed.cleanTitle !== String(card.title || '')) {
     patch.title = parsed.cleanTitle;
+  }
+  if (parsed.people.length > 0 && !samePeople(card.people, parsed.people)) {
+    patch.people = parsed.people;
+  }
+  if (parsed.sponsor !== null && (card.sponsor || null) !== parsed.sponsor) {
+    patch.sponsor = parsed.sponsor;
   }
   return Object.keys(patch).length > 0 ? patch : null;
 }
@@ -189,10 +267,32 @@ export function parseCardTitle(title: string): ParsedCardTitle {
   clean = clean.replace(/\(\s*\)/g, '').replace(/\s{2,}/g, ' ').trim();
   if (!clean) clean = rest.trim();
 
+  const templateType = tag ? templateTypeForTag(tag) : null;
+  let people: string[] = [];
+  let sponsor: string | null = null;
+  let topic = clean;
+  if (templateType) {
+    const trailer = splitTrailer(clean);
+    if (trailer) {
+      if (templateType === 'newsletter') {
+        sponsor = tidyName(trailer.tail);
+        topic = trailer.head;
+      } else if (PERSON_TEMPLATE_TYPES.has(templateType)) {
+        const names = splitPeople(trailer.tail);
+        if (names.length > 0) {
+          people = names;
+          topic = trailer.head;
+        }
+      }
+    }
+  }
+
   return {
     tag,
-    templateType: tag ? templateTypeForTag(tag) : null,
+    templateType,
     date,
-    cleanTitle: clean,
+    people,
+    sponsor,
+    cleanTitle: topic,
   };
 }

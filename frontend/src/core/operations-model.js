@@ -16,6 +16,7 @@ import {
   taskProofState,
   tasksFromWorkPayload,
   todayIsoDate,
+  workCardSubtitle,
   workCardTitle,
   workTaskTitle,
 } from "./workspace.js";
@@ -677,6 +678,7 @@ export function createOperationsModel({
     const anchorDate = String(card.anchorDate || "").slice(0, 10);
     return {
       title: workCardTitle(card),
+      subtitle: workCardSubtitle(card),
       stage: card.stage || "",
       summary: summaryParts.join(" - "),
       meta: progress ? progress.label : relationshipLabel,

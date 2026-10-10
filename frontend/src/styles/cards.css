@@ -207,6 +207,14 @@
   -webkit-line-clamp: 3;
   line-clamp: 3;
   -webkit-box-orient: vertical;
+}.workflow-card-subtitle {
+  display: block;
+  overflow: hidden;
+  color: var(--dk-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }.workflow-card-anchor {
   display: inline-flex;
   align-items: center;

@@ -434,6 +434,13 @@ export function createCardsSurface(context) {
     title.textContent = item.title;
     card.append(title);
 
+    if (item.subtitle) {
+      const subtitle = document.createElement("span");
+      subtitle.className = "workflow-card-subtitle";
+      subtitle.textContent = item.subtitle;
+      card.append(subtitle);
+    }
+
     if (item.taskRelationshipsComplete === false) {
       const unavailable = document.createElement("span");
       unavailable.className = "workflow-card-count";

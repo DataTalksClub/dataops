@@ -316,6 +316,27 @@ function validateCardRefs(body: Record<string, unknown>): string | null {
   return null;
 }
 
+function isNameList(value: unknown): boolean {
+  return Array.isArray(value)
+    && value.length <= 20
+    && value.every((item) => typeof item === 'string' && item.trim().length > 0 && item.length <= 200);
+}
+
+function validateCardPeople(body: Record<string, unknown>): string | null {
+  if (body.people !== undefined && !isNameList(body.people)) {
+    return 'people must be an array of up to 20 non-empty names';
+  }
+  if (body.secondarySponsors !== undefined && !isNameList(body.secondarySponsors)) {
+    return 'secondarySponsors must be an array of up to 20 non-empty names';
+  }
+  if (body.sponsor !== undefined && body.sponsor !== null && (
+    typeof body.sponsor !== 'string' || body.sponsor.trim().length === 0 || body.sponsor.length > 200
+  )) {
+    return 'sponsor must be a non-empty string or null';
+  }
+  return null;
+}
+
 /**
  * Handle all /api/cards routes.
  */
@@ -562,6 +583,14 @@ async function handleCollection(
         body: JSON.stringify({ error: refsError }),
       };
     }
+    const peopleError = validateCardPeople(body);
+    if (peopleError) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: peopleError }),
+      };
+    }
 
     // Ownership is administrative metadata. An operator-created Card is owned
     // by that operator; only an admin may create a Card owned by somebody else
@@ -654,6 +683,11 @@ async function handleCollection(
       }
     }
     for (const field of ['artifactRefs', 'assistantJobRefs', 'intakeRefs']) {
+      if (body[field] !== undefined) {
+        cardData[field] = body[field];
+      }
+    }
+    for (const field of ['people', 'sponsor', 'secondarySponsors']) {
       if (body[field] !== undefined) {
         cardData[field] = body[field];
       }
@@ -845,10 +879,20 @@ async function handleSingle(
       };
     }
 
+    const peopleError = validateCardPeople(body);
+    if (peopleError) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: peopleError }),
+      };
+    }
+
     // Only allow updating known fields
     const allowedFields = [
       'title', 'description', 'anchorDate', 'references', 'cardLinks', 'emoji', 'tags', 'stage',
       'sourceDocIds', 'artifactRefs', 'assistantJobRefs', 'intakeRefs',
+      'people', 'sponsor', 'secondarySponsors',
     ];
     const updates: Record<string, unknown> = {};
     for (const field of allowedFields) {

@@ -3093,6 +3093,44 @@ describe("Work Detail surface boundary", () => {
     assert.equal(missing.navigations.at(-1).params.has("taskId"), false);
   });
 
+  test("shows people and sponsor bylines in the Card detail", async () => {
+    const { createCardSummary } = await import(
+      "../src/surfaces/work-detail/card-summary.js"
+    );
+    globalThis.document = new FakeDocument(
+      new FakeElement("main"),
+      new FakeElement("body"),
+    );
+    const base = {
+      cardAnchorTone: () => "upcoming",
+      detail: {},
+      formatCardAnchorLabel: (value) => value,
+      isArchivedWorkCard: () => false,
+      labelizeWorkValue: (value) => value,
+      progress: { total: 1, done: 0, overdue: 0, waiting: 0, missingProof: 0, nextDueTask: null },
+      state: { workSnapshot: { usersById: new Map() } },
+      today: "2026-08-12",
+      updateCardStage: () => {},
+      workCardSubtitle: (card) => (card.people || []).join(", ") || card.sponsor || "",
+      workTaskTitle: (task) => task.description,
+    };
+    const people = createCardSummary({
+      ...base,
+      card: { id: "pod", title: "Playbook", people: ["Tony Zeljkovic", "Juan Manuel Perafan"] },
+    });
+    assert.match(people.textContent, /PeopleTony Zeljkovic, Juan Manuel Perafan/);
+    const sponsor = createCardSummary({
+      ...base,
+      card: { id: "news", title: "Weekly email #298", sponsor: "Astronomer" },
+    });
+    assert.match(sponsor.textContent, /SponsorAstronomer/);
+    const plain = createCardSummary({
+      ...base,
+      card: { id: "plain", title: "Untitled" },
+    });
+    assert.doesNotMatch(plain.textContent, /People|Sponsor/);
+  });
+
   test("links the Card detail panel to its source Template", async () => {
     const { renderCardTemplateLink } = await import(
       "../src/surfaces/work-detail/card-summary.js"

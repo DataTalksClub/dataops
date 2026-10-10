@@ -19,62 +19,78 @@ describe('card title structure', () => {
     assert.strictEqual(templateTypeForTag('Random'), null);
   });
 
-  it('parses newsletter titles into tag, date, and clean title', () => {
+  it('parses newsletter titles into tag, date, sponsor, and clean title', () => {
     assert.deepStrictEqual(parseCardTitle('[Newsletter] Weekly email #294(14 SEP 2026) -Astronomer'), {
       tag: 'Newsletter',
       templateType: 'newsletter',
       date: '2026-09-14',
-      cleanTitle: 'Weekly email #294 - Astronomer',
+      people: [],
+      sponsor: 'Astronomer',
+      cleanTitle: 'Weekly email #294',
     });
     assert.deepStrictEqual(parseCardTitle('[Newsletter] Weekly email #298(20OCT 2026) -Astronomer'), {
       tag: 'Newsletter',
       templateType: 'newsletter',
       date: '2026-10-20',
-      cleanTitle: 'Weekly email #298 - Astronomer',
+      people: [],
+      sponsor: 'Astronomer',
+      cleanTitle: 'Weekly email #298',
     });
     assert.deepStrictEqual(parseCardTitle('[Newsletter] Weekly email #Secondary(07DEC 2026) -Snowplow'), {
       tag: 'Newsletter',
       templateType: 'newsletter',
       date: '2026-12-07',
-      cleanTitle: 'Weekly email #Secondary - Snowplow',
+      people: [],
+      sponsor: 'Snowplow',
+      cleanTitle: 'Weekly email #Secondary',
     });
-    assert.deepStrictEqual(parseCardTitle('[Newsletter] Weekly email #291(24  AUG 2026) -Meritmap'), {
+    assert.deepStrictEqual(parseCardTitle('[Newsletter] Weekly email Secondary (21 SEP 2026) -sponsored'), {
       tag: 'Newsletter',
       templateType: 'newsletter',
-      date: '2026-08-24',
-      cleanTitle: 'Weekly email #291 - Meritmap',
+      date: '2026-09-21',
+      people: [],
+      sponsor: 'sponsored',
+      cleanTitle: 'Weekly email Secondary',
     });
     assert.deepStrictEqual(parseCardTitle('[Newsletter] Weekly email Stand-Alone(04 NOV 2026) -Snowplow'), {
       tag: 'Newsletter',
       templateType: 'newsletter',
       date: '2026-11-04',
-      cleanTitle: 'Weekly email Stand-Alone - Snowplow',
+      people: [],
+      sponsor: 'Snowplow',
+      cleanTitle: 'Weekly email Stand-Alone',
     });
   });
 
-  it('parses event titles into tag, date, and clean title', () => {
+  it('parses event titles into tag, date, people, and clean title', () => {
     assert.deepStrictEqual(
-      parseCardTitle('[Podcast] 2026-AUG-17 - The Data Consultant Playbook - Tony Zeljkovic'),
+      parseCardTitle('[Podcast] 2026-AUG-17 - The Data Consultant Playbook - Tony Zeljkovic & Juan Manuel Perafan'),
       {
         tag: 'Podcast',
         templateType: 'podcast',
         date: '2026-08-17',
-        cleanTitle: 'The Data Consultant Playbook - Tony Zeljkovic',
+        people: ['Tony Zeljkovic', 'Juan Manuel Perafan'],
+        sponsor: null,
+        cleanTitle: 'The Data Consultant Playbook',
       },
     );
     assert.deepStrictEqual(parseCardTitle('[Webinar] 2026-SEPT-07-Topic- Daan Di Scala'), {
       tag: 'Webinar',
       templateType: 'webinar',
       date: '2026-09-07',
-      cleanTitle: 'Topic - Daan Di Scala',
+      people: ['Daan Di Scala'],
+      sponsor: null,
+      cleanTitle: 'Topic',
     });
     assert.deepStrictEqual(
-      parseCardTitle('[Workshop] 2026-AUG-18 -Running Durable Agents in Production-Nicholas Lotz (Orkes)'),
+      parseCardTitle('[Workshop] 2026-JUL-21 - Tracking agents-James Borlase & Jordan Peck (Snowplow )'),
       {
         tag: 'Workshop',
         templateType: 'workshop',
-        date: '2026-08-18',
-        cleanTitle: 'Running Durable Agents in Production-Nicholas Lotz (Orkes)',
+        date: '2026-07-21',
+        people: ['James Borlase', 'Jordan Peck (Snowplow)'],
+        sponsor: null,
+        cleanTitle: 'Tracking agents',
       },
     );
     assert.deepStrictEqual(
@@ -83,28 +99,62 @@ describe('card title structure', () => {
         tag: 'Book of the Week',
         templateType: 'book-of-the-week',
         date: '2026-09-14',
-        cleanTitle: 'Book - Maria Vechtomova(s)',
+        people: ['Maria Vechtomova(s)'],
+        sponsor: null,
+        cleanTitle: 'Book',
       },
     );
   });
 
-  it('ignores placeholder dates from Trello card templates', () => {
-    const parsed = parseCardTitle('[Newsletter] Weekly email #XXX (DD MMM 2026) -sponsored');
-    assert.strictEqual(parsed.date, null);
-    assert.strictEqual(parsed.tag, 'Newsletter');
+  it('splits glued person segments but keeps hyphenated words intact', () => {
+    assert.deepStrictEqual(
+      parseCardTitle('[Podcast] 2026-AUG-03-Engineering AI-Powered Data Products-Radovan Bacovic'),
+      {
+        tag: 'Podcast',
+        templateType: 'podcast',
+        date: '2026-08-03',
+        people: ['Radovan Bacovic'],
+        sponsor: null,
+        cleanTitle: 'Engineering AI-Powered Data Products',
+      },
+    );
+    assert.deepStrictEqual(
+      parseCardTitle('[Webinar] 2026-SEP-14-ML Zoomcamp 2026 Pre-Course Live Q&A- Alexey Grigorev'),
+      {
+        tag: 'Webinar',
+        templateType: 'webinar',
+        date: '2026-09-14',
+        people: ['Alexey Grigorev'],
+        sponsor: null,
+        cleanTitle: 'ML Zoomcamp 2026 Pre-Course Live Q&A',
+      },
+    );
+  });
+
+  it('ignores placeholder people and dates from Trello card templates', () => {
+    const dated = parseCardTitle('[Newsletter] Weekly email #XXX (DD MMM 2026) -sponsored');
+    assert.strictEqual(dated.date, null);
+    assert.strictEqual(dated.tag, 'Newsletter');
+    const person = parseCardTitle('[Podcast] 2026-SEP-08 - Topic - Name');
+    assert.deepStrictEqual(person.people, []);
+    assert.strictEqual(person.cleanTitle, 'Topic - Name');
   });
 
   it('leaves already-structured titles untouched', () => {
-    assert.deepStrictEqual(parseCardTitle('Weekly email #298 - Astronomer'), {
+    assert.deepStrictEqual(parseCardTitle('Weekly email #298'), {
       tag: null,
       templateType: null,
       date: null,
-      cleanTitle: 'Weekly email #298 - Astronomer',
+      people: [],
+      sponsor: null,
+      cleanTitle: 'Weekly email #298',
     });
     assert.deepStrictEqual(parseCardTitle('Some card without tag'), {
       tag: null,
       templateType: null,
       date: null,
+      people: [],
+      sponsor: null,
       cleanTitle: 'Some card without tag',
     });
   });
@@ -123,7 +173,7 @@ describe('planCardStructureUpdate', () => {
     ['webinar', 'template-webinar'],
   ]);
 
-  it('plans template, anchor, and title updates for a legacy card', () => {
+  it('plans template, anchor, title, and sponsor updates for a legacy card', () => {
     assert.deepStrictEqual(
       planCardStructureUpdate(
         { title: '[Newsletter] Weekly email #299(19OCT 2026) -Snowplow', anchorDate: '2026-08-11' },
@@ -132,22 +182,38 @@ describe('planCardStructureUpdate', () => {
       {
         templateId: 'template-newsletter',
         anchorDate: '2026-10-19',
-        title: 'Weekly email #299 - Snowplow',
+        title: 'Weekly email #299',
+        sponsor: 'Snowplow',
       },
     );
   });
 
-  it('never overwrites an existing templateId', () => {
+  it('plans people updates for event cards', () => {
+    assert.deepStrictEqual(
+      planCardStructureUpdate(
+        { title: '[Podcast] 2026-AUG-17 - Playbook - Tony Zeljkovic & Juan Manuel Perafan', anchorDate: '2026-08-17' },
+        templates,
+      ),
+      {
+        templateId: 'template-podcast',
+        title: 'Playbook',
+        people: ['Tony Zeljkovic', 'Juan Manuel Perafan'],
+      },
+    );
+  });
+
+  it('keeps templateId lineage but corrects stale sponsor values from the title', () => {
     assert.deepStrictEqual(
       planCardStructureUpdate(
         {
           title: '[Newsletter] Weekly email #299(19OCT 2026) -Snowplow',
           anchorDate: '2026-08-11',
           templateId: 'template-other',
+          sponsor: 'Acme',
         },
         templates,
       ),
-      { anchorDate: '2026-10-19', title: 'Weekly email #299 - Snowplow' },
+      { anchorDate: '2026-10-19', title: 'Weekly email #299', sponsor: 'Snowplow' },
     );
   });
 
@@ -155,9 +221,10 @@ describe('planCardStructureUpdate', () => {
     assert.strictEqual(
       planCardStructureUpdate(
         {
-          title: 'Weekly email #299 - Snowplow',
+          title: 'Weekly email #299',
           anchorDate: '2026-10-19',
           templateId: 'template-newsletter',
+          sponsor: 'Snowplow',
         },
         templates,
       ),
