@@ -510,8 +510,7 @@
   padding: 7px 4px;
   user-select: none;
 }.calendar-week-number.is-current-week {
-  background: rgba(59, 130, 246, 0.07);
-  box-shadow: inset 3px 0 0 var(--dk-accent, #2563eb);
+  background: rgba(59, 130, 246, 0.08);
 }
 .calendar-week-number.is-current-week .iso-week {
   color: var(--dk-accent, #2563eb);

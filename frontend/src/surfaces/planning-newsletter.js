@@ -1,0 +1,351 @@
+export function createNewsletterPlanner(context) {
+  const {
+    documentList,
+    escapeHtml,
+    request,
+    setRouteTitle,
+    todayIsoDate,
+    workApiUrl,
+  } = context;
+
+  function plannerLabel(value) {
+    const label = String(value || "").replaceAll("-", " ");
+    return label ? label[0].toUpperCase() + label.slice(1) : "";
+  }
+
+  function plannerStatusClass(value) {
+    if (["sent", "published", "confirmed"].includes(value)) return "is-success";
+    if (["cancelled"].includes(value)) return "is-danger";
+    if (["reserved", "drafting", "scheduled", "announced"].includes(value)) return "is-info";
+    if (["tentative", "open"].includes(value)) return "is-warning";
+    return "";
+  }
+
+  function formatShortPlanningDate(iso) {
+    const parsed = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
+    return Number.isNaN(parsed.getTime())
+      ? String(iso)
+      : new Intl.DateTimeFormat("en-GB", {
+          day: "numeric",
+          month: "short",
+          timeZone: "UTC",
+        }).format(parsed);
+  }
+
+  function newsletterAlertCopy(reasonCode) {
+    return {
+      "near-term-open-unbooked": "An open slot needs booking soon",
+      "duplicate-campaign-number": "Campaign numbers need review",
+      "publication-date-overlap": "Multiple campaigns share a publication date",
+      "publication-missing-workflow": "Publication is missing its workflow card",
+      "reserved-missing-booker": "A reserved slot has no booker",
+    }[reasonCode] || "Newsletter planning needs review";
+  }
+
+  function newsletterAlertAdvice(reasonCode) {
+    return {
+      "near-term-open-unbooked":
+        "Confirm whether a sponsor is booking or convert the slot to an editorial campaign.",
+      "duplicate-campaign-number":
+        "Two newsletter slots share the same campaign number.",
+      "publication-date-overlap":
+        "Multiple campaigns share a publication date.",
+      "publication-missing-workflow":
+        "Create or link a workflow card so drafting and publication have a clear owner.",
+      "reserved-missing-booker":
+        "Add the sponsor contact or team member who reserved this slot.",
+    }[reasonCode] || "Check the publication date and campaign setup.";
+  }
+
+  async function renderNewsletterSurface() {
+    documentList.replaceChildren();
+    const newsletterStatuses = [
+      "open",
+      "reserved",
+      "drafting",
+      "scheduled",
+      "sent",
+      "cancelled",
+    ];
+    const newsletterStatusOptions = newsletterStatuses
+      .map((value) => `
+        <option value="${value}">${plannerLabel(value)}</option>
+      `)
+      .join("");
+    const surface = document.createElement("section");
+    surface.className = "newsletter-surface";
+    surface.setAttribute("aria-labelledby", "newsletter-surface-title");
+    surface.innerHTML = `
+      <header class="planner-header">
+        <div class="planner-heading">
+          <p class="planner-eyebrow">Planning</p>
+          <h1 id="newsletter-surface-title">Newsletter planner</h2>
+          <p>Plan campaign slots, booking readiness, and publication progress in Europe/Berlin.</p>
+        </div>
+        <button class="primary-button" data-newsletter-add>Add slot</button>
+      </header>
+      <div class="newsletter-filters" aria-label="Newsletter filters">
+        <div class="planner-filter-fields">
+          <label>From <input data-from type="date"></label>
+          <label>To <input data-to type="date"></label>
+          <label>Group by
+            <select data-view>
+              <option value="month">Month</option>
+              <option value="week">Week</option>
+            </select>
+          </label>
+          <label>Status
+            <select data-status>
+              <option value="">Any status</option>
+              ${newsletterStatusOptions}
+            </select>
+          </label>
+          <label>Booking
+            <select data-booked>
+              <option value="">Any booking</option>
+              <option value="true">Booked</option>
+              <option value="false">Unbooked</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <p class="planner-load-state" role="status">Loading newsletter slots…</p>
+      <div class="planner-alerts" data-alerts></div>
+      <div class="newsletter-schedule" data-slots>Loading slots…</div>
+      <dialog class="dk-dialog" style="--dk-dialog-width: 620px">
+        <form method="dialog">
+          <div class="dk-dialog__head"><div>
+            <h2>Newsletter slot</h2>
+            <p>Keep the publication plan and booking context together.</p>
+          </div></div>
+          <div class="dk-dialog__body">
+          <input name="id" type="hidden">
+          <input name="version" type="hidden">
+          <div class="planner-form-grid">
+            <label>Publication date <input name="publicationDate" type="date" required></label>
+            <label>Campaign number <input name="campaignNumber" type="number" min="1"></label>
+            <label class="planner-field-wide">Campaign label <input name="campaignLabel" required maxlength="200"></label>
+            <label>Status
+              <select name="status">${newsletterStatusOptions}</select>
+            </label>
+            <label>Booked by <input name="bookedByDisplayName" autocomplete="off"></label>
+            <label class="planner-field-wide">Sponsor booking reference <input name="sponsorBookingId" autocomplete="off"></label>
+            <label class="planner-field-wide">Card reference <input name="cardId" autocomplete="off"></label>
+            <label class="planner-field-wide">Public campaign URL <input name="publicUrl" type="url"></label>
+            <label class="planner-field-wide">Planning note <textarea name="planningNote" rows="4"></textarea></label>
+          </div>
+          <p class="planner-form-error" role="alert"></p>
+          </div>
+          <div class="dk-dialog__foot">
+            <button class="primary-button" data-save>Save slot</button>
+            <button value="cancel">Cancel</button>
+          </div>
+        </form>
+      </dialog>`;
+    documentList.append(surface);
+    setRouteTitle("Newsletter");
+    const status = surface.querySelector('[role="status"]'),
+      dialog = surface.querySelector("dialog"),
+      form = dialog.querySelector("form"),
+      api = (path, options = {}) =>
+        request(workApiUrl(`/api/newsletter-slots${path}`), {
+          headers: { "content-type": "application/json" },
+          ...options,
+        });
+    let items = [];
+    const now = todayIsoDate();
+    surface.querySelector("[data-from]").value = now.slice(0, 8) + "01";
+    surface.querySelector("[data-to]").value =
+      `${Number(now.slice(0, 4)) + 1}-12-31`;
+    const isoWeekKey = (date) => {
+        const day = new Date(`${date}T00:00:00Z`);
+        day.setUTCDate(day.getUTCDate() + 4 - (day.getUTCDay() || 7));
+        const yearStart = new Date(Date.UTC(day.getUTCFullYear(), 0, 1)),
+          week = Math.ceil(((day - yearStart) / 86400000 + 1) / 7);
+        return `${day.getUTCFullYear()} · week ${String(week).padStart(2, "0")}`;
+      },
+      groupKey = (item) =>
+      surface.querySelector("[data-view]").value === "month"
+        ? item.publicationDate.slice(0, 7)
+        : isoWeekKey(item.publicationDate);
+
+    function newsletterAlertMarkup(alert) {
+      const slot = (items || []).find((candidate) => candidate.id === alert.slotId);
+      const naming = slot
+        ? `${slot.campaignLabel || "Slot"}${slot.publicationDate ? ` — ${formatShortPlanningDate(slot.publicationDate)}` : ""}`
+        : "";
+      return `
+        <article class="planner-alert is-${escapeHtml(alert.severity || "warning")}">
+          <div>
+            <strong>${escapeHtml(newsletterAlertCopy(alert.reasonCode))}</strong>
+            <p>${naming ? `${escapeHtml(naming)}. ` : ""}${plannerLabel(alert.severity || "warning")} · ${escapeHtml(newsletterAlertAdvice(alert.reasonCode))}</p>
+          </div>
+        </article>
+      `;
+    }
+
+    function newsletterSlotMarkup(item) {
+      const bookedBy = item.bookedByDisplayName
+        || (item.sponsorBookingId
+          ? "Sponsor booking linked"
+          : item.bookedByUserId
+            ? "Team member"
+            : "Unbooked");
+      const publicationLabel = new Date(`${item.publicationDate}T00:00:00Z`)
+        .toLocaleDateString("en", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          timeZone: "UTC",
+        });
+      const campaignNumber = item.campaignNumber
+        ? `<small>Campaign ${escapeHtml(item.campaignNumber)}</small>`
+        : "";
+      const planningNote = item.planningNote
+        ? `<small>${escapeHtml(item.planningNote)}</small>`
+        : "";
+      const campaignLink = item.publicUrl
+        ? `
+          <a href="${escapeHtml(item.publicUrl)}" target="_blank" rel="noreferrer">
+            Open campaign
+          </a>
+        `
+        : "";
+      return `
+        <article class="newsletter-slot-row">
+          <div class="newsletter-slot-date">
+            <time datetime="${escapeHtml(item.publicationDate)}">${publicationLabel}</time>
+            ${campaignNumber}
+          </div>
+          <div class="newsletter-slot-main">
+            <div class="newsletter-slot-title">
+              <h4>${escapeHtml(item.campaignLabel)}</h4>
+              <span class="planner-status ${plannerStatusClass(item.status)}">
+                ${escapeHtml(plannerLabel(item.status))}
+              </span>
+            </div>
+            <p>Booked by: ${escapeHtml(bookedBy)}</p>
+            ${planningNote}
+          </div>
+          <div class="newsletter-slot-actions">
+            ${campaignLink}
+            <button data-edit="${escapeHtml(item.id)}">Edit</button>
+          </div>
+        </article>
+      `;
+    }
+
+    function newsletterPeriodMarkup(period, slots) {
+      const periodLabel = surface.querySelector("[data-view]").value === "month"
+        ? new Date(`${period}-01T00:00:00Z`).toLocaleDateString("en", {
+          month: "long",
+          year: "numeric",
+          timeZone: "UTC",
+        })
+        : period;
+      return `
+        <section class="newsletter-period">
+          <header>
+            <h3>${escapeHtml(periodLabel)}</h3>
+            <span class="planner-count">${slots.length} ${slots.length === 1 ? "slot" : "slots"}</span>
+          </header>
+          <div class="newsletter-slot-list">
+            ${slots.map(newsletterSlotMarkup).join("")}
+          </div>
+        </section>
+      `;
+    }
+
+    async function load() {
+      status.textContent = "Loading newsletter slots…";
+      try {
+        const query = new URLSearchParams({
+            from: surface.querySelector("[data-from]").value,
+            to: surface.querySelector("[data-to]").value,
+            status: surface.querySelector("[data-status]").value,
+            booked: surface.querySelector("[data-booked]").value,
+          }),
+          result = await api(`?${query}`);
+        items = result.items || [];
+        const uniqueAlerts = [
+          ...new Map((result.alerts || []).map((alert) => [alert.reasonCode, alert])).values(),
+        ];
+        surface.querySelector("[data-alerts]").innerHTML = uniqueAlerts
+          .map(newsletterAlertMarkup)
+          .join("");
+        const groups = {};
+        const sortedItems = [...items].sort((a, b) => a.publicationDate.localeCompare(b.publicationDate));
+        for (const item of sortedItems) {
+          (groups[groupKey(item)] ||= []).push(item);
+        }
+        surface.querySelector("[data-slots]").innerHTML = items.length
+          ? Object.entries(groups)
+              .map(([period, slots]) => newsletterPeriodMarkup(period, slots))
+              .join("")
+          : `
+            <div class="honest-state planner-empty">
+              <strong>No newsletter slots</strong>
+              <p>Create the first slot or adjust the date, status, and booking filters.</p>
+            </div>
+          `;
+        status.textContent = "";
+      } catch (error) {
+        status.textContent = `Could not load newsletter schedule: ${error.message}`;
+        surface.querySelector("[data-alerts]").replaceChildren();
+        surface.querySelector("[data-slots]").innerHTML = `
+          <div class="honest-state planner-failure">
+            <strong>Newsletter schedule unavailable</strong>
+            <p>Reopen Newsletter to retry. No slots have been changed.</p>
+          </div>
+        `;
+      }
+    }
+    surface
+      .querySelectorAll(".newsletter-filters input,.newsletter-filters select")
+      .forEach((el) => (el.onchange = load));
+    surface.querySelector("[data-newsletter-add]").onclick = () => {
+      form.reset();
+      form.querySelector('[role="alert"]').textContent = "";
+      dialog.showModal();
+    };
+    surface.querySelector("[data-slots]").onclick = (event) => {
+      const item = items.find(
+        (value) => value.id === event.target.closest("[data-edit]")?.dataset.edit,
+      );
+      if (!item) return;
+      form.reset();
+      form.querySelector('[role="alert"]').textContent = "";
+      for (const key of Object.keys(item))
+        if (form.elements[key]) form.elements[key].value = item[key] || "";
+      dialog.showModal();
+    };
+    surface.querySelector("[data-save]").onclick = async (event) => {
+      event.preventDefault();
+      form.querySelector('[role="alert"]').textContent = "";
+      const value = Object.fromEntries(
+          [...new FormData(form)].filter(([, v]) => v !== ""),
+        ),
+        id = value.id;
+      delete value.id;
+      if (value.version) value.version = Number(value.version);
+      if (value.campaignNumber)
+        value.campaignNumber = Number(value.campaignNumber);
+      try {
+        await api(id ? `/${id}` : "", {
+          method: id ? "PUT" : "POST",
+          body: JSON.stringify(value),
+        });
+        dialog.close();
+        await load();
+      } catch (error) {
+        form.querySelector('[role="alert"]').textContent =
+          `Could not save slot: ${error.message}`;
+      }
+    };
+    await load();
+  }
+
+  return {
+    renderNewsletterSurface,
+  };
+}

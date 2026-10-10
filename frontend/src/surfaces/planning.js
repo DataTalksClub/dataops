@@ -1,4 +1,6 @@
 import { parseIsoDateValue } from "../core/workspace.js";
+import { createNewsletterPlanner } from "./planning-newsletter.js";
+import { setupDayScheduleDialog, setupCalendarSettingsDialog } from "./planning-calendar-dialogs.js";
 
 export function createPlanningSurface(context) {
   const {
@@ -9,6 +11,8 @@ export function createPlanningSurface(context) {
     todayIsoDate,
     workApiUrl,
   } = context;
+
+  const { renderNewsletterSurface } = createNewsletterPlanner(context);
 
   function plannerLabel(value) {
     const label = String(value || "").replaceAll("-", " ");
@@ -42,28 +46,6 @@ export function createPlanningSurface(context) {
       "activity-overlap": "Two activities overlap",
       "missing-workflow-context": "Activity has no linked workflow",
     }[reasonCode] || "Calendar timing needs review";
-  }
-
-  function newsletterAlertCopy(reasonCode) {
-    return {
-      "near-term-open-unbooked": "An open slot needs booking soon",
-      "duplicate-campaign-number": "Campaign numbers need review",
-      "publication-date-overlap": "Multiple campaigns share a publication date",
-      "publication-missing-workflow": "Publication is missing its workflow card",
-      "reserved-missing-booker": "A reserved slot has no booker",
-    }[reasonCode] || "Newsletter planning needs review";
-  }
-
-  // Advice is per reason: two alerts on one slot must read as two different
-  // facts, never the same sentence twice.
-  function newsletterAlertAdvice(reasonCode) {
-    return {
-      "near-term-open-unbooked": "Book an owner or move the date.",
-      "duplicate-campaign-number": "Renumber one of the campaigns.",
-      "publication-date-overlap": "Stagger the publication dates.",
-      "publication-missing-workflow": "Attach the issue's workflow card.",
-      "reserved-missing-booker": "Name the booker or release the slot.",
-    }[reasonCode] || "Open the slot and resolve it before it ships.";
   }
 
   async function renderCalendarSurface() {
@@ -178,7 +160,15 @@ export function createPlanningSurface(context) {
             <button type="button" class="calendar-layer-settings-btn" data-calendar-settings title="Configure overlay filters & connection">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06
+                  a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09
+                  A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83
+                  l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2
+                  h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0
+                  l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2
+                  v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83
+                  l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2
+                  h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
               </svg>
               <span>Settings</span>
             </button>
@@ -301,7 +291,11 @@ export function createPlanningSurface(context) {
             <p data-day-subtitle>Europe/Berlin time · Full schedule & availability for event planning</p>
           </div>
           <button type="button" class="calendar-day-close-btn" data-day-close aria-label="Close day schedule">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
           </button>
         </div>
         <div class="dk-dialog__body calendar-day-dialog-body" data-day-body>
@@ -309,7 +303,11 @@ export function createPlanningSurface(context) {
         </div>
         <div class="dk-dialog__foot calendar-day-dialog-foot">
           <button class="primary-button" type="button" data-day-add-activity>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
             <span>Add activity on this day</span>
           </button>
           <button type="button" data-day-close-foot>Close</button>
@@ -327,7 +325,8 @@ export function createPlanningSurface(context) {
       items = [],
       holidays = [],
       overlays = [];
-    const api = (path, options = {}) => request(workApiUrl(`/api/calendar-items${path}`), {
+    const api = (path, options = {}) =>
+      request(workApiUrl(`/api/calendar-items${path}`), {
         headers: { "content-type": "application/json", ...(options.headers || {}) },
         ...options,
       }),
@@ -454,7 +453,11 @@ export function createPlanningSurface(context) {
           weekIsCurrent = (date === currentMondayIso);
           weekMarkup += `
             <div class="calendar-week${weekIsCurrent ? " is-current-week" : ""}">
-              <div class="calendar-week-number${weekIsCurrent ? " is-current-week" : ""}" aria-label="Week ${currentWeek}${weekIsCurrent ? " (Current week)" : ""}" title="${weekIsCurrent ? `Current week (Week ${currentWeek})` : `Week ${currentWeek}`}">
+              <div
+                class="calendar-week-number${weekIsCurrent ? " is-current-week" : ""}"
+                aria-label="Week ${currentWeek}${weekIsCurrent ? " (Current week)" : ""}"
+                title="${weekIsCurrent ? `Current week (Week ${currentWeek})` : `Week ${currentWeek}`}"
+              >
                 <small class="iso-week${weekIsCurrent ? " is-current" : ""}">${currentWeek}</small>
               </div>
           `;
@@ -683,268 +686,32 @@ export function createPlanningSurface(context) {
       dialog.showModal();
     };
 
-    const dayDialog = surface.querySelector("[data-day-dialog]"),
-      dayTitle = dayDialog?.querySelector("[data-day-title]"),
-      daySubtitle = dayDialog?.querySelector("[data-day-subtitle]"),
-      dayBody = dayDialog?.querySelector("[data-day-body]"),
-      dayAddActivityBtn = dayDialog?.querySelector("[data-day-add-activity]"),
-      dayCloseBtn = dayDialog?.querySelector("[data-day-close]"),
-      dayCloseFootBtn = dayDialog?.querySelector("[data-day-close-foot]");
-
-    let selectedDayIso = "";
-    const dayOverlayCache = new Map();
-
-    function renderDaySchedule(dateIso, overlayItems, errorMessage) {
-      if (!dayBody) return;
-      if (errorMessage) {
-        dayBody.innerHTML = `
-          <div class="honest-state planner-failure">
-            <strong>Schedule unavailable</strong>
-            <p>${escapeHtml(errorMessage)}</p>
-          </div>
-        `;
-        return;
-      }
-      if (overlayItems === null) {
-        dayBody.innerHTML = `<p class="planner-load-state" role="status">Loading full day schedule…</p>`;
-        return;
-      }
-
-      const dayActivities = items.filter(
-        (i) => (i.startKey || i.startDate) <= dateIso && (i.endKey || i.endDate) >= dateIso
-      );
-      const dayHolidays = holidays.filter(
-        (h) => h.startDate <= dateIso && h.endDate >= dateIso
-      );
-      const dayNewsletters = overlays.filter(
-        (o) => o.category === "Newsletter" && o.startDate <= dateIso && o.endDate >= dateIso
-      );
-      const alexeyItems = overlayItems.filter((o) => o.category === "Alexey");
-
-      // Operational Slot Availability
-      const blockers = alexeyItems.filter(
-        (e) => e.slot === "all-day" || /vacation|holiday|flight|conference|trip/i.test(e.label)
-      );
-      const middayEvents = alexeyItems.filter((e) => e.slot === "midday");
-      const isMiddayAvailable = blockers.length === 0 && middayEvents.length === 0;
-
-      const eveningEvents = alexeyItems.filter((e) => e.slot === "evening");
-      const isEveningAvailable = blockers.length === 0 && eveningEvents.length === 0;
-
-      const blockerAlert = blockers.length > 0
-        ? `
-          <div class="calendar-alert planner-alert is-warning" style="margin-bottom: 14px">
-            <div>
-              <strong>All-day Blocker</strong>
-              <p>${escapeHtml(blockers.map((b) => b.label).join(" · "))}</p>
-            </div>
-          </div>
-        `
-        : "";
-
-      const slotCardsHtml = `
-        <div class="calendar-slot-summary-grid">
-          <div class="calendar-slot-card">
-            <div class="calendar-slot-card-header">
-              <span class="calendar-slot-card-title">Midday Event Slot</span>
-              <span class="calendar-slot-card-time">11:30–14:00</span>
-            </div>
-            <span class="calendar-slot-status-pill ${isMiddayAvailable ? "is-available" : "is-busy"}">
-              ${isMiddayAvailable ? "● Available" : "● Busy / Reserved"}
-            </span>
-            <div class="calendar-slot-card-detail">
-              ${isMiddayAvailable
-                ? "No conflicts. Preferred operational window for podcasts and lunch discussions."
-                : escapeHtml(middayEvents.map((e) => e.label).join(", ") || (blockers.length ? "Blocked by all-day event" : "Slot reserved"))}
-            </div>
-          </div>
-          <div class="calendar-slot-card">
-            <div class="calendar-slot-card-header">
-              <span class="calendar-slot-card-title">Evening Event Slot</span>
-              <span class="calendar-slot-card-time">16:30–18:30</span>
-            </div>
-            <span class="calendar-slot-status-pill ${isEveningAvailable ? "is-available" : "is-busy"}">
-              ${isEveningAvailable ? "● Available" : "● Busy / Reserved"}
-            </span>
-            <div class="calendar-slot-card-detail">
-              ${isEveningAvailable
-                ? "No conflicts. Preferred operational window for workshops, live Q&As and webinars."
-                : escapeHtml(eveningEvents.map((e) => e.label).join(", ") || (blockers.length ? "Blocked by all-day event" : "Slot reserved"))}
-            </div>
-          </div>
-        </div>
-      `;
-
-      // Timeline entries
-      const timelineEntries = [];
-
-      for (const h of dayHolidays) {
-        timelineEntries.push({
-          time: "All day",
-          title: h.name,
-          sortTime: "00:00",
-          tagClass: "is-holiday",
-          tagLabel: h.kind === "berlin-school-holiday" ? "School holiday" : "Public holiday",
-        });
-      }
-
-      for (const a of dayActivities) {
-        const timeLabel = a.allDay ? "All day" : (a.startsAt ? `${a.startsAt.slice(11, 16)}–${a.endsAt ? a.endsAt.slice(11, 16) : ""}` : "All day");
-        timelineEntries.push({
-          time: timeLabel,
-          title: a.title,
-          sortTime: a.allDay ? "00:00" : (a.startsAt ? a.startsAt.slice(11, 16) : "00:00"),
-          tagClass: "is-activity",
-          tagLabel: plannerLabel(a.activityType || "activity"),
-          id: a.id,
-        });
-      }
-
-      for (const n of dayNewsletters) {
-        timelineEntries.push({
-          time: "Scheduled",
-          title: n.label,
-          sortTime: "08:00",
-          tagClass: "is-activity",
-          tagLabel: "Newsletter",
-          href: n.href,
-        });
-      }
-
-      for (const e of alexeyItems) {
-        let timeLabel = "All day";
-        let sortTime = "00:00";
-        let title = e.label;
-        const match = e.label.match(/^(\d{2}:\d{2}(?:–\d{2}:\d{2})?)\s+(.+)$/);
-        if (match) {
-          timeLabel = match[1];
-          sortTime = match[1].slice(0, 5);
-          title = match[2];
-        }
-        let tagClass = "is-other";
-        let tagLabel = "Other event";
-        if (e.slot === "midday") {
-          tagClass = "is-midday";
-          tagLabel = "Midday slot";
-        } else if (e.slot === "evening") {
-          tagClass = "is-evening";
-          tagLabel = "Evening slot";
-        } else if (e.slot === "all-day") {
-          tagClass = "is-blocker";
-          tagLabel = "Blocker";
-        }
-
-        timelineEntries.push({
-          time: timeLabel,
-          title,
-          sortTime,
-          tagClass,
-          tagLabel,
-          href: e.href,
-        });
-      }
-
-      timelineEntries.sort((a, b) => a.sortTime.localeCompare(b.sortTime));
-
-      const timelineRowsHtml = timelineEntries.length === 0
-        ? `<p class="planner-empty-hint">No events or activities scheduled on this date.</p>`
-        : timelineEntries
-            .map(
-              (entry) => `
-                <div class="calendar-day-timeline-row">
-                  <div class="calendar-day-timeline-main">
-                    <span class="calendar-day-timeline-time">${escapeHtml(entry.time)}</span>
-                    ${entry.href
-                      ? `<a class="calendar-day-timeline-title" href="${escapeHtml(entry.href)}" target="_blank" rel="noreferrer">${escapeHtml(entry.title)}</a>`
-                      : `<span class="calendar-day-timeline-title">${escapeHtml(entry.title)}</span>`}
-                  </div>
-                  <div class="calendar-day-timeline-tags">
-                    <span class="calendar-slot-tag ${entry.tagClass}">${escapeHtml(entry.tagLabel)}</span>
-                    ${entry.id ? `<button type="button" class="calendar-mini-edit-btn" data-edit="${escapeHtml(entry.id)}" style="font-size: 11px; padding: 2px 7px; border: 1px solid var(--dk-border-default); border-radius: 4px; background: var(--dk-bg-muted); cursor: pointer;">Edit</button>` : ""}
-                  </div>
-                </div>
-              `
-            )
-            .join("");
-
-      dayBody.innerHTML = `
-        ${blockerAlert}
-        <div>
-          <h3 class="calendar-day-section-title">Operational Slot Availability</h3>
-          ${slotCardsHtml}
-        </div>
-        <div>
-          <h3 class="calendar-day-section-title">
-            <span>Full Schedule & Other Events</span>
-            <small style="font-size: 11px; font-weight: normal; color: var(--dk-text-muted);">${timelineEntries.length} ${timelineEntries.length === 1 ? "entry" : "entries"}</small>
-          </h3>
-          <div class="calendar-day-timeline-list">
-            ${timelineRowsHtml}
-          </div>
-        </div>
-      `;
-    }
-
-    async function openDayDialog(dateIso) {
-      if (!dayDialog || !dateIso) return;
-      selectedDayIso = dateIso;
-
-      const formattedHeading = new Date(`${dateIso}T12:00:00Z`).toLocaleDateString("en-GB", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-        timeZone: "UTC",
-      });
-
-      if (dayTitle) dayTitle.textContent = formattedHeading;
-      if (daySubtitle) daySubtitle.textContent = `Europe/Berlin time · Full schedule & availability for event planning (${dateIso})`;
-
-      renderDaySchedule(dateIso, null);
-      dayDialog.showModal();
-
-      try {
-        let overlayItems = dayOverlayCache.get(dateIso);
-        if (!overlayItems) {
-          const res = await api(`/overlays?from=${dateIso}&to=${dateIso}&includeAll=true`);
-          overlayItems = res.items || [];
-          dayOverlayCache.set(dateIso, overlayItems);
-        }
-        if (selectedDayIso === dateIso) {
-          renderDaySchedule(dateIso, overlayItems);
-        }
-      } catch (err) {
-        if (selectedDayIso === dateIso && dayBody) {
-          renderDaySchedule(dateIso, [], err.message);
-        }
-      }
-    }
-
-    if (dayCloseBtn) dayCloseBtn.onclick = () => dayDialog.close();
-    if (dayCloseFootBtn) dayCloseFootBtn.onclick = () => dayDialog.close();
-    if (dayAddActivityBtn) {
-      dayAddActivityBtn.onclick = () => {
-        dayDialog.close();
+    const daySchedule = setupDayScheduleDialog({
+      surface,
+      api,
+      escapeHtml,
+      plannerLabel,
+      onAddActivity: (selectedDayIso) => {
         form.reset();
         form.querySelector('[role="alert"]').textContent = "";
         form.elements.startDate.value = selectedDayIso || iso(cursor);
         form.elements.endDate.value = selectedDayIso || iso(cursor);
         dialog.showModal();
-      };
-    }
-    if (dayBody) {
-      dayBody.onclick = (event) => {
-        const editBtn = event.target.closest("[data-edit]");
-        if (!editBtn) return;
-        const item = items.find((value) => value.id === editBtn.dataset.edit);
+      },
+      onEditActivity: (itemId) => {
+        const item = items.find((value) => value.id === itemId);
         if (!item) return;
-        dayDialog.close();
         form.reset();
         form.querySelector('[role="alert"]').textContent = "";
-        Object.keys(item).forEach((key) => { if (form.elements[key]) form.elements[key].value = item[key] || ""; });
+        Object.keys(item).forEach((key) => {
+          if (form.elements[key]) form.elements[key].value = item[key] || "";
+        });
         dialog.showModal();
-      };
-    }
+      },
+      getCalendarState: () => ({ items, holidays, overlays }),
+    });
+
+    const openDayDialog = daySchedule.openDayDialog;
 
     grid.onclick = (event) => {
       const editBtn = event.target.closest("[data-edit]");
@@ -993,369 +760,15 @@ export function createPlanningSurface(context) {
       }
     };
 
-    const settingsDialog = surface.querySelector("[data-settings-dialog]"),
-      settingsForm = settingsDialog?.querySelector("form"),
-      settingsBtn = surface.querySelector("[data-calendar-settings]"),
-      settingsError = settingsDialog?.querySelector("[data-settings-error]"),
-      connectionsDatalist = settingsDialog?.querySelector("#dapier-calendar-connections");
+    setupCalendarSettingsDialog({
+      surface,
+      api,
+      escapeHtml,
+      onSettingsSaved: () => load(),
+    });
 
-    if (settingsBtn && settingsDialog && settingsForm) {
-      settingsBtn.onclick = async () => {
-        if (settingsError) settingsError.textContent = "";
-        settingsBtn.disabled = true;
-        try {
-          const res = await api("/settings");
-          if (connectionsDatalist && Array.isArray(res.connections)) {
-            connectionsDatalist.innerHTML = res.connections
-              .map((c) => `<option value="${escapeHtml(c.connectionId)}">${escapeHtml(c.title)}</option>`)
-              .join("");
-          }
-          if (res.settings) {
-            const s = res.settings;
-            if (settingsForm.elements.connectionId) settingsForm.elements.connectionId.value = s.connectionId || "google-calendar";
-            if (settingsForm.elements.showAvailableSlots) settingsForm.elements.showAvailableSlots.checked = s.showAvailableSlots !== false;
-            if (settingsForm.elements.filterNonSlotHours) settingsForm.elements.filterNonSlotHours.checked = s.filterNonSlotHours !== false;
-            if (settingsForm.elements.filterDtcPlaceholders) settingsForm.elements.filterDtcPlaceholders.checked = s.filterDtcPlaceholders !== false;
-            if (settingsForm.elements.filterTransparent) settingsForm.elements.filterTransparent.checked = s.filterTransparent !== false;
-            if (settingsForm.elements.filterLunch) settingsForm.elements.filterLunch.checked = s.filterLunch !== false;
-            if (settingsForm.elements.filterRoutines) settingsForm.elements.filterRoutines.checked = s.filterRoutines !== false;
-            if (settingsForm.elements.filterFitness) settingsForm.elements.filterFitness.checked = s.filterFitness !== false;
-            if (settingsForm.elements.filterCampaigns) settingsForm.elements.filterCampaigns.checked = s.filterCampaigns !== false;
-            if (settingsForm.elements.filterBusy) settingsForm.elements.filterBusy.checked = s.filterBusy !== false;
-            if (settingsForm.elements.customKeywords) settingsForm.elements.customKeywords.value = (s.customKeywords || []).join("\n");
-          }
-          settingsDialog.showModal();
-        } catch (err) {
-          if (settingsError) settingsError.textContent = `Could not load settings: ${err.message}`;
-          settingsDialog.showModal();
-        } finally {
-          settingsBtn.disabled = false;
-        }
-      };
-
-      const settingsCancelBtn = settingsDialog.querySelector("[data-settings-cancel]");
-      if (settingsCancelBtn) {
-        settingsCancelBtn.onclick = () => settingsDialog.close();
-      }
-
-      settingsForm.onsubmit = async (e) => {
-        e.preventDefault();
-        if (settingsError) settingsError.textContent = "";
-        const submitBtn = settingsForm.querySelector('button[type="submit"]');
-        if (submitBtn) submitBtn.disabled = true;
-        try {
-          const rawKeywords = settingsForm.elements.customKeywords?.value || "";
-          const customKeywords = rawKeywords
-            .split(/[\n,]+/)
-            .map((k) => k.trim())
-            .filter(Boolean);
-          const body = {
-            connectionId: settingsForm.elements.connectionId?.value?.trim() || "google-calendar",
-            showAvailableSlots: Boolean(settingsForm.elements.showAvailableSlots?.checked),
-            filterNonSlotHours: Boolean(settingsForm.elements.filterNonSlotHours?.checked),
-            filterDtcPlaceholders: Boolean(settingsForm.elements.filterDtcPlaceholders?.checked),
-            filterTransparent: Boolean(settingsForm.elements.filterTransparent?.checked),
-            filterLunch: Boolean(settingsForm.elements.filterLunch?.checked),
-            filterRoutines: Boolean(settingsForm.elements.filterRoutines?.checked),
-            filterFitness: Boolean(settingsForm.elements.filterFitness?.checked),
-            filterCampaigns: Boolean(settingsForm.elements.filterCampaigns?.checked),
-            filterBusy: Boolean(settingsForm.elements.filterBusy?.checked),
-            customKeywords,
-          };
-          await api("/settings", { method: "PUT", body: JSON.stringify(body) });
-          settingsDialog.close();
-          load();
-        } catch (err) {
-          if (settingsError) settingsError.textContent = `Could not save settings: ${err.message}`;
-        } finally {
-          if (submitBtn) submitBtn.disabled = false;
-        }
-      };
-    }
-
-    load();
-  }
-
-  async function renderNewsletterSurface() {
-    documentList.replaceChildren();
-    const newsletterStatuses = ["open", "reserved", "drafting", "scheduled", "sent", "cancelled"];
-    const newsletterStatusOptions = newsletterStatuses
-      .map((value) => `
-        <option value="${value}">${plannerLabel(value)}</option>
-      `)
-      .join("");
-    const surface = document.createElement("section");
-    surface.className = "newsletter-surface";
-    surface.setAttribute("aria-labelledby", "newsletter-surface-title");
-    surface.innerHTML = `
-      <header class="planner-header">
-        <div class="planner-heading">
-          <p class="planner-eyebrow">Planning</p>
-          <h1 id="newsletter-surface-title">Newsletter planner</h2>
-          <p>Plan campaign slots, booking readiness, and publication progress in Europe/Berlin.</p>
-        </div>
-        <button class="primary-button" data-newsletter-add>Add slot</button>
-      </header>
-      <div class="newsletter-filters" aria-label="Newsletter filters">
-        <div class="planner-filter-fields">
-          <label>From <input data-from type="date"></label>
-          <label>To <input data-to type="date"></label>
-          <label>Group by
-            <select data-view>
-              <option value="month">Month</option>
-              <option value="week">Week</option>
-            </select>
-          </label>
-          <label>Status
-            <select data-status>
-              <option value="">Any status</option>
-              ${newsletterStatusOptions}
-            </select>
-          </label>
-          <label>Booking
-            <select data-booked>
-              <option value="">Any booking</option>
-              <option value="true">Booked</option>
-              <option value="false">Unbooked</option>
-            </select>
-          </label>
-        </div>
-      </div>
-      <p class="planner-load-state" role="status">Loading newsletter slots…</p>
-      <div class="planner-alerts" data-alerts></div>
-      <div class="newsletter-schedule" data-slots>Loading slots…</div>
-      <dialog class="dk-dialog" style="--dk-dialog-width: 620px">
-        <form method="dialog">
-          <div class="dk-dialog__head"><div>
-            <h2>Newsletter slot</h2>
-            <p>Keep the publication plan and booking context together.</p>
-          </div></div>
-          <div class="dk-dialog__body">
-          <input name="id" type="hidden">
-          <input name="version" type="hidden">
-          <div class="planner-form-grid">
-            <label>Publication date <input name="publicationDate" type="date" required></label>
-            <label>Campaign number <input name="campaignNumber" type="number" min="1"></label>
-            <label class="planner-field-wide">Campaign label <input name="campaignLabel" required maxlength="200"></label>
-            <label>Status
-              <select name="status">${newsletterStatusOptions}</select>
-            </label>
-            <label>Booked by <input name="bookedByDisplayName" autocomplete="off"></label>
-            <label class="planner-field-wide">Sponsor booking reference <input name="sponsorBookingId" autocomplete="off"></label>
-            <label class="planner-field-wide">Card reference <input name="cardId" autocomplete="off"></label>
-            <label class="planner-field-wide">Public campaign URL <input name="publicUrl" type="url"></label>
-            <label class="planner-field-wide">Planning note <textarea name="planningNote" rows="4"></textarea></label>
-          </div>
-          <p class="planner-form-error" role="alert"></p>
-          </div>
-          <div class="dk-dialog__foot">
-            <button class="primary-button" data-save>Save slot</button>
-            <button value="cancel">Cancel</button>
-          </div>
-        </form>
-      </dialog>`;
-    documentList.append(surface);
-    setRouteTitle("Newsletter");
-    const status = surface.querySelector('[role="status"]'),
-      dialog = surface.querySelector("dialog"),
-      form = dialog.querySelector("form"),
-      api = (path, options = {}) =>
-        request(workApiUrl(`/api/newsletter-slots${path}`), {
-          headers: { "content-type": "application/json" },
-          ...options,
-        });
-    let items = [];
-    const now = todayIsoDate();
-    surface.querySelector("[data-from]").value = now.slice(0, 8) + "01";
-    surface.querySelector("[data-to]").value =
-      `${Number(now.slice(0, 4)) + 1}-12-31`;
-    const isoWeekKey = (date) => {
-        const day = new Date(`${date}T00:00:00Z`);
-        day.setUTCDate(day.getUTCDate() + 4 - (day.getUTCDay() || 7));
-        const yearStart = new Date(Date.UTC(day.getUTCFullYear(), 0, 1)),
-          week = Math.ceil(((day - yearStart) / 86400000 + 1) / 7);
-        return `${day.getUTCFullYear()} · week ${String(week).padStart(2, "0")}`;
-      },
-      groupKey = (item) =>
-      surface.querySelector("[data-view]").value === "month"
-        ? item.publicationDate.slice(0, 7)
-        : isoWeekKey(item.publicationDate);
-
-    function newsletterAlertMarkup(alert) {
-      const slot = (items || []).find((candidate) => candidate.id === alert.slotId);
-      const naming = slot
-        ? `${slot.campaignLabel || "Slot"}${slot.publicationDate ? ` — ${formatShortPlanningDate(slot.publicationDate)}` : ""}`
-        : "";
-      return `
-        <article class="planner-alert is-${escapeHtml(alert.severity || "warning")}">
-          <div>
-            <strong>${escapeHtml(newsletterAlertCopy(alert.reasonCode))}</strong>
-            <p>${naming ? `${escapeHtml(naming)}. ` : ""}${plannerLabel(alert.severity || "warning")} · ${escapeHtml(newsletterAlertAdvice(alert.reasonCode))}</p>
-          </div>
-        </article>
-      `;
-    }
-
-    function newsletterSlotMarkup(item) {
-      const bookedBy = item.bookedByDisplayName
-        || (item.sponsorBookingId
-          ? "Sponsor booking linked"
-          : item.bookedByUserId
-            ? "Team member"
-            : "Unbooked");
-      const publicationLabel = new Date(`${item.publicationDate}T00:00:00Z`)
-        .toLocaleDateString("en", {
-          weekday: "short",
-          day: "numeric",
-          month: "short",
-          timeZone: "UTC",
-        });
-      const campaignNumber = item.campaignNumber
-        ? `<small>Campaign ${escapeHtml(item.campaignNumber)}</small>`
-        : "";
-      const planningNote = item.planningNote
-        ? `<small>${escapeHtml(item.planningNote)}</small>`
-        : "";
-      const campaignLink = item.publicUrl
-        ? `
-          <a href="${escapeHtml(item.publicUrl)}" target="_blank" rel="noreferrer">
-            Open campaign
-          </a>
-        `
-        : "";
-      return `
-        <article class="newsletter-slot-row">
-          <div class="newsletter-slot-date">
-            <time datetime="${escapeHtml(item.publicationDate)}">${publicationLabel}</time>
-            ${campaignNumber}
-          </div>
-          <div class="newsletter-slot-main">
-            <div class="newsletter-slot-title">
-              <h4>${escapeHtml(item.campaignLabel)}</h4>
-              <span class="planner-status ${plannerStatusClass(item.status)}">
-                ${escapeHtml(plannerLabel(item.status))}
-              </span>
-            </div>
-            <p>Booked by: ${escapeHtml(bookedBy)}</p>
-            ${planningNote}
-          </div>
-          <div class="newsletter-slot-actions">
-            ${campaignLink}
-            <button data-edit="${escapeHtml(item.id)}">Edit</button>
-          </div>
-        </article>
-      `;
-    }
-
-    function newsletterPeriodMarkup(period, slots) {
-      const periodLabel = surface.querySelector("[data-view]").value === "month"
-        ? new Date(`${period}-01T00:00:00Z`).toLocaleDateString("en", {
-          month: "long",
-          year: "numeric",
-          timeZone: "UTC",
-        })
-        : period;
-      return `
-        <section class="newsletter-period">
-          <header>
-            <h3>${escapeHtml(periodLabel)}</h3>
-            <span class="planner-count">${slots.length} ${slots.length === 1 ? "slot" : "slots"}</span>
-          </header>
-          <div class="newsletter-slot-list">
-            ${slots.map(newsletterSlotMarkup).join("")}
-          </div>
-        </section>
-      `;
-    }
-
-    async function load() {
-      status.textContent = "Loading newsletter slots…";
-      try {
-        const query = new URLSearchParams({
-            from: surface.querySelector("[data-from]").value,
-            to: surface.querySelector("[data-to]").value,
-            status: surface.querySelector("[data-status]").value,
-            booked: surface.querySelector("[data-booked]").value,
-          }),
-          result = await api(`?${query}`);
-        items = result.items || [];
-        // One banner per reason: the same warning about different slots
-        // reads as noise repeated, so identical reasons collapse.
-        const uniqueAlerts = [
-          ...new Map((result.alerts || []).map((alert) => [alert.reasonCode, alert])).values(),
-        ];
-        surface.querySelector("[data-alerts]").innerHTML = uniqueAlerts
-          .map(newsletterAlertMarkup)
-          .join("");
-        const groups = {};
-        for (const item of [...items].sort((a, b) => a.publicationDate.localeCompare(b.publicationDate))) (groups[groupKey(item)] ||= []).push(item);
-        surface.querySelector("[data-slots]").innerHTML = items.length
-          ? Object.entries(groups)
-              .map(([period, slots]) => newsletterPeriodMarkup(period, slots))
-              .join("")
-          : `
-            <div class="honest-state planner-empty">
-              <strong>No newsletter slots</strong>
-              <p>Create the first slot or adjust the date, status, and booking filters.</p>
-            </div>
-          `;
-        status.textContent = "";
-      } catch (error) {
-        status.textContent = `Could not load newsletter schedule: ${error.message}`;
-        surface.querySelector("[data-alerts]").replaceChildren();
-        surface.querySelector("[data-slots]").innerHTML = `
-          <div class="honest-state planner-failure">
-            <strong>Newsletter schedule unavailable</strong>
-            <p>Reopen Newsletter to retry. No slots have been changed.</p>
-          </div>
-        `;
-      }
-    }
-    surface
-      .querySelectorAll(".newsletter-filters input,.newsletter-filters select")
-      .forEach((el) => (el.onchange = load));
-    surface.querySelector("[data-newsletter-add]").onclick = () => {
-      form.reset();
-      form.querySelector('[role="alert"]').textContent = "";
-      dialog.showModal();
-    };
-    surface.querySelector("[data-slots]").onclick = (event) => {
-      const item = items.find(
-        (value) => value.id === event.target.closest("[data-edit]")?.dataset.edit,
-      );
-      if (!item) return;
-      form.reset();
-      form.querySelector('[role="alert"]').textContent = "";
-      for (const key of Object.keys(item))
-        if (form.elements[key]) form.elements[key].value = item[key] || "";
-      dialog.showModal();
-    };
-    surface.querySelector("[data-save]").onclick = async (event) => {
-      event.preventDefault();
-      form.querySelector('[role="alert"]').textContent = "";
-      const value = Object.fromEntries(
-          [...new FormData(form)].filter(([, v]) => v !== ""),
-        ),
-        id = value.id;
-      delete value.id;
-      if (value.version) value.version = Number(value.version);
-      if (value.campaignNumber)
-        value.campaignNumber = Number(value.campaignNumber);
-      try {
-        await api(id ? `/${id}` : "", {
-          method: id ? "PUT" : "POST",
-          body: JSON.stringify(value),
-        });
-        dialog.close();
-        await load();
-      } catch (error) {
-        form.querySelector('[role="alert"]').textContent =
-          `Could not save slot: ${error.message}`;
-      }
-    };
     await load();
   }
-
 
   return {
     renderCalendarSurface,
