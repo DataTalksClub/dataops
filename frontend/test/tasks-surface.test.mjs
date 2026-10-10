@@ -2269,6 +2269,50 @@ describe("Tasks surface boundary", () => {
     assert.equal(overlay.removed, true);
   });
 
+  test("offers optional task groups in the quick Card form", async () => {
+    const bodies = [];
+    const harness = createHarness({
+      request: async (url, options = {}) => {
+        if (url === "/api/templates")
+          return {
+            templates: [
+              {
+                id: "tpl-news",
+                name: "Newsletter",
+                taskDefinitions: [
+                  { refId: "core", description: "Core", offsetDays: 0 },
+                  { refId: "extra", description: "Extra", offsetDays: 1, optionalGroup: "secondary" },
+                ],
+              },
+            ],
+          };
+        if (url === "/api/cards") {
+          bodies.push(JSON.parse(options.body));
+          return { card: { id: "card-1" } };
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.openQuickWorkflowForm();
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    overlay.querySelector("select").value = "tpl-news";
+    await overlay.querySelector("select").dispatch("change");
+    const boxes = overlay.querySelectorAll('input[type="checkbox"]');
+    assert.equal(boxes.length, 1);
+    assert.match(boxes[0].parentElement.textContent, /secondary/);
+    boxes[0].checked = true;
+
+    await submitQuickForm(overlay);
+    assert.deepEqual(bodies, [
+      {
+        templateId: "tpl-news",
+        anchorDate: "2026-08-12",
+        optionalGroups: ["secondary"],
+      },
+    ]);
+    assert.deepEqual(harness.openedCards, ["card-1"]);
+  });
+
   test("refreshes a stale successful quick Card without replacing the newer view", async () => {
     let releaseMutation;
     const refreshes = [];

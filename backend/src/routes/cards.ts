@@ -694,12 +694,29 @@ async function handleCollection(
     }
 
     if (template) {
+      let selectedGroups: string[] | undefined;
+      if (body.optionalGroups !== undefined) {
+        if (!Array.isArray(body.optionalGroups) || body.optionalGroups.some((group) => typeof group !== 'string')) {
+          return json(400, { error: 'optionalGroups must be an array of strings', code: 'invalid-optional-groups' });
+        }
+        const knownGroups = new Set(
+          (template.taskDefinitions || [])
+            .map((definition) => definition.optionalGroup)
+            .filter((group): group is string => typeof group === 'string'),
+        );
+        const unknown = (body.optionalGroups as string[]).find((group) => !knownGroups.has(group));
+        if (unknown) {
+          return json(400, { error: `Unknown optional task group: ${unknown}`, code: 'unknown-optional-group' });
+        }
+        selectedGroups = [...(body.optionalGroups as string[])];
+      }
       try {
         const { card, tasks } = await createCardFromTemplate(
           client,
           cardData,
           template,
           body.anchorDate as string,
+          selectedGroups,
         );
         return json(201, { card: await projectCard(new TeamDirectory(client), card, tasks), tasks });
       } catch (error) {
@@ -824,7 +841,7 @@ async function handleSingle(
     }
     const systemOwnedFields = [
       'status', 'taskCount', 'openTaskCount', 'completedAt', 'completedBy',
-      'activeStageBeforeCompletion', 'auditEventRefs',
+      'activeStageBeforeCompletion', 'auditEventRefs', 'selectedOptionalGroups',
     ];
     const suppliedSystemField = systemOwnedFields.find((field) => Object.hasOwn(body, field));
     if (suppliedSystemField) {

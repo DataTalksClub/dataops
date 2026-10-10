@@ -287,6 +287,42 @@ describe('Card lifecycle aggregate', () => {
     )));
   });
 
+  it('instantiates only selected optional task groups and records the selection', async () => {
+    const template = await createTemplate(client, {
+      name: 'Grouped template',
+      taskDefinitions: [
+        { refId: 'core', description: 'Core', offsetDays: 0 },
+        { refId: 'extra', description: 'Extra', offsetDays: 1, optionalGroup: 'secondary' },
+      ],
+    });
+    const selected = await createCardFromTemplate(
+      client,
+      { id: 'grouped-selected-card', title: 'Selected', anchorDate: '2026-09-07', templateId: template.id },
+      template,
+      '2026-09-07',
+      ['secondary'],
+    );
+    assert.deepEqual(
+      { taskCount: selected.card.taskCount, tasks: selected.tasks.length },
+      { taskCount: 2, tasks: 2 },
+    );
+    assert.deepStrictEqual(selected.card.selectedOptionalGroups, ['secondary']);
+
+    const deselected = await createCardFromTemplate(
+      client,
+      { id: 'grouped-deselected-card', title: 'Deselected', anchorDate: '2026-09-07', templateId: template.id },
+      template,
+      '2026-09-07',
+      [],
+    );
+    assert.deepEqual(
+      { taskCount: deselected.card.taskCount, tasks: deselected.tasks.length },
+      { taskCount: 1, tasks: 1 },
+    );
+    assert.deepStrictEqual(deselected.tasks.map((task) => task.templateTaskRef), ['core']);
+    assert.deepStrictEqual(deselected.card.selectedOptionalGroups, []);
+  });
+
   it('rolls back Template Card creation and rejects oversized aggregates before writing', async () => {
     const template = await createTemplate(client, {
       name: 'Rollback template',

@@ -51,6 +51,7 @@ const TASK_FIELDS = [
   ['validation', 'validation'],
   ['requiredLinkName', 'required_link'],
   ['requiresFile', 'requires_file'],
+  ['optionalGroup', 'optional_group'],
   ['proofRequirement', 'proof'],
   ['artifactRefs', 'artifact_refs'],
   ['assistantJobRefs', 'assistant_job_refs'],
@@ -232,7 +233,7 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
   const seen = new Set<string>();
 
   for (const task of tasks) {
-    strings(task, ['task_kind', 'owner_role', 'instruction_exempt_reason', 'runtime_instruction_source']);
+    strings(task, ['task_kind', 'owner_role', 'instruction_exempt_reason', 'runtime_instruction_source', 'optional_group']);
     stringLists(task, ['tools']);
     if (task.closure !== undefined) {
       const closure = task.closure as Dict;
@@ -251,6 +252,9 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
     if (!id) { fail('a task is missing an id'); continue; }
     if (seen.has(id)) fail(`duplicate task id '${id}'`);
     seen.add(id);
+    if (typeof task.optional_group === 'string' && !/^[a-z0-9][a-z0-9-]*$/.test(task.optional_group)) {
+      fail(`task '${id}' optional_group must be a slug`);
+    }
 
     const schedule = (task.schedule as Dict | undefined) || {};
     if (typeof schedule.offset_days !== 'number') fail(`task '${id}' needs schedule.offset_days`);

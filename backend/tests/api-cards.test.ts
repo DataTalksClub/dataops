@@ -1104,4 +1104,52 @@ describe('API — Cards', () => {
       assert.strictEqual(JSON.parse(res.body).card.sponsor, 'Snowplow');
     });
   });
+
+  describe('POST /api/cards optional task groups', () => {
+    it('instantiates only selected groups and rejects unknown groups', async () => {
+      const template = await createTemplate(client, {
+        name: 'Grouped API template',
+        taskDefinitions: [
+          { refId: 'core', description: 'Core', offsetDays: 0 },
+          { refId: 'extra', description: 'Extra', offsetDays: 1, optionalGroup: 'secondary' },
+        ],
+      });
+      const selected = await invoke('POST', '/api/cards', {
+        title: 'Grouped card',
+        anchorDate: utcDateString(),
+        templateId: template.id,
+        optionalGroups: ['secondary'],
+      });
+      assert.strictEqual(selected.statusCode, 201);
+      const selectedBody = JSON.parse(selected.body);
+      assert.strictEqual(selectedBody.tasks.length, 2);
+      assert.deepStrictEqual(selectedBody.card.selectedOptionalGroups, ['secondary']);
+
+      const deselected = await invoke('POST', '/api/cards', {
+        title: 'Ungrouped card',
+        anchorDate: utcDateString(),
+        templateId: template.id,
+        optionalGroups: [],
+      });
+      assert.strictEqual(deselected.statusCode, 201);
+      assert.strictEqual(JSON.parse(deselected.body).tasks.length, 1);
+
+      const unknown = await invoke('POST', '/api/cards', {
+        title: 'Unknown group card',
+        anchorDate: utcDateString(),
+        templateId: template.id,
+        optionalGroups: ['nope'],
+      });
+      assert.strictEqual(unknown.statusCode, 400);
+      assert.strictEqual(JSON.parse(unknown.body).code, 'unknown-optional-group');
+
+      const malformed = await invoke('POST', '/api/cards', {
+        title: 'Malformed group card',
+        anchorDate: utcDateString(),
+        templateId: template.id,
+        optionalGroups: 'secondary',
+      });
+      assert.strictEqual(malformed.statusCode, 400);
+    });
+  });
 });

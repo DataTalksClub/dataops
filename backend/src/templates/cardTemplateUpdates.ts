@@ -263,7 +263,13 @@ export function buildCardTemplateUpdatePlan(
   const taskChanges: TemplateTaskUpdatePreview[] = [];
   const targetRefs = new Set<string>();
 
-  for (const [order, definition] of (template.taskDefinitions || []).entries()) {
+  // A Card created without an optional group never receives that group's
+  // tasks from later Template versions either.
+  const selected = card.selectedOptionalGroups;
+  const definitions = (template.taskDefinitions || []).filter((definition) => (
+    !definition.optionalGroup || selected === undefined || selected.includes(definition.optionalGroup)
+  ));
+  for (const [order, definition] of definitions.entries()) {
     const ref = definition.refId;
     targetRefs.add(ref);
     const current = byRef.get(ref) || null;

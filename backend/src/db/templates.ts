@@ -9,7 +9,7 @@ import {
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { TABLE_CARDS, TABLE_TASKS, TABLE_TEMPLATES } from './tableNames';
-import { buildCard, cardKey } from './cards';
+import { buildCard, cardKey, getCard } from './cards';
 import { usesLocalTransactionEmulation } from './client';
 import { createTask, listTasksByCard } from './tasks';
 import type { Card, Template, Task } from '../types';
@@ -278,16 +278,44 @@ async function listTemplates(client: DynamoDBDocumentClient): Promise<Template[]
 }
 
 /**
- * Instantiate a template: fetch the template, and for each taskDefinition
- * create a task with a calculated date (anchorDate + offsetDays).
+ * Keep only the task definitions a Card wants: ungrouped tasks always
+ * instantiate, while grouped tasks need their group in the selection. An
+ * absent selection means every definition (the pre-group behavior).
  */
-async function instantiateTemplate(client: DynamoDBDocumentClient, templateId: string, cardId: string, anchorDate: string): Promise<Task[]> {
+function selectTaskDefinitions(
+  definitions: Template['taskDefinitions'],
+  selectedGroups?: string[],
+): NonNullable<Template['taskDefinitions']> {
+  const all = definitions || [];
+  if (selectedGroups === undefined) return all;
+  const selected = new Set(selectedGroups);
+  return all.filter((definition) => !definition.optionalGroup || selected.has(definition.optionalGroup));
+}
+
+/**
+ * Instantiate a template: fetch the template, and for each selected
+ * taskDefinition create a task with a calculated date (anchorDate +
+ * offsetDays). Without an explicit selection the Card's stored selection
+ * applies, so recovery never resurrects a deselected group.
+ */
+async function instantiateTemplate(
+  client: DynamoDBDocumentClient,
+  templateId: string,
+  cardId: string,
+  anchorDate: string,
+  selectedGroups?: string[],
+): Promise<Task[]> {
   const template = await getTemplate(client, templateId);
   if (!template) {
     throw new Error(`Template not found: ${templateId}`);
   }
 
-  const taskDefinitions = template.taskDefinitions || [];
+  let groups = selectedGroups;
+  if (groups === undefined) {
+    const card = await getCard(client, cardId);
+    groups = card?.selectedOptionalGroups;
+  }
+  const taskDefinitions = selectTaskDefinitions(template.taskDefinitions, groups);
   const existingTasks = await listTasksByCard(client, cardId);
   const existingRefs = new Set(
     existingTasks
@@ -318,8 +346,12 @@ async function createCardFromTemplate(
   cardData: Record<string, unknown>,
   template: Template,
   anchorDate: string,
+  selectedGroups?: string[],
 ): Promise<{ card: Card; tasks: Task[] }> {
-  const definitions = template.taskDefinitions || [];
+  const definitions = selectTaskDefinitions(template.taskDefinitions, selectedGroups);
+  if (selectedGroups !== undefined) {
+    cardData.selectedOptionalGroups = [...selectedGroups];
+  }
   const card = buildCard(cardData, {
     taskCount: definitions.length,
     openTaskCount: definitions.length,

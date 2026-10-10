@@ -119,6 +119,31 @@ describe('authored YAML template mapping', () => {
     assert.ok(issues.some((message) => message.includes('unknown process document')));
   });
 
+  it('round-trips optional task groups and rejects malformed group slugs', () => {
+    const authored = templateToYaml({
+      ...RUNTIME_TEMPLATE,
+      taskDefinitions: [
+        { ...RUNTIME_TEMPLATE.taskDefinitions[0] },
+        {
+          refId: 'extra',
+          description: 'Extra sponsor block',
+          offsetDays: 1,
+          optionalGroup: 'secondary',
+        },
+      ],
+    });
+    assert.deepStrictEqual(validateAuthoredTemplate(authored), []);
+    const restored = templateFromYaml(authored);
+    const restoredTasks = restored.taskDefinitions as Record<string, unknown>[];
+    assert.strictEqual(restoredTasks?.[1]?.optionalGroup, 'secondary');
+    assert.deepStrictEqual(templateToYaml(restored), authored);
+
+    const tasks = authored.tasks as Record<string, unknown>[];
+    tasks[1].optional_group = 'Secondary sponsor';
+    const messages = validateAuthoredTemplate(authored).map((issue) => issue.message).join('\n');
+    assert.match(messages, /optional_group must be a slug/);
+  });
+
   it('rejects duplicate tasks, unknown phases, undefined card links, and Google Docs-only instructions', () => {
     const authored = templateToYaml(RUNTIME_TEMPLATE);
     const tasks = authored.tasks as Record<string, unknown>[];

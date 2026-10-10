@@ -136,6 +136,23 @@ describe('Card Template update planning', () => {
     assert.deepEqual(announce?.operatorOverrideFields, []);
   });
 
+  it('ignores unselected optional groups when planning Template updates', () => {
+    const source = template(1);
+    const target = {
+      ...template(2),
+      taskDefinitions: [
+        ...(source.taskDefinitions || []),
+        { refId: 'extra-selected', description: 'Extra selected', offsetDays: 3, optionalGroup: 'secondary' },
+        { refId: 'extra-skipped', description: 'Extra skipped', offsetDays: 4, optionalGroup: 'standalone' },
+      ],
+    };
+    const card = { ...cardFrom(source), selectedOptionalGroups: ['secondary'] };
+    const tasks = tasksFrom(source);
+    const plan = buildCardTemplateUpdatePlan(card, tasks, target);
+    assert.equal(plan.preview.taskChanges.find((change) => change.taskRef === 'extra-selected')?.action, 'add');
+    assert.equal(plan.preview.taskChanges.find((change) => change.taskRef === 'extra-skipped'), undefined);
+  });
+
   it('marks an override only when its definition field also changes', () => {
     const source = template(1);
     const target = template(2);
