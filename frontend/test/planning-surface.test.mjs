@@ -377,6 +377,9 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /calendar-week-heading/);
     assert.match(dom.grid.innerHTML, /calendar-week-number/);
     assert.match(dom.grid.innerHTML, /<small class="iso-week">\d+<\/small>/);
+    assert.match(dom.grid.innerHTML, /calendar-week is-current-week/);
+    assert.match(dom.grid.innerHTML, /calendar-week-number is-current-week/);
+    assert.match(dom.grid.innerHTML, /calendar-day[^"]*is-current-week/);
     expectCalendarRange(harness.requests[0], "2026-08-03", "2026-09-06");
 
     // Toggle off Alexey's calendar layer
