@@ -18,6 +18,7 @@ import { handleNotificationRoutes } from './routes/notifications';
 import { handleCronRoutes } from './routes/cron';
 import { handleBookkeepingRoutes } from './routes/bookkeeping';
 import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
+import { handleSponsorLeadIntake, handleSponsorLeadRoutes } from './routes/sponsorLeads';
 import { handleSponsorFinanceRoutes } from './routes/sponsorFinance';
 import { handleSponsorCommunicationRoutes } from './routes/sponsorCommunications';
 import { handleNewsletterSlotRoutes } from './routes/newsletterSlots';
@@ -56,6 +57,7 @@ function isAuthExempt(method: string, path: string): boolean {
   if (isAnonymousDeviceRequest(method, path)) return true;
   if (AUTH_EXEMPT_PATHS.has(path)) return true;
   if (method === 'POST' && path === '/api/v1/intake/email-documents') return true;
+  if (method === 'POST' && path === '/api/v1/intake/leads') return true;
   if (method === 'POST' && path === '/api/webhook/telegram') return true;
   return false;
 }
@@ -132,6 +134,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // through interactive session or portal authentication.
     if (method === 'POST' && reqPath === '/api/v1/intake/email-documents') {
       return await handleEmailDocumentIntake(event, client);
+    }
+    if (method === 'POST' && reqPath === '/api/v1/intake/leads') {
+      return await handleSponsorLeadIntake(event, client);
     }
 
     decodeBase64Body(event);
@@ -276,6 +281,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       return await handleBookkeepingRoutes(reqPath, method, event, client, skipAuth || !!portalUserId || portalAuthorized || !!headerValue(event.headers, 'x-user-id'));
     }
 
+    if (reqPath === '/api/sponsor-crm/leads' || reqPath.startsWith('/api/sponsor-crm/leads/')) {
+      return await handleSponsorLeadRoutes(reqPath, method, event, client);
+    }
     if (reqPath.startsWith('/api/sponsor-crm')) {
       if (isSponsorCommunicationRoute(reqPath)) {
         return await handleSponsorCommunicationRoutes(reqPath, method, event, client);

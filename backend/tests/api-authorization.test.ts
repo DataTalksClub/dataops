@@ -73,6 +73,7 @@ const AUTHENTICATED_ROUTES: RouteCase[] = [
   { method: 'GET', path: '/api/bookkeeping' },
   { method: 'GET', path: '/api/sponsor-crm/sponsors' },
   { method: 'POST', path: '/api/sponsor-crm/sponsors', body: {} },
+  { method: 'GET', path: '/api/sponsor-crm/leads' },
   { method: 'GET', path: '/api/newsletter-slots' },
   { method: 'POST', path: '/api/newsletter-slots', body: {} },
   { method: 'GET', path: '/api/calendar-items' },
@@ -101,6 +102,7 @@ const EXEMPT_ROUTES: RouteCase[] = [
   { method: 'POST', path: '/api/auth/device', body: {} },
   { method: 'POST', path: '/api/auth/device/token', body: {} },
   { method: 'POST', path: '/api/v1/intake/email-documents', body: {} },
+  { method: 'POST', path: '/api/v1/intake/leads', body: {} },
   { method: 'POST', path: '/api/webhook/telegram', body: {} },
 ];
 
