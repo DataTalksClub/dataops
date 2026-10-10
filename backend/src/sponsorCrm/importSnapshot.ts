@@ -67,12 +67,24 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
   for (const existing of await listCrmRecords(client, 'organization')) {
     if (existing.domain) orgByDomain.set(String(existing.domain), existing.id);
   }
+  const contactByEmail = new Map<string, string>();
+  for (const existing of await listCrmRecords(client, 'contact')) {
+    const emails = Array.isArray(existing.emails) ? existing.emails : [];
+    for (const email of emails) {
+      if (typeof email === 'string' && email.trim()) contactByEmail.set(email.toLowerCase(), existing.id);
+    }
+  }
   const created = { companies: 0, people: 0, deals: 0, invoices: 0, leads: 0, duplicates: 0 };
 
   for (const company of companies) {
     const domain = registrableDomain(company.domain);
     if (!domain || !company.displayName?.trim() || company.displayName.length > 200) {
       throw Object.assign(new Error('Invalid company'), { statusCode: 400 });
+    }
+    const existingId = orgByDomain.get(domain);
+    if (existingId) {
+      created.duplicates += 1;
+      continue;
     }
     const result = await createOrganizationAtomic(client, {
       displayName: company.displayName.trim(),
@@ -89,16 +101,23 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
   for (const person of people) {
     const domain = registrableDomain(person.organizationDomain);
     const organizationId = domain ? orgByDomain.get(domain) : undefined;
-    if (!organizationId || !person.name?.trim() || !EMAIL.test(person.email)) {
+    const email = typeof person.email === 'string' ? person.email.toLowerCase() : '';
+    if (!organizationId || !person.name?.trim() || !EMAIL.test(email)) {
       throw Object.assign(new Error('Invalid person'), { statusCode: 400 });
+    }
+    const existingId = contactByEmail.get(email);
+    if (existingId) {
+      created.duplicates += 1;
+      continue;
     }
     const result = await createContactAtomic(client, {
       organizationId,
       name: person.name.trim(),
-      emails: [person.email.toLowerCase()],
+      emails: [email],
       sourceType: 'import',
-      sourceKey: person.sourceKey || `import-person:${person.email.toLowerCase()}`,
+      sourceKey: person.sourceKey || `import-person:${email}`,
     }, actorId);
+    contactByEmail.set(email, result.item.id);
     if (result.duplicate) created.duplicates += 1;
     else created.people += 1;
   }

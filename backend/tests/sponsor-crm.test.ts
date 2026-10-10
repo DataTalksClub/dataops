@@ -297,6 +297,46 @@ describe('sponsor CRM', () => {
     assert.equal(orgs.find((item: any) => item.domain === 'cash.example.invalid').relationship, 'customer');
   });
 
+  it('merges imported companies by domain and people by email when source keys differ', async () => {
+    const existingOrg = data(await invoke('POST', '/api/sponsor-crm/organizations', {
+      displayName: 'Prior Corp',
+      domain: 'merge.example.invalid',
+      sourceKey: 'merge-org-prior',
+    }));
+    const existingPerson = data(await invoke('POST', '/api/sponsor-crm/contacts', {
+      organizationId: existingOrg.id,
+      name: 'Prior Person',
+      emails: ['pat@merge.example.invalid'],
+      sourceKey: 'merge-person-prior',
+    }));
+    const imported = await invoke('POST', '/api/sponsor-crm/imports', {
+      companies: [{
+        domain: 'merge.example.invalid',
+        displayName: 'Imported Merge Corp',
+        sourceKey: 'merge-org-import',
+      }],
+      people: [{
+        email: 'pat@merge.example.invalid',
+        name: 'Imported Pat',
+        organizationDomain: 'merge.example.invalid',
+        sourceKey: 'merge-person-import',
+      }],
+    });
+    assert.equal(imported.statusCode, 200, imported.body);
+    const body = data(imported);
+    assert.equal(body.companies, 0);
+    assert.equal(body.people, 0);
+    assert.ok(body.duplicates >= 2, JSON.stringify(body));
+    const orgs = data(await invoke('GET', '/api/sponsor-crm/organizations?limit=100')).items
+      .filter((item: any) => item.domain === 'merge.example.invalid');
+    assert.equal(orgs.length, 1);
+    assert.equal(orgs[0].id, existingOrg.id);
+    const people = data(await invoke('GET', '/api/sponsor-crm/contacts?limit=100')).items
+      .filter((item: any) => (item.emails || []).includes('pat@merge.example.invalid'));
+    assert.equal(people.length, 1);
+    assert.equal(people[0].id, existingPerson.id);
+  });
+
   it('files live mail to a known person and keeps archive search off the dump path', async () => {
     const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Mail Co', domain: 'mail.example.invalid', sourceKey: 'mail-org' }));
     await invoke('POST', '/api/sponsor-crm/contacts', { organizationId: organization.id, name: 'Mail Person', emails: ['pat@mail.example.invalid'], sourceKey: 'mail-person' });
