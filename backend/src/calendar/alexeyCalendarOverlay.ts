@@ -51,6 +51,17 @@ export function formatBerlinDate(isoString: string): string {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
+export function eachDayOfInterval(from: string, to: string): string[] {
+  const dates: string[] = [];
+  const current = new Date(`${from}T12:00:00Z`);
+  const end = new Date(`${to}T12:00:00Z`);
+  while (current <= end) {
+    dates.push(current.toISOString().slice(0, 10));
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return dates;
+}
+
 export function overlapsOperationalSlotWindow(startIso: string, endIso: string): boolean {
   try {
     const startTime = formatBerlinTime(startIso);
@@ -323,6 +334,20 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
 
       const result: CalendarOverlayItem[] = [];
 
+      interface ProcessedEvent {
+        event: any;
+        isAllDay: boolean;
+        startDate: string;
+        endDate: string;
+        summary: string;
+        slot: 'midday' | 'evening' | 'all-day' | 'outside';
+        isSlotEvent: boolean;
+        startIso?: string;
+        endIso?: string;
+      }
+
+      const validEvents: ProcessedEvent[] = [];
+
       for (const event of events) {
         if (event.status === 'cancelled') continue;
         const isAllDay = !!event.start?.date;
@@ -339,20 +364,15 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
         const summary = (event.summary || '').trim() || '(No title)';
         let startDate: string;
         let endDate: string;
-        let label: string;
 
         if (event.start?.date) {
           // All-day event
           startDate = event.start.date;
           endDate = adjustAllDayEndDate(startDate, event.end?.date);
-          label = summary;
         } else if (event.start?.dateTime) {
           // Timed event
           startDate = formatBerlinDate(event.start.dateTime);
           endDate = formatBerlinDate(event.end?.dateTime || event.start.dateTime);
-          const startTime = formatBerlinTime(event.start.dateTime);
-          const endTime = event.end?.dateTime ? formatBerlinTime(event.end.dateTime) : '';
-          label = endTime && endTime !== startTime ? `${startTime}–${endTime} ${summary}` : `${startTime} ${summary}`;
         } else {
           continue;
         }
@@ -360,20 +380,139 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
         const slot = determineSlotType(startIso, endIso, isAllDay);
         const isSlotEvent = slot !== 'outside';
 
-        result.push({
-          provider: 'alexey-calendar',
-          id: `alexey-calendar:${event.id}`,
+        validEvents.push({
+          event,
+          isAllDay,
           startDate,
           endDate,
-          label,
-          category: 'Alexey',
-          href: event.htmlLink || undefined,
-          status: event.status || 'confirmed',
-          startsAt: event.start?.dateTime || undefined,
-          endsAt: event.end?.dateTime || undefined,
+          summary,
           slot,
           isSlotEvent,
+          startIso,
+          endIso,
         });
+      }
+
+      // If includeAll (day schedule detail view) or showAvailableSlots is explicitly disabled,
+      // return the individual calendar events.
+      if (includeAll || effectiveSettings.showAvailableSlots === false) {
+        for (const item of validEvents) {
+          let label: string;
+          if (item.isAllDay) {
+            label = item.summary;
+          } else {
+            const startTime = formatBerlinTime(item.startIso!);
+            const endTime = item.endIso ? formatBerlinTime(item.endIso) : '';
+            label = endTime && endTime !== startTime ? `${startTime}–${endTime} ${item.summary}` : `${startTime} ${item.summary}`;
+          }
+
+          result.push({
+            provider: 'alexey-calendar',
+            id: `alexey-calendar:${item.event.id}`,
+            startDate: item.startDate,
+            endDate: item.endDate,
+            label,
+            category: 'Alexey',
+            href: item.event.htmlLink || undefined,
+            status: item.event.status || 'confirmed',
+            startsAt: item.event.start?.dateTime || undefined,
+            endsAt: item.event.end?.dateTime || undefined,
+            slot: item.slot,
+            isSlotEvent: item.isSlotEvent,
+            isAvailableSlot: false,
+          });
+        }
+        return result;
+      }
+
+      // Available slots mode (month calendar view):
+      // 1. Project all-day blockers (vacations, conferences, flights, etc.)
+      const allDayBlockers = validEvents.filter(
+        (e) => e.isAllDay || e.slot === 'all-day' || (/vacation|holiday|flight|conference|trip/i.test(e.summary) && e.isSlotEvent),
+      );
+
+      for (const item of allDayBlockers) {
+        result.push({
+          provider: 'alexey-calendar',
+          id: `alexey-calendar:${item.event.id}`,
+          startDate: item.startDate,
+          endDate: item.endDate,
+          label: item.summary,
+          category: 'Alexey',
+          href: item.event.htmlLink || undefined,
+          status: item.event.status || 'confirmed',
+          startsAt: item.event.start?.dateTime || undefined,
+          endsAt: item.event.end?.dateTime || undefined,
+          slot: 'all-day',
+          isSlotEvent: true,
+          isAvailableSlot: false,
+        });
+      }
+
+      // 2. Project available slots across all weekdays in the range
+      const timedEvents = validEvents.filter((e) => !allDayBlockers.includes(e));
+      const dates = eachDayOfInterval(from, to);
+
+      for (const curDate of dates) {
+        const d = new Date(`${curDate}T12:00:00Z`);
+        const dayOfWeek = d.getUTCDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+
+        // Per SOP: "Never schedule anything on weekend"
+        if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+
+        // If covered by an all-day blocker, no slots available on this day
+        const isBlockedAllDay = allDayBlockers.some((b) => b.startDate <= curDate && curDate <= b.endDate);
+        if (isBlockedAllDay) continue;
+
+        // Timed events on this day
+        const dayTimedEvents = timedEvents.filter((e) => e.startDate <= curDate && curDate <= e.endDate);
+
+        // Check Midday Slot (12:30, operational window 11:30–14:00 Berlin time)
+        const hasMiddayConflict = dayTimedEvents.some((e) => {
+          if (!e.startIso || !e.endIso) return false;
+          const startTime = formatBerlinTime(e.startIso);
+          const endTime = formatBerlinTime(e.endIso);
+          return startTime < '14:00' && endTime > '11:30';
+        });
+
+        if (!hasMiddayConflict) {
+          result.push({
+            provider: 'alexey-calendar',
+            id: `alexey-slot:${curDate}:midday`,
+            startDate: curDate,
+            endDate: curDate,
+            label: '12:30 Available',
+            category: 'Available slot',
+            slot: 'midday',
+            isSlotEvent: true,
+            isAvailableSlot: true,
+          });
+        }
+
+        // Check Evening Slot (17:00, operational window 16:30–18:30 Berlin time)
+        // Per SOP: offered on Monday and Tuesday only (US guests)
+        if (dayOfWeek === 1 || dayOfWeek === 2) {
+          const hasEveningConflict = dayTimedEvents.some((e) => {
+            if (!e.startIso || !e.endIso) return false;
+            const startTime = formatBerlinTime(e.startIso);
+            const endTime = formatBerlinTime(e.endIso);
+            return startTime < '18:30' && endTime > '16:30';
+          });
+
+          if (!hasEveningConflict) {
+            result.push({
+              provider: 'alexey-calendar',
+              id: `alexey-slot:${curDate}:evening`,
+              startDate: curDate,
+              endDate: curDate,
+              label: '17:00 Available',
+              category: 'Available slot',
+              slot: 'evening',
+              isSlotEvent: true,
+              isAvailableSlot: true,
+            });
+          }
+        }
       }
 
       return result;

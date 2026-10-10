@@ -235,6 +235,10 @@ export function createPlanningSurface(context) {
               <span class="calendar-settings-hint">Focus strictly on operational availability slots and all-day blockers per SOP:</span>
               <div class="calendar-settings-checkboxes">
                 <label class="calendar-settings-checkbox">
+                  <input type="checkbox" name="showAvailableSlots">
+                  <span>Show available slots <small>(Project free 12:30 lunch & 17:00 evening slots instead of busy meetings)</small></span>
+                </label>
+                <label class="calendar-settings-checkbox">
                   <input type="checkbox" name="filterNonSlotHours">
                   <span>Focus on operational event slots <small>(Lunch 11:30–14:00 & Evening 16:30–18:30 + all-day blockers)</small></span>
                 </label>
@@ -431,9 +435,12 @@ export function createPlanningSurface(context) {
             const isAlexey = overlay.provider === "alexey-calendar";
             const category = overlay.category || (isAlexey ? "Alexey" : "Newsletter");
             const hrefAttr = overlay.href ? `href="${escapeHtml(overlay.href)}"` : "";
-            const tag = overlay.href ? "a" : "span";
+            const isAvailable = Boolean(overlay.isAvailableSlot);
+            const tag = overlay.href ? "a" : (isAvailable ? "button type=\"button\"" : "span");
+            const slotClass = isAvailable ? " is-available-slot" : "";
+            const openDayAttr = isAvailable ? ` data-open-day="${escapeHtml(date)}"` : "";
             return `
-              <${tag} class="calendar-overlay ${isAlexey ? "is-alexey" : "is-newsletter"}" ${hrefAttr} title="${escapeHtml(overlay.label)}">
+              <${tag} class="calendar-overlay ${isAlexey ? "is-alexey" : "is-newsletter"}${slotClass}" ${hrefAttr}${openDayAttr} title="${escapeHtml(overlay.label)}">
                 <small>${escapeHtml(category)}</small>
                 <span>${escapeHtml(overlay.label)}</span>
               </${tag}>
@@ -1002,6 +1009,7 @@ export function createPlanningSurface(context) {
           if (res.settings) {
             const s = res.settings;
             if (settingsForm.elements.connectionId) settingsForm.elements.connectionId.value = s.connectionId || "google-calendar";
+            if (settingsForm.elements.showAvailableSlots) settingsForm.elements.showAvailableSlots.checked = s.showAvailableSlots !== false;
             if (settingsForm.elements.filterNonSlotHours) settingsForm.elements.filterNonSlotHours.checked = s.filterNonSlotHours !== false;
             if (settingsForm.elements.filterDtcPlaceholders) settingsForm.elements.filterDtcPlaceholders.checked = s.filterDtcPlaceholders !== false;
             if (settingsForm.elements.filterTransparent) settingsForm.elements.filterTransparent.checked = s.filterTransparent !== false;
@@ -1039,6 +1047,7 @@ export function createPlanningSurface(context) {
             .filter(Boolean);
           const body = {
             connectionId: settingsForm.elements.connectionId?.value?.trim() || "google-calendar",
+            showAvailableSlots: Boolean(settingsForm.elements.showAvailableSlots?.checked),
             filterNonSlotHours: Boolean(settingsForm.elements.filterNonSlotHours?.checked),
             filterDtcPlaceholders: Boolean(settingsForm.elements.filterDtcPlaceholders?.checked),
             filterTransparent: Boolean(settingsForm.elements.filterTransparent?.checked),
