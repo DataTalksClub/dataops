@@ -379,13 +379,16 @@ export function createPlanningSurface(context) {
         ...["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
           .map((day) => `<strong>${day}</strong>`),
       ].join("");
-      let weekMarkup = "";
+      const todayIso = todayIsoDate(),
+        currentMondayIso = iso(monday(parseIsoDateValue(todayIso)));
+      let weekMarkup = "",
+        weekIsCurrent = false;
       for (let dateValue = new Date(`${from}T00:00:00Z`); dateValue <= new Date(`${to}T00:00:00Z`); dateValue.setUTCDate(dateValue.getUTCDate() + 1)) {
         const dayOfWeek = dateValue.getUTCDay();
         if (dayOfWeek === 0 || dayOfWeek === 6) continue;
         const date = iso(dateValue),
           isOutside = !isWeek && dateValue.getUTCMonth() !== cursor.getUTCMonth(),
-          isToday = date === todayIsoDate(),
+          isToday = date === todayIso,
           dayItems = visibleItems.filter((item) => (
             (item.startKey || item.startDate || "").slice(0, 10) <= date
             && (item.endKey || item.endDate || "").slice(0, 10) >= date
@@ -447,16 +450,17 @@ export function createPlanningSurface(context) {
           }).join("");
         if (dayOfWeek === 1) {
           const currentWeek = weekNumber(dateValue);
+          weekIsCurrent = (date === currentMondayIso);
           weekMarkup += `
-            <div class="calendar-week">
-              <div class="calendar-week-number" aria-label="Week ${currentWeek}">
-                <small class="iso-week">${currentWeek}</small>
+            <div class="calendar-week${weekIsCurrent ? " is-current-week" : ""}">
+              <div class="calendar-week-number${weekIsCurrent ? " is-current-week" : ""}" aria-label="Week ${currentWeek}${weekIsCurrent ? " (Current week)" : ""}" title="${weekIsCurrent ? `Current week (Week ${currentWeek})` : `Week ${currentWeek}`}">
+                <small class="iso-week${weekIsCurrent ? " is-current" : ""}">${currentWeek}</small>
               </div>
           `;
         }
         weekMarkup += `
           <section
-            class="calendar-day${isOutside ? " is-outside" : ""}${isToday ? " is-today" : ""}"
+            class="calendar-day${isOutside ? " is-outside" : ""}${isToday ? " is-today" : ""}${weekIsCurrent ? " is-current-week" : ""}"
             aria-label="${fullDate}"
             data-day="${date}"
           >
