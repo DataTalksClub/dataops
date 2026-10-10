@@ -40,6 +40,11 @@ describe('Alexey calendar overlay and filtering', () => {
         'GLM-5.3-Flash campaign window',
         'Физио',
         'Zahnreinigung',
+        'Busy',
+        'busy',
+        'Занято',
+        'Focus',
+        'Focus time',
       ];
 
       for (const title of filtered) {
@@ -58,7 +63,6 @@ describe('Alexey calendar overlay and filtering', () => {
         'Alexey Grigorev<>Daniel Kravtsov',
         'Alexey / Elias',
         'Amit + Alexey lunch',
-        'Busy',
         'No',
         'Vacation',
         'Flight to Helsinki (AY 1438)',
