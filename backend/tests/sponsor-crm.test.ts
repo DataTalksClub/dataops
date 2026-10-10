@@ -297,6 +297,32 @@ describe('sponsor CRM', () => {
     assert.equal(orgs.find((item: any) => item.domain === 'cash.example.invalid').relationship, 'customer');
   });
 
+  it('imports name-only companies and attaches people by company name', async () => {
+    const imported = await invoke('POST', '/api/sponsor-crm/imports', {
+      companies: [{ displayName: 'Name Only Co', sourceKey: 'name-only-org' }],
+      people: [{
+        email: 'pat@name-only.example.invalid',
+        name: 'Pat Name',
+        organizationDomain: 'Name Only Co',
+        sourceKey: 'name-only-person',
+      }],
+    });
+    assert.equal(imported.statusCode, 200, imported.body);
+    const body = data(imported);
+    assert.equal(body.companies, 1);
+    assert.equal(body.people, 1);
+    const orgs = data(await invoke('GET', '/api/sponsor-crm/organizations?limit=100')).items
+      .filter((item: any) => item.displayName === 'Name Only Co');
+    assert.equal(orgs.length, 1);
+    assert.equal(orgs[0].domain, undefined);
+    const again = await invoke('POST', '/api/sponsor-crm/imports', {
+      companies: [{ displayName: 'Name Only Co', sourceKey: 'name-only-org-again' }],
+    });
+    assert.equal(again.statusCode, 200, again.body);
+    assert.equal(data(again).companies, 0);
+    assert.ok(data(again).duplicates >= 1);
+  });
+
   it('merges imported companies by domain and people by email when source keys differ', async () => {
     const existingOrg = data(await invoke('POST', '/api/sponsor-crm/organizations', {
       displayName: 'Prior Corp',

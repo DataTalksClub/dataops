@@ -109,6 +109,18 @@ export function neverContacted(organization: Record<string, unknown>, deals: Arr
   return !organization.lastOutboundAt && !deals.length && relationshipTag(organization, deals, '2099-01-01') === 'prospect';
 }
 
+export function dealIsComplete(
+  deal: Record<string, unknown>,
+  invoices: Array<Record<string, unknown>>,
+  deliverables: Array<Record<string, unknown>>,
+  today: string,
+): boolean {
+  if (String(deal.status || '') === 'lost') return true;
+  const money = deriveMoney(invoices, today);
+  const fulfillment = deriveFulfillment(deliverables);
+  return money === 'paid' && (fulfillment === 'delivered' || fulfillment === 'none');
+}
+
 export function defaultOwner(why: string, channel = ''): string {
   if (why === 'yes' || why === 'price' || why === 'lost') return ALEXEY_USER_ID;
   if ((why === 'chase_materials' || why === 'copy') && (channel === 'workshop' || channel === 'course')) return VALERIIA_USER_ID;
@@ -186,6 +198,7 @@ export function computeQueue(input: {
       const dealDeliverables = deliverablesByDeal.get(dealId) || [];
       const status = String(deal.status || '');
       if (status === 'lost') continue;
+      if (dealIsComplete(deal, dealInvoices, dealDeliverables, today)) continue;
       const action = deal.nextAction as NextAction | null | undefined;
       if (dealIsRotting(deal)) {
         push(items, {
