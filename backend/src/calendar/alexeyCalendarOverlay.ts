@@ -204,25 +204,35 @@ export function setAlexeyCalendarProviderClientsForTests(value: { secrets?: Secr
   fetcher = value.fetch || fetch;
 }
 
-export async function fetchDapierConnections(config?: AlexeyCalendarConfig): Promise<DapierConnectionOption[]> {
-  const brokerUrl = (config?.brokerUrl || process.env.DAPIER_BASE_URL || 'https://dapier.dtcdev.click').replace(/\/$/, '');
-  let credential = config?.brokerCredential || process.env.DAPIER_API_TOKEN;
+const DAPIER_BASE_URL = 'https://dapier.dtcdev.click';
+const DAPIER_AGENT = 'personal-scheduler';
+const DAPIER_SECRET_NAME = 'personal-scheduler/dapier-api-token';
+const DEFAULT_CALENDAR_CONNECTION = 'google-calendar';
 
-  if (!credential) {
-    const secretName = process.env.DAPIER_API_TOKEN_SECRET_NAME || 'personal-scheduler/dapier-api-token';
-    try {
-      const res = await secretClient.send(new GetSecretValueCommand({ SecretId: secretName }));
-      if (res.SecretString) {
+async function resolveDapierCredential(explicit?: string): Promise<string | undefined> {
+  if (explicit) return explicit;
+  try {
+    const res = await secretClient.send(new GetSecretValueCommand({ SecretId: DAPIER_SECRET_NAME }));
+    if (res.SecretString) {
+      try {
         const parsed = JSON.parse(res.SecretString);
-        credential = parsed.api_token || parsed.token;
+        return parsed.api_token || parsed.token || res.SecretString;
+      } catch {
+        return res.SecretString;
       }
-    } catch {
-      // Secrets manager not configured or inaccessible
     }
+  } catch {
+    // Secrets manager not configured or inaccessible
   }
+  return undefined;
+}
+
+export async function fetchDapierConnections(config?: AlexeyCalendarConfig): Promise<DapierConnectionOption[]> {
+  const brokerUrl = (config?.brokerUrl || DAPIER_BASE_URL).replace(/\/$/, '');
+  const credential = await resolveDapierCredential(config?.brokerCredential);
 
   const fallback: DapierConnectionOption[] = [
-    { connectionId: 'google-calendar', provider: 'google', title: 'google-calendar' },
+    { connectionId: DEFAULT_CALENDAR_CONNECTION, provider: 'google', title: DEFAULT_CALENDAR_CONNECTION },
   ];
 
   if (!credential) {
@@ -263,24 +273,10 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
         activeSettings = DEFAULT_CALENDAR_OVERLAY_SETTINGS;
       }
 
-      const brokerUrl = (config?.brokerUrl || process.env.DAPIER_BASE_URL || 'https://dapier.dtcdev.click').replace(/\/$/, '');
-      const agent = config?.agent || process.env.DAPIER_AGENT || 'personal-scheduler';
-      const connectionId = config?.connectionId || activeSettings.connectionId || process.env.DAPIER_CALENDAR_CONNECTION || 'google-calendar';
-      let credential = config?.brokerCredential || process.env.DAPIER_API_TOKEN;
-
-
-      if (!credential) {
-        const secretName = process.env.DAPIER_API_TOKEN_SECRET_NAME || 'personal-scheduler/dapier-api-token';
-        try {
-          const res = await secretClient.send(new GetSecretValueCommand({ SecretId: secretName }));
-          if (res.SecretString) {
-            const parsed = JSON.parse(res.SecretString);
-            credential = parsed.api_token || parsed.token;
-          }
-        } catch {
-          // Secrets manager not configured or inaccessible
-        }
-      }
+      const brokerUrl = (config?.brokerUrl || DAPIER_BASE_URL).replace(/\/$/, '');
+      const agent = config?.agent || DAPIER_AGENT;
+      const connectionId = config?.connectionId || activeSettings.connectionId || DEFAULT_CALENDAR_CONNECTION;
+      const credential = await resolveDapierCredential(config?.brokerCredential);
 
       if (!credential) {
         return [];
