@@ -357,8 +357,6 @@ describe('Alexey calendar overlay and filtering', () => {
 
   describe('alexeyCalendarOverlay provider', () => {
     it('returns empty list gracefully if no token or credentials are available', async () => {
-      delete process.env.DAPIER_API_TOKEN;
-      delete process.env.DAPIER_API_TOKEN_SECRET_NAME;
       setAlexeyCalendarProviderClientsForTests({
         secrets: {
           send: async () => {
