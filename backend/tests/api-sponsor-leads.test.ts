@@ -31,6 +31,7 @@ function sponsor(overrides: Record<string, unknown> = {}) {
   return {
     name: 'Acme Gadgets',
     url: 'https://acme.example.test/widgets',
+    category: 'tool',
     blurb: 'A fictional widget vendor used only for tests.',
     context: 'Sponsored segment near the middle of the issue.',
     ...overrides,
@@ -140,6 +141,18 @@ describe('sponsor lead intake and review', () => {
     const replay = await handler(intakeRequest('newsletter-shuffled-keys', [sponsor()]), {});
     assert.strictEqual(replay.statusCode, 200);
     assert.strictEqual(JSON.parse(replay.body).status, 'duplicate');
+  });
+
+  it('stores the category and treats a changed category as a conflict', async () => {
+    const first = await handler(intakeRequest('newsletter-310', [sponsor()]), {});
+    assert.strictEqual(first.statusCode, 201);
+    const stored = await getCrmRecord(await getClient(), 'lead', JSON.parse(first.body).leads[0].id);
+    assert.strictEqual((stored?.sponsor as Record<string, unknown>)?.category, 'tool');
+    const same = await handler(intakeRequest('newsletter-310', [sponsor()]), {});
+    assert.strictEqual(same.statusCode, 200);
+    const changed = await handler(intakeRequest('newsletter-310', [sponsor({ category: 'event' })]), {});
+    assert.strictEqual(changed.statusCode, 409);
+    assert.strictEqual(JSON.parse(changed.body).error.code, 'idempotency-conflict');
   });
 
   it('rejects the same sponsor identity with different content', async () => {

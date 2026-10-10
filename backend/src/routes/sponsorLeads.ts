@@ -13,7 +13,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 const SECRET_CACHE_MS = 60_000;
 const TOP_LEVEL_FIELDS = new Set(['version', 'messageId', 'newsletter', 'sponsors']);
 const NEWSLETTER_FIELDS = new Set(['name', 'sender', 'subject', 'receivedAt']);
-const SPONSOR_FIELDS = new Set(['name', 'url', 'blurb', 'context']);
+const SPONSOR_FIELDS = new Set(['name', 'url', 'category', 'blurb', 'context']);
 const LEAD_STATUSES = new Set(['new', 'triaged', 'converted', 'ignored']);
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
@@ -22,7 +22,7 @@ let cachedCredential: { value: string; id: string; expiresAt: number } | null = 
 
 interface Credential { value: string; id: string }
 interface LeadNewsletter { name: string; sender: string; subject: string; receivedAt: string }
-interface LeadSponsor { name: string; url: string; blurb: string; context: string }
+interface LeadSponsor { name: string; url: string; category: string; blurb: string; context: string }
 
 function response(statusCode: number, body: unknown, headers: Record<string, string> = {}): LambdaResponse {
   return { statusCode, headers: { ...JSON_HEADERS, ...headers }, body: JSON.stringify(body) };
@@ -202,6 +202,7 @@ function parseSponsors(value: unknown): LeadSponsor[] {
     return {
       name: text(sponsor.name, `sponsors[${index}].name`, 200),
       url: validatedUrl(sponsor.url, `sponsors[${index}].url`),
+      category: optionalText(sponsor.category, `sponsors[${index}].category`, 40),
       blurb: optionalText(sponsor.blurb, `sponsors[${index}].blurb`, 2000),
       context: optionalText(sponsor.context, `sponsors[${index}].context`, 2000),
     };
@@ -226,6 +227,7 @@ interface LeadValue {
   sponsor: {
     name: string;
     url: string;
+    category: string;
     blurb: string;
     context: string;
     normalizedName: string;
@@ -245,6 +247,7 @@ function canonicalLead(value: LeadValue): Record<string, unknown> {
     newsletter: value.newsletter,
     normalizedName: value.sponsor.normalizedName,
     normalizedUrl: value.sponsor.normalizedUrl,
+    category: value.sponsor.category,
     blurb: value.sponsor.blurb,
     context: value.sponsor.context,
   };
@@ -266,11 +269,15 @@ function stableStringify(value: unknown): string {
 
 function sameCanonical(existing: CrmRecord, value: LeadValue): boolean {
   const sponsor = (existing.sponsor || {}) as Record<string, unknown>;
+  // Leads stored before category existed carry no key; read them as '' so
+  // an old lead replayed without a category still matches (a newly added
+  // category is a content change and conflicts, as it should).
   return stableStringify({
     messageId: existing.messageId,
     newsletter: existing.newsletter,
     normalizedName: sponsor.normalizedName,
     normalizedUrl: sponsor.normalizedUrl,
+    category: typeof sponsor.category === 'string' ? sponsor.category : '',
     blurb: sponsor.blurb,
     context: sponsor.context,
   }) === stableStringify(canonicalLead(value));
@@ -372,6 +379,7 @@ export async function handleSponsorLeadIntake(event: LambdaEvent, client: Dynamo
         sponsor: {
           name: sponsor.name.trim(),
           url: sponsor.url.trim(),
+          category: sponsor.category,
           blurb: sponsor.blurb,
           context: sponsor.context,
           normalizedName: normalizeLeadName(sponsor.name),
