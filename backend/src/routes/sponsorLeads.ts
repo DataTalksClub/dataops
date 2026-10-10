@@ -250,16 +250,30 @@ function canonicalLead(value: LeadValue): Record<string, unknown> {
   };
 }
 
+function stableStringify(value: unknown): string {
+  // DynamoDB does not preserve document key order, so a stored newsletter
+  // can come back with its keys shuffled. An order-sensitive comparison
+  // would then mistake an exact replay for a conflict (live 409 on a
+  // byte-identical retry); sort keys recursively before comparing.
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
 function sameCanonical(existing: CrmRecord, value: LeadValue): boolean {
   const sponsor = (existing.sponsor || {}) as Record<string, unknown>;
-  return JSON.stringify({
+  return stableStringify({
     messageId: existing.messageId,
     newsletter: existing.newsletter,
     normalizedName: sponsor.normalizedName,
     normalizedUrl: sponsor.normalizedUrl,
     blurb: sponsor.blurb,
     context: sponsor.context,
-  }) === JSON.stringify(canonicalLead(value));
+  }) === stableStringify(canonicalLead(value));
 }
 
 async function storeLead(client: DynamoDBDocumentClient, value: LeadValue): Promise<{ id: string; outcome: 'created' | 'duplicate' }> {

@@ -1,7 +1,9 @@
 import { after, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert';
 
+import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
+import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { getCrmRecord } from '../src/db/sponsorCrm';
@@ -118,6 +120,26 @@ describe('sponsor lead intake and review', () => {
     assert.strictEqual(replay.statusCode, 200);
     assert.strictEqual(JSON.parse(replay.body).status, 'duplicate');
     assert.strictEqual(JSON.parse(replay.body).leads[0].id, JSON.parse(first.body).leads[0].id);
+  });
+
+  it('treats a shuffled stored newsletter as the same lead (DynamoDB key order)', async () => {
+    // Real DynamoDB does not preserve document key order: a stored
+    // newsletter can come back with shuffled keys, which must not read as
+    // a conflict on a byte-identical retry (live 409 regression).
+    const first = await handler(intakeRequest('newsletter-shuffled-keys', [sponsor()]), {});
+    assert.strictEqual(first.statusCode, 201);
+    const id = JSON.parse(first.body).leads[0].id;
+    const stored = await getCrmRecord(await getClient(), 'lead', id);
+    const shuffled = { receivedAt: stored?.newsletter.receivedAt, subject: stored?.newsletter.subject, sender: stored?.newsletter.sender, name: stored?.newsletter.name };
+    await (await getClient()).send(new UpdateCommand({
+      TableName: TABLE_SPONSOR_CRM,
+      Key: { PK: `LEAD#${id}`, SK: `LEAD#${id}` },
+      UpdateExpression: 'SET newsletter = :newsletter',
+      ExpressionAttributeValues: { ':newsletter': shuffled },
+    }));
+    const replay = await handler(intakeRequest('newsletter-shuffled-keys', [sponsor()]), {});
+    assert.strictEqual(replay.statusCode, 200);
+    assert.strictEqual(JSON.parse(replay.body).status, 'duplicate');
   });
 
   it('rejects the same sponsor identity with different content', async () => {
