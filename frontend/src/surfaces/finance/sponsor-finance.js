@@ -43,7 +43,6 @@ export function createSponsorFinance(context) {
   financeDialog.dataset.financeDialog = "";
   financeDialog.innerHTML = html`<form>
     <header>
-      <p class="surface-eyebrow">Booking finance</p>
       <h3>Classify sponsor finance</h3>
       <p>Record what must be invoiced before linking evidence.</p>
     </header>
@@ -90,7 +89,6 @@ export function createSponsorFinance(context) {
   financeCandidateDialog.dataset.financeCandidateDialog = "";
   financeCandidateDialog.innerHTML = html`<form>
     <header>
-      <p class="surface-eyebrow">Booking finance</p>
       <h3 data-title>Link finance evidence</h3>
       <p>Only eligible, unclaimed Bookkeeping evidence is shown.</p>
     </header>
@@ -326,7 +324,6 @@ export function createSponsorFinance(context) {
       >
       <header>
         <div>
-          <p class="section-kicker">Payment position</p>
           <h3>${escapeHtml(humanizeOptionLabel(projection.paymentState))}</h3>
           <p>
             ${escapeHtml(humanizeOptionLabel(projection.invoiceState))} ·

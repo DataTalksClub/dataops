@@ -84,6 +84,7 @@ body[data-workspace-view="sponsors"] .document-list {
   justify-content: space-between;
   gap: 16px;
 }.bookkeeping-header h2,
+.crm-header h1,
 .crm-header h2,
 .booking-detail-header h2 {
   margin-bottom: 4px;
@@ -610,7 +611,7 @@ body[data-workspace-view="sponsors"] .document-list {
   display: grid;
   align-items: start;
 }.crm-booking-row[aria-current="true"] {
-  background: var(--dk-accent-soft);
+  background: var(--dk-bg-muted);
 }.crm-booking-row strong,
 .booking-detail-header strong {
   margin-right: 8px;
@@ -625,7 +626,7 @@ body[data-workspace-view="sponsors"] .document-list {
 }.crm-directory .section-header label {
   width: 130px;
 }.crm-select-booking {
-  min-height: 260px;
+  min-height: 0;
 }.booking-detail-header {
   padding: 16px;
 }.booking-detail-header h2 {

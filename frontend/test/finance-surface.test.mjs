@@ -461,7 +461,7 @@ describe("Finance surface boundary", () => {
     continuationOnline = true;
     await clickAlertControl("[data-load-sponsor-alerts]");
     const renderedArticleCount = [
-      ...alerts.innerHTML.matchAll(/<article class="crm-card">/g),
+      ...alerts.innerHTML.matchAll(/<article class="crm-card crm-alert-row">/g),
     ].length;
     assert.equal(renderedArticleCount, 3);
     assert.match(alerts.innerHTML, /First alert/);

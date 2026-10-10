@@ -3,12 +3,7 @@ import { html } from "./shared.js";
 export function sponsorSurfaceMarkup(bookingStatusOptions) {
   return html`<header class="crm-header">
       <div>
-        <p class="surface-eyebrow">Partner operations</p>
         <h1>Sponsors</h1>
-        <p>
-          Move each booking from agreement through publication, payment, and
-          reviewed follow-up.
-        </p>
       </div>
       <div class="surface-actions">
         <button data-evaluate-communications>Refresh suggestions</button
@@ -19,11 +14,14 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
     <p data-crm-message class="surface-status" role="status">
       Loading sponsor CRM…
     </p>
+    <nav class="crm-pipeline" data-crm-pipeline aria-label="Booking pipeline"></nav>
+    <section class="crm-alerts" aria-label="Alerts">
+      <div data-crm-alerts>Loading alerts…</div>
+    </section>
     <div class="crm-layout">
       <section class="crm-master" aria-labelledby="crm-bookings-heading">
         <header class="section-header">
           <div>
-            <p class="section-kicker">Booking queue</p>
             <h3 id="crm-bookings-heading">Bookings</h3>
           </div>
           <span data-booking-count class="section-count"></span>
@@ -35,7 +33,7 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
               data-crm-search
               type="search"
               placeholder="Sponsor name" /></label
-          ><label
+          ><label class="visually-hidden"
             >Booking status
             <select data-crm-status>
               <option value="">All statuses</option>
@@ -53,42 +51,29 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
             history in one place.
           </p>
         </div>
+        <div data-crm-upcoming></div>
       </section>
     </div>
-    <section class="crm-support-grid">
-      <section class="crm-directory" aria-labelledby="crm-sponsors-heading">
-        <header class="section-header">
-          <div>
-            <p class="section-kicker">Partner directory</p>
-            <h3 id="crm-sponsors-heading">Sponsor organizations</h3>
-          </div>
-          <label
-            >Show
-            <select data-crm-active>
-              <option value="true">Active</option>
-              <option value="false">Archived</option>
-              <option value="">All</option>
-            </select></label
-          >
-        </header>
-        <div data-crm-orgs>Loading sponsors…</div>
-      </section>
-      <section class="crm-alerts" aria-labelledby="crm-alerts-heading">
-        <header class="section-header">
-          <div>
-            <p class="section-kicker">Follow-up</p>
-            <h3 id="crm-alerts-heading">Booking alerts</h3>
-          </div>
-        </header>
-        <div data-crm-alerts>Loading alerts…</div>
-      </section>
+    <section class="crm-directory" aria-labelledby="crm-sponsors-heading">
+      <header class="section-header">
+        <div>
+          <h3 id="crm-sponsors-heading">Organizations</h3>
+        </div>
+        <label
+          >Show
+          <select data-crm-active>
+            <option value="true">Active</option>
+            <option value="false">Archived</option>
+            <option value="">All</option>
+          </select></label
+        >
+      </header>
+      <div data-crm-orgs>Loading sponsors…</div>
     </section>
     <dialog class="surface-dialog" data-org-dialog>
       <form method="dialog">
         <header>
-          <p class="surface-eyebrow">Partner record</p>
           <h3>Sponsor organization</h3>
-          <p>Add the public-facing name operators will recognize.</p>
         </header>
         <div class="dialog-fields">
           <label>Name <input name="displayName" required /></label
@@ -104,9 +89,7 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
     <dialog class="surface-dialog" data-contact-dialog>
       <form method="dialog">
         <header>
-          <p class="surface-eyebrow">Partner record</p>
           <h3>Contact</h3>
-          <p>Contact details stay attached to the sponsor organization.</p>
         </header>
         <div class="dialog-fields">
           <input name="organizationId" type="hidden" /><label
@@ -128,7 +111,6 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
     <dialog class="surface-dialog" data-suppression-dialog>
       <form method="dialog">
         <header>
-          <p class="surface-eyebrow">Delivery safety</p>
           <h3>Suppress sponsor email</h3>
           <p>
             This immediately blocks future review and dispatch for the selected
@@ -155,12 +137,7 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
     <dialog class="surface-dialog surface-dialog-wide" data-booking-dialog>
       <form method="dialog">
         <header>
-          <p class="surface-eyebrow">Booking record</p>
           <h3>Sponsor booking</h3>
-          <p>
-            Dates and status drive the operator queue. Links and notes remain
-            supporting context.
-          </p>
         </header>
         <div class="dialog-fields booking-form-grid">
           <input name="bookingId" type="hidden" /><input
@@ -219,7 +196,6 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
     >
       <form method="dialog">
         <header>
-          <p class="surface-eyebrow">Reviewed communication</p>
           <h3>Draft sponsor message</h3>
           <p>Drafting does not approve or send a message.</p>
         </header>
@@ -257,7 +233,6 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
     >
       <form method="dialog">
         <header>
-          <p class="surface-eyebrow">Final approval gate</p>
           <h3>Exact message review</h3>
           <p class="error-banner" data-review-warning></p>
         </header>
@@ -290,7 +265,6 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
     >
       <form method="dialog">
         <header>
-          <p class="surface-eyebrow">Confirm change</p>
           <h3 data-confirm-title></h3>
           <p data-confirm-description></p>
         </header>

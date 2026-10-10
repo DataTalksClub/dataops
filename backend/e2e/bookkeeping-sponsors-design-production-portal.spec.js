@@ -20,6 +20,7 @@ const SCREENSHOTS = path.resolve(
 let server;
 
 async function setTheme(page, dark) {
+  await page.emulateMedia({ colorScheme: dark ? "dark" : "light" });
   await page.evaluate((enabled) => {
     document.documentElement.dataset.theme = enabled ? "dark" : "light";
     localStorage.setItem("dakit-theme", enabled ? "dark" : "light");
@@ -244,8 +245,12 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     const root = await page.goto("/#/sponsors");
     assertOwnedServerResponse(server, root, "sponsor design root");
     await expect(page.getByRole("heading", { name: "Sponsors" })).toBeVisible();
+    await expect(page.locator("[data-crm-pipeline]")).toContainText("Materials Pending");
+    await expect(page.locator("[data-crm-pipeline]")).not.toContainText("Inquiry");
+    await expect(page.locator("[data-crm-alerts]")).toContainText("Due 3 Sept");
+    await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-queue-light.png") });
     await page.getByLabel("Bookings").getByRole("button", { name: "Open booking" }).click();
-    await expect(page.getByRole("heading", { name: "Booking detail" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Booking detail sections" })).toContainText("Finance");
     await expect(page.locator('[data-booking-panel="communications"]')).toContainText("Draft version 2");
     await expect(page.locator(".crm-booking-row[aria-current=true]")).toHaveCSS("border-left-width", "0px");
@@ -254,8 +259,13 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-desktop-light.png") });
 
     await setTheme(page, true);
-    await expect(page.getByRole("heading", { name: "Booking detail" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
     await expectPalette(page, true);
+    await expect(page.locator(".crm-booking-row[aria-current=true] p")).toHaveCSS(
+      "color",
+      "rgb(230, 237, 243)",
+    );
+    await expect(page.locator("[data-crm-alerts]")).toContainText("Due 3 Sept");
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-desktop-dark.png") });
 
     await page.getByRole("button", { name: "Review exact draft" }).click();
@@ -285,7 +295,7 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await expectNoPageOverflow(page, 390);
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-mobile-dark.png") });
     await setTheme(page, false);
-    await expect(page.getByRole("heading", { name: "Booking detail" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
     await expectPalette(page, false);
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-mobile-light.png") });
 

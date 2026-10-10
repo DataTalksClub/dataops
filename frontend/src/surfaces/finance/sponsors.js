@@ -175,17 +175,15 @@ export function createSponsorCrmSurface(context) {
         <header class="booking-detail-header">
           <div>
             <button type="button" class="booking-back" data-close-booking>
-              ← Return to bookings
+              ← Bookings
             </button>
-            <p class="surface-eyebrow">
+            <p class="booking-kind">
               ${escapeHtml(humanizeOptionLabel(booking.slotType || "sponsor"))}
               booking
             </p>
-            <h2>Booking detail</h2>
+            <h2>${escapeHtml(org?.displayName || "Unknown sponsor")}</h2>
             <p>
-              <strong
-                >${escapeHtml(org?.displayName || "Unknown sponsor")}</strong
-              ><span class="status-label"
+              <span class="status-label"
                 >${escapeHtml(humanizeOptionLabel(booking.status))}</span
               >
             </p>
@@ -222,23 +220,38 @@ export function createSponsorCrmSurface(context) {
             data-booking-panel="overview"
           >
             <header>
-              <p class="section-kicker">Current work</p>
               <h3>Overview</h3>
             </header>
             <dl class="booking-overview-list">
               <div>
                 <dt>Publication</dt>
                 <dd>
-                  ${escapeHtml(booking.plannedPublicationDate || "Not set")}
+                  ${escapeHtml(
+                    booking.plannedPublicationDate
+                      ? humanSponsorDate(booking.plannedPublicationDate)
+                      : "Not set",
+                  )}
                 </dd>
               </div>
               <div>
                 <dt>Material deadline</dt>
-                <dd>${escapeHtml(booking.materialDeadline || "Not set")}</dd>
+                <dd>
+                  ${escapeHtml(
+                    booking.materialDeadline
+                      ? humanSponsorDate(booking.materialDeadline)
+                      : "Not set",
+                  )}
+                </dd>
               </div>
               <div>
                 <dt>Next action</dt>
-                <dd>${escapeHtml(booking.nextActionDate || "Not set")}</dd>
+                <dd>
+                  ${escapeHtml(
+                    booking.nextActionDate
+                      ? humanSponsorDate(booking.nextActionDate)
+                      : "Not set",
+                  )}
+                </dd>
               </div>
               <div>
                 <dt>Primary contact</dt>
@@ -280,7 +293,6 @@ export function createSponsorCrmSurface(context) {
             aria-labelledby="crm-communications-heading"
           >
             <header>
-              <p class="section-kicker">Reviewed delivery</p>
               <h3 id="crm-communications-heading">Communications</h3>
               <p>Suggestions never draft, approve, or send automatically.</p>
             </header>
@@ -296,7 +308,6 @@ export function createSponsorCrmSurface(context) {
             data-booking-panel="history"
           >
             <header>
-              <p class="section-kicker">Audit trail</p>
               <h3>History</h3>
             </header>
             <div class="crm-history">${historyMarkup}</div>
@@ -347,6 +358,82 @@ export function createSponsorCrmSurface(context) {
         )
         .join("");
     }
+    function bookingRank(item) {
+      const closed = item.status === "complete" || item.status === "cancelled";
+      const action = item.nextActionDate || "9999-99-99";
+      return `${closed ? "1" : "0"}:${action}`;
+    }
+    function organizationName(organizationId) {
+      return (
+        organizations.find((item) => item.id === organizationId)?.displayName ||
+        "Unknown sponsor"
+      );
+    }
+    function drawPipeline(shownIds) {
+      const pipeline = surface.querySelector("[data-crm-pipeline]");
+      const selected = surface.querySelector("[data-crm-status]").value;
+      const counted = bookings.filter((item) => shownIds.has(item.organizationId));
+      const counts = Object.fromEntries(bookingStatuses.map((status) => [status, 0]));
+      for (const item of counted) {
+        if (counts[item.status] != null) counts[item.status] += 1;
+      }
+      pipeline.innerHTML = html`<button
+          type="button"
+          data-pipeline-status=""
+          aria-pressed="${selected === "" ? "true" : "false"}"
+        >
+          All <strong>${counted.length}</strong>
+        </button>${bookingStatuses
+          .filter((status) => counts[status] > 0 || selected === status)
+          .map(
+            (status) => html`<button
+              type="button"
+              data-pipeline-status="${escapeHtml(status)}"
+              aria-pressed="${selected === status ? "true" : "false"}"
+            >
+              ${escapeHtml(humanizeOptionLabel(status))}
+              <strong>${counts[status]}</strong>
+            </button>`,
+          )
+          .join("")}`;
+    }
+    function drawUpcoming(shownIds) {
+      if (surface.classList.contains("has-booking-detail")) return;
+      const upcomingRoot = surface.querySelector("[data-crm-upcoming]");
+      if (!upcomingRoot) return;
+      const upcoming = bookings
+        .filter(
+          (item) =>
+            shownIds.has(item.organizationId) &&
+            item.nextActionDate &&
+            item.status !== "complete" &&
+            item.status !== "cancelled",
+        )
+        .sort((left, right) =>
+          String(left.nextActionDate).localeCompare(String(right.nextActionDate)),
+        )
+        .slice(0, 6);
+      upcomingRoot.innerHTML = upcoming.length
+        ? html`<h3>Next actions</h3>
+            <ul class="crm-upcoming-list">
+              ${upcoming
+                .map(
+                  (item) => html`<li>
+                    <button
+                      type="button"
+                      data-open-booking="${escapeHtml(item.id)}"
+                    >
+                      <strong
+                        >${escapeHtml(organizationName(item.organizationId))}</strong
+                      >
+                      <span>${escapeHtml(humanSponsorDate(item.nextActionDate))}</span>
+                    </button>
+                  </li>`,
+                )
+                .join("")}
+            </ul>`
+        : "";
+    }
     function draw() {
       const search = surface
           .querySelector("[data-crm-search]")
@@ -366,7 +453,7 @@ export function createSponsorCrmSurface(context) {
                   <div>
                     <strong>${escapeHtml(item.displayName)}</strong>
                     <p>
-                      ${item.archivedAt ? "Archived organization" : "Active organization"}
+                      ${item.archivedAt ? "Archived" : "Active"}
                     </p>
                   </div>
                   <div class="row-actions">
@@ -382,37 +469,39 @@ export function createSponsorCrmSurface(context) {
             <p>Adjust filters or add the first sponsor.</p>
           </div>`;
       const shownIds = new Set(shown.map((item) => item.id));
-      const visible = bookings.filter(
-        (item) =>
-          shownIds.has(item.organizationId) &&
-          (!status || item.status === status),
-      );
+      drawPipeline(shownIds);
+      const visible = bookings
+        .filter(
+          (item) =>
+            shownIds.has(item.organizationId) &&
+            (!status || item.status === status),
+        )
+        .slice()
+        .sort((left, right) => bookingRank(left).localeCompare(bookingRank(right)));
       surface.querySelector("[data-booking-count]").textContent =
         `${visible.length} ${visible.length === 1 ? "booking" : "bookings"}`;
       surface.querySelector("[data-crm-bookings]").innerHTML = visible.length
         ? visible
             .map((item) => {
-              const org = organizations.find(
-                (value) => value.id === item.organizationId,
-              );
+              const nextAction = item.nextActionDate
+                ? `Next ${humanSponsorDate(item.nextActionDate)}`
+                : "Next action not set";
+              const publication = item.plannedPublicationDate
+                ? `Publishes ${humanSponsorDate(item.plannedPublicationDate)}`
+                : "Publication not set";
               return html`<article
                 class="crm-booking-row"
                 ${item.id === sponsorCommunications.selectedBookingId ? 'aria-current="true"' : ""}
               >
                 <div>
                   <strong
-                    >${escapeHtml(org?.displayName || "Unknown sponsor")}</strong
+                    >${escapeHtml(organizationName(item.organizationId))}</strong
                   ><span class="status-label"
                     >${escapeHtml(humanizeOptionLabel(item.status))}</span
                   >
                   <p>
-                    ${escapeHtml(
-                      item.plannedPublicationDate
-                        ? `Publication ${humanSponsorDate(item.plannedPublicationDate)}`
-                        : "Publication not set",
-                    )}
-                    · next action
-                    ${escapeHtml(item.nextActionDate ? humanSponsorDate(item.nextActionDate) : "not set")}
+                    ${escapeHtml(humanizeOptionLabel(item.slotType || "sponsor"))}
+                    · ${escapeHtml(nextAction)} · ${escapeHtml(publication)}
                   </p>
                 </div>
                 <div class="row-actions">
@@ -429,6 +518,7 @@ export function createSponsorCrmSurface(context) {
             <strong>No bookings</strong>
             <p>Create a booking or adjust filters.</p>
           </div>`;
+      drawUpcoming(shownIds);
     }
     function humanSponsorDate(value) {
     const iso = String(value || "").slice(0, 10);
@@ -500,6 +590,19 @@ export function createSponsorCrmSurface(context) {
     surface
       .querySelectorAll("[data-crm-search],[data-crm-active],[data-crm-status]")
       .forEach((input) => input.addEventListener("input", draw));
+    surface.querySelector("[data-crm-pipeline]").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-pipeline-status]");
+      if (!button) return;
+      surface.querySelector("[data-crm-status]").value =
+        button.getAttribute("data-pipeline-status") || "";
+      draw();
+    });
+    surface.querySelector("[data-crm-detail]").addEventListener("click", (event) => {
+      if (surface.classList.contains("has-booking-detail")) return;
+      const open = event.target.closest("[data-open-booking]")?.dataset
+        .openBooking;
+      if (open) navigateCanonicalWorkspace("/sponsors", { bookingId: open });
+    });
     surface.querySelector("[data-add-org]").onclick = () =>
       openDialog(surface.querySelector("[data-org-dialog]"));
     surface.querySelector("[data-add-booking]").onclick = () =>

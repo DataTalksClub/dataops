@@ -190,6 +190,7 @@ body[data-workspace-view="sponsors"] .library-view {
 .finance-panel > header {
     display: grid;
   }.bookkeeping-header h2,
+.crm-header h1,
 .crm-header h2 {
     font-size: 22px;
   }.bookkeeping-header .primary-button,
@@ -258,9 +259,10 @@ body[data-workspace-view="sponsors"] .library-view {
     grid-column: auto;
   }.bookkeeping-document-row,
 .crm-directory-row,
-.crm-alerts .crm-card,
 .booking-detail-section .crm-card {
     display: grid;
+  }.sponsor-crm-surface .crm-alert-row {
+    display: flex;
   }.bookkeeping-document-row .row-actions,
 .crm-directory-row .row-actions {
     justify-content: flex-start;
@@ -274,7 +276,10 @@ body[data-workspace-view="sponsors"] .library-view {
   }.crm-detail-pane,
 .sponsor-crm-surface.has-booking-detail > .crm-header,
 .sponsor-crm-surface.has-booking-detail > .surface-status,
+.sponsor-crm-surface.has-booking-detail > .crm-pipeline,
+.sponsor-crm-surface.has-booking-detail > .crm-alerts,
 .sponsor-crm-surface.has-booking-detail .crm-master,
+.sponsor-crm-surface.has-booking-detail > .crm-directory,
 .sponsor-crm-surface.has-booking-detail > .crm-support-grid {
     display: none;
   }.sponsor-crm-surface.has-booking-detail .crm-detail-pane {

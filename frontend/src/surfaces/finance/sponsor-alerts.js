@@ -1,5 +1,17 @@
 import { html } from "./shared.js";
 
+function humanAlertDate(value) {
+  if (!value || value === "now") return "now";
+  const iso = String(value).slice(0, 10);
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(parsed);
+}
+
 export function renderSponsorBookingAlerts({
   surface,
   notificationState,
@@ -14,9 +26,9 @@ export function renderSponsorBookingAlerts({
     ? alerts
         .map(
           (item) =>
-            html`<article class="crm-card">
+            html`<article class="crm-card crm-alert-row">
               <strong>${escapeHtml(item.message)}</strong>
-              <p>Due ${escapeHtml(item.dueAt || "now")}</p>
+              <p>Due ${escapeHtml(humanAlertDate(item.dueAt))}</p>
               <button
                 data-alert-booking="${escapeHtml(
                   item.metadata.sponsorBookingId ||
@@ -73,4 +85,15 @@ export function renderSponsorBookingAlerts({
 
   surface.querySelector("[data-crm-alerts]").innerHTML =
     `${alertCards}${continuation}`;
+  const section = surface.querySelector(".crm-alerts");
+  if (section) {
+    const empty =
+      !alerts.length &&
+      notificationState.complete &&
+      !notificationState.failed &&
+      !notificationState.loading &&
+      !notificationState.loadingMore &&
+      !notificationState.moreAvailable;
+    section.hidden = empty;
+  }
 }
