@@ -176,7 +176,7 @@ export function createSponsorCommunications(context) {
       const query = new URLSearchParams({ limit: "50" });
       if (cursor) query.set("cursor", cursor);
       const result = await api(
-        `/bookings/${bookingId}/communications?${query}`,
+        `/deals/${bookingId}/communications?${query}`,
       );
       items.push(...(result.items || []));
       communicationConfig = result.config || { enabled: false };

@@ -18,7 +18,7 @@ export function createSponsorFinance(context) {
   const financeApi = async (bookingId, suffix = "", options = {}) => {
     const response = await fetch(
       workApiUrl(
-        `/api/sponsor-crm/bookings/${encodeURIComponent(bookingId)}/finance${suffix}`,
+        `/api/sponsor-crm/deals/${encodeURIComponent(bookingId)}/finance${suffix}`,
       ),
       {
         headers: {
@@ -182,7 +182,7 @@ export function createSponsorFinance(context) {
     }
   };
   const financeMutation = async (booking, suffix, method, body) => {
-    const requestBody = { bookingVersion: booking.version, ...body };
+    const requestBody = { dealVersion: booking.version, ...body };
     const scope = `${booking.id}:${method}:${suffix}:${JSON.stringify(requestBody)}`;
     const idempotencyKey = pendingFinanceKeys.get(scope) || crypto.randomUUID();
     pendingFinanceKeys.set(scope, idempotencyKey);
@@ -218,7 +218,7 @@ export function createSponsorFinance(context) {
         <div class="honest-state">
           <strong>Finance is not classified</strong>
           <p>
-            This booking has not been classified. Record whether an invoice is
+            This deal has not been classified. Record whether an invoice is
             required before linking invoice or payment evidence.
           </p>
           ${

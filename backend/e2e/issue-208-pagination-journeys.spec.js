@@ -292,7 +292,7 @@ test.describe('issue 208 paginated collections', () => {
       dueAt: '2026-08-30',
       id,
       message,
-      metadata: { sponsorBookingId: 'booking-pagination' },
+      metadata: { sponsorDealId: 'booking-pagination' },
     });
     await page.route('**/work/api/notifications*', async (route) => {
       const cursor = new URL(route.request().url()).searchParams.get('cursor');
@@ -320,12 +320,15 @@ test.describe('issue 208 paginated collections', () => {
         return json(route, 200, { items: [{ displayName: 'Pagination Sponsor', id: 'sponsor-org' }] });
       }
       if (pathname.endsWith('/contacts')) return json(route, 200, { items: [] });
-      if (pathname.endsWith('/bookings')) {
+      if (pathname.endsWith('/queue')) return json(route, 200, { items: [] });
+      if (pathname.endsWith('/leads')) return json(route, 200, { items: [] });
+      if (pathname.endsWith('/deals')) {
         return json(route, 200, {
           items: [{
             id: 'booking-pagination',
             organizationId: 'sponsor-org',
-            status: 'confirmed',
+            status: 'agreed',
+            nextAction: { type: 'follow_up', due: '2026-08-30', owner: '00000000-0000-0000-0000-000000000001', note: 'nudge' },
           }],
         });
       }
@@ -336,7 +339,7 @@ test.describe('issue 208 paginated collections', () => {
     const alerts = page.locator('[data-crm-alerts]');
     const articles = alerts.locator('article.crm-card strong');
     await expect(articles).toHaveText(['Sponsor alert one', 'Sponsor alert two']);
-    await expect(alerts).toContainText('More booking alerts are available.');
+    await expect(alerts).toContainText('More sponsor alerts are available.');
     await captureDesktopAndMobile(page, 'sponsor-alerts-more-available');
 
     await keyboardRetry(

@@ -851,7 +851,7 @@ test.describe('canonical frontend capability behavior', () => {
     const page = await admin.newPage();
     await page.goto('/#/sponsors');
     await expect(page.getByText('No sponsors found')).toBeVisible();
-    await expect(page.getByText('No bookings')).toBeVisible();
+    await expect(page.getByText('No live deals')).toBeVisible();
     const id = unique('sponsor');
     const organizationResponse = await admin.request.post('/api/sponsor-crm/organizations', { data: {
       displayName: `Synthetic Sponsor ${id}`, notes: 'Synthetic private note', sourceKey: `${id}-org`,
@@ -861,51 +861,57 @@ test.describe('canonical frontend capability behavior', () => {
       organizationId: organization.id, name: 'Synthetic Contact', emails: ['synthetic-contact@example.invalid'], primary: true, sourceKey: `${id}-contact`,
     } });
     const contact = await json(contactResponse);
-    const bookingResponse = await admin.request.post('/api/sponsor-crm/bookings', { data: {
-      organizationId: organization.id, primaryContactId: contact.id, slotType: 'main', status: 'inquiry',
-      plannedPublicationDate: '2026-09-01', sourceKey: `${id}-booking`,
+    const bookingResponse = await admin.request.post('/api/sponsor-crm/deals', { data: {
+      organizationId: organization.id, primaryContactId: contact.id, status: 'open',
+      nextAction: { type: 'follow_up', due: '2026-09-01', owner: '00000000-0000-0000-0000-000000000001', note: 'route' },
+      sourceKey: `${id}-booking`,
     } });
     const booking = await json(bookingResponse);
-    const adminMutation = await admin.request.put(`/api/sponsor-crm/bookings/${booking.id}`, { data: {
-      version: booking.version, status: 'confirmed', historyNote: 'Synthetic permitted update',
+    const adminMutation = await admin.request.put(`/api/sponsor-crm/deals/${booking.id}`, { data: {
+      version: booking.version, status: 'agreed',
+      nextAction: { type: 'follow_up', due: '2026-09-01', owner: '00000000-0000-0000-0000-000000000001', note: 'route' },
+      historyNote: 'Synthetic permitted update',
     } });
     expect(adminMutation.status()).toBe(200);
     const updatedBooking = await json(adminMutation);
-    const conflict = await admin.request.put(`/api/sponsor-crm/bookings/${booking.id}`, { data: {
-      version: booking.version, status: 'cancelled',
+    const conflict = await admin.request.put(`/api/sponsor-crm/deals/${booking.id}`, { data: {
+      version: booking.version, status: 'lost',
     } });
     expect(conflict.status()).toBe(409);
 
     const operatorOrganization = await json(await operator.request.post('/api/sponsor-crm/organizations', { data: {
       displayName: `Synthetic Operator Sponsor ${id}`, notes: 'Operator-private synthetic note', sourceKey: `${id}-operator-org`,
     } }));
-    const operatorBooking = await json(await operator.request.post('/api/sponsor-crm/bookings', { data: {
-      organizationId: operatorOrganization.id, slotType: 'main', status: 'inquiry', sourceKey: `${id}-operator-booking`,
+    const operatorBooking = await json(await operator.request.post('/api/sponsor-crm/deals', { data: {
+      organizationId: operatorOrganization.id, status: 'open',
+      nextAction: { type: 'follow_up', due: '2026-09-01', owner: '00000000-0000-0000-0000-000000000001', note: 'route' },
+      sourceKey: `${id}-operator-booking`,
     } }));
-    const operatorProjection = await operator.request.get(`/api/sponsor-crm/bookings/${operatorBooking.id}/finance`);
+    const operatorProjection = await operator.request.get(`/api/sponsor-crm/deals/${operatorBooking.id}/finance`);
     expect(operatorProjection.status()).toBe(200);
     expect(await json(operatorProjection)).toMatchObject({ role: 'operator', classified: false });
-    const operatorMutation = await operator.request.put(`/api/sponsor-crm/bookings/${operatorBooking.id}/finance`, { data: {
-      bookingVersion: operatorBooking.version, invoiceRequirement: 'required', amountDue: '99', currency: 'EUR', taxMode: 'included', taxAmount: '0',
+    const operatorMutation = await operator.request.put(`/api/sponsor-crm/deals/${operatorBooking.id}/finance`, { data: {
+      dealVersion: operatorBooking.version, invoiceRequirement: 'required', amountDue: '99', currency: 'EUR', taxMode: 'included', taxAmount: '0',
     }, headers: { 'idempotency-key': `${id}-operator-denied` } });
     expect(operatorMutation.status()).toBe(403);
 
-    await page.goto(`/#/sponsors?bookingId=${updatedBooking.id}`);
+    await page.goto(`/#/sponsors?dealId=${updatedBooking.id}`);
     await expect(page.locator('[data-crm-detail]')).toContainText(`Synthetic Sponsor ${id}`);
-    await expect(page.locator('[data-crm-detail] .status-label')).toHaveText('Confirmed');
+    await expect(page.locator('[data-crm-detail] .status-label').first()).toHaveText('Agreed');
     await expect(page.locator('[data-crm-detail]')).not.toContainText('Synthetic private note');
     await page.reload();
     await expect(page.locator('[data-crm-detail]')).toContainText(`Synthetic Sponsor ${id}`);
     await page.goto('/#/sponsors');
+    await page.getByRole('button', { name: 'Pipeline' }).click();
     const bookingCard = page.locator('[data-crm-bookings] article', { hasText: `Synthetic Sponsor ${id}` });
     await bookingCard.getByRole('button', { name: 'Edit' }).click();
-    const latestBooking = await json(await admin.request.get(`/api/sponsor-crm/bookings/${updatedBooking.id}`));
-    expect((await admin.request.put(`/api/sponsor-crm/bookings/${updatedBooking.id}`, { data: {
-      version: latestBooking.version, status: 'materials-pending', historyNote: 'Concurrent synthetic change',
+    const latestBooking = await json(await admin.request.get(`/api/sponsor-crm/deals/${updatedBooking.id}`));
+    expect((await admin.request.put(`/api/sponsor-crm/deals/${updatedBooking.id}`, { data: {
+      version: latestBooking.version, status: 'lost', lostReason: 'timing', historyNote: 'Concurrent synthetic change',
     } })).status()).toBe(200);
-    const bookingDialog = page.locator('[data-booking-dialog]');
-    await bookingDialog.locator('select[name="status"]').selectOption('scheduled');
-    await bookingDialog.getByRole('button', { name: 'Save booking' }).click();
+    const bookingDialog = page.locator('[data-deal-dialog]');
+    await bookingDialog.locator('select[name="status"]').selectOption('lost');
+    await bookingDialog.getByRole('button', { name: 'Save deal' }).click();
     await expect(page.locator('[data-crm-message]')).toContainText('Record was changed; reload and retry');
     await expect(bookingDialog).toBeVisible();
     await bookingDialog.getByRole('button', { name: 'Cancel' }).click();
@@ -917,16 +923,16 @@ test.describe('canonical frontend capability behavior', () => {
     await page.reload();
     await expect(page.getByRole('article').filter({ hasText: `Synthetic Sponsor ${id}` }).first()).toBeVisible();
     const operatorPage = await operator.newPage();
-    await operatorPage.goto(`/#/sponsors?bookingId=${operatorBooking.id}`);
+    await operatorPage.goto(`/#/sponsors?dealId=${operatorBooking.id}`);
     await expect(operatorPage.locator('[data-crm-detail]')).toContainText(`Synthetic Operator Sponsor ${id}`);
-    await expect(operatorPage.locator('[data-finance-panel]')).toContainText('This booking has not been classified');
+    await expect(operatorPage.locator('[data-finance-panel]')).toContainText('This deal has not been classified');
     await expect(operatorPage.locator('[data-finance-panel] [data-finance-classify]')).toHaveCount(0);
     await expect(operatorPage.locator('[data-crm-detail]')).not.toContainText('Operator-private synthetic note');
     await admin.close();
     await operator.close();
     recordCapabilityEvidence(testInfo, [
-      { route: '/#/sponsors?bookingId=<id>', roleId: 'admin', stateIds: ['sponsors.empty', 'sponsors.ready-detail', 'sponsors.admin-mutation', 'sponsors.conflict', 'sponsors.failure'] },
-      { route: '/#/sponsors?bookingId=<id>', roleId: 'operator', stateIds: ['sponsors.operator-safe-read', 'sponsors.operator-denied'] },
+      { route: '/#/sponsors?dealId=<id>', roleId: 'admin', stateIds: ['sponsors.empty', 'sponsors.ready-detail', 'sponsors.admin-mutation', 'sponsors.conflict', 'sponsors.failure'] },
+      { route: '/#/sponsors?dealId=<id>', roleId: 'operator', stateIds: ['sponsors.operator-safe-read', 'sponsors.operator-denied'] },
     ]);
   });
 
@@ -951,14 +957,14 @@ test.describe('canonical frontend capability behavior', () => {
     expect(slotConflict.status()).toBe(409);
 
     const calendarResponse = await context.request.post('/api/calendar-items', { data: {
-      activityType: 'webinar', title: `Synthetic calendar ${id}`, status: 'confirmed', allDay: true,
+      activityType: 'webinar', title: `Synthetic calendar ${id}`, status: 'agreed', allDay: true,
       startDate: '2026-09-03', endDate: '2026-09-03', notes: 'Synthetic only',
     } });
     expect(calendarResponse.status()).toBe(201);
     const calendar = (await json(calendarResponse)).item || await json(calendarResponse);
     const calendarItem = calendar.item || calendar;
     const invalidCalendar = await context.request.post('/api/calendar-items', { data: {
-      activityType: 'invalid', title: 'Invalid', status: 'confirmed', allDay: true, startDate: '2026-09-03', endDate: '2026-09-03',
+      activityType: 'invalid', title: 'Invalid', status: 'agreed', allDay: true, startDate: '2026-09-03', endDate: '2026-09-03',
     } });
     expect(invalidCalendar.status()).toBe(400);
     const changedCalendar = await context.request.put(`/api/calendar-items/${calendarItem.id}`, { data: { version: calendarItem.version, title: `Updated calendar ${id}` } });

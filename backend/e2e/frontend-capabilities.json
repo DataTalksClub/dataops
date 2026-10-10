@@ -780,7 +780,7 @@
     {
       "id": "sponsors",
       "surface": "Sponsors",
-      "route": "/#/sponsors?bookingId=<id>",
+      "route": "/#/sponsors?dealId=<id>",
       "apiBoundaries": [
         "/api/sponsor-crm/*"
       ],

@@ -1,6 +1,31 @@
 import { html } from "./shared.js";
 
-export function sponsorSurfaceMarkup(bookingStatusOptions) {
+const DEAL_STATUSES = ["open", "agreed", "lost"];
+const PRODUCT_KINDS = ["one-off", "package", "course"];
+const CHANNELS = ["main", "secondary", "standalone", "social", "workshop", "course", "other"];
+const NEXT_ACTION_TYPES = ["follow_up", "send_invoice", "chase_payment", "chase_materials", "send_stats", "other"];
+const LOST_REASONS = ["no_budget", "no_reply", "wrong_fit", "timing", "other"];
+const OWNERS = [
+  ["00000000-0000-0000-0000-000000000001", "Grace"],
+  ["00000000-0000-0000-0000-000000000003", "Alexey"],
+  ["00000000-0000-0000-0000-000000000002", "Valeriia"],
+];
+
+function options(values, humanize) {
+  return values
+    .map((value) => html`<option value="${value}">${humanize(value)}</option>`)
+    .join("");
+}
+
+export function sponsorSurfaceMarkup(humanizeOptionLabel) {
+  const dealStatusOptions = options(DEAL_STATUSES, humanizeOptionLabel);
+  const productOptions = options(PRODUCT_KINDS, humanizeOptionLabel);
+  const channelOptions = options(CHANNELS, humanizeOptionLabel);
+  const actionOptions = options(NEXT_ACTION_TYPES, humanizeOptionLabel);
+  const lostOptions = options(LOST_REASONS, humanizeOptionLabel);
+  const ownerOptions = OWNERS.map(
+    ([id, name]) => html`<option value="${id}">${name}</option>`,
+  ).join("");
   return html`<header class="crm-header">
       <div>
         <h1>Sponsors</h1>
@@ -8,21 +33,26 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
       <div class="surface-actions">
         <button data-evaluate-communications>Refresh suggestions</button
         ><button data-add-org>Add sponsor</button
-        ><button class="primary-button" data-add-booking>Add booking</button>
+        ><button class="primary-button" data-add-deal>Add deal</button>
       </div>
     </header>
     <p data-crm-message class="surface-status" role="status">
       Loading sponsor CRM…
     </p>
-    <nav class="crm-pipeline" data-crm-pipeline aria-label="Booking pipeline"></nav>
+    <nav class="crm-views" data-crm-views aria-label="Sponsors views">
+      <button type="button" data-crm-view="queue" aria-pressed="true">Queue</button
+      ><button type="button" data-crm-view="pipeline" aria-pressed="false">Pipeline</button
+      ><button type="button" data-crm-view="companies" aria-pressed="false">Companies</button>
+    </nav>
+    <nav class="crm-pipeline" data-crm-pipeline aria-label="Deal pipeline"></nav>
     <section class="crm-alerts" aria-label="Alerts">
       <div data-crm-alerts>Loading alerts…</div>
     </section>
     <div class="crm-layout">
-      <section class="crm-master" aria-labelledby="crm-bookings-heading">
+      <section class="crm-master" aria-labelledby="crm-queue-heading">
         <header class="section-header">
           <div>
-            <h3 id="crm-bookings-heading">Bookings</h3>
+            <h3 id="crm-queue-heading" data-crm-list-heading>Queue</h3>
           </div>
           <span data-booking-count class="section-count"></span>
         </header>
@@ -34,30 +64,31 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
               type="search"
               placeholder="Sponsor name" /></label
           ><label class="visually-hidden"
-            >Booking status
+            >Deal status
             <select data-crm-status>
               <option value="">All statuses</option>
-              ${bookingStatusOptions}
+              ${dealStatusOptions}
             </select></label
           >
         </div>
-        <div data-crm-bookings class="crm-booking-list">Loading bookings…</div>
+        <div data-crm-queue class="crm-booking-list">Loading queue…</div>
+        <div data-crm-bookings class="crm-booking-list" hidden>Loading pipeline…</div>
       </section>
       <section class="crm-detail-pane" data-crm-detail aria-live="polite">
         <div class="honest-state crm-select-booking">
-          <strong>Select a booking</strong>
+          <strong>Select a company</strong>
           <p>
-            Open a booking to review its work, finance, communications, and
-            history in one place.
+            Open a queue row or pipeline deal to review people, deals, mail, and
+            finance in one place.
           </p>
         </div>
         <div data-crm-upcoming></div>
       </section>
     </div>
-    <section class="crm-directory" aria-labelledby="crm-sponsors-heading">
+    <section class="crm-directory" data-crm-companies-section aria-labelledby="crm-sponsors-heading">
       <header class="section-header">
         <div>
-          <h3 id="crm-sponsors-heading">Organizations</h3>
+          <h3 id="crm-sponsors-heading">Companies</h3>
         </div>
         <label
           >Show
@@ -92,10 +123,11 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
     <dialog class="surface-dialog" data-org-dialog>
       <form method="dialog">
         <header>
-          <h3>Sponsor organization</h3>
+          <h3>Sponsor company</h3>
         </header>
         <div class="dialog-fields">
           <label>Name <input name="displayName" required /></label
+          ><label>Domain <input name="domain" placeholder="example.com" /></label
           ><label>Operator notes <textarea name="notes"></textarea></label>
           <p role="alert"></p>
         </div>
@@ -127,6 +159,27 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
         </footer>
       </form>
     </dialog>
+    <dialog class="surface-dialog" data-convert-dialog>
+      <form method="dialog">
+        <header>
+          <h3>Convert lead</h3>
+          <p>This name already exists. Pick the company or create a new one.</p>
+        </header>
+        <div class="dialog-fields">
+          <input name="leadId" type="hidden" /><input name="version" type="hidden" />
+          <label
+            >Existing company
+            <select name="organizationId"></select></label
+          >
+          <p role="alert"></p>
+        </div>
+        <footer>
+          <button class="primary-button" data-convert-existing>Link company</button
+          ><button type="button" data-convert-new>Create new company</button
+          ><button value="cancel">Cancel</button>
+        </footer>
+      </form>
+    </dialog>
     <dialog class="surface-dialog" data-suppression-dialog>
       <form method="dialog">
         <header>
@@ -153,17 +206,17 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
         </footer>
       </form>
     </dialog>
-    <dialog class="surface-dialog surface-dialog-wide" data-booking-dialog>
+    <dialog class="surface-dialog surface-dialog-wide" data-deal-dialog>
       <form method="dialog">
         <header>
-          <h3>Sponsor booking</h3>
+          <h3>Sponsor deal</h3>
         </header>
         <div class="dialog-fields booking-form-grid">
-          <input name="bookingId" type="hidden" /><input
+          <input name="dealId" type="hidden" /><input
             name="version"
             type="hidden"
           /><label
-            >Sponsor
+            >Company
             <select name="organizationId"></select></label
           ><label
             >Primary contact
@@ -171,16 +224,38 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
               <option value="">No contact</option>
             </select></label
           ><label
-            >Slot type
-            <select name="slotType">
-              <option>main</option>
-              <option>secondary</option>
-              <option>standalone</option>
-            </select></label
-          ><label
             >Status
             <select name="status">
-              ${bookingStatusOptions}
+              ${dealStatusOptions}
+            </select></label
+          ><label
+            >Product
+            <select name="productKind">
+              ${productOptions}
+            </select></label
+          ><label>Amount EUR <input name="amountEur" inputmode="decimal" /></label
+          ><label
+            >Lost reason
+            <select name="lostReason">
+              <option value="">Not lost</option>
+              ${lostOptions}
+            </select></label
+          ><label
+            >Next action
+            <select name="nextActionType">
+              ${actionOptions}
+            </select></label
+          ><label>Due <input name="nextActionDue" type="date" /></label
+          ><label
+            >Owner
+            <select name="nextActionOwner">
+              ${ownerOptions}
+            </select></label
+          ><label class="span-all">Action note <input name="nextActionNote" /></label
+          ><label
+            >Channel
+            <select name="channel">
+              ${channelOptions}
             </select></label
           ><label
             >Publication date
@@ -188,23 +263,13 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
           ><label
             >Material deadline
             <input name="materialDeadline" type="date" /></label
-          ><label>Next action <input name="nextActionDate" type="date" /></label
-          ><label>Schedule entry <input name="scheduleEntryId" /></label
-          ><label>Newsletter Card <input name="cardId" /></label
-          ><label class="span-all"
-            >Required link <input name="requiredLinkUrl" type="url" /></label
-          ><label class="span-all"
-            >Private artifact links
-            <textarea name="artifactUrls"></textarea></label
-          ><label class="span-all"
-            >Operator notes <textarea name="notes"></textarea></label
           ><label class="span-all"
             >Status note <input name="historyNote"
           /></label>
           <p class="span-all" role="alert"></p>
         </div>
         <footer>
-          <button class="primary-button" data-booking-save>Save booking</button
+          <button class="primary-button" data-deal-save>Save deal</button
           ><button value="cancel">Cancel</button>
         </footer>
       </form>

@@ -1,7 +1,7 @@
 import { html } from "./shared.js";
 
 export function createSponsorLeads(context) {
-  const { api, escapeHtml, humanizeOptionLabel, message, surface } = context;
+  const { api, escapeHtml, humanizeOptionLabel, message, surface, openDialog } = context;
   let leads = [];
   let leadStatusFilter = "";
 
@@ -100,13 +100,69 @@ export function createSponsorLeads(context) {
       if (!lead) return;
       const { leadStatus } = transition.dataset;
       fail(async () => {
-        await api(`/leads/${encodeURIComponent(lead.id)}`, {
-          method: "PATCH",
-          body: JSON.stringify({ version: lead.version, status: leadStatus }),
-        });
+        try {
+          await api(`/leads/${encodeURIComponent(lead.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({ version: lead.version, status: leadStatus }),
+          });
+        } catch (error) {
+          if (leadStatus === "converted" && error.status === 409 && error.payload?.candidates) {
+            const dialog = surface.querySelector("[data-convert-dialog]");
+            const form = dialog.querySelector("form");
+            form.elements.leadId.value = lead.id;
+            form.elements.version.value = String(lead.version);
+            form.elements.organizationId.innerHTML = (error.payload.candidates || [])
+              .map(
+                (item) =>
+                  html`<option value="${escapeHtml(item.id)}">
+                    ${escapeHtml(item.displayName)}${item.domain ? html` · ${escapeHtml(item.domain)}` : ""}
+                  </option>`,
+              )
+              .join("");
+            if (openDialog) openDialog(dialog);
+            else dialog.showModal();
+            return;
+          }
+          throw error;
+        }
         await loadLeads();
       }, "Could not update lead");
     };
+    const convert = async (body) => {
+      await api(`/leads/${encodeURIComponent(body.leadId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          version: Number(body.version),
+          status: "converted",
+          organizationId: body.organizationId || undefined,
+          createNew: body.createNew === true,
+        }),
+      });
+      surface.querySelector("[data-convert-dialog]").close();
+      await loadLeads();
+    };
+    surface.querySelector("[data-convert-existing]")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      const form = surface.querySelector("[data-convert-dialog] form");
+      fail(async () => {
+        await convert({
+          leadId: form.elements.leadId.value,
+          version: form.elements.version.value,
+          organizationId: form.elements.organizationId.value,
+        });
+      }, "Could not convert lead");
+    });
+    surface.querySelector("[data-convert-new]")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      const form = surface.querySelector("[data-convert-dialog] form");
+      fail(async () => {
+        await convert({
+          leadId: form.elements.leadId.value,
+          version: form.elements.version.value,
+          createNew: true,
+        });
+      }, "Could not convert lead");
+    });
   }
 
   return { loadLeads, wireLeadControls };

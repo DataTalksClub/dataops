@@ -229,11 +229,11 @@ async function navigateState(page, baseURL, state) {
     await page.getByText('No active notifications.').waitFor();
     result.mutation = 'notification-dismissed';
   } else if (state === 'sponsor-booking-role-safe') {
-    await page.goto(`${baseURL}/#/sponsors?bookingId=parity-booking`);
+    await page.goto(`${baseURL}/#/sponsors?dealId=parity-booking`);
     await settle(page);
     const sponsorDetail = page.locator("[data-crm-detail] .crm-booking-detail");
     await sponsorDetail.filter({ hasText: "Synthetic Learning Co" }).waitFor();
-    await sponsorDetail.filter({ hasText: "confirmed" }).waitFor();
+    await sponsorDetail.filter({ hasText: "Agreed" }).waitFor();
     result.mutation = 'operator-read-only';
   } else if (state === 'docs-search-detail') {
     await page.goto(`${baseURL}/#/processes`);

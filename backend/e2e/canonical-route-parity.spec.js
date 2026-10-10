@@ -35,8 +35,13 @@ async function createFixtures(request, referenceTime = Date.now()) {
   const organization = await (await request.post('/api/sponsor-crm/organizations', {
     data: { displayName: `Route sponsor ${id}` },
   })).json();
-  const booking = await (await request.post('/api/sponsor-crm/bookings', {
-    data: { organizationId: organization.id, slotType: 'main', status: 'inquiry', plannedPublicationDate: '2026-09-01' },
+  const booking = await (await request.post('/api/sponsor-crm/deals', {
+    data: {
+      organizationId: organization.id,
+      status: 'open',
+      nextAction: { type: 'follow_up', due: '2026-09-01', owner: '00000000-0000-0000-0000-000000000001', note: 'route' },
+      deliverable: { channel: 'main', plannedPublicationDate: '2026-09-01' },
+    },
   })).json();
   return { id, card, contextCard, task, assistant, template: templates[0], booking };
 }
@@ -121,7 +126,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       [`/#/templates?templateId=${encodeURIComponent(fixture.template.id)}`, 'Templates'],
       ['/#/recurring', 'Recurring'],
       ['/#/bookkeeping', 'Bookkeeping'],
-      [`/#/sponsors?bookingId=${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
+      [`/#/sponsors?dealId=${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
       ['/#/newsletter', 'Newsletter'],
       ['/#/calendar', 'Calendar'],
       ['/#/processes', 'Docs'],
@@ -163,7 +168,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       ['cards?cardId=stale-workflow', 'stale-workflow'],
       ['assistants?assistantJobId=stale-assistant', 'stale-assistant'],
       ['templates?templateId=stale-template', 'stale-template'],
-      ['sponsors?bookingId=stale-booking', 'stale-booking'],
+      ['sponsors?dealId=stale-booking', 'stale-booking'],
     ]) {
       await page.goto(`/#/${route}`);
       await expect(page.locator('.entity-route-not-found:visible')).toContainText(id);
@@ -174,7 +179,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.not-found'] },
       { route: '/#/assistants?assistantJobId=<id>', roleId: 'admin', stateIds: ['assistants.stale-not-found'] },
       { route: '/#/templates?templateId=<id>', roleId: 'admin', stateIds: ['templates.stale-not-found'] },
-      { route: '/#/sponsors?bookingId=<id>', roleId: 'admin', stateIds: ['sponsors.not-found'] },
+      { route: '/#/sponsors?dealId=<id>', roleId: 'admin', stateIds: ['sponsors.not-found'] },
     ]);
   });
 

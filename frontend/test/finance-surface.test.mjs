@@ -336,22 +336,24 @@ describe("Finance surface boundary", () => {
 
     const sponsorHarness = createHarness({
       setupSurface: (surface) =>
-        surface.setQuery("[data-booking-dialog]", sponsorDialog),
+        surface.setQuery("[data-deal-dialog]", sponsorDialog),
       request: async (url) => {
         const path = requestPath(url);
         if (path.endsWith("/organizations"))
           return { items: [{ id: "org-1", displayName: "Sponsor" }] };
         if (path.endsWith("/contacts")) return { items: [] };
-        if (path.endsWith("/bookings"))
+        if (path.endsWith("/deals"))
           return {
             items: [
               {
-                id: "booking-1",
+                id: "deal-1",
                 organizationId: "org-1",
-                status: "confirmed",
+                status: "agreed",
               },
             ],
           };
+        if (path.endsWith("/queue")) return { items: [] };
+        if (path.endsWith("/leads")) return { items: [] };
         if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         throw new Error(`Unexpected request: ${url}`);
       },
@@ -363,8 +365,8 @@ describe("Finance surface boundary", () => {
     await bookings.dispatch("click", {
       target: {
         closest(selector) {
-          return selector === "[data-edit-booking]"
-            ? { dataset: { editBooking: "booking-1" } }
+          return selector === "[data-edit-deal]"
+            ? { dataset: { editDeal: "deal-1" } }
             : null;
         },
       },
@@ -380,7 +382,7 @@ describe("Finance surface boundary", () => {
       message,
       dismissed: false,
       dueAt: "2026-08-20",
-      metadata: { sponsorBookingId: "booking-alert" },
+      metadata: { sponsorDealId: "deal-alert" },
     });
     const { document, finance, requests } = createHarness({
       request: async (url) => {
@@ -416,18 +418,20 @@ describe("Finance surface boundary", () => {
         if (path.endsWith("/organizations"))
           return { items: [{ id: "org-1", displayName: "Sponsor" }] };
         if (path.endsWith("/contacts")) return { items: [] };
-        if (path.endsWith("/bookings"))
+        if (path.endsWith("/deals"))
           return {
-            items: [{ id: "booking-alert", organizationId: "org-1", status: "confirmed" }],
+            items: [{ id: "deal-alert", organizationId: "org-1", status: "agreed" }],
           };
+        if (path.endsWith("/queue")) return { items: [] };
+        if (path.endsWith("/leads")) return { items: [] };
         throw new Error(`Unexpected request: ${url}`);
       },
     });
 
     await finance.renderSponsorCrmSurface();
     const alerts = document.surface.querySelector("[data-crm-alerts]");
-    assert.doesNotMatch(alerts.innerHTML, /No active sponsor booking alerts/);
-    assert.match(alerts.innerHTML, /Booking alerts are unavailable:/);
+    assert.doesNotMatch(alerts.innerHTML, /No active sponsor alerts/);
+    assert.match(alerts.innerHTML, /Sponsor alerts are unavailable:/);
     assert.match(alerts.innerHTML, /Notifications offline/);
     assert.match(
       alerts.innerHTML,
@@ -446,7 +450,7 @@ describe("Finance surface boundary", () => {
     await clickAlertControl("[data-load-sponsor-alerts-retry]");
     assert.match(alerts.innerHTML, /First alert/);
     assert.match(alerts.innerHTML, /Second alert/);
-    assert.match(alerts.innerHTML, /More booking alerts are available\./);
+    assert.match(alerts.innerHTML, /More sponsor alerts are available\./);
     assert.match(
       alerts.innerHTML,
       /<button type="button" data-load-sponsor-alerts>/,
@@ -501,7 +505,8 @@ describe("Finance surface boundary", () => {
         if (path.endsWith("/organizations"))
           return { items: [{ id: "org-1", displayName: "Sponsor" }] };
         if (path.endsWith("/contacts")) return { items: [] };
-        if (path.endsWith("/bookings")) return { items: [] };
+        if (path.endsWith("/deals")) return { items: [] };
+        if (path.endsWith("/queue")) return { items: [] };
         if (path === "/api/sponsor-crm/leads") {
           if (!leadsOnline) throw new Error("Leads offline");
           assert.equal(query.get("limit"), "50");
@@ -563,14 +568,14 @@ describe("Finance surface boundary", () => {
       id: "booking-1",
       organizationId: "org-1",
       primaryContactId: "contact-1",
-      status: "confirmed",
+      status: "agreed",
       version: 3,
     };
     const { document, finance } = createHarness({
       route: {
         path: "/sponsors",
         token: 1,
-        params: new URLSearchParams({ bookingId: booking.id }),
+        params: new URLSearchParams({ dealId: booking.id }),
       },
       request: async (url) => {
         const path = requestPath(url);
@@ -587,9 +592,12 @@ describe("Finance surface boundary", () => {
               },
             ],
           };
-        if (path.endsWith("/bookings")) return { items: [booking] };
+        if (path.endsWith("/deals")) return { items: [booking] };
+        if (path.endsWith("/queue")) return { items: [] };
+        if (path.endsWith("/leads")) return { items: [] };
         if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
+        if (path.includes("/messages")) return { items: [] };
         if (path.includes("/communications"))
           return {
             items: [
@@ -651,7 +659,7 @@ describe("Finance surface boundary", () => {
     const booking = {
       id: "booking-1",
       organizationId: "org-1",
-      status: "confirmed",
+      status: "agreed",
       version: 3,
     };
     const seen = [];
@@ -659,7 +667,7 @@ describe("Finance surface boundary", () => {
       route: {
         path: "/sponsors",
         token: 1,
-        params: new URLSearchParams({ bookingId: booking.id }),
+        params: new URLSearchParams({ dealId: booking.id }),
       },
       request: async (url, options) => {
         const path = requestPath(url);
@@ -667,10 +675,13 @@ describe("Finance surface boundary", () => {
         if (path.endsWith("/organizations"))
           return { items: [{ id: "org-1", displayName: "Safe Sponsor" }] };
         if (path.endsWith("/contacts")) return { items: [] };
-        if (path.endsWith("/bookings")) return { items: [booking] };
+        if (path.endsWith("/deals")) return { items: [booking] };
+        if (path.endsWith("/queue")) return { items: [] };
+        if (path.endsWith("/leads")) return { items: [] };
         if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
-        if (path.includes("/bookings/booking-1/communications"))
+        if (path.includes("/messages")) return { items: [] };
+        if (path.includes("/deals/booking-1/communications"))
           return {
             items: [
               {
@@ -773,6 +784,110 @@ describe("Finance surface boundary", () => {
       seen.some(({ path }) => path.endsWith("/approve")),
       false,
     );
+  });
+
+  test("renders Queue, Pipeline, Company, and Leads and Convert hits the leads API", async () => {
+    const lead = {
+      id: "lead-convert",
+      version: 1,
+      status: "new",
+      sponsor: { name: "Queue Vendor", url: "https://queue.example.invalid" },
+      newsletter: { name: "Digest" },
+    };
+    const { document, finance, requests } = createHarness({
+      request: async (url, options = {}) => {
+        const path = requestPath(url);
+        if (path === "/api/notifications")
+          return { notifications: { items: [] } };
+        if (path.endsWith("/organizations"))
+          return {
+            items: [
+              {
+                id: "org-1",
+                displayName: "Talking Co",
+                relationship: "talking",
+              },
+            ],
+          };
+        if (path.endsWith("/contacts")) return { items: [] };
+        if (path.endsWith("/deals"))
+          return {
+            items: [
+              {
+                id: "deal-1",
+                organizationId: "org-1",
+                status: "open",
+                money: "none",
+                nextAction: { type: "follow_up", due: "2026-08-01", owner: "grace", note: "ping" },
+              },
+            ],
+          };
+        if (path.endsWith("/queue"))
+          return {
+            items: [
+              {
+                id: "relationship:org-1::quiet:2026-08-13",
+                kind: "relationship",
+                why: "quiet",
+                action: "Follow up",
+                companyId: "org-1",
+                companyName: "Talking Co",
+                due: "2026-08-13",
+                owner: "grace",
+              },
+            ],
+          };
+        if (path === "/api/sponsor-crm/leads") return { items: [lead] };
+        if (path === "/api/sponsor-crm/leads/lead-convert" && options.method === "PATCH") {
+          return { ...lead, status: "converted", version: 2 };
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+
+    await finance.renderSponsorCrmSurface();
+    const queue = document.surface.querySelector("[data-crm-queue]");
+    const pipeline = document.surface.querySelector("[data-crm-bookings]");
+    const companies = document.surface.querySelector("[data-crm-orgs]");
+    const leads = document.surface.querySelector("[data-crm-leads]");
+    assert.match(queue.innerHTML, /Talking Co/);
+    assert.match(queue.innerHTML, /Follow up/);
+    assert.match(pipeline.innerHTML, /Talking Co/);
+    assert.match(pipeline.innerHTML, /Open/);
+    assert.match(companies.innerHTML, /Talking Co/);
+    assert.match(leads.innerHTML, /Queue Vendor/);
+
+    await document.surface.querySelector("[data-crm-views]").dispatch("click", {
+      target: {
+        closest: (selector) =>
+          selector === "[data-crm-view]"
+            ? { dataset: { crmView: "pipeline" } }
+            : null,
+      },
+    });
+    assert.equal(
+      document.surface.querySelector("[data-crm-list-heading]").textContent,
+      "Pipeline",
+    );
+
+    await leads.dispatch("click", {
+      target: {
+        closest: (candidate) =>
+          candidate === "[data-lead-status]"
+            ? { dataset: { leadId: "lead-convert", leadStatus: "converted" } }
+            : null,
+      },
+    });
+    await settle();
+    const patch = requests.find(
+      (entry) => requestPath(entry.url) === "/api/sponsor-crm/leads/lead-convert",
+    );
+    assert.ok(patch);
+    assert.equal(patch.options.method, "PATCH");
+    assert.deepEqual(JSON.parse(patch.options.body), {
+      version: 1,
+      status: "converted",
+    });
   });
 
   test("derives bookkeeping totals and evidence relationships from loaded records", async () => {

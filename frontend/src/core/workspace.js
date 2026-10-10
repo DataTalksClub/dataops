@@ -44,7 +44,7 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/sponsors": {
     view: "sponsors",
     tasksSection: "queue",
-    params: ["bookingId"],
+    params: ["dealId", "companyId"],
   },
   "/newsletter": { view: "newsletter", tasksSection: "queue", params: [] },
   "/calendar": { view: "calendar", tasksSection: "queue", params: [] },

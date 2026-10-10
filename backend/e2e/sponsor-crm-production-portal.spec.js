@@ -53,12 +53,21 @@ test.describe("production sponsor CRM portal", () => {
         id: "booking-1",
         organizationId: "org-1",
         primaryContactId: "contact-1",
-        slotType: "main",
-        status: "confirmed",
-        plannedPublicationDate: "2026-08-20",
-        materialDeadline: "2026-08-10",
-        nextActionDate: "2026-08-01",
-        cardId: "newsletter-card-1",
+        status: "agreed",
+        productKind: "one-off",
+        nextAction: {
+          type: "chase_materials",
+          due: "2026-08-01",
+          owner: "00000000-0000-0000-0000-000000000001",
+          note: "Get materials",
+        },
+        deliverables: [{
+          id: "deliverable-1",
+          dealId: "booking-1",
+          channel: "main",
+          plannedPublicationDate: "2026-08-20",
+          materialDeadline: "2026-08-10",
+        }],
         version: 2,
       };
     let financeStage = "unclassified",
@@ -327,9 +336,29 @@ test.describe("production sponsor CRM portal", () => {
         return route.fulfill({ json: { items: [organization] } });
       if (pathname.endsWith("/contacts"))
         return route.fulfill({ json: { items: [contact] } });
-      if (pathname.endsWith("/bookings"))
+      if (pathname.endsWith("/queue"))
+        return route.fulfill({
+          json: {
+            items: [{
+              id: "queue-1",
+              kind: "operational",
+              why: "chase_materials",
+              action: "Get materials",
+              companyId: organization.id,
+              companyName: organization.displayName,
+              dealId: booking.id,
+              due: "2026-08-20",
+              owner: "00000000-0000-0000-0000-000000000001",
+            }],
+          },
+        });
+      if (pathname.endsWith("/leads"))
+        return route.fulfill({ json: { items: [] } });
+      if (pathname.endsWith("/messages"))
+        return route.fulfill({ json: { items: [] } });
+      if (pathname.endsWith("/deals"))
         return route.fulfill({ json: { items: [booking] } });
-      if (pathname.endsWith("/bookings/booking-1/communications")) {
+      if (pathname.endsWith("/deals/booking-1/communications")) {
         const cursor = url.searchParams.get("cursor");
         communicationRequests.push({
           limit: url.searchParams.get("limit"),
@@ -434,7 +463,7 @@ test.describe("production sponsor CRM portal", () => {
                   "Sponsor booking materials are missing 10 days before publication",
                 dueAt: "2026-08-20",
                 dismissed: false,
-                metadata: { sponsorBookingId: "booking-1" },
+                metadata: { sponsorDealId: "booking-1" },
               },
             ],
           },
@@ -455,10 +484,10 @@ test.describe("production sponsor CRM portal", () => {
     await page
       .locator(".crm-layout")
       .screenshot({ path: ".tmp/sponsor-crm-production-populated.png" });
-    await page.getByRole("button", { name: "Open booking" }).first().click();
-    await expect(page.getByText("inquiry → confirmed")).toBeVisible();
+    await page.getByRole("button", { name: "Open company" }).first().click();
+    await expect(page.getByText("Inquiry → Confirmed")).toBeVisible();
     await expect(
-      page.getByText("This booking has not been classified."),
+      page.getByText("This deal has not been classified."),
     ).toBeVisible();
     const statusMessage = page.locator("[data-crm-message]");
     await expect.poll(() => communicationRequests.length).toBe(2);
@@ -645,7 +674,7 @@ test.describe("production sponsor CRM portal", () => {
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-voided.png" });
     financeStage = "not-required";
-    await page.getByRole("button", { name: "Open booking" }).first().click();
+    await page.getByRole("button", { name: "Open company" }).first().click();
     await expect(page.locator("[data-finance-panel]")).toContainText(
       "not-required",
     );
@@ -653,7 +682,7 @@ test.describe("production sponsor CRM portal", () => {
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-not-required.png" });
     financeStage = "reconciliation";
-    await page.getByRole("button", { name: "Open booking" }).first().click();
+    await page.getByRole("button", { name: "Open company" }).first().click();
     await expect(page.locator("[data-finance-panel]")).toContainText(
       "Evidence is unavailable or changed",
     );
@@ -661,7 +690,7 @@ test.describe("production sponsor CRM portal", () => {
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-reconciliation-required.png" });
     financeStage = "limit";
-    await page.getByRole("button", { name: "Open booking" }).first().click();
+    await page.getByRole("button", { name: "Open company" }).first().click();
     await expect(page.locator("[data-finance-panel]")).toContainText(
       "Payment link limit reached",
     );
@@ -701,7 +730,7 @@ test.describe("production sponsor CRM portal", () => {
     expect(mutationKeys.at(-1)).toBe(unknownKey);
     financeStage = "paid";
     financeRole = "operator";
-    await page.getByRole("button", { name: "Open booking" }).first().click();
+    await page.getByRole("button", { name: "Open company" }).first().click();
     await expect(page.locator("[data-finance-panel]")).toContainText("paid");
     await expect(
       page.getByRole("button", { name: "Download invoice" }),
@@ -718,14 +747,14 @@ test.describe("production sponsor CRM portal", () => {
       fullPage: true,
     });
     financeDisabled = true;
-    await page.getByRole("button", { name: "Open booking" }).first().click();
+    await page.getByRole("button", { name: "Open company" }).first().click();
     await expect(page.locator("[data-finance-panel]")).toHaveCount(0);
     await page
       .locator("[data-crm-detail]")
       .screenshot({ path: ".tmp/sponsor-finance-disabled.png" });
     financeDisabled = false;
     financeRole = "operator";
-    await page.getByRole("button", { name: "Open booking" }).first().click();
+    await page.getByRole("button", { name: "Open company" }).first().click();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => document.body.classList.remove("sidebar-open"));
     await expect
