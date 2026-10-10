@@ -15,6 +15,7 @@ export interface AlexeyCalendarConfig {
   connectionId?: string;
   accountId?: string;
   settings?: CalendarOverlaySettings;
+  includeAll?: boolean;
 }
 
 export interface DapierConnectionOption {
@@ -61,6 +62,24 @@ export function overlapsOperationalSlotWindow(startIso: string, endIso: string):
     return overlapsMidday || overlapsEvening;
   } catch {
     return true;
+  }
+}
+
+export function determineSlotType(
+  startIso?: string,
+  endIso?: string,
+  isAllDay?: boolean,
+): 'all-day' | 'midday' | 'evening' | 'outside' {
+  if (isAllDay) return 'all-day';
+  if (!startIso || !endIso) return 'outside';
+  try {
+    const startTime = formatBerlinTime(startIso);
+    const endTime = formatBerlinTime(endIso);
+    if (startTime < '14:00' && endTime > '11:30') return 'midday';
+    if (startTime < '18:30' && endTime > '16:30') return 'evening';
+    return 'outside';
+  } catch {
+    return 'outside';
   }
 }
 
@@ -297,18 +316,25 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
       const calData = (await calRes.json()) as { items?: any[] };
       const events = calData.items || [];
 
+      const includeAll = Boolean(config?.includeAll);
+      const effectiveSettings: CalendarOverlaySettings = includeAll
+        ? { ...activeSettings, filterNonSlotHours: false }
+        : activeSettings;
+
       const result: CalendarOverlayItem[] = [];
 
       for (const event of events) {
         if (event.status === 'cancelled') continue;
         const isAllDay = !!event.start?.date;
+        const startIso = event.start?.dateTime || event.start?.date;
+        const endIso = event.end?.dateTime || event.end?.date;
         const context: AlexeyCalendarEventContext = {
           transparency: event.transparency,
           isAllDay,
-          startIso: event.start?.dateTime || event.start?.date,
-          endIso: event.end?.dateTime || event.end?.date,
+          startIso,
+          endIso,
         };
-        if (shouldFilterAlexeyCalendarEvent(event.summary, activeSettings, context)) continue;
+        if (shouldFilterAlexeyCalendarEvent(event.summary, effectiveSettings, context)) continue;
 
         const summary = (event.summary || '').trim() || '(No title)';
         let startDate: string;
@@ -331,6 +357,9 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
           continue;
         }
 
+        const slot = determineSlotType(startIso, endIso, isAllDay);
+        const isSlotEvent = slot !== 'outside';
+
         result.push({
           provider: 'alexey-calendar',
           id: `alexey-calendar:${event.id}`,
@@ -342,6 +371,8 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
           status: event.status || 'confirmed',
           startsAt: event.start?.dateTime || undefined,
           endsAt: event.end?.dateTime || undefined,
+          slot,
+          isSlotEvent,
         });
       }
 

@@ -197,8 +197,22 @@ function createCalendarDom() {
   settingsForm.setQuery('[data-settings-error]', new TestElement("p"));
   const settingsCancel = settingsDialog.setQuery("[data-settings-cancel]", new TestElement("button"));
   const connectionsDatalist = settingsDialog.setQuery("#dapier-calendar-connections", new TestElement("datalist"));
+  const dayDialog = surface.setQuery("[data-day-dialog]", new TestElement("dialog"));
+  const dayTitle = dayDialog.setQuery("[data-day-title]", new TestElement("h2"));
+  const daySubtitle = dayDialog.setQuery("[data-day-subtitle]", new TestElement("p"));
+  const dayBody = dayDialog.setQuery("[data-day-body]", new TestElement("div"));
+  const dayClose = dayDialog.setQuery("[data-day-close]", new TestElement("button"));
+  const dayCloseFoot = dayDialog.setQuery("[data-day-close-foot]", new TestElement("button"));
+  const dayAddActivity = dayDialog.setQuery("[data-day-add-activity]", new TestElement("button"));
   return {
     alerts,
+    dayAddActivity,
+    dayBody,
+    dayClose,
+    dayCloseFoot,
+    dayDialog,
+    daySubtitle,
+    dayTitle,
     dialog,
     form,
     grid,
@@ -667,6 +681,114 @@ describe("Planning surface production behavior", () => {
     assert.equal(sent.filterLunch, false);
     assert.equal(sent.filterBusy, true);
     assert.deepEqual(sent.customKeywords, ["dentist", "haircut"]);
+  });
+
+  test("opens day schedule dialog displaying full day schedule, slot availability, and other events", async () => {
+    const dom = createCalendarDom();
+    const requests = [];
+    const harness = createPlanningHarness({
+      calendar: dom,
+      request: async (url) => {
+        const u = String(url);
+        requests.push(u);
+        if (u.includes("/overlays?from=2026-08-13&to=2026-08-13")) {
+          return {
+            items: [
+              {
+                id: "alexey-calendar:evt-morning",
+                category: "Alexey",
+                label: "09:30–10:30 Team sync",
+                startDate: "2026-08-13",
+                endDate: "2026-08-13",
+                slot: "outside",
+                isSlotEvent: false,
+              },
+              {
+                id: "alexey-calendar:evt-podcast",
+                category: "Alexey",
+                label: "12:30–13:30 Podcast with Guest",
+                startDate: "2026-08-13",
+                endDate: "2026-08-13",
+                slot: "midday",
+                isSlotEvent: true,
+              },
+              {
+                id: "alexey-calendar:evt-call",
+                category: "Alexey",
+                label: "15:00–15:45 Partner discussion",
+                startDate: "2026-08-13",
+                endDate: "2026-08-13",
+                slot: "outside",
+                isSlotEvent: false,
+              },
+            ],
+          };
+        }
+        if (u.includes("/overlays")) {
+          return {
+            items: [
+              {
+                id: "alexey-calendar:evt-podcast",
+                category: "Alexey",
+                label: "12:30–13:30 Podcast with Guest",
+                startDate: "2026-08-13",
+                endDate: "2026-08-13",
+                slot: "midday",
+                isSlotEvent: true,
+              },
+            ],
+          };
+        }
+        return {
+          alerts: [],
+          holidays: [],
+          items: [
+            {
+              id: "activity-1",
+              title: "Community webinar",
+              activityType: "webinar",
+              status: "confirmed",
+              startDate: "2026-08-13",
+              endDate: "2026-08-13",
+              startKey: "2026-08-13",
+              endKey: "2026-08-13",
+              allDay: true,
+              version: 1,
+            },
+          ],
+        };
+      },
+    });
+
+    await harness.surface.renderCalendarSurface();
+    await nextTicks();
+
+    // Click on day button for 2026-08-13
+    await dom.grid.onclick({
+      target: {
+        closest: (sel) => {
+          if (sel === "[data-open-day]") return { dataset: { openDay: "2026-08-13" } };
+          return null;
+        },
+      },
+    });
+    await nextTicks();
+
+    assert.equal(dom.dayDialog.open, true);
+    assert.match(dom.dayTitle.textContent, /13 August 2026/);
+    assert.match(dom.daySubtitle.textContent, /2026-08-13/);
+
+    // Verify dayBody contains slot availability & both slot and other events
+    assert.match(dom.dayBody.innerHTML, /Midday Event Slot/);
+    assert.match(dom.dayBody.innerHTML, /Evening Event Slot/);
+    assert.match(dom.dayBody.innerHTML, /Podcast with Guest/);
+    assert.match(dom.dayBody.innerHTML, /Team sync/);
+    assert.match(dom.dayBody.innerHTML, /Partner discussion/);
+    assert.match(dom.dayBody.innerHTML, /Community webinar/);
+
+    // Click close
+    dom.dayClose.onclick();
+    assert.equal(dom.dayDialog.open, false);
   });
 
   test("renders grouped Newsletter slots, safe booking labels, links, and alerts", async () => {

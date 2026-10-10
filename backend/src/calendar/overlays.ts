@@ -9,6 +9,8 @@ export type CalendarOverlayItem = {
   category?: string;
   startsAt?: string;
   endsAt?: string;
+  slot?: 'midday' | 'evening' | 'all-day' | 'outside';
+  isSlotEvent?: boolean;
 };
 
 export type CalendarOverlayProvider = {

@@ -2,6 +2,7 @@ import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   alexeyCalendarOverlay,
+  determineSlotType,
   setAlexeyCalendarProviderClientsForTests,
   shouldFilterAlexeyCalendarEvent,
 } from '../src/calendar/alexeyCalendarOverlay';
@@ -223,6 +224,39 @@ describe('Alexey calendar overlay and filtering', () => {
     });
   });
 
+  describe('determineSlotType', () => {
+    it('accurately categorizes operational slots, all-day events, and outside-slot events', () => {
+      // All day
+      assert.equal(determineSlotType(undefined, undefined, true), 'all-day');
+
+      // Midday operational window: 11:30–14:00 Berlin time
+      assert.equal(
+        determineSlotType('2026-10-13T12:00:00+02:00', '2026-10-13T13:00:00+02:00'),
+        'midday',
+      );
+      assert.equal(
+        determineSlotType('2026-10-13T11:30:00+02:00', '2026-10-13T12:30:00+02:00'),
+        'midday',
+      );
+
+      // Evening operational window: 16:30–18:30 Berlin time
+      assert.equal(
+        determineSlotType('2026-10-13T17:00:00+02:00', '2026-10-13T18:00:00+02:00'),
+        'evening',
+      );
+
+      // Outside operational event slots
+      assert.equal(
+        determineSlotType('2026-10-13T09:00:00+02:00', '2026-10-13T10:00:00+02:00'),
+        'outside',
+      );
+      assert.equal(
+        determineSlotType('2026-10-13T14:30:00+02:00', '2026-10-13T15:30:00+02:00'),
+        'outside',
+      );
+    });
+  });
+
   describe('fetchDapierConnections and configurable provider', () => {
     it('discovers Dapier calendar connections using token', async () => {
       const { fetchDapierConnections } = await import('../src/calendar/alexeyCalendarOverlay');
@@ -439,6 +473,74 @@ describe('Alexey calendar overlay and filtering', () => {
       assert.equal(items[2].endDate, '2026-10-17');
       assert.equal(items[2].label, 'Flight to Helsinki');
       assert.equal(items[2].category, 'Alexey');
+      assert.equal(items[2].slot, 'all-day');
+      assert.equal(items[2].isSlotEvent, true);
+    });
+
+    it('returns all events including those outside slots when includeAll is true', async () => {
+      const mockFetch: typeof fetch = async (input) => {
+        const url = String(input);
+        if (url.endsWith('/api/agent/token')) {
+          return new Response(
+            JSON.stringify({
+              access_token: 'synthetic-google-token-123',
+              provider_account_id: 'alexey.s.grigoriev@gmail.com',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('googleapis.com/calendar/v3/calendars/primary/events')) {
+          return new Response(
+            JSON.stringify({
+              items: [
+                {
+                  id: 'evt-morning',
+                  summary: 'Morning team standup',
+                  status: 'confirmed',
+                  start: { dateTime: '2026-10-13T10:00:00+02:00' },
+                  end: { dateTime: '2026-10-13T10:30:00+02:00' },
+                },
+                {
+                  id: 'evt-midday',
+                  summary: 'Podcast recording',
+                  status: 'confirmed',
+                  start: { dateTime: '2026-10-13T12:30:00+02:00' },
+                  end: { dateTime: '2026-10-13T13:30:00+02:00' },
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      setAlexeyCalendarProviderClientsForTests({ fetch: mockFetch });
+
+      // Without includeAll: morning meeting (outside slots) is filtered out
+      const defaultProvider = alexeyCalendarOverlay({
+        brokerCredential: 'token',
+        includeAll: false,
+      });
+      const defaultItems = await defaultProvider.project('2026-10-13', '2026-10-13');
+      assert.equal(defaultItems.length, 1);
+      assert.equal(defaultItems[0].id, 'alexey-calendar:evt-midday');
+      assert.equal(defaultItems[0].slot, 'midday');
+      assert.equal(defaultItems[0].isSlotEvent, true);
+
+      // With includeAll: morning meeting is kept and tagged with slot: outside
+      const allProvider = alexeyCalendarOverlay({
+        brokerCredential: 'token',
+        includeAll: true,
+      });
+      const allItems = await allProvider.project('2026-10-13', '2026-10-13');
+      assert.equal(allItems.length, 2);
+      assert.equal(allItems[0].id, 'alexey-calendar:evt-morning');
+      assert.equal(allItems[0].slot, 'outside');
+      assert.equal(allItems[0].isSlotEvent, false);
+      assert.equal(allItems[1].id, 'alexey-calendar:evt-midday');
+      assert.equal(allItems[1].slot, 'midday');
+      assert.equal(allItems[1].isSlotEvent, true);
     });
   });
 });
