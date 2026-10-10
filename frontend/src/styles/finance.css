@@ -610,8 +610,10 @@ body[data-workspace-view="sponsors"] .document-list {
 }.crm-booking-row {
   display: grid;
   align-items: start;
+  border: 1px solid transparent;
 }.crm-booking-row[aria-current="true"] {
   background: var(--dk-bg-muted);
+  border-color: var(--dk-border-strong);
 }.crm-booking-row strong,
 .booking-detail-header strong {
   margin-right: 8px;

@@ -101,7 +101,8 @@ export function createPlanningSurface(context) {
               <h1 id="calendar-surface-title" class="calendar-heading-wrapper">
                 <button type="button" class="calendar-period-btn" data-picker-toggle aria-haspopup="dialog" aria-expanded="false" title="Choose month and year">
                   <span class="calendar-period-title" data-period-heading>Calendar</span>
-                  <svg class="calendar-period-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <svg class="calendar-period-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="6 9 12 15 18 9"></polyline>
                   </svg>
                 </button>

@@ -307,7 +307,6 @@ body[data-workspace-view="sponsors"] .document-list {
 }.crm-booking-row[aria-current="true"],
 .crm-booking-row[aria-current="true"]:hover {
   background: var(--dk-bg-muted);
-  box-shadow: inset 3px 0 0 var(--dk-accent-default);
 }.sponsor-crm-surface .crm-booking-row[aria-current="true"] p,
 .sponsor-crm-surface .crm-booking-row[aria-current="true"] .status-label {
   color: var(--dk-text-primary);
