@@ -3,6 +3,7 @@ import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-sec
 import { DynamoDBDocumentClient, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 import { deterministicCrmId, getCrmRecord, listCrmRecords, updateCrmRecord, type CrmRecord } from '../db/sponsorCrm';
+import { convertLead } from '../sponsorCrm/convertLead';
 import { TABLE_AUDIT_EVENTS, TABLE_SPONSOR_CRM } from '../db/tableNames';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
@@ -484,10 +485,20 @@ export async function handleSponsorLeadRoutes(path: string, method: string, even
     const existing = await getCrmRecord(client, 'lead', id);
     if (!existing) return response(404, { error: 'Not found' });
     if (body.version !== existing.version) return response(409, { error: 'Lead was changed; reload and retry' });
-    const unknown = Object.keys(body).find((key) => key !== 'version' && key !== 'status');
+    const unknown = Object.keys(body).find((key) => !['version', 'status', 'organizationId', 'createNew'].includes(key));
     if (unknown) return response(400, { error: `Unknown field: ${unknown}` });
     if (body.status !== undefined && !LEAD_STATUSES.has(String(body.status))) return response(400, { error: 'Invalid status' });
     if (body.status === undefined) return response(400, { error: 'Nothing to update' });
+    if (body.status === 'converted') {
+      const actorId = Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === 'x-user-id')?.[1] || 'authenticated-operator';
+      try {
+        const result = await convertLead(client, existing, body, actorId);
+        if (!result.ok) return response(result.statusCode, { error: result.error, candidates: result.candidates });
+        return response(200, { ...publicLead(result.lead), organizationId: result.organization.id, organization: { id: result.organization.id, displayName: result.organization.displayName, domain: result.organization.domain, sightings: result.organization.sightings }, created: result.created });
+      } catch {
+        return response(409, { error: 'Conflicting update; reload and retry' });
+      }
+    }
     try {
       const next = await updateCrmRecord(client, 'lead', existing, { status: body.status });
       return response(200, publicLead(next));

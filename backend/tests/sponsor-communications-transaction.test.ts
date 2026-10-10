@@ -151,8 +151,8 @@ async function seedApproval(sequence: number): Promise<ApprovalInput> {
     templateVersion: '1',
     templateDigest: 'b'.repeat(64),
     templateSetGeneration: config.templateSetGeneration,
-    bookingId: `booking-${sequence}`,
-    bookingVersion: 1,
+    dealId: `booking-${sequence}`,
+    dealVersion: 1,
     organizationId: `organization-${sequence}`,
     organizationVersion: 1,
     contactId: `contact-${sequence}`,
@@ -175,7 +175,7 @@ async function seedApproval(sequence: number): Promise<ApprovalInput> {
     id: payloadId,
     recordType: 'communication-draft-version',
     communicationId,
-    bookingId: `booking-${sequence}`,
+    dealId: `booking-${sequence}`,
     version: 1,
     suggestionId: `suggestion-${sequence}`,
     payloadRef: payloadId,
@@ -198,7 +198,7 @@ async function seedApproval(sequence: number): Promise<ApprovalInput> {
     id: `presentation-${sequence}`,
     recordType: 'communication-presentation',
     communicationId,
-    bookingId: `booking-${sequence}`,
+    dealId: `booking-${sequence}`,
     payloadRef: payloadId,
     draftVersion: 1,
     payloadHash: canonical.hash,
@@ -212,15 +212,15 @@ async function seedApproval(sequence: number): Promise<ApprovalInput> {
     createdAt,
   };
   await Promise.all([
-    put('BOOKING', `booking-${sequence}`, { id: `booking-${sequence}`, version: 1, organizationId: `organization-${sequence}`, primaryContactId: `contact-${sequence}`, status: 'confirmed', active: true }),
+    put('DEAL', `booking-${sequence}`, { id: `booking-${sequence}`, version: 1, organizationId: `organization-${sequence}`, primaryContactId: `contact-${sequence}`, status: 'agreed', active: true }),
     put('ORGANIZATION', `organization-${sequence}`, { id: `organization-${sequence}`, version: 1, displayName: 'Synthetic Sponsor', active: true }),
     put('CONTACT', `contact-${sequence}`, { id: `contact-${sequence}`, version: 1, organizationId: `organization-${sequence}`, emails: [`recipient-${sequence}@example.invalid`], active: true }),
     put('COMMUNICATION_SUGGESTION', `suggestion-${sequence}`, {
       id: `suggestion-${sequence}`,
       recordType: 'communication-suggestion',
       version: 1,
-      bookingId: `booking-${sequence}`,
-      bookingVersion: 1,
+      dealId: `booking-${sequence}`,
+      dealVersion: 1,
       organizationId: `organization-${sequence}`,
       communicationType: 'booking-confirmation',
       occurrenceKey: `synthetic-${sequence}`,
@@ -252,8 +252,8 @@ async function seedRouteSource(sequence: number) {
   const recipient = `route-${sequence}@example.invalid`;
   const createdAt = new Date().toISOString();
   await Promise.all([
-    put('BOOKING', bookingId, {
-      id: bookingId, recordType: 'booking', version: 1, organizationId, status: 'confirmed',
+    put('DEAL', bookingId, {
+      id: bookingId, recordType: 'deal', version: 1, organizationId, status: 'agreed',
       plannedPublicationDate: '2026-08-15', active: true,
     }),
     put('ORGANIZATION', organizationId, {
@@ -268,7 +268,7 @@ async function seedRouteSource(sequence: number) {
       occurrenceKey: `route-${sequence}`,
       communicationType: 'booking-confirmation',
       bookingId,
-      bookingVersion: 1,
+      dealVersion: 1,
       organizationId,
       version: 1,
       eligible: true,
@@ -550,7 +550,7 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
     let operatorPermissions: Record<string, unknown> | undefined;
     do {
       const response = await handleSponsorCommunicationRoutes(
-        `/api/sponsor-crm/bookings/${source.bookingId}/communications`,
+        `/api/sponsor-crm/deals/${source.bookingId}/communications`,
         'GET',
         {
           ...apiEvent('GET', '', 'operator-1'),
@@ -590,7 +590,7 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
       GSI4SK: 'DRAFT#2026-01-01T00:00:00.000Z#other#1',
     })).toString('base64url');
     const crossBookingPage = await handleSponsorCommunicationRoutes(
-      `/api/sponsor-crm/bookings/${source.bookingId}/communications`,
+      `/api/sponsor-crm/deals/${source.bookingId}/communications`,
       'GET',
       {
         ...apiEvent('GET', '', 'operator-1'),

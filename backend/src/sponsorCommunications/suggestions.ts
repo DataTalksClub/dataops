@@ -7,43 +7,46 @@ import type { CommunicationSuggestion } from './types';
 type Candidate = { type: CommunicationType; occurrenceKey: string; reason: string };
 const dayDiff = (from: string, to: string) => Math.floor((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 
-export function communicationCandidates(booking: Record<string, unknown>, today: string): Candidate[] {
-  if (booking.status === 'cancelled' || booking.status === 'complete') return [];
+export function communicationCandidates(deal: Record<string, unknown>, deliverables: Array<Record<string, unknown>>, today: string): Candidate[] {
+  if (deal.status === 'lost') return [];
   const candidates: Candidate[] = [];
-  const publication = String(booking.plannedPublicationDate || '');
-  const deadline = String(booking.materialDeadline || '');
-  const hasMaterials = Array.isArray(booking.artifactUrls) && booking.artifactUrls.length > 0;
-  if (booking.status === 'confirmed' && booking.primaryContactId) {
-    candidates.push({ type: 'booking-confirmation', occurrenceKey: 'confirmed', reason: 'Booking confirmed with an active recipient' });
+  if (deal.status === 'agreed' && deal.primaryContactId) {
+    candidates.push({ type: 'booking-confirmation', occurrenceKey: 'agreed', reason: 'Deal agreed with an active recipient' });
   }
-  if (publication && ['confirmed', 'materials-pending'].includes(String(booking.status)) && !hasMaterials) {
-    const days = dayDiff(today, publication);
-    if ([14, 10, 3].includes(days)) candidates.push({
+  for (const deliverable of deliverables) {
+    const publication = String(deliverable.plannedPublicationDate || '');
+    const deadline = String(deliverable.materialDeadline || '');
+    const hasMaterials = Array.isArray(deliverable.artifactUrls) && deliverable.artifactUrls.length > 0;
+    const published = String(deliverable.publishedAt || '').slice(0, 10);
+    if (deal.status === 'agreed' && publication && !hasMaterials && !published) {
+      const days = dayDiff(today, publication);
+      if ([14, 10, 3].includes(days)) candidates.push({
+        type: 'materials-reminder',
+        occurrenceKey: `materials-missing-${days}d:${publication}`,
+        reason: `Materials reminder eligible at ${days} days`,
+      });
+    }
+    if (deadline && deadline < today && !hasMaterials) candidates.push({
       type: 'materials-reminder',
-      occurrenceKey: `materials-missing-${days}d:${publication}`,
-      reason: `Materials reminder eligible at ${days} days`,
+      occurrenceKey: `materials-deadline-overdue:${deadline}`,
+      reason: 'Materials deadline is overdue',
+    });
+    if (published && typeof deliverable.requiredLinkUrl === 'string') {
+      try {
+        const link = new URL(String(deliverable.requiredLinkUrl));
+        if (link.protocol === 'https:') candidates.push({
+          type: 'publication-live',
+          occurrenceKey: `published:${String(deliverable.version)}`,
+          reason: 'Publication is live with a public link',
+        });
+      } catch { /* ineligible */ }
+    }
+    if (published && dayDiff(published, today) >= 7) candidates.push({
+      type: 'performance-follow-up',
+      occurrenceKey: `performance-follow-up:${published}`,
+      reason: 'Performance follow-up is due',
     });
   }
-  if (deadline && deadline < today && !hasMaterials) candidates.push({
-    type: 'materials-reminder',
-    occurrenceKey: `materials-deadline-overdue:${deadline}`,
-    reason: 'Materials deadline is overdue',
-  });
-  if (booking.status === 'published' && typeof booking.requiredLinkUrl === 'string') {
-    try {
-      const link = new URL(booking.requiredLinkUrl);
-      if (link.protocol === 'https:') candidates.push({
-        type: 'publication-live',
-        occurrenceKey: `published:${String(booking.version)}`,
-        reason: 'Publication is live with a public link',
-      });
-    } catch { /* ineligible */ }
-  }
-  if (booking.status === 'published' && publication && dayDiff(publication, today) >= 7) candidates.push({
-    type: 'performance-follow-up',
-    occurrenceKey: `performance-follow-up:${publication}`,
-    reason: 'Performance follow-up is due',
-  });
   return candidates;
 }
 
@@ -51,22 +54,24 @@ export async function evaluateCommunicationSuggestions(
   client: DynamoDBDocumentClient,
   today = new Date().toISOString().slice(0, 10),
 ): Promise<{ created: string[]; existing: string[] }> {
-  const bookings = await listCrmRecords(client, 'booking');
+  const deals = await listCrmRecords(client, 'deal');
+  const deliverables = await listCrmRecords(client, 'deliverable');
   const created: string[] = [];
   const existing: string[] = [];
-  for (const booking of bookings) {
-    for (const candidate of communicationCandidates(booking, today)) {
+  for (const deal of deals) {
+    const kids = deliverables.filter((item) => item.dealId === deal.id);
+    for (const candidate of communicationCandidates(deal, kids, today)) {
       if (!COMMUNICATION_TYPES.includes(candidate.type)) continue;
-      const id = deterministicCrmId('communication-suggestion', `${booking.id}:${candidate.type}:${candidate.occurrenceKey}`);
+      const id = deterministicCrmId('communication-suggestion', `${deal.id}:${candidate.type}:${candidate.occurrenceKey}`);
       const now = new Date().toISOString();
       const suggestion: CommunicationSuggestion = {
         id,
         recordType: 'communication-suggestion',
-        bookingId: booking.id,
-        organizationId: String(booking.organizationId),
+        dealId: deal.id,
+        organizationId: String(deal.organizationId),
         communicationType: candidate.type,
         occurrenceKey: candidate.occurrenceKey,
-        bookingVersion: booking.version,
+        dealVersion: deal.version,
         eligible: true,
         safeReason: candidate.reason.slice(0, 120),
         status: 'open',

@@ -35,7 +35,7 @@ const clean = <T>(item?: Record<string, unknown>): T | null => {
   return value as T;
 };
 const userKey = (id: string) => ({ PK: `USER#${id}`, SK: `USER#${id}` });
-const bookingKey = (id: string) => singleton(`BOOKING#${id}`);
+const dealKey = (id: string) => singleton(`DEAL#${id}`);
 const nowIso = () => new Date().toISOString();
 const safeConflict = () => Object.assign(new Error('Finance state changed; reload and retry'), { statusCode: 409 });
 const DISCOVERY_MAX_ITEMS = 5_000;
@@ -59,10 +59,10 @@ export async function financeActor(client: DynamoDBDocumentClient, actorId: stri
   return { id: actorId, role: user.role as 'admin' | 'operator' };
 }
 
-export async function getFinanceState(client: DynamoDBDocumentClient, bookingId: string): Promise<FinanceState | null> {
+export async function getFinanceState(client: DynamoDBDocumentClient, dealId: string): Promise<FinanceState | null> {
   return clean<FinanceState>((await client.send(new GetCommand({
     TableName: TABLE_SPONSOR_CRM,
-    Key: singleton(financeKey(bookingId)),
+    Key: singleton(financeKey(dealId)),
     ConsistentRead: true,
   }))).Item as Record<string, unknown>);
 }
@@ -96,20 +96,20 @@ function adminCheck(actorId: string) {
   };
 }
 
-function bookingCheck(bookingId: string, version: number) {
+function dealCheck(dealId: string, version: number) {
   return {
     ConditionCheck: {
       TableName: TABLE_SPONSOR_CRM,
-      Key: bookingKey(bookingId),
-      ConditionExpression: '#version = :version AND attribute_not_exists(archivedAt) AND active = :true AND #status <> :cancelled AND #status <> :complete',
+      Key: dealKey(dealId),
+      ConditionExpression: '#version = :version AND attribute_not_exists(archivedAt) AND active = :true AND #status <> :lost',
       ExpressionAttributeNames: { '#version': 'version', '#status': 'status' },
-      ExpressionAttributeValues: { ':version': version, ':true': true, ':cancelled': 'cancelled', ':complete': 'complete' },
+      ExpressionAttributeValues: { ':version': version, ':true': true, ':lost': 'lost' },
     },
   };
 }
 
-const receiptKey = (actorId: string, operation: string, bookingId: string, idempotencyKey: string) =>
-  `SPONSOR_FINANCE_RECEIPT#${digest({ actorId, operation, bookingId, idempotencyKey })}`;
+const receiptKey = (actorId: string, operation: string, dealId: string, idempotencyKey: string) =>
+  `SPONSOR_FINANCE_RECEIPT#${digest({ actorId, operation, dealId, idempotencyKey })}`;
 
 type MutationResult = { financeVersion: number; recordId: string; outcome?: string };
 async function existingReceipt(
@@ -125,14 +125,14 @@ async function existingReceipt(
 
 async function replayMutation(
   client: DynamoDBDocumentClient,
-  input: { actorId: string; operation: string; bookingId: string; idempotencyKey: string; request: unknown },
+  input: { actorId: string; operation: string; dealId: string; idempotencyKey: string; request: unknown },
 ): Promise<MutationResult | null> {
   if (!IDEMPOTENCY.test(input.idempotencyKey)) {
     throw Object.assign(new Error('Invalid Idempotency-Key'), { statusCode: 400 });
   }
   return existingReceipt(
     client,
-    receiptKey(input.actorId, input.operation, input.bookingId, input.idempotencyKey),
+    receiptKey(input.actorId, input.operation, input.dealId, input.idempotencyKey),
     digest(input.request),
   );
 }
@@ -142,7 +142,7 @@ async function executeMutation(
   input: {
     actorId: string;
     operation: string;
-    bookingId: string;
+    dealId: string;
     idempotencyKey: string;
     request: unknown;
     financeVersion: number;
@@ -155,7 +155,7 @@ async function executeMutation(
 ): Promise<MutationResult> {
   if (!IDEMPOTENCY.test(input.idempotencyKey)) throw Object.assign(new Error('Invalid Idempotency-Key'), { statusCode: 400 });
   const requestDigest = digest(input.request);
-  const key = receiptKey(input.actorId, input.operation, input.bookingId, input.idempotencyKey);
+  const key = receiptKey(input.actorId, input.operation, input.dealId, input.idempotencyKey);
   const prior = await existingReceipt(client, key, requestDigest);
   if (prior) return prior;
   const at = nowIso();
@@ -165,7 +165,7 @@ async function executeMutation(
     recordType: 'sponsor-finance-receipt',
     actorId: input.actorId,
     operation: input.operation,
-    bookingId: input.bookingId,
+    dealId: input.dealId,
     requestDigest,
     recordId: input.recordId,
     financeVersion: input.financeVersion,
@@ -181,11 +181,11 @@ async function executeMutation(
           Put: {
             TableName: TABLE_SPONSOR_CRM,
             Item: {
-              PK: `SPONSOR_FINANCE_HISTORY#${input.bookingId}`,
+              PK: `SPONSOR_FINANCE_HISTORY#${input.dealId}`,
               SK: historyId,
               id: historyId,
               recordType: 'sponsor-finance-history',
-              bookingId: input.bookingId,
+              dealId: input.dealId,
               actorId: input.actorId,
               eventCode: input.eventCode,
               financeVersion: input.financeVersion,
@@ -248,21 +248,21 @@ export function validateClassification(body: Record<string, unknown>) {
 export async function classifyFinance(
   client: DynamoDBDocumentClient,
   input: {
-    actorId: string; bookingId: string; bookingVersion: number; expectedVersion?: number;
+    actorId: string; dealId: string; dealVersion: number; expectedVersion?: number;
     idempotencyKey: string; body: Record<string, unknown>;
   },
 ) {
   const values = validateClassification(input.body);
-  const request = { ...values, bookingVersion: input.bookingVersion, expectedVersion: input.expectedVersion };
+  const request = { ...values, dealVersion: input.dealVersion, expectedVersion: input.expectedVersion };
   const replay = await replayMutation(client, {
     actorId: input.actorId,
     operation: 'classify',
-    bookingId: input.bookingId,
+    dealId: input.dealId,
     idempotencyKey: input.idempotencyKey,
     request,
   });
   if (replay) return replay;
-  const existing = await getFinanceState(client, input.bookingId);
+  const existing = await getFinanceState(client, input.dealId);
   if (existing?.voidedAt) throw safeConflict();
   if (existing && (existing.invoiceLinkId || existing.paymentLinkIds.length) && (
     existing.amountDue !== (values as any).amountDue || existing.currency !== (values as any).currency
@@ -272,9 +272,9 @@ export async function classifyFinance(
   const now = nowIso();
   const nextVersion = (existing?.version || 0) + 1;
   const state: FinanceState = {
-    id: input.bookingId,
+    id: input.dealId,
     recordType: 'sponsor-finance',
-    bookingId: input.bookingId,
+    dealId: input.dealId,
     version: nextVersion,
     ...values,
     ...(existing?.invoiceRequestedAt ? { invoiceRequestedAt: existing.invoiceRequestedAt } : {}),
@@ -287,16 +287,16 @@ export async function classifyFinance(
     updatedAt: now,
   };
   return executeMutation(client, {
-    actorId: input.actorId, operation: 'classify', bookingId: input.bookingId,
+    actorId: input.actorId, operation: 'classify', dealId: input.dealId,
     idempotencyKey: input.idempotencyKey, request,
     financeVersion: nextVersion, recordId: state.id, eventCode: existing ? 'classification-updated' : 'classification-created',
     transactItems: [
       adminCheck(input.actorId),
-      bookingCheck(input.bookingId, input.bookingVersion),
+      dealCheck(input.dealId, input.dealVersion),
       {
         Put: {
           TableName: TABLE_SPONSOR_CRM,
-          Item: { ...singleton(financeKey(input.bookingId)), ...state },
+          Item: { ...singleton(financeKey(input.dealId)), ...state },
           ConditionExpression: existing ? '#version = :version AND attribute_not_exists(voidedAt)' : 'attribute_not_exists(PK)',
           ...(existing ? {
             ExpressionAttributeNames: { '#version': 'version' },
@@ -310,29 +310,29 @@ export async function classifyFinance(
 
 export async function recordInvoiceRequest(
   client: DynamoDBDocumentClient,
-  input: { actorId: string; bookingId: string; bookingVersion: number; expectedVersion: number; idempotencyKey: string },
+  input: { actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string },
 ) {
-  const request = { bookingVersion: input.bookingVersion, expectedVersion: input.expectedVersion };
+  const request = { dealVersion: input.dealVersion, expectedVersion: input.expectedVersion };
   const replay = await replayMutation(client, {
     actorId: input.actorId,
     operation: 'request-invoice',
-    bookingId: input.bookingId,
+    dealId: input.dealId,
     idempotencyKey: input.idempotencyKey,
     request,
   });
   if (replay) return replay;
-  const state = await getFinanceState(client, input.bookingId);
+  const state = await getFinanceState(client, input.dealId);
   if (!state || state.version !== input.expectedVersion || state.invoiceRequirement !== 'required' || state.voidedAt) throw safeConflict();
   const now = nowIso();
   return executeMutation(client, {
-    actorId: input.actorId, operation: 'request-invoice', bookingId: input.bookingId,
+    actorId: input.actorId, operation: 'request-invoice', dealId: input.dealId,
     idempotencyKey: input.idempotencyKey, request,
     financeVersion: state.version + 1, recordId: state.id, eventCode: 'invoice-requested',
     transactItems: [
-      adminCheck(input.actorId), bookingCheck(input.bookingId, input.bookingVersion),
+      adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
       {
         Update: {
-          TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.bookingId)),
+          TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
           UpdateExpression: 'SET invoiceRequestedAt = :now, updatedAt = :now, actorId = :actor, #version = #version + :one',
           ConditionExpression: '#version = :version AND invoiceRequirement = :required AND attribute_not_exists(voidedAt) AND attribute_not_exists(invoiceRequestedAt)',
           ExpressionAttributeNames: { '#version': 'version' },
@@ -354,7 +354,7 @@ async function sourceItem(client: DynamoDBDocumentClient, kind: 'document' | 'tr
 export async function linkInvoice(
   client: DynamoDBDocumentClient,
   input: {
-    actorId: string; bookingId: string; bookingVersion: number; expectedVersion: number;
+    actorId: string; dealId: string; dealVersion: number; expectedVersion: number;
     sourceId: string; identityToken: string; issuedOn: string; dueOn: string; idempotencyKey: string;
   },
 ) {
@@ -362,7 +362,7 @@ export async function linkInvoice(
     throw Object.assign(new Error('Invalid invoice link'), { statusCode: 400 });
   }
   const request = {
-    bookingVersion: input.bookingVersion,
+    dealVersion: input.dealVersion,
     expectedVersion: input.expectedVersion,
     sourceId: input.sourceId,
     identityToken: input.identityToken,
@@ -372,32 +372,32 @@ export async function linkInvoice(
   const replay = await replayMutation(client, {
     actorId: input.actorId,
     operation: 'link-invoice',
-    bookingId: input.bookingId,
+    dealId: input.dealId,
     idempotencyKey: input.idempotencyKey,
     request,
   });
   if (replay) return replay;
-  const [state, source] = await Promise.all([getFinanceState(client, input.bookingId), sourceItem(client, 'document', input.sourceId)]);
+  const [state, source] = await Promise.all([getFinanceState(client, input.dealId), sourceItem(client, 'document', input.sourceId)]);
   if (
     !state || state.version !== input.expectedVersion || state.invoiceRequirement !== 'required' || state.invoiceLinkId
     || !state.invoiceRequestedAt || state.taxMode === 'unknown' || state.voidedAt || !source
     || invoiceIdentity(source) !== input.identityToken
     || input.issuedOn < berlinDate(new Date(state.invoiceRequestedAt))
   ) throw safeConflict();
-  const id = linkKey(input.bookingId, 'document', input.sourceId);
+  const id = linkKey(input.dealId, 'document', input.sourceId);
   const nextVersion = state.version + 1;
   const now = nowIso();
   const link: FinanceLink = {
-    id, recordType: 'sponsor-finance-link', bookingId: input.bookingId, kind: 'document',
+    id, recordType: 'sponsor-finance-link', dealId: input.dealId, kind: 'document',
     sourceId: input.sourceId, identityToken: input.identityToken, actorId: input.actorId,
     financeVersion: nextVersion, createdAt: now,
   };
   return executeMutation(client, {
-    actorId: input.actorId, operation: 'link-invoice', bookingId: input.bookingId, idempotencyKey: input.idempotencyKey,
+    actorId: input.actorId, operation: 'link-invoice', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
     request,
     financeVersion: nextVersion, recordId: id, linkId: id, sourceId: input.sourceId, eventCode: 'invoice-linked',
     transactItems: [
-      adminCheck(input.actorId), bookingCheck(input.bookingId, input.bookingVersion),
+      adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
       {
         ConditionCheck: {
           TableName: TABLE_BOOKKEEPING, Key: singleton(sourceKey('document', input.sourceId)),
@@ -409,7 +409,7 @@ export async function linkInvoice(
           TableName: TABLE_BOOKKEEPING,
           Item: {
             ...singleton(claimKey('document', input.sourceId)), recordType: 'sponsor-finance-claim',
-            kind: 'document', sourceId: input.sourceId, bookingId: input.bookingId, linkId: id,
+            kind: 'document', sourceId: input.sourceId, dealId: input.dealId, linkId: id,
             identityToken: input.identityToken, actorId: input.actorId, createdAt: now,
           },
           ConditionExpression: 'attribute_not_exists(PK)',
@@ -418,7 +418,7 @@ export async function linkInvoice(
       { Put: { TableName: TABLE_SPONSOR_CRM, Item: { ...singleton(id), ...link }, ConditionExpression: 'attribute_not_exists(PK)' } },
       {
         Update: {
-          TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.bookingId)),
+          TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
           UpdateExpression: 'SET invoiceLinkId = :link, issuedOn = :issued, dueOn = :due, updatedAt = :now, actorId = :actor, #version = #version + :one',
           ConditionExpression: '#version = :version AND attribute_not_exists(invoiceLinkId) AND attribute_not_exists(voidedAt)',
           ExpressionAttributeNames: { '#version': 'version' },
@@ -432,13 +432,13 @@ export async function linkInvoice(
 export async function linkPayment(
   client: DynamoDBDocumentClient,
   input: {
-    actorId: string; bookingId: string; bookingVersion: number; expectedVersion: number;
+    actorId: string; dealId: string; dealVersion: number; expectedVersion: number;
     sourceId: string; identityToken: string; idempotencyKey: string;
   },
 ) {
   if (!OPAQUE.test(input.sourceId)) throw Object.assign(new Error('Invalid payment link'), { statusCode: 400 });
   const request = {
-    bookingVersion: input.bookingVersion,
+    dealVersion: input.dealVersion,
     expectedVersion: input.expectedVersion,
     sourceId: input.sourceId,
     identityToken: input.identityToken,
@@ -446,13 +446,13 @@ export async function linkPayment(
   const replay = await replayMutation(client, {
     actorId: input.actorId,
     operation: 'link-payment',
-    bookingId: input.bookingId,
+    dealId: input.dealId,
     idempotencyKey: input.idempotencyKey,
     request,
   });
   if (replay) return replay;
-  const projection = await projectFinance(client, input.bookingId, 'admin');
-  const state = await getFinanceState(client, input.bookingId);
+  const projection = await projectFinance(client, input.dealId, 'admin');
+  const state = await getFinanceState(client, input.dealId);
   const source = await sourceItem(client, 'transaction', input.sourceId);
   if (
     !state || state.version !== input.expectedVersion || state.voidedAt || !state.invoiceLinkId
@@ -461,12 +461,12 @@ export async function linkPayment(
   ) throw safeConflict();
   const paid = projection.payments.reduce((sum, item) => sum + scaledMoney(item.amount), 0n);
   if (paid + scaledMoney(source.amount) > scaledMoney(state.amountDue)) throw safeConflict();
-  const id = linkKey(input.bookingId, 'transaction', input.sourceId);
+  const id = linkKey(input.dealId, 'transaction', input.sourceId);
   const nextIds = [...state.paymentLinkIds, id].sort();
   const nextVersion = state.version + 1;
   const now = nowIso();
   const link: FinanceLink = {
-    id, recordType: 'sponsor-finance-link', bookingId: input.bookingId, kind: 'transaction',
+    id, recordType: 'sponsor-finance-link', dealId: input.dealId, kind: 'transaction',
     sourceId: input.sourceId, identityToken: input.identityToken, actorId: input.actorId,
     financeVersion: nextVersion, createdAt: now,
   };
@@ -474,7 +474,7 @@ export async function linkPayment(
   for (const payment of projection.payments) {
     const linkedSource = await sourceItem(client, 'transaction', payment.id);
     if (!linkedSource) throw safeConflict();
-    const existingLinkId = linkKey(input.bookingId, 'transaction', payment.id);
+    const existingLinkId = linkKey(input.dealId, 'transaction', payment.id);
     const identityToken = paymentIdentity(linkedSource);
     existingTupleChecks.push(
       {
@@ -488,9 +488,9 @@ export async function linkPayment(
         ConditionCheck: {
           TableName: TABLE_BOOKKEEPING,
           Key: singleton(claimKey('transaction', payment.id)),
-          ConditionExpression: 'bookingId = :booking AND linkId = :link AND kind = :kind AND sourceId = :source AND identityToken = :identity',
+          ConditionExpression: 'dealId = :booking AND linkId = :link AND kind = :kind AND sourceId = :source AND identityToken = :identity',
           ExpressionAttributeValues: {
-            ':booking': input.bookingId,
+            ':booking': input.dealId,
             ':link': existingLinkId,
             ':kind': 'transaction',
             ':source': payment.id,
@@ -502,11 +502,11 @@ export async function linkPayment(
   }
   if (existingTupleChecks.length + 8 > MAX_PAYMENT_LINK_TRANSACTION_ACTIONS) throw safeConflict();
   return executeMutation(client, {
-    actorId: input.actorId, operation: 'link-payment', bookingId: input.bookingId, idempotencyKey: input.idempotencyKey,
+    actorId: input.actorId, operation: 'link-payment', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
     request,
     financeVersion: nextVersion, recordId: id, linkId: id, sourceId: input.sourceId, eventCode: 'payment-linked',
     transactItems: [
-      adminCheck(input.actorId), bookingCheck(input.bookingId, input.bookingVersion),
+      adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
       ...existingTupleChecks,
       {
         ConditionCheck: {
@@ -519,7 +519,7 @@ export async function linkPayment(
           TableName: TABLE_BOOKKEEPING,
           Item: {
             ...singleton(claimKey('transaction', input.sourceId)), recordType: 'sponsor-finance-claim',
-            kind: 'transaction', sourceId: input.sourceId, bookingId: input.bookingId, linkId: id,
+            kind: 'transaction', sourceId: input.sourceId, dealId: input.dealId, linkId: id,
             identityToken: input.identityToken, actorId: input.actorId, createdAt: now,
           },
           ConditionExpression: 'attribute_not_exists(PK)',
@@ -528,7 +528,7 @@ export async function linkPayment(
       { Put: { TableName: TABLE_SPONSOR_CRM, Item: { ...singleton(id), ...link }, ConditionExpression: 'attribute_not_exists(PK)' } },
       {
         Update: {
-          TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.bookingId)),
+          TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
           UpdateExpression: 'SET paymentLinkIds = :next, updatedAt = :now, actorId = :actor, #version = #version + :one',
           ConditionExpression: '#version = :version AND paymentLinkIds = :prior AND size(paymentLinkIds) < :limit AND attribute_not_exists(voidedAt)',
           ExpressionAttributeNames: { '#version': 'version' },
@@ -542,21 +542,21 @@ export async function linkPayment(
 export async function unlinkFinanceSource(
   client: DynamoDBDocumentClient,
   input: {
-    actorId: string; bookingId: string; bookingVersion: number; expectedVersion: number;
+    actorId: string; dealId: string; dealVersion: number; expectedVersion: number;
     kind: 'document' | 'transaction'; sourceId: string; idempotencyKey: string;
   },
 ) {
-  const id = linkKey(input.bookingId, input.kind, input.sourceId);
-  const request = { bookingVersion: input.bookingVersion, expectedVersion: input.expectedVersion, sourceId: input.sourceId };
+  const id = linkKey(input.dealId, input.kind, input.sourceId);
+  const request = { dealVersion: input.dealVersion, expectedVersion: input.expectedVersion, sourceId: input.sourceId };
   const replay = await replayMutation(client, {
     actorId: input.actorId,
     operation: `unlink-${input.kind}`,
-    bookingId: input.bookingId,
+    dealId: input.dealId,
     idempotencyKey: input.idempotencyKey,
     request,
   });
   if (replay) return replay;
-  const state = await getFinanceState(client, input.bookingId);
+  const state = await getFinanceState(client, input.dealId);
   if (
     !state || state.version !== input.expectedVersion
     || (input.kind === 'document' ? state.invoiceLinkId !== id : !state.paymentLinkIds.includes(id))
@@ -580,56 +580,56 @@ export async function unlinkFinanceSource(
       },
     };
   return executeMutation(client, {
-    actorId: input.actorId, operation: `unlink-${input.kind}`, bookingId: input.bookingId, idempotencyKey: input.idempotencyKey,
+    actorId: input.actorId, operation: `unlink-${input.kind}`, dealId: input.dealId, idempotencyKey: input.idempotencyKey,
     request,
     financeVersion: nextVersion, recordId: id, linkId: id, sourceId: input.sourceId,
     eventCode: input.kind === 'document' ? 'invoice-unlinked' : 'payment-unlinked',
     transactItems: [
-      adminCheck(input.actorId), bookingCheck(input.bookingId, input.bookingVersion),
+      adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
       {
         Delete: {
           TableName: TABLE_BOOKKEEPING, Key: singleton(claimKey(input.kind, input.sourceId)),
-          ConditionExpression: 'bookingId = :booking AND linkId = :link',
-          ExpressionAttributeValues: { ':booking': input.bookingId, ':link': id },
+          ConditionExpression: 'dealId = :booking AND linkId = :link',
+          ExpressionAttributeValues: { ':booking': input.dealId, ':link': id },
         },
       },
       {
         Delete: {
           TableName: TABLE_SPONSOR_CRM, Key: singleton(id),
-          ConditionExpression: 'bookingId = :booking AND sourceId = :source',
-          ExpressionAttributeValues: { ':booking': input.bookingId, ':source': input.sourceId },
+          ConditionExpression: 'dealId = :booking AND sourceId = :source',
+          ExpressionAttributeValues: { ':booking': input.dealId, ':source': input.sourceId },
         },
       },
-      { Update: { TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.bookingId)), ...update } },
+      { Update: { TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)), ...update } },
     ],
   });
 }
 
 export async function voidFinance(
   client: DynamoDBDocumentClient,
-  input: { actorId: string; bookingId: string; bookingVersion: number; expectedVersion: number; idempotencyKey: string },
+  input: { actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string },
 ) {
-  const request = { bookingVersion: input.bookingVersion, expectedVersion: input.expectedVersion };
+  const request = { dealVersion: input.dealVersion, expectedVersion: input.expectedVersion };
   const replay = await replayMutation(client, {
     actorId: input.actorId,
     operation: 'void',
-    bookingId: input.bookingId,
+    dealId: input.dealId,
     idempotencyKey: input.idempotencyKey,
     request,
   });
   if (replay) return replay;
-  const state = await getFinanceState(client, input.bookingId);
+  const state = await getFinanceState(client, input.dealId);
   if (!state || state.version !== input.expectedVersion || state.invoiceLinkId || state.paymentLinkIds.length || state.voidedAt) throw safeConflict();
   const now = nowIso();
   return executeMutation(client, {
-    actorId: input.actorId, operation: 'void', bookingId: input.bookingId, idempotencyKey: input.idempotencyKey,
+    actorId: input.actorId, operation: 'void', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
     request,
     financeVersion: state.version + 1, recordId: state.id, eventCode: 'finance-voided',
     transactItems: [
-      adminCheck(input.actorId), bookingCheck(input.bookingId, input.bookingVersion),
+      adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
       {
         Update: {
-          TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.bookingId)),
+          TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
           UpdateExpression: 'SET voidedAt = :now, updatedAt = :now, actorId = :actor, #version = #version + :one',
           ConditionExpression: '#version = :version AND size(paymentLinkIds) = :zero AND attribute_not_exists(invoiceLinkId) AND attribute_not_exists(voidedAt)',
           ExpressionAttributeNames: { '#version': 'version' },
@@ -642,14 +642,14 @@ export async function voidFinance(
 
 export async function projectFinance(
   client: DynamoDBDocumentClient,
-  bookingId: string,
+  dealId: string,
   role: 'admin' | 'operator',
 ): Promise<FinanceProjection> {
   for (let retry = 0; retry < 3; retry++) {
-    const orphanDiscovery = await discoverFinanceClaims(client, bookingId);
-    const discovered = await getFinanceState(client, bookingId);
+    const orphanDiscovery = await discoverFinanceClaims(client, dealId);
+    const discovered = await getFinanceState(client, dealId);
     if (!discovered) return {
-      enabled: true, classified: false, bookingId, role, invoiceState: 'unclassified',
+      enabled: true, classified: false, dealId, role, invoiceState: 'unclassified',
       paymentState: orphanDiscovery.complete && orphanDiscovery.keys.length === 0
         ? 'not-applicable' : 'reconciliation-required',
       timingState: 'not-applicable', payments: [],
@@ -661,8 +661,8 @@ export async function projectFinance(
     const linkKinds = ids.map((id) => id.includes('#document#') ? 'document' as const : 'transaction' as const);
     const sourceIds = ids.map((id) => id.split('#').at(-1)!);
     const getItems: any[] = [
-      { Get: { TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(bookingId)) } },
-      { Get: { TableName: TABLE_SPONSOR_CRM, Key: bookingKey(bookingId) } },
+      { Get: { TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(dealId)) } },
+      { Get: { TableName: TABLE_SPONSOR_CRM, Key: dealKey(dealId) } },
     ];
     ids.forEach((id, index) => {
       getItems.push(
@@ -676,7 +676,7 @@ export async function projectFinance(
     const state = clean<FinanceState>(responses[0]?.Item as Record<string, unknown>);
     const booking = responses[1]?.Item;
     if (!state || state.version !== discovered.version || JSON.stringify(state.paymentLinkIds) !== JSON.stringify(discovered.paymentLinkIds) || state.invoiceLinkId !== discovered.invoiceLinkId) continue;
-    const confirmedClaims = await discoverFinanceClaims(client, bookingId);
+    const confirmedClaims = await discoverFinanceClaims(client, dealId);
     if (
       !confirmedClaims.complete
       || JSON.stringify(confirmedClaims.keys) !== JSON.stringify(orphanDiscovery.keys)
@@ -695,9 +695,9 @@ export async function projectFinance(
       try { identity = source ? (kind === 'document' ? invoiceIdentity(source) : paymentIdentity(source)) : ''; } catch { coherent = false; }
       if (
         !link || !claim || !source || link.id !== ids[index] || link.sourceId !== sourceIds[index]
-        || link.bookingId !== bookingId || link.kind !== kind
+        || link.dealId !== dealId || link.kind !== kind
         || link.identityToken !== identity || claim.identityToken !== identity || claim.linkId !== link.id
-        || claim.bookingId !== bookingId || claim.kind !== kind || claim.sourceId !== sourceIds[index]
+        || claim.dealId !== dealId || claim.kind !== kind || claim.sourceId !== sourceIds[index]
         || String(source.id) !== sourceIds[index]
       ) coherent = false;
       if (kind === 'document' && source) {
@@ -735,7 +735,7 @@ export async function projectFinance(
       : paymentState === 'paid' ? 'settled'
         : state.dueOn && state.dueOn < today ? 'overdue' : 'not-due';
     return {
-      enabled: true, classified: true, bookingId, role,
+      enabled: true, classified: true, dealId, role,
       finance: {
         version: state.version, invoiceRequirement: state.invoiceRequirement,
         ...(state.amountDue ? { amountDue: state.amountDue } : {}),
@@ -820,11 +820,11 @@ const canonicalCursor = (cursor: Record<string, unknown>) =>
   Object.entries(cursor).sort(([left], [right]) => left.localeCompare(right))
     .map(([key, value]) => `${key}:${String(value)}`).join('|');
 
-async function discoverFinanceClaims(client: DynamoDBDocumentClient, bookingId: string) {
+async function discoverFinanceClaims(client: DynamoDBDocumentClient, dealId: string) {
   const result = await boundedBookkeepingScan(
     client,
-    'begins_with(PK, :prefix) AND bookingId = :booking',
-    { ':prefix': 'SPONSOR_FINANCE_CLAIM#', ':booking': bookingId },
+    'begins_with(PK, :prefix) AND dealId = :booking',
+    { ':prefix': 'SPONSOR_FINANCE_CLAIM#', ':booking': dealId },
   );
   return {
     complete: result.complete,
@@ -885,11 +885,11 @@ export async function listFinanceCandidates(
   };
 }
 
-export async function listFinanceHistory(client: DynamoDBDocumentClient, bookingId: string, limit = 50) {
+export async function listFinanceHistory(client: DynamoDBDocumentClient, dealId: string, limit = 50) {
   const result = await client.send(new QueryCommand({
     TableName: TABLE_SPONSOR_CRM,
     KeyConditionExpression: 'PK = :pk',
-    ExpressionAttributeValues: { ':pk': `SPONSOR_FINANCE_HISTORY#${bookingId}` },
+    ExpressionAttributeValues: { ':pk': `SPONSOR_FINANCE_HISTORY#${dealId}` },
     ScanIndexForward: false,
     Limit: Math.min(Math.max(limit, 1), 100),
   }));

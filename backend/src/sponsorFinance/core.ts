@@ -76,9 +76,9 @@ export function paymentIdentity(source: Record<string, unknown>): string {
   return digest({ kind: 'transaction', id: source.id, updatedAt: source.updatedAt, amount: source.amount, currency: source.currency });
 }
 
-export const financeKey = (bookingId: string) => `SPONSOR_FINANCE#${bookingId}`;
-export const linkKey = (bookingId: string, kind: 'document' | 'transaction', sourceId: string) =>
-  `SPONSOR_FINANCE_LINK#${bookingId}#${kind}#${sourceId}`;
+export const financeKey = (dealId: string) => `SPONSOR_FINANCE#${dealId}`;
+export const linkKey = (dealId: string, kind: 'document' | 'transaction', sourceId: string) =>
+  `SPONSOR_FINANCE_LINK#${dealId}#${kind}#${sourceId}`;
 export const claimKey = (kind: 'document' | 'transaction', sourceId: string) =>
   `SPONSOR_FINANCE_CLAIM#${kind}#${sourceId}`;
 export const sourceKey = (kind: 'document' | 'transaction', sourceId: string) =>

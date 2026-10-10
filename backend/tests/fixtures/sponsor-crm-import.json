@@ -1,0 +1,79 @@
+{
+  "companies": [
+    {
+      "domain": "cash.example.invalid",
+      "displayName": "Cash Corp",
+      "relevancy": "high",
+      "sourceKey": "fixture-cash"
+    },
+    {
+      "domain": "verbal.example.invalid",
+      "displayName": "Verbal Corp",
+      "relevancy": "medium",
+      "sourceKey": "fixture-verbal"
+    }
+  ],
+  "people": [
+    {
+      "email": "pat@cash.example.invalid",
+      "name": "Pat Cash",
+      "organizationDomain": "cash.example.invalid",
+      "sourceKey": "fixture-pat"
+    }
+  ],
+  "deals": [
+    {
+      "organizationDomain": "cash.example.invalid",
+      "status": "agreed",
+      "productKind": "package",
+      "amountEur": 9000,
+      "cash": true,
+      "agreementDate": "2026-01-15",
+      "nextAction": {
+        "type": "send_stats",
+        "due": "2026-08-01",
+        "owner": "00000000-0000-0000-0000-000000000001",
+        "note": "send package stats"
+      },
+      "sourceKey": "fixture-cash-deal",
+      "deliverables": [
+        {
+          "channel": "main",
+          "plannedPublicationDate": "2026-03-01",
+          "publishedAt": "2026-03-01"
+        }
+      ]
+    },
+    {
+      "organizationDomain": "verbal.example.invalid",
+      "status": "agreed",
+      "productKind": "one-off",
+      "amountEur": 2700,
+      "cash": false,
+      "nextAction": {
+        "type": "send_invoice",
+        "due": "2026-08-01",
+        "owner": "00000000-0000-0000-0000-000000000001",
+        "note": "invoice the verbal yes"
+      },
+      "sourceKey": "fixture-verbal-deal"
+    }
+  ],
+  "invoices": [
+    {
+      "dealSourceKey": "fixture-cash-deal",
+      "amountEur": 9000,
+      "due": "2026-02-01",
+      "paidAt": "2026-02-02",
+      "sourceKey": "fixture-cash-inv"
+    }
+  ],
+  "leads": [
+    {
+      "name": "Sighting Co",
+      "url": "https://sighting.example.invalid",
+      "newsletter": "example-digest",
+      "sourceKey": "fixture-lead"
+    }
+  ]
+}

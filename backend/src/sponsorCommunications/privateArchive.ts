@@ -79,12 +79,12 @@ function validateRecordSchema(record: Record<string, unknown>): void {
   }
   switch (record.recordType) {
     case 'communication-suggestion':
-      requireFields(record, ['id', 'bookingId', 'organizationId', 'communicationType'], ['version']);
+      requireFields(record, ['id', 'dealId', 'organizationId', 'communicationType'], ['version']);
       if (typeof record.eligible !== 'boolean' || !isEnum(record.status, ['open', 'dismissed', 'ineligible'])) throw new Error('Invalid suggestion state');
       requireTimestamps(record, ['createdAt', 'updatedAt']);
       break;
     case 'communication-draft-version':
-      requireFields(record, ['id', 'communicationId', 'bookingId', 'suggestionId', 'payloadHash', 'previewHash', 'configDigest'], ['version']);
+      requireFields(record, ['id', 'communicationId', 'dealId', 'suggestionId', 'payloadHash', 'previewHash', 'configDigest'], ['version']);
       if ((record.payloadExpired === true) === isString(record.payloadRef)) throw new Error('Invalid draft payload state');
       requireTimestamps(record, ['createdAt']);
       break;
@@ -94,13 +94,13 @@ function validateRecordSchema(record: Record<string, unknown>): void {
       requireTimestamps(record, ['createdAt']);
       break;
     case 'communication-presentation':
-      requireFields(record, ['id', 'communicationId', 'bookingId', 'payloadHash', 'previewHash'], ['draftVersion', 'revision']);
+      requireFields(record, ['id', 'communicationId', 'dealId', 'payloadHash', 'previewHash'], ['draftVersion', 'revision']);
       if (!isEnum(record.state, ['revoked']) || (record.payloadExpired === true) === isString(record.payloadRef)) throw new Error('Invalid presentation state');
       requireTimestamps(record, ['expiresAt', 'createdAt']);
       break;
     case 'sponsor-send-attempt':
       requireFields(record, [
-        'id', 'communicationId', 'bookingId', 'payloadHash', 'previewHash', 'configDigest',
+        'id', 'communicationId', 'dealId', 'payloadHash', 'previewHash', 'configDigest',
         'sesAccount', 'sesRegion', 'sesIdentityArn', 'from', 'configurationSet', 'configurationSetGeneration',
       ], ['draftVersion', 'configGeneration', 'revision']);
       if (
@@ -112,7 +112,7 @@ function validateRecordSchema(record: Record<string, unknown>): void {
       break;
     case 'sponsor-send-event-fact':
       requireFields(record, [
-        'id', 'attemptId', 'communicationId', 'bookingId', 'eventType', 'eventTime',
+        'id', 'attemptId', 'communicationId', 'dealId', 'eventType', 'eventTime',
         'messageId', 'configurationSetGeneration',
       ]);
       if (!isEnum(record.eventType, ['SEND', 'DELIVERY', 'DELIVERY_DELAY', 'REJECT', 'RENDERING_FAILURE', 'BOUNCE', 'COMPLAINT'])) throw new Error('Invalid send event type');
@@ -191,7 +191,7 @@ export async function exportSponsorCommunications(
     const result = await client.send(new ScanCommand({
       TableName: TABLE_SPONSOR_CRM,
       ExclusiveStartKey: cursor,
-      ProjectionExpression: '#pk,#sk,recordType,id,communicationId,bookingId,organizationId,contactId,suggestionId,payloadRef,payloadExpired,attemptId,suppressionId,#version,revision,generation,createdAt,updatedAt,#status,#state,eligible,safeReason,safeReasonCode,communicationType,occurrenceKey,bookingVersion,payloadHash,previewHash,configDigest,#digest,configGeneration,templateSetGeneration,hmacActiveVersion,hmacAcceptedVersions,hmacKeyringDigest,sesAccount,sesRegion,sesIdentityArn,#from,replyTo,configurationSet,configurationSetGeneration,approverPolicyVersion,enabled,payload,retentionAnchoredAt,#ttl,draftVersion,expiresAt,createdBy,approverId,roleSnapshot,derivedStatus,dispatchStartedAt,providerMessageId,providerFacts,recoveryBlocked,payloadDeleteAt,eventType,eventTime,messageId,keyVersion,liveCount,liveVersions,category,facts,candidateMessageId,#action,actorId,#at,correlationHash',
+      ProjectionExpression: '#pk,#sk,recordType,id,communicationId,dealId,organizationId,contactId,suggestionId,payloadRef,payloadExpired,attemptId,suppressionId,#version,revision,generation,createdAt,updatedAt,#status,#state,eligible,safeReason,safeReasonCode,communicationType,occurrenceKey,dealVersion,payloadHash,previewHash,configDigest,#digest,configGeneration,templateSetGeneration,hmacActiveVersion,hmacAcceptedVersions,hmacKeyringDigest,sesAccount,sesRegion,sesIdentityArn,#from,replyTo,configurationSet,configurationSetGeneration,approverPolicyVersion,enabled,payload,retentionAnchoredAt,#ttl,draftVersion,expiresAt,createdBy,approverId,roleSnapshot,derivedStatus,dispatchStartedAt,providerMessageId,providerFacts,recoveryBlocked,payloadDeleteAt,eventType,eventTime,messageId,keyVersion,liveCount,liveVersions,category,facts,candidateMessageId,#action,actorId,#at,correlationHash',
       ExpressionAttributeNames: {
         '#pk': 'PK', '#sk': 'SK', '#version': 'version', '#status': 'status', '#state': 'state',
         '#from': 'from', '#ttl': 'ttl', '#action': 'action', '#at': 'at', '#digest': 'digest',
@@ -313,7 +313,7 @@ export function validateSponsorPrivateArchive(archive: SponsorPrivateArchive): v
       const suggestion = suggestions.get(String(record.suggestionId));
       const payload = record.payloadRef ? payloads.get(String(record.payloadRef)) : undefined;
       const body = payload?.payload as Record<string, unknown> | undefined;
-      if (!suggestion || suggestion.bookingId !== record.bookingId) {
+      if (!suggestion || suggestion.dealId !== record.dealId) {
         throw new Error('Private sponsor archive has a dangling suggestion reference');
       }
       if (record.payloadExpired !== true && (
@@ -323,7 +323,7 @@ export function validateSponsorPrivateArchive(archive: SponsorPrivateArchive): v
         || payload.payloadHash !== record.payloadHash
         || body?.communicationId !== record.communicationId
         || body?.version !== record.version
-        || body?.bookingId !== record.bookingId
+        || body?.dealId !== record.dealId
         || body?.suggestionId !== record.suggestionId
         || body?.organizationId !== suggestion.organizationId
         || body?.communicationType !== suggestion.communicationType
@@ -342,7 +342,7 @@ export function validateSponsorPrivateArchive(archive: SponsorPrivateArchive): v
       const draft = drafts.get(`${record.communicationId}#${record.draftVersion}`);
       if (
         !draft
-        || record.bookingId !== draft.bookingId
+        || record.dealId !== draft.dealId
         || record.payloadHash !== draft.payloadHash
         || record.previewHash !== draft.previewHash
         || !samePayloadState(record, draft)
@@ -355,7 +355,7 @@ export function validateSponsorPrivateArchive(archive: SponsorPrivateArchive): v
       const config = configRelationships.get(`${record.configGeneration}#${record.configDigest}`);
       if (
         !draft
-        || record.bookingId !== draft.bookingId
+        || record.dealId !== draft.dealId
         || record.payloadHash !== draft.payloadHash
         || record.previewHash !== draft.previewHash
         || !samePayloadState(record, draft)
@@ -377,7 +377,7 @@ export function validateSponsorPrivateArchive(archive: SponsorPrivateArchive): v
         !attempt
         || !hasExactKey(record, 'SPONSOR_SEND_EVENT', record.id)
         || record.communicationId !== attempt.communicationId
-        || record.bookingId !== attempt.bookingId
+        || record.dealId !== attempt.dealId
         || !isString(attempt.providerMessageId)
         || record.messageId !== attempt.providerMessageId
         || record.configurationSetGeneration !== attempt.configurationSetGeneration

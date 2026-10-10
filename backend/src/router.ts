@@ -197,6 +197,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (result) return result;
     }
     const testTemplateActorId = skipAuth ? process.env.E2E_TEMPLATE_ACTOR_ID || '' : '';
+    if (skipAuth && !headerValue(event.headers, 'x-user-id') && testTemplateActorId) {
+      if (!event.headers) event.headers = {};
+      event.headers['x-user-id'] = testTemplateActorId;
+    }
     if (skipAuth && reqPath === '/api/me' && (headerValue(event.headers, 'x-user-id') || testTemplateActorId)) {
       const user = await getUser(client, headerValue(event.headers, 'x-user-id') || testTemplateActorId);
       return user && !user.disabled
@@ -459,7 +463,7 @@ export function isSponsorCommunicationRoute(pathname: string): boolean {
   if (segments.some((segment) => segment.length === 0)) return false;
 
   const [family] = segments;
-  if (family === 'bookings') {
+  if (family === 'deals') {
     return segments.length === 3 && segments[2] === 'communications';
   }
   if (family === 'communication-suggestions') {

@@ -9,14 +9,15 @@ import {
 
 export type CrmRecord = Record<string, unknown> & { id: string; version: number; createdAt: string; updatedAt: string };
 const key = (kind: string, id: string) => `${kind.toUpperCase()}#${id}`;
+const compact = (record: Record<string, unknown>) => Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 const clean = (item?: Record<string, unknown>): CrmRecord | null => {
   if (!item) return null;
   const { PK, SK, ...record } = item;
   return record as CrmRecord;
 };
 export const deterministicCrmId = (kind: string, sourceKey: string) => createHash('sha256').update(`${kind}:${sourceKey}`).digest('hex');
-const stored = (kind: string, record: Record<string, unknown>) => ({ PK: key(kind, String(record.id)), SK: key(kind, String(record.id)), ...record });
-const historyPut = (bookingId: string, event: Record<string, unknown>) => { const createdAt=new Date().toISOString(),id=`${createdAt}#${randomUUID()}`;return { Put:{TableName:TABLE_SPONSOR_CRM,Item:{PK:key('history',bookingId),SK:id,...event,id,bookingId,createdAt},ConditionExpression:'attribute_not_exists(PK) AND attribute_not_exists(SK)'} }; };
+const stored = (kind: string, record: Record<string, unknown>) => ({ PK: key(kind, String(record.id)), SK: key(kind, String(record.id)), ...compact(record) });
+const historyPut = (bookingId: string, event: Record<string, unknown>) => { const createdAt=new Date().toISOString(),id=`${createdAt}#${randomUUID()}`;return { Put:{TableName:TABLE_SPONSOR_CRM,Item:compact({PK:key('history',bookingId),SK:id,...event,id,bookingId,createdAt}),ConditionExpression:'attribute_not_exists(PK) AND attribute_not_exists(SK)'} }; };
 async function transact(client:DynamoDBDocumentClient,items:any[]){
   if(process.env.NODE_ENV!=='test') return client.send(new TransactWriteCommand({TransactItems:items,ClientRequestToken:randomUUID()}));
   // Dynalite used by this repository lacks TransactWriteItems. Production always
@@ -60,7 +61,7 @@ export async function createCrmRecord(client: DynamoDBDocumentClient, kind: stri
   const sourceKey = typeof value.sourceKey === 'string' ? value.sourceKey : '';
   const id = sourceKey ? deterministicCrmId(kind, sourceKey) : randomUUID();
   const now = new Date().toISOString();
-  const item = { PK: key(kind, id), SK: key(kind, id), ...value, id, version: 1, createdAt: now, updatedAt: now };
+  const item = compact({ PK: key(kind, id), SK: key(kind, id), ...value, id, version: 1, createdAt: now, updatedAt: now });
   try {
     await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: item, ConditionExpression: 'attribute_not_exists(PK)' }));
     return { item: clean(item)!, duplicate: false };
@@ -74,49 +75,60 @@ export async function createCrmRecord(client: DynamoDBDocumentClient, kind: stri
 }
 
 export async function updateCrmRecord(client: DynamoDBDocumentClient, kind: string, existing: CrmRecord, value: Record<string, unknown>) {
-  const now = new Date().toISOString(), next = { ...existing, ...value, id: existing.id, createdAt: existing.createdAt, updatedAt: now, version: existing.version + 1 };
+  const now = new Date().toISOString(), next = compact({ ...existing, ...value, id: existing.id, createdAt: existing.createdAt, updatedAt: now, version: existing.version + 1 });
   await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { PK: key(kind, existing.id), SK: key(kind, existing.id), ...next }, ConditionExpression: '#version = :version', ExpressionAttributeNames: { '#version': 'version' }, ExpressionAttributeValues: { ':version': existing.version } }));
   return next;
 }
 
-export async function putBookingWithScheduleLock(client: DynamoDBDocumentClient, booking: CrmRecord, previousScheduleEntryId?: string) {
-  const bookingKey = key('booking', booking.id), nextSchedule = booking.status === 'cancelled' ? '' : String(booking.scheduleEntryId || ''), claimedNew = !!nextSchedule && nextSchedule !== previousScheduleEntryId;
-  if (nextSchedule) await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { PK: key('schedule', nextSchedule), SK: key('schedule', nextSchedule), bookingId: booking.id }, ConditionExpression: 'attribute_not_exists(PK) OR bookingId = :bookingId', ExpressionAttributeValues: { ':bookingId': booking.id } }));
-  try {
-    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { PK: bookingKey, SK: bookingKey, ...booking }, ConditionExpression: '#version = :previous', ExpressionAttributeNames: { '#version': 'version' }, ExpressionAttributeValues: { ':previous': booking.version === 1 ? 1 : booking.version - 1 } }));
-  } catch (error) {
-    if (claimedNew) await client.send(new DeleteCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: key('schedule', nextSchedule), SK: key('schedule', nextSchedule) }, ConditionExpression: 'bookingId = :bookingId', ExpressionAttributeValues: { ':bookingId': booking.id } }));
-    throw error;
-  }
-  if (previousScheduleEntryId && previousScheduleEntryId !== nextSchedule) await client.send(new DeleteCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: key('schedule', previousScheduleEntryId), SK: key('schedule', previousScheduleEntryId) }, ConditionExpression: 'bookingId = :bookingId', ExpressionAttributeValues: { ':bookingId': booking.id } }));
-}
-
-export async function createBookingAtomic(client:DynamoDBDocumentClient,value:Record<string,unknown>,actorId:string){
-  const {historyNote,...recordValue}=value,sourceKey=typeof recordValue.sourceKey==='string'?recordValue.sourceKey:'',id=sourceKey?deterministicCrmId('booking',sourceKey):randomUUID(),now=new Date().toISOString();
-  const item={...recordValue,id,version:1,createdAt:now,updatedAt:now} as CrmRecord,items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('booking',item),ConditionExpression:'attribute_not_exists(PK)'}}];
-  if(item.scheduleEntryId&&item.status!=='cancelled')items.push({Put:{TableName:TABLE_SPONSOR_CRM,Item:{PK:key('schedule',String(item.scheduleEntryId)),SK:key('schedule',String(item.scheduleEntryId)),bookingId:id},ConditionExpression:'attribute_not_exists(PK)'}});
-  items.push(historyPut(id,{actorId,oldStatus:null,newStatus:item.status,note:typeof historyNote==='string'?historyNote.slice(0,500):'Booking created'}));
-  try{await transact(client,items);return{item,duplicate:false};}catch(error){if(sourceKey){const existing=await getCrmRecord(client,'booking',id);const same=existing&&Object.keys(recordValue).every(name=>JSON.stringify(existing[name])===JSON.stringify(recordValue[name]));if(same)return{item:existing!,duplicate:true};}throw error;}
-}
-
-export async function updateBookingAtomic(client:DynamoDBDocumentClient,existing:CrmRecord,value:Record<string,unknown>,actorId:string){
-  const {historyNote,...changes}=value,now=new Date().toISOString(),next={...existing,...changes,id:existing.id,createdAt:existing.createdAt,updatedAt:now,version:existing.version+1} as CrmRecord,previous=String(existing.scheduleEntryId||''),target=next.status==='cancelled'?'':String(next.scheduleEntryId||'');
-  const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('booking',next),ConditionExpression:'#version = :version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}}];
-  if(target&&target!==previous)items.push({Put:{TableName:TABLE_SPONSOR_CRM,Item:{PK:key('schedule',target),SK:key('schedule',target),bookingId:existing.id},ConditionExpression:'attribute_not_exists(PK)'}});
-  if(previous&&previous!==target)items.push({Delete:{TableName:TABLE_SPONSOR_CRM,Key:{PK:key('schedule',previous),SK:key('schedule',previous)},ConditionExpression:'bookingId = :bookingId',ExpressionAttributeValues:{':bookingId':existing.id}}});
-  if(next.status!==existing.status)items.push(historyPut(existing.id,{actorId,oldStatus:existing.status,newStatus:next.status,note:typeof historyNote==='string'?String(historyNote).slice(0,500):undefined}));
-  await transact(client,items);return next;
+function domainLock(domain: string, organizationId: string) {
+  return { Put: { TableName: TABLE_SPONSOR_CRM, Item: { PK: key('domain', domain), SK: key('domain', domain), organizationId }, ConditionExpression: 'attribute_not_exists(PK) OR organizationId = :organizationId', ExpressionAttributeValues: { ':organizationId': organizationId } } };
 }
 
 export async function createOrganizationAtomic(client:DynamoDBDocumentClient,value:Record<string,unknown>,actorId:string){
   const sourceKey=typeof value.sourceKey==='string'?value.sourceKey:'',id=sourceKey?deterministicCrmId('organization',sourceKey):randomUUID(),now=new Date().toISOString(),item={...value,id,version:1,createdAt:now,updatedAt:now} as CrmRecord;
-  try{await transact(client,[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('organization',item),ConditionExpression:'attribute_not_exists(PK)'}},historyPut(`organization:${id}`,{actorId,entityKind:'organization',entityId:id,action:'created'})]);return{item,duplicate:false};}
+  const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('organization',item),ConditionExpression:'attribute_not_exists(PK)'}},historyPut(`organization:${id}`,{actorId,entityKind:'organization',entityId:id,action:'created'})];
+  if (item.domain) items.push(domainLock(String(item.domain), id));
+  try{await transact(client,items);return{item,duplicate:false};}
   catch(error){if(sourceKey){const existing=await getCrmRecord(client,'organization',id);if(existing&&Object.keys(value).every(name=>JSON.stringify(existing[name])===JSON.stringify(value[name])))return{item:existing,duplicate:true};}throw error;}
 }
 
 export async function updateOrganizationAtomic(client:DynamoDBDocumentClient,existing:CrmRecord,value:Record<string,unknown>,actorId:string,action='updated'){
   const next={...existing,...value,id:existing.id,createdAt:existing.createdAt,updatedAt:new Date().toISOString(),version:existing.version+1} as CrmRecord;
-  await transact(client,[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('organization',next),ConditionExpression:'#version=:version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}},historyPut(`organization:${existing.id}`,{actorId,entityKind:'organization',entityId:existing.id,action})]);return next;
+  const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('organization',next),ConditionExpression:'#version=:version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}},historyPut(`organization:${existing.id}`,{actorId,entityKind:'organization',entityId:existing.id,action})];
+  const previous=String(existing.domain||''),target=String(next.domain||'');
+  if(target&&target!==previous)items.push(domainLock(target, existing.id));
+  if(previous&&previous!==target)items.push({Delete:{TableName:TABLE_SPONSOR_CRM,Key:{PK:key('domain',previous),SK:key('domain',previous)},ConditionExpression:'organizationId=:organizationId',ExpressionAttributeValues:{':organizationId':existing.id}}});
+  await transact(client,items);return next;
+}
+
+export async function createDealAtomic(client:DynamoDBDocumentClient,value:Record<string,unknown>,actorId:string){
+  const {historyNote,...recordValue}=value,sourceKey=typeof recordValue.sourceKey==='string'?recordValue.sourceKey:'',id=sourceKey?deterministicCrmId('deal',sourceKey):randomUUID(),now=new Date().toISOString();
+  const item={...recordValue,id,version:1,createdAt:now,updatedAt:now,active:recordValue.active!==false} as CrmRecord;
+  try{await transact(client,[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('deal',item),ConditionExpression:'attribute_not_exists(PK)'}},historyPut(id,{actorId,oldStatus:null,newStatus:item.status,note:typeof historyNote==='string'?historyNote.slice(0,500):'Deal created'})]);return{item,duplicate:false};}
+  catch(error){if(sourceKey){const existing=await getCrmRecord(client,'deal',id);const same=existing&&Object.keys(recordValue).every(name=>JSON.stringify(existing[name])===JSON.stringify(recordValue[name]));if(same)return{item:existing!,duplicate:true};}throw error;}
+}
+
+export async function updateDealAtomic(client:DynamoDBDocumentClient,existing:CrmRecord,value:Record<string,unknown>,actorId:string){
+  const {historyNote,...changes}=value,now=new Date().toISOString(),next={...existing,...changes,id:existing.id,createdAt:existing.createdAt,updatedAt:now,version:existing.version+1} as CrmRecord;
+  const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('deal',next),ConditionExpression:'#version = :version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}}];
+  if(next.status!==existing.status)items.push(historyPut(existing.id,{actorId,oldStatus:existing.status,newStatus:next.status,note:typeof historyNote==='string'?String(historyNote).slice(0,500):undefined}));
+  await transact(client,items);return next;
+}
+
+export async function createDeliverableAtomic(client:DynamoDBDocumentClient,value:Record<string,unknown>,actorId:string){
+  const sourceKey=typeof value.sourceKey==='string'?value.sourceKey:'',id=sourceKey?deterministicCrmId('deliverable',sourceKey):randomUUID(),now=new Date().toISOString();
+  const item={...value,id,version:1,createdAt:now,updatedAt:now,active:value.active!==false} as CrmRecord;
+  const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('deliverable',item),ConditionExpression:'attribute_not_exists(PK)'}},historyPut(`deliverable:${id}`,{actorId,entityKind:'deliverable',entityId:id,action:'created'})];
+  if(item.scheduleEntryId)items.push({Put:{TableName:TABLE_SPONSOR_CRM,Item:{PK:key('schedule',String(item.scheduleEntryId)),SK:key('schedule',String(item.scheduleEntryId)),deliverableId:id},ConditionExpression:'attribute_not_exists(PK)'}});
+  try{await transact(client,items);return{item,duplicate:false};}catch(error){if(sourceKey){const existing=await getCrmRecord(client,'deliverable',id);if(existing&&Object.keys(value).every(name=>JSON.stringify(existing[name])===JSON.stringify(value[name])))return{item:existing,duplicate:true};}throw error;}
+}
+
+export async function updateDeliverableAtomic(client:DynamoDBDocumentClient,existing:CrmRecord,value:Record<string,unknown>,actorId:string){
+  const now=new Date().toISOString(),next={...existing,...value,id:existing.id,createdAt:existing.createdAt,updatedAt:now,version:existing.version+1} as CrmRecord,previous=String(existing.scheduleEntryId||''),target=String(next.scheduleEntryId||'');
+  const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('deliverable',next),ConditionExpression:'#version = :version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}},historyPut(`deliverable:${existing.id}`,{actorId,entityKind:'deliverable',entityId:existing.id,action:'updated'})];
+  if(target&&target!==previous)items.push({Put:{TableName:TABLE_SPONSOR_CRM,Item:{PK:key('schedule',target),SK:key('schedule',target),deliverableId:existing.id},ConditionExpression:'attribute_not_exists(PK)'}});
+  if(previous&&previous!==target)items.push({Delete:{TableName:TABLE_SPONSOR_CRM,Key:{PK:key('schedule',previous),SK:key('schedule',previous)},ConditionExpression:'deliverableId = :deliverableId',ExpressionAttributeValues:{':deliverableId':existing.id}}});
+  await transact(client,items);return next;
 }
 
 export async function createContactAtomic(client:DynamoDBDocumentClient,value:Record<string,unknown>,actorId:string){

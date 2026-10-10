@@ -312,10 +312,10 @@ describe("newsletter slots", () => {
     );
 
     const booking = (
-      await createCrmRecord(client, "booking", {
+      await createCrmRecord(client, "deal", {
         sourceKey: "authorized-newsletter-booking",
         organizationId: "synthetic-org",
-        status: "confirmed",
+        status: "agreed",
       })
     ).item;
     const linked = data(
@@ -331,7 +331,7 @@ describe("newsletter slots", () => {
     assert.deepEqual(linkedRead.sponsor, {
       id: booking.id,
       organizationId: "synthetic-org",
-      status: "confirmed",
+      status: "agreed",
     });
     assert.equal(
       (await invoke("POST", "/api/newsletter-slots/projection", {})).statusCode,

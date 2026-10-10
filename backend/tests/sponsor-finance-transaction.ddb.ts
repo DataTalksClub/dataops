@@ -58,16 +58,16 @@ describe('sponsor finance production DynamoDB transactions', () => {
   async function bootstrapPayable(label: string, amountDue = '100') {
     const id = `booking-${label}`;
     await put(client, TABLE_SPONSOR_CRM, {
-      ...key('BOOKING', id), id, version: 1, status: 'confirmed', active: true,
+      ...key('DEAL', id), id, version: 1, status: 'agreed', active: true,
       organizationId: `organization-${label}`,
     });
     const classified = await classifyFinance(client, {
-      actorId: adminId, bookingId: id, bookingVersion: 1,
+      actorId: adminId, dealId: id, dealVersion: 1,
       idempotencyKey: idem(`${label}-classify`),
       body: { invoiceRequirement: 'required', amountDue, currency: 'EUR', taxMode: 'included' },
     });
     const requested = await recordInvoiceRequest(client, {
-      actorId: adminId, bookingId: id, bookingVersion: 1,
+      actorId: adminId, dealId: id, dealVersion: 1,
       expectedVersion: classified.financeVersion, idempotencyKey: idem(`${label}-request`),
     });
     const invoice = {
@@ -78,12 +78,12 @@ describe('sponsor finance production DynamoDB transactions', () => {
     };
     await put(client, TABLE_BOOKKEEPING, invoice);
     const linked = await linkInvoice(client, {
-      actorId: adminId, bookingId: id, bookingVersion: 1,
+      actorId: adminId, dealId: id, dealVersion: 1,
       expectedVersion: requested.financeVersion, sourceId: invoice.id,
       identityToken: invoiceIdentity(invoice), issuedOn: berlinDate(), dueOn: '2099-12-31',
       idempotencyKey: idem(`${label}-invoice`),
     });
-    return { bookingId: id, version: linked.financeVersion };
+    return { dealId: id, version: linked.financeVersion };
   }
 
   function payment(label: string, amount = '1') {
@@ -102,10 +102,10 @@ describe('sponsor finance production DynamoDB transactions', () => {
       put(client, TABLE_USERS, { ...key('USER', adminId), id: adminId, role: 'admin', disabled: false }),
       put(client, TABLE_USERS, { ...key('USER', 'finance-operator-1'), id: 'finance-operator-1', role: 'operator', disabled: false }),
       put(client, TABLE_SPONSOR_CRM, {
-        ...key('BOOKING', bookingId),
+        ...key('DEAL', bookingId),
         id: bookingId,
         version: 1,
-        status: 'confirmed',
+        status: 'agreed',
         active: true,
         organizationId: 'organization-finance-1',
       }),
@@ -120,7 +120,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const classifyInput = {
       actorId: adminId,
       bookingId,
-      bookingVersion: 1,
+      dealVersion: 1,
       idempotencyKey: idem('classify'),
       body: {
         invoiceRequirement: 'required',
@@ -144,7 +144,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const requested = await recordInvoiceRequest(client, {
       actorId: adminId,
       bookingId,
-      bookingVersion: 1,
+      dealVersion: 1,
       expectedVersion: 1,
       idempotencyKey: idem('request'),
     });
@@ -165,7 +165,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const invoiceLinked = await linkInvoice(client, {
       actorId: adminId,
       bookingId,
-      bookingVersion: 1,
+      dealVersion: 1,
       expectedVersion: requested.financeVersion,
       sourceId: String(invoice.id),
       identityToken: invoiceIdentity(invoice),
@@ -197,7 +197,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       const result = await linkPayment(client, {
         actorId: adminId,
         bookingId,
-        bookingVersion: 1,
+        dealVersion: 1,
         expectedVersion: version,
         sourceId: String(payment.id),
         identityToken: paymentIdentity(payment),
@@ -224,7 +224,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const unlinked = await unlinkFinanceSource(client, {
       actorId: adminId,
       bookingId,
-      bookingVersion: 1,
+      dealVersion: 1,
       expectedVersion: version,
       kind: 'transaction',
       sourceId: String(payments[0].id),
@@ -269,7 +269,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       ...Array.from({ length: 25 }, (_, index) => linkPayment(simultaneousClient, {
         actorId: adminId,
         bookingId,
-        bookingVersion: 1,
+        dealVersion: 1,
         expectedVersion: beforeProjection.finance!.version,
         sourceId: String(source.id),
         identityToken: paymentIdentity(source),
@@ -340,11 +340,11 @@ describe('sponsor finance production DynamoDB transactions', () => {
   it('respects alert dismissal, resolution, and later Berlin-date recurrence', async () => {
     const alertBooking = 'booking-alert-recurrence';
     await put(client, TABLE_SPONSOR_CRM, {
-      ...key('BOOKING', alertBooking), id: alertBooking, version: 1,
-      status: 'confirmed', active: true, organizationId: 'organization-alert-recurrence',
+      ...key('DEAL', alertBooking), id: alertBooking, version: 1,
+      status: 'agreed', active: true, organizationId: 'organization-alert-recurrence',
     });
     const classification = {
-      actorId: adminId, bookingId: alertBooking, bookingVersion: 1,
+      actorId: adminId, dealId: alertBooking, dealVersion: 1,
       idempotencyKey: idem('alert-recurrence-classify'),
       body: {
         invoiceRequirement: 'required', amountDue: '1', currency: 'EUR',
@@ -355,7 +355,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const paginationRows = Array.from({ length: 300 }, (_, index) => ({
       PutRequest: {
         Item: {
-          ...key('BOOKING', `inactive-alert-page-${index}`),
+          ...key('DEAL', `inactive-alert-page-${index}`),
           id: `inactive-alert-page-${index}`, version: 1, status: 'cancelled',
           active: false, padding: 'x'.repeat(4_000),
         },
@@ -418,14 +418,14 @@ describe('sponsor finance production DynamoDB transactions', () => {
   it('fails locked for orphan claims and complete tuple/source drift', async () => {
     const orphanBooking = 'booking-orphan-graph';
     await put(client, TABLE_SPONSOR_CRM, {
-      ...key('BOOKING', orphanBooking), id: orphanBooking, version: 1,
-      status: 'confirmed', active: true, organizationId: 'organization-orphan',
+      ...key('DEAL', orphanBooking), id: orphanBooking, version: 1,
+      status: 'agreed', active: true, organizationId: 'organization-orphan',
     });
     const orphanId = 'payment-orphan-graph';
     await put(client, TABLE_BOOKKEEPING, {
       ...key('SPONSOR_FINANCE_CLAIM#transaction', orphanId),
       recordType: 'sponsor-finance-claim', kind: 'transaction', sourceId: orphanId,
-      bookingId: orphanBooking, linkId: 'missing-link', identityToken: 'missing-identity',
+      dealId: orphanBooking, linkId: 'missing-link', identityToken: 'missing-identity',
     });
     const orphanProjection = await projectFinance(client, orphanBooking, 'operator');
     assert.equal(orphanProjection.reconciliationStatus, 'reconciliation-required');
@@ -439,7 +439,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const source = payment('source-drift', '5');
     await put(client, TABLE_BOOKKEEPING, source);
     await linkPayment(client, {
-      actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
       expectedVersion: setup.version, sourceId: source.id, identityToken: paymentIdentity(source),
       idempotencyKey: idem('source-drift-link'),
     });
@@ -453,11 +453,11 @@ describe('sponsor finance production DynamoDB transactions', () => {
   it('retries a changing discovery graph and returns a safe conflict without a partial projection', async () => {
     const changingBooking = 'booking-changing-discovery';
     await put(client, TABLE_SPONSOR_CRM, {
-      ...key('BOOKING', changingBooking), id: changingBooking, version: 1,
-      status: 'confirmed', active: true, organizationId: 'organization-changing',
+      ...key('DEAL', changingBooking), id: changingBooking, version: 1,
+      status: 'agreed', active: true, organizationId: 'organization-changing',
     });
     await classifyFinance(client, {
-      actorId: adminId, bookingId: changingBooking, bookingVersion: 1,
+      actorId: adminId, dealId: changingBooking, dealVersion: 1,
       idempotencyKey: idem('changing-discovery-classify'),
       body: { invoiceRequirement: 'not-required' },
     });
@@ -493,7 +493,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     await put(client, TABLE_BOOKKEEPING, first);
     await put(client, TABLE_BOOKKEEPING, second);
     const linked = await linkPayment(client, {
-      actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
       expectedVersion: setup.version, sourceId: first.id, identityToken: paymentIdentity(first),
       idempotencyKey: idem('tuple-race-first-link'),
     });
@@ -510,7 +510,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       },
     } as DynamoDBDocumentClient;
     await assert.rejects(() => linkPayment(racingClient, {
-      actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
       expectedVersion: linked.financeVersion, sourceId: second.id, identityToken: paymentIdentity(second),
       idempotencyKey: idem('tuple-race-second-link'),
     }));
@@ -535,13 +535,13 @@ describe('sponsor finance production DynamoDB transactions', () => {
       },
     } as DynamoDBDocumentClient;
     const recovered = await linkPayment(lostResponseClient, {
-      actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
       expectedVersion: setup.version, sourceId: source.id, identityToken: paymentIdentity(source),
       idempotencyKey: idem('lost-response-link'),
     });
     assert.equal(recovered.outcome, 'replayed');
     const replay = await linkPayment(client, {
-      actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
       expectedVersion: setup.version, sourceId: source.id, identityToken: paymentIdentity(source),
       idempotencyKey: idem('lost-response-link'),
     });
@@ -564,7 +564,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       },
     } as DynamoDBDocumentClient;
     const input = {
-      actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
       expectedVersion: setup.version, sourceId: source.id, identityToken: paymentIdentity(source),
       idempotencyKey: idem('in-progress-retry-link'),
     };
@@ -584,7 +584,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     await put(client, TABLE_BOOKKEEPING, revokedSource);
     await put(client, TABLE_USERS, { ...key('USER', adminId), id: adminId, role: 'operator', disabled: true });
     await assert.rejects(() => linkPayment(client, {
-      actorId: adminId, bookingId: revoked.bookingId, bookingVersion: 1,
+      actorId: adminId, dealId: revoked.bookingId, dealVersion: 1,
       expectedVersion: revoked.version, sourceId: revokedSource.id, identityToken: paymentIdentity(revokedSource),
       idempotencyKey: idem('admin-revoked-link'),
     }));
@@ -594,11 +594,11 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const cancelledSource = payment('booking-cancelled', '1');
     await put(client, TABLE_BOOKKEEPING, cancelledSource);
     await put(client, TABLE_SPONSOR_CRM, {
-      ...key('BOOKING', cancelled.bookingId), id: cancelled.bookingId, version: 2,
+      ...key('DEAL', cancelled.bookingId), id: cancelled.bookingId, version: 2,
       status: 'cancelled', active: true, organizationId: 'organization-cancelled',
     });
     await assert.rejects(() => linkPayment(client, {
-      actorId: adminId, bookingId: cancelled.bookingId, bookingVersion: 1,
+      actorId: adminId, dealId: cancelled.bookingId, dealVersion: 1,
       expectedVersion: cancelled.version, sourceId: cancelledSource.id,
       identityToken: paymentIdentity(cancelledSource), idempotencyKey: idem('booking-cancelled-link'),
     }));
@@ -609,7 +609,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const createBooking = async (label: string) => {
       const id = `booking-write-race-${label}-${sequence++}`;
       await put(client, TABLE_SPONSOR_CRM, {
-        ...key('BOOKING', id), id, version: 1, status: 'confirmed',
+        ...key('DEAL', id), id, version: 1, status: 'agreed',
         active: true, organizationId: `organization-${label}`,
       });
       return id;
@@ -617,7 +617,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const factories: Array<{
       name: string;
       prepare: (label: string) => Promise<{
-        bookingId: string;
+        dealId: string;
         invoke: (racingClient: DynamoDBDocumentClient) => Promise<unknown>;
       }>;
     }> = [
@@ -626,9 +626,9 @@ describe('sponsor finance production DynamoDB transactions', () => {
         prepare: async (label) => {
           const id = await createBooking(label);
           return {
-            bookingId: id,
+            dealId: id,
             invoke: (racingClient) => classifyFinance(racingClient, {
-              actorId: adminId, bookingId: id, bookingVersion: 1,
+              actorId: adminId, dealId: id, dealVersion: 1,
               idempotencyKey: idem(`${label}-classify`),
               body: { invoiceRequirement: 'not-required' },
             }),
@@ -640,14 +640,14 @@ describe('sponsor finance production DynamoDB transactions', () => {
         prepare: async (label) => {
           const id = await createBooking(label);
           const classified = await classifyFinance(client, {
-            actorId: adminId, bookingId: id, bookingVersion: 1,
+            actorId: adminId, dealId: id, dealVersion: 1,
             idempotencyKey: idem(`${label}-classify`),
             body: { invoiceRequirement: 'required', amountDue: '10', currency: 'EUR', taxMode: 'included' },
           });
           return {
-            bookingId: id,
+            dealId: id,
             invoke: (racingClient) => recordInvoiceRequest(racingClient, {
-              actorId: adminId, bookingId: id, bookingVersion: 1,
+              actorId: adminId, dealId: id, dealVersion: 1,
               expectedVersion: classified.financeVersion,
               idempotencyKey: idem(`${label}-request`),
             }),
@@ -659,12 +659,12 @@ describe('sponsor finance production DynamoDB transactions', () => {
         prepare: async (label) => {
           const id = await createBooking(label);
           const classified = await classifyFinance(client, {
-            actorId: adminId, bookingId: id, bookingVersion: 1,
+            actorId: adminId, dealId: id, dealVersion: 1,
             idempotencyKey: idem(`${label}-classify`),
             body: { invoiceRequirement: 'required', amountDue: '10', currency: 'EUR', taxMode: 'included' },
           });
           const requested = await recordInvoiceRequest(client, {
-            actorId: adminId, bookingId: id, bookingVersion: 1,
+            actorId: adminId, dealId: id, dealVersion: 1,
             expectedVersion: classified.financeVersion, idempotencyKey: idem(`${label}-request`),
           });
           const invoice = {
@@ -675,9 +675,9 @@ describe('sponsor finance production DynamoDB transactions', () => {
           };
           await put(client, TABLE_BOOKKEEPING, invoice);
           return {
-            bookingId: id,
+            dealId: id,
             invoke: (racingClient) => linkInvoice(racingClient, {
-              actorId: adminId, bookingId: id, bookingVersion: 1,
+              actorId: adminId, dealId: id, dealVersion: 1,
               expectedVersion: requested.financeVersion, sourceId: invoice.id,
               identityToken: invoiceIdentity(invoice), issuedOn: berlinDate(), dueOn: '2099-12-31',
               idempotencyKey: idem(`${label}-invoice`),
@@ -692,9 +692,9 @@ describe('sponsor finance production DynamoDB transactions', () => {
           const source = payment(label, '1');
           await put(client, TABLE_BOOKKEEPING, source);
           return {
-            bookingId: setup.bookingId,
+            dealId: setup.bookingId,
             invoke: (racingClient) => linkPayment(racingClient, {
-              actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+              actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
               expectedVersion: setup.version, sourceId: source.id, identityToken: paymentIdentity(source),
               idempotencyKey: idem(`${label}-payment`),
             }),
@@ -708,14 +708,14 @@ describe('sponsor finance production DynamoDB transactions', () => {
           const source = payment(label, '1');
           await put(client, TABLE_BOOKKEEPING, source);
           const linked = await linkPayment(client, {
-            actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+            actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
             expectedVersion: setup.version, sourceId: source.id, identityToken: paymentIdentity(source),
             idempotencyKey: idem(`${label}-payment`),
           });
           return {
-            bookingId: setup.bookingId,
+            dealId: setup.bookingId,
             invoke: (racingClient) => unlinkFinanceSource(racingClient, {
-              actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+              actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
               expectedVersion: linked.financeVersion, kind: 'transaction', sourceId: source.id,
               idempotencyKey: idem(`${label}-unlink`),
             }),
@@ -727,9 +727,9 @@ describe('sponsor finance production DynamoDB transactions', () => {
         prepare: async (label) => {
           const setup = await bootstrapPayable(label, '10');
           return {
-            bookingId: setup.bookingId,
+            dealId: setup.bookingId,
             invoke: (racingClient) => unlinkFinanceSource(racingClient, {
-              actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+              actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
               expectedVersion: setup.version, kind: 'document', sourceId: `invoice-${label}`,
               idempotencyKey: idem(`${label}-unlink-invoice`),
             }),
@@ -741,14 +741,14 @@ describe('sponsor finance production DynamoDB transactions', () => {
         prepare: async (label) => {
           const id = await createBooking(label);
           const classified = await classifyFinance(client, {
-            actorId: adminId, bookingId: id, bookingVersion: 1,
+            actorId: adminId, dealId: id, dealVersion: 1,
             idempotencyKey: idem(`${label}-classify`),
             body: { invoiceRequirement: 'not-required' },
           });
           return {
-            bookingId: id,
+            dealId: id,
             invoke: (racingClient) => voidFinance(racingClient, {
-              actorId: adminId, bookingId: id, bookingVersion: 1,
+              actorId: adminId, dealId: id, dealVersion: 1,
               expectedVersion: classified.financeVersion,
               idempotencyKey: idem(`${label}-void`),
             }),
@@ -776,7 +776,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
                 ...key('USER', adminId), id: adminId, role: 'operator', disabled: true,
               })
               : put(client, TABLE_SPONSOR_CRM, {
-                ...key('BOOKING', prepared.bookingId), id: prepared.bookingId,
+                ...key('DEAL', prepared.bookingId), id: prepared.bookingId,
                 version: 2, status: 'cancelled', active: true,
                 organizationId: `organization-${label}`,
               });
@@ -846,7 +846,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       await put(client, TABLE_BOOKKEEPING, {
         ...key('SPONSOR_FINANCE_CLAIM#document', id),
         recordType: 'sponsor-finance-claim', kind: 'document', sourceId: id,
-        bookingId: `booking-${label}`, linkId: `finance-link-${label}`,
+        dealId: `booking-${label}`, linkId: `finance-link-${label}`,
         identityToken: `identity-${label}`,
       });
       return document;
@@ -929,7 +929,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     await put(client, TABLE_BOOKKEEPING, {
       ...key('SPONSOR_FINANCE_CLAIM#document', first.item.id),
       recordType: 'sponsor-finance-claim', kind: 'document', sourceId: first.item.id,
-      bookingId: 'booking-duplicate', linkId: 'link-duplicate', identityToken: 'identity-duplicate',
+      dealId: 'booking-duplicate', linkId: 'link-duplicate', identityToken: 'identity-duplicate',
     });
     const duplicate = await putBookkeepingItem(client, 'document', {
       status: 'active', documentType: 'invoice', marker: 'changed',
@@ -962,7 +962,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       const source = payment(`link-cap-${index}`, '1');
       await put(client, TABLE_BOOKKEEPING, source);
       const linked = await linkPayment(client, {
-        actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+        actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
         expectedVersion: version, sourceId: source.id, identityToken: paymentIdentity(source),
         idempotencyKey: idem(`link-cap-${index}`),
       });
@@ -1055,7 +1055,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       } as DynamoDBDocumentClient;
       await assert.rejects(
         () => linkPayment(cancellationClient, {
-          actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+          actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
           expectedVersion: version, sourceId: twentieth.id, identityToken: paymentIdentity(twentieth),
           idempotencyKey: idem(`link-cap-cancel-${cancellationIndex}`),
         }),
@@ -1094,7 +1094,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       const source = payment(`link-cap-success-${index}`, '1');
       await put(client, TABLE_BOOKKEEPING, source);
       const linked = await linkPayment(client, {
-        actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+        actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
         expectedVersion: version, sourceId: source.id, identityToken: paymentIdentity(source),
         idempotencyKey: idem(`link-cap-success-${index}`),
       });
@@ -1103,7 +1103,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const twentieth = payment('link-cap-success-19', '1');
     await put(client, TABLE_BOOKKEEPING, twentieth);
     const twentiethLinked = await linkPayment(client, {
-      actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
       expectedVersion: version, sourceId: twentieth.id, identityToken: paymentIdentity(twentieth),
       idempotencyKey: idem('link-cap-success-19'),
     });
@@ -1111,7 +1111,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const twentyFirst = payment('link-cap-success-20', '1');
     await put(client, TABLE_BOOKKEEPING, twentyFirst);
     await assert.rejects(() => linkPayment(client, {
-      actorId: adminId, bookingId: setup.bookingId, bookingVersion: 1,
+      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
       expectedVersion: version, sourceId: twentyFirst.id, identityToken: paymentIdentity(twentyFirst),
       idempotencyKey: idem('link-cap-success-20'),
     }));
@@ -1132,7 +1132,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const tooLarge = payment('overpay', '1.0001');
     await put(client, TABLE_BOOKKEEPING, tooLarge);
     await assert.rejects(() => linkPayment(client, {
-      actorId: adminId, bookingId: overpay.bookingId, bookingVersion: 1,
+      actorId: adminId, dealId: overpay.bookingId, dealVersion: 1,
       expectedVersion: overpay.version, sourceId: tooLarge.id, identityToken: paymentIdentity(tooLarge),
       idempotencyKey: idem('overpay-link'),
     }));

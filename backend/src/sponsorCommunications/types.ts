@@ -3,11 +3,11 @@ import type { CanonicalPayload, CommunicationType, ProviderFacts } from './core'
 export type CommunicationSuggestion = {
   id: string;
   recordType: 'communication-suggestion';
-  bookingId: string;
+  dealId: string;
   organizationId: string;
   communicationType: CommunicationType;
   occurrenceKey: string;
-  bookingVersion: number;
+  dealVersion: number;
   eligible: boolean;
   safeReason: string;
   status: 'open' | 'dismissed' | 'ineligible';
@@ -20,7 +20,7 @@ export type CommunicationDraftVersion = {
   id: string;
   recordType: 'communication-draft-version';
   communicationId: string;
-  bookingId: string;
+  dealId: string;
   version: number;
   suggestionId: string;
   payloadRef: string;
@@ -50,7 +50,7 @@ export type CommunicationPresentation = {
   id: string;
   recordType: 'communication-presentation';
   communicationId: string;
-  bookingId: string;
+  dealId: string;
   payloadRef: string;
   draftVersion: number;
   payloadHash: string;
@@ -68,7 +68,7 @@ export type SponsorSendAttempt = {
   id: string;
   recordType: 'sponsor-send-attempt';
   communicationId: string;
-  bookingId: string;
+  dealId: string;
   draftVersion: number;
   payloadRef: string;
   payloadHash: string;
