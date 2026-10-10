@@ -400,6 +400,8 @@ export interface Card {
   templateDefinitionSnapshot?: TemplateCardDefinitionSnapshot;
   /** Source documents inherited from the runtime template at instantiation. */
   sourceDocIds?: string[];
+  /** Optional task groups selected when the Card was created from its Template. */
+  selectedOptionalGroups?: string[];
   /** People named by the Card: speakers and guests on event Cards. */
   people?: string[];
   /** Main sponsor of a newsletter Card. */
@@ -472,6 +474,12 @@ export interface TaskDefinition {
   refId: string;
   description: string;
   offsetDays: number;
+  /**
+   * Optional checklist group (e.g. "secondary"): tasks in a group are only
+   * instantiated when the group is selected at Card creation. Ungrouped
+   * tasks always instantiate.
+   */
+  optionalGroup?: string;
   taskKind?: 'procedure' | 'communication' | 'milestone' | 'milestone-plus-publication'
     | 'handoff' | 'waiting-input' | 'validation' | 'approval-gate' | 'checklist' | 'dynamic-slot';
   ownerRole?: string;

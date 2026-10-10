@@ -1146,6 +1146,86 @@ describe('API — Cards', () => {
       assert.strictEqual(matched.title, 'Weekly email');
       assert.strictEqual(matched.issueNumber, '298');
       assert.strictEqual(matched.sponsor, 'Astronomer');
+      });
+    });
+
+  describe('POST /api/cards optional task groups', () => {
+    it('rejects group selection without a Template and direct stored-selection writes', async () => {
+      const noTemplate = await invoke('POST', '/api/cards', {
+        title: 'No Template groups', anchorDate: utcDateString(), optionalGroups: [],
+      });
+      assert.strictEqual(noTemplate.statusCode, 400);
+      assert.strictEqual(JSON.parse(noTemplate.body).code, 'invalid-optional-groups');
+      const spoofed = await invoke('POST', '/api/cards', {
+        title: 'Spoofed groups', anchorDate: utcDateString(), selectedOptionalGroups: ['secondary'],
+      });
+      assert.strictEqual(spoofed.statusCode, 400);
+      assert.match(JSON.parse(spoofed.body).error, /selectedOptionalGroups is system-owned/);
+    });
+
+    it('instantiates only selected groups and rejects unknown groups', async () => {
+      const template = await createTemplate(client, {
+        name: 'Grouped API template',
+        taskDefinitions: [
+          { refId: 'core', description: 'Core', offsetDays: 0 },
+          { refId: 'extra', description: 'Extra', offsetDays: 1, optionalGroup: 'secondary' },
+        ],
+      });
+      const selected = await invoke('POST', '/api/cards', {
+        title: 'Grouped card',
+        anchorDate: utcDateString(),
+        templateId: template.id,
+        optionalGroups: ['secondary'],
+      });
+      assert.strictEqual(selected.statusCode, 201);
+      const selectedBody = JSON.parse(selected.body);
+      assert.strictEqual(selectedBody.tasks.length, 2);
+      assert.deepStrictEqual(selectedBody.card.selectedOptionalGroups, ['secondary']);
+
+      const deselected = await invoke('POST', '/api/cards', {
+        title: 'Ungrouped card',
+        anchorDate: utcDateString(),
+        templateId: template.id,
+        optionalGroups: [],
+      });
+      assert.strictEqual(deselected.statusCode, 201);
+      assert.strictEqual(JSON.parse(deselected.body).tasks.length, 1);
+
+      const defaultSelection = await invoke('POST', '/api/cards', {
+        title: 'Default group card',
+        anchorDate: utcDateString(),
+        templateId: template.id,
+      });
+      assert.strictEqual(defaultSelection.statusCode, 201);
+      const defaultBody = JSON.parse(defaultSelection.body);
+      assert.strictEqual(defaultBody.tasks.length, 1);
+      assert.deepStrictEqual(defaultBody.card.selectedOptionalGroups, []);
+
+      const unknown = await invoke('POST', '/api/cards', {
+        title: 'Unknown group card',
+        anchorDate: utcDateString(),
+        templateId: template.id,
+        optionalGroups: ['nope'],
+      });
+      assert.strictEqual(unknown.statusCode, 400);
+      assert.strictEqual(JSON.parse(unknown.body).code, 'unknown-optional-group');
+
+      const emptyGroup = await invoke('POST', '/api/cards', {
+        title: 'Empty group card',
+        anchorDate: utcDateString(),
+        templateId: template.id,
+        optionalGroups: [''],
+      });
+      assert.strictEqual(emptyGroup.statusCode, 400);
+      assert.strictEqual(JSON.parse(emptyGroup.body).code, 'unknown-optional-group');
+
+      const malformed = await invoke('POST', '/api/cards', {
+        title: 'Malformed group card',
+        anchorDate: utcDateString(),
+        templateId: template.id,
+        optionalGroups: 'secondary',
+      });
+      assert.strictEqual(malformed.statusCode, 400);
     });
   });
 });

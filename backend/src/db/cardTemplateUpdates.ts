@@ -233,9 +233,9 @@ function addedTask(
   now: string,
 ): Task {
   const definitions = template.taskDefinitions || [];
-  const order = definitions.findIndex(({ refId }) => refId === update.taskRef);
-  const definition = definitions[order];
-  if (!definition || order < 0 || !card.anchorDate) {
+  const definition = definitions.find(({ refId }) => refId === update.taskRef);
+  const order = update.target?.templateTaskOrder;
+  if (!definition || order === undefined || order < 0 || !card.anchorDate) {
     throw new CardTemplateUpdateConflictError();
   }
   const id = deterministicTaskId(card.id, template.id, update.taskRef);

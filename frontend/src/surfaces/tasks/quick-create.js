@@ -161,6 +161,9 @@ export function createQuickTaskActions(context) {
     templateState.setAttribute("role", "status");
     templateState.setAttribute("aria-live", "polite");
     templateState.textContent = "Loading templates…";
+    const groupsWrap = document.createElement("div");
+    groupsWrap.className = "quick-form-groups";
+    groupsWrap.hidden = true;
     const feedback = createFormFeedback();
 
     const createBtn = document.createElement("button");
@@ -173,6 +176,7 @@ export function createQuickTaskActions(context) {
     form.append(
       selectLabel,
       templateState,
+      groupsWrap,
       titleInput.label,
       anchorInput.label,
       feedback.node,
@@ -243,6 +247,34 @@ export function createQuickTaskActions(context) {
       liveTemplates.length > 0
         ? ""
         : "No templates are deployed, so no card can be created yet.";
+    // Optional task groups (e.g. a secondary sponsor block) instantiate
+    // only when checked. Unchecked groups stay out of the new Card.
+    const syncOptionalGroups = () => {
+      const selected = liveTemplates.find(
+        (template) => template.id === templateSelect.value,
+      );
+      const groups = [
+        ...new Set(
+          (selected?.taskDefinitions || [])
+            .map((definition) => definition?.optionalGroup)
+            .filter((group) => typeof group === "string" && group.length > 0),
+        ),
+      ];
+      groupsWrap.replaceChildren();
+      groupsWrap.hidden = groups.length === 0;
+      for (const group of groups) {
+        const label = document.createElement("label");
+        label.className = "quick-form-label quick-form-checkbox";
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.value = group;
+        box.dataset.optionalGroup = group;
+        label.append(box, document.createTextNode(`Include ${group} tasks`));
+        groupsWrap.append(label);
+      }
+    };
+    templateSelect.addEventListener("change", syncOptionalGroups);
+    syncOptionalGroups();
     if (liveTemplates.length > 0) createBtn.disabled = false;
     else {
       const emptyOpt = document.createElement("option");
@@ -274,6 +306,11 @@ export function createQuickTaskActions(context) {
         const body = { templateId, anchorDate };
         const title = titleInput.input.value.trim();
         if (title) body.title = title;
+        if (!groupsWrap.hidden) {
+          body.optionalGroups = [...groupsWrap.querySelectorAll("input[type=\"checkbox\"]")]
+            .filter((box) => box.checked)
+            .map((box) => box.value);
+        }
         const result = await request(workApiUrl("/api/cards"), {
           method: "POST",
           body: JSON.stringify(body),

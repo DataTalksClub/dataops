@@ -136,6 +136,23 @@ describe('Card Template update planning', () => {
     assert.deepEqual(announce?.operatorOverrideFields, []);
   });
 
+  it('ignores unselected optional groups when planning Template updates', () => {
+    const source = template(1);
+    const target = {
+      ...template(2),
+      taskDefinitions: [
+        ...(source.taskDefinitions || []),
+        { refId: 'extra-selected', description: 'Extra selected', offsetDays: 3, optionalGroup: 'secondary' },
+        { refId: 'extra-skipped', description: 'Extra skipped', offsetDays: 4, optionalGroup: 'standalone' },
+      ],
+    };
+    const card = { ...cardFrom(source), selectedOptionalGroups: ['secondary'] };
+    const tasks = tasksFrom(source);
+    const plan = buildCardTemplateUpdatePlan(card, tasks, target);
+    assert.equal(plan.preview.taskChanges.find((change) => change.taskRef === 'extra-selected')?.action, 'add');
+    assert.equal(plan.preview.taskChanges.find((change) => change.taskRef === 'extra-skipped'), undefined);
+  });
+
   it('marks an override only when its definition field also changes', () => {
     const source = template(1);
     const target = template(2);
@@ -257,6 +274,39 @@ describe('Card Template update planning', () => {
         ),
         CardTemplateUpdateConflictError,
       );
+    } finally {
+      disableLocalTransactionEmulation();
+    }
+  });
+
+  it('applies additions after omitted groups with the reviewed order and leaves the preview current', async () => {
+    const source = template(1);
+    const target = template(2);
+    target.taskDefinitions = [
+      ...target.taskDefinitions!,
+      { refId: 'skipped', description: 'Unchecked group step', offsetDays: 2, optionalGroup: 'secondary' },
+      { refId: 'required', description: 'New required step', offsetDays: 3 },
+    ];
+    const card = { ...cardFrom(source), selectedOptionalGroups: [] };
+    const tasks = tasksFrom(source);
+    const plan = buildCardTemplateUpdatePlan(card, tasks, target);
+    assert.equal(plan.taskUpdates.find(({ taskRef }) => taskRef === 'required')?.target?.templateTaskOrder, 3);
+    const fake = {
+      send: async (command: unknown) => {
+        if (command instanceof GetCommand || command instanceof TransactWriteCommand) return {};
+        throw new Error('Unexpected command');
+      },
+    } as any;
+    disableLocalTransactionEmulation();
+    try {
+      const result = await applyCardTemplateUpdate(fake, card, tasks, target, plan.preview.previewToken, 'operator');
+      const added = result.tasks.find(({ templateTaskRef }) => templateTaskRef === 'required');
+      assert.equal(added?.templateTaskOrder, 3);
+      assert.equal(added?.templateDefinitionSnapshot?.templateTaskOrder, 3);
+      assert.equal(result.tasks.some(({ templateTaskRef }) => templateTaskRef === 'skipped'), false);
+      const next = buildCardTemplateUpdatePlan(result.card, result.tasks, target).preview;
+      assert.equal(next.state, 'current');
+      assert.deepEqual(next.taskChanges, []);
     } finally {
       disableLocalTransactionEmulation();
     }

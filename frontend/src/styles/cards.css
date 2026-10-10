@@ -238,6 +238,11 @@
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
+}.quick-form-groups {
+  display: grid;
+  gap: 6px;
+}.quick-form-groups[hidden] {
+  display: none;
 }.workflow-card-meta-top {
   display: flex;
   flex-wrap: wrap;
