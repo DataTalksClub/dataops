@@ -131,20 +131,19 @@ describe('sponsor reviewed communication core', () => {
   });
 
   it('creates only deterministic milestone candidates, never executable work', () => {
-    const booking = {
-      id: 'booking-1',
+    const deal = {
+      id: 'deal-1',
       version: 3,
       organizationId: 'organization-1',
       primaryContactId: 'contact-1',
       status: 'agreed',
-      plannedPublicationDate: '2026-08-13',
-      artifactUrls: [],
     };
-    assert.deepEqual(communicationCandidates(booking, '2026-07-30').map((item) => item.type), [
+    const deliverables = [{ plannedPublicationDate: '2026-08-13', artifactUrls: [] }];
+    assert.deepEqual(communicationCandidates(deal, deliverables, '2026-07-30').map((item) => item.type), [
       'booking-confirmation',
       'materials-reminder',
     ]);
-    assert.deepEqual(communicationCandidates({ ...booking, status: 'cancelled' }, '2026-07-30'), []);
+    assert.deepEqual(communicationCandidates({ ...deal, status: 'lost' }, deliverables, '2026-07-30'), []);
   });
 
   it('validates exactly four allowlisted templates and only declared placeholders', () => {
