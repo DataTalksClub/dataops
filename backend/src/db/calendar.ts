@@ -68,7 +68,7 @@ export const DEFAULT_CALENDAR_OVERLAY_SETTINGS: CalendarOverlaySettings = {
   filterRoutines: true,
   filterFitness: true,
   filterCampaigns: true,
-  filterBusy: false,
+  filterBusy: true,
   filterNonSlotHours: true,
   filterDtcPlaceholders: true,
   filterTransparent: true,

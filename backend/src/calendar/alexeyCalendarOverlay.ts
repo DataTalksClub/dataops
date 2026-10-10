@@ -154,7 +154,7 @@ export function shouldFilterAlexeyCalendarEvent(
   }
 
   // Busy blocks
-  if (filterBusy && /^(busy|занято|busy block)$/i.test(s)) {
+  if (filterBusy && /^(busy|занято|busy block|focus|focus time)$/i.test(s)) {
     return true;
   }
 

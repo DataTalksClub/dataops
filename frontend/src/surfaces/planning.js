@@ -1020,7 +1020,7 @@ export function createPlanningSurface(context) {
             if (settingsForm.elements.filterRoutines) settingsForm.elements.filterRoutines.checked = s.filterRoutines !== false;
             if (settingsForm.elements.filterFitness) settingsForm.elements.filterFitness.checked = s.filterFitness !== false;
             if (settingsForm.elements.filterCampaigns) settingsForm.elements.filterCampaigns.checked = s.filterCampaigns !== false;
-            if (settingsForm.elements.filterBusy) settingsForm.elements.filterBusy.checked = Boolean(s.filterBusy);
+            if (settingsForm.elements.filterBusy) settingsForm.elements.filterBusy.checked = s.filterBusy !== false;
             if (settingsForm.elements.customKeywords) settingsForm.elements.customKeywords.value = (s.customKeywords || []).join("\n");
           }
           settingsDialog.showModal();

@@ -626,7 +626,7 @@ describe("Planning surface production behavior", () => {
               filterRoutines: true,
               filterFitness: true,
               filterCampaigns: true,
-              filterBusy: false,
+              filterBusy: true,
               customKeywords: ["dentist"],
             },
             connections: [
@@ -660,7 +660,7 @@ describe("Planning surface production behavior", () => {
     assert.equal(dom.settingsForm.elements.filterDtcPlaceholders.checked, true);
     assert.equal(dom.settingsForm.elements.filterTransparent.checked, true);
     assert.equal(dom.settingsForm.elements.filterLunch.checked, true);
-    assert.equal(dom.settingsForm.elements.filterBusy.checked, false);
+    assert.equal(dom.settingsForm.elements.filterBusy.checked, true);
     assert.equal(dom.settingsForm.elements.customKeywords.value, "dentist");
 
     // Modify settings and submit
@@ -670,7 +670,7 @@ describe("Planning surface production behavior", () => {
     dom.settingsForm.elements.filterDtcPlaceholders.checked = false;
     dom.settingsForm.elements.filterTransparent.checked = false;
     dom.settingsForm.elements.filterLunch.checked = false;
-    dom.settingsForm.elements.filterBusy.checked = true;
+    dom.settingsForm.elements.filterBusy.checked = false;
     dom.settingsForm.elements.customKeywords.value = "dentist\nhaircut";
 
     await dom.settingsForm.onsubmit({ preventDefault() {} });
@@ -686,7 +686,7 @@ describe("Planning surface production behavior", () => {
     assert.equal(sent.filterDtcPlaceholders, false);
     assert.equal(sent.filterTransparent, false);
     assert.equal(sent.filterLunch, false);
-    assert.equal(sent.filterBusy, true);
+    assert.equal(sent.filterBusy, false);
     assert.deepEqual(sent.customKeywords, ["dentist", "haircut"]);
   });
 
