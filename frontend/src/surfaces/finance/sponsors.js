@@ -1,5 +1,6 @@
 import { createSponsorCommunications } from "./sponsor-communications.js";
 import { createSponsorFinance } from "./sponsor-finance.js";
+import { createSponsorLeads } from "./sponsor-leads.js";
 import { renderSponsorBookingAlerts } from "./sponsor-alerts.js";
 import { sponsorSurfaceMarkup } from "./sponsor-layout.js";
 import { createCollectionLoader } from "../../core/collection-loader.js";
@@ -117,6 +118,14 @@ export function createSponsorCrmSurface(context) {
       message,
       surface,
     });
+    const sponsorLeads = createSponsorLeads({
+      api,
+      escapeHtml,
+      humanizeOptionLabel,
+      message,
+      surface,
+    });
+    sponsorLeads.wireLeadControls();
     const { loadFinance } = sponsorFinance;
     const {
       drawCommunications,
@@ -550,6 +559,9 @@ export function createSponsorCrmSurface(context) {
       drawAlerts();
       orgOptions();
       draw();
+      // Leads load independently: a review-queue failure must not hide the
+      // booking queue, and loadLeads already renders its own honest state.
+      await sponsorLeads.loadLeads();
       // A loaded CRM states nothing: the bookings themselves are the evidence.
       message.textContent = "";
       message.hidden = true;

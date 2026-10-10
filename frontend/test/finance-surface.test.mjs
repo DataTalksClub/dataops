@@ -477,6 +477,87 @@ describe("Finance surface boundary", () => {
     assert.deepEqual(notificationUrls, []);
   });
 
+  test("lists potential leads independently and transitions status for review", async () => {
+    let leadsOnline = false;
+    const lead = {
+      id: "lead-1",
+      version: 1,
+      status: "new",
+      messageId: "newsletter-1",
+      newsletter: { name: "Example Newsletter", subject: "Issue 42" },
+      sponsor: {
+        name: "Acme Gadgets",
+        url: "https://acme.example.test/widgets",
+        blurb: "A fictional widget vendor.",
+        context: "Sponsored segment.",
+      },
+    };
+    const { document, finance, requests } = createHarness({
+      request: async (url, options = {}) => {
+        const path = requestPath(url);
+        const query = new URL(url, "http://dataops.test").searchParams;
+        if (path === "/api/notifications")
+          return { notifications: { items: [] } };
+        if (path.endsWith("/organizations"))
+          return { items: [{ id: "org-1", displayName: "Sponsor" }] };
+        if (path.endsWith("/contacts")) return { items: [] };
+        if (path.endsWith("/bookings")) return { items: [] };
+        if (path === "/api/sponsor-crm/leads") {
+          if (!leadsOnline) throw new Error("Leads offline");
+          assert.equal(query.get("limit"), "50");
+          return { items: [lead] };
+        }
+        if (path === "/api/sponsor-crm/leads/lead-1" && options.method === "PATCH") {
+          const body = JSON.parse(options.body);
+          assert.deepEqual(body, { version: 1, status: "triaged" });
+          return { ...lead, ...body, version: 2 };
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+
+    await finance.renderSponsorCrmSurface();
+    const leads = document.surface.querySelector("[data-crm-leads]");
+    // The booking queue still renders while the review queue fails on its own.
+    assert.match(leads.innerHTML, /Could not load potential leads\./);
+    assert.match(leads.innerHTML, /Leads offline/);
+    assert.match(leads.innerHTML, /<button type="button" data-retry-leads>/);
+
+    leadsOnline = true;
+    await leads.dispatch("click", {
+      target: { closest: (candidate) => (candidate === "[data-retry-leads]" ? {} : null) },
+    });
+    await settle();
+    assert.match(leads.innerHTML, /Acme Gadgets/);
+    assert.match(leads.innerHTML, /https:\/\/acme\.example\.test\/widgets/);
+    assert.match(leads.innerHTML, /Example Newsletter/);
+    assert.match(leads.innerHTML, /data-lead-status="triaged"/);
+
+    await leads.dispatch("click", {
+      target: {
+        closest: (candidate) =>
+          candidate === "[data-lead-status]"
+            ? { dataset: { leadId: "lead-1", leadStatus: "triaged" } }
+            : null,
+      },
+    });
+    await settle();
+    const patch = requests.find(
+      (entry) => requestPath(entry.url) === "/api/sponsor-crm/leads/lead-1",
+    );
+    assert.ok(patch);
+    assert.equal(patch.options.method, "PATCH");
+
+    const filter = document.surface.querySelector("[data-crm-lead-status]");
+    await filter.dispatch("input", { target: { value: "triaged" } });
+    await settle();
+    const filtered = requests.find((entry) =>
+      entry.url.includes("/api/sponsor-crm/leads?") &&
+      entry.url.includes("status=triaged"),
+    );
+    assert.ok(filtered);
+  });
+
   test("renders only safe sponsor communication projections and preserves the operator action hierarchy", async () => {
     const booking = {
       id: "booking-1",
