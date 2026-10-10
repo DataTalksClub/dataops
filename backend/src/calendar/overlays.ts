@@ -11,6 +11,7 @@ export type CalendarOverlayItem = {
   endsAt?: string;
   slot?: 'midday' | 'evening' | 'all-day' | 'outside';
   isSlotEvent?: boolean;
+  isAvailableSlot?: boolean;
 };
 
 export type CalendarOverlayProvider = {

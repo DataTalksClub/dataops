@@ -333,6 +333,7 @@ describe('Alexey calendar overlay and filtering', () => {
         brokerCredential: 'test-token',
         settings: {
           connectionId: 'work-calendar',
+          showAvailableSlots: false,
           filterLunch: false, // Lunch should now be kept!
           filterRoutines: true,
           filterFitness: true,
@@ -367,7 +368,7 @@ describe('Alexey calendar overlay and filtering', () => {
       assert.deepEqual(items, []);
     });
 
-    it('fetches Google access token via Dapier and projects filtered events in Berlin time', async () => {
+    it('fetches Google access token via Dapier and projects filtered raw events when showAvailableSlots is false', async () => {
       const calls: { url: string; headers: any }[] = [];
       const mockFetch: typeof fetch = async (input, init = {}) => {
         const url = String(input);
@@ -446,6 +447,18 @@ describe('Alexey calendar overlay and filtering', () => {
         brokerCredential: 'dap_synthetic_token',
         agent: 'personal-scheduler',
         connectionId: 'google-calendar',
+        settings: {
+          showAvailableSlots: false,
+          connectionId: 'google-calendar',
+          filterLunch: true,
+          filterRoutines: true,
+          filterFitness: true,
+          filterCampaigns: true,
+          filterBusy: false,
+          filterNonSlotHours: true,
+          filterDtcPlaceholders: true,
+          filterTransparent: true,
+        },
       });
 
       const items = await provider.project('2026-10-01', '2026-10-31');
@@ -475,6 +488,112 @@ describe('Alexey calendar overlay and filtering', () => {
       assert.equal(items[2].category, 'Alexey');
       assert.equal(items[2].slot, 'all-day');
       assert.equal(items[2].isSlotEvent, true);
+    });
+
+    it('projects available event slots and preserves all-day blockers by default', async () => {
+      const mockFetch: typeof fetch = async (input) => {
+        const url = String(input);
+        if (url.endsWith('/api/agent/token')) {
+          return new Response(
+            JSON.stringify({ access_token: 'synthetic-google-token' }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+
+        if (url.includes('googleapis.com/calendar/v3/calendars/primary/events')) {
+          return new Response(
+            JSON.stringify({
+              items: [
+                // Oct 12 (Monday): Meeting during midday 12:00–13:00, evening free
+                {
+                  id: 'evt-mon-midday',
+                  summary: 'Partner sync',
+                  status: 'confirmed',
+                  start: { dateTime: '2026-10-12T12:00:00+02:00' },
+                  end: { dateTime: '2026-10-12T13:00:00+02:00' },
+                },
+                // Oct 13 (Tuesday): Midday free (only personal lunch), evening busy
+                {
+                  id: 'evt-tue-lunch',
+                  summary: 'Lunch',
+                  status: 'confirmed',
+                  start: { dateTime: '2026-10-13T12:00:00+02:00' },
+                  end: { dateTime: '2026-10-13T13:00:00+02:00' },
+                },
+                {
+                  id: 'evt-tue-evening',
+                  summary: 'Evening webinar recording',
+                  status: 'confirmed',
+                  start: { dateTime: '2026-10-13T17:00:00+02:00' },
+                  end: { dateTime: '2026-10-13T18:00:00+02:00' },
+                },
+                // Oct 14 (Wednesday): completely free
+                // Oct 15–16 (Thu–Fri): all-day vacation blocker
+                {
+                  id: 'evt-vacation',
+                  summary: 'Autumn Vacation',
+                  status: 'confirmed',
+                  start: { date: '2026-10-15' },
+                  end: { date: '2026-10-17' }, // Exclusive end date in Google Calendar (covers 15 and 16)
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+
+        return new Response('Not found', { status: 404 });
+      };
+
+      setAlexeyCalendarProviderClientsForTests({ fetch: mockFetch });
+
+      const provider = alexeyCalendarOverlay({
+        brokerCredential: 'synthetic-token',
+      });
+
+      // Project Oct 12 to Oct 18 (one full week Mon–Sun)
+      const items = await provider.project('2026-10-12', '2026-10-18');
+
+      // 1. All-day blocker is projected:
+      const vacation = items.find((i) => i.id === 'alexey-calendar:evt-vacation');
+      assert.ok(vacation, 'Vacation blocker should be projected');
+      assert.equal(vacation.startDate, '2026-10-15');
+      assert.equal(vacation.endDate, '2026-10-16');
+      assert.equal(vacation.label, 'Autumn Vacation');
+      assert.equal(vacation.slot, 'all-day');
+
+      // 2. Monday Oct 12: midday has partner sync (busy) -> evening is free -> 17:00 Available projected
+      const monMidday = items.find((i) => i.id === 'alexey-slot:2026-10-12:midday');
+      assert.equal(monMidday, undefined, 'Monday midday slot is busy');
+      const monEvening = items.find((i) => i.id === 'alexey-slot:2026-10-12:evening');
+      assert.ok(monEvening, 'Monday evening slot should be available');
+      assert.equal(monEvening.label, '17:00 Available');
+      assert.equal(monEvening.isAvailableSlot, true);
+
+      // 3. Tuesday Oct 13: personal lunch filtered -> midday is free -> 12:30 Available projected; evening is busy
+      const tueMidday = items.find((i) => i.id === 'alexey-slot:2026-10-13:midday');
+      assert.ok(tueMidday, 'Tuesday midday slot should be available');
+      assert.equal(tueMidday.label, '12:30 Available');
+      assert.equal(tueMidday.isAvailableSlot, true);
+      const tueEvening = items.find((i) => i.id === 'alexey-slot:2026-10-13:evening');
+      assert.equal(tueEvening, undefined, 'Tuesday evening slot is busy');
+
+      // 4. Wednesday Oct 14: midday free -> 12:30 Available; evening is NOT offered on Wed per SOP
+      const wedMidday = items.find((i) => i.id === 'alexey-slot:2026-10-14:midday');
+      assert.ok(wedMidday, 'Wednesday midday slot should be available');
+      assert.equal(wedMidday.label, '12:30 Available');
+      const wedEvening = items.find((i) => i.id === 'alexey-slot:2026-10-14:evening');
+      assert.equal(wedEvening, undefined, 'Evening slots are only offered Mon/Tue per SOP');
+
+      // 5. Thursday Oct 15 & Friday Oct 16: Vacation blocker -> NO slots available
+      const thuMidday = items.find((i) => i.id === 'alexey-slot:2026-10-15:midday');
+      assert.equal(thuMidday, undefined, 'Thursday is blocked by vacation');
+      const friMidday = items.find((i) => i.id === 'alexey-slot:2026-10-16:midday');
+      assert.equal(friMidday, undefined, 'Friday is blocked by vacation');
+
+      // 6. Saturday Oct 17 & Sunday Oct 18: Weekend -> NO slots available per SOP
+      const satSlots = items.filter((i) => i.startDate === '2026-10-17' && i.isAvailableSlot);
+      assert.equal(satSlots.length, 0, 'No slots offered on weekends');
     });
 
     it('returns all events including those outside slots when includeAll is true', async () => {
@@ -517,10 +636,22 @@ describe('Alexey calendar overlay and filtering', () => {
 
       setAlexeyCalendarProviderClientsForTests({ fetch: mockFetch });
 
-      // Without includeAll: morning meeting (outside slots) is filtered out
+      // Without includeAll and showAvailableSlots: false: morning meeting is filtered out
       const defaultProvider = alexeyCalendarOverlay({
         brokerCredential: 'token',
         includeAll: false,
+        settings: {
+          showAvailableSlots: false,
+          connectionId: 'google-calendar',
+          filterLunch: true,
+          filterRoutines: true,
+          filterFitness: true,
+          filterCampaigns: true,
+          filterBusy: false,
+          filterNonSlotHours: true,
+          filterDtcPlaceholders: true,
+          filterTransparent: true,
+        },
       });
       const defaultItems = await defaultProvider.project('2026-10-13', '2026-10-13');
       assert.equal(defaultItems.length, 1);

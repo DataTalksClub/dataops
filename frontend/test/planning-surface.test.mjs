@@ -615,6 +615,7 @@ describe("Planning surface production behavior", () => {
           return {
             settings: {
               connectionId: "google-calendar",
+              showAvailableSlots: true,
               filterNonSlotHours: true,
               filterDtcPlaceholders: true,
               filterTransparent: true,
@@ -651,6 +652,7 @@ describe("Planning surface production behavior", () => {
 
     assert.equal(dom.settingsDialog.open, true);
     assert.equal(dom.settingsForm.elements.connectionId.value, "google-calendar");
+    assert.equal(dom.settingsForm.elements.showAvailableSlots.checked, true);
     assert.equal(dom.settingsForm.elements.filterNonSlotHours.checked, true);
     assert.equal(dom.settingsForm.elements.filterDtcPlaceholders.checked, true);
     assert.equal(dom.settingsForm.elements.filterTransparent.checked, true);
@@ -660,6 +662,7 @@ describe("Planning surface production behavior", () => {
 
     // Modify settings and submit
     dom.settingsForm.elements.connectionId.value = "work-calendar";
+    dom.settingsForm.elements.showAvailableSlots.checked = false;
     dom.settingsForm.elements.filterNonSlotHours.checked = false;
     dom.settingsForm.elements.filterDtcPlaceholders.checked = false;
     dom.settingsForm.elements.filterTransparent.checked = false;
@@ -675,6 +678,7 @@ describe("Planning surface production behavior", () => {
     assert.ok(putCall);
     const sent = JSON.parse(putCall.body);
     assert.equal(sent.connectionId, "work-calendar");
+    assert.equal(sent.showAvailableSlots, false);
     assert.equal(sent.filterNonSlotHours, false);
     assert.equal(sent.filterDtcPlaceholders, false);
     assert.equal(sent.filterTransparent, false);
