@@ -118,9 +118,20 @@ export function createTasksSurface(context) {
     const wrap = document.createElement("div");
     wrap.className = `operations-home ops-surface ops-surface-${activeSection}`;
     if (activeSection !== "workflows") {
-      wrap.append(
-        renderSurfaceHeader(title, surfaceDescription(activeSection)),
-      );
+      const header = renderSurfaceHeader(title, surfaceDescription(activeSection));
+      if (activeSection === "queue") {
+        const quickBar = document.createElement("div");
+        quickBar.className = "home-quick-actions";
+        quickBar.setAttribute("aria-label", "Quick actions");
+        const quickTask = document.createElement("button");
+        quickTask.type = "button";
+        quickTask.className = "home-quick-action";
+        quickTask.textContent = "New task";
+        quickTask.addEventListener("click", () => openQuickTaskForm());
+        quickBar.append(quickTask);
+        header.append(quickBar);
+      }
+      wrap.append(header);
     }
     const summary = renderTasksSummary(activeSection, model, documents);
     // A fully loaded surface states nothing: its own content is the evidence.

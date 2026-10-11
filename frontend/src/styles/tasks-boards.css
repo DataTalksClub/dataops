@@ -66,6 +66,28 @@ body[data-workspace-view="tasks"] .operations-home .ops-empty {
   display: grid;
   gap: 14px;
   min-width: 0;
+  min-height: 1px;
+}body[data-workspace-view="tasks"] .home-quick-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+}body[data-workspace-view="tasks"] .home-quick-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--task-panel-radius);
+  border: 1px solid var(--dk-border-strong);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-default);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}body[data-workspace-view="tasks"] .home-quick-action:hover {
+  background: var(--dk-bg-muted);
+  border-color: var(--dk-border-subtle);
 }body[data-workspace-view="tasks"] .ops-queue-board {
   width: min(880px, 100%);
   overflow: hidden;
