@@ -165,7 +165,7 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   await expect(page.getByText("Synthetic Newsletter").first()).toBeVisible();
   await expect(page.getByText("Synthetic public holiday").first()).toBeVisible();
   await expect(page.getByText("Summer holidays").first()).toBeVisible();
-  await expect(page.locator(".iso-week").first()).toContainText("ISO");
+  await expect(page.locator(".iso-week").first()).toHaveText(/^\d+$/);
   const surface = page.locator(".calendar-surface");
   await surface.evaluate((element) => (element.style.width = "1000px"));
   await surface.screenshot({
@@ -259,7 +259,7 @@ test("production calendar renders cross-year ISO weeks and Berlin DST boundary d
   await expect(surface.locator('time[datetime="2027-01-01"]')).toBeVisible();
   await expect(surface.locator(".calendar-weeks > .calendar-week")).toHaveCount(1);
   await expect(surface.locator(".calendar-weeks > .calendar-week > section.calendar-day")).toHaveCount(7);
-  await expect(surface.locator(".iso-week")).toContainText(["ISO 53"]);
+  await expect(surface.locator(".iso-week")).toContainText(["53"]);
   await surface.screenshot({
     path: path.join(shots, "production-year-boundary.png"),
   });

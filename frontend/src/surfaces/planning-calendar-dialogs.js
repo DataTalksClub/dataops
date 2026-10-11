@@ -32,7 +32,7 @@ export function setupDayScheduleDialog(options) {
       return;
     }
     if (overlayItems === null) {
-      dayBody.innerHTML = `<p class="planner-load-state" role="status">Loading full day schedule…</p>`;
+      dayBody.innerHTML = `<p class="planner-load-state">Loading full day schedule…</p>`;
       return;
     }
 

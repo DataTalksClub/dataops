@@ -65,7 +65,7 @@ export function createPlanningSurface(context) {
     surface.className = "calendar-surface";
     surface.setAttribute("aria-labelledby", "calendar-surface-title");
     surface.innerHTML = `
-      <header class="planner-header calendar-header-bar">
+      <header class="calendar-controls calendar-header-bar">
         <div class="calendar-header-main">
           <div class="calendar-nav-group">
             <button type="button" class="calendar-today-btn" data-today>Today</button>
@@ -80,7 +80,7 @@ export function createPlanningSurface(context) {
               </button>
             </div>
             <div class="calendar-picker-container">
-              <h1 id="calendar-surface-title" class="calendar-heading-wrapper">
+              <h1 id="calendar-surface-title" class="calendar-heading-wrapper" aria-label="Operations calendar">
                 <button type="button" class="calendar-period-btn" data-picker-toggle aria-haspopup="dialog" aria-expanded="false" title="Choose month and year">
                   <span class="calendar-period-title" data-period-heading>Calendar</span>
                   <svg class="calendar-period-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
@@ -108,10 +108,6 @@ export function createPlanningSurface(context) {
             </div>
           </div>
           <div class="calendar-header-actions">
-            <select data-view aria-label="Calendar view" hidden>
-              <option value="month" selected>Month</option>
-              <option value="week">Week</option>
-            </select>
             <button class="primary-button calendar-add-button" data-add>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -126,6 +122,13 @@ export function createPlanningSurface(context) {
       <footer class="calendar-footer-controls" aria-label="Calendar controls">
         <div class="calendar-footer-controls-bar">
           <div class="calendar-filter-section">
+            <span class="calendar-control-label">View:</span>
+            <label class="calendar-select-label" title="Calendar view">
+              <select data-view aria-label="Calendar view">
+                <option value="month" selected>Month</option>
+                <option value="week">Week</option>
+              </select>
+            </label>
             <span class="calendar-control-label">Filter:</span>
             <label class="calendar-select-label" title="Filter by activity type">
               <select data-type aria-label="Activity type">
@@ -199,9 +202,12 @@ export function createPlanningSurface(context) {
           </div>
           <p class="planner-form-error" role="alert"></p>
           </div>
-          <div class="dk-dialog__foot">
-            <button class="primary-button">Save activity</button>
-            <button type="button" data-cancel>Cancel</button>
+          <div class="dk-dialog__foot calendar-activity-dialog-foot">
+            <div class="calendar-activity-dialog-foot-actions">
+              <button class="primary-button">Save activity</button>
+              <button type="button" data-cancel>Cancel</button>
+            </div>
+            <button type="button" class="calendar-delete-activity-btn" data-delete-activity style="display: none;">Delete activity</button>
           </div>
         </form>
       </dialog>
@@ -299,7 +305,7 @@ export function createPlanningSurface(context) {
           </button>
         </div>
         <div class="dk-dialog__body calendar-day-dialog-body" data-day-body>
-          <p class="planner-load-state" role="status">Loading schedule…</p>
+          <p class="planner-load-state">Loading schedule…</p>
         </div>
         <div class="dk-dialog__foot calendar-day-dialog-foot">
           <button class="primary-button" type="button" data-day-add-activity>
@@ -374,10 +380,12 @@ export function createPlanningSurface(context) {
           : cursor.toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });
       const periodHeadingEl = surface.querySelector("[data-period-heading]");
       if (periodHeadingEl) periodHeadingEl.textContent = periodLabel;
+      const days = isWeek
+        ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
       const weekdayHeadings = [
         '<strong class="calendar-week-heading" aria-label="Week number">Week</strong>',
-        ...["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
-          .map((day) => `<strong>${day}</strong>`),
+        ...days.map((day) => `<strong>${day}</strong>`),
       ].join("");
       const todayIso = todayIsoDate(),
         currentMondayIso = iso(monday(parseIsoDateValue(todayIso)));
@@ -385,7 +393,7 @@ export function createPlanningSurface(context) {
         weekIsCurrent = false;
       for (let dateValue = new Date(`${from}T00:00:00Z`); dateValue <= new Date(`${to}T00:00:00Z`); dateValue.setUTCDate(dateValue.getUTCDate() + 1)) {
         const dayOfWeek = dateValue.getUTCDay();
-        if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+        if (!isWeek && (dayOfWeek === 0 || dayOfWeek === 6)) continue;
         const date = iso(dateValue),
           isOutside = !isWeek && dateValue.getUTCMonth() !== cursor.getUTCMonth(),
           isToday = date === todayIso,
@@ -489,13 +497,17 @@ export function createPlanningSurface(context) {
             </div>
           </section>
         `;
-        if (dayOfWeek === 5) weekMarkup += `</div>`;
+        if (isWeek ? dayOfWeek === 0 : dayOfWeek === 5) weekMarkup += `</div>`;
       }
       if (weekMarkup && !weekMarkup.trimEnd().endsWith("</div>")) {
         weekMarkup += `</div>`;
       }
+      const emptyNotice = type && visibleItems.length === 0
+        ? `<div class="calendar-empty honest-state"><p>No matching activities</p></div>`
+        : "";
       grid.innerHTML = `
-        <div class="calendar-grid">
+        ${emptyNotice}
+        <div class="calendar-grid${isWeek ? " is-week-view" : ""}">
           <div class="calendar-weekdays">${weekdayHeadings}</div>
           <div class="calendar-weeks">${weekMarkup}</div>
         </div>
@@ -677,36 +689,54 @@ export function createPlanningSurface(context) {
     surface.querySelector("[data-view]").onchange = load;
     surface.querySelector("[data-type]").onchange = render;
     surface.querySelectorAll("[data-layer]").forEach((control) => { control.onchange = render; });
-    surface.querySelector("[data-add]").onclick = () => {
+    const deleteBtn = dialog.querySelector("[data-delete-activity]");
+    function openActivityDialog(item = null, defaultDate = null) {
       form.reset();
       form.querySelector('[role="alert"]').textContent = "";
-      const date = iso(cursor);
-      form.elements.startDate.value = date;
-      form.elements.endDate.value = date;
+      if (item) {
+        Object.keys(item).forEach((key) => {
+          if (form.elements[key]) form.elements[key].value = item[key] || "";
+        });
+        if (deleteBtn?.style) deleteBtn.style.display = "";
+      } else {
+        const date = defaultDate || iso(cursor);
+        form.elements.startDate.value = date;
+        form.elements.endDate.value = date;
+        if (deleteBtn?.style) deleteBtn.style.display = "none";
+      }
       dialog.showModal();
-    };
+    }
+
+    if (deleteBtn) {
+      deleteBtn.onclick = async () => {
+        const id = form.elements.id.value;
+        const version = form.elements.version.value;
+        if (!id) return;
+        form.querySelector('[role="alert"]').textContent = "";
+        try {
+          await api(`/${encodeURIComponent(id)}`, {
+            method: "DELETE",
+            body: JSON.stringify({ version: Number(version) || 1 }),
+          });
+          dialog.close();
+          load();
+        } catch (error) {
+          form.querySelector('[role="alert"]').textContent = `Could not delete activity: ${error.message}`;
+        }
+      };
+    }
+
+    surface.querySelector("[data-add]").onclick = () => openActivityDialog();
 
     const daySchedule = setupDayScheduleDialog({
       surface,
       api,
       escapeHtml,
       plannerLabel,
-      onAddActivity: (selectedDayIso) => {
-        form.reset();
-        form.querySelector('[role="alert"]').textContent = "";
-        form.elements.startDate.value = selectedDayIso || iso(cursor);
-        form.elements.endDate.value = selectedDayIso || iso(cursor);
-        dialog.showModal();
-      },
+      onAddActivity: (selectedDayIso) => openActivityDialog(null, selectedDayIso),
       onEditActivity: (itemId) => {
         const item = items.find((value) => value.id === itemId);
-        if (!item) return;
-        form.reset();
-        form.querySelector('[role="alert"]').textContent = "";
-        Object.keys(item).forEach((key) => {
-          if (form.elements[key]) form.elements[key].value = item[key] || "";
-        });
-        dialog.showModal();
+        if (item) openActivityDialog(item);
       },
       getCalendarState: () => ({ items, holidays, overlays }),
     });
@@ -717,12 +747,10 @@ export function createPlanningSurface(context) {
       const editBtn = event.target.closest("[data-edit]");
       if (editBtn) {
         const item = items.find((value) => value.id === editBtn.dataset.edit);
-        if (!item) return;
-        form.reset();
-        form.querySelector('[role="alert"]').textContent = "";
-        Object.keys(item).forEach((key) => { if (form.elements[key]) form.elements[key].value = item[key] || ""; });
-        dialog.showModal();
-        return;
+        if (item) {
+          openActivityDialog(item);
+          return;
+        }
       }
       const openDayBtn = event.target.closest("[data-open-day]");
       if (openDayBtn) {
