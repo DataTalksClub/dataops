@@ -118,6 +118,7 @@ export function createSponsorCrmSurface(context) {
     const { loadFinance } = sponsorFinance;
     const {
       loadCommunications,
+      revokeCurrentReview,
       showExactReview,
     } = sponsorCommunications;
     const showExactReviewAndFocus = async (...args) => {
@@ -585,6 +586,17 @@ export function createSponsorCrmSurface(context) {
       const cancel = dialog.querySelector('[value="cancel"],[data-cancel]');
       if (cancel) cancel.onclick = () => dialog.close();
     }
+    const reviewDialog = surface.querySelector(
+      "[data-communication-review-dialog]",
+    );
+    reviewDialog.querySelector("[data-review-close]").onclick = (event) => {
+      event.preventDefault();
+      revokeCurrentReview("close");
+    };
+    reviewDialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      revokeCurrentReview("escape");
+    });
     const confirmDialog = surface.querySelector("[data-sponsor-confirm-dialog]");
     const confirmSponsorAction = (title, description, actionLabel) =>
       new Promise((resolve) => {
@@ -693,6 +705,61 @@ export function createSponsorCrmSurface(context) {
             ),
           "Could not open exact review",
         );
+        return;
+      }
+      const suggestionId = event.target.closest("[data-draft-suggestion]")
+        ?.dataset.draftSuggestion;
+      if (suggestionId) {
+        const suggestion = sponsorCommunications.communicationItems.find(
+          (item) => item.id === suggestionId,
+        );
+        const deal = deals.find(
+          (item) => item.id === sponsorCommunications.selectedBookingId,
+        );
+        const recipients = contacts
+          .filter(
+            (item) =>
+              item.organizationId === deal?.organizationId &&
+              item.active !== false &&
+              !item.archivedAt,
+          )
+          .flatMap((item) =>
+            (item.emails || []).map((email) => ({
+              contactId: item.id,
+              name: item.name,
+              email,
+            })),
+          );
+        if (!suggestion || !recipients.length) {
+          message.hidden = false;
+          message.textContent =
+            "At least one active contact address in this sponsor organization is required before drafting.";
+          return;
+        }
+        const dialog = surface.querySelector(
+          "[data-communication-draft-dialog]",
+        );
+        const form = dialog.querySelector("form");
+        form.reset();
+        form.elements.suggestionId.value = suggestionId;
+        form.elements.recipient.innerHTML = recipients
+          .map(
+            (item) =>
+              html`<option
+                value="${escapeHtml(item.email)}"
+                data-contact-id="${escapeHtml(item.contactId)}"
+              >
+                ${escapeHtml(item.name || "Sponsor contact")} ·
+                ${escapeHtml(item.email)}
+              </option>`,
+          )
+          .join("");
+        surface.querySelector("[data-create-review]").textContent =
+          sponsorCommunications.communicationPermissions.canApprove
+            ? "Save and review exact message"
+            : "Save draft for admin review";
+        openDialog(dialog);
+        return;
       }
     });
     surface.querySelector("[data-org-save]").onclick = (event) => {
