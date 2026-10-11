@@ -67,8 +67,11 @@ export function createCardsSurface(context) {
     actions.className = "workflow-board-actions";
     const archive = document.createElement("button");
     archive.type = "button";
-    archive.className = "quiet-button";
+    archive.className = archiveVisible
+      ? "quiet-button"
+      : "quiet-button workflow-archive-toggle";
     archive.textContent = headerModel.archiveAction;
+    archive.setAttribute("aria-label", headerModel.archiveAction);
     archive.setAttribute("aria-pressed", String(archiveVisible));
     archive.addEventListener("click", () =>
       navigateCanonicalWorkspace(headerModel.archiveRoute),

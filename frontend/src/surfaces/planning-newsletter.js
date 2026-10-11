@@ -405,6 +405,22 @@ export function createNewsletterPlanner(context) {
         if (statScheduled) statScheduled.textContent = String(scheduledCount);
         if (statUnbooked) statUnbooked.textContent = String(unbookedCount);
 
+        // The mobile layout keeps the tab row but drops the stats strip, so
+        // each view tab carries its count (data-count rendered as a chip by
+        // the mobile stylesheet; desktop shows the full stats bar instead).
+        const sentCount = items.filter((i) =>
+          ["sent", "cancelled"].includes(i.status)
+        ).length;
+        const viewCounts = {
+          all: totalCount,
+          upcoming: upcomingCount,
+          sent: sentCount,
+        };
+        for (const [view, count] of Object.entries(viewCounts)) {
+          const tab = surface.querySelector(`[data-newsletter-view="${view}"]`);
+          if (tab) tab.dataset.count = String(count);
+        }
+
         const uniqueAlerts = [
           ...new Map((result.alerts || []).map((alert) => [alert.reasonCode, alert])).values(),
         ];

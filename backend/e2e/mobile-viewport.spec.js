@@ -26,22 +26,19 @@ const VIEWPORTS = [
 // templates, tasks, sponsor organizations, newsletter slots), because empty
 // states stack differently than the boards operators actually use.
 //
-// knownGap marks routes whose chrome still pushes content past the budget;
-// the assertion records the measured position as a test annotation instead
-// of failing, until the follow-up compaction pass lands.
 const ROUTES = [
   { path: '/', ready: '.ops-work-queue', content: '.ops-queue-board, .ops-honest-state, .ops-empty', contentReady: '.ops-queue-list, .ops-empty' },
   { path: '/tasks', ready: '.ops-work-queue', content: '.ops-queue-board, .ops-honest-state, .ops-empty', contentReady: '.ops-queue-list, .ops-empty' },
-  { path: '/cards', ready: '.ops-workflows-board', content: '.ops-workflows-grid', contentReady: '.ops-workflows-grid', knownGap: true },
+  { path: '/cards', ready: '.ops-workflows-board', content: '.ops-workflows-grid', contentReady: '.ops-workflows-grid' },
   { path: '/cards/archive', ready: '.ops-workflows-board', content: '.workflow-archive-tabs, .cards-archive-grid, .ops-honest-state' },
-  { path: '/templates', ready: '.ops-split-surface', content: '.runtime-template-layout, .ops-template-grid', knownGap: true },
+  { path: '/templates', ready: '.ops-split-surface', content: '.runtime-template-layout, .ops-template-grid' },
   { path: '/recurring', ready: '.ops-recurring-surface', content: '.recurring-summary, .recurring-toolbar, .ops-recurring-section' },
   { path: '/assistants', ready: '.assistant-workspace', content: '.assistant-layout' },
-  { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bookkeeping-worklist, .bookkeeping-section', knownGap: true },
+  { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bookkeeping-worklist, .bookkeeping-section' },
   { path: '/sponsors', ready: '.sponsor-crm-surface', content: '.crm-layout, .crm-upcoming-list, .crm-directory-row, .crm-booking-row', contentReady: '.crm-directory-row, .crm-upcoming-list, .ops-honest-state' },
-  { path: '/newsletter', ready: '.newsletter-surface', content: '.newsletter-slot-row, .newsletter-slot-list, .newsletter-schedule', knownGap: true },
+  { path: '/newsletter', ready: '.newsletter-surface', content: '.newsletter-slot-row, .newsletter-slot-list, .newsletter-schedule' },
   { path: '/calendar', ready: '.calendar-surface', content: '.calendar-grid', contentReady: '.calendar-grid', mockCalendar: true },
-  { path: '/processes', ready: '.ops-surface-docs', content: '.ops-docs-catalog, .ops-docs-state, .ops-docs-state-detail', knownGap: true },
+  { path: '/processes', ready: '.ops-surface-docs', content: '.ops-docs-catalog, .ops-docs-state, .ops-docs-state-detail' },
   { path: '/operating-model', ready: '.operating-model-surface', content: '.operating-model-surface strong, .operating-model-surface table, .operating-model-surface .status-text' },
   { path: '/review', ready: '.review-surface', content: '.review-summary, .review-empty-state' },
   { path: '/admin', ready: '.ops-surface-admin', content: '.ops-admin-card, .ops-admin-intake-recovery' },
@@ -157,24 +154,22 @@ for (const viewport of VIEWPORTS) {
 
       // Primary content starts within the top quarter of the viewport:
       // titles, helper text, and action buttons above it must stay compact
-      // so the work itself is on screen (mobile content-start budget).
+      // so the work itself is on screen (mobile content-start budget). The
+      // measured position rides along as an annotation on every route.
       const contentTop = await measureContentStart(page, route.content);
       expect(
         contentTop,
         `${route.path}: no visible primary content matched ${route.content}`,
       ).not.toBeNull();
       const contentBudget = Math.round(layout.viewport.height * 0.25) + 2;
-      if (route.knownGap) {
-        test.info().annotations.push({
-          type: 'known-gap',
-          description: `${route.path} content starts at ${contentTop}px (budget ${contentBudget}px)`,
-        });
-      } else {
-        expect(
-          contentTop,
-          `${route.path}: primary content starts at ${contentTop}px, budget is ${contentBudget}px`,
-        ).toBeLessThanOrEqual(contentBudget);
-      }
+      test.info().annotations.push({
+        type: 'content-start',
+        description: `${route.path} content starts at ${contentTop}px (budget ${contentBudget}px)`,
+      });
+      expect(
+        contentTop,
+        `${route.path}: primary content starts at ${contentTop}px, budget is ${contentBudget}px`,
+      ).toBeLessThanOrEqual(contentBudget);
 
       // The body is not scroll-locked, and a tall page actually scrolls to
       // reveal its bottom. A page that fits the viewport must not scroll.

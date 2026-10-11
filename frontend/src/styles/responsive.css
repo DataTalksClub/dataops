@@ -345,6 +345,12 @@ body[data-workspace-view="sponsors"] .library-view {
   }
 }
 
+@media (max-width: 620px) {
+  .newsletter-surface {
+    gap: 4px !important;
+  }
+}
+
 @media (max-width: 420px) {.newsletter-filters .planner-filter-fields label:last-child { grid-column: 1 / -1; }.calendar-alert { display: grid; grid-template-columns: minmax(0, 1fr) auto; }.calendar-alert button { align-self: center; }.calendar-content-header { display: grid; gap: 4px; }.newsletter-slot-row { grid-template-columns: minmax(0, 1fr); }.newsletter-slot-actions { grid-column: 1; }.newsletter-slot-title { align-items: start; }.planner-form-grid { grid-template-columns: minmax(0, 1fr); }.planner-field-wide { grid-column: 1; }.bookkeeping-filters,
 .crm-filters {
     grid-template-columns: 1fr;
@@ -387,13 +393,11 @@ body[data-workspace-view="sponsors"] .library-view {
   .workflow-board-filter-count,
   .workflow-board-scroll-hint,
   .calendar-timezone-badge,
-  .newsletter-stats-bar,
   .bookkeeping-close-state,
   .bookkeeping-header p,
   .crm-header p,
   .review-header p,
   .planner-header p,
-  .runtime-template-result-count,
   .runtime-template-inspector .ops-section-header span {
     display: none !important;
   }
@@ -418,7 +422,7 @@ body[data-workspace-view="sponsors"] .library-view {
   }
 
   .library-view {
-    padding: 8px 10px 28px !important;
+    padding: 8px 12px 28px !important;
   }
 
   /* ---- compact header actions everywhere: one 32px row, not 44px stacks ---- */
@@ -457,7 +461,10 @@ body[data-workspace-view="sponsors"] .library-view {
     display: flex !important;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 6px !important;
+  }
+  .ops-workflows-grid {
+    padding-top: 0 !important;
   }
   .workflow-board-header,
   .workflow-board-header > div,
@@ -472,7 +479,11 @@ body[data-workspace-view="sponsors"] .library-view {
   .workflow-board-filter select {
     flex: 1 1 150px;
   }
-  .workflow-board-actions .quiet-button {
+  /* Only the Archive toggle collapses to an icon; its "Back to board" state
+     and every other quiet action keep their text. The glyph is an archive
+     box, not a trash can: archiving is reversible, delete reads permanent.
+     The accessible name comes from the button's aria-label ("Archive (N)"). */
+  .workflow-board-actions .workflow-archive-toggle {
     flex: 0 0 34px !important;
     width: 34px !important;
     min-width: 34px !important;
@@ -483,13 +494,13 @@ body[data-workspace-view="sponsors"] .library-view {
     align-items: center;
     justify-content: center;
   }
-  .workflow-board-actions .quiet-button::before {
+  .workflow-board-actions .workflow-archive-toggle::before {
     content: "";
     width: 16px;
     height: 16px;
     background: currentColor;
-    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='4' rx='1'/%3E%3Cpath d='M5 7v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7'/%3E%3Cpath d='M10 11v6M14 11v6'/%3E%3C/svg%3E") center / contain no-repeat;
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='4' rx='1'/%3E%3Cpath d='M5 7v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7'/%3E%3Cpath d='M10 11v6M14 11v6'/%3E%3C/svg%3E") center / contain no-repeat;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='3' width='20' height='5' rx='1'/%3E%3Cpath d='M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8'/%3E%3Cpath d='M10 12h4'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='3' width='20' height='5' rx='1'/%3E%3Cpath d='M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8'/%3E%3Cpath d='M10 12h4'/%3E%3C/svg%3E") center / contain no-repeat;
   }
   .ops-workflows-grid,
   .workflow-archive-tabs,
@@ -498,8 +509,11 @@ body[data-workspace-view="sponsors"] .library-view {
   }
 
   /* ---- Templates: compact inspector toolbar so the list leads ---- */
-  .runtime-template-inspector .ops-section-header {
-    margin: 0 0 6px !important;
+  .runtime-template-inspector > .ops-section-header {
+    /* Title and guidance are already hidden; the header is an empty box of
+       padding and border. contents keeps the h3 reachable while removing the
+       box itself. */
+    display: contents !important;
   }
   .runtime-template-toolbar {
     flex-direction: row !important;
@@ -509,7 +523,18 @@ body[data-workspace-view="sponsors"] .library-view {
     margin: 0 !important;
   }
   .runtime-template-toolbar > * {
-    flex: 1 1 150px;
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+  .runtime-template-toolbar .runtime-template-result-count {
+    flex: 0 1 auto;
+    font-size: 11px !important;
+    white-space: nowrap;
+  }
+  .runtime-template-toolbar .runtime-template-search {
+    flex: 1 1 0 !important;
+    width: 0;
+    min-height: 32px !important;
   }
   .runtime-template-toolbar .primary-button,
   .runtime-template-toolbar .quiet-button {
@@ -523,7 +548,7 @@ body[data-workspace-view="sponsors"] .library-view {
     gap: 4px;
   }
   .assistant-workspace > .surface-summary {
-    display: none !important;
+    order: 4 !important;
   }
   .assistant-workspace > .assistant-panel {
     order: 3;
@@ -636,15 +661,40 @@ body[data-workspace-view="sponsors"] .library-view {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 6px;
     padding: 0 !important;
+  }
+  .newsletter-stats-bar {
+    display: none !important;
   }
   .newsletter-surface > .newsletter-views {
     order: 1;
     display: flex;
     gap: 4px;
+    margin: 0 !important;
+    padding: 0 !important;
   }
   .newsletter-view-tab {
     flex: 1 1 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 32px;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+    white-space: nowrap;
+  }
+  .newsletter-view-tab[data-count]::after {
+    content: attr(data-count);
+    border: 1px solid var(--dk-border-default);
+    border-radius: 999px;
+    background: var(--dk-bg-muted);
+    color: var(--dk-text-muted);
+    padding: 0 5px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 14px;
   }
   .newsletter-surface > .newsletter-schedule {
     order: 2;
