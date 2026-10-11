@@ -63,9 +63,12 @@ export function monthLabel(month) {
   }).format(parsed);
 }
 
-// The month before/after "YYYY-MM"; stepping is how the operator moves the
+// The month before/after "YYYY-MM" or "YYYY"; stepping is how the operator moves the
 // close lens without opening a picker.
 export function shiftMonth(month, step) {
+  if (/^\d{4}$/.test(String(month))) {
+    return String(Number(month) + step);
+  }
   if (!/^\d{4}-\d{2}$/.test(String(month))) return month;
   const [y, m] = String(month).split("-").map(Number);
   const shifted = new Date(Date.UTC(y, m - 1 + step, 1));
@@ -82,4 +85,217 @@ export function latestActivityMonth(entries, fallbackMonth) {
     .sort();
   if (months.length) return months[months.length - 1];
   return fallbackMonth;
+}
+
+// Unique years from transactions plus fallback, sorted descending.
+export function yearsOf(entries, fallback) {
+  const set = new Set();
+  const currentYear = String(new Date().getFullYear());
+  set.add(currentYear);
+  if (fallback) {
+    const y = String(fallback).slice(0, 4);
+    if (/^\d{4}$/.test(y)) set.add(y);
+  }
+  (entries || []).forEach((e) => {
+    const y = String(e?.transactionDate || "").slice(0, 4);
+    if (/^\d{4}$/.test(y)) set.add(y);
+  });
+  return [...set].sort((a, b) => b.localeCompare(a));
+}
+
+// RFC 4180 CSV cell quoting
+export function csvCell(value) {
+  if (value == null) return '""';
+  const str = String(value);
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
+// Payment categories tracked in the ledger but kept out of accountant's
+// monthly package and taxable report.
+export const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance"]);
+export function isReportExempt(entry) {
+  return REPORT_EXEMPT_CATEGORIES.has(String(entry?.category || ""));
+}
+
+// Format ledger entries into the standard accountant tax report CSV.
+// Follows the DTC bookkeeping sheet specification (signed EUR prices, USD original prices).
+export function formatReportCsv(entries, options = {}) {
+  const excludeExempt = options.excludeExempt ?? true;
+  const rows = excludeExempt
+    ? (entries || []).filter((e) => !isReportExempt(e))
+    : (entries || []);
+  const headers = [
+    "Date",
+    "Paid Date",
+    "Provider",
+    "Description",
+    "Price EUR",
+    "Price USD",
+    "Original Currency",
+    "VAT Amount",
+    "VAT Currency",
+    "Category",
+    "Type",
+    "Statement",
+  ];
+  const lines = [headers.map(csvCell).join(",")];
+  for (const entry of rows) {
+    const dir = entryDirection(entry);
+    const sign = dir === "expense" ? "-" : "";
+    const eurVal =
+      entry.currency === "EUR"
+        ? entry.amount
+        : entry.amountEur || entry.amount || "";
+    const priceEur = eurVal ? `${sign}${eurVal}` : "";
+    const priceUsd =
+      entry.currency === "USD" ? `${sign}${entry.amount}` : "";
+    lines.push(
+      [
+        entry.transactionDate || "",
+        entry.paidDate || "",
+        entry.counterparty || "",
+        entry.description || "",
+        priceEur,
+        priceUsd,
+        entry.currency || "",
+        entry.vatAmount || "",
+        entry.vatCurrency || "",
+        entry.category || "",
+        dir === "income" ? "Income" : dir === "expense" ? "Expense" : entry.entryType || "",
+        entry.statementRef || "",
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+  }
+  return lines.join("\r\n") + "\r\n";
+}
+
+// Format full raw ledger entries matching the backend snapshot format.
+export function formatFullCsv(entries) {
+  const columns = [
+    "transactionDate",
+    "paidDate",
+    "counterparty",
+    "description",
+    "amount",
+    "currency",
+    "amountEur",
+    "vatAmount",
+    "vatCurrency",
+    "category",
+    "entryType",
+    "statementRef",
+  ];
+  const lines = [columns.map(csvCell).join(",")];
+  for (const entry of entries || []) {
+    lines.push(columns.map((c) => csvCell(entry[c])).join(","));
+  }
+  return lines.join("\r\n") + "\r\n";
+}
+
+// Format tab-separated values ready for copy-pasting directly into Gmail or Google Sheets.
+export function formatReportTsv(entries, options = {}) {
+  const excludeExempt = options.excludeExempt ?? true;
+  const rows = excludeExempt
+    ? (entries || []).filter((e) => !isReportExempt(e))
+    : (entries || []);
+  const headers = [
+    "Date",
+    "Paid Date",
+    "Provider",
+    "Description",
+    "Price EUR",
+    "Price USD",
+    "Currency",
+    "VAT",
+    "Category",
+    "Type",
+    "Statement",
+  ];
+  const lines = [headers.join("\t")];
+  for (const entry of rows) {
+    const dir = entryDirection(entry);
+    const sign = dir === "expense" ? "-" : "";
+    const eurVal =
+      entry.currency === "EUR"
+        ? entry.amount
+        : entry.amountEur || entry.amount || "";
+    const priceEur = eurVal ? `${sign}${eurVal}` : "";
+    const priceUsd =
+      entry.currency === "USD" ? `${sign}${entry.amount}` : "";
+    lines.push(
+      [
+        entry.transactionDate || "",
+        entry.paidDate || "",
+        entry.counterparty || "",
+        entry.description || "",
+        priceEur,
+        priceUsd,
+        entry.currency || "",
+        entry.vatAmount || "",
+        entry.category || "",
+        dir === "income" ? "Income" : dir === "expense" ? "Expense" : entry.entryType || "",
+        entry.statementRef || "",
+      ]
+        .map((v) => String(v ?? "").replace(/[\t\r\n]/g, " "))
+        .join("\t"),
+    );
+  }
+  return lines.join("\n");
+}
+
+// Trigger client-side file download.
+export function downloadCsv(content, filename) {
+  if (typeof document === "undefined") return;
+  const blob =
+    typeof Blob !== "undefined"
+      ? new Blob([content], { type: "text/csv;charset=utf-8;" })
+      : null;
+  const url =
+    blob && typeof URL !== "undefined" && URL.createObjectURL
+      ? URL.createObjectURL(blob)
+      : "";
+  const link = document.createElement("a");
+  if (url) link.href = url;
+  link.download = filename;
+  const container = document.body || document.documentElement || document;
+  if (container?.appendChild) container.appendChild(link);
+  if (link.click) link.click();
+  if (link.remove) link.remove();
+  if (url && typeof URL !== "undefined" && URL.revokeObjectURL) {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+}
+
+// Copy text to clipboard with fallback.
+export async function copyToClipboard(text) {
+  if (typeof navigator !== "undefined" && navigator?.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fallback below
+    }
+  }
+  if (typeof document !== "undefined") {
+    const container = document.body || document.documentElement || document;
+    if (container && typeof container.appendChild === "function") {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      container.appendChild(textarea);
+      if (textarea.select) textarea.select();
+      const success = document.execCommand ? document.execCommand("copy") : true;
+      if (textarea.remove) {
+        textarea.remove();
+      } else if (container.removeChild) {
+        container.removeChild(textarea);
+      }
+      return Boolean(success);
+    }
+    return true;
+  }
+  return false;
 }

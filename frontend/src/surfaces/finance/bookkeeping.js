@@ -12,20 +12,23 @@ import {
 import { mountInvoiceReview } from "./invoices.js";
 import { html } from "./shared.js";
 import {
+  copyToClipboard,
+  downloadCsv,
   entryDirection,
   FIELD_LABELS,
+  formatFullCsv,
+  formatReportCsv,
+  formatReportTsv,
+  isReportExempt,
   latestActivityMonth,
   ledgerDate,
   MONEY_PATTERN,
   monthLabel,
   monthOf,
+  REPORT_EXEMPT_CATEGORIES,
   shiftMonth,
+  yearsOf,
 } from "./bookkeeping-format.js";
-
-// Categories the backend keeps out of the monthly package (private-money
-// payments reported separately); mirrored so the package review can say what
-// will be excluded before anything is created.
-const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance"]);
 
 function focusFirstUsableControl(dialog) {
   const control = dialog.querySelector(
@@ -79,10 +82,26 @@ export function createBookkeepingSurface(context) {
       worklist = surface.querySelector("[data-worklist]"),
       worklistSection = surface.querySelector("[data-worklist-section]"),
       lensInput = surface.querySelector("[data-lens-month]"),
+      yearSelect = surface.querySelector("[data-lens-year]"),
+      monthSelect = surface.querySelector("[data-lens-month-select]"),
       entryDialog = surface.querySelector(".bookkeeping-entry-dialog"),
       eurDialog = surface.querySelector(".bookkeeping-eur-dialog"),
       form = entryDialog.querySelector("form"),
       status = surface.querySelector("[data-bookkeeping-status]");
+    const MONTH_NAMES = {
+      "01": "January",
+      "02": "February",
+      "03": "March",
+      "04": "April",
+      "05": "May",
+      "06": "June",
+      "07": "July",
+      "08": "August",
+      "09": "September",
+      "10": "October",
+      "11": "November",
+      "12": "December",
+    };
     const api = (path, options = {}) =>
       request(workApiUrl(`/api/bookkeeping${path}`), {
         headers: {
@@ -105,8 +124,12 @@ export function createBookkeepingSurface(context) {
       link.rel = "noopener";
       link.click();
     }
-    const lensEntries = () =>
-      lens === "all" ? entries : entries.filter((e) => monthOf(e) === lens);
+    const lensEntries = () => {
+      if (lens === "all") return entries;
+      if (/^\d{4}$/.test(lens))
+        return entries.filter((e) => monthOf(e).startsWith(lens));
+      return entries.filter((e) => monthOf(e) === lens);
+    };
     const hasEvidence = (id) =>
       links.some((l) => l.transactionId === id && l.coverageType === "evidence");
     const isExempt = (entry) =>
@@ -122,14 +145,50 @@ export function createBookkeepingSurface(context) {
       };
     }
     function monthReport() {
+      if (!/^\d{4}-\d{2}$/.test(lens)) return null;
       return reports.find(
         (r) =>
           r.month === lens && ["ready", "generated"].includes(String(r.status)),
       );
     }
+    function populateLensSelectors() {
+      if (!yearSelect || !monthSelect) return;
+      const years = yearsOf(entries, lens);
+      yearSelect.innerHTML = [
+        '<option value="all">All years</option>',
+        ...years.map((y) => `<option value="${y}">${y}</option>`),
+      ].join("");
+
+      monthSelect.innerHTML = [
+        '<option value="all">All months (full year)</option>',
+        ...Object.entries(MONTH_NAMES).map(
+          ([m, name]) => `<option value="${m}">${m} - ${name}</option>`,
+        ),
+      ].join("");
+
+      syncLensSelectors();
+    }
+    function syncLensSelectors() {
+      if (!yearSelect || !monthSelect) return;
+      if (lens === "all") {
+        yearSelect.value = "all";
+        monthSelect.value = "all";
+        monthSelect.disabled = true;
+      } else if (/^\d{4}$/.test(lens)) {
+        yearSelect.value = lens;
+        monthSelect.value = "all";
+        monthSelect.disabled = false;
+      } else if (/^\d{4}-\d{2}$/.test(lens)) {
+        const [y, m] = lens.split("-");
+        yearSelect.value = y;
+        monthSelect.value = m;
+        monthSelect.disabled = false;
+      }
+    }
     function setLens(month) {
       lens = month;
-      lensInput.value = month === "all" ? "" : month;
+      lensInput.value = /^\d{4}-\d{2}$/.test(month) ? month : "";
+      syncLensSelectors();
       renderAll();
     }
     function renderAll() {
@@ -153,6 +212,7 @@ export function createBookkeepingSurface(context) {
         open.missingEvidence.length +
         open.conversions.length +
         open.unclassified.length;
+      const isYear = /^\d{4}$/.test(lens);
       const report = monthReport();
       closeState.innerHTML = closeStateMonthMarkup({
         title: monthLabel(lens),
@@ -166,7 +226,9 @@ export function createBookkeepingSurface(context) {
             ? { kind: "worklist", count: openCount }
             : report
               ? { kind: "download" }
-              : { kind: "package" },
+              : isYear
+                ? { kind: "export" }
+                : { kind: "package" },
         e: escapeHtml,
       });
     }
@@ -575,11 +637,8 @@ export function createBookkeepingSurface(context) {
         String(todayIsoDate?.() || new Date().toISOString()).slice(0, 7),
       );
       lensInput.value = lens;
-      const years = [
-        ...new Set(entries.map((e) => e.transactionDate.slice(0, 4))),
-      ]
-        .sort()
-        .reverse();
+      populateLensSelectors();
+      const years = yearsOf(entries, lens);
       const vatYears = surface.querySelector("[data-vat-year]");
       vatYears.insertAdjacentHTML(
         "beforeend",
@@ -601,6 +660,72 @@ export function createBookkeepingSurface(context) {
     surface
       .querySelector("[data-vat-year]")
       .addEventListener("change", renderVat);
+    yearSelect?.addEventListener("change", () => {
+      const y = yearSelect.value;
+      if (y === "all") {
+        setLens("all");
+        return;
+      }
+      const m = monthSelect.value;
+      if (m === "all") {
+        setLens(y);
+      } else {
+        setLens(`${y}-${m}`);
+      }
+    });
+    monthSelect?.addEventListener("change", () => {
+      const m = monthSelect.value;
+      let y = yearSelect.value;
+      if (y === "all") {
+        const years = yearsOf(entries, lens);
+        y = years[0] || String(new Date().getFullYear());
+        yearSelect.value = y;
+      }
+      if (m === "all") {
+        setLens(y);
+      } else {
+        setLens(`${y}-${m}`);
+      }
+    });
+    const exportReport = () => {
+      const period = lens === "all" ? "all-records" : lens;
+      const filename = `datatalksclub-${period}.csv`;
+      const shown = lensEntries();
+      const csv = formatReportCsv(shown, { excludeExempt: true });
+      downloadCsv(csv, filename);
+      const count = shown.filter((e) => !isReportExempt(e)).length;
+      status.textContent = `Exported report CSV (${filename}) with ${count} transactions.`;
+    };
+    const exportFull = () => {
+      const period = lens === "all" ? "all-records" : lens;
+      const filename = `datatalksclub-${period}-full.csv`;
+      const shown = lensEntries();
+      const csv = formatFullCsv(shown);
+      downloadCsv(csv, filename);
+      status.textContent = `Exported full CSV (${filename}) with ${shown.length} transactions.`;
+    };
+    const copyReport = async () => {
+      const period = monthLabel(lens);
+      const shown = lensEntries();
+      const tsv = formatReportTsv(shown, { excludeExempt: true });
+      const count = shown.filter((e) => !isReportExempt(e)).length;
+      const ok = await copyToClipboard(tsv);
+      if (ok) {
+        status.textContent = `✓ Copied report table for ${period} (${count} transactions) to clipboard. Paste directly into email or spreadsheet.`;
+      } else {
+        status.textContent =
+          "Could not access clipboard. Please use 'Export report CSV'.";
+      }
+    };
+    surface
+      .querySelector("[data-export-report-csv]")
+      ?.addEventListener("click", exportReport);
+    surface
+      .querySelector("[data-export-full-csv]")
+      ?.addEventListener("click", exportFull);
+    surface
+      .querySelector("[data-copy-report]")
+      ?.addEventListener("click", copyReport);
     const stepLens = (step) => {
       if (lens !== "all") setLens(shiftMonth(lens, step));
     };

@@ -28,9 +28,13 @@ export function closeStateMonthMarkup({
           ? html`<button class="primary-button" type="button" data-cta-package>
               Prepare the monthly package
             </button>`
-          : html`<button class="primary-button" type="button" data-cta-add>
-              Add the first entry
-            </button>`;
+          : cta.kind === "export"
+            ? html`<button class="primary-button" type="button" data-export-report-csv>
+                Export report data
+              </button>`
+            : html`<button class="primary-button" type="button" data-cta-add>
+                Add the first entry
+              </button>`;
   return html`<h2>${e(title)} close</h2>
     <div class="bookkeeping-counters">
       <span class="bookkeeping-counter"
