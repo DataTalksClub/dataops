@@ -119,7 +119,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
   it('runs the exact lifecycle, protects claimed sources, and returns strict DTOs', async () => {
     const classifyInput = {
       actorId: adminId,
-      bookingId,
+      dealId: bookingId,
       dealVersion: 1,
       idempotencyKey: idem('classify'),
       body: {
@@ -143,7 +143,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     }));
     const requested = await recordInvoiceRequest(client, {
       actorId: adminId,
-      bookingId,
+      dealId: bookingId,
       dealVersion: 1,
       expectedVersion: 1,
       idempotencyKey: idem('request'),
@@ -164,7 +164,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     await put(client, TABLE_BOOKKEEPING, invoice);
     const invoiceLinked = await linkInvoice(client, {
       actorId: adminId,
-      bookingId,
+      dealId: bookingId,
       dealVersion: 1,
       expectedVersion: requested.financeVersion,
       sourceId: String(invoice.id),
@@ -196,7 +196,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     for (const payment of payments) {
       const result = await linkPayment(client, {
         actorId: adminId,
-        bookingId,
+        dealId: bookingId,
         dealVersion: 1,
         expectedVersion: version,
         sourceId: String(payment.id),
@@ -223,7 +223,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     await assert.rejects(() => deleteBookkeepingItem(client, 'bookkeeping', String(payments[0].id)));
     const unlinked = await unlinkFinanceSource(client, {
       actorId: adminId,
-      bookingId,
+      dealId: bookingId,
       dealVersion: 1,
       expectedVersion: version,
       kind: 'transaction',
@@ -268,7 +268,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const attempts = await Promise.allSettled([
       ...Array.from({ length: 25 }, (_, index) => linkPayment(simultaneousClient, {
         actorId: adminId,
-        bookingId,
+        dealId: bookingId,
         dealVersion: 1,
         expectedVersion: beforeProjection.finance!.version,
         sourceId: String(source.id),
@@ -327,7 +327,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     for (const alert of financeAlerts) {
       assert.deepEqual(Object.keys(alert.metadata).sort(), [
         'financeBasisDate',
-        'financeBookingId',
+        'financeDealId',
         'financeFingerprint',
         'financeRule',
         'route',
@@ -383,7 +383,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const findAlerts = async () => ((await client.send(new ScanCommand({
       TableName: process.env.DATAOPS_NOTIFICATIONS_TABLE || 'Notifications',
     }))).Items || []).filter((item) =>
-      item.type === 'sponsor-finance' && item.metadata?.financeBookingId === alertBooking);
+      item.type === 'sponsor-finance' && item.metadata?.financeDealId === alertBooking);
     let alerts = await findAlerts();
     assert.equal(alerts.length, 1);
     await client.send(new UpdateCommand({
@@ -439,12 +439,12 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const source = payment('source-drift', '5');
     await put(client, TABLE_BOOKKEEPING, source);
     await linkPayment(client, {
-      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+      actorId: adminId, dealId: setup.dealId, dealVersion: 1,
       expectedVersion: setup.version, sourceId: source.id, identityToken: paymentIdentity(source),
       idempotencyKey: idem('source-drift-link'),
     });
     await put(client, TABLE_BOOKKEEPING, { ...source, amount: '6', updatedAt: '2026-08-02T10:00:00.000Z' });
-    const drifted = await projectFinance(client, setup.bookingId, 'operator');
+    const drifted = await projectFinance(client, setup.dealId, 'operator');
     assert.equal(drifted.reconciliationStatus, 'reconciliation-required');
     assert.equal(drifted.paymentState, 'reconciliation-required');
     assert.deepEqual(drifted.payments, []);
@@ -493,7 +493,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     await put(client, TABLE_BOOKKEEPING, first);
     await put(client, TABLE_BOOKKEEPING, second);
     const linked = await linkPayment(client, {
-      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+      actorId: adminId, dealId: setup.dealId, dealVersion: 1,
       expectedVersion: setup.version, sourceId: first.id, identityToken: paymentIdentity(first),
       idempotencyKey: idem('tuple-race-first-link'),
     });
@@ -510,11 +510,11 @@ describe('sponsor finance production DynamoDB transactions', () => {
       },
     } as DynamoDBDocumentClient;
     await assert.rejects(() => linkPayment(racingClient, {
-      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+      actorId: adminId, dealId: setup.dealId, dealVersion: 1,
       expectedVersion: linked.financeVersion, sourceId: second.id, identityToken: paymentIdentity(second),
       idempotencyKey: idem('tuple-race-second-link'),
     }));
-    const projection = await projectFinance(client, setup.bookingId, 'operator');
+    const projection = await projectFinance(client, setup.dealId, 'operator');
     assert.equal(projection.reconciliationStatus, 'reconciliation-required');
     assert.equal(projection.paymentLinkCount, 1);
   });
@@ -535,18 +535,18 @@ describe('sponsor finance production DynamoDB transactions', () => {
       },
     } as DynamoDBDocumentClient;
     const recovered = await linkPayment(lostResponseClient, {
-      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+      actorId: adminId, dealId: setup.dealId, dealVersion: 1,
       expectedVersion: setup.version, sourceId: source.id, identityToken: paymentIdentity(source),
       idempotencyKey: idem('lost-response-link'),
     });
     assert.equal(recovered.outcome, 'replayed');
     const replay = await linkPayment(client, {
-      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+      actorId: adminId, dealId: setup.dealId, dealVersion: 1,
       expectedVersion: setup.version, sourceId: source.id, identityToken: paymentIdentity(source),
       idempotencyKey: idem('lost-response-link'),
     });
     assert.equal(replay.outcome, 'replayed');
-    assert.equal((await projectFinance(client, setup.bookingId, 'operator')).paymentLinkCount, 1);
+    assert.equal((await projectFinance(client, setup.dealId, 'operator')).paymentLinkCount, 1);
   });
 
   it('keeps an in-progress outcome unknown and safely recovers with the same key', async () => {
@@ -564,7 +564,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       },
     } as DynamoDBDocumentClient;
     const input = {
-      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+      actorId: adminId, dealId: setup.dealId, dealVersion: 1,
       expectedVersion: setup.version, sourceId: source.id, identityToken: paymentIdentity(source),
       idempotencyKey: idem('in-progress-retry-link'),
     };
@@ -575,7 +575,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     );
     const recovered = await linkPayment(client, input);
     assert.equal(recovered.financeVersion, setup.version + 1);
-    assert.equal((await projectFinance(client, setup.bookingId, 'operator')).paymentLinkCount, 1);
+    assert.equal((await projectFinance(client, setup.dealId, 'operator')).paymentLinkCount, 1);
   });
 
   it('fails atomic writes after admin revocation or booking cancellation', async () => {
@@ -584,7 +584,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     await put(client, TABLE_BOOKKEEPING, revokedSource);
     await put(client, TABLE_USERS, { ...key('USER', adminId), id: adminId, role: 'operator', disabled: true });
     await assert.rejects(() => linkPayment(client, {
-      actorId: adminId, dealId: revoked.bookingId, dealVersion: 1,
+      actorId: adminId, dealId: revoked.dealId, dealVersion: 1,
       expectedVersion: revoked.version, sourceId: revokedSource.id, identityToken: paymentIdentity(revokedSource),
       idempotencyKey: idem('admin-revoked-link'),
     }));
@@ -594,11 +594,11 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const cancelledSource = payment('booking-cancelled', '1');
     await put(client, TABLE_BOOKKEEPING, cancelledSource);
     await put(client, TABLE_SPONSOR_CRM, {
-      ...key('DEAL', cancelled.bookingId), id: cancelled.bookingId, version: 2,
+      ...key('DEAL', cancelled.dealId), id: cancelled.dealId, version: 2,
       status: 'cancelled', active: true, organizationId: 'organization-cancelled',
     });
     await assert.rejects(() => linkPayment(client, {
-      actorId: adminId, dealId: cancelled.bookingId, dealVersion: 1,
+      actorId: adminId, dealId: cancelled.dealId, dealVersion: 1,
       expectedVersion: cancelled.version, sourceId: cancelledSource.id,
       identityToken: paymentIdentity(cancelledSource), idempotencyKey: idem('booking-cancelled-link'),
     }));
@@ -692,9 +692,9 @@ describe('sponsor finance production DynamoDB transactions', () => {
           const source = payment(label, '1');
           await put(client, TABLE_BOOKKEEPING, source);
           return {
-            dealId: setup.bookingId,
+            dealId: setup.dealId,
             invoke: (racingClient) => linkPayment(racingClient, {
-              actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+              actorId: adminId, dealId: setup.dealId, dealVersion: 1,
               expectedVersion: setup.version, sourceId: source.id, identityToken: paymentIdentity(source),
               idempotencyKey: idem(`${label}-payment`),
             }),
@@ -708,14 +708,14 @@ describe('sponsor finance production DynamoDB transactions', () => {
           const source = payment(label, '1');
           await put(client, TABLE_BOOKKEEPING, source);
           const linked = await linkPayment(client, {
-            actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+            actorId: adminId, dealId: setup.dealId, dealVersion: 1,
             expectedVersion: setup.version, sourceId: source.id, identityToken: paymentIdentity(source),
             idempotencyKey: idem(`${label}-payment`),
           });
           return {
-            dealId: setup.bookingId,
+            dealId: setup.dealId,
             invoke: (racingClient) => unlinkFinanceSource(racingClient, {
-              actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+              actorId: adminId, dealId: setup.dealId, dealVersion: 1,
               expectedVersion: linked.financeVersion, kind: 'transaction', sourceId: source.id,
               idempotencyKey: idem(`${label}-unlink`),
             }),
@@ -727,9 +727,9 @@ describe('sponsor finance production DynamoDB transactions', () => {
         prepare: async (label) => {
           const setup = await bootstrapPayable(label, '10');
           return {
-            dealId: setup.bookingId,
+            dealId: setup.dealId,
             invoke: (racingClient) => unlinkFinanceSource(racingClient, {
-              actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+              actorId: adminId, dealId: setup.dealId, dealVersion: 1,
               expectedVersion: setup.version, kind: 'document', sourceId: `invoice-${label}`,
               idempotencyKey: idem(`${label}-unlink-invoice`),
             }),
@@ -776,7 +776,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
                 ...key('USER', adminId), id: adminId, role: 'operator', disabled: true,
               })
               : put(client, TABLE_SPONSOR_CRM, {
-                ...key('DEAL', prepared.bookingId), id: prepared.bookingId,
+                ...key('DEAL', prepared.dealId), id: prepared.dealId,
                 version: 2, status: 'cancelled', active: true,
                 organizationId: `organization-${label}`,
               });
@@ -792,7 +792,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
         assert.equal(raced, true);
         const state = (await client.send(new GetCommand({
           TableName: TABLE_SPONSOR_CRM,
-          Key: key('SPONSOR_FINANCE', prepared.bookingId),
+          Key: key('SPONSOR_FINANCE', prepared.dealId),
           ConsistentRead: true,
         }))).Item;
         if (state) {
@@ -962,7 +962,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       const source = payment(`link-cap-${index}`, '1');
       await put(client, TABLE_BOOKKEEPING, source);
       const linked = await linkPayment(client, {
-        actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+        actorId: adminId, dealId: setup.dealId, dealVersion: 1,
         expectedVersion: version, sourceId: source.id, identityToken: paymentIdentity(source),
         idempotencyKey: idem(`link-cap-${index}`),
       });
@@ -1055,7 +1055,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       } as DynamoDBDocumentClient;
       await assert.rejects(
         () => linkPayment(cancellationClient, {
-          actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+          actorId: adminId, dealId: setup.dealId, dealVersion: 1,
           expectedVersion: version, sourceId: twentieth.id, identityToken: paymentIdentity(twentieth),
           idempotencyKey: idem(`link-cap-cancel-${cancellationIndex}`),
         }),
@@ -1084,7 +1084,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
         `${actionPositions[cancellationIndex]} cancellation has zero partial effects`,
       );
     }
-    assert.equal((await projectFinance(client, setup.bookingId, 'operator')).paymentLinkCount, 19);
+    assert.equal((await projectFinance(client, setup.dealId, 'operator')).paymentLinkCount, 19);
   });
 
   it('accepts exactly 20 payment links, rejects link 21 and prospective overpayment', async () => {
@@ -1094,7 +1094,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       const source = payment(`link-cap-success-${index}`, '1');
       await put(client, TABLE_BOOKKEEPING, source);
       const linked = await linkPayment(client, {
-        actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+        actorId: adminId, dealId: setup.dealId, dealVersion: 1,
         expectedVersion: version, sourceId: source.id, identityToken: paymentIdentity(source),
         idempotencyKey: idem(`link-cap-success-${index}`),
       });
@@ -1103,7 +1103,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const twentieth = payment('link-cap-success-19', '1');
     await put(client, TABLE_BOOKKEEPING, twentieth);
     const twentiethLinked = await linkPayment(client, {
-      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+      actorId: adminId, dealId: setup.dealId, dealVersion: 1,
       expectedVersion: version, sourceId: twentieth.id, identityToken: paymentIdentity(twentieth),
       idempotencyKey: idem('link-cap-success-19'),
     });
@@ -1111,11 +1111,11 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const twentyFirst = payment('link-cap-success-20', '1');
     await put(client, TABLE_BOOKKEEPING, twentyFirst);
     await assert.rejects(() => linkPayment(client, {
-      actorId: adminId, dealId: setup.bookingId, dealVersion: 1,
+      actorId: adminId, dealId: setup.dealId, dealVersion: 1,
       expectedVersion: version, sourceId: twentyFirst.id, identityToken: paymentIdentity(twentyFirst),
       idempotencyKey: idem('link-cap-success-20'),
     }));
-    const capped = await projectFinance(client, setup.bookingId, 'operator');
+    const capped = await projectFinance(client, setup.dealId, 'operator');
     assert.equal(capped.paymentLinkCount, 20);
     assert.equal(capped.paymentState, 'paid');
     const firstLinked = payment('link-cap-success-0', '1');
@@ -1126,17 +1126,17 @@ describe('sponsor finance production DynamoDB transactions', () => {
       deleteBookkeepingItem(client, 'bookkeeping', firstLinked.id),
     ]);
     assert.deepEqual(guardedEdits.map((result) => result.status), ['rejected', 'rejected']);
-    assert.equal((await projectFinance(client, setup.bookingId, 'operator')).paymentLinkCount, 20);
+    assert.equal((await projectFinance(client, setup.dealId, 'operator')).paymentLinkCount, 20);
 
     const overpay = await bootstrapPayable('overpay', '1');
     const tooLarge = payment('overpay', '1.0001');
     await put(client, TABLE_BOOKKEEPING, tooLarge);
     await assert.rejects(() => linkPayment(client, {
-      actorId: adminId, dealId: overpay.bookingId, dealVersion: 1,
+      actorId: adminId, dealId: overpay.dealId, dealVersion: 1,
       expectedVersion: overpay.version, sourceId: tooLarge.id, identityToken: paymentIdentity(tooLarge),
       idempotencyKey: idem('overpay-link'),
     }));
-    assert.equal((await projectFinance(client, overpay.bookingId, 'operator')).paymentLinkCount, 0);
+    assert.equal((await projectFinance(client, overpay.dealId, 'operator')).paymentLinkCount, 0);
   });
 
   it('fails closed at the real DynamoDB 5,000-evaluated-row discovery boundary', async () => {

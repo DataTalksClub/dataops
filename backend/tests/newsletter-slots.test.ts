@@ -311,27 +311,35 @@ describe("newsletter slots", () => {
       ),
     );
 
-    const booking = (
+    const deal = (
       await createCrmRecord(client, "deal", {
-        sourceKey: "authorized-newsletter-booking",
+        sourceKey: "authorized-newsletter-deal",
         organizationId: "synthetic-org",
         status: "agreed",
+      })
+    ).item;
+    const deliverable = (
+      await createCrmRecord(client, "deliverable", {
+        sourceKey: "authorized-newsletter-booking",
+        organizationId: "synthetic-org",
+        dealId: deal.id,
+        channel: "main",
       })
     ).item;
     const linked = data(
       await invoke("POST", "/api/newsletter-slots", {
         ...valid,
         sourceKey: "authorized-linked-slot",
-        sponsorBookingId: booking.id,
+        sponsorBookingId: deliverable.id,
       }),
     );
     const linkedRead = data(
       await invoke("GET", `/api/newsletter-slots/${linked.id}`),
     );
     assert.deepEqual(linkedRead.sponsor, {
-      id: booking.id,
+      id: deliverable.id,
       organizationId: "synthetic-org",
-      status: "agreed",
+      dealId: deal.id,
     });
     assert.equal(
       (await invoke("POST", "/api/newsletter-slots/projection", {})).statusCode,

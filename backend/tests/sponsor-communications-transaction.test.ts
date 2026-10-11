@@ -267,7 +267,7 @@ async function seedRouteSource(sequence: number) {
       recordType: 'communication-suggestion',
       occurrenceKey: `route-${sequence}`,
       communicationType: 'booking-confirmation',
-      bookingId,
+      dealId: bookingId,
       dealVersion: 1,
       organizationId,
       version: 1,
@@ -668,7 +668,7 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
     assert.equal(createDrifted.statusCode, 201, createDrifted.body);
     await client.send(new UpdateCommand({
       TableName: TABLE,
-      Key: keys('BOOKING', drifted.bookingId),
+      Key: keys('DEAL', drifted.bookingId),
       UpdateExpression: 'SET #version = :version',
       ExpressionAttributeNames: { '#version': 'version' },
       ExpressionAttributeValues: { ':version': 2 },
@@ -828,10 +828,10 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
 
     let historyItems: Record<string, unknown>[] = [];
     for (let retry = 0; retry < 20; retry++) {
-      let history = await listBookingCommunications(client, input.draft.bookingId, { limit: 2 });
+      let history = await listBookingCommunications(client, input.draft.dealId, { limit: 2 });
       historyItems = [...history.items];
       while (history.nextCursor) {
-        history = await listBookingCommunications(client, input.draft.bookingId, { limit: 2, cursor: history.nextCursor });
+        history = await listBookingCommunications(client, input.draft.dealId, { limit: 2, cursor: history.nextCursor });
         historyItems.push(...history.items);
       }
       if (historyItems.some((item) => item.recordType === 'sponsor-send-attempt')) break;
@@ -850,7 +850,7 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
       UpdateExpression: 'SET leaseOwner = :owner, leaseExpiresAt = :expiry, resolutionReason = :reason',
       ExpressionAttributeValues: { ':owner': 'private-worker', ':expiry': '2099-01-01T00:00:00Z', ':reason': 'private operator reason' },
     }));
-    const redacted = await listBookingCommunications(client, input.draft.bookingId, { limit: 50 });
+    const redacted = await listBookingCommunications(client, input.draft.dealId, { limit: 50 });
     const encodedHistory = JSON.stringify(redacted);
     for (const forbidden of [
       'leaseOwner', 'leaseExpiresAt', 'resolutionReason', 'private-worker', 'private operator reason',
@@ -1069,7 +1069,7 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
 
     const crossBooking = structuredClone(archive);
     const crossBookingAttempt = crossBooking.records.find((item) => item.recordType === 'sponsor-send-attempt')!;
-    crossBookingAttempt.bookingId = 'semantically-wrong-booking';
+    crossBookingAttempt.dealId = 'semantically-wrong-booking';
     assert.throws(() => validateSponsorPrivateArchive(resealArchive(crossBooking)));
 
     const crossSource = structuredClone(archive);
@@ -1077,7 +1077,7 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
     const sourceSuggestion = crossSource.records.find((item) => (
       item.recordType === 'communication-suggestion' && item.id === sourceDraft.suggestionId
     ))!;
-    sourceSuggestion.bookingId = 'semantically-wrong-source-booking';
+    sourceSuggestion.dealId = 'semantically-wrong-source-booking';
     assert.throws(() => validateSponsorPrivateArchive(resealArchive(crossSource)));
 
     const wrongProvider = structuredClone(archive);
@@ -1088,7 +1088,7 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
     const crossEvent = structuredClone(archive);
     const eventRecord = crossEvent.records.find((item) => item.recordType === 'sponsor-send-event-fact');
     assert.ok(eventRecord);
-    eventRecord.bookingId = 'semantically-wrong-event-booking';
+    eventRecord.dealId = 'semantically-wrong-event-booking';
     assert.throws(() => validateSponsorPrivateArchive(resealArchive(crossEvent)));
 
     const wrongEventMessage = structuredClone(archive);
