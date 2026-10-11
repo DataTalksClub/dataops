@@ -679,12 +679,12 @@ body[data-workspace-view="tasks"] .runtime-template-list {
    The whole row is the control, so hover and focus both say so. */
 body[data-workspace-view="tasks"] .runtime-template-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   grid-template-areas:
-    "name name"
-    "meta meta"
-    "summary open";
-  align-items: baseline;
+    "name name name"
+    "meta meta meta"
+    "summary start open";
+  align-items: center;
   gap: 6px 12px;
   width: 100%;
   min-width: 0;
@@ -766,6 +766,9 @@ body[data-workspace-view="tasks"] .runtime-template-row small {
   font-size: 12px;
   line-height: 1.4;
   text-overflow: ellipsis;
+}
+body[data-workspace-view="tasks"] .runtime-template-start-btn {
+  grid-area: start;
 }
 body[data-workspace-view="tasks"] .runtime-template-row-open {
   grid-area: open;
@@ -1008,7 +1011,7 @@ body[data-workspace-view="tasks"] .runtime-template-live-cards li {
   justify-content: space-between;
   gap: 12px;
   border-top: 1px solid var(--dk-border-default);
-  padding: 8px 11px;
+  padding: 0;
 }
 body[data-workspace-view="tasks"] .runtime-template-live-cards li:first-child {
   border-top: 0;
@@ -1033,6 +1036,7 @@ body[data-workspace-view="tasks"] .runtime-template-live-cards span.is-attention
   font-weight: var(--dk-weight-medium);
 }
 body[data-workspace-view="tasks"] .runtime-template-live-cards-more {
+  padding: 8px 11px;
   background: var(--dk-bg-muted);
   color: var(--dk-text-muted);
   font-size: 11px;

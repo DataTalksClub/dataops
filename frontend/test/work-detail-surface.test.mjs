@@ -3117,9 +3117,9 @@ describe("Work Detail surface boundary", () => {
     );
     assert.equal(row.className, "card-template-link-row");
     const [link] = row.children;
-    assert.equal(link.textContent, "View template");
+    assert.equal(link.textContent, "Template · View template");
     await nextTicks();
-    assert.equal(link.textContent, "📰 Newsletter · View template");
+    assert.equal(link.textContent, "Template: 📰 Newsletter · View template");
     await link.dispatch("click");
     assert.deepEqual(navigations, [
       { path: "/templates", params: { templateId: "tpl-news" } },

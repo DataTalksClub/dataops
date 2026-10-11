@@ -221,7 +221,8 @@ export function createCardsSurface(context) {
   }
 
   function templateMeta(templateId) {
-    return templateLabels.get(templateId) || null;
+    const meta = templateLabels.get(templateId);
+    return meta ? { id: templateId, ...meta } : null;
   }
 
   function templateLabel(templateId) {
@@ -263,6 +264,17 @@ export function createCardsSurface(context) {
     label.append(name, select);
     filters.append(label);
     if (templateFilter) {
+      const newCardBtn = document.createElement("button");
+      newCardBtn.type = "button";
+      newCardBtn.className = "workflow-board-filter-action";
+      newCardBtn.textContent = "+ New card from template";
+      newCardBtn.addEventListener("click", () => {
+        openQuickWorkflowForm({
+          template: templateMeta(templateFilter) || { id: templateFilter },
+        });
+      });
+      filters.append(newCardBtn);
+
       const shown = document.createElement("span");
       shown.className = "workflow-board-filter-count";
       shown.textContent = `${countLabel(counts.shown, "card")} of ${counts.total} shown`;
@@ -294,6 +306,7 @@ export function createCardsSurface(context) {
         .map((template) => [
           String(template.id),
           {
+            id: String(template.id),
             name: String(template.name || template.title || template.id),
             emoji: String(template.emoji || ""),
             type: String(template.type || ""),
@@ -387,13 +400,12 @@ export function createCardsSurface(context) {
     card.addEventListener("click", () => openCardPanel(item.cardId));
 
     // The Template badge replaces the legacy `[Tag]` title prefix: the card
-    // shows which Template it was created from, and opens it on click. The
-    // badge waits for the template listing so it never flashes a raw id.
-    if (template) {
+    // shows which Template it was created from, and opens it on click.
+    if (templateId) {
       const badge = document.createElement("span");
       badge.className = "workflow-card-template";
-      if (template.type) badge.dataset.templateType = template.type;
-      badge.textContent = template.emoji
+      if (template?.type) badge.dataset.templateType = template.type;
+      badge.textContent = template?.emoji
         ? `${template.emoji} ${templateName}`
         : templateName;
       badge.title = `View ${templateName} template`;

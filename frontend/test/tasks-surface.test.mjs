@@ -959,6 +959,9 @@ describe("Tasks surface boundary", () => {
       ["news-1", "news-2"],
     );
     assert.match(documentList.textContent, /2 cards of 3 shown/);
+    const filterAction = documentList.querySelector(".workflow-board-filter-action");
+    assert.ok(filterAction);
+    assert.equal(filterAction.textContent, "+ New card from template");
 
     // A snapshot refresh that leaves no Card behind the chosen Template
     // heals the filter back to "All templates" instead of an empty board.
@@ -1007,6 +1010,11 @@ describe("Tasks surface boundary", () => {
     });
 
     api.renderTasksSurface([], "workflows");
+    const preNews = findAllByClass(documentList, "workflow-board-card")
+      .find((card) => card.dataset.cardId === "news-1");
+    const [preBadge] = findAllByClass(preNews, "workflow-card-template");
+    assert.equal(preBadge.textContent, "Template tpl-news");
+
     await nextTicks();
     api.renderTasksSurface([], "workflows");
 
@@ -1440,6 +1448,93 @@ describe("Tasks surface boundary", () => {
         `no app stylesheet rule styles .${token} on the Templates surface`,
       );
     }
+  });
+
+  test("starts a card directly from a template row and navigates live cards", async () => {
+    const template = {
+      id: "template-1",
+      name: "Newsletter",
+      emoji: "📰",
+      type: "workflow",
+      version: 2,
+    };
+    const liveCard = {
+      id: "card-1",
+      title: "Newsletter run",
+      status: "open",
+      templateId: "template-1",
+      templateVersion: 2,
+      templateSourceRevision: "rev-2",
+      templateDefinitionSnapshot: { version: 2 },
+      openTaskCount: 1,
+      updatedAt: new Date().toISOString(),
+    };
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") return { templates: [template] };
+        throw new Error(`Unexpected request ${url}`);
+      },
+      workSnapshot: { cards: [liveCard] },
+    });
+    await harness.api.refreshRuntimeTemplates();
+    harness.api.renderTasksSurface([], "templates");
+
+    const row = harness.documentList.querySelector(".runtime-template-row");
+    const startBtn = row.querySelector(".runtime-template-start-btn");
+    assert.ok(startBtn, "start card button must be present in template row");
+    assert.equal(startBtn.textContent, "Start card");
+
+    let stopped = false;
+    await startBtn.dispatch("click", {
+      stopPropagation() {
+        stopped = true;
+      },
+    });
+    assert.equal(stopped, true, "clicking start card must call stopPropagation");
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    assert.ok(overlay, "quick workflow form should open");
+    overlay.remove();
+
+    harness.api.setRuntimeTemplateRoute(
+      {
+        tasksSection: "templates",
+        params: new URLSearchParams({ templateId: "template-1" }),
+      },
+      { templateId: "template-1" },
+    );
+    harness.api.renderTasksSurface([], "templates");
+
+    const liveCardsList = harness.documentList.querySelector(".runtime-template-live-cards");
+    const liveCardBtn = liveCardsList.querySelector("li button");
+    assert.ok(liveCardBtn, "live card row must be interactive button");
+    await liveCardBtn.dispatch("click");
+    assert.deepEqual(harness.navigations.at(-1), {
+      path: "/cards",
+      params: { cardId: "card-1" },
+      options: {},
+    });
+  });
+
+  test("formats template select options with emoji prefix and name", async () => {
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") {
+          return {
+            templates: [
+              { id: "tpl-1", name: "Newsletter", emoji: "📰" },
+              { id: "tpl-2", name: "Podcast" },
+            ],
+          };
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.openQuickWorkflowForm();
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    const select = overlay.querySelector("select");
+    const optionTexts = select.children.map((opt) => opt.textContent);
+    assert.deepEqual(optionTexts, ["Select template...", "📰 Newsletter", "Podcast"]);
+    overlay.remove();
   });
 
   test("reviews explicit Card selections and reports partial batch conflicts without retrying", async () => {

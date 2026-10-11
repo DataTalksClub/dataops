@@ -361,7 +361,16 @@ export function createTemplatesSurface(context) {
     open.setAttribute("aria-hidden", "true");
     open.textContent = "Inspect";
 
-    button.append(name, meta, summary, open);
+    const startBtn = document.createElement("button");
+    startBtn.type = "button";
+    startBtn.className = "runtime-template-start-btn";
+    startBtn.textContent = "Start card";
+    startBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openQuickWorkflowForm({ template });
+    });
+
+    button.append(name, meta, summary, startBtn, open);
     button.addEventListener("click", () => {
       if (template.id === runtimeState.selectedId) return;
       navigateCanonicalWorkspace("/templates", { templateId: template.id });
@@ -589,6 +598,8 @@ export function createTemplatesSurface(context) {
         || (card.templateSourceRevision || null) !== (template.sourceRevision || null)
         || Number(card.templateVersion || 0) !== Number(template.version || 0);
       const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
       const name = document.createElement("strong");
       name.textContent = card.title || card.id;
       const meta = document.createElement("span");
@@ -596,7 +607,11 @@ export function createTemplatesSurface(context) {
         ? "Behind this revision"
         : `Current · ${countLabel(Number(card.openTaskCount || 0), "open task")}`;
       if (behind) meta.className = "is-attention";
-      item.append(name, meta);
+      button.append(name, meta);
+      button.addEventListener("click", () => {
+        navigateCanonicalWorkspace("/cards", { cardId: card.id });
+      });
+      item.append(button);
       list.append(item);
     }
     if (facts.cards.length > shown.length) {

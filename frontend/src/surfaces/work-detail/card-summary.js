@@ -19,9 +19,10 @@ export function renderCardTemplateLink(
   link.className = "card-template-link";
   const labelFor = (cached) =>
     cached
-      ? `${cached.emoji ? `${cached.emoji} ` : ""}${cached.name} · View template`
-      : "View template";
+      ? `Template: ${cached.emoji ? `${cached.emoji} ` : ""}${cached.name} · View template`
+      : "Template · View template";
   link.textContent = labelFor(templateLinkCache.get(templateId));
+  link.title = "View template in Templates";
   link.addEventListener("click", () =>
     navigateCanonicalWorkspace("/templates", { templateId }),
   );

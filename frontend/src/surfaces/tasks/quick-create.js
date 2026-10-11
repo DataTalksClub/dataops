@@ -225,7 +225,8 @@ export function createQuickTaskActions(context) {
     for (const template of liveTemplates) {
       const opt = document.createElement("option");
       opt.value = template.id;
-      opt.textContent = template.name || template.title || template.id;
+      const prefix = template.emoji ? `${template.emoji} ` : "";
+      opt.textContent = `${prefix}${template.name || template.title || template.id}`;
       templateSelect.append(opt);
     }
     const matchedTemplate = findLiveWorkflowTemplate(
@@ -330,7 +331,8 @@ export function createQuickTaskActions(context) {
   function findLiveWorkflowTemplate(liveTemplates, requestedTemplate) {
     if (!requestedTemplate || !Array.isArray(liveTemplates)) return null;
     const wantedId = normalizeTemplateMatchValue(
-      requestedTemplate.templateId ||
+      requestedTemplate.id ||
+        requestedTemplate.templateId ||
         requestedTemplate.sourceTemplateId ||
         requestedTemplate.canonicalTemplateId,
     );
