@@ -648,6 +648,13 @@ export function createTaskQueue(context) {
       if (event.target?.closest?.("button, input, label, a")) return;
       openTaskPanel(task.id);
     });
+    row.addEventListener("keydown", (event) => {
+      if (event.target?.closest?.("button, input, label, a") && event.target !== row) return;
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openTaskPanel(task.id);
+      }
+    });
 
     const toggle = renderQueueToggle(task);
 
