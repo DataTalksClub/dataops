@@ -74,8 +74,8 @@ export async function createCrmRecord(client: DynamoDBDocumentClient, kind: stri
   }
 }
 
-export async function updateCrmRecord(client: DynamoDBDocumentClient, kind: string, existing: CrmRecord, value: Record<string, unknown>) {
-  const now = new Date().toISOString(), next = compact({ ...existing, ...value, id: existing.id, createdAt: existing.createdAt, updatedAt: now, version: existing.version + 1 });
+export async function updateCrmRecord(client: DynamoDBDocumentClient, kind: string, existing: CrmRecord, value: Record<string, unknown>): Promise<CrmRecord> {
+  const now = new Date().toISOString(), next = compact({ ...existing, ...value, id: existing.id, createdAt: existing.createdAt, updatedAt: now, version: existing.version + 1 }) as CrmRecord;
   await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { PK: key(kind, existing.id), SK: key(kind, existing.id), ...next }, ConditionExpression: '#version = :version', ExpressionAttributeNames: { '#version': 'version' }, ExpressionAttributeValues: { ':version': existing.version } }));
   return next;
 }

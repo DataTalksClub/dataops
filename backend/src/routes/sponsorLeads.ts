@@ -492,7 +492,12 @@ export async function handleSponsorLeadRoutes(path: string, method: string, even
     if (body.status === 'converted') {
       const actorId = Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === 'x-user-id')?.[1] || 'authenticated-operator';
       try {
-        const result = await convertLead(client, existing, body, actorId);
+        const result = await convertLead(client, existing, {
+          version: body.version,
+          status: body.status,
+          organizationId: body.organizationId,
+          createNew: body.createNew,
+        }, actorId);
         if (!result.ok) return response(result.statusCode, { error: result.error, candidates: result.candidates });
         return response(200, { ...publicLead(result.lead), organizationId: result.organization.id, organization: { id: result.organization.id, displayName: result.organization.displayName, domain: result.organization.domain, sightings: result.organization.sightings }, created: result.created });
       } catch {
