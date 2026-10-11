@@ -425,6 +425,21 @@ export function createTaskPanel(context) {
       link.type = "button";
       link.className = "task-instruction-doc-link";
       link.textContent = resolveCardLabel(task.cardId);
+      if (link.textContent === "Open card") {
+        request(workApiUrl(`/api/cards/${encodeURIComponent(task.cardId)}`))
+          .then((cardPayload) => {
+            const card = cardPayload?.card || cardPayload;
+            if (card?.title) {
+              if (state.workSnapshot.cardsById) {
+                state.workSnapshot.cardsById.set(task.cardId, card);
+              }
+              if (link.isConnected) {
+                link.textContent = card.title;
+              }
+            }
+          })
+          .catch(() => {});
+      }
       link.addEventListener("click", () => navigateTaskToWorkflow(task));
       cardRow.append(link);
       meta.append(cardRow);

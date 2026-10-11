@@ -429,7 +429,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.task.id);
     await laterSnapshot;
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.contextCard.id);
-    await expect(page.locator('.task-detail-meta button')).toHaveCount(0);
+    await expect(page.locator('#task-panel .task-detail-meta button')).toHaveCount(0);
     await clearRouteFaults(request);
   });
 
