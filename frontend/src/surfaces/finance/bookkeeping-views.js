@@ -142,14 +142,14 @@ export function ledgerTableMarkup({ shown, hasEvidence, lensTitle, e }) {
                     <td data-label="Transaction date">
                       ${e(ledgerDate(entry.transactionDate))}
                     </td>
-                    <td data-label="Paid">
+                    <td data-label="Paid" class="${entry.paidDate ? "is-paid" : "is-unpaid"}">
                       ${e(entry.paidDate ? ledgerDate(entry.paidDate) : "Unpaid")}
                     </td>
                     <td data-label="Entry">
                       <strong>${e(entry.counterparty)}</strong
                       ><small>${e(entry.description)}</small>
                     </td>
-                    <td data-label="Amount" class="ledger-amount">
+                    <td data-label="Amount" class="ledger-amount ${entryDirection(entry)}">
                       ${e(
                         formatAmount(`${entryDirection(entry) === "expense" ? "-" : ""}${entry.amount}`, entry.currency),
                       )}${entry.currency !== "EUR" && entry.amountEur
