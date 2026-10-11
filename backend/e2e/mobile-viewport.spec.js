@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { setupPageWithAuth } = require('./helpers/auth');
+const { seedOperationsData } = require('./helpers/seed-operations-data');
 const {
   assertOwnedServerResponse,
   startOwnedTestServer,
@@ -16,24 +17,36 @@ const VIEWPORTS = [
   { name: '390x844', width: 390, height: 844 },
 ];
 
+// `content` names the route's primary content: the first list, board, table,
+// form, or honest empty state an operator actually works with. Headers,
+// descriptions, action rows, and filter bars above it are chrome; the mobile
+// layout budget requires the primary content itself to start within the top
+// quarter of the viewport so chrome cannot crowd out the work. Routes are
+// measured against a seeded dataset (cards across stages from multiple
+// templates, tasks, sponsor organizations, newsletter slots), because empty
+// states stack differently than the boards operators actually use.
+//
+// knownGap marks routes whose chrome still pushes content past the budget;
+// the assertion records the measured position as a test annotation instead
+// of failing, until the follow-up compaction pass lands.
 const ROUTES = [
-  { path: '/', ready: '.ops-work-queue' },
-  { path: '/tasks', ready: '.ops-work-queue' },
-  { path: '/cards', ready: '.ops-workflows-board' },
-  { path: '/cards/archive', ready: '.ops-workflows-board' },
-  { path: '/templates', ready: '.ops-split-surface' },
-  { path: '/recurring', ready: '.ops-recurring-surface' },
-  { path: '/assistants', ready: '.assistant-workspace' },
-  { path: '/bookkeeping', ready: '.bookkeeping-surface' },
-  { path: '/sponsors', ready: '.sponsor-crm-surface' },
-  { path: '/newsletter', ready: '.newsletter-surface' },
-  { path: '/calendar', ready: '.calendar-surface' },
-  { path: '/processes', ready: '.ops-surface-docs' },
-  { path: '/operating-model', ready: '.operating-model-surface' },
-  { path: '/review', ready: '.review-surface' },
-  { path: '/admin', ready: '.ops-surface-admin' },
-  { path: '/users', ready: '.ops-surface-users' },
-  { path: '/device', ready: '.ops-surface-device' },
+  { path: '/', ready: '.ops-work-queue', content: '.ops-queue-board, .ops-honest-state, .ops-empty', contentReady: '.ops-queue-list, .ops-empty' },
+  { path: '/tasks', ready: '.ops-work-queue', content: '.ops-queue-board, .ops-honest-state, .ops-empty', contentReady: '.ops-queue-list, .ops-empty' },
+  { path: '/cards', ready: '.ops-workflows-board', content: '.ops-workflows-grid', contentReady: '.ops-workflows-grid', knownGap: true },
+  { path: '/cards/archive', ready: '.ops-workflows-board', content: '.workflow-archive-tabs, .cards-archive-grid, .ops-honest-state' },
+  { path: '/templates', ready: '.ops-split-surface', content: '.runtime-template-layout, .ops-template-grid', knownGap: true },
+  { path: '/recurring', ready: '.ops-recurring-surface', content: '.recurring-summary, .recurring-toolbar, .ops-recurring-section' },
+  { path: '/assistants', ready: '.assistant-workspace', content: '.assistant-layout' },
+  { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bookkeeping-worklist, .bookkeeping-section', knownGap: true },
+  { path: '/sponsors', ready: '.sponsor-crm-surface', content: '.crm-layout, .crm-upcoming-list, .crm-directory-row, .crm-booking-row', contentReady: '.crm-directory-row, .crm-upcoming-list, .ops-honest-state' },
+  { path: '/newsletter', ready: '.newsletter-surface', content: '.newsletter-slot-row, .newsletter-slot-list, .newsletter-schedule', knownGap: true },
+  { path: '/calendar', ready: '.calendar-surface', content: '.calendar-grid', contentReady: '.calendar-grid', mockCalendar: true },
+  { path: '/processes', ready: '.ops-surface-docs', content: '.ops-docs-catalog, .ops-docs-state, .ops-docs-state-detail', knownGap: true },
+  { path: '/operating-model', ready: '.operating-model-surface', content: '.operating-model-surface strong, .operating-model-surface table, .operating-model-surface .status-text' },
+  { path: '/review', ready: '.review-surface', content: '.review-summary, .review-empty-state' },
+  { path: '/admin', ready: '.ops-surface-admin', content: '.ops-admin-card, .ops-admin-intake-recovery' },
+  { path: '/users', ready: '.ops-surface-users', content: '.ops-users-outcome, .ops-users-toolbar, .ops-users-table' },
+  { path: '/device', ready: '.ops-surface-device', content: '.device-form' },
 ];
 
 const SURFACE_SELECTOR = ROUTES.map((route) => route.ready).join(', ');
@@ -47,17 +60,38 @@ test.beforeAll(async () => {
       DTC_CACHE_ROOT: createDocsCacheRoot('mobile-viewport'),
     },
   });
+  const seeded = await seedOperationsData(server.baseURL);
+  console.log(
+    `mobile-viewport seed: ${seeded.cards} cards, ${seeded.tasks} tasks, ` +
+      `${seeded.organizations} organizations, ${seeded.slots} newsletter slots` +
+      (seeded.failures.length ? `, failures: ${seeded.failures.join('; ')}` : ''),
+  );
 });
 
 test.afterAll(async () => stopOwnedTestServer(server));
 
 async function openRouteAt(page, viewport, route) {
+  if (route.mockCalendar) {
+    // The calendar grid renders only after its items fetch settles; serve a
+    // small deterministic payload (same approach as calendar-seams.spec.js)
+    // so the layout check measures the grid, not a spinner.
+    await page.route('**/api/calendar-items**', (route2) =>
+      route2.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], holidays: [], alerts: [], timeZone: 'Europe/Berlin' }),
+      }),
+    );
+  }
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: viewport.width, height: viewport.height });
   await setupPageWithAuth(page);
   const response = await page.goto(`${server.baseURL}/#${route.path}`);
   assertOwnedServerResponse(server, response, `mobile viewport ${route.path}`);
   await expect(page.locator(route.ready).first()).toBeVisible();
+  if (route.contentReady) {
+    await expect(page.locator(route.contentReady).first()).toBeVisible();
+  }
+  await page.waitForTimeout(400);
 }
 
 async function measureMobileLayout(page) {
@@ -81,9 +115,22 @@ async function measureMobileLayout(page) {
   }, SURFACE_SELECTOR);
 }
 
+async function measureContentStart(page, contentSelector) {
+  return page.evaluate((selector) => {
+    for (const element of document.querySelectorAll(selector)) {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      if (style.visibility === 'hidden' || style.display === 'none') continue;
+      if (rect.width === 0 && rect.height === 0) continue;
+      return Math.round(rect.top);
+    }
+    return null;
+  }, contentSelector);
+}
+
 for (const viewport of VIEWPORTS) {
   for (const route of ROUTES) {
-    test(`${route.path} at ${viewport.name}: fits width, starts below topbar, page scrolls`, async ({ page }) => {
+    test(`${route.path} at ${viewport.name}: fits width, starts below topbar, content within top quarter`, async ({ page }) => {
       test.setTimeout(60_000);
       await openRouteAt(page, viewport, route);
       const layout = await measureMobileLayout(page);
@@ -108,11 +155,33 @@ for (const viewport of VIEWPORTS) {
       );
       expect(layout.surface.top).toBeLessThan(layout.viewport.height);
 
+      // Primary content starts within the top quarter of the viewport:
+      // titles, helper text, and action buttons above it must stay compact
+      // so the work itself is on screen (mobile content-start budget).
+      const contentTop = await measureContentStart(page, route.content);
+      expect(
+        contentTop,
+        `${route.path}: no visible primary content matched ${route.content}`,
+      ).not.toBeNull();
+      const contentBudget = Math.round(layout.viewport.height * 0.25) + 2;
+      if (route.knownGap) {
+        test.info().annotations.push({
+          type: 'known-gap',
+          description: `${route.path} content starts at ${contentTop}px (budget ${contentBudget}px)`,
+        });
+      } else {
+        expect(
+          contentTop,
+          `${route.path}: primary content starts at ${contentTop}px, budget is ${contentBudget}px`,
+        ).toBeLessThanOrEqual(contentBudget);
+      }
+
       // The body is not scroll-locked, and a tall page actually scrolls to
       // reveal its bottom. A page that fits the viewport must not scroll.
       expect(layout.bodyOverflowY).not.toBe('hidden');
       expect(layout.htmlOverflowY).not.toBe('hidden');
-      const scrollable = layout.scrollHeight > layout.viewport.height + 4;
+      const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+      const scrollable = scrollHeight > layout.viewport.height + 4;
       const scrolled = await page.evaluate(() => {
         window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
         return window.scrollY;
@@ -120,7 +189,7 @@ for (const viewport of VIEWPORTS) {
       if (scrollable) {
         expect(scrolled).toBeGreaterThan(0);
         expect(scrolled).toBeGreaterThanOrEqual(
-          layout.scrollHeight - layout.viewport.height - 2,
+          scrollHeight - layout.viewport.height - 2,
         );
       } else {
         expect(scrolled).toBeLessThanOrEqual(2);
