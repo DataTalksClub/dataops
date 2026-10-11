@@ -292,10 +292,10 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await notice.getByRole('button', { name: 'Open task' }).click();
     await expect(page).toHaveURL(new RegExp(`/#/tasks\\?taskId=${dueTask.id}$`));
     await page.locator('#task-panel-close').click();
-    await expect(page).toHaveURL(/\/#\/tasks$/);
+    await expect(page).toHaveURL(/\/#\/$/);
     await page.locator('#work-bell-button').click();
     await page.locator('#work-bell-close').click();
-    await expect(page).toHaveURL(/\/#\/tasks$/);
+    await expect(page).toHaveURL(/\/#\/$/);
 
     await page.goto('/#/');
     await page.locator('#search-input').fill(fixture.assistant.title);

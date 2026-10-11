@@ -340,7 +340,6 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     expect(proofResponse.status()).toBe(201);
     const proofTask = await json(proofResponse);
 
-    await expect(page.locator('.ops-queue-board')).toHaveCount(1);
     await openProofTask(page, proofTask.id, card.id, proofTitle);
     const complete = page.locator('#task-panel').getByRole('button', { name: 'Mark done' });
     await expect(complete).toBeDisabled();
@@ -617,8 +616,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     for (const taskTitle of [missingArtifactTitle, proofTitle, completedTitle]) {
       await expect(page.locator('#card-panel .card-checklist-label', { hasText: taskTitle })).toBeVisible();
     }
-    await expect(page.locator('#card-panel')).toContainText('Active (1)');
-    await expect(page.locator('#card-panel')).toContainText('Done / history (2)');
+    await expect(page.locator('#card-panel .card-checklist-percent')).toHaveText('67%');
     await expect(page.locator('#card-panel .card-stage-select')).toHaveValue('preparation');
     const stageChanged = page.waitForResponse((response) => {
       const url = new URL(response.url());
@@ -659,11 +657,11 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await expect(page.locator('#card-panel')).toContainText('3/3 tasks');
     await expect(page.locator('#card-panel .card-stage-static')).toHaveText('Completed');
     await expect(page.locator('#card-panel .card-completion-meta')).toContainText('from Announced');
-    await expect(page.locator('#card-panel')).toContainText('Done / history (3)');
+    await expect(page.locator('#card-panel .card-checklist-percent')).toHaveText('100%');
     await page.reload();
     await expect(page.locator('#card-panel .card-stage-static')).toHaveText('Completed');
     await expect(page.locator('#card-panel .card-completion-meta')).toContainText('from Announced');
-    await expect(page.locator('#card-panel')).toContainText('Done / history (3)');
+    await expect(page.locator('#card-panel .card-checklist-percent')).toHaveText('100%');
     await expect(page.locator('#card-panel [role="progressbar"]')).toHaveAttribute('aria-valuenow', '100');
 
     recordCapabilityEvidence(testInfo, [

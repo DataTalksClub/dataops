@@ -101,7 +101,7 @@ test.describe('issue 208 paginated collections', () => {
     await page.goto(`${BASE_URL}/#/tasks`);
     const summary = page.locator('[data-summary-id="tasks-queue"]');
     await expect(summary).toHaveAttribute('data-summary-state', 'partial');
-    await expect(summary).toContainText('Cards unavailable. Loaded work is still shown.');
+    await expect(summary).toContainText('Some task sources are unavailable.');
     await expect(summary.locator('.surface-summary-detail')).toHaveCount(0);
     await expect(page.locator('.ops-queue-row strong')).toHaveText(task.description);
     await expect(page.locator('.ops-queue-row')).toContainText('Card page one');
@@ -112,7 +112,7 @@ test.describe('issue 208 paginated collections', () => {
     continuationOnline = true;
     await keyboardRetry(
       page,
-      summary.getByRole('button', { name: /Retry loading work/ }),
+      summary.getByRole('button', { name: /Retry loading tasks/ }),
       page.waitForResponse((response) =>
         Boolean(new URL(response.url()).searchParams.get('cursor')),
       ),

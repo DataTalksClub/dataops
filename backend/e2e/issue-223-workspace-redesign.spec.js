@@ -44,7 +44,7 @@ async function queue(page) {
   await setupPageWithAuth(page);
   await page.goto(`${server.baseURL}/#/`);
   await expect(page).toHaveURL(`${server.baseURL}/#/`);
-  await expect(page.locator('.ops-queue-board')).toBeVisible();
+  await expect(page.locator('.ops-work-queue')).toBeVisible();
 }
 
 async function accessible(page) {
@@ -176,7 +176,7 @@ test('empty and partial sources keep useful destinations and recover through ret
   await page.route('**/work/api/cards**', (route) => route.fulfill({ status: 503, json: { error: 'Synthetic cards outage' } }));
   await page.reload();
   await expect(page.locator('.surface-summary[data-summary-state="partial"]')).toBeVisible();
-  await expect(page.locator('.surface-summary[data-summary-state="partial"]')).toContainText('Cards unavailable. Loaded work is still shown.');
+  await expect(page.locator('.surface-summary[data-summary-state="partial"]')).toContainText('Some task sources are unavailable.');
   await expect(page.locator('.ops-runtime-state')).toHaveCount(0);
   await expect(page.locator('.surface-summary-detail')).toHaveCount(0);
   await expect(page.locator('.ops-queue-row strong')).toHaveCount(tasks.length);

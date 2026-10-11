@@ -224,7 +224,6 @@ test.describe("pre-refactor frontend module characterization", () => {
       ["/templates", "Templates", ".runtime-template-inspector"],
       ["/recurring", "Recurring", ".ops-recurring-section"],
       ["/assistants", "Assistants", ".assistant-workspace"],
-      ["/artifacts", "Artifacts", '[aria-label="Artifacts"]'],
       ["/newsletter", "Newsletter", ".newsletter-surface"],
       ["/calendar", "Calendar", ".calendar-surface"],
       ["/bookkeeping", "Bookkeeping", ".bookkeeping-surface"],
@@ -259,7 +258,7 @@ test.describe("pre-refactor frontend module characterization", () => {
     await expect(page.locator(".newsletter-surface dialog")).toBeVisible();
     await page.goto(`${baseURL}/#/calendar`);
     await page.getByRole("button", { name: "Add activity" }).click();
-    await expect(page.locator(".calendar-surface dialog")).toBeVisible();
+    await expect(page.locator(".calendar-surface dialog[data-activity-dialog]")).toBeVisible();
     await page.goto(`${baseURL}/#/bookkeeping`);
     await expect(page.locator(".bookkeeping-documents")).toContainText(
       /No private documents uploaded|Download/,

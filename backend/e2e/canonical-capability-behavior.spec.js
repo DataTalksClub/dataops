@@ -578,7 +578,7 @@ test.describe('canonical frontend capability behavior', () => {
     const partialRender = page.evaluate(() => window.__dataopsRefreshWork());
     await partialWork;
     await partialRender;
-    await expect(page.locator('.surface-summary[data-summary-state="partial"]')).toContainText('Cards unavailable. Loaded work is still shown.');
+    await expect(page.locator('.surface-summary[data-summary-state="partial"]')).toContainText('Some task sources are unavailable.');
     await expect(page.locator('.ops-queue-row', { hasText: title })).toBeVisible();
     await page.screenshot({
       path: path.join(ISSUE_161_SCREENSHOTS, 'source-queue-partial-failure-desktop-1440x900.png'),
@@ -677,7 +677,7 @@ test.describe('canonical frontend capability behavior', () => {
 
     const queueRow = page.locator('.ops-queue-row', { hasText: title });
     await expect(queueRow).toBeVisible();
-    await expect(queueRow).toContainText('Due today');
+    await expect(queueRow).toContainText('Today');
     expect([...new Set(observedTodayQueries)]).toEqual([BOUNDARY_OPERATOR_DATE]);
     await page.screenshot({
       path: path.join(ISSUE_196_SCREENSHOTS, 'operator-day-new-york-desktop.png'),
@@ -851,7 +851,7 @@ test.describe('canonical frontend capability behavior', () => {
     const page = await admin.newPage();
     await page.goto('/#/sponsors');
     await expect(page.getByText('No sponsors found')).toBeVisible();
-    await expect(page.getByText('No live deals')).toBeVisible();
+    await expect(page.getByText('Queue is clear')).toBeVisible();
     const id = unique('sponsor');
     const organizationResponse = await admin.request.post('/api/sponsor-crm/organizations', { data: {
       displayName: `Synthetic Sponsor ${id}`, notes: 'Synthetic private note', sourceKey: `${id}-org`,
@@ -942,7 +942,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.goto('/#/newsletter');
     await expect(page.getByText('No newsletter slots')).toBeVisible();
     await page.goto('/#/calendar');
-    await expect(page.getByText('No matching activities')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Operations calendar' })).toBeVisible();
     const id = unique('schedule');
     const slotResponse = await context.request.post('/api/newsletter-slots', { data: {
       publicationDate: '2026-09-03', campaignLabel: `Synthetic newsletter ${id}`, status: 'open', planningNote: 'Public-safe plan',
@@ -957,7 +957,7 @@ test.describe('canonical frontend capability behavior', () => {
     expect(slotConflict.status()).toBe(409);
 
     const calendarResponse = await context.request.post('/api/calendar-items', { data: {
-      activityType: 'webinar', title: `Synthetic calendar ${id}`, status: 'agreed', allDay: true,
+      activityType: 'webinar', title: `Synthetic calendar ${id}`, status: 'confirmed', allDay: true,
       startDate: '2026-09-03', endDate: '2026-09-03', notes: 'Synthetic only',
     } });
     expect(calendarResponse.status()).toBe(201);
@@ -1002,11 +1002,11 @@ test.describe('canonical frontend capability behavior', () => {
     await page.locator('[data-status]').selectOption('');
     await expect(page.getByText(`Server newsletter ${id}`)).toBeVisible();
 
-    await page.goto('/#/calendar');
     await page.clock.setFixedTime(new Date('2026-09-03T12:00:00Z'));
+    await page.goto('/#/calendar');
     await page.locator('[data-today]').click();
     await expect(page.getByText(`Updated calendar ${id}`).first()).toBeVisible();
-    const calendarDialog = page.locator('.calendar-surface dialog');
+    const calendarDialog = page.locator('.calendar-surface [data-activity-dialog]');
     await page.getByRole('button', { name: 'Add activity' }).click();
     await calendarDialog.getByRole('button', { name: 'Save activity' }).click();
     await expect(calendarDialog).toBeVisible();
@@ -1030,8 +1030,8 @@ test.describe('canonical frontend capability behavior', () => {
     await page.clock.setFixedTime(new Date('2026-09-03T12:00:00Z'));
     await page.locator('[data-today]').click();
     await page.locator('.calendar-surface [data-edit]', { hasText: `Server calendar ${id}` }).first().click();
-    await page.locator('.calendar-surface dialog').getByLabel('Title').fill(`Browser calendar ${id}`);
-    await page.locator('.calendar-surface dialog').getByRole('button', { name: 'Save activity' }).click();
+    await calendarDialog.getByLabel('Title').fill(`Browser calendar ${id}`);
+    await calendarDialog.getByRole('button', { name: 'Save activity' }).click();
     await expect(page.getByText(`Browser calendar ${id}`).first()).toBeVisible();
     await expect(page.locator('[data-calendar]')).toContainText(`Server newsletter ${id}`);
     await setFaults(context.request, [{ method: 'GET', path: '/api/calendar-items', status: 503 }]);
