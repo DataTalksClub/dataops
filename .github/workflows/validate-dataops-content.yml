@@ -33,7 +33,7 @@ permissions:
 jobs:
   validate-content:
     name: Validate operation docs content
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Check out repository
