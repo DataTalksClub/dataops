@@ -1044,6 +1044,49 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
     assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
   });
+
+  test("supports Newsletter dialog workspace with tabs, quick actions, and markdown preview", async () => {
+    const dom = createNewsletterDom();
+    const items = [
+      {
+        id: "slot-draft",
+        publicationDate: "2026-08-25",
+        campaignNumber: 15,
+        campaignLabel: "Issue 15 Deep Learning",
+        status: "drafting",
+        bookedByDisplayName: "Weights & Biases",
+        planningNote: "# Subject: Deep Learning Trends\n> Preheader: Insights for engineers\n\nWelcome to Issue 15!",
+      },
+    ];
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      request: async () => ({ alerts: [], items }),
+    });
+    await harness.surface.renderNewsletterSurface();
+
+    // Compose quick action on card opens dialog in compose tab
+    dom.slots.onclick({
+      target: {
+        closest: (selector) => (selector === "[data-compose]" ? { dataset: { compose: "slot-draft" } } : null),
+      },
+    });
+    assert.equal(dom.dialog.open, true);
+    assert.equal(dom.dialog.querySelector("[data-dialog-title]").textContent, "Compose Issue");
+
+    // Preview quick action opens dialog in preview tab
+    dom.slots.onclick({
+      target: {
+        closest: (selector) => (selector === "[data-preview]" ? { dataset: { preview: "slot-draft" } } : null),
+      },
+    });
+    assert.equal(dom.dialog.open, true);
+    assert.equal(dom.dialog.querySelector("[data-dialog-title]").textContent, "Email Preview");
+
+    // Verify preview simulation content
+    assert.equal(dom.dialog.querySelector("[data-preview-subject]").textContent, "Deep Learning Trends");
+    assert.equal(dom.dialog.querySelector("[data-preview-preheader]").textContent, "Insights for engineers");
+    assert.match(dom.dialog.querySelector("[data-sim-sponsor]").innerHTML, /Weights &amp; Biases/);
+  });
 });
 
 function expectCalendarRange(request, from, to) {

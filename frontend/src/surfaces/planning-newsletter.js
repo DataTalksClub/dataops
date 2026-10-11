@@ -1,3 +1,8 @@
+import {
+  renderNewsletterDialogMarkup,
+  setupNewsletterDialog,
+} from "./planning-newsletter-dialog.js";
+
 export function createNewsletterPlanner(context) {
   const {
     documentList,
@@ -7,6 +12,84 @@ export function createNewsletterPlanner(context) {
     todayIsoDate,
     workApiUrl,
   } = context;
+
+  function renderNewsletterMarkdown(text) {
+    const wrap = document.createElement("div");
+    wrap.className = "md";
+    let html = escapeHtml(text || "");
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    html = html.replace(
+      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noreferrer" style="color: var(--dk-primary); text-decoration: underline;">$1</a>',
+    );
+    wrap.innerHTML = html.replace(/\n/g, "<br>");
+    return wrap;
+  }
+
+  function attachInlineEditor(el, options) {
+    el.tabIndex = 0;
+    el.title = "Click to edit";
+    el.classList.add("inline-editable");
+
+    function enter() {
+      if (el.classList.contains("editing")) return;
+      el.classList.add("editing");
+      const original = options.getValue ? options.getValue() : el.textContent;
+      const editor = document.createElement(options.multiline ? "textarea" : "input");
+      if (!options.multiline) editor.type = "text";
+      editor.className = "inline-editor";
+      editor.value = original;
+      if (options.multiline) {
+        editor.rows = Math.max(2, (editor.value.match(/\n/g) || []).length + 1);
+      }
+      el.replaceChildren(editor);
+      editor.focus();
+
+      let committed = false;
+      const doCommit = () => {
+        if (committed) return;
+        committed = true;
+        el.classList.remove("editing");
+        const val = editor.value;
+        if (val !== original && options.commit) options.commit(val);
+        else if (options.restore) options.restore();
+      };
+      const doCancel = () => {
+        if (committed) return;
+        committed = true;
+        el.classList.remove("editing");
+        if (options.restore) options.restore();
+      };
+
+      editor.addEventListener("blur", () => {
+        setTimeout(doCommit, 100);
+      });
+      editor.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          doCancel();
+        } else if (e.key === "Enter" && (!options.multiline || e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          doCommit();
+        } else if (e.key === "/" && editor.value.trim() === "" && options.onSlash) {
+          options.onSlash();
+        }
+      });
+    }
+
+    el.addEventListener("click", (e) => {
+      if (e.target.closest("a, button, .notion-block-gutter, .inline-editor")) return;
+      enter();
+    });
+    el.addEventListener("keydown", (e) => {
+      if (e.target === el && e.key === "Enter") {
+        e.preventDefault();
+        enter();
+      }
+    });
+  }
 
   function plannerLabel(value) {
     const label = String(value || "").replaceAll("-", " ");
@@ -152,36 +235,7 @@ export function createNewsletterPlanner(context) {
       <p class="planner-load-state" role="status">Loading newsletter slots…</p>
       <div class="planner-alerts" data-alerts></div>
       <div class="newsletter-schedule" data-slots>Loading slots…</div>
-      <dialog class="dk-dialog" style="--dk-dialog-width: 620px">
-        <form method="dialog">
-          <div class="dk-dialog__head"><div>
-            <h2>Newsletter slot</h2>
-            <p>Keep the publication plan and booking context together.</p>
-          </div></div>
-          <div class="dk-dialog__body">
-          <input name="id" type="hidden">
-          <input name="version" type="hidden">
-          <div class="planner-form-grid">
-            <label>Publication date <input name="publicationDate" type="date" required></label>
-            <label>Campaign number <input name="campaignNumber" type="number" min="1"></label>
-            <label class="planner-field-wide">Campaign label <input name="campaignLabel" required maxlength="200"></label>
-            <label>Status
-              <select name="status">${newsletterStatusOptions}</select>
-            </label>
-            <label>Booked by <input name="bookedByDisplayName" autocomplete="off"></label>
-            <label class="planner-field-wide">Sponsor booking reference <input name="sponsorBookingId" autocomplete="off"></label>
-            <label class="planner-field-wide">Card reference <input name="cardId" autocomplete="off"></label>
-            <label class="planner-field-wide">Public campaign URL <input name="publicUrl" type="url"></label>
-            <label class="planner-field-wide">Planning note <textarea name="planningNote" rows="4"></textarea></label>
-          </div>
-          <p class="planner-form-error" role="alert"></p>
-          </div>
-          <div class="dk-dialog__foot">
-            <button class="primary-button" data-save>Save slot</button>
-            <button value="cancel">Cancel</button>
-          </div>
-        </form>
-      </dialog>`;
+      ${renderNewsletterDialogMarkup(newsletterStatusOptions)}`;
     documentList.append(surface);
     setRouteTitle("Newsletter");
     const status = surface.querySelector('[role="status"]'),
@@ -281,6 +335,8 @@ export function createNewsletterPlanner(context) {
           </div>
           <div class="newsletter-slot-actions">
             ${campaignLink}
+            <button type="button" class="quiet-button" data-compose="${escapeHtml(item.id)}">Compose</button>
+            <button type="button" class="quiet-button" data-preview="${escapeHtml(item.id)}">Preview</button>
             <button data-edit="${escapeHtml(item.id)}">Edit</button>
           </div>
         </article>
@@ -407,44 +463,38 @@ export function createNewsletterPlanner(context) {
         load();
       };
     });
+    const { openIssueDialog } = setupNewsletterDialog({
+      surface,
+      dialog,
+      form,
+      context,
+      escapeHtml,
+      renderNewsletterMarkdown,
+      attachInlineEditor,
+      formatShortPlanningDate,
+      api,
+      load,
+    });
+
     surface.querySelector("[data-newsletter-add]").onclick = () => {
-      form.reset();
-      form.querySelector('[role="alert"]').textContent = "";
-      dialog.showModal();
+      openIssueDialog(null, "details");
     };
+
     surface.querySelector("[data-slots]").onclick = (event) => {
-      const item = items.find(
-        (value) => value.id === event.target.closest("[data-edit]")?.dataset.edit,
-      );
+      const target = event.target;
+      const editBtn = target.closest("[data-edit]");
+      const composeBtn = target.closest("[data-compose]");
+      const previewBtn = target.closest("[data-preview]");
+      const slotId = (editBtn || composeBtn || previewBtn)?.dataset.edit
+        || composeBtn?.dataset.compose
+        || previewBtn?.dataset.preview;
+      if (!slotId) return;
+      const item = items.find((value) => value.id === slotId);
       if (!item) return;
-      form.reset();
-      form.querySelector('[role="alert"]').textContent = "";
-      for (const key of Object.keys(item))
-        if (form.elements[key]) form.elements[key].value = item[key] || "";
-      dialog.showModal();
-    };
-    surface.querySelector("[data-save]").onclick = async (event) => {
-      event.preventDefault();
-      form.querySelector('[role="alert"]').textContent = "";
-      const value = Object.fromEntries(
-          [...new FormData(form)].filter(([, v]) => v !== ""),
-        ),
-        id = value.id;
-      delete value.id;
-      if (value.version) value.version = Number(value.version);
-      if (value.campaignNumber)
-        value.campaignNumber = Number(value.campaignNumber);
-      try {
-        await api(id ? `/${id}` : "", {
-          method: id ? "PUT" : "POST",
-          body: JSON.stringify(value),
-        });
-        dialog.close();
-        await load();
-      } catch (error) {
-        form.querySelector('[role="alert"]').textContent =
-          `Could not save slot: ${error.message}`;
-      }
+
+      if (composeBtn) openIssueDialog(item, "compose");
+      else if (previewBtn) openIssueDialog(item, "preview");
+      else openIssueDialog(item, "details");
     };
     await load();
   }

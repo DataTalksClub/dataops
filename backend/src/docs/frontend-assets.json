@@ -85,6 +85,7 @@
     "src/surfaces/operations/index.js",
     "src/surfaces/planning-calendar-dialogs.js",
     "src/surfaces/planning-newsletter.js",
+    "src/surfaces/planning-newsletter-dialog.js",
     "src/surfaces/planning.js",
     "src/surfaces/review/index.js",
     "src/surfaces/review/model.js",
