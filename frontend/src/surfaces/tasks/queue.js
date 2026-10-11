@@ -550,6 +550,7 @@ export function createTaskQueue(context) {
       cell.dataset.assignee = "none";
       cell.textContent = "—";
       cell.title = "Unassigned";
+      cell.setAttribute("role", "img");
       cell.setAttribute("aria-label", "Unassigned");
       return cell;
     }
@@ -561,6 +562,7 @@ export function createTaskQueue(context) {
     cell.dataset.assignee = "named";
     cell.append(avatar);
     cell.title = name;
+    cell.setAttribute("role", "img");
     cell.setAttribute("aria-label", `Assigned to ${name}`);
     return cell;
   }

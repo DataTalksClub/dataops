@@ -182,7 +182,7 @@ body[data-workspace-view="tasks"] .ops-queue-row {
 }body[data-workspace-view="tasks"] .ops-queue-head {
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
-  color: var(--dk-text-faint);
+  color: var(--dk-text-muted);
   padding: 7px 14px;
   font-size: 10.5px;
   font-weight: 600;
