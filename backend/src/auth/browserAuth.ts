@@ -67,6 +67,11 @@ export function browserAuthConfigured(): boolean {
   return Boolean(c.baseUrl && c.issuer && c.clientId && c.callbackUrl && c.logoutUrl);
 }
 
+/** Browser cookies and the OAuth callback must share one origin. */
+export function browserAuthOrigin(): string | null {
+  return browserAuthConfigured() ? new URL(authConfig().callbackUrl).origin : null;
+}
+
 function base64url(input: Buffer): string { return input.toString('base64url'); }
 function sha256(value: string): string { return createHash('sha256').update(value).digest('base64url'); }
 function randomValue(bytes = 32): string { return base64url(randomBytes(bytes)); }

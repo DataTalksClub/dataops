@@ -1,5 +1,6 @@
 import { getClient } from '../db/client';
 import { getUser } from '../db/users';
+import { browserAuthOrigin } from '../auth/browserAuth';
 import {
   DEVICE_POLL_INTERVAL_SECONDS,
   createApiToken,
@@ -49,6 +50,8 @@ function requestIp(event: LambdaEvent): string {
 }
 
 function portalBaseUrl(event: LambdaEvent): string {
+  const browserOrigin = browserAuthOrigin();
+  if (browserOrigin) return browserOrigin;
   const configured = process.env.DATAOPS_PORTAL_URL || '';
   if (configured) return configured.replace(/\/$/, '');
   const host = headerValue(event.headers, 'x-forwarded-host') || headerValue(event.headers, 'host');
