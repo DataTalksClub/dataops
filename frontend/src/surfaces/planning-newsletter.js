@@ -32,6 +32,19 @@ export function createNewsletterPlanner(context) {
         }).format(parsed);
   }
 
+  function relativeDateBadge(isoDate, todayIso) {
+    if (!isoDate || !todayIso) return "";
+    const dTarget = new Date(`${isoDate.slice(0, 10)}T00:00:00Z`);
+    const dToday = new Date(`${todayIso.slice(0, 10)}T00:00:00Z`);
+    const diffDays = Math.round((dTarget - dToday) / 86400000);
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Tomorrow";
+    if (diffDays === -1) return "Yesterday";
+    if (diffDays > 1 && diffDays <= 7) return `In ${diffDays} days`;
+    if (diffDays < -1 && diffDays >= -7) return `${Math.abs(diffDays)}d ago`;
+    return "";
+  }
+
   function newsletterAlertCopy(reasonCode) {
     return {
       "near-term-open-unbooked": "An open slot needs booking soon",
@@ -78,12 +91,39 @@ export function createNewsletterPlanner(context) {
     surface.innerHTML = `
       <header class="planner-header">
         <div class="planner-heading">
-          <p class="planner-eyebrow">Planning</p>
-          <h1 id="newsletter-surface-title">Newsletter planner</h2>
+          <p class="planner-eyebrow">Editorial</p>
+          <h1 id="newsletter-surface-title">Newsletter planner</h1>
           <p>Plan campaign slots, booking readiness, and publication progress in Europe/Berlin.</p>
         </div>
         <button class="primary-button" data-newsletter-add>Add slot</button>
       </header>
+      <nav class="newsletter-views" data-newsletter-views aria-label="Newsletter views">
+        <button type="button" data-newsletter-view="all" class="newsletter-view-tab" aria-pressed="true">All Issues</button>
+        <button type="button" data-newsletter-view="upcoming" class="newsletter-view-tab" aria-pressed="false">Upcoming</button>
+        <button type="button" data-newsletter-view="sent" class="newsletter-view-tab" aria-pressed="false">Sent & Archive</button>
+      </nav>
+      <div class="newsletter-stats-bar" data-newsletter-stats aria-label="Newsletter overview statistics">
+        <div class="newsletter-stat-item">
+          <span class="newsletter-stat-number" data-stat-total>0</span>
+          <span class="newsletter-stat-label">Total</span>
+        </div>
+        <div class="newsletter-stat-item">
+          <span class="newsletter-stat-number" data-stat-upcoming>0</span>
+          <span class="newsletter-stat-label">Upcoming</span>
+        </div>
+        <div class="newsletter-stat-item">
+          <span class="newsletter-stat-number" data-stat-drafting>0</span>
+          <span class="newsletter-stat-label">Drafting</span>
+        </div>
+        <div class="newsletter-stat-item">
+          <span class="newsletter-stat-number" data-stat-scheduled>0</span>
+          <span class="newsletter-stat-label">Scheduled</span>
+        </div>
+        <div class="newsletter-stat-item">
+          <span class="newsletter-stat-number" data-stat-unbooked>0</span>
+          <span class="newsletter-stat-label">Unbooked</span>
+        </div>
+      </div>
       <div class="newsletter-filters" aria-label="Newsletter filters">
         <div class="planner-filter-fields">
           <label>From <input data-from type="date"></label>
@@ -153,6 +193,7 @@ export function createNewsletterPlanner(context) {
           ...options,
         });
     let items = [];
+    let currentView = "all";
     const now = todayIsoDate();
     surface.querySelector("[data-from]").value = now.slice(0, 8) + "01";
     surface.querySelector("[data-to]").value =
@@ -198,11 +239,18 @@ export function createNewsletterPlanner(context) {
           month: "short",
           timeZone: "UTC",
         });
+      const relBadge = relativeDateBadge(item.publicationDate, todayIsoDate());
+      const relMarkup = relBadge
+        ? `<span class="newsletter-relative-badge">${escapeHtml(relBadge)}</span>`
+        : "";
       const campaignNumber = item.campaignNumber
-        ? `<small>Campaign ${escapeHtml(item.campaignNumber)}</small>`
+        ? `<small class="newsletter-campaign-badge">Campaign ${escapeHtml(item.campaignNumber)}</small>`
+        : `<small>Slot</small>`;
+      const timeMarkup = item.publicationTime
+        ? `<span class="newsletter-time-badge">${escapeHtml(item.publicationTime)} Berlin</span>`
         : "";
       const planningNote = item.planningNote
-        ? `<small>${escapeHtml(item.planningNote)}</small>`
+        ? `<small class="newsletter-slot-note">${escapeHtml(item.planningNote)}</small>`
         : "";
       const campaignLink = item.publicUrl
         ? `
@@ -212,10 +260,14 @@ export function createNewsletterPlanner(context) {
         `
         : "";
       return `
-        <article class="newsletter-slot-row">
+        <article class="newsletter-slot-row" data-slot-id="${escapeHtml(item.id)}">
           <div class="newsletter-slot-date">
             <time datetime="${escapeHtml(item.publicationDate)}">${publicationLabel}</time>
-            ${campaignNumber}
+            <div class="newsletter-date-meta">
+              ${campaignNumber}
+              ${relMarkup}
+              ${timeMarkup}
+            </div>
           </div>
           <div class="newsletter-slot-main">
             <div class="newsletter-slot-title">
@@ -267,18 +319,61 @@ export function createNewsletterPlanner(context) {
           }),
           result = await api(`?${query}`);
         items = result.items || [];
+
+        // Update stats summary bar
+        const totalCount = items.length;
+        const upcomingCount = items.filter((i) =>
+          ["open", "reserved", "drafting", "scheduled"].includes(i.status)
+        ).length;
+        const draftingCount = items.filter((i) => i.status === "drafting").length;
+        const scheduledCount = items.filter((i) => i.status === "scheduled").length;
+        const unbookedCount = items.filter(
+          (i) =>
+            i.status === "open" &&
+            !i.bookedByDisplayName &&
+            !i.sponsorBookingId &&
+            !i.bookedByUserId
+        ).length;
+
+        const statTotal = surface.querySelector("[data-stat-total]");
+        const statUpcoming = surface.querySelector("[data-stat-upcoming]");
+        const statDrafting = surface.querySelector("[data-stat-drafting]");
+        const statScheduled = surface.querySelector("[data-stat-scheduled]");
+        const statUnbooked = surface.querySelector("[data-stat-unbooked]");
+        if (statTotal) statTotal.textContent = String(totalCount);
+        if (statUpcoming) statUpcoming.textContent = String(upcomingCount);
+        if (statDrafting) statDrafting.textContent = String(draftingCount);
+        if (statScheduled) statScheduled.textContent = String(scheduledCount);
+        if (statUnbooked) statUnbooked.textContent = String(unbookedCount);
+
         const uniqueAlerts = [
           ...new Map((result.alerts || []).map((alert) => [alert.reasonCode, alert])).values(),
         ];
         surface.querySelector("[data-alerts]").innerHTML = uniqueAlerts
           .map(newsletterAlertMarkup)
           .join("");
+
+        // Filter displayed items by current view tab (unless an explicit dropdown status is chosen)
+        let displayedItems = items;
+        const explicitStatus = surface.querySelector("[data-status]").value;
+        if (!explicitStatus) {
+          if (currentView === "upcoming") {
+            displayedItems = items.filter((i) =>
+              ["open", "reserved", "drafting", "scheduled"].includes(i.status)
+            );
+          } else if (currentView === "sent") {
+            displayedItems = items.filter((i) =>
+              ["sent", "cancelled"].includes(i.status)
+            );
+          }
+        }
+
         const groups = {};
-        const sortedItems = [...items].sort((a, b) => a.publicationDate.localeCompare(b.publicationDate));
+        const sortedItems = [...displayedItems].sort((a, b) => a.publicationDate.localeCompare(b.publicationDate));
         for (const item of sortedItems) {
           (groups[groupKey(item)] ||= []).push(item);
         }
-        surface.querySelector("[data-slots]").innerHTML = items.length
+        surface.querySelector("[data-slots]").innerHTML = displayedItems.length
           ? Object.entries(groups)
               .map(([period, slots]) => newsletterPeriodMarkup(period, slots))
               .join("")
@@ -303,6 +398,15 @@ export function createNewsletterPlanner(context) {
     surface
       .querySelectorAll(".newsletter-filters input,.newsletter-filters select")
       .forEach((el) => (el.onchange = load));
+    surface.querySelectorAll("[data-newsletter-view]").forEach((btn) => {
+      btn.onclick = () => {
+        currentView = btn.dataset.newsletterView;
+        surface.querySelectorAll("[data-newsletter-view]").forEach((b) => {
+          b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+        });
+        load();
+      };
+    });
     surface.querySelector("[data-newsletter-add]").onclick = () => {
       form.reset();
       form.querySelector('[role="alert"]').textContent = "";

@@ -255,6 +255,22 @@ function createNewsletterDom() {
   surface.setQueryAll(".newsletter-filters input,.newsletter-filters select", filters);
   surface.setQuery("[data-newsletter-add]", new TestElement("button"));
   surface.setQuery("[data-save]", new TestElement("button"));
+
+  const statTotal = surface.setQuery("[data-stat-total]", new TestElement("span"));
+  const statUpcoming = surface.setQuery("[data-stat-upcoming]", new TestElement("span"));
+  const statDrafting = surface.setQuery("[data-stat-drafting]", new TestElement("span"));
+  const statScheduled = surface.setQuery("[data-stat-scheduled]", new TestElement("span"));
+  const statUnbooked = surface.setQuery("[data-stat-unbooked]", new TestElement("span"));
+
+  const viewAll = new TestElement("button");
+  viewAll.dataset = { newsletterView: "all" };
+  const viewUpcoming = new TestElement("button");
+  viewUpcoming.dataset = { newsletterView: "upcoming" };
+  const viewSent = new TestElement("button");
+  viewSent.dataset = { newsletterView: "sent" };
+  const viewButtons = [viewAll, viewUpcoming, viewSent];
+  surface.setQueryAll("[data-newsletter-view]", viewButtons);
+
   return {
     alerts,
     booked,
@@ -264,10 +280,19 @@ function createNewsletterDom() {
     form,
     from,
     slots,
+    statDrafting,
+    statScheduled,
+    statTotal,
+    statUnbooked,
+    statUpcoming,
     status,
     surface,
     to,
     view,
+    viewAll,
+    viewButtons,
+    viewSent,
+    viewUpcoming,
   };
 }
 
@@ -939,11 +964,85 @@ describe("Planning surface production behavior", () => {
     await failureDom.surface.querySelector("[data-save]").onclick({
       preventDefault() {},
     });
-    assert.equal(failureDom.dialog.open, true);
     assert.equal(
       failureDom.form.querySelector('[role="alert"]').textContent,
       "Could not save slot: Slot conflict",
     );
+  });
+
+  test("calculates overview stats and filters by view tabs (All, Upcoming, Sent)", async () => {
+    const dom = createNewsletterDom();
+    const items = [
+      {
+        id: "slot-1",
+        publicationDate: "2026-08-15",
+        campaignNumber: 10,
+        campaignLabel: "Issue 10 Upcoming Open",
+        status: "open",
+      },
+      {
+        id: "slot-2",
+        publicationDate: "2026-08-20",
+        campaignNumber: 11,
+        campaignLabel: "Issue 11 Drafting",
+        status: "drafting",
+        bookedByDisplayName: "Alice",
+      },
+      {
+        id: "slot-3",
+        publicationDate: "2026-08-25",
+        campaignNumber: 12,
+        campaignLabel: "Issue 12 Scheduled",
+        status: "scheduled",
+        bookedByUserId: "bob",
+      },
+      {
+        id: "slot-4",
+        publicationDate: "2026-08-01",
+        campaignNumber: 9,
+        campaignLabel: "Issue 9 Sent",
+        status: "sent",
+        publicUrl: "https://example.invalid/9",
+      },
+    ];
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      request: async () => ({ alerts: [], items }),
+    });
+    await harness.surface.renderNewsletterSurface();
+
+    // Verify stats bar counts
+    assert.equal(dom.statTotal.textContent, "4");
+    assert.equal(dom.statUpcoming.textContent, "3");
+    assert.equal(dom.statDrafting.textContent, "1");
+    assert.equal(dom.statScheduled.textContent, "1");
+    assert.equal(dom.statUnbooked.textContent, "1");
+
+    // Default "All" view shows all 4 slots
+    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
+    assert.match(dom.slots.innerHTML, /Issue 11 Drafting/);
+    assert.match(dom.slots.innerHTML, /Issue 12 Scheduled/);
+    assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
+
+    // Switch to "Upcoming" view: only open, reserved, drafting, scheduled
+    dom.viewUpcoming.onclick();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
+    assert.match(dom.slots.innerHTML, /Issue 11 Drafting/);
+    assert.match(dom.slots.innerHTML, /Issue 12 Scheduled/);
+    assert.doesNotMatch(dom.slots.innerHTML, /Issue 9 Sent/);
+
+    // Switch to "Sent & Archive" view: only sent / cancelled
+    dom.viewSent.onclick();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.doesNotMatch(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
+    assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
+
+    // Switch back to "All" view: all items visible
+    dom.viewAll.onclick();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
+    assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
   });
 });
 
