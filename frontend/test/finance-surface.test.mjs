@@ -269,6 +269,7 @@ function createHarness({ request, route = null, setupSurface } = {}) {
     renderEntityLoadState() {},
     setRouteTitle: (title) => routeTitles.push(title),
     todayIsoDate: () => "2026-08-13",
+    viewportWidth: () => 1280,
     workApiUrl: (path) => path,
   });
   return { document, documentList, finance, requests, routeTitles };

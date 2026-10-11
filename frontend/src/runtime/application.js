@@ -205,6 +205,7 @@ const {
   request,
   renderEntityLoadState,
   setRouteTitle, todayIsoDate,
+  viewportWidth: () => window.innerWidth,
   workApiUrl,
 });
 const { renderCalendarSurface, renderNewsletterSurface } =
@@ -214,6 +215,7 @@ const { renderCalendarSurface, renderNewsletterSurface } =
     request,
     setRouteTitle,
     todayIsoDate,
+    viewportWidth: () => window.innerWidth,
     workApiUrl,
   });
 operatingModelSurface = createOperatingModelSurface({

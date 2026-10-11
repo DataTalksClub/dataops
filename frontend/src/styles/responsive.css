@@ -585,8 +585,8 @@ body[data-workspace-view="sponsors"] .library-view {
     align-items: center;
   }
   .bookkeeping-monthlens {
-    padding: 6px 8px !important;
-    margin: 0 0 8px !important;
+    padding: 4px 8px !important;
+    margin: 0 0 4px !important;
   }
   .bookkeeping-lens-nav {
     gap: 6px !important;
@@ -599,6 +599,12 @@ body[data-workspace-view="sponsors"] .library-view {
   .bookkeeping-section {
     padding: 0 !important;
     margin: 0 0 10px !important;
+  }
+  .bookkeeping-surface {
+    gap: 8px !important;
+  }
+  .bookkeeping-header {
+    padding: 0 0 2px !important;
   }
   .bookkeeping-section h3 {
     font-size: 13px !important;
@@ -811,6 +817,186 @@ body[data-workspace-view="sponsors"] .library-view {
     padding: 8px 10px !important;
   }
   .task-route-context h3 {
+    display: none;
+  }
+
+  /* ---- Newsletter issue cards: one primary action + More overflow ---- */
+  .newsletter-slot-row {
+    padding: 8px 12px;
+    gap: 4px;
+  }
+  .newsletter-slot-date {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+  }
+  .newsletter-date-meta {
+    margin-top: 0;
+  }
+  .newsletter-slot-main p {
+    margin-top: 0;
+  }
+  .newsletter-slot-actions {
+    gap: 6px;
+  }
+  .newsletter-slot-row .newsletter-slot-actions button,
+  .newsletter-slot-row .newsletter-slot-actions a {
+    min-height: 32px !important;
+  }
+  .newsletter-slot-primary {
+    min-height: 32px !important;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+    font-size: 13px !important;
+  }
+  .newsletter-overflow {
+    position: relative;
+    margin-left: auto;
+  }
+  .newsletter-overflow-trigger {
+    min-height: 32px !important;
+    padding: 4px 12px !important;
+    font-size: 13px !important;
+    white-space: nowrap;
+  }
+  .newsletter-overflow-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 40;
+    display: grid;
+    min-width: 176px;
+    padding: 4px;
+    border: 1px solid var(--dk-border-default);
+    border-radius: var(--dk-radius-md);
+    background: var(--dk-bg-surface);
+    box-shadow: var(--dk-shadow-overlay);
+  }
+  .newsletter-overflow-menu[hidden] {
+    display: none;
+  }
+  .newsletter-overflow-item {
+    display: flex;
+    min-height: 40px;
+    align-items: center;
+    justify-content: flex-start;
+    border: 0;
+    background: none;
+    padding: 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    white-space: nowrap;
+    color: var(--dk-text-body, inherit);
+  }
+
+  /* ---- Bookkeeping: the close panel is one expandable summary line when
+         the month is clear, and the month picker stays a single row ---- */
+  .bookkeeping-worklist-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+  }
+  .bookkeeping-worklist-summary .section-header {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+  }
+  .bookkeeping-worklist-summary h3 {
+    margin: 0 !important;
+  }
+  .bookkeeping-worklist-hint {
+    margin: 0;
+    color: var(--dk-text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .bookkeeping-lens-month {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .bookkeeping-lens-month-label {
+    display: none;
+  }
+  .bookkeeping-lens-month input {
+    width: 100%;
+  }
+  .bookkeeping-lens-nav {
+    flex-wrap: nowrap !important;
+  }
+  .bookkeeping-lens-step,
+  .bookkeeping-lens-nav .quiet-button {
+    flex: 0 0 auto;
+  }
+  /* The collapsed close panel is one line: chevron, heading, state hint.
+     The section chrome and long description stay desktop-only. */
+  .bookkeeping-worklist-summary {
+    padding: 4px 10px;
+  }
+  .bookkeeping-worklist-summary .section-header {
+    background: none;
+    border-bottom: 0;
+    padding: 0;
+    align-items: baseline;
+  }
+  .bookkeeping-worklist-summary .section-header div p {
+    display: none !important;
+  }
+  .bookkeeping-worklist-summary .section-header h3 {
+    font-size: 12px !important;
+    margin: 0 !important;
+    min-width: 0;
+  }
+  .bookkeeping-worklist-hint {
+    flex: 0 0 auto;
+    font-size: 11px;
+  }
+  .bookkeeping-worklist-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* ---- Per-item action rows: one compact line, never a wrapped stack ---- */
+  .row-actions,
+  .recurring-row-actions,
+  .ops-user-actions {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .row-actions button,
+  .recurring-row-actions button,
+  .ops-user-actions button {
+    flex: 0 0 auto;
+    min-height: 32px !important;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+    font-size: 12px !important;
+  }
+}
+
+/* The close-worklist section is a details/summary so narrow screens can
+   collapse it to one line. Desktop hides the toggle affordance: the summary
+   renders as the plain section header and never collapses. */
+.bookkeeping-worklist-summary {
+  list-style: none;
+}
+.bookkeeping-worklist-summary::-webkit-details-marker {
+  display: none;
+}
+@media (min-width: 821px) {
+  .bookkeeping-worklist-summary {
+    pointer-events: none;
+  }
+  .bookkeeping-surface details > summary.bookkeeping-worklist-summary::before {
+    display: none;
+  }
+  .bookkeeping-worklist-hint {
     display: none;
   }
 }

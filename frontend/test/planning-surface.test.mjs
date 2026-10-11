@@ -376,6 +376,8 @@ function createPlanningHarness({
       created.push(value);
       return value;
     },
+    addEventListener() {},
+    removeEventListener() {},
   };
   globalThis.FormData = TestFormData;
   const requests = [];
@@ -390,6 +392,7 @@ function createPlanningHarness({
     },
     setRouteTitle: (title) => routeTitles.push(title),
     todayIsoDate: () => today,
+    viewportWidth: () => 1280,
     workApiUrl: (path) => new URL(path, "http://portal.test"),
   });
   return { documentList, requests, routeTitles, surface };

@@ -58,6 +58,27 @@ export function closeStateAllMarkup(transactions) {
   </p>`;
 }
 
+// The reconcile rows in fix order: evidence, then conversions, then
+// classification — every open item with its one-click fix.
+export function worklistRowsFromOpenItems({
+  missingEvidence,
+  conversions,
+  unclassified,
+}) {
+  return [
+    ...missingEvidence.map((entry) => ({ kind: "evidence", entry })),
+    ...conversions.map((entry) => ({ kind: "eur", entry })),
+    ...unclassified.map((entry) => ({ kind: "classify", entry })),
+  ];
+}
+
+// The one-line state the collapsed close panel shows next to its heading.
+export function worklistHintText(rows) {
+  return rows.length
+    ? `${rows.length} open item${rows.length === 1 ? "" : "s"}`
+    : "All clear";
+}
+
 // The reconcile list: every open item with its fix one click away.
 export function worklistMarkup({ rows, monthTitle, e }) {
   if (!rows.length) {

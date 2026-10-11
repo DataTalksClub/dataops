@@ -7,7 +7,9 @@ import {
   ledgerTableMarkup,
   packageReviewMarkup,
   transactionOptionsMarkup,
+  worklistHintText,
   worklistMarkup,
+  worklistRowsFromOpenItems,
 } from "./bookkeeping-views.js";
 import { mountInvoiceReview } from "./invoices.js";
 import { html } from "./shared.js";
@@ -53,6 +55,7 @@ export function createBookkeepingSurface(context) {
     request,
     setRouteTitle,
     todayIsoDate,
+    viewportWidth,
     workApiUrl,
   } = context;
 
@@ -173,16 +176,13 @@ export function createBookkeepingSurface(context) {
     function renderWorklist() {
       worklistSection.hidden = lens === "all";
       if (lens === "all") return;
-      const open = openItems(lensEntries());
-      worklist.innerHTML = worklistMarkup({
-        rows: [
-          ...open.missingEvidence.map((entry) => ({ kind: "evidence", entry })),
-          ...open.conversions.map((entry) => ({ kind: "eur", entry })),
-          ...open.unclassified.map((entry) => ({ kind: "classify", entry })),
-        ],
-        monthTitle: monthLabel(lens),
-        e: escapeHtml,
-      });
+      const rows = worklistRowsFromOpenItems(openItems(lensEntries()));
+      worklist.innerHTML = worklistMarkup({ rows, monthTitle: monthLabel(lens), e: escapeHtml });
+      // Narrow screens collapse the panel to its one-line summary when the
+      // month is clear; open items (or desktop) keep it expanded.
+      worklistSection.open = viewportWidth() > 820 || rows.length > 0;
+      surface.querySelector("[data-worklist-hint]").textContent =
+        worklistHintText(rows);
     }
     function renderLedger() {
       const filters = Object.fromEntries(

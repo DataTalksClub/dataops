@@ -10,6 +10,7 @@ export function createNewsletterPlanner(context) {
     request,
     setRouteTitle,
     todayIsoDate,
+    viewportWidth,
     workApiUrl,
   } = context;
 
@@ -152,6 +153,30 @@ export function createNewsletterPlanner(context) {
       "reserved-missing-booker":
         "Add the sponsor contact or team member who reserved this slot.",
     }[reasonCode] || "Check the publication date and campaign setup.";
+  }
+
+  // Narrow screens render one primary action per issue card and fold the
+  // rest into a "More" menu, so a card is one compact stack instead of two
+  // wrapped button rows. Desktop (>820px) keeps the full inline action row.
+  const compactLayout = () => viewportWidth() <= 820;
+
+  function closeAllSlotOverflows(scope) {
+    scope.querySelectorAll(".newsletter-overflow-menu:not([hidden])").forEach((menu) => {
+      menu.hidden = true;
+      const trigger = menu
+        .closest(".newsletter-overflow")
+        .querySelector(".newsletter-overflow-trigger");
+      if (trigger) trigger.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  function toggleSlotOverflow(trigger) {
+    const menu = trigger.parentElement.querySelector(".newsletter-overflow-menu");
+    if (!menu) return;
+    const willOpen = menu.hidden;
+    closeAllSlotOverflows(trigger.closest("[data-slots]") || trigger.closest(".newsletter-surface"));
+    menu.hidden = !willOpen;
+    trigger.setAttribute("aria-expanded", String(willOpen));
   }
 
   async function renderNewsletterSurface() {
@@ -315,8 +340,34 @@ export function createNewsletterPlanner(context) {
           </a>
         `
         : "";
+      const slotId = escapeHtml(item.id);
+      const inlineActions = `
+            ${campaignLink}
+            <button type="button" class="quiet-button" data-compose="${slotId}">Compose</button>
+            <button type="button" class="quiet-button" data-preview="${slotId}">Preview</button>
+            <button type="button" class="quiet-button" data-schedule="${slotId}">Schedule</button>
+            <button data-edit="${slotId}">Edit</button>
+          `;
+      const compactActions = `
+            <button type="button" class="primary-button newsletter-slot-primary" data-compose="${slotId}">Compose</button>
+            <div class="newsletter-overflow">
+              <button
+                type="button"
+                class="newsletter-overflow-trigger"
+                aria-haspopup="true"
+                aria-expanded="false"
+                aria-label="More actions for ${escapeHtml(item.campaignLabel)}"
+              >More</button>
+              <div class="newsletter-overflow-menu" role="menu" hidden>
+                ${campaignLink ? campaignLink.replace('<a ', '<a class="newsletter-overflow-item" role="menuitem" ') : ""}
+                <button type="button" class="newsletter-overflow-item" role="menuitem" data-preview="${slotId}">Preview</button>
+                <button type="button" class="newsletter-overflow-item" role="menuitem" data-schedule="${slotId}">Schedule</button>
+                <button type="button" class="newsletter-overflow-item" role="menuitem" data-edit="${slotId}">Edit details</button>
+              </div>
+            </div>
+          `;
       return `
-        <article class="newsletter-slot-row" data-slot-id="${escapeHtml(item.id)}">
+        <article class="newsletter-slot-row" data-slot-id="${slotId}">
           <div class="newsletter-slot-date">
             <time datetime="${escapeHtml(item.publicationDate)}">${publicationLabel}</time>
             <div class="newsletter-date-meta">
@@ -336,11 +387,7 @@ export function createNewsletterPlanner(context) {
             ${planningNote}
           </div>
           <div class="newsletter-slot-actions">
-            ${campaignLink}
-            <button type="button" class="quiet-button" data-compose="${escapeHtml(item.id)}">Compose</button>
-            <button type="button" class="quiet-button" data-preview="${escapeHtml(item.id)}">Preview</button>
-            <button type="button" class="quiet-button" data-schedule="${escapeHtml(item.id)}">Schedule</button>
-            <button data-edit="${escapeHtml(item.id)}">Edit</button>
+            ${compactLayout() ? compactActions : inlineActions}
           </div>
         </article>
       `;
@@ -509,7 +556,16 @@ export function createNewsletterPlanner(context) {
         || composeBtn?.dataset.compose
         || previewBtn?.dataset.preview
         || scheduleBtn?.dataset.schedule;
-      if (!slotId) return;
+      if (!slotId) {
+        const overflowTrigger = target.closest(".newsletter-overflow-trigger");
+        if (overflowTrigger) toggleSlotOverflow(overflowTrigger);
+        return;
+      }
+      // An action chosen from inside the open overflow closes it first; the
+      // dialog opens on top either way.
+      if (target.classList?.contains?.("newsletter-overflow-item")) {
+        closeAllSlotOverflows(surface);
+      }
       const item = items.find((value) => value.id === slotId);
       if (!item) return;
 
@@ -518,6 +574,19 @@ export function createNewsletterPlanner(context) {
       else if (scheduleBtn) openIssueDialog(item, "schedule");
       else openIssueDialog(item, "details");
     };
+    surface.querySelector("[data-slots]").addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      const openMenu = surface.querySelector(".newsletter-overflow-menu:not([hidden])");
+      if (!openMenu) return;
+      closeAllSlotOverflows(surface);
+      const trigger = openMenu.closest(".newsletter-overflow").querySelector(".newsletter-overflow-trigger");
+      if (trigger) trigger.focus();
+    });
+    document.addEventListener("click", (event) => {
+      if (!surface.isConnected) return;
+      if (event.target.closest(".newsletter-overflow")) return;
+      closeAllSlotOverflows(surface);
+    });
     await load();
   }
 

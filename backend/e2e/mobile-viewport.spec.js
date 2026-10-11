@@ -125,6 +125,16 @@ async function measureContentStart(page, contentSelector) {
   }, contentSelector);
 }
 
+
+// The seeded newsletter baseline (before issue-card compaction) measured
+// 232px per card at 375x667: four full-size action buttons wrapped onto two
+// rows under the date and booking lines. The compact card carries one
+// primary button plus a "More" overflow, so half the baseline plus a small
+// rounding margin is the hard budget.
+const NEWSLETTER_CARD_BUDGET_PX = 124;
+const NEWSLETTER_CARD_BASELINE_PX = 232;
+const BOOKKEEPING_LEDGER_TOP_RATIO = 0.4;
+
 for (const viewport of VIEWPORTS) {
   for (const route of ROUTES) {
     test(`${route.path} at ${viewport.name}: fits width, starts below topbar, content within top quarter`, async ({ page }) => {
@@ -201,3 +211,109 @@ for (const viewport of VIEWPORTS) {
     });
   }
 }
+
+test('newsletter at 375x667: issue cards fit the compaction budget and the overflow menu holds the moved actions', async ({ page }) => {
+  test.setTimeout(60_000);
+  const viewport = VIEWPORTS[0];
+  const route = ROUTES.find((candidate) => candidate.path === '/newsletter');
+  await openRouteAt(page, viewport, route);
+
+  const heights = await page.evaluate(() =>
+    [...document.querySelectorAll('.newsletter-slot-row')].map((card) =>
+      Math.round(card.getBoundingClientRect().height),
+    ),
+  );
+  expect(
+    heights.length,
+    'the seeded dataset must render at least one newsletter issue card',
+  ).toBeGreaterThan(0);
+  for (const height of heights) {
+    test.info().annotations.push({
+      type: 'newsletter-card-height',
+      description: `${height}px (baseline ${NEWSLETTER_CARD_BASELINE_PX}px, budget ${NEWSLETTER_CARD_BUDGET_PX}px)`,
+    });
+    expect(
+      height,
+      `issue card is ${height}px, budget is ${NEWSLETTER_CARD_BUDGET_PX}px ` +
+        `(baseline ${NEWSLETTER_CARD_BASELINE_PX}px before the overflow menu)`,
+    ).toBeLessThanOrEqual(NEWSLETTER_CARD_BUDGET_PX);
+  }
+
+  const firstCard = page.locator('.newsletter-slot-row').first();
+  await expect(firstCard.locator('.newsletter-slot-primary')).toHaveText('Compose');
+  const trigger = firstCard.locator('.newsletter-overflow-trigger');
+  const menu = firstCard.locator('.newsletter-overflow-menu');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(menu).toBeHidden();
+
+  await trigger.click();
+  await expect(menu).toBeVisible();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  for (const movedAction of ['Preview', 'Schedule', 'Edit details']) {
+    await expect(
+      menu.locator('.newsletter-overflow-item').filter({ hasText: movedAction }),
+    ).toBeVisible();
+  }
+
+  // A moved action still drives the issue dialog it opened inline before.
+  await menu.locator('button[data-edit]').click();
+  await expect(page.locator('.newsletter-surface dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  // Escape closes the overflow menu and hands focus back to its trigger.
+  await trigger.click();
+  await expect(menu).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+});
+
+test('bookkeeping at 375x667: ledger starts within the top 40% behind a one-line close summary', async ({ page }) => {
+  test.setTimeout(60_000);
+  const viewport = VIEWPORTS[0];
+  const route = ROUTES.find((candidate) => candidate.path === '/bookkeeping');
+  await openRouteAt(page, viewport, route);
+
+  // The ledger section must start within the top 40% of the viewport: the
+  // close panel and month picker may not push the actual ledger mid-screen.
+  const ledgerTop = await page.evaluate(() =>
+    Math.round(
+      document.querySelector('#bookkeeping-ledger').getBoundingClientRect().top,
+    ),
+  );
+  const ledgerBudget = Math.round(viewport.height * BOOKKEEPING_LEDGER_TOP_RATIO);
+  test.info().annotations.push({
+    type: 'bookkeeping-ledger-top',
+    description: `${ledgerTop}px (budget ${ledgerBudget}px)`,
+  });
+  expect(
+    ledgerTop,
+    `ledger starts at ${ledgerTop}px, budget is ${ledgerBudget}px`,
+  ).toBeLessThanOrEqual(ledgerBudget);
+
+  // The month picker stays one compact row.
+  const lensHeight = await page.evaluate(() =>
+    Math.round(
+      document.querySelector('.bookkeeping-monthlens').getBoundingClientRect().height,
+    ),
+  );
+  expect(
+    lensHeight,
+    `month picker is ${lensHeight}px tall, expected a single row`,
+  ).toBeLessThanOrEqual(56);
+
+  // The seeded month has no open items, so the close panel is collapsed to
+  // its one-line summary; expanding it reveals the reconcile list.
+  const worklistSection = page.locator('[data-worklist-section]');
+  expect(
+    await worklistSection.getAttribute('open'),
+    'the close panel must collapse on mobile when nothing needs attention',
+  ).toBeNull();
+  await expect(page.locator('[data-worklist-hint]')).toHaveText('All clear');
+  await expect(page.locator('.bookkeeping-worklist')).toBeHidden();
+
+  await page.locator('.bookkeeping-worklist-summary').click();
+  await expect(page.locator('.bookkeeping-worklist')).toBeVisible();
+  await expect(page.locator('.bookkeeping-worklist')).toContainText('Nothing needs attention');
+  await page.locator('.bookkeeping-worklist-summary').click();
+  await expect(page.locator('.bookkeeping-worklist')).toBeHidden();
+});

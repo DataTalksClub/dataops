@@ -31,7 +31,8 @@ export function bookkeepingSurfaceMarkup() {
             ‹
           </button>
           <label class="bookkeeping-lens-month"
-            >Month <input type="month" data-lens-month
+            ><span class="bookkeeping-lens-month-label">Month</span>
+            <input type="month" data-lens-month aria-label="Month"
           /></label>
           <button
             class="bookkeeping-lens-step"
@@ -48,25 +49,28 @@ export function bookkeepingSurfaceMarkup() {
         <div class="bookkeeping-close-state" data-close-state></div>
       </section>
       <p data-bookkeeping-status class="surface-status" role="status"></p>
-      <section
+      <details
         class="bookkeeping-section bookkeeping-worklist-section"
         data-worklist-section
-        aria-labelledby="bookkeeping-worklist-heading"
+        open
       >
-        <header class="section-header">
-          <div>
-            <p class="section-kicker">Needs attention</p>
-            <h3 id="bookkeeping-worklist-heading">
-              Fix what the close is missing
-            </h3>
-            <p>
-              Every open item for this month with its fix one click away — the
-              monthly reconcile list, made actionable.
-            </p>
-          </div>
-        </header>
+        <summary class="bookkeeping-worklist-summary">
+          <header class="section-header">
+            <div>
+              <p class="section-kicker">Needs attention</p>
+              <h3 id="bookkeeping-worklist-heading">
+                Fix what the close is missing
+              </h3>
+              <p>
+                Every open item for this month with its fix one click away —
+                the monthly reconcile list, made actionable.
+              </p>
+            </div>
+            <p class="bookkeeping-worklist-hint" data-worklist-hint></p>
+          </header>
+        </summary>
         <div class="bookkeeping-worklist" data-worklist aria-live="polite"></div>
-      </section>
+      </details>
       <section
         id="bookkeeping-ledger"
         class="bookkeeping-section bookkeeping-ledger-section"
