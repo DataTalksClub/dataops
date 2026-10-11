@@ -108,7 +108,7 @@ export function createNavigationShell(context) {
     }
     if (restoreFocus?.kind === "queue-task") {
       return (
-        [...documentRef.querySelectorAll(".queue-task-action[data-task-id]")].find(
+        [...documentRef.querySelectorAll(".ops-queue-row[data-task-id], .queue-task-action[data-task-id]")].find(
           (candidate) =>
             candidate.dataset.taskId === restoreFocus.id &&
             candidate.isConnected &&
