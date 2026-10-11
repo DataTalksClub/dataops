@@ -102,7 +102,12 @@ export function renderDataSummary(view = {}) {
     label: view.label,
     state,
     message: messages[state] || messages.ready || "",
-    detail: recoverable ? errors[0] || "" : view.detail || "",
+    detail:
+      view.detail !== undefined
+        ? view.detail
+        : recoverable
+          ? errors[0] || ""
+          : "",
     retryLabel: view.retryLabel,
     onRetry: recoverable ? view.onRetry : null,
   });
