@@ -489,8 +489,71 @@ export function workTaskTitle(task) {
   return typeof title === "string" ? title : String(title);
 }
 
+export function cleanCardTitle(raw) {
+  if (typeof raw !== "string") return "";
+  const tagMatch = raw.match(/^(?:[\p{Extended_Pictographic}\u2699\u26a1\ufe0f\u200d]+\s*)?\[([^\]]+)\]\s*/u);
+  if (!tagMatch) return raw;
+  let rest = raw.slice(tagMatch[0].length);
+  rest = rest.replace(/\(\s*(\d{1,2})\s*([A-Za-z]{3,9}|\d{1,2})\s*(20\d{2})\s*\)/g, "");
+  rest = rest.replace(/\b(20\d{2})-([A-Za-z]{3,9}|\d{1,2})-(\d{1,2})\b/g, "");
+  const lastDash = rest.lastIndexOf(" - ");
+  if (lastDash > 0) rest = rest.slice(0, lastDash);
+  const gluedDash = rest.match(/^(.*)-([A-ZÀ-Þ][^-]* [^-]*)$/u);
+  if (gluedDash) rest = gluedDash[1];
+  const issueMatch = rest.match(/#\s*\d+\b/);
+  if (issueMatch) {
+    const withoutIssue = rest.slice(0, issueMatch.index) + rest.slice(issueMatch.index + issueMatch[0].length);
+    if (withoutIssue.replace(/^[-–:;\s]+|[-–:;\s]+$/g, "").trim()) {
+      rest = withoutIssue;
+    }
+  }
+  rest = rest.replace(/\(\s*\)/g, "").replace(/\s{2,}/g, " ").replace(/^[-–:;\s]+|[-–:;\s]+$/g, "").trim();
+  return rest || raw;
+}
+
 export function workCardTitle(card) {
-  return card.title || card.name || card.id || "Untitled card";
+  if (!card || typeof card !== "object") return "Untitled card";
+  const raw = card.title || card.name || card.id || "Untitled card";
+  return cleanCardTitle(raw);
+}
+
+export function workCardSubtitle(card) {
+  if (!card || typeof card !== "object") return "";
+  const people = Array.isArray(card.people)
+    ? card.people.filter((name) => typeof name === "string" && name.trim().length > 0)
+    : [];
+  if (people.length > 0) return people.join(", ");
+  const sponsors = [
+    ...(typeof card.sponsor === "string" && card.sponsor.trim() ? [card.sponsor.trim()] : []),
+    ...(Array.isArray(card.secondarySponsors)
+      ? card.secondarySponsors.filter((name) => typeof name === "string" && name.trim().length > 0)
+      : []),
+  ];
+  if (sponsors.length > 0) return sponsors.join(", ");
+
+  const raw = String(card.title || card.name || "");
+  const tagMatch = raw.match(/^(?:[\p{Extended_Pictographic}\u2699\u26a1\ufe0f\u200d]+\s*)?\[([^\]]+)\]\s*/u);
+  if (tagMatch) {
+    const lastDash = raw.lastIndexOf(" - ");
+    if (lastDash > 0) {
+      const tail = raw.slice(lastDash + 3).trim();
+      if (tail && !/^\d{4}/.test(tail)) return tail;
+    }
+    const gluedDash = raw.match(/-([A-ZÀ-Þ][^-]* [^-]*)$/u);
+    if (gluedDash) return gluedDash[1].trim();
+  }
+  return "";
+}
+
+export function workCardIssueNumber(card) {
+  if (!card || typeof card !== "object") return "";
+  if (card.issueNumber !== undefined && card.issueNumber !== null) {
+    const raw = String(card.issueNumber).trim();
+    if (raw) return raw.replace(/^#/, "");
+  }
+  const raw = String(card.title || card.name || "");
+  const match = raw.match(/#\s*(\d+)\b/);
+  return match ? match[1] : "";
 }
 
 export function taskDate(task) {

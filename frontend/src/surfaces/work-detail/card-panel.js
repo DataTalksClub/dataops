@@ -48,6 +48,8 @@ export function createCardPanel(context) {
     todayIsoDate,
     updateTaskStatus,
     workApiUrl,
+    workCardIssueNumber,
+    workCardSubtitle,
     workCardTitle,
     workTaskTitle,
     workflowTaskGroups,
@@ -360,6 +362,8 @@ export function createCardPanel(context) {
       state,
       today,
       updateCardStage,
+      workCardIssueNumber,
+      workCardSubtitle,
       workTaskTitle,
     });
     // The board badge replaces the legacy `[Tag]` title prefix; the detail

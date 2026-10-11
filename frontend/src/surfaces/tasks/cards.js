@@ -401,6 +401,8 @@ export function createCardsSurface(context) {
 
     // The Template badge replaces the legacy `[Tag]` title prefix: the card
     // shows which Template it was created from, and opens it on click.
+    const metaTop = document.createElement("div");
+    metaTop.className = "workflow-card-meta-top";
     if (templateId) {
       const badge = document.createElement("span");
       badge.className = "workflow-card-template";
@@ -413,7 +415,17 @@ export function createCardsSurface(context) {
         event.stopPropagation();
         navigateCanonicalWorkspace("/templates", { templateId });
       });
-      card.append(badge);
+      metaTop.append(badge);
+    }
+    if (item.issueNumber) {
+      const issue = document.createElement("span");
+      issue.className = "workflow-card-issue";
+      issue.textContent = `#${String(item.issueNumber).replace(/^#/, "")}`;
+      issue.title = `Issue #${String(item.issueNumber).replace(/^#/, "")}`;
+      metaTop.append(issue);
+    }
+    if (metaTop.children.length > 0) {
+      card.append(metaTop);
     }
 
     const header = document.createElement("span");
@@ -445,6 +457,13 @@ export function createCardsSurface(context) {
     title.className = "workflow-card-title";
     title.textContent = item.title;
     card.append(title);
+
+    if (item.subtitle) {
+      const subtitle = document.createElement("span");
+      subtitle.className = "workflow-card-subtitle";
+      subtitle.textContent = item.subtitle;
+      card.append(subtitle);
+    }
 
     if (item.taskRelationshipsComplete === false) {
       const unavailable = document.createElement("span");

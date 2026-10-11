@@ -15,8 +15,10 @@ import { CollectionCursorError, encodeCollectionCursor } from '../db/collectionP
 import {
   createCardFromTemplate,
   getTemplate,
+  listTemplates,
   TemplateVersionConflictError,
 } from '../db/templates';
+import { parseCardTitle } from '../cards/cardTitleStructure';
 import { listAllTasks, listTasksByCard } from '../db/tasks';
 import {
   applyCardTemplateUpdate,
@@ -316,6 +318,59 @@ function validateCardRefs(body: Record<string, unknown>): string | null {
   return null;
 }
 
+let cachedTemplateTypeMap: { timestamp: number; map: Map<string, string> } | null = null;
+
+export async function getTemplateIdByType(client: DynamoDBDocumentClient): Promise<Map<string, string>> {
+  const now = Date.now();
+  if (cachedTemplateTypeMap && now - cachedTemplateTypeMap.timestamp < 60_000) {
+    return cachedTemplateTypeMap.map;
+  }
+  try {
+    const templates = await listTemplates(client);
+    const map = new Map<string, string>();
+    for (const t of templates) {
+      if (t.type && t.id) {
+        map.set(t.type, t.id);
+      }
+    }
+    cachedTemplateTypeMap = { timestamp: now, map };
+    return map;
+  } catch (err) {
+    console.error('Failed to load templates for card structure mapping:', err);
+    return cachedTemplateTypeMap ? cachedTemplateTypeMap.map : new Map();
+  }
+}
+
+function isNameList(value: unknown): boolean {
+  return Array.isArray(value)
+    && value.length <= 20
+    && value.every((item) => typeof item === 'string' && item.trim().length > 0 && item.length <= 200);
+}
+
+function validateCardPeople(body: Record<string, unknown>): string | null {
+  if (body.people !== undefined && !isNameList(body.people)) {
+    return 'people must be an array of up to 20 non-empty names';
+  }
+  if (body.secondarySponsors !== undefined && !isNameList(body.secondarySponsors)) {
+    return 'secondarySponsors must be an array of up to 20 non-empty names';
+  }
+  if (body.sponsor !== undefined && body.sponsor !== null && (
+    typeof body.sponsor !== 'string' || body.sponsor.trim().length === 0 || body.sponsor.length > 200
+  )) {
+    return 'sponsor must be a non-empty string or null';
+  }
+  if (body.issueNumber !== undefined && body.issueNumber !== null) {
+    if (typeof body.issueNumber !== 'string' && typeof body.issueNumber !== 'number') {
+      return 'issueNumber must be a string or number';
+    }
+    const str = String(body.issueNumber).trim();
+    if (str.length === 0 || str.length > 50) {
+      return 'issueNumber must not be empty or longer than 50 characters';
+    }
+  }
+  return null;
+}
+
 /**
  * Handle all /api/cards routes.
  */
@@ -465,12 +520,13 @@ async function handleCollection(
       tasksByCardId.set(task.cardId, tasks);
     }
 
+    const templateIdByType = await getTemplateIdByType(client);
     const responseBody: {
       cards: Record<string, unknown>;
       owner?: Awaited<ReturnType<TeamDirectory['project']>>;
     } = {
       cards: {
-        items: await projectCards(directory, cardPage.items, tasksByCardId),
+        items: await projectCards(directory, cardPage.items, tasksByCardId, templateIdByType),
       },
     };
     if (cardPage.nextExclusiveStartKey) {
@@ -560,6 +616,14 @@ async function handleCollection(
         statusCode: 400,
         headers: JSON_HEADERS,
         body: JSON.stringify({ error: refsError }),
+      };
+    }
+    const peopleError = validateCardPeople(body);
+    if (peopleError) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: peopleError }),
       };
     }
 
@@ -653,9 +717,33 @@ async function handleCollection(
         cardData.sourceDocIds = body.sourceDocIds;
       }
     }
-    for (const field of ['artifactRefs', 'assistantJobRefs', 'intakeRefs']) {
+    for (const field of ['artifactRefs', 'assistantJobRefs', 'intakeRefs', 'people', 'sponsor', 'secondarySponsors', 'issueNumber']) {
       if (body[field] !== undefined) {
-        cardData[field] = body[field];
+        cardData[field] = body[field] !== null && field === 'issueNumber' ? String(body[field]).trim() : body[field];
+      }
+    }
+
+    const templateIdByType = await getTemplateIdByType(client);
+    const parsed = parseCardTitle(String(cardData.title || ''));
+    if (parsed.tag && parsed.templateType) {
+      if (cardData.issueNumber === undefined && parsed.issueNumber) {
+        cardData.issueNumber = parsed.issueNumber;
+      }
+      if (cardData.sponsor === undefined && parsed.sponsor) {
+        cardData.sponsor = parsed.sponsor;
+      }
+      if (cardData.secondarySponsors === undefined && parsed.secondarySponsors?.length) {
+        cardData.secondarySponsors = parsed.secondarySponsors;
+      }
+      if ((!cardData.people || (cardData.people as string[]).length === 0) && parsed.people.length > 0) {
+        cardData.people = parsed.people;
+      }
+      if (!cardData.templateId && parsed.templateType) {
+        const tId = templateIdByType.get(parsed.templateType);
+        if (tId) cardData.templateId = tId;
+      }
+      if (parsed.cleanTitle && parsed.cleanTitle !== cardData.title) {
+        cardData.title = parsed.cleanTitle;
       }
     }
 
@@ -667,7 +755,7 @@ async function handleCollection(
           template,
           body.anchorDate as string,
         );
-        return json(201, { card: await projectCard(new TeamDirectory(client), card, tasks), tasks });
+        return json(201, { card: await projectCard(new TeamDirectory(client), card, tasks, templateIdByType), tasks });
       } catch (error) {
         if (error instanceof TemplateVersionConflictError) {
           return json(409, {
@@ -681,7 +769,7 @@ async function handleCollection(
 
     const card = await createCard(client, cardData);
 
-    return json(201, { card: await projectCard(new TeamDirectory(client), card) });
+    return json(201, { card: await projectCard(new TeamDirectory(client), card, undefined, templateIdByType) });
   }
 
   // Method not allowed
@@ -728,7 +816,8 @@ async function handleParkResume(
   const card = action === 'park'
     ? await parkCard(client, id, body.expectedVersion as number)
     : await resumeCard(client, id, body.expectedVersion as number);
-  return json(200, { card: await projectCard(new TeamDirectory(client), card) });
+  const templateIdByType = await getTemplateIdByType(client);
+  return json(200, { card: await projectCard(new TeamDirectory(client), card, undefined, templateIdByType) });
 }
 
 /**
@@ -754,8 +843,9 @@ async function handleSingle(
     }
     // Opening a teammate's Card exposes its Task execution actions; it does
     // not grant direct Card administration.
+    const templateIdByType = await getTemplateIdByType(client);
     const tasks = await listTasksByCard(client, card.id);
-    return json(200, { card: await projectCard(new TeamDirectory(client), card, tasks) });
+    return json(200, { card: await projectCard(new TeamDirectory(client), card, tasks, templateIdByType) });
   }
 
   if (method === 'PUT') {
@@ -844,16 +934,29 @@ async function handleSingle(
         body: JSON.stringify({ error: refsError }),
       };
     }
+    const peopleError = validateCardPeople(body);
+    if (peopleError) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: peopleError }),
+      };
+    }
 
     // Only allow updating known fields
     const allowedFields = [
       'title', 'description', 'anchorDate', 'references', 'cardLinks', 'emoji', 'tags', 'stage',
       'sourceDocIds', 'artifactRefs', 'assistantJobRefs', 'intakeRefs',
+      'people', 'sponsor', 'secondarySponsors', 'issueNumber',
     ];
     const updates: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
-        updates[field] = body[field];
+        if (field === 'issueNumber' && body[field] !== null) {
+          updates[field] = String(body[field]).trim();
+        } else {
+          updates[field] = body[field];
+        }
       }
     }
     if (owner.supplied && !('invalid' in owner)) {
@@ -872,7 +975,8 @@ async function handleSingle(
       expectedVersion: body.expectedVersion as number,
       patch: updates,
     });
-    return json(200, { card: await projectCard(new TeamDirectory(client), card) });
+    const templateIdByType = await getTemplateIdByType(client);
+    return json(200, { card: await projectCard(new TeamDirectory(client), card, undefined, templateIdByType) });
   }
 
   // Method not allowed

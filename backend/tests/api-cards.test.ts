@@ -1056,4 +1056,96 @@ describe('API — Cards', () => {
       assert.strictEqual(noVersion.statusCode, 400);
     });
   });
+
+  describe('PUT /api/cards/:id structured fields', () => {
+    it('stores people, sponsor, secondarySponsors, and issueNumber', async () => {
+      const created = await createCard(client, { title: 'People card', anchorDate: utcDateString() });
+      const res = await invoke('PUT', `/api/cards/${created.id}`, {
+        expectedVersion: 1,
+        people: ['Tony Zeljkovic', 'Juan Manuel Perafan'],
+        sponsor: 'Astronomer',
+        secondarySponsors: ['Snowplow'],
+        issueNumber: '298',
+      });
+      assert.strictEqual(res.statusCode, 200);
+      const card = JSON.parse(res.body).card;
+      assert.deepStrictEqual(card.people, ['Tony Zeljkovic', 'Juan Manuel Perafan']);
+      assert.strictEqual(card.sponsor, 'Astronomer');
+      assert.deepStrictEqual(card.secondarySponsors, ['Snowplow']);
+      assert.strictEqual(card.issueNumber, '298');
+    });
+
+    it('clears sponsor with null and rejects malformed values', async () => {
+      const created = await createCard(client, { title: 'Sponsor card', anchorDate: utcDateString(), sponsor: 'Acme' });
+      const cleared = await invoke('PUT', `/api/cards/${created.id}`, { expectedVersion: 1, sponsor: null });
+      assert.strictEqual(cleared.statusCode, 200);
+      assert.strictEqual(JSON.parse(cleared.body).card.sponsor, undefined);
+
+      for (const body of [
+        { expectedVersion: 2, people: 'Tony' },
+        { expectedVersion: 2, people: [''] },
+        { expectedVersion: 2, sponsor: '' },
+        { expectedVersion: 2, sponsor: 42 },
+        { expectedVersion: 2, secondarySponsors: [null] },
+        { expectedVersion: 2, issueNumber: {} },
+      ]) {
+        const res = await invoke('PUT', `/api/cards/${created.id}`, body);
+        assert.strictEqual(res.statusCode, 400);
+      }
+    });
+  });
+
+  describe('POST /api/cards structured fields and title derivation', () => {
+    it('accepts people, sponsor, and issueNumber at creation', async () => {
+      const res = await invoke('POST', '/api/cards', {
+        title: 'New event',
+        anchorDate: utcDateString(),
+        people: ['Irina Krotova'],
+        sponsor: 'Snowplow',
+        issueNumber: '42',
+      });
+      assert.strictEqual(res.statusCode, 201);
+      const card = JSON.parse(res.body).card;
+      assert.deepStrictEqual(card.people, ['Irina Krotova']);
+      assert.strictEqual(card.sponsor, 'Snowplow');
+      assert.strictEqual(card.issueNumber, '42');
+    });
+
+    it('auto-extracts structured fields when created with legacy formatted title', async () => {
+      const res = await invoke('POST', '/api/cards', {
+        title: '[Newsletter] Weekly email #298(12OCT 2026) -Astronomer',
+        anchorDate: '2026-10-12',
+      });
+      assert.strictEqual(res.statusCode, 201);
+      const card = JSON.parse(res.body).card;
+      assert.strictEqual(card.title, 'Weekly email');
+      assert.strictEqual(card.issueNumber, '298');
+      assert.strictEqual(card.sponsor, 'Astronomer');
+    });
+  });
+
+  describe('GET /api/cards read-time derivation for existing cards', () => {
+    it('derives clean title, issue number, sponsor, and date on read for legacy cards', async () => {
+      const created = await createCard(client, {
+        title: '[Newsletter] Weekly email #298(12OCT 2026) -Astronomer',
+        anchorDate: '2026-08-01',
+      });
+
+      const single = await invoke('GET', `/api/cards/${created.id}`);
+      assert.strictEqual(single.statusCode, 200);
+      const singleCard = JSON.parse(single.body).card;
+      assert.strictEqual(singleCard.title, 'Weekly email');
+      assert.strictEqual(singleCard.issueNumber, '298');
+      assert.strictEqual(singleCard.sponsor, 'Astronomer');
+
+      const list = await invoke('GET', '/api/cards');
+      assert.strictEqual(list.statusCode, 200);
+      const items = JSON.parse(list.body).cards.items;
+      const matched = items.find((item: any) => item.id === created.id);
+      assert.ok(matched);
+      assert.strictEqual(matched.title, 'Weekly email');
+      assert.strictEqual(matched.issueNumber, '298');
+      assert.strictEqual(matched.sponsor, 'Astronomer');
+    });
+  });
 });

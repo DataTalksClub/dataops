@@ -10,7 +10,7 @@ import {
   isTaskDueToday, isTaskOverdue, isWaitingOrFollowUpTask, isoDayDistance,
   parseWorkspaceHash, summarizeCardProgress, taskDate, taskProofState,
   taskRequiresApprovedArtifact, tasksFromWorkPayload, tasksSectionTitle,
-  todayIsoDate, workCardTitle, workTaskTitle, workflowTaskGroups,
+  todayIsoDate, workCardIssueNumber, workCardSubtitle, workCardTitle, workTaskTitle, workflowTaskGroups,
   workspaceHashPath, workspaceRouteFor,
 } from "../core/workspace.js";
 import {
@@ -467,6 +467,8 @@ const {
   tasksFromWorkPayload,
   todayIsoDate,
   workApiUrl,
+  workCardIssueNumber,
+  workCardSubtitle,
   workCardTitle,
   workTaskTitle,
   workflowTaskGroups,
@@ -549,6 +551,8 @@ const {
   tasksFromWorkPayload,
   todayIsoDate,
   workApiUrl,
+  workCardIssueNumber,
+  workCardSubtitle,
   workCardTitle,
   workTaskTitle,
 });

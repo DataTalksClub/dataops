@@ -176,6 +176,8 @@ export function createCardSummary(context) {
     state,
     today,
     updateCardStage,
+    workCardIssueNumber,
+    workCardSubtitle,
     workTaskTitle,
   } = context;
 
@@ -228,6 +230,16 @@ export function createCardSummary(context) {
     anchor.textContent = formatCardAnchorLabel(card.anchorDate, today);
     summaryTop.append(anchor);
   }
+  const issueNumber = typeof workCardIssueNumber === "function"
+    ? workCardIssueNumber(card)
+    : (card.issueNumber ? String(card.issueNumber).replace(/^#/, "") : "");
+  if (issueNumber) {
+    const issue = document.createElement("span");
+    issue.className = "workflow-card-issue";
+    issue.textContent = `#${issueNumber}`;
+    issue.title = `Issue #${issueNumber}`;
+    summaryTop.append(issue);
+  }
   const countRow = document.createElement("span");
   countRow.className = "workflow-card-count";
   countRow.textContent =
@@ -278,6 +290,22 @@ export function createCardSummary(context) {
     summaryTop.append(park);
   }
   meta.append(summaryTop);
+
+  const subtitle = typeof workCardSubtitle === "function" ? workCardSubtitle(card) : "";
+  const people = Array.isArray(card.people)
+    ? card.people.filter((name) => typeof name === "string" && name.trim().length > 0)
+    : [];
+  if (subtitle) {
+    const byline = document.createElement("p");
+    byline.className = "workflow-next-task";
+    const bylineLabel = document.createElement("span");
+    bylineLabel.textContent = people.length > 0 ? "People" : "Sponsor";
+    const bylineValue = document.createElement("strong");
+    appendBreakableText(bylineValue, subtitle);
+    bylineValue.title = subtitle;
+    byline.append(bylineLabel, bylineValue);
+    meta.append(byline);
+  }
 
   if (progress.nextDueTask) {
     const nextRow = document.createElement("p");

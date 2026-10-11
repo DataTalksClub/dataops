@@ -21,6 +21,8 @@ import {
   taskProofState,
   tasksFromWorkPayload,
   tasksSectionTitle,
+  workCardIssueNumber,
+  workCardSubtitle,
   workCardTitle,
   workTaskTitle,
 } from "../src/core/workspace.js";
@@ -214,6 +216,8 @@ function createHarness(options = {}) {
         cardId: card.id,
         templateId: card.templateId || "",
         title: card.title,
+        subtitle: workCardSubtitle(card),
+        issueNumber: workCardIssueNumber(card),
         stage: card.stage,
         risk: progress.risk,
         meta: progress.label,
@@ -826,6 +830,52 @@ describe("Tasks surface boundary", () => {
       ["recent", "old"],
     );
     assert.equal(findAllByClass(documentList, "cards-archive-grid").length, 2);
+  });
+
+  test("shows people, sponsors, and issue chips on board cards", () => {
+    const active = [
+      {
+        id: "pod",
+        title: "Playbook",
+        stage: "announced",
+        anchorDate: "2026-08-17",
+        people: ["Tony Zeljkovic", "Juan Manuel Perafan"],
+      },
+      {
+        id: "news",
+        title: "Weekly email",
+        stage: "preparation",
+        anchorDate: "2026-10-20",
+        sponsor: "Astronomer",
+        issueNumber: "298",
+      },
+      {
+        id: "plain",
+        title: "Untitled work",
+        stage: "preparation",
+        anchorDate: "2026-08-10",
+      },
+    ];
+    const { api, documentList } = createHarness({
+      route: { path: "/cards", params: new URLSearchParams() },
+      workSnapshot: {
+        activeCards: active,
+        cards: active,
+        cardTasks: { pod: [], news: [], plain: [] },
+      },
+    });
+
+    api.renderTasksSurface([], "workflows");
+    const subtitles = findAllByClass(documentList, "workflow-card-subtitle");
+    assert.deepEqual(
+      subtitles.map((subtitle) => subtitle.textContent),
+      ["Astronomer", "Tony Zeljkovic, Juan Manuel Perafan"],
+    );
+    const issueChips = findAllByClass(documentList, "workflow-card-issue");
+    assert.deepEqual(
+      issueChips.map((chip) => chip.textContent),
+      ["#298"],
+    );
   });
 
   test("splits the archive into Done and Parked categories", async () => {

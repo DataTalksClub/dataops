@@ -230,6 +230,31 @@
   -webkit-line-clamp: 3;
   line-clamp: 3;
   -webkit-box-orient: vertical;
+}.workflow-card-subtitle {
+  display: block;
+  overflow: hidden;
+  color: var(--dk-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}.workflow-card-meta-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}.workflow-card-issue {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.08);
+  color: var(--dk-text-muted);
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  white-space: nowrap;
 }.workflow-card-anchor {
   display: inline-flex;
   align-items: center;
