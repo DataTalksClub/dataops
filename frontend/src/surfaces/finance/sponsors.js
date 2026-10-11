@@ -216,7 +216,16 @@ export function createSponsorCrmSurface(context) {
       loadCommunications,
       safe,
     });
-    sponsorFinance.setReopenBookingDetail(reopenDealDetail);
+    sponsorFinance.setReopenBookingDetail(async (booking) => {
+      if (
+        surface.classList.contains("has-booking-detail") &&
+        surface.querySelector('[data-booking-panel="finance"]')
+      ) {
+        await loadFinance(booking);
+      } else {
+        await reopenDealDetail(booking);
+      }
+    });
 
     function drawPipeline(shownIds) {
       const pipeline = surface.querySelector("[data-crm-pipeline]");
