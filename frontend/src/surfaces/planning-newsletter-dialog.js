@@ -111,6 +111,7 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
           <div class="issue-pane" data-pane="details">
             <div class="planner-form-grid">
               <label>Publication date <input name="publicationDate" type="date" required></label>
+              <label>Publication time <input name="publicationTime" type="time" placeholder="14:00" title="Time in Europe/Berlin"></label>
               <label>Campaign number <input name="campaignNumber" type="number" min="1"></label>
               <label class="planner-field-wide">
                 Campaign label <input name="campaignLabel" required maxlength="200">
@@ -225,6 +226,10 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
           </div>
 
           <div class="issue-pane" data-pane="schedule" hidden>
+            <div class="newsletter-status-banner" data-status-banner>
+              <span class="status-banner-badge" data-status-banner-badge>Draft</span>
+              <span class="status-banner-text" data-status-banner-text>Content drafting is in progress.</span>
+            </div>
             <div class="newsletter-stepper">
               <div class="stepper-step is-done" data-step="1">
                 <span class="stepper-num">1</span>
@@ -232,7 +237,7 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
               </div>
               <div class="stepper-step" data-step="2">
                 <span class="stepper-num">2</span>
-                <span>Drafting</span>
+                <span>Draft</span>
               </div>
               <div class="stepper-step" data-step="3">
                 <span class="stepper-num">3</span>
@@ -247,11 +252,39 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
                 <span>Sent</span>
               </div>
             </div>
+
+            <div class="newsletter-schedule-timing">
+              <h3>Schedule & Timing</h3>
+              <div class="planner-form-grid">
+                <label>Send date
+                  <input name="schedulePublicationDate" type="date">
+                </label>
+                <label>Send time (Europe/Berlin)
+                  <input name="schedulePublicationTime" type="time" placeholder="14:00">
+                </label>
+              </div>
+              <div class="newsletter-schedule-explainer">
+                <p>
+                  <strong>What scheduling does:</strong>
+                  Locks the editorial draft and queues the issue for automated dispatch at the selected Europe/Berlin time.
+                </p>
+                <p>
+                  <strong>When the email goes out:</strong>
+                  Subscribers receive the email promptly at the scheduled time.
+                  Revisions after scheduling require returning to Draft or Review.
+                </p>
+              </div>
+            </div>
+
             <div class="newsletter-checklist-box">
               <h3>Publication Readiness Checklist</h3>
               <div class="checklist-item" data-check-date>
                 <span class="check-icon">✓</span>
                 <span>Publication date chosen</span>
+              </div>
+              <div class="checklist-item" data-check-time>
+                <span class="check-icon">✓</span>
+                <span>Send time set</span>
               </div>
               <div class="checklist-item" data-check-subject>
                 <span class="check-icon">○</span>
@@ -270,17 +303,34 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
                 <span>Workflow card connected</span>
               </div>
             </div>
-            <div class="newsletter-action-bar">
-              <button type="button" class="newsletter-template-btn" data-set-status="drafting">
-                Set Status: Drafting
+
+            <div class="newsletter-confirm-card" data-confirm-card hidden>
+              <h4 data-confirm-title>Confirm Action</h4>
+              <p data-confirm-message>Are you sure?</p>
+              <div class="newsletter-confirm-buttons">
+                <button type="button" class="primary-button" data-confirm-proceed>Confirm</button>
+                <button type="button" class="quiet-button" data-confirm-cancel>Cancel</button>
+              </div>
+            </div>
+
+            <div class="newsletter-action-bar" data-action-bar>
+              <button type="button" class="newsletter-template-btn" data-action="start-draft" data-set-status="draft">
+                Start Drafting
               </button>
-              <button type="button" class="newsletter-template-btn" data-set-status="scheduled">
-                Set Status: Scheduled
+              <button type="button" class="newsletter-template-btn" data-action="submit-review" data-set-status="review">
+                Submit for Review
               </button>
-              <button type="button" class="newsletter-template-btn" data-set-status="sent">
+              <button type="button" class="primary-button" data-action="prompt-schedule" data-set-status="scheduled">
+                Schedule Issue
+              </button>
+              <button type="button" class="newsletter-template-btn" data-action="prompt-send" data-set-status="sent">
                 Mark as Sent
               </button>
+              <button type="button" class="quiet-button" data-action="return-draft">
+                Return to Draft
+              </button>
             </div>
+
             <div class="newsletter-safety-badge">
               <span>🔒</span>
               <span>Guarded environment: emails are never dispatched to real recipients in this system.</span>
@@ -365,6 +415,7 @@ export function setupNewsletterDialog(options) {
     const preheaderInput = form?.elements?.issuePreheader || dialog.querySelector('[name="issuePreheader"]');
     const labelInput = form?.elements?.campaignLabel || dialog.querySelector('[name="campaignLabel"]');
     const dateInput = form?.elements?.publicationDate || dialog.querySelector('[name="publicationDate"]');
+    const timeInput = form?.elements?.publicationTime || dialog.querySelector('[name="publicationTime"]');
     const numInput = form?.elements?.campaignNumber || dialog.querySelector('[name="campaignNumber"]');
     const bookerInput = form?.elements?.bookedByDisplayName ||
       dialog.querySelector('[name="bookedByDisplayName"]');
@@ -372,6 +423,7 @@ export function setupNewsletterDialog(options) {
     const subject = (subjectInput?.value || labelInput?.value || "DataTalks.Club Weekly").trim();
     const preheader = (preheaderInput?.value || "").trim();
     const dateVal = dateInput?.value || context.todayIsoDate();
+    const timeVal = (timeInput?.value || "").trim();
     const numVal = numInput?.value || "";
     const booker = bookerInput?.value || "";
 
@@ -384,7 +436,7 @@ export function setupNewsletterDialog(options) {
 
     if (subjectEl) subjectEl.textContent = subject;
     if (preheaderEl) preheaderEl.textContent = preheader || "(No preview text set)";
-    if (dateEl) dateEl.textContent = `${formatShortPlanningDate(dateVal)} (Europe/Berlin)`;
+    if (dateEl) dateEl.textContent = `${formatShortPlanningDate(dateVal)}${timeVal ? ` at ${timeVal}` : ""} (Europe/Berlin)`;
     if (issueLineEl) {
       issueLineEl.textContent = `${numVal ? `Issue #${numVal} · ` : ""}${formatShortPlanningDate(dateVal)}`;
     }
@@ -407,8 +459,13 @@ export function setupNewsletterDialog(options) {
     }
   }
 
+  let pendingConfirmation = null;
+
   function updateSchedulePane() {
     const dateInput = form?.elements?.publicationDate || dialog.querySelector('[name="publicationDate"]');
+    const timeInput = form?.elements?.publicationTime || dialog.querySelector('[name="publicationTime"]');
+    const schedDateInput = form?.elements?.schedulePublicationDate || dialog.querySelector('[name="schedulePublicationDate"]');
+    const schedTimeInput = form?.elements?.schedulePublicationTime || dialog.querySelector('[name="schedulePublicationTime"]');
     const labelInput = form?.elements?.campaignLabel || dialog.querySelector('[name="campaignLabel"]');
     const subjectInput = form?.elements?.issueSubject || dialog.querySelector('[name="issueSubject"]');
     const statusSelect = form?.elements?.status || dialog.querySelector('[name="status"]');
@@ -416,15 +473,32 @@ export function setupNewsletterDialog(options) {
     const bookerInput = form?.elements?.bookedByDisplayName ||
       dialog.querySelector('[name="bookedByDisplayName"]');
 
-    const hasDate = Boolean(dateInput?.value);
-    const hasSubject = Boolean((subjectInput?.value || labelInput?.value || "").trim());
-    const hasContent = (currentBlocks || []).length > 0;
+    // Keep schedule timing inputs synced with form values
+    if (schedDateInput && dateInput) {
+      if (dateInput.value && !schedDateInput.value) schedDateInput.value = dateInput.value;
+      else if (schedDateInput.value && !dateInput.value) dateInput.value = schedDateInput.value;
+    }
+    if (schedTimeInput && timeInput) {
+      if (timeInput.value && !schedTimeInput.value) schedTimeInput.value = timeInput.value;
+      else if (!schedTimeInput.value && !timeInput.value) {
+        schedTimeInput.value = "14:00";
+        timeInput.value = "14:00";
+      }
+    }
+
+    const hasDate = Boolean(dateInput?.value || schedDateInput?.value);
+    const timeVal = (timeInput?.value || schedTimeInput?.value || "14:00").trim();
+    const hasTime = Boolean(timeVal);
+    const subjectText = (subjectInput?.value || labelInput?.value || "").trim();
+    const hasSubject = Boolean(subjectText);
+    const hasContent = (currentBlocks || []).some((b) => b.raw && b.raw.trim().length > 0);
     const statusVal = statusSelect?.value || "open";
     const hasCard = Boolean(cardInput?.value);
-    const isReserved = statusVal === "reserved";
+    const isReserved = statusVal === "reserved" || Boolean(bookerInput?.value);
     const hasBooker = Boolean(bookerInput?.value);
 
     const checkDate = dialog.querySelector("[data-check-date]");
+    const checkTime = dialog.querySelector("[data-check-time]");
     const checkSubject = dialog.querySelector("[data-check-subject]");
     const checkContent = dialog.querySelector("[data-check-content]");
     const checkSponsor = dialog.querySelector("[data-check-sponsor]");
@@ -439,53 +513,120 @@ export function setupNewsletterDialog(options) {
       if (label) label.textContent = ready ? readyText : pendingText;
     };
 
-    setCheck(
-      checkDate,
-      hasDate,
-      `Publication date chosen: ${dateInput?.value || ""}`,
-      "Choose publication date",
-    );
-    setCheck(
-      checkSubject,
-      hasSubject,
-      `Subject line ready: "${(subjectInput?.value || labelInput?.value || "").slice(0, 30)}…"`,
-      "Provide subject line & title",
-    );
-    setCheck(
-      checkContent,
-      hasContent,
-      `Content drafted (${currentBlocks.length} blocks)`,
-      "Draft newsletter content",
-    );
+    const dateVal = dateInput?.value || schedDateInput?.value || "";
+    setCheck(checkDate, hasDate, `Publication date chosen: ${dateVal}`, "Choose publication date");
+    setCheck(checkTime, hasTime, `Send time: ${timeVal} (Europe/Berlin)`, "Set send time in Europe/Berlin");
+    setCheck(checkSubject, hasSubject, `Subject line ready: "${subjectText.slice(0, 30)}…"`, "Provide subject line & title");
+    setCheck(checkContent, hasContent, `Content drafted (${currentBlocks.length} blocks)`, "Draft newsletter content");
     setCheck(
       checkSponsor,
       !isReserved || hasBooker,
       isReserved ? `Sponsor confirmed: ${bookerInput?.value || ""}` : "Open editorial / sponsor slot",
       "Confirm sponsor booking context",
     );
-    setCheck(
-      checkCard,
-      hasCard,
-      `Workflow card linked: ${cardInput?.value || ""}`,
-      "Connect workflow card (optional)",
-    );
+    setCheck(checkCard, hasCard, `Workflow card linked: ${cardInput?.value || ""}`, "Connect workflow card (optional)");
 
     const stepIdx = {
-      open: 1,
-      reserved: 1,
-      drafting: 2,
-      review: 3,
-      scheduled: 4,
-      sent: 5,
-      cancelled: 0,
+      open: 1, reserved: 1, draft: 2, drafting: 2, review: 3, scheduled: 4, sent: 5, cancelled: 0,
     }[statusVal] || 1;
 
     dialog.querySelectorAll(".stepper-step").forEach((stepEl) => {
       const num = Number(stepEl.dataset.step);
-      stepEl.classList.remove("is-active", "is-done");
-      if (num < stepIdx) stepEl.classList.add("is-done");
-      else if (num === stepIdx) stepEl.classList.add("is-active");
+      stepEl.classList.toggle("is-done", num < stepIdx);
+      stepEl.classList.toggle("is-active", num === stepIdx);
     });
+
+    // Update status banner
+    const bannerEl = dialog.querySelector("[data-status-banner]");
+    const bannerBadge = dialog.querySelector("[data-status-banner-badge]");
+    const bannerText = dialog.querySelector("[data-status-banner-text]");
+    if (bannerEl && bannerBadge && bannerText) {
+      bannerEl.className = "newsletter-status-banner";
+      if (statusVal === "drafting" || statusVal === "draft") {
+        bannerEl.classList.add("is-draft");
+        bannerBadge.textContent = "Draft";
+        bannerText.textContent = "Content drafting is in progress. Edits can be made in Compose.";
+      } else if (statusVal === "review") {
+        bannerEl.classList.add("is-review");
+        bannerBadge.textContent = "In Review";
+        bannerText.textContent = "Editorial review underway. Check readiness before scheduling.";
+      } else if (statusVal === "scheduled") {
+        bannerEl.classList.add("is-scheduled");
+        bannerBadge.textContent = "Scheduled";
+        bannerText.textContent =
+          `Scheduled for automated dispatch on ${formatShortPlanningDate(dateVal)} at ${timeVal} (Europe/Berlin).`;
+      } else if (statusVal === "sent") {
+        bannerEl.classList.add("is-sent");
+        bannerBadge.textContent = "Sent";
+        bannerText.textContent = "Issue published and marked sent. Publication archived.";
+      } else {
+        bannerEl.classList.add("is-open");
+        bannerBadge.textContent = isReserved ? "Reserved" : "Slot Planned";
+        bannerText.textContent = isReserved
+          ? "Slot reserved for sponsor booking."
+          : "Editorial campaign slot planned.";
+      }
+    }
+
+    // Update action buttons and confirmation card visibility
+    const startDraftBtn = dialog.querySelector('[data-action="start-draft"]');
+    const submitReviewBtn = dialog.querySelector('[data-action="submit-review"]');
+    const promptScheduleBtn = dialog.querySelector('[data-action="prompt-schedule"]');
+    const promptSendBtn = dialog.querySelector('[data-action="prompt-send"]');
+    const returnDraftBtn = dialog.querySelector('[data-action="return-draft"]');
+    const actionBar = dialog.querySelector("[data-action-bar]");
+    const confirmCard = dialog.querySelector("[data-confirm-card]");
+
+    if (confirmCard) {
+      confirmCard.hidden = !pendingConfirmation;
+      if (pendingConfirmation) {
+        if (confirmCard.removeAttribute) confirmCard.removeAttribute("hidden");
+      } else {
+        if (confirmCard.setAttribute) confirmCard.setAttribute("hidden", "");
+      }
+      if (actionBar) {
+        actionBar.hidden = Boolean(pendingConfirmation);
+        if (pendingConfirmation) {
+          if (actionBar.setAttribute) actionBar.setAttribute("hidden", "");
+        } else {
+          if (actionBar.removeAttribute) actionBar.removeAttribute("hidden");
+        }
+      }
+    }
+
+    const setVisible = (el, show) => {
+      if (!el) return;
+      el.hidden = !show;
+      if (show) {
+        if (el.removeAttribute) el.removeAttribute("hidden");
+      } else {
+        if (el.setAttribute) el.setAttribute("hidden", "");
+      }
+      if (el.style) el.style.display = show ? "" : "none";
+    };
+
+    const actionMap = {
+      open: [true, false, false, false, false],
+      reserved: [true, false, false, false, false],
+      draft: [false, true, true, false, false],
+      drafting: [false, true, true, false, false],
+      review: [false, false, true, true, true],
+      scheduled: [false, false, false, true, true],
+      sent: [false, false, false, false, false],
+    };
+    const [canDraft, canReview, canSchedule, canSend, canReturn] =
+      actionMap[statusVal] || actionMap.open;
+
+    setVisible(startDraftBtn, canDraft);
+    setVisible(submitReviewBtn, canReview);
+    setVisible(promptScheduleBtn, canSchedule);
+    setVisible(promptSendBtn, canSend);
+    setVisible(returnDraftBtn, canReturn);
+    if (returnDraftBtn && canReturn) {
+      returnDraftBtn.textContent = statusVal === "scheduled"
+        ? "Unschedule (Return to Draft)"
+        : "Return to Draft";
+    }
   }
 
   function switchDialogTab(tabName) {
@@ -523,6 +664,7 @@ export function setupNewsletterDialog(options) {
 
   function openIssueDialog(item, initialTab = "details") {
     currentEditingItem = item || null;
+    pendingConfirmation = null;
     form.reset();
     form.querySelector('[role="alert"]').textContent = "";
 
@@ -531,6 +673,14 @@ export function setupNewsletterDialog(options) {
         if (form.elements[key]) form.elements[key].value = item[key] || "";
       }
     }
+
+    if (form.elements.publicationTime) {
+      form.elements.publicationTime.value = item?.publicationTime || "14:00";
+    }
+    const schedDate = dialog.querySelector('[name="schedulePublicationDate"]');
+    const schedTime = dialog.querySelector('[name="schedulePublicationTime"]');
+    if (schedDate) schedDate.value = item?.publicationDate || "";
+    if (schedTime) schedTime.value = item?.publicationTime || "14:00";
 
     const draftKey = item ? `dataops-newsletter-draft-${item.id}` : null;
     const storedDraft = (draftKey && typeof localStorage !== "undefined")
@@ -602,6 +752,115 @@ export function setupNewsletterDialog(options) {
     };
   });
 
+  // Schedule timing inputs change sync
+  const schedDateInput = dialog.querySelector('[name="schedulePublicationDate"]');
+  const schedTimeInput = dialog.querySelector('[name="schedulePublicationTime"]');
+  if (schedDateInput) {
+    schedDateInput.oninput = () => {
+      if (form.elements.publicationDate) form.elements.publicationDate.value = schedDateInput.value;
+      updateSchedulePane();
+      updatePreviewPane();
+    };
+  }
+  if (schedTimeInput) {
+    schedTimeInput.oninput = () => {
+      if (form.elements.publicationTime) form.elements.publicationTime.value = schedTimeInput.value;
+      updateSchedulePane();
+      updatePreviewPane();
+    };
+  }
+
+  // Action button clicks
+  dialog.querySelectorAll("[data-action]").forEach((btn) => {
+    btn.onclick = () => {
+      const action = btn.dataset.action;
+      const statusSelect = form.elements.status;
+      const dateInput = form.elements.publicationDate;
+      const timeInput = form.elements.publicationTime || dialog.querySelector('[name="publicationTime"]');
+      const subjectInput = form.elements.issueSubject || dialog.querySelector('[name="issueSubject"]');
+      const labelInput = form.elements.campaignLabel || dialog.querySelector('[name="campaignLabel"]');
+      const subjectText = (subjectInput?.value || labelInput?.value || "").trim();
+      const hasDate = Boolean(dateInput?.value || schedDateInput?.value);
+      const hasSubject = Boolean(subjectText);
+      const hasContent = (currentBlocks || []).some((b) => b.raw && b.raw.trim().length > 0);
+      const timeVal = (timeInput?.value || schedTimeInput?.value || "14:00").trim();
+      const alertEl = form.querySelector('[role="alert"]');
+
+      if (action === "start-draft") {
+        if (statusSelect) statusSelect.value = "draft";
+        updateSchedulePane();
+      } else if (action === "submit-review") {
+        if (statusSelect) statusSelect.value = "review";
+        updateSchedulePane();
+      } else if (action === "return-draft") {
+        if (statusSelect) statusSelect.value = "draft";
+        updateSchedulePane();
+      } else if (action === "prompt-schedule") {
+        if (!hasDate || !hasSubject || !hasContent) {
+          if (alertEl) {
+            alertEl.textContent = "Cannot schedule: Publication date, subject line, and draft content are required.";
+          }
+          return;
+        }
+        if (alertEl) alertEl.textContent = "";
+        pendingConfirmation = "schedule";
+        const titleEl = dialog.querySelector("[data-confirm-title]");
+        const msgEl = dialog.querySelector("[data-confirm-message]");
+        const schedDateVal = dateInput?.value || schedDateInput?.value;
+        const schedTimeDisplay = `${formatShortPlanningDate(schedDateVal)} at ${escapeHtml(timeVal)} Europe/Berlin`;
+        if (msgEl) {
+          msgEl.innerHTML =
+            `Schedule <strong>${escapeHtml(subjectText)}</strong> for automated dispatch on ` +
+            `<strong>${schedTimeDisplay}</strong>?<br>` +
+            `<small style="color: var(--dk-text-muted);">` +
+            `Content is reviewed and locked for publication. Real emails are never sent in this environment.` +
+            `</small>`;
+        }
+        updateSchedulePane();
+      } else if (action === "prompt-send") {
+        if (alertEl) alertEl.textContent = "";
+        pendingConfirmation = "send";
+        const titleEl = dialog.querySelector("[data-confirm-title]");
+        const msgEl = dialog.querySelector("[data-confirm-message]");
+        if (titleEl) titleEl.textContent = "Confirm Mark as Sent";
+        if (msgEl) {
+          msgEl.innerHTML =
+            `Mark <strong>${escapeHtml(subjectText)}</strong> as sent? ` +
+            `This marks publication as complete and moves the issue to Sent & Archive.`;
+        }
+        updateSchedulePane();
+      }
+    };
+  });
+
+  const confirmProceedBtn = dialog.querySelector("[data-confirm-proceed]");
+  if (confirmProceedBtn) {
+    confirmProceedBtn.onclick = () => {
+      const statusSelect = form.elements.status;
+      if (pendingConfirmation === "schedule") {
+        if (statusSelect) statusSelect.value = "scheduled";
+        if (form.elements.publicationTime && schedTimeInput?.value) {
+          form.elements.publicationTime.value = schedTimeInput.value;
+        }
+        if (form.elements.publicationDate && schedDateInput?.value) {
+          form.elements.publicationDate.value = schedDateInput.value;
+        }
+      } else if (pendingConfirmation === "send") {
+        if (statusSelect) statusSelect.value = "sent";
+      }
+      pendingConfirmation = null;
+      updateSchedulePane();
+    };
+  }
+
+  const confirmCancelBtn = dialog.querySelector("[data-confirm-cancel]");
+  if (confirmCancelBtn) {
+    confirmCancelBtn.onclick = () => {
+      pendingConfirmation = null;
+      updateSchedulePane();
+    };
+  }
+
   dialog.querySelectorAll("[data-set-status]").forEach((btn) => {
     btn.onclick = () => {
       const nextStatus = btn.dataset.setStatus;
@@ -635,7 +894,12 @@ export function setupNewsletterDialog(options) {
       form.querySelector('[role="alert"]').textContent = "";
       const value = Object.fromEntries(
         [...new FormData(form)].filter(
-          ([k, v]) => v !== "" && k !== "issueSubject" && k !== "issuePreheader",
+          ([k, v]) =>
+            v !== "" &&
+            k !== "issueSubject" &&
+            k !== "issuePreheader" &&
+            k !== "schedulePublicationDate" &&
+            k !== "schedulePublicationTime",
         ),
       );
       const id = value.id;

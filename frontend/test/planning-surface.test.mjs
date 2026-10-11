@@ -37,6 +37,7 @@ class TestElement {
     this.disabled = false;
     this.hidden = false;
     this.innerHTML = "";
+    this.style = {};
     this.listeners = new Map();
     this.open = false;
     this.queries = new Map();
@@ -110,6 +111,10 @@ class TestElement {
     this.attributes.set(name, String(value));
   }
 
+  removeAttribute(name) {
+    this.attributes.delete(name);
+  }
+
   setQuery(selector, value) {
     this.queries.set(selector, value);
     return value;
@@ -127,7 +132,13 @@ class TestElement {
 
 class TestFormData {
   constructor(form) {
-    this.entries = form.formEntries || [];
+    if (form.formEntries && form.formEntries.length > 0) {
+      this.entries = form.formEntries;
+    } else {
+      this.entries = (form.elements || [])
+        .filter((field) => field.name && field.value !== undefined)
+        .map((field) => [field.name, field.value]);
+    }
   }
 
   [Symbol.iterator]() {
@@ -243,6 +254,60 @@ function createNewsletterDom() {
   const dialog = surface.setQuery("dialog", new TestElement("dialog"));
   const form = dialog.setQuery("form", new TestElement("form"));
   form.setQuery('[role="alert"]', new TestElement("p"));
+
+  const dialogTabs = ["details", "compose", "preview", "schedule"].map((tabName) => {
+    const btn = new TestElement("button");
+    btn.dataset.dialogTab = tabName;
+    return btn;
+  });
+  dialog.setQueryAll("[data-dialog-tab]", dialogTabs);
+
+  const dialogPanes = ["details", "compose", "preview", "schedule"].map((paneName) => {
+    const pane = new TestElement("div");
+    pane.dataset.pane = paneName;
+    return pane;
+  });
+  dialog.setQueryAll("[data-pane]", dialogPanes);
+
+  const actions = ["start-draft", "submit-review", "prompt-schedule", "prompt-send", "return-draft"].map((act) => {
+    const btn = new TestElement("button");
+    btn.dataset.action = act;
+    dialog.setQuery(`[data-action="${act}"]`, btn);
+    return btn;
+  });
+  dialog.setQueryAll("[data-action]", actions);
+
+  const confirmCard = dialog.setQuery("[data-confirm-card]", new TestElement("div"));
+  confirmCard.hidden = true;
+  dialog.setQuery("[data-confirm-proceed]", new TestElement("button"));
+  dialog.setQuery("[data-confirm-cancel]", new TestElement("button"));
+  dialog.setQuery("[data-confirm-title]", new TestElement("h4"));
+  dialog.setQuery("[data-confirm-message]", new TestElement("p"));
+  dialog.setQuery("[data-status-banner]", new TestElement("div"));
+  dialog.setQuery("[data-status-banner-badge]", new TestElement("span"));
+  dialog.setQuery("[data-status-banner-text]", new TestElement("span"));
+  dialog.setQuery("[data-action-bar]", new TestElement("div"));
+
+  dialog.setQuery('[name="schedulePublicationDate"]', new TestElement("input"));
+  dialog.setQuery('[name="schedulePublicationTime"]', new TestElement("input"));
+
+  const stepperSteps = [1, 2, 3, 4, 5].map((step) => {
+    const el = new TestElement("div");
+    el.dataset.step = String(step);
+    return el;
+  });
+  dialog.setQueryAll(".stepper-step", stepperSteps);
+
+  const checkDate = dialog.setQuery("[data-check-date]", new TestElement("div"));
+  const checkTime = dialog.setQuery("[data-check-time]", new TestElement("div"));
+  const checkSubject = dialog.setQuery("[data-check-subject]", new TestElement("div"));
+  const checkContent = dialog.setQuery("[data-check-content]", new TestElement("div"));
+  const checkSponsor = dialog.setQuery("[data-check-sponsor]", new TestElement("div"));
+  const checkCard = dialog.setQuery("[data-check-card]", new TestElement("div"));
+  for (const c of [checkDate, checkTime, checkSubject, checkContent, checkSponsor, checkCard]) {
+    c.setQuery(".check-icon", new TestElement("span"));
+    c.setQuery("span:last-child", new TestElement("span"));
+  }
   const from = surface.setQuery("[data-from]", new TestElement("input"));
   const to = surface.setQuery("[data-to]", new TestElement("input"));
   const view = surface.setQuery("[data-view]", new TestElement("select"));
@@ -1096,6 +1161,115 @@ describe("Planning surface production behavior", () => {
     assert.equal(dom.dialog.querySelector("[data-preview-subject]").textContent, "Deep Learning Trends");
     assert.equal(dom.dialog.querySelector("[data-preview-preheader]").textContent, "Insights for engineers");
     assert.match(dom.dialog.querySelector("[data-sim-sponsor]").innerHTML, /Weights &amp; Biases/);
+  });
+
+  test("supports explicit scheduling and sending flow with confirmations and status transitions", async () => {
+    const dom = createNewsletterDom();
+    let slotData = {
+      id: "slot-sched",
+      publicationDate: "2026-08-25",
+      publicationTime: "14:00",
+      campaignNumber: 16,
+      campaignLabel: "Issue 16 Scheduling Test",
+      status: "draft",
+      bookedByDisplayName: "Alexey",
+      planningNote: "# Subject: Scheduled Issue\n> Preheader: Delivery test\n\nIssue 16 content ready for dispatch.",
+    };
+    let lastPutPayload = null;
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      request: async (url, options) => {
+        if (options?.method === "PUT") {
+          lastPutPayload = JSON.parse(options.body);
+          slotData = { ...slotData, ...lastPutPayload };
+          return slotData;
+        }
+        return { alerts: [], items: [slotData] };
+      },
+    });
+    await harness.surface.renderNewsletterSurface();
+
+    // Schedule quick action on card opens dialog in schedule tab
+    dom.slots.onclick({
+      target: {
+        closest: (selector) => (selector === "[data-schedule]" ? { dataset: { schedule: "slot-sched" } } : null),
+      },
+    });
+    assert.equal(dom.dialog.open, true);
+    assert.equal(dom.dialog.querySelector("[data-dialog-title]").textContent, "Schedule & Checklist");
+
+    // Status banner shows Draft
+    assert.equal(dom.dialog.querySelector("[data-status-banner-badge]").textContent, "Draft");
+
+    // Submit for Review transition
+    const submitReviewBtn = dom.dialog.querySelector('[data-action="submit-review"]');
+    assert.ok(submitReviewBtn);
+    submitReviewBtn.onclick();
+    assert.equal(dom.dialog.querySelector("[data-status-banner-badge]").textContent, "In Review");
+
+    // Ready to schedule: prompt confirmation
+    const promptScheduleBtn = dom.dialog.querySelector('[data-action="prompt-schedule"]');
+    assert.ok(promptScheduleBtn);
+    promptScheduleBtn.onclick();
+
+    const confirmCard = dom.dialog.querySelector("[data-confirm-card]");
+    assert.equal(confirmCard.hidden, false);
+    assert.match(dom.dialog.querySelector("[data-confirm-message]").innerHTML, /automated dispatch/);
+
+    // Cancel confirmation hides the card
+    const cancelConfirmBtn = dom.dialog.querySelector("[data-confirm-cancel]");
+    cancelConfirmBtn.onclick();
+    assert.equal(confirmCard.hidden, true);
+
+    // Prompt schedule again and confirm
+    promptScheduleBtn.onclick();
+    const proceedConfirmBtn = dom.dialog.querySelector("[data-confirm-proceed]");
+    proceedConfirmBtn.onclick();
+    assert.equal(dom.dialog.querySelector("[data-status-banner-badge]").textContent, "Scheduled");
+
+    // Save scheduled slot
+    await dom.surface.querySelector("[data-save]").onclick({ preventDefault() {} });
+    assert.equal(lastPutPayload.status, "scheduled");
+
+    // Reopen dialog for scheduled slot and test unschedule back to draft
+    dom.slots.onclick({
+      target: {
+        closest: (selector) => (selector === "[data-schedule]" ? { dataset: { schedule: "slot-sched" } } : null),
+      },
+    });
+    const returnDraftBtn = dom.dialog.querySelector('[data-action="return-draft"]');
+    assert.ok(returnDraftBtn);
+    assert.equal(returnDraftBtn.textContent.trim(), "Unschedule (Return to Draft)");
+    returnDraftBtn.onclick();
+    assert.equal(dom.dialog.querySelector("[data-status-banner-badge]").textContent, "Draft");
+
+    // Save slot back to draft
+    await dom.surface.querySelector("[data-save]").onclick({ preventDefault() {} });
+    assert.equal(lastPutPayload.status, "draft");
+
+    // Reopen, move to review, schedule, and mark as sent
+    dom.slots.onclick({
+      target: {
+        closest: (selector) => (selector === "[data-schedule]" ? { dataset: { schedule: "slot-sched" } } : null),
+      },
+    });
+    dom.dialog.querySelector('[data-action="submit-review"]').onclick();
+    dom.dialog.querySelector('[data-action="prompt-schedule"]').onclick();
+    dom.dialog.querySelector("[data-confirm-proceed]").onclick();
+    assert.equal(dom.dialog.querySelector("[data-status-banner-badge]").textContent, "Scheduled");
+
+    const promptSendBtn = dom.dialog.querySelector('[data-action="prompt-send"]');
+    assert.ok(promptSendBtn);
+    promptSendBtn.onclick();
+    assert.equal(confirmCard.hidden, false);
+    assert.match(dom.dialog.querySelector("[data-confirm-message]").innerHTML, /mark.*as sent/i);
+
+    dom.dialog.querySelector("[data-confirm-proceed]").onclick();
+    assert.equal(dom.dialog.querySelector("[data-status-banner-badge]").textContent, "Sent");
+
+    // Save slot marked sent
+    await dom.surface.querySelector("[data-save]").onclick({ preventDefault() {} });
+    assert.equal(lastPutPayload.status, "sent");
   });
 });
 

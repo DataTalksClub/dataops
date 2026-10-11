@@ -1561,4 +1561,146 @@ a.calendar-day-timeline-title:hover {
   font-size: 12px;
 }
 
+/* Newsletter status banner */
+.newsletter-status-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--dk-radius-md);
+  border: 1px solid var(--dk-border-default);
+  background: var(--dk-bg-muted);
+  font-size: 13px;
+}
+.newsletter-status-banner.is-draft {
+  border-color: var(--dk-border-strong);
+  background: var(--dk-bg-muted);
+}
+.newsletter-status-banner.is-review {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+}
+.newsletter-status-banner.is-scheduled {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #1e40af;
+}
+.newsletter-status-banner.is-sent {
+  border-color: #10b981;
+  background: #ecfdf5;
+  color: #065f46;
+}
+.status-banner-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--dk-radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--dk-border-default);
+  color: var(--dk-text-heading);
+}
+.newsletter-status-banner.is-review .status-banner-badge {
+  background: #fef3c7;
+  color: #92400e;
+}
+.newsletter-status-banner.is-scheduled .status-banner-badge {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.newsletter-status-banner.is-sent .status-banner-badge {
+  background: #d1fae5;
+  color: #065f46;
+}
+.status-banner-text {
+  font-weight: 500;
+}
+
+/* Schedule & Timing */
+.newsletter-schedule-timing {
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.newsletter-schedule-timing h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--dk-text-heading);
+}
+.newsletter-schedule-explainer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dk-text-muted);
+  line-height: 1.5;
+  padding: 10px 12px;
+  background: var(--dk-bg-muted);
+  border-radius: var(--dk-radius-sm);
+  border: 1px solid var(--dk-border-default);
+}
+.newsletter-schedule-explainer p {
+  margin: 0;
+}
+.newsletter-schedule-explainer strong {
+  color: var(--dk-text-heading);
+}
+
+/* Confirmation card */
+.newsletter-confirm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--dk-radius-md);
+  border: 1px solid var(--dk-border-strong);
+  background: var(--dk-bg-muted);
+}
+.newsletter-confirm-card[hidden] {
+  display: none !important;
+}
+.newsletter-confirm-card h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--dk-text-heading);
+  margin: 0;
+}
+.newsletter-confirm-card p {
+  font-size: 13px;
+  color: var(--dk-text-primary);
+  margin: 0;
+  line-height: 1.4;
+}
+.newsletter-confirm-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .newsletter-status-banner.is-review {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fcd34d;
+    border-color: rgba(245, 158, 11, 0.4);
+  }
+  .newsletter-status-banner.is-scheduled {
+    background: rgba(59, 130, 246, 0.15);
+    color: #93c5fd;
+    border-color: rgba(59, 130, 246, 0.4);
+  }
+  .newsletter-status-banner.is-sent {
+    background: rgba(16, 185, 129, 0.15);
+    color: #6ee7b7;
+    border-color: rgba(16, 185, 129, 0.4);
+  }
+}
+
 

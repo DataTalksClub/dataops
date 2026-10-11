@@ -339,6 +339,7 @@ export function createNewsletterPlanner(context) {
             ${campaignLink}
             <button type="button" class="quiet-button" data-compose="${escapeHtml(item.id)}">Compose</button>
             <button type="button" class="quiet-button" data-preview="${escapeHtml(item.id)}">Preview</button>
+            <button type="button" class="quiet-button" data-schedule="${escapeHtml(item.id)}">Schedule</button>
             <button data-edit="${escapeHtml(item.id)}">Edit</button>
           </div>
         </article>
@@ -487,15 +488,18 @@ export function createNewsletterPlanner(context) {
       const editBtn = target.closest("[data-edit]");
       const composeBtn = target.closest("[data-compose]");
       const previewBtn = target.closest("[data-preview]");
-      const slotId = (editBtn || composeBtn || previewBtn)?.dataset.edit
+      const scheduleBtn = target.closest("[data-schedule]");
+      const slotId = (editBtn || composeBtn || previewBtn || scheduleBtn)?.dataset.edit
         || composeBtn?.dataset.compose
-        || previewBtn?.dataset.preview;
+        || previewBtn?.dataset.preview
+        || scheduleBtn?.dataset.schedule;
       if (!slotId) return;
       const item = items.find((value) => value.id === slotId);
       if (!item) return;
 
       if (composeBtn) openIssueDialog(item, "compose");
       else if (previewBtn) openIssueDialog(item, "preview");
+      else if (scheduleBtn) openIssueDialog(item, "schedule");
       else openIssueDialog(item, "details");
     };
     await load();
