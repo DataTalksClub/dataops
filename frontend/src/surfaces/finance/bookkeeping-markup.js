@@ -18,26 +18,34 @@ export function bookkeepingSurfaceMarkup() {
         data-monthlens
       >
         <div class="bookkeeping-lens-nav">
-          <button
-            class="bookkeeping-lens-step"
-            type="button"
-            data-lens-prev
-            aria-label="Previous month"
-          >
-            ‹
-          </button>
-          <label class="bookkeeping-lens-month"
-            ><span class="bookkeeping-lens-month-label">Month</span>
-            <input type="month" data-lens-month aria-label="Month"
-          /></label>
-          <button
-            class="bookkeeping-lens-step"
-            type="button"
-            data-lens-next
-            aria-label="Next month"
-          >
-            ›
-          </button>
+          <div class="bookkeeping-lens-steppers">
+            <button
+              class="bookkeeping-lens-step"
+              type="button"
+              data-lens-prev
+              aria-label="Previous month"
+            >
+              ‹
+            </button>
+            <button
+              class="bookkeeping-lens-step"
+              type="button"
+              data-lens-next
+              aria-label="Next month"
+            >
+              ›
+            </button>
+          </div>
+          <div class="bookkeeping-lens-selectors">
+            <label class="bookkeeping-lens-field"
+              ><span class="lens-label">Year</span>
+              <select data-lens-year aria-label="Select year"></select
+            ></label>
+            <label class="bookkeeping-lens-field"
+              ><span class="lens-label">Month</span>
+              <select data-lens-month-select aria-label="Select month"></select
+            ></label>
+          </div>
           <button class="quiet-button" type="button" data-lens-toggle>
             All months
           </button>
@@ -79,11 +87,39 @@ export function bookkeepingSurfaceMarkup() {
               Record and review the ledger
             </h3>
             <p>
-              Transactions for the selected month. Open an entry only when it
+              Transactions for the selected period. Open an entry only when it
               needs work.
             </p>
           </div>
-          <p class="bookkeeping-totals" aria-live="polite"></p>
+          <div class="bookkeeping-ledger-header-actions">
+            <p class="bookkeeping-totals" aria-live="polite"></p>
+            <div class="bookkeeping-export-actions">
+              <button
+                class="quiet-button bookkeeping-export-btn"
+                type="button"
+                data-export-report-csv
+                title="Export accountant report CSV (with signed EUR prices and report columns)"
+              >
+                Export report CSV
+              </button>
+              <button
+                class="quiet-button bookkeeping-export-btn"
+                type="button"
+                data-copy-report
+                title="Copy formatted report table to clipboard for email or spreadsheet"
+              >
+                Copy for report
+              </button>
+              <button
+                class="quiet-button bookkeeping-export-btn"
+                type="button"
+                data-export-full-csv
+                title="Export full raw ledger CSV"
+              >
+                Full CSV
+              </button>
+            </div>
+          </div>
         </header>
         <div class="bookkeeping-filters">
           <label

@@ -6,6 +6,13 @@ import { ledgerTableMarkup, transactionOptionsMarkup, worklistMarkup } from "../
 
 import { createFinanceSurface } from "../src/surfaces/finance/index.js";
 import { createSponsorFinance } from "../src/surfaces/finance/sponsor-finance.js";
+import {
+  copyToClipboard,
+  formatFullCsv,
+  formatReportCsv,
+  formatReportTsv,
+  yearsOf,
+} from "../src/surfaces/finance/bookkeeping-format.js";
 
 const originalGlobals = {
   document: globalThis.document,
@@ -219,6 +226,7 @@ class FakeDocument {
     this.created = [];
     this.setupSurface = setupSurface;
     this.surface = null;
+    this.body = new FakeElement("body");
   }
 
   createElement(tagName) {
@@ -1728,6 +1736,103 @@ describe("Finance surface boundary", () => {
       surface.querySelector(".bookkeeping-ledger").innerHTML,
       /Hosting GmbH/,
     );
+
+    // Year/month selector navigation
+    const yearSelect = surface.querySelector("[data-lens-year]");
+    const monthSelect = surface.querySelector("[data-lens-month-select]");
+    assert.ok(yearSelect);
+    assert.ok(monthSelect);
+    yearSelect.value = "2026";
+    monthSelect.value = "all";
+    await yearSelect.dispatch("change");
+    assert.match(
+      surface.querySelector("[data-close-state]").innerHTML,
+      /2026 close/,
+    );
+    assert.equal(surface.querySelector("[data-worklist-section]").hidden, false);
+
+    // Export actions update status feedback
+    await surface.querySelector("[data-export-report-csv]").dispatch("click");
+    assert.match(
+      surface.querySelector("[data-bookkeeping-status]").textContent,
+      /Exported report CSV \(datatalksclub-2026\.csv\)/,
+    );
+
+    await surface.querySelector("[data-export-full-csv]").dispatch("click");
+    assert.match(
+      surface.querySelector("[data-bookkeeping-status]").textContent,
+      /Exported full CSV \(datatalksclub-2026-full\.csv\)/,
+    );
+
+    document.execCommand = () => true;
+    await surface.querySelector("[data-copy-report]").dispatch("click");
+    assert.match(
+      surface.querySelector("[data-bookkeeping-status]").textContent,
+      /Copied report table for 2026/,
+    );
+
+    // Formatter unit tests: signed EUR prices and tax exclusion
+    const sampleEntries = [
+      {
+        transactionDate: "2026-09-01",
+        paidDate: "2026-09-02",
+        counterparty: "Client Inc",
+        description: "Consulting",
+        amount: "500.00",
+        currency: "EUR",
+        entryType: "income",
+        category: "Services",
+        statementRef: "Finom 1",
+      },
+      {
+        transactionDate: "2026-09-05",
+        paidDate: "2026-09-06",
+        counterparty: "Hosting Corp",
+        description: "Server hosting",
+        amount: "100.00",
+        currency: "EUR",
+        entryType: "expense",
+        category: "Infrastructure",
+        statementRef: "Finom 2",
+      },
+      {
+        transactionDate: "2026-09-10",
+        paidDate: "2026-09-11",
+        counterparty: "Finanzamt",
+        description: "Tax prepayment",
+        amount: "300.00",
+        currency: "EUR",
+        entryType: "expense",
+        category: "Taxes",
+      },
+      {
+        transactionDate: "2026-09-12",
+        paidDate: "2026-09-13",
+        counterparty: "US Sponsor",
+        description: "Ad sponsorship",
+        amount: "1000.00",
+        currency: "USD",
+        amountEur: "920.00",
+        entryType: "income",
+        category: "Sponsorship",
+      },
+    ];
+
+    const reportCsv = formatReportCsv(sampleEntries);
+    assert.match(reportCsv, /"Date","Paid Date","Provider","Description","Price EUR","Price USD"/);
+    assert.match(reportCsv, /"2026-09-01","2026-09-02","Client Inc","Consulting","500\.00","","EUR"/);
+    assert.match(reportCsv, /"2026-09-05","2026-09-06","Hosting Corp","Server hosting","-100\.00","","EUR"/);
+    assert.match(reportCsv, /"2026-09-12","2026-09-13","US Sponsor","Ad sponsorship","920\.00","1000\.00","USD"/);
+    // Taxes excluded from accountant report CSV
+    assert.doesNotMatch(reportCsv, /Finanzamt/);
+
+    const fullCsv = formatFullCsv(sampleEntries);
+    assert.match(fullCsv, /Finanzamt/);
+
+    const reportTsv = formatReportTsv(sampleEntries);
+    assert.match(reportTsv, /Date\tPaid Date\tProvider\tDescription\tPrice EUR\tPrice USD/);
+    assert.match(reportTsv, /Client Inc\tConsulting\t500\.00/);
+    assert.doesNotMatch(reportTsv, /Finanzamt/);
   });
 });
 
@@ -1762,4 +1867,39 @@ test("ledger, VAT, conversions, and worklist format display without changing dec
   const worklist = worklistMarkup({ rows: [{ kind: "evidence", entry }], monthTitle: "October", e: String });
   assert.match(worklist, /\$4,800\.12/);
   assert.equal(JSON.stringify(entry), before);
+});
+
+
+test("report exports preserve decimal precision, quote cells, and require a real EUR conversion", () => {
+  const entries = [
+    { transactionDate: "2024-12-01", counterparty: 'Vendor, "quoted"', description: "First\nsecond", amount: "12.3456", currency: "USD", entryType: "expense", vatAmount: "0" },
+    { transactionDate: "2024-12-02", counterparty: "Converted", amount: "5.1234", currency: "GBP", amountEur: "0", entryType: "expense" },
+    { transactionDate: "2024-12-03", counterparty: "Tax", amount: "4", currency: "EUR", category: "Taxes", entryType: "expense" },
+  ];
+  const report = formatReportCsv(entries);
+  assert.match(report, /"Vendor, ""quoted""","First\nsecond","","-12\.3456","USD","0"/);
+  assert.match(report, /"Converted","","-0","","GBP"/);
+  assert.doesNotMatch(report, /"Tax"/);
+  assert.match(formatFullCsv(entries), /"Tax"/);
+  const tsv = formatReportTsv(entries);
+  assert.match(tsv, /Vendor, "quoted"\tFirst second\t\t-12\.3456/);
+  assert.equal(tsv.split("\n").length, 3);
+});
+
+test("clipboard fallback reports failure when no copy command is available", async () => {
+  globalThis.document = new FakeDocument();
+  assert.equal(await copyToClipboard("report"), false);
+});
+
+
+test("spreadsheet exports escape text formulas while retaining numeric expense signs and VAT currency", () => {
+  const entries = [{ transactionDate: "2024-12-01", counterparty: "=1+1", description: " @SUM(A1)", amount: "12.3400", currency: "EUR", entryType: "expense", vatAmount: "1.2500", vatCurrency: "USD", category: "+formula", statementRef: "-formula" }];
+  const csv = formatReportCsv(entries);
+  assert.match(csv, /"'=1\+1","' @SUM\(A1\)","-12\.3400"/);
+  assert.match(csv, /"1\.2500","USD","'\+formula","Expense","'-formula"/);
+  assert.match(formatFullCsv(entries), /"'=1\+1","' @SUM\(A1\)","12\.3400"/);
+  const tsv = formatReportTsv(entries);
+  assert.match(tsv, /VAT\tVAT Currency/);
+  assert.match(tsv, /'=1\+1\t' @SUM\(A1\)\t-12\.3400/);
+  assert.match(tsv, /1\.2500\tUSD\t'\+formula/);
 });

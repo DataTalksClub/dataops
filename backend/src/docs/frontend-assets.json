@@ -54,6 +54,7 @@
     "src/surfaces/document-editor/slash-menu.js",
     "src/surfaces/document-editor/structured-editor.js",
     "src/surfaces/finance/bookkeeping.js",
+    "src/surfaces/finance/bookkeeping-navigation.js",
     "src/surfaces/finance/bookkeeping-markup.js",
     "src/surfaces/finance/bookkeeping-views.js",
     "src/surfaces/finance/bookkeeping-format.js",

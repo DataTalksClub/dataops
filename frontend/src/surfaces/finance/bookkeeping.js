@@ -1,3 +1,4 @@
+import { mountBookkeepingNavigation } from "./bookkeeping-navigation.js";
 import { bookkeepingSurfaceMarkup } from "./bookkeeping-markup.js";
 import {
   accountOptionsMarkup,
@@ -22,13 +23,9 @@ import {
   MONEY_PATTERN,
   monthLabel,
   monthOf,
-  shiftMonth,
+  REPORT_EXEMPT_CATEGORIES,
+  yearsOf,
 } from "./bookkeeping-format.js";
-
-// Categories the backend keeps out of the monthly package (private-money
-// payments reported separately); mirrored so the package review can say what
-// will be excluded before anything is created.
-const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance"]);
 
 function focusFirstUsableControl(dialog) {
   const control = dialog.querySelector(
@@ -82,7 +79,6 @@ export function createBookkeepingSurface(context) {
       closeState = surface.querySelector("[data-close-state]"),
       worklist = surface.querySelector("[data-worklist]"),
       worklistSection = surface.querySelector("[data-worklist-section]"),
-      lensInput = surface.querySelector("[data-lens-month]"),
       entryDialog = surface.querySelector(".bookkeeping-entry-dialog"),
       eurDialog = surface.querySelector(".bookkeeping-eur-dialog"),
       form = entryDialog.querySelector("form"),
@@ -110,8 +106,12 @@ export function createBookkeepingSurface(context) {
       link.rel = "noopener";
       link.click();
     }
-    const lensEntries = () =>
-      lens === "all" ? entries : entries.filter((e) => monthOf(e) === lens);
+    const lensEntries = () => {
+      if (lens === "all") return entries;
+      if (/^\d{4}$/.test(lens))
+        return entries.filter((e) => monthOf(e).startsWith(lens));
+      return entries.filter((e) => monthOf(e) === lens);
+    };
     const hasEvidence = (id) =>
       links.some((l) => l.transactionId === id && l.coverageType === "evidence");
     const isExempt = (entry) =>
@@ -127,6 +127,7 @@ export function createBookkeepingSurface(context) {
       };
     }
     function monthReport() {
+      if (!/^\d{4}-\d{2}$/.test(lens)) return null;
       return reports.find(
         (r) =>
           r.month === lens && ["ready", "generated"].includes(String(r.status)),
@@ -134,10 +135,10 @@ export function createBookkeepingSurface(context) {
     }
     function setLens(month) {
       lens = month;
-      lensInput.value = month === "all" ? "" : month;
       renderAll();
     }
     function renderAll() {
+      navigation.refresh();
       renderCloseState();
       renderWorklist();
       renderLedger();
@@ -158,6 +159,9 @@ export function createBookkeepingSurface(context) {
         open.missingEvidence.length +
         open.conversions.length +
         open.unclassified.length;
+      const isYear = /^\d{4}$/.test(lens);
+      surface.querySelector("[data-lens-prev]").setAttribute("aria-label", isYear ? "Previous year" : "Previous month");
+      surface.querySelector("[data-lens-next]").setAttribute("aria-label", isYear ? "Next year" : "Next month");
       const report = monthReport();
       closeState.innerHTML = closeStateMonthMarkup({
         title: monthLabel(lens),
@@ -171,7 +175,9 @@ export function createBookkeepingSurface(context) {
             ? { kind: "worklist", count: openCount }
             : report
               ? { kind: "download" }
-              : { kind: "package" },
+              : isYear
+                ? { kind: "export" }
+                : { kind: "package" },
         e: escapeHtml,
       });
     }
@@ -353,8 +359,10 @@ export function createBookkeepingSurface(context) {
     function renderPackageReview() {
       const review = surface.querySelector("[data-package-review]");
       const reportInput = surface.querySelector("[data-report-month]");
-      reportInput.value = lens === "all" ? "" : lens;
-      if (lens === "all") {
+      const isMonth = /^\d{4}-\d{2}$/.test(lens);
+      reportInput.value = isMonth ? lens : "";
+      surface.querySelector("[data-report]").disabled = !isMonth;
+      if (!isMonth) {
         review.innerHTML = html`<div class="honest-state">
             <strong>Choose a month to review</strong>
             <p>
@@ -569,6 +577,10 @@ export function createBookkeepingSurface(context) {
         event.preventDefault();
         saveEurValue();
       });
+    const navigation = mountBookkeepingNavigation({
+      surface, closeState, status, setLens, lensEntries, todayIsoDate,
+      getEntries: () => entries, getLens: () => lens,
+    });
     try {
       const result = await api("/transactions");
       entries = result.items || [];
@@ -576,12 +588,7 @@ export function createBookkeepingSurface(context) {
         entries,
         String(todayIsoDate?.() || new Date().toISOString()).slice(0, 7),
       );
-      lensInput.value = lens;
-      const years = [
-        ...new Set(entries.map((e) => e.transactionDate.slice(0, 4))),
-      ]
-        .sort()
-        .reverse();
+      const years = yearsOf(entries, lens);
       const vatYears = surface.querySelector("[data-vat-year]");
       vatYears.insertAdjacentHTML(
         "beforeend",
@@ -603,32 +610,12 @@ export function createBookkeepingSurface(context) {
     surface
       .querySelector("[data-vat-year]")
       .addEventListener("change", renderVat);
-    const stepLens = (step) => {
-      if (lens !== "all") setLens(shiftMonth(lens, step));
-    };
-    surface.querySelector("[data-lens-prev]").addEventListener("click", () => stepLens(-1));
-    surface.querySelector("[data-lens-next]").addEventListener("click", () => stepLens(1));
-    lensInput.addEventListener("change", () => {
-      if (/^\d{4}-\d{2}$/.test(lensInput.value)) setLens(lensInput.value);
-    });
-    surface
-      .querySelector("[data-lens-toggle]")
-      .addEventListener("click", () => {
-        setLens(
-          lens === "all"
-            ? latestActivityMonth(
-                entries,
-                String(todayIsoDate?.() || new Date().toISOString()).slice(0, 7),
-              )
-            : "all",
-        );
-      });
     closeState.addEventListener("click", (event) => {
       if (event.target.closest("[data-cta-add]")) {
         form.reset();
         form.elements.currency.value = "EUR";
         form.elements.entryType.value = "expense";
-        form.elements.transactionDate.value = `${lens}-01`;
+        if (/^\d{4}-\d{2}$/.test(lens)) form.elements.transactionDate.value = `${lens}-01`;
         entryDialog.querySelector("h3").textContent = "Add ledger entry";
         openDialog(entryDialog);
       }
@@ -651,7 +638,7 @@ export function createBookkeepingSurface(context) {
         form.reset();
         form.elements.currency.value = "EUR";
         form.elements.entryType.value = "expense";
-        if (lens !== "all") form.elements.transactionDate.value = `${lens}-01`;
+        if (/^\d{4}-\d{2}$/.test(lens)) form.elements.transactionDate.value = `${lens}-01`;
         entryDialog.querySelector("h3").textContent = "Add ledger entry";
         openDialog(entryDialog);
       });
@@ -896,7 +883,7 @@ export function createBookkeepingSurface(context) {
               "private-account-statement",
             ].includes(documentType)
               ? surface.querySelector("[data-statement-month]").value ||
-                (lens !== "all" ? lens : undefined)
+                (/^\d{4}-\d{2}$/.test(lens) ? lens : undefined)
               : undefined,
           }),
         });
