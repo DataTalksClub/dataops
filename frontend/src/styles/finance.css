@@ -1,12 +1,19 @@
 body[data-workspace-view="sponsors"] .document-list {
   width: 100%;
   max-width: 1120px;
-}.bookkeeping-surface,
-.sponsor-crm-surface {
+}.bookkeeping-surface {
+  display: grid;
+  min-width: 0;
+  gap: 20px;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+}.sponsor-crm-surface {
   display: grid;
   min-width: 0;
   gap: 24px;
-}.bookkeeping-surface h2,
+}.bookkeeping-surface h1,
+.bookkeeping-surface h2,
 .bookkeeping-surface h3,
 .bookkeeping-surface p,
 .sponsor-crm-surface h2,
@@ -83,13 +90,14 @@ body[data-workspace-view="sponsors"] .document-list {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-}.bookkeeping-header h2,
+}.bookkeeping-header h1,
+.bookkeeping-header h2,
 .crm-header h2,
 .booking-detail-header h2 {
   margin-bottom: 4px;
   color: var(--dk-text-heading);
   font-size: var(--dk-text-page);
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.2;
 }.bookkeeping-header > div > p:last-child,
@@ -120,13 +128,18 @@ body[data-workspace-view="sponsors"] .document-list {
 .booking-detail-header > button {
   justify-self: start;
 }.surface-status {
-  margin: -12px 0 0;
-  border: 1px solid var(--dk-border-default);
+  margin: 0;
+  border: 1px solid var(--dk-accent-border);
   border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-muted);
-  padding: 8px 12px;
+  background: var(--dk-accent-soft);
+  color: var(--dk-text-primary);
+  padding: 10px 14px;
   font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.surface-status:empty {
+  display: none;
 }.section-header {
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
@@ -155,53 +168,91 @@ body[data-workspace-view="sponsors"] .document-list {
 }/* Month lens: the close-state header that replaced the decorative job nav.
    It answers "what is left for this month" above the fold (#242). */.bookkeeping-monthlens {
   display: grid;
-  gap: 14px;
+  gap: 16px;
   border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
+  border-radius: var(--dk-radius-lg);
   background: var(--dk-bg-surface);
-  padding: 14px 16px;
+  padding: 20px 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }.bookkeeping-lens-nav {
   display: flex;
   flex-wrap: wrap;
-  align-items: end;
+  align-items: center;
   gap: 8px;
 }.bookkeeping-lens-step {
-  min-width: 36px;
-}.bookkeeping-lens-month {
-  display: grid;
-  gap: 4px;
-  color: var(--dk-text-heading);
-  font-size: 12px;
+  min-width: 34px;
+  min-height: 34px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-primary);
+  font-size: 16px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 120ms ease;
+}.bookkeeping-lens-step:hover {
+  background: var(--dk-bg-hover);
+  border-color: var(--dk-border-control-hover);
+}.bookkeeping-lens-month {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dk-text-heading);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
 }.bookkeeping-lens-month input {
-  min-height: 36px;
+  min-height: 34px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-heading);
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}.bookkeeping-lens-month input:focus {
+  border-color: var(--dk-accent-default);
+  box-shadow: 0 0 0 2px var(--dk-focus-ring);
 }.bookkeeping-close-state {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }.bookkeeping-close-state h2 {
-  margin-bottom: 0;
+  margin: 0;
   color: var(--dk-text-heading);
   font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
 }.bookkeeping-lens-note {
   margin: 0;
   color: var(--dk-text-muted);
+  font-size: 14px;
+  line-height: 1.5;
 }.bookkeeping-counters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
 }.bookkeeping-counter {
   display: grid;
-  gap: 2px;
-  min-width: 120px;
+  gap: 4px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
   color: var(--dk-text-muted);
-  padding: 8px 12px;
+  padding: 12px 16px;
   font-size: 12px;
+  font-weight: 500;
+  transition: all 120ms ease;
 }.bookkeeping-counter strong {
   color: var(--dk-text-heading);
-  font-size: 18px;
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
 }.bookkeeping-counter.is-open {
   border-color: var(--dk-danger-border);
   background: var(--dk-danger-bg);
@@ -215,7 +266,15 @@ body[data-workspace-view="sponsors"] .document-list {
 }.bookkeeping-close-cta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
+  margin-top: 4px;
+}.bookkeeping-close-cta button {
+  min-height: 38px;
+  padding: 0 18px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--dk-radius-md);
+  cursor: pointer;
 }/* Needs-attention worklist: the monthly reconcile output as actions. */.bookkeeping-worklist {
   display: grid;
 }.worklist-row {
@@ -225,71 +284,198 @@ body[data-workspace-view="sponsors"] .document-list {
   justify-content: space-between;
   gap: 16px;
   border-bottom: 1px solid var(--dk-border-default);
-  padding: 12px 16px;
+  padding: 14px 20px;
+  background: var(--dk-bg-surface);
+  transition: background 120ms ease;
+  position: relative;
 }.worklist-row:last-child {
   border-bottom: 0;
-}.worklist-what {
+}.worklist-row:hover {
+  background: var(--dk-bg-hover);
+}.worklist-row.is-evidence {
+  border-left: 3px solid var(--dk-danger-text);
+}
+.worklist-row.is-evidence .worklist-what::before {
+  content: "Missing evidence";
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dk-danger-text);
+  margin-bottom: 2px;
+}
+.worklist-row.is-evidence button {
+  border-color: var(--dk-danger-border);
+  color: var(--dk-danger-text);
+  background: var(--dk-danger-bg);
+}
+.worklist-row.is-evidence button:hover {
+  border-color: var(--dk-danger-hover);
+  background: var(--dk-danger-text);
+  color: #ffffff;
+}
+.worklist-row.is-eur {
+  border-left: 3px solid var(--dk-warning-text);
+}
+.worklist-row.is-eur .worklist-what::before {
+  content: "EUR conversion needed";
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dk-warning-text);
+  margin-bottom: 2px;
+}
+.worklist-row.is-eur button {
+  border-color: var(--dk-warning-border);
+  color: var(--dk-warning-text);
+  background: var(--dk-warning-bg);
+}
+.worklist-row.is-eur button:hover {
+  background: var(--dk-warning-text);
+  color: #ffffff;
+}
+.worklist-row.is-classify {
+  border-left: 3px solid var(--dk-accent-default);
+}
+.worklist-row.is-classify .worklist-what::before {
+  content: "Classification needed";
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dk-accent-default);
+  margin-bottom: 2px;
+}
+.worklist-what {
   display: grid;
   min-width: 0;
-}.worklist-what small {
+  gap: 2px;
+}
+.worklist-what strong {
+  color: var(--dk-text-heading);
+  font-size: 14px;
+  font-weight: 600;
+}
+.worklist-what small {
   overflow: hidden;
   color: var(--dk-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
-}.worklist-classify {
+  font-size: 12px;
+}
+.worklist-row .row-actions button {
+  min-height: 32px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--dk-radius-md);
+  border: 1px solid var(--dk-border-default);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-primary);
+  transition: all 120ms ease;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.worklist-row .row-actions button:hover {
+  background: var(--dk-bg-hover);
+  border-color: var(--dk-border-control-hover);
+}
+.worklist-classify {
   display: flex;
   align-items: center;
   gap: 8px;
   color: var(--dk-text-heading);
   font-size: 12px;
   font-weight: 600;
-}.worklist-classify select {
-  min-height: 36px;
+  margin: 0;
+}
+.worklist-classify select {
+  min-height: 32px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-primary);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.worklist-classify select:focus {
+  border-color: var(--dk-accent-default);
+  box-shadow: 0 0 0 2px var(--dk-focus-ring);
+  outline: none;
 }.bookkeeping-worklist-done {
   margin: 0;
   border-bottom: 0;
   color: var(--dk-success-text);
-  padding: 14px 16px;
+  background: var(--dk-success-bg);
+  padding: 16px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }/* Evidence upload collapsed behind its summary; attach actions open it. */.bookkeeping-upload-panel {
   border-bottom: 1px solid var(--dk-border-default);
+  background: var(--dk-bg-surface);
 }.bookkeeping-upload-panel > summary {
-  padding: 12px 16px;
-}.bookkeeping-upload-panel[open] {
+  padding: 14px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dk-text-heading);
+  cursor: pointer;
+  background: var(--dk-bg-muted);
+  border-bottom: 1px solid transparent;
+}.bookkeeping-upload-panel[open] > summary {
   border-bottom: 1px solid var(--dk-border-default);
 }/* Evidence grouped by the month each document belongs to. */.bookkeeping-doc-group h4 {
   margin: 0;
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
   color: var(--dk-text-heading);
-  padding: 8px 16px;
-  font-size: 12px;
+  padding: 10px 20px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
 }/* Package review: what the archive will contain, before creating it. */.bookkeeping-package-review {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   border-bottom: 1px solid var(--dk-border-default);
-  padding: 16px;
+  padding: 20px;
 }.bookkeeping-package-review h4 {
   margin: 0;
   color: var(--dk-text-heading);
-  font-size: 15px;
+  font-size: 16px;
+  font-weight: 600;
 }.bookkeeping-preflight {
   display: grid;
-  gap: 6px;
+  gap: 8px;
+  padding: 14px 18px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-muted);
 }.preflight-row {
   margin: 0;
-  color: var(--dk-text-muted);
   font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }.preflight-row.is-ok {
   color: var(--dk-success-text);
 }.preflight-row.is-blocked {
   color: var(--dk-danger-text);
 }.preflight-note {
-  margin: 0;
+  margin: 6px 0 0;
   color: var(--dk-text-muted);
   font-size: 12px;
+  line-height: 1.45;
 }.bookkeeping-package-preview {
   margin: 0;
   color: var(--dk-text-muted);
@@ -298,33 +484,47 @@ body[data-workspace-view="sponsors"] .document-list {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
   border: 1px solid var(--dk-success-border);
   border-radius: var(--dk-radius-md);
   background: var(--dk-success-bg);
-  padding: 12px;
+  padding: 14px 18px;
 }.bookkeeping-package-ready p {
   margin: 0;
   color: var(--dk-success-text);
+  font-weight: 500;
+  font-size: 13px;
+}.bookkeeping-package-ready button {
+  min-height: 34px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--dk-radius-md);
 }.bookkeeping-package-ready small {
   color: var(--dk-text-muted);
+  font-size: 12px;
 }/* Converted non-EUR amounts show their defensible EUR value inline. */.ledger-eur {
   display: block;
   color: var(--dk-text-muted);
   font-weight: 400;
+  font-size: 11px;
+  margin-top: 2px;
 }/* hidden labels inside grids keep their grid display unless restated. */.bookkeeping-upload label[hidden],
 .dialog-fields label[hidden] {
   display: none;
 }/* Optional details live behind a disclosure inside the entry dialog. */.bookkeeping-entry-optional {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
-  padding: 8px 12px;
+  padding: 10px 14px;
+  background: var(--dk-bg-muted);
 }.bookkeeping-entry-optional > summary {
   color: var(--dk-text-heading);
   font-size: 13px;
   font-weight: 600;
+  cursor: pointer;
 }.bookkeeping-entry-optional .dialog-fields {
-  margin-top: 10px;
+  margin-top: 12px;
 }.bookkeeping-section,
 .crm-master,
 .crm-detail-pane,
@@ -337,11 +537,12 @@ body[data-workspace-view="sponsors"] .document-list {
   background: var(--dk-bg-surface);
 }.bookkeeping-filters {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) 150px auto;
+  grid-template-columns: minmax(260px, 1fr) 140px;
   align-items: end;
-  gap: 10px;
+  gap: 12px;
   border-bottom: 1px solid var(--dk-border-default);
-  padding: 12px 16px;
+  padding: 14px 20px;
+  background: var(--dk-bg-surface);
 }.bookkeeping-filters label,
 .bookkeeping-upload label,
 .bookkeeping-package label,
@@ -368,21 +569,46 @@ body[data-workspace-view="sponsors"] .document-list {
 .dialog-fields textarea {
   width: 100%;
   min-height: 36px;
+  border-radius: var(--dk-radius-md);
+  border: 1px solid var(--dk-border-default);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-primary);
   font-weight: 400;
+  font-size: 13px;
+  padding: 0 10px;
+  box-sizing: border-box;
+}.bookkeeping-filters input[data-filter="search"]:focus,
+.bookkeeping-upload input:focus,
+.bookkeeping-upload select:focus,
+.bookkeeping-package input:focus,
+.dialog-fields input:focus,
+.dialog-fields select:focus,
+.dialog-fields textarea:focus {
+  border-color: var(--dk-accent-default);
+  box-shadow: 0 0 0 2px var(--dk-focus-ring);
+  outline: none;
 }.bookkeeping-filters details {
   position: relative;
 }.bookkeeping-filters summary {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   min-height: 36px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
-  padding: 7px 10px;
+  padding: 0 14px;
   cursor: pointer;
+  font-size: 12px;
   font-weight: 600;
+  color: var(--dk-text-primary);
+  user-select: none;
   list-style-position: inside;
+  transition: all 120ms ease;
+}.bookkeeping-filters summary:hover {
+  background: var(--dk-bg-hover);
+  border-color: var(--dk-border-control-hover);
 }/* Disclosures use the family chevron, never the UA triangle or text glyphs:
    one stroke language for every disclosure in the app. */.bookkeeping-surface summary,
 .ops-quality-filters-disclosure > summary {
@@ -422,11 +648,12 @@ body[data-workspace-view="sponsors"] .document-list {
   display: grid;
   width: auto;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
+  gap: 12px;
   border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-lg);
-  background: var(--dk-bg-surface);
-  padding: 12px;
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-muted);
+  padding: 14px;
+  margin-top: 10px;
 }/* The all-months totals sentence is long: let it wrap on the right instead
    of squeezing the ledger heading into a sliver. */.bookkeeping-ledger-section .section-header > div {
   flex: 1 0 auto;
@@ -434,10 +661,18 @@ body[data-workspace-view="sponsors"] .document-list {
   flex: 0 1 auto;
   min-width: 0;
   margin: 0;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-full);
+  background: var(--dk-bg-surface);
   color: var(--dk-text-heading) !important;
-  font-size: 14px;
+  padding: 5px 14px;
+  font-size: 12px;
   font-weight: 600;
-  text-align: right;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  white-space: nowrap;
 }.bookkeeping-table-wrap {
   width: 100%;
   min-width: 0;
@@ -449,45 +684,61 @@ body[data-workspace-view="sponsors"] .document-list {
 }.bookkeeping-table-wrap th,
 .bookkeeping-table-wrap td {
   border-bottom: 1px solid var(--dk-border-default);
-  padding: 10px 12px;
+  padding: 12px 18px;
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
 }.bookkeeping-table-wrap th {
   background: var(--dk-bg-muted);
   color: var(--dk-text-muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   white-space: nowrap;
+}.bookkeeping-table-wrap tbody tr {
+  transition: background 120ms ease;
+}.bookkeeping-table-wrap tbody tr:hover td {
+  background: var(--dk-bg-hover);
 }.bookkeeping-table-wrap tbody tr:last-child td {
   border-bottom: 0;
-}.bookkeeping-table-wrap td strong,
-.bookkeeping-table-wrap td small {
+}.bookkeeping-table-wrap td strong {
   display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dk-text-heading);
 }.bookkeeping-table-wrap td small {
-  margin-top: 2px;
+  display: block;
+  font-size: 12px;
   color: var(--dk-text-muted);
+  margin-top: 2px;
 }.ledger-amount {
   color: var(--dk-text-heading);
   font-weight: 600;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}.ledger-amount.income {
+  color: var(--dk-success-text);
 }.evidence-state.is-attached {
-  border-color: var(--dk-success-border);
+  border: 1px solid var(--dk-success-border);
   background: var(--dk-success-bg);
   color: var(--dk-success-text);
 }/* The "Missing" evidence chip is a button; restate the chip skin above the
    generic bookkeeping button rule rather than relying on source order. */.bookkeeping-surface .bookkeeping-ledger button.evidence-state {
   min-height: 22px;
-  padding: 2px 8px;
-  border-color: var(--dk-danger-border);
+  padding: 2px 10px;
+  border: 1px solid var(--dk-danger-border);
   border-radius: var(--dk-radius-full);
-  background: var(--dk-bg-surface);
-  color: var(--dk-danger-text);
-  font-size: 12px;
-  cursor: pointer;
-}.bookkeeping-surface .bookkeeping-ledger button.evidence-state:hover {
-  border-color: var(--dk-danger-border);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 120ms ease;
+}.bookkeeping-surface .bookkeeping-ledger button.evidence-state:hover {
+  border-color: var(--dk-danger-hover);
+  background: var(--dk-danger-text);
+  color: #ffffff;
 }.dialog-fields .required-mark {
   color: var(--dk-danger-text);
   font-style: normal;
@@ -501,14 +752,15 @@ body[data-workspace-view="sponsors"] .document-list {
   margin: 0;
   color: var(--dk-text-muted);
   font-size: 12px;
-  padding: 0 18px 8px;
+  padding: 12px 20px 6px;
 }.bookkeeping-upload {
   display: grid;
   grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(140px, 0.8fr));
   align-items: end;
-  gap: 12px;
+  gap: 14px;
   border-bottom: 1px solid var(--dk-border-default);
-  padding: 16px;
+  padding: 20px;
+  background: var(--dk-bg-surface);
 }.bookkeeping-transaction-link {
   grid-column: span 2;
 }.bookkeeping-document-row,
@@ -525,13 +777,19 @@ body[data-workspace-view="sponsors"] .document-list {
   border-bottom: 1px solid var(--dk-border-default);
   border-radius: 0;
   background: var(--dk-bg-surface);
-  padding: 12px 16px;
+  padding: 12px 20px;
+  transition: background 120ms ease;
+}.bookkeeping-document-row:hover {
+  background: var(--dk-bg-hover);
 }.bookkeeping-document-row:last-child,
 .crm-directory-row:last-child,
 .crm-booking-row:last-child,
 .crm-alerts .crm-card:last-child,
 .booking-detail-section .crm-card:last-child {
   border-bottom: 0;
+}.bookkeeping-document-row strong {
+  font-size: 13px;
+  color: var(--dk-text-heading);
 }.bookkeeping-document-row p,
 .crm-directory-row p,
 .crm-booking-row p,
@@ -539,21 +797,28 @@ body[data-workspace-view="sponsors"] .document-list {
 .booking-detail-section .crm-card p {
   margin: 2px 0 0;
   color: var(--dk-text-muted);
-  font-size: 13px;
+  font-size: 12px;
+}.bookkeeping-document-row .row-actions button {
+  min-height: 30px;
+  padding: 2px 10px;
+  font-size: 12px;
+  border-radius: var(--dk-radius-md);
 }.bookkeeping-private-statements {
-  margin: 16px;
+  margin: 20px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
-  padding: 12px;
+  padding: 14px;
+  background: var(--dk-bg-muted);
 }.bookkeeping-private-statements legend {
   color: var(--dk-text-heading);
-  padding: 0 4px 6px;
+  padding: 0 6px;
   font-size: 13px;
   font-weight: 600;
 }.bookkeeping-private-statements [data-private-statements] {
   display: grid;
   gap: 8px;
   color: var(--dk-text-muted);
+  font-size: 13px;
 }.checkbox-label {
   display: flex !important;
   align-items: flex-start;
@@ -565,32 +830,40 @@ body[data-workspace-view="sponsors"] .document-list {
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 10px;
+  gap: 12px;
   border-top: 1px solid var(--dk-border-default);
-  padding: 16px;
+  padding: 20px;
+  background: var(--dk-bg-surface);
 }.bookkeeping-package label {
-  width: 220px;
+  width: 200px;
+}.bookkeeping-vat {
+  border-top: 1px solid var(--dk-border-default);
+  padding: 20px;
+  background: var(--dk-bg-surface);
 }.bookkeeping-vat .section-header {
   display: flex;
   flex-wrap: wrap;
-  align-items: end;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 10px 16px;
+  gap: 12px;
   border-bottom: 0;
   background: transparent;
+  padding: 0 0 14px;
 }.bookkeeping-vat h4 {
   color: var(--dk-text-heading);
   font-size: 15px;
-  margin-bottom: 2px;
+  font-weight: 600;
+  margin: 0 0 3px;
 }.bookkeeping-vat .section-header p {
-  max-width: 640px;
+  max-width: 600px;
   font-size: 13px;
   line-height: 1.45;
   color: var(--dk-text-muted);
+  margin: 0;
 }.bookkeeping-vat .section-header label {
-  width: 180px;
+  width: 160px;
 }.bookkeeping-vat-summary {
-  padding: 0 18px 16px;
+  padding: 0;
 }.crm-layout {
   display: grid;
   grid-template-columns: minmax(300px, 0.72fr) minmax(0, 1.55fr);
@@ -788,6 +1061,52 @@ body[data-workspace-view="sponsors"] .document-list {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }.span-all {
   grid-column: 1 / -1;
+}/* Bookkeeping dialog styles: entry, EUR conversion, and delete confirm */
+.bookkeeping-entry-dialog,
+.bookkeeping-eur-dialog,
+.bookkeeping-delete-dialog {
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-lg);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+.bookkeeping-entry-dialog form > header,
+.bookkeeping-eur-dialog form > header,
+.bookkeeping-delete-dialog form > header {
+  padding: 18px 22px;
+  background: var(--dk-bg-muted);
+}
+.bookkeeping-entry-dialog form > header h3,
+.bookkeeping-eur-dialog form > header h3,
+.bookkeeping-delete-dialog form > header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+.bookkeeping-entry-dialog .dialog-fields,
+.bookkeeping-eur-dialog .dialog-fields {
+  padding: 20px 22px;
+  gap: 14px;
+}
+.bookkeeping-entry-dialog [role="alert"]:not(:empty),
+.bookkeeping-eur-dialog [role="alert"]:not(:empty) {
+  padding: 10px 14px;
+  border: 1px solid var(--dk-danger-border);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-danger-bg);
+  color: var(--dk-danger-text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+.bookkeeping-entry-dialog form > footer,
+.bookkeeping-eur-dialog form > footer,
+.bookkeeping-delete-dialog form > footer {
+  padding: 14px 22px;
+  background: var(--dk-bg-muted);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
 }.finance-candidate {
   display: flex;
   align-items: flex-start;
