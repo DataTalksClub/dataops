@@ -28,13 +28,16 @@ export function createStructuredEditor(context, services, editorState) {
       hintClass,
       hintText,
       showHint = true,
+      onSlash,
+      onDeleteBlock,
+      onEnterNewBlock,
     },
   ) {
     el.tabIndex = 0;
     el.title = "Click to edit";
     el.classList.add("inline-editable");
     el.addEventListener("click", (event) => {
-      if (event.target.closest("a, button, img, .inline-editor")) return;
+      if (event.target.closest("a, button, img, .inline-editor, .notion-block-gutter")) return;
       if (el.classList.contains("editing")) return;
       enter();
     });
@@ -109,15 +112,35 @@ export function createStructuredEditor(context, services, editorState) {
         if (event.key === "Escape") {
           event.preventDefault();
           doCancel();
+        } else if (event.key === "/" && (editor.value === "" || editor.selectionStart === 0)) {
+          if (onSlash) {
+            event.preventDefault();
+            onSlash();
+          }
+        } else if (event.key === "Backspace" && editor.value === "") {
+          if (onDeleteBlock) {
+            event.preventDefault();
+            done = true;
+            onDeleteBlock();
+          }
         } else if (event.key === "Enter") {
           if (commitOnEnter && !event.shiftKey) {
             event.preventDefault();
             doCommit();
+            if (onEnterNewBlock) onEnterNewBlock();
             return;
           }
-          if (multiline && !(event.metaKey || event.ctrlKey)) return;
+          if (multiline && !(event.metaKey || event.ctrlKey)) {
+            if (event.shiftKey && onEnterNewBlock) {
+              event.preventDefault();
+              doCommit();
+              onEnterNewBlock();
+            }
+            return;
+          }
           event.preventDefault();
           doCommit();
+          if (onEnterNewBlock) onEnterNewBlock();
         }
       });
     }

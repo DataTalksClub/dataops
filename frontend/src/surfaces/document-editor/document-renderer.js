@@ -1,4 +1,9 @@
 import { editorFeedbackFor, editorMutationGuard } from "./feedback.js";
+import {
+  createBlockEditor,
+  parseMarkdownBlocks,
+  serializeBlocksToMarkdown,
+} from "./block-editor.js";
 
 export function createDocumentRenderer(context, services) {
   const {
@@ -13,6 +18,7 @@ export function createDocumentRenderer(context, services) {
     resizeDocumentTitle, setMarkdownTitle, stripLeadingHeading, updateSaveState,
   } = services;
   const showFeedback = editorFeedbackFor(context);
+  const blockEditor = createBlockEditor(context, services);
 
   const DOC_TYPES = [
     "sop", "checklist", "template", "reference", "playbook", "prompt",
@@ -89,19 +95,80 @@ export function createDocumentRenderer(context, services) {
     const blocks = [];
     const fm = (documentState.currentParsed && documentState.currentParsed.frontmatter) || {};
     const loomBlock = renderLoomBlock(fm);
+
+    const trail = renderDocHierarchyTrail();
+    if (trail) blocks.push(trail);
+
     blocks.push(renderTitleBlock(fm));
     blocks.push(renderFrontmatterBlock(fm));
     blocks.push(renderWarningsBlock());
     if (Object.keys(sections).length === 0) {
-      // Plain markdown (template, reference, etc.) — render the body as one
-      // big rendered block, no editing controls.
-      const body = stripFrontmatter(editor.value || "");
+      const rawFull = editor.value || "";
+      const body = stripFrontmatter(rawFull);
+      const cleanBody = stripLeadingHeading(body);
+      const docBlocks = parseMarkdownBlocks(cleanBody);
+
       const wrap = document.createElement("div");
       wrap.className = "block-plain-body";
-      wrap.append(renderMarkdown(stripLeadingHeading(body)));
+
+      if (docBlocks.length === 0) {
+        const emptyBlock = document.createElement("div");
+        emptyBlock.className = "notion-empty-document";
+        const emptyBtn = document.createElement("button");
+        emptyBtn.type = "button";
+        emptyBtn.className = "notion-add-row-btn";
+        emptyBtn.textContent = "+ Click or type '/' to insert text, headings, lists, or callouts…";
+        emptyBtn.addEventListener("click", () => {
+          blockEditor.slashMenu.open({
+            targetEl: emptyBtn,
+            onSelect: (item) => {
+              applyBlocksChange([
+                {
+                  id: `blk-0-${Date.now()}`,
+                  type: item.type,
+                  raw: item.template || "",
+                },
+              ]);
+            },
+          });
+        });
+        emptyBlock.append(emptyBtn);
+        wrap.append(emptyBlock);
+      } else {
+        const blocksContainer = blockEditor.renderBlocksContainer({
+          blocks: docBlocks,
+          onChange: (idx, newRaw) => {
+            docBlocks[idx].raw = newRaw;
+            applyBlocksChange(docBlocks);
+          },
+          onMoveBlock: (fromIdx, toIdx) => {
+            const [moved] = docBlocks.splice(fromIdx, 1);
+            docBlocks.splice(toIdx, 0, moved);
+            applyBlocksChange(docBlocks);
+          },
+          onInsertBlock: (atIdx, template) => {
+            docBlocks.splice(atIdx, 0, {
+              id: `blk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              type: "paragraph",
+              raw: template,
+            });
+            applyBlocksChange(docBlocks);
+          },
+          onDeleteBlock: (idx) => {
+            docBlocks.splice(idx, 1);
+            applyBlocksChange(docBlocks);
+          },
+        });
+        wrap.append(blocksContainer);
+      }
+
       blocks.push(wrap);
       blocks.push(loomBlock);
       blocks.push(renderRelatedDocsBlock(fm));
+
+      const subpages = renderSubpagesBlock(documentState.currentDoc?.path);
+      if (subpages) blocks.push(subpages);
+
       renderedView.replaceChildren(...blocks.filter(Boolean));
       return;
     }
@@ -133,9 +200,113 @@ export function createDocumentRenderer(context, services) {
     blocks.push(backlinksHost);
     blocks.push(loomBlock);
 
+    const subpages = renderSubpagesBlock(documentState.currentDoc?.path);
+    if (subpages) blocks.push(subpages);
+
     renderedView.replaceChildren(...blocks.filter(Boolean));
     // Async-fetch backlinks separately so the main render isn't blocked.
     fetchBacklinksForCurrentDoc();
+  }
+
+  function applyBlocksChange(newBlocks) {
+    const rawFull = editor.value || "";
+    const fmRange = _frontmatterRange(rawFull);
+    const fmText = fmRange ? rawFull.slice(0, fmRange.end + 5) : "";
+    const bodyAfterFm = fmRange ? rawFull.slice(fmRange.end + 5) : rawFull;
+    const h1Match = bodyAfterFm.match(/^#{1,2}\s+[^\n]*\n+/);
+    const headingText = h1Match ? h1Match[0] : "";
+    const newBodyMarkdown = serializeBlocksToMarkdown(newBlocks);
+    editor.value =
+      (fmText ? fmText + (fmText.endsWith("\n") ? "" : "\n") : "") +
+      headingText +
+      (headingText && !headingText.endsWith("\n\n") ? "\n" : "") +
+      newBodyMarkdown;
+    storeDraft();
+    updateSaveState();
+    renderParsedDocument();
+  }
+
+  function renderDocHierarchyTrail() {
+    const path = documentState.currentDoc?.path;
+    if (!path) return null;
+    const nav = document.createElement("nav");
+    nav.className = "doc-hierarchy-nav";
+    nav.setAttribute("aria-label", "Document location");
+    const root = document.createElement("button");
+    root.type = "button";
+    root.className = "doc-trail-item doc-trail-root";
+    root.textContent = "Docs";
+    root.addEventListener("click", () => {
+      if (context.navigateCanonicalWorkspace) {
+        context.navigateCanonicalWorkspace("/docs");
+      }
+    });
+    nav.append(root);
+
+    const parts = path.split("/").filter(Boolean);
+    for (let i = 0; i < parts.length - 1; i++) {
+      const sep = document.createElement("span");
+      sep.className = "doc-trail-sep";
+      sep.textContent = " / ";
+      const folder = document.createElement("span");
+      folder.className = "doc-trail-item doc-trail-folder";
+      folder.textContent = humanizeDocType(parts[i]);
+      nav.append(sep, folder);
+    }
+
+    const sep = document.createElement("span");
+    sep.className = "doc-trail-sep";
+    sep.textContent = " / ";
+    const current = document.createElement("span");
+    current.className = "doc-trail-item doc-trail-current";
+    current.textContent =
+      documentState.currentParsed?.frontmatter?.title ||
+      documentState.currentDoc?.title ||
+      basename(path);
+    nav.append(sep, current);
+    return nav;
+  }
+
+  function renderSubpagesBlock(currentDocPath) {
+    if (!currentDocPath) return null;
+    const allDocs = context.knowledgeState?.documents || [];
+    const currentDir = currentDocPath.includes("/")
+      ? currentDocPath.slice(0, currentDocPath.lastIndexOf("/") + 1)
+      : "";
+    const children = allDocs.filter(
+      (d) => d.path !== currentDocPath && currentDir && d.path.startsWith(currentDir),
+    );
+    if (children.length === 0) return null;
+
+    const section = document.createElement("section");
+    section.className = "doc-subpages";
+    const header = document.createElement("header");
+    header.className = "doc-subpages-header";
+    const heading = document.createElement("h3");
+    heading.textContent = "Sub-pages";
+    header.append(heading);
+    section.append(header);
+
+    const list = document.createElement("div");
+    list.className = "doc-subpages-list";
+    for (const child of children.slice(0, 10)) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "doc-subpage-item";
+      const icon = document.createElement("span");
+      icon.className = "doc-subpage-icon";
+      icon.textContent = "📄";
+      const title = document.createElement("span");
+      title.className = "doc-subpage-title";
+      title.textContent = child.title || basename(child.path);
+      row.append(icon, title);
+      row.addEventListener("click", () => {
+        if (context.openDocument) context.openDocument(child.path);
+      });
+      list.append(row);
+    }
+    section.append(list);
+    return section;
   }
 
   function emptyNote(text) {

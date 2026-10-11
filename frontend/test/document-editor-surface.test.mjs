@@ -4,6 +4,11 @@ import { afterEach, describe, test } from "node:test";
 import { createDocumentEditor } from "../src/surfaces/document-editor/index.js";
 import { createProcedureRenderer } from "../src/surfaces/document-editor/procedure-renderer.js";
 import {
+  parseMarkdownBlocks,
+  serializeBlocksToMarkdown,
+} from "../src/surfaces/document-editor/block-editor.js";
+import { createSlashMenu } from "../src/surfaces/document-editor/slash-menu.js";
+import {
   FakeDocument,
   FakeElement,
   findAllByClass,
@@ -1153,4 +1158,137 @@ describe("Document Editor surface boundary", () => {
     assert.equal(harness.storageValues.get(`dtc-doc-base:${path}`), "r2");
   });
 
+  test("parses and serializes Notion markdown blocks (headings, paragraphs, lists, todos, callouts, code, dividers)", () => {
+    const markdown = [
+      "# First heading",
+      "",
+      "This is a regular paragraph.",
+      "",
+      "## Subheading",
+      "",
+      "- Bullet item 1",
+      "- Bullet item 2",
+      "",
+      "1. Numbered item 1",
+      "2. Numbered item 2",
+      "",
+      "- [ ] Open to-do item",
+      "- [x] Done to-do item",
+      "",
+      "> [!NOTE]",
+      "> Important callout note.",
+      "",
+      "```javascript",
+      "const answer = 42;",
+      "```",
+      "",
+      "---",
+    ].join("\n");
+
+    const blocks = parseMarkdownBlocks(markdown);
+    assert.equal(blocks.length, 10);
+    assert.equal(blocks[0].type, "h1");
+    assert.equal(blocks[1].type, "paragraph");
+    assert.equal(blocks[2].type, "h2");
+    assert.equal(blocks[3].type, "bullet");
+    assert.equal(blocks[4].type, "numbered");
+    assert.equal(blocks[5].type, "todo");
+    assert.equal(blocks[5].checked, false);
+    assert.equal(blocks[6].type, "todo");
+    assert.equal(blocks[6].checked, true);
+    assert.equal(blocks[7].type, "callout");
+    assert.equal(blocks[8].type, "code");
+    assert.equal(blocks[9].type, "divider");
+
+    const serialized = serializeBlocksToMarkdown(blocks);
+    assert.match(serialized, /# First heading/);
+    assert.match(serialized, /This is a regular paragraph/);
+    assert.match(serialized, /- \[ \] Open to-do item/);
+    assert.match(serialized, /- \[x\] Done to-do item/);
+    assert.match(serialized, /const answer = 42;/);
+  });
+
+  test("filters and selects block types in the slash menu", () => {
+    createEditorHarness();
+    let chosen = null;
+    const menu = createSlashMenu({
+      onSelectBlockType: (item) => {
+        chosen = item;
+      },
+    });
+
+    const target = element("div");
+    globalThis.document.body.append(target);
+
+    menu.open({ targetEl: target, initialQuery: "" });
+    assert.equal(menu.isOpen(), true);
+
+    const menuEl = globalThis.document.body.querySelector(".block-slash-menu");
+    assert.ok(menuEl);
+    const filterInput = menuEl.querySelector(".slash-menu-filter");
+    assert.ok(filterInput);
+
+    filterInput.value = "todo";
+    filterInput.dispatch("input");
+
+    const items = findAllByClass(menuEl, "slash-menu-item");
+    assert.equal(items.length, 1);
+    assert.match(items[0].textContent, /To-do List/);
+
+    items[0].dispatch("click");
+    assert.equal(chosen?.type, "todo");
+    assert.equal(menu.isOpen(), false);
+    target.remove();
+  });
+
+  test("renders plain documents with interactive Notion blocks, todo toggling, and hierarchy trail", async () => {
+    const content = [
+      "# Project Roadmap",
+      "",
+      "A calm overview of the upcoming milestones.",
+      "",
+      "- [ ] Draft initial scope",
+      "- [x] Align with team",
+      "",
+      "> [!NOTE]",
+      "> Keep milestones focused.",
+    ].join("\n");
+
+    const harness = createEditorHarness({
+      currentDoc: { path: "engineering/roadmaps/2026.md", title: "2026 Roadmap" },
+      content,
+      editorValue: content,
+      mode: "raw",
+    });
+
+    await harness.api.enterRenderedMode();
+    assert.equal(harness.elements.editorView.dataset.mode, "rendered");
+
+    // Location trail
+    const trail = harness.elements.renderedView.querySelector(".doc-hierarchy-nav");
+    assert.ok(trail);
+    assert.ok(findByText(trail, "Docs", "button"));
+    assert.ok(findByText(trail, "Engineering"));
+    assert.ok(findByText(trail, "2026 Roadmap"));
+
+    // Notion blocks
+    const blocksContainer = harness.elements.renderedView.querySelector(".notion-blocks-container");
+    assert.ok(blocksContainer);
+    const blocks = findAllByClass(blocksContainer, "notion-block");
+    assert.equal(blocks.length, 4); // paragraph, 2 todos, callout
+
+    // Checkboxes
+    const checkboxes = blocksContainer.querySelectorAll(".notion-todo-checkbox");
+    assert.equal(checkboxes.length, 2);
+    assert.equal(checkboxes[0].checked, false);
+    assert.equal(checkboxes[1].checked, true);
+
+    // Toggle first checkbox
+    checkboxes[0].checked = true;
+    checkboxes[0].dispatch("change");
+
+    assert.match(harness.elements.editor.value, /- \[x\] Draft initial scope/);
+  });
+
 });
+
