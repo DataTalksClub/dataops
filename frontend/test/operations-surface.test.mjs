@@ -174,6 +174,8 @@ function createOperationsHarness(options = {}) {
     isOperationsWorkspaceVisible: () => true,
     isWorkspaceRouteFresh: (token) =>
       options.fresh !== false && token === activeRouteToken,
+    locationRef: options.locationRef,
+    canonicalOrigin: options.canonicalOrigin,
     navigateCanonicalWorkspace: (path, params = {}, navigationOptions = {}) => {
       navigations.push({ path, params, options: navigationOptions });
       return { ready: Promise.resolve() };
@@ -537,6 +539,57 @@ describe("Operations surface boundary", () => {
         .summaryState,
       "ready",
     );
+  });
+
+  test("redirects to the canonical host when arriving on a raw lambda URL, keeping userCode", async () => {
+    const replaced = [];
+    const locationRef = {
+      hostname: "el4jt4z2k4lnxwvoqawrdcsedm0axjzc.lambda-url.eu-west-1.on.aws",
+      replace: (url) => replaced.push(url),
+    };
+    const harness = createOperationsHarness({
+      locationRef,
+      canonicalOrigin: "https://ops.dtcdev.click",
+      route: {
+        path: "/device",
+        params: new URLSearchParams({ userCode: "BCDF-GHJK" }),
+      },
+    });
+    harness.api.renderDeviceSurfaceView();
+    assert.equal(replaced.length, 1);
+    assert.equal(
+      replaced[0],
+      "https://ops.dtcdev.click/#/device?userCode=BCDF-GHJK",
+    );
+    assert.equal(
+      harness.documentList.children.length,
+      0,
+      "does not render the device panel when redirecting",
+    );
+  });
+
+  test("does not redirect when on localhost or the canonical host", async () => {
+    const replaced = [];
+    const locationRef = {
+      hostname: "localhost",
+      replace: (url) => replaced.push(url),
+    };
+    const harness = createOperationsHarness({
+      locationRef,
+      canonicalOrigin: "https://ops.dtcdev.click",
+      route: {
+        path: "/device",
+        params: new URLSearchParams({ userCode: "BCDF-GHJK" }),
+      },
+      request: async () => ({
+        label: "test-machine",
+        requestIp: "127.0.0.1",
+        createdAt: "2026-08-12T09:00:00.000Z",
+      }),
+    });
+    harness.api.renderDeviceSurfaceView();
+    assert.equal(replaced.length, 0);
+    assert.equal(harness.documentList.children.length, 1);
   });
 
   test("renders Admin diagnostics while preserving success, empty, and failure truth", async () => {

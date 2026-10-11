@@ -217,6 +217,57 @@ describe("device login", () => {
       /denied in the browser/,
     );
   });
+
+  test("rewrites verification link to the target portal origin when server returns a different host", async () => {
+    const rawLambda =
+      "https://el4jt4z2k4lnxwvoqawrdcsedm0axjzc.lambda-url.eu-west-1.on.aws/#/device?userCode=BCDF-GHJK";
+    const fetchImpl = fakeFetch({
+      "/api/auth/device": {
+        body: {
+          deviceCode: "device-code",
+          userCode: "BCDF-GHJK",
+          verificationUri:
+            "https://el4jt4z2k4lnxwvoqawrdcsedm0axjzc.lambda-url.eu-west-1.on.aws/#/device",
+          verificationUriComplete: rawLambda,
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+          interval: 1,
+        },
+      },
+      "/api/auth/device/token": {
+        body: {
+          token: "dops_issued",
+          tokenId: "token-id",
+          expiresAt: "2026-11-11T00:00:00.000Z",
+          user: { id: "u1", name: "Grace", email: "grace@datatalks.club" },
+        },
+      },
+    });
+    globalThis.fetch = fetchImpl;
+    const { login, rewriteVerificationUri } = await import(
+      "../src/commands/auth.mjs"
+    );
+    assert.equal(
+      rewriteVerificationUri(rawLambda, "https://ops.dtcdev.click"),
+      "https://ops.dtcdev.click/#/device?userCode=BCDF-GHJK",
+    );
+    assert.equal(
+      rewriteVerificationUri(
+        "https://ops.dtcdev.click/#/device?userCode=XYZ",
+        "https://ops.dtcdev.click",
+      ),
+      "https://ops.dtcdev.click/#/device?userCode=XYZ",
+    );
+    const io = captureIo();
+    await login(
+      { url: "https://ops.dtcdev.click", label: "grace@remote" },
+      { print: io.log },
+    );
+    assert.match(
+      io.text(),
+      /Open in a browser:\s+https:\/\/ops\.dtcdev\.click\/#\/device\?userCode=BCDF-GHJK/,
+    );
+    assert.doesNotMatch(io.text(), /lambda-url/);
+  });
 });
 
 describe("recurring commands", () => {

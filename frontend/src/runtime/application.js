@@ -570,6 +570,7 @@ const {
   isMobileShell,
   isOperationsWorkspaceVisible,
   isWorkspaceRouteFresh,
+  locationRef: window.location,
   navigateCanonicalWorkspace,
   openCardPanel,
   openTaskPanel,
