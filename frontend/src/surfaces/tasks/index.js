@@ -128,7 +128,12 @@ export function createTasksSurface(context) {
         quickTask.className = "home-quick-action";
         quickTask.textContent = "New task";
         quickTask.addEventListener("click", () => openQuickTaskForm());
-        quickBar.append(quickTask);
+        const quickCard = document.createElement("button");
+        quickCard.type = "button";
+        quickCard.className = "home-quick-action";
+        quickCard.textContent = "Create card";
+        quickCard.addEventListener("click", () => openQuickWorkflowForm());
+        quickBar.append(quickTask, quickCard);
         header.append(quickBar);
       }
       wrap.append(header);
@@ -137,7 +142,7 @@ export function createTasksSurface(context) {
     // A fully loaded surface states nothing: its own content is the evidence.
     if (summary && summary.dataset.summaryState !== "ready") wrap.append(summary);
     const runtimeStatus = renderOperationsRuntimeState(model.runtime);
-    if (runtimeStatus && ["queue", "workflows"].includes(activeSection)) {
+    if (runtimeStatus && activeSection === "workflows") {
       wrap.append(runtimeStatus);
     }
 
@@ -165,9 +170,11 @@ export function createTasksSurface(context) {
     const workErrors = (model.stats.workErrors || []).filter(Boolean);
     const retryWork = async () => {
       const routeToken = getActiveWorkspaceRouteToken();
-      // Resetting the Cards loader is deliberate: a continuation retry must
-      // also recover a failed page, not merely preserve its broken cursor.
-      await refreshOperationsWorkSnapshot({ rerender: false });
+      const refreshOptions = { rerender: false };
+      if (model.stats.cardsLoaded && !model.stats.cardsComplete) {
+        refreshOptions.continueCards = true;
+      }
+      await refreshOperationsWorkSnapshot(refreshOptions);
       if (isWorkspaceRouteFresh(routeToken)) refreshDocuments();
     };
     if (view === "queue") {
@@ -205,6 +212,7 @@ export function createTasksSurface(context) {
           partial: `${counts}. Some task sources are unavailable.`,
           ready: `${counts}.`,
         },
+        detail: model.stats.liveLoaded ? "" : undefined,
         retryLabel: "Retry loading tasks",
         onRetry: retryWork,
       });

@@ -644,6 +644,7 @@ export function createTaskQueue(context) {
     // ordering already happened above, so this never changes what renders.
     row.dataset.urgency = queueUrgency(task, today);
     row.tabIndex = -1;
+    row.setAttribute("aria-label", `Open task ${workTaskTitle(task)}`);
     row.addEventListener("click", (event) => {
       if (event.target?.closest?.("button, input, label, a")) return;
       openTaskPanel(task.id);
