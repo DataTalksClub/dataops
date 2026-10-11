@@ -5,8 +5,8 @@
     padding: 0;
   }.diff-modal .diff-panel,
 .quick-form-overlay .quick-form-panel {
-    min-height: 100vh;
-    max-height: 100vh;
+    min-height: 100dvh;
+    max-height: 100dvh;
     width: 100%;
     border: 0;
     border-radius: 0;
@@ -14,16 +14,16 @@
     padding: 12px;
   }.lightbox-frame {
     width: 100%;
-    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
   }#lightbox-img {
     max-width: calc(100vw - 24px);
-    max-height: calc(100vh - 128px);
+    max-height: calc(100dvh - 128px);
   }.quick-nav {
     place-items: start center;
     padding: max(12px, env(safe-area-inset-top)) 12px 12px;
   }.quick-nav-panel {
     width: 100%;
-    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
   }.workflow-board-scroll-hint {
     display: block;
     grid-column: 1 / -1;
@@ -91,9 +91,6 @@ body[data-workspace-view="calendar"] .calendar-day:nth-last-child(-n + 7) {
     display: grid;
     gap: 2px;
     font-size: 13px;
-  }body[data-workspace-view="calendar"] .calendar-day-items {
-    max-height: 92px;
-    overflow-y: auto;
   }
 }
 

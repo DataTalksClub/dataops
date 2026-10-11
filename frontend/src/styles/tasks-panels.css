@@ -1209,8 +1209,8 @@ body[data-workspace-view="tasks"] .workflow-modal-panel,
 body[data-workspace-view="tasks"] .quick-form-panel {
     width: 100%;
     max-width: none;
-    height: 100vh;
-    max-height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
     margin: 0;
     border: 0;
     border-radius: 0;
