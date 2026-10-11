@@ -316,7 +316,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     recordCapabilityEvidence(testInfo, [{
       route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>',
       roleId: 'admin',
-      stateIds: ['tasks.empty', 'tasks.waiting', 'tasks.create-select-update'],
+      stateIds: ['tasks.waiting', 'tasks.create-select-update'],
     }]);
   });
 
