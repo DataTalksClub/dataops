@@ -92,6 +92,7 @@ export function createNewsletterPlanner(context) {
   }
 
   function plannerLabel(value) {
+    if (value === "review") return "In Review";
     const label = String(value || "").replaceAll("-", " ");
     return label ? label[0].toUpperCase() + label.slice(1) : "";
   }
@@ -99,8 +100,8 @@ export function createNewsletterPlanner(context) {
   function plannerStatusClass(value) {
     if (["sent", "published", "confirmed"].includes(value)) return "is-success";
     if (["cancelled"].includes(value)) return "is-danger";
-    if (["reserved", "drafting", "scheduled", "announced"].includes(value)) return "is-info";
-    if (["tentative", "open"].includes(value)) return "is-warning";
+    if (["reserved", "drafting", "draft", "scheduled", "announced"].includes(value)) return "is-info";
+    if (["review", "tentative", "open"].includes(value)) return "is-warning";
     return "";
   }
 
@@ -159,6 +160,7 @@ export function createNewsletterPlanner(context) {
       "open",
       "reserved",
       "drafting",
+      "review",
       "scheduled",
       "sent",
       "cancelled",
@@ -379,9 +381,9 @@ export function createNewsletterPlanner(context) {
         // Update stats summary bar
         const totalCount = items.length;
         const upcomingCount = items.filter((i) =>
-          ["open", "reserved", "drafting", "scheduled"].includes(i.status)
+          ["open", "reserved", "drafting", "draft", "review", "scheduled"].includes(i.status)
         ).length;
-        const draftingCount = items.filter((i) => i.status === "drafting").length;
+        const draftingCount = items.filter((i) => ["drafting", "draft"].includes(i.status)).length;
         const scheduledCount = items.filter((i) => i.status === "scheduled").length;
         const unbookedCount = items.filter(
           (i) =>
@@ -415,7 +417,7 @@ export function createNewsletterPlanner(context) {
         if (!explicitStatus) {
           if (currentView === "upcoming") {
             displayedItems = items.filter((i) =>
-              ["open", "reserved", "drafting", "scheduled"].includes(i.status)
+              ["open", "reserved", "drafting", "draft", "review", "scheduled"].includes(i.status)
             );
           } else if (currentView === "sent") {
             displayedItems = items.filter((i) =>

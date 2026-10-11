@@ -93,6 +93,22 @@ describe("newsletter slots", () => {
       ).statusCode,
       409,
     );
+    const reviewRes = await invoke(
+      "PUT",
+      `/api/newsletter-slots/${slot.id}`,
+      { version: 2, status: "review" },
+      auth,
+    );
+    assert.equal(reviewRes.statusCode, 200);
+    assert.equal(data(reviewRes).status, "review");
+    const draftRes = await invoke(
+      "PUT",
+      `/api/newsletter-slots/${slot.id}`,
+      { version: 3, status: "draft" },
+      auth,
+    );
+    assert.equal(draftRes.statusCode, 200);
+    assert.equal(data(draftRes).status, "draft");
     const listed = data(
       await invoke("GET", "/api/newsletter-slots", undefined, auth, {
         from: "2026-08-01",

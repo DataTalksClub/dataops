@@ -1004,6 +1004,13 @@ describe("Planning surface production behavior", () => {
         status: "sent",
         publicUrl: "https://example.invalid/9",
       },
+      {
+        id: "slot-5",
+        publicationDate: "2026-08-28",
+        campaignNumber: 13,
+        campaignLabel: "Issue 13 In Review",
+        status: "review",
+      },
     ];
     const harness = createPlanningHarness({
       newsletter: dom,
@@ -1012,24 +1019,27 @@ describe("Planning surface production behavior", () => {
     await harness.surface.renderNewsletterSurface();
 
     // Verify stats bar counts
-    assert.equal(dom.statTotal.textContent, "4");
-    assert.equal(dom.statUpcoming.textContent, "3");
+    assert.equal(dom.statTotal.textContent, "5");
+    assert.equal(dom.statUpcoming.textContent, "4");
     assert.equal(dom.statDrafting.textContent, "1");
     assert.equal(dom.statScheduled.textContent, "1");
     assert.equal(dom.statUnbooked.textContent, "1");
 
-    // Default "All" view shows all 4 slots
+    // Default "All" view shows all 5 slots
     assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
     assert.match(dom.slots.innerHTML, /Issue 11 Drafting/);
     assert.match(dom.slots.innerHTML, /Issue 12 Scheduled/);
     assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
+    assert.match(dom.slots.innerHTML, /Issue 13 In Review/);
+    assert.match(dom.slots.innerHTML, /In Review/);
 
-    // Switch to "Upcoming" view: only open, reserved, drafting, scheduled
+    // Switch to "Upcoming" view: only open, reserved, drafting, review, scheduled
     dom.viewUpcoming.onclick();
     await new Promise((r) => setTimeout(r, 0));
     assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
     assert.match(dom.slots.innerHTML, /Issue 11 Drafting/);
     assert.match(dom.slots.innerHTML, /Issue 12 Scheduled/);
+    assert.match(dom.slots.innerHTML, /Issue 13 In Review/);
     assert.doesNotMatch(dom.slots.innerHTML, /Issue 9 Sent/);
 
     // Switch to "Sent & Archive" view: only sent / cancelled

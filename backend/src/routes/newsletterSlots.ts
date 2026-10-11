@@ -23,7 +23,9 @@ const json = (statusCode: number, body: unknown): LambdaResponse => ({
   STATUSES = new Set([
     "open",
     "reserved",
+    "draft",
     "drafting",
+    "review",
     "scheduled",
     "sent",
     "cancelled",
