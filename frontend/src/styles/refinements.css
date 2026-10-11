@@ -197,33 +197,7 @@ body[data-workspace-view="sponsors"] .document-list {
 }.bookkeeping-actions,
 .sponsor-crm-surface .surface-dialog form > footer {
   justify-content: flex-start;
-}/* Sponsor CRM: pipeline first, then a booking queue beside one record. */.sponsor-crm-surface .crm-pipeline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}.sponsor-crm-surface .crm-pipeline button {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  min-height: 34px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-muted);
-  padding: 4px 10px;
-  font-size: 12px;
-  font-weight: 600;
-}.sponsor-crm-surface .crm-pipeline button strong {
-  color: var(--dk-text-heading);
-  font-family: var(--dk-font-mono);
-  font-size: 13px;
-  font-weight: 600;
-}.sponsor-crm-surface .crm-pipeline button[aria-pressed="true"] {
-  border-color: var(--dk-accent-border);
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-heading);
-  box-shadow: inset 0 -2px 0 var(--dk-accent-default);
-}.sponsor-crm-surface .crm-header h1 {
+}/* Sponsor CRM: pipeline first, then a booking queue beside one record. */.sponsor-crm-surface .crm-header h1 {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: var(--dk-text-page);
@@ -254,12 +228,6 @@ body[data-workspace-view="sponsors"] .document-list {
   margin: 0 0 4px;
   color: var(--dk-text-muted);
   font-size: 13px;
-}.sponsor-crm-surface .crm-booking-row .status-label,
-.sponsor-crm-surface .booking-detail-header .status-label {
-  border-color: var(--dk-border-default);
-  background: transparent;
-  color: var(--dk-text-muted);
-  border-radius: var(--dk-radius-md);
 }.sponsor-crm-surface .crm-upcoming-list {
   margin: 0;
   padding: 0;
@@ -298,29 +266,6 @@ body[data-workspace-view="sponsors"] .document-list {
   padding: 16px 18px;
 }.crm-filters {
   padding: 14px 18px;
-}.crm-booking-list {
-  display: grid;
-}.crm-booking-row {
-  min-height: 84px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-}.crm-booking-row[aria-current="true"],
-.crm-booking-row[aria-current="true"]:hover {
-  background: var(--dk-bg-muted);
-}.sponsor-crm-surface .crm-booking-row[aria-current="true"] p,
-.sponsor-crm-surface .crm-booking-row[aria-current="true"] .status-label {
-  color: var(--dk-text-primary);
-}.crm-booking-row[aria-current="true"] .status-label {
-  border-color: var(--dk-border-strong);
-}.crm-booking-row .status-label {
-  margin-left: 4px;
-  vertical-align: middle;
-}.crm-booking-row .row-actions {
-  margin-top: 0;
-}.crm-booking-row .row-actions button:first-child {
-  border-color: var(--dk-border-default);
-  background: var(--dk-bg-surface);
-  color: var(--dk-accent-default);
 }.sponsor-crm-surface .crm-filters {
   grid-template-columns: minmax(0, 1fr);
 }.crm-support-grid {
@@ -350,12 +295,6 @@ body[data-workspace-view="sponsors"] .document-list {
 }.booking-back:hover {
   color: var(--dk-text-link-hover) !important;
   text-decoration: underline;
-}.booking-section-nav {
-  background: var(--dk-bg-surface);
-  padding: 8px;
-}.booking-section-nav button {
-  min-height: 38px;
-  font-size: 13px;
 }.booking-detail-section {
   padding: 22px;
 }.booking-detail-section > header {

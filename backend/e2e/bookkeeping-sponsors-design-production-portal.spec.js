@@ -277,7 +277,7 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Company detail sections" })).toContainText("Finance");
     await expect(page.locator('[data-booking-panel="communications"]')).toContainText("Draft version 2");
-    await expect(page.locator(".crm-booking-row[aria-current=true]")).toHaveCSS("border-left-width", "0px");
+    await expect(page.locator(".crm-booking-row[aria-current=true]")).toHaveCSS("border-left-width", "1px");
     await expectPalette(page, false);
     await expectNoPageOverflow(page, 1440);
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-desktop-light.png") });

@@ -37,25 +37,30 @@ export function createSponsorLeads(context) {
       .filter(Boolean)
       .join(" · ");
     return html`<article class="crm-lead-row">
-      <div>
-        <strong>${escapeHtml(sponsor.name || "Unnamed sponsor")}</strong
-        ><span class="status-label"
-          >${escapeHtml(humanizeOptionLabel(item.status))}</span
-        >
-        <p>${source}${newsletter.subject ? html` · ${escapeHtml(newsletter.subject)}` : ""}</p>
-        ${sponsor.blurb ? html`<p>${escapeHtml(sponsor.blurb)}</p>` : ""}
-        ${sponsor.context ? html`<p class="muted">${escapeHtml(sponsor.context)}</p>` : ""}
+      <div class="crm-lead-body">
+        <div class="crm-lead-header">
+          <strong class="crm-lead-name">${escapeHtml(sponsor.name || "Unnamed sponsor")}</strong>
+          <span class="status-label" data-status="${escapeHtml(item.status)}"
+            >${escapeHtml(humanizeOptionLabel(item.status))}</span
+          >
+        </div>
+        <p class="crm-lead-source">${source}${newsletter.subject ? html` · ${escapeHtml(newsletter.subject)}` : ""}</p>
+        ${sponsor.blurb ? html`<p class="crm-lead-blurb">${escapeHtml(sponsor.blurb)}</p>` : ""}
+        ${sponsor.context ? html`<p class="crm-lead-context muted">${escapeHtml(sponsor.context)}</p>` : ""}
       </div>
-      <div class="row-actions">
-        ${leadAction(item.id, "triaged", "Triage")}
-        ${leadAction(item.id, "converted", "Convert")}
-        ${leadAction(item.id, "ignored", "Ignore")}
+      <div class="row-actions crm-lead-actions">
+        ${leadAction(item.id, "converted", "Convert", "primary-button")}
+        ${leadAction(item.id, "triaged", "Triage", "crm-lead-triage")}
+        ${leadAction(item.id, "ignored", "Ignore", "danger-text-button")}
       </div>
     </article>`;
   }
 
-  function leadAction(id, status, label) {
+  function leadAction(id, status, label, className = "") {
+    const classAttr = className ? html` class="${className}"` : "";
     return html`<button
+      type="button"
+      ${classAttr}
       data-lead-status="${status}"
       data-lead-id="${escapeHtml(id)}"
     >

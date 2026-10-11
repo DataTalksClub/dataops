@@ -338,17 +338,21 @@ export function createSponsorCrmSurface(context) {
             .map(([companyId, items]) => {
               const name = items[0].companyName || organizationName(companyId);
               return html`<article class="crm-booking-row">
-                <div>
-                  <strong>${escapeHtml(name)}</strong>
-                  ${items
-                    .map(
-                      (item) => html`<p>
-                        <span class="status-label">${escapeHtml(item.kind)}</span>
-                        ${escapeHtml(item.action)}
-                        · ${escapeHtml(humanSponsorDate(item.due))}
-                      </p>`,
-                    )
-                    .join("")}
+                <div class="crm-booking-content">
+                  <div class="crm-booking-header">
+                    <strong class="crm-booking-name">${escapeHtml(name)}</strong>
+                  </div>
+                  <div class="crm-booking-items">
+                    ${items
+                      .map(
+                        (item) => html`<p class="crm-queue-item">
+                          <span class="status-label" data-status="${escapeHtml(item.kind)}">${escapeHtml(item.kind)}</span>
+                          <span class="crm-queue-action">${escapeHtml(item.action)}</span>
+                          <span class="crm-queue-due">· ${escapeHtml(humanSponsorDate(item.due))}</span>
+                        </p>`,
+                      )
+                      .join("")}
+                  </div>
                 </div>
                 <div class="row-actions">
                   <button
@@ -396,13 +400,16 @@ export function createSponsorCrmSurface(context) {
                 class="crm-booking-row"
                 ${item.id === sponsorCommunications.selectedBookingId ? 'aria-current="true"' : ""}
               >
-                <div>
-                  <strong>${escapeHtml(organizationName(item.organizationId))}</strong
-                  ><span class="status-label">${escapeHtml(humanizeOptionLabel(item.status))}</span>
-                  <p>
-                    ${escapeHtml(humanizeOptionLabel(item.productKind || "deal"))}
-                    · ${escapeHtml(humanizeOptionLabel(item.money || "none"))}
-                    · ${escapeHtml(nextAction)} · ${escapeHtml(publication)}
+                <div class="crm-booking-content">
+                  <div class="crm-booking-header">
+                    <strong class="crm-booking-name">${escapeHtml(organizationName(item.organizationId))}</strong>
+                    <span class="status-label" data-status="${escapeHtml(item.status)}">${escapeHtml(humanizeOptionLabel(item.status))}</span>
+                  </div>
+                  <p class="crm-deal-meta">
+                    <span class="crm-deal-product">${escapeHtml(humanizeOptionLabel(item.productKind || "deal"))}</span>
+                    · <span class="crm-deal-amount">${escapeHtml(humanizeOptionLabel(item.money || "none"))}</span>
+                    · <span class="crm-deal-action">${escapeHtml(nextAction)}</span>
+                    · <span class="crm-deal-pub">${escapeHtml(publication)}</span>
                   </p>
                 </div>
                 <div class="row-actions">

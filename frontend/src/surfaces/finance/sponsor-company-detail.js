@@ -88,16 +88,18 @@ export function createSponsorCompanyDetail({
                 : "No next action";
             const current = deal?.id === item.id ? 'aria-current="true"' : "";
             return html`<article class="crm-card" ${current}>
-              <strong>
-                ${escapeHtml(humanizeOptionLabel(item.productKind || "deal"))}
-              </strong>
-              <span class="status-label">
-                ${escapeHtml(humanizeOptionLabel(item.status))}
-              </span>
-              <p>
-                ${escapeHtml(humanizeOptionLabel(item.money || "none"))}
+              <div class="crm-deal-card-header">
+                <strong>
+                  ${escapeHtml(humanizeOptionLabel(item.productKind || "deal"))}
+                </strong>
+                <span class="status-label" data-status="${escapeHtml(item.status)}">
+                  ${escapeHtml(humanizeOptionLabel(item.status))}
+                </span>
+              </div>
+              <p class="crm-deal-meta">
+                <span class="crm-deal-amount">${escapeHtml(humanizeOptionLabel(item.money || "none"))}</span>
                 · ${escapeHtml(humanizeOptionLabel(item.fulfillment || "none"))}
-                · ${escapeHtml(next)}
+                · <span class="crm-deal-action">${escapeHtml(next)}</span>
               </p>
               <div class="row-actions">
                 <button data-edit-deal="${escapeHtml(item.id)}">Edit deal</button>
@@ -128,10 +130,10 @@ export function createSponsorCompanyDetail({
       organization.relationship || "company",
     );
     const domainChip = organization.domain
-      ? html`<span class="status-label">${escapeHtml(organization.domain)}</span>`
+      ? html`<span class="status-label" data-status="domain">${escapeHtml(organization.domain)}</span>`
       : "";
     const dealChip = deal
-      ? html`<span class="status-label">
+      ? html`<span class="status-label" data-status="${escapeHtml(deal.status)}">
           ${escapeHtml(humanizeOptionLabel(deal.status))}
         </span>`
       : "";
