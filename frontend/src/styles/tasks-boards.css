@@ -626,6 +626,17 @@ body[data-workspace-view="tasks"] .runtime-template-search {
   min-height: 34px;
 }
 
+@media (max-width: 820px) {
+  body[data-workspace-view="tasks"] .runtime-template-toolbar {
+    padding-block: 4px;
+  }
+  body[data-workspace-view="tasks"] .runtime-template-toolbar .runtime-template-search {
+    flex: 1 0 100% !important;
+    width: 100%;
+    max-width: none;
+  }
+}
+
 body[data-workspace-view="tasks"] .runtime-template-layout {
   display: grid;
   grid-template-columns: minmax(320px, 1fr) minmax(0, 1.15fr);
@@ -973,6 +984,7 @@ body[data-workspace-view="tasks"] .runtime-template-live-cards {
   list-style: none;
 }
 body[data-workspace-view="tasks"] .runtime-template-live-cards li {
+  min-width: 0;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -982,6 +994,13 @@ body[data-workspace-view="tasks"] .runtime-template-live-cards li {
 }
 body[data-workspace-view="tasks"] .runtime-template-live-cards li:first-child {
   border-top: 0;
+}
+body[data-workspace-view="tasks"] .runtime-template-live-cards li > button {
+  min-width: 0;
+  width: 100%;
+}
+body[data-workspace-view="tasks"] .runtime-template-live-cards li > button > strong {
+  flex: 1 1 auto;
 }
 body[data-workspace-view="tasks"] .runtime-template-live-cards strong {
   min-width: 0;
