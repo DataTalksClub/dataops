@@ -82,8 +82,8 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
   return `
     <dialog class="dk-dialog" style="--dk-dialog-width: 760px; max-width: 95vw;">
       <form method="dialog">
-        <div class="dk-dialog__head">
-          <div>
+        <div class="dk-dialog__head newsletter-dialog-head">
+          <div class="newsletter-dialog-head-title">
             <h2 data-dialog-title>Newsletter slot</h2>
             <p data-dialog-subtitle>
               Keep the publication plan, content drafting, and email preview together.
