@@ -16,6 +16,7 @@ import { html } from "./shared.js";
 import {
   entryDirection,
   FIELD_LABELS,
+  formatAmount,
   latestActivityMonth,
   ledgerDate,
   MONEY_PATTERN,
@@ -229,12 +230,12 @@ export function createBookkeepingSurface(context) {
       totals.textContent =
         Object.entries(sums)
           .flatMap(([currency, s]) => [
-            ...(s.income ? [`${currency} Income ${s.income.toFixed(2)}`] : []),
+            ...(s.income ? [`Income ${formatAmount(s.income, currency)}`] : []),
             ...(s.expense
-              ? [`${currency} Expenses ${s.expense.toFixed(2)}`]
+              ? [`Expenses ${formatAmount(s.expense, currency)}`]
               : []),
             ...(s.unclassified
-              ? [`${currency} Unclassified ${s.unclassified.toFixed(2)}`]
+              ? [`Unclassified ${formatAmount(s.unclassified, currency)}`]
               : []),
           ])
           .join(" · ") || "No filtered total";
@@ -482,13 +483,13 @@ export function createBookkeepingSurface(context) {
                           <td data-label="Month">${escapeHtml(m.month)}</td>
                           <td data-label="Currency">${escapeHtml(m.currency)}</td>
                           <td data-label="Output VAT" class="ledger-amount">
-                            ${m.outputVat.toFixed(2)}
+                            ${escapeHtml(formatAmount(m.outputVat, m.currency))}
                           </td>
                           <td data-label="Input VAT" class="ledger-amount">
-                            ${m.inputVat.toFixed(2)}
+                            ${escapeHtml(formatAmount(m.inputVat, m.currency))}
                           </td>
                           <td data-label="Net" class="ledger-amount">
-                            ${m.net.toFixed(2)}
+                            ${escapeHtml(formatAmount(m.net, m.currency))}
                           </td>
                           <td data-label="Entries">${m.transactionCount}</td>
                         </tr>`,
@@ -532,7 +533,7 @@ export function createBookkeepingSurface(context) {
       eurDialog.querySelector("form").reset();
       eurDialog.querySelector("[data-eur-error]").textContent = "";
       eurDialog.querySelector("[data-eur-context]").textContent =
-        `${item.counterparty} — ${item.amount} ${item.currency}, ${ledgerDate(item.transactionDate)}.`;
+        `${item.counterparty} — ${formatAmount(item.amount, item.currency)}, ${ledgerDate(item.transactionDate)}.`;
       openDialog(eurDialog);
     }
     async function saveEurValue() {

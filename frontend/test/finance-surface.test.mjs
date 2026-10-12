@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
+import { formatAmount } from "../src/surfaces/finance/bookkeeping-format.js";
+import { ledgerTableMarkup, worklistMarkup } from "../src/surfaces/finance/bookkeeping-views.js";
+
 import { createFinanceSurface } from "../src/surfaces/finance/index.js";
 
 const originalGlobals = {
@@ -1020,7 +1023,7 @@ describe("Finance surface boundary", () => {
     // unclassified. No mixed income+expenses sum.
     assert.equal(
       surface.querySelector(".bookkeeping-totals").textContent,
-      "EUR Income 240.00 · EUR Expenses 145.50 · EUR Unclassified 10.00",
+      "Income €240.00 · Expenses €145.50 · Unclassified €10.00",
     );
     // The page opens quiet: the download-expiry note lives next to the
     // download actions, not as a permanent strip.
@@ -1030,10 +1033,10 @@ describe("Finance surface boundary", () => {
     );
     const ledger = surface.querySelector(".bookkeeping-ledger").innerHTML;
     assert.match(ledger, /Provider One/);
-    assert.match(ledger, /-125\.50 EUR/);
+    assert.match(ledger, /-€125\.50/);
     // Typed non-income rows carry the expense sign; income rows stay positive.
-    assert.match(ledger, /-20\.00 EUR/);
-    assert.match(ledger, /40\.00 EUR/);
+    assert.match(ledger, /-€20\.00/);
+    assert.match(ledger, /€40\.00/);
     assert.match(ledger, /Referenced/);
     assert.match(ledger, /Provider Two/);
     assert.match(
@@ -1070,7 +1073,7 @@ describe("Finance surface boundary", () => {
     await filters[1].dispatch("input");
     assert.equal(
       surface.querySelector(".bookkeeping-totals").textContent,
-      "EUR Expenses 125.50",
+      "Expenses €125.50",
     );
   });
 
@@ -1561,7 +1564,7 @@ describe("Finance surface boundary", () => {
     assert.equal(eurDialog.open, true);
     assert.match(
       eurDialog.querySelector("[data-eur-context]").textContent,
-      /Sponsor LLC — 200\.00 USD/,
+      /Sponsor LLC — \$200\.00/,
     );
     const eurInput = eurDialog.querySelector("input[name=amountEur]");
     eurInput.value = "not-a-number";
@@ -1579,7 +1582,7 @@ describe("Finance surface boundary", () => {
     assert.deepEqual(savedPuts[0], { amountEur: "184.20" });
     assert.match(
       surface.querySelector(".bookkeeping-ledger").innerHTML,
-      /≈ 184\.20 EUR/,
+      /≈ €184\.20/,
     );
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
@@ -1650,4 +1653,33 @@ describe("Finance surface boundary", () => {
       /Hosting GmbH/,
     );
   });
+});
+
+
+test("currency display uses separators and two decimals without throwing on unknown values", () => {
+  assert.equal(formatAmount("4800.0000"), "€4,800.00");
+  assert.equal(formatAmount(-4800), "-€4,800.00");
+  assert.equal(formatAmount("1234.5678", "usd"), "$1,234.57");
+  assert.equal(formatAmount(12, "GBP"), "£12.00");
+  assert.equal(formatAmount("pending", "EUR"), "pending EUR");
+  assert.equal(formatAmount("12.3456", "EURO"), "12.3456 EURO");
+  assert.equal(formatAmount(Infinity), "Infinity EUR");
+  assert.equal(formatAmount(null), "—");
+  assert.equal(formatAmount(""), "—");
+});
+
+test("ledger, VAT, conversions, and worklist format display without changing decimal storage", () => {
+  const entry = Object.freeze({
+    id: "precision-entry", amount: "4800.1234", currency: "USD", amountEur: "4200.4567",
+    vatAmount: "912.0234", vatCurrency: "EUR", entryType: "expense", counterparty: "Example",
+    transactionDate: "2026-10-12", description: "Test", category: "Hosting",
+  });
+  const before = JSON.stringify(entry);
+  const ledger = ledgerTableMarkup({ shown: [entry], hasEvidence: () => false, lensTitle: "October", e: String });
+  assert.match(ledger, /-\$4,800\.12/);
+  assert.match(ledger, /≈ €4,200\.46/);
+  assert.match(ledger, /€912\.02/);
+  const worklist = worklistMarkup({ rows: [{ kind: "evidence", entry }], monthTitle: "October", e: String });
+  assert.match(worklist, /\$4,800\.12/);
+  assert.equal(JSON.stringify(entry), before);
 });

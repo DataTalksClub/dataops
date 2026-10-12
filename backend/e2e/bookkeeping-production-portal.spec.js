@@ -72,7 +72,7 @@ test.describe("production portal bookkeeping", () => {
     const createdRow = page.getByRole("row").filter({
       hasText: "Synthetic Portal Vendor",
     });
-    await expect(createdRow).toContainText("20.00 EUR");
+    await expect(createdRow).toContainText("-€20.00");
     await page.reload();
     await expect(createdRow).toContainText("Synthetic browser evidence");
 

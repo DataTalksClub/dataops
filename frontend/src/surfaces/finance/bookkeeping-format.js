@@ -83,3 +83,26 @@ export function latestActivityMonth(entries, fallbackMonth) {
   if (months.length) return months[months.length - 1];
   return fallbackMonth;
 }
+
+// Display only: entry forms and storage keep their original decimal strings.
+export function formatAmount(value, currency = "EUR") {
+  const raw = value === null || value === undefined ? "" : String(value);
+  const code = String(currency || "").trim().toUpperCase();
+  if (!raw.trim()) return "—";
+  const numeric = typeof value === "number" || typeof value === "string"
+    ? Number(value)
+    : NaN;
+  const fallback = `${raw}${code ? ` ${code}` : ""}`;
+  if (!Number.isFinite(numeric) || !/^[A-Z]{3}$/.test(code)) return fallback;
+  try {
+    return new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency: code,
+      currencyDisplay: "narrowSymbol",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(numeric);
+  } catch {
+    return fallback;
+  }
+}

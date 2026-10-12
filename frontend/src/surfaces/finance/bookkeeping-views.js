@@ -2,7 +2,7 @@
 // data to markup: no queries, no events — bookkeeping.js owns state and
 // wiring, this module owns what the operator reads (#242 month lens).
 import { html } from "./shared.js";
-import { entryDirection, ledgerDate } from "./bookkeeping-format.js";
+import { entryDirection, formatAmount, ledgerDate } from "./bookkeeping-format.js";
 
 // The close-state header: the month, four counters, one CTA that follows
 // the month state. This is what answers "what is left for this month".
@@ -91,7 +91,7 @@ export function worklistMarkup({ rows, monthTitle, e }) {
       const what = html`<strong>${e(entry.counterparty)}</strong>
         <small
           >${e(ledgerDate(entry.transactionDate))} ·
-          ${e(`${entry.amount} ${entry.currency}`)}${entry.description ? ` · ${e(entry.description)}` : ""}</small
+          ${e(formatAmount(entry.amount, entry.currency))}${entry.description ? ` · ${e(entry.description)}` : ""}</small
         >`;
       const fix =
         kind === "evidence"
@@ -151,15 +151,15 @@ export function ledgerTableMarkup({ shown, hasEvidence, lensTitle, e }) {
                     </td>
                     <td data-label="Amount" class="ledger-amount">
                       ${e(
-                        `${entryDirection(entry) === "expense" ? "-" : ""}${entry.amount} ${entry.currency}`,
+                        formatAmount(`${entryDirection(entry) === "expense" ? "-" : ""}${entry.amount}`, entry.currency),
                       )}${entry.currency !== "EUR" && entry.amountEur
-                        ? `<small class="ledger-eur">≈ ${e(`${entry.amountEur} EUR`)}</small>`
+                        ? `<small class="ledger-eur">≈ ${e(formatAmount(entry.amountEur))}</small>`
                         : ""}
                     </td>
                     <td data-label="VAT" class="ledger-vat">
                       ${e(
                         entry.vatAmount
-                          ? `${entry.vatAmount} ${entry.vatCurrency || entry.currency}`
+                          ? formatAmount(entry.vatAmount, entry.vatCurrency || entry.currency)
                           : "—",
                       )}
                     </td>
