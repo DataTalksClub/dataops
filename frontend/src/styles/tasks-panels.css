@@ -902,7 +902,7 @@ body[data-workspace-view="tasks"] .card-checklist-header > .task-history-label {
   font-weight: 700;
   color: var(--dk-text-muted);
   font-variant-numeric: tabular-nums;
-  font-family: var(--dk-font-mono, monospace);
+  font-family: var(--dk-font-sans);
 }body[data-workspace-view="tasks"] .workflow-checklist-section .ops-progress {
   height: 6px;
   border-radius: 3px;

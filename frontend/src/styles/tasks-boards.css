@@ -316,7 +316,7 @@ body[data-workspace-view="tasks"] .ops-queue-origin {
 body[data-workspace-view="tasks"] .ops-queue-origin[data-source="recurring"] {
   color: var(--dk-text-faint);
   font-style: italic;
-}/* Due is a machine quantity or a word, never a sentence. */
+}/* Due dates stay compact and align for scanning. */
 body[data-workspace-view="tasks"] .ops-queue-due {
   color: var(--dk-text-muted);
   font-size: 12px;
@@ -325,7 +325,8 @@ body[data-workspace-view="tasks"] .ops-queue-due {
   white-space: nowrap;
 }body[data-workspace-view="tasks"] .ops-queue-due[data-due="overdue"] {
   color: var(--dk-danger-text);
-  font-family: var(--dk-font-mono);
+  font-family: var(--dk-font-sans);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
 }body[data-workspace-view="tasks"] .ops-queue-due[data-due="today"] {
   color: var(--attention-due);
@@ -972,7 +973,8 @@ body[data-workspace-view="tasks"] .runtime-template-readonly-tasks li::before {
   flex: none;
   width: 18px;
   color: var(--dk-text-faint);
-  font-family: var(--dk-font-mono);
+  font-family: var(--dk-font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
   font-weight: var(--dk-weight-medium);
 }
@@ -988,7 +990,8 @@ body[data-workspace-view="tasks"] .runtime-template-readonly-tasks li strong {
 body[data-workspace-view="tasks"] .runtime-template-readonly-tasks li span {
   flex: 0 0 auto;
   color: var(--dk-text-muted);
-  font-family: var(--dk-font-mono);
+  font-family: var(--dk-font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
   white-space: nowrap;
 }

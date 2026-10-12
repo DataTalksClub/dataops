@@ -246,7 +246,8 @@ body[data-workspace-view="sponsors"] .document-list {
   text-align: left;
 }.sponsor-crm-surface .crm-upcoming-list button span {
   color: var(--dk-text-muted);
-  font-family: var(--dk-font-mono);
+  font-family: var(--dk-font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 12px;
   white-space: nowrap;
 }.sponsor-crm-surface .crm-select-booking {

@@ -425,7 +425,8 @@ body[data-view="library"] .library-view {
 }.operating-model-count {
   display: block;
   color: var(--dk-text-heading);
-  font-family: var(--dk-font-mono);
+  font-family: var(--dk-font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 15px;
   font-weight: 600;
   line-height: 1;
