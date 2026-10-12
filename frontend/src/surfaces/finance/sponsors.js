@@ -192,10 +192,13 @@ export function createSponsorCrmSurface(context) {
       const companies = surface.querySelector("[data-crm-companies-section]");
       queue.hidden = view !== "queue";
       pipeline.hidden = view !== "pipeline";
-      companies.hidden = view === "pipeline";
+      companies.hidden = view !== "companies";
+      surface.querySelector(".crm-leads").hidden = view !== "leads";
+      surface.querySelector(".crm-layout").hidden = view === "companies" || view === "leads";
+      surface.querySelector("[data-crm-pipeline]").hidden = view !== "pipeline";
       const heading = surface.querySelector("[data-crm-list-heading]");
       heading.textContent =
-        view === "queue" ? "Queue" : view === "pipeline" ? "Pipeline" : "Companies";
+        view === "queue" ? "Queue" : view === "pipeline" ? "Pipeline" : view === "leads" ? "Leads" : "Companies";
       draw();
     }
     const { reopenDealDetail, reopenCompanyDetail } = createSponsorCompanyDetail({
@@ -406,8 +409,8 @@ export function createSponsorCrmSurface(context) {
                     <span class="status-label" data-status="${escapeHtml(item.status)}">${escapeHtml(humanizeOptionLabel(item.status))}</span>
                   </div>
                   <p class="crm-deal-meta">
-                    <span class="crm-deal-product">${escapeHtml(humanizeOptionLabel(item.productKind || "deal"))}</span>
-                    · <span class="crm-deal-amount">${escapeHtml(humanizeOptionLabel(item.money || "none"))}</span>
+                    <span class="crm-deal-product">${escapeHtml(({ "one-off": "One-off", package: "Package", course: "Course" }[item.productKind] || "Deal"))}</span>
+                    ${item.money && item.money !== "none" ? html`· <span class="crm-deal-amount">${escapeHtml(humanizeOptionLabel(item.money))}</span>` : ""}
                     · <span class="crm-deal-action">${escapeHtml(nextAction)}</span>
                     · <span class="crm-deal-pub">${escapeHtml(publication)}</span>
                   </p>
@@ -503,10 +506,12 @@ export function createSponsorCrmSurface(context) {
         ? organizations.find((item) => item.id === companyId)
         : null;
       if (deal) {
+        if (currentView === "companies" || currentView === "leads") setView("queue");
         safe(() => reopenDealDetail(deal), "Could not open deal");
         return true;
       }
       if (organization) {
+        if (currentView === "companies" || currentView === "leads") setView("queue");
         safe(() => reopenCompanyDetail(organization), "Could not open company");
         return true;
       }
@@ -925,6 +930,7 @@ export function createSponsorCrmSurface(context) {
         await loadCommunications(sponsorCommunications.selectedBookingId);
       }, "Approval was not applied");
     };
+    setView("queue");
     try {
       await refresh();
       if (routeToken && (!isWorkspaceRouteFresh(routeToken) || !surface.isConnected)) return;

@@ -42,7 +42,8 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
     <nav class="crm-views" data-crm-views aria-label="Sponsors views">
       <button type="button" data-crm-view="queue" aria-pressed="true">Queue</button
       ><button type="button" data-crm-view="pipeline" aria-pressed="false">Pipeline</button
-      ><button type="button" data-crm-view="companies" aria-pressed="false">Companies</button>
+      ><button type="button" data-crm-view="companies" aria-pressed="false">Companies</button
+      ><button type="button" data-crm-view="leads" aria-pressed="false">Leads</button>
     </nav>
     <nav class="crm-pipeline" data-crm-pipeline aria-label="Deal pipeline"></nav>
     <section class="crm-alerts" aria-label="Alerts">
@@ -85,7 +86,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
         <div data-crm-upcoming></div>
       </section>
     </div>
-    <section class="crm-directory" data-crm-companies-section aria-labelledby="crm-sponsors-heading">
+    <section class="crm-directory" data-crm-companies-section hidden aria-labelledby="crm-sponsors-heading">
       <header class="section-header">
         <div>
           <h3 id="crm-sponsors-heading">Companies</h3>
@@ -101,7 +102,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
       </header>
       <div data-crm-orgs>Loading sponsors…</div>
     </section>
-    <section class="crm-leads" aria-labelledby="crm-leads-heading">
+    <section class="crm-leads" hidden aria-labelledby="crm-leads-heading">
       <header class="section-header">
         <div>
           <p class="section-kicker">Review queue</p>

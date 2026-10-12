@@ -35,7 +35,7 @@ const ROUTES = [
   { path: '/recurring', ready: '.ops-recurring-surface', content: '.recurring-summary, .recurring-toolbar, .ops-recurring-section' },
   { path: '/assistants', ready: '.assistant-workspace', content: '.assistant-layout' },
   { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bookkeeping-worklist, .bookkeeping-section' },
-  { path: '/sponsors', ready: '.sponsor-crm-surface', content: '.crm-layout, .crm-upcoming-list, .crm-directory-row, .crm-booking-row', contentReady: '.crm-directory-row, .crm-upcoming-list, .ops-honest-state' },
+  { path: '/sponsors', ready: '.sponsor-crm-surface', content: '.crm-layout, .crm-upcoming-list, .crm-directory-row, .crm-booking-row', contentReady: '.crm-master .crm-booking-row, .crm-master .honest-state' },
   { path: '/newsletter', ready: '.newsletter-surface', content: '.newsletter-slot-row, .newsletter-slot-list, .newsletter-schedule' },
   { path: '/calendar', ready: '.calendar-surface', content: '.calendar-grid', contentReady: '.calendar-grid', mockCalendar: true },
   { path: '/processes', ready: '.ops-surface-docs', content: '.ops-docs-catalog, .ops-docs-state, .ops-docs-state-detail' },

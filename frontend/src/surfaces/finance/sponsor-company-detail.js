@@ -90,16 +90,18 @@ export function createSponsorCompanyDetail({
             return html`<article class="crm-card" ${current}>
               <div class="crm-deal-card-header">
                 <strong>
-                  ${escapeHtml(humanizeOptionLabel(item.productKind || "deal"))}
+                  ${escapeHtml(({ "one-off": "One-off", package: "Package", course: "Course" }[item.productKind] || "Deal"))}
                 </strong>
                 <span class="status-label" data-status="${escapeHtml(item.status)}">
                   ${escapeHtml(humanizeOptionLabel(item.status))}
                 </span>
               </div>
               <p class="crm-deal-meta">
-                <span class="crm-deal-amount">${escapeHtml(humanizeOptionLabel(item.money || "none"))}</span>
-                · ${escapeHtml(humanizeOptionLabel(item.fulfillment || "none"))}
-                · <span class="crm-deal-action">${escapeHtml(next)}</span>
+                ${[
+                  item.money && item.money !== "none" ? humanizeOptionLabel(item.money) : "",
+                  item.fulfillment && item.fulfillment !== "none" ? humanizeOptionLabel(item.fulfillment) : "",
+                  next,
+                ].filter(Boolean).map((value) => escapeHtml(value)).join(" · ")}
               </p>
               <div class="row-actions">
                 <button data-edit-deal="${escapeHtml(item.id)}">Edit deal</button>
