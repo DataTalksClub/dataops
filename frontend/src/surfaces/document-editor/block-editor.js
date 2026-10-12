@@ -351,19 +351,28 @@ export function createBlockEditor(context, services) {
       content.append(label);
     } else if (block.type === "callout") {
       const callout = document.createElement("div");
-      callout.className = "notion-callout";
+      const matchKind = block.raw.match(/\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i);
+      const calloutKind = matchKind ? matchKind[1].toUpperCase() : "NOTE";
+      callout.className = `notion-callout notion-callout-${calloutKind.toLowerCase()}`;
       const icon = document.createElement("span");
       icon.className = "notion-callout-icon";
-      icon.textContent = "💡";
+      icon.textContent = calloutKind === "IMPORTANT" ? "⭐" :
+                         calloutKind === "TIP" ? "💡" :
+                         calloutKind === "WARNING" ? "⚠️" :
+                         calloutKind === "CAUTION" ? "🚨" : "💡";
       const body = document.createElement("div");
       body.className = "notion-callout-body";
-      const cleanText = block.raw.replace(/^>\s?(\[!NOTE\]\s*)?/gm, "");
+      let cleanText = block.raw
+        .replace(/^>\s?/gm, "")
+        .replace(/^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*\n?/i, "")
+        .trim();
       body.append(renderMarkdown(cleanText));
 
       attachInlineEditor(body, {
         getValue: () => cleanText,
         commit: (newText) => {
-          const newRaw = `> [!NOTE]\n> ${newText.trim().replace(/\n/g, "\n> ")}`;
+          const trimmed = newText.trim();
+          const newRaw = `> [!${calloutKind}]\n> ${trimmed.replace(/\n/g, "\n> ")}`;
           block.raw = newRaw;
           onChange(index, newRaw);
         },

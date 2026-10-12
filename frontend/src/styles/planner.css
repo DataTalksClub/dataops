@@ -1334,6 +1334,22 @@ a.calendar-day-timeline-title:hover {
   max-height: 480px;
   overflow-y: auto;
 }
+.notion-callout.notion-callout-important {
+  border-color: var(--dk-accent-default);
+  background: var(--dk-accent-soft);
+}
+.notion-callout.notion-callout-warning {
+  border-color: var(--dk-warning);
+  background: var(--dk-bg-muted);
+}
+.notion-callout.notion-callout-caution {
+  border-color: var(--dk-danger);
+  background: var(--dk-bg-muted);
+}
+.notion-callout.notion-callout-tip {
+  border-color: var(--dk-success);
+  background: var(--dk-bg-muted);
+}
 
 /* Preview styles */
 .newsletter-preview-toolbar {

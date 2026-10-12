@@ -40,42 +40,101 @@ Here are the latest community highlights, articles, and discussions.
 - **Data Platform Lead** (Berlin / Hybrid)`,
 };
 
+function formatInline(escaped) {
+  return escaped
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(
+      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noreferrer" style="color: #2563eb; text-decoration: underline;">$1</a>',
+    );
+}
+
 export function renderMarkdownToHtml(md, escapeHtml) {
   if (!md) return "";
-  let html = escapeHtml(md);
-  html = html.replace(/^### (.*$)/gim, "<h3>$1</h3>");
-  html = html.replace(/^## (.*$)/gim, "<h2>$1</h2>");
-  html = html.replace(/^# (.*$)/gim, "<h1>$1</h1>");
-  html = html.replace(
-    /^>\s?\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*$)/gim,
-    '<div style="padding: 10px 14px; margin: 12px 0;' +
-      ' border-left: 4px solid var(--dk-primary, #3b82f6);' +
-      ' background: #f8fafc; border-radius: 4px;"><strong>$1</strong>: $2</div>',
-  );
-  html = html.replace(
-    /^>\s?(.*$)/gim,
-    '<blockquote style="margin: 12px 0; padding-left: 12px;' +
-      ' border-left: 3px solid #cbd5e1; color: #64748b;">$1</blockquote>',
-  );
-  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  html = html.replace(
-    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noreferrer"' +
-      ' style="color: #2563eb; text-decoration: underline;">$1</a>',
-  );
-  html = html.replace(/^\s*[-*]\s+(.*$)/gim, "<li>$1</li>");
-  html = html.replace(/(<li>.*<\/li>(\n|$)(\s*))+/g, "<ul>$&</ul>");
-  html = html.replace(/^---$/gim, "<hr>");
-  const paragraphs = html.split(/\n{2,}/);
-  return paragraphs
-    .map((p) => {
-      const trimmed = p.trim();
-      if (!trimmed) return "";
-      if (/^<(h[1-6]|ul|ol|div|blockquote|hr)/.test(trimmed)) return trimmed;
-      return `<p>${trimmed.replace(/\n/g, "<br>")}</p>`;
-    })
-    .join("\n");
+  const lines = String(md).split("\n");
+  const renderedBlocks = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    if (!lines[i].trim()) {
+      i++;
+      continue;
+    }
+    const line = lines[i];
+
+    if (/^>\s?/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])) {
+        buf.push(lines[i].replace(/^>\s?/, ""));
+        i++;
+      }
+      const match = buf[0].match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$/i);
+      if (match) {
+        const type = match[1].toUpperCase();
+        if (match[2].trim()) buf[0] = match[2].trim();
+        else buf.shift();
+        const colors = { NOTE: "#3b82f6", TIP: "#10b981", IMPORTANT: "#8b5cf6", WARNING: "#f59e0b", CAUTION: "#ef4444" };
+        const bColor = colors[type] || "#3b82f6";
+        const inner = buf.map((l) => formatInline(escapeHtml(l))).join("<br>");
+        renderedBlocks.push(
+          `<div class="newsletter-callout newsletter-callout-${type.toLowerCase()}" ` +
+            `style="padding: 12px 16px; margin: 14px 0; border-left: 4px solid ${bColor}; ` +
+            `background: #f8fafc; border-radius: 6px; line-height: 1.5;">${inner}</div>`,
+        );
+      } else {
+        const inner = buf.map((l) => formatInline(escapeHtml(l))).join("<br>");
+        renderedBlocks.push(
+          `<blockquote style="margin: 12px 0; padding-left: 12px; ` +
+            `border-left: 3px solid #cbd5e1; color: #64748b; font-style: italic;">${inner}</blockquote>`,
+        );
+      }
+      continue;
+    }
+
+    const hMatch = line.match(/^(#{1,3})\s+(.*)$/);
+    if (hMatch) {
+      renderedBlocks.push(`<h${hMatch[1].length}>${formatInline(escapeHtml(hMatch[2]))}</h${hMatch[1].length}>`);
+      i++;
+      continue;
+    }
+
+    if (/^(?:---|\*\*\*|___)\s*$/.test(line)) {
+      renderedBlocks.push("<hr>");
+      i++;
+      continue;
+    }
+
+    if (/^\s*[-*]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+        items.push(`<li>${formatInline(escapeHtml(lines[i].replace(/^\s*[-*]\s+/, "")))}</li>`);
+        i++;
+      }
+      renderedBlocks.push(`<ul>${items.join("")}</ul>`);
+      continue;
+    }
+
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+        items.push(`<li>${formatInline(escapeHtml(lines[i].replace(/^\s*\d+\.\s+/, "")))}</li>`);
+        i++;
+      }
+      renderedBlocks.push(`<ol>${items.join("")}</ol>`);
+      continue;
+    }
+
+    const pLines = [line];
+    i++;
+    while (i < lines.length && lines[i].trim() && !/^([>#-]|---|\*\*\*|\d+\.)/.test(lines[i])) {
+      pLines.push(lines[i]);
+      i++;
+    }
+    renderedBlocks.push(`<p>${pLines.map((l) => formatInline(escapeHtml(l))).join("<br>")}</p>`);
+  }
+
+  return renderedBlocks.join("\n");
 }
 
 export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
@@ -90,18 +149,10 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
             </p>
           </div>
           <nav class="newsletter-dialog-tabs" aria-label="Issue tabs">
-            <button type="button" data-dialog-tab="details" class="dialog-tab-btn" aria-pressed="true">
-              Details
-            </button>
-            <button type="button" data-dialog-tab="compose" class="dialog-tab-btn" aria-pressed="false">
-              Compose
-            </button>
-            <button type="button" data-dialog-tab="preview" class="dialog-tab-btn" aria-pressed="false">
-              Email Preview
-            </button>
-            <button type="button" data-dialog-tab="schedule" class="dialog-tab-btn" aria-pressed="false">
-              Schedule & Checklist
-            </button>
+            <button type="button" data-dialog-tab="details" class="dialog-tab-btn" aria-pressed="true">Details</button>
+            <button type="button" data-dialog-tab="compose" class="dialog-tab-btn" aria-pressed="false">Compose</button>
+            <button type="button" data-dialog-tab="preview" class="dialog-tab-btn" aria-pressed="false">Email Preview</button>
+            <button type="button" data-dialog-tab="schedule" class="dialog-tab-btn" aria-pressed="false">Schedule & Checklist</button>
           </nav>
         </div>
         <div class="dk-dialog__body">
@@ -147,18 +198,10 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
               </div>
               <div class="newsletter-quick-templates">
                 <span>Quick insert:</span>
-                <button type="button" class="newsletter-template-btn" data-insert-template="weekly">
-                  + Weekly Template
-                </button>
-                <button type="button" class="newsletter-template-btn" data-insert-template="sponsor">
-                  + Sponsor Spotlight
-                </button>
-                <button type="button" class="newsletter-template-btn" data-insert-template="events">
-                  + Events Section
-                </button>
-                <button type="button" class="newsletter-template-btn" data-insert-template="jobs">
-                  + Jobs Section
-                </button>
+                <button type="button" class="newsletter-template-btn" data-insert-template="weekly">+ Weekly Template</button>
+                <button type="button" class="newsletter-template-btn" data-insert-template="sponsor">+ Sponsor Spotlight</button>
+                <button type="button" class="newsletter-template-btn" data-insert-template="events">+ Events Section</button>
+                <button type="button" class="newsletter-template-btn" data-insert-template="jobs">+ Jobs Section</button>
               </div>
             </div>
             <div class="newsletter-blocks-wrapper" data-blocks-editor></div>
@@ -167,16 +210,10 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
           <div class="issue-pane" data-pane="preview" hidden>
             <div class="newsletter-preview-toolbar">
               <div class="preview-device-toggle">
-                <button type="button" class="preview-device-btn is-active" data-device="desktop">
-                  Desktop (600px)
-                </button>
-                <button type="button" class="preview-device-btn" data-device="mobile">
-                  Mobile (360px)
-                </button>
+                <button type="button" class="preview-device-btn is-active" data-device="desktop">Desktop (600px)</button>
+                <button type="button" class="preview-device-btn" data-device="mobile">Mobile (360px)</button>
               </div>
-              <button type="button" class="newsletter-template-btn" data-copy-preview>
-                Copy preview text
-              </button>
+              <button type="button" class="newsletter-template-btn" data-copy-preview>Copy preview text</button>
             </div>
             <div class="preview-envelope">
               <div class="envelope-row">
@@ -730,8 +767,14 @@ export function setupNewsletterDialog(options) {
   dialog.querySelectorAll("[data-insert-template]").forEach((btn) => {
     btn.onclick = () => {
       const tplKey = btn.dataset.insertTemplate;
-      const tplText = NEWSLETTER_TEMPLATES[tplKey];
+      let tplText = NEWSLETTER_TEMPLATES[tplKey];
       if (!tplText) return;
+      if (tplKey === "sponsor") {
+        const bookerInput = form?.elements?.bookedByDisplayName || dialog.querySelector('[name="bookedByDisplayName"]');
+        const booker = (bookerInput?.value || currentEditingItem?.bookedByDisplayName || "").trim();
+        const sponsorName = booker || "Featured Partner";
+        tplText = tplText.replace(/Sponsor Name/g, sponsorName);
+      }
       const newBlocks = parseMarkdownBlocks(tplText);
       currentBlocks = [...(currentBlocks || []), ...newBlocks];
       renderBlocksEditor();
