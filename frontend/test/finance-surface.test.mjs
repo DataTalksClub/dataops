@@ -624,7 +624,7 @@ describe("Finance surface boundary", () => {
       request: async (url) => {
         const path = requestPath(url);
         if (path.endsWith("/organizations"))
-          return { items: [{ id: "org-1", displayName: "Safe Sponsor" }] };
+          return { items: [{ id: "org-1", displayName: "Safe Sponsor", relationship: "talking" }] };
         if (path.endsWith("/contacts"))
           return {
             items: [
@@ -688,6 +688,9 @@ describe("Finance surface boundary", () => {
     });
 
     await finance.renderSponsorCrmSurface();
+    const companyDetail = document.surface.querySelector("[data-crm-detail]").innerHTML;
+    assert.match(companyDetail, /class="booking-kind">Agreed<\/p>/);
+    assert.match(companyDetail, /data-status="agreed">\s*Agreed/);
 
     const communications = document.surface.querySelector(
       "[data-crm-communications]",

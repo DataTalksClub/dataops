@@ -143,8 +143,8 @@ export function createSponsorCompanyDetail({
           <strong>No filed mail yet</strong>
           <p>Threads linked to this company will appear here.</p>
         </li>`;
-    const relationship = humanizeOptionLabel(
-      organization.relationship || "company",
+    const kindLabel = humanizeOptionLabel(
+      deal ? deal.status : organization.relationship || "company",
     );
     const domainChip = organization.domain
       ? html`<span class="status-label" data-status="domain">${escapeHtml(organization.domain)}</span>`
@@ -162,7 +162,7 @@ export function createSponsorCompanyDetail({
           <button type="button" class="booking-back" data-close-booking>
             ← Sponsors
           </button>
-          <p class="booking-kind">${escapeHtml(relationship)}</p>
+          <p class="booking-kind">${escapeHtml(kindLabel)}</p>
           <h2>${escapeHtml(organization.displayName || "Unknown sponsor")}</h2>
           <p>${domainChip}${dealChip}</p>
         </div>
