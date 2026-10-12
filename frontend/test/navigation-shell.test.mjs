@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import {
+  WORKSPACE_ROUTE_DEFINITIONS,
   canonicalWorkspaceUrl,
   parseWorkspaceHash,
   workspaceRouteFor,
@@ -182,6 +183,49 @@ function createNavigationHarness(options = {}) {
 }
 
 describe("canonical navigation shell behavior", () => {
+  test("direct workspace paths normalize without waiting for the document catalog", async () => {
+    for (const path of Object.keys(WORKSPACE_ROUTE_DEFINITIONS)) {
+      const harness = createNavigationHarness({ hash: "", pathname: path });
+      await harness.shell.initializeRouting(new Promise(() => {}));
+      assert.equal(harness.shell.getActiveWorkspaceRoute().path, path);
+      assert.equal(harness.history.replaced.at(-1).url, canonicalWorkspaceUrl(path));
+      assert.deepEqual(harness.history.pushed, []);
+    }
+  });
+
+  test("direct links retain validated entity queries and discard unrelated parameters", async () => {
+    const harness = createNavigationHarness({ hash: "", pathname: "/sponsors/", search: "?companyId=company-1&dealId=deal-1&tracking=demo" });
+    await harness.shell.initializeRouting(Promise.resolve());
+    assert.equal(harness.shell.getActiveWorkspaceRoute().canonicalUrl, "/#/sponsors?dealId=deal-1&companyId=company-1");
+    assert.equal(harness.history.replaced.at(-1).url, "/#/sponsors?dealId=deal-1&companyId=company-1");
+  });
+
+  test("invalid direct-link parameters return to Queue instead of becoming document paths", async () => {
+    for (const [pathname, search] of [["/tasks", "?date=2026-02-30"], ["/cards", "?taskId=orphan"], ["/sponsors", "?dealId=one&dealId=two"]]) {
+      const harness = createNavigationHarness({ hash: "", pathname, search });
+      await harness.shell.initializeRouting(Promise.resolve());
+      assert.equal(harness.shell.getActiveWorkspaceRoute().path, "/");
+      assert.equal(harness.history.replaced.at(-1).url, "/#/");
+      assert.equal(harness.calls.some(([name]) => name === "open-doc"), false);
+    }
+  });
+
+  test("browser history applies direct workspace URLs and preserves entity queries", async () => {
+    let routeCallback;
+    globalThis.setTimeout = (callback) => { routeCallback = callback; return 1; };
+    globalThis.clearTimeout = () => {};
+    const harness = createNavigationHarness({ hash: "#/tasks" });
+    await harness.shell.initializeRouting(Promise.resolve());
+    harness.location.hash = "";
+    harness.location.pathname = "/sponsors";
+    harness.location.search = "?dealId=deal-1";
+    harness.shell.scheduleCurrentBrowserLocation();
+    routeCallback();
+    await nextTicks();
+    assert.equal(harness.shell.getActiveWorkspaceRoute().path, "/sponsors");
+    assert.equal(harness.history.replaced.at(-1).url, "/#/sponsors?dealId=deal-1");
+  });
+
   test("commits canonical entity routes before hydrating their panels", async () => {
     const harness = createNavigationHarness();
     const result = harness.shell.navigateCanonicalWorkspace("/cards", {

@@ -342,8 +342,19 @@ export function createNavigationShell(context) {
     }).ready;
   }
 
+  function readCurrentWorkspaceRoute() {
+    if (locationRef.hash) return parseWorkspaceHash();
+    const pathname = locationRef.pathname || "/";
+    // Only registered workspace paths use hash routing. Document and folder
+    // URLs still need their content catalog before they can be opened.
+    const pathRoute = parseWorkspaceHash(`#${pathname}`);
+    if (pathRoute.invalid) return null;
+    const route = parseWorkspaceHash(`#${pathname}${locationRef.search || ""}`);
+    return { ...route, normalized: true };
+  }
+
   async function openInitialRoute() {
-    let workspaceRoute = parseWorkspaceHash();
+    const workspaceRoute = readCurrentWorkspaceRoute();
     if (workspaceRoute && !workspaceRoute.invalid) {
       if (workspaceRoute.normalized) {
         historyRef.replaceState(
@@ -351,12 +362,11 @@ export function createNavigationShell(context) {
           "",
           workspaceRoute.canonicalUrl,
         );
-        workspaceRoute = parseWorkspaceHash();
       }
       await applyWorkspaceRoute(workspaceRoute);
       return;
     }
-    if (locationRef.hash || locationRef.pathname === "/") {
+    if (workspaceRoute) {
       await applyWorkspaceRoute(replaceWithWorkQueue());
       return;
     }
@@ -388,7 +398,7 @@ export function createNavigationShell(context) {
   }
 
   async function applyCurrentBrowserLocation() {
-    let workspaceRoute = parseWorkspaceHash();
+    const workspaceRoute = readCurrentWorkspaceRoute();
     if (workspaceRoute && !workspaceRoute.invalid) {
       if (workspaceRoute.normalized) {
         historyRef.replaceState(
@@ -396,12 +406,11 @@ export function createNavigationShell(context) {
           "",
           workspaceRoute.canonicalUrl,
         );
-        workspaceRoute = parseWorkspaceHash();
       }
       await applyWorkspaceRoute(workspaceRoute);
       return;
     }
-    if (locationRef.hash || locationRef.pathname === "/") {
+    if (workspaceRoute) {
       await applyWorkspaceRoute(replaceWithWorkQueue());
       return;
     }
@@ -430,7 +439,7 @@ export function createNavigationShell(context) {
 
   function initializeRouting(documentsReady) {
     initialRouteReadyPromise = Promise.resolve().then(() =>
-      locationRef.hash || locationRef.pathname === "/"
+      locationRef.hash || locationRef.pathname === "/" || readCurrentWorkspaceRoute()
         ? openInitialRoute()
         : documentsReady.then(openInitialRoute),
     );
