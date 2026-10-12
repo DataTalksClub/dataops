@@ -172,6 +172,7 @@ function createCalendarDom() {
   const alerts = surface.setQuery("[data-alerts]", new TestElement("div"));
   const dialog = surface.setQuery("dialog", new TestElement("dialog"));
   const form = dialog.setQuery("form", new TestElement("form"));
+  form.elements.allDay.checked = true;
   form.setQuery('[role="alert"]', new TestElement("p"));
   const view = surface.setQuery("[data-view]", new TestElement("select"));
   view.value = "month";

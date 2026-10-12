@@ -224,14 +224,23 @@ test("production calendar renders cross-year ISO weeks and Berlin DST boundary d
   page,
 }) => {
   await page.clock.setFixedTime(new Date("2026-12-31T12:00:00Z"));
+  let savedTimed;
+
   await page.route("**/work/api/calendar-items**", (route) => {
     const u = new URL(route.request().url());
     if (u.pathname.endsWith("/overlays"))
       return route.fulfill({ json: { items: [] } });
+    if (route.request().method() === "PUT") {
+      savedTimed = route.request().postDataJSON();
+      return route.fulfill({ json: { ...savedTimed, id: "dst-edge", version: 2 } });
+    }
+    const isAutumn = /^2026-10-/.test(u.searchParams.get("from") || "");
     const isDst = /^2026-0[23]-/.test(u.searchParams.get("from") || "");
     return route.fulfill({
       json: {
-        items: isDst ? [{id:"dst-edge",activityType:"webinar",title:"DST-safe timed activity",status:"confirmed",allDay:false,startsAt:"2026-03-29T01:30:00.000Z",endsAt:"2026-03-29T02:30:00.000Z",startKey:"2026-03-29",endKey:"2026-03-29",version:1}] : [
+        items: isAutumn ? [{ id: "autumn-edge", activityType: "webinar", title: "Autumn repeated hour",
+          status: "confirmed", allDay: false, startsAt: "2026-10-25T00:30:00.000Z", endsAt: "2026-10-25T01:45:00.000Z",
+          startKey: "2026-10-25", endKey: "2026-10-25", version: 1 }] : isDst ? [{id:"dst-edge",activityType:"webinar",title:"DST-safe timed activity",status:"confirmed",allDay:false,startsAt:"2026-03-29T01:30:00.000Z",endsAt:"2026-03-29T02:30:00.000Z",startKey:"2026-03-29",endKey:"2026-03-29",version:1}] : [
           {
             id: "year-edge",
             activityType: "other",
@@ -273,9 +282,35 @@ test("production calendar renders cross-year ISO weeks and Berlin DST boundary d
   await surface.locator("[data-today]").click();
   await expect(surface.locator('time[datetime="2026-03-29"]')).toBeVisible();
   await expect(surface.getByText("DST-safe timed activity")).toBeVisible();
+  await expect(surface.locator('[data-edit="dst-edge"]')).toContainText("03:30");
+  await surface.getByText("DST-safe timed activity").click();
+  await expect(surface.getByLabel("Start date")).toHaveValue("2026-03-29");
+  await expect(surface.getByLabel("End date")).toHaveValue("2026-03-29");
+  await expect(surface.getByLabel("Start time (Berlin)")).toHaveValue("03:30");
+  await expect(surface.getByLabel("End time (Berlin)")).toHaveValue("04:30");
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.screenshot({ path: path.join(shots, "calendar-demo-timed-editor-1280x800.png") });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.screenshot({ path: path.join(shots, "calendar-demo-timed-editor-1440x900.png") });
+  await surface.getByLabel("Title", { exact: true }).fill("Edited timed activity");
+  await surface.getByRole("button", { name: "Save activity" }).click();
+  await expect.poll(() => savedTimed?.startsAt).toBe("2026-03-29T01:30:00.000Z");
+  expect(savedTimed.endsAt).toBe("2026-03-29T02:30:00.000Z");
+  expect(savedTimed.allDay).toBe(false);
+  expect(savedTimed).not.toHaveProperty("startDate");
+  expect(savedTimed).not.toHaveProperty("startTime");
   await surface.screenshot({
     path: path.join(shots, "production-dst-boundary.png"),
   });
+  await page.clock.setFixedTime(new Date("2026-10-25T12:00:00Z"));
+  await surface.locator("[data-today]").click();
+  await surface.getByText("Autumn repeated hour").click();
+  await expect(surface.getByLabel("Start time (Berlin)")).toHaveValue("02:30");
+  await expect(surface.getByLabel("End time (Berlin)")).toHaveValue("02:45");
+  await surface.getByLabel("Title", { exact: true }).fill("Autumn title edit");
+  await surface.getByRole("button", { name: "Save activity" }).click();
+  await expect.poll(() => savedTimed?.startsAt).toBe("2026-10-25T00:30:00.000Z");
+  expect(savedTimed.endsAt).toBe("2026-10-25T01:45:00.000Z");
 });
 
 

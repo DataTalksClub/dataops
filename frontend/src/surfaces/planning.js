@@ -47,6 +47,20 @@ export function createPlanningSurface(context) {
     return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
   }
 
+  function berlinTimestamp(date, time) {
+    const local = `${date}T${time}`;
+    const target = Date.parse(`${local}:00Z`);
+    let instant = target;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const represented = Date.parse(`${berlinDateTime(instant)}:00Z`);
+      instant += target - represented;
+    }
+    if (berlinDateTime(instant) !== local) {
+      throw new Error("This time does not exist in Europe/Berlin because the clocks change. Choose another time.");
+    }
+    return new Date(instant).toISOString();
+  }
+
   function calendarAlertCopy(reasonCode) {
     return {
       "public-holiday-overlap": "Activity overlaps a public holiday",
@@ -204,8 +218,11 @@ export function createPlanningSurface(context) {
             <label>Status
               <select name="status">${activityStatusOptions}</select>
             </label>
+            <label class="planner-field-wide calendar-all-day"><input name="allDay" type="checkbox" checked> All-day activity</label>
             <label>Start date <input name="startDate" type="date" required></label>
             <label>End date <input name="endDate" type="date" required></label>
+            <label data-time-field hidden>Start time (Berlin) <input name="startTime" type="time"></label>
+            <label data-time-field hidden>End time (Berlin) <input name="endTime" type="time"></label>
             <label class="planner-field-wide">Card reference <input name="cardId" autocomplete="off"></label>
             <label class="planner-field-wide">Planning notes <textarea name="notes" maxlength="2000" rows="4"></textarea></label>
           </div>
@@ -717,20 +734,41 @@ export function createPlanningSurface(context) {
     surface.querySelector("[data-type]").onchange = render;
     surface.querySelectorAll("[data-layer]").forEach((control) => { control.onchange = render; });
     const deleteBtn = dialog.querySelector("[data-delete-activity]");
+    function updateTimeFields() {
+      const allDay = form.elements.allDay.checked;
+      form.querySelectorAll("[data-time-field]").forEach((field) => { field.hidden = allDay; });
+      for (const name of ["startTime", "endTime"]) {
+        form.elements[name].disabled = allDay;
+        form.elements[name].required = !allDay;
+      }
+    }
+    form.elements.allDay.onchange = updateTimeFields;
+    let editingActivity = null;
     function openActivityDialog(item = null, defaultDate = null) {
+      editingActivity = item;
       form.reset();
       form.querySelector('[role="alert"]').textContent = "";
       if (item) {
         Object.keys(item).forEach((key) => {
           if (form.elements[key]) form.elements[key].value = item[key] || "";
         });
+        form.elements.allDay.checked = item.allDay !== false;
+        if (item.allDay === false) {
+          const start = berlinDateTime(item.startsAt), end = berlinDateTime(item.endsAt);
+          form.elements.startDate.value = start.slice(0, 10);
+          form.elements.endDate.value = end.slice(0, 10);
+          form.elements.startTime.value = start.slice(11);
+          form.elements.endTime.value = end.slice(11);
+        }
         if (deleteBtn?.style) deleteBtn.style.display = "";
       } else {
+        form.elements.allDay.checked = true;
         const date = defaultDate || iso(cursor);
         form.elements.startDate.value = date;
         form.elements.endDate.value = date;
         if (deleteBtn?.style) deleteBtn.style.display = "none";
       }
+      updateTimeFields();
       dialog.showModal();
     }
 
@@ -803,10 +841,24 @@ export function createPlanningSurface(context) {
       form.querySelector('[role="alert"]').textContent = "";
       const value = Object.fromEntries([...new FormData(form)].filter(([, fieldValue]) => fieldValue !== "")), id = value.id;
       delete value.id;
-      value.allDay = true;
+      value.allDay = form.elements.allDay.checked;
       value.timeZone = "Europe/Berlin";
       if (value.version) value.version = Number(value.version);
       try {
+        if (!value.allDay) {
+          // Preserve the item's original offset when an autumn hour repeats.
+          const unchangedTime = (timestamp, date, time) => timestamp
+            && berlinDateTime(timestamp) === `${date}T${time}`;
+          value.startsAt = unchangedTime(editingActivity?.startsAt, value.startDate, value.startTime)
+            ? editingActivity.startsAt : berlinTimestamp(value.startDate, value.startTime);
+          value.endsAt = unchangedTime(editingActivity?.endsAt, value.endDate, value.endTime)
+            ? editingActivity.endsAt : berlinTimestamp(value.endDate, value.endTime);
+          if (value.startsAt >= value.endsAt) throw new Error("End time must be after start time.");
+          delete value.startDate;
+          delete value.endDate;
+        }
+        delete value.startTime;
+        delete value.endTime;
         await api(id ? `/${encodeURIComponent(id)}` : "", { method: id ? "PUT" : "POST", body: JSON.stringify(value) });
         dialog.close();
         load();
