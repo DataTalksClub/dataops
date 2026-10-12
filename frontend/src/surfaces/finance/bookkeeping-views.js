@@ -2,7 +2,7 @@
 // data to markup: no queries, no events — bookkeeping.js owns state and
 // wiring, this module owns what the operator reads (#242 month lens).
 import { html } from "./shared.js";
-import { entryDirection, formatAmount, ledgerDate } from "./bookkeeping-format.js";
+import { entryDirection, entryTypeLabel, formatAmount, ledgerDate } from "./bookkeeping-format.js";
 
 // The close-state header: the month, four counters, one CTA that follows
 // the month state. This is what answers "what is left for this month".
@@ -164,7 +164,7 @@ export function ledgerTableMarkup({ shown, hasEvidence, lensTitle, e }) {
                       )}
                     </td>
                     <td data-label="Category / type">
-                      ${e([entry.category, entry.entryType].filter(Boolean).join(" / ") || "—")}
+                      ${e([entry.category, entryTypeLabel(entry.entryType)].filter(Boolean).join(" / ") || "—")}
                     </td>
                     <td data-label="Evidence">
                       ${hasEvidence(entry.id)
@@ -272,7 +272,7 @@ export function transactionOptionsMarkup(scoped, e) {
       .map(
         (entry) =>
           html`<option value="${e(entry.id)}">
-            ${e(`${entry.transactionDate} · ${entry.counterparty}`)}
+            ${e(`${ledgerDate(entry.transactionDate)} · ${entry.counterparty}`)}
           </option>`,
       )
       .join("")}`;

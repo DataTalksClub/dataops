@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import { formatAmount } from "../src/surfaces/finance/bookkeeping-format.js";
-import { ledgerTableMarkup, worklistMarkup } from "../src/surfaces/finance/bookkeeping-views.js";
+import { ledgerTableMarkup, transactionOptionsMarkup, worklistMarkup } from "../src/surfaces/finance/bookkeeping-views.js";
 
 import { createFinanceSurface } from "../src/surfaces/finance/index.js";
 import { createSponsorFinance } from "../src/surfaces/finance/sponsor-finance.js";
@@ -1719,6 +1719,10 @@ test("ledger, VAT, conversions, and worklist format display without changing dec
   assert.match(ledger, /-\$4,800\.12/);
   assert.match(ledger, /≈ €4,200\.46/);
   assert.match(ledger, /€912\.02/);
+  assert.match(ledger, /Expense/);
+  const options = transactionOptionsMarkup([{ id: "friendly-date", transactionDate: "2026-10-03", counterparty: "Example" }], escapeHtml);
+  assert.match(options, /3 Oct(?: 2026)? · Example/);
+  assert.doesNotMatch(options, /2026-10-03/);
   const worklist = worklistMarkup({ rows: [{ kind: "evidence", entry }], monthTitle: "October", e: String });
   assert.match(worklist, /\$4,800\.12/);
   assert.equal(JSON.stringify(entry), before);

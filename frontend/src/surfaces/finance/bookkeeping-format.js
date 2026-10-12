@@ -30,6 +30,14 @@ export function entryDirection(entry) {
   return "expense";
 }
 
+export function entryTypeLabel(value) {
+  return String(value || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+
 // Ledger dates read as short human dates; the year is kept when it is not
 // the current one, since a finance ledger spans years.
 export function ledgerDate(value) {
