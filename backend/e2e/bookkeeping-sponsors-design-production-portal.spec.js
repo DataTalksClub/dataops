@@ -277,6 +277,15 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await page.getByRole("button", { name: "Open deal" }).click();
     await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Company detail sections" })).toContainText("Finance");
+    const financePanel = page.locator('[data-finance-panel]');
+    await expect(financePanel.locator(".finance-status")).toHaveText("Evidence consistent");
+    await expect(financePanel).toContainText("€1,200.00");
+    await expect(financePanel).toContainText("€700.00");
+    await expect(financePanel).toContainText("30 Sept");
+    await expect(financePanel).toContainText("uploaded 30 Aug");
+    await expect(financePanel).toContainText(/1 Sept(?: 2026)?\s*·\s*€500\.00/);
+    await expect(financePanel.getByRole("button", { name: /^Unlink 1 Sept(?: 2026)? payment$/ })).toBeVisible();
+    await expect(financePanel).not.toContainText("2026-09-30");
     await expect(page.locator('[data-booking-panel="history"]')).toContainText("Recorded 28 Aug 2026, 11:00 CEST");
     await expect(page.locator('[data-booking-panel="communications"]')).toContainText("Draft version 2");
     await expect(page.locator(".crm-card[aria-current=true]")).toHaveCSS("border-left-width", "1px");

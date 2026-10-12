@@ -596,7 +596,7 @@ test.describe("production sponsor CRM portal", () => {
       has: page.locator("dt", { hasText: /^Outstanding$/ }),
     });
     await expect(outstanding.locator("dt")).toHaveText("Outstanding");
-    await expect(outstanding.locator("dd")).toHaveText("60 EUR");
+    await expect(outstanding.locator("dd")).toHaveText("€60.00");
     await page
       .locator("[data-finance-candidate-dialog]")
       .getByRole("button", { name: "Link selected evidence" })

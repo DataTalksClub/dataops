@@ -1,4 +1,5 @@
 import { html } from "./shared.js";
+import { formatAmount, ledgerDate } from "./bookkeeping-format.js";
 
 export function createSponsorFinance(context) {
   const {
@@ -255,7 +256,7 @@ export function createSponsorFinance(context) {
       .map(
         (payment) => html`
           <button data-finance-unlink-payment="${escapeHtml(payment.id)}">
-            Unlink ${escapeHtml(`${payment.effectiveDate} payment`)}
+            Unlink ${escapeHtml(`${ledgerDate(payment.effectiveDate)} payment`)}
           </button>
         `,
       )
@@ -278,7 +279,7 @@ export function createSponsorFinance(context) {
       ? html`
           <p>
             <strong>${escapeHtml(projection.invoice.label)}</strong>
-            · uploaded ${escapeHtml(projection.invoice.uploadedAt)}
+            · uploaded ${escapeHtml(ledgerDate(projection.invoice.uploadedAt))}
             <button
               data-finance-download="${escapeHtml(projection.invoice.id)}"
             >
@@ -301,8 +302,8 @@ export function createSponsorFinance(context) {
           .map(
             (payment) => html`
               <p>
-                ${escapeHtml(payment.effectiveDate)} ·
-                ${escapeHtml(payment.amount)} ${escapeHtml(payment.currency)}
+                ${escapeHtml(ledgerDate(payment.effectiveDate))} ·
+                ${escapeHtml(formatAmount(payment.amount, payment.currency))}
               </p>
             `,
           )
@@ -331,30 +332,30 @@ export function createSponsorFinance(context) {
           </p>
         </div>
         <span class="finance-status"
-          >${escapeHtml(humanizeOptionLabel(projection.reconciliationStatus))}</span
+          >${projection.reconciliationStatus === "coherent" ? "Evidence consistent" : "Review evidence"}</span
         >
       </header>
       <dl>
         <div>
           <dt>Amount due</dt>
           <dd>
-            ${escapeHtml(finance.amountDue ? `${finance.amountDue} ${finance.currency}` : "Not applicable")}
+            ${escapeHtml(finance.amountDue ? formatAmount(finance.amountDue, finance.currency) : "Not applicable")}
           </dd>
         </div>
         <div>
           <dt>Outstanding</dt>
           <dd>
-            ${escapeHtml(projection.outstanding ? `${projection.outstanding} ${finance.currency}` : "Not applicable")}
+            ${escapeHtml(projection.outstanding ? formatAmount(projection.outstanding, finance.currency) : "Not applicable")}
           </dd>
         </div>
         <div>
           <dt>Tax</dt>
-          <dd>${escapeHtml(finance.taxMode || "Not applicable")}</dd>
+          <dd>${escapeHtml(finance.taxMode ? humanizeOptionLabel(finance.taxMode) : "Not applicable")}</dd>
         </div>
         <div>
           <dt>Due</dt>
           <dd>
-            ${escapeHtml(finance.dueOn || finance.expectedInvoiceBy || "Not set")}
+            ${escapeHtml(finance.dueOn || finance.expectedInvoiceBy ? ledgerDate(finance.dueOn || finance.expectedInvoiceBy) : "Not set")}
           </dd>
         </div>
       </dl>
