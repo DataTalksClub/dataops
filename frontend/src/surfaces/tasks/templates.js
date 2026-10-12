@@ -201,7 +201,7 @@ export function createTemplatesSurface(context) {
     // Operator language. What an operator wants to know is what a Template is
     // and what opening one gets them; where the definition is authored is
     // maintainer detail and lives in the pane foot.
-    guidance.textContent = "Choose a template to see its steps, or start a card right away.";
+    guidance.textContent = "Choose a template to preview its steps, then start a card.";
     heading.append(title, guidance);
     header.append(heading);
     section.append(header);
@@ -356,16 +356,7 @@ export function createTemplatesSurface(context) {
     const summary = document.createElement("small");
     summary.textContent = templateRowSummary(facts);
 
-    const startBtn = document.createElement("button");
-    startBtn.type = "button";
-    startBtn.className = "runtime-template-start-btn";
-    startBtn.textContent = "Start card";
-    startBtn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      openQuickWorkflowForm({ template });
-    });
-
-    button.append(name, meta, summary, startBtn);
+    button.append(name, meta, summary);
     button.addEventListener("click", () => {
       if (template.id === runtimeState.selectedId) return;
       navigateCanonicalWorkspace("/templates", { templateId: template.id });
@@ -386,7 +377,7 @@ export function createTemplatesSurface(context) {
       const prompt = document.createElement("p");
       prompt.textContent = "Choose a template";
       const hint = document.createElement("span");
-      hint.textContent = "Select a template on the left to see its steps and existing cards. Use Start card when you’re ready to begin.";
+      hint.textContent = "Choose a template from the list to preview its steps and existing cards. Use Start card in the preview when you’re ready to begin.";
       empty.append(glyph, prompt, hint);
       return empty;
     }

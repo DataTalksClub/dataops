@@ -84,6 +84,7 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     await expect(empty).toContainText('Choose a template');
     await expect(empty).toContainText('Use Start card');
     await expect(page.locator('.runtime-template-row-open')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Start card', exact: true })).toHaveCount(0);
     if (width > 1000) {
       const listBox = await page.locator('.runtime-template-list').boundingBox();
       const emptyBox = await empty.boundingBox();
@@ -92,6 +93,7 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     await page.screenshot({ path: path.join(out, `templates-${width}x${height}.png`) });
     await page.locator('.runtime-template-row').first().click();
     await expect(page.locator('.runtime-template-projection').getByRole('button', { name: 'Start card' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Start card', exact: true })).toHaveCount(1);
     await expect(page.locator('.runtime-template-projection').getByRole('button', { name: 'Create card' })).toHaveCount(0);
     await page.screenshot({ path: path.join(out, `template-detail-${width}x${height}.png`) });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);

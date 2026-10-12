@@ -1505,7 +1505,7 @@ describe("Tasks surface boundary", () => {
     }
   });
 
-  test("starts a card directly from a template row and navigates live cards", async () => {
+  test("opens a template preview with one Start card action and navigates live cards", async () => {
     const template = {
       id: "template-1",
       name: "Newsletter",
@@ -1535,24 +1535,16 @@ describe("Tasks surface boundary", () => {
     harness.api.renderTasksSurface([], "templates");
 
     const row = harness.documentList.querySelector(".runtime-template-row");
-    const startBtn = row.querySelector(".runtime-template-start-btn");
-    assert.ok(startBtn, "start card button must be present in template row");
-    assert.equal(startBtn.textContent, "Start card");
-    assert.equal(row.querySelector(".runtime-template-row-open"), null);
+    assert.equal(row.querySelector("button"), null, "a template row only opens the preview");
+    assert.equal(findByText(harness.documentList, "Start card", "button"), undefined);
     const emptyPane = harness.documentList.querySelector(".runtime-template-empty");
-    assert.match(emptyPane.textContent, /Choose a template/);
-    assert.match(emptyPane.textContent, /Select a template on the left/);
-
-    let stopped = false;
-    await startBtn.dispatch("click", {
-      stopPropagation() {
-        stopped = true;
-      },
+    assert.match(emptyPane.textContent, /Choose a template from the list/);
+    await row.dispatch("click");
+    assert.deepEqual(harness.navigations.at(-1), {
+      path: "/templates",
+      params: { templateId: "template-1" },
+      options: {},
     });
-    assert.equal(stopped, true, "clicking start card must call stopPropagation");
-    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
-    assert.ok(overlay, "quick workflow form should open");
-    overlay.remove();
 
     harness.api.setRuntimeTemplateRoute(
       {
@@ -1562,6 +1554,18 @@ describe("Tasks surface boundary", () => {
       { templateId: "template-1" },
     );
     harness.api.renderTasksSurface([], "templates");
+
+    const start = findByText(harness.documentList, "Start card", "button");
+    assert.ok(start);
+    assert.equal(
+      harness.documentList.querySelectorAll("button").filter((button) => button.textContent === "Start card").length,
+      1,
+    );
+    await start.dispatch("click");
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    assert.ok(overlay, "the preview action starts a card from the selected template");
+    assert.equal(overlay.querySelector("select").value, template.id);
+    overlay.remove();
 
     const liveCardsList = harness.documentList.querySelector(".runtime-template-live-cards");
     const liveCardBtn = liveCardsList.querySelector("li button");
