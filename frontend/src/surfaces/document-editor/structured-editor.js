@@ -22,7 +22,7 @@ export function createStructuredEditor(context, services, editorState) {
       restore,
       multiline = true,
       singleLine = false,
-      autoSize = false,
+      autoSize = true,
       commitOnEnter = false,
       editorClass,
       hintClass,
@@ -57,12 +57,14 @@ export function createStructuredEditor(context, services, editorState) {
       if (!multiline) editor.type = "text";
       editor.className = `inline-editor ${editorClass || ""}`.trim();
       editor.value = original;
+      editor.style.width = "100%";
+      editor.style.boxSizing = "border-box";
       if (multiline) {
         editor.rows = Math.max(2, (editor.value.match(/\n/g) || []).length + 1);
-      }
-      if (autoSize) {
-        editor.style.minHeight = `${originalHeight}px`;
-        editor.style.overflow = "hidden";
+        if (autoSize) {
+          editor.style.minHeight = `${Math.max(originalHeight, 44)}px`;
+          editor.style.overflow = "hidden";
+        }
       }
 
       const hint = document.createElement("div");
@@ -78,7 +80,12 @@ export function createStructuredEditor(context, services, editorState) {
 
       if (showHint) el.replaceChildren(editor, hint);
       else el.replaceChildren(editor);
-      if (autoSize) resizeInlineEditor(editor);
+      if (autoSize) {
+        resizeInlineEditor(editor);
+        if (typeof requestAnimationFrame !== "undefined") {
+          requestAnimationFrame(() => resizeInlineEditor(editor));
+        }
+      }
       editor.focus();
       if (multiline) {
         editor.setSelectionRange(editor.value.length, editor.value.length);
@@ -147,8 +154,10 @@ export function createStructuredEditor(context, services, editorState) {
   }
 
   function resizeInlineEditor(editor) {
+    if (!editor) return;
     editor.style.height = "auto";
-    editor.style.height = `${editor.scrollHeight}px`;
+    const nextHeight = Math.max(44, editor.scrollHeight || 0);
+    editor.style.height = `${nextHeight}px`;
   }
 
   function applyStepBodyEdit(step, newBody) {

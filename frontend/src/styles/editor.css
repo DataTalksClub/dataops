@@ -447,6 +447,27 @@
 .inline-edit-hint {
   color: var(--dk-text-muted);
   font-size: 12px;
+}
+.inline-editor {
+  width: 100%;
+  box-sizing: border-box;
+  display: block;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: var(--dk-text-primary);
+  background: var(--dk-bg-surface);
+  border: 1px solid var(--dk-border-control-hover);
+  border-radius: var(--dk-radius-sm);
+  padding: 6px 10px;
+}
+textarea.inline-editor {
+  width: 100%;
+  box-sizing: border-box;
+  display: block;
+  min-height: 48px;
+  line-height: 1.5;
+  resize: vertical;
 }.block-screenshot {
   display: grid;
   gap: 8px;
