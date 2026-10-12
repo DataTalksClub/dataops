@@ -215,22 +215,57 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       }
     });
 
-    // Position menu near target element
-    if (targetEl) {
-      const rect = anchorRect || targetEl.getBoundingClientRect();
-      menuEl.style.position = "absolute";
-      const scrollY = typeof window !== "undefined" ? window.scrollY || 0 : 0;
-      const scrollX = typeof window !== "undefined" ? window.scrollX || 0 : 0;
-      menuEl.style.top = `${rect.bottom + scrollY + 4}px`;
-      menuEl.style.left = `${Math.max(16, rect.left + scrollX)}px`;
-    }
-
+    const dialog = targetEl?.closest?.("dialog");
     const root =
+      dialog ||
       targetEl?.ownerDocument?.body ||
       globalThis.document?.body ||
       targetEl?.parentElement ||
       targetEl;
     if (root) root.append(menuEl);
+
+    // Position menu near target element, flipping upward if needed
+    if (targetEl) {
+      const rect = anchorRect || targetEl.getBoundingClientRect();
+      menuEl.style.position = "absolute";
+      const menuHeight = menuEl.offsetHeight || 300;
+      const menuWidth = menuEl.offsetWidth || 300;
+
+      if (dialog) {
+        const dialogRect = dialog.getBoundingClientRect();
+        const relTop = rect.top - dialogRect.top;
+        const relBottom = rect.bottom - dialogRect.top;
+        const relLeft = rect.left - dialogRect.left;
+        const spaceBelow = dialogRect.bottom - rect.bottom;
+        const spaceAbove = rect.top - dialogRect.top;
+
+        let top;
+        if (spaceBelow < menuHeight + 10 && spaceAbove > spaceBelow) {
+          top = Math.max(8, relTop - menuHeight - 4);
+        } else {
+          top = Math.min(dialogRect.height - menuHeight - 8, relBottom + 4);
+        }
+        const left = Math.max(8, Math.min(relLeft, dialogRect.width - menuWidth - 8));
+        menuEl.style.top = `${Math.round(top)}px`;
+        menuEl.style.left = `${Math.round(left)}px`;
+        dialog.addEventListener("close", () => close(), { once: true });
+      } else {
+        const scrollY = typeof window !== "undefined" ? window.scrollY || 0 : 0;
+        const scrollX = typeof window !== "undefined" ? window.scrollX || 0 : 0;
+        const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 800;
+        const spaceBelow = viewportHeight - rect.bottom;
+        const spaceAbove = rect.top;
+
+        let top;
+        if (spaceBelow < menuHeight + 10 && spaceAbove > spaceBelow) {
+          top = rect.top + scrollY - menuHeight - 4;
+        } else {
+          top = rect.bottom + scrollY + 4;
+        }
+        menuEl.style.top = `${Math.round(top)}px`;
+        menuEl.style.left = `${Math.max(16, Math.round(rect.left + scrollX))}px`;
+      }
+    }
     updateFiltered(initialQuery);
     setTimeout(() => filterInput.focus(), 10);
 
