@@ -26,7 +26,10 @@ export function createNewsletterPlanner(context) {
       /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
       '<a href="$2" target="_blank" rel="noreferrer" style="color: var(--dk-primary); text-decoration: underline;">$1</a>',
     );
-    wrap.innerHTML = html.replace(/\n/g, "<br>");
+    const heading = html.match(/^(#{1,6})\s+(.*)$/);
+    wrap.innerHTML = heading
+      ? `<h${heading[1].length}>${heading[2]}</h${heading[1].length}>`
+      : html.replace(/\n/g, "<br>");
     return wrap;
   }
 
@@ -43,6 +46,7 @@ export function createNewsletterPlanner(context) {
       if (!options.multiline) editor.type = "text";
       editor.className = "inline-editor";
       editor.value = original;
+      editor.placeholder = options.placeholder || "";
       if (options.multiline) {
         editor.rows = Math.max(2, (editor.value.match(/\n/g) || []).length + 1);
       }
@@ -65,9 +69,7 @@ export function createNewsletterPlanner(context) {
         if (options.restore) options.restore();
       };
 
-      editor.addEventListener("blur", () => {
-        setTimeout(doCommit, 100);
-      });
+      editor.addEventListener("blur", doCommit);
       editor.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
           e.preventDefault();
@@ -77,6 +79,7 @@ export function createNewsletterPlanner(context) {
           doCommit();
           options.onEnterNewBlock?.();
         } else if (e.key === "/" && editor.value.trim() === "" && options.onSlash) {
+          e.preventDefault();
           options.onSlash();
         }
       });
@@ -90,6 +93,7 @@ export function createNewsletterPlanner(context) {
 
     el.addEventListener("click", (e) => {
       if (e.target.closest("a, button, .notion-block-gutter, .inline-editor")) return;
+      e.preventDefault();
       enter();
     });
     el.addEventListener("keydown", (e) => {

@@ -49,7 +49,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       description: "Big section heading.",
       icon: BLOCK_ICONS.h1,
       shortcut: "h1",
-      template: "# Heading 1",
+      template: "# ",
     },
     {
       type: "h2",
@@ -57,7 +57,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       description: "Medium section heading.",
       icon: BLOCK_ICONS.h2,
       shortcut: "h2",
-      template: "## Heading 2",
+      template: "## ",
     },
     {
       type: "h3",
@@ -65,7 +65,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       description: "Small section heading.",
       icon: BLOCK_ICONS.h3,
       shortcut: "h3",
-      template: "### Heading 3",
+      template: "### ",
     },
     {
       type: "bullet",
@@ -89,7 +89,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       description: "Track tasks with a to-do list.",
       icon: BLOCK_ICONS.todo,
       shortcut: "todo",
-      template: "- [ ] To-do item",
+      template: "- [ ] ",
     },
     {
       type: "callout",

@@ -90,7 +90,7 @@ export function createDocumentRenderer(context, services) {
     }
   }
 
-  function renderParsedDocument() {
+  function renderParsedDocument({ bodyBlocks, focusBlockIndex = -1 } = {}) {
     const sections = (documentState.currentParsed && documentState.currentParsed.sections) || {};
     const blocks = [];
     const fm = (documentState.currentParsed && documentState.currentParsed.frontmatter) || {};
@@ -106,7 +106,7 @@ export function createDocumentRenderer(context, services) {
       const rawFull = editor.value || "";
       const body = stripFrontmatter(rawFull);
       const cleanBody = stripLeadingHeading(body);
-      const docBlocks = parseMarkdownBlocks(cleanBody);
+      const docBlocks = bodyBlocks || parseMarkdownBlocks(cleanBody);
 
       const wrap = document.createElement("div");
       wrap.className = "block-plain-body";
@@ -128,7 +128,7 @@ export function createDocumentRenderer(context, services) {
                   type: item.type,
                   raw: item.template || "",
                 },
-              ]);
+              ], { focusBlockIndex: 0 });
             },
           });
         });
@@ -137,9 +137,12 @@ export function createDocumentRenderer(context, services) {
       } else {
         const blocksContainer = blockEditor.renderBlocksContainer({
           blocks: docBlocks,
-          onChange: (idx, newRaw, { rerender = true } = {}) => {
-            docBlocks[idx].raw = newRaw;
-            applyBlocksChange(docBlocks, { rerender });
+          focusBlockIndex,
+          onChange: (idx, newRaw, options = {}) => {
+            docBlocks[idx] = {
+              ...docBlocks[idx], ...parseMarkdownBlocks(newRaw)[0], raw: newRaw,
+            };
+            applyBlocksChange(docBlocks, options);
           },
           onMoveBlock: (fromIdx, toIdx) => {
             const [moved] = docBlocks.splice(fromIdx, 1);
@@ -148,11 +151,11 @@ export function createDocumentRenderer(context, services) {
           },
           onInsertBlock: (atIdx, template) => {
             docBlocks.splice(atIdx, 0, {
+              ...(parseMarkdownBlocks(template)[0] || { type: "paragraph" }),
               id: `blk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              type: "paragraph",
               raw: template,
             });
-            applyBlocksChange(docBlocks);
+            applyBlocksChange(docBlocks, { focusBlockIndex: atIdx });
           },
           onDeleteBlock: (idx) => {
             docBlocks.splice(idx, 1);
@@ -208,7 +211,7 @@ export function createDocumentRenderer(context, services) {
     fetchBacklinksForCurrentDoc();
   }
 
-  function applyBlocksChange(newBlocks, { rerender = true } = {}) {
+  function applyBlocksChange(newBlocks, { rerender = true, focusBlockIndex = -1 } = {}) {
     const rawFull = editor.value || "";
     const fmRange = _frontmatterRange(rawFull);
     const fmText = fmRange ? rawFull.slice(0, fmRange.end + 5) : "";
@@ -223,7 +226,7 @@ export function createDocumentRenderer(context, services) {
       newBodyMarkdown;
     storeDraft();
     updateSaveState();
-    if (rerender) renderParsedDocument();
+    if (rerender) renderParsedDocument({ bodyBlocks: newBlocks, focusBlockIndex });
   }
 
   function renderDocHierarchyTrail() {

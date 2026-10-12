@@ -34,6 +34,7 @@ export function createStructuredEditor(context, services, editorState) {
       onEnterNewBlock,
       onIndent,
       onOutdent,
+      placeholder = "",
     },
   ) {
     el.tabIndex = 0;
@@ -42,6 +43,7 @@ export function createStructuredEditor(context, services, editorState) {
     el.addEventListener("click", (event) => {
       if (event.target.closest("a, button, img, .inline-editor, .notion-block-gutter")) return;
       if (el.classList.contains("editing")) return;
+      event.preventDefault();
       enter();
     });
     el.addEventListener("keydown", (event) => {
@@ -68,6 +70,7 @@ export function createStructuredEditor(context, services, editorState) {
       if (!multiline) editor.type = "text";
       editor.className = `inline-editor ${editorClass || ""}`.trim();
       editor.value = original;
+      editor.placeholder = placeholder;
       editor.style.width = "100%";
       editor.style.boxSizing = "border-box";
       if (multiline) {

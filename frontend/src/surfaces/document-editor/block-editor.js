@@ -205,6 +205,7 @@ export function createBlockEditor(context, services) {
 
   function renderBlocksContainer({
     blocks,
+    focusBlockIndex = -1,
     onChange,
     onMoveBlock,
     onInsertBlock,
@@ -239,12 +240,22 @@ export function createBlockEditor(context, services) {
       slashMenu.open({
         targetEl: addBtn,
         onSelect: (item) => {
-          onInsertBlock(blocks.length, item.template || "New text block");
+          onInsertBlock(blocks.length, item.template ?? "");
         },
       });
     });
     addRow.append(addBtn);
     container.append(addRow);
+
+    if (focusBlockIndex >= 0) {
+      setTimeout(() => {
+        if (!container.isConnected) return;
+        const blockEl = container.querySelectorAll(".notion-block")[focusBlockIndex];
+        const editable = blockEl?.querySelector(".inline-editable");
+        editable?.click();
+        editable?.querySelector(".inline-editor")?.select();
+      }, 0);
+    }
 
     return container;
   }
@@ -506,12 +517,13 @@ export function createBlockEditor(context, services) {
           textSpan.replaceChildren(renderMarkdown(block.text || ""));
         },
         multiline: false,
+        placeholder: "To-do item",
         onSlash: () => {
           slashMenu.open({
             targetEl: textSpan,
             onSelect: (item) => {
               block.raw = item.template;
-              onChange(index, item.template);
+              onChange(index, item.template, { focusBlockIndex: index });
             },
           });
         },
@@ -574,10 +586,13 @@ export function createBlockEditor(context, services) {
       const inner = document.createElement("div");
       inner.className = `notion-text-content ${block.type}`;
       inner.append(renderMarkdown(block.raw));
+      const headingPrefix = /^h[1-6]$/.test(block.type)
+        ? `${"#".repeat(Number(block.type.slice(1)))} ` : "";
 
       attachInlineEditor(inner, {
-        getValue: () => block.raw,
-        commit: (newRaw) => {
+        getValue: () => headingPrefix ? block.raw.replace(/^#{1,6}\s+/, "") : block.raw,
+        commit: (newText) => {
+          const newRaw = headingPrefix + newText;
           block.raw = newRaw;
           onChange(index, newRaw);
         },
@@ -586,12 +601,13 @@ export function createBlockEditor(context, services) {
         },
         multiline: block.type !== "h1" && block.type !== "h2" && block.type !== "h3",
         singleLine: block.type === "h1" || block.type === "h2" || block.type === "h3",
+        placeholder: headingPrefix ? `Heading ${block.type.slice(1)}` : "Start writing…",
         onSlash: () => {
           slashMenu.open({
             targetEl: inner,
             onSelect: (item) => {
               block.raw = item.template;
-              onChange(index, item.template);
+              onChange(index, item.template, { focusBlockIndex: index });
             },
           });
         },

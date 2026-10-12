@@ -373,7 +373,7 @@ export function setupNewsletterDialog(options) {
   let currentBlocks = [];
   let currentDevice = "desktop";
 
-  function renderBlocksEditor() {
+  function renderBlocksEditor(focusBlockIndex = -1) {
     const editorWrap = dialog.querySelector("[data-blocks-editor]");
     if (!editorWrap) return;
     editorWrap.replaceChildren();
@@ -388,8 +388,14 @@ export function setupNewsletterDialog(options) {
     }
     const container = blockEditor.renderBlocksContainer({
       blocks: currentBlocks,
-      onChange: (idx, newRaw) => {
-        if (currentBlocks[idx]) currentBlocks[idx].raw = newRaw;
+      focusBlockIndex,
+      onChange: (idx, newRaw, options = {}) => {
+        if (currentBlocks[idx]) {
+          currentBlocks[idx] = {
+            ...currentBlocks[idx], ...parseMarkdownBlocks(newRaw)[0], raw: newRaw,
+          };
+        }
+        if (options.focusBlockIndex != null) renderBlocksEditor(options.focusBlockIndex);
       },
       onMoveBlock: (fromIdx, toIdx) => {
         const [moved] = currentBlocks.splice(fromIdx, 1);
@@ -398,11 +404,11 @@ export function setupNewsletterDialog(options) {
       },
       onInsertBlock: (atIdx, template) => {
         currentBlocks.splice(atIdx, 0, {
+          ...(parseMarkdownBlocks(template)[0] || { type: "paragraph" }),
           id: `blk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          type: "paragraph",
           raw: template || "",
         });
-        renderBlocksEditor();
+        renderBlocksEditor(atIdx);
       },
       onDeleteBlock: (idx) => {
         currentBlocks.splice(idx, 1);
