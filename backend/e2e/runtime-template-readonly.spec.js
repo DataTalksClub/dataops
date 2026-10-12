@@ -28,7 +28,7 @@ test.describe('Git-authored runtime templates', () => {
     await expect(page.getByRole('button', { name: 'Save template' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Delete template' })).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Create card' }).click();
+    await page.locator('.runtime-template-projection').getByRole('button', { name: 'Start card' }).click();
     const form = page.locator('.quick-form-overlay');
     await expect(form.locator('.quick-form-select')).toHaveValue(template.id);
     await form.getByLabel('Card title (optional)').fill('Synthetic projection card');
@@ -67,3 +67,29 @@ test.describe('Git-authored runtime templates', () => {
     }]);
   });
 });
+
+for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]) {
+  test(`template preview guidance and Start card at ${width}x${height}`, async ({ page }) => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const out = path.resolve(__dirname, '../../.tmp/demo-c-after');
+    fs.mkdirSync(out, { recursive: true });
+    await page.setViewportSize({ width, height });
+    await page.goto('/#/templates');
+    const empty = page.locator('.runtime-template-empty');
+    await expect(empty).toContainText('Choose a template');
+    await expect(empty).toContainText('Use Start card');
+    await expect(page.locator('.runtime-template-row-open')).toHaveCount(0);
+    if (width > 1000) {
+      const listBox = await page.locator('.runtime-template-list').boundingBox();
+      const emptyBox = await empty.boundingBox();
+      expect(emptyBox.x).toBeGreaterThanOrEqual(listBox.x + listBox.width);
+    }
+    await page.screenshot({ path: path.join(out, `templates-${width}x${height}.png`) });
+    await page.locator('.runtime-template-row').first().click();
+    await expect(page.locator('.runtime-template-projection').getByRole('button', { name: 'Start card' })).toBeVisible();
+    await expect(page.locator('.runtime-template-projection').getByRole('button', { name: 'Create card' })).toHaveCount(0);
+    await page.screenshot({ path: path.join(out, `template-detail-${width}x${height}.png`) });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  });
+}

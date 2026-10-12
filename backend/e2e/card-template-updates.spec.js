@@ -143,10 +143,10 @@ test.describe('reviewed Card Template updates', () => {
 
     await page.goto(`/#/templates?templateId=${encodeURIComponent(template.id)}`);
     const inspector = page.locator('.runtime-template-projection');
-    await expect(inspector).toContainText('2 active Cards');
-    await inspector.getByRole('button', { name: 'Review 2 Cards for updates' }).click();
+    await expect(inspector).toContainText('2 active cards');
+    await inspector.getByRole('button', { name: 'Review 2 cards for updates' }).click();
     await expect(inspector).toContainText('Nothing is selected automatically');
-    await expect(inspector.getByRole('button', { name: 'Apply 0 selected Cards' })).toBeDisabled();
+    await expect(inspector.getByRole('button', { name: 'Apply 0 selected cards' })).toBeDisabled();
 
     await expect(inspector.getByRole('checkbox', { name: 'Select Synthetic batch Card A' })).not.toBeChecked();
     await expect(inspector.getByRole('checkbox', { name: 'Select Synthetic batch Card B' })).not.toBeChecked();
@@ -160,8 +160,8 @@ test.describe('reviewed Card Template updates', () => {
         expectedVersion: staleTask.version,
       },
     })).status()).toBe(200);
-    await inspector.getByRole('button', { name: 'Apply 2 selected Cards' }).click();
-    await expect(inspector).toContainText('1 Card applied · 1 conflict needs a fresh preview');
+    await inspector.getByRole('button', { name: 'Apply 2 selected cards' }).click();
+    await expect(inspector).toContainText('1 card applied · 1 conflict needs a fresh preview');
     await expect(inspector).toContainText('Synthetic batch Card A: applied');
     await expect(inspector).toContainText('Synthetic batch Card B: conflict — reload before retrying');
     await expect(inspector.getByRole('button', { name: 'Reload batch previews' })).toBeVisible();

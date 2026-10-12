@@ -1394,7 +1394,8 @@ describe("Tasks surface boundary", () => {
       /workflow-templates\/newsletter.yaml/,
     );
     assert.match(harness.documentList.textContent, /1234567890ab/);
-    assert.ok(findByText(harness.documentList, "Create card", "button"));
+    assert.ok(findByText(harness.documentList, "Start card", "button"));
+    assert.equal(findByText(harness.documentList, "Create card", "button"), undefined);
     for (const mutation of [
       "New runtime template",
       "Save template",
@@ -1537,6 +1538,10 @@ describe("Tasks surface boundary", () => {
     const startBtn = row.querySelector(".runtime-template-start-btn");
     assert.ok(startBtn, "start card button must be present in template row");
     assert.equal(startBtn.textContent, "Start card");
+    assert.equal(row.querySelector(".runtime-template-row-open"), null);
+    const emptyPane = harness.documentList.querySelector(".runtime-template-empty");
+    assert.match(emptyPane.textContent, /Choose a template/);
+    assert.match(emptyPane.textContent, /Select a template on the left/);
 
     let stopped = false;
     await startBtn.dispatch("click", {
@@ -1693,7 +1698,7 @@ describe("Tasks surface boundary", () => {
 
     await findByText(
       harness.documentList,
-      "Review 3 Cards for updates",
+      "Review 3 cards for updates",
       "button",
     ).dispatch("click");
     assert.equal(previewCalls, 1);
@@ -1708,7 +1713,7 @@ describe("Tasks surface boundary", () => {
       /Nothing is selected automatically/,
     );
     assert.equal(
-      findByText(harness.documentList, "Apply 0 selected Cards", "button")
+      findByText(harness.documentList, "Apply 0 selected cards", "button")
         .disabled,
       true,
     );
@@ -1728,7 +1733,7 @@ describe("Tasks surface boundary", () => {
     await checkbox.dispatch("change");
     const apply = findByText(
       harness.documentList,
-      "Apply 2 selected Cards",
+      "Apply 2 selected cards",
       "button",
     );
     assert.equal(apply.disabled, false);
@@ -1745,7 +1750,7 @@ describe("Tasks surface boundary", () => {
     assert.equal(previewCalls, 1);
     assert.match(
       harness.documentList.textContent,
-      /1 Card applied · 1 conflict needs a fresh preview/,
+      /1 card applied · 1 conflict needs a fresh preview/,
     );
     assert.match(
       harness.documentList.textContent,

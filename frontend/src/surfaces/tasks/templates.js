@@ -164,7 +164,7 @@ export function createTemplatesSurface(context) {
       // failed to load. Nothing published is not a section; it is one line.
       support.classList.add("is-empty");
       const note = document.createElement("p");
-      note.textContent = "No Template process docs published yet.";
+      note.textContent = "No template process docs published yet.";
       support.append(note);
       return support;
     }
@@ -176,7 +176,7 @@ export function createTemplatesSurface(context) {
     const title = document.createElement("h3");
     title.textContent = "Template process docs";
     const guidance = document.createElement("span");
-    guidance.textContent = "Read the written procedure behind a Template.";
+    guidance.textContent = "Read the written procedure behind a template.";
     heading.append(title, guidance);
     header.append(heading);
     section.append(header);
@@ -201,7 +201,7 @@ export function createTemplatesSurface(context) {
     // Operator language. What an operator wants to know is what a Template is
     // and what opening one gets them; where the definition is authored is
     // maintainer detail and lives in the pane foot.
-    guidance.textContent = "A reusable definition. Open one to see its steps, then start a Card.";
+    guidance.textContent = "Choose a template to see its steps, or start a card right away.";
     heading.append(title, guidance);
     header.append(heading);
     section.append(header);
@@ -232,7 +232,7 @@ export function createTemplatesSurface(context) {
     }
     if (!runtimeState.loaded) {
       section.append(renderHonestState(
-        "Loading Authored templates",
+        "Loading authored templates",
         "Fetching the current deployed projections.",
       ));
       return section;
@@ -252,7 +252,7 @@ export function createTemplatesSurface(context) {
     const sortLabel = document.createElement("span");
     sortLabel.textContent = "Sort";
     const sortSelect = document.createElement("select");
-    sortSelect.setAttribute("aria-label", "Sort Templates");
+    sortSelect.setAttribute("aria-label", "Sort templates");
     for (const option of TEMPLATE_SORTS) {
       const element = document.createElement("option");
       element.value = option.id;
@@ -269,8 +269,8 @@ export function createTemplatesSurface(context) {
     const search = document.createElement("input");
     search.type = "search";
     search.className = "runtime-template-search";
-    search.setAttribute("aria-label", "Search Authored templates");
-    search.placeholder = "Search Templates";
+    search.setAttribute("aria-label", "Search authored templates");
+    search.placeholder = "Search templates";
     search.value = runtimeState.search;
     search.addEventListener("input", debounce(() => {
       runtimeState.search = search.value.trim().toLowerCase();
@@ -303,18 +303,18 @@ export function createTemplatesSurface(context) {
     list.replaceChildren();
     if (!templates.length) {
       list.append(renderHonestState(
-        "No Authored templates match",
+        "No authored templates match",
         runtimeState.search
-          ? "Broaden the search, or clear it to see every Template."
-          : "The deployment has not published any Templates yet.",
+          ? "Broaden the search, or clear it to see every template."
+          : "The deployment has not published any templates yet.",
       ));
     }
     for (const template of templates) list.append(renderTemplateRow(template));
     if (resultCount) {
       const total = runtimeState.templates.length;
       resultCount.textContent = runtimeState.search || templates.length !== total
-        ? `${countLabel(templates.length, "Template")} of ${total}`
-        : countLabel(total, "Template");
+        ? `${countLabel(templates.length, "template")} of ${total}`
+        : countLabel(total, "template");
     }
   }
 
@@ -339,9 +339,9 @@ export function createTemplatesSurface(context) {
     const chips = [
       [countLabel(facts.steps, "step"), ""],
       [triggerLabel(template.triggerType), ""],
-      [facts.cards.length ? countLabel(facts.cards.length, "live Card") : "No live Cards", ""],
+      [facts.cards.length ? countLabel(facts.cards.length, "live card") : "No live cards", ""],
       [
-        facts.behind ? `${countLabel(facts.behind, "Card")} behind` : "",
+        facts.behind ? `${countLabel(facts.behind, "card")} behind` : "",
         facts.behind ? "is-attention" : "",
       ],
     ];
@@ -356,11 +356,6 @@ export function createTemplatesSurface(context) {
     const summary = document.createElement("small");
     summary.textContent = templateRowSummary(facts);
 
-    const open = document.createElement("span");
-    open.className = "runtime-template-row-open";
-    open.setAttribute("aria-hidden", "true");
-    open.textContent = "Inspect";
-
     const startBtn = document.createElement("button");
     startBtn.type = "button";
     startBtn.className = "runtime-template-start-btn";
@@ -370,7 +365,7 @@ export function createTemplatesSurface(context) {
       openQuickWorkflowForm({ template });
     });
 
-    button.append(name, meta, summary, startBtn, open);
+    button.append(name, meta, summary, startBtn);
     button.addEventListener("click", () => {
       if (template.id === runtimeState.selectedId) return;
       navigateCanonicalWorkspace("/templates", { templateId: template.id });
@@ -381,9 +376,6 @@ export function createTemplatesSurface(context) {
   function renderTemplateDetail() {
     const selected = runtimeState.templates.find((template) => template.id === runtimeState.selectedId);
     if (!selected) {
-      // The unselected pane used to hold the largest, boldest text on the page,
-      // and that text was an instruction about the UI rather than a fact about
-      // the operator's work. It is now the quietest thing in the pane.
       const empty = document.createElement("div");
       empty.className =
         "runtime-template-projection runtime-template-readonly runtime-template-empty";
@@ -392,9 +384,9 @@ export function createTemplatesSurface(context) {
       glyph.setAttribute("aria-hidden", "true");
       glyph.appendChild(templateIcon());
       const prompt = document.createElement("p");
-      prompt.textContent = "Select an authored template";
+      prompt.textContent = "Choose a template";
       const hint = document.createElement("span");
-      hint.textContent = "Inspect what it runs, then create a Card.";
+      hint.textContent = "Select a template on the left to see its steps and existing cards. Use Start card when you’re ready to begin.";
       empty.append(glyph, prompt, hint);
       return empty;
     }
@@ -427,7 +419,7 @@ export function createTemplatesSurface(context) {
     const create = document.createElement("button");
     create.type = "button";
     create.className = "primary-button";
-    create.textContent = "Create card";
+    create.textContent = "Start card";
     create.addEventListener("click", () => openQuickWorkflowForm({ template: selected }));
     header.append(title, create);
 
@@ -436,11 +428,11 @@ export function createTemplatesSurface(context) {
     const factsStrip = document.createElement("dl");
     factsStrip.className = "runtime-template-facts";
     appendDefinition(factsStrip, "Steps", countLabel(facts.steps, "task"));
-    appendDefinition(factsStrip, "Live Cards", countLabel(facts.cards.length, "Card"));
+    appendDefinition(factsStrip, "Live cards", countLabel(facts.cards.length, "card"));
     appendDefinition(
       factsStrip,
       "Behind revision",
-      facts.behind ? countLabel(facts.behind, "Card") : "None",
+      facts.behind ? countLabel(facts.behind, "card") : "None",
       facts.behind ? "is-attention" : "is-quiet",
     );
 
@@ -449,7 +441,7 @@ export function createTemplatesSurface(context) {
     const stepsSection = document.createElement("section");
     stepsSection.className = "runtime-template-block";
     const stepsHeading = document.createElement("h5");
-    stepsHeading.textContent = "What a new Card runs";
+    stepsHeading.textContent = "What a new card runs";
     const tasks = document.createElement("ol");
     tasks.className = "runtime-template-readonly-tasks";
     for (const task of selected.taskDefinitions || []) {
@@ -463,8 +455,8 @@ export function createTemplatesSurface(context) {
     }
     if (!(selected.taskDefinitions || []).length) {
       tasks.append(renderHonestState(
-        "This Template defines no steps",
-        "A Card created from it will start empty.",
+        "This template defines no steps",
+        "A card started from it will be empty.",
       ));
     }
     stepsSection.append(stepsHeading, tasks);
@@ -534,11 +526,11 @@ export function createTemplatesSurface(context) {
   // The one sentence an operator wants before clicking: what this Template is
   // currently doing in the world.
   function templateRowSummary(facts) {
-    if (!facts.cards.length) return "No Cards yet. New Cards start from this revision.";
-    const live = countLabel(facts.cards.length, "active Card");
+    if (!facts.cards.length) return "No cards yet. New cards start from this revision.";
+    const live = countLabel(facts.cards.length, "active card");
     const used = relativeDayLabel(facts.lastUsed);
     if (facts.behind) {
-      return `${live} · ${countLabel(facts.behind, "Card")} behind the current revision.`;
+      return `${live} · ${countLabel(facts.behind, "card")} behind the current revision.`;
     }
     return `${live} · all current${used ? ` · last used ${used}` : ""}.`;
   }
@@ -618,7 +610,7 @@ export function createTemplatesSurface(context) {
       const rest = document.createElement("li");
       rest.className = "runtime-template-live-cards-more";
       rest.textContent =
-        `+${facts.cards.length - shown.length} more from this Template`;
+        `+${facts.cards.length - shown.length} more from this template`;
       list.append(rest);
     }
     return list;
@@ -630,16 +622,16 @@ export function createTemplatesSurface(context) {
     const heading = document.createElement("div");
     heading.className = "runtime-template-card-updates-heading";
     const title = document.createElement("h5");
-    title.textContent = "Live Cards";
+    title.textContent = "Live cards";
     const cards = cardsForTemplate(template.id);
     const count = document.createElement("span");
-    count.textContent = countLabel(cards.length, "active Card");
+    count.textContent = countLabel(cards.length, "active card");
     heading.append(title, count);
     section.append(heading);
     if (!cards.length) {
       section.append(renderHonestState(
-        "No active Cards use this Template",
-        "New Cards will start at the current Authored revision.",
+        "No active cards use this template",
+        "New cards will start at the current authored revision.",
       ));
       return section;
     }
@@ -659,11 +651,11 @@ export function createTemplatesSurface(context) {
       // without opening the reviewed preview, which is the expensive step.
       section.append(renderTemplateLiveCards(template, cards));
       const guidance = document.createElement("p");
-      guidance.textContent = "Preview current Template differences, then explicitly select the Cards to update.";
+      guidance.textContent = "Preview current template differences, then select the cards to update.";
       const button = document.createElement("button");
       button.type = "button";
       button.className = "task-action-btn";
-      button.textContent = `Review ${countLabel(cards.length, "Card")} for updates`;
+      button.textContent = `Review ${countLabel(cards.length, "card")} for updates`;
       button.disabled = runtimeState.batchBusy;
       button.addEventListener("click", () => reviewTemplateCards(template, cards));
       section.append(guidance, button);
@@ -733,7 +725,7 @@ export function createTemplatesSurface(context) {
     apply.className = "primary-button";
     apply.textContent = runtimeState.batchBusy
       ? "Applying…"
-      : `Apply ${countLabel(selectedIds.size, "selected Card")}`;
+      : `Apply ${countLabel(selectedIds.size, "selected card")}`;
     apply.disabled = runtimeState.batchBusy || selectedIds.size === 0;
     apply.addEventListener("click", () => applyTemplateCardBatch(template, review));
     const cancel = document.createElement("button");
@@ -775,11 +767,11 @@ export function createTemplatesSurface(context) {
         result.status === "ready" && result.preview?.state !== "current"
       )).length;
       runtimeState.batchMessage = actionable
-        ? `${countLabel(actionable, "Card")} can be selected. Nothing is selected automatically.`
-        : "Every reviewed Card is current.";
+        ? `${countLabel(actionable, "card")} can be selected. Nothing is selected automatically.`
+        : "Every reviewed card is current.";
     } catch (error) {
       runtimeState.batchReview = null;
-      runtimeState.batchMessage = `Could not preview Card updates: ${error.message || "request failed"}`;
+      runtimeState.batchMessage = `Could not preview card updates: ${error.message || "request failed"}`;
     } finally {
       runtimeState.batchBusy = false;
       renderTasksSurface(getAllDocuments(), "templates");
@@ -793,7 +785,7 @@ export function createTemplatesSurface(context) {
       .map((result) => ({ cardId: result.cardId, previewToken: result.preview.previewToken }));
     if (!updates.length) return;
     runtimeState.batchBusy = true;
-    runtimeState.batchMessage = `Applying ${countLabel(updates.length, "reviewed Card")}…`;
+    runtimeState.batchMessage = `Applying ${countLabel(updates.length, "reviewed card")}…`;
     renderTasksSurface(getAllDocuments(), "templates");
     try {
       const payload = await request(workApiUrl("/api/cards/template-updates/apply"), {
@@ -804,12 +796,12 @@ export function createTemplatesSurface(context) {
       const applied = runtimeState.batchApplyResults.filter(({ status }) => status === "applied").length;
       const conflicts = runtimeState.batchApplyResults.filter(({ status }) => status === "failed").length;
       runtimeState.batchMessage = [
-        `${countLabel(applied, "Card")} applied`,
+        `${countLabel(applied, "card")} applied`,
         conflicts ? `${countLabel(conflicts, "conflict")} needs a fresh preview` : "no conflicts",
       ].join(" · ");
       await refreshOperationsWorkSnapshot({ rerender: false });
     } catch (error) {
-      runtimeState.batchMessage = `Could not apply reviewed Cards: ${error.message || "request failed"}`;
+      runtimeState.batchMessage = `Could not apply reviewed cards: ${error.message || "request failed"}`;
     } finally {
       runtimeState.batchBusy = false;
       renderTasksSurface(getAllDocuments(), "templates");
