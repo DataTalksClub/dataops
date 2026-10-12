@@ -99,7 +99,7 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   page,
 }) => {
   await page.clock.setFixedTime(new Date("2026-07-01T12:00:00Z"));
-  await page.setViewportSize({ width: 1280, height: 1200 });
+  await page.setViewportSize({ width: 1280, height: 800 });
   let dismissed = false,
     failed = false,
     changed = false;
@@ -161,13 +161,15 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   // The planner status line carries only warnings (stale holidays, holiday
   // horizon, unavailable newsletter overlays); empty means loaded clean.
   await expect(page.locator(".calendar-surface [role='status']")).toHaveText("");
-  await expect(page.getByText("Synthetic Webinar").first()).toBeVisible();
+  await expect(page.locator(".calendar-activity").filter({ hasText: "Synthetic Webinar" }).first()).toBeVisible();
   await expect(page.getByText("Synthetic Newsletter").first()).toBeVisible();
   await expect(page.getByText("Synthetic public holiday").first()).toBeVisible();
   await expect(page.getByText("Summer holidays").first()).toBeVisible();
   await expect(page.locator(".iso-week").first()).toHaveText(/^\d+$/);
   const surface = page.locator(".calendar-surface");
-  await surface.evaluate((element) => (element.style.width = "1000px"));
+  await page.screenshot({ path: path.join(shots, "calendar-demo-1280x800.png") });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.screenshot({ path: path.join(shots, "calendar-demo-1440x900.png") });
   await surface.screenshot({
     path: path.join(shots, "production-month-populated.png"),
   });
@@ -179,12 +181,16 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   await expect(surface.getByText("Summer holidays")).toHaveCount(0);
   await surface.locator('[data-layer="overlay"]').uncheck();
   await expect(surface.getByText("Synthetic Newsletter")).toHaveCount(0);
+  await expect(surface.locator(".calendar-alert-summary")).not.toHaveAttribute("open", "");
+  await surface.locator(".calendar-alert-summary > summary").click();
   await surface.getByRole("button", { name: "Dismiss" }).click();
   await expect(surface.getByText("Activity overlaps a public holiday")).toHaveCount(0);
   await surface.locator("select[data-view]").selectOption("month");
-  await surface.getByText("Synthetic Webinar").first().click();
+  await surface.locator(".calendar-activity").filter({ hasText: "Synthetic Webinar" }).first().click();
   await surface.getByLabel("Title").fill("Changed Webinar");
   await surface.getByRole("button", { name: "Save activity" }).click();
+  await expect(surface.locator(".calendar-alert-summary > summary")).toHaveText("1 planning alert");
+  await surface.locator(".calendar-alert-summary > summary").click();
   await expect(surface.getByText("Activity overlaps a public holiday")).toBeVisible();
   await surface.locator("select[data-view]").selectOption("week");
   await surface.locator("[data-type]").selectOption("other");
@@ -270,4 +276,33 @@ test("production calendar renders cross-year ISO weeks and Berlin DST boundary d
   await surface.screenshot({
     path: path.join(shots, "production-dst-boundary.png"),
   });
+});
+
+
+test("calendar grid is ready before the external overlay response", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-07-01T12:00:00Z"));
+  let releaseOverlay;
+  const overlayReady = new Promise((resolve) => { releaseOverlay = resolve; });
+  await page.route("**/work/api/calendar-items**", async (route) => {
+    if (new URL(route.request().url()).pathname.endsWith("/overlays")) {
+      await overlayReady;
+      return route.fulfill({ json: { items: [{ id: "late-overlay", provider: "alexey-calendar",
+        startDate: "2026-06-30", endDate: "2026-06-30", category: "Alexey", label: "12:00 Late external event" }] } });
+    }
+    return route.fulfill({ json: payload });
+  });
+  await page.route("**/api/**", (route) => new URL(route.request().url()).pathname.includes("/calendar-items")
+    ? route.fallback() : route.fulfill({ json: { items: [] } }));
+  await page.goto(frontendBase);
+  await page.getByRole("button", { name: "Calendar", exact: true }).click();
+  const surface = page.locator(".calendar-surface");
+  try {
+    await expect(surface.locator(".calendar-activity").first()).toContainText("Synthetic Webinar");
+    await expect(surface.locator(".calendar-grid")).toBeVisible();
+    await expect(surface.locator("[role='status']")).toHaveText("Loading calendar overlays…");
+  } finally {
+    releaseOverlay();
+  }
+  await expect(surface.locator(".calendar-overlay").first()).toContainText("12:00 Late external event");
+  await expect(surface.locator("[role='status']")).toHaveText("");
 });

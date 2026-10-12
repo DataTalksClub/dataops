@@ -489,6 +489,27 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /Tejas at DataTalks\.Club Podcast/);
   });
 
+  test("renders owned Calendar planning data while an external overlay is pending", async () => {
+    const dom = createCalendarDom();
+    let finishOverlay;
+    const overlay = new Promise((resolve) => { finishOverlay = resolve; });
+    const harness = createPlanningHarness({
+      calendar: dom,
+      request: async (url) => String(url).includes("/overlays") ? overlay : {
+        items: [{ id: "pending-overlay", title: "Ready planning activity", allDay: true,
+          startDate: "2026-08-13", endDate: "2026-08-13" }],
+        holidays: [], alerts: [],
+      },
+    });
+    const loading = harness.surface.renderCalendarSurface();
+    await nextTicks();
+    assert.match(dom.grid.innerHTML, /Ready planning activity/);
+    assert.match(dom.status.textContent, /Loading calendar overlays/);
+    finishOverlay({ items: [] });
+    await loading;
+    assert.equal(dom.status.textContent, "");
+  });
+
   test("keeps Calendar usable when overlays fail and exposes filter and period controls", async () => {
     const dom = createCalendarDom();
     const harness = createPlanningHarness({
@@ -501,7 +522,7 @@ describe("Planning surface production behavior", () => {
     });
     await harness.surface.renderCalendarSurface();
     await nextTicks();
-    assert.match(dom.status.textContent, /Newsletter dates are temporarily unavailable/);
+    assert.match(dom.status.textContent, /Calendar overlays are temporarily unavailable/);
     assert.match(dom.surface.innerHTML, /Europe\/Berlin time/);
 
     dom.type.value = "webinar";

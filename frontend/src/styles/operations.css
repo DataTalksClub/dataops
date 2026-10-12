@@ -374,3 +374,17 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+
+}
+
+/* Calendar planning stays readable without pushing the grid below the fold. */
+.calendar-alert-summary { border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-sm); background: var(--dk-bg-muted); }
+.calendar-alert-summary > summary { padding: 10px 14px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--dk-text-primary); }
+.calendar-alert-list { display: grid; gap: 8px; padding: 0 10px 10px; }
+.calendar-surface .calendar-activity,
+.calendar-surface .calendar-overlay { flex-direction: column; align-items: flex-start; gap: 3px; min-height: 34px; }
+.calendar-surface .calendar-activity span,
+.calendar-surface .calendar-overlay span { width: 100%; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+.calendar-surface .calendar-chip-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+ .calendar-surface .calendar-overlay.is-available-slot { color: var(--dk-success-text); background: var(--dk-success-bg); border-color: var(--dk-success-border); }
+.calendar-surface .calendar-overlay.is-available-slot small { color: var(--dk-success-text); background: var(--dk-success-bg); }

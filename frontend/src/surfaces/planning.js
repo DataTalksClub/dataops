@@ -38,6 +38,15 @@ export function createPlanningSurface(context) {
         }).format(parsed);
   }
 
+  function berlinDateTime(timestamp) {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).formatToParts(new Date(timestamp));
+    const part = (type) => parts.find((entry) => entry.type === type).value;
+    return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
+  }
+
   function calendarAlertCopy(reasonCode) {
     return {
       "public-holiday-overlap": "Activity overlaps a public holiday",
@@ -438,7 +447,8 @@ export function createPlanningSurface(context) {
               title="${escapeHtml(item.title)} (${escapeHtml(plannerLabel(item.activityType))})"
             >
               <small>${escapeHtml(plannerLabel(item.activityType))}</small>
-              <span>${escapeHtml(item.title)}</span>
+              <span>${item.allDay === false && item.startsAt
+                ? `<b class="calendar-chip-time">${escapeHtml(berlinDateTime(item.startsAt).slice(11))}</b> ` : ""}${escapeHtml(item.title)}</span>
             </button>
           `).join(""),
           overlayMarkup = dayOverlays.map((overlay) => {
@@ -514,23 +524,27 @@ export function createPlanningSurface(context) {
       `;
     }
 
+    let loadRevision = 0;
     async function load() {
+      const revision = ++loadRevision;
       const [from, to] = bounds();
       status.textContent = "Loading calendar…";
       try {
-        const [calendarResult, overlayResult] = await Promise.allSettled([
-          api(`?from=${from}&to=${to}`),
-          api(`/overlays?from=${from}&to=${to}`),
-        ]);
-        if (calendarResult.status === "rejected") throw calendarResult.reason;
-        const result = calendarResult.value;
+        // External overlays can wait on the calendar broker. Show owned planning
+        // data immediately and add overlays when ready instead of blocking the grid.
+        const overlayPromise = api(`/overlays?from=${from}&to=${to}`).then(
+          (value) => ({ status: "fulfilled", value }),
+          (reason) => ({ status: "rejected", reason }),
+        );
+        const result = await api(`?from=${from}&to=${to}`);
+        if (revision !== loadRevision) return;
         items = result.items || [];
         holidays = result.holidays || [];
-        overlays = overlayResult.status === "fulfilled" ? overlayResult.value.items || [] : [];
+        overlays = [];
         const itemById = new Map(
           (result.items || []).map((item) => [item.id, item]),
         );
-        alertsBox.innerHTML = (result.alerts || []).map((alert) => {
+        const alertMarkup = (result.alerts || []).map((alert) => {
           const named = (alert.affectedIds || [])
             .map((id) => {
               const item = itemById.get(id);
@@ -549,6 +563,12 @@ export function createPlanningSurface(context) {
             <button data-dismiss="${encodeURIComponent(alert.fingerprint)}">Dismiss</button>
           </article>
         `;}).join("");
+        const alertCount = (result.alerts || []).length;
+        alertsBox.innerHTML = alertCount ? `
+          <details class="calendar-alert-summary">
+            <summary>${alertCount} planning ${alertCount === 1 ? "alert" : "alerts"}</summary>
+            <div class="calendar-alert-list">${alertMarkup}</div>
+          </details>` : "";
         render();
         const holidayStaleMessage = result.holidayMetadata?.stale
           ? "Holiday information may be out of date. "
@@ -556,11 +576,18 @@ export function createPlanningSurface(context) {
         const holidayHorizonMessage = result.holidayMetadata?.outOfHorizon
           ? "This range is outside the verified holiday window. "
           : "";
-        const newsletterMessage = overlayResult.status === "rejected"
-          ? "Newsletter dates are temporarily unavailable. "
+        const planningWarnings = `${holidayStaleMessage}${holidayHorizonMessage}`;
+        status.textContent = `${planningWarnings}Loading calendar overlays…`.trimEnd();
+        const overlayResult = await overlayPromise;
+        if (revision !== loadRevision) return;
+        overlays = overlayResult.status === "fulfilled" ? overlayResult.value.items || [] : [];
+        render();
+        const overlayMessage = overlayResult.status === "rejected"
+          ? "Calendar overlays are temporarily unavailable. "
           : "";
-        status.textContent = `${holidayStaleMessage}${holidayHorizonMessage}${newsletterMessage}`.trimEnd();
+        status.textContent = `${planningWarnings}${overlayMessage}`.trimEnd();
       } catch (error) {
+        if (revision !== loadRevision) return;
         items = [];
         holidays = [];
         overlays = [];
