@@ -871,7 +871,7 @@
   padding: 1px 5px;
   border-radius: var(--dk-radius-sm);
   background: var(--dk-bg-muted);
-  color: var(--dk-primary);
+  color: var(--dk-accent-default);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
@@ -1546,6 +1546,8 @@ a.calendar-day-timeline-title:hover {
   border: 1px solid var(--dk-border-default);
   overflow-x: auto;
   gap: 8px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 .stepper-step {
   display: flex;
@@ -1555,9 +1557,10 @@ a.calendar-day-timeline-title:hover {
   font-weight: 500;
   color: var(--dk-text-muted);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .stepper-step.is-active {
-  color: var(--dk-primary);
+  color: var(--dk-accent-default);
   font-weight: 700;
 }
 .stepper-step.is-done {
@@ -1575,7 +1578,7 @@ a.calendar-day-timeline-title:hover {
   font-size: 11px;
 }
 .stepper-step.is-active .stepper-num {
-  background: var(--dk-primary);
+  background: var(--dk-accent-default);
   color: #ffffff;
 }
 .stepper-step.is-done .stepper-num {

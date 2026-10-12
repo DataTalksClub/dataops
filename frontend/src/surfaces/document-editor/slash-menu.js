@@ -258,6 +258,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       targetEl?.parentElement ||
       targetEl;
     if (root) root.append(menuEl);
+    updateFiltered(initialQuery);
 
     // Position menu near target element, flipping upward if needed
     if (targetEl) {
@@ -301,7 +302,6 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
         menuEl.style.left = `${Math.max(16, Math.round(rect.left + scrollX))}px`;
       }
     }
-    updateFiltered(initialQuery);
     setTimeout(() => filterInput.focus(), 10);
 
     const onDocClick = (e) => {
