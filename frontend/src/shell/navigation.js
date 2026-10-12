@@ -191,6 +191,12 @@ export function createNavigationShell(context) {
     resetTaskPanel();
     resetCardPanel();
     closeWorkBellPanel({ restoreFocus: false });
+    for (const overlay of documentRef.querySelectorAll(".quick-form-overlay")) {
+      overlay.close();
+    }
+    for (const dialog of documentRef.querySelectorAll("dialog[open]")) {
+      dialog.close();
+    }
     closeSettingsMenu();
 
     const requestedView =

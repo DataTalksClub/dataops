@@ -146,7 +146,7 @@ export function createQuickTaskActions(context) {
     selectLabel.append(templateSelect);
 
     const anchorInput = createQuickInput(
-      "Anchor date",
+      "Date",
       "date",
       options.anchorDate || todayIsoDate(),
     );
@@ -241,7 +241,7 @@ export function createQuickTaskActions(context) {
     templateSelect.disabled = false;
     templateState.textContent =
       liveTemplates.length > 0
-        ? `${liveTemplates.length} ${liveTemplates.length === 1 ? "template" : "templates"} available.`
+        ? ""
         : "No templates are deployed, so no card can be created yet.";
     if (liveTemplates.length > 0) createBtn.disabled = false;
     else {
@@ -257,7 +257,7 @@ export function createQuickTaskActions(context) {
       const anchorDate = anchorInput.input.value;
       const invalid = reportFieldValidation([
         [templateControl, templateId ? "" : "Select a template."],
-        [anchorInput, anchorDate ? "" : "Anchor date is required."],
+        [anchorInput, anchorDate ? "" : "Date is required."],
       ]);
       if (invalid) {
         feedback.clear();
@@ -754,7 +754,7 @@ export function createQuickTaskActions(context) {
     panel.setAttribute("aria-labelledby", titleId);
 
     const header = document.createElement("div");
-    header.className = "diff-header";
+    header.className = "diff-header quick-form-header";
     const title = document.createElement("strong");
     title.setAttribute("id", titleId);
     title.textContent = titleText;

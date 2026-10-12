@@ -251,6 +251,23 @@ describe("canonical navigation shell behavior", () => {
     assert.equal(harness.history.replaced.at(-1).url, "/#/tasks");
   });
 
+  test("closes open creation dialogs only after navigation is accepted", async () => {
+    const harness = createNavigationHarness();
+    await harness.shell.initializeRouting(Promise.resolve());
+    const overlay = new FakeElement("div");
+    overlay.className = "quick-form-overlay";
+    let closed = 0;
+    overlay.close = () => { closed += 1; overlay.remove(); };
+    harness.document.body.append(overlay);
+    harness.setAllowLeave(false);
+    await harness.shell.applyWorkspaceRoute(workspaceRouteFor("/templates", {}, harness.location));
+    assert.equal(closed, 0);
+    harness.setAllowLeave(true);
+    await harness.shell.navigateCanonicalWorkspace("/templates").ready;
+    assert.equal(closed, 1);
+    assert.equal(harness.shell.getActiveWorkspaceRoute().path, "/templates");
+  });
+
   test("normal navigation clears composer input and closes the mobile shell", async () => {
     const harness = createNavigationHarness();
     harness.searchInput.value = "stale search";

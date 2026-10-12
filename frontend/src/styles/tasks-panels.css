@@ -1402,3 +1402,19 @@ body[data-workspace-view="tasks"] #task-panel-close::before {
   line-height: 1;
 }
 body[data-workspace-view="tasks"] #task-panel-close:hover { background: var(--dk-bg-hover); }
+
+/* The dialog owns its header; padding belongs to the form body. */
+body[data-workspace-view="tasks"] .quick-form-panel { padding: 0; }
+body[data-workspace-view="tasks"] .quick-form-panel .quick-form-header {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--dk-bg-surface);
+}
+body[data-workspace-view="tasks"] .quick-form-panel .quick-form-label input:not([type="checkbox"]),
+body[data-workspace-view="tasks"] .quick-form-panel .quick-form-label select {
+  width: 100%;
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .quick-form-panel .quick-form > .task-action-btn {
+  width: fit-content;
+}
