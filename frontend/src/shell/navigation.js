@@ -99,12 +99,19 @@ export function createNavigationShell(context) {
 
   function visibleEntityFocusTarget(restoreFocus) {
     if (restoreFocus?.kind === "runtime-template-list") {
-      const search = documentRef.querySelector(".runtime-template-search");
-      return search instanceof HTMLElementClass &&
-        search.isConnected &&
-        search.offsetParent !== null
-        ? search
-        : null;
+      // The Templates surface has no search field; returning to the list
+      // lands focus back on the operator's Template, or the first row.
+      const rows = [...documentRef.querySelectorAll(".runtime-template-row")].filter(
+        (candidate) =>
+          candidate instanceof HTMLElementClass &&
+          candidate.isConnected &&
+          candidate.offsetParent !== null,
+      );
+      return (
+        rows.find((candidate) => candidate.classList.contains("is-selected"))
+        || rows[0]
+        || null
+      );
     }
     if (restoreFocus?.kind === "queue-task") {
       return (

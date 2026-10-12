@@ -74,7 +74,6 @@ export function createTasksSurface(context) {
   const {
     recurringConfigTitle,
     renderRecurringSurface,
-    renderWorkflowTemplateCard,
   } = createRecurringTasks({
     ...context,
     openQuickWorkflowForm,
@@ -95,7 +94,6 @@ export function createTasksSurface(context) {
     ...context,
     openQuickWorkflowForm,
     renderTasksSurface,
-    renderWorkflowTemplateCard,
   });
 
   function renderTasksSurface(documents, section) {
@@ -157,7 +155,7 @@ export function createTasksSurface(context) {
     else if (activeSection === "workflows")
       wrap.append(renderWorkflowsSurface(model));
     else if (activeSection === "templates")
-      wrap.append(renderTemplatesSurface(model));
+      wrap.append(renderTemplatesSurface());
     else if (activeSection === "recurring")
       wrap.append(recurringSurface);
     else if (activeSection === "assistants")

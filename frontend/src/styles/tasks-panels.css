@@ -1166,8 +1166,6 @@ body[data-workspace-view="tasks"] .runtime-template-layout {
     display: none;
   }body[data-workspace-view="tasks"] .runtime-template-layout.is-detail .runtime-template-projection {
     display: grid;
-  }body[data-workspace-view="tasks"] .ops-template-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1191,9 +1189,8 @@ body[data-workspace-view="tasks"] .task-context-state {
     scroll-snap-type: x proximity;
   }body[data-workspace-view="tasks"] .workflow-board-column {
     scroll-snap-align: start;
-  }body[data-workspace-view="tasks"] .ops-template-grid {
-    grid-template-columns: 1fr;
-  }body[data-workspace-view="tasks"] .assistant-create-grid,
+  }
+body[data-workspace-view="tasks"] .assistant-create-grid,
 body[data-workspace-view="tasks"] .assistant-editor {
     grid-template-columns: 1fr;
   }body[data-workspace-view="tasks"] .assistant-create-grid button,

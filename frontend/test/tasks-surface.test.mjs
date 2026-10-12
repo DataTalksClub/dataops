@@ -1408,6 +1408,113 @@ describe("Tasks surface boundary", () => {
     }
   });
 
+  test("keeps one stable Templates shell from loading through ready", async () => {
+    const template = {
+      id: "template-1",
+      name: "Newsletter",
+      type: "workflow",
+      version: 2,
+      triggerType: "manual",
+      taskDefinitions: [
+        { refId: "draft", description: "Draft", offsetDays: 0 },
+      ],
+    };
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") return { templates: [template] };
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    // Before the fetch resolves the shell is already the shell: header,
+    // list, and detail regions exist, with a quiet loading note in the list.
+    harness.api.renderTasksSurface([], "templates");
+    const loading = harness.documentList.querySelector(".runtime-template-inspector");
+    assert.ok(loading);
+    assert.ok(loading.querySelector(".runtime-template-layout"));
+    assert.ok(loading.querySelector(".runtime-template-list"));
+    assert.match(
+      loading.querySelector(".runtime-template-list").textContent,
+      /Loading templates/,
+    );
+
+    await harness.api.refreshRuntimeTemplates();
+    harness.api.renderTasksSurface([], "templates");
+    const ready = harness.documentList.querySelector(".runtime-template-inspector");
+    assert.ok(ready);
+    assert.equal(
+      ready.querySelectorAll(".runtime-template-row").length,
+      1,
+      "the list fills in; the shell does not swap",
+    );
+    for (const removed of [
+      ".runtime-template-toolbar",
+      ".runtime-template-search",
+      ".runtime-template-sort",
+      ".runtime-template-result-count",
+      ".runtime-template-facts",
+      ".runtime-template-support",
+      ".ops-template-grid",
+    ]) {
+      assert.equal(
+        harness.documentList.querySelector(removed),
+        null,
+        `${removed} stays out of the simplified surface`,
+      );
+    }
+  });
+
+  test("keeps the Template list scroll when a Template is selected", async () => {
+    const templates = [
+      {
+        id: "template-1",
+        name: "Newsletter",
+        type: "workflow",
+        version: 2,
+        triggerType: "manual",
+        taskDefinitions: [],
+      },
+      {
+        id: "template-2",
+        name: "Webinar",
+        type: "workflow",
+        version: 2,
+        triggerType: "manual",
+        taskDefinitions: [],
+      },
+    ];
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") return { templates };
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.refreshRuntimeTemplates();
+    harness.api.renderTasksSurface([], "templates");
+    const list = harness.documentList.querySelector(".runtime-template-list");
+    list.scrollTop = 142;
+    await list.dispatch("scroll");
+
+    const rows = harness.documentList.querySelectorAll(".runtime-template-row");
+    assert.equal(rows.length, 2);
+    await rows[1].click();
+    assert.deepEqual(harness.navigations.at(-1).params, { templateId: "template-2" });
+
+    // The route change re-renders the surface (and the fetch renders it
+    // again); the list must not jump back to the top.
+    harness.api.setRuntimeTemplateRoute(
+      {
+        tasksSection: "templates",
+        params: new URLSearchParams({ templateId: "template-2" }),
+      },
+      { templateId: "template-2" },
+    );
+    harness.api.renderTasksSurface([], "templates");
+    assert.equal(
+      harness.documentList.querySelector(".runtime-template-list").scrollTop,
+      142,
+    );
+  });
+
   test("every Templates surface class has an app stylesheet rule", async () => {
     // Regression guard: the stylesheet split dropped the Templates design
     // CSS while the markup kept emitting its classes, so rows rendered with
@@ -1472,17 +1579,6 @@ describe("Tasks surface boundary", () => {
     );
     harness.api.renderTasksSurface([], "templates");
     collectClasses(harness.documentList);
-
-    // The support-doc grid renders no docs in this harness
-    // (getAllDocuments is empty), so its factory classes are covered
-    // statically. They come from renderWorkflowTemplateCard in
-    // surfaces/tasks/recurring.js.
-    for (const staticClass of [
-      "ops-template-card",
-      "ops-template-grid",
-      "ops-template-actions",
-      "ops-card-chips",
-    ]) renderedClasses.add(staticClass);
 
     // Intentionally rule-less by design: the icons are sized by element
     // selectors (.runtime-template-projection h4 svg,

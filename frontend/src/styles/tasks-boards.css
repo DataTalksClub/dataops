@@ -535,13 +535,7 @@ body[data-workspace-view="tasks"] .assistant-job-row:focus-visible {
    (20px) > row name and block headings (14-15px) > facts (12px) > provenance
    (11px). Provenance sits at the foot because only maintainers read it, and the
    unselected pane stays quiet so the list keeps the page's attention. */
-body[data-workspace-view="tasks"] .ops-split-surface {
-  display: grid;
-  gap: 20px;
-  min-width: 0;
-}
-body[data-workspace-view="tasks"] .runtime-template-inspector,
-body[data-workspace-view="tasks"] .runtime-template-support > .ops-section {
+body[data-workspace-view="tasks"] .runtime-template-inspector {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--dk-border-default);
@@ -550,10 +544,7 @@ body[data-workspace-view="tasks"] .runtime-template-support > .ops-section {
   padding: 0;
 }
 
-/* Panel header: names the set and, on the right, the number that tells the
-   operator whether the list is worth scrolling. */
-body[data-workspace-view="tasks"] .runtime-template-inspector > .ops-section-header,
-body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header {
+body[data-workspace-view="tasks"] .runtime-template-inspector > .ops-section-header {
   display: flex;
   align-items: start;
   justify-content: space-between;
@@ -562,79 +553,23 @@ body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header 
   background: var(--dk-bg-muted);
   padding: 13px 16px;
 }
-body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header > div,
-body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header > div {
+body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header > div {
   display: grid;
   min-width: 0;
   gap: 3px;
 }
-body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header h3,
-body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header h3 {
+body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header h3 {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 15px;
   font-weight: var(--dk-weight-semibold);
 }
-body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header span,
-body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header span,
-body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header > span {
-  min-width: 0;
+body[data-workspace-view="tasks"] .runtime-template-loading {
+  margin: 0;
   color: var(--dk-text-muted);
   font-size: 12px;
   line-height: 1.45;
-}
-
-/* Toolbar. Count, order, then filter, in the order the operator reaches for
-   them. Search grows so the list below is as wide as its content. */
-body[data-workspace-view="tasks"] .runtime-template-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-  border-bottom: 1px solid var(--dk-border-default);
-  padding: 10px 14px;
-}
-body[data-workspace-view="tasks"] .runtime-template-result-count {
-  margin-right: auto;
-  color: var(--dk-text-muted);
-  font-size: 12px;
-  font-weight: var(--dk-weight-medium);
-}
-body[data-workspace-view="tasks"] .runtime-template-sort {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--dk-text-muted);
-  font-size: 12px;
-}
-body[data-workspace-view="tasks"] .runtime-template-sort select {
-  min-height: 32px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-primary);
-  padding: 4px 8px;
-  font-family: inherit;
-  font-size: 12px;
-}
-body[data-workspace-view="tasks"] .runtime-template-search {
-  display: block;
-  flex: 1 1 200px;
-  width: auto;
-  min-width: 0;
-  max-width: 320px;
-  min-height: 34px;
-}
-
-@media (max-width: 820px) {
-  body[data-workspace-view="tasks"] .runtime-template-toolbar {
-    padding-block: 4px;
-  }
-  body[data-workspace-view="tasks"] .runtime-template-toolbar .runtime-template-search {
-    flex: 1 0 100% !important;
-    width: 100%;
-    max-width: none;
-  }
+  padding: 16px;
 }
 
 body[data-workspace-view="tasks"] .runtime-template-layout {
@@ -865,60 +800,6 @@ body[data-workspace-view="tasks"] .runtime-template-block > p {
   line-height: 1.5;
 }
 
-/* The three numbers that decide whether to start a run, stated once at the top
-   of the pane instead of being re-read from the rows. */
-body[data-workspace-view="tasks"] .runtime-template-facts {
-  display: grid;
-  grid-template-rows: auto auto;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: 0;
-  margin: 0;
-  /* Deliberately not a clip container. The pane is height-capped, and a clipped
-     grid item's automatic minimum size is zero, which collapsed this strip to
-     its borders. The outer corners are rounded on the cells instead. */
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-}
-body[data-workspace-view="tasks"] .runtime-template-facts > :first-child {
-  border-start-start-radius: var(--dk-radius-md);
-  border-start-end-radius: var(--dk-radius-md);
-}
-body[data-workspace-view="tasks"] .runtime-template-facts > :last-child {
-  border-end-start-radius: var(--dk-radius-md);
-  border-end-end-radius: var(--dk-radius-md);
-}
-body[data-workspace-view="tasks"] .runtime-template-facts dt {
-  border-bottom: 1px solid var(--dk-border-default);
-  border-right: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-muted);
-  padding: 7px 10px;
-  font-size: 11px;
-  font-weight: var(--dk-weight-medium);
-}
-body[data-workspace-view="tasks"] .runtime-template-facts dd {
-  min-width: 0;
-  margin: 0;
-  border-right: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-heading);
-  padding: 9px 10px;
-  font-size: 16px;
-  font-weight: var(--dk-weight-semibold);
-  line-height: 1.2;
-  overflow-wrap: anywhere;
-}
-/* A fact with nothing to report must not wear the weight of a real number. */
-body[data-workspace-view="tasks"] .runtime-template-facts dd.is-quiet {
-  color: var(--dk-text-faint);
-  font-size: 13px;
-  font-weight: var(--dk-weight-medium);
-}
-body[data-workspace-view="tasks"] .runtime-template-facts dd.is-attention {
-  color: var(--attention-due);
-}
-
 /* Steps read as an ordered run, so the sequence and the day offset are both
    legible without counting rows. */
 body[data-workspace-view="tasks"] .runtime-template-readonly-tasks {
@@ -1104,50 +985,6 @@ body[data-workspace-view="tasks"] .runtime-mobile-back {
   }
 }
 
-body[data-workspace-view="tasks"] .runtime-template-support {
-  min-width: 0;
-}
-/* Nothing published: a quiet footnote under the Templates, not a second panel
-   of equal weight with an empty body. */
-body[data-workspace-view="tasks"] .runtime-template-support.is-empty {
-  border-top: 1px solid var(--dk-border-default);
-  padding-top: 14px;
-}
-body[data-workspace-view="tasks"] .runtime-template-support.is-empty p {
-  margin: 0;
-  color: var(--dk-text-faint);
-  font-size: 12px;
-}
-body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header {
-  border-bottom: 1px solid var(--dk-border-default);
-}
-body[data-workspace-view="tasks"] .ops-template-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 10px;
-  padding: 14px;
-}
-body[data-workspace-view="tasks"] .ops-template-card {
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  min-width: 0;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  padding: 12px 13px;
-}
-body[data-workspace-view="tasks"] .ops-template-card > strong {
-  color: var(--dk-text-primary);
-  font-size: 13px;
-  font-weight: var(--dk-weight-semibold);
-  overflow-wrap: anywhere;
-}
-body[data-workspace-view="tasks"] .ops-template-card > span {
-  color: var(--dk-text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
 body[data-workspace-view="tasks"] .ops-card-chips {
   display: flex;
   flex-wrap: wrap;
@@ -1162,11 +999,4 @@ body[data-workspace-view="tasks"] .ops-card-chips small {
   padding: 2px 7px;
   font-size: 10px;
   font-weight: var(--dk-weight-semibold);
-}
-body[data-workspace-view="tasks"] .ops-template-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: auto;
-  padding-top: 4px;
 }

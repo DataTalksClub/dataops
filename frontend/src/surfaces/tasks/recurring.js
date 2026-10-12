@@ -29,8 +29,6 @@ export function createRecurringTasks(context) {
     countLabel,
     getActiveWorkspaceRouteToken,
     isWorkspaceRouteFresh,
-    openDocument,
-    openQuickWorkflowForm,
     openRecurringForm,
     refreshOperationsRecurringSnapshot,
     request,
@@ -311,48 +309,6 @@ export function createRecurringTasks(context) {
     }
   }
 
-  function renderWorkflowTemplateCard(template) {
-    const card = document.createElement("article");
-    card.className = "ops-template-card";
-
-    const title = document.createElement("strong");
-    title.textContent = template.title;
-    // Chips only for exceptional states and varying facets: the recurring or
-    // manual default is identical on every card and reads as noise, and the
-    // generated summary sentence repeats verbatim down the grid.
-    const chips = document.createElement("div");
-    chips.className = "ops-card-chips";
-    const chipValues = [
-      template.atRisk ? "Watch" : "",
-      ...template.tags.slice(0, 2),
-    ].filter(Boolean);
-    for (const value of chipValues) {
-      const chip = document.createElement("small");
-      chip.textContent = value;
-      chips.append(chip);
-    }
-    if (!chipValues.length) chips.remove();
-
-    const actions = document.createElement("div");
-    actions.className = "ops-template-actions";
-    // Row-level actions stay quiet: the grid is a browsing surface, and the
-    // one primary "Create card" lives in the selected template's inspector.
-    const start = document.createElement("button");
-    start.type = "button";
-    start.className = "task-action-btn";
-    start.textContent = "Create card";
-    start.addEventListener("click", () => openQuickWorkflowForm({ template }));
-    const docs = document.createElement("button");
-    docs.type = "button";
-    docs.className = "task-action-btn";
-    docs.textContent = "View process doc";
-    docs.addEventListener("click", () => openDocument(template.path));
-    actions.append(start, docs);
-
-    card.append(title, chips, actions);
-    return card;
-  }
-
   async function toggleRecurringConfig(configId, enabled, button) {
     const originalText = button?.textContent || (enabled ? "Resume" : "Pause");
     const routeToken = getActiveWorkspaceRouteToken();
@@ -408,6 +364,5 @@ export function createRecurringTasks(context) {
     recurringConfigTitle,
     renderRecurringOperationsSection,
     renderRecurringSurface,
-    renderWorkflowTemplateCard,
   };
 }

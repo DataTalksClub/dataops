@@ -1,7 +1,6 @@
 export function createTemplatesSurface(context) {
   const {
     countLabel,
-    debounce,
     getAllDocuments,
     getWorkspaceEntityState,
     isWorkspaceRouteFresh,
@@ -10,7 +9,6 @@ export function createTemplatesSurface(context) {
     renderHonestState,
     renderEntityLoadState,
     renderTasksSurface,
-    renderWorkflowTemplateCard,
     request,
     refreshOperationsWorkSnapshot,
     setWorkspaceEntityState,
@@ -22,8 +20,6 @@ export function createTemplatesSurface(context) {
     loaded: false,
     templates: [],
     selectedId: null,
-    search: "",
-    sort: "used",
     error: "",
     batchReview: null,
     batchBusy: false,
@@ -31,21 +27,16 @@ export function createTemplatesSurface(context) {
     batchApplyResults: null,
   };
 
-  // Search and sort redraw only the rows, never the whole surface. Re-rendering
-  // the surface would replace the search input mid-keystroke and drop focus
-  // after the first character.
-  let listFrame = null;
-  let resultCount = null;
+  // Selecting a Template re-renders the whole surface (route change plus a
+  // fresh fetch), which recreates the list element and resets its scroll to
+  // the top. Track the scroll offset so a Template at the bottom of a long
+  // list stays where the operator left it.
+  let listScrollTop = 0;
 
-  // The Templates page has three jobs, in this order: start a Card from a
-  // Template, see what a Template does, and reconcile live Cards when the
-  // definition changed upstream. Everything on this surface is laid out in that
-  // order, so the most-wanted answer is never the smallest text on screen.
-  const TEMPLATE_SORTS = [
-    { id: "used", label: "Most used" },
-    { id: "name", label: "Name A–Z" },
-    { id: "changed", label: "Recently changed" },
-  ];
+  // The Templates page has two jobs, in this order: start a Card from a
+  // Template, and reconcile live Cards when the definition changed upstream.
+  // Everything on this surface is laid out in that order, so the most-wanted
+  // answer is never the smallest text on screen.
 
   const TRIGGER_LABELS = {
     manual: "Manual",
@@ -119,7 +110,8 @@ export function createTemplatesSurface(context) {
     const days = Number(offsetDays || 0);
     if (days === 0) return "Day 0";
     if (days > 0) return `+${days} ${days === 1 ? "day" : "days"}`;
-    return `${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} before`;
+    const magnitude = Math.abs(days);
+    return `${magnitude} ${magnitude === 1 ? "day" : "days"} before`;
   }
 
   async function refreshRuntimeTemplates(options = {}) {
@@ -143,51 +135,13 @@ export function createTemplatesSurface(context) {
     }
   }
 
-  function renderTemplatesSurface(model) {
-    const surface = document.createElement("section");
-    surface.className = "ops-split-surface";
-    surface.append(renderRuntimeTemplateInspector());
-    surface.append(renderTemplateDocReference(model));
-    return surface;
+  function renderTemplatesSurface() {
+    return renderRuntimeTemplateInspector();
   }
 
-  // Process docs are reference reading, not a Template you act on. They used to
-  // occupy a full second panel at the same weight as the Templates themselves,
-  // which made an empty link-out look like the page's second half. Reference
-  // reading now reads as reference.
-  function renderTemplateDocReference(model) {
-    const support = document.createElement("aside");
-    support.className = "runtime-template-support";
-    const docs = model.templates.filter((template) => !template.recurring);
-    if (!docs.length) {
-      // A bordered panel with a header bar and no body reads as a section that
-      // failed to load. Nothing published is not a section; it is one line.
-      support.classList.add("is-empty");
-      const note = document.createElement("p");
-      note.textContent = "No template process docs published yet.";
-      support.append(note);
-      return support;
-    }
-    const section = document.createElement("div");
-    section.className = "ops-section";
-    const header = document.createElement("div");
-    header.className = "ops-section-header";
-    const heading = document.createElement("div");
-    const title = document.createElement("h3");
-    title.textContent = "Template process docs";
-    const guidance = document.createElement("span");
-    guidance.textContent = "Read the written procedure behind a template.";
-    heading.append(title, guidance);
-    header.append(heading);
-    section.append(header);
-    const grid = document.createElement("div");
-    grid.className = "ops-template-grid";
-    for (const template of docs) grid.append(renderWorkflowTemplateCard(template));
-    section.append(grid);
-    support.append(section);
-    return support;
-  }
-
+  // The inspector keeps one stable shell across loading, error, and ready
+  // states: header, list, detail. Only the list region swaps its content, so
+  // opening Templates never flashes one interface and then another.
   function renderRuntimeTemplateInspector() {
     const section = document.createElement("section");
     section.className = "ops-section runtime-template-inspector";
@@ -197,12 +151,7 @@ export function createTemplatesSurface(context) {
     const heading = document.createElement("div");
     const title = document.createElement("h3");
     title.textContent = "Authored templates";
-    const guidance = document.createElement("span");
-    // Operator language. What an operator wants to know is what a Template is
-    // and what opening one gets them; where the definition is authored is
-    // maintainer detail and lives in the pane foot.
-    guidance.textContent = "Choose a template to preview its steps, then start a card.";
-    heading.append(title, guidance);
+    heading.append(title);
     header.append(heading);
     section.append(header);
 
@@ -226,96 +175,43 @@ export function createTemplatesSurface(context) {
       return section;
     }
 
-    if (runtimeState.error) {
-      section.append(renderHonestState("Runtime templates unavailable", runtimeState.error));
-      return section;
-    }
-    if (!runtimeState.loaded) {
-      section.append(renderHonestState(
-        "Loading authored templates",
-        "Fetching the current deployed projections.",
-      ));
-      return section;
-    }
-
-    const toolbar = document.createElement("div");
-    toolbar.className = "runtime-template-toolbar";
-
-    // The result count sits with the controls that change it, so the list never
-    // silently shrinks under a search.
-    resultCount = document.createElement("span");
-    resultCount.className = "runtime-template-result-count";
-    resultCount.setAttribute("role", "status");
-
-    const sort = document.createElement("label");
-    sort.className = "runtime-template-sort";
-    const sortLabel = document.createElement("span");
-    sortLabel.textContent = "Sort";
-    const sortSelect = document.createElement("select");
-    sortSelect.setAttribute("aria-label", "Sort templates");
-    for (const option of TEMPLATE_SORTS) {
-      const element = document.createElement("option");
-      element.value = option.id;
-      element.textContent = option.label;
-      if (option.id === runtimeState.sort) element.selected = true;
-      sortSelect.append(element);
-    }
-    sortSelect.addEventListener("change", () => {
-      runtimeState.sort = sortSelect.value;
-      refreshTemplateList();
-    });
-    sort.append(sortLabel, sortSelect);
-
-    const search = document.createElement("input");
-    search.type = "search";
-    search.className = "runtime-template-search";
-    search.setAttribute("aria-label", "Search authored templates");
-    search.placeholder = "Search templates";
-    search.value = runtimeState.search;
-    search.addEventListener("input", debounce(() => {
-      runtimeState.search = search.value.trim().toLowerCase();
-      refreshTemplateList();
-    }, 150));
-    toolbar.append(resultCount, sort, search);
-    section.append(toolbar);
-
     const layout = document.createElement("div");
     layout.className = "runtime-template-layout";
     layout.classList.toggle("is-detail", Boolean(runtimeState.selectedId));
     const list = document.createElement("div");
     list.className = "runtime-template-list";
-    listFrame = list;
-    renderTemplateRows(list);
+    list.addEventListener("scroll", () => {
+      listScrollTop = list.scrollTop || 0;
+    }, { passive: true });
+    if (runtimeState.error) {
+      list.append(renderHonestState("Runtime templates unavailable", runtimeState.error));
+    } else if (!runtimeState.loaded) {
+      const loading = document.createElement("p");
+      loading.className = "runtime-template-loading";
+      loading.setAttribute("role", "status");
+      loading.textContent = "Loading templates…";
+      list.append(loading);
+    } else {
+      renderTemplateRows(list);
+    }
     layout.append(list, renderTemplateDetail());
     section.append(layout);
     return section;
   }
 
-  // Repaint the rows and the result count in place. The search input keeps focus
-  // and the caret because nothing it owns is replaced.
-  function refreshTemplateList() {
-    if (!listFrame) return;
-    renderTemplateRows(listFrame);
-  }
-
   function renderTemplateRows(list) {
-    const templates = visibleTemplates();
+    const templates = orderedTemplates();
     list.replaceChildren();
     if (!templates.length) {
       list.append(renderHonestState(
-        "No authored templates match",
-        runtimeState.search
-          ? "Broaden the search, or clear it to see every template."
-          : "The deployment has not published any templates yet.",
+        "No Authored templates",
+        "The deployment has not published any Templates yet.",
       ));
     }
     for (const template of templates) list.append(renderTemplateRow(template));
-    if (resultCount) {
-      const total = runtimeState.templates.length;
-      resultCount.textContent = runtimeState.search || templates.length !== total
-        ? `${countLabel(templates.length, "template")} of ${total}`
-        : countLabel(total, "template");
-    }
+    // The list element is recreated on every surface render; without this a
+    // selection made at the bottom jumps the scroll back to the top.
+    list.scrollTop = listScrollTop;
   }
 
   // Row anatomy follows the work queue, which is the app's strongest list:
@@ -359,6 +255,7 @@ export function createTemplatesSurface(context) {
     button.append(name, meta, summary);
     button.addEventListener("click", () => {
       if (template.id === runtimeState.selectedId) return;
+      listScrollTop = button.closest(".runtime-template-list")?.scrollTop || 0;
       navigateCanonicalWorkspace("/templates", { templateId: template.id });
     });
     return button;
@@ -414,19 +311,6 @@ export function createTemplatesSurface(context) {
     create.addEventListener("click", () => openQuickWorkflowForm({ template: selected }));
     header.append(title, create);
 
-    // Three numbers an operator weighs before committing to a run, stated once
-    // at the top of the pane instead of being re-derived from the rows below.
-    const factsStrip = document.createElement("dl");
-    factsStrip.className = "runtime-template-facts";
-    appendDefinition(factsStrip, "Steps", countLabel(facts.steps, "task"));
-    appendDefinition(factsStrip, "Live cards", countLabel(facts.cards.length, "card"));
-    appendDefinition(
-      factsStrip,
-      "Behind revision",
-      facts.behind ? countLabel(facts.behind, "card") : "None",
-      facts.behind ? "is-attention" : "is-quiet",
-    );
-
     // What the Template does comes before where it came from. Provenance is
     // maintainer detail and belongs at the foot of the pane.
     const stepsSection = document.createElement("section");
@@ -475,7 +359,7 @@ export function createTemplatesSurface(context) {
     );
     definitionSection.append(definitionSummary, definition, provenanceNote);
 
-    detail.append(back, header, factsStrip, stepsSection, cardUpdates, definitionSection);
+    detail.append(back, header, stepsSection, cardUpdates, definitionSection);
     return detail;
   }
 
@@ -528,18 +412,12 @@ export function createTemplatesSurface(context) {
     return `${live} · all current${used ? ` · last used ${used}` : ""}.`;
   }
 
-  function sortTemplates(templates) {
-    const facts = new Map(templates.map((template) => [template.id, templateFacts(template)]));
+  // One fixed ordering: the Templates already carrying live work float up,
+  // because that is where an operator returning to a run is looking.
+  function orderedTemplates() {
+    const facts = new Map(runtimeState.templates.map((template) => [template.id, templateFacts(template)]));
     const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || ""));
-    if (runtimeState.sort === "name") return [...templates].sort(byName);
-    if (runtimeState.sort === "changed") {
-      return [...templates].sort((a, b) => (
-        String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")) || byName(a, b)
-      ));
-    }
-    // Default: the Templates already carrying live work float up, because that
-    // is where an operator returning to a run is looking.
-    return [...templates].sort((a, b) => {
+    return [...runtimeState.templates].sort((a, b) => {
       const left = facts.get(a.id);
       const right = facts.get(b.id);
       return right.behind - left.behind
@@ -547,17 +425,6 @@ export function createTemplatesSurface(context) {
         || String(right.lastUsed || "").localeCompare(String(left.lastUsed || ""))
         || byName(a, b);
     });
-  }
-
-  function visibleTemplates() {
-    const matched = runtimeState.templates.filter((template) => {
-      const text = [template.name, template.type, template.triggerType, ...(template.tags || [])]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return !runtimeState.search || text.includes(runtimeState.search);
-    });
-    return sortTemplates(matched);
   }
 
   function batchPreviewSummary(preview) {
@@ -808,17 +675,6 @@ export function createTemplatesSurface(context) {
     definition.textContent = value || "None";
     if (valueClass) definition.className = valueClass;
     list.append(term, definition);
-  }
-
-  // Day offsets read as a position in a run, not a signed integer: one day
-  // ahead is "+1 day", and a step that has to happen beforehand says so rather
-  // than rendering "-5 days" with no hint of what the sign meant.
-  function dayOffsetLabel(offsetDays) {
-    const days = Number(offsetDays || 0);
-    if (days === 0) return "Day 0";
-    if (days > 0) return `+${days} ${days === 1 ? "day" : "days"}`;
-    const magnitude = Math.abs(days);
-    return `${magnitude} ${magnitude === 1 ? "day" : "days"} before`;
   }
 
   async function resolveTemplateRouteEntity(route, token) {

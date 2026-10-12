@@ -34,7 +34,11 @@ function createNavigationHarness(options = {}) {
   routeHeading.offsetParent = {};
   documentList.append(routeHeading);
   const searchInput = new FakeElement("input");
-  const runtimeTemplateSearch = visibleButton("runtime-template-search", {});
+  const templateRow = visibleButton("runtime-template-row", {});
+  const selectedTemplateRow = visibleButton(
+    "runtime-template-row is-selected",
+    {},
+  );
   const taskButton = visibleButton("ops-queue-row", { taskId: "task-1" });
   const queueTaskButton = visibleButton("queue-task-action", { taskId: "queue-task" });
   const nestedTask = visibleButton("card-checklist-label", {
@@ -48,7 +52,8 @@ function createNavigationHarness(options = {}) {
     body,
     documentList,
     searchInput,
-    runtimeTemplateSearch,
+    templateRow,
+    selectedTemplateRow,
     taskButton,
     queueTaskButton,
     nestedTask,
@@ -171,8 +176,9 @@ function createNavigationHarness(options = {}) {
     nestedTask,
     recurring,
     routeHeading,
-    runtimeTemplateSearch,
     searchInput,
+    selectedTemplateRow,
+    templateRow,
     setAllowLeave: (value) => {
       allowLeave = value;
     },
@@ -367,7 +373,7 @@ describe("canonical navigation shell behavior", () => {
         { id: "task-nested", kind: "task", surface: "workflows" },
         "nestedTask",
       ],
-      ["/templates", {}, { kind: "runtime-template-list" }, "runtimeTemplateSearch"],
+      ["/templates", {}, { kind: "runtime-template-list" }, "selectedTemplateRow"],
       ["/tasks", {}, { id: "queue-task", kind: "queue-task" }, "queueTaskButton"],
     ];
     for (const [path, params, restoreFocus, targetName] of cases) {
