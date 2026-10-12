@@ -1230,8 +1230,13 @@ describe("Document Editor surface boundary", () => {
     const filterInput = menuEl.querySelector(".slash-menu-filter");
     assert.ok(filterInput);
 
-    filterInput.value = "todo";
-    filterInput.dispatch("input");
+    for (const query of ["todo", "to-do", "to do", "/to-do"]) {
+      filterInput.value = query;
+      filterInput.dispatch("input");
+      const matches = findAllByClass(menuEl, "slash-menu-item");
+      assert.equal(matches.length, 1);
+      assert.match(matches[0].textContent, /To-do List/);
+    }
 
     const items = findAllByClass(menuEl, "slash-menu-item");
     assert.equal(items.length, 1);
@@ -1315,4 +1320,3 @@ describe("Document Editor surface boundary", () => {
   });
 
 });
-

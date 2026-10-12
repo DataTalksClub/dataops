@@ -158,14 +158,14 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
     menuEl.append(list);
 
     function updateFiltered(query) {
-      const q = String(query || "").trim().toLowerCase();
+      const normalize = (value) => String(value || "").toLowerCase()
+        .replace(/^\/+/, "").replace(/[-\s]+/g, "");
+      const q = normalize(query);
       filtered = BLOCK_TYPES.filter(
         (item) =>
           !q ||
-          item.title.toLowerCase().includes(q) ||
-          item.shortcut.toLowerCase().includes(q) ||
-          item.description.toLowerCase().includes(q) ||
-          item.type.toLowerCase().includes(q),
+          [item.title, item.shortcut, item.description, item.type]
+            .some((value) => normalize(value).includes(q)),
       );
       if (filtered.length === 0) {
         filtered = BLOCK_TYPES;

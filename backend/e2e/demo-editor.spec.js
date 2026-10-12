@@ -45,7 +45,7 @@ for (const width of [1440, 1280]) {
       const root = await openEditor(page, surface, { width, height: width === 1440 ? 900 : 800 });
       for (const choice of [
         { query: 'h2', label: 'Heading 2', type: 'h2', text: 'Typed heading', raw: /## Typed heading/ },
-        { query: 'todo', label: 'To-do List', type: 'todo', text: 'Typed task', raw: /- \[ \] Typed task/ },
+        { query: 'to-do', label: 'To-do List', type: 'todo', text: 'Typed task', raw: /- \[ \] Typed task/ },
       ]) {
         await root.locator('.notion-add-row-btn').click();
         await page.locator('.slash-menu-filter').fill(choice.query);
