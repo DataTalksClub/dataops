@@ -858,8 +858,11 @@ test.describe('canonical frontend capability behavior', () => {
     const operator = await portalContext(browser, servers.operator);
     const page = await admin.newPage();
     await page.goto('/#/sponsors');
-    await expect(page.getByText('No sponsors found')).toBeVisible();
+    await expect(page.locator('[data-crm-message]')).toBeHidden();
     await expect(page.getByText('Queue is clear')).toBeVisible();
+    await page.locator('[data-crm-view="companies"]').click();
+    await expect(page.getByText('No sponsors found')).toBeVisible();
+    await page.locator('[data-crm-view="queue"]').click();
     const id = unique('sponsor');
     const organizationResponse = await admin.request.post('/api/sponsor-crm/organizations', { data: {
       displayName: `Synthetic Sponsor ${id}`, notes: 'Synthetic private note', sourceKey: `${id}-org`,
@@ -929,7 +932,10 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('[data-crm-message]')).toContainText('Reopen Sponsors to retry');
     await clearFaults(admin.request);
     await page.reload();
-    await expect(page.getByRole('article').filter({ hasText: `Synthetic Sponsor ${id}` }).first()).toBeVisible();
+    await expect(page.locator('[data-crm-message]')).toBeAttached();
+    await expect(page.locator('[data-crm-message]')).toBeHidden();
+    await page.locator('[data-crm-view="companies"]').click();
+    await expect(page.locator('.crm-directory-row').filter({ hasText: `Synthetic Sponsor ${id}` })).toBeVisible();
     const operatorPage = await operator.newPage();
     await operatorPage.goto(`/#/sponsors?dealId=${operatorBooking.id}`);
     await expect(operatorPage.locator('[data-crm-detail]')).toContainText(`Synthetic Operator Sponsor ${id}`);

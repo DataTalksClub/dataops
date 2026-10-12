@@ -181,7 +181,7 @@ export function createSponsorCrmSurface(context) {
           .join("")}`;
       if (selectedId) form.elements.primaryContactId.value = selectedId;
     }
-    function setView(view) {
+    function setView(view, redraw = true) {
       currentView = view;
       surface.querySelectorAll("[data-crm-view]").forEach((button) => {
         const active = button.dataset.crmView === view;
@@ -190,6 +190,12 @@ export function createSponsorCrmSurface(context) {
       const queue = surface.querySelector("[data-crm-queue]");
       const pipeline = surface.querySelector("[data-crm-bookings]");
       const companies = surface.querySelector("[data-crm-companies-section]");
+      const filters = surface.querySelector(".crm-filters");
+      if (view === "companies") {
+        companies.insertBefore(filters, surface.querySelector("[data-crm-orgs]"));
+      } else if (view === "queue" || view === "pipeline") {
+        surface.querySelector(".crm-master").insertBefore(filters, queue);
+      }
       queue.hidden = view !== "queue";
       pipeline.hidden = view !== "pipeline";
       companies.hidden = view !== "companies";
@@ -199,7 +205,7 @@ export function createSponsorCrmSurface(context) {
       const heading = surface.querySelector("[data-crm-list-heading]");
       heading.textContent =
         view === "queue" ? "Queue" : view === "pipeline" ? "Pipeline" : view === "leads" ? "Leads" : "Companies";
-      draw();
+      if (redraw) draw();
     }
     const { reopenDealDetail, reopenCompanyDetail } = createSponsorCompanyDetail({
       api,
@@ -930,7 +936,7 @@ export function createSponsorCrmSurface(context) {
         await loadCommunications(sponsorCommunications.selectedBookingId);
       }, "Approval was not applied");
     };
-    setView("queue");
+    setView("queue", false);
     try {
       await refresh();
       if (routeToken && (!isWorkspaceRouteFresh(routeToken) || !surface.isConnected)) return;

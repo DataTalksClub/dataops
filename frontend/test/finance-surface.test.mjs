@@ -117,6 +117,16 @@ class FakeElement {
     }
   }
 
+  insertBefore(value, reference) {
+    if (value.parentNode) {
+      value.parentNode.children = value.parentNode.children.filter((child) => child !== value);
+    }
+    const index = this.children.indexOf(reference);
+    this.children.splice(index < 0 ? this.children.length : index, 0, value);
+    value.parentNode = this;
+    return value;
+  }
+
   appendChild(value) {
     this.children.push(value);
     return value;
