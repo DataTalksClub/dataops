@@ -1594,6 +1594,63 @@ describe('API — CRUD for tasks', () => {
     });
   });
 
+  describe('leading [Tag] extraction into tags', () => {
+    it('splits a bracket prefix off the description on create', async () => {
+      const res = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: '[Podcast page] Add a podcast episode', date: '2026-04-01' }),
+      }, {});
+      assert.strictEqual(res.statusCode, 201);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.description, 'Add a podcast episode');
+      assert.deepStrictEqual(body.tags, ['Podcast page']);
+    });
+
+    it('keeps explicit tags and leaves the description untouched', async () => {
+      const res = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: '[Podcast page] Add a podcast episode',
+          date: '2026-04-01',
+          tags: ['custom'],
+        }),
+      }, {});
+      assert.strictEqual(res.statusCode, 201);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.description, '[Podcast page] Add a podcast episode');
+      assert.deepStrictEqual(body.tags, ['custom']);
+    });
+
+    it('rejects malformed tags', async () => {
+      const res = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Tagged', date: '2026-04-01', tags: ['ok', 42] }),
+      }, {});
+      assert.strictEqual(res.statusCode, 400);
+      assert.match(JSON.parse(res.body).error, /tags/);
+    });
+
+    it('splits a bracket prefix off the description on update', async () => {
+      const created = JSON.parse((await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Base task', date: '2026-04-01' }),
+      }, {})).body);
+      const res = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({ description: '[Other tasks] Renamed task', expectedVersion: created.version }),
+      }, {});
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.description, 'Renamed task');
+      assert.deepStrictEqual(body.tags, ['Other tasks']);
+    });
+  });
+
   describe('PUT /api/tasks/:id with new fields', () => {
     it('updates a task to add new fields', async () => {
       const createRes = await handler({

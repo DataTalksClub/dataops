@@ -326,9 +326,16 @@ function queueRowTitles(root) {
 // without matching on wording.
 function queueOrigins(root) {
   return findAllByClass(root, "ops-queue-origin").map((cell) => ({
-    label: cell.textContent,
+    label: cell.querySelector(".ops-queue-origin-label")?.textContent ?? cell.textContent,
     kind: cell.dataset.source,
+    icon: cell.querySelector(".ops-queue-origin-icon")?.textContent ?? "",
   }));
+}
+
+function queueTags(root) {
+  return findAllByClass(root, "ops-queue-row").map(
+    (row) => row.querySelector(".ops-queue-tag")?.textContent ?? "",
+  );
 }
 
 function queueOwners(root) {
@@ -448,6 +455,7 @@ describe("Tasks surface boundary", () => {
     assert.deepEqual(queueOrigins(documentList)[0], {
       label: "Weekly newsletter",
       kind: "card",
+      icon: "▣",
     });
     for (const origin of queueOrigins(documentList).slice(1)) {
       assert.equal(origin.kind, "other");
@@ -695,8 +703,75 @@ describe("Tasks surface boundary", () => {
 
     api.renderTasksSurface([], "queue");
     assert.deepEqual(queueOrigins(documentList), [
-      { label: "Ad hoc", kind: "adhoc" },
-      { label: "Template", kind: "other" },
+      { label: "Ad hoc", kind: "adhoc", icon: "✦" },
+      { label: "Template", kind: "other", icon: "•" },
+    ]);
+  });
+
+  test("shows the bracket tag as its own pill and keeps proof needs out of the queue", () => {
+    const tasks = [
+      canonicalTask({
+        id: "tagged",
+        description: "[Podcast page] Add a podcast episode",
+        date: "2026-08-12",
+        requiredLinkName: "Airtable record",
+      }),
+      canonicalTask({
+        id: "field-tag",
+        description: "Upload the emails",
+        date: "2026-08-12",
+        tags: ["Other tasks"],
+      }),
+    ];
+    const { api, documentList } = createHarness({
+      taskRouteContext: {
+        date: "",
+        tasks,
+        cardId: "",
+        filterCard: null,
+        contextCardId: "",
+        contextCard: null,
+        failures: [],
+      },
+    });
+
+    api.renderTasksSurface([], "queue");
+    assert.deepEqual(queueRowTitles(documentList), [
+      "Add a podcast episode",
+      "Upload the emails",
+    ]);
+    assert.deepEqual(queueTags(documentList), ["Podcast page", "Other tasks"]);
+    const notes = findAllByClass(documentList, "ops-queue-note").map(
+      (note) => note.textContent,
+    );
+    assert.deepEqual(notes, []);
+  });
+
+  test("names recurring origin with its own icon", () => {
+    const tasks = [
+      canonicalTask({
+        id: "recurring",
+        description: "Weekly standup",
+        date: "2026-08-12",
+        recurringConfigId: "rc-1",
+      }),
+    ];
+    const { api, documentList } = createHarness({
+      taskSourceLabel: () => "Recurring",
+      taskRouteContext: {
+        date: "",
+        tasks,
+        cardId: "",
+        filterCard: null,
+        contextCardId: "",
+        contextCard: null,
+        failures: [],
+      },
+    });
+
+    api.renderTasksSurface([], "queue");
+    assert.deepEqual(queueOrigins(documentList), [
+      { label: "Recurring", kind: "recurring", icon: "↻" },
     ]);
   });
 

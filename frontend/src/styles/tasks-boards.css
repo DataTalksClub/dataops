@@ -180,7 +180,7 @@ body[data-workspace-view="tasks"] .ops-queue-row {
   border-top: 1px solid var(--dk-border-default);
   background: var(--dk-bg-surface);
   color: var(--dk-text-primary);
-  padding: 8px 14px;
+  padding: 6px 14px;
   transition: background 140ms ease;
   cursor: pointer;
 }body[data-workspace-view="tasks"] .ops-queue-head + .ops-queue-row {
@@ -266,10 +266,33 @@ body[data-workspace-view="tasks"] .ops-queue-main:focus-visible strong {
   outline-offset: 2px;
 }body[data-workspace-view="tasks"] .ops-queue-row strong {
   overflow: hidden;
+  min-width: 0;
+  flex: 1 1 auto;
   color: var(--dk-text-heading);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body[data-workspace-view="tasks"] .ops-queue-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .ops-queue-tag {
+  flex: none;
+  max-width: 11rem;
+  overflow: hidden;
+  border: 1px solid var(--dk-border-default);
+  border-radius: 999px;
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
   text-overflow: ellipsis;
   white-space: nowrap;
 }body[data-workspace-view="tasks"] .ops-queue-note {
@@ -285,9 +308,31 @@ body[data-workspace-view="tasks"] .ops-queue-main:focus-visible strong {
 }/* Where the task came from. A card names the card; work that belongs to no
    card says so plainly instead of rendering an empty column. */
 body[data-workspace-view="tasks"] .ops-queue-origin {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   overflow: hidden;
+  min-width: 0;
   color: var(--dk-text-muted);
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body[data-workspace-view="tasks"] .ops-queue-origin-icon {
+  flex: none;
+  color: var(--dk-text-faint);
+  font-size: 12px;
+  line-height: 1;
+}
+body[data-workspace-view="tasks"] .ops-queue-row[data-source="card"] .ops-queue-origin-icon {
+  color: var(--dk-accent-default);
+}
+body[data-workspace-view="tasks"] .ops-queue-row[data-source="recurring"] .ops-queue-origin-icon {
+  color: var(--dk-text-muted);
+}
+body[data-workspace-view="tasks"] .ops-queue-origin-label {
+  overflow: hidden;
+  min-width: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
 }body[data-workspace-view="tasks"] .ops-queue-origin[data-source="adhoc"],

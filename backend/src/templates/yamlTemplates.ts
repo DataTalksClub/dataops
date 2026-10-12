@@ -53,6 +53,7 @@ const TASK_FIELDS = [
   ['requiresFile', 'requires_file'],
   ['optionalGroup', 'optional_group'],
   ['proofRequirement', 'proof'],
+  ['tags', 'tags'],
   ['artifactRefs', 'artifact_refs'],
   ['assistantJobRefs', 'assistant_job_refs'],
   ['intakeRefs', 'intake_refs'],
@@ -234,7 +235,7 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
 
   for (const task of tasks) {
     strings(task, ['task_kind', 'owner_role', 'instruction_exempt_reason', 'runtime_instruction_source', 'optional_group']);
-    stringLists(task, ['tools']);
+    stringLists(task, ['tools', 'tags']);
     if (task.closure !== undefined) {
       const closure = task.closure as Dict;
       if (!closure || typeof closure !== 'object' || Array.isArray(closure)) fail('closure must be an object');

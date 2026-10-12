@@ -31,6 +31,7 @@ import {
   WAITING_COMPLETION_ERROR,
   WAITING_FIELDS_ERROR,
   WAITING_TODO_ERROR,
+  applyLeadingTagToTaskData,
   expectedVersionError,
   isNonEmptyString,
   isTaskStatus,
@@ -46,6 +47,7 @@ import {
   validateRequiredCardLinks,
   validateTaskDocContext,
   validateTaskRefs,
+  validateTaskTags,
 } from './taskValidation';
 
 /**
@@ -178,6 +180,11 @@ export async function handleTaskRoutes(
     }
     if (taskData.cardId !== undefined && !isNonEmptyString(taskData.cardId)) {
       return jsonResponse(400, { error: 'cardId must be a non-empty string' });
+    }
+    applyLeadingTagToTaskData(taskData);
+    const tagsError = validateTaskTags(taskData.tags);
+    if (tagsError) {
+      return jsonResponse(400, { error: tagsError });
     }
     const docContextError = validateTaskDocContext(taskData);
     if (docContextError) {
@@ -562,6 +569,11 @@ export async function handleTaskRoutes(
     }
     if (updates.cardId !== undefined && updates.cardId !== null && !isNonEmptyString(updates.cardId)) {
       return jsonResponse(400, { error: 'cardId must be a non-empty string or null' });
+    }
+    applyLeadingTagToTaskData(updates);
+    const tagsError = validateTaskTags(updates.tags);
+    if (tagsError) {
+      return jsonResponse(400, { error: tagsError });
     }
     const docContextError = validateTaskDocContext(updates);
     if (docContextError) {
