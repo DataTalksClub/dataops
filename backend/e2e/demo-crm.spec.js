@@ -52,6 +52,13 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     await expect(page.locator('[data-crm-bookings]')).toBeVisible();
     await expect(page.locator('[data-crm-bookings]')).not.toContainText('None');
     await page.screenshot({ path: path.join(screenshots, `pipeline-${width}x${height}.png`) });
+    await page.locator('[data-open-deal]').first().click();
+    const detail = page.locator('[data-crm-detail]');
+    await expect(detail.locator('.crm-booking-detail')).toBeVisible();
+    await expect(detail.locator('.crm-company-section-header').filter({ hasText: 'People' }).getByRole('button', { name: 'Add contact' })).toBeVisible();
+    await expect(detail.locator('.crm-company-section-header').filter({ hasText: 'Deals' }).getByRole('button', { name: 'Add deal' })).toBeVisible();
+    await expect(detail.locator('[data-mail-threads]')).toContainText('No filed mail yet');
+    await page.screenshot({ path: path.join(screenshots, `company-${width}x${height}.png`) });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   });
 }

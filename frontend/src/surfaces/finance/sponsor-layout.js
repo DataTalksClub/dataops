@@ -19,7 +19,7 @@ function options(values, humanize) {
 
 export function sponsorSurfaceMarkup(humanizeOptionLabel) {
   const dealStatusOptions = options(DEAL_STATUSES, humanizeOptionLabel);
-  const productOptions = options(PRODUCT_KINDS, humanizeOptionLabel);
+  const productOptions = options(PRODUCT_KINDS, (kind) => ({ "one-off": "One-off", package: "Package", course: "Course" })[kind]);
   const channelOptions = options(CHANNELS, humanizeOptionLabel);
   const actionOptions = options(NEXT_ACTION_TYPES, humanizeOptionLabel);
   const lostOptions = options(LOST_REASONS, humanizeOptionLabel);

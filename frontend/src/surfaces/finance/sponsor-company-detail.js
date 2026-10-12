@@ -87,7 +87,7 @@ export function createSponsorCompanyDetail({
                 ? "Next action missing"
                 : "No next action";
             const current = deal?.id === item.id ? 'aria-current="true"' : "";
-            return html`<article class="crm-card" ${current}>
+            return html`<article class="crm-card crm-company-deal" ${current}>
               <div class="crm-deal-card-header">
                 <strong>
                   ${escapeHtml(({ "one-off": "One-off", package: "Package", course: "Course" }[item.productKind] || "Deal"))}
@@ -125,8 +125,9 @@ export function createSponsorCompanyDetail({
             </li>`,
           )
           .join("")
-      : html`<li>
-          No live-filed threads. Search the archive from here later.
+      : html`<li class="crm-mail-empty">
+          <strong>No filed mail yet</strong>
+          <p>Threads linked to this company will appear here.</p>
         </li>`;
     const relationship = humanizeOptionLabel(
       organization.relationship || "company",
@@ -186,21 +187,19 @@ export function createSponsorCompanyDetail({
           data-booking-panel="overview"
         >
           <header><h3>Overview</h3></header>
-          <p>
-            <button data-contact-org="${escapeHtml(organization.id)}">
-              Add contact
-            </button>
-            <button data-add-deal-org="${escapeHtml(organization.id)}">
-              Add deal
-            </button>
-          </p>
-          <h4>People</h4>
+          <header class="crm-company-section-header">
+            <h4>People</h4>
+            <button data-contact-org="${escapeHtml(organization.id)}">Add contact</button>
+          </header>
           <ul>${people}</ul>
-          <h4>Deals</h4>
+          <header class="crm-company-section-header">
+            <h4>Deals</h4>
+            <button data-add-deal-org="${escapeHtml(organization.id)}">Add deal</button>
+          </header>
           ${dealCards}
-          <h4>Mail</h4>
-          <label>
-            Search filed threads <input data-mail-search type="search" />
+          <header class="crm-company-section-header"><h4>Mail</h4></header>
+          <label class="crm-mail-search">
+            Search filed threads <input data-mail-search type="search" placeholder="Search this company’s mail" />
           </label>
           <ul data-mail-threads>${threads}</ul>
         </section>
@@ -310,7 +309,7 @@ export function createSponsorCompanyDetail({
                   </li>`,
                 )
                 .join("")
-            : html`<li>No matching filed threads.</li>`;
+            : html`<li class="crm-mail-empty">No matching filed threads.</li>`;
         }, "Could not search mail");
       });
     if (deal) {

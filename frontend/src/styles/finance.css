@@ -985,8 +985,44 @@ body[data-workspace-view="sponsors"] .document-list {
 }.booking-detail-section .crm-card[aria-current="true"] {
   border-color: var(--dk-accent-default);
   background: var(--dk-accent-soft);
+}.booking-detail-section .crm-company-deal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}.booking-detail-section .crm-company-deal .crm-deal-card-header,
+.booking-detail-section .crm-company-deal .crm-deal-meta {
+  grid-column: 1;
+  margin: 0;
+}.booking-detail-section .crm-company-deal .row-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}.booking-detail-section .crm-company-deal .row-actions button,
+.crm-deal-card-header .status-label {
+  white-space: nowrap;
+  flex-shrink: 0;
+}.booking-detail-section .crm-company-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 20px 0 10px;
+}.crm-company-section-header h4 {
+  margin: 0;
+}.crm-mail-search {
+  display: grid;
+  gap: 6px;
+}.crm-mail-search input {
+  width: 100%;
+}.crm-mail-empty {
+  list-style: none;
+  color: var(--dk-text-muted);
+  padding: 12px 0;
+}.crm-mail-empty p {
+  margin: 4px 0 0;
+}[data-mail-threads] {
+  padding-left: 0;
 }.crm-deal-card-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }.booking-detail-section > header {
