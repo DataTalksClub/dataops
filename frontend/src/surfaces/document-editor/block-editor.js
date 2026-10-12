@@ -1,5 +1,48 @@
 import { createSlashMenu } from "./slash-menu.js";
 
+export function parseListItems(raw, type) {
+  const lines = (raw || "").split("\n");
+  const items = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    if (type === "numbered") {
+      const match = line.match(/^(\s*)(\d+)\.\s*(.*)$/);
+      if (match) {
+        items.push({ indent: match[1] || "", num: match[2], text: match[3] || "" });
+      } else {
+        items.push({ indent: "", num: "1", text: line.trim() });
+      }
+    } else {
+      const match = line.match(/^(\s*)([-*])\s*(.*)$/);
+      if (match) {
+        items.push({ indent: match[1] || "", bullet: match[2], text: match[3] || "" });
+      } else {
+        items.push({ indent: "", bullet: "-", text: line.trim() });
+      }
+    }
+  }
+  return items;
+}
+
+export function serializeListItems(items, type) {
+  if (type === "numbered") {
+    let topLevelCount = 0;
+    return items.map((item) => {
+      const isTopLevel = !item.indent || item.indent.length === 0;
+      if (isTopLevel) {
+        topLevelCount++;
+        return `${topLevelCount}. ${item.text || ""}`;
+      }
+      return `${item.indent}${item.num || "1"}. ${item.text || ""}`;
+    }).join("\n");
+  } else {
+    return items.map((item) => {
+      const bullet = item.bullet || "-";
+      return `${item.indent || ""}${bullet} ${item.text || ""}`;
+    }).join("\n");
+  }
+}
+
 export function parseMarkdownBlocks(markdown) {
   if (!markdown) return [];
   const lines = String(markdown).split("\n");
@@ -206,6 +249,133 @@ export function createBlockEditor(context, services) {
     return container;
   }
 
+  function renderNotionListBlock({
+    block,
+    blockIndex,
+    onChange,
+    onDeleteBlock,
+    renderMarkdown,
+    attachInlineEditor,
+    slashMenu,
+  }) {
+    const listEl = document.createElement(block.type === "numbered" ? "ol" : "ul");
+    listEl.className = `notion-list notion-${block.type}-list`;
+    let items = parseListItems(block.raw, block.type);
+    if (items.length === 0) {
+      items = [{ indent: "", text: "", bullet: "-", num: "1" }];
+    }
+
+    function renderListItems(focusIndex = -1) {
+      listEl.replaceChildren();
+      items.forEach((item, itemIdx) => {
+        const li = document.createElement("li");
+        li.className = "notion-list-item";
+        li.dataset.itemIndex = String(itemIdx);
+        if (item.indent) {
+          const depth = Math.floor(item.indent.length / 2);
+          if (depth > 0) {
+            li.style.marginLeft = `${depth * 20}px`;
+          }
+        }
+
+        const textSpan = document.createElement("span");
+        textSpan.className = "notion-list-item-text";
+        if (!item.text) {
+          const placeholder = document.createElement("span");
+          placeholder.className = "notion-item-placeholder";
+          placeholder.textContent = "List item…";
+          textSpan.append(placeholder);
+        } else {
+          textSpan.append(renderMarkdown(item.text));
+        }
+
+        attachInlineEditor(textSpan, {
+          getValue: () => item.text || "",
+          commit: (newText) => {
+            item.text = newText;
+            block.raw = serializeListItems(items, block.type);
+            onChange(blockIndex, block.raw);
+          },
+          restore: () => {
+            textSpan.replaceChildren();
+            if (!item.text) {
+              const placeholder = document.createElement("span");
+              placeholder.className = "notion-item-placeholder";
+              placeholder.textContent = "List item…";
+              textSpan.append(placeholder);
+            } else {
+              textSpan.append(renderMarkdown(item.text));
+            }
+          },
+          multiline: false,
+          singleLine: true,
+          commitOnEnter: true,
+          autoSize: false,
+          showHint: false,
+          autoFocus: itemIdx === focusIndex,
+          onEnterNewBlock: () => {
+            const isNumbered = block.type === "numbered";
+            const newItem = isNumbered
+              ? { indent: item.indent, num: String(itemIdx + 2), text: "" }
+              : { indent: item.indent, bullet: item.bullet || "-", text: "" };
+            items.splice(itemIdx + 1, 0, newItem);
+            block.raw = serializeListItems(items, block.type);
+            onChange(blockIndex, block.raw);
+            renderListItems(itemIdx + 1);
+          },
+          onDeleteBlock: () => {
+            if (item.indent && item.indent.length >= 2) {
+              item.indent = item.indent.slice(2);
+              block.raw = serializeListItems(items, block.type);
+              onChange(blockIndex, block.raw);
+              renderListItems(itemIdx);
+              return;
+            }
+            if (items.length > 1) {
+              items.splice(itemIdx, 1);
+              block.raw = serializeListItems(items, block.type);
+              onChange(blockIndex, block.raw);
+              renderListItems(Math.max(0, itemIdx - 1));
+            } else {
+              onDeleteBlock(blockIndex);
+            }
+          },
+          onIndent: () => {
+            item.indent = (item.indent || "") + "  ";
+            block.raw = serializeListItems(items, block.type);
+            onChange(blockIndex, block.raw);
+            renderListItems(itemIdx);
+          },
+          onOutdent: () => {
+            if (item.indent && item.indent.length >= 2) {
+              item.indent = item.indent.slice(2);
+              block.raw = serializeListItems(items, block.type);
+              onChange(blockIndex, block.raw);
+              renderListItems(itemIdx);
+            }
+          },
+          onSlash: () => {
+            slashMenu.open({
+              targetEl: textSpan,
+              onSelect: (menuItem) => {
+                item.text = menuItem.template;
+                block.raw = serializeListItems(items, block.type);
+                onChange(blockIndex, block.raw);
+                renderListItems(itemIdx);
+              },
+            });
+          },
+        });
+
+        li.append(textSpan);
+        listEl.append(li);
+      });
+    }
+
+    renderListItems(-1);
+    return listEl;
+  }
+
   function renderSingleBlock({
     block,
     index,
@@ -388,6 +558,17 @@ export function createBlockEditor(context, services) {
       const hr = document.createElement("hr");
       hr.className = "notion-divider";
       content.append(hr);
+    } else if (block.type === "bullet" || block.type === "numbered") {
+      const listEl = renderNotionListBlock({
+        block,
+        blockIndex: index,
+        onChange,
+        onDeleteBlock,
+        renderMarkdown,
+        attachInlineEditor,
+        slashMenu,
+      });
+      content.append(listEl);
     } else {
       // General paragraph, heading, list, quote, code
       const inner = document.createElement("div");

@@ -24,6 +24,7 @@ export function createStructuredEditor(context, services, editorState) {
       singleLine = false,
       autoSize = true,
       commitOnEnter = false,
+      autoFocus = false,
       editorClass,
       hintClass,
       hintText,
@@ -31,6 +32,8 @@ export function createStructuredEditor(context, services, editorState) {
       onSlash,
       onDeleteBlock,
       onEnterNewBlock,
+      onIndent,
+      onOutdent,
     },
   ) {
     el.tabIndex = 0;
@@ -48,6 +51,14 @@ export function createStructuredEditor(context, services, editorState) {
         enter();
       }
     });
+
+    if (autoFocus) {
+      setTimeout(() => {
+        if (!el.classList.contains("editing")) {
+          enter();
+        }
+      }, 0);
+    }
 
     function enter() {
       el.classList.add("editing");
@@ -128,7 +139,23 @@ export function createStructuredEditor(context, services, editorState) {
           if (onDeleteBlock) {
             event.preventDefault();
             done = true;
+            el.classList.remove("editing");
+            restore();
             onDeleteBlock();
+          }
+        } else if (event.key === "Tab") {
+          if (event.shiftKey) {
+            if (onOutdent) {
+              event.preventDefault();
+              doCommit();
+              onOutdent();
+            }
+          } else {
+            if (onIndent) {
+              event.preventDefault();
+              doCommit();
+              onIndent();
+            }
           }
         } else if (event.key === "Enter") {
           if (commitOnEnter && !event.shiftKey) {

@@ -4,8 +4,10 @@ import { afterEach, describe, test } from "node:test";
 import { createDocumentEditor } from "../src/surfaces/document-editor/index.js";
 import { createProcedureRenderer } from "../src/surfaces/document-editor/procedure-renderer.js";
 import {
+  parseListItems,
   parseMarkdownBlocks,
   serializeBlocksToMarkdown,
+  serializeListItems,
 } from "../src/surfaces/document-editor/block-editor.js";
 import { createSlashMenu } from "../src/surfaces/document-editor/slash-menu.js";
 import {
@@ -1288,6 +1290,28 @@ describe("Document Editor surface boundary", () => {
     checkboxes[0].dispatch("change");
 
     assert.match(harness.elements.editor.value, /- \[x\] Draft initial scope/);
+  });
+
+  test("parses and serializes Notion list items with indentation and renumbering", () => {
+    const rawBullets = "- First item\n  - Sub item\n- Third item";
+    const bullets = parseListItems(rawBullets, "bullet");
+    assert.equal(bullets.length, 3);
+    assert.equal(bullets[0].text, "First item");
+    assert.equal(bullets[1].indent, "  ");
+    assert.equal(bullets[1].text, "Sub item");
+    assert.equal(serializeListItems(bullets, "bullet"), rawBullets);
+
+    const rawNumbered = "1. Item one\n2. Item two\n  1. Sub item\n3. Item three";
+    const numbered = parseListItems(rawNumbered, "numbered");
+    assert.equal(numbered.length, 4);
+    assert.equal(numbered[0].text, "Item one");
+    assert.equal(numbered[2].indent, "  ");
+    assert.equal(numbered[2].text, "Sub item");
+
+    // Adding an item at index 1 and re-serializing renumbers top-level items
+    numbered.splice(1, 0, { indent: "", num: "2", text: "New item" });
+    const reserialized = serializeListItems(numbered, "numbered");
+    assert.match(reserialized, /^1\. Item one\n2\. New item\n3\. Item two\n  1\. Sub item\n4\. Item three$/);
   });
 
 });

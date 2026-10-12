@@ -1418,3 +1418,53 @@ blockquote p,
   text-align: left;
 }
 
+.notion-list {
+  margin: 0;
+  padding-left: 24px;
+  width: 100%;
+}
+
+.notion-list-item {
+  margin: 2px 0;
+  padding: 1px 0;
+  line-height: 1.6;
+}
+
+.notion-list-item-text {
+  display: block;
+  min-height: 24px;
+  cursor: text;
+  border-radius: var(--dk-radius-sm);
+  padding: 1px 4px;
+}
+
+.notion-list-item-text:hover:not(.editing) {
+  background: var(--dk-bg-hover);
+}
+
+.notion-list-item-text.editing {
+  background: transparent;
+}
+
+.notion-list-item-text input.inline-editor {
+  margin: 0;
+  padding: 2px 6px;
+  min-height: 28px;
+  font-size: inherit;
+  font-family: inherit;
+  line-height: inherit;
+}
+
+.notion-list-item-text .md,
+.notion-list-item-text p {
+  display: inline;
+  margin: 0;
+}
+
+.notion-item-placeholder {
+  color: var(--dk-text-faint);
+  font-style: italic;
+  pointer-events: none;
+}
+
+
