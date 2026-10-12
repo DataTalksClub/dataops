@@ -86,6 +86,13 @@ export function createProcessDocsSurface(context, services) {
       const meta = document.createElement("span");
       meta.textContent = catalogMeta(doc);
       row.append(title, meta);
+      const summaryText = String(doc.summary || doc.description || "").trim();
+      if (summaryText) {
+        const summary = document.createElement("p");
+        summary.className = "ops-docs-catalog-summary";
+        summary.textContent = summaryText;
+        row.append(summary);
+      }
       row.addEventListener("click", () => openDocument(doc.path));
       list.append(row);
     }
@@ -95,12 +102,9 @@ export function createProcessDocsSurface(context, services) {
   function catalogMeta(doc) {
     const type = humanizeDocType(doc.doc_type);
     const domain = doc.domain ? String(doc.domain) : "";
-    const summary = String(doc.summary || doc.description || "").trim();
     const parts = [];
     if (type) parts.push(type);
     if (domain && domain.toLowerCase() !== type.toLowerCase()) parts.push(domain);
-    if (!type && !domain && summary) parts.push(summary);
-    else if (summary && parts.length === 0) parts.push(summary);
     return parts.join(" · ");
   }
 

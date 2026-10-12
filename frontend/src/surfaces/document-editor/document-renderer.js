@@ -243,7 +243,7 @@ export function createDocumentRenderer(context, services) {
     });
     nav.append(root);
 
-    const parts = path.split("/").filter(Boolean);
+    const parts = path.split("/").filter((p) => Boolean(p) && p.toLowerCase() !== "content");
     for (let i = 0; i < parts.length - 1; i++) {
       const sep = document.createElement("span");
       sep.className = "doc-trail-sep";

@@ -248,10 +248,13 @@ export function createEditorLifecycle(context, services) {
   }
 
   function updateSaveState() {
+    const footer = editorSaveButton?.closest?.(".document-editor-footer") ||
+      editorView?.querySelector?.(".document-editor-footer");
     if (!documentState.currentDoc) {
       editorSaveButton.disabled = true;
       editorDiscardButton.disabled = true;
       setSaveState("");
+      if (footer) footer.hidden = true;
       return;
     }
 
@@ -262,6 +265,10 @@ export function createEditorLifecycle(context, services) {
       setSaveState("Unsaved changes");
     } else {
       setSaveState("");
+    }
+    const hasUnsaved = hasChanges || Boolean(documentState.hasDraft);
+    if (footer) {
+      footer.hidden = !hasUnsaved;
     }
   }
 
@@ -313,6 +320,11 @@ export function createEditorLifecycle(context, services) {
 
   function setSaveState(message) {
     editorSaveState.textContent = message;
+    const footer = editorSaveButton?.closest?.(".document-editor-footer") ||
+      editorView?.querySelector?.(".document-editor-footer");
+    if (footer && message) {
+      footer.hidden = false;
+    }
   }
 
   function restoreMutationFocus() {
