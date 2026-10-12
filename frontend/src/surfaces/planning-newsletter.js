@@ -49,8 +49,19 @@ export function createNewsletterPlanner(context) {
       editor.placeholder = options.placeholder || "";
       if (options.multiline) {
         editor.rows = Math.max(2, (editor.value.match(/\n/g) || []).length + 1);
+        editor.style.resize = "none";
+        editor.style.overflow = "hidden";
+        editor.style.minHeight = `${Math.max(44, el.getBoundingClientRect().height)}px`;
       }
       el.replaceChildren(editor);
+      const autoGrow = () => {
+        if (!options.multiline) return;
+        editor.style.height = "auto";
+        const borderHeight = (editor.offsetHeight || 0) - (editor.clientHeight || 0);
+        editor.style.height = `${Math.max(44, (editor.scrollHeight || 0) + borderHeight)}px`;
+      };
+      autoGrow();
+      editor.addEventListener("input", autoGrow);
       editor.focus();
       if (options.selectionRange) {
         editor.setSelectionRange(options.selectionRange.start, options.selectionRange.end);

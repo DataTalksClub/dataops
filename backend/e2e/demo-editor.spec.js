@@ -42,6 +42,34 @@ async function openEditor(page, surface, viewport) {
 }
 
 for (const width of [1440, 1280]) {
+  test(`Compose: body editor grows with text and has no resize handle at ${width}px`, async ({ page }) => {
+    const root = await openEditor(page, 'Compose', { width, height: width === 1440 ? 900 : 800 });
+    await root.locator('.notion-text-content.paragraph').last().click();
+    const editor = root.locator('.notion-text-content.paragraph textarea.inline-editor').last();
+    const initial = await editor.boundingBox();
+    await editor.fill(Array.from({ length: 12 }, (_, index) => `Synthetic newsletter body line ${index + 1}`).join('\n'));
+    const grown = await editor.boundingBox();
+    expect(grown.height).toBeGreaterThan(initial.height);
+    const metrics = await editor.evaluate((node) => ({
+      resize: getComputedStyle(node).resize,
+      overflow: getComputedStyle(node).overflowY,
+      scrollHeight: node.scrollHeight,
+      clientHeight: node.clientHeight,
+      font: getComputedStyle(node).fontFamily,
+      parentFont: getComputedStyle(node.parentElement).fontFamily,
+    }));
+    expect(metrics.resize).toBe('none');
+    expect(metrics.overflow).toBe('hidden');
+    expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.clientHeight + 1);
+    expect(metrics.font).toBe(metrics.parentFont);
+    const output = path.resolve(__dirname, '../../.tmp/demo-editor-after');
+    fs.mkdirSync(output, { recursive: true });
+    await editor.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(output, `compose-body-${width}.png`) });
+    await page.getByLabel('Subject Line', { exact: true }).click();
+    await expect(root.locator('.notion-text-content.paragraph').last()).toContainText('Synthetic newsletter body line 12');
+  });
+
   test(`Compose: slash menu stays below tabs and Escape only dismisses the menu at ${width}px`, async ({ page }) => {
     const root = await openEditor(page, 'Compose', { width, height: width === 1440 ? 900 : 800 });
     const dialog = page.locator('.newsletter-surface dialog');
