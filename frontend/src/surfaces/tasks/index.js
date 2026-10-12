@@ -116,6 +116,7 @@ export function createTasksSurface(context) {
 
     const wrap = document.createElement("div");
     wrap.className = `operations-home ops-surface ops-surface-${activeSection}`;
+    const recurringSurface = activeSection === "recurring" ? renderRecurringSurface(model) : null;
     if (activeSection !== "workflows") {
       const actions = [];
       if (activeSection === "queue") {
@@ -130,6 +131,11 @@ export function createTasksSurface(context) {
         quickCard.textContent = "Create card";
         quickCard.addEventListener("click", () => openQuickWorkflowForm());
         actions.push(quickTask, quickCard);
+      }
+      if (activeSection === "recurring") {
+        const toolbar = recurringSurface.querySelector(".recurring-toolbar");
+        actions.push(toolbar.querySelector("button"));
+        toolbar.remove();
       }
       const header = createPageHeader({
         title,
@@ -153,7 +159,7 @@ export function createTasksSurface(context) {
     else if (activeSection === "templates")
       wrap.append(renderTemplatesSurface(model));
     else if (activeSection === "recurring")
-      wrap.append(renderRecurringSurface(model));
+      wrap.append(recurringSurface);
     else if (activeSection === "assistants")
       wrap.append(renderAssistantsSurface());
 
@@ -257,7 +263,7 @@ export function createTasksSurface(context) {
         `${recurring.enabled.length} enabled`,
         `${recurring.disabled.length} paused`,
       ].join(" · ");
-      return renderDataSummary({
+      const summary = renderDataSummary({
         id: "tasks-recurring",
         label: "Recurring",
         loaded: recurring.loaded,
@@ -277,6 +283,7 @@ export function createTasksSurface(context) {
           if (isWorkspaceRouteFresh(routeToken)) renderTasksSurface(documents, view);
         },
       });
+      return summary.dataset.summaryState === "empty" ? null : summary;
     }
     if (view === "templates") {
       const routeToken = getActiveWorkspaceRouteToken();

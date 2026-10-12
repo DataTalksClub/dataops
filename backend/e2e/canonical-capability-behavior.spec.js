@@ -1622,7 +1622,9 @@ test.describe('canonical frontend capability behavior', () => {
     const operator = await portalContext(browser, servers.operator);
     const page = await admin.newPage();
     await page.goto('/#/recurring');
-    await expect(page.getByRole('region', { name: 'Recurring operations' })).toContainText('No recurring configs yet');
+    await expect(page.getByRole('region', { name: 'Recurring operations' })).toContainText('No recurring schedules yet');
+    await expect(page.locator('.page-header-actions').getByRole('button', { name: 'New schedule' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'New schedule' })).toHaveCount(1);
     const id = unique('runtime-template');
     const projections = (await json(await admin.request.get('/api/templates'))).templates;
     const projection = projections.find((template) => template.type === 'synthetic-git-workflow');

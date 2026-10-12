@@ -1792,9 +1792,12 @@ describe("Tasks surface boundary", () => {
       },
     });
     harness.api.renderTasksSurface([], "recurring");
+    const headerActions = harness.documentList.querySelector(".page-header-actions");
+    assert.ok(findByText(headerActions, "New schedule", "button"));
+    assert.equal(findAllByClass(harness.documentList, "recurring-toolbar").length, 0);
     assert.match(harness.documentList.textContent, /Active1/);
     assert.match(harness.documentList.textContent, /Paused0/);
-    assert.match(harness.documentList.textContent, /Every Monday at 09:00/);
+    assert.match(harness.documentList.textContent, /Every Monday/);
     assert.match(harness.documentList.textContent, /Next /);
 
     await findByText(harness.documentList, "Pause", "button").dispatch("click");
@@ -1812,7 +1815,29 @@ describe("Tasks surface boundary", () => {
 
     harness.setModel(baseModel());
     harness.api.renderTasksSurface([], "recurring");
-    assert.match(harness.documentList.textContent, /No recurring configs yet/);
+    assert.match(harness.documentList.textContent, /No recurring schedules yet/);
+    assert.equal(harness.documentList.querySelector(".surface-summary"), null);
+  });
+
+  test("shows the recurring batch in Berlin time across winter and summer", () => {
+    const harness = createHarness();
+    for (const [date, expected] of [
+      ["2026-01-12", /Next Mon 12 Jan at 09:00 CET/],
+      ["2026-07-13", /Next Mon 13 Jul at 10:00 CEST/],
+    ]) {
+      harness.setModel(baseModel({ recurring: recurringSnapshot([{
+        id: "berlin-schedule",
+        description: "Weekly work",
+        enabled: true,
+        scheduleLabel: "Every Monday at 09:00",
+        nextRunDate: date,
+        nextRunLabel: date === "2026-01-12" ? "Mon 12 Jan" : "Mon 13 Jul",
+      }]) }));
+      harness.api.renderTasksSurface([], "recurring");
+      assert.match(harness.documentList.textContent, expected);
+      assert.match(harness.documentList.textContent, /Europe\/Berlin/);
+      assert.equal(harness.documentList.textContent.includes("Every Monday at 09:00"), false);
+    }
   });
 
   test("exposes recurring Active and Paused state as text without prohibited ARIA", () => {
