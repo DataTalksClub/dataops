@@ -99,12 +99,13 @@ test.describe("production newsletter planner", () => {
     release();
     await expect(page.getByText("Synthetic Year End")).toBeVisible();
     await expect(page.locator("[data-slots]")).toContainText(
-      "Booked by: Unbooked",
+      "No sponsor",
     );
     await expect(page.getByText("An open slot needs booking soon")).toBeVisible();
     await page
       .locator(".newsletter-surface")
       .screenshot({ path: ".tmp/newsletter-production-populated-alert.png" });
+    await page.locator(".newsletter-filters summary").click();
     await page.locator("select[data-view]").selectOption("week");
     const weekSections = page.locator("[data-slots] > section");
     await expect(weekSections).toHaveCount(1);
@@ -135,7 +136,8 @@ test.describe("production newsletter planner", () => {
     await page.getByLabel("Campaign label").fill("Synthetic Created");
     await page.getByRole("button", { name: "Save issue" }).click();
     await expect(page.getByText(/Synthetic Created/)).toBeVisible();
-    await page.getByRole("button", { name: "Edit" }).first().click();
+    await page.getByRole("button", { name: /More actions for/ }).first().click();
+    await page.getByRole("menuitem", { name: "Edit details" }).click();
     await expect(
       page.getByRole("heading", { name: "Newsletter slot" }),
     ).toBeVisible();
@@ -143,11 +145,13 @@ test.describe("production newsletter planner", () => {
       .locator(".newsletter-surface dialog")
       .screenshot({ path: ".tmp/newsletter-production-edit.png" });
     await page.getByRole("button", { name: "Cancel" }).click();
-    await page.getByRole("button", { name: "Edit" }).first().click();
+    await page.getByRole("button", { name: /More actions for/ }).first().click();
+    await page.getByRole("menuitem", { name: "Edit details" }).click();
     await page.locator("dialog [name=status]").selectOption("cancelled");
     await page.getByRole("button", { name: "Save issue" }).click();
     await expect(page.locator("[data-slots]")).toContainText("Cancelled");
-    await page.getByRole("button", { name: "Edit" }).first().click();
+    await page.getByRole("button", { name: /More actions for/ }).first().click();
+    await page.getByRole("menuitem", { name: "Edit details" }).click();
     conflict = true;
     await page.getByRole("button", { name: "Save issue" }).click();
     await expect(page.getByRole("alert")).toContainText("reload and retry");

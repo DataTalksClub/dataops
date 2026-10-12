@@ -155,10 +155,6 @@ export function createNewsletterPlanner(context) {
     }[reasonCode] || "Check the publication date and campaign setup.";
   }
 
-  // Narrow screens render one primary action per issue card and fold the
-  // rest into a "More" menu, so a card is one compact stack instead of two
-  // wrapped button rows. Desktop (>820px) keeps the full inline action row.
-  const compactLayout = () => viewportWidth() <= 820;
 
   function closeAllSlotOverflows(scope) {
     scope.querySelectorAll(".newsletter-overflow-menu:not([hidden])").forEach((menu) => {
@@ -234,7 +230,10 @@ export function createNewsletterPlanner(context) {
           <span class="newsletter-stat-label">Unbooked</span>
         </div>
       </div>
-      <div class="newsletter-filters" aria-label="Newsletter filters">
+      <details class="newsletter-filters" aria-label="Newsletter filters">
+        <summary class="newsletter-filters-summary">
+          <span class="newsletter-filters-title">Filter & group</span>
+        </summary>
         <div class="planner-filter-fields">
           <label>From <input data-from type="date"></label>
           <label>To <input data-to type="date"></label>
@@ -258,7 +257,7 @@ export function createNewsletterPlanner(context) {
             </select>
           </label>
         </div>
-      </div>
+      </details>
       <p class="planner-load-state" role="status">Loading newsletter slots…</p>
       <div class="planner-alerts" data-alerts></div>
       <div class="newsletter-schedule" data-slots>Loading slots…</div>
@@ -300,7 +299,7 @@ export function createNewsletterPlanner(context) {
         <article class="planner-alert is-${escapeHtml(alert.severity || "warning")}">
           <div>
             <strong>${escapeHtml(newsletterAlertCopy(alert.reasonCode))}</strong>
-            <p>${naming ? `${escapeHtml(naming)}. ` : ""}${plannerLabel(alert.severity || "warning")} · ${escapeHtml(newsletterAlertAdvice(alert.reasonCode))}</p>
+            <p>${naming ? `${escapeHtml(naming)}. ` : ""}${escapeHtml(newsletterAlertAdvice(alert.reasonCode))}</p>
           </div>
         </article>
       `;
@@ -312,7 +311,10 @@ export function createNewsletterPlanner(context) {
           ? "Sponsor booking linked"
           : item.bookedByUserId
             ? "Team member"
-            : "Unbooked");
+            : "");
+      const bookedMarkup = bookedBy
+        ? `<p>Booked by: ${escapeHtml(bookedBy)}</p>`
+        : `<p>No sponsor</p>`;
       const publicationLabel = new Date(`${item.publicationDate}T00:00:00Z`)
         .toLocaleDateString("en", {
           weekday: "short",
@@ -341,14 +343,7 @@ export function createNewsletterPlanner(context) {
         `
         : "";
       const slotId = escapeHtml(item.id);
-      const inlineActions = `
-            ${campaignLink}
-            <button type="button" class="quiet-button" data-compose="${slotId}">Compose</button>
-            <button type="button" class="quiet-button" data-preview="${slotId}">Preview</button>
-            <button type="button" class="quiet-button" data-schedule="${slotId}">Schedule</button>
-            <button data-edit="${slotId}">Edit</button>
-          `;
-      const compactActions = `
+      const actions = `
             <button type="button" class="primary-button newsletter-slot-primary" data-compose="${slotId}">Compose</button>
             <div class="newsletter-overflow">
               <button
@@ -383,11 +378,11 @@ export function createNewsletterPlanner(context) {
                 ${escapeHtml(plannerLabel(item.status))}
               </span>
             </div>
-            <p>Booked by: ${escapeHtml(bookedBy)}</p>
+            ${bookedMarkup}
             ${planningNote}
           </div>
           <div class="newsletter-slot-actions">
-            ${compactLayout() ? compactActions : inlineActions}
+            ${actions}
           </div>
         </article>
       `;

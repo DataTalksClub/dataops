@@ -1772,4 +1772,107 @@ a.calendar-day-timeline-title:hover {
   }
 }
 
+.newsletter-overflow {
+  position: relative;
+  display: inline-flex;
+}
+
+.newsletter-overflow-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.newsletter-overflow-trigger:hover,
+.newsletter-overflow-trigger[aria-expanded="true"] {
+  border-color: var(--dk-border-strong);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-primary);
+}
+
+.newsletter-overflow-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  display: grid;
+  min-width: 176px;
+  padding: 4px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  box-shadow: var(--dk-shadow-overlay);
+}
+
+.newsletter-overflow-menu[hidden] {
+  display: none !important;
+}
+
+.newsletter-overflow-item {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: var(--dk-radius-sm);
+  background: none;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--dk-text-primary);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.newsletter-overflow-item:hover,
+.newsletter-overflow-item:focus-visible {
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-heading);
+}
+
+details.newsletter-filters {
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  padding: 0;
+  overflow: hidden;
+}
+
+details.newsletter-filters summary.newsletter-filters-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dk-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+details.newsletter-filters summary.newsletter-filters-summary:hover {
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-primary);
+}
+
+details.newsletter-filters[open] summary.newsletter-filters-summary {
+  border-bottom: 1px solid var(--dk-border-subtle);
+}
+
+details.newsletter-filters .planner-filter-fields {
+  padding: 12px 14px;
+}
+
 
