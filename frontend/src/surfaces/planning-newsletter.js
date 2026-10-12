@@ -56,7 +56,7 @@ export function createNewsletterPlanner(context) {
         el.classList.remove("editing");
         const val = editor.value;
         if (val !== original && options.commit) options.commit(val);
-        else if (options.restore) options.restore();
+        if (options.restore) options.restore();
       };
       const doCancel = () => {
         if (committed) return;
@@ -75,10 +75,17 @@ export function createNewsletterPlanner(context) {
         } else if (e.key === "Enter" && (!options.multiline || e.ctrlKey || e.metaKey)) {
           e.preventDefault();
           doCommit();
+          options.onEnterNewBlock?.();
         } else if (e.key === "/" && editor.value.trim() === "" && options.onSlash) {
           options.onSlash();
         }
       });
+    }
+
+    if (options.autoFocus) {
+      setTimeout(() => {
+        if (el.isConnected) enter();
+      }, 0);
     }
 
     el.addEventListener("click", (e) => {

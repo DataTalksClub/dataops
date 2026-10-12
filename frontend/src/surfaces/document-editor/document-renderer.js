@@ -137,9 +137,9 @@ export function createDocumentRenderer(context, services) {
       } else {
         const blocksContainer = blockEditor.renderBlocksContainer({
           blocks: docBlocks,
-          onChange: (idx, newRaw) => {
+          onChange: (idx, newRaw, { rerender = true } = {}) => {
             docBlocks[idx].raw = newRaw;
-            applyBlocksChange(docBlocks);
+            applyBlocksChange(docBlocks, { rerender });
           },
           onMoveBlock: (fromIdx, toIdx) => {
             const [moved] = docBlocks.splice(fromIdx, 1);
@@ -208,7 +208,7 @@ export function createDocumentRenderer(context, services) {
     fetchBacklinksForCurrentDoc();
   }
 
-  function applyBlocksChange(newBlocks) {
+  function applyBlocksChange(newBlocks, { rerender = true } = {}) {
     const rawFull = editor.value || "";
     const fmRange = _frontmatterRange(rawFull);
     const fmText = fmRange ? rawFull.slice(0, fmRange.end + 5) : "";
@@ -223,7 +223,7 @@ export function createDocumentRenderer(context, services) {
       newBodyMarkdown;
     storeDraft();
     updateSaveState();
-    renderParsedDocument();
+    if (rerender) renderParsedDocument();
   }
 
   function renderDocHierarchyTrail() {

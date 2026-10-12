@@ -294,7 +294,7 @@ export function createBlockEditor(context, services) {
           commit: (newText) => {
             item.text = newText;
             block.raw = serializeListItems(items, block.type);
-            onChange(blockIndex, block.raw);
+            onChange(blockIndex, block.raw, { rerender: false });
           },
           restore: () => {
             textSpan.replaceChildren();
@@ -320,21 +320,21 @@ export function createBlockEditor(context, services) {
               : { indent: item.indent, bullet: item.bullet || "-", text: "" };
             items.splice(itemIdx + 1, 0, newItem);
             block.raw = serializeListItems(items, block.type);
-            onChange(blockIndex, block.raw);
+            onChange(blockIndex, block.raw, { rerender: false });
             renderListItems(itemIdx + 1);
           },
           onDeleteBlock: () => {
             if (item.indent && item.indent.length >= 2) {
               item.indent = item.indent.slice(2);
               block.raw = serializeListItems(items, block.type);
-              onChange(blockIndex, block.raw);
+              onChange(blockIndex, block.raw, { rerender: false });
               renderListItems(itemIdx);
               return;
             }
             if (items.length > 1) {
               items.splice(itemIdx, 1);
               block.raw = serializeListItems(items, block.type);
-              onChange(blockIndex, block.raw);
+              onChange(blockIndex, block.raw, { rerender: false });
               renderListItems(Math.max(0, itemIdx - 1));
             } else {
               onDeleteBlock(blockIndex);
@@ -343,14 +343,14 @@ export function createBlockEditor(context, services) {
           onIndent: () => {
             item.indent = (item.indent || "") + "  ";
             block.raw = serializeListItems(items, block.type);
-            onChange(blockIndex, block.raw);
+            onChange(blockIndex, block.raw, { rerender: false });
             renderListItems(itemIdx);
           },
           onOutdent: () => {
             if (item.indent && item.indent.length >= 2) {
               item.indent = item.indent.slice(2);
               block.raw = serializeListItems(items, block.type);
-              onChange(blockIndex, block.raw);
+              onChange(blockIndex, block.raw, { rerender: false });
               renderListItems(itemIdx);
             }
           },
@@ -360,7 +360,7 @@ export function createBlockEditor(context, services) {
               onSelect: (menuItem) => {
                 item.text = menuItem.template;
                 block.raw = serializeListItems(items, block.type);
-                onChange(blockIndex, block.raw);
+                onChange(blockIndex, block.raw, { rerender: false });
                 renderListItems(itemIdx);
               },
             });

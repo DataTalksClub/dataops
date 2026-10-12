@@ -54,7 +54,7 @@ export function createStructuredEditor(context, services, editorState) {
 
     if (autoFocus) {
       setTimeout(() => {
-        if (!el.classList.contains("editing")) {
+        if (el.isConnected && !el.classList.contains("editing")) {
           enter();
         }
       }, 0);
