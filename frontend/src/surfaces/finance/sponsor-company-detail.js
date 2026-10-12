@@ -37,6 +37,16 @@ export function createSponsorCompanyDetail({
     }).format(date);
   }
 
+  function mailThreadMarkup(item) {
+    const direction = { inbound: "Incoming", outbound: "Outgoing" }[item.direction]
+      || humanizeOptionLabel(item.direction);
+    return html`<li>
+      <strong>${escapeHtml(direction)}</strong>
+      ${item.sentAt ? html` · ${escapeHtml(historyDateTime(item.sentAt))}` : ""}
+      ${item.snippet ? html`<p>${escapeHtml(item.snippet)}</p>` : ""}
+    </li>`;
+  }
+
   async function reopenDealDetail(deal) {
     const organization =
       getOrganizations().find((item) => item.id === deal.organizationId) ||
@@ -129,15 +139,7 @@ export function createSponsorCompanyDetail({
         </div>`;
     const threads = (mail.items || []).length
       ? (mail.items || [])
-          .map(
-            (item) => html`<li>
-              <strong>${escapeHtml(item.direction)}</strong>
-              ${item.sentAt
-                ? html` · ${escapeHtml(String(item.sentAt).slice(0, 10))}`
-                : ""}
-              ${item.snippet ? html`<p>${escapeHtml(item.snippet)}</p>` : ""}
-            </li>`,
-          )
+          .map(mailThreadMarkup)
           .join("")
       : html`<li class="crm-mail-empty">
           <strong>No filed mail yet</strong>
@@ -314,14 +316,7 @@ export function createSponsorCompanyDetail({
             result.items || []
           ).length
             ? result.items
-                .map(
-                  (item) => html`<li>
-                    <strong>${escapeHtml(item.direction)}</strong>
-                    ${item.snippet
-                      ? html`<p>${escapeHtml(item.snippet)}</p>`
-                      : ""}
-                  </li>`,
-                )
+                .map(mailThreadMarkup)
                 .join("")
             : html`<li class="crm-mail-empty">No matching filed threads.</li>`;
         }, "Could not search mail");

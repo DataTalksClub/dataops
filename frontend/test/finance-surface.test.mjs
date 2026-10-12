@@ -641,7 +641,10 @@ describe("Finance surface boundary", () => {
         if (path.endsWith("/leads")) return { items: [] };
         if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
-        if (path.includes("/messages")) return { items: [] };
+        if (path.includes("/messages")) return { items: [
+          { direction: "inbound", sentAt: "2026-01-12T23:30:00Z", snippet: "Synthetic <reply>" },
+          { direction: "outbound", sentAt: "2026-01-12T23:45:00Z", snippet: "Synthetic response" },
+        ] };
         if (path.includes("/communications"))
           return {
             items: [
@@ -691,6 +694,18 @@ describe("Finance surface boundary", () => {
     const companyDetail = document.surface.querySelector("[data-crm-detail]").innerHTML;
     assert.match(companyDetail, /class="booking-kind">Agreed<\/p>/);
     assert.match(companyDetail, /data-status="agreed">\s*Agreed/);
+    assert.match(companyDetail, /Incoming/);
+    assert.match(companyDetail, /Outgoing/);
+    assert.match(companyDetail, /13 Jan 2026, 00:30 CET/);
+    assert.match(companyDetail, /Synthetic &lt;reply&gt;/);
+    await document.surface.querySelector("[data-mail-search]").dispatch("input", {
+      target: { value: "Synthetic" },
+    });
+    await settle();
+    const searchedMail = document.surface.querySelector("[data-mail-threads]").innerHTML;
+    assert.match(searchedMail, /Incoming/);
+    assert.match(searchedMail, /13 Jan 2026, 00:30 CET/);
+    assert.match(searchedMail, /Synthetic &lt;reply&gt;/);
 
     const communications = document.surface.querySelector(
       "[data-crm-communications]",
