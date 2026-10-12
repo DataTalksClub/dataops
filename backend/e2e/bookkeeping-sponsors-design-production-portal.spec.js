@@ -276,6 +276,7 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await page.getByRole("button", { name: "Open deal" }).click();
     await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Company detail sections" })).toContainText("Finance");
+    await expect(page.locator('[data-booking-panel="history"]')).toContainText("Recorded 28 Aug 2026, 11:00 CEST");
     await expect(page.locator('[data-booking-panel="communications"]')).toContainText("Draft version 2");
     await expect(page.locator(".crm-card[aria-current=true]")).toHaveCSS("border-left-width", "1px");
     await expectPalette(page, false);

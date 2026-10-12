@@ -23,6 +23,20 @@ export function createSponsorCompanyDetail({
   loadCommunications,
   safe,
 }) {
+  function historyDateTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Date unavailable";
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/Berlin",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZoneName: "short",
+    }).format(date);
+  }
+
   async function reopenDealDetail(deal) {
     const organization =
       getOrganizations().find((item) => item.id === deal.organizationId) ||
@@ -55,7 +69,7 @@ export function createSponsorCompanyDetail({
                   ${escapeHtml(humanizeOptionLabel(item.oldStatus || "created"))}
                   → ${escapeHtml(humanizeOptionLabel(item.newStatus))}
                 </strong>
-                <small>Recorded ${escapeHtml(item.createdAt)}</small>
+                <small>Recorded ${escapeHtml(historyDateTime(item.createdAt))}</small>
                 ${item.note ? html`<p>${escapeHtml(item.note)}</p>` : ""}
               </div>
             `,
