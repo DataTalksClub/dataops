@@ -77,6 +77,10 @@ class TestElement {
     this.children.push(...values);
   }
 
+  prepend(...values) {
+    this.children.unshift(...values);
+  }
+
   close() {
     this.open = false;
   }
@@ -458,6 +462,10 @@ describe("Planning surface production behavior", () => {
       },
     });
     await harness.surface.renderCalendarSurface();
+    const header = dom.surface.children[0];
+    assert.equal(header.className, "page-header calendar-page-header");
+    assert.equal(header.children[0].children[0].textContent, "Calendar");
+    assert.equal(header.children[0].children[0].id, "calendar-surface-title");
     await nextTicks();
     assert.deepEqual(harness.routeTitles, ["Calendar"]);
     assert.match(dom.status.textContent, /Holiday information may be out of date/);

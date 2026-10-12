@@ -93,7 +93,7 @@ async function expectStableRouteFocus(page) {
 const VISIBLE_ROUTE_HEADINGS = {
   'Work Queue': 'Work Queue',
   Newsletter: 'Newsletter planner',
-  Calendar: 'Operations calendar',
+  Calendar: 'Calendar',
 };
 
 async function expectVisibleRouteHeading(page, routeTitle) {

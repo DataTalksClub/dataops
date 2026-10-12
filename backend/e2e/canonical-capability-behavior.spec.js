@@ -956,7 +956,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.goto('/#/newsletter');
     await expect(page.getByText('No newsletter slots')).toBeVisible();
     await page.goto('/#/calendar');
-    await expect(page.getByRole('heading', { name: 'Operations calendar' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Calendar', exact: true, level: 1 })).toBeVisible();
     const id = unique('schedule');
     const slotResponse = await context.request.post('/api/newsletter-slots', { data: {
       publicationDate: '2026-09-03', campaignLabel: `Synthetic newsletter ${id}`, status: 'open', planningNote: 'Public-safe plan',

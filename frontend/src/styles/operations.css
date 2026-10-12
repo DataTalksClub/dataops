@@ -487,3 +487,30 @@ body[data-view="library"] .library-view .document-list .page-header > .ops-docs-
     font-size: 12px;
   }
 }
+
+/* Calendar keeps its shared title and action above the mobile grid. */
+.calendar-page-header .calendar-add-button {
+  border-radius: var(--dk-radius-sm);
+  box-shadow: none;
+}
+@media (max-width: 820px) {
+  body[data-view="library"] .library-view .document-list .calendar-page-header {
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0;
+  }
+  body[data-view="library"] .library-view .document-list .calendar-page-header .page-header-copy h1 {
+    font-size: 22px;
+    line-height: 1.2;
+  }
+  body[data-view="library"] .library-view .document-list .calendar-page-header .page-header-copy p {
+    display: none;
+  }
+  body[data-view="library"] .library-view .document-list .calendar-page-header .page-header-actions {
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+  }
+  .calendar-page-header .calendar-add-button { min-width: 36px; min-height: 32px; }
+  .document-list > .calendar-surface { gap: 6px; }
+}

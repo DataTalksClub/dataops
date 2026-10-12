@@ -10,6 +10,7 @@ const routes = [
   ['/tasks', '.ops-queue-list'], ['/cards', '.workflow-board-card'],
   ['/cards/archive', '.cards-archive-grid, .ops-honest-state'],
   ['/templates', '.runtime-template-layout'], ['/recurring', '.recurring-summary'],
+  ['/calendar', '.calendar-grid'],
   ['/assistants', '.assistant-layout'], ['/processes', '.ops-docs-catalog'],
   ['/admin', '.ops-admin-card'], ['/users', '.ops-users-table'], ['/device', '.device-form'],
 ];
@@ -42,6 +43,13 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
         const board = await page.locator('.ops-queue-board').boundingBox();
         expect(Math.abs(board.width - canvas.width)).toBeLessThan(1);
         const action = await header.getByRole('button', { name: 'Create card', exact: true }).boundingBox();
+        expect(Math.abs(action.x + action.width - canvas.x - canvas.width)).toBeLessThan(1);
+      }
+      if (route === '/calendar') {
+        const grid = await page.locator('.calendar-grid').boundingBox();
+        expect(Math.abs(grid.x - canvas.x)).toBeLessThan(1);
+        expect(Math.abs(grid.width - canvas.width)).toBeLessThan(1);
+        const action = await header.getByRole('button', { name: 'Add activity', exact: true }).boundingBox();
         expect(Math.abs(action.x + action.width - canvas.x - canvas.width)).toBeLessThan(1);
       }
       await page.screenshot({ path: path.join(out, `${route.slice(1).replaceAll('/', '-')}-${viewport.width}x${viewport.height}.png`) });

@@ -150,7 +150,7 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   const root = await page.goto(`${server.baseURL}/#/calendar`);
   assertOwnedServerResponse(server, root, "planning calendar root");
   const surface = page.locator(".calendar-surface");
-  await expect(surface.getByRole("heading", { name: "Operations calendar" })).toBeVisible();
+  await expect(surface.getByRole("heading", { name: "Calendar", exact: true, level: 1 })).toBeVisible();
   await expect(surface.locator(".calendar-activity", { hasText: "Community webinar" }).first()).toBeVisible();
   const planningAlerts = surface.locator(".calendar-alert-summary");
   await expect(planningAlerts).not.toHaveAttribute("open", "");
@@ -175,7 +175,7 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   await page.screenshot({ path: path.join(screenshots, "calendar-1440-dark.png"), animations: "disabled" });
 
   await page.setViewportSize({ width: 820, height: 900 });
-  await expect(surface).toHaveCSS("gap", "16px");
+  await expect(surface).toHaveCSS("gap", "6px");
   await expectNoPageOverflow(page, 820);
   await page.screenshot({ path: path.join(screenshots, "calendar-820-dark.png"), animations: "disabled" });
   await page.setViewportSize({ width: 620, height: 844 });

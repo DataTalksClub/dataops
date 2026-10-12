@@ -1,3 +1,4 @@
+import { createPageHeader } from "./operations-overview.js";
 import { parseIsoDateValue } from "../core/workspace.js";
 import { createNewsletterPlanner } from "./planning-newsletter.js";
 import { setupDayScheduleDialog, setupCalendarSettingsDialog } from "./planning-calendar-dialogs.js";
@@ -103,7 +104,7 @@ export function createPlanningSurface(context) {
               </button>
             </div>
             <div class="calendar-picker-container">
-              <h1 id="calendar-surface-title" class="calendar-heading-wrapper" aria-label="Operations calendar">
+              <h2 id="calendar-period-heading" class="calendar-heading-wrapper" aria-label="Calendar period">
                 <button type="button" class="calendar-period-btn" data-picker-toggle aria-haspopup="dialog" aria-expanded="false" title="Choose month and year">
                   <span class="calendar-period-title" data-period-heading>Calendar</span>
                   <svg class="calendar-period-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
@@ -111,7 +112,7 @@ export function createPlanningSurface(context) {
                     <polyline points="6 9 12 15 18 9"></polyline>
                   </svg>
                 </button>
-              </h1>
+              </h2>
               <span class="calendar-timezone-badge">Europe/Berlin time</span>
               <div class="calendar-month-picker-popover" data-picker-popover hidden role="dialog" aria-label="Choose month and year">
                 <div class="calendar-picker-year-nav">
@@ -130,13 +131,7 @@ export function createPlanningSurface(context) {
               </div>
             </div>
           </div>
-          <div class="calendar-header-actions">
-            <button class="primary-button calendar-add-button" data-add aria-label="Add activity">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              <span>Add activity</span>
-            </button>
-          </div>
+
         </div>
       </header>
       <p class="planner-load-state" role="status">Loading calendar…</p>
@@ -345,6 +340,19 @@ export function createPlanningSurface(context) {
           <button type="button" data-day-close-foot>Close</button>
         </div>
       </dialog>`;
+    const addActivity = document.createElement("button");
+    addActivity.type = "button";
+    addActivity.className = "primary-button calendar-add-button";
+    addActivity.dataset.add = "";
+    addActivity.setAttribute("aria-label", "Add activity");
+    addActivity.textContent = "Add activity";
+    surface.prepend(createPageHeader({
+      title: "Calendar",
+      subtitle: "Plan activities alongside holidays and scheduled events.",
+      titleId: "calendar-surface-title",
+      className: "calendar-page-header",
+      actions: [addActivity],
+    }));
     documentList.append(surface);
     setRouteTitle("Calendar");
 

@@ -167,6 +167,8 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   await expect(page.getByText("Summer holidays").first()).toBeVisible();
   await expect(page.locator(".iso-week").first()).toHaveText(/^\d+$/);
   const surface = page.locator(".calendar-surface");
+  await expect(surface.getByRole("heading", { name: "Calendar", exact: true, level: 1 })).toBeVisible();
+  await expect(surface.locator(".page-header-actions").getByRole("button", { name: "Add activity", exact: true })).toBeVisible();
   await page.screenshot({ path: path.join(shots, "calendar-demo-1280x800.png") });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ path: path.join(shots, "calendar-demo-1440x900.png") });
@@ -340,4 +342,27 @@ test("calendar grid is ready before the external overlay response", async ({ pag
   }
   await expect(surface.locator(".calendar-overlay").first()).toContainText("12:00 Late external event");
   await expect(surface.locator("[role='status']")).toHaveText("");
+});
+
+
+test("calendar shared header keeps the mobile grid within the first quarter", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-07-01T12:00:00Z"));
+  await page.route("**/work/api/calendar-items**", (route) => route.fulfill({ json:
+    new URL(route.request().url()).pathname.endsWith("/overlays") ? { items: [] }
+      : { ...payload, alerts: [], holidays: [] } }));
+  await page.route("**/api/**", (route) => new URL(route.request().url()).pathname.includes("/calendar-items")
+    ? route.fallback() : route.fulfill({ json: { items: [] } }));
+  for (const viewport of [{ width: 375, height: 667 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${frontendBase}/#/calendar`);
+    const surface = page.locator(".calendar-surface");
+    await expect(surface.locator("[role='status']")).toHaveText("");
+    await expect(surface.getByRole("heading", { name: "Calendar", exact: true, level: 1 })).toBeVisible();
+    const top = await surface.locator(".calendar-grid").evaluate((node) => node.getBoundingClientRect().top);
+    expect(top).toBeLessThanOrEqual(Math.round(viewport.height * 0.25) + 2);
+    await surface.locator(".page-header-actions").getByRole("button", { name: "Add activity", exact: true }).click();
+    await expect(surface.locator("dialog[open]")).toBeVisible();
+    await surface.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.screenshot({ path: path.join(shots, `calendar-page-header-${viewport.width}x${viewport.height}.png`) });
+  }
 });
