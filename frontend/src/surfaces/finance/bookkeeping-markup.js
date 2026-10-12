@@ -128,7 +128,7 @@ export function bookkeepingSurfaceMarkup() {
               it supports.
             </p>
           </div>
-          <button class="quiet-button" data-setup-accounts>
+          <button class="quiet-button" type="button" data-setup-accounts disabled>
             Set up business accounts
           </button>
         </header>

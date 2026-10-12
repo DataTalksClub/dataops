@@ -95,6 +95,7 @@ export function createBookkeepingSurface(context) {
         },
         ...options,
       });
+    let setupAccountsReady = false;
     async function safeAction(action, fallback) {
       try {
         await action();
@@ -441,7 +442,7 @@ export function createBookkeepingSurface(context) {
       refreshVocabulary();
       renderTransactionOptions();
       const setupButton = surface.querySelector("[data-setup-accounts]");
-      setupButton.disabled = accounts.length > 0;
+      setupButton.disabled = !setupAccountsReady || accounts.length > 0;
       if (accounts.length)
         setupButton.textContent = "Business accounts ready";
       surface.querySelector("[data-account]").innerHTML =
@@ -847,6 +848,8 @@ export function createBookkeepingSurface(context) {
           await refreshEvidence();
         }, "Could not set up accounts"),
       );
+    setupAccountsReady = true;
+    surface.querySelector("[data-setup-accounts]").disabled = accounts.length > 0;
     surface
       .querySelector("[data-document-type]")
       .addEventListener("change", (event) => {
