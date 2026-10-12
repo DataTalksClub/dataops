@@ -659,6 +659,7 @@ knowledgeSurface = createKnowledgeSurface({
   listDraftPaths: (...args) => listDraftPaths(...args),
   navigateCanonicalWorkspace,
   openCardPanel,
+  openHistory: (...args) => documentEditorSurface.openHistory(...args),
   openQuickWorkflowForm,
   openTaskPanel,
   qualityFiltersState,

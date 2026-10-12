@@ -96,6 +96,21 @@ async function openDoc(page) {
   await expect(page.locator('#document-path')).toHaveText(docPath);
   await expect(page.locator('#editor')).toBeEnabled();
 }
+for (const width of [1440, 1280]) {
+  test(`document actions History opens without a runtime error at ${width}px`, async ({ page }) => {
+    const failures = [];
+    page.on('pageerror', (error) => failures.push(error.message));
+    await page.setViewportSize({ width, height: width === 1440 ? 900 : 800 });
+    await fixtures(page);
+    await openDoc(page);
+    await page.getByRole('button', { name: 'Doc actions', exact: true }).click();
+    await page.locator('.doc-menu-popover').getByRole('button', { name: 'History', exact: true }).click();
+    await expect(page.locator('#history-modal')).toBeVisible();
+    await expect(page.locator('#history-versions')).toContainText('Grace');
+    await expect(page.locator('#history-versions')).toContainText('Alexey');
+    expect(failures).toEqual([]);
+  });
+}
 test('file history compares and restores a version with actor metadata', async ({ page }) => {
   const state = await fixtures(page); await openDoc(page);
   await page.getByRole('button', { name: 'History', exact: true }).click();
