@@ -12,7 +12,7 @@ const routes = [
   ['/tasks', '.ops-queue-list'], ['/cards', '.workflow-board-card'],
   ['/cards/archive', '.cards-archive-grid, .ops-honest-state'],
   ['/templates', '.runtime-template-layout'], ['/recurring', '.recurring-summary'],
-  ['/calendar', '.calendar-grid'],
+  ['/calendar', '.calendar-grid'], ['/newsletter', '.newsletter-views'],
   ['/assistants', '.assistant-layout'], ['/processes', '.ops-docs-catalog'],
   ['/operating-model', '.operating-model-grid, .review-empty-state'], ['/review', '.review-summary'],
   ['/admin', '.ops-admin-card'], ['/users', '.ops-users-table'], ['/device', '.device-form'],
@@ -48,6 +48,10 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       expect(Math.abs(canvas.x - commonLeft), `${route}: canvas left edge`).toBeLessThan(1);
       expect(Math.abs(heading.x - canvas.x), `${route}: title left edge`).toBeLessThan(1);
       expect(canvas.x + canvas.width).toBeLessThanOrEqual(viewport.width);
+      if (route === '/newsletter') {
+        const action = await header.getByRole('button', { name: 'Add slot', exact: true }).boundingBox();
+        expect(Math.abs(action.x + action.width - canvas.x - canvas.width), `${route}: action right edge`).toBeLessThan(1);
+      }
       if (route === '/tasks') {
         const board = await page.locator('.ops-queue-board').boundingBox();
         expect(Math.abs(board.width - canvas.width)).toBeLessThan(1);

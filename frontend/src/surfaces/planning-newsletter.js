@@ -2,6 +2,7 @@ import {
   renderNewsletterDialogMarkup,
   setupNewsletterDialog,
 } from "./planning-newsletter-dialog.js";
+import { renderPageHeaderMarkup } from "./operations-overview.js";
 
 export function createNewsletterPlanner(context) {
   const {
@@ -195,14 +196,13 @@ export function createNewsletterPlanner(context) {
     surface.className = "newsletter-surface";
     surface.setAttribute("aria-labelledby", "newsletter-surface-title");
     surface.innerHTML = `
-      <header class="planner-header">
-        <div class="planner-heading">
-          <p class="planner-eyebrow">Editorial</p>
-          <h1 id="newsletter-surface-title">Newsletter planner</h1>
-          <p>Plan campaign slots, booking readiness, and publication progress in Europe/Berlin.</p>
-        </div>
-        <button class="primary-button" data-newsletter-add>Add slot</button>
-      </header>
+      ${renderPageHeaderMarkup({
+        title: "Newsletter planner",
+        titleId: "newsletter-surface-title",
+        subtitle: "Plan campaign slots, booking readiness, and publication progress in Europe/Berlin.",
+        className: "planner-header",
+        actionsHtml: '<button class="primary-button" data-newsletter-add>Add slot</button>',
+      })}
       <nav class="newsletter-views" data-newsletter-views aria-label="Newsletter views">
         <button type="button" data-newsletter-view="all" class="newsletter-view-tab" aria-pressed="true">All Issues</button>
         <button type="button" data-newsletter-view="upcoming" class="newsletter-view-tab" aria-pressed="false">Upcoming</button>
