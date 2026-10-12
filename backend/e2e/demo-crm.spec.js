@@ -8,10 +8,32 @@ const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolate
 
 let server;
 const pipelineStageFixtures = new Map();
+const INTAKE_SECRET = 'demo-crm-synthetic-intake-secret';
 const screenshots = path.resolve(__dirname, '../../.tmp/demo-c-after');
 test.beforeAll(async () => {
-  server = await startOwnedTestServer({ environment: { DTC_CACHE_ROOT: createDocsCacheRoot('demo-crm') } });
+  server = await startOwnedTestServer({ environment: {
+    DTC_CACHE_ROOT: createDocsCacheRoot('demo-crm'),
+    EMAIL_DOCUMENT_INTAKE_SECRET: INTAKE_SECRET,
+  } });
   await seedOperationsData(server.baseURL);
+  const leadResponse = await fetch(`${server.baseURL}/api/v1/intake/leads`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-dataops-intake-secret': INTAKE_SECRET },
+    body: JSON.stringify({
+      version: '2026-10-10',
+      messageId: 'demo-crm-synthetic-newsletter-lead',
+      newsletter: {
+        name: 'Synthetic Newsletter', sender: 'news@synthetic.example',
+        subject: 'Synthetic sponsor spotlight', receivedAt: new Date().toISOString(),
+      },
+      sponsors: [{
+        name: 'Synthetic Newsletter Lead', url: 'https://synthetic-lead.example/catalog',
+        category: 'tool', blurb: 'Synthetic analytics tooling sponsor for a newsletter campaign.',
+        context: 'Seen in a synthetic newsletter sponsor slot.',
+      }],
+    }),
+  });
+  expect(leadResponse.ok).toBeTruthy();
   const organizations = await (await fetch(`${server.baseURL}/api/sponsor-crm/organizations?limit=100`)).json();
   for (const [index, org] of [...organizations.items, organizations.items[0]].entries()) {
     const response = await fetch(`${server.baseURL}/api/sponsor-crm/deals`, {
@@ -64,6 +86,16 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     await page.locator('[data-crm-view="leads"]').click();
     await expect(page.locator('.crm-leads')).toBeVisible();
     await expect(page.locator('[data-crm-companies-section]')).toBeHidden();
+    const lead = page.locator('.crm-lead-row').filter({ hasText: 'Synthetic Newsletter Lead' });
+    await expect(lead).toBeVisible();
+    if (width <= 600) {
+      const rowBox = await lead.boundingBox();
+      const bodyBox = await lead.locator('.crm-lead-body').boundingBox();
+      const actionsBox = await lead.locator('.crm-lead-actions').boundingBox();
+      expect(bodyBox.width).toBeGreaterThan(rowBox.width * 0.75);
+      expect(actionsBox.y).toBeGreaterThanOrEqual(bodyBox.y + bodyBox.height - 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    }
     await page.screenshot({ path: path.join(screenshots, `leads-${width}x${height}.png`) });
     await page.locator('[data-crm-view="pipeline"]').click();
     await expect(page.locator('[data-crm-bookings]')).toBeVisible();

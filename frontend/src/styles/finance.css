@@ -1299,3 +1299,18 @@ body[data-workspace-view="sponsors"] .document-list {
     min-height: 0;
   }
 }
+
+@media (max-width: 600px) {
+  .sponsor-crm-surface .crm-lead-row {
+    flex-direction: column;
+  }
+  .sponsor-crm-surface .crm-lead-body {
+    width: 100%;
+    overflow-wrap: anywhere;
+  }
+  .sponsor-crm-surface .crm-lead-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
