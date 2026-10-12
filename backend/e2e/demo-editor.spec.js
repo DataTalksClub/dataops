@@ -40,6 +40,20 @@ async function openEditor(page, surface, viewport) {
 }
 
 for (const width of [1440, 1280]) {
+  test(`Compose: slash menu inserts Sponsor Spotlight at ${width}px`, async ({ page }) => {
+    const root = await openEditor(page, 'Compose', { width, height: width === 1440 ? 900 : 800 });
+    await root.locator('.notion-add-row-btn').click();
+    await page.locator('.slash-menu-filter').fill('sponsor spotlight');
+    await page.getByRole('menuitem').filter({ hasText: 'Sponsor Spotlight' }).click();
+    const spotlight = root.locator('.notion-callout-important');
+    await expect(spotlight.locator('.inline-editor')).toBeFocused();
+    await expect(spotlight.locator('.inline-editor')).toHaveValue(/PARTNER SPOTLIGHT/);
+    await root.locator('.notion-list-item-text').first().click();
+    await expect(spotlight).toContainText('PARTNER SPOTLIGHT');
+    await page.getByRole('button', { name: 'Email Preview', exact: true }).click();
+    await expect(page.locator('[data-sim-body]')).toContainText('PARTNER SPOTLIGHT');
+  });
+
   for (const surface of ['Docs', 'Compose']) {
     test(`${surface}: slash choices focus editable headings and to-dos at ${width}px`, async ({ page }) => {
       const root = await openEditor(page, surface, { width, height: width === 1440 ? 900 : 800 });

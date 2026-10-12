@@ -200,7 +200,7 @@ export function serializeBlocksToMarkdown(blocks) {
 
 export function createBlockEditor(context, services) {
   const { renderMarkdown, attachInlineEditor } = services;
-  const slashMenu = createSlashMenu();
+  const slashMenu = createSlashMenu({ additionalBlockTypes: services.slashMenuItems });
   let dragBlockIndex = null;
 
   function renderBlocksContainer({

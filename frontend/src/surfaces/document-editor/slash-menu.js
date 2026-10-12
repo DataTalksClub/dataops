@@ -33,7 +33,7 @@ const BLOCK_ICONS = {
     '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 18 10 18 10 14 14 14 14 10 18 10 18 6"/></svg>',
 };
 
-export function createSlashMenu({ onSelectBlockType } = {}) {
+export function createSlashMenu({ onSelectBlockType, additionalBlockTypes = [] } = {}) {
   const BLOCK_TYPES = [
     {
       type: "paragraph",
@@ -124,6 +124,10 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       template: "1. Action step",
     },
   ];
+  BLOCK_TYPES.push(...additionalBlockTypes.map((item) => ({
+    icon: BLOCK_ICONS.callout,
+    ...item,
+  })));
 
   let menuEl = null;
   let activeIndex = 0;

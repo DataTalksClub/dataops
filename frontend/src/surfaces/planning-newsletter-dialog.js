@@ -367,6 +367,13 @@ export function setupNewsletterDialog(options) {
   const blockEditor = createBlockEditor(context, {
     renderMarkdown: renderNewsletterMarkdown,
     attachInlineEditor,
+    slashMenuItems: [{
+      type: "callout",
+      title: "Sponsor Spotlight",
+      description: "Feature a newsletter partner.",
+      shortcut: "sponsor",
+      template: NEWSLETTER_TEMPLATES.sponsor,
+    }],
   });
 
   let currentEditingItem = null;
