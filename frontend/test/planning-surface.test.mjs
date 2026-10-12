@@ -190,7 +190,7 @@ function createCalendarDom() {
     return layer;
   });
   surface.setQueryAll("[data-layer]", layers);
-  for (const selector of ["[data-prev]", "[data-today]", "[data-next]", "[data-add]", "[data-cancel]"]) {
+  for (const selector of ["[data-prev]", "[data-today]", "[data-next]", "[data-add]", "[data-cancel]", "[data-controls-toggle]"]) {
     surface.setQuery(selector, new TestElement("button"));
   }
   const pickerToggle = surface.setQuery("[data-picker-toggle]", new TestElement("button"));
@@ -482,7 +482,7 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /calendar-week is-current-week/);
     assert.match(dom.grid.innerHTML, /calendar-week-number is-current-week/);
     assert.match(dom.grid.innerHTML, /calendar-day[^"]*is-current-week/);
-    expectCalendarRange(harness.requests[0], "2026-08-03", "2026-09-06");
+    expectCalendarRange(harness.requests[0], "2026-07-27", "2026-09-06");
 
     // Toggle off Alexey's calendar layer
     dom.surface.querySelector('[data-layer="alexey"]').checked = false;
@@ -584,12 +584,14 @@ describe("Planning surface production behavior", () => {
     assert.equal(dom.surface.querySelector("[data-period-heading]").textContent, "December 2026");
     assert.match(dom.grid.innerHTML, /December 1, 2026/);
 
-    // Test November 2026: Nov 1 is Sunday (weekend), so Mon Oct 26–Fri Oct 30 must NOT be shown
+    // A month starting on Sunday includes the full week containing its first day.
     dom.pickerToggle.onclick({ stopPropagation() {} });
     dom.pickerMonthBtns[10].onclick({ stopPropagation() {} });
     await nextTicks();
     assert.equal(dom.surface.querySelector("[data-period-heading]").textContent, "November 2026");
-    assert.doesNotMatch(dom.grid.innerHTML, /Monday, October 26, 2026/);
+    assert.match(dom.grid.innerHTML, /Monday, October 26, 2026/);
+    assert.match(dom.grid.innerHTML, /Sunday, November 1, 2026/);
+    assert.match(dom.grid.innerHTML, /Saturday, November 7, 2026/);
     assert.match(dom.grid.innerHTML, /Monday, November 2, 2026/);
   });
 

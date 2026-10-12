@@ -132,22 +132,22 @@ export function createPlanningSurface(context) {
             </div>
           </div>
 
+          <button type="button" class="icon-button calendar-controls-toggle" data-controls-toggle
+            aria-label="Calendar layers and view" aria-controls="calendar-display-controls" aria-expanded="false" title="Calendar layers and view">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M4 6h16M4 12h16M4 18h16M9 3v6M15 9v6M9 15v6"/>
+            </svg>
+          </button>
         </div>
-      </header>
-      <p class="planner-load-state" role="status">Loading calendar…</p>
-      <div class="planner-alerts" data-alerts></div>
-      <div data-calendar></div>
-      <footer class="calendar-footer-controls" aria-label="Calendar controls">
-        <div class="calendar-footer-controls-bar">
+      <div id="calendar-display-controls" class="calendar-display-controls" role="group" aria-label="Calendar controls">
+        <div class="calendar-display-controls-bar">
           <div class="calendar-filter-section">
-            <span class="calendar-control-label">View:</span>
             <label class="calendar-select-label" title="Calendar view">
               <select data-view aria-label="Calendar view">
                 <option value="month" selected>Month</option>
                 <option value="week">Week</option>
               </select>
             </label>
-            <span class="calendar-control-label">Filter:</span>
             <label class="calendar-select-label" title="Filter by activity type">
               <select data-type aria-label="Activity type">
                 <option value="">All activities</option>
@@ -195,7 +195,11 @@ export function createPlanningSurface(context) {
             </button>
           </div>
         </div>
-      </footer>
+      </div>
+      </header>
+      <p class="planner-load-state" role="status">Loading calendar…</p>
+      <div class="planner-alerts" data-alerts></div>
+      <div data-calendar></div>
       <dialog class="dk-dialog" data-activity-dialog style="--dk-dialog-width: 620px">
         <form>
           <div class="dk-dialog__head"><div>
@@ -346,12 +350,13 @@ export function createPlanningSurface(context) {
     addActivity.dataset.add = "";
     addActivity.setAttribute("aria-label", "Add activity");
     addActivity.textContent = "Add activity";
+    const controlsToggle = surface.querySelector("[data-controls-toggle]");
     surface.prepend(createPageHeader({
       title: "Calendar",
       subtitle: "Plan activities alongside holidays and scheduled events.",
       titleId: "calendar-surface-title",
       className: "calendar-page-header",
-      actions: [addActivity],
+      actions: [controlsToggle, addActivity],
     }));
     documentList.append(surface);
     setRouteTitle("Calendar");
@@ -392,9 +397,6 @@ export function createPlanningSurface(context) {
       if (surface.querySelector("[data-view]").value === "week") return [iso(monday(cursor)), iso(sunday(cursor))];
       const year = cursor.getUTCFullYear(), month = cursor.getUTCMonth();
       const first = new Date(Date.UTC(year, month, 1));
-      const day = first.getUTCDay();
-      if (day === 0) first.setUTCDate(2);
-      else if (day === 6) first.setUTCDate(3);
       const last = new Date(Date.UTC(year, month + 1, 0));
       return [iso(monday(first)), iso(sunday(last))];
     }
@@ -414,9 +416,7 @@ export function createPlanningSurface(context) {
           : cursor.toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });
       const periodHeadingEl = surface.querySelector("[data-period-heading]");
       if (periodHeadingEl) periodHeadingEl.textContent = periodLabel;
-      const days = isWeek
-        ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+      const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
       const weekdayHeadings = [
         '<strong class="calendar-week-heading" aria-label="Week number">Week</strong>',
         ...days.map((day) => `<strong>${day}</strong>`),
@@ -427,7 +427,6 @@ export function createPlanningSurface(context) {
         weekIsCurrent = false;
       for (let dateValue = new Date(`${from}T00:00:00Z`); dateValue <= new Date(`${to}T00:00:00Z`); dateValue.setUTCDate(dateValue.getUTCDate() + 1)) {
         const dayOfWeek = dateValue.getUTCDay();
-        if (!isWeek && (dayOfWeek === 0 || dayOfWeek === 6)) continue;
         const date = iso(dateValue),
           isOutside = !isWeek && dateValue.getUTCMonth() !== cursor.getUTCMonth(),
           isToday = date === todayIso,
@@ -532,7 +531,7 @@ export function createPlanningSurface(context) {
             </div>
           </section>
         `;
-        if (isWeek ? dayOfWeek === 0 : dayOfWeek === 5) weekMarkup += `</div>`;
+        if (dayOfWeek === 0) weekMarkup += `</div>`;
       }
       if (weekMarkup && !weekMarkup.trimEnd().endsWith("</div>")) {
         weekMarkup += `</div>`;
@@ -738,6 +737,11 @@ export function createPlanningSurface(context) {
       if (e.key === "Escape") closePicker();
     });
 
+    controlsToggle.onclick = () => {
+      const expanded = controlsToggle.getAttribute("aria-expanded") !== "true";
+      controlsToggle.setAttribute("aria-expanded", String(expanded));
+      surface.classList.toggle("calendar-controls-open", expanded);
+    };
     surface.querySelector("[data-view]").onchange = load;
     surface.querySelector("[data-type]").onchange = render;
     surface.querySelectorAll("[data-layer]").forEach((control) => { control.onchange = render; });

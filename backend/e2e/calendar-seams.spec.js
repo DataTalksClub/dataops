@@ -207,6 +207,7 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   await surface.screenshot({ path: path.join(shots, "production-error.png") });
   failed = false;
   await page.setViewportSize({ width: 390, height: 844 });
+  await surface.getByRole("button", { name: "Calendar layers and view" }).click();
   await surface.evaluate((element) => (element.style.width = ""));
   await surface.locator("[data-type]").selectOption("");
   await surface.locator("select[data-view]").selectOption("week");
@@ -366,3 +367,75 @@ test("calendar shared header keeps the mobile grid within the first quarter", as
     await page.screenshot({ path: path.join(shots, `calendar-page-header-${viewport.width}x${viewport.height}.png`) });
   }
 });
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800 },
+  { width: 375, height: 667 }, { width: 390, height: 844 }]) {
+  test(`calendar controls and weekend events are reachable at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-11-01T12:00:00Z"));
+    await page.setViewportSize(viewport);
+    const weekendItems = [
+      { id: "saturday", title: "Saturday webinar", date: "2026-11-07" },
+      { id: "sunday", title: "Sunday workshop", date: "2026-11-01" },
+    ].map(({ id, title, date }) => ({ id, title, activityType: "webinar", status: "confirmed",
+      allDay: true, startDate: date, endDate: date, startKey: date, endKey: date, version: 1 }));
+    await page.route("**/work/api/calendar-items**", (route) => route.fulfill({ json:
+      new URL(route.request().url()).pathname.endsWith("/overlays") ? { items: [] } : {
+        items: weekendItems, holidays: [{ kind: "berlin-public-holiday", name: "Weekend holiday",
+          startDate: "2026-11-01", endDate: "2026-11-01" }], holidayMetadata: {}, alerts: [],
+      } }));
+    await page.route("**/api/**", (route) => new URL(route.request().url()).pathname.includes("/calendar-items")
+      ? route.fallback() : route.fulfill({ json: { items: [] } }));
+    await page.goto(`${frontendBase}/#/calendar`);
+    const surface = page.locator(".calendar-surface");
+    const grid = surface.locator(".calendar-grid");
+    const controls = surface.locator(".calendar-display-controls");
+    await expect(surface.locator("[role='status']")).toHaveText("");
+    await expect(surface.locator('[data-day="2026-11-01"] [data-edit="sunday"]')).toHaveText(/Sunday workshop/);
+    await expect(surface.locator('[data-day="2026-11-07"] [data-edit="saturday"]')).toHaveText(/Saturday webinar/);
+    for (const week of await surface.locator(".calendar-week").all()) {
+      await expect(week.locator("section.calendar-day")).toHaveCount(7);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    if (viewport.width < 821) {
+      expect((await grid.boundingBox()).y).toBeLessThanOrEqual(Math.round(viewport.height * 0.25) + 2);
+      await expect(controls).toBeHidden();
+      const toggle = surface.getByRole("button", { name: "Calendar layers and view" });
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    } else {
+      await expect(surface.locator(".calendar-weekdays strong")).toContainText(["Saturday", "Sunday"]);
+      const bounds = await controls.boundingBox();
+      expect(bounds.height).toBeLessThanOrEqual(80);
+      expect(bounds.y + bounds.height).toBeLessThan(viewport.height);
+    }
+    await expect(controls).toBeVisible();
+    const bounds = await controls.boundingBox();
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual((await grid.boundingBox()).y);
+    await surface.locator('[data-layer="public"]').uncheck();
+    await expect(surface.getByText("Weekend holiday", { exact: true })).toHaveCount(0);
+    await surface.locator('[data-layer="public"]').check();
+    await expect(surface.getByText("Weekend holiday", { exact: true })).toBeVisible();
+    if (viewport.width < 821) {
+      const settings = surface.locator("[data-calendar-settings]");
+      await settings.scrollIntoViewIfNeeded();
+      const settingsBox = await settings.boundingBox();
+      expect(settingsBox.x).toBeGreaterThanOrEqual(0);
+      expect(settingsBox.x + settingsBox.width).toBeLessThanOrEqual(viewport.width);
+      await surface.locator(".calendar-layers").evaluate((node) => { node.scrollLeft = 0; });
+    }
+    await page.screenshot({ path: path.join(shots, `calendar-controls-weekends-${viewport.width}x${viewport.height}.png`) });
+    for (const item of weekendItems) {
+      const activity = surface.locator(`[data-edit="${item.id}"]`);
+      await activity.scrollIntoViewIfNeeded();
+      const activityBox = await activity.boundingBox();
+      expect(activityBox.x).toBeGreaterThanOrEqual(0);
+      expect(activityBox.x + activityBox.width).toBeLessThanOrEqual(viewport.width);
+      await activity.click();
+      await expect(surface.getByLabel("Title", { exact: true })).toHaveValue(item.title);
+      await surface.getByRole("button", { name: "Cancel", exact: true }).click();
+    }
+    await controls.getByLabel("Calendar view", { exact: true }).selectOption("week");
+    await expect(surface.locator(".calendar-week")).toHaveCount(1);
+    await expect(surface.locator('[data-day="2026-11-01"] [data-edit="sunday"]')).toBeVisible();
+  });
+}

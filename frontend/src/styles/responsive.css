@@ -444,7 +444,7 @@ body[data-workspace-view="sponsors"] .library-view {
   .calendar-today-btn,
   .calendar-nav-arrow,
   .calendar-add-button,
-  .calendar-footer-controls select,
+  .calendar-display-controls select,
   .ops-docs-create,
   .runtime-template-toolbar input,
   .runtime-template-toolbar select,
@@ -744,9 +744,21 @@ body[data-workspace-view="sponsors"] .library-view {
     font-size: 18px;
     line-height: 1;
   }
-  .calendar-footer-controls {
-    padding: 6px 0 !important;
+  .calendar-surface .calendar-controls-toggle {
+    display: inline-flex;
+    flex: 0 0 36px;
+    min-width: 36px;
+    min-height: 32px;
   }
+  .calendar-controls-toggle svg { width: 20px; height: 20px; }
+  .calendar-surface .calendar-display-controls { display: none; }
+  .calendar-surface.calendar-controls-open .calendar-display-controls {
+    display: block;
+    padding: 6px 0;
+  }
+  .calendar-display-controls-bar { gap: 8px; }
+  .calendar-layer-chip { min-height: 44px; font-size: 12px; }
+  .calendar-layers { gap: 6px; }
 
   /* ---- Device: compact panel so the form leads with the summary back ---- */
   .ops-section.device-panel {
