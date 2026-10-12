@@ -336,7 +336,9 @@ export function createSponsorCrmSurface(context) {
                     ${items
                       .map(
                         (item) => html`<p class="crm-queue-item">
-                          <span class="status-label" data-status="${escapeHtml(item.kind)}">${escapeHtml(item.kind)}</span>
+                          <span class="status-label" data-status="${escapeHtml(item.kind)}">${escapeHtml(
+                            { relationship: "Follow up", operational: "Deal work" }[item.kind] || "Work",
+                          )}</span>
                           <span class="crm-queue-action">${escapeHtml(item.action)}</span>
                           <span class="crm-queue-due">· ${escapeHtml(humanSponsorDate(item.due))}</span>
                         </p>`,

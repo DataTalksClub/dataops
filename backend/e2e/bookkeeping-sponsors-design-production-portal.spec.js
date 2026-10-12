@@ -268,6 +268,7 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     assertOwnedServerResponse(server, root, "sponsor design root");
     await expect(page.getByRole("heading", { name: "Sponsors" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Queue" })).toBeVisible();
+    await expect(page.locator("[data-crm-queue] .status-label")).toHaveText("Deal work");
     await page.getByRole("button", { name: "Pipeline" }).click();
     await expect(page.locator("[data-crm-pipeline]")).toContainText("Agreed");
     await expect(page.locator("[data-crm-pipeline]")).not.toContainText("Inquiry");
