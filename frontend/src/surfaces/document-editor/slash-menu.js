@@ -132,7 +132,7 @@ export function createSlashMenu({ onSelectBlockType, additionalBlockTypes = [] }
   let menuEl = null;
   let activeIndex = 0;
   let filtered = [...BLOCK_TYPES];
-  let currentTargetEl = null;
+  let cleanupOpen = null;
 
   function isOpen() {
     return menuEl != null && menuEl.isConnected;
@@ -140,9 +140,10 @@ export function createSlashMenu({ onSelectBlockType, additionalBlockTypes = [] }
 
   function open({ targetEl, anchorRect, onSelect, onClose, initialQuery = "" } = {}) {
     close();
-    currentTargetEl = targetEl;
     menuEl = document.createElement("div");
+    const openedMenu = menuEl;
     menuEl.className = "block-slash-menu";
+    menuEl.style.position = "absolute";
     menuEl.setAttribute("role", "menu");
     menuEl.setAttribute("aria-label", "Block types");
 
@@ -247,11 +248,19 @@ export function createSlashMenu({ onSelectBlockType, additionalBlockTypes = [] }
       } else if (e.key === "Enter") {
         e.preventDefault();
         if (filtered[activeIndex]) selectItem(filtered[activeIndex]);
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        close();
-        if (onClose) onClose();
       }
+    });
+
+    const dismiss = () => {
+      close();
+      if (targetEl?.isConnected) targetEl.focus();
+      if (onClose) onClose();
+    };
+    menuEl.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      dismiss();
     });
 
     const dialog = targetEl?.closest?.("dialog");
@@ -267,28 +276,28 @@ export function createSlashMenu({ onSelectBlockType, additionalBlockTypes = [] }
     // Position menu near target element, flipping upward if needed
     if (targetEl) {
       const rect = anchorRect || targetEl.getBoundingClientRect();
-      menuEl.style.position = "absolute";
-      const menuHeight = menuEl.offsetHeight || 300;
+      let menuHeight = menuEl.offsetHeight || 300;
       const menuWidth = menuEl.offsetWidth || 300;
 
       if (dialog) {
         const dialogRect = dialog.getBoundingClientRect();
+        const bodyRect = (dialog.querySelector(".dk-dialog__body") || dialog).getBoundingClientRect();
+        const minTop = bodyRect.top - dialogRect.top + 4;
+        const maxBottom = bodyRect.bottom - dialogRect.top - 4;
         const relTop = rect.top - dialogRect.top;
         const relBottom = rect.bottom - dialogRect.top;
         const relLeft = rect.left - dialogRect.left;
-        const spaceBelow = dialogRect.bottom - rect.bottom;
-        const spaceAbove = rect.top - dialogRect.top;
-
-        let top;
-        if (spaceBelow < menuHeight + 10 && spaceAbove > spaceBelow) {
-          top = Math.max(8, relTop - menuHeight - 4);
-        } else {
-          top = Math.min(dialogRect.height - menuHeight - 8, relBottom + 4);
-        }
+        const spaceBelow = maxBottom - relBottom - 4;
+        const spaceAbove = relTop - minTop - 4;
+        const downward = spaceBelow >= Math.min(menuHeight, 160) || spaceBelow >= spaceAbove;
+        const available = Math.max(60, downward ? spaceBelow : spaceAbove);
+        list.style.maxHeight = `${Math.min(260, Math.max(40, available - header.offsetHeight - 20))}px`;
+        menuHeight = menuEl.offsetHeight || menuHeight;
+        const anchoredTop = downward ? relBottom + 4 : relTop - menuHeight - 4;
+        const top = Math.max(minTop, Math.min(anchoredTop, maxBottom - menuHeight));
         const left = Math.max(8, Math.min(relLeft, dialogRect.width - menuWidth - 8));
         menuEl.style.top = `${Math.round(top)}px`;
         menuEl.style.left = `${Math.round(left)}px`;
-        dialog.addEventListener("close", () => close(), { once: true });
       } else {
         const scrollY = typeof window !== "undefined" ? window.scrollY || 0 : 0;
         const scrollX = typeof window !== "undefined" ? window.scrollX || 0 : 0;
@@ -306,26 +315,43 @@ export function createSlashMenu({ onSelectBlockType, additionalBlockTypes = [] }
         menuEl.style.left = `${Math.max(16, Math.round(rect.left + scrollX))}px`;
       }
     }
-    setTimeout(() => filterInput.focus(), 10);
+    const focusTimer = setTimeout(() => {
+      if (menuEl === openedMenu && openedMenu.isConnected) filterInput.focus();
+    }, 0);
 
     const onDocClick = (e) => {
-      if (!menuEl || menuEl.contains(e.target) || targetEl?.contains(e.target)) return;
+      if (menuEl !== openedMenu || openedMenu.contains(e.target) || targetEl?.contains(e.target)) return;
       close();
       if (onClose) onClose();
     };
-    setTimeout(() => {
-      if (typeof window !== "undefined") {
-        window.addEventListener("click", onDocClick, { once: true });
+    const onDialogClose = () => close();
+    const onDialogCancel = (event) => {
+      event.preventDefault();
+      dismiss();
+    };
+    const outsideTimer = setTimeout(() => {
+      if (menuEl === openedMenu && typeof window !== "undefined") {
+        window.addEventListener("click", onDocClick);
       }
-    }, 50);
+    }, 0);
+    dialog?.addEventListener("close", onDialogClose);
+    dialog?.addEventListener("cancel", onDialogCancel);
+    cleanupOpen = () => {
+      clearTimeout(focusTimer);
+      clearTimeout(outsideTimer);
+      if (typeof window !== "undefined") window.removeEventListener("click", onDocClick);
+      dialog?.removeEventListener("close", onDialogClose);
+      dialog?.removeEventListener("cancel", onDialogCancel);
+    };
   }
 
   function close() {
+    cleanupOpen?.();
+    cleanupOpen = null;
     if (menuEl) {
       menuEl.remove();
       menuEl = null;
     }
-    currentTargetEl = null;
   }
 
   return {

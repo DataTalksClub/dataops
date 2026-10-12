@@ -659,6 +659,7 @@ export function setupNewsletterDialog(options) {
   }
 
   function switchDialogTab(tabName) {
+    blockEditor.slashMenu.close();
     dialog.querySelectorAll("[data-dialog-tab]").forEach((btn) => {
       btn.setAttribute("aria-pressed", btn.dataset.dialogTab === tabName ? "true" : "false");
     });

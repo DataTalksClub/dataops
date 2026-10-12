@@ -1,4 +1,6 @@
 const { test, expect } = require('@playwright/test');
+const fs = require('node:fs');
+const path = require('node:path');
 const { setupPageWithAuth } = require('./helpers/auth');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
@@ -40,6 +42,39 @@ async function openEditor(page, surface, viewport) {
 }
 
 for (const width of [1440, 1280]) {
+  test(`Compose: slash menu stays below tabs and Escape only dismisses the menu at ${width}px`, async ({ page }) => {
+    const root = await openEditor(page, 'Compose', { width, height: width === 1440 ? 900 : 800 });
+    const dialog = page.locator('.newsletter-surface dialog');
+    const trigger = root.locator('.notion-add-row-btn');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await trigger.click();
+      const menu = page.locator('.block-slash-menu');
+      await expect(page.locator('.slash-menu-filter')).toBeFocused();
+      await expect(page.locator('.slash-menu-filter')).toHaveValue('');
+      const tabs = await page.locator('.newsletter-dialog-tabs').boundingBox();
+      const bounds = await menu.boundingBox();
+      expect(bounds.y).toBeGreaterThanOrEqual(tabs.y + tabs.height);
+      const body = await dialog.locator('.dk-dialog__body').boundingBox();
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(body.y + body.height + 1);
+      if (attempt === 0) {
+        const output = path.resolve(__dirname, '../../.tmp/demo-editor-after');
+        fs.mkdirSync(output, { recursive: true });
+        await page.screenshot({ path: path.join(output, `compose-slash-${width}.png`) });
+      }
+      if (attempt === 1) await menu.getByRole('menuitem').first().focus();
+      await page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
+      await expect(dialog).toBeVisible();
+      await expect(trigger).toBeFocused();
+      await page.getByLabel('Subject Line', { exact: true }).fill(`Menu dismissal ${attempt}`);
+      await expect(menu).toHaveCount(0);
+    }
+    await trigger.click();
+    await page.getByRole('button', { name: 'Email Preview', exact: true }).click();
+    await expect(page.locator('.block-slash-menu')).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+  });
+
   test(`Compose: slash menu inserts Sponsor Spotlight at ${width}px`, async ({ page }) => {
     const root = await openEditor(page, 'Compose', { width, height: width === 1440 ? 900 : 800 });
     await root.locator('.notion-add-row-btn').click();
