@@ -237,11 +237,18 @@ test.describe('issue 201 queue urgency cues', () => {
       await expect(row.locator('strong')).toHaveText(item.task.description);
       // Urgency is stated as text, never as a colored-only marker.
       await expect(row.locator('.ops-queue-due')).toContainText(item.timing);
-      // Proof-blocked work names its blocker instead of claiming "Mark done".
+      // Proof requirements stay in the task panel and the disabled
+      // checkbox tooltip: only waiting rows earn a second line, so a
+      // proof-blocked row reads as one compact line that cannot be ticked.
       const summary = row.locator('small');
-      if (item.proof) await expect(summary).toContainText('Needs');
-      else if (item.waiting) await expect(summary).toContainText(item.waiting);
+      if (item.waiting) await expect(summary).toContainText(item.waiting);
       else await expect(summary).toHaveCount(0);
+      if (item.proof) {
+        await expect(row.locator('.ops-queue-check')).toHaveAttribute(
+          'title',
+          'Fill in Evidence URL',
+        );
+      }
       await expect(row.getByRole('button', {
         name: `Open task ${item.task.description}`,
       })).toBeVisible();
