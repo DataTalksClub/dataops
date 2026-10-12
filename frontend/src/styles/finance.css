@@ -1286,6 +1286,11 @@ body[data-workspace-view="sponsors"] .document-list {
   }
 }
 @media (max-width: 600px) {
+  .sponsor-crm-surface > .crm-pipeline {
+    flex: 0 1 100%;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
   .sponsor-crm-surface [data-crm-bookings].crm-pipeline-board:not([hidden]) {
     grid-template-columns: minmax(0, 1fr);
     padding: 12px;

@@ -78,6 +78,7 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     await expect(page.locator('[data-pipeline-stage="open"] .crm-pipeline-card')).toHaveCount(0);
     await page.locator('[data-pipeline-status=""]').click();
     await page.screenshot({ path: path.join(screenshots, `pipeline-${width}x${height}.png`) });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.locator('.crm-pipeline-card [data-edit-deal]').first().click();
     await expect(page.locator('[data-deal-dialog]')).toBeVisible();
     await expect(page.locator('.sponsor-crm-surface')).not.toHaveClass(/has-booking-detail/);
