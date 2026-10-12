@@ -1404,6 +1404,12 @@ blockquote p,
   display: none !important;
 }
 
+.document-editor-footer:not(.has-unsaved) #editor-save-button,
+.document-editor-footer:not(.has-unsaved) #editor-discard-button,
+.document-editor-footer:not(.has-unsaved) #editor-save-state {
+  display: none;
+}
+
 .ops-docs-catalog-summary {
   margin: 4px 0 0;
   font-size: 13px;
@@ -1411,3 +1417,4 @@ blockquote p,
   line-height: 1.4;
   text-align: left;
 }
+

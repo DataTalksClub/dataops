@@ -254,7 +254,7 @@ export function createEditorLifecycle(context, services) {
       editorSaveButton.disabled = true;
       editorDiscardButton.disabled = true;
       setSaveState("");
-      if (footer) footer.hidden = true;
+      if (footer) footer.classList.remove("has-unsaved");
       return;
     }
 
@@ -268,7 +268,7 @@ export function createEditorLifecycle(context, services) {
     }
     const hasUnsaved = hasChanges || Boolean(documentState.hasDraft);
     if (footer) {
-      footer.hidden = !hasUnsaved;
+      footer.classList.toggle("has-unsaved", hasUnsaved);
     }
   }
 
@@ -323,7 +323,7 @@ export function createEditorLifecycle(context, services) {
     const footer = editorSaveButton?.closest?.(".document-editor-footer") ||
       editorView?.querySelector?.(".document-editor-footer");
     if (footer && message) {
-      footer.hidden = false;
+      footer.classList.add("has-unsaved");
     }
   }
 
