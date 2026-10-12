@@ -394,8 +394,8 @@ export function createBookkeepingSurface(context) {
       );
       if (businessAccounts.length < 2)
         preflightRows.push(
-          html`<p class="preflight-row is-blocked">
-            ✗ Two business accounts are required; set them up in Evidence.
+          html`<p class="preflight-row">
+            Set up two business accounts in Evidence before preparing a monthly package.
           </p>`,
         );
       const preflightNote = missingStatements.length

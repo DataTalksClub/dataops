@@ -44,8 +44,8 @@ export function closeStateMonthMarkup({
         class="bookkeeping-counter ${conversions ? "is-open" : "is-done"}"
         ><strong>${conversions}</strong
         >EUR conversions open</span
-      ><span class="bookkeeping-counter ${packageReady ? "is-done" : "is-open"}"
-        ><strong>${packageReady ? "Ready" : "—"}</strong>package</span
+      ><span class="bookkeeping-counter ${packageReady ? "is-done" : ""}"
+        ><strong>${packageReady ? "Ready" : "Pending"}</strong>package</span
       >
     </div>
     <div class="bookkeeping-close-cta">${ctaButton}</div>`;

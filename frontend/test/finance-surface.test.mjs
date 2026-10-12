@@ -1381,7 +1381,7 @@ describe("Finance surface boundary", () => {
     // the package is blocked and says why.
     const review = surface.querySelector("[data-package-review]");
     assert.match(review.innerHTML, /August 2026 package/);
-    assert.match(review.innerHTML, /Two business accounts are required/);
+    assert.match(review.innerHTML, /Set up two business accounts in Evidence/);
     assert.equal(
       surface.querySelector("[data-report-month]").value,
       "2026-08",
