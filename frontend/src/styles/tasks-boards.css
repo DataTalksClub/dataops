@@ -544,12 +544,11 @@ body[data-workspace-view="tasks"] .recurring-toolbar button {
 }body[data-workspace-view="tasks"] .workflow-board-list {
   gap: 10px;
 }body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card {
-  min-height: 128px;
-  gap: 9px;
+  gap: 6px;
   border-color: var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
-  padding: 13px 14px 14px;
+  padding: 10px 12px 11px;
   transition: border-color 140ms ease, background 140ms ease;
 }body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card:hover {
   border-color: var(--dk-accent-default);
@@ -561,15 +560,15 @@ body[data-workspace-view="tasks"] .assistant-job-row:focus-visible {
   outline: 3px solid var(--dk-focus-ring);
   outline-offset: 2px;
 }body[data-workspace-view="tasks"] .workflow-card-header {
-  min-height: 22px;
+  min-height: 0;
 }body[data-workspace-view="tasks"] .workflow-card-anchor {
   border-color: var(--dk-border-strong);
   padding-inline: 8px;
 }body[data-workspace-view="tasks"] .workflow-card-count {
   font-weight: 600;
 }body[data-workspace-view="tasks"] .workflow-board-card .ops-progress {
-  height: 5px;
-  margin: auto 0 0;
+  height: 4px;
+  margin: 2px 0 1px;
 }body[data-workspace-view="tasks"] .workflow-board-card .ops-progress i {
   transition: width 240ms ease;
 }body[data-workspace-view="tasks"] .cards-archive-month-title {

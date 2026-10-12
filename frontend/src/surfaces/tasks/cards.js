@@ -377,6 +377,16 @@ export function createCardsSurface(context) {
     return flags;
   }
 
+  function nextTaskLabel(progress) {
+    const next = progress?.nextDueTask;
+    if (!next) return "";
+    const title =
+      typeof next === "string"
+        ? next
+        : next.description || next.title || "";
+    return String(title || "").trim();
+  }
+
   function renderWorkflowSurfaceCard(item) {
     const card = document.createElement("button");
     card.type = "button";
@@ -421,9 +431,11 @@ export function createCardsSurface(context) {
       card.append(metaTop);
     }
 
+    // Date and task count share one wrapping header row beneath the badge.
     const header = document.createElement("span");
     header.className = "workflow-card-header";
     let headerFilled = false;
+
     if (item.anchorLabel) {
       const anchor = document.createElement("span");
       anchor.className = `workflow-card-anchor is-${item.anchorTone || "upcoming"}`;
@@ -463,6 +475,15 @@ export function createCardsSurface(context) {
       unavailable.className = "workflow-card-count";
       unavailable.textContent = "Task relationships unavailable";
       card.append(unavailable);
+    }
+
+    const nextLabel = nextTaskLabel(item.progress);
+    if (nextLabel) {
+      const next = document.createElement("span");
+      next.className = "workflow-card-next";
+      next.textContent = `Next: ${nextLabel}`;
+      next.title = next.textContent;
+      card.append(next);
     }
 
     if (item.progress) {
