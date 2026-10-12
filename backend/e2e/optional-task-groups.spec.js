@@ -43,7 +43,7 @@ for (const includeOptional of [false, true]) {
       if (includeOptional) await checkbox.check();
       await form.getByLabel('Card title (optional)').fill(`Synthetic optional Card ${includeOptional}`);
       const pending = page.waitForResponse(response => response.request().method() === 'POST'
-        && new URL(response.url()).pathname === '/work/api/cards');
+        && new URL(response.url()).pathname === '/api/cards');
       await form.getByRole('button', { name: 'Create card' }).click();
       const response = await pending;
       expect(response.status()).toBe(201);

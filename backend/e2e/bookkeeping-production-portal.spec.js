@@ -195,7 +195,7 @@ test.describe("production portal bookkeeping", () => {
       { transactionDate: "2025-01-02", counterparty: "Next Year Export Vendor", amount: "20.00", currency: "EUR", entryType: "expense" },
     ];
     for (const entry of samples) {
-      const response = await context.request.post("/work/api/bookkeeping/transactions", { data: { description: "Export browser fixture", ...entry } });
+      const response = await context.request.post("/api/bookkeeping/transactions", { data: { description: "Export browser fixture", ...entry } });
       expect(response.ok(), await response.text()).toBe(true);
     }
     await gotoOwnedBookkeepingPage(page);
