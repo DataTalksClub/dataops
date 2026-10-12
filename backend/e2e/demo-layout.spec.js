@@ -7,6 +7,8 @@ const { seedOperationsData } = require('./helpers/seed-operations-data');
 const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
 let server;
 const routes = [
+  ['/bookkeeping', '.bookkeeping-close-state h2'],
+  ['/sponsors', '.crm-master .crm-booking-row, .crm-master .honest-state'],
   ['/tasks', '.ops-queue-list'], ['/cards', '.workflow-board-card'],
   ['/cards/archive', '.cards-archive-grid, .ops-honest-state'],
   ['/templates', '.runtime-template-layout'], ['/recurring', '.recurring-summary'],
@@ -62,6 +64,11 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
         expect(Math.abs(grid.width - canvas.width)).toBeLessThan(1);
         const action = await header.getByRole('button', { name: 'Add activity', exact: true }).boundingBox();
         expect(Math.abs(action.x + action.width - canvas.x - canvas.width)).toBeLessThan(1);
+      }
+      const financeAction = { '/bookkeeping': 'Add entry', '/sponsors': 'Add deal' }[route];
+      if (financeAction) {
+        const action = await header.getByRole('button', { name: financeAction, exact: true }).boundingBox();
+        expect(Math.abs(action.x + action.width - canvas.x - canvas.width), `${route}: action right edge`).toBeLessThan(1);
       }
       await page.screenshot({ path: path.join(out, `${route.slice(1).replaceAll('/', '-')}-${viewport.width}x${viewport.height}.png`) });
     }

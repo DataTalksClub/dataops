@@ -3,19 +3,15 @@
 // All dynamic state renders into [data-close-state], [data-worklist],
 // .bookkeeping-ledger, .bookkeeping-documents and [data-package-review].
 import { html } from "./shared.js";
+import { renderPageHeaderMarkup } from "../operations-overview.js";
 
 export function bookkeepingSurfaceMarkup() {
-  return html` <header class="bookkeeping-header">
-        <div>
-          <p class="surface-eyebrow">Monthly close</p>
-          <h1>Bookkeeping</h1>
-          <p>
-            One month at a time: record the transactions, attach the evidence,
-            and close the month with a reviewable package.
-          </p>
-        </div>
-        <button class="primary-button" data-bookkeeping-add>Add entry</button>
-      </header>
+  return html`${renderPageHeaderMarkup({
+    title: "Bookkeeping",
+    subtitle: "One month at a time: record the transactions, attach the evidence, and close the month with a reviewable package.",
+    className: "bookkeeping-header",
+    actionsHtml: html`<button class="primary-button" data-bookkeeping-add>Add entry</button>`,
+  })}
       <section
         class="bookkeeping-monthlens"
         aria-label="Month close state"

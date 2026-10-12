@@ -1,4 +1,5 @@
 import { html } from "./shared.js";
+import { renderPageHeaderMarkup } from "../operations-overview.js";
 
 const DEAL_STATUSES = ["open", "agreed", "lost"];
 const PRODUCT_KINDS = ["one-off", "package", "course"];
@@ -26,16 +27,15 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
   const ownerOptions = OWNERS.map(
     ([id, name]) => html`<option value="${id}">${name}</option>`,
   ).join("");
-  return html`<header class="crm-header">
-      <div>
-        <h1>Sponsors</h1>
-      </div>
-      <div class="surface-actions">
-        <button data-evaluate-communications>Refresh suggestions</button
-        ><button data-add-org>Add sponsor</button
-        ><button class="primary-button" data-add-deal>Add deal</button>
-      </div>
-    </header>
+  return html`${renderPageHeaderMarkup({
+    title: "Sponsors",
+    className: "crm-header",
+    actionsHtml: html`<div class="surface-actions">
+      <button data-evaluate-communications>Refresh suggestions</button
+      ><button data-add-org>Add sponsor</button
+      ><button class="primary-button" data-add-deal>Add deal</button>
+    </div>`,
+  })}
     <p data-crm-message class="surface-status" role="status">
       Loading sponsor CRM…
     </p>
