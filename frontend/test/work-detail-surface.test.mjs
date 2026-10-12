@@ -414,6 +414,26 @@ describe("Work Detail surface boundary", () => {
     assert.equal(harness.cardPanel.hidden, false);
   });
 
+  test("wraps Card dialog focus from a collapsed form summary back to Close", () => {
+    const harness = createHarness();
+    harness.api.prepareCardPanel("card-1");
+    const details = new FakeElement("details");
+    const summary = new FakeElement("summary");
+    summary.textContent = "+ Add process reference";
+    const hiddenInput = new FakeElement("input");
+    details.append(summary, hiddenInput);
+    harness.cardPanelClose.parentElement.append(details);
+    harness.document.activeElement = summary;
+    let prevented = false;
+    harness.api.handleWorkspaceEntityModalKeydown({
+      defaultPrevented: false,
+      key: "Tab", shiftKey: false,
+      preventDefault: () => { prevented = true; },
+    });
+    assert.equal(prevented, true);
+    assert.equal(harness.cardPanelClose.focused, true);
+  });
+
   test("requires canonical Task history and presents comments separately from transition history", async () => {
     const canonical = {
       id: "task-history",

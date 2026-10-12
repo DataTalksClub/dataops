@@ -151,8 +151,13 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   assertOwnedServerResponse(server, root, "planning calendar root");
   const surface = page.locator(".calendar-surface");
   await expect(surface.getByRole("heading", { name: "Operations calendar" })).toBeVisible();
-  await expect(surface.getByText("Community webinar").first()).toBeVisible();
-  await expect(surface.getByText("Activity overlaps a school holiday")).toBeVisible();
+  await expect(surface.locator(".calendar-activity", { hasText: "Community webinar" }).first()).toBeVisible();
+  const planningAlerts = surface.locator(".calendar-alert-summary");
+  await expect(planningAlerts).not.toHaveAttribute("open", "");
+  await planningAlerts.locator("summary").click();
+  await expect(planningAlerts.getByText("Activity overlaps a school holiday")).toBeVisible();
+  await expect(planningAlerts.getByRole("button", { name: "Dismiss" }).first()).toBeVisible();
+  await planningAlerts.locator("summary").click();
   await expect(surface.getByText("school-holiday-overlap")).toHaveCount(0);
   await expect(surface.locator(".calendar-weeks > .calendar-week")).toHaveCount(5);
   await expect(surface.locator(".calendar-weeks > .calendar-week > section.calendar-day")).toHaveCount(25);

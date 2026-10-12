@@ -83,8 +83,18 @@ export function createRouteState(context) {
     }
     if (event.key !== "Tab") return;
     const focusables = [
-      ...activePanel.querySelectorAll(FOCUSABLE_SELECTOR),
-    ].filter((el) => el.offsetParent !== null);
+      ...activePanel.querySelectorAll(`${FOCUSABLE_SELECTOR}, summary`),
+    ].filter((el) => {
+      if (el.offsetParent === null) return false;
+      let child = el;
+      for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+        if (parent.tagName === "DETAILS" && !parent.open && child.tagName !== "SUMMARY") {
+          return false;
+        }
+        child = parent;
+      }
+      return true;
+    });
     if (focusables.length === 0) return;
     const first = focusables[0];
     const last = focusables[focusables.length - 1];

@@ -179,6 +179,13 @@ async function openProcessQualityFindings(page) {
   await expect(drilldown).toHaveJSProperty('open', true);
 }
 
+async function expandNewsletterFilters(page) {
+  const filters = page.locator('.newsletter-filters');
+  if (!(await filters.evaluate((element) => element.open))) {
+    await filters.locator('summary').click();
+  }
+}
+
 async function setNewsletterDateRange(page, from, to) {
   const fromInput = page.locator('[data-from]');
   const toInput = page.locator('[data-to]');
@@ -186,6 +193,7 @@ async function setNewsletterDateRange(page, from, to) {
   // between the two fills silently reverts one of them. Keep applying until
   // both values stick, then trigger the filtered load once.
   await expect(async () => {
+    await expandNewsletterFilters(page);
     await fromInput.fill(from);
     await toInput.fill(to);
     expect(await fromInput.inputValue()).toBe(from);
@@ -784,7 +792,7 @@ test.describe('canonical frontend capability behavior', () => {
     const transaction = await json(created);
     await page.goto('/#/bookkeeping');
     await expect(page.getByRole('cell', { name: counterparty })).toBeVisible();
-    await expect(page.locator('.bookkeeping-totals')).toContainText('EUR Expenses 18.50');
+    await expect(page.locator('.bookkeeping-totals')).toContainText('Expenses €18.50');
 
     // The upload form lives collapsed behind its summary; open it.
     await page.locator('.bookkeeping-upload-panel > summary').click();
@@ -982,7 +990,9 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Invalid publicationDate');
     await page.keyboard.press('Escape');
     await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
-    await page.locator('[data-slots] article', { hasText: `Synthetic newsletter ${id}` }).getByRole('button', { name: 'Edit' }).click();
+    const editableSlot = page.locator('[data-slots] article', { hasText: `Synthetic newsletter ${id}` });
+    await editableSlot.getByRole('button', { name: `More actions for Synthetic newsletter ${id}` }).click();
+    await editableSlot.getByRole('menuitem', { name: 'Edit details', exact: true }).click();
     const serverSlot = await json(await context.request.get(`/api/newsletter-slots/${slot.id}`));
     const concurrentSlot = await context.request.put(`/api/newsletter-slots/${slot.id}`, { data: {
       version: serverSlot.version, campaignLabel: `Server newsletter ${id}`,
@@ -996,16 +1006,23 @@ test.describe('canonical frontend capability behavior', () => {
     await setNewsletterDateRange(page, '2026-09-01', '2026-09-30');
     await expect(page.getByText(`Server newsletter ${id}`)).toBeVisible();
     await setFaults(context.request, [{ method: 'GET', path: '/api/newsletter-slots', status: 503 }]);
+    await expandNewsletterFilters(page);
     await page.locator('[data-status]').selectOption('open');
     await expect(page.locator('.newsletter-surface [role="status"]')).toContainText('Could not load newsletter schedule');
     await clearFaults(context.request);
+    await expandNewsletterFilters(page);
     await page.locator('[data-status]').selectOption('');
     await expect(page.getByText(`Server newsletter ${id}`)).toBeVisible();
 
     await page.clock.setFixedTime(new Date('2026-09-03T12:00:00Z'));
     await page.goto('/#/calendar');
     await page.locator('[data-today]').click();
-    await expect(page.getByText(`Updated calendar ${id}`).first()).toBeVisible();
+    await expect(page.locator('.calendar-surface .calendar-activity', { hasText: `Updated calendar ${id}` }).first()).toBeVisible();
+    const planningAlerts = page.locator('.calendar-surface .calendar-alert-summary');
+    await planningAlerts.locator('summary').click();
+    await expect(planningAlerts).toContainText(`Updated calendar ${id}`);
+    await expect(planningAlerts.getByRole('button', { name: 'Dismiss' }).first()).toBeVisible();
+    await planningAlerts.locator('summary').click();
     const calendarDialog = page.locator('.calendar-surface [data-activity-dialog]');
     await page.getByRole('button', { name: 'Add activity' }).click();
     await calendarDialog.getByRole('button', { name: 'Save activity' }).click();
@@ -1031,15 +1048,21 @@ test.describe('canonical frontend capability behavior', () => {
     await page.locator('[data-today]').click();
     await page.locator('.calendar-surface [data-edit]', { hasText: `Server calendar ${id}` }).first().click();
     await calendarDialog.getByLabel('Title').fill(`Browser calendar ${id}`);
+    const refreshedOverlayRequest = page.waitForRequest((request) =>
+      new URL(request.url()).pathname.endsWith('/calendar-items/overlays'));
     await calendarDialog.getByRole('button', { name: 'Save activity' }).click();
-    await expect(page.getByText(`Browser calendar ${id}`).first()).toBeVisible();
+    await expect(page.locator('.calendar-surface .calendar-activity', { hasText: `Browser calendar ${id}` }).first()).toBeVisible();
+    // Owned activities render before optional overlays. Wait for this save's
+    // overlay request, rather than treating the visible grid as overlay-ready.
+    const refreshedOverlayResponse = await (await refreshedOverlayRequest).response();
+    expect(refreshedOverlayResponse.ok()).toBe(true);
     await expect(page.locator('[data-calendar]')).toContainText(`Server newsletter ${id}`);
     await setFaults(context.request, [{ method: 'GET', path: '/api/calendar-items', status: 503 }]);
     await page.locator('[data-next]').click();
     await expect(page.getByText('Calendar unavailable')).toBeVisible();
     await clearFaults(context.request);
     await page.locator('[data-today]').click();
-    await expect(page.getByText(`Browser calendar ${id}`).first()).toBeVisible();
+    await expect(page.locator('.calendar-surface .calendar-activity', { hasText: `Browser calendar ${id}` }).first()).toBeVisible();
     await context.close();
     recordCapabilityEvidence(testInfo, [
       { route: '/#/newsletter', roleId: 'admin', stateIds: ['newsletter.empty', 'newsletter.populated', 'newsletter.create-edit-reload', 'newsletter.validation', 'newsletter.conflict', 'newsletter.failure'] },
