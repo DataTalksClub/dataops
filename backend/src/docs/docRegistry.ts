@@ -65,10 +65,14 @@ export interface DocumentRecord {
   updated_at: number;
   domain: string;
   id_source: 'frontmatter' | 'generated';
+  parent?: string;
+  parent_id?: string;
 }
 
 export interface DocumentRecordDict extends Omit<DocumentRecord, never> {
   stable_id: boolean;
+  parent?: string;
+  parent_id?: string;
 }
 
 export interface DocumentRegistry {
@@ -103,6 +107,8 @@ export function recordToDict(record: DocumentRecord): DocumentRecordDict {
     updated_at: record.updated_at,
     domain: record.domain,
     id_source: record.id_source,
+    parent: record.parent || '',
+    parent_id: record.parent_id || '',
   };
 }
 
@@ -176,10 +182,34 @@ export function buildRegistry(contentRoot: string, validate = true): DocumentReg
 
   const registry: DocumentRegistry = { documents: records, byId, byAlias, byPath };
 
+  for (const record of records) {
+    if (record.parent) {
+      try {
+        const parentRecord = resolveReference(registry, record.parent);
+        record.parent_id = parentRecord.id;
+      } catch {
+        violations.push(`${record.path}: parent reference not found: '${record.parent}'`);
+      }
+    } else {
+      const dir = posix.dirname(record.path);
+      if (dir !== 'content' && dir !== '.' && dir !== '/') {
+        const candidatePath = `${dir}.md`;
+        const candidate =
+          registry.byPath.get(candidatePath) ||
+          registry.byPath.get(removePrefix(candidatePath, 'content/'));
+        if (candidate) {
+          record.parent = candidate.id;
+          record.parent_id = candidate.id;
+        }
+      }
+    }
+  }
+
   if (validate) {
     violations.push(...validateAliasConflicts(byAlias, byId));
     violations.push(...validateAliasPathConflicts(byAlias, byPath));
     violations.push(...validateRelatedDocs(records, registry));
+    violations.push(...validateParentCycles(records, registry));
     if (violations.length) throw new DocumentRegistryError(violations);
   }
 
@@ -268,6 +298,25 @@ function validateAliasPathConflicts(
   return violations;
 }
 
+function validateParentCycles(records: DocumentRecord[], registry: DocumentRegistry): string[] {
+  const violations: string[] = [];
+  for (const record of records) {
+    const visited = new Set<string>();
+    visited.add(record.id);
+    let current = record.parent_id;
+    while (current) {
+      if (visited.has(current)) {
+        violations.push(`${record.path}: cycle detected in parent hierarchy involving '${current}'`);
+        break;
+      }
+      visited.add(current);
+      const parentRecord = registry.byId.get(current);
+      current = parentRecord?.parent_id;
+    }
+  }
+  return violations;
+}
+
 // ── Record construction ─────────────────────────────────────────────────────
 
 function recordFromMetadata(
@@ -280,6 +329,7 @@ function recordFromMetadata(
   const docType = asString(metadata.doc_type) || inferDocType(repoPath);
   const docId = explicitId || generatedId(repoPath, docType);
   const stem = basename(repoPath).replace(/\.md$/, '');
+  const explicitParent = stripQuotes(asString(metadata.parent));
   return {
     id: docId,
     aliases: asStrings(metadata.aliases),
@@ -303,6 +353,7 @@ function recordFromMetadata(
     updated_at: mtime,
     domain: inferDomain(repoPath),
     id_source: explicitId ? 'frontmatter' : 'generated',
+    parent: explicitParent || undefined,
   };
 }
 

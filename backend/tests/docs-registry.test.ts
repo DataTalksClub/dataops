@@ -116,6 +116,143 @@ describe('docRegistry - build + resolve (port of doc_registry.py)', () => {
     assert.strictEqual(normalizeReference('[[sop.x|Label]]'), 'sop.x');
     assert.strictEqual(normalizeReference('  plain  '), 'plain');
   });
+
+  it('resolves explicit parent by id, alias, and path', () => {
+    writeDoc(
+      contentRoot,
+      'ops/parent.md',
+      '---\nid: doc.parent\naliases: [parent-alias]\ntitle: Parent\n---\n\n# Parent\n',
+    );
+    writeDoc(
+      contentRoot,
+      'ops/child1.md',
+      '---\nid: doc.child1\ntitle: Child 1\nparent: doc.parent\n---\n\n# Child 1\n',
+    );
+    writeDoc(
+      contentRoot,
+      'ops/child2.md',
+      '---\nid: doc.child2\ntitle: Child 2\nparent: parent-alias\n---\n\n# Child 2\n',
+    );
+    writeDoc(
+      contentRoot,
+      'ops/child3.md',
+      '---\nid: doc.child3\ntitle: Child 3\nparent: content/ops/parent.md\n---\n\n# Child 3\n',
+    );
+
+    const registry = buildRegistry(contentRoot);
+    const child1 = registry.byId.get('doc.child1');
+    assert.ok(child1);
+    assert.strictEqual(child1.parent, 'doc.parent');
+    assert.strictEqual(child1.parent_id, 'doc.parent');
+    const child1Dict = recordToDict(child1);
+    assert.strictEqual(child1Dict.parent, 'doc.parent');
+    assert.strictEqual(child1Dict.parent_id, 'doc.parent');
+
+    const child2 = registry.byId.get('doc.child2');
+    assert.ok(child2);
+    assert.strictEqual(child2.parent, 'parent-alias');
+    assert.strictEqual(child2.parent_id, 'doc.parent');
+
+    const child3 = registry.byId.get('doc.child3');
+    assert.ok(child3);
+    assert.strictEqual(child3.parent, 'content/ops/parent.md');
+    assert.strictEqual(child3.parent_id, 'doc.parent');
+  });
+
+  it('infers parent from directory structure when stem.md matches parent directory', () => {
+    writeDoc(
+      contentRoot,
+      'topics/backend.md',
+      '---\nid: doc.backend\ntitle: Backend\n---\n\n# Backend\n',
+    );
+    writeDoc(
+      contentRoot,
+      'topics/backend/database.md',
+      '---\nid: doc.database\ntitle: Database\n---\n\n# Database\n',
+    );
+    writeDoc(
+      contentRoot,
+      'topics/backend/database/postgres.md',
+      '---\nid: doc.postgres\ntitle: Postgres\n---\n\n# Postgres\n',
+    );
+    writeDoc(
+      contentRoot,
+      'topics/other/standalone.md',
+      '---\nid: doc.standalone\ntitle: Standalone\n---\n\n# Standalone\n',
+    );
+
+    const registry = buildRegistry(contentRoot);
+    const db = registry.byId.get('doc.database');
+    assert.ok(db);
+    assert.strictEqual(db.parent, 'doc.backend');
+    assert.strictEqual(db.parent_id, 'doc.backend');
+
+    const pg = registry.byId.get('doc.postgres');
+    assert.ok(pg);
+    assert.strictEqual(pg.parent, 'doc.database');
+    assert.strictEqual(pg.parent_id, 'doc.database');
+
+    const standalone = registry.byId.get('doc.standalone');
+    assert.ok(standalone);
+    assert.strictEqual(standalone.parent, undefined);
+    assert.strictEqual(standalone.parent_id, undefined);
+    const standaloneDict = recordToDict(standalone);
+    assert.strictEqual(standaloneDict.parent, '');
+    assert.strictEqual(standaloneDict.parent_id, '');
+  });
+
+  it('detects cycles in parent hierarchy and raises DocumentRegistryError', () => {
+    writeDoc(
+      contentRoot,
+      'a.md',
+      '---\nid: doc.a\ntitle: A\nparent: doc.b\n---\n\n# A\n',
+    );
+    writeDoc(
+      contentRoot,
+      'b.md',
+      '---\nid: doc.b\ntitle: B\nparent: doc.a\n---\n\n# B\n',
+    );
+
+    assert.throws(
+      () => buildRegistry(contentRoot),
+      (err: unknown) => {
+        assert.ok(err instanceof DocumentRegistryError);
+        assert.ok(
+          err.violations.some(
+            (v) =>
+              v.includes("cycle detected in parent hierarchy involving 'doc.a'") ||
+              v.includes("cycle detected in parent hierarchy involving 'doc.b'"),
+          ),
+        );
+        return true;
+      },
+    );
+  });
+
+  it('reports error on dangling parent reference and skips on validate=false', () => {
+    writeDoc(
+      contentRoot,
+      'leaf.md',
+      '---\nid: doc.leaf\ntitle: Leaf\nparent: doc.missing-parent\n---\n\n# Leaf\n',
+    );
+
+    assert.throws(
+      () => buildRegistry(contentRoot),
+      (err: unknown) => {
+        assert.ok(err instanceof DocumentRegistryError);
+        assert.ok(
+          err.violations.some((v) => v.includes("parent reference not found: 'doc.missing-parent'")),
+        );
+        return true;
+      },
+    );
+
+    const registry = buildRegistry(contentRoot, false);
+    assert.strictEqual(registry.documents.length, 1);
+    const leaf = registry.byId.get('doc.leaf');
+    assert.ok(leaf);
+    assert.strictEqual(leaf.parent_id, undefined);
+  });
 });
 
 const STRUCTURED_SOP = [

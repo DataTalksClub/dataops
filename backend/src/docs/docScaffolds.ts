@@ -3,17 +3,24 @@
  * `api_handler.py`). Extracted from `contentApi.ts`.
  */
 
-export function newDocContent(title: string, docType: string, summary: string, scaffold: 'full' | 'minimal'): string {
+export function newDocContent(
+  title: string,
+  docType: string,
+  summary: string,
+  scaffold: 'full' | 'minimal',
+  parent?: string,
+): string {
   if (docType === 'sop' || docType === 'checklist') {
     return scaffold === 'minimal'
-      ? minimalSopTemplate(title, docType, summary)
-      : fullSopTemplate(title, docType, summary);
+      ? minimalSopTemplate(title, docType, summary, parent)
+      : fullSopTemplate(title, docType, summary, parent);
   }
+  const parentLine = parent ? `parent: "${parent}"\n` : '';
   return `---
 title: "${title}"
 summary: "${summary}"
 doc_type: ${docType}
-tags: []
+${parentLine}tags: []
 systems: []
 related_docs: []
 ---
@@ -27,13 +34,14 @@ related_docs: []
 `;
 }
 
-function fullSopTemplate(title: string, docType: string, summary: string): string {
+function fullSopTemplate(title: string, docType: string, summary: string, parent?: string): string {
+  const parentLine = parent ? `parent: "${parent}"\n` : '';
   return `---
 title: "${title}"
 summary: "${summary}"
 doc_type: ${docType}
 schema_version: 1
-tags: []
+${parentLine}tags: []
 systems: []
 related_docs: []
 ---
@@ -87,13 +95,14 @@ related_docs: []
 `;
 }
 
-function minimalSopTemplate(title: string, docType: string, summary: string): string {
+function minimalSopTemplate(title: string, docType: string, summary: string, parent?: string): string {
+  const parentLine = parent ? `parent: "${parent}"\n` : '';
   return `---
 title: "${title}"
 summary: "${summary}"
 doc_type: ${docType}
 schema_version: 1
-tags: []
+${parentLine}tags: []
 systems: []
 related_docs: []
 ---
