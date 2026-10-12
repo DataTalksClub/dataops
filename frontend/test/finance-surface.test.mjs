@@ -258,6 +258,7 @@ function escapeHtml(value) {
 function humanizeOptionLabel(value) {
   return String(value || "")
     .replaceAll("-", " ")
+    .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
@@ -891,7 +892,7 @@ describe("Finance surface boundary", () => {
                 id: "relationship:org-1::quiet:2026-08-13",
                 kind: "relationship",
                 why: "quiet",
-                action: "Follow up",
+                action: "chase_materials",
                 companyId: "org-1",
                 companyName: "Talking Co",
                 due: "2026-08-13",
@@ -914,7 +915,8 @@ describe("Finance surface boundary", () => {
     const companies = document.surface.querySelector("[data-crm-orgs]");
     const leads = document.surface.querySelector("[data-crm-leads]");
     assert.match(queue.innerHTML, /Talking Co/);
-    assert.match(queue.innerHTML, /Follow up/);
+    assert.match(queue.innerHTML, /Chase Materials/);
+    assert.doesNotMatch(queue.innerHTML, /chase_materials/);
     assert.match(pipeline.innerHTML, /Talking Co/);
     assert.match(pipeline.innerHTML, /Open/);
     assert.match(companies.innerHTML, /Talking Co/);
