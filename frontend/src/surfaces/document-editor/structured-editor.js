@@ -35,6 +35,7 @@ export function createStructuredEditor(context, services, editorState) {
       onIndent,
       onOutdent,
       placeholder = "",
+      selectionRange = null,
     },
   ) {
     el.tabIndex = 0;
@@ -101,7 +102,9 @@ export function createStructuredEditor(context, services, editorState) {
         }
       }
       editor.focus();
-      if (multiline) {
+      if (selectionRange) {
+        editor.setSelectionRange(selectionRange.start, selectionRange.end);
+      } else if (multiline) {
         editor.setSelectionRange(editor.value.length, editor.value.length);
       } else {
         editor.select();
@@ -150,14 +153,16 @@ export function createStructuredEditor(context, services, editorState) {
           if (event.shiftKey) {
             if (onOutdent) {
               event.preventDefault();
+              const selection = { start: editor.selectionStart, end: editor.selectionEnd };
               doCommit();
-              onOutdent();
+              onOutdent(selection);
             }
           } else {
             if (onIndent) {
               event.preventDefault();
+              const selection = { start: editor.selectionStart, end: editor.selectionEnd };
               doCommit();
-              onIndent();
+              onIndent(selection);
             }
           }
         } else if (event.key === "Enter") {

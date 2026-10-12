@@ -26,14 +26,14 @@ export function parseListItems(raw, type) {
 
 export function serializeListItems(items, type) {
   if (type === "numbered") {
-    let topLevelCount = 0;
+    const counts = new Map();
     return items.map((item) => {
-      const isTopLevel = !item.indent || item.indent.length === 0;
-      if (isTopLevel) {
-        topLevelCount++;
-        return `${topLevelCount}. ${item.text || ""}`;
-      }
-      return `${item.indent}${item.num || "1"}. ${item.text || ""}`;
+      const indent = item.indent || "";
+      const depth = indent.length;
+      for (const level of counts.keys()) if (level > depth) counts.delete(level);
+      const num = (counts.get(depth) || 0) + 1;
+      counts.set(depth, num);
+      return `${indent}${num}. ${item.text || ""}`;
     }).join("\n");
   } else {
     return items.map((item) => {
@@ -276,18 +276,25 @@ export function createBlockEditor(context, services) {
       items = [{ indent: "", text: "", bullet: "-", num: "1" }];
     }
 
-    function renderListItems(focusIndex = -1) {
+    function renderListItems(focusIndex = -1, focusSelection = null) {
       listEl.replaceChildren();
+      const listStack = [listEl];
       items.forEach((item, itemIdx) => {
+        const depth = Math.floor((item.indent || "").length / 2);
+        while (listStack.length > depth + 1) listStack.pop();
+        while (listStack.length < depth + 1) {
+          const parentItem = listStack.at(-1).lastElementChild;
+          if (!parentItem) break;
+          const nestedList = document.createElement(block.type === "numbered" ? "ol" : "ul");
+          nestedList.className = listEl.className;
+          parentItem.append(nestedList);
+          listStack.push(nestedList);
+        }
+        const targetList = listStack.at(-1);
         const li = document.createElement("li");
         li.className = "notion-list-item";
         li.dataset.itemIndex = String(itemIdx);
-        if (item.indent) {
-          const depth = Math.floor(item.indent.length / 2);
-          if (depth > 0) {
-            li.style.marginLeft = `${depth * 20}px`;
-          }
-        }
+        if (block.type === "numbered") li.value = targetList.children.length + 1;
 
         const textSpan = document.createElement("span");
         textSpan.className = "notion-list-item-text";
@@ -324,6 +331,7 @@ export function createBlockEditor(context, services) {
           autoSize: false,
           showHint: false,
           autoFocus: itemIdx === focusIndex,
+          selectionRange: itemIdx === focusIndex ? focusSelection : null,
           onEnterNewBlock: () => {
             const isNumbered = block.type === "numbered";
             const newItem = isNumbered
@@ -351,18 +359,25 @@ export function createBlockEditor(context, services) {
               onDeleteBlock(blockIndex);
             }
           },
-          onIndent: () => {
+          onIndent: (selection) => {
+            const maxIndent = itemIdx > 0 ? (items[itemIdx - 1].indent || "").length + 2 : 0;
+            if ((item.indent || "").length + 2 > maxIndent) {
+              renderListItems(itemIdx, selection);
+              return;
+            }
             item.indent = (item.indent || "") + "  ";
             block.raw = serializeListItems(items, block.type);
             onChange(blockIndex, block.raw, { rerender: false });
-            renderListItems(itemIdx);
+            renderListItems(itemIdx, selection);
           },
-          onOutdent: () => {
+          onOutdent: (selection) => {
             if (item.indent && item.indent.length >= 2) {
               item.indent = item.indent.slice(2);
               block.raw = serializeListItems(items, block.type);
               onChange(blockIndex, block.raw, { rerender: false });
-              renderListItems(itemIdx);
+              renderListItems(itemIdx, selection);
+            } else {
+              renderListItems(itemIdx, selection);
             }
           },
           onSlash: () => {
@@ -379,7 +394,7 @@ export function createBlockEditor(context, services) {
         });
 
         li.append(textSpan);
-        listEl.append(li);
+        targetList.append(li);
       });
     }
 

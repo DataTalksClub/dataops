@@ -52,6 +52,9 @@ export function createNewsletterPlanner(context) {
       }
       el.replaceChildren(editor);
       editor.focus();
+      if (options.selectionRange) {
+        editor.setSelectionRange(options.selectionRange.start, options.selectionRange.end);
+      }
 
       let committed = false;
       const doCommit = () => {
@@ -74,6 +77,12 @@ export function createNewsletterPlanner(context) {
         if (e.key === "Escape") {
           e.preventDefault();
           doCancel();
+        } else if (e.key === "Tab" && (e.shiftKey ? options.onOutdent : options.onIndent)) {
+          e.preventDefault();
+          const selection = { start: editor.selectionStart, end: editor.selectionEnd };
+          doCommit();
+          if (e.shiftKey) options.onOutdent(selection);
+          else options.onIndent(selection);
         } else if (e.key === "Enter" && (!options.multiline || e.ctrlKey || e.metaKey)) {
           e.preventDefault();
           doCommit();

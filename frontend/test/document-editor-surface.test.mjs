@@ -1317,6 +1317,10 @@ describe("Document Editor surface boundary", () => {
     numbered.splice(1, 0, { indent: "", num: "2", text: "New item" });
     const reserialized = serializeListItems(numbered, "numbered");
     assert.match(reserialized, /^1\. Item one\n2\. New item\n3\. Item two\n  1\. Sub item\n4\. Item three$/);
+    assert.equal(serializeListItems(parseListItems(
+      "1. Parent\n  2. Child\n  7. Sibling\n2. Next parent\n  9. New child",
+      "numbered",
+    ), "numbered"), "1. Parent\n  1. Child\n  2. Sibling\n2. Next parent\n  1. New child");
   });
 
 });

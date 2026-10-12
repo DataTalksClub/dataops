@@ -90,6 +90,33 @@ for (const width of [1440, 1280]) {
   });
 
   for (const surface of ['Docs', 'Compose']) {
+    test(`${surface}: Tab indents with fresh numbering and retains the caret at ${width}px`, async ({ page }) => {
+      const root = await openEditor(page, surface, { width, height: width === 1440 ? 900 : 800 });
+      await root.locator('.notion-list-item-text').nth(1).click();
+      const item = () => root.locator('.notion-list-item-text').nth(1);
+      await item().locator('.inline-editor').fill('Nested item');
+      await page.keyboard.press('Tab');
+      await expect(item().locator('.inline-editor')).toBeFocused();
+      expect(await item().evaluate((span) => ({
+        nested: span.parentElement.parentElement.parentElement.tagName === 'LI',
+        number: span.parentElement.value,
+      }))).toEqual({ nested: true, number: 1 });
+      await page.keyboard.type(' continued');
+      await expect(item().locator('.inline-editor')).toHaveValue('Nested item continued');
+      if (surface === 'Docs') {
+        await expect(page.locator('#editor')).toHaveValue(/1\. First item\n  1\. Nested item/);
+      }
+      await page.keyboard.press('Shift+Tab');
+      await expect(item().locator('.inline-editor')).toBeFocused();
+      expect(await item().evaluate((span) => span.parentElement.value)).toBe(2);
+      await page.keyboard.type(' after outdent');
+      await root.locator('.notion-text-content').last().click();
+      await expect(item()).toHaveText('Nested item continued after outdent');
+      if (surface === 'Docs') {
+        await expect(page.locator('#editor')).toHaveValue(/2\. Nested item continued after outdent/);
+      }
+    });
+
     test(`${surface}: slash choices focus editable headings and to-dos at ${width}px`, async ({ page }) => {
       const root = await openEditor(page, surface, { width, height: width === 1440 ? 900 : 800 });
       for (const choice of [
