@@ -356,10 +356,10 @@ export function createTaskQueue(context) {
     button.type = "button";
     button.className = "ops-queue-history-row";
     button.dataset.taskId = task.id;
-    button.setAttribute("aria-label", `Open task ${workTaskTitle(task)}`);
+    button.setAttribute("aria-label", `Open task ${cleanTaskTitle(task)}`);
     button.addEventListener("click", () => openTaskPanel(task.id));
     const title = document.createElement("strong");
-    title.textContent = workTaskTitle(task);
+    title.textContent = cleanTaskTitle(task);
     const meta = document.createElement("span");
     const completed = String(task.completedAt || task.date || "").slice(0, 10);
     meta.textContent = completed
@@ -595,7 +595,7 @@ export function createTaskQueue(context) {
     const input = document.createElement("input");
     input.type = "checkbox";
     input.className = "ops-queue-check-input";
-    input.setAttribute("aria-label", `Mark ${workTaskTitle(task)} as done`);
+    input.setAttribute("aria-label", `Mark ${cleanTaskTitle(task)} as done`);
     const blockers = queueToggleBlockers(task);
     if (blockers.length > 0) {
       input.disabled = true;
@@ -616,25 +616,72 @@ export function createTaskQueue(context) {
     return label;
   }
 
+  // Leading "[Tag]" prefixes are migration debt from the Trello import,
+  // where the checklist name was baked into the description. The canonical
+  // home is `task.tags[0]`; this helper prefers the field and falls back to
+  // parsing so old rows render correctly before the backfill runs.
+  function taskTag(task) {
+    const fieldTag = Array.isArray(task.tags)
+      ? task.tags.find((tag) => typeof tag === "string" && tag.trim().length > 0)
+      : null;
+    if (fieldTag) return fieldTag.trim();
+    const match = String(workTaskTitle(task)).match(/^\[([^\[\]]{1,40})\]\s*/);
+    return match ? match[1].trim() : "";
+  }
+
+  function cleanTaskTitle(task) {
+    const raw = String(workTaskTitle(task));
+    const tag = taskTag(task);
+    if (!tag) return raw;
+    const stripped = raw.replace(/^\[[^\[\]]{1,40}\]\s*/, "");
+    return stripped.length > 0 ? stripped : raw;
+  }
+
   // The one place a task names where it came from. Card membership wins
   // (the card is what the operator can open); recurring schedules and
   // explicit import sources follow; everything else is hand-made ad hoc
   // work. The label is the bare origin — the column heading already says
   // where, so a card cell carries the card's name, not "Card · name".
+  // The icon is the scannable part: card / recurring / ad hoc read before
+  // any text is parsed.
+  const TASK_ORIGIN_ICONS = Object.freeze({
+    card: "▣",
+    recurring: "↻",
+    adhoc: "✦",
+    other: "•",
+  });
+
   function taskOrigin(task, cardsById) {
     if (task.cardId) {
       const card = cardsById.get(String(task.cardId));
       return {
         label: card ? workCardTitle(card) : "Card",
         kind: "card",
-        title: card ? workCardTitle(card) : "Card",
+        icon: TASK_ORIGIN_ICONS.card,
+        title: card ? workCardTitle(card) : "Card task",
       };
     }
     const source = taskSourceLabel(task);
-    if (source === "Recurring") return { label: "Recurring", kind: "recurring" };
+    if (source === "Recurring")
+      return {
+        label: "Recurring",
+        kind: "recurring",
+        icon: TASK_ORIGIN_ICONS.recurring,
+        title: "Recurring task",
+      };
     if (["Ad hoc", "Manual"].includes(source))
-      return { label: "Ad hoc", kind: "adhoc" };
-    return { label: source, kind: "other" };
+      return {
+        label: "Ad hoc",
+        kind: "adhoc",
+        icon: TASK_ORIGIN_ICONS.adhoc,
+        title: "Ad hoc task",
+      };
+    return {
+      label: source,
+      kind: "other",
+      icon: TASK_ORIGIN_ICONS.other,
+      title: source,
+    };
   }
 
   // Ownership reads as a face, not a sentence. The avatar carries the
@@ -690,12 +737,10 @@ export function createTaskQueue(context) {
     return cell;
   }
 
-  // The blocker note is the only second line a row earns, and only when the
-  // task is genuinely stuck: waiting on someone, or missing proof. A task
-  // with nothing blocking it is one line, so the list scans as a checklist
-  // rather than a wall of "Next: Mark done".
+  // The second line a row earns, and only when the task is waiting on
+  // someone. Proof requirements stay in the task panel — the queue is one
+  // compact line per task so the list scans as a checklist.
   function taskBlockerNote(task, today) {
-    const proof = taskProofState(task);
     if (task.status === "done") return null;
     if (task.waitingFor) {
       const note = document.createElement("small");
@@ -703,12 +748,6 @@ export function createTaskQueue(context) {
       note.textContent = `Waiting for ${task.waitingFor}${
         task.followUpAt ? ` · ${queueDueLabel(task.followUpAt, today)}` : ""
       }`;
-      return note;
-    }
-    if (!proof.ok) {
-      const note = document.createElement("small");
-      note.className = "ops-queue-note is-blocked";
-      note.textContent = `Needs ${proof.label.replace(/^Missing proof:\s*/i, "")}`;
       return note;
     }
     if (isFollowUpDueTask(task, today)) {
@@ -769,21 +808,39 @@ export function createTaskQueue(context) {
     const open = document.createElement("button");
     open.type = "button";
     open.className = "ops-queue-main";
-    open.setAttribute("aria-label", `Open task ${workTaskTitle(task)}`);
+    open.setAttribute("aria-label", `Open task ${cleanTaskTitle(task)}`);
     open.addEventListener("click", () => openTaskPanel(task.id));
 
+    const titleRow = document.createElement("span");
+    titleRow.className = "ops-queue-title-row";
+    const tag = taskTag(task);
+    if (tag) {
+      const pill = document.createElement("span");
+      pill.className = "ops-queue-tag";
+      pill.textContent = tag;
+      pill.title = tag;
+      titleRow.append(pill);
+    }
     const title = document.createElement("strong");
-    title.textContent = workTaskTitle(task);
+    title.textContent = cleanTaskTitle(task);
     // Titles truncate to one line; the full name stays one hover away.
-    title.title = workTaskTitle(task);
-    open.append(title);
+    title.title = cleanTaskTitle(task);
+    titleRow.append(title);
+    open.append(titleRow);
     const note = taskBlockerNote(task, today);
     if (note) open.append(note);
 
     const originCell = document.createElement("span");
     originCell.className = "ops-queue-origin";
     originCell.dataset.source = origin.kind;
-    originCell.textContent = origin.label;
+    const icon = document.createElement("span");
+    icon.className = "ops-queue-origin-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = origin.icon;
+    const originLabel = document.createElement("span");
+    originLabel.className = "ops-queue-origin-label";
+    originLabel.textContent = origin.label;
+    originCell.append(icon, originLabel);
     originCell.title = origin.title;
 
     row.append(toggle, open, originCell, taskDueCell(task, today), owner);

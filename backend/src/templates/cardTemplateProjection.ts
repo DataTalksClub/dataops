@@ -62,8 +62,20 @@ export function templateTaskDefinitionSnapshot(
     throw new Error(`Template Task ${definition.refId} has invalid stageOnComplete`);
   }
   const offsetDays = definition.offsetDays || 0;
+  // Trello-imported definitions bake the checklist name into the description
+  // as "[Checklist] Task". Split it off so instantiated Tasks store the tag
+  // in `tags` and keep a clean description.
+  const leadingTag = /^\[([^\[\]]{1,40})\]\s*/.exec(definition.description || '');
+  const cleanDescription = leadingTag && definition.description.slice(leadingTag[0].length).trim()
+    ? definition.description.slice(leadingTag[0].length).trim()
+    : definition.description;
+  const combinedTags = [
+    ...(template.tags || []),
+    ...((definition as { tags?: string[] }).tags || []),
+    ...(leadingTag ? [leadingTag[1].trim()] : []),
+  ];
   return withoutUndefined({
-    description: definition.description,
+    description: cleanDescription,
     date: dateFromTemplateOffset(anchorDate, offsetDays),
     templateOffsetDays: offsetDays,
     templateTaskOrder: order,
@@ -79,7 +91,7 @@ export function templateTaskDefinitionSnapshot(
     requiredLinkName: definition.requiredLinkName,
     requiresFile: definition.requiresFile,
     proofRequirement: definition.proofRequirement ? copy(definition.proofRequirement) : undefined,
-    tags: template.tags?.length ? copy(template.tags) : undefined,
+    tags: combinedTags.length ? combinedTags : undefined,
     sourceDocIds: template.sourceDocIds?.length ? copy(template.sourceDocIds) : undefined,
   });
 }

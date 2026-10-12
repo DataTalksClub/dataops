@@ -499,6 +499,8 @@ export interface TaskDefinition {
   requiredLinkName?: string;
   requiresFile?: boolean;
   proofRequirement?: ProofRequirement;
+  /** Checklist tag split out of the description (e.g. "Podcast page"). */
+  tags?: string[];
   artifactRefs?: ArtifactRef[];
   assistantJobRefs?: AssistantJobRef[];
   intakeRefs?: IntakeRef[];

@@ -213,6 +213,48 @@ export function validateTaskRefs(fields: Record<string, unknown>): string | null
   return null;
 }
 
+export function validateTaskTags(value: unknown): string | null {
+  if (value === undefined) return null;
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    return 'tags must be an array of strings';
+  }
+  if (value.length > 10) return 'tags must have 10 or fewer entries';
+  for (const tag of value as string[]) {
+    const trimmed = tag.trim();
+    if (!trimmed) return 'tags must not contain empty entries';
+    if (trimmed.length > 60) return 'tags must each be 60 characters or fewer';
+  }
+  return null;
+}
+
+const LEADING_TAG_PATTERN = /^\[([^\[\]]{1,40})\]\s*/;
+
+export function extractLeadingTag(description: unknown): { tag: string; clean: string } | null {
+  if (typeof description !== 'string') return null;
+  const match = description.match(LEADING_TAG_PATTERN);
+  if (!match) return null;
+  const tag = match[1].trim();
+  if (!tag) return null;
+  const clean = description.slice(match[0].length).trim();
+  if (!clean) return null;
+  return { tag, clean };
+}
+
+/**
+ * Migration-debt handler: the Trello import baked the checklist name into
+ * the description as "[Checklist] Task". The canonical home is `tags[0]`.
+ * When the caller did not supply tags explicitly, split the prefix off so
+ * new and updated Tasks store the tag separately. Explicit tags win and the
+ * description is left untouched.
+ */
+export function applyLeadingTagToTaskData(taskData: Record<string, unknown>): void {
+  if (taskData.tags !== undefined) return;
+  const extracted = extractLeadingTag(taskData.description);
+  if (!extracted) return;
+  taskData.description = extracted.clean;
+  taskData.tags = [extracted.tag];
+}
+
 function proofMissingError(type: string, label?: string): string {
   const suffix = label ? ` '${label}'` : '';
   return `Cannot mark task as done: required ${type} proof${suffix} is missing`;

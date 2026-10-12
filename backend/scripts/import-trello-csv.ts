@@ -367,7 +367,7 @@ function trelloTemplateToAppTemplate(card: TrelloCard, boardChecklists: TrelloCh
     .filter((cl): cl is TrelloChecklist => Boolean(cl))
     .sort((a, b) => a.pos - b.pos);
 
-  const taskDefinitions: { refId: string; description: string; offsetDays: number; instructionsUrl?: string }[] = [];
+  const taskDefinitions: { refId: string; description: string; offsetDays: number; instructionsUrl?: string; tags?: string[] }[] = [];
   let totalItems = 0;
 
   for (const cl of cardChecklists) {
@@ -385,10 +385,11 @@ function trelloTemplateToAppTemplate(card: TrelloCard, boardChecklists: TrelloCh
       const { description: cleanedName, instructionsUrl } = extractInstructionsUrl(item.name);
       const refId = slugify(`${cl.name}-${cleanedName}`.substring(0, 60));
 
-      const td: { refId: string; description: string; offsetDays: number; instructionsUrl?: string } = {
+      const td: { refId: string; description: string; offsetDays: number; instructionsUrl?: string; tags?: string[] } = {
         refId: `${refId}-${itemIndex}`,
-        description: `[${cl.name}] ${cleanedName}`,
+        description: cleanedName,
         offsetDays,
+        tags: [cl.name],
       };
       if (instructionsUrl) td.instructionsUrl = instructionsUrl;
       taskDefinitions.push(td);
@@ -711,11 +712,12 @@ function trelloChecklistItemsToTasks(card: TrelloCard, boardChecklists: TrelloCh
       const refId = slugify(`${cl.name}-${finalName}`.substring(0, 60));
 
       const taskData: Record<string, unknown> = {
-        description: `[${cl.name}] ${finalName}`,
+        description: finalName,
         date: item.due ? item.due.split('T')[0] : anchorDate,
         status: item.state === 'complete' ? 'done' : 'todo',
         source: 'template',
         templateTaskRef: `${refId}-${itemIndex}`,
+        tags: [cl.name],
       };
       if (instructionsUrl) taskData.instructionsUrl = instructionsUrl;
       if (assigneeId) taskData.assigneeId = assigneeId;
@@ -1060,14 +1062,14 @@ function planTrelloActiveCard(
       let status = item.state === 'complete' ? 'done' : waiting ? 'waiting' : 'todo';
       const task: Record<string, unknown> = {
         id: taskId,
-        description: `[${checklist.name}] ${finalName}`,
+        description: finalName,
         date,
         status,
         source: 'import',
         cardId,
         templateTaskRef: `${refId}-${item.id || itemIndex}`,
         phase,
-        tags: ['trello-import', templateType],
+        tags: [checklist.name, 'trello-import', templateType],
         comment: appendMigrationProvenance(waiting?.note, [
           `source=trello-active-trelloCard`,
           `source_card_id=${trelloCard.id}`,
