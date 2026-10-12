@@ -141,25 +141,6 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
       </header>
       <div data-crm-leads>Loading potential leads…</div>
     </section>
-    <section class="crm-leads" aria-labelledby="crm-leads-heading">
-      <header class="section-header">
-        <div>
-          <p class="section-kicker">Review queue</p>
-          <h3 id="crm-leads-heading">Potential leads</h3>
-        </div>
-        <label
-          >Show
-          <select data-crm-lead-status>
-            <option value="">All statuses</option>
-            <option value="new">New</option>
-            <option value="triaged">Triaged</option>
-            <option value="converted">Converted</option>
-            <option value="ignored">Ignored</option>
-          </select></label
-        >
-      </header>
-      <div data-crm-leads>Loading potential leads…</div>
-    </section>
     <dialog class="surface-dialog" data-org-dialog>
       <form method="dialog">
         <header>

@@ -11,7 +11,7 @@ const routes = [
   ['/sponsors', '.crm-master .crm-booking-row, .crm-master .honest-state'],
   ['/tasks', '.ops-queue-list'], ['/cards', '.workflow-board-card'],
   ['/cards/archive', '.cards-archive-grid, .ops-honest-state'],
-  ['/templates', '.runtime-template-layout'], ['/recurring', '.recurring-summary'],
+  ['/templates', '.runtime-template-layout'], ['/recurring', '.ops-recurring-section'],
   ['/calendar', '.calendar-grid'], ['/newsletter', '.newsletter-views'],
   ['/assistants', '.assistant-layout'], ['/processes', '.ops-docs-catalog'],
   ['/operating-model', '.operating-model-grid, .review-empty-state'], ['/review', '.review-summary'],
