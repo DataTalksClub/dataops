@@ -240,6 +240,10 @@ export function createBlockEditor(context, services) {
       slashMenu.open({
         targetEl: addBtn,
         onSelect: (item) => {
+          if (item.type === "page") {
+            if (services.createSubpage) services.createSubpage(context.documentState?.currentDoc);
+            return;
+          }
           onInsertBlock(blocks.length, item.template ?? "");
         },
       });
@@ -385,6 +389,10 @@ export function createBlockEditor(context, services) {
             slashMenu.open({
               targetEl: textSpan,
               onSelect: (menuItem) => {
+                if (menuItem.type === "page") {
+                  if (services.createSubpage) services.createSubpage(context.documentState?.currentDoc);
+                  return;
+                }
                 if (!item.text.trim()) {
                   if (items.length === 1) {
                     onChange(blockIndex, menuItem.template, { focusBlockIndex: blockIndex });
@@ -441,6 +449,10 @@ export function createBlockEditor(context, services) {
       slashMenu.open({
         targetEl: addBtn,
         onSelect: (item) => {
+          if (item.type === "page") {
+            if (services.createSubpage) services.createSubpage(context.documentState?.currentDoc);
+            return;
+          }
           onInsertBlock(index + 1, item.template || "");
         },
       });

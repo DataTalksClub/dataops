@@ -122,6 +122,11 @@ export function createDocumentRenderer(context, services) {
           blockEditor.slashMenu.open({
             targetEl: emptyBtn,
             onSelect: (item) => {
+              if (item.type === "page") {
+                if (services.createSubpage) services.createSubpage(documentState.currentDoc);
+                else if (context.createSubpage) context.createSubpage(documentState.currentDoc);
+                return;
+              }
               applyBlocksChange([
                 {
                   id: `blk-0-${Date.now()}`,
@@ -230,14 +235,15 @@ export function createDocumentRenderer(context, services) {
   }
 
   function renderDocHierarchyTrail() {
-    const path = documentState.currentDoc?.path;
+    const currentDoc = documentState.currentDoc;
+    const path = currentDoc?.path;
     if (!path) return null;
     const nav = document.createElement("nav");
-    nav.className = "doc-hierarchy-nav";
+    nav.className = "doc-hierarchy-nav doc-hierarchy-trail";
     nav.setAttribute("aria-label", "Document location");
     const root = document.createElement("button");
     root.type = "button";
-    root.className = "doc-trail-item doc-trail-root";
+    root.className = "doc-trail-item doc-trail-root doc-trail-link";
     root.textContent = "Docs";
     root.addEventListener("click", () => {
       if (context.navigateCanonicalWorkspace) {
@@ -246,15 +252,68 @@ export function createDocumentRenderer(context, services) {
     });
     nav.append(root);
 
-    const parts = path.split("/").filter((p) => Boolean(p) && p.toLowerCase() !== "content");
-    for (let i = 0; i < parts.length - 1; i++) {
-      const sep = document.createElement("span");
-      sep.className = "doc-trail-sep";
-      sep.textContent = " / ";
-      const folder = document.createElement("span");
-      folder.className = "doc-trail-item doc-trail-folder";
-      folder.textContent = humanizeDocType(parts[i]);
-      nav.append(sep, folder);
+    const allDocs = context.knowledgeState?.allDocuments || [];
+    const matchedDoc = allDocs.find((d) => d.path === path);
+    const ancestors = [];
+    const visited = new Set();
+    if (currentDoc.id) visited.add(currentDoc.id);
+    if (matchedDoc?.id) visited.add(matchedDoc.id);
+    visited.add(currentDoc.path);
+
+    let curr = {
+      ...matchedDoc,
+      parent: documentState.currentParsed?.frontmatter?.parent || matchedDoc?.parent,
+      parent_id: matchedDoc?.parent_id,
+    };
+    while (curr) {
+      const parentRef = curr.parent_id || curr.parent || "";
+      if (!parentRef) break;
+      const parentDoc = allDocs.find(
+        (d) => d.id === parentRef || d.path === parentRef || d.aliases?.includes(parentRef),
+      );
+      if (!parentDoc || visited.has(parentDoc.id) || visited.has(parentDoc.path)) break;
+      visited.add(parentDoc.id);
+      visited.add(parentDoc.path);
+      ancestors.unshift(parentDoc);
+      curr = parentDoc;
+    }
+
+    if (ancestors.length === 0) {
+      const parts = path.split("/").filter((p) => Boolean(p) && p.toLowerCase() !== "content");
+      for (let i = 0; i < parts.length - 1; i++) {
+        const sep = document.createElement("span");
+        sep.className = "doc-trail-sep";
+        sep.textContent = " / ";
+        const folder = document.createElement("span");
+        folder.className = "doc-trail-item doc-trail-folder";
+        folder.textContent = humanizeDocType(parts[i]);
+        nav.append(sep, folder);
+      }
+    } else {
+      const firstParent = ancestors[0];
+      const domain = firstParent.domain || partsFirstDomain(firstParent.path);
+      if (domain && domain !== "docs") {
+        const sep = document.createElement("span");
+        sep.className = "doc-trail-sep";
+        sep.textContent = " / ";
+        const folder = document.createElement("span");
+        folder.className = "doc-trail-item doc-trail-folder";
+        folder.textContent = humanizeDocType(domain);
+        nav.append(sep, folder);
+      }
+      for (const ancestor of ancestors) {
+        const sep = document.createElement("span");
+        sep.className = "doc-trail-sep";
+        sep.textContent = " / ";
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "doc-trail-item doc-trail-ancestor doc-trail-link";
+        item.textContent = ancestor.title || basename(ancestor.path);
+        item.addEventListener("click", () => {
+          if (context.openDocument) context.openDocument(ancestor.path);
+        });
+        nav.append(sep, item);
+      }
     }
 
     const sep = document.createElement("span");
@@ -270,16 +329,26 @@ export function createDocumentRenderer(context, services) {
     return nav;
   }
 
+  function partsFirstDomain(p) {
+    const parts = (p || "").split("/").filter((x) => Boolean(x) && x.toLowerCase() !== "content");
+    return parts.length > 1 ? parts[0] : "";
+  }
+
   function renderSubpagesBlock(currentDocPath) {
     if (!currentDocPath) return null;
-    const allDocs = context.knowledgeState?.documents || [];
-    const currentDir = currentDocPath.includes("/")
-      ? currentDocPath.slice(0, currentDocPath.lastIndexOf("/") + 1)
-      : "";
+    const currentDoc = documentState.currentDoc;
+    const allDocs = context.knowledgeState?.allDocuments || [];
+    const matchedDoc = allDocs.find((d) => d.path === currentDocPath) || currentDoc;
+    const currentDocId = matchedDoc?.id || documentState.currentParsed?.frontmatter?.id;
+    const docStemPath = currentDocPath.replace(/\.md$/, "") + "/";
     const children = allDocs.filter(
-      (d) => d.path !== currentDocPath && currentDir && d.path.startsWith(currentDir),
+      (d) =>
+        d.path !== currentDocPath &&
+        ((currentDocId && d.parent_id === currentDocId) ||
+         (currentDocId && d.parent === currentDocId) ||
+         (d.parent === currentDocPath) ||
+         (d.path.startsWith(docStemPath) && !d.parent_id)),
     );
-    if (children.length === 0) return null;
 
     const section = document.createElement("section");
     section.className = "doc-subpages";
@@ -287,26 +356,41 @@ export function createDocumentRenderer(context, services) {
     header.className = "doc-subpages-header";
     const heading = document.createElement("h3");
     heading.textContent = "Sub-pages";
-    header.append(heading);
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "quiet-button doc-add-subpage-btn";
+    addBtn.textContent = "+ Add sub-page";
+    addBtn.addEventListener("click", () => {
+      if (services.createSubpage) services.createSubpage(currentDoc);
+      else if (context.createSubpage) context.createSubpage(currentDoc);
+    });
+    header.append(heading, addBtn);
     section.append(header);
 
     const list = document.createElement("div");
     list.className = "doc-subpages-list";
-    for (const child of children.slice(0, 10)) {
-      const row = document.createElement("button");
-      row.type = "button";
-      row.className = "doc-subpage-item";
-      const icon = document.createElement("span");
-      icon.className = "doc-subpage-icon";
-      icon.textContent = "📄";
-      const title = document.createElement("span");
-      title.className = "doc-subpage-title";
-      title.textContent = child.title || basename(child.path);
-      row.append(icon, title);
-      row.addEventListener("click", () => {
-        if (context.openDocument) context.openDocument(child.path);
-      });
-      list.append(row);
+    if (children.length === 0) {
+      const empty = document.createElement("span");
+      empty.className = "doc-subpages-empty";
+      empty.textContent = "No sub-pages yet.";
+      list.append(empty);
+    } else {
+      for (const child of children) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "doc-subpage-item";
+        const icon = document.createElement("span");
+        icon.className = "doc-subpage-icon";
+        icon.textContent = "📄";
+        const title = document.createElement("span");
+        title.className = "doc-subpage-title";
+        title.textContent = child.title || basename(child.path);
+        row.append(icon, title);
+        row.addEventListener("click", () => {
+          if (context.openDocument) context.openDocument(child.path);
+        });
+        list.append(row);
+      }
     }
     section.append(list);
     return section;
