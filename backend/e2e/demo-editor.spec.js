@@ -118,6 +118,24 @@ for (const width of [1440, 1280]) {
   });
 
   for (const surface of ['Docs', 'Compose']) {
+    test(`${surface}: slash from a new list item focuses a typed to-do block at ${width}px`, async ({ page }) => {
+      const root = await openEditor(page, surface, { width, height: width === 1440 ? 900 : 800 });
+      await root.locator('.notion-list-item-text').first().click();
+      await page.keyboard.press('Enter');
+      await expect(root.locator('.notion-list-item-text').nth(1).locator('.inline-editor')).toBeFocused();
+      await page.keyboard.press('/');
+      await page.locator('.slash-menu-filter').fill('to do');
+      await page.locator('.slash-menu-filter').press('Enter');
+      const todo = root.locator('[data-block-type="todo"]');
+      await expect(todo.locator('.inline-editor')).toBeFocused();
+      await expect(todo.locator('.inline-editor')).toHaveValue('');
+      await page.keyboard.type('Task typed after list slash');
+      await root.locator('.notion-text-content').last().click();
+      await expect(todo).toContainText('Task typed after list slash');
+      await expect(root.locator('.notion-list-item-text')).toHaveText(['First item', 'Second item']);
+      if (surface === 'Docs') await expect(page.locator('#editor')).toHaveValue(/- \[ \] Task typed after list slash/);
+    });
+
     test(`${surface}: Tab indents with fresh numbering and retains the caret at ${width}px`, async ({ page }) => {
       const root = await openEditor(page, surface, { width, height: width === 1440 ? 900 : 800 });
       await root.locator('.notion-list-item-text').nth(1).click();

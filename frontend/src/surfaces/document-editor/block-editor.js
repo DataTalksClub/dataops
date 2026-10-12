@@ -265,6 +265,7 @@ export function createBlockEditor(context, services) {
     blockIndex,
     onChange,
     onDeleteBlock,
+    onInsertBlock,
     renderMarkdown,
     attachInlineEditor,
     slashMenu,
@@ -384,10 +385,16 @@ export function createBlockEditor(context, services) {
             slashMenu.open({
               targetEl: textSpan,
               onSelect: (menuItem) => {
-                item.text = menuItem.template;
-                block.raw = serializeListItems(items, block.type);
-                onChange(blockIndex, block.raw, { rerender: false });
-                renderListItems(itemIdx);
+                if (!item.text.trim()) {
+                  if (items.length === 1) {
+                    onChange(blockIndex, menuItem.template, { focusBlockIndex: blockIndex });
+                    return;
+                  }
+                  items.splice(itemIdx, 1);
+                  block.raw = serializeListItems(items, block.type);
+                  onChange(blockIndex, block.raw, { rerender: false });
+                }
+                onInsertBlock(blockIndex + 1, menuItem.template);
               },
             });
           },
@@ -591,6 +598,7 @@ export function createBlockEditor(context, services) {
         blockIndex: index,
         onChange,
         onDeleteBlock,
+        onInsertBlock,
         renderMarkdown,
         attachInlineEditor,
         slashMenu,
