@@ -527,6 +527,7 @@ test.describe('production sponsor CRM communications portal', () => {
     await expect(disabledPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
     await disabledPage.getByRole('button', { name: 'Open company' }).click();
     await expect(disabledPage.getByText('Reviewed sending is disabled')).toBeVisible();
+    await expect(disabledPage.locator('[data-communication-state="disabled"]')).toContainText('History remains available. Ask an administrator to enable reviewed sending before approving new messages.');
     await captureCommunications(
       disabledPage,
       '.tmp/sponsor-communications-disabled-desktop.png',

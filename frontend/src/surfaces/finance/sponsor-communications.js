@@ -41,9 +41,8 @@ export function createSponsorCommunications(context) {
       ? html`<div class="honest-state" data-communication-state="disabled">
           <strong>Reviewed sending is disabled</strong>
           <p>
-            History remains visible. A credentialed operator must reconcile
-            private templates, suppression keys, SES identity, and the kill
-            switch before a new preview can be approved.
+            History remains available. Ask an administrator to enable reviewed
+            sending before approving new messages.
           </p>
         </div>`
       : "";
