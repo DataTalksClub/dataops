@@ -1438,16 +1438,51 @@ a.calendar-day-timeline-title:hover {
   padding: 24px;
   text-align: center;
 }
+.email-sim-brand-banner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.email-sim-wordmark-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #38bdf8;
+}
 .email-sim-brand {
   font-size: 20px;
   font-weight: 800;
   letter-spacing: -0.02em;
   margin: 0;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.email-sim-brand .wordmark-dot {
+  color: #38bdf8;
+}
+.email-sim-brand .wordmark-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--dk-radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.4);
 }
 .email-sim-issue-line {
   font-size: 12px;
   color: #94a3b8;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 .email-sim-sponsor-banner {
   margin: 16px 20px 0;

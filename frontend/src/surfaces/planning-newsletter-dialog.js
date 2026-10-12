@@ -240,7 +240,19 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
             <div class="preview-email-container">
               <div class="email-sim-card" data-sim-card>
                 <div class="email-sim-header">
-                  <h2 class="email-sim-brand">DataTalks.Club Weekly</h2>
+                  <div class="email-sim-brand-banner">
+                    <span class="email-sim-wordmark-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                        <polyline points="2 17 12 22 22 17"></polyline>
+                        <polyline points="2 12 12 17 22 12"></polyline>
+                      </svg>
+                    </span>
+                    <h2 class="email-sim-brand">
+                      <span>DataTalks<span class="wordmark-dot">.</span>Club</span>
+                      <span class="wordmark-badge">Weekly</span>
+                    </h2>
+                  </div>
                   <div class="email-sim-issue-line" data-sim-issue-line>Issue</div>
                 </div>
                 <div class="email-sim-sponsor-banner" data-sim-sponsor hidden></div>
