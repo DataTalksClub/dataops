@@ -635,7 +635,9 @@ body[data-workspace-view="sponsors"] .library-view {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
     gap: 4px;
     margin: 0 !important;
   }
@@ -645,13 +647,14 @@ body[data-workspace-view="sponsors"] .library-view {
   }
   .crm-pipeline {
     order: 2;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     min-width: 0;
     margin: 0 !important;
   }
   .crm-layout,
   .crm-directory,
   .crm-leads {
+    order: 3;
     flex-basis: 100%;
     min-width: 0;
     overflow-x: auto;
