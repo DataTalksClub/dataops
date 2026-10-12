@@ -36,7 +36,6 @@ export function createRecurringTasks(context) {
     request,
     resolveAssigneeLabel,
     scheduleAnimationFrame,
-    todayIsoDate,
     workApiUrl,
   } = context;
   // Row-owned recovery text. A schedule that fails to delete, pause or resume
@@ -63,10 +62,7 @@ export function createRecurringTasks(context) {
       error.textContent = message;
       wrap.append(error);
     }
-    wrap.append(
-      renderRecurringSummary(recurring),
-      renderRecurringOperationsSection(recurring),
-    );
+    wrap.append(renderRecurringOperationsSection(recurring));
     return wrap;
   }
 
@@ -83,44 +79,6 @@ export function createRecurringTasks(context) {
 
     toolbar.append(create);
     return toolbar;
-  }
-
-  function renderRecurringSummary(recurring) {
-    const summary = document.createElement("section");
-    summary.className = "recurring-summary";
-    summary.setAttribute("aria-label", "Recurring summary");
-    const today = todayIsoDate();
-    const configs = Array.isArray(recurring?.configs) ? recurring.configs : [];
-    const dueToday = configs.filter(
-      (config) => config.enabled !== false && config.nextRunDate === today,
-    ).length;
-    const stats = [
-      { id: "active", label: "Active", value: recurring?.enabled?.length || 0 },
-      {
-        id: "paused",
-        label: "Paused",
-        value: recurring?.disabled?.length || 0,
-      },
-      { id: "today", label: "Runs today", value: dueToday },
-    ];
-    for (const stat of stats) {
-      const item = document.createElement("div");
-      item.className = `recurring-summary-item recurring-summary-${stat.id}`;
-      item.dataset.state = recurring?.loaded ? "ready" : "unavailable";
-      // Attention colors signal work, not absence: a zero never wears amber
-      // or blue, so "0 paused" cannot read as a warning.
-      item.dataset.nonzero = stat.value > 0 ? "true" : "false";
-      const label = document.createElement("span");
-      label.className = "recurring-summary-label";
-      label.textContent = stat.label;
-      const value = document.createElement("strong");
-      value.textContent = recurring?.loaded ? String(stat.value) : "—";
-      if (!recurring?.loaded)
-        value.setAttribute("aria-label", `${stat.label} unavailable`);
-      item.append(label, value);
-      summary.append(item);
-    }
-    return summary;
   }
 
   function renderRecurringOperationsSection(recurring, options = {}) {

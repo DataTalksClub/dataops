@@ -6,16 +6,8 @@
   padding: 0;
 }body[data-workspace-view="tasks"] .ops-recurring-surface {
   gap: 16px;
-}body[data-workspace-view="tasks"] .recurring-summary,
-body[data-workspace-view="tasks"] .ops-recurring-section {
+}body[data-workspace-view="tasks"] .ops-recurring-section {
   border-radius: var(--task-panel-radius);
-}body[data-workspace-view="tasks"] .recurring-summary-item {
-  min-height: 76px;
-  justify-content: space-between;
-  padding-inline: 18px;
-}body[data-workspace-view="tasks"] .recurring-summary-item strong {
-  font-size: 22px;
-  font-variant-numeric: tabular-nums;
 }body[data-workspace-view="tasks"] .ops-recurring-item {
   min-height: 82px;
   padding: 14px 16px;

@@ -1755,8 +1755,6 @@ describe("Tasks surface boundary", () => {
       },
     });
     harness.api.renderTasksSurface([], "recurring");
-    assert.match(harness.documentList.textContent, /Active1/);
-    assert.match(harness.documentList.textContent, /Paused0/);
     assert.match(harness.documentList.textContent, /Every Monday at 09:00/);
     assert.match(harness.documentList.textContent, /Next /);
 
