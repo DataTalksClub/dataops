@@ -264,41 +264,39 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
 
           <div class="issue-pane" data-pane="schedule" hidden>
             <div class="newsletter-status-banner" data-status-banner>
-              <span class="status-banner-badge" data-status-banner-badge>Draft</span>
-              <span class="status-banner-text" data-status-banner-text>Content drafting is in progress.</span>
+              <span class="status-banner-badge" data-status-banner-badge hidden></span>
+              <span class="status-banner-text" data-status-banner-text>Editorial campaign slot planned.</span>
             </div>
             <div class="newsletter-stepper">
-              <div class="stepper-step is-done" data-step="1">
-                <span class="stepper-num">1</span>
-                <span>Slot Planned</span>
+              <div class="stepper-step is-active" data-step="1"><span class="stepper-num">1</span><span>Slot Planned</span></div>
+              <div class="stepper-step" data-step="2"><span class="stepper-num">2</span><span>Draft</span></div>
+              <div class="stepper-step" data-step="3"><span class="stepper-num">3</span><span>In Review</span></div>
+              <div class="stepper-step" data-step="4"><span class="stepper-num">4</span><span>Scheduled</span></div>
+              <div class="stepper-step" data-step="5"><span class="stepper-num">5</span><span>Sent</span></div>
+            </div>
+
+            <div class="newsletter-confirm-card" data-confirm-card hidden>
+              <h4 data-confirm-title>Confirm Action</h4>
+              <p data-confirm-message>Are you sure?</p>
+              <div class="newsletter-confirm-buttons">
+                <button type="button" class="primary-button" data-confirm-proceed>Confirm</button>
+                <button type="button" class="quiet-button" data-confirm-cancel>Cancel</button>
               </div>
-              <div class="stepper-step" data-step="2">
-                <span class="stepper-num">2</span>
-                <span>Draft</span>
-              </div>
-              <div class="stepper-step" data-step="3">
-                <span class="stepper-num">3</span>
-                <span>In Review</span>
-              </div>
-              <div class="stepper-step" data-step="4">
-                <span class="stepper-num">4</span>
-                <span>Scheduled</span>
-              </div>
-              <div class="stepper-step" data-step="5">
-                <span class="stepper-num">5</span>
-                <span>Sent</span>
-              </div>
+            </div>
+
+            <div class="newsletter-action-bar" data-action-bar>
+              <button type="button" class="newsletter-template-btn" data-action="start-draft" data-set-status="draft">Start Drafting</button>
+              <button type="button" class="newsletter-template-btn" data-action="submit-review" data-set-status="review">Submit for Review</button>
+              <button type="button" class="primary-button" data-action="prompt-schedule" data-set-status="scheduled">Schedule Issue</button>
+              <button type="button" class="newsletter-template-btn" data-action="prompt-send" data-set-status="sent">Mark as Sent</button>
+              <button type="button" class="quiet-button" data-action="return-draft">Return to Draft</button>
             </div>
 
             <div class="newsletter-schedule-timing">
               <h3>Schedule & Timing</h3>
               <div class="planner-form-grid">
-                <label>Send date
-                  <input name="schedulePublicationDate" type="date">
-                </label>
-                <label>Send time (Europe/Berlin)
-                  <input name="schedulePublicationTime" type="time" placeholder="14:00">
-                </label>
+                <label>Send date <input name="schedulePublicationDate" type="date"></label>
+                <label>Send time (Europe/Berlin) <input name="schedulePublicationTime" type="time" placeholder="14:00"></label>
               </div>
               <div class="newsletter-schedule-explainer">
                 <p>
@@ -315,57 +313,12 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
 
             <div class="newsletter-checklist-box">
               <h3>Publication Readiness Checklist</h3>
-              <div class="checklist-item" data-check-date>
-                <span class="check-icon">✓</span>
-                <span>Publication date chosen</span>
-              </div>
-              <div class="checklist-item" data-check-time>
-                <span class="check-icon">✓</span>
-                <span>Send time set</span>
-              </div>
-              <div class="checklist-item" data-check-subject>
-                <span class="check-icon">○</span>
-                <span>Subject line & preview text provided</span>
-              </div>
-              <div class="checklist-item" data-check-content>
-                <span class="check-icon">○</span>
-                <span>Newsletter content drafted</span>
-              </div>
-              <div class="checklist-item" data-check-sponsor>
-                <span class="check-icon">○</span>
-                <span>Sponsor deliverable context</span>
-              </div>
-              <div class="checklist-item" data-check-card>
-                <span class="check-icon">○</span>
-                <span>Workflow card connected</span>
-              </div>
-            </div>
-
-            <div class="newsletter-confirm-card" data-confirm-card hidden>
-              <h4 data-confirm-title>Confirm Action</h4>
-              <p data-confirm-message>Are you sure?</p>
-              <div class="newsletter-confirm-buttons">
-                <button type="button" class="primary-button" data-confirm-proceed>Confirm</button>
-                <button type="button" class="quiet-button" data-confirm-cancel>Cancel</button>
-              </div>
-            </div>
-
-            <div class="newsletter-action-bar" data-action-bar>
-              <button type="button" class="newsletter-template-btn" data-action="start-draft" data-set-status="draft">
-                Start Drafting
-              </button>
-              <button type="button" class="newsletter-template-btn" data-action="submit-review" data-set-status="review">
-                Submit for Review
-              </button>
-              <button type="button" class="primary-button" data-action="prompt-schedule" data-set-status="scheduled">
-                Schedule Issue
-              </button>
-              <button type="button" class="newsletter-template-btn" data-action="prompt-send" data-set-status="sent">
-                Mark as Sent
-              </button>
-              <button type="button" class="quiet-button" data-action="return-draft">
-                Return to Draft
-              </button>
+              <div class="checklist-item" data-check-date><span class="check-icon">✓</span><span>Publication date chosen</span></div>
+              <div class="checklist-item" data-check-time><span class="check-icon">✓</span><span>Send time set</span></div>
+              <div class="checklist-item" data-check-subject><span class="check-icon">○</span><span>Subject line & preview text provided</span></div>
+              <div class="checklist-item" data-check-content><span class="check-icon">○</span><span>Newsletter content drafted</span></div>
+              <div class="checklist-item" data-check-sponsor><span class="check-icon">○</span><span>Sponsor deliverable context</span></div>
+              <div class="checklist-item" data-check-card><span class="check-icon">○</span><span>Workflow card connected</span></div>
             </div>
 
             <div class="newsletter-safety-badge">
@@ -377,7 +330,7 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
           <p class="planner-form-error" role="alert"></p>
         </div>
         <div class="dk-dialog__foot">
-          <button class="primary-button" data-save>Save slot</button>
+          <button class="primary-button" data-save>Save issue</button>
           <button value="cancel">Cancel</button>
         </div>
       </form>
@@ -551,7 +504,7 @@ export function setupNewsletterDialog(options) {
     };
 
     const dateVal = dateInput?.value || schedDateInput?.value || "";
-    setCheck(checkDate, hasDate, `Publication date chosen: ${dateVal}`, "Choose publication date");
+    setCheck(checkDate, hasDate, `Publication date chosen: ${formatShortPlanningDate(dateVal)}`, "Choose publication date");
     setCheck(checkTime, hasTime, `Send time: ${timeVal} (Europe/Berlin)`, "Set send time in Europe/Berlin");
     setCheck(checkSubject, hasSubject, `Subject line ready: "${subjectText.slice(0, 30)}…"`, "Provide subject line & title");
     setCheck(checkContent, hasContent, `Content drafted (${currentBlocks.length} blocks)`, "Draft newsletter content");
@@ -581,27 +534,41 @@ export function setupNewsletterDialog(options) {
       bannerEl.className = "newsletter-status-banner";
       if (statusVal === "drafting" || statusVal === "draft") {
         bannerEl.classList.add("is-draft");
+        bannerBadge.hidden = false;
+        bannerBadge.style.display = "";
         bannerBadge.textContent = "Draft";
         bannerText.textContent = "Content drafting is in progress. Edits can be made in Compose.";
       } else if (statusVal === "review") {
         bannerEl.classList.add("is-review");
+        bannerBadge.hidden = false;
+        bannerBadge.style.display = "";
         bannerBadge.textContent = "In Review";
         bannerText.textContent = "Editorial review underway. Check readiness before scheduling.";
       } else if (statusVal === "scheduled") {
         bannerEl.classList.add("is-scheduled");
+        bannerBadge.hidden = false;
+        bannerBadge.style.display = "";
         bannerBadge.textContent = "Scheduled";
         bannerText.textContent =
           `Scheduled for automated dispatch on ${formatShortPlanningDate(dateVal)} at ${timeVal} (Europe/Berlin).`;
       } else if (statusVal === "sent") {
         bannerEl.classList.add("is-sent");
+        bannerBadge.hidden = false;
+        bannerBadge.style.display = "";
         bannerBadge.textContent = "Sent";
         bannerText.textContent = "Issue published and marked sent. Publication archived.";
       } else {
         bannerEl.classList.add("is-open");
-        bannerBadge.textContent = isReserved ? "Reserved" : "Slot Planned";
-        bannerText.textContent = isReserved
-          ? "Slot reserved for sponsor booking."
-          : "Editorial campaign slot planned.";
+        if (isReserved) {
+          bannerBadge.hidden = false;
+          bannerBadge.style.display = "";
+          bannerBadge.textContent = "Reserved";
+          bannerText.textContent = "Slot reserved for sponsor booking.";
+        } else {
+          bannerBadge.hidden = true;
+          bannerBadge.style.display = "none";
+          bannerText.textContent = "Editorial campaign slot planned.";
+        }
       }
     }
 

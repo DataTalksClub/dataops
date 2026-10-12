@@ -133,7 +133,7 @@ test.describe("production newsletter planner", () => {
     await page.getByRole("button", { name: "Add slot" }).click();
     await page.getByLabel("Publication date").fill("2027-01-08");
     await page.getByLabel("Campaign label").fill("Synthetic Created");
-    await page.getByRole("button", { name: "Save slot" }).click();
+    await page.getByRole("button", { name: "Save issue" }).click();
     await expect(page.getByText(/Synthetic Created/)).toBeVisible();
     await page.getByRole("button", { name: "Edit" }).first().click();
     await expect(
@@ -145,11 +145,11 @@ test.describe("production newsletter planner", () => {
     await page.getByRole("button", { name: "Cancel" }).click();
     await page.getByRole("button", { name: "Edit" }).first().click();
     await page.locator("dialog [name=status]").selectOption("cancelled");
-    await page.getByRole("button", { name: "Save slot" }).click();
+    await page.getByRole("button", { name: "Save issue" }).click();
     await expect(page.locator("[data-slots]")).toContainText("Cancelled");
     await page.getByRole("button", { name: "Edit" }).first().click();
     conflict = true;
-    await page.getByRole("button", { name: "Save slot" }).click();
+    await page.getByRole("button", { name: "Save issue" }).click();
     await expect(page.getByRole("alert")).toContainText("reload and retry");
     await page
       .locator(".newsletter-surface dialog")

@@ -978,7 +978,7 @@ test.describe('canonical frontend capability behavior', () => {
     const scheduledSlot = page.locator('[data-slots] article', { hasText: `Synthetic newsletter ${id}` });
     await expect(scheduledSlot.locator('.planner-status.is-info')).toHaveText('Scheduled');
     await page.getByRole('button', { name: 'Add slot' }).click();
-    await page.getByRole('button', { name: 'Save slot' }).click();
+    await page.getByRole('button', { name: 'Save issue' }).click();
     await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Invalid publicationDate');
     await page.keyboard.press('Escape');
     await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
@@ -988,7 +988,7 @@ test.describe('canonical frontend capability behavior', () => {
       version: serverSlot.version, campaignLabel: `Server newsletter ${id}`,
     } });
     expect(concurrentSlot.status()).toBe(200);
-    await page.getByRole('button', { name: 'Save slot' }).click();
+    await page.getByRole('button', { name: 'Save issue' }).click();
     await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Slot changed; reload and retry');
     await page.keyboard.press('Escape');
     await expect(page.locator('.newsletter-surface dialog')).toBeHidden();

@@ -1268,6 +1268,9 @@ a.calendar-day-timeline-title:hover {
   flex-direction: column;
   gap: 16px;
 }
+.issue-pane[data-pane="schedule"] {
+  padding-bottom: 32px;
+}
 .issue-pane[hidden] {
   display: none !important;
 }
@@ -1541,8 +1544,9 @@ a.calendar-day-timeline-title:hover {
   color: #ffffff;
 }
 .stepper-step.is-done .stepper-num {
-  background: var(--dk-success-border);
+  background: #16a34a;
   color: #ffffff;
+  font-weight: 700;
 }
 .newsletter-checklist-box {
   border: 1px solid var(--dk-border-default);
