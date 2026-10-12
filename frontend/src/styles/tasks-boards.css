@@ -89,7 +89,7 @@ body[data-workspace-view="tasks"] .operations-home .ops-empty {
   background: var(--dk-bg-muted);
   border-color: var(--dk-border-subtle);
 }body[data-workspace-view="tasks"] .ops-queue-board {
-  width: min(880px, 100%);
+  width: 100%;
   overflow: hidden;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--task-panel-radius);
@@ -477,9 +477,9 @@ body[data-workspace-view="tasks"] .ops-queue-owner {
   max-width: 620px;
   margin-top: 5px;
   line-height: 1.5;
-}body[data-workspace-view="tasks"] .workflow-board-actions {
+}body[data-workspace-view="tasks"] .workflow-board-header .page-header-actions {
   align-items: center;
-}body[data-workspace-view="tasks"] .workflow-board-actions > button,
+}body[data-workspace-view="tasks"] .workflow-board-header .page-header-actions > button,
 body[data-workspace-view="tasks"] .recurring-toolbar button {
   min-height: 40px;
 }body[data-workspace-view="tasks"] .ops-workflows-grid {

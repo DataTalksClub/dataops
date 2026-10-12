@@ -424,6 +424,10 @@ describe("Tasks surface boundary", () => {
     });
 
     api.renderTasksSurface([], "queue");
+    const header = documentList.querySelector(".page-header");
+    const createCard = findByText(header, "Create card", "button");
+    assert.equal(createCard.className, "primary-button");
+    assert.equal(findByText(header, "New task", "button").className, "quiet-button");
 
     // One queue: a single bordered list, no per-lane group cards.
     const board = documentList.querySelector(".ops-queue-board");

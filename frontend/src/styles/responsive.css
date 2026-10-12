@@ -106,7 +106,7 @@
     font-size: 22px;
   }.workflow-board-header p {
     max-width: 220px;
-  }.workflow-board-actions .primary-button {
+  }.workflow-board-header .page-header-actions .primary-button {
     min-height: 44px;
   }.ops-workflows-grid {
     grid-template-columns: repeat(3, minmax(272px, 78vw));
@@ -426,7 +426,7 @@ body[data-workspace-view="sponsors"] .library-view {
   }
 
   /* ---- compact header actions everywhere: one 32px row, not 44px stacks ---- */
-  .workflow-board-actions button,
+  .workflow-board-header .page-header-actions button,
   .workflow-board-filter select,
   .workflow-board-filter-action,
   .workflow-archive-tabs button,
@@ -468,7 +468,7 @@ body[data-workspace-view="sponsors"] .library-view {
   }
   .workflow-board-header,
   .workflow-board-header > div,
-  .workflow-board-actions,
+  .workflow-board-header .page-header-actions,
   .workflow-board-filters,
   .workflow-board-filter {
     display: contents !important;
@@ -483,7 +483,7 @@ body[data-workspace-view="sponsors"] .library-view {
      and every other quiet action keep their text. The glyph is an archive
      box, not a trash can: archiving is reversible, delete reads permanent.
      The accessible name comes from the button's aria-label ("Archive (N)"). */
-  .workflow-board-actions .workflow-archive-toggle {
+  .workflow-board-header .page-header-actions .workflow-archive-toggle {
     flex: 0 0 34px !important;
     width: 34px !important;
     min-width: 34px !important;
@@ -494,7 +494,7 @@ body[data-workspace-view="sponsors"] .library-view {
     align-items: center;
     justify-content: center;
   }
-  .workflow-board-actions .workflow-archive-toggle::before {
+  .workflow-board-header .page-header-actions .workflow-archive-toggle::before {
     content: "";
     width: 16px;
     height: 16px;

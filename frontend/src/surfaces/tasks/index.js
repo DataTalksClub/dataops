@@ -1,4 +1,4 @@
-import { renderDataSummary } from "../operations-overview.js";
+import { createPageHeader, renderDataSummary } from "../operations-overview.js";
 import { createCardsSurface } from "./cards.js";
 import { createQuickTaskActions } from "./quick-create.js";
 import { createTaskQueue } from "./queue.js";
@@ -48,7 +48,6 @@ export function createTasksSurface(context) {
     renderEntityLoadState,
     renderHonestState,
     renderOperationsRuntimeState,
-    renderSurfaceHeader,
     resolveAssigneeLabel,
     request,
     scheduleAnimationFrame,
@@ -118,24 +117,26 @@ export function createTasksSurface(context) {
     const wrap = document.createElement("div");
     wrap.className = `operations-home ops-surface ops-surface-${activeSection}`;
     if (activeSection !== "workflows") {
-      const header = renderSurfaceHeader(title, surfaceDescription(activeSection));
+      const actions = [];
       if (activeSection === "queue") {
-        const quickBar = document.createElement("div");
-        quickBar.className = "home-quick-actions";
-        quickBar.setAttribute("aria-label", "Quick actions");
         const quickTask = document.createElement("button");
         quickTask.type = "button";
-        quickTask.className = "home-quick-action";
+        quickTask.className = "quiet-button";
         quickTask.textContent = "New task";
         quickTask.addEventListener("click", () => openQuickTaskForm());
         const quickCard = document.createElement("button");
         quickCard.type = "button";
-        quickCard.className = "home-quick-action";
+        quickCard.className = "primary-button";
         quickCard.textContent = "Create card";
         quickCard.addEventListener("click", () => openQuickWorkflowForm());
-        quickBar.append(quickTask, quickCard);
-        header.append(quickBar);
+        actions.push(quickTask, quickCard);
       }
+      const header = createPageHeader({
+        title,
+        subtitle: surfaceDescription(activeSection),
+        actions,
+        className: "ops-surface-header",
+      });
       wrap.append(header);
     }
     const summary = renderTasksSummary(activeSection, model, documents);

@@ -1,3 +1,5 @@
+import { createPageHeader } from "../operations-overview.js";
+
 export function createCardsSurface(context) {
   const {
     cardsHeaderViewModel,
@@ -49,22 +51,6 @@ export function createCardsSurface(context) {
       archivedCount: archivedCards.length,
       parkedCount: parkedCards.length,
     });
-    const header = document.createElement("header");
-    header.className = "workflow-board-header";
-    const heading = document.createElement("div");
-    const title = document.createElement("h1");
-    title.id = "workflow-board-title";
-    title.textContent = headerModel.title;
-    heading.append(title);
-    // An empty board states its emptiness once, in the panel below; a
-    // "0 active cards" meta line would only restate it.
-    if (archiveVisible || cards.length > 0) {
-      const summary = document.createElement("p");
-      summary.textContent = headerModel.summary;
-      heading.append(summary);
-    }
-    const actions = document.createElement("div");
-    actions.className = "workflow-board-actions";
     const archive = document.createElement("button");
     archive.type = "button";
     archive.className = archiveVisible
@@ -81,9 +67,13 @@ export function createCardsSurface(context) {
     start.className = "primary-button";
     start.textContent = "Create card";
     start.addEventListener("click", () => openQuickWorkflowForm());
-    actions.append(archive);
-    if (headerModel.createVisible) actions.append(start);
-    header.append(heading, actions);
+    const header = createPageHeader({
+      title: headerModel.title,
+      subtitle: archiveVisible || cards.length > 0 ? headerModel.summary : "",
+      titleId: "workflow-board-title",
+      className: "workflow-board-header",
+      actions: headerModel.createVisible ? [archive, start] : [archive],
+    });
     section.append(header);
 
     if (displayedCards.length === 0 && !archiveVisible) {

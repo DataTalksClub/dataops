@@ -11,11 +11,11 @@
   margin-top: 3px;
   color: var(--dk-text-muted);
   font-size: 13px;
-}.workflow-board-actions {
+}.workflow-board-header .page-header-actions {
   display: flex;
   flex: 0 0 auto;
   gap: 8px;
-}.workflow-board-actions .quiet-button[aria-pressed="true"] {
+}.workflow-board-header .page-header-actions .quiet-button[aria-pressed="true"] {
   border-color: var(--dk-border-control-hover);
   background: var(--dk-bg-hover);
 }.workflow-board-filters {

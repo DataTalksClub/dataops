@@ -393,3 +393,97 @@
 .calendar-surface .planner-form-grid [hidden] { display: none; }
 .calendar-surface .calendar-all-day { display: flex; flex-direction: row; align-items: center; gap: 8px; }
 .calendar-surface .calendar-all-day input { width: auto; min-height: auto; }
+
+/* One page canvas and header across the operations workspace. */
+:root {
+  --page-width: 1200px;
+  --content-width: var(--page-width);
+}
+body[data-view="library"] .library-view .document-list {
+  width: 100%;
+  min-width: 0;
+  max-width: var(--page-width);
+  margin-inline: 0;
+}
+body[data-view="library"] .operations-home,
+body[data-view="library"] .ops-surface-docs,
+body[data-view="library"] .operating-model-surface,
+body[data-view="library"] .review-surface {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+  justify-items: stretch;
+}
+body[data-view="library"] .library-view .document-list .page-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 24px;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+}
+.page-header-copy { min-width: 0; }
+body[data-view="library"] .library-view .document-list .page-header-copy h1 {
+  margin: 0;
+  color: var(--dk-text-heading);
+  font-size: 32px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+body[data-view="library"] .library-view .document-list .page-header-copy p {
+  max-width: 72ch;
+  margin: 6px 0 0;
+  color: var(--dk-text-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+.page-header-actions button { white-space: nowrap; }
+body[data-view="library"] .library-view .document-list .page-header > .ops-docs-create {
+  grid-area: auto;
+  align-self: start;
+}
+@media (max-width: 820px) {
+  body[data-view="library"] .library-view .document-list .page-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  body[data-view="library"] .library-view .document-list .page-header:not(.calendar-page-header) .page-header-copy {
+    display: block !important;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  body[data-view="library"] .library-view .document-list .page-header:not(.calendar-page-header) .page-header-copy p {
+    display: block !important;
+  }
+  body[data-view="library"] .library-view .document-list .page-header-copy h1 { font-size: 22px; }
+  .page-header-actions {
+    justify-content: flex-start;
+    padding-top: 0;
+  }
+  body[data-view="library"] .library-view .document-list .page-header-actions button {
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+}
