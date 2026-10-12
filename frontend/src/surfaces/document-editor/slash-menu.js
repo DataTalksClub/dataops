@@ -1,10 +1,45 @@
+const BLOCK_ICONS = {
+  paragraph:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
+  h1:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h8M4 5v14M12 5v14M18 19V9l-3 2"/></svg>',
+  h2:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h8M4 5v14M12 5v14"/>' +
+    '<path d="M21 19h-4c0-2.5 4-3 4-5.5a2.5 2.5 0 0 0-5 0"/></svg>',
+  h3:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h8M4 5v14M12 5v14"/>' +
+    '<path d="M17.5 10.5c1-1 3.5-.5 3.5 1.5 0 1.2-1 1.8-2 2 1.2.2 2 1 2 2.2 0 2-2.5 2.5-3.5 1.5"/></svg>',
+  bullet:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><line x1="9" y1="6" x2="20" y2="6"/>' +
+    '<line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/>' +
+    '<circle cx="4" cy="6" r="1.5" fill="currentColor"/>' +
+    '<circle cx="4" cy="12" r="1.5" fill="currentColor"/>' +
+    '<circle cx="4" cy="18" r="1.5" fill="currentColor"/></svg>',
+  numbered:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><line x1="10" y1="6" x2="20" y2="6"/>' +
+    '<line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/>' +
+    '<path d="M4 7V5h1v4M4 9h2"/><path d="M6 17H4c0-.8 1.5-1.5 2-2s-.5-1-1.5-1"/></svg>',
+  todo:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/>' +
+    '<path d="m8 12 3 3 5-6"/></svg>',
+  callout:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2zM9 21h6"/></svg>',
+  code:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="16 18 22 12 16 6"/>' +
+    '<polyline points="8 6 2 12 8 18"/></svg>',
+  divider:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/></svg>',
+  step:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 18 10 18 10 14 14 14 14 10 18 10 18 6"/></svg>',
+};
+
 export function createSlashMenu({ onSelectBlockType } = {}) {
   const BLOCK_TYPES = [
     {
       type: "paragraph",
       title: "Text",
       description: "Just start writing with plain text.",
-      icon: "📝",
+      icon: BLOCK_ICONS.paragraph,
       shortcut: "p",
       template: "",
     },
@@ -12,7 +47,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       type: "h1",
       title: "Heading 1",
       description: "Big section heading.",
-      icon: "📌",
+      icon: BLOCK_ICONS.h1,
       shortcut: "h1",
       template: "# Heading 1",
     },
@@ -20,7 +55,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       type: "h2",
       title: "Heading 2",
       description: "Medium section heading.",
-      icon: "📍",
+      icon: BLOCK_ICONS.h2,
       shortcut: "h2",
       template: "## Heading 2",
     },
@@ -28,7 +63,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       type: "h3",
       title: "Heading 3",
       description: "Small section heading.",
-      icon: "🏷️",
+      icon: BLOCK_ICONS.h3,
       shortcut: "h3",
       template: "### Heading 3",
     },
@@ -36,7 +71,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       type: "bullet",
       title: "Bulleted List",
       description: "Create a bulleted list.",
-      icon: "📋",
+      icon: BLOCK_ICONS.bullet,
       shortcut: "bullet",
       template: "- List item",
     },
@@ -44,7 +79,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       type: "numbered",
       title: "Numbered List",
       description: "Create a numbered list.",
-      icon: "🔢",
+      icon: BLOCK_ICONS.numbered,
       shortcut: "number",
       template: "1. List item",
     },
@@ -52,7 +87,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       type: "todo",
       title: "To-do List",
       description: "Track tasks with a to-do list.",
-      icon: "☑️",
+      icon: BLOCK_ICONS.todo,
       shortcut: "todo",
       template: "- [ ] To-do item",
     },
@@ -60,7 +95,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       type: "callout",
       title: "Callout",
       description: "Highlight important context or notes.",
-      icon: "💡",
+      icon: BLOCK_ICONS.callout,
       shortcut: "callout",
       template: "> [!NOTE]\n> Note text",
     },
@@ -68,7 +103,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       type: "code",
       title: "Code Block",
       description: "Capture code with syntax formatting.",
-      icon: "💻",
+      icon: BLOCK_ICONS.code,
       shortcut: "code",
       template: "```\n// code here\n```",
     },
@@ -76,7 +111,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       type: "divider",
       title: "Divider",
       description: "Visually divide blocks with a line.",
-      icon: "➖",
+      icon: BLOCK_ICONS.divider,
       shortcut: "hr",
       template: "---",
     },
@@ -84,7 +119,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
       type: "step",
       title: "Procedure Step",
       description: "Add a numbered step with action and proof.",
-      icon: "🪜",
+      icon: BLOCK_ICONS.step,
       shortcut: "step",
       template: "1. Action step",
     },
@@ -150,7 +185,7 @@ export function createSlashMenu({ onSelectBlockType } = {}) {
 
         const icon = document.createElement("span");
         icon.className = "slash-menu-icon";
-        icon.textContent = item.icon;
+        icon.innerHTML = item.icon;
 
         const info = document.createElement("div");
         info.className = "slash-menu-info";

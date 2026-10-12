@@ -1285,8 +1285,26 @@ textarea.inline-editor {
   background: var(--dk-bg-hover);
 }
 .slash-menu-icon {
-  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
+  color: var(--dk-text-muted);
+}
+.slash-menu-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.slash-menu-item:hover .slash-menu-icon,
+.slash-menu-item.is-active .slash-menu-icon {
+  color: var(--dk-primary);
 }
 .slash-menu-info {
   display: grid;
