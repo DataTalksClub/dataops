@@ -177,7 +177,15 @@ describe("Document review surface", () => {
     surface.renderReviewSurface([first, second]);
     await nextTicks(3);
 
-    assert.ok(findByText(documentList, "Document review"));
+    assert.ok(findByText(documentList, "Document review", "h1"));
+    assert.equal(documentList.querySelector(".page-header").className, "page-header review-header");
+    assert.equal(findByText(documentList, "Knowledge operations"), undefined);
+    const refresh = findByText(documentList, "Refresh review data", "button");
+    assert.equal(refresh.parentElement.className, "page-header-actions");
+    const requestsBeforeRefresh = calls.filter(([method]) => method === "GET").length;
+    await refresh.click();
+    await nextTicks(3);
+    assert.ok(calls.filter(([method]) => method === "GET").length > requestsBeforeRefresh);
     assert.equal(findAllByClass(documentList, "review-queue-item").length, 1);
     assert.ok(findByText(documentList, "# Publish the newsletter\n\nRun the documented steps.", ".review-markdown-preview"));
     assert.ok(findByText(documentList, "Add a validation example."));

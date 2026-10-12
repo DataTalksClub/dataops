@@ -132,7 +132,7 @@ test("stale definitions stay visible while definitions refresh", async () => {
   assert.ok(findByText(root, "Showing the last valid model while definitions refresh."));
 });
 
-test("hub is a named map without kicker, explainer, or chevron buttons", async () => {
+test("hub uses the shared header and remains a named map without redundant labels", async () => {
   const { root, surface } = harness(async (url) => {
     if (url === "/api/operating-model") return { model: model() };
     throw new Error(`Unexpected URL ${url}`);
@@ -140,6 +140,8 @@ test("hub is a named map without kicker, explainer, or chevron buttons", async (
   surface.renderOperatingModel();
   await nextTicks();
   assert.ok(findByText(root, "Operating Model", "h1"));
+  assert.equal(root.querySelector(".page-header").className, "page-header operating-model-header");
+  assert.ok(findByText(root, "Business units, responsibilities, systems, and roadmap.", "p"));
   assert.equal(findByText(root, "Company system"), undefined);
   assert.equal(
     findByText(root, "See how business units, accountable functions, systems, gaps, and lifecycles fit together."),
@@ -174,6 +176,8 @@ test("section uses a title-cased family name and definition rows", async () => {
   surface.renderOperatingModel();
   await nextTicks();
   assert.ok(findByText(root, "Functions", "h1"));
+  assert.equal(root.querySelector(".page-header").className, "page-header operating-model-header");
+  assert.equal(findByText(root, "Business units, responsibilities, systems, and roadmap.", "p"), undefined);
   assert.equal(findByText(root, "functions", "h1"), undefined);
   assert.equal(findByText(root, "1 current definitions"), undefined);
   assert.ok(findByText(root, "Editorial", "h3"));

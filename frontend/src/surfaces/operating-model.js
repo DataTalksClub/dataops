@@ -1,3 +1,5 @@
+import { createPageHeader } from "./operations-overview.js";
+
 function el(documentRef, tag, className, text = "") {
   const node = documentRef.createElement(tag);
   if (className) node.className = className;
@@ -60,10 +62,13 @@ export function createOperatingModelSurface(context) {
     return button;
   }
 
-  function header(root, title) {
-    const block = el(documentRef, "header", "operating-model-header");
-    block.append(el(documentRef, "h1", "", title));
-    root.append(block);
+  function header(root, title, subtitle = "") {
+    root.append(createPageHeader({
+      title,
+      subtitle,
+      className: "operating-model-header",
+      documentRef,
+    }));
   }
 
   function unavailable(root) {
@@ -125,7 +130,7 @@ export function createOperatingModelSurface(context) {
     if (keepFailureDOM("operating-model")) return;
     setRouteTitle("Operating Model");
     const root = el(documentRef, "div", "operating-model-surface");
-    header(root, "Operating Model");
+    header(root, "Operating Model", "Business units, responsibilities, systems, and roadmap.");
     if (!model) { load(); unavailable(root); replaceSurface(root); return; }
     if (model.freshness === "stale") root.append(el(documentRef, "p", "status-text", "Showing the last valid model while definitions refresh."));
     const grid = el(documentRef, "section", "operating-model-grid");

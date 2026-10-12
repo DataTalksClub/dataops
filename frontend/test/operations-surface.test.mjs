@@ -1101,7 +1101,10 @@ describe("Operations surface boundary", () => {
     });
     await harness.api.refreshUsersSurface();
     harness.api.renderUsersSurfaceView();
-    await findByText(harness.documentList, "Add user", "button").click();
+    const addUser = findByText(harness.documentList, "Add user", "button");
+    assert.equal(addUser.parentElement.className, "page-header-actions");
+    assert.equal(addUser.className, "primary-button");
+    await addUser.click();
     const inputs = harness.documentList.querySelectorAll("input");
     inputs[0].value = "Synthetic User";
     inputs[1].value = "synthetic-user@datatalks.club";

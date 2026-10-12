@@ -12,6 +12,7 @@ const routes = [
   ['/templates', '.runtime-template-layout'], ['/recurring', '.recurring-summary'],
   ['/calendar', '.calendar-grid'],
   ['/assistants', '.assistant-layout'], ['/processes', '.ops-docs-catalog'],
+  ['/operating-model', '.operating-model-grid, .review-empty-state'], ['/review', '.review-summary'],
   ['/admin', '.ops-admin-card'], ['/users', '.ops-users-table'], ['/device', '.device-form'],
 ];
 test.beforeAll(async () => {
@@ -34,6 +35,12 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       const header = page.locator('#document-list .page-header').first();
       await expect(header.locator('h1')).toBeVisible();
       const canvas = await page.locator('#document-list').boundingBox();
+      const availableWidth = await page.locator('#library-view').evaluate((node) => {
+        const style = getComputedStyle(node);
+        return node.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      });
+      expect(Math.abs(canvas.width - Math.min(1200, availableWidth)), `${route}: full page canvas width`).toBeLessThan(1);
+
       const heading = await header.locator('h1').boundingBox();
       commonLeft ??= canvas.x;
       expect(Math.abs(canvas.x - commonLeft), `${route}: canvas left edge`).toBeLessThan(1);
@@ -43,6 +50,10 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
         const board = await page.locator('.ops-queue-board').boundingBox();
         expect(Math.abs(board.width - canvas.width)).toBeLessThan(1);
         const action = await header.getByRole('button', { name: 'Create card', exact: true }).boundingBox();
+        expect(Math.abs(action.x + action.width - canvas.x - canvas.width)).toBeLessThan(1);
+      }
+      if (route === '/users') {
+        const action = await header.getByRole('button', { name: 'Add user', exact: true }).boundingBox();
         expect(Math.abs(action.x + action.width - canvas.x - canvas.width)).toBeLessThan(1);
       }
       if (route === '/calendar') {
