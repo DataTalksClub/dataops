@@ -113,8 +113,12 @@ for (const width of [1440, 1280]) {
     await expect(spotlight.locator('.inline-editor')).toHaveValue(/PARTNER SPOTLIGHT/);
     await root.locator('.notion-list-item-text').first().click();
     await expect(spotlight).toContainText('PARTNER SPOTLIGHT');
+    await spotlight.locator('.notion-callout-body').click();
+    await spotlight.locator('.inline-editor').fill('Synthetic sponsor copy typed into the new block.');
+    await root.locator('.notion-list-item-text').first().click();
+    await expect(spotlight).toContainText('Synthetic sponsor copy typed into the new block.');
     await page.getByRole('button', { name: 'Email Preview', exact: true }).click();
-    await expect(page.locator('[data-sim-body]')).toContainText('PARTNER SPOTLIGHT');
+    await expect(page.locator('[data-sim-body]')).toContainText('Synthetic sponsor copy typed into the new block.');
   });
 
   for (const surface of ['Docs', 'Compose']) {

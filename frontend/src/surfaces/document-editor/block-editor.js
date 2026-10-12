@@ -577,6 +577,7 @@ export function createBlockEditor(context, services) {
         commit: (newText) => {
           const trimmed = newText.trim();
           const newRaw = `> [!${calloutKind}]\n> ${trimmed.replace(/\n/g, "\n> ")}`;
+          cleanText = trimmed;
           block.raw = newRaw;
           onChange(index, newRaw);
         },
