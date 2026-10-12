@@ -224,12 +224,6 @@ textarea:focus {
   text-transform: uppercase;
 }.workspace-nav-label:first-child {
   margin-top: 0;
-}.search-scope {
-  display: block;
-  margin: 6px 2px 0;
-  color: var(--dk-text-muted);
-  font-size: 11px;
-  line-height: 1.4;
 }#sidebar-close-button svg {
   width: 20px;
   height: 20px;
