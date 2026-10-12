@@ -8,6 +8,7 @@ import {
   listCrmRecords,
 } from '../db/sponsorCrm';
 import { DEAL_STATUSES, PRODUCT_KINDS, parseNextAction, realDate, registrableDomain } from './model';
+import { newsletterRecord, validateNewsletter } from './newsletters';
 
 export type SnapshotCompany = {
   domain?: string;
@@ -56,12 +57,26 @@ export type SnapshotLead = {
   newsletter?: string;
   sourceKey?: string;
 };
+export type SnapshotNewsletter = {
+  name: string;
+  slug?: string;
+  url: string;
+  mailbox?: string;
+  senders?: string[];
+  cadence?: string;
+  expectedIntervalDays: number;
+  subscriptionStatus: string;
+  subscribedAt?: string;
+  notes?: string;
+  sourceKey?: string;
+};
 export type CrmSnapshot = {
   companies?: SnapshotCompany[];
   people?: SnapshotPerson[];
   deals?: SnapshotDeal[];
   invoices?: SnapshotInvoice[];
   leads?: SnapshotLead[];
+  newsletters?: SnapshotNewsletter[];
 };
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -72,7 +87,8 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
   const deals = snapshot.deals || [];
   const invoices = snapshot.invoices || [];
   const leads = snapshot.leads || [];
-  if (companies.length + people.length + deals.length + invoices.length + leads.length > 10_000) {
+  const newsletters = snapshot.newsletters || [];
+  if (companies.length + people.length + deals.length + invoices.length + leads.length + newsletters.length > 10_000) {
     throw Object.assign(new Error('Snapshot too large'), { statusCode: 400 });
   }
 
@@ -89,7 +105,7 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
       if (typeof email === 'string' && email.trim()) contactByEmail.set(email.toLowerCase(), existing.id);
     }
   }
-  const created = { companies: 0, people: 0, deals: 0, invoices: 0, leads: 0, duplicates: 0 };
+  const created = { companies: 0, people: 0, deals: 0, invoices: 0, leads: 0, newsletters: 0, duplicates: 0 };
   const resolveOrg = (ref: string) => {
     const domain = registrableDomain(ref);
     if (domain && orgByDomain.has(domain)) return orgByDomain.get(domain);
@@ -223,6 +239,23 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
     });
     if (result.duplicate) created.duplicates += 1;
     else created.leads += 1;
+  }
+
+  const existingNewsletters = await listCrmRecords(client, 'newsletter');
+  const newsletterBySlug = new Map(existingNewsletters.map((item) => [String(item.slug || ''), item.id]));
+  for (const newsletter of newsletters) {
+    const error = validateNewsletter(newsletter);
+    if (error) throw Object.assign(new Error('Invalid newsletter'), { statusCode: 400 });
+    const record = newsletterRecord({ ...newsletter, sourceType: 'import' });
+    const slug = String(record.slug);
+    if (newsletterBySlug.has(slug)) {
+      created.duplicates += 1;
+      continue;
+    }
+    const result = await createCrmRecord(client, 'newsletter', record);
+    newsletterBySlug.set(slug, result.item.id);
+    if (result.duplicate) created.duplicates += 1;
+    else created.newsletters += 1;
   }
 
   return created;

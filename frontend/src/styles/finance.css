@@ -207,6 +207,20 @@ body[data-workspace-view="sponsors"] .document-list {
   border-color: var(--dk-accent-border);
   background: var(--dk-accent-soft);
   color: var(--dk-accent-deep);
+}.status-label[data-health="overdue"],
+.status-label[data-health="missing"] {
+  border-color: var(--dk-danger-border);
+  background: var(--dk-danger-bg);
+  color: var(--dk-danger-text);
+}.status-label[data-health="pending"],
+.status-label[data-health="waiting"] {
+  border-color: var(--dk-warning-border);
+  background: var(--dk-warning-bg);
+  color: var(--dk-warning-text);
+}.status-label[data-health="current"] {
+  border-color: var(--dk-success-border);
+  background: var(--dk-success-bg);
+  color: var(--dk-success-text);
 }/* Month lens: the close-state header that replaced the decorative job nav.
    It answers "what is left for this month" above the fold (#242). */.bookkeeping-monthlens {
   display: grid;
@@ -1001,9 +1015,11 @@ body[data-workspace-view="sponsors"] .document-list {
   padding: 0;
 }.crm-views {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   width: fit-content;
+  max-width: 100%;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-full);
   background: var(--dk-bg-muted);
@@ -1194,13 +1210,15 @@ body[data-workspace-view="sponsors"] .document-list {
   gap: 16px;
 }.crm-directory .section-header label {
   width: 130px;
-}.crm-leads {
+}.crm-leads,
+.crm-newsletters {
   min-width: 0;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
   overflow: hidden;
-}[data-crm-leads] {
+}[data-crm-leads],
+[data-crm-newsletters] {
   display: flex;
   flex-direction: column;
   gap: 8px;

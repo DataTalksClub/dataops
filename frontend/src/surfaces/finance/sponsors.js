@@ -1,6 +1,7 @@
 import { createSponsorCommunications } from "./sponsor-communications.js";
 import { createSponsorFinance } from "./sponsor-finance.js";
 import { createSponsorLeads } from "./sponsor-leads.js";
+import { createSponsorNewsletters } from "./sponsor-newsletters.js";
 import { renderSponsorBookingAlerts } from "./sponsor-alerts.js";
 import { createSponsorCompanyDetail } from "./sponsor-company-detail.js";
 import { sponsorSurfaceMarkup } from "./sponsor-layout.js";
@@ -120,6 +121,15 @@ export function createSponsorCrmSurface(context) {
       openDialog,
     });
     sponsorLeads.wireLeadControls();
+    const sponsorNewsletters = createSponsorNewsletters({
+      api,
+      escapeHtml,
+      humanizeOptionLabel,
+      message,
+      surface,
+      openDialog,
+    });
+    sponsorNewsletters.wireNewsletterControls();
     const { loadFinance } = sponsorFinance;
     const {
       loadCommunications,
@@ -207,11 +217,17 @@ export function createSponsorCrmSurface(context) {
       pipeline.hidden = view !== "pipeline";
       companies.hidden = view !== "companies";
       surface.querySelector(".crm-leads").hidden = view !== "leads";
-      surface.querySelector(".crm-layout").hidden = view === "companies" || view === "leads";
+      surface.querySelector(".crm-newsletters").hidden = view !== "newsletters";
+      surface.querySelector(".crm-layout").hidden =
+        view === "companies" || view === "leads" || view === "newsletters";
       surface.querySelector("[data-crm-pipeline]").hidden = view !== "pipeline";
       const heading = surface.querySelector("[data-crm-list-heading]");
       heading.textContent =
-        view === "queue" ? "Queue" : view === "pipeline" ? "Pipeline" : view === "leads" ? "Leads" : "Companies";
+        view === "queue" ? "Queue"
+        : view === "pipeline" ? "Pipeline"
+        : view === "leads" ? "Leads"
+        : view === "newsletters" ? "Newsletters"
+        : "Companies";
       if (redraw) draw();
     }
     const { reopenDealDetail, reopenCompanyDetail } = createSponsorCompanyDetail({
@@ -409,6 +425,7 @@ export function createSponsorCrmSurface(context) {
       orgOptions();
       draw();
       await sponsorLeads.loadLeads();
+      await sponsorNewsletters.loadNewsletters();
       message.textContent = "";
       message.hidden = true;
     }
@@ -463,12 +480,16 @@ export function createSponsorCrmSurface(context) {
         ? organizations.find((item) => item.id === companyId)
         : null;
       if (deal) {
-        if (currentView === "companies" || currentView === "leads") setView("queue");
+        if (currentView === "companies" || currentView === "leads" || currentView === "newsletters") {
+          setView("queue");
+        }
         safe(() => reopenDealDetail(deal), "Could not open deal");
         return true;
       }
       if (organization) {
-        if (currentView === "companies" || currentView === "leads") setView("queue");
+        if (currentView === "companies" || currentView === "leads" || currentView === "newsletters") {
+          setView("queue");
+        }
         safe(() => reopenCompanyDetail(organization), "Could not open company");
         return true;
       }

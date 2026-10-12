@@ -642,6 +642,7 @@ body[data-workspace-view="sponsors"] .library-view {
     margin: 0 !important;
   }
   .crm-views button {
+    flex-shrink: 0;
     padding-left: 8px !important;
     padding-right: 8px !important;
   }
@@ -653,7 +654,8 @@ body[data-workspace-view="sponsors"] .library-view {
   }
   .crm-layout,
   .crm-directory,
-  .crm-leads {
+  .crm-leads,
+  .crm-newsletters {
     order: 3;
     flex-basis: 100%;
     min-width: 0;

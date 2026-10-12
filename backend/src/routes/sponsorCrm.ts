@@ -32,6 +32,15 @@ import {
   registrableDomain,
   relationshipTag,
 } from '../sponsorCrm/model';
+import {
+  NEWSLETTER_HEALTH,
+  matchNewsletterBySender,
+  newsletterPatch,
+  newsletterRecord,
+  publicNewsletter,
+  sortNewsletters,
+  validateNewsletter,
+} from '../sponsorCrm/newsletters';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -59,6 +68,10 @@ function validateList(event: LambdaEvent) {
   if (query.dealId && !ID.test(query.dealId)) return 'Invalid dealId filter';
   if (query.active && !['true', 'false'].includes(query.active)) return 'Invalid active filter';
   if (query.status && !DEAL_STATUSES.has(query.status)) return 'Invalid status filter';
+  if (query.health && !NEWSLETTER_HEALTH.includes(query.health as (typeof NEWSLETTER_HEALTH)[number])) return 'Invalid health filter';
+  if (query.subscriptionStatus && !['subscribed', 'pending', 'paused', 'unsubscribed'].includes(query.subscriptionStatus)) {
+    return 'Invalid subscriptionStatus filter';
+  }
   return '';
 }
 
@@ -213,6 +226,91 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     if (body?.version !== existing.version) return json(409, { error: 'Deliverable was changed; reload and retry' });
     try { return json(200, safeDeliverableSummary(await updateDeliverableAtomic(client, existing, { scheduleEntryId }, user))); }
     catch (error) { if ((error as Error).name.includes('Transaction') || (error as Error).name.includes('Conditional')) return json(409, { error: 'Schedule entry is already linked' }); throw error; }
+  }
+
+  if (path === '/api/sponsor-crm/newsletters/receipts' && method === 'POST') {
+    if (!body) return json(400, { error: 'Invalid JSON' });
+    const sender = typeof body.sender === 'string' ? body.sender.trim().toLowerCase() : '';
+    const receivedAt = typeof body.receivedAt === 'string' ? body.receivedAt : '';
+    const subject = typeof body.subject === 'string' ? body.subject.slice(0, 300) : '';
+    const messageId = typeof body.messageId === 'string' ? body.messageId.trim() : '';
+    if (!EMAIL.test(sender) || !receivedAt || Number.isNaN(Date.parse(receivedAt))) return json(400, { error: 'Invalid receipt' });
+    const newsletters = await listCrmRecords(client, 'newsletter');
+    let target: CrmRecord | null = null;
+    if (body.newsletterId) {
+      if (!ID.test(String(body.newsletterId))) return json(400, { error: 'Invalid newsletterId' });
+      target = await getCrmRecord(client, 'newsletter', String(body.newsletterId));
+      if (!target) return json(404, { error: 'Not found' });
+    } else {
+      target = matchNewsletterBySender(newsletters, sender) as CrmRecord | null;
+      if (!target) return json(422, { error: 'Unknown newsletter sender' });
+    }
+    if (messageId && target.lastMessageId === messageId) return json(200, publicNewsletter(target, today));
+    const previous = String(target.lastReceivedAt || '');
+    if (previous && Date.parse(receivedAt) < Date.parse(previous)) return json(200, publicNewsletter(target, today));
+    const senders = Array.isArray(target.senders) ? target.senders.map((value) => String(value)) : [];
+    if (!senders.includes(sender) && senders.length < 10) senders.push(sender);
+    try {
+      const updated = await updateCrmRecord(client, 'newsletter', target, {
+        lastReceivedAt: receivedAt,
+        lastSender: sender,
+        lastSubject: subject,
+        lastMessageId: messageId || undefined,
+        senders,
+      });
+      return json(200, publicNewsletter(updated, today));
+    } catch {
+      return json(409, { error: 'Conflicting update; reload and retry' });
+    }
+  }
+
+  const newsletterMatch = path.match(/^\/api\/sponsor-crm\/newsletters(?:\/([^/]+))?$/);
+  if (newsletterMatch) {
+    const id = newsletterMatch[1];
+    if (id && !ID.test(id)) return json(400, { error: 'Invalid ID' });
+    if (method === 'GET' && id) {
+      const record = await getCrmRecord(client, 'newsletter', id);
+      return record ? json(200, publicNewsletter(record, today)) : json(404, { error: 'Not found' });
+    }
+    if (method === 'GET' && !id) {
+      const listError = validateList(event);
+      if (listError) return json(400, { error: listError });
+      const query = event.queryStringParameters || {};
+      let items = sortNewsletters(await listCrmRecords(client, 'newsletter'), today).map((item) => publicNewsletter(item, today));
+      if (query.health) items = items.filter((item) => item.health === query.health);
+      if (query.subscriptionStatus) items = items.filter((item) => item.subscriptionStatus === query.subscriptionStatus);
+      if (query.search) {
+        const q = query.search.toLowerCase();
+        items = items.filter((item) => [item.name, item.slug, ...(Array.isArray(item.senders) ? item.senders : [])]
+          .some((value) => String(value || '').toLowerCase().includes(q)));
+      }
+      return json(200, page(items, event));
+    }
+    if (method === 'POST' && !id) {
+      if (!body) return json(400, { error: 'Invalid JSON' });
+      const error = validateNewsletter(body);
+      if (error) return json(400, { error });
+      try {
+        const created = await createCrmRecord(client, 'newsletter', newsletterRecord(body));
+        return json(created.duplicate ? 200 : 201, publicNewsletter(created.item, today));
+      } catch (error) {
+        return json((error as { statusCode?: number }).statusCode || 409, { error: (error as Error).message });
+      }
+    }
+    if ((method === 'PUT' || method === 'PATCH') && id) {
+      if (!body) return json(400, { error: 'Invalid JSON' });
+      const existing = await getCrmRecord(client, 'newsletter', id);
+      if (!existing) return json(404, { error: 'Not found' });
+      if (body.version !== existing.version) return json(409, { error: 'Record was changed; reload and retry' });
+      const error = validateNewsletter(body, true);
+      if (error) return json(400, { error });
+      try {
+        return json(200, publicNewsletter(await updateCrmRecord(client, 'newsletter', existing, newsletterPatch(existing, body)), today));
+      } catch {
+        return json(409, { error: 'Conflicting update; reload and retry' });
+      }
+    }
+    return json(405, { error: 'Method not allowed' });
   }
 
   const match = path.match(/^\/api\/sponsor-crm\/(organizations|contacts|deals|deliverables|invoices)(?:\/([^/]+))?$/);

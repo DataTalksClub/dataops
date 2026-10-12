@@ -43,7 +43,8 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
       <button type="button" data-crm-view="queue" aria-pressed="true">Queue</button
       ><button type="button" data-crm-view="pipeline" aria-pressed="false">Pipeline</button
       ><button type="button" data-crm-view="companies" aria-pressed="false">Companies</button
-      ><button type="button" data-crm-view="leads" aria-pressed="false">Leads</button>
+      ><button type="button" data-crm-view="leads" aria-pressed="false">Leads</button
+      ><button type="button" data-crm-view="newsletters" aria-pressed="false">Newsletters</button>
     </nav>
     <nav class="crm-pipeline" data-crm-pipeline aria-label="Deal pipeline"></nav>
     <section class="crm-alerts" aria-label="Alerts">
@@ -101,6 +102,25 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
         >
       </header>
       <div data-crm-orgs>Loading sponsors…</div>
+    </section>
+    <section class="crm-newsletters" hidden aria-labelledby="crm-newsletters-heading">
+      <header class="section-header">
+        <div>
+          <p class="section-kicker">Inbound sources</p>
+          <h3 id="crm-newsletters-heading">Newsletters</h3>
+        </div>
+        <label
+          >Show
+          <select data-crm-newsletter-health>
+            <option value="">All</option>
+            <option value="attention">Needs attention</option>
+            <option value="current">Current</option>
+            <option value="pending">Signup pending</option>
+          </select></label
+        >
+        <button type="button" data-add-newsletter>Add newsletter</button>
+      </header>
+      <div data-crm-newsletters>Loading newsletters…</div>
     </section>
     <section class="crm-leads" hidden aria-labelledby="crm-leads-heading">
       <header class="section-header">
@@ -177,6 +197,39 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
         <footer>
           <button class="primary-button" data-convert-existing>Link company</button
           ><button type="button" data-convert-new>Create new company</button
+          ><button value="cancel">Cancel</button>
+        </footer>
+      </form>
+    </dialog>
+    <dialog class="surface-dialog" data-newsletter-dialog>
+      <form method="dialog">
+        <header>
+          <h3>Newsletter</h3>
+          <p>Catalog a title we receive at newsletter@dtcdev.click.</p>
+        </header>
+        <div class="dialog-fields">
+          <input name="newsletterId" type="hidden" /><input name="version" type="hidden" />
+          <label>Name <input name="name" required /></label
+          ><label>Archive URL <input name="url" type="url" required /></label
+          ><label>Senders <input name="senders" placeholder="news@example.com, other@example.com" /></label
+          ><label>Cadence <input name="cadence" value="Weekly" /></label
+          ><label
+            >Expected days
+            <input name="expectedIntervalDays" type="number" min="1" max="90" value="7" /></label
+          ><label
+            >Subscription
+            <select name="subscriptionStatus">
+              <option value="subscribed">Subscribed</option>
+              <option value="pending">Signup pending</option>
+              <option value="paused">Paused</option>
+              <option value="unsubscribed">Unsubscribed</option>
+            </select></label
+          ><label>Operator notes <textarea name="notes"></textarea></label>
+          <p role="alert"></p>
+        </div>
+        <footer>
+          <button type="button" class="primary-button" data-newsletter-save>
+            Save newsletter</button
           ><button value="cancel">Cancel</button>
         </footer>
       </form>

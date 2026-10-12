@@ -75,5 +75,19 @@
       "newsletter": "example-digest",
       "sourceKey": "fixture-lead"
     }
+  ],
+  "newsletters": [
+    {
+      "name": "Example Digest",
+      "slug": "example-digest",
+      "url": "https://digest.example.invalid/archive",
+      "mailbox": "newsletter@example.invalid",
+      "senders": ["news@digest.example.invalid"],
+      "cadence": "Weekly",
+      "expectedIntervalDays": 7,
+      "subscriptionStatus": "subscribed",
+      "subscribedAt": "2026-10-01",
+      "sourceKey": "fixture-newsletter"
+    }
   ]
 }
