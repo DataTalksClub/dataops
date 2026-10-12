@@ -1,4 +1,4 @@
-import { renderDataSummary } from "../operations-overview.js";
+import { createPageHeader, renderDataSummary } from "../operations-overview.js";
 import { createCardsSurface } from "./cards.js";
 import { createQuickTaskActions } from "./quick-create.js";
 import { createTaskQueue } from "./queue.js";
@@ -48,7 +48,6 @@ export function createTasksSurface(context) {
     renderEntityLoadState,
     renderHonestState,
     renderOperationsRuntimeState,
-    renderSurfaceHeader,
     resolveAssigneeLabel,
     request,
     scheduleAnimationFrame,
@@ -75,7 +74,6 @@ export function createTasksSurface(context) {
   const {
     recurringConfigTitle,
     renderRecurringSurface,
-    renderWorkflowTemplateCard,
   } = createRecurringTasks({
     ...context,
     openQuickWorkflowForm,
@@ -96,7 +94,6 @@ export function createTasksSurface(context) {
     ...context,
     openQuickWorkflowForm,
     renderTasksSurface,
-    renderWorkflowTemplateCard,
   });
 
   function renderTasksSurface(documents, section) {
@@ -117,16 +114,40 @@ export function createTasksSurface(context) {
 
     const wrap = document.createElement("div");
     wrap.className = `operations-home ops-surface ops-surface-${activeSection}`;
+    const recurringSurface = activeSection === "recurring" ? renderRecurringSurface(model) : null;
     if (activeSection !== "workflows") {
-      wrap.append(
-        renderSurfaceHeader(title, surfaceDescription(activeSection)),
-      );
+      const actions = [];
+      if (activeSection === "queue") {
+        const quickTask = document.createElement("button");
+        quickTask.type = "button";
+        quickTask.className = "quiet-button";
+        quickTask.textContent = "New task";
+        quickTask.addEventListener("click", () => openQuickTaskForm());
+        const quickCard = document.createElement("button");
+        quickCard.type = "button";
+        quickCard.className = "primary-button";
+        quickCard.textContent = "Create card";
+        quickCard.addEventListener("click", () => openQuickWorkflowForm());
+        actions.push(quickTask, quickCard);
+      }
+      if (activeSection === "recurring") {
+        const toolbar = recurringSurface.querySelector(".recurring-toolbar");
+        actions.push(toolbar.querySelector("button"));
+        toolbar.remove();
+      }
+      const header = createPageHeader({
+        title,
+        subtitle: surfaceDescription(activeSection),
+        actions,
+        className: "ops-surface-header",
+      });
+      wrap.append(header);
     }
     const summary = renderTasksSummary(activeSection, model, documents);
     // A fully loaded surface states nothing: its own content is the evidence.
     if (summary && summary.dataset.summaryState !== "ready") wrap.append(summary);
     const runtimeStatus = renderOperationsRuntimeState(model.runtime);
-    if (runtimeStatus && ["queue", "workflows"].includes(activeSection)) {
+    if (runtimeStatus && activeSection === "workflows") {
       wrap.append(runtimeStatus);
     }
 
@@ -134,9 +155,9 @@ export function createTasksSurface(context) {
     else if (activeSection === "workflows")
       wrap.append(renderWorkflowsSurface(model));
     else if (activeSection === "templates")
-      wrap.append(renderTemplatesSurface(model));
+      wrap.append(renderTemplatesSurface());
     else if (activeSection === "recurring")
-      wrap.append(renderRecurringSurface(model));
+      wrap.append(recurringSurface);
     else if (activeSection === "assistants")
       wrap.append(renderAssistantsSurface());
 
@@ -154,9 +175,11 @@ export function createTasksSurface(context) {
     const workErrors = (model.stats.workErrors || []).filter(Boolean);
     const retryWork = async () => {
       const routeToken = getActiveWorkspaceRouteToken();
-      // Resetting the Cards loader is deliberate: a continuation retry must
-      // also recover a failed page, not merely preserve its broken cursor.
-      await refreshOperationsWorkSnapshot({ rerender: false });
+      const refreshOptions = { rerender: false };
+      if (model.stats.cardsLoaded && !model.stats.cardsComplete) {
+        refreshOptions.continueCards = true;
+      }
+      await refreshOperationsWorkSnapshot(refreshOptions);
       if (isWorkspaceRouteFresh(routeToken)) refreshDocuments();
     };
     if (view === "queue") {
@@ -194,6 +217,7 @@ export function createTasksSurface(context) {
           partial: `${counts}. Some task sources are unavailable.`,
           ready: `${counts}.`,
         },
+        detail: model.stats.liveLoaded ? "" : undefined,
         retryLabel: "Retry loading tasks",
         onRetry: retryWork,
       });
@@ -237,7 +261,7 @@ export function createTasksSurface(context) {
         `${recurring.enabled.length} enabled`,
         `${recurring.disabled.length} paused`,
       ].join(" · ");
-      return renderDataSummary({
+      const summary = renderDataSummary({
         id: "tasks-recurring",
         label: "Recurring",
         loaded: recurring.loaded,
@@ -257,6 +281,7 @@ export function createTasksSurface(context) {
           if (isWorkspaceRouteFresh(routeToken)) renderTasksSurface(documents, view);
         },
       });
+      return summary.dataset.summaryState === "empty" ? null : summary;
     }
     if (view === "templates") {
       const routeToken = getActiveWorkspaceRouteToken();

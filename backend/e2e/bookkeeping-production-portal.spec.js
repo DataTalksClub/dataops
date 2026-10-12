@@ -72,7 +72,7 @@ test.describe("production portal bookkeeping", () => {
     const createdRow = page.getByRole("row").filter({
       hasText: "Synthetic Portal Vendor",
     });
-    await expect(createdRow).toContainText("20.00 EUR");
+    await expect(createdRow).toContainText("-€20.00");
     await page.reload();
     await expect(createdRow).toContainText("Synthetic browser evidence");
 
@@ -106,7 +106,7 @@ test.describe("production portal bookkeeping", () => {
     );
     await expect(page.getByRole("button", { name: /Unlink/ })).toBeVisible();
     const linksResponse = await context.request.get(
-      `${server.baseURL}/work/api/bookkeeping/links`,
+      `${server.baseURL}/api/bookkeeping/links`,
     );
     expect(linksResponse.status()).toBe(200);
     assertOwnedServerResponse(server, linksResponse, "bookkeeping links");
@@ -183,4 +183,81 @@ test.describe("production portal bookkeeping", () => {
     expect(dimensions.page).toBeLessThanOrEqual(390);
     await context.close();
   });
+
+  test("year/month navigation exports only the selected period and copies report data", async ({ browser }) => {
+    const fs = require("fs/promises");
+    const context = await browser.newContext({ baseURL: server.baseURL, acceptDownloads: true });
+    const page = await context.newPage();
+    const samples = [
+      { transactionDate: "2024-01-02", counterparty: "January Export Vendor", amount: "100.1234", currency: "EUR", entryType: "expense" },
+      { transactionDate: "2024-12-02", counterparty: 'December, "Export" Vendor', amount: "25.4321", currency: "USD", entryType: "income" },
+      { transactionDate: "2024-12-03", counterparty: "Excluded Export Tax", amount: "10.00", currency: "EUR", entryType: "expense", category: "Taxes" },
+      { transactionDate: "2025-01-02", counterparty: "Next Year Export Vendor", amount: "20.00", currency: "EUR", entryType: "expense" },
+    ];
+    for (const entry of samples) {
+      const response = await context.request.post("/api/bookkeeping/transactions", { data: { description: "Export browser fixture", ...entry } });
+      expect(response.ok(), await response.text()).toBe(true);
+    }
+    await gotoOwnedBookkeepingPage(page);
+    const year = page.getByRole("combobox", { name: "Select year", exact: true });
+    const month = page.getByRole("combobox", { name: "Select month", exact: true });
+    await expect(year).toBeVisible();
+    await expect(month.locator("option")).toHaveText([
+      "All months (full year)",
+      "01 - January", "02 - February", "03 - March", "04 - April",
+      "05 - May", "06 - June", "07 - July", "08 - August",
+      "09 - September", "10 - October", "11 - November", "12 - December",
+    ]);
+    await month.selectOption("all");
+    await year.selectOption("2024");
+    const ledger = page.locator(".bookkeeping-ledger");
+    await expect(ledger).toContainText("January Export Vendor");
+    await expect(ledger).toContainText('December, "Export" Vendor');
+    await expect(ledger).not.toContainText("Next Year Export Vendor");
+    await expect(page.locator("[data-package-review]")).toContainText("Choose a month to review");
+    await expect(page.locator("[data-report]")).toBeDisabled();
+
+    const reportDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export report CSV", exact: true }).click();
+    const report = await reportDownload;
+    expect(report.suggestedFilename()).toBe("datatalksclub-2024.csv");
+    const reportText = await fs.readFile(await report.path(), "utf8");
+    expect(reportText).toContain('"-100.1234"');
+    expect(reportText).toContain('"December, ""Export"" Vendor","Export browser fixture","","25.4321","USD"');
+    expect(reportText).not.toContain("Excluded Export Tax");
+    expect(reportText).not.toContain("Next Year Export Vendor");
+
+    const fullDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Full CSV", exact: true }).click();
+    const full = await fullDownload;
+    expect(full.suggestedFilename()).toBe("datatalksclub-2024-full.csv");
+    expect(await fs.readFile(await full.path(), "utf8")).toContain("Excluded Export Tax");
+
+    await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text) => { window.__copiedReport = text; } } }));
+    await page.getByRole("button", { name: "Copy for report", exact: true }).click();
+    await expect(page.getByRole("status")).toContainText("Copied report table for 2024 (2 transactions)");
+    const copied = await page.evaluate(() => window.__copiedReport);
+    expect(copied).toContain("VAT\tVAT Currency");
+    expect(copied).toContain("January Export Vendor");
+    expect(copied).not.toContain("Excluded Export Tax");
+
+    await month.selectOption("12");
+    await expect(ledger).not.toContainText("January Export Vendor");
+    await expect(page.locator("[data-report]")).toBeEnabled();
+    await page.getByRole("button", { name: "Next month", exact: true }).click();
+    await expect(year).toHaveValue("2025");
+    await expect(month).toHaveValue("01");
+    await expect(ledger).toContainText("Next Year Export Vendor");
+    await month.selectOption("all");
+    await page.getByRole("button", { name: "Previous year", exact: true }).click();
+    await expect(year).toHaveValue("2024");
+    await page.getByRole("button", { name: "Previous year", exact: true }).click();
+    await expect(year).toHaveValue("2023");
+    await expect(ledger).toContainText("No bookkeeping entries in 2023");
+    await year.selectOption("all");
+    await expect(month).toBeDisabled();
+    await expect(ledger).toContainText("Next Year Export Vendor");
+    await context.close();
+  });
+
 });

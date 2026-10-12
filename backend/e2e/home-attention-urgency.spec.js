@@ -125,7 +125,7 @@ async function expectAttentionRowsDoNotOverlap(page) {
           ...row.querySelectorAll(
             'strong, time, button',
           ),
-        ].map((control) => {
+        ].filter((control) => !control.parentElement.closest('strong, time, button')).map((control) => {
           const rect = control.getBoundingClientRect();
           return {
             className: String(control.className || ''),
@@ -203,22 +203,23 @@ test.describe('issue 201 queue urgency cues', () => {
     const expected = [
       {
         task: fixtures.overdue,
-        timing: '1 day overdue',
+        timing: '1d late',
         proof: false,
       },
       {
         task: fixtures.followUp,
-        timing: '2 days overdue',
+        timing: 'Tomorrow',
         proof: false,
+        waiting: 'Waiting for Synthetic reply',
       },
       {
         task: fixtures.today,
-        timing: 'Due today',
+        timing: 'Today',
         proof: false,
       },
       {
         task: fixtures.proofTask,
-        timing: 'Due tomorrow',
+        timing: 'Tomorrow',
         proof: true,
       },
     ];
@@ -235,11 +236,19 @@ test.describe('issue 201 queue urgency cues', () => {
       await expect(row).toHaveCount(1);
       await expect(row.locator('strong')).toHaveText(item.task.description);
       // Urgency is stated as text, never as a colored-only marker.
-      await expect(row.locator('.ops-queue-meta')).toContainText(item.timing);
-      // Proof-blocked work names its blocker instead of claiming "Mark done".
+      await expect(row.locator('.ops-queue-due')).toContainText(item.timing);
+      // Proof requirements stay in the task panel and the disabled
+      // checkbox tooltip: only waiting rows earn a second line, so a
+      // proof-blocked row reads as one compact line that cannot be ticked.
       const summary = row.locator('small');
-      if (item.proof) await expect(summary).toContainText('Proof needed');
-      else await expect(summary).not.toContainText('Proof needed');
+      if (item.waiting) await expect(summary).toContainText(item.waiting);
+      else await expect(summary).toHaveCount(0);
+      if (item.proof) {
+        await expect(row.locator('.ops-queue-check')).toHaveAttribute(
+          'title',
+          'Fill in Evidence URL',
+        );
+      }
       await expect(row.getByRole('button', {
         name: `Open task ${item.task.description}`,
       })).toBeVisible();

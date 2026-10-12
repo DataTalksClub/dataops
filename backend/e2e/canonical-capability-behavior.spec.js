@@ -179,6 +179,13 @@ async function openProcessQualityFindings(page) {
   await expect(drilldown).toHaveJSProperty('open', true);
 }
 
+async function expandNewsletterFilters(page) {
+  const filters = page.locator('.newsletter-filters');
+  if (!(await filters.evaluate((element) => element.open))) {
+    await filters.locator('summary').click();
+  }
+}
+
 async function setNewsletterDateRange(page, from, to) {
   const fromInput = page.locator('[data-from]');
   const toInput = page.locator('[data-to]');
@@ -186,6 +193,7 @@ async function setNewsletterDateRange(page, from, to) {
   // between the two fills silently reverts one of them. Keep applying until
   // both values stick, then trigger the filtered load once.
   await expect(async () => {
+    await expandNewsletterFilters(page);
     await fromInput.fill(from);
     await toInput.fill(to);
     expect(await fromInput.inputValue()).toBe(from);
@@ -355,9 +363,9 @@ function freshHomeWork(page) {
     return response.request().method() === 'GET' && predicate(url);
   };
   return Promise.all([
-    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/work/api/tasks' && url.searchParams.has('date'))),
-    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/work/api/tasks' && url.searchParams.get('status') === 'waiting')),
-    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/work/api/cards' && url.searchParams.has('limit'))),
+    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/api/tasks' && url.searchParams.has('date'))),
+    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/api/tasks' && url.searchParams.get('status') === 'waiting')),
+    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/api/cards' && url.searchParams.has('limit'))),
   ]);
 }
 
@@ -375,7 +383,7 @@ test.describe('canonical frontend capability behavior', () => {
 
   test('session and Settings enforce real cookie roles, denial, focus, close, and logout', async ({ browser }, testInfo) => {
     const { context, page } = await portalPage(browser, servers.session);
-    const me = await context.request.get('/work/api/me');
+    const me = await context.request.get('/api/me');
     expect(me.status()).toBe(200);
     expect((await json(me)).user.role).toBe('admin');
     expect(await page.evaluate(() => ({ token: localStorage.getItem('dataops_token'), user: localStorage.getItem('dataops_user') })))
@@ -427,7 +435,7 @@ test.describe('canonical frontend capability behavior', () => {
     expect((await disabled.request.get('/api/me')).status()).toBe(401);
     const disabledWork = await browser.newContext({ baseURL: baseUrl(servers.disabled) });
     expect((await disabledWork.request.get('/__e2e__/browser-session', { maxRedirects: 0 })).status()).toBe(303);
-    const disabledWorkMe = await disabledWork.request.get('/work/api/me', { maxRedirects: 0 });
+    const disabledWorkMe = await disabledWork.request.get('/api/me', { maxRedirects: 0 });
     expect(disabledWorkMe.status()).toBe(401);
     expect(disabledWorkMe.headers()['content-type']).toContain('application/json');
     await disabledWork.close();
@@ -443,7 +451,7 @@ test.describe('canonical frontend capability behavior', () => {
     expect(expiredMe.headers()['content-type']).toContain('application/json');
     const expiredWork = await browser.newContext({ baseURL: baseUrl(servers.expired) });
     expect((await expiredWork.request.get('/__e2e__/browser-session', { maxRedirects: 0 })).status()).toBe(303);
-    const expiredWorkMe = await expiredWork.request.get('/work/api/me', { maxRedirects: 0 });
+    const expiredWorkMe = await expiredWork.request.get('/api/me', { maxRedirects: 0 });
     expect(expiredWorkMe.status()).toBe(401);
     expect(expiredWorkMe.headers()['content-type']).toContain('application/json');
     await expiredWork.close();
@@ -473,11 +481,11 @@ test.describe('canonical frontend capability behavior', () => {
     const browserErrors = observeBrowserErrors(page);
     const initialToday = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return url.pathname === '/work/api/tasks' && url.searchParams.has('date');
+      return url.pathname === '/api/tasks' && url.searchParams.has('date');
     });
     const initialCards = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return url.pathname === '/work/api/cards' && url.searchParams.has('limit');
+      return url.pathname === '/api/cards' && url.searchParams.has('limit');
     });
     await page.goto('/#/');
     expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe('Europe/Berlin');
@@ -568,17 +576,17 @@ test.describe('canonical frontend capability behavior', () => {
     const partialWork = Promise.all([
       page.waitForResponse((response) => {
         const url = new URL(response.url());
-        return url.pathname === '/work/api/tasks' && url.searchParams.has('date');
+        return url.pathname === '/api/tasks' && url.searchParams.has('date');
       }),
       page.waitForResponse((response) => {
         const url = new URL(response.url());
-        return url.pathname === '/work/api/cards' && response.status() === 503;
+        return url.pathname === '/api/cards' && response.status() === 503;
       }),
     ]);
     const partialRender = page.evaluate(() => window.__dataopsRefreshWork());
     await partialWork;
     await partialRender;
-    await expect(page.locator('.surface-summary[data-summary-state="partial"]')).toContainText('Cards unavailable. Loaded work is still shown.');
+    await expect(page.locator('.surface-summary[data-summary-state="partial"]')).toContainText('Some task sources are unavailable.');
     await expect(page.locator('.ops-queue-row', { hasText: title })).toBeVisible();
     await page.screenshot({
       path: path.join(ISSUE_161_SCREENSHOTS, 'source-queue-partial-failure-desktop-1440x900.png'),
@@ -637,7 +645,7 @@ test.describe('canonical frontend capability behavior', () => {
     const observedTodayQueries = [];
     page.on('request', (request) => {
       const url = new URL(request.url());
-      if (request.method() !== 'GET' || url.pathname !== '/work/api/tasks') return;
+      if (request.method() !== 'GET' || url.pathname !== '/api/tasks') return;
       const date = url.searchParams.get('date');
       if (date) observedTodayQueries.push(date);
     });
@@ -645,7 +653,7 @@ test.describe('canonical frontend capability behavior', () => {
     const initialToday = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'GET'
-        && url.pathname === '/work/api/tasks'
+        && url.pathname === '/api/tasks'
         && url.searchParams.get('date') === BOUNDARY_OPERATOR_DATE;
     });
     await installBerlinBoundaryClock(page);
@@ -666,7 +674,7 @@ test.describe('canonical frontend capability behavior', () => {
     const refreshedToday = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'GET'
-        && url.pathname === '/work/api/tasks'
+        && url.pathname === '/api/tasks'
         && url.searchParams.get('date') === BOUNDARY_OPERATOR_DATE;
     });
     const refreshedRender = page.evaluate(() => window.__dataopsRefreshWork());
@@ -677,7 +685,7 @@ test.describe('canonical frontend capability behavior', () => {
 
     const queueRow = page.locator('.ops-queue-row', { hasText: title });
     await expect(queueRow).toBeVisible();
-    await expect(queueRow).toContainText('Due today');
+    await expect(queueRow).toContainText('Today');
     expect([...new Set(observedTodayQueries)]).toEqual([BOUNDARY_OPERATOR_DATE]);
     await page.screenshot({
       path: path.join(ISSUE_196_SCREENSHOTS, 'operator-day-new-york-desktop.png'),
@@ -784,7 +792,7 @@ test.describe('canonical frontend capability behavior', () => {
     const transaction = await json(created);
     await page.goto('/#/bookkeeping');
     await expect(page.getByRole('cell', { name: counterparty })).toBeVisible();
-    await expect(page.locator('.bookkeeping-totals')).toContainText('EUR Expenses 18.50');
+    await expect(page.locator('.bookkeeping-totals')).toContainText('Expenses €18.50');
 
     // The upload form lives collapsed behind its summary; open it.
     await page.locator('.bookkeeping-upload-panel > summary').click();
@@ -850,8 +858,11 @@ test.describe('canonical frontend capability behavior', () => {
     const operator = await portalContext(browser, servers.operator);
     const page = await admin.newPage();
     await page.goto('/#/sponsors');
+    await expect(page.locator('[data-crm-message]')).toBeHidden();
+    await expect(page.getByText('Queue is clear')).toBeVisible();
+    await page.locator('[data-crm-view="companies"]').click();
     await expect(page.getByText('No sponsors found')).toBeVisible();
-    await expect(page.getByText('No bookings')).toBeVisible();
+    await page.locator('[data-crm-view="queue"]').click();
     const id = unique('sponsor');
     const organizationResponse = await admin.request.post('/api/sponsor-crm/organizations', { data: {
       displayName: `Synthetic Sponsor ${id}`, notes: 'Synthetic private note', sourceKey: `${id}-org`,
@@ -861,51 +872,57 @@ test.describe('canonical frontend capability behavior', () => {
       organizationId: organization.id, name: 'Synthetic Contact', emails: ['synthetic-contact@example.invalid'], primary: true, sourceKey: `${id}-contact`,
     } });
     const contact = await json(contactResponse);
-    const bookingResponse = await admin.request.post('/api/sponsor-crm/bookings', { data: {
-      organizationId: organization.id, primaryContactId: contact.id, slotType: 'main', status: 'inquiry',
-      plannedPublicationDate: '2026-09-01', sourceKey: `${id}-booking`,
+    const bookingResponse = await admin.request.post('/api/sponsor-crm/deals', { data: {
+      organizationId: organization.id, primaryContactId: contact.id, status: 'open',
+      nextAction: { type: 'follow_up', due: '2026-09-01', owner: '00000000-0000-0000-0000-000000000001', note: 'route' },
+      sourceKey: `${id}-booking`,
     } });
     const booking = await json(bookingResponse);
-    const adminMutation = await admin.request.put(`/api/sponsor-crm/bookings/${booking.id}`, { data: {
-      version: booking.version, status: 'confirmed', historyNote: 'Synthetic permitted update',
+    const adminMutation = await admin.request.put(`/api/sponsor-crm/deals/${booking.id}`, { data: {
+      version: booking.version, status: 'agreed',
+      nextAction: { type: 'follow_up', due: '2026-09-01', owner: '00000000-0000-0000-0000-000000000001', note: 'route' },
+      historyNote: 'Synthetic permitted update',
     } });
     expect(adminMutation.status()).toBe(200);
     const updatedBooking = await json(adminMutation);
-    const conflict = await admin.request.put(`/api/sponsor-crm/bookings/${booking.id}`, { data: {
-      version: booking.version, status: 'cancelled',
+    const conflict = await admin.request.put(`/api/sponsor-crm/deals/${booking.id}`, { data: {
+      version: booking.version, status: 'lost',
     } });
     expect(conflict.status()).toBe(409);
 
     const operatorOrganization = await json(await operator.request.post('/api/sponsor-crm/organizations', { data: {
       displayName: `Synthetic Operator Sponsor ${id}`, notes: 'Operator-private synthetic note', sourceKey: `${id}-operator-org`,
     } }));
-    const operatorBooking = await json(await operator.request.post('/api/sponsor-crm/bookings', { data: {
-      organizationId: operatorOrganization.id, slotType: 'main', status: 'inquiry', sourceKey: `${id}-operator-booking`,
+    const operatorBooking = await json(await operator.request.post('/api/sponsor-crm/deals', { data: {
+      organizationId: operatorOrganization.id, status: 'open',
+      nextAction: { type: 'follow_up', due: '2026-09-01', owner: '00000000-0000-0000-0000-000000000001', note: 'route' },
+      sourceKey: `${id}-operator-booking`,
     } }));
-    const operatorProjection = await operator.request.get(`/api/sponsor-crm/bookings/${operatorBooking.id}/finance`);
+    const operatorProjection = await operator.request.get(`/api/sponsor-crm/deals/${operatorBooking.id}/finance`);
     expect(operatorProjection.status()).toBe(200);
     expect(await json(operatorProjection)).toMatchObject({ role: 'operator', classified: false });
-    const operatorMutation = await operator.request.put(`/api/sponsor-crm/bookings/${operatorBooking.id}/finance`, { data: {
-      bookingVersion: operatorBooking.version, invoiceRequirement: 'required', amountDue: '99', currency: 'EUR', taxMode: 'included', taxAmount: '0',
+    const operatorMutation = await operator.request.put(`/api/sponsor-crm/deals/${operatorBooking.id}/finance`, { data: {
+      dealVersion: operatorBooking.version, invoiceRequirement: 'required', amountDue: '99', currency: 'EUR', taxMode: 'included', taxAmount: '0',
     }, headers: { 'idempotency-key': `${id}-operator-denied` } });
     expect(operatorMutation.status()).toBe(403);
 
-    await page.goto(`/#/sponsors?bookingId=${updatedBooking.id}`);
+    await page.goto(`/#/sponsors?dealId=${updatedBooking.id}`);
     await expect(page.locator('[data-crm-detail]')).toContainText(`Synthetic Sponsor ${id}`);
-    await expect(page.locator('[data-crm-detail] .status-label')).toHaveText('Confirmed');
+    await expect(page.locator('[data-crm-detail] .status-label').first()).toHaveText('Agreed');
     await expect(page.locator('[data-crm-detail]')).not.toContainText('Synthetic private note');
     await page.reload();
     await expect(page.locator('[data-crm-detail]')).toContainText(`Synthetic Sponsor ${id}`);
     await page.goto('/#/sponsors');
+    await page.getByRole('button', { name: 'Pipeline' }).click();
     const bookingCard = page.locator('[data-crm-bookings] article', { hasText: `Synthetic Sponsor ${id}` });
     await bookingCard.getByRole('button', { name: 'Edit' }).click();
-    const latestBooking = await json(await admin.request.get(`/api/sponsor-crm/bookings/${updatedBooking.id}`));
-    expect((await admin.request.put(`/api/sponsor-crm/bookings/${updatedBooking.id}`, { data: {
-      version: latestBooking.version, status: 'materials-pending', historyNote: 'Concurrent synthetic change',
+    const latestBooking = await json(await admin.request.get(`/api/sponsor-crm/deals/${updatedBooking.id}`));
+    expect((await admin.request.put(`/api/sponsor-crm/deals/${updatedBooking.id}`, { data: {
+      version: latestBooking.version, status: 'lost', lostReason: 'timing', historyNote: 'Concurrent synthetic change',
     } })).status()).toBe(200);
-    const bookingDialog = page.locator('[data-booking-dialog]');
-    await bookingDialog.locator('select[name="status"]').selectOption('scheduled');
-    await bookingDialog.getByRole('button', { name: 'Save booking' }).click();
+    const bookingDialog = page.locator('[data-deal-dialog]');
+    await bookingDialog.locator('select[name="status"]').selectOption('lost');
+    await bookingDialog.getByRole('button', { name: 'Save deal' }).click();
     await expect(page.locator('[data-crm-message]')).toContainText('Record was changed; reload and retry');
     await expect(bookingDialog).toBeVisible();
     await bookingDialog.getByRole('button', { name: 'Cancel' }).click();
@@ -915,18 +932,21 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('[data-crm-message]')).toContainText('Reopen Sponsors to retry');
     await clearFaults(admin.request);
     await page.reload();
-    await expect(page.getByRole('article').filter({ hasText: `Synthetic Sponsor ${id}` }).first()).toBeVisible();
+    await expect(page.locator('[data-crm-message]')).toBeAttached();
+    await expect(page.locator('[data-crm-message]')).toBeHidden();
+    await page.locator('[data-crm-view="companies"]').click();
+    await expect(page.locator('.crm-directory-row').filter({ hasText: `Synthetic Sponsor ${id}` })).toBeVisible();
     const operatorPage = await operator.newPage();
-    await operatorPage.goto(`/#/sponsors?bookingId=${operatorBooking.id}`);
+    await operatorPage.goto(`/#/sponsors?dealId=${operatorBooking.id}`);
     await expect(operatorPage.locator('[data-crm-detail]')).toContainText(`Synthetic Operator Sponsor ${id}`);
-    await expect(operatorPage.locator('[data-finance-panel]')).toContainText('This booking has not been classified');
+    await expect(operatorPage.locator('[data-finance-panel]')).toContainText('This deal has not been classified');
     await expect(operatorPage.locator('[data-finance-panel] [data-finance-classify]')).toHaveCount(0);
     await expect(operatorPage.locator('[data-crm-detail]')).not.toContainText('Operator-private synthetic note');
     await admin.close();
     await operator.close();
     recordCapabilityEvidence(testInfo, [
-      { route: '/#/sponsors?bookingId=<id>', roleId: 'admin', stateIds: ['sponsors.empty', 'sponsors.ready-detail', 'sponsors.admin-mutation', 'sponsors.conflict', 'sponsors.failure'] },
-      { route: '/#/sponsors?bookingId=<id>', roleId: 'operator', stateIds: ['sponsors.operator-safe-read', 'sponsors.operator-denied'] },
+      { route: '/#/sponsors?dealId=<id>', roleId: 'admin', stateIds: ['sponsors.empty', 'sponsors.ready-detail', 'sponsors.admin-mutation', 'sponsors.conflict', 'sponsors.failure'] },
+      { route: '/#/sponsors?dealId=<id>', roleId: 'operator', stateIds: ['sponsors.operator-safe-read', 'sponsors.operator-denied'] },
     ]);
   });
 
@@ -936,7 +956,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.goto('/#/newsletter');
     await expect(page.getByText('No newsletter slots')).toBeVisible();
     await page.goto('/#/calendar');
-    await expect(page.getByText('No matching activities')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Calendar', exact: true, level: 1 })).toBeVisible();
     const id = unique('schedule');
     const slotResponse = await context.request.post('/api/newsletter-slots', { data: {
       publicationDate: '2026-09-03', campaignLabel: `Synthetic newsletter ${id}`, status: 'open', planningNote: 'Public-safe plan',
@@ -958,7 +978,7 @@ test.describe('canonical frontend capability behavior', () => {
     const calendar = (await json(calendarResponse)).item || await json(calendarResponse);
     const calendarItem = calendar.item || calendar;
     const invalidCalendar = await context.request.post('/api/calendar-items', { data: {
-      activityType: 'invalid', title: 'Invalid', status: 'confirmed', allDay: true, startDate: '2026-09-03', endDate: '2026-09-03',
+      activityType: 'invalid', title: 'Invalid', status: 'agreed', allDay: true, startDate: '2026-09-03', endDate: '2026-09-03',
     } });
     expect(invalidCalendar.status()).toBe(400);
     const changedCalendar = await context.request.put(`/api/calendar-items/${calendarItem.id}`, { data: { version: calendarItem.version, title: `Updated calendar ${id}` } });
@@ -972,17 +992,19 @@ test.describe('canonical frontend capability behavior', () => {
     const scheduledSlot = page.locator('[data-slots] article', { hasText: `Synthetic newsletter ${id}` });
     await expect(scheduledSlot.locator('.planner-status.is-info')).toHaveText('Scheduled');
     await page.getByRole('button', { name: 'Add slot' }).click();
-    await page.getByRole('button', { name: 'Save slot' }).click();
+    await page.getByRole('button', { name: 'Save issue' }).click();
     await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Invalid publicationDate');
     await page.keyboard.press('Escape');
     await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
-    await page.locator('[data-slots] article', { hasText: `Synthetic newsletter ${id}` }).getByRole('button', { name: 'Edit' }).click();
+    const editableSlot = page.locator('[data-slots] article', { hasText: `Synthetic newsletter ${id}` });
+    await editableSlot.getByRole('button', { name: `More actions for Synthetic newsletter ${id}` }).click();
+    await editableSlot.getByRole('menuitem', { name: 'Edit details', exact: true }).click();
     const serverSlot = await json(await context.request.get(`/api/newsletter-slots/${slot.id}`));
     const concurrentSlot = await context.request.put(`/api/newsletter-slots/${slot.id}`, { data: {
       version: serverSlot.version, campaignLabel: `Server newsletter ${id}`,
     } });
     expect(concurrentSlot.status()).toBe(200);
-    await page.getByRole('button', { name: 'Save slot' }).click();
+    await page.getByRole('button', { name: 'Save issue' }).click();
     await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Slot changed; reload and retry');
     await page.keyboard.press('Escape');
     await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
@@ -990,17 +1012,24 @@ test.describe('canonical frontend capability behavior', () => {
     await setNewsletterDateRange(page, '2026-09-01', '2026-09-30');
     await expect(page.getByText(`Server newsletter ${id}`)).toBeVisible();
     await setFaults(context.request, [{ method: 'GET', path: '/api/newsletter-slots', status: 503 }]);
+    await expandNewsletterFilters(page);
     await page.locator('[data-status]').selectOption('open');
     await expect(page.locator('.newsletter-surface [role="status"]')).toContainText('Could not load newsletter schedule');
     await clearFaults(context.request);
+    await expandNewsletterFilters(page);
     await page.locator('[data-status]').selectOption('');
     await expect(page.getByText(`Server newsletter ${id}`)).toBeVisible();
 
-    await page.goto('/#/calendar');
     await page.clock.setFixedTime(new Date('2026-09-03T12:00:00Z'));
+    await page.goto('/#/calendar');
     await page.locator('[data-today]').click();
-    await expect(page.getByText(`Updated calendar ${id}`).first()).toBeVisible();
-    const calendarDialog = page.locator('.calendar-surface dialog');
+    await expect(page.locator('.calendar-surface .calendar-activity', { hasText: `Updated calendar ${id}` }).first()).toBeVisible();
+    const planningAlerts = page.locator('.calendar-surface .calendar-alert-summary');
+    await planningAlerts.locator('summary').click();
+    await expect(planningAlerts).toContainText(`Updated calendar ${id}`);
+    await expect(planningAlerts.getByRole('button', { name: 'Dismiss' }).first()).toBeVisible();
+    await planningAlerts.locator('summary').click();
+    const calendarDialog = page.locator('.calendar-surface [data-activity-dialog]');
     await page.getByRole('button', { name: 'Add activity' }).click();
     await calendarDialog.getByRole('button', { name: 'Save activity' }).click();
     await expect(calendarDialog).toBeVisible();
@@ -1024,16 +1053,22 @@ test.describe('canonical frontend capability behavior', () => {
     await page.clock.setFixedTime(new Date('2026-09-03T12:00:00Z'));
     await page.locator('[data-today]').click();
     await page.locator('.calendar-surface [data-edit]', { hasText: `Server calendar ${id}` }).first().click();
-    await page.locator('.calendar-surface dialog').getByLabel('Title').fill(`Browser calendar ${id}`);
-    await page.locator('.calendar-surface dialog').getByRole('button', { name: 'Save activity' }).click();
-    await expect(page.getByText(`Browser calendar ${id}`).first()).toBeVisible();
+    await calendarDialog.getByLabel('Title').fill(`Browser calendar ${id}`);
+    const refreshedOverlayRequest = page.waitForRequest((request) =>
+      new URL(request.url()).pathname.endsWith('/calendar-items/overlays'));
+    await calendarDialog.getByRole('button', { name: 'Save activity' }).click();
+    await expect(page.locator('.calendar-surface .calendar-activity', { hasText: `Browser calendar ${id}` }).first()).toBeVisible();
+    // Owned activities render before optional overlays. Wait for this save's
+    // overlay request, rather than treating the visible grid as overlay-ready.
+    const refreshedOverlayResponse = await (await refreshedOverlayRequest).response();
+    expect(refreshedOverlayResponse.ok()).toBe(true);
     await expect(page.locator('[data-calendar]')).toContainText(`Server newsletter ${id}`);
     await setFaults(context.request, [{ method: 'GET', path: '/api/calendar-items', status: 503 }]);
     await page.locator('[data-next]').click();
     await expect(page.getByText('Calendar unavailable')).toBeVisible();
     await clearFaults(context.request);
     await page.locator('[data-today]').click();
-    await expect(page.getByText(`Browser calendar ${id}`).first()).toBeVisible();
+    await expect(page.locator('.calendar-surface .calendar-activity', { hasText: `Browser calendar ${id}` }).first()).toBeVisible();
     await context.close();
     recordCapabilityEvidence(testInfo, [
       { route: '/#/newsletter', roleId: 'admin', stateIds: ['newsletter.empty', 'newsletter.populated', 'newsletter.create-edit-reload', 'newsletter.validation', 'newsletter.conflict', 'newsletter.failure'] },
@@ -1570,7 +1605,7 @@ test.describe('canonical frontend capability behavior', () => {
       expect(response.headers()['content-type']).toContain('application/json');
       expect(await response.text()).not.toContain('<!doctype html>');
     }
-    const workUnknown = await context.request.get('/work/api/not-a-retained-route');
+    const workUnknown = await context.request.get('/api/not-a-retained-route');
     expect(workUnknown.status()).toBe(404);
     expect(workUnknown.headers()['content-type']).toContain('application/json');
 
@@ -1587,7 +1622,9 @@ test.describe('canonical frontend capability behavior', () => {
     const operator = await portalContext(browser, servers.operator);
     const page = await admin.newPage();
     await page.goto('/#/recurring');
-    await expect(page.getByRole('region', { name: 'Recurring operations' })).toContainText('No recurring configs yet');
+    await expect(page.getByRole('region', { name: 'Recurring operations' })).toContainText('No recurring schedules yet');
+    await expect(page.locator('.page-header-actions').getByRole('button', { name: 'New schedule' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'New schedule' })).toHaveCount(1);
     const id = unique('runtime-template');
     const projections = (await json(await admin.request.get('/api/templates'))).templates;
     const projection = projections.find((template) => template.type === 'synthetic-git-workflow');

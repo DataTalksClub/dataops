@@ -100,8 +100,8 @@ describe('sponsor reviewed communication core', () => {
       templateVersion: '1',
       templateDigest: 'b'.repeat(64),
       templateSetGeneration: config.templateSetGeneration,
-      bookingId: 'booking-1',
-      bookingVersion: 3,
+      dealId: 'booking-1',
+      dealVersion: 3,
       organizationId: 'organization-1',
       organizationVersion: 2,
       contactId: 'contact-1',
@@ -131,20 +131,19 @@ describe('sponsor reviewed communication core', () => {
   });
 
   it('creates only deterministic milestone candidates, never executable work', () => {
-    const booking = {
-      id: 'booking-1',
+    const deal = {
+      id: 'deal-1',
       version: 3,
       organizationId: 'organization-1',
       primaryContactId: 'contact-1',
-      status: 'confirmed',
-      plannedPublicationDate: '2026-08-13',
-      artifactUrls: [],
+      status: 'agreed',
     };
-    assert.deepEqual(communicationCandidates(booking, '2026-07-30').map((item) => item.type), [
+    const deliverables = [{ plannedPublicationDate: '2026-08-13', artifactUrls: [] }];
+    assert.deepEqual(communicationCandidates(deal, deliverables, '2026-07-30').map((item) => item.type), [
       'booking-confirmation',
       'materials-reminder',
     ]);
-    assert.deepEqual(communicationCandidates({ ...booking, status: 'cancelled' }, '2026-07-30'), []);
+    assert.deepEqual(communicationCandidates({ ...deal, status: 'lost' }, deliverables, '2026-07-30'), []);
   });
 
   it('validates exactly four allowlisted templates and only declared placeholders', () => {

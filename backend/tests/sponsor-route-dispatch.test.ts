@@ -7,11 +7,11 @@ import { isSponsorCommunicationRoute, route } from '../src/router';
 const communicationRoutes = [
   '/api/sponsor-crm/communications/config',
   '/api/sponsor-crm/communications/evaluate',
-  '/api/sponsor-crm/bookings/booking-1/communications',
-  '/api/sponsor-crm/bookings/communications/communications',
-  '/api/sponsor-crm/bookings/finance/communications',
-  '/api/sponsor-crm/bookings/attempts/communications',
-  '/api/sponsor-crm/bookings/%63ommunications/communications',
+  '/api/sponsor-crm/deals/booking-1/communications',
+  '/api/sponsor-crm/deals/communications/communications',
+  '/api/sponsor-crm/deals/finance/communications',
+  '/api/sponsor-crm/deals/attempts/communications',
+  '/api/sponsor-crm/deals/%63ommunications/communications',
   '/api/sponsor-crm/communication-suggestions/suggestion-1/drafts',
   '/api/sponsor-crm/communications/communication-1/presentations',
   '/api/sponsor-crm/communications/communication-1/approve',
@@ -36,12 +36,12 @@ describe('sponsor route dispatch', () => {
 
   it('does not treat opaque booking IDs or encoded IDs as route families', () => {
     const financePaths = [
-      '/api/sponsor-crm/bookings/communications/finance',
-      '/api/sponsor-crm/bookings/finance/finance',
-      '/api/sponsor-crm/bookings/attempts/finance',
-      '/api/sponsor-crm/bookings/%63ommunications/finance',
-      '/api/sponsor-crm/bookings/opaque%3Abooking/finance',
-      '/api/sponsor-crm/bookings/opaque%2Fcommunications/finance',
+      '/api/sponsor-crm/deals/communications/finance',
+      '/api/sponsor-crm/deals/finance/finance',
+      '/api/sponsor-crm/deals/attempts/finance',
+      '/api/sponsor-crm/deals/%63ommunications/finance',
+      '/api/sponsor-crm/deals/opaque%3Abooking/finance',
+      '/api/sponsor-crm/deals/opaque%2Fcommunications/finance',
     ];
     for (const pathname of financePaths) {
       assert.equal(
@@ -66,7 +66,7 @@ describe('sponsor route dispatch', () => {
       ]) {
         const response = await route({
           httpMethod: 'GET',
-          path: `/api/sponsor-crm/bookings/${bookingId}/finance`,
+          path: `/api/sponsor-crm/deals/${bookingId}/finance`,
           headers: {},
           queryStringParameters: null,
           body: null,

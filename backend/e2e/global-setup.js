@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
 const { trackTestServerProcessGroup } = require('./helpers/test-server-process-groups');
+const globalTeardown = require('./global-teardown');
 
 const { TEST_SERVER_PORT } = require('./test-server-port');
 const READY_TIMEOUT_MS = 30000;
@@ -459,7 +460,10 @@ async function assertExplicitPortAvailable(port, timeoutMs = 1000) {
   });
 }
 
-async function globalSetup({ port = TEST_SERVER_PORT } = {}) {
+async function globalSetup({
+  port = TEST_SERVER_PORT,
+  readyTimeoutMs = READY_TIMEOUT_MS,
+} = {}) {
   // Playwright specs also launch isolated test-server children. Keep every
   // process in this test-only tree on the same explicit dark rollout state.
   Object.assign(process.env, DARK_ROLLOUT_ENVIRONMENT);
@@ -499,7 +503,7 @@ async function globalSetup({ port = TEST_SERVER_PORT } = {}) {
   // Playwright. A foreign HTTP 200 must never satisfy global setup.
   let ready;
   try {
-    ready = await waitForOwnedServer(child, port, READY_TIMEOUT_MS, {
+    ready = await waitForOwnedServer(child, port, readyTimeoutMs, {
       checkout: path.resolve(__dirname, '..', '..'),
       token: ownerToken,
     });

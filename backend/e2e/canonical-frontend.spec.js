@@ -12,7 +12,7 @@ test.describe('canonical DataOps frontend', () => {
   test('resolves legacy hash routes inside one navigation shell', async ({ page, request }) => {
     await page.goto('/#/');
     await expect(page.locator('#document-list')).toBeVisible();
-    await expect(page.locator('button[data-workspace-view="home"]')).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('[data-tasks-section="queue"]')).toHaveAttribute('aria-current', 'page');
 
     await page.goto('/#/cards');
     await expect(page.getByRole('heading', { name: 'Cards', exact: true })).toBeVisible();
@@ -89,7 +89,7 @@ test.describe('canonical DataOps frontend', () => {
     const projection = page.locator('.runtime-template-projection');
     await expect(projection).toContainText('workflow-templates/synthetic-git-workflow.yaml');
     await expect(projection).toContainText('0123456789ab');
-    await expect(projection.getByRole('button', { name: 'Create card' })).toBeVisible();
+    await expect(projection.getByRole('button', { name: 'Start card' })).toBeVisible();
     await expect(page.getByRole('button', { name: /template/i }).filter({ hasText: /new|save|delete/i })).toHaveCount(0);
   });
 });

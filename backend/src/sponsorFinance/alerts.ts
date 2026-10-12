@@ -9,50 +9,50 @@ import { TABLE_NOTIFICATIONS, TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { berlinDate, digest } from './core';
 import { financeEnabled, projectFinance } from './repository';
 
-type Condition = { bookingId: string; rule: string; basisDate: string; version: number };
+type Condition = { dealId: string; rule: string; basisDate: string; version: number };
 
 export async function evaluateSponsorFinanceAlerts(
   client: DynamoDBDocumentClient,
   today = berlinDate(),
 ): Promise<{ created: number; resolved: number }> {
   if (!financeEnabled()) return { created: 0, resolved: 0 };
-  const bookings: Record<string, unknown>[] = [];
+  const deals: Record<string, unknown>[] = [];
   let cursor: Record<string, unknown> | undefined;
   do {
     const page: ScanCommandOutput = await client.send(new ScanCommand({
       TableName: TABLE_SPONSOR_CRM,
       FilterExpression: 'begins_with(PK, :prefix)',
-      ExpressionAttributeValues: { ':prefix': 'BOOKING#' },
+      ExpressionAttributeValues: { ':prefix': 'DEAL#' },
       ExclusiveStartKey: cursor,
     }));
-    bookings.push(...(page.Items || []));
+    deals.push(...(page.Items || []));
     cursor = page.LastEvaluatedKey;
   } while (cursor);
   const conditions: Condition[] = [];
-  for (const booking of bookings) {
-    if (booking.archivedAt || booking.active !== true || ['cancelled', 'complete'].includes(String(booking.status))) continue;
-    const projection = await projectFinance(client, String(booking.id), 'operator');
-    if (!projection.classified && booking.status === 'confirmed') {
-      conditions.push({ bookingId: String(booking.id), rule: 'finance-unclassified', basisDate: today, version: Number(booking.version) });
+  for (const deal of deals) {
+    if (deal.archivedAt || deal.active !== true || ['lost'].includes(String(deal.status))) continue;
+    const projection = await projectFinance(client, String(deal.id), 'operator');
+    if (!projection.classified && deal.status === 'agreed') {
+      conditions.push({ dealId: String(deal.id), rule: 'finance-unclassified', basisDate: today, version: Number(deal.version) });
       continue;
     }
     const finance = projection.finance;
     if (!finance || finance.invoiceRequirement !== 'required' || finance.voidedAt) continue;
     if (!finance.invoiceRequestedAt && finance.requestBy && finance.requestBy < today) {
-      conditions.push({ bookingId: String(booking.id), rule: 'invoice-request-overdue', basisDate: finance.requestBy, version: finance.version });
+      conditions.push({ dealId: String(deal.id), rule: 'invoice-request-overdue', basisDate: finance.requestBy, version: finance.version });
     }
     if (finance.invoiceRequestedAt && projection.invoiceState !== 'issued' && finance.expectedInvoiceBy && finance.expectedInvoiceBy < today) {
-      conditions.push({ bookingId: String(booking.id), rule: 'invoice-missing', basisDate: finance.expectedInvoiceBy, version: finance.version });
+      conditions.push({ dealId: String(deal.id), rule: 'invoice-missing', basisDate: finance.expectedInvoiceBy, version: finance.version });
     }
     if (
       finance.dueOn
       && finance.dueOn < today
       && ['unpaid', 'partially-paid'].includes(projection.paymentState)
     ) {
-      conditions.push({ bookingId: String(booking.id), rule: 'payment-overdue', basisDate: finance.dueOn, version: finance.version });
+      conditions.push({ dealId: String(deal.id), rule: 'payment-overdue', basisDate: finance.dueOn, version: finance.version });
     }
     if (projection.reconciliationStatus === 'reconciliation-required') {
-      conditions.push({ bookingId: String(booking.id), rule: 'finance-reconciliation-required', basisDate: today, version: finance.version });
+      conditions.push({ dealId: String(deal.id), rule: 'finance-reconciliation-required', basisDate: today, version: finance.version });
     }
   }
   const wanted = new Map(conditions.map((condition) => {
@@ -77,7 +77,7 @@ export async function evaluateSponsorFinanceAlerts(
   for (const condition of wanted.values()) {
     const continuing = existing.some((item) => {
       const metadata = item.metadata as Record<string, unknown>;
-      return metadata.financeBookingId === condition.bookingId
+      return metadata.financeDealId === condition.dealId
         && metadata.financeRule === condition.rule && !item.resolvedAt;
     });
     if (continuing) continue;
@@ -90,11 +90,11 @@ export async function evaluateSponsorFinanceAlerts(
           type: 'sponsor-finance', message: 'Sponsor finance follow-through needs attention.',
           dueAt: condition.basisDate, dismissed: false, createdAt: new Date().toISOString(),
           metadata: {
-            financeBookingId: condition.bookingId,
+            financeDealId: condition.dealId,
             financeRule: condition.rule,
             financeBasisDate: condition.basisDate,
             financeFingerprint: condition.fingerprint,
-            route: `/sponsors?booking=${condition.bookingId}`,
+            route: `/sponsors?dealId=${condition.dealId}`,
           },
         },
         ConditionExpression: 'attribute_not_exists(PK)',
@@ -108,7 +108,7 @@ export async function evaluateSponsorFinanceAlerts(
     if (item.resolvedAt) continue;
     const metadata = item.metadata as Record<string, unknown>;
     const stillWanted = [...wanted.values()].some((condition) =>
-      condition.bookingId === metadata.financeBookingId && condition.rule === metadata.financeRule);
+      condition.dealId === metadata.financeDealId && condition.rule === metadata.financeRule);
     if (stillWanted) continue;
     try {
       await client.send(new UpdateCommand({

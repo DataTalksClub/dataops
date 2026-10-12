@@ -40,7 +40,7 @@ test.describe('production portal browser-cookie bootstrap', () => {
       contentType: 'application/json',
       body: JSON.stringify({ error: 'docs intentionally unavailable for auth bootstrap test' }),
     }));
-    const meResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/work/api/me');
+    const meResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/me');
 
     await page.goto('/__e2e__/browser-session');
     const response = await meResponse;
@@ -53,7 +53,7 @@ test.describe('production portal browser-cookie bootstrap', () => {
     await expect(page.getByRole('heading', { name: 'Work Queue', exact: true }).first()).toBeVisible();
     // The queue is the landing page and states its load state before rows.
     await expect(page.locator('.ops-work-queue')).toBeVisible();
-    await creationActions.last().click();
+    await page.getByRole('button', { name: 'New task' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
     await expect(page.getByRole('heading', { name: 'Sign in' })).toHaveCount(0);

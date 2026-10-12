@@ -22,20 +22,29 @@ export function createStructuredEditor(context, services, editorState) {
       restore,
       multiline = true,
       singleLine = false,
-      autoSize = false,
+      autoSize = true,
       commitOnEnter = false,
+      autoFocus = false,
       editorClass,
       hintClass,
       hintText,
       showHint = true,
+      onSlash,
+      onDeleteBlock,
+      onEnterNewBlock,
+      onIndent,
+      onOutdent,
+      placeholder = "",
+      selectionRange = null,
     },
   ) {
     el.tabIndex = 0;
     el.title = "Click to edit";
     el.classList.add("inline-editable");
     el.addEventListener("click", (event) => {
-      if (event.target.closest("a, button, img, .inline-editor")) return;
+      if (event.target.closest("a, button, img, .inline-editor, .notion-block-gutter")) return;
       if (el.classList.contains("editing")) return;
+      event.preventDefault();
       enter();
     });
     el.addEventListener("keydown", (event) => {
@@ -46,6 +55,14 @@ export function createStructuredEditor(context, services, editorState) {
       }
     });
 
+    if (autoFocus) {
+      setTimeout(() => {
+        if (el.isConnected && !el.classList.contains("editing")) {
+          enter();
+        }
+      }, 0);
+    }
+
     function enter() {
       el.classList.add("editing");
       const original = getValue();
@@ -54,12 +71,15 @@ export function createStructuredEditor(context, services, editorState) {
       if (!multiline) editor.type = "text";
       editor.className = `inline-editor ${editorClass || ""}`.trim();
       editor.value = original;
+      editor.placeholder = placeholder;
+      editor.style.width = "100%";
+      editor.style.boxSizing = "border-box";
       if (multiline) {
         editor.rows = Math.max(2, (editor.value.match(/\n/g) || []).length + 1);
-      }
-      if (autoSize) {
-        editor.style.minHeight = `${originalHeight}px`;
-        editor.style.overflow = "hidden";
+        if (autoSize) {
+          editor.style.minHeight = `${Math.max(originalHeight, 44)}px`;
+          editor.style.overflow = "hidden";
+        }
       }
 
       const hint = document.createElement("div");
@@ -75,9 +95,16 @@ export function createStructuredEditor(context, services, editorState) {
 
       if (showHint) el.replaceChildren(editor, hint);
       else el.replaceChildren(editor);
-      if (autoSize) resizeInlineEditor(editor);
+      if (autoSize) {
+        resizeInlineEditor(editor);
+        if (typeof requestAnimationFrame !== "undefined") {
+          requestAnimationFrame(() => resizeInlineEditor(editor));
+        }
+      }
       editor.focus();
-      if (multiline) {
+      if (selectionRange) {
+        editor.setSelectionRange(selectionRange.start, selectionRange.end);
+      } else if (multiline) {
         editor.setSelectionRange(editor.value.length, editor.value.length);
       } else {
         editor.select();
@@ -109,23 +136,63 @@ export function createStructuredEditor(context, services, editorState) {
         if (event.key === "Escape") {
           event.preventDefault();
           doCancel();
+        } else if (event.key === "/" && (editor.value === "" || editor.selectionStart === 0)) {
+          if (onSlash) {
+            event.preventDefault();
+            onSlash();
+          }
+        } else if (event.key === "Backspace" && editor.value === "") {
+          if (onDeleteBlock) {
+            event.preventDefault();
+            done = true;
+            el.classList.remove("editing");
+            restore();
+            onDeleteBlock();
+          }
+        } else if (event.key === "Tab") {
+          if (event.shiftKey) {
+            if (onOutdent) {
+              event.preventDefault();
+              const selection = { start: editor.selectionStart, end: editor.selectionEnd };
+              doCommit();
+              onOutdent(selection);
+            }
+          } else {
+            if (onIndent) {
+              event.preventDefault();
+              const selection = { start: editor.selectionStart, end: editor.selectionEnd };
+              doCommit();
+              onIndent(selection);
+            }
+          }
         } else if (event.key === "Enter") {
           if (commitOnEnter && !event.shiftKey) {
             event.preventDefault();
             doCommit();
+            if (onEnterNewBlock) onEnterNewBlock();
             return;
           }
-          if (multiline && !(event.metaKey || event.ctrlKey)) return;
+          if (multiline && !(event.metaKey || event.ctrlKey)) {
+            if (event.shiftKey && onEnterNewBlock) {
+              event.preventDefault();
+              doCommit();
+              onEnterNewBlock();
+            }
+            return;
+          }
           event.preventDefault();
           doCommit();
+          if (onEnterNewBlock) onEnterNewBlock();
         }
       });
     }
   }
 
   function resizeInlineEditor(editor) {
+    if (!editor) return;
     editor.style.height = "auto";
-    editor.style.height = `${editor.scrollHeight}px`;
+    const nextHeight = Math.max(44, editor.scrollHeight || 0);
+    editor.style.height = `${nextHeight}px`;
   }
 
   function applyStepBodyEdit(step, newBody) {

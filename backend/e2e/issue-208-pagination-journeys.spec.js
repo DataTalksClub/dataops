@@ -59,7 +59,7 @@ test.describe('issue 208 paginated collections', () => {
       assigneeId: '00000000-0000-0000-0000-000000000001', status: 'todo',
       version: 1, taskHistory: [],
     };
-    await page.route('**/work/api/tasks*', (route) => {
+    await page.route('**/api/tasks*', (route) => {
       const params = new URL(route.request().url()).searchParams;
       const empty = params.has('endDate') || params.get('status') === 'waiting' ||
         params.get('cardId') === 'pagination-card-b';
@@ -75,7 +75,7 @@ test.describe('issue 208 paginated collections', () => {
       title,
       version: 1,
     });
-    await page.route('**/work/api/cards*', async (route) => {
+    await page.route('**/api/cards*', async (route) => {
       const cursor = new URL(route.request().url()).searchParams.get('cursor');
       if (!cursor) {
         firstPageRequests += 1;
@@ -101,7 +101,7 @@ test.describe('issue 208 paginated collections', () => {
     await page.goto(`${BASE_URL}/#/tasks`);
     const summary = page.locator('[data-summary-id="tasks-queue"]');
     await expect(summary).toHaveAttribute('data-summary-state', 'partial');
-    await expect(summary).toContainText('Cards unavailable. Loaded work is still shown.');
+    await expect(summary).toContainText('Some task sources are unavailable.');
     await expect(summary.locator('.surface-summary-detail')).toHaveCount(0);
     await expect(page.locator('.ops-queue-row strong')).toHaveText(task.description);
     await expect(page.locator('.ops-queue-row')).toContainText('Card page one');
@@ -112,7 +112,7 @@ test.describe('issue 208 paginated collections', () => {
     continuationOnline = true;
     await keyboardRetry(
       page,
-      summary.getByRole('button', { name: /Retry loading work/ }),
+      summary.getByRole('button', { name: /Retry loading tasks/ }),
       page.waitForResponse((response) =>
         Boolean(new URL(response.url()).searchParams.get('cursor')),
       ),
@@ -152,7 +152,7 @@ test.describe('issue 208 paginated collections', () => {
     expect(taskResponse.status()).toBe(201);
     const taskId = (await taskResponse.json()).id;
     let continuationOnline = false;
-    await page.route('**/work/api/files*', async (route) => {
+    await page.route('**/api/files*', async (route) => {
       const cursor = new URL(route.request().url()).searchParams.get('cursor');
       if (!cursor) {
         return json(route, 200, {
@@ -215,7 +215,7 @@ test.describe('issue 208 paginated collections', () => {
       id,
       message,
     });
-    await page.route('**/work/api/notifications*', async (route) => {
+    await page.route('**/api/notifications*', async (route) => {
       const cursor = new URL(route.request().url()).searchParams.get('cursor');
       if (!cursor) {
         return json(route, 200, {
@@ -292,9 +292,9 @@ test.describe('issue 208 paginated collections', () => {
       dueAt: '2026-08-30',
       id,
       message,
-      metadata: { sponsorBookingId: 'booking-pagination' },
+      metadata: { sponsorDealId: 'booking-pagination' },
     });
-    await page.route('**/work/api/notifications*', async (route) => {
+    await page.route('**/api/notifications*', async (route) => {
       const cursor = new URL(route.request().url()).searchParams.get('cursor');
       if (!cursor) {
         return json(route, 200, {
@@ -314,18 +314,21 @@ test.describe('issue 208 paginated collections', () => {
         },
       });
     });
-    await page.route('**/work/api/sponsor-crm/**', async (route) => {
+    await page.route('**/api/sponsor-crm/**', async (route) => {
       const pathname = new URL(route.request().url()).pathname;
       if (pathname.endsWith('/organizations')) {
         return json(route, 200, { items: [{ displayName: 'Pagination Sponsor', id: 'sponsor-org' }] });
       }
       if (pathname.endsWith('/contacts')) return json(route, 200, { items: [] });
-      if (pathname.endsWith('/bookings')) {
+      if (pathname.endsWith('/queue')) return json(route, 200, { items: [] });
+      if (pathname.endsWith('/leads')) return json(route, 200, { items: [] });
+      if (pathname.endsWith('/deals')) {
         return json(route, 200, {
           items: [{
             id: 'booking-pagination',
             organizationId: 'sponsor-org',
-            status: 'confirmed',
+            status: 'agreed',
+            nextAction: { type: 'follow_up', due: '2026-08-30', owner: '00000000-0000-0000-0000-000000000001', note: 'nudge' },
           }],
         });
       }
@@ -336,7 +339,7 @@ test.describe('issue 208 paginated collections', () => {
     const alerts = page.locator('[data-crm-alerts]');
     const articles = alerts.locator('article.crm-card strong');
     await expect(articles).toHaveText(['Sponsor alert one', 'Sponsor alert two']);
-    await expect(alerts).toContainText('More booking alerts are available.');
+    await expect(alerts).toContainText('More sponsor alerts are available.');
     await captureDesktopAndMobile(page, 'sponsor-alerts-more-available');
 
     await keyboardRetry(

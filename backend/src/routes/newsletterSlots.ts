@@ -23,7 +23,9 @@ const json = (statusCode: number, body: unknown): LambdaResponse => ({
   STATUSES = new Set([
     "open",
     "reserved",
+    "draft",
     "drafting",
+    "review",
     "scheduled",
     "sent",
     "cancelled",
@@ -319,16 +321,17 @@ export async function handleNewsletterSlotRoutes(
     if (!item) return json(404, { error: "Not found" });
     let sponsor = null;
     if (item.sponsorBookingId) {
-      const booking = await getCrmRecord(
+      const deliverable = await getCrmRecord(
         client,
-        "booking",
+        "deliverable",
         String(item.sponsorBookingId),
       ).catch(() => null);
-      if (booking)
+      if (deliverable)
         sponsor = {
-          id: booking.id,
-          organizationId: booking.organizationId,
-          status: booking.status,
+          id: deliverable.id,
+          organizationId: deliverable.organizationId,
+          dealId: deliverable.dealId,
+          status: deliverable.status,
         };
     }
     return json(200, { ...item, sponsor });
@@ -340,7 +343,7 @@ export async function handleNewsletterSlotRoutes(
     if (error) return json(400, { error });
     if (
       body.sponsorBookingId &&
-      !(await getCrmRecord(client, "booking", String(body.sponsorBookingId)))
+      !(await getCrmRecord(client, "deliverable", String(body.sponsorBookingId)))
     )
       return json(422, { error: "Sponsor booking unavailable" });
     if (body.cardId && !(await getCard(client, String(body.cardId))))
@@ -378,7 +381,7 @@ export async function handleNewsletterSlotRoutes(
     if (error) return json(400, { error });
     if (
       body.sponsorBookingId &&
-      !(await getCrmRecord(client, "booking", String(body.sponsorBookingId)))
+      !(await getCrmRecord(client, "deliverable", String(body.sponsorBookingId)))
     )
       return json(422, { error: "Sponsor booking unavailable" });
     try {

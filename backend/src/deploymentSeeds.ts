@@ -18,14 +18,16 @@ import {
 import type { RecurringConfig, Task } from './types';
 
 export const OPERATOR_USER_ID = '00000000-0000-0000-0000-000000000001';
+export const VALERIIA_USER_ID = '00000000-0000-0000-0000-000000000002';
+export const ALEXEY_USER_ID = '00000000-0000-0000-0000-000000000003';
 const SLACK_INVITE_DOC_ID = 'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form';
 const TRELLO_EVENT_DOC_ID = 'sop.internal-admin.trello.how-to-create-an-event-through-trello';
 const DEFAULT_PASSWORD = '111';
 
 export const USERS = [
   { id: OPERATOR_USER_ID, name: 'Grace', email: 'grace@datatalks.club', role: 'admin' as const },
-  { id: '00000000-0000-0000-0000-000000000002', name: 'Valeriia', email: 'valeriia@datatalks.club', role: 'admin' as const },
-  { id: '00000000-0000-0000-0000-000000000003', name: 'Alexey', email: 'alexey@datatalks.club', role: 'admin' as const },
+  { id: VALERIIA_USER_ID, name: 'Valeriia', email: 'valeriia@datatalks.club', role: 'admin' as const },
+  { id: ALEXEY_USER_ID, name: 'Alexey', email: 'alexey@datatalks.club', role: 'admin' as const },
 ] as const;
 
 type BaselineRecurringConfig = Pick<
@@ -39,7 +41,9 @@ type BaselineRecurringConfig = Pick<
   | 'requiredLinkName'
   | 'requiresFile'
   | 'tags'
->;
+> & {
+  readonly assigneeId?: string;
+};
 
 export const BASELINE_RECURRING_CONFIGS: readonly BaselineRecurringConfig[] = [
   {
@@ -146,7 +150,7 @@ function valuesEqual(left: unknown, right: unknown): boolean {
 }
 
 function desiredRecurringConfig(baseline: BaselineRecurringConfig): Record<string, unknown> {
-  return { ...baseline, enabled: true, assigneeId: OPERATOR_USER_ID };
+  return { ...baseline, enabled: true, assigneeId: baseline.assigneeId || OPERATOR_USER_ID };
 }
 
 function configUpdate(existing: RecurringConfig, desired: Record<string, unknown>): Record<string, unknown> {

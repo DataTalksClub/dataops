@@ -2,7 +2,7 @@
 // data to markup: no queries, no events — bookkeeping.js owns state and
 // wiring, this module owns what the operator reads (#242 month lens).
 import { html } from "./shared.js";
-import { entryDirection, ledgerDate } from "./bookkeeping-format.js";
+import { entryDirection, entryTypeLabel, formatAmount, ledgerDate } from "./bookkeeping-format.js";
 
 // The close-state header: the month, four counters, one CTA that follows
 // the month state. This is what answers "what is left for this month".
@@ -48,8 +48,8 @@ export function closeStateMonthMarkup({
         class="bookkeeping-counter ${conversions ? "is-open" : "is-done"}"
         ><strong>${conversions}</strong
         >EUR conversions open</span
-      ><span class="bookkeeping-counter ${packageReady ? "is-done" : "is-open"}"
-        ><strong>${packageReady ? "Ready" : "—"}</strong>package</span
+      ><span class="bookkeeping-counter ${packageReady ? "is-done" : ""}"
+        ><strong>${packageReady ? "Ready" : "Pending"}</strong>package</span
       >
     </div>
     <div class="bookkeeping-close-cta">${ctaButton}</div>`;
@@ -60,6 +60,27 @@ export function closeStateAllMarkup(transactions) {
     All months — ${transactions} transaction${transactions === 1 ? "" : "s"}
     on record. Select a month above to see its close state.
   </p>`;
+}
+
+// The reconcile rows in fix order: evidence, then conversions, then
+// classification — every open item with its one-click fix.
+export function worklistRowsFromOpenItems({
+  missingEvidence,
+  conversions,
+  unclassified,
+}) {
+  return [
+    ...missingEvidence.map((entry) => ({ kind: "evidence", entry })),
+    ...conversions.map((entry) => ({ kind: "eur", entry })),
+    ...unclassified.map((entry) => ({ kind: "classify", entry })),
+  ];
+}
+
+// The one-line state the collapsed close panel shows next to its heading.
+export function worklistHintText(rows) {
+  return rows.length
+    ? `${rows.length} open item${rows.length === 1 ? "" : "s"}`
+    : "All clear";
 }
 
 // The reconcile list: every open item with its fix one click away.
@@ -74,7 +95,7 @@ export function worklistMarkup({ rows, monthTitle, e }) {
       const what = html`<strong>${e(entry.counterparty)}</strong>
         <small
           >${e(ledgerDate(entry.transactionDate))} ·
-          ${e(`${entry.amount} ${entry.currency}`)}${entry.description ? ` · ${e(entry.description)}` : ""}</small
+          ${e(formatAmount(entry.amount, entry.currency))}${entry.description ? ` · ${e(entry.description)}` : ""}</small
         >`;
       const fix =
         kind === "evidence"
@@ -134,20 +155,20 @@ export function ledgerTableMarkup({ shown, hasEvidence, lensTitle, e }) {
                     </td>
                     <td data-label="Amount" class="ledger-amount ${entryDirection(entry)}">
                       ${e(
-                        `${entryDirection(entry) === "expense" ? "-" : ""}${entry.amount} ${entry.currency}`,
+                        formatAmount(`${entryDirection(entry) === "expense" ? "-" : ""}${entry.amount}`, entry.currency),
                       )}${entry.currency !== "EUR" && entry.amountEur
-                        ? `<small class="ledger-eur">≈ ${e(`${entry.amountEur} EUR`)}</small>`
+                        ? `<small class="ledger-eur">≈ ${e(formatAmount(entry.amountEur))}</small>`
                         : ""}
                     </td>
                     <td data-label="VAT" class="ledger-vat">
                       ${e(
                         entry.vatAmount
-                          ? `${entry.vatAmount} ${entry.vatCurrency || entry.currency}`
+                          ? formatAmount(entry.vatAmount, entry.vatCurrency || entry.currency)
                           : "—",
                       )}
                     </td>
                     <td data-label="Category / type">
-                      ${e([entry.category, entry.entryType].filter(Boolean).join(" / ") || "—")}
+                      ${e([entry.category, entryTypeLabel(entry.entryType)].filter(Boolean).join(" / ") || "—")}
                     </td>
                     <td data-label="Evidence">
                       ${hasEvidence(entry.id)
@@ -255,7 +276,7 @@ export function transactionOptionsMarkup(scoped, e) {
       .map(
         (entry) =>
           html`<option value="${e(entry.id)}">
-            ${e(`${entry.transactionDate} · ${entry.counterparty}`)}
+            ${e(`${ledgerDate(entry.transactionDate)} · ${entry.counterparty}`)}
           </option>`,
       )
       .join("")}`;

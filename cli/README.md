@@ -62,6 +62,17 @@ dataops invoices edit <id> --revision N --paid-date YYYY-MM-DD --amount-eur N --
 dataops invoices verify <id> --revision N
 dataops invoices reject <id> --revision N [--reason NOTE]
 dataops invoices retry <id> --revision N
+
+dataops calendar list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--type TYPE] [--status STATUS]
+dataops calendar detail <id>
+dataops calendar create --title T --type TYPE [--status STATUS] [--date DATE] [--starts-at ISO --ends-at ISO]
+dataops calendar edit <id> [--title T] [--type TYPE] [--status STATUS] [--date DATE] [--version N]
+dataops calendar delete <id> [--version N]
+dataops calendar day <date>                   Show operational slot availability & full day schedule
+dataops calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all]
+dataops calendar settings [--connection ID] [--show-available-slots true|false] [--filter-busy true|false] ...
+dataops calendar dismiss-alert <fingerprint>
+dataops calendar sync-holidays
 ```
 
 Every command accepts `--json` and prints the raw API response, so the CLI

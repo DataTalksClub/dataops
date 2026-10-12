@@ -1,7 +1,7 @@
 import { html } from "./shared.js";
 
 export function createSponsorLeads(context) {
-  const { api, escapeHtml, humanizeOptionLabel, message, surface } = context;
+  const { api, escapeHtml, humanizeOptionLabel, message, surface, openDialog } = context;
   let leads = [];
   let leadStatusFilter = "";
 
@@ -37,25 +37,30 @@ export function createSponsorLeads(context) {
       .filter(Boolean)
       .join(" · ");
     return html`<article class="crm-lead-row">
-      <div>
-        <strong>${escapeHtml(sponsor.name || "Unnamed sponsor")}</strong
-        ><span class="status-label"
-          >${escapeHtml(humanizeOptionLabel(item.status))}</span
-        >
-        <p>${source}${newsletter.subject ? html` · ${escapeHtml(newsletter.subject)}` : ""}</p>
-        ${sponsor.blurb ? html`<p>${escapeHtml(sponsor.blurb)}</p>` : ""}
-        ${sponsor.context ? html`<p class="muted">${escapeHtml(sponsor.context)}</p>` : ""}
+      <div class="crm-lead-body">
+        <div class="crm-lead-header">
+          <strong class="crm-lead-name">${escapeHtml(sponsor.name || "Unnamed sponsor")}</strong>
+          <span class="status-label" data-status="${escapeHtml(item.status)}"
+            >${escapeHtml(humanizeOptionLabel(item.status))}</span
+          >
+        </div>
+        <p class="crm-lead-source">${source}${newsletter.subject ? html` · ${escapeHtml(newsletter.subject)}` : ""}</p>
+        ${sponsor.blurb ? html`<p class="crm-lead-blurb">${escapeHtml(sponsor.blurb)}</p>` : ""}
+        ${sponsor.context ? html`<p class="crm-lead-context muted">${escapeHtml(sponsor.context)}</p>` : ""}
       </div>
-      <div class="row-actions">
-        ${leadAction(item.id, "triaged", "Triage")}
-        ${leadAction(item.id, "converted", "Convert")}
-        ${leadAction(item.id, "ignored", "Ignore")}
-      </div>
+      ${item.status === "converted" ? "" : html`<div class="row-actions crm-lead-actions">
+        ${leadAction(item.id, "converted", "Convert", "primary-button")}
+        ${leadAction(item.id, "triaged", "Triage", "crm-lead-triage")}
+        ${leadAction(item.id, "ignored", "Ignore", "danger-text-button")}
+      </div>`}
     </article>`;
   }
 
-  function leadAction(id, status, label) {
+  function leadAction(id, status, label, className = "") {
+    const classAttr = className ? html` class="${className}"` : "";
     return html`<button
+      type="button"
+      ${classAttr}
       data-lead-status="${status}"
       data-lead-id="${escapeHtml(id)}"
     >
@@ -97,16 +102,77 @@ export function createSponsorLeads(context) {
       const transition = event.target.closest("[data-lead-status]");
       if (!transition) return;
       const lead = leads.find((item) => item.id === transition.dataset.leadId);
-      if (!lead) return;
+      if (!lead || lead.status === "converted") return;
       const { leadStatus } = transition.dataset;
       fail(async () => {
-        await api(`/leads/${encodeURIComponent(lead.id)}`, {
-          method: "PATCH",
-          body: JSON.stringify({ version: lead.version, status: leadStatus }),
-        });
+        try {
+          await api(`/leads/${encodeURIComponent(lead.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({ version: lead.version, status: leadStatus }),
+          });
+        } catch (error) {
+          if (leadStatus === "converted" && error.status === 409 && error.payload?.candidates) {
+            const dialog = surface.querySelector("[data-convert-dialog]");
+            const form = dialog.querySelector("form");
+            form.elements.leadId.value = lead.id;
+            form.elements.version.value = String(lead.version);
+            form.elements.organizationId.innerHTML = (error.payload.candidates || [])
+              .map(
+                (item) =>
+                  html`<option value="${escapeHtml(item.id)}">
+                    ${escapeHtml(item.displayName)}${item.domain ? html` · ${escapeHtml(item.domain)}` : ""}
+                  </option>`,
+              )
+              .join("");
+            if (openDialog) openDialog(dialog);
+            else dialog.showModal();
+            return;
+          }
+          throw error;
+        }
         await loadLeads();
       }, "Could not update lead");
     };
+    const convert = async (body) => {
+      const lead = leads.find((item) => item.id === body.leadId);
+      if (!lead || lead.status === "converted") {
+        surface.querySelector("[data-convert-dialog]").close();
+        return;
+      }
+      await api(`/leads/${encodeURIComponent(body.leadId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          version: Number(body.version),
+          status: "converted",
+          organizationId: body.organizationId || undefined,
+          createNew: body.createNew === true,
+        }),
+      });
+      surface.querySelector("[data-convert-dialog]").close();
+      await loadLeads();
+    };
+    surface.querySelector("[data-convert-existing]")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      const form = surface.querySelector("[data-convert-dialog] form");
+      fail(async () => {
+        await convert({
+          leadId: form.elements.leadId.value,
+          version: form.elements.version.value,
+          organizationId: form.elements.organizationId.value,
+        });
+      }, "Could not convert lead");
+    });
+    surface.querySelector("[data-convert-new]")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      const form = surface.querySelector("[data-convert-dialog] form");
+      fail(async () => {
+        await convert({
+          leadId: form.elements.leadId.value,
+          version: form.elements.version.value,
+          createNew: true,
+        });
+      }, "Could not convert lead");
+    });
   }
 
   return { loadLeads, wireLeadControls };

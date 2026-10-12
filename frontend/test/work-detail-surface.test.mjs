@@ -414,6 +414,26 @@ describe("Work Detail surface boundary", () => {
     assert.equal(harness.cardPanel.hidden, false);
   });
 
+  test("wraps Card dialog focus from a collapsed form summary back to Close", () => {
+    const harness = createHarness();
+    harness.api.prepareCardPanel("card-1");
+    const details = new FakeElement("details");
+    const summary = new FakeElement("summary");
+    summary.textContent = "+ Add process reference";
+    const hiddenInput = new FakeElement("input");
+    details.append(summary, hiddenInput);
+    harness.cardPanelClose.parentElement.append(details);
+    harness.document.activeElement = summary;
+    let prevented = false;
+    harness.api.handleWorkspaceEntityModalKeydown({
+      defaultPrevented: false,
+      key: "Tab", shiftKey: false,
+      preventDefault: () => { prevented = true; },
+    });
+    assert.equal(prevented, true);
+    assert.equal(harness.cardPanelClose.focused, true);
+  });
+
   test("requires canonical Task history and presents comments separately from transition history", async () => {
     const canonical = {
       id: "task-history",
@@ -874,7 +894,7 @@ describe("Work Detail surface boundary", () => {
     );
 
     await findByText(alert, "Review latest", "button").click();
-    assert.match(harness.taskPanelBody.textContent, /Version 2/);
+    assert.match(harness.taskPanelBody.querySelector(".task-status-badge").textContent, /waiting/);
     assert.equal(
       harness.taskPanelBody
         .querySelectorAll("input")
@@ -906,7 +926,7 @@ describe("Work Detail surface boundary", () => {
       findByText(harness.taskPanelBody, "Retry my change", "button"),
       undefined,
     );
-    assert.match(harness.taskPanelBody.textContent, /Version 3/);
+    assert.match(harness.taskPanelBody.querySelector(".task-status-badge").textContent, /todo/);
     assert.equal(
       harness.taskPanelBody
         .querySelectorAll("input")
@@ -2740,7 +2760,7 @@ describe("Work Detail surface boundary", () => {
         entry.options.method === "POST",
     );
     assert.deepEqual(jsonBody(apply), { previewToken: "a".repeat(64) });
-    assert.match(harness.cardPanelBody.textContent, /Current at Template v2/);
+    assert.doesNotMatch(harness.cardPanelBody.textContent, /Template definition|Current at Template/);
   });
 
   test("retains the open review after a stale preview and reloads only on request", async () => {
@@ -3093,44 +3113,6 @@ describe("Work Detail surface boundary", () => {
     assert.equal(missing.navigations.at(-1).params.has("taskId"), false);
   });
 
-  test("shows people and sponsor bylines in the Card detail", async () => {
-    const { createCardSummary } = await import(
-      "../src/surfaces/work-detail/card-summary.js"
-    );
-    globalThis.document = new FakeDocument(
-      new FakeElement("main"),
-      new FakeElement("body"),
-    );
-    const base = {
-      cardAnchorTone: () => "upcoming",
-      detail: {},
-      formatCardAnchorLabel: (value) => value,
-      isArchivedWorkCard: () => false,
-      labelizeWorkValue: (value) => value,
-      progress: { total: 1, done: 0, overdue: 0, waiting: 0, missingProof: 0, nextDueTask: null },
-      state: { workSnapshot: { usersById: new Map() } },
-      today: "2026-08-12",
-      updateCardStage: () => {},
-      workCardSubtitle: (card) => (card.people || []).join(", ") || card.sponsor || "",
-      workTaskTitle: (task) => task.description,
-    };
-    const people = createCardSummary({
-      ...base,
-      card: { id: "pod", title: "Playbook", people: ["Tony Zeljkovic", "Juan Manuel Perafan"] },
-    });
-    assert.match(people.textContent, /PeopleTony Zeljkovic, Juan Manuel Perafan/);
-    const sponsor = createCardSummary({
-      ...base,
-      card: { id: "news", title: "Weekly email #298", sponsor: "Astronomer" },
-    });
-    assert.match(sponsor.textContent, /SponsorAstronomer/);
-    const plain = createCardSummary({
-      ...base,
-      card: { id: "plain", title: "Untitled" },
-    });
-    assert.doesNotMatch(plain.textContent, /People|Sponsor/);
-  });
-
   test("links the Card detail panel to its source Template", async () => {
     const { renderCardTemplateLink } = await import(
       "../src/surfaces/work-detail/card-summary.js"
@@ -3155,9 +3137,9 @@ describe("Work Detail surface boundary", () => {
     );
     assert.equal(row.className, "card-template-link-row");
     const [link] = row.children;
-    assert.equal(link.textContent, "View template");
+    assert.equal(link.textContent, "Template · View template");
     await nextTicks();
-    assert.equal(link.textContent, "📰 Newsletter · View template");
+    assert.equal(link.textContent, "Template: 📰 Newsletter · View template");
     await link.dispatch("click");
     assert.deepEqual(navigations, [
       { path: "/templates", params: { templateId: "tpl-news" } },
@@ -3227,5 +3209,45 @@ describe("Work Detail surface boundary", () => {
       url: `/api/cards/${parked.id}/resume`,
       body: { expectedVersion: 3 },
     });
+  });
+
+  test("shows people, sponsor bylines, and issue chips in the Card detail", async () => {
+    const { createCardSummary } = await import(
+      "../src/surfaces/work-detail/card-summary.js"
+    );
+    globalThis.document = new FakeDocument(
+      new FakeElement("main"),
+      new FakeElement("body"),
+    );
+    const base = {
+      cardAnchorTone: () => "upcoming",
+      detail: {},
+      formatCardAnchorLabel: (value) => value,
+      isArchivedWorkCard: () => false,
+      labelizeWorkValue: (value) => value,
+      progress: { total: 1, done: 0, overdue: 0, waiting: 0, missingProof: 0, nextDueTask: null },
+      state: { workSnapshot: { usersById: new Map() } },
+      today: "2026-08-12",
+      updateCardStage: () => {},
+      workCardIssueNumber: (card) => card.issueNumber || "",
+      workCardSubtitle: (card) => (card.people || []).join(", ") || card.sponsor || "",
+      workTaskTitle: (task) => task.description,
+    };
+    const people = createCardSummary({
+      ...base,
+      card: { id: "pod", title: "Playbook", people: ["Tony Zeljkovic", "Juan Manuel Perafan"] },
+    });
+    assert.match(people.textContent, /PeopleTony Zeljkovic, Juan Manuel Perafan/);
+    const sponsor = createCardSummary({
+      ...base,
+      card: { id: "news", title: "Weekly email", sponsor: "Astronomer", issueNumber: "298" },
+    });
+    assert.match(sponsor.textContent, /SponsorAstronomer/);
+    assert.match(sponsor.textContent, /#298/);
+    const plain = createCardSummary({
+      ...base,
+      card: { id: "plain", title: "Untitled" },
+    });
+    assert.doesNotMatch(plain.textContent, /People|Sponsor/);
   });
 });

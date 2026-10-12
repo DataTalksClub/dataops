@@ -39,19 +39,19 @@ export async function handleSponsorFinanceRoutes(
 ): Promise<LambdaResponse | null> {
   if (!path.includes('/finance')) return null;
   if (!financeEnabled()) return json(404, { error: 'Finance follow-through is disabled' });
-  const match = path.match(/^\/api\/sponsor-crm\/bookings\/([^/]+)\/finance(?:\/(.*))?$/);
+  const match = path.match(/^\/api\/sponsor-crm\/deals\/([^/]+)\/finance(?:\/(.*))?$/);
   if (!match || !OPAQUE.test(match[1])) return json(404, { error: 'Not found' });
-  const bookingId = match[1], action = match[2] || '';
+  const dealId = match[1], action = match[2] || '';
   const body = parse(event);
   if (!body) return json(400, { error: 'Invalid request' });
   const actorId = header(event, 'x-user-id');
   try {
     const write = method !== 'GET';
     const actor = await financeActor(client, actorId, write || action.startsWith('candidates/'));
-    if (method === 'GET' && !action) return json(200, await projectFinance(client, bookingId, actor.role));
-    if (method === 'GET' && action === 'history') return json(200, { items: await listFinanceHistory(client, bookingId) });
+    if (method === 'GET' && !action) return json(200, await projectFinance(client, dealId, actor.role));
+    if (method === 'GET' && action === 'history') return json(200, { items: await listFinanceHistory(client, dealId) });
     if (method === 'GET' && (action === 'candidates/invoices' || action === 'candidates/payments')) {
-      const state = await getFinanceState(client, bookingId);
+      const state = await getFinanceState(client, dealId);
       if (!state) return json(409, { error: 'Finance state changed; reload and retry' });
       const limit = Number(event.queryStringParameters?.limit || 25);
       if (!Number.isInteger(limit) || limit < 1 || limit > 50) return json(400, { error: 'Invalid pagination' });
@@ -65,18 +65,18 @@ export async function handleSponsorFinanceRoutes(
     const idempotencyKey = header(event, 'idempotency-key');
     const common = {
       actorId: actor.id,
-      bookingId,
-      bookingVersion: Number(body.bookingVersion),
+      dealId,
+      dealVersion: Number(body.dealVersion),
       expectedVersion: body.expectedVersion === undefined ? undefined : Number(body.expectedVersion),
       idempotencyKey,
     };
     if (method === 'PUT' && !action) {
       const result = await classifyFinance(client, { ...common, body });
-      return json(200, { result, projection: await projectFinance(client, bookingId, actor.role) });
+      return json(200, { result, projection: await projectFinance(client, dealId, actor.role) });
     }
     if (method === 'POST' && action === 'request') {
       const result = await recordInvoiceRequest(client, { ...common, expectedVersion: Number(body.expectedVersion) });
-      return json(200, { result, projection: await projectFinance(client, bookingId, actor.role) });
+      return json(200, { result, projection: await projectFinance(client, dealId, actor.role) });
     }
     if (method === 'POST' && action === 'invoice') {
       const result = await linkInvoice(client, {
@@ -87,7 +87,7 @@ export async function handleSponsorFinanceRoutes(
         issuedOn: String(body.issuedOn || ''),
         dueOn: String(body.dueOn || ''),
       });
-      return json(200, { result, projection: await projectFinance(client, bookingId, actor.role) });
+      return json(200, { result, projection: await projectFinance(client, dealId, actor.role) });
     }
     if (method === 'POST' && action === 'payments') {
       const result = await linkPayment(client, {
@@ -96,7 +96,7 @@ export async function handleSponsorFinanceRoutes(
         sourceId: String(body.sourceId || ''),
         identityToken: String(body.identityToken || ''),
       });
-      return json(200, { result, projection: await projectFinance(client, bookingId, actor.role) });
+      return json(200, { result, projection: await projectFinance(client, dealId, actor.role) });
     }
     const unlink = action.match(/^(invoice|payments)\/([^/]+)$/);
     if (method === 'DELETE' && unlink) {
@@ -106,14 +106,14 @@ export async function handleSponsorFinanceRoutes(
         kind: unlink[1] === 'invoice' ? 'document' : 'transaction',
         sourceId: unlink[2],
       });
-      return json(200, { result, projection: await projectFinance(client, bookingId, actor.role) });
+      return json(200, { result, projection: await projectFinance(client, dealId, actor.role) });
     }
     if (method === 'POST' && action === 'void') {
       const result = await voidFinance(client, { ...common, expectedVersion: Number(body.expectedVersion) });
-      return json(200, { result, projection: await projectFinance(client, bookingId, actor.role) });
+      return json(200, { result, projection: await projectFinance(client, dealId, actor.role) });
     }
     if (method === 'POST' && action === 'reconcile') {
-      return json(200, { projection: await projectFinance(client, bookingId, actor.role) });
+      return json(200, { projection: await projectFinance(client, dealId, actor.role) });
     }
     return json(405, { error: 'Method not allowed' });
   } catch (error) {

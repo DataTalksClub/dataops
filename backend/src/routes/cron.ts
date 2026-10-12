@@ -1,21 +1,30 @@
 import { getClient } from '../db/client';
 import { runCron } from '../cron/runner';
 import { writePortableExportArchive } from '../export/archive';
+import { backupConfigFromEnv, writeRawDynamoBackup } from '../export/dynamoBackup';
 import { writePortableExport } from '../export/portable';
 import type { LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
 /**
- * Handle /api/cron routes: run recurring tasks and scheduled export.
+ * Handle /api/cron routes: run recurring tasks, scheduled export, and Dynamo dumps.
  */
 async function handleCronRoutes(path: string, method: string): Promise<LambdaResponse | null> {
-  if (path !== '/api/cron/run' && path !== '/api/cron/export') {
+  if (
+    path !== '/api/cron/run'
+    && path !== '/api/cron/export'
+    && path !== '/api/cron/dynamo-backup'
+  ) {
     return null;
   }
 
   if (path === '/api/cron/export') {
     return handleScheduledExport(method);
+  }
+
+  if (path === '/api/cron/dynamo-backup') {
+    return handleScheduledDynamoBackup(method);
   }
 
   if (method !== 'POST') {
@@ -107,6 +116,47 @@ async function handleScheduledExport(method: string): Promise<LambdaResponse> {
     };
   } catch (err: unknown) {
     console.error('Scheduled export route error:', err);
+    return {
+      statusCode: 500,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ error: 'Internal server error' }),
+    };
+  }
+}
+
+async function handleScheduledDynamoBackup(method: string): Promise<LambdaResponse> {
+  if (method !== 'POST') {
+    return {
+      statusCode: 405,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ error: 'Method not allowed' }),
+    };
+  }
+
+  try {
+    const client = await getClient();
+    const result = await writeRawDynamoBackup(client, backupConfigFromEnv());
+    return {
+      statusCode: 200,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        schema_version: result.manifest.schema_version,
+        generated_at: result.manifest.generated_at,
+        source_environment: result.manifest.source_environment,
+        manifest_uri: result.manifestUri,
+        manifest_key: result.manifestKey,
+        item_count: result.manifest.item_count,
+        table_count: result.manifest.table_count,
+        tables: Object.fromEntries(
+          Object.entries(result.manifest.tables).map(([name, stats]) => [
+            name,
+            { items: stats.items, bytes: stats.bytes },
+          ]),
+        ),
+      }),
+    };
+  } catch (err: unknown) {
+    console.error('Scheduled Dynamo backup route error:', err);
     return {
       statusCode: 500,
       headers: JSON_HEADERS,

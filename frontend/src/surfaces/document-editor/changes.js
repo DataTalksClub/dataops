@@ -327,9 +327,210 @@ export function createEditorChanges(context, services) {
     }
   }
 
+  function getDescendantIds(doc, allDocs) {
+    const descendants = new Set();
+    const queue = [doc.id, doc.path].filter(Boolean);
+    while (queue.length > 0) {
+      const parentRef = queue.shift();
+      for (const d of allDocs) {
+        if (
+          (d.parent_id === parentRef || d.parent === parentRef) &&
+          !descendants.has(d.id)
+        ) {
+          descendants.add(d.id);
+          descendants.add(d.path);
+          queue.push(d.id);
+        }
+      }
+    }
+    return descendants;
+  }
+
+  async function openMoveToDialog(doc) {
+    const allDocs = context.knowledgeState?.allDocuments || [];
+    const descendants = getDescendantIds(doc, allDocs);
+    const candidates = [
+      { id: "", title: "(Top-level / No parent)" },
+      ...allDocs
+        .filter((d) => d.id !== doc.id && d.path !== doc.path && !descendants.has(d.id))
+        .map((d) => ({ id: d.id, title: d.title || basename(d.path) })),
+    ];
+
+    return new Promise((resolve) => {
+      const modal = document.createElement("div");
+      modal.className = "task-modal diff-modal doc-move-modal";
+      modal.setAttribute("role", "dialog");
+      modal.setAttribute("aria-modal", "true");
+      modal.setAttribute("aria-label", "Move document");
+
+      const backdrop = document.createElement("div");
+      backdrop.className = "task-modal-backdrop diff-backdrop";
+
+      const panel = document.createElement("div");
+      panel.className = "task-modal-panel diff-panel doc-move-panel";
+
+      const header = document.createElement("header");
+      header.className = "task-panel-header";
+      const titleEl = document.createElement("strong");
+      titleEl.textContent = `Move "${doc.title || basename(doc.path)}"`;
+      const closeBtn = document.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.className = "quiet-button";
+      closeBtn.textContent = "Cancel";
+      header.append(titleEl, closeBtn);
+
+      const bodyEl = document.createElement("div");
+      bodyEl.className = "task-panel-body doc-move-body";
+
+      const label = document.createElement("label");
+      label.className = "doc-move-label";
+      label.textContent = "Select new parent page:";
+      const select = document.createElement("select");
+      select.className = "doc-move-select";
+      candidates.forEach((c) => {
+        const opt = document.createElement("option");
+        opt.value = c.id;
+        opt.textContent = c.title;
+        if (doc.parent_id === c.id || doc.parent === c.id) {
+          opt.selected = true;
+        }
+        select.append(opt);
+      });
+      label.append(select);
+      bodyEl.append(label);
+
+      const footer = document.createElement("div");
+      footer.className = "doc-move-footer";
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "quiet-button";
+      cancelBtn.textContent = "Cancel";
+      const confirmBtn = document.createElement("button");
+      confirmBtn.type = "button";
+      confirmBtn.className = "primary-button";
+      confirmBtn.textContent = "Move page";
+      footer.append(cancelBtn, confirmBtn);
+      bodyEl.append(footer);
+
+      panel.append(header, bodyEl);
+      modal.append(backdrop, panel);
+      document.body.append(modal);
+
+      function cleanup(result) {
+        modal.remove();
+        resolve(result);
+      }
+
+      closeBtn.addEventListener("click", () => cleanup(undefined));
+      cancelBtn.addEventListener("click", () => cleanup(undefined));
+      backdrop.addEventListener("click", () => cleanup(undefined));
+      confirmBtn.addEventListener("click", () => cleanup(select.value));
+    });
+  }
+
+  async function moveCurrentDoc(targetParentId) {
+    if (!documentState.currentDoc || !beginDocumentMutation("move")) return;
+    const currentDoc = documentState.currentDoc;
+    const oldPath = currentDoc.path;
+    const isFresh = editorMutationGuard(context);
+
+    try {
+      let newParent = targetParentId;
+      if (newParent === undefined) {
+        newParent = await openMoveToDialog(currentDoc);
+        if (newParent === undefined) return;
+      }
+
+      const payload = await request(apiUrl("/docs/move"), {
+        method: "POST",
+        body: JSON.stringify({
+          path: oldPath,
+          new_parent: newParent || null,
+          expectedRevision: currentDoc.revision,
+        }),
+      });
+
+      if (!isFresh() || documentState.currentDoc?.path !== oldPath) return;
+      recordPublication(currentDoc.revision, payload.revision);
+      currentDoc.parent = payload.parent || undefined;
+      currentDoc.parent_id = payload.parent || undefined;
+
+      await loadDocuments();
+      if (!isFresh() || documentState.currentDoc?.path !== oldPath) return;
+
+      const targetTitle = payload.parent
+        ? (context.knowledgeState?.allDocuments?.find((d) => d.id === payload.parent)?.title || payload.parent)
+        : "Top-level";
+      showFeedback(`Moved to ${targetTitle}.`);
+      if (editorView.dataset.mode === "rendered" && services.renderParsedDocument) {
+        services.renderParsedDocument();
+      }
+    } catch (err) {
+      if (!isFresh() || documentState.currentDoc?.path !== oldPath) return;
+      if (err.status === 409) { showRevisionConflict(); return; }
+      showFeedback(`Move failed: ${err.message}`, {
+        kind: feedbackKindForError(err),
+      });
+    } finally {
+      endDocumentMutation("move");
+    }
+  }
+
+  async function createSubpage(parentDoc, initialTitle = "") {
+    const parent = parentDoc || documentState.currentDoc;
+    if (!parent) return;
+
+    let title = initialTitle;
+    if (!title) {
+      title = (promptUser?.("Sub-page title:") || globalThis.prompt?.("Sub-page title:") || "").trim();
+    }
+    if (!title) return;
+
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "untitled";
+    const parentPath = parent.path;
+    const lastSlash = parentPath.lastIndexOf("/");
+    const parentDir = lastSlash >= 0 ? parentPath.slice(0, lastSlash) : "content";
+    const parentStem = (lastSlash >= 0 ? parentPath.slice(lastSlash + 1) : parentPath).replace(/\.md$/, "");
+    let newPath = `${parentDir}/${parentStem}/${slug}.md`;
+
+    const allDocs = context.knowledgeState?.allDocuments || [];
+    let counter = 1;
+    while (allDocs.some((d) => d.path === newPath)) {
+      counter++;
+      newPath = `${parentDir}/${parentStem}/${slug}-${counter}.md`;
+    }
+
+    try {
+      showFeedback(`Creating sub-page "${title}"…`, { kind: "pending" });
+      const payload = await request(apiUrl("/docs"), {
+        method: "POST",
+        body: JSON.stringify({
+          path: newPath,
+          title,
+          doc_type: parent.doc_type || "doc",
+          parent: parent.id || parent.path,
+          scaffold: "minimal",
+          absent: true,
+          expectedRevision: parent.revision || "",
+        }),
+      });
+
+      await loadDocuments();
+      if (openDocument) {
+        await openDocument(newPath);
+      }
+      showFeedback(`Created sub-page "${title}".`);
+      return payload;
+    } catch (err) {
+      showFeedback(`Failed to create sub-page: ${err.message}`, {
+        kind: feedbackKindForError(err),
+      });
+    }
+  }
 
   return {
-    deleteCurrentDoc, discardAllDrafts, refreshChangesPanel,
-    renameCurrentDoc, saveAllDrafts, showChangesStatus,
+    createSubpage, deleteCurrentDoc, discardAllDrafts, moveCurrentDoc,
+    openMoveToDialog, refreshChangesPanel, renameCurrentDoc, saveAllDrafts,
+    showChangesStatus,
   };
 }

@@ -1,5 +1,47 @@
 import { docsAvailabilityView } from "../core/operations-model.js";
 
+export function createPageHeader({
+  title, subtitle = "", actions = [], className = "", titleId = "",
+  documentRef = document,
+}) {
+  const header = documentRef.createElement("header");
+  header.className = `page-header${className ? ` ${className}` : ""}`;
+  const copy = documentRef.createElement("div");
+  copy.className = "page-header-copy";
+  const heading = documentRef.createElement("h1");
+  heading.textContent = title;
+  if (titleId) heading.id = titleId;
+  copy.append(heading);
+  if (subtitle) {
+    const description = documentRef.createElement("p");
+    description.textContent = subtitle;
+    copy.append(description);
+  }
+  header.append(copy);
+  if (actions.length > 0) {
+    const controls = documentRef.createElement("div");
+    controls.className = "page-header-actions";
+    controls.append(...actions);
+    header.append(controls);
+  }
+  return header;
+}
+
+export function renderPageHeaderMarkup({
+  title, subtitle = "", actionsHtml = "", className = "", titleId = "",
+}) {
+  const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]);
+  const classes = `page-header${className ? ` ${className}` : ""}`;
+  const id = titleId ? ` id="${escape(titleId)}"` : "";
+  const description = subtitle ? `<p>${escape(subtitle)}</p>` : "";
+  // Only application-authored controls belong in actionsHtml.
+  const controls = actionsHtml ? `<div class="page-header-actions">${actionsHtml}</div>` : "";
+  return `<header class="${escape(classes)}"><div class="page-header-copy">` +
+    `<h1${id}>${escape(title)}</h1>${description}</div>${controls}</header>`;
+}
+
 const SUMMARY_LABELS = {
   loading: "Loading",
   ready: "Ready",
@@ -102,7 +144,12 @@ export function renderDataSummary(view = {}) {
     label: view.label,
     state,
     message: messages[state] || messages.ready || "",
-    detail: recoverable ? errors[0] || "" : view.detail || "",
+    detail:
+      view.detail !== undefined
+        ? view.detail
+        : recoverable
+          ? errors[0] || ""
+          : "",
     retryLabel: view.retryLabel,
     onRetry: recoverable ? view.onRetry : null,
   });
@@ -242,7 +289,7 @@ export function createOperationsOverview(context) {
         "One queue, most urgent first. Each task names where it came from — a Card, recurring, or ad hoc.",
       workflows:
         "Every active card by stage. Open a card to see its tasks.",
-      templates: "Create cards from reusable Templates.",
+      templates: "Create cards from reusable templates.",
       recurring:
         "Create, edit, pause, and delete the schedules that generate recurring tasks.",
       assistants:
@@ -274,24 +321,13 @@ export function createOperationsOverview(context) {
     return countLabel(count, singular, category);
   }
 
-  function renderSurfaceHeader(titleText, descriptionText = "", kickerText = "") {
-    const header = document.createElement("section");
-    header.className = "ops-surface-header";
-    if (kickerText) {
-      const kicker = document.createElement("p");
-      kicker.className = "section-kicker";
-      kicker.textContent = kickerText;
-      header.append(kicker);
-    }
-    const title = document.createElement("h1");
-    title.textContent = titleText;
-    header.append(title);
-    if (descriptionText) {
-      const description = document.createElement("p");
-      description.textContent = descriptionText;
-      header.append(description);
-    }
-    return header;
+  function renderSurfaceHeader(titleText, descriptionText = "") {
+    return createPageHeader({
+      title: titleText,
+      subtitle: descriptionText,
+      className: "ops-surface-header",
+      documentRef: document,
+    });
   }
 
   function renderHonestState(titleText, bodyText) {
@@ -350,7 +386,7 @@ export function createOperationsOverview(context) {
   }
 
   function workApiUrl(path, params = {}) {
-    const url = apiUrl(`/work${path}`);
+    const url = apiUrl(path);
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null && value !== "")
         url.searchParams.set(key, String(value));
@@ -387,7 +423,7 @@ export function createOperationsOverview(context) {
       : "Live work data unavailable";
     const body = document.createElement("span");
     body.textContent = runtime?.connected
-      ? "Some /work/api calls failed. Loaded tasks remain visible, and unavailable parts are not replaced with fake data."
+      ? "Some /api calls failed. Loaded tasks remain visible, and unavailable parts are not replaced with fake data."
       : "The workspace could not load Card and Task data. Templates and internal Processes remain available from their dedicated views.";
     section.append(title, body);
 

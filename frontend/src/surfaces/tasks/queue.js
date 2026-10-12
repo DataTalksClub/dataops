@@ -36,6 +36,71 @@ export function createTaskQueue(context) {
     workTaskTitle,
   } = context;
 
+  const PERSONA_FILTERS = [
+    { id: "all", label: "All", name: "All teammates" },
+    { id: "00000000-0000-0000-0000-000000000001", label: "Grace", name: "Grace" },
+    { id: "00000000-0000-0000-0000-000000000002", label: "Valeriia", name: "Valeriia" },
+    { id: "00000000-0000-0000-0000-000000000003", label: "Alexey", name: "Alexey" },
+  ];
+
+  let activePersonaFilter = "all";
+
+  function taskMatchesPersona(task, filterId) {
+    if (!filterId || filterId === "all") return true;
+    const assigneeId = String(task.assigneeId || "");
+    if (filterId === "unassigned") return !assigneeId;
+    if (assigneeId === filterId) return true;
+    const label = (resolveAssigneeLabel?.(assigneeId) || "").toLowerCase();
+    if (filterId === "00000000-0000-0000-0000-000000000001" && label.includes("grace")) return true;
+    if (filterId === "00000000-0000-0000-0000-000000000002" && label.includes("valeriia")) return true;
+    if (filterId === "00000000-0000-0000-0000-000000000003" && label.includes("alexey")) return true;
+    return false;
+  }
+
+  function countOpenByPersona(openTasks) {
+    const counts = { all: openTasks.length };
+    for (const p of PERSONA_FILTERS) {
+      if (p.id !== "all") {
+        counts[p.id] = openTasks.filter((entry) => taskMatchesPersona(entry.task, p.id)).length;
+      }
+    }
+    return counts;
+  }
+
+  function renderPersonaFilterBar(counts, onSelect) {
+    const nav = document.createElement("div");
+    nav.className = "ops-queue-persona-nav";
+    nav.setAttribute("role", "tablist");
+    nav.setAttribute("aria-label", "Filter queue by assignee");
+    nav.style.display = "flex";
+    nav.style.flexWrap = "wrap";
+    nav.style.gap = "6px";
+    nav.style.margin = "0 0 14px 0";
+
+    for (const p of PERSONA_FILTERS) {
+      const isSelected = activePersonaFilter === p.id;
+      const count = counts[p.id] ?? 0;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = isSelected ? "primary-button ops-queue-persona-filter" : "quiet-button ops-queue-persona-filter";
+      btn.dataset.persona = p.label.toLowerCase();
+      btn.setAttribute("role", "tab");
+      btn.setAttribute("aria-selected", String(isSelected));
+      btn.setAttribute("aria-label", `Filter to ${p.name}, ${count} open`);
+      btn.style.fontSize = "12px";
+      btn.style.padding = "4px 10px";
+      btn.style.borderRadius = "var(--dk-radius-sm, 6px)";
+      btn.textContent = `${p.label} (${count})`;
+      btn.addEventListener("click", () => {
+        if (activePersonaFilter === p.id) return;
+        activePersonaFilter = p.id;
+        onSelect();
+      });
+      nav.append(btn);
+    }
+    return nav;
+  }
+
   function renderWorkQueueSurface() {
     const taskRouteContext = getTaskRouteContext();
     const today = taskRouteContext.date || todayIsoDate();
@@ -50,7 +115,7 @@ export function createTaskQueue(context) {
         Object.keys(state.workSnapshot.cardTasks || {}).length,
     );
 
-    const openTasks = orderOpenTasks(tasks, today);
+    const allOpenTasks = orderOpenTasks(tasks, today);
     const doneTasks = tasks
       .filter((task) => isCanonicalWorkTask(task) && task.status === "done")
       .sort((left, right) =>
@@ -69,24 +134,51 @@ export function createTaskQueue(context) {
       section.append(renderTaskRouteContext(taskRouteContext));
     }
 
-    // A fully loaded empty queue states nothing here: the page summary above
-    // already says "No tasks are open in this queue." once. The board only
-    // renders when there is work to show or data to apologize for.
     const board = document.createElement("div");
     board.className = "ops-queue-board";
     board.dataset.loadState = anySourceLoaded ? "ready" : "unavailable";
-    if (!anySourceLoaded) {
-      board.append(renderUnavailableState());
-    } else if (openTasks.length > 0 || doneTasks.length > 0) {
-      if (openTasks.length > 0) {
-        board.append(renderQueueTotalLine(openTasks.length));
-        board.append(renderQueueRows(openTasks, today, cardsById));
-        const expander = renderQueueExpander(openTasks.length);
-        if (expander) board.append(expander);
+
+    function populateBoard() {
+      board.replaceChildren();
+      if (!anySourceLoaded) {
+        board.append(renderUnavailableState());
+        return;
       }
-      if (doneTasks.length > 0)
-        board.append(renderQueueHistory(doneTasks, today));
+
+      const visibleOpen = activePersonaFilter === "all"
+        ? allOpenTasks
+        : allOpenTasks.filter((entry) => taskMatchesPersona(entry.task, activePersonaFilter));
+
+      const visibleDone = activePersonaFilter === "all"
+        ? doneTasks
+        : doneTasks.filter((task) => taskMatchesPersona(task, activePersonaFilter));
+
+      const activePersona = PERSONA_FILTERS.find((p) => p.id === activePersonaFilter);
+      const personaLabel = activePersona?.label || "All";
+
+      if (allOpenTasks.length > 0 || doneTasks.length > 0) {
+        const counts = countOpenByPersona(allOpenTasks);
+        board.append(renderPersonaFilterBar(counts, () => populateBoard()));
+
+        if (visibleOpen.length > 0) {
+          board.append(renderQueueTotalLine(visibleOpen.length, allOpenTasks.length, personaLabel));
+          board.append(renderQueueRows(visibleOpen, today, cardsById));
+          const expander = renderQueueExpander(visibleOpen.length);
+          if (expander) board.append(expander);
+        } else if (activePersonaFilter !== "all" && allOpenTasks.length > 0) {
+          const emptyMsg = document.createElement("p");
+          emptyMsg.className = "ops-empty ops-queue-persona-empty";
+          emptyMsg.textContent = `No open tasks assigned to ${personaLabel} right now.`;
+          board.append(emptyMsg);
+        }
+
+        if (visibleDone.length > 0) {
+          board.append(renderQueueHistory(visibleDone, today));
+        }
+      }
     }
+
+    populateBoard();
     if (board.children.length > 0) section.append(board);
     return section;
   }
@@ -167,13 +259,18 @@ export function createTaskQueue(context) {
     return empty;
   }
 
-  function renderQueueTotalLine(totalOpen) {
+  function renderQueueTotalLine(visibleCount, totalOpen, personaLabel) {
     const total = document.createElement("p");
     total.className = "ops-queue-total";
-    total.textContent =
-      totalOpen > QUEUE_VISIBLE_LIMIT
-        ? `Showing ${QUEUE_VISIBLE_LIMIT} of ${totalOpen} open, most urgent first`
-        : `${totalOpen} open, most urgent first`;
+    if (personaLabel && personaLabel !== "All" && totalOpen !== undefined) {
+      total.textContent = `Showing ${personaLabel}’s work: ${visibleCount} open task${visibleCount === 1 ? "" : "s"} (${totalOpen} total across all teammates)`;
+    } else {
+      const count = visibleCount ?? totalOpen;
+      total.textContent =
+        count > QUEUE_VISIBLE_LIMIT
+          ? `Showing ${QUEUE_VISIBLE_LIMIT} of ${count} open, most urgent first`
+          : `${count} open, most urgent first`;
+    }
     total.setAttribute("role", "status");
     return total;
   }
@@ -597,6 +694,7 @@ export function createTaskQueue(context) {
       cell.dataset.assignee = "none";
       cell.textContent = "—";
       cell.title = "Unassigned";
+      cell.setAttribute("role", "img");
       cell.setAttribute("aria-label", "Unassigned");
       return cell;
     }
@@ -608,6 +706,7 @@ export function createTaskQueue(context) {
     cell.dataset.assignee = "named";
     cell.append(avatar);
     cell.title = name;
+    cell.setAttribute("role", "img");
     cell.setAttribute("aria-label", `Assigned to ${name}`);
     return cell;
   }
@@ -657,6 +756,16 @@ export function createTaskQueue(context) {
       note.textContent = `Follow up ${queueShortDate(task.followUpAt)}`;
       return note;
     }
+    if (task.instructionDocId || task.instructionsUrl) {
+      const note = document.createElement("small");
+      note.className = "ops-queue-note is-guide";
+      const guideName = task.instructionDocId
+        ? task.instructionDocId.split(".").pop()?.replace(/-/g, " ") || "Playbook"
+        : "Instructions";
+      note.textContent = `📖 ${guideName}`;
+      note.title = task.instructionDocId || task.instructionsUrl || "";
+      return note;
+    }
     return null;
   }
 
@@ -681,9 +790,17 @@ export function createTaskQueue(context) {
     // ordering already happened above, so this never changes what renders.
     row.dataset.urgency = queueUrgency(task, today);
     row.tabIndex = -1;
+    row.setAttribute("aria-label", `Open task ${workTaskTitle(task)}`);
     row.addEventListener("click", (event) => {
       if (event.target?.closest?.("button, input, label, a")) return;
       openTaskPanel(task.id);
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.target?.closest?.("button, input, label, a") && event.target !== row) return;
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openTaskPanel(task.id);
+      }
     });
 
     const toggle = renderQueueToggle(task);

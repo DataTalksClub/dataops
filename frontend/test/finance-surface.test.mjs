@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
+import { formatAmount } from "../src/surfaces/finance/bookkeeping-format.js";
+import { ledgerTableMarkup, transactionOptionsMarkup, worklistMarkup } from "../src/surfaces/finance/bookkeeping-views.js";
+
 import { createFinanceSurface } from "../src/surfaces/finance/index.js";
+import { createSponsorFinance } from "../src/surfaces/finance/sponsor-finance.js";
 import {
+  copyToClipboard,
   formatFullCsv,
   formatReportCsv,
   formatReportTsv,
@@ -118,6 +123,16 @@ class FakeElement {
       if (typeof value === "string") this.textContent += value;
       else this.children.push(value);
     }
+  }
+
+  insertBefore(value, reference) {
+    if (value.parentNode) {
+      value.parentNode.children = value.parentNode.children.filter((child) => child !== value);
+    }
+    const index = this.children.indexOf(reference);
+    this.children.splice(index < 0 ? this.children.length : index, 0, value);
+    value.parentNode = this;
+    return value;
   }
 
   appendChild(value) {
@@ -251,6 +266,7 @@ function escapeHtml(value) {
 function humanizeOptionLabel(value) {
   return String(value || "")
     .replaceAll("-", " ")
+    .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
@@ -276,6 +292,7 @@ function createHarness({ request, route = null, setupSurface } = {}) {
     renderEntityLoadState() {},
     setRouteTitle: (title) => routeTitles.push(title),
     todayIsoDate: () => "2026-08-13",
+    viewportWidth: () => 1280,
     workApiUrl: (path) => path,
   });
   return { document, documentList, finance, requests, routeTitles };
@@ -291,6 +308,35 @@ async function settle() {
 }
 
 describe("Finance surface boundary", () => {
+  test("treats missing sponsor finance as an empty state and keeps actual failures visible", async () => {
+    createHarness();
+    const surface = new FakeElement("section");
+    const panel = surface.querySelector('[data-booking-panel="finance"]');
+    const sponsorFinance = createSponsorFinance({
+      surface,
+      escapeHtml,
+      humanizeOptionLabel,
+      message: new FakeElement("p"),
+      request: async () => ({}),
+      workApiUrl: (path) => path,
+    });
+    for (const status of [404, 503]) {
+      globalThis.fetch = async () => ({
+        ok: false,
+        status,
+        json: async () => ({ error: "Synthetic unavailable finance" }),
+      });
+      await sponsorFinance.loadFinance({ id: "missing-finance" });
+      if (status === 404) {
+        assert.match(panel.innerHTML, /No finance recorded yet/);
+        assert.doesNotMatch(panel.innerHTML, /Finance is not enabled|Finance is unavailable/);
+      } else {
+        assert.match(panel.innerHTML, /Finance is unavailable/);
+        assert.doesNotMatch(panel.innerHTML, /No finance recorded yet/);
+      }
+    }
+  });
+
   test("directly imports the production factory and exposes the stable Finance facade", () => {
     const { finance } = createHarness();
     assert.deepEqual(Object.keys(finance).sort(), [
@@ -343,22 +389,24 @@ describe("Finance surface boundary", () => {
 
     const sponsorHarness = createHarness({
       setupSurface: (surface) =>
-        surface.setQuery("[data-booking-dialog]", sponsorDialog),
+        surface.setQuery("[data-deal-dialog]", sponsorDialog),
       request: async (url) => {
         const path = requestPath(url);
         if (path.endsWith("/organizations"))
           return { items: [{ id: "org-1", displayName: "Sponsor" }] };
         if (path.endsWith("/contacts")) return { items: [] };
-        if (path.endsWith("/bookings"))
+        if (path.endsWith("/deals"))
           return {
             items: [
               {
-                id: "booking-1",
+                id: "deal-1",
                 organizationId: "org-1",
-                status: "confirmed",
+                status: "agreed",
               },
             ],
           };
+        if (path.endsWith("/queue")) return { items: [] };
+        if (path.endsWith("/leads")) return { items: [] };
         if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         throw new Error(`Unexpected request: ${url}`);
       },
@@ -370,8 +418,8 @@ describe("Finance surface boundary", () => {
     await bookings.dispatch("click", {
       target: {
         closest(selector) {
-          return selector === "[data-edit-booking]"
-            ? { dataset: { editBooking: "booking-1" } }
+          return selector === "[data-edit-deal]"
+            ? { dataset: { editDeal: "deal-1" } }
             : null;
         },
       },
@@ -387,7 +435,7 @@ describe("Finance surface boundary", () => {
       message,
       dismissed: false,
       dueAt: "2026-08-20",
-      metadata: { sponsorBookingId: "booking-alert" },
+      metadata: { sponsorDealId: "deal-alert" },
     });
     const { document, finance, requests } = createHarness({
       request: async (url) => {
@@ -423,18 +471,20 @@ describe("Finance surface boundary", () => {
         if (path.endsWith("/organizations"))
           return { items: [{ id: "org-1", displayName: "Sponsor" }] };
         if (path.endsWith("/contacts")) return { items: [] };
-        if (path.endsWith("/bookings"))
+        if (path.endsWith("/deals"))
           return {
-            items: [{ id: "booking-alert", organizationId: "org-1", status: "confirmed" }],
+            items: [{ id: "deal-alert", organizationId: "org-1", status: "agreed" }],
           };
+        if (path.endsWith("/queue")) return { items: [] };
+        if (path.endsWith("/leads")) return { items: [] };
         throw new Error(`Unexpected request: ${url}`);
       },
     });
 
     await finance.renderSponsorCrmSurface();
     const alerts = document.surface.querySelector("[data-crm-alerts]");
-    assert.doesNotMatch(alerts.innerHTML, /No active sponsor booking alerts/);
-    assert.match(alerts.innerHTML, /Booking alerts are unavailable:/);
+    assert.doesNotMatch(alerts.innerHTML, /No active sponsor alerts/);
+    assert.match(alerts.innerHTML, /Sponsor alerts are unavailable:/);
     assert.match(alerts.innerHTML, /Notifications offline/);
     assert.match(
       alerts.innerHTML,
@@ -453,7 +503,7 @@ describe("Finance surface boundary", () => {
     await clickAlertControl("[data-load-sponsor-alerts-retry]");
     assert.match(alerts.innerHTML, /First alert/);
     assert.match(alerts.innerHTML, /Second alert/);
-    assert.match(alerts.innerHTML, /More booking alerts are available\./);
+    assert.match(alerts.innerHTML, /More sponsor alerts are available\./);
     assert.match(
       alerts.innerHTML,
       /<button type="button" data-load-sponsor-alerts>/,
@@ -468,7 +518,7 @@ describe("Finance surface boundary", () => {
     continuationOnline = true;
     await clickAlertControl("[data-load-sponsor-alerts]");
     const renderedArticleCount = [
-      ...alerts.innerHTML.matchAll(/<article class="crm-card">/g),
+      ...alerts.innerHTML.matchAll(/<article class="crm-card crm-alert-row">/g),
     ].length;
     assert.equal(renderedArticleCount, 3);
     assert.match(alerts.innerHTML, /First alert/);
@@ -508,7 +558,8 @@ describe("Finance surface boundary", () => {
         if (path.endsWith("/organizations"))
           return { items: [{ id: "org-1", displayName: "Sponsor" }] };
         if (path.endsWith("/contacts")) return { items: [] };
-        if (path.endsWith("/bookings")) return { items: [] };
+        if (path.endsWith("/deals")) return { items: [] };
+        if (path.endsWith("/queue")) return { items: [] };
         if (path === "/api/sponsor-crm/leads") {
           if (!leadsOnline) throw new Error("Leads offline");
           assert.equal(query.get("limit"), "50");
@@ -570,19 +621,19 @@ describe("Finance surface boundary", () => {
       id: "booking-1",
       organizationId: "org-1",
       primaryContactId: "contact-1",
-      status: "confirmed",
+      status: "agreed",
       version: 3,
     };
     const { document, finance } = createHarness({
       route: {
         path: "/sponsors",
         token: 1,
-        params: new URLSearchParams({ bookingId: booking.id }),
+        params: new URLSearchParams({ dealId: booking.id }),
       },
       request: async (url) => {
         const path = requestPath(url);
         if (path.endsWith("/organizations"))
-          return { items: [{ id: "org-1", displayName: "Safe Sponsor" }] };
+          return { items: [{ id: "org-1", displayName: "Safe Sponsor", relationship: "talking" }] };
         if (path.endsWith("/contacts"))
           return {
             items: [
@@ -594,9 +645,15 @@ describe("Finance surface boundary", () => {
               },
             ],
           };
-        if (path.endsWith("/bookings")) return { items: [booking] };
+        if (path.endsWith("/deals")) return { items: [booking] };
+        if (path.endsWith("/queue")) return { items: [] };
+        if (path.endsWith("/leads")) return { items: [] };
         if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
+        if (path.includes("/messages")) return { items: [
+          { direction: "inbound", sentAt: "2026-01-12T23:30:00Z", snippet: "Synthetic <reply>" },
+          { direction: "outbound", sentAt: "2026-01-12T23:45:00Z", snippet: "Synthetic response" },
+        ] };
         if (path.includes("/communications"))
           return {
             items: [
@@ -643,6 +700,21 @@ describe("Finance surface boundary", () => {
     });
 
     await finance.renderSponsorCrmSurface();
+    const companyDetail = document.surface.querySelector("[data-crm-detail]").innerHTML;
+    assert.match(companyDetail, /class="booking-kind">Agreed<\/p>/);
+    assert.match(companyDetail, /data-status="agreed">\s*Agreed/);
+    assert.match(companyDetail, /Incoming/);
+    assert.match(companyDetail, /Outgoing/);
+    assert.match(companyDetail, /13 Jan 2026, 00:30 CET/);
+    assert.match(companyDetail, /Synthetic &lt;reply&gt;/);
+    await document.surface.querySelector("[data-mail-search]").dispatch("input", {
+      target: { value: "Synthetic" },
+    });
+    await settle();
+    const searchedMail = document.surface.querySelector("[data-mail-threads]").innerHTML;
+    assert.match(searchedMail, /Incoming/);
+    assert.match(searchedMail, /13 Jan 2026, 00:30 CET/);
+    assert.match(searchedMail, /Synthetic &lt;reply&gt;/);
 
     const communications = document.surface.querySelector(
       "[data-crm-communications]",
@@ -658,7 +730,7 @@ describe("Finance surface boundary", () => {
     const booking = {
       id: "booking-1",
       organizationId: "org-1",
-      status: "confirmed",
+      status: "agreed",
       version: 3,
     };
     const seen = [];
@@ -666,7 +738,7 @@ describe("Finance surface boundary", () => {
       route: {
         path: "/sponsors",
         token: 1,
-        params: new URLSearchParams({ bookingId: booking.id }),
+        params: new URLSearchParams({ dealId: booking.id }),
       },
       request: async (url, options) => {
         const path = requestPath(url);
@@ -674,10 +746,13 @@ describe("Finance surface boundary", () => {
         if (path.endsWith("/organizations"))
           return { items: [{ id: "org-1", displayName: "Safe Sponsor" }] };
         if (path.endsWith("/contacts")) return { items: [] };
-        if (path.endsWith("/bookings")) return { items: [booking] };
+        if (path.endsWith("/deals")) return { items: [booking] };
+        if (path.endsWith("/queue")) return { items: [] };
+        if (path.endsWith("/leads")) return { items: [] };
         if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
-        if (path.includes("/bookings/booking-1/communications"))
+        if (path.includes("/messages")) return { items: [] };
+        if (path.includes("/deals/booking-1/communications"))
           return {
             items: [
               {
@@ -780,6 +855,127 @@ describe("Finance surface boundary", () => {
       seen.some(({ path }) => path.endsWith("/approve")),
       false,
     );
+  });
+
+  test("renders Queue, Pipeline, Company, and Leads and Convert hits the leads API", async () => {
+    let lead = {
+      id: "lead-convert",
+      version: 1,
+      status: "new",
+      sponsor: { name: "Queue Vendor", url: "https://queue.example.invalid" },
+      newsletter: { name: "Digest" },
+    };
+    const { document, finance, requests } = createHarness({
+      request: async (url, options = {}) => {
+        const path = requestPath(url);
+        if (path === "/api/notifications")
+          return { notifications: { items: [] } };
+        if (path.endsWith("/organizations"))
+          return {
+            items: [
+              {
+                id: "org-1",
+                displayName: "Talking Co",
+                relationship: "talking",
+              },
+            ],
+          };
+        if (path.endsWith("/contacts")) return { items: [] };
+        if (path.endsWith("/deals"))
+          return {
+            items: [
+              {
+                id: "deal-1",
+                organizationId: "org-1",
+                status: "open",
+                money: "none",
+                nextAction: { type: "follow_up", due: "2026-08-01", owner: "grace", note: "ping" },
+              },
+            ],
+          };
+        if (path.endsWith("/queue"))
+          return {
+            items: [
+              {
+                id: "relationship:org-1::quiet:2026-08-13",
+                kind: "relationship",
+                why: "quiet",
+                action: "chase_materials",
+                companyId: "org-1",
+                companyName: "Talking Co",
+                due: "2026-08-13",
+                owner: "grace",
+              },
+            ],
+          };
+        if (path === "/api/sponsor-crm/leads") return { items: [lead] };
+        if (path === "/api/sponsor-crm/leads/lead-convert" && options.method === "PATCH") {
+          lead = { ...lead, status: "converted", version: 2 };
+          return lead;
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+
+    await finance.renderSponsorCrmSurface();
+    const queue = document.surface.querySelector("[data-crm-queue]");
+    const pipeline = document.surface.querySelector("[data-crm-bookings]");
+    const companies = document.surface.querySelector("[data-crm-orgs]");
+    const leads = document.surface.querySelector("[data-crm-leads]");
+    assert.match(queue.innerHTML, /Talking Co/);
+    assert.match(queue.innerHTML, /Chase Materials/);
+    assert.doesNotMatch(queue.innerHTML, /chase_materials/);
+    assert.match(pipeline.innerHTML, /Talking Co/);
+    assert.match(pipeline.innerHTML, /Open/);
+    assert.match(companies.innerHTML, /Talking Co/);
+    assert.match(leads.innerHTML, /Queue Vendor/);
+
+    await document.surface.querySelector("[data-crm-views]").dispatch("click", {
+      target: {
+        closest: (selector) =>
+          selector === "[data-crm-view]"
+            ? { dataset: { crmView: "pipeline" } }
+            : null,
+      },
+    });
+    assert.equal(
+      document.surface.querySelector("[data-crm-list-heading]").textContent,
+      "Pipeline",
+    );
+
+    await leads.dispatch("click", {
+      target: {
+        closest: (candidate) =>
+          candidate === "[data-lead-status]"
+            ? { dataset: { leadId: "lead-convert", leadStatus: "converted" } }
+            : null,
+      },
+    });
+    await settle();
+    const patch = requests.find(
+      (entry) => requestPath(entry.url) === "/api/sponsor-crm/leads/lead-convert",
+    );
+    assert.ok(patch);
+    assert.equal(patch.options.method, "PATCH");
+    assert.deepEqual(JSON.parse(patch.options.body), {
+      version: 1,
+      status: "converted",
+    });
+    assert.match(leads.innerHTML, /Converted/);
+    assert.doesNotMatch(leads.innerHTML, /data-lead-status|data-lead-id|crm-lead-actions/);
+    for (const status of ["converted", "triaged", "ignored"]) {
+      await leads.dispatch("click", {
+        target: {
+          closest: (selector) => selector === "[data-lead-status]"
+            ? { dataset: { leadId: "lead-convert", leadStatus: status } }
+            : null,
+        },
+      });
+    }
+    await settle();
+    assert.equal(requests.filter(({ url, options }) =>
+      requestPath(url) === "/api/sponsor-crm/leads/lead-convert" && options.method === "PATCH",
+    ).length, 1, "stale converted-lead controls cannot issue another transition");
   });
 
   test("derives bookkeeping totals and evidence relationships from loaded records", async () => {
@@ -911,7 +1107,7 @@ describe("Finance surface boundary", () => {
     // unclassified. No mixed income+expenses sum.
     assert.equal(
       surface.querySelector(".bookkeeping-totals").textContent,
-      "EUR Income 240.00 · EUR Expenses 145.50 · EUR Unclassified 10.00",
+      "Income €240.00 · Expenses €145.50 · Unclassified €10.00",
     );
     // The page opens quiet: the download-expiry note lives next to the
     // download actions, not as a permanent strip.
@@ -921,10 +1117,10 @@ describe("Finance surface boundary", () => {
     );
     const ledger = surface.querySelector(".bookkeeping-ledger").innerHTML;
     assert.match(ledger, /Provider One/);
-    assert.match(ledger, /-125\.50 EUR/);
+    assert.match(ledger, /-€125\.50/);
     // Typed non-income rows carry the expense sign; income rows stay positive.
-    assert.match(ledger, /-20\.00 EUR/);
-    assert.match(ledger, /40\.00 EUR/);
+    assert.match(ledger, /-€20\.00/);
+    assert.match(ledger, /€40\.00/);
     assert.match(ledger, /Referenced/);
     assert.match(ledger, /Provider Two/);
     assert.match(
@@ -961,7 +1157,7 @@ describe("Finance surface boundary", () => {
     await filters[1].dispatch("input");
     assert.equal(
       surface.querySelector(".bookkeeping-totals").textContent,
-      "EUR Expenses 125.50",
+      "Expenses €125.50",
     );
   });
 
@@ -1259,7 +1455,7 @@ describe("Finance surface boundary", () => {
     // the package is blocked and says why.
     const review = surface.querySelector("[data-package-review]");
     assert.match(review.innerHTML, /August 2026 package/);
-    assert.match(review.innerHTML, /Two business accounts are required/);
+    assert.match(review.innerHTML, /Set up two business accounts in Evidence/);
     assert.equal(
       surface.querySelector("[data-report-month]").value,
       "2026-08",
@@ -1452,7 +1648,7 @@ describe("Finance surface boundary", () => {
     assert.equal(eurDialog.open, true);
     assert.match(
       eurDialog.querySelector("[data-eur-context]").textContent,
-      /Sponsor LLC — 200\.00 USD/,
+      /Sponsor LLC — \$200\.00/,
     );
     const eurInput = eurDialog.querySelector("input[name=amountEur]");
     eurInput.value = "not-a-number";
@@ -1470,7 +1666,7 @@ describe("Finance surface boundary", () => {
     assert.deepEqual(savedPuts[0], { amountEur: "184.20" });
     assert.match(
       surface.querySelector(".bookkeeping-ledger").innerHTML,
-      /≈ 184\.20 EUR/,
+      /≈ €184\.20/,
     );
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
@@ -1568,6 +1764,7 @@ describe("Finance surface boundary", () => {
       /Exported full CSV \(datatalksclub-2026-full\.csv\)/,
     );
 
+    document.execCommand = () => true;
     await surface.querySelector("[data-copy-report]").dispatch("click");
     assert.match(
       surface.querySelector("[data-bookkeeping-status]").textContent,
@@ -1637,4 +1834,72 @@ describe("Finance surface boundary", () => {
     assert.match(reportTsv, /Client Inc\tConsulting\t500\.00/);
     assert.doesNotMatch(reportTsv, /Finanzamt/);
   });
+});
+
+
+test("currency display uses separators and two decimals without throwing on unknown values", () => {
+  assert.equal(formatAmount("4800.0000"), "€4,800.00");
+  assert.equal(formatAmount(-4800), "-€4,800.00");
+  assert.equal(formatAmount("1234.5678", "usd"), "$1,234.57");
+  assert.equal(formatAmount(12, "GBP"), "£12.00");
+  assert.equal(formatAmount("pending", "EUR"), "pending EUR");
+  assert.equal(formatAmount("12.3456", "EURO"), "12.3456 EURO");
+  assert.equal(formatAmount(Infinity), "Infinity EUR");
+  assert.equal(formatAmount(null), "—");
+  assert.equal(formatAmount(""), "—");
+});
+
+test("ledger, VAT, conversions, and worklist format display without changing decimal storage", () => {
+  const entry = Object.freeze({
+    id: "precision-entry", amount: "4800.1234", currency: "USD", amountEur: "4200.4567",
+    vatAmount: "912.0234", vatCurrency: "EUR", entryType: "expense", counterparty: "Example",
+    transactionDate: "2026-10-12", description: "Test", category: "Hosting",
+  });
+  const before = JSON.stringify(entry);
+  const ledger = ledgerTableMarkup({ shown: [entry], hasEvidence: () => false, lensTitle: "October", e: String });
+  assert.match(ledger, /-\$4,800\.12/);
+  assert.match(ledger, /≈ €4,200\.46/);
+  assert.match(ledger, /€912\.02/);
+  assert.match(ledger, /Expense/);
+  const options = transactionOptionsMarkup([{ id: "friendly-date", transactionDate: "2026-10-03", counterparty: "Example" }], escapeHtml);
+  assert.match(options, /3 Oct(?: 2026)? · Example/);
+  assert.doesNotMatch(options, /2026-10-03/);
+  const worklist = worklistMarkup({ rows: [{ kind: "evidence", entry }], monthTitle: "October", e: String });
+  assert.match(worklist, /\$4,800\.12/);
+  assert.equal(JSON.stringify(entry), before);
+});
+
+
+test("report exports preserve decimal precision, quote cells, and require a real EUR conversion", () => {
+  const entries = [
+    { transactionDate: "2024-12-01", counterparty: 'Vendor, "quoted"', description: "First\nsecond", amount: "12.3456", currency: "USD", entryType: "expense", vatAmount: "0" },
+    { transactionDate: "2024-12-02", counterparty: "Converted", amount: "5.1234", currency: "GBP", amountEur: "0", entryType: "expense" },
+    { transactionDate: "2024-12-03", counterparty: "Tax", amount: "4", currency: "EUR", category: "Taxes", entryType: "expense" },
+  ];
+  const report = formatReportCsv(entries);
+  assert.match(report, /"Vendor, ""quoted""","First\nsecond","","-12\.3456","USD","0"/);
+  assert.match(report, /"Converted","","-0","","GBP"/);
+  assert.doesNotMatch(report, /"Tax"/);
+  assert.match(formatFullCsv(entries), /"Tax"/);
+  const tsv = formatReportTsv(entries);
+  assert.match(tsv, /Vendor, "quoted"\tFirst second\t\t-12\.3456/);
+  assert.equal(tsv.split("\n").length, 3);
+});
+
+test("clipboard fallback reports failure when no copy command is available", async () => {
+  globalThis.document = new FakeDocument();
+  assert.equal(await copyToClipboard("report"), false);
+});
+
+
+test("spreadsheet exports escape text formulas while retaining numeric expense signs and VAT currency", () => {
+  const entries = [{ transactionDate: "2024-12-01", counterparty: "=1+1", description: " @SUM(A1)", amount: "12.3400", currency: "EUR", entryType: "expense", vatAmount: "1.2500", vatCurrency: "USD", category: "+formula", statementRef: "-formula" }];
+  const csv = formatReportCsv(entries);
+  assert.match(csv, /"'=1\+1","' @SUM\(A1\)","-12\.3400"/);
+  assert.match(csv, /"1\.2500","USD","'\+formula","Expense","'-formula"/);
+  assert.match(formatFullCsv(entries), /"'=1\+1","' @SUM\(A1\)","12\.3400"/);
+  const tsv = formatReportTsv(entries);
+  assert.match(tsv, /VAT\tVAT Currency/);
+  assert.match(tsv, /'=1\+1\t' @SUM\(A1\)\t-12\.3400/);
+  assert.match(tsv, /1\.2500\tUSD\t'\+formula/);
 });

@@ -1,5 +1,6 @@
 import {
   createFormFeedback,
+  createPageHeader,
   renderDataSummary,
   reportFieldValidation,
   setControlPending,
@@ -109,11 +110,22 @@ export function createAdminSurface(context) {
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-users";
+    const actions = [];
+    if (usersSnapshot.loaded && isCurrentUserAdmin()) {
+      const createButton = document.createElement("button");
+      createButton.type = "button";
+      createButton.className = "primary-button";
+      createButton.textContent = "Add user";
+      createButton.addEventListener("click", () => openUserForm(null));
+      actions.push(createButton);
+    }
     wrap.append(
-      renderSurfaceHeader(
-        "Users",
-        "People who can access this workspace. Admins can add, edit, and disable accounts.",
-      ),
+      createPageHeader({
+        title: "Users",
+        subtitle: "People who can access this workspace. Admins can add, edit, and disable accounts.",
+        className: "ops-surface-header",
+        actions,
+      }),
       renderUsersSummary(),
     );
     if (usersOutcome) {
@@ -163,18 +175,6 @@ export function createAdminSurface(context) {
     // The summary above already names the outage and owns the retry; repeating
     // it here would be a second voice for the same fact.
     if (!usersSnapshot.loaded) return section;
-
-    const toolbar = document.createElement("div");
-    toolbar.className = "ops-users-toolbar";
-    if (isCurrentUserAdmin()) {
-      const createButton = document.createElement("button");
-      createButton.type = "button";
-      createButton.className = "primary-button";
-      createButton.textContent = "Add user";
-      createButton.addEventListener("click", () => openUserForm(null));
-      toolbar.append(createButton);
-    }
-    section.append(toolbar);
 
     const users = [...usersSnapshot.users].sort((a, b) =>
       String(a.name || "").localeCompare(String(b.name || "")),

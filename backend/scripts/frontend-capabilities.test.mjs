@@ -67,7 +67,7 @@ const REQUIRED = {
     states: ["empty", "configured", "validation", "upload-link", "report", "failure"],
   },
   sponsors: {
-    route: "/#/sponsors?bookingId=<id>",
+    route: "/#/sponsors?dealId=<id>",
     states: ["empty", "ready-detail", "operator-safe-read", "admin-mutation", "operator-denied", "conflict", "not-found", "failure"],
   },
   newsletter: {
@@ -107,7 +107,7 @@ const REQUIRED = {
 
 const REQUIRED_ROLES = ["signed-out", "expired-session", "disabled-user", "operator", "admin"];
 const REQUIRED_APIS = {
-  session: ["/api/me", "/api/*", "/work/api/*"],
+  session: ["/api/me", "/api/*"],
   settings: ["/api/me", "/logout"],
   tasks: ["/api/tasks", "/api/files", "/api/artifacts", "/docs", "/content/*"],
   workflows: ["/api/cards", "/api/tasks", "/api/artifacts"],
@@ -159,7 +159,7 @@ const REQUIRED_ROUTE_SET = [
   "/#/templates?templateId=<id>",
   "/#/recurring",
   "/#/bookkeeping",
-  "/#/sponsors?bookingId=<id>",
+  "/#/sponsors?dealId=<id>",
   "/#/newsletter",
   "/#/calendar",
   "/#/processes",

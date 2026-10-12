@@ -146,7 +146,7 @@ export function createQuickTaskActions(context) {
     selectLabel.append(templateSelect);
 
     const anchorInput = createQuickInput(
-      "Anchor date",
+      "Date",
       "date",
       options.anchorDate || todayIsoDate(),
     );
@@ -229,7 +229,8 @@ export function createQuickTaskActions(context) {
     for (const template of liveTemplates) {
       const opt = document.createElement("option");
       opt.value = template.id;
-      opt.textContent = template.name || template.title || template.id;
+      const prefix = template.emoji ? `${template.emoji} ` : "";
+      opt.textContent = `${prefix}${template.name || template.title || template.id}`;
       templateSelect.append(opt);
     }
     const matchedTemplate = findLiveWorkflowTemplate(
@@ -244,7 +245,7 @@ export function createQuickTaskActions(context) {
     templateSelect.disabled = false;
     templateState.textContent =
       liveTemplates.length > 0
-        ? `${liveTemplates.length} ${liveTemplates.length === 1 ? "template" : "templates"} available.`
+        ? ""
         : "No templates are deployed, so no card can be created yet.";
     // Optional task groups (e.g. a secondary sponsor block) instantiate
     // only when checked. Unchecked groups stay out of the new Card.
@@ -288,7 +289,7 @@ export function createQuickTaskActions(context) {
       const anchorDate = anchorInput.input.value;
       const invalid = reportFieldValidation([
         [templateControl, templateId ? "" : "Select a template."],
-        [anchorInput, anchorDate ? "" : "Anchor date is required."],
+        [anchorInput, anchorDate ? "" : "Date is required."],
       ]);
       if (invalid) {
         feedback.clear();
@@ -367,7 +368,8 @@ export function createQuickTaskActions(context) {
   function findLiveWorkflowTemplate(liveTemplates, requestedTemplate) {
     if (!requestedTemplate || !Array.isArray(liveTemplates)) return null;
     const wantedId = normalizeTemplateMatchValue(
-      requestedTemplate.templateId ||
+      requestedTemplate.id ||
+        requestedTemplate.templateId ||
         requestedTemplate.sourceTemplateId ||
         requestedTemplate.canonicalTemplateId,
     );
@@ -789,7 +791,7 @@ export function createQuickTaskActions(context) {
     panel.setAttribute("aria-labelledby", titleId);
 
     const header = document.createElement("div");
-    header.className = "diff-header";
+    header.className = "diff-header quick-form-header";
     const title = document.createElement("strong");
     title.setAttribute("id", titleId);
     title.textContent = titleText;

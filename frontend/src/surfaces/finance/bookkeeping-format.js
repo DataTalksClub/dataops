@@ -30,6 +30,14 @@ export function entryDirection(entry) {
   return "expense";
 }
 
+export function entryTypeLabel(value) {
+  return String(value || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+
 // Ledger dates read as short human dates; the year is kept when it is not
 // the current one, since a finance ledger spans years.
 export function ledgerDate(value) {
@@ -87,6 +95,28 @@ export function latestActivityMonth(entries, fallbackMonth) {
   return fallbackMonth;
 }
 
+// Display only: entry forms and storage keep their original decimal strings.
+export function formatAmount(value, currency = "EUR") {
+  const raw = value === null || value === undefined ? "" : String(value);
+  const code = String(currency || "").trim().toUpperCase();
+  if (!raw.trim()) return "—";
+  const numeric = typeof value === "number" || typeof value === "string"
+    ? Number(value)
+    : NaN;
+  const fallback = `${raw}${code ? ` ${code}` : ""}`;
+  if (!Number.isFinite(numeric) || !/^[A-Z]{3}$/.test(code)) return fallback;
+  try {
+    return new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency: code,
+      currencyDisplay: "narrowSymbol",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(numeric);
+  } catch {
+    return fallback;
+  }
+}
 // Unique years from transactions plus fallback, sorted descending.
 export function yearsOf(entries, fallback) {
   const set = new Set();
@@ -108,6 +138,13 @@ export function csvCell(value) {
   if (value == null) return '""';
   const str = String(value);
   return `"${str.replace(/"/g, '""')}"`;
+}
+
+// Spreadsheet applications interpret leading formula markers in text fields.
+// Monetary columns remain numeric strings so expense signs and precision survive.
+function spreadsheetText(value) {
+  const text = String(value ?? "");
+  return /^\s*[=+@-]/.test(text) ? `'${text}` : text;
 }
 
 // Payment categories tracked in the ledger but kept out of accountant's
@@ -145,8 +182,8 @@ export function formatReportCsv(entries, options = {}) {
     const eurVal =
       entry.currency === "EUR"
         ? entry.amount
-        : entry.amountEur || entry.amount || "";
-    const priceEur = eurVal ? `${sign}${eurVal}` : "";
+        : entry.amountEur ?? "";
+    const priceEur = eurVal !== "" && eurVal != null ? `${sign}${eurVal}` : "";
     const priceUsd =
       entry.currency === "USD" ? `${sign}${entry.amount}` : "";
     lines.push(
@@ -164,7 +201,7 @@ export function formatReportCsv(entries, options = {}) {
         dir === "income" ? "Income" : dir === "expense" ? "Expense" : entry.entryType || "",
         entry.statementRef || "",
       ]
-        .map(csvCell)
+        .map((value, index) => csvCell([4, 5, 7].includes(index) ? value : spreadsheetText(value)))
         .join(","),
     );
   }
@@ -189,7 +226,7 @@ export function formatFullCsv(entries) {
   ];
   const lines = [columns.map(csvCell).join(",")];
   for (const entry of entries || []) {
-    lines.push(columns.map((c) => csvCell(entry[c])).join(","));
+    lines.push(columns.map((c) => csvCell(["amount", "amountEur", "vatAmount"].includes(c) ? entry[c] : spreadsheetText(entry[c]))).join(","));
   }
   return lines.join("\r\n") + "\r\n";
 }
@@ -209,6 +246,7 @@ export function formatReportTsv(entries, options = {}) {
     "Price USD",
     "Currency",
     "VAT",
+    "VAT Currency",
     "Category",
     "Type",
     "Statement",
@@ -220,8 +258,8 @@ export function formatReportTsv(entries, options = {}) {
     const eurVal =
       entry.currency === "EUR"
         ? entry.amount
-        : entry.amountEur || entry.amount || "";
-    const priceEur = eurVal ? `${sign}${eurVal}` : "";
+        : entry.amountEur ?? "";
+    const priceEur = eurVal !== "" && eurVal != null ? `${sign}${eurVal}` : "";
     const priceUsd =
       entry.currency === "USD" ? `${sign}${entry.amount}` : "";
     lines.push(
@@ -233,12 +271,16 @@ export function formatReportTsv(entries, options = {}) {
         priceEur,
         priceUsd,
         entry.currency || "",
-        entry.vatAmount || "",
+        entry.vatAmount ?? "",
+        entry.vatCurrency || "",
         entry.category || "",
         dir === "income" ? "Income" : dir === "expense" ? "Expense" : entry.entryType || "",
         entry.statementRef || "",
       ]
-        .map((v) => String(v ?? "").replace(/[\t\r\n]/g, " "))
+        .map((v, index) => {
+          const text = String(v ?? "").replace(/[\t\r\n]/g, " ");
+          return [4, 5, 7].includes(index) ? text : spreadsheetText(text);
+        })
         .join("\t"),
     );
   }
@@ -287,7 +329,7 @@ export async function copyToClipboard(text) {
       textarea.style.opacity = "0";
       container.appendChild(textarea);
       if (textarea.select) textarea.select();
-      const success = document.execCommand ? document.execCommand("copy") : true;
+      const success = document.execCommand ? document.execCommand("copy") : false;
       if (textarea.remove) {
         textarea.remove();
       } else if (container.removeChild) {
@@ -295,7 +337,7 @@ export async function copyToClipboard(text) {
       }
       return Boolean(success);
     }
-    return true;
+    return false;
   }
   return false;
 }

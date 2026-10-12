@@ -1,7 +1,7 @@
 export type FinanceState = {
   id: string;
   recordType: 'sponsor-finance';
-  bookingId: string;
+  dealId: string;
   version: number;
   invoiceRequirement: 'required' | 'not-required';
   amountDue?: string;
@@ -24,7 +24,7 @@ export type FinanceState = {
 export type FinanceLink = {
   id: string;
   recordType: 'sponsor-finance-link';
-  bookingId: string;
+  dealId: string;
   kind: 'document' | 'transaction';
   sourceId: string;
   identityToken: string;
@@ -36,7 +36,7 @@ export type FinanceLink = {
 export type FinanceProjection = {
   enabled: true;
   classified: boolean;
-  bookingId: string;
+  dealId: string;
   role: 'admin' | 'operator';
   finance?: {
     version: number;

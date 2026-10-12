@@ -10,7 +10,7 @@ import {
   isTaskDueToday, isTaskOverdue, isWaitingOrFollowUpTask, isoDayDistance,
   parseWorkspaceHash, summarizeCardProgress, taskDate, taskProofState,
   taskRequiresApprovedArtifact, tasksFromWorkPayload, tasksSectionTitle,
-  todayIsoDate, workCardSubtitle, workCardTitle, workTaskTitle, workflowTaskGroups,
+  todayIsoDate, workCardIssueNumber, workCardSubtitle, workCardTitle, workTaskTitle, workflowTaskGroups,
   workspaceHashPath, workspaceRouteFor,
 } from "../core/workspace.js";
 import {
@@ -205,6 +205,7 @@ const {
   request,
   renderEntityLoadState,
   setRouteTitle, todayIsoDate,
+  viewportWidth: () => window.innerWidth,
   workApiUrl,
 });
 const { renderCalendarSurface, renderNewsletterSurface } =
@@ -214,6 +215,7 @@ const { renderCalendarSurface, renderNewsletterSurface } =
     request,
     setRouteTitle,
     todayIsoDate,
+    viewportWidth: () => window.innerWidth,
     workApiUrl,
   });
 operatingModelSurface = createOperatingModelSurface({
@@ -467,6 +469,7 @@ const {
   tasksFromWorkPayload,
   todayIsoDate,
   workApiUrl,
+  workCardIssueNumber,
   workCardSubtitle,
   workCardTitle,
   workTaskTitle,
@@ -550,6 +553,7 @@ const {
   tasksFromWorkPayload,
   todayIsoDate,
   workApiUrl,
+  workCardIssueNumber,
   workCardSubtitle,
   workCardTitle,
   workTaskTitle,
@@ -572,6 +576,7 @@ const {
   isMobileShell,
   isOperationsWorkspaceVisible,
   isWorkspaceRouteFresh,
+  locationRef: window.location,
   navigateCanonicalWorkspace,
   openCardPanel,
   openTaskPanel,
@@ -654,6 +659,7 @@ knowledgeSurface = createKnowledgeSurface({
   listDraftPaths: (...args) => listDraftPaths(...args),
   navigateCanonicalWorkspace,
   openCardPanel,
+  openHistory: (...args) => documentEditorSurface.openHistory(...args),
   openQuickWorkflowForm,
   openTaskPanel,
   qualityFiltersState,

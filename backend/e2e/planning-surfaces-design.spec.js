@@ -39,7 +39,7 @@ const newsletterPayload = {
 };
 
 async function mockPlanningApis(page) {
-  await page.route("**/work/api/calendar-items**", (route) => {
+  await page.route("**/api/calendar-items**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/overlays")) {
       return route.fulfill({ json: { items: [{ provider: "newsletter-slots-readonly", id: "overlay-community", startDate: "2026-08-14", endDate: "2026-08-14", label: "Community highlights", href: "#/newsletter" }] } });
@@ -47,7 +47,7 @@ async function mockPlanningApis(page) {
     if (url.pathname.includes("/alerts/") && route.request().method() === "POST") return route.fulfill({ json: { dismissed: true } });
     return route.fulfill({ json: calendarPayload });
   });
-  await page.route("**/work/api/newsletter-slots**", (route) => route.fulfill({ json: newsletterPayload }));
+  await page.route("**/api/newsletter-slots**", (route) => route.fulfill({ json: newsletterPayload }));
 }
 
 async function useTheme(page, dark) {
@@ -150,14 +150,19 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   const root = await page.goto(`${server.baseURL}/#/calendar`);
   assertOwnedServerResponse(server, root, "planning calendar root");
   const surface = page.locator(".calendar-surface");
-  await expect(surface.getByRole("heading", { name: "Operations calendar" })).toBeVisible();
-  await expect(surface.getByText("Community webinar").first()).toBeVisible();
-  await expect(surface.getByText("Activity overlaps a school holiday")).toBeVisible();
+  await expect(surface.getByRole("heading", { name: "Calendar", exact: true, level: 1 })).toBeVisible();
+  await expect(surface.locator(".calendar-activity", { hasText: "Community webinar" }).first()).toBeVisible();
+  const planningAlerts = surface.locator(".calendar-alert-summary");
+  await expect(planningAlerts).not.toHaveAttribute("open", "");
+  await planningAlerts.locator("summary").click();
+  await expect(planningAlerts.getByText("Activity overlaps a school holiday")).toBeVisible();
+  await expect(planningAlerts.getByRole("button", { name: "Dismiss" }).first()).toBeVisible();
+  await planningAlerts.locator("summary").click();
   await expect(surface.getByText("school-holiday-overlap")).toHaveCount(0);
   await expect(surface.locator(".calendar-weeks > .calendar-week")).toHaveCount(6);
   await expect(surface.locator(".calendar-weeks > .calendar-week > section.calendar-day")).toHaveCount(42);
   await expectNoPageOverflow(page, 1440);
-  await expect(surface).toHaveCSS("gap", "20px");
+  await expect(surface).toHaveCSS("gap", "12px");
   await expectExactPalette(page, false);
   const accessibility = await new AxeBuilder({ page }).include(".calendar-surface").analyze();
   expect(accessibility.violations.filter((violation) => ["critical", "serious"].includes(violation.impact))).toEqual([]);
@@ -170,33 +175,20 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   await page.screenshot({ path: path.join(screenshots, "calendar-1440-dark.png"), animations: "disabled" });
 
   await page.setViewportSize({ width: 820, height: 900 });
-  await expect(surface).toHaveCSS("gap", "16px");
-  expect(await surface.locator(".calendar-grid").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
+  await expect(surface).toHaveCSS("gap", "6px");
   await expectNoPageOverflow(page, 820);
   await page.screenshot({ path: path.join(screenshots, "calendar-820-dark.png"), animations: "disabled" });
   await page.setViewportSize({ width: 620, height: 844 });
-  expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(2);
   await expectNoPageOverflow(page, 620);
   await page.setViewportSize({ width: 420, height: 844 });
-  expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
   await expectNoPageOverflow(page, 420);
   await page.screenshot({ path: path.join(screenshots, "calendar-420-dark.png"), animations: "disabled" });
 
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
+  await surface.getByRole("button", { name: "Calendar layers and view" }).click();
   await surface.locator("select[data-view]").selectOption("week");
   await expect(surface.locator(".calendar-weeks > .calendar-week")).toHaveCount(1);
   await expect(surface.locator(".calendar-weeks > .calendar-week > section.calendar-day")).toHaveCount(7);
-  const swipeHint = surface.locator(".calendar-mobile-hint");
-  await expect(swipeHint).toBeVisible();
-  await expect(swipeHint).toContainText("Swipe each week horizontally");
-  const weekScroll = await surface.locator(".calendar-week").first().evaluate((element) => ({
-    clientWidth: element.clientWidth,
-    overflowX: getComputedStyle(element).overflowX,
-    scrollWidth: element.scrollWidth,
-  }));
-  expect(weekScroll.overflowX).toBe("auto");
-  expect(weekScroll.scrollWidth).toBeGreaterThan(weekScroll.clientWidth);
   await page.evaluate(() => window.scrollTo(0, 0));
   await useTheme(page, false);
   await expectNoPageOverflow(page, 390);

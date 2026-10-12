@@ -104,6 +104,22 @@ export function createTaskEvidence(context) {
 
     const fileInput = document.createElement("input");
     fileInput.type = "file";
+    label.className = "task-file-drop-zone";
+    const hint = document.createElement("span");
+    hint.className = "task-file-drop-hint";
+    hint.textContent = "Drop a file here or choose a file";
+    label.append(hint);
+    label.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      if (!fileInput.disabled) label.classList.add("is-dragging");
+    });
+    label.addEventListener("dragleave", () => label.classList.remove("is-dragging"));
+    label.addEventListener("drop", (event) => {
+      event.preventDefault();
+      label.classList.remove("is-dragging");
+      const file = event.dataTransfer?.files?.[0];
+      if (file && !fileInput.disabled) uploadTaskFile(task.id, file);
+    });
     fileInput.disabled = detail.activeTaskMutationBusy ||
       detail.activeCardMutationBusy ||
       detail.activeCardTemplateBusy ||
@@ -562,7 +578,16 @@ export function createTaskEvidence(context) {
       }),
     );
     addRow.append(titleInput, urlInput, addBtn);
-    section.append(addRow);
+    if (options.ownerType === "card" && artifacts.length === 0) {
+      const form = document.createElement("details");
+      form.className = "card-add-details";
+      const toggle = document.createElement("summary");
+      toggle.textContent = "+ Add artifact";
+      form.append(toggle, addRow);
+      section.append(form);
+    } else {
+      section.append(addRow);
+    }
     return section;
   }
 

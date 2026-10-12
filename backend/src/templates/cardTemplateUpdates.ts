@@ -265,9 +265,9 @@ export function buildCardTemplateUpdatePlan(
 
   // A Card created without an optional group never receives that group's
   // tasks from later Template versions either.
-  const selected = card.selectedOptionalGroups;
+  const selected = card.selectedOptionalGroups || [];
   const definitions = (template.taskDefinitions || []).filter((definition) => (
-    !definition.optionalGroup || selected === undefined || selected.includes(definition.optionalGroup)
+    !definition.optionalGroup || selected.includes(definition.optionalGroup)
   ));
   for (const [order, definition] of definitions.entries()) {
     const ref = definition.refId;

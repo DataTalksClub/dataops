@@ -1,4 +1,9 @@
 import { editorFeedbackFor, editorMutationGuard } from "./feedback.js";
+import {
+  createBlockEditor,
+  parseMarkdownBlocks,
+  serializeBlocksToMarkdown,
+} from "./block-editor.js";
 
 export function createDocumentRenderer(context, services) {
   const {
@@ -13,6 +18,7 @@ export function createDocumentRenderer(context, services) {
     resizeDocumentTitle, setMarkdownTitle, stripLeadingHeading, updateSaveState,
   } = services;
   const showFeedback = editorFeedbackFor(context);
+  const blockEditor = createBlockEditor(context, services);
 
   const DOC_TYPES = [
     "sop", "checklist", "template", "reference", "playbook", "prompt",
@@ -84,24 +90,93 @@ export function createDocumentRenderer(context, services) {
     }
   }
 
-  function renderParsedDocument() {
+  function renderParsedDocument({ bodyBlocks, focusBlockIndex = -1 } = {}) {
     const sections = (documentState.currentParsed && documentState.currentParsed.sections) || {};
     const blocks = [];
     const fm = (documentState.currentParsed && documentState.currentParsed.frontmatter) || {};
     const loomBlock = renderLoomBlock(fm);
+
+    const trail = renderDocHierarchyTrail();
+    if (trail) blocks.push(trail);
+
     blocks.push(renderTitleBlock(fm));
     blocks.push(renderFrontmatterBlock(fm));
     blocks.push(renderWarningsBlock());
     if (Object.keys(sections).length === 0) {
-      // Plain markdown (template, reference, etc.) — render the body as one
-      // big rendered block, no editing controls.
-      const body = stripFrontmatter(editor.value || "");
+      const rawFull = editor.value || "";
+      const body = stripFrontmatter(rawFull);
+      const cleanBody = stripLeadingHeading(body);
+      const docBlocks = bodyBlocks || parseMarkdownBlocks(cleanBody);
+
       const wrap = document.createElement("div");
       wrap.className = "block-plain-body";
-      wrap.append(renderMarkdown(stripLeadingHeading(body)));
+
+      if (docBlocks.length === 0) {
+        const emptyBlock = document.createElement("div");
+        emptyBlock.className = "notion-empty-document";
+        const emptyBtn = document.createElement("button");
+        emptyBtn.type = "button";
+        emptyBtn.className = "notion-add-row-btn";
+        emptyBtn.textContent = "+ Click or type '/' to insert text, headings, lists, or callouts…";
+        emptyBtn.addEventListener("click", () => {
+          blockEditor.slashMenu.open({
+            targetEl: emptyBtn,
+            onSelect: (item) => {
+              if (item.type === "page") {
+                if (services.createSubpage) services.createSubpage(documentState.currentDoc);
+                else if (context.createSubpage) context.createSubpage(documentState.currentDoc);
+                return;
+              }
+              applyBlocksChange([
+                {
+                  id: `blk-0-${Date.now()}`,
+                  type: item.type,
+                  raw: item.template || "",
+                },
+              ], { focusBlockIndex: 0 });
+            },
+          });
+        });
+        emptyBlock.append(emptyBtn);
+        wrap.append(emptyBlock);
+      } else {
+        const blocksContainer = blockEditor.renderBlocksContainer({
+          blocks: docBlocks,
+          focusBlockIndex,
+          onChange: (idx, newRaw, options = {}) => {
+            docBlocks[idx] = {
+              ...docBlocks[idx], ...parseMarkdownBlocks(newRaw)[0], raw: newRaw,
+            };
+            applyBlocksChange(docBlocks, options);
+          },
+          onMoveBlock: (fromIdx, toIdx) => {
+            const [moved] = docBlocks.splice(fromIdx, 1);
+            docBlocks.splice(toIdx, 0, moved);
+            applyBlocksChange(docBlocks);
+          },
+          onInsertBlock: (atIdx, template) => {
+            docBlocks.splice(atIdx, 0, {
+              ...(parseMarkdownBlocks(template)[0] || { type: "paragraph" }),
+              id: `blk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              raw: template,
+            });
+            applyBlocksChange(docBlocks, { focusBlockIndex: atIdx });
+          },
+          onDeleteBlock: (idx) => {
+            docBlocks.splice(idx, 1);
+            applyBlocksChange(docBlocks);
+          },
+        });
+        wrap.append(blocksContainer);
+      }
+
       blocks.push(wrap);
       blocks.push(loomBlock);
       blocks.push(renderRelatedDocsBlock(fm));
+
+      const subpages = renderSubpagesBlock(documentState.currentDoc?.path);
+      if (subpages) blocks.push(subpages);
+
       renderedView.replaceChildren(...blocks.filter(Boolean));
       return;
     }
@@ -133,9 +208,192 @@ export function createDocumentRenderer(context, services) {
     blocks.push(backlinksHost);
     blocks.push(loomBlock);
 
+    const subpages = renderSubpagesBlock(documentState.currentDoc?.path);
+    if (subpages) blocks.push(subpages);
+
     renderedView.replaceChildren(...blocks.filter(Boolean));
     // Async-fetch backlinks separately so the main render isn't blocked.
     fetchBacklinksForCurrentDoc();
+  }
+
+  function applyBlocksChange(newBlocks, { rerender = true, focusBlockIndex = -1 } = {}) {
+    const rawFull = editor.value || "";
+    const fmRange = _frontmatterRange(rawFull);
+    const fmText = fmRange ? rawFull.slice(0, fmRange.end + 5) : "";
+    const bodyAfterFm = fmRange ? rawFull.slice(fmRange.end + 5) : rawFull;
+    const h1Match = bodyAfterFm.match(/^#{1,2}\s+[^\n]*\n+/);
+    const headingText = h1Match ? h1Match[0] : "";
+    const newBodyMarkdown = serializeBlocksToMarkdown(newBlocks);
+    editor.value =
+      (fmText ? fmText + (fmText.endsWith("\n") ? "" : "\n") : "") +
+      headingText +
+      (headingText && !headingText.endsWith("\n\n") ? "\n" : "") +
+      newBodyMarkdown;
+    storeDraft();
+    updateSaveState();
+    if (rerender) renderParsedDocument({ bodyBlocks: newBlocks, focusBlockIndex });
+  }
+
+  function renderDocHierarchyTrail() {
+    const currentDoc = documentState.currentDoc;
+    const path = currentDoc?.path;
+    if (!path) return null;
+    const nav = document.createElement("nav");
+    nav.className = "doc-hierarchy-nav doc-hierarchy-trail";
+    nav.setAttribute("aria-label", "Document location");
+    const root = document.createElement("button");
+    root.type = "button";
+    root.className = "doc-trail-item doc-trail-root doc-trail-link";
+    root.textContent = "Docs";
+    root.addEventListener("click", () => {
+      if (context.navigateCanonicalWorkspace) {
+        context.navigateCanonicalWorkspace("/docs");
+      }
+    });
+    nav.append(root);
+
+    const allDocs = context.knowledgeState?.allDocuments || [];
+    const matchedDoc = allDocs.find((d) => d.path === path);
+    const ancestors = [];
+    const visited = new Set();
+    if (currentDoc.id) visited.add(currentDoc.id);
+    if (matchedDoc?.id) visited.add(matchedDoc.id);
+    visited.add(currentDoc.path);
+
+    let curr = {
+      ...matchedDoc,
+      parent: documentState.currentParsed?.frontmatter?.parent || matchedDoc?.parent,
+      parent_id: matchedDoc?.parent_id,
+    };
+    while (curr) {
+      const parentRef = curr.parent_id || curr.parent || "";
+      if (!parentRef) break;
+      const parentDoc = allDocs.find(
+        (d) => d.id === parentRef || d.path === parentRef || d.aliases?.includes(parentRef),
+      );
+      if (!parentDoc || visited.has(parentDoc.id) || visited.has(parentDoc.path)) break;
+      visited.add(parentDoc.id);
+      visited.add(parentDoc.path);
+      ancestors.unshift(parentDoc);
+      curr = parentDoc;
+    }
+
+    if (ancestors.length === 0) {
+      const parts = path.split("/").filter((p) => Boolean(p) && p.toLowerCase() !== "content");
+      for (let i = 0; i < parts.length - 1; i++) {
+        const sep = document.createElement("span");
+        sep.className = "doc-trail-sep";
+        sep.textContent = " / ";
+        const folder = document.createElement("span");
+        folder.className = "doc-trail-item doc-trail-folder";
+        folder.textContent = humanizeDocType(parts[i]);
+        nav.append(sep, folder);
+      }
+    } else {
+      const firstParent = ancestors[0];
+      const domain = firstParent.domain || partsFirstDomain(firstParent.path);
+      if (domain && domain !== "docs") {
+        const sep = document.createElement("span");
+        sep.className = "doc-trail-sep";
+        sep.textContent = " / ";
+        const folder = document.createElement("span");
+        folder.className = "doc-trail-item doc-trail-folder";
+        folder.textContent = humanizeDocType(domain);
+        nav.append(sep, folder);
+      }
+      for (const ancestor of ancestors) {
+        const sep = document.createElement("span");
+        sep.className = "doc-trail-sep";
+        sep.textContent = " / ";
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "doc-trail-item doc-trail-ancestor doc-trail-link";
+        item.textContent = ancestor.title || basename(ancestor.path);
+        item.addEventListener("click", () => {
+          if (context.openDocument) context.openDocument(ancestor.path);
+        });
+        nav.append(sep, item);
+      }
+    }
+
+    const sep = document.createElement("span");
+    sep.className = "doc-trail-sep";
+    sep.textContent = " / ";
+    const current = document.createElement("span");
+    current.className = "doc-trail-item doc-trail-current";
+    current.textContent =
+      documentState.currentParsed?.frontmatter?.title ||
+      documentState.currentDoc?.title ||
+      basename(path);
+    nav.append(sep, current);
+    return nav;
+  }
+
+  function partsFirstDomain(p) {
+    const parts = (p || "").split("/").filter((x) => Boolean(x) && x.toLowerCase() !== "content");
+    return parts.length > 1 ? parts[0] : "";
+  }
+
+  function renderSubpagesBlock(currentDocPath) {
+    if (!currentDocPath) return null;
+    const currentDoc = documentState.currentDoc;
+    const allDocs = context.knowledgeState?.allDocuments || [];
+    const matchedDoc = allDocs.find((d) => d.path === currentDocPath) || currentDoc;
+    const currentDocId = matchedDoc?.id || documentState.currentParsed?.frontmatter?.id;
+    const docStemPath = currentDocPath.replace(/\.md$/, "") + "/";
+    const children = allDocs.filter(
+      (d) =>
+        d.path !== currentDocPath &&
+        ((currentDocId && d.parent_id === currentDocId) ||
+         (currentDocId && d.parent === currentDocId) ||
+         (d.parent === currentDocPath) ||
+         (d.path.startsWith(docStemPath) && !d.parent_id)),
+    );
+
+    const section = document.createElement("section");
+    section.className = "doc-subpages";
+    const header = document.createElement("header");
+    header.className = "doc-subpages-header";
+    const heading = document.createElement("h3");
+    heading.textContent = "Sub-pages";
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "quiet-button doc-add-subpage-btn";
+    addBtn.textContent = "+ Add sub-page";
+    addBtn.addEventListener("click", () => {
+      if (services.createSubpage) services.createSubpage(currentDoc);
+      else if (context.createSubpage) context.createSubpage(currentDoc);
+    });
+    header.append(heading, addBtn);
+    section.append(header);
+
+    const list = document.createElement("div");
+    list.className = "doc-subpages-list";
+    if (children.length === 0) {
+      const empty = document.createElement("span");
+      empty.className = "doc-subpages-empty";
+      empty.textContent = "No sub-pages yet.";
+      list.append(empty);
+    } else {
+      for (const child of children) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "doc-subpage-item";
+        const icon = document.createElement("span");
+        icon.className = "doc-subpage-icon";
+        icon.textContent = "📄";
+        const title = document.createElement("span");
+        title.className = "doc-subpage-title";
+        title.textContent = child.title || basename(child.path);
+        row.append(icon, title);
+        row.addEventListener("click", () => {
+          if (context.openDocument) context.openDocument(child.path);
+        });
+        list.append(row);
+      }
+    }
+    section.append(list);
+    return section;
   }
 
   function emptyNote(text) {

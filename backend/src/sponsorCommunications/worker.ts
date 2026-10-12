@@ -123,7 +123,7 @@ async function writeDispatchMarker(
     await failBeforeMarker(client, attempt, owner, 'private-state-unavailable', now);
     return null;
   }
-  const exactBooking = await getCrmRecord(client, 'booking', payload.payload.bookingId);
+  const exactBooking = await getCrmRecord(client, 'deal', payload.payload.dealId);
   const exactOrganization = await getCrmRecord(client, 'organization', payload.payload.organizationId);
   const exactContact = await getCrmRecord(client, 'contact', payload.payload.contactId);
   const exactSuggestion = await getSponsorItem<Record<string, unknown>>(client, 'COMMUNICATION_SUGGESTION', payload.payload.suggestionId);
@@ -152,7 +152,7 @@ async function writeDispatchMarker(
     || payload.payload.sendConfigGeneration !== attempt.configGeneration
     || payload.payload.sendConfigDigest !== attempt.configDigest
     || !exactBooking || !exactOrganization || !exactContact || !exactSuggestion
-    || exactBooking.version !== payload.payload.bookingVersion
+    || exactBooking.version !== payload.payload.dealVersion
     || exactOrganization.version !== payload.payload.organizationVersion
     || exactContact.version !== payload.payload.contactVersion
     || Number(exactSuggestion.version) !== payload.payload.suggestionVersion
@@ -195,10 +195,10 @@ async function writeDispatchMarker(
         {
           ConditionCheck: {
             TableName: TABLE_SPONSOR_CRM,
-            Key: sponsorItemKey('BOOKING', payload.payload.bookingId),
-            ConditionExpression: '#version = :version AND organizationId = :organization AND #status <> :cancelled AND #status <> :complete',
+            Key: sponsorItemKey('DEAL', payload.payload.dealId),
+            ConditionExpression: '#version = :version AND organizationId = :organization AND #status <> :lost',
             ExpressionAttributeNames: { '#version': 'version', '#status': 'status' },
-            ExpressionAttributeValues: { ':version': payload.payload.bookingVersion, ':organization': payload.payload.organizationId, ':cancelled': 'cancelled', ':complete': 'complete' },
+            ExpressionAttributeValues: { ':version': payload.payload.dealVersion, ':organization': payload.payload.organizationId, ':lost': 'lost' },
           },
         },
         {

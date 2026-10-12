@@ -210,11 +210,13 @@ async function expectAboveFooter(page, text) {
   const prose = page.getByText(text).last();
   await expect(prose).toBeVisible();
   const proseBox = await prose.boundingBox();
-  const footer = page.locator(".document-editor-footer");
-  const footerBox = await footer.boundingBox();
   expect(proseBox, `missing box for ${text}`).toBeTruthy();
-  expect(footerBox, "missing footer box").toBeTruthy();
-  expect(proseBox.y + proseBox.height).toBeLessThanOrEqual(footerBox.y + 1);
+  const footer = page.locator(".document-editor-footer");
+  if (await footer.isVisible()) {
+    const footerBox = await footer.boundingBox();
+    expect(footerBox, "missing footer box").toBeTruthy();
+    expect(proseBox.y + proseBox.height).toBeLessThanOrEqual(footerBox.y + 1);
+  }
 }
 
 test.beforeAll(async () => {

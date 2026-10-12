@@ -74,6 +74,7 @@ function createHarness(options = {}) {
   const requests = [];
   const menu = createKnowledgeMenus({
     apiUrl: (path) => new URL(path, "https://portal.test"),
+    createSubpage: (doc) => calls.push(["create-subpage", doc]),
     deleteCurrentDoc: () => calls.push(["delete-current-doc"]),
     diffBody,
     diffClose,
@@ -86,6 +87,7 @@ function createHarness(options = {}) {
       value.textContent = message;
       return value;
     },
+    moveCurrentDoc: () => calls.push(["move-current-doc"]),
     openHistory: () => calls.push(["open-history"]),
     renameCurrentDoc: () => calls.push(["rename-current-doc"]),
     request: async (url) => {
@@ -114,15 +116,32 @@ describe("Knowledge menu behavior", () => {
     const popover = harness.body.querySelector(".doc-menu-popover");
     assert.deepEqual(
       popover.children.map((item) => item.textContent),
-      ["Rename…", "History", "Delete"],
+      ["Rename…", "Add sub-page…", "Move to…", "History", "Delete"],
     );
     await clickMenuItem(harness, "Rename…");
     assert.deepEqual(harness.calls, [["rename-current-doc"]]);
 
     harness.menu.openDocMenu();
+    await clickMenuItem(harness, "Add sub-page…");
+    assert.deepEqual(harness.calls, [
+      ["rename-current-doc"],
+      ["create-subpage", { path: "content/process.md" }],
+    ]);
+
+    harness.menu.openDocMenu();
+    await clickMenuItem(harness, "Move to…");
+    assert.deepEqual(harness.calls, [
+      ["rename-current-doc"],
+      ["create-subpage", { path: "content/process.md" }],
+      ["move-current-doc"],
+    ]);
+
+    harness.menu.openDocMenu();
     await clickMenuItem(harness, "Delete");
     assert.deepEqual(harness.calls, [
       ["rename-current-doc"],
+      ["create-subpage", { path: "content/process.md" }],
+      ["move-current-doc"],
       ["delete-current-doc"],
     ]);
   });

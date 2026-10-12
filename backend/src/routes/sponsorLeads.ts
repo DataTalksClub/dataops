@@ -3,6 +3,7 @@ import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-sec
 import { DynamoDBDocumentClient, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 import { deterministicCrmId, getCrmRecord, listCrmRecords, updateCrmRecord, type CrmRecord } from '../db/sponsorCrm';
+import { convertLead } from '../sponsorCrm/convertLead';
 import { TABLE_AUDIT_EVENTS, TABLE_SPONSOR_CRM } from '../db/tableNames';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
@@ -13,7 +14,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 const SECRET_CACHE_MS = 60_000;
 const TOP_LEVEL_FIELDS = new Set(['version', 'messageId', 'newsletter', 'sponsors']);
 const NEWSLETTER_FIELDS = new Set(['name', 'sender', 'subject', 'receivedAt']);
-const SPONSOR_FIELDS = new Set(['name', 'url', 'blurb', 'context']);
+const SPONSOR_FIELDS = new Set(['name', 'url', 'category', 'blurb', 'context']);
 const LEAD_STATUSES = new Set(['new', 'triaged', 'converted', 'ignored']);
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
@@ -22,7 +23,7 @@ let cachedCredential: { value: string; id: string; expiresAt: number } | null = 
 
 interface Credential { value: string; id: string }
 interface LeadNewsletter { name: string; sender: string; subject: string; receivedAt: string }
-interface LeadSponsor { name: string; url: string; blurb: string; context: string }
+interface LeadSponsor { name: string; url: string; category: string; blurb: string; context: string }
 
 function response(statusCode: number, body: unknown, headers: Record<string, string> = {}): LambdaResponse {
   return { statusCode, headers: { ...JSON_HEADERS, ...headers }, body: JSON.stringify(body) };
@@ -202,6 +203,7 @@ function parseSponsors(value: unknown): LeadSponsor[] {
     return {
       name: text(sponsor.name, `sponsors[${index}].name`, 200),
       url: validatedUrl(sponsor.url, `sponsors[${index}].url`),
+      category: optionalText(sponsor.category, `sponsors[${index}].category`, 40),
       blurb: optionalText(sponsor.blurb, `sponsors[${index}].blurb`, 2000),
       context: optionalText(sponsor.context, `sponsors[${index}].context`, 2000),
     };
@@ -226,6 +228,7 @@ interface LeadValue {
   sponsor: {
     name: string;
     url: string;
+    category: string;
     blurb: string;
     context: string;
     normalizedName: string;
@@ -245,21 +248,40 @@ function canonicalLead(value: LeadValue): Record<string, unknown> {
     newsletter: value.newsletter,
     normalizedName: value.sponsor.normalizedName,
     normalizedUrl: value.sponsor.normalizedUrl,
+    category: value.sponsor.category,
     blurb: value.sponsor.blurb,
     context: value.sponsor.context,
   };
 }
 
+function stableStringify(value: unknown): string {
+  // DynamoDB does not preserve document key order, so a stored newsletter
+  // can come back with its keys shuffled. An order-sensitive comparison
+  // would then mistake an exact replay for a conflict (live 409 on a
+  // byte-identical retry); sort keys recursively before comparing.
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
 function sameCanonical(existing: CrmRecord, value: LeadValue): boolean {
   const sponsor = (existing.sponsor || {}) as Record<string, unknown>;
-  return JSON.stringify({
+  // Leads stored before category existed carry no key; read them as '' so
+  // an old lead replayed without a category still matches (a newly added
+  // category is a content change and conflicts, as it should).
+  return stableStringify({
     messageId: existing.messageId,
     newsletter: existing.newsletter,
     normalizedName: sponsor.normalizedName,
     normalizedUrl: sponsor.normalizedUrl,
+    category: typeof sponsor.category === 'string' ? sponsor.category : '',
     blurb: sponsor.blurb,
     context: sponsor.context,
-  }) === JSON.stringify(canonicalLead(value));
+  }) === stableStringify(canonicalLead(value));
 }
 
 async function storeLead(client: DynamoDBDocumentClient, value: LeadValue): Promise<{ id: string; outcome: 'created' | 'duplicate' }> {
@@ -358,6 +380,7 @@ export async function handleSponsorLeadIntake(event: LambdaEvent, client: Dynamo
         sponsor: {
           name: sponsor.name.trim(),
           url: sponsor.url.trim(),
+          category: sponsor.category,
           blurb: sponsor.blurb,
           context: sponsor.context,
           normalizedName: normalizeLeadName(sponsor.name),
@@ -462,10 +485,25 @@ export async function handleSponsorLeadRoutes(path: string, method: string, even
     const existing = await getCrmRecord(client, 'lead', id);
     if (!existing) return response(404, { error: 'Not found' });
     if (body.version !== existing.version) return response(409, { error: 'Lead was changed; reload and retry' });
-    const unknown = Object.keys(body).find((key) => key !== 'version' && key !== 'status');
+    const unknown = Object.keys(body).find((key) => !['version', 'status', 'organizationId', 'createNew'].includes(key));
     if (unknown) return response(400, { error: `Unknown field: ${unknown}` });
     if (body.status !== undefined && !LEAD_STATUSES.has(String(body.status))) return response(400, { error: 'Invalid status' });
     if (body.status === undefined) return response(400, { error: 'Nothing to update' });
+    if (body.status === 'converted') {
+      const actorId = Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === 'x-user-id')?.[1] || 'authenticated-operator';
+      try {
+        const result = await convertLead(client, existing, {
+          version: body.version,
+          status: body.status,
+          organizationId: body.organizationId,
+          createNew: body.createNew,
+        }, actorId);
+        if (!result.ok) return response(result.statusCode, { error: result.error, candidates: result.candidates });
+        return response(200, { ...publicLead(result.lead), organizationId: result.organization.id, organization: { id: result.organization.id, displayName: result.organization.displayName, domain: result.organization.domain, sightings: result.organization.sightings }, created: result.created });
+      } catch {
+        return response(409, { error: 'Conflicting update; reload and retry' });
+      }
+    }
     try {
       const next = await updateCrmRecord(client, 'lead', existing, { status: body.status });
       return response(200, publicLead(next));

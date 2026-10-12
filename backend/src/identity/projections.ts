@@ -9,6 +9,7 @@
 
 import type { Card, Task, User } from '../types';
 import type { SafeUserProjection, TeamDirectory } from './directory';
+import { hydrateStructuredCardFields } from '../cards/cardTitleStructure';
 
 export interface ProjectedTask extends Task {
   /** Safe projection of `assigneeId`; omitted when the Task is unassigned. */
@@ -75,8 +76,10 @@ export async function projectCard(
   directory: TeamDirectory,
   card: Card,
   tasks?: Task[],
+  templateIdByType?: Map<string, string> | Record<string, string>,
 ): Promise<ProjectedCard> {
   const projected: ProjectedCard = { ...card };
+  hydrateStructuredCardFields(projected, templateIdByType);
   const ownerId = nonEmpty(card.ownerId);
   if (ownerId) projected.owner = await directory.project(ownerId);
   if (tasks) {
@@ -91,10 +94,11 @@ export async function projectCards(
   directory: TeamDirectory,
   cards: Card[],
   tasksByCardId: ReadonlyMap<string, Task[]>,
+  templateIdByType?: Map<string, string> | Record<string, string>,
 ): Promise<ProjectedCard[]> {
   const projected: ProjectedCard[] = [];
   for (const card of cards) {
-    projected.push(await projectCard(directory, card, tasksByCardId.get(card.id) ?? []));
+    projected.push(await projectCard(directory, card, tasksByCardId.get(card.id) ?? [], templateIdByType));
   }
   return projected;
 }

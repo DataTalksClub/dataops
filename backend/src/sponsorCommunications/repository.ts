@@ -32,9 +32,9 @@ export async function putSuggestion(client: DynamoDBDocumentClient, suggestion: 
   const stored = {
     ...itemKey('COMMUNICATION_SUGGESTION', suggestion.id),
     ...suggestion,
-    GSI1PK: `BOOKING_COMMUNICATION#${suggestion.bookingId}`,
+    GSI1PK: `DEAL_COMMUNICATION#${suggestion.dealId}`,
     GSI1SK: `SUGGESTION#${suggestion.createdAt}#${suggestion.id}`,
-    GSI4PK: `BOOKING_COMMUNICATION#${suggestion.bookingId}`,
+    GSI4PK: `DEAL_COMMUNICATION#${suggestion.dealId}`,
     GSI4SK: `SUGGESTION#${suggestion.createdAt}#${suggestion.id}`,
   };
   try {
@@ -48,11 +48,11 @@ export async function putSuggestion(client: DynamoDBDocumentClient, suggestion: 
 
 export async function listBookingCommunications(
   client: DynamoDBDocumentClient,
-  bookingId: string,
+  dealId: string,
   options: { limit?: number; cursor?: string } = {},
 ): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }> {
   const limit = Math.min(Math.max(options.limit || 50, 1), 100);
-  const bookingPartition = `BOOKING_COMMUNICATION#${bookingId}`;
+  const bookingPartition = `DEAL_COMMUNICATION#${dealId}`;
   let exclusiveStartKey: Record<string, unknown> | undefined;
   if (options.cursor) {
     try {
@@ -79,10 +79,10 @@ export async function listBookingCommunications(
   }));
   const safeFields: Record<string, readonly string[]> = {
     'communication-suggestion': ['id', 'recordType', 'communicationType', 'status', 'safeReason', 'eligible', 'version', 'createdAt', 'updatedAt'],
-    'communication-draft-version': ['id', 'recordType', 'communicationId', 'bookingId', 'version', 'suggestionId', 'createdAt', 'abandonedAt'],
-    'communication-presentation': ['id', 'recordType', 'communicationId', 'bookingId', 'draftVersion', 'state', 'expiresAt', 'createdAt'],
-    'sponsor-send-attempt': ['id', 'recordType', 'communicationId', 'bookingId', 'draftVersion', 'status', 'derivedStatus', 'safeReasonCode', 'createdAt', 'updatedAt'],
-    'sponsor-send-event-fact': ['recordType', 'communicationId', 'bookingId', 'attemptId', 'eventType', 'eventTime', 'createdAt'],
+    'communication-draft-version': ['id', 'recordType', 'communicationId', 'dealId', 'version', 'suggestionId', 'createdAt', 'abandonedAt'],
+    'communication-presentation': ['id', 'recordType', 'communicationId', 'dealId', 'draftVersion', 'state', 'expiresAt', 'createdAt'],
+    'sponsor-send-attempt': ['id', 'recordType', 'communicationId', 'dealId', 'draftVersion', 'status', 'derivedStatus', 'safeReasonCode', 'createdAt', 'updatedAt'],
+    'sponsor-send-event-fact': ['recordType', 'communicationId', 'dealId', 'attemptId', 'eventType', 'eventTime', 'createdAt'],
   };
   const items = (result.Items || []).flatMap((raw) => {
     const fields = safeFields[String(raw.recordType)];
@@ -166,7 +166,7 @@ export async function storeDraft(
             GSI1SK: `DRAFT#${String(draft.version).padStart(10, '0')}`,
             GSI2PK: 'SPONSOR_DRAFT_ABANDONMENT',
             GSI2SK: `${abandonmentAt}#${draft.id}`,
-            GSI4PK: `BOOKING_COMMUNICATION#${draft.bookingId}`,
+            GSI4PK: `DEAL_COMMUNICATION#${draft.dealId}`,
             GSI4SK: `DRAFT#${draft.createdAt}#${draft.id}`,
           },
           ConditionExpression: 'attribute_not_exists(PK)',
@@ -249,14 +249,13 @@ export async function storePresentation(
       {
         ConditionCheck: {
           TableName: TABLE_SPONSOR_CRM,
-          Key: itemKey('BOOKING', source.bookingId),
-          ConditionExpression: '#version = :version AND organizationId = :organization AND #status <> :cancelled AND #status <> :complete',
+          Key: itemKey('DEAL', source.dealId),
+          ConditionExpression: '#version = :version AND organizationId = :organization AND #status <> :lost',
           ExpressionAttributeNames: { '#version': 'version', '#status': 'status' },
           ExpressionAttributeValues: {
-            ':version': source.bookingVersion,
+            ':version': source.dealVersion,
             ':organization': source.organizationId,
-            ':cancelled': 'cancelled',
-            ':complete': 'complete',
+            ':lost': 'lost',
           },
         },
       },
@@ -329,7 +328,7 @@ export async function storePresentation(
             GSI1SK: `PRESENTATION#${presentation.createdAt}#${presentation.id}`,
             GSI2PK: 'SPONSOR_PRESENTATION_EXPIRY',
             GSI2SK: `${presentation.expiresAt}#${presentation.id}`,
-            GSI4PK: `BOOKING_COMMUNICATION#${presentation.bookingId}`,
+            GSI4PK: `DEAL_COMMUNICATION#${presentation.dealId}`,
             GSI4SK: `PRESENTATION#${presentation.createdAt}#${presentation.id}`,
           },
           ConditionExpression: 'attribute_not_exists(PK)',

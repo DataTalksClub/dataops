@@ -23,6 +23,26 @@ export function createKnowledgeMenus(context) {
     });
     popover.append(renameBtn);
 
+    const subpageBtn = document.createElement("button");
+    subpageBtn.type = "button";
+    subpageBtn.className = "doc-menu-item";
+    subpageBtn.textContent = "Add sub-page…";
+    subpageBtn.addEventListener("click", () => {
+      popover.remove();
+      if (context.createSubpage) context.createSubpage(documentState.currentDoc);
+    });
+    popover.append(subpageBtn);
+
+    const moveBtn = document.createElement("button");
+    moveBtn.type = "button";
+    moveBtn.className = "doc-menu-item";
+    moveBtn.textContent = "Move to…";
+    moveBtn.addEventListener("click", () => {
+      popover.remove();
+      if (context.moveCurrentDoc) context.moveCurrentDoc();
+    });
+    popover.append(moveBtn);
+
     const historyBtn = document.createElement("button");
     historyBtn.type = "button";
     historyBtn.className = "doc-menu-item";

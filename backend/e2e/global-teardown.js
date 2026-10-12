@@ -15,6 +15,7 @@ module.exports = async function globalTeardown() {
   // A zero exit on the tsx controller does not prove that its detached Node
   // child is gone. Always ask the OS about the whole tracked process group.
   await stopTestServerProcessGroup(child.pid);
+  delete globalThis.__testServerProcess;
   console.log(
     child.exitCode !== null || child.signalCode !== null
       ? '[global-teardown] Exited controller group verified stopped.'

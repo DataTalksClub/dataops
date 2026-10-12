@@ -54,6 +54,7 @@ export function ownerAvatar(ownerName) {
   const owner = document.createElement("span");
   owner.className = "card-task-owner";
   owner.title = ownerName;
+  owner.setAttribute("role", "img");
   owner.setAttribute("aria-label", `Assigned to ${ownerName}`);
   const avatar = document.createElement("span");
   avatar.className = "account-avatar card-task-owner-avatar";

@@ -1,3 +1,5 @@
+import { createPageHeader } from "../operations-overview.js";
+
 export function createCardsSurface(context) {
   const {
     cardsHeaderViewModel,
@@ -49,26 +51,13 @@ export function createCardsSurface(context) {
       archivedCount: archivedCards.length,
       parkedCount: parkedCards.length,
     });
-    const header = document.createElement("header");
-    header.className = "workflow-board-header";
-    const heading = document.createElement("div");
-    const title = document.createElement("h1");
-    title.id = "workflow-board-title";
-    title.textContent = headerModel.title;
-    heading.append(title);
-    // An empty board states its emptiness once, in the panel below; a
-    // "0 active cards" meta line would only restate it.
-    if (archiveVisible || cards.length > 0) {
-      const summary = document.createElement("p");
-      summary.textContent = headerModel.summary;
-      heading.append(summary);
-    }
-    const actions = document.createElement("div");
-    actions.className = "workflow-board-actions";
     const archive = document.createElement("button");
     archive.type = "button";
-    archive.className = "quiet-button";
+    archive.className = archiveVisible
+      ? "quiet-button"
+      : "quiet-button workflow-archive-toggle";
     archive.textContent = headerModel.archiveAction;
+    archive.setAttribute("aria-label", headerModel.archiveAction);
     archive.setAttribute("aria-pressed", String(archiveVisible));
     archive.addEventListener("click", () =>
       navigateCanonicalWorkspace(headerModel.archiveRoute),
@@ -78,9 +67,13 @@ export function createCardsSurface(context) {
     start.className = "primary-button";
     start.textContent = "Create card";
     start.addEventListener("click", () => openQuickWorkflowForm());
-    actions.append(archive);
-    if (headerModel.createVisible) actions.append(start);
-    header.append(heading, actions);
+    const header = createPageHeader({
+      title: headerModel.title,
+      subtitle: archiveVisible || cards.length > 0 ? headerModel.summary : "",
+      titleId: "workflow-board-title",
+      className: "workflow-board-header",
+      actions: headerModel.createVisible ? [archive, start] : [archive],
+    });
     section.append(header);
 
     if (displayedCards.length === 0 && !archiveVisible) {
@@ -221,7 +214,8 @@ export function createCardsSurface(context) {
   }
 
   function templateMeta(templateId) {
-    return templateLabels.get(templateId) || null;
+    const meta = templateLabels.get(templateId);
+    return meta ? { id: templateId, ...meta } : null;
   }
 
   function templateLabel(templateId) {
@@ -263,6 +257,17 @@ export function createCardsSurface(context) {
     label.append(name, select);
     filters.append(label);
     if (templateFilter) {
+      const newCardBtn = document.createElement("button");
+      newCardBtn.type = "button";
+      newCardBtn.className = "workflow-board-filter-action";
+      newCardBtn.textContent = "+ New card from template";
+      newCardBtn.addEventListener("click", () => {
+        openQuickWorkflowForm({
+          template: templateMeta(templateFilter) || { id: templateFilter },
+        });
+      });
+      filters.append(newCardBtn);
+
       const shown = document.createElement("span");
       shown.className = "workflow-board-filter-count";
       shown.textContent = `${countLabel(counts.shown, "card")} of ${counts.total} shown`;
@@ -294,6 +299,7 @@ export function createCardsSurface(context) {
         .map((template) => [
           String(template.id),
           {
+            id: String(template.id),
             name: String(template.name || template.title || template.id),
             emoji: String(template.emoji || ""),
             type: String(template.type || ""),
@@ -387,13 +393,14 @@ export function createCardsSurface(context) {
     card.addEventListener("click", () => openCardPanel(item.cardId));
 
     // The Template badge replaces the legacy `[Tag]` title prefix: the card
-    // shows which Template it was created from, and opens it on click. The
-    // badge waits for the template listing so it never flashes a raw id.
-    if (template) {
+    // shows which Template it was created from, and opens it on click.
+    const metaTop = document.createElement("div");
+    metaTop.className = "workflow-card-meta-top";
+    if (templateId) {
       const badge = document.createElement("span");
       badge.className = "workflow-card-template";
-      if (template.type) badge.dataset.templateType = template.type;
-      badge.textContent = template.emoji
+      if (template?.type) badge.dataset.templateType = template.type;
+      badge.textContent = template?.emoji
         ? `${template.emoji} ${templateName}`
         : templateName;
       badge.title = `View ${templateName} template`;
@@ -401,7 +408,17 @@ export function createCardsSurface(context) {
         event.stopPropagation();
         navigateCanonicalWorkspace("/templates", { templateId });
       });
-      card.append(badge);
+      metaTop.append(badge);
+    }
+    if (item.issueNumber) {
+      const issue = document.createElement("span");
+      issue.className = "workflow-card-issue";
+      issue.textContent = `#${String(item.issueNumber).replace(/^#/, "")}`;
+      issue.title = `Issue #${String(item.issueNumber).replace(/^#/, "")}`;
+      metaTop.append(issue);
+    }
+    if (metaTop.children.length > 0) {
+      card.append(metaTop);
     }
 
     const header = document.createElement("span");

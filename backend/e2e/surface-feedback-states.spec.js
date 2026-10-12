@@ -80,7 +80,7 @@ test.describe('issue 204 owning-surface feedback', () => {
 
     let releaseTasks;
     const tasksReady = new Promise((resolve) => { releaseTasks = resolve; });
-    await page.route('**/work/api/tasks*', async (route) => {
+    await page.route('**/api/tasks*', async (route) => {
       await tasksReady;
       await route.continue();
     });
@@ -88,12 +88,11 @@ test.describe('issue 204 owning-surface feedback', () => {
     const queueSummary = page.locator('[data-summary-id="tasks-queue"]');
     await expect(queueSummary).toHaveAttribute('data-summary-state', 'loading');
     releaseTasks();
-    await expect(page.locator('.ops-queue-board')).toBeVisible();
-    await expect(queueSummary).toHaveCount(0);
-    await expect(page.locator('.ops-queue-board')).toBeVisible();
+    await expect(queueSummary).toHaveAttribute('data-summary-state', 'empty');
+    await expect(queueSummary).toContainText('No tasks are open in this queue.');
     await expectNoHorizontalOverflow(page);
     await shot(page, 'queue-ready-desktop-1440x900');
-    await page.unroute('**/work/api/tasks*');
+    await page.unroute('**/api/tasks*');
     const taskResponse = await context.request.post('/api/tasks', { data: {
       description: 'Retained work during a source outage', date: berlinBusinessDate(Date.now()),
       assigneeId: '00000000-0000-0000-0000-000000000001',
@@ -106,7 +105,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     await setFaults(context.request, [{ method: 'GET', path: '/api/cards', status: 503, remaining: 20 }]);
     await page.reload();
     await expect(queueSummary).toHaveAttribute('data-summary-state', 'partial');
-    await expect(queueSummary).toContainText('Cards unavailable. Loaded work is still shown.');
+    await expect(queueSummary).toContainText('Some task sources are unavailable.');
     await expect(page.locator('.ops-queue-row strong')).toHaveText('Retained work during a source outage');
     await shot(page, 'queue-partial-retained-work-desktop-1440x900');
 
@@ -120,12 +119,12 @@ test.describe('issue 204 owning-surface feedback', () => {
     // sources answered; either way the queue names the failure and offers
     // recovery in its own summary rather than reporting a clean count.
     await expect(queueSummary).toHaveAttribute('data-summary-state', /unavailable|partial/);
-    await expect(queueSummary).toContainText('Due-today tasks, Overdue tasks, Waiting tasks, Cards unavailable. Loaded work is still shown.');
+    await expect(queueSummary).toContainText('Some task sources are unavailable.');
     await expect(queueSummary.locator('.surface-summary-detail')).toHaveCount(0);
     await expect(page.locator('.ops-queue-row')).toHaveCount(0);
     await expect(page.locator('.ops-queue-board[data-load-state="unavailable"] .ops-empty'))
       .toContainText('Live work data unavailable.');
-    const retry = queueSummary.getByRole('button', { name: /Retry loading work/ });
+    const retry = queueSummary.getByRole('button', { name: /Retry loading (tasks|work)/ });
     await expect(retry).toBeVisible();
     const retryBox = await retry.boundingBox();
     expect(retryBox.height).toBeGreaterThan(0);
@@ -135,7 +134,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     // Keyboard-only recovery works from the summary that owns it.
     await retry.focus();
     const [recovered] = await Promise.all([
-      page.waitForResponse((response) => response.url().includes('/work/api/tasks')),
+      page.waitForResponse((response) => response.url().includes('/api/tasks')),
       page.keyboard.press('Enter'),
     ]);
     expect(recovered.status()).toBe(503);
@@ -144,7 +143,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     await retry.focus();
     await expect(retry).toBeFocused();
     const [healthyResponse] = await Promise.all([
-      page.waitForResponse((response) => response.url().includes('/work/api/tasks')),
+      page.waitForResponse((response) => response.url().includes('/api/tasks')),
       page.keyboard.press('Enter'),
     ]);
     expect(healthyResponse.status()).toBe(200);

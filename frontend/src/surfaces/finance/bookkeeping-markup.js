@@ -3,19 +3,15 @@
 // All dynamic state renders into [data-close-state], [data-worklist],
 // .bookkeeping-ledger, .bookkeeping-documents and [data-package-review].
 import { html } from "./shared.js";
+import { renderPageHeaderMarkup } from "../operations-overview.js";
 
 export function bookkeepingSurfaceMarkup() {
-  return html` <header class="bookkeeping-header">
-        <div>
-          <p class="surface-eyebrow">Monthly close</p>
-          <h1>Bookkeeping</h1>
-          <p>
-            One month at a time: record the transactions, attach the evidence,
-            and close the month with a reviewable package.
-          </p>
-        </div>
-        <button class="primary-button" data-bookkeeping-add>Add entry</button>
-      </header>
+  return html`${renderPageHeaderMarkup({
+    title: "Bookkeeping",
+    subtitle: "One month at a time: record the transactions, attach the evidence, and close the month with a reviewable package.",
+    className: "bookkeeping-header",
+    actionsHtml: html`<button class="primary-button" data-bookkeeping-add>Add entry</button>`,
+  })}
       <section
         class="bookkeeping-monthlens"
         aria-label="Month close state"
@@ -49,13 +45,6 @@ export function bookkeepingSurfaceMarkup() {
               ><span class="lens-label">Month</span>
               <select data-lens-month-select aria-label="Select month"></select
             ></label>
-            <input
-              type="month"
-              data-lens-month
-              class="visually-hidden"
-              tabindex="-1"
-              aria-hidden="true"
-            />
           </div>
           <button class="quiet-button" type="button" data-lens-toggle>
             All months
@@ -64,25 +53,28 @@ export function bookkeepingSurfaceMarkup() {
         <div class="bookkeeping-close-state" data-close-state></div>
       </section>
       <p data-bookkeeping-status class="surface-status" role="status"></p>
-      <section
+      <details
         class="bookkeeping-section bookkeeping-worklist-section"
         data-worklist-section
-        aria-labelledby="bookkeeping-worklist-heading"
+        open
       >
-        <header class="section-header">
-          <div>
-            <p class="section-kicker">Needs attention</p>
-            <h3 id="bookkeeping-worklist-heading">
-              Fix what the close is missing
-            </h3>
-            <p>
-              Every open item for this month with its fix one click away — the
-              monthly reconcile list, made actionable.
-            </p>
-          </div>
-        </header>
+        <summary class="bookkeeping-worklist-summary">
+          <header class="section-header">
+            <div>
+              <p class="section-kicker">Needs attention</p>
+              <h3 id="bookkeeping-worklist-heading">
+                Fix what the close is missing
+              </h3>
+              <p>
+                Every open item for this month with its fix one click away —
+                the monthly reconcile list, made actionable.
+              </p>
+            </div>
+            <p class="bookkeeping-worklist-hint" data-worklist-hint></p>
+          </header>
+        </summary>
         <div class="bookkeeping-worklist" data-worklist aria-live="polite"></div>
-      </section>
+      </details>
       <section
         id="bookkeeping-ledger"
         class="bookkeeping-section bookkeeping-ledger-section"
@@ -168,7 +160,7 @@ export function bookkeepingSurfaceMarkup() {
               it supports.
             </p>
           </div>
-          <button class="quiet-button" data-setup-accounts>
+          <button class="quiet-button" type="button" data-setup-accounts disabled>
             Set up business accounts
           </button>
         </header>

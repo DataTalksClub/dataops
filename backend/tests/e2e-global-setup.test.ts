@@ -38,7 +38,7 @@ interface ReportedTestServerOwner extends ExpectedTestServerOwner {
 }
 
 const globalSetupModule = require('../e2e/global-setup.js') as {
-  (options?: { port?: number }): Promise<void>;
+  (options?: { port?: number; readyTimeoutMs?: number }): Promise<void>;
   buildTestServerEnvironment(
     parent?: TestServerEnvironment,
     port?: number,
@@ -526,6 +526,22 @@ describe('Playwright E2E bootstrap', () => {
         else process.env[key] = value;
       }
     }
+  });
+
+  it('cleans up the spawned server via globalTeardown when startup wait fails', async () => {
+    const reservation = http.createServer();
+    const port = await listen(reservation);
+    await close(reservation);
+
+    await assert.rejects(
+      globalSetupModule({ port, readyTimeoutMs: 50 }),
+      (error: Error) => {
+        assert.doesNotMatch(error.message, /globalTeardown is not defined/);
+        assert.match(error.message, /did not announce an owned loopback listener/);
+        return true;
+      },
+    );
+    assert.equal(globalThis.__testServerProcess, undefined);
   });
 });
 

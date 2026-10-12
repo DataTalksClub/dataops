@@ -86,7 +86,7 @@ textarea:focus {
   flex-direction: column;
   min-width: 0;
   height: 100vh;
-  overflow-y: auto;
+  overflow: hidden;
   border-right: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
   padding: 16px 12px;
@@ -101,6 +101,7 @@ textarea:focus {
 }body.sidebar-collapsed .sidebar-rail {
   display: block;
 }.workspace-header {
+  flex-shrink: 0;
   display: flex;
   order: -3;
   align-items: center;
@@ -124,10 +125,7 @@ textarea:focus {
   flex: 1 1 auto;
 }.workspace-title h1,
 .workspace-title p {
-  overflow: hidden;
   margin: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }.workspace-title h1 {
   color: var(--dk-text-heading);
   font-size: 16px;
@@ -159,8 +157,7 @@ textarea:focus {
   background: var(--dk-bg-hover);
   color: var(--dk-text-primary);
 }.sidebar-footer {
-  position: sticky;
-  bottom: -16px;
+  flex: 0 0 auto;
   display: grid;
   gap: 2px;
   margin: auto -12px -16px;
@@ -179,6 +176,7 @@ textarea:focus {
   max-width: none;
   text-align: left;
 }.search-form {
+  flex-shrink: 0;
   order: -2;
   margin: 0 4px 16px;
 }.search-input-wrap {
@@ -208,6 +206,10 @@ textarea:focus {
 }.workspace-nav {
   display: grid;
   order: -1;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  align-content: start;
   gap: 2px;
   margin-bottom: 16px;
 }.workspace-nav-label {
@@ -219,12 +221,6 @@ textarea:focus {
   text-transform: uppercase;
 }.workspace-nav-label:first-child {
   margin-top: 0;
-}.search-scope {
-  display: block;
-  margin: 6px 2px 0;
-  color: var(--dk-text-muted);
-  font-size: 11px;
-  line-height: 1.4;
 }#sidebar-close-button svg {
   width: 20px;
   height: 20px;
@@ -592,3 +588,13 @@ body[data-view="create"] .editor-view {
     padding-inline: 16px;
   }
 }/* Document review workspace: the audit backlog is an operator queue, not a
+
+@media (min-width: 821px) and (max-height: 850px) {
+  .workspace-nav .workspace-nav-button {
+    min-height: 34px;
+    padding-block: 5px;
+  }
+  .workspace-nav-label {
+    margin-top: 12px;
+  }
+}

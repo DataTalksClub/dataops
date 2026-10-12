@@ -35,8 +35,13 @@ async function createFixtures(request, referenceTime = Date.now()) {
   const organization = await (await request.post('/api/sponsor-crm/organizations', {
     data: { displayName: `Route sponsor ${id}` },
   })).json();
-  const booking = await (await request.post('/api/sponsor-crm/bookings', {
-    data: { organizationId: organization.id, slotType: 'main', status: 'inquiry', plannedPublicationDate: '2026-09-01' },
+  const booking = await (await request.post('/api/sponsor-crm/deals', {
+    data: {
+      organizationId: organization.id,
+      status: 'open',
+      nextAction: { type: 'follow_up', due: '2026-09-01', owner: '00000000-0000-0000-0000-000000000001', note: 'route' },
+      deliverable: { channel: 'main', plannedPublicationDate: '2026-09-01' },
+    },
   })).json();
   return { id, card, contextCard, task, assistant, template: templates[0], booking };
 }
@@ -88,7 +93,7 @@ async function expectStableRouteFocus(page) {
 const VISIBLE_ROUTE_HEADINGS = {
   'Work Queue': 'Work Queue',
   Newsletter: 'Newsletter planner',
-  Calendar: 'Operations calendar',
+  Calendar: 'Calendar',
 };
 
 async function expectVisibleRouteHeading(page, routeTitle) {
@@ -121,7 +126,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       [`/#/templates?templateId=${encodeURIComponent(fixture.template.id)}`, 'Templates'],
       ['/#/recurring', 'Recurring'],
       ['/#/bookkeeping', 'Bookkeeping'],
-      [`/#/sponsors?bookingId=${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
+      [`/#/sponsors?dealId=${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
       ['/#/newsletter', 'Newsletter'],
       ['/#/calendar', 'Calendar'],
       ['/#/processes', 'Docs'],
@@ -163,7 +168,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       ['cards?cardId=stale-workflow', 'stale-workflow'],
       ['assistants?assistantJobId=stale-assistant', 'stale-assistant'],
       ['templates?templateId=stale-template', 'stale-template'],
-      ['sponsors?bookingId=stale-booking', 'stale-booking'],
+      ['sponsors?dealId=stale-booking', 'stale-booking'],
     ]) {
       await page.goto(`/#/${route}`);
       await expect(page.locator('.entity-route-not-found:visible')).toContainText(id);
@@ -174,7 +179,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.not-found'] },
       { route: '/#/assistants?assistantJobId=<id>', roleId: 'admin', stateIds: ['assistants.stale-not-found'] },
       { route: '/#/templates?templateId=<id>', roleId: 'admin', stateIds: ['templates.stale-not-found'] },
-      { route: '/#/sponsors?bookingId=<id>', roleId: 'admin', stateIds: ['sponsors.not-found'] },
+      { route: '/#/sponsors?dealId=<id>', roleId: 'admin', stateIds: ['sponsors.not-found'] },
     ]);
   });
 
@@ -287,10 +292,10 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await notice.getByRole('button', { name: 'Open task' }).click();
     await expect(page).toHaveURL(new RegExp(`/#/tasks\\?taskId=${dueTask.id}$`));
     await page.locator('#task-panel-close').click();
-    await expect(page).toHaveURL(/\/#\/tasks$/);
+    await expect(page).toHaveURL(/\/#\/$/);
     await page.locator('#work-bell-button').click();
     await page.locator('#work-bell-close').click();
-    await expect(page).toHaveURL(/\/#\/tasks$/);
+    await expect(page).toHaveURL(/\/#\/$/);
 
     await page.goto('/#/');
     await page.locator('#search-input').fill(fixture.assistant.title);
@@ -397,7 +402,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       let largerSnapshotResolved = false;
       const largerSnapshot = page.waitForResponse((response) => {
         const url = new URL(response.url());
-        return response.request().method() === 'GET' && url.pathname === '/work/api/cards' && url.searchParams.has('limit');
+        return response.request().method() === 'GET' && url.pathname === '/api/cards' && url.searchParams.has('limit');
       }).then(() => { largerSnapshotResolved = true; });
 
       await page.goto(route);
@@ -418,13 +423,13 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await setRouteFaults(request, [{ method: 'GET', path: '/api/cards', delayMs: 900 }]);
     const laterSnapshot = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return response.request().method() === 'GET' && url.pathname === '/work/api/cards' && url.searchParams.has('limit');
+      return response.request().method() === 'GET' && url.pathname === '/api/cards' && url.searchParams.has('limit');
     });
     await page.goto(`/#/cards?cardId=${fixture.contextCard.id}&taskId=${fixture.task.id}`);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.task.id);
     await laterSnapshot;
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.contextCard.id);
-    await expect(page.locator('.task-detail-meta button')).toHaveCount(0);
+    await expect(page.locator('#task-panel .task-detail-meta button')).toHaveCount(0);
     await clearRouteFaults(request);
   });
 
@@ -445,12 +450,12 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await cleanBack.click();
     await expect(page).toHaveURL(/\/#\/templates$/);
     await expect(page.locator('.runtime-template-list')).toBeVisible();
-    await expect(page.locator('.runtime-template-projection')).toContainText('Select an authored template');
-    await expect(page.locator('.runtime-template-search')).toBeFocused();
+    await expect(page.locator('.runtime-template-projection')).toContainText('Choose a template');
+    await expect(page.locator('.runtime-template-row').first()).toBeFocused();
     await page.reload();
     await expect(page).toHaveURL(/\/#\/templates$/);
     await expect(page.locator('.runtime-template-list')).toBeVisible();
-    await expect(page.locator('.runtime-template-projection')).toContainText('Select an authored template');
+    await expect(page.locator('.runtime-template-projection')).toContainText('Choose a template');
     await page.goBack();
     await expect(page).toHaveURL(exactRoute);
     await expect(page.locator('.runtime-template-projection')).toContainText(fixture.template.name);

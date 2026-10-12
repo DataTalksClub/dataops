@@ -22,6 +22,25 @@ function defaultLabel() {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * When the server returns a verification URI hosted on a raw internal hostname
+ * (such as a direct Lambda function URL), rewrite it to the origin of the target
+ * portal URL passed by the operator, keeping the path, query, hash and userCode intact.
+ */
+export function rewriteVerificationUri(rawUri, targetBaseUrl) {
+  if (!rawUri || !targetBaseUrl) return rawUri;
+  try {
+    const parsedUri = new URL(rawUri);
+    const targetOrigin = new URL(targetBaseUrl).origin;
+    if (parsedUri.origin !== targetOrigin) {
+      return `${targetOrigin}${parsedUri.pathname}${parsedUri.search}${parsedUri.hash}`;
+    }
+    return rawUri;
+  } catch {
+    return rawUri;
+  }
+}
+
+/**
  * Device authorization grant. The browser half runs wherever the operator
  * already has a portal session, which is why this works over SSH: nothing
  * here needs a browser on this machine.
@@ -53,8 +72,12 @@ export async function login(args, io) {
     { label },
     { anonymous: true },
   );
-  const verificationUri =
+  const rawVerificationUri =
     start.verificationUriComplete || start.verificationUri;
+  const verificationUri = rewriteVerificationUri(
+    rawVerificationUri,
+    client.base,
+  );
 
   io.print("");
   io.print(`  Confirm this code:  ${start.userCode}`);

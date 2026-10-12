@@ -56,7 +56,6 @@ describe("dakit adoption contract", () => {
         "/src/styles/operations.css",
         "/src/styles/cards.css",
         "/src/styles/planner.css",
-        "/src/styles/responsive.css",
         "/src/styles/refinements.css",
         "/src/styles/admin.css",
         "/src/styles/tasks-boards.css",
@@ -64,6 +63,7 @@ describe("dakit adoption contract", () => {
         "/src/styles/knowledge.css",
         "/src/styles/editor.css",
         "/src/styles/overrides.css",
+        "/src/styles/responsive.css",
       ],
       "index.html must load the dakit tokens, then the dakit bundle, then the app stylesheets in slice order",
     );

@@ -93,6 +93,22 @@ describe("newsletter slots", () => {
       ).statusCode,
       409,
     );
+    const reviewRes = await invoke(
+      "PUT",
+      `/api/newsletter-slots/${slot.id}`,
+      { version: 2, status: "review" },
+      auth,
+    );
+    assert.equal(reviewRes.statusCode, 200);
+    assert.equal(data(reviewRes).status, "review");
+    const draftRes = await invoke(
+      "PUT",
+      `/api/newsletter-slots/${slot.id}`,
+      { version: 3, status: "draft" },
+      auth,
+    );
+    assert.equal(draftRes.statusCode, 200);
+    assert.equal(data(draftRes).status, "draft");
     const listed = data(
       await invoke("GET", "/api/newsletter-slots", undefined, auth, {
         from: "2026-08-01",
@@ -311,27 +327,35 @@ describe("newsletter slots", () => {
       ),
     );
 
-    const booking = (
-      await createCrmRecord(client, "booking", {
+    const deal = (
+      await createCrmRecord(client, "deal", {
+        sourceKey: "authorized-newsletter-deal",
+        organizationId: "synthetic-org",
+        status: "agreed",
+      })
+    ).item;
+    const deliverable = (
+      await createCrmRecord(client, "deliverable", {
         sourceKey: "authorized-newsletter-booking",
         organizationId: "synthetic-org",
-        status: "confirmed",
+        dealId: deal.id,
+        channel: "main",
       })
     ).item;
     const linked = data(
       await invoke("POST", "/api/newsletter-slots", {
         ...valid,
         sourceKey: "authorized-linked-slot",
-        sponsorBookingId: booking.id,
+        sponsorBookingId: deliverable.id,
       }),
     );
     const linkedRead = data(
       await invoke("GET", `/api/newsletter-slots/${linked.id}`),
     );
     assert.deepEqual(linkedRead.sponsor, {
-      id: booking.id,
+      id: deliverable.id,
       organizationId: "synthetic-org",
-      status: "confirmed",
+      dealId: deal.id,
     });
     assert.equal(
       (await invoke("POST", "/api/newsletter-slots/projection", {})).statusCode,

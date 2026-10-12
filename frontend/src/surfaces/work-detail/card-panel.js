@@ -48,6 +48,7 @@ export function createCardPanel(context) {
     todayIsoDate,
     updateTaskStatus,
     workApiUrl,
+    workCardIssueNumber,
     workCardSubtitle,
     workCardTitle,
     workTaskTitle,
@@ -361,6 +362,7 @@ export function createCardPanel(context) {
       state,
       today,
       updateCardStage,
+      workCardIssueNumber,
       workCardSubtitle,
       workTaskTitle,
     });
@@ -457,8 +459,6 @@ export function createCardPanel(context) {
       main.append(linksSection);
     }
 
-    // Card artifacts (always shown, with register capability) sit above the
-    // checklist: proof first, then the work that remains.
     {
       const artifactsSection = document.createElement("div");
       artifactsSection.className =
@@ -490,7 +490,6 @@ export function createCardPanel(context) {
       main.append(artifactsSection);
     }
 
-    // Task checklist
     if (tasks.length > 0) {
       const checklistSection = document.createElement("div");
       checklistSection.className =
@@ -501,7 +500,7 @@ export function createCardPanel(context) {
       checklistLabel.className = "task-history-label";
       checklistLabel.textContent = "Tasks";
       checklistHeader.append(checklistLabel);
-      if (progress.total > 0) {
+      if (progress.total > 0 && progress.percent > 0) {
         const percent = document.createElement("span");
         percent.className = "card-checklist-percent";
         percent.textContent = `${progress.percent}%`;
@@ -509,7 +508,7 @@ export function createCardPanel(context) {
       }
       checklistSection.append(checklistHeader);
 
-      if (progress.total > 0) {
+      if (progress.total > 0 && progress.percent > 0) {
         const bar = document.createElement("div");
         bar.className = `ops-progress${progress.percent >= 100 ? " is-complete" : ""}`;
         bar.setAttribute("role", "progressbar");
@@ -554,7 +553,6 @@ export function createCardPanel(context) {
       main.append(checklistSection);
     }
 
-    // References and artifact links (always shown, with add capability)
     const refsSection = document.createElement("div");
     refsSection.className =
       "task-history workflow-detail-section workflow-references-section";
@@ -608,7 +606,6 @@ export function createCardPanel(context) {
       refsList.append(empty);
     }
 
-    // Add artifact/reference link form
     const addRow = document.createElement("div");
     addRow.className = "task-follow-up-row";
     const nameInput = document.createElement("input");
@@ -652,7 +649,13 @@ export function createCardPanel(context) {
       ),
     );
     addRow.append(nameInput, urlInput, addBtn);
-    refsSection.append(addRow);
+    const referenceForm = document.createElement("details");
+    referenceForm.className = "card-add-details";
+    referenceForm.open = detail.activeCardPanelDraft?.kind === "reference" || Boolean(capturedDrafts?.get("new-reference-name") || capturedDrafts?.get("new-reference-url"));
+    const referenceToggle = document.createElement("summary");
+    referenceToggle.textContent = "+ Add process reference";
+    referenceForm.append(referenceToggle, addRow);
+    refsSection.append(referenceForm);
     main.append(refsSection);
     if (preserveDrafts) restoreCardPanelDrafts(capturedDrafts);
     if (feedbackClaimedFocus && detail.activeCardPanelFeedback?.focusSelector) {
@@ -801,6 +804,7 @@ export function createCardPanel(context) {
   function renderCardTemplateUpdate(card, data) {
     if (!card.templateId) return null;
     const preview = data.templateUpdate;
+    if (preview?.state === "current") return null;
     const section = document.createElement("section");
     section.className = "card-template-update workflow-detail-section";
     const heading = document.createElement("div");
@@ -825,11 +829,6 @@ export function createCardPanel(context) {
 
     const status = document.createElement("p");
     status.className = `card-template-update-status is-${preview.state}`;
-    if (preview.state === "current") {
-      status.textContent = `Current at Template v${preview.targetTemplateVersion}.`;
-      section.append(status);
-      return section;
-    }
     status.textContent = `Update available: Template v${preview.sourceTemplateVersion} → v${preview.targetTemplateVersion}.`;
     const summary = document.createElement("p");
     summary.className = "card-template-update-summary";
@@ -942,6 +941,10 @@ export function createCardPanel(context) {
     for (const input of cardPanelBody.querySelectorAll("[data-card-draft-key]")) {
       if (drafts.has(input.dataset.cardDraftKey)) {
         input.value = drafts.get(input.dataset.cardDraftKey);
+        if (input.value) {
+          const form = input.closest?.("details");
+          if (form) form.open = true;
+        }
       }
     }
   }

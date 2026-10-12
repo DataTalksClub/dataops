@@ -176,7 +176,7 @@ export function createSurfaceComposition(context) {
   }
 
   function workApiUrl(path, params = {}) {
-    const url = apiUrl(`/work${path}`);
+    const url = apiUrl(path);
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null && value !== "") {
         url.searchParams.set(key, String(value));

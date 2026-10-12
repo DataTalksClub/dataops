@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import {
+  WORKSPACE_ROUTE_DEFINITIONS,
   canonicalWorkspaceUrl,
   parseWorkspaceHash,
   workspaceRouteFor,
@@ -33,7 +34,11 @@ function createNavigationHarness(options = {}) {
   routeHeading.offsetParent = {};
   documentList.append(routeHeading);
   const searchInput = new FakeElement("input");
-  const runtimeTemplateSearch = visibleButton("runtime-template-search", {});
+  const templateRow = visibleButton("runtime-template-row", {});
+  const selectedTemplateRow = visibleButton(
+    "runtime-template-row is-selected",
+    {},
+  );
   const taskButton = visibleButton("ops-queue-row", { taskId: "task-1" });
   const queueTaskButton = visibleButton("queue-task-action", { taskId: "queue-task" });
   const nestedTask = visibleButton("card-checklist-label", {
@@ -47,7 +52,8 @@ function createNavigationHarness(options = {}) {
     body,
     documentList,
     searchInput,
-    runtimeTemplateSearch,
+    templateRow,
+    selectedTemplateRow,
     taskButton,
     queueTaskButton,
     nestedTask,
@@ -170,8 +176,9 @@ function createNavigationHarness(options = {}) {
     nestedTask,
     recurring,
     routeHeading,
-    runtimeTemplateSearch,
     searchInput,
+    selectedTemplateRow,
+    templateRow,
     setAllowLeave: (value) => {
       allowLeave = value;
     },
@@ -182,6 +189,49 @@ function createNavigationHarness(options = {}) {
 }
 
 describe("canonical navigation shell behavior", () => {
+  test("direct workspace paths normalize without waiting for the document catalog", async () => {
+    for (const path of Object.keys(WORKSPACE_ROUTE_DEFINITIONS)) {
+      const harness = createNavigationHarness({ hash: "", pathname: path });
+      await harness.shell.initializeRouting(new Promise(() => {}));
+      assert.equal(harness.shell.getActiveWorkspaceRoute().path, path);
+      assert.equal(harness.history.replaced.at(-1).url, canonicalWorkspaceUrl(path));
+      assert.deepEqual(harness.history.pushed, []);
+    }
+  });
+
+  test("direct links retain validated entity queries and discard unrelated parameters", async () => {
+    const harness = createNavigationHarness({ hash: "", pathname: "/sponsors/", search: "?companyId=company-1&dealId=deal-1&tracking=demo" });
+    await harness.shell.initializeRouting(Promise.resolve());
+    assert.equal(harness.shell.getActiveWorkspaceRoute().canonicalUrl, "/#/sponsors?dealId=deal-1&companyId=company-1");
+    assert.equal(harness.history.replaced.at(-1).url, "/#/sponsors?dealId=deal-1&companyId=company-1");
+  });
+
+  test("invalid direct-link parameters return to Queue instead of becoming document paths", async () => {
+    for (const [pathname, search] of [["/tasks", "?date=2026-02-30"], ["/cards", "?taskId=orphan"], ["/sponsors", "?dealId=one&dealId=two"]]) {
+      const harness = createNavigationHarness({ hash: "", pathname, search });
+      await harness.shell.initializeRouting(Promise.resolve());
+      assert.equal(harness.shell.getActiveWorkspaceRoute().path, "/");
+      assert.equal(harness.history.replaced.at(-1).url, "/#/");
+      assert.equal(harness.calls.some(([name]) => name === "open-doc"), false);
+    }
+  });
+
+  test("browser history applies direct workspace URLs and preserves entity queries", async () => {
+    let routeCallback;
+    globalThis.setTimeout = (callback) => { routeCallback = callback; return 1; };
+    globalThis.clearTimeout = () => {};
+    const harness = createNavigationHarness({ hash: "#/tasks" });
+    await harness.shell.initializeRouting(Promise.resolve());
+    harness.location.hash = "";
+    harness.location.pathname = "/sponsors";
+    harness.location.search = "?dealId=deal-1";
+    harness.shell.scheduleCurrentBrowserLocation();
+    routeCallback();
+    await nextTicks();
+    assert.equal(harness.shell.getActiveWorkspaceRoute().path, "/sponsors");
+    assert.equal(harness.history.replaced.at(-1).url, "/#/sponsors?dealId=deal-1");
+  });
+
   test("commits canonical entity routes before hydrating their panels", async () => {
     const harness = createNavigationHarness();
     const result = harness.shell.navigateCanonicalWorkspace("/cards", {
@@ -251,6 +301,23 @@ describe("canonical navigation shell behavior", () => {
     assert.equal(harness.history.replaced.at(-1).url, "/#/tasks");
   });
 
+  test("closes open creation dialogs only after navigation is accepted", async () => {
+    const harness = createNavigationHarness();
+    await harness.shell.initializeRouting(Promise.resolve());
+    const overlay = new FakeElement("div");
+    overlay.className = "quick-form-overlay";
+    let closed = 0;
+    overlay.close = () => { closed += 1; overlay.remove(); };
+    harness.document.body.append(overlay);
+    harness.setAllowLeave(false);
+    await harness.shell.applyWorkspaceRoute(workspaceRouteFor("/templates", {}, harness.location));
+    assert.equal(closed, 0);
+    harness.setAllowLeave(true);
+    await harness.shell.navigateCanonicalWorkspace("/templates").ready;
+    assert.equal(closed, 1);
+    assert.equal(harness.shell.getActiveWorkspaceRoute().path, "/templates");
+  });
+
   test("normal navigation clears composer input and closes the mobile shell", async () => {
     const harness = createNavigationHarness();
     harness.searchInput.value = "stale search";
@@ -306,7 +373,7 @@ describe("canonical navigation shell behavior", () => {
         { id: "task-nested", kind: "task", surface: "workflows" },
         "nestedTask",
       ],
-      ["/templates", {}, { kind: "runtime-template-list" }, "runtimeTemplateSearch"],
+      ["/templates", {}, { kind: "runtime-template-list" }, "selectedTemplateRow"],
       ["/tasks", {}, { id: "queue-task", kind: "queue-task" }, "queueTaskButton"],
     ];
     for (const [path, params, restoreFocus, targetName] of cases) {

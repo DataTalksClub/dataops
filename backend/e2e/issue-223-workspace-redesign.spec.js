@@ -44,7 +44,7 @@ async function queue(page) {
   await setupPageWithAuth(page);
   await page.goto(`${server.baseURL}/#/`);
   await expect(page).toHaveURL(`${server.baseURL}/#/`);
-  await expect(page.locator('.ops-queue-board')).toBeVisible();
+  await expect(page.locator('.ops-work-queue')).toBeVisible();
 }
 
 async function accessible(page) {
@@ -164,7 +164,7 @@ test('grouped navigation and scoped search remain usable in both themes and resp
 test('empty and partial sources keep useful destinations and recover through retry', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.route('**/work/api/tasks**', (route) => route.fulfill({ json: { tasks: [] } }));
+  await page.route('**/api/tasks**', (route) => route.fulfill({ json: { tasks: [] } }));
   await queue(page);
   await expect(page.locator('.surface-summary[data-summary-state="empty"]')).toContainText('No tasks are open in this queue');
   await expect(page.locator('.ops-queue-row')).toHaveCount(0);
@@ -172,11 +172,11 @@ test('empty and partial sources keep useful destinations and recover through ret
   await page.screenshot({ path: path.join(screenshots, 'empty-desktop.png') });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: path.join(screenshots, 'empty-mobile.png'), fullPage: true });
-  await page.unroute('**/work/api/tasks**');
-  await page.route('**/work/api/cards**', (route) => route.fulfill({ status: 503, json: { error: 'Synthetic cards outage' } }));
+  await page.unroute('**/api/tasks**');
+  await page.route('**/api/cards**', (route) => route.fulfill({ status: 503, json: { error: 'Synthetic cards outage' } }));
   await page.reload();
   await expect(page.locator('.surface-summary[data-summary-state="partial"]')).toBeVisible();
-  await expect(page.locator('.surface-summary[data-summary-state="partial"]')).toContainText('Cards unavailable. Loaded work is still shown.');
+  await expect(page.locator('.surface-summary[data-summary-state="partial"]')).toContainText('Some task sources are unavailable.');
   await expect(page.locator('.ops-runtime-state')).toHaveCount(0);
   await expect(page.locator('.surface-summary-detail')).toHaveCount(0);
   await expect(page.locator('.ops-queue-row strong')).toHaveCount(tasks.length);
@@ -185,7 +185,7 @@ test('empty and partial sources keep useful destinations and recover through ret
   await page.setViewportSize({ width: 1440, height: 900 });
   await accessible(page);
   await page.screenshot({ path: path.join(screenshots, 'partial-desktop.png') });
-  await page.unroute('**/work/api/cards**');
+  await page.unroute('**/api/cards**');
   await page.locator('.surface-summary').getByRole('button', { name: /Retry/ }).click();
   await expect(page.locator('.surface-summary[data-summary-state="ready"]')).toHaveCount(0);
 });

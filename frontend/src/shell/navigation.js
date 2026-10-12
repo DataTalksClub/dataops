@@ -99,16 +99,23 @@ export function createNavigationShell(context) {
 
   function visibleEntityFocusTarget(restoreFocus) {
     if (restoreFocus?.kind === "runtime-template-list") {
-      const search = documentRef.querySelector(".runtime-template-search");
-      return search instanceof HTMLElementClass &&
-        search.isConnected &&
-        search.offsetParent !== null
-        ? search
-        : null;
+      // The Templates surface has no search field; returning to the list
+      // lands focus back on the operator's Template, or the first row.
+      const rows = [...documentRef.querySelectorAll(".runtime-template-row")].filter(
+        (candidate) =>
+          candidate instanceof HTMLElementClass &&
+          candidate.isConnected &&
+          candidate.offsetParent !== null,
+      );
+      return (
+        rows.find((candidate) => candidate.classList.contains("is-selected"))
+        || rows[0]
+        || null
+      );
     }
     if (restoreFocus?.kind === "queue-task") {
       return (
-        [...documentRef.querySelectorAll(".queue-task-action[data-task-id]")].find(
+        [...documentRef.querySelectorAll(".ops-queue-row[data-task-id], .queue-task-action[data-task-id]")].find(
           (candidate) =>
             candidate.dataset.taskId === restoreFocus.id &&
             candidate.isConnected &&
@@ -191,6 +198,12 @@ export function createNavigationShell(context) {
     resetTaskPanel();
     resetCardPanel();
     closeWorkBellPanel({ restoreFocus: false });
+    for (const overlay of documentRef.querySelectorAll(".quick-form-overlay")) {
+      overlay.close();
+    }
+    for (const dialog of documentRef.querySelectorAll("dialog[open]")) {
+      dialog.close();
+    }
     closeSettingsMenu();
 
     const requestedView =
@@ -336,8 +349,19 @@ export function createNavigationShell(context) {
     }).ready;
   }
 
+  function readCurrentWorkspaceRoute() {
+    if (locationRef.hash) return parseWorkspaceHash();
+    const pathname = locationRef.pathname || "/";
+    // Only registered workspace paths use hash routing. Document and folder
+    // URLs still need their content catalog before they can be opened.
+    const pathRoute = parseWorkspaceHash(`#${pathname}`);
+    if (pathRoute.invalid) return null;
+    const route = parseWorkspaceHash(`#${pathname}${locationRef.search || ""}`);
+    return { ...route, normalized: true };
+  }
+
   async function openInitialRoute() {
-    let workspaceRoute = parseWorkspaceHash();
+    const workspaceRoute = readCurrentWorkspaceRoute();
     if (workspaceRoute && !workspaceRoute.invalid) {
       if (workspaceRoute.normalized) {
         historyRef.replaceState(
@@ -345,12 +369,11 @@ export function createNavigationShell(context) {
           "",
           workspaceRoute.canonicalUrl,
         );
-        workspaceRoute = parseWorkspaceHash();
       }
       await applyWorkspaceRoute(workspaceRoute);
       return;
     }
-    if (locationRef.hash || locationRef.pathname === "/") {
+    if (workspaceRoute) {
       await applyWorkspaceRoute(replaceWithWorkQueue());
       return;
     }
@@ -382,7 +405,7 @@ export function createNavigationShell(context) {
   }
 
   async function applyCurrentBrowserLocation() {
-    let workspaceRoute = parseWorkspaceHash();
+    const workspaceRoute = readCurrentWorkspaceRoute();
     if (workspaceRoute && !workspaceRoute.invalid) {
       if (workspaceRoute.normalized) {
         historyRef.replaceState(
@@ -390,12 +413,11 @@ export function createNavigationShell(context) {
           "",
           workspaceRoute.canonicalUrl,
         );
-        workspaceRoute = parseWorkspaceHash();
       }
       await applyWorkspaceRoute(workspaceRoute);
       return;
     }
-    if (locationRef.hash || locationRef.pathname === "/") {
+    if (workspaceRoute) {
       await applyWorkspaceRoute(replaceWithWorkQueue());
       return;
     }
@@ -424,7 +446,7 @@ export function createNavigationShell(context) {
 
   function initializeRouting(documentsReady) {
     initialRouteReadyPromise = Promise.resolve().then(() =>
-      locationRef.hash || locationRef.pathname === "/"
+      locationRef.hash || locationRef.pathname === "/" || readCurrentWorkspaceRoute()
         ? openInitialRoute()
         : documentsReady.then(openInitialRoute),
     );

@@ -1,3 +1,4 @@
+import { mountBookkeepingNavigation } from "./bookkeeping-navigation.js";
 import { bookkeepingSurfaceMarkup } from "./bookkeeping-markup.js";
 import {
   accountOptionsMarkup,
@@ -7,26 +8,22 @@ import {
   ledgerTableMarkup,
   packageReviewMarkup,
   transactionOptionsMarkup,
+  worklistHintText,
   worklistMarkup,
+  worklistRowsFromOpenItems,
 } from "./bookkeeping-views.js";
 import { mountInvoiceReview } from "./invoices.js";
 import { html } from "./shared.js";
 import {
-  copyToClipboard,
-  downloadCsv,
   entryDirection,
   FIELD_LABELS,
-  formatFullCsv,
-  formatReportCsv,
-  formatReportTsv,
-  isReportExempt,
+  formatAmount,
   latestActivityMonth,
   ledgerDate,
   MONEY_PATTERN,
   monthLabel,
   monthOf,
   REPORT_EXEMPT_CATEGORIES,
-  shiftMonth,
   yearsOf,
 } from "./bookkeeping-format.js";
 
@@ -56,6 +53,7 @@ export function createBookkeepingSurface(context) {
     request,
     setRouteTitle,
     todayIsoDate,
+    viewportWidth,
     workApiUrl,
   } = context;
 
@@ -81,27 +79,10 @@ export function createBookkeepingSurface(context) {
       closeState = surface.querySelector("[data-close-state]"),
       worklist = surface.querySelector("[data-worklist]"),
       worklistSection = surface.querySelector("[data-worklist-section]"),
-      lensInput = surface.querySelector("[data-lens-month]"),
-      yearSelect = surface.querySelector("[data-lens-year]"),
-      monthSelect = surface.querySelector("[data-lens-month-select]"),
       entryDialog = surface.querySelector(".bookkeeping-entry-dialog"),
       eurDialog = surface.querySelector(".bookkeeping-eur-dialog"),
       form = entryDialog.querySelector("form"),
       status = surface.querySelector("[data-bookkeeping-status]");
-    const MONTH_NAMES = {
-      "01": "January",
-      "02": "February",
-      "03": "March",
-      "04": "April",
-      "05": "May",
-      "06": "June",
-      "07": "July",
-      "08": "August",
-      "09": "September",
-      "10": "October",
-      "11": "November",
-      "12": "December",
-    };
     const api = (path, options = {}) =>
       request(workApiUrl(`/api/bookkeeping${path}`), {
         headers: {
@@ -110,6 +91,7 @@ export function createBookkeepingSurface(context) {
         },
         ...options,
       });
+    let setupAccountsReady = false;
     async function safeAction(action, fallback) {
       try {
         await action();
@@ -151,47 +133,12 @@ export function createBookkeepingSurface(context) {
           r.month === lens && ["ready", "generated"].includes(String(r.status)),
       );
     }
-    function populateLensSelectors() {
-      if (!yearSelect || !monthSelect) return;
-      const years = yearsOf(entries, lens);
-      yearSelect.innerHTML = [
-        '<option value="all">All years</option>',
-        ...years.map((y) => `<option value="${y}">${y}</option>`),
-      ].join("");
-
-      monthSelect.innerHTML = [
-        '<option value="all">All months (full year)</option>',
-        ...Object.entries(MONTH_NAMES).map(
-          ([m, name]) => `<option value="${m}">${m} - ${name}</option>`,
-        ),
-      ].join("");
-
-      syncLensSelectors();
-    }
-    function syncLensSelectors() {
-      if (!yearSelect || !monthSelect) return;
-      if (lens === "all") {
-        yearSelect.value = "all";
-        monthSelect.value = "all";
-        monthSelect.disabled = true;
-      } else if (/^\d{4}$/.test(lens)) {
-        yearSelect.value = lens;
-        monthSelect.value = "all";
-        monthSelect.disabled = false;
-      } else if (/^\d{4}-\d{2}$/.test(lens)) {
-        const [y, m] = lens.split("-");
-        yearSelect.value = y;
-        monthSelect.value = m;
-        monthSelect.disabled = false;
-      }
-    }
     function setLens(month) {
       lens = month;
-      lensInput.value = /^\d{4}-\d{2}$/.test(month) ? month : "";
-      syncLensSelectors();
       renderAll();
     }
     function renderAll() {
+      navigation.refresh();
       renderCloseState();
       renderWorklist();
       renderLedger();
@@ -213,6 +160,8 @@ export function createBookkeepingSurface(context) {
         open.conversions.length +
         open.unclassified.length;
       const isYear = /^\d{4}$/.test(lens);
+      surface.querySelector("[data-lens-prev]").setAttribute("aria-label", isYear ? "Previous year" : "Previous month");
+      surface.querySelector("[data-lens-next]").setAttribute("aria-label", isYear ? "Next year" : "Next month");
       const report = monthReport();
       closeState.innerHTML = closeStateMonthMarkup({
         title: monthLabel(lens),
@@ -235,16 +184,13 @@ export function createBookkeepingSurface(context) {
     function renderWorklist() {
       worklistSection.hidden = lens === "all";
       if (lens === "all") return;
-      const open = openItems(lensEntries());
-      worklist.innerHTML = worklistMarkup({
-        rows: [
-          ...open.missingEvidence.map((entry) => ({ kind: "evidence", entry })),
-          ...open.conversions.map((entry) => ({ kind: "eur", entry })),
-          ...open.unclassified.map((entry) => ({ kind: "classify", entry })),
-        ],
-        monthTitle: monthLabel(lens),
-        e: escapeHtml,
-      });
+      const rows = worklistRowsFromOpenItems(openItems(lensEntries()));
+      worklist.innerHTML = worklistMarkup({ rows, monthTitle: monthLabel(lens), e: escapeHtml });
+      // Narrow screens collapse the panel to its one-line summary when the
+      // month is clear; open items (or desktop) keep it expanded.
+      worklistSection.open = viewportWidth() > 820 || rows.length > 0;
+      surface.querySelector("[data-worklist-hint]").textContent =
+        worklistHintText(rows);
     }
     function renderLedger() {
       const filters = Object.fromEntries(
@@ -291,12 +237,12 @@ export function createBookkeepingSurface(context) {
       totals.textContent =
         Object.entries(sums)
           .flatMap(([currency, s]) => [
-            ...(s.income ? [`${currency} Income ${s.income.toFixed(2)}`] : []),
+            ...(s.income ? [`Income ${formatAmount(s.income, currency)}`] : []),
             ...(s.expense
-              ? [`${currency} Expenses ${s.expense.toFixed(2)}`]
+              ? [`Expenses ${formatAmount(s.expense, currency)}`]
               : []),
             ...(s.unclassified
-              ? [`${currency} Unclassified ${s.unclassified.toFixed(2)}`]
+              ? [`Unclassified ${formatAmount(s.unclassified, currency)}`]
               : []),
           ])
           .join(" · ") || "No filtered total";
@@ -413,8 +359,10 @@ export function createBookkeepingSurface(context) {
     function renderPackageReview() {
       const review = surface.querySelector("[data-package-review]");
       const reportInput = surface.querySelector("[data-report-month]");
-      reportInput.value = lens === "all" ? "" : lens;
-      if (lens === "all") {
+      const isMonth = /^\d{4}-\d{2}$/.test(lens);
+      reportInput.value = isMonth ? lens : "";
+      surface.querySelector("[data-report]").disabled = !isMonth;
+      if (!isMonth) {
         review.innerHTML = html`<div class="honest-state">
             <strong>Choose a month to review</strong>
             <p>
@@ -455,8 +403,8 @@ export function createBookkeepingSurface(context) {
       );
       if (businessAccounts.length < 2)
         preflightRows.push(
-          html`<p class="preflight-row is-blocked">
-            ✗ Two business accounts are required; set them up in Evidence.
+          html`<p class="preflight-row">
+            Set up two business accounts in Evidence before preparing a monthly package.
           </p>`,
         );
       const preflightNote = missingStatements.length
@@ -502,7 +450,7 @@ export function createBookkeepingSurface(context) {
       refreshVocabulary();
       renderTransactionOptions();
       const setupButton = surface.querySelector("[data-setup-accounts]");
-      setupButton.disabled = accounts.length > 0;
+      setupButton.disabled = !setupAccountsReady || accounts.length > 0;
       if (accounts.length)
         setupButton.textContent = "Business accounts ready";
       surface.querySelector("[data-account]").innerHTML =
@@ -544,13 +492,13 @@ export function createBookkeepingSurface(context) {
                           <td data-label="Month">${escapeHtml(m.month)}</td>
                           <td data-label="Currency">${escapeHtml(m.currency)}</td>
                           <td data-label="Output VAT" class="ledger-amount">
-                            ${m.outputVat.toFixed(2)}
+                            ${escapeHtml(formatAmount(m.outputVat, m.currency))}
                           </td>
                           <td data-label="Input VAT" class="ledger-amount">
-                            ${m.inputVat.toFixed(2)}
+                            ${escapeHtml(formatAmount(m.inputVat, m.currency))}
                           </td>
                           <td data-label="Net" class="ledger-amount">
-                            ${m.net.toFixed(2)}
+                            ${escapeHtml(formatAmount(m.net, m.currency))}
                           </td>
                           <td data-label="Entries">${m.transactionCount}</td>
                         </tr>`,
@@ -594,7 +542,7 @@ export function createBookkeepingSurface(context) {
       eurDialog.querySelector("form").reset();
       eurDialog.querySelector("[data-eur-error]").textContent = "";
       eurDialog.querySelector("[data-eur-context]").textContent =
-        `${item.counterparty} — ${item.amount} ${item.currency}, ${ledgerDate(item.transactionDate)}.`;
+        `${item.counterparty} — ${formatAmount(item.amount, item.currency)}, ${ledgerDate(item.transactionDate)}.`;
       openDialog(eurDialog);
     }
     async function saveEurValue() {
@@ -629,6 +577,10 @@ export function createBookkeepingSurface(context) {
         event.preventDefault();
         saveEurValue();
       });
+    const navigation = mountBookkeepingNavigation({
+      surface, closeState, status, setLens, lensEntries, todayIsoDate,
+      getEntries: () => entries, getLens: () => lens,
+    });
     try {
       const result = await api("/transactions");
       entries = result.items || [];
@@ -636,8 +588,6 @@ export function createBookkeepingSurface(context) {
         entries,
         String(todayIsoDate?.() || new Date().toISOString()).slice(0, 7),
       );
-      lensInput.value = lens;
-      populateLensSelectors();
       const years = yearsOf(entries, lens);
       const vatYears = surface.querySelector("[data-vat-year]");
       vatYears.insertAdjacentHTML(
@@ -660,98 +610,12 @@ export function createBookkeepingSurface(context) {
     surface
       .querySelector("[data-vat-year]")
       .addEventListener("change", renderVat);
-    yearSelect?.addEventListener("change", () => {
-      const y = yearSelect.value;
-      if (y === "all") {
-        setLens("all");
-        return;
-      }
-      const m = monthSelect.value;
-      if (m === "all") {
-        setLens(y);
-      } else {
-        setLens(`${y}-${m}`);
-      }
-    });
-    monthSelect?.addEventListener("change", () => {
-      const m = monthSelect.value;
-      let y = yearSelect.value;
-      if (y === "all") {
-        const years = yearsOf(entries, lens);
-        y = years[0] || String(new Date().getFullYear());
-        yearSelect.value = y;
-      }
-      if (m === "all") {
-        setLens(y);
-      } else {
-        setLens(`${y}-${m}`);
-      }
-    });
-    const exportReport = () => {
-      const period = lens === "all" ? "all-records" : lens;
-      const filename = `datatalksclub-${period}.csv`;
-      const shown = lensEntries();
-      const csv = formatReportCsv(shown, { excludeExempt: true });
-      downloadCsv(csv, filename);
-      const count = shown.filter((e) => !isReportExempt(e)).length;
-      status.textContent = `Exported report CSV (${filename}) with ${count} transactions.`;
-    };
-    const exportFull = () => {
-      const period = lens === "all" ? "all-records" : lens;
-      const filename = `datatalksclub-${period}-full.csv`;
-      const shown = lensEntries();
-      const csv = formatFullCsv(shown);
-      downloadCsv(csv, filename);
-      status.textContent = `Exported full CSV (${filename}) with ${shown.length} transactions.`;
-    };
-    const copyReport = async () => {
-      const period = monthLabel(lens);
-      const shown = lensEntries();
-      const tsv = formatReportTsv(shown, { excludeExempt: true });
-      const count = shown.filter((e) => !isReportExempt(e)).length;
-      const ok = await copyToClipboard(tsv);
-      if (ok) {
-        status.textContent = `✓ Copied report table for ${period} (${count} transactions) to clipboard. Paste directly into email or spreadsheet.`;
-      } else {
-        status.textContent =
-          "Could not access clipboard. Please use 'Export report CSV'.";
-      }
-    };
-    surface
-      .querySelector("[data-export-report-csv]")
-      ?.addEventListener("click", exportReport);
-    surface
-      .querySelector("[data-export-full-csv]")
-      ?.addEventListener("click", exportFull);
-    surface
-      .querySelector("[data-copy-report]")
-      ?.addEventListener("click", copyReport);
-    const stepLens = (step) => {
-      if (lens !== "all") setLens(shiftMonth(lens, step));
-    };
-    surface.querySelector("[data-lens-prev]").addEventListener("click", () => stepLens(-1));
-    surface.querySelector("[data-lens-next]").addEventListener("click", () => stepLens(1));
-    lensInput.addEventListener("change", () => {
-      if (/^\d{4}-\d{2}$/.test(lensInput.value)) setLens(lensInput.value);
-    });
-    surface
-      .querySelector("[data-lens-toggle]")
-      .addEventListener("click", () => {
-        setLens(
-          lens === "all"
-            ? latestActivityMonth(
-                entries,
-                String(todayIsoDate?.() || new Date().toISOString()).slice(0, 7),
-              )
-            : "all",
-        );
-      });
     closeState.addEventListener("click", (event) => {
       if (event.target.closest("[data-cta-add]")) {
         form.reset();
         form.elements.currency.value = "EUR";
         form.elements.entryType.value = "expense";
-        form.elements.transactionDate.value = `${lens}-01`;
+        if (/^\d{4}-\d{2}$/.test(lens)) form.elements.transactionDate.value = `${lens}-01`;
         entryDialog.querySelector("h3").textContent = "Add ledger entry";
         openDialog(entryDialog);
       }
@@ -774,7 +638,7 @@ export function createBookkeepingSurface(context) {
         form.reset();
         form.elements.currency.value = "EUR";
         form.elements.entryType.value = "expense";
-        if (lens !== "all") form.elements.transactionDate.value = `${lens}-01`;
+        if (/^\d{4}-\d{2}$/.test(lens)) form.elements.transactionDate.value = `${lens}-01`;
         entryDialog.querySelector("h3").textContent = "Add ledger entry";
         openDialog(entryDialog);
       });
@@ -971,6 +835,8 @@ export function createBookkeepingSurface(context) {
           await refreshEvidence();
         }, "Could not set up accounts"),
       );
+    setupAccountsReady = true;
+    surface.querySelector("[data-setup-accounts]").disabled = accounts.length > 0;
     surface
       .querySelector("[data-document-type]")
       .addEventListener("change", (event) => {
@@ -1017,7 +883,7 @@ export function createBookkeepingSurface(context) {
               "private-account-statement",
             ].includes(documentType)
               ? surface.querySelector("[data-statement-month]").value ||
-                (lens !== "all" ? lens : undefined)
+                (/^\d{4}-\d{2}$/.test(lens) ? lens : undefined)
               : undefined,
           }),
         });

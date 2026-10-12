@@ -53,12 +53,21 @@ test.describe('production sponsor CRM communications portal', () => {
       id: 'booking-1',
       organizationId: 'org-1',
       primaryContactId: 'contact-1',
-      slotType: 'main',
-      status: 'confirmed',
-      plannedPublicationDate: '2026-08-20',
-      materialDeadline: '2026-08-10',
-      nextActionDate: '2026-08-01',
-      cardId: 'newsletter-card-1',
+      status: 'agreed',
+      productKind: 'one-off',
+      nextAction: {
+        type: 'chase_materials',
+        due: '2026-08-01',
+        owner: '00000000-0000-0000-0000-000000000001',
+        note: 'Get materials',
+      },
+      deliverables: [{
+        id: 'deliverable-1',
+        dealId: 'booking-1',
+        channel: 'main',
+        plannedPublicationDate: '2026-08-20',
+        materialDeadline: '2026-08-10',
+      }],
       version: 2,
     };
     const suggestion = {
@@ -96,7 +105,7 @@ test.describe('production sponsor CRM communications portal', () => {
     };
 
     const routeRole = async (page, role) => {
-      await page.route('**/work/api/notifications*', (route) =>
+      await page.route('**/api/notifications*', (route) =>
         route.fulfill({
           json: {
             notifications: {
@@ -105,19 +114,38 @@ test.describe('production sponsor CRM communications portal', () => {
                 message: 'Sponsor booking materials are missing 10 days before publication',
                 dueAt: '2026-08-20',
                 dismissed: false,
-                metadata: { sponsorBookingId: 'booking-1' },
+                metadata: { sponsorDealId: 'booking-1' },
               }],
             },
           },
         }));
-      await page.route('**/work/api/sponsor-crm/**', async (route) => {
+      await page.route('**/api/sponsor-crm/**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         const pathname = url.pathname;
         if (pathname.endsWith('/organizations')) return route.fulfill({ json: { items: [organization] } });
         if (pathname.endsWith('/contacts')) return route.fulfill({ json: { items: [contact, alternateContact] } });
-        if (pathname.endsWith('/bookings')) return route.fulfill({ json: { items: [booking] } });
-        if (pathname.endsWith('/bookings/booking-1/history')) {
+        if (pathname.endsWith('/queue')) {
+          return route.fulfill({
+            json: {
+              items: [{
+                id: 'queue-1',
+                kind: 'operational',
+                why: 'chase_materials',
+                action: 'Get materials',
+                companyId: organization.id,
+                companyName: organization.displayName,
+                dealId: booking.id,
+                due: '2026-08-20',
+                owner: '00000000-0000-0000-0000-000000000001',
+              }],
+            },
+          });
+        }
+        if (pathname.endsWith('/leads')) return route.fulfill({ json: { items: [] } });
+        if (pathname.endsWith('/messages')) return route.fulfill({ json: { items: [] } });
+        if (pathname.endsWith('/deals')) return route.fulfill({ json: { items: [booking] } });
+        if (pathname.endsWith('/deals/booking-1/history')) {
           return route.fulfill({
             json: {
               items: [{
@@ -130,7 +158,7 @@ test.describe('production sponsor CRM communications portal', () => {
             },
           });
         }
-        if (pathname.endsWith('/bookings/booking-1/communications')) {
+        if (pathname.endsWith('/deals/booking-1/communications')) {
           const permissions = {
             role,
             canApprove: role === 'admin',
@@ -267,7 +295,7 @@ test.describe('production sponsor CRM communications portal', () => {
       await gotoOwnedCommunicationsPage(page);
       await page.getByRole('button', { name: 'Sponsors' }).click();
       await expect(page.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
-      await page.getByRole('button', { name: 'Open booking' }).first().click();
+      await page.getByRole('button', { name: 'Open company' }).first().click();
       await expect(page.locator('[data-crm-communications]')).toContainText('Booking confirmed with an active recipient');
     };
     const captureCommunications = async (page, screenshotPath) => {
@@ -335,7 +363,7 @@ test.describe('production sponsor CRM communications portal', () => {
     await operatorPage.reload();
     await operatorPage.getByRole('button', { name: 'Sponsors' }).click();
     await expect(operatorPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
-    await operatorPage.getByRole('button', { name: 'Open booking' }).first().click();
+    await operatorPage.getByRole('button', { name: 'Open company' }).first().click();
     await expect(operatorPage.locator('[data-crm-communications]')).toContainText('Draft version 1');
     await expect(operatorPage.getByRole('button', { name: 'Review exact draft' })).toHaveCount(0);
 
@@ -409,7 +437,7 @@ test.describe('production sponsor CRM communications portal', () => {
 
     await adminPage.getByRole('button', { name: 'Sponsors' }).click();
     await expect(adminPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
-    await adminPage.getByRole('button', { name: 'Open booking' }).first().click();
+    await adminPage.getByRole('button', { name: 'Open company' }).first().click();
     await adminPage.getByRole('button', { name: 'Review exact draft' }).click();
     failNextApprove = true;
     await adminPage.getByRole('button', { name: 'Approve and queue' }).click();
@@ -454,14 +482,33 @@ test.describe('production sponsor CRM communications portal', () => {
 
     const disabledContext = await browser.newContext({ baseURL: server.baseURL });
     const disabledPage = await disabledContext.newPage();
-    await disabledPage.route('**/work/api/notifications*', (route) =>
+    await disabledPage.route('**/api/notifications*', (route) =>
       route.fulfill({ json: { notifications: { items: [] } } }));
-    await disabledPage.route('**/work/api/sponsor-crm/**', (route) => {
+    await disabledPage.route('**/api/sponsor-crm/**', (route) => {
       const url = new URL(route.request().url());
       const pathname = url.pathname;
       if (pathname.endsWith('/organizations')) return route.fulfill({ json: { items: [organization] } });
       if (pathname.endsWith('/contacts')) return route.fulfill({ json: { items: [contact] } });
-      if (pathname.endsWith('/bookings')) return route.fulfill({ json: { items: [booking] } });
+      if (pathname.endsWith('/queue')) {
+        return route.fulfill({
+          json: {
+            items: [{
+              id: 'queue-1',
+              kind: 'operational',
+              why: 'chase_materials',
+              action: 'Get materials',
+              companyId: organization.id,
+              companyName: organization.displayName,
+              dealId: booking.id,
+              due: '2026-08-20',
+              owner: '00000000-0000-0000-0000-000000000001',
+            }],
+          },
+        });
+      }
+      if (pathname.endsWith('/leads')) return route.fulfill({ json: { items: [] } });
+      if (pathname.endsWith('/messages')) return route.fulfill({ json: { items: [] } });
+      if (pathname.endsWith('/deals')) return route.fulfill({ json: { items: [booking] } });
       if (pathname.endsWith('/history')) return route.fulfill({ json: { items: [] } });
       if (pathname.endsWith('/communications')) {
         return route.fulfill({
@@ -478,8 +525,9 @@ test.describe('production sponsor CRM communications portal', () => {
     await disabledPage.goto('/');
     await disabledPage.getByRole('button', { name: 'Sponsors' }).click();
     await expect(disabledPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
-    await disabledPage.getByRole('button', { name: 'Open booking' }).click();
+    await disabledPage.getByRole('button', { name: 'Open company' }).click();
     await expect(disabledPage.getByText('Reviewed sending is disabled')).toBeVisible();
+    await expect(disabledPage.locator('[data-communication-state="disabled"]')).toContainText('History remains available. Ask an administrator to enable reviewed sending before approving new messages.');
     await captureCommunications(
       disabledPage,
       '.tmp/sponsor-communications-disabled-desktop.png',
