@@ -4,6 +4,7 @@ import { createSponsorLeads } from "./sponsor-leads.js";
 import { renderSponsorBookingAlerts } from "./sponsor-alerts.js";
 import { createSponsorCompanyDetail } from "./sponsor-company-detail.js";
 import { sponsorSurfaceMarkup } from "./sponsor-layout.js";
+import { SPONSOR_PIPELINE_STAGES, renderSponsorPipelineBoard, renderSponsorPipelineFilters, sponsorPipelineStage } from "./sponsor-pipeline.js";
 import { createCollectionLoader } from "../../core/collection-loader.js";
 import { html } from "./shared.js";
 
@@ -64,6 +65,10 @@ export function createSponsorCrmSurface(context) {
     surface.className = "sponsor-crm-surface";
     surface.innerHTML = sponsorSurfaceMarkup(humanizeOptionLabel);
     documentList.append(surface);
+    surface.querySelector("[data-crm-bookings]").classList.add("crm-pipeline-board");
+    surface.querySelector("[data-crm-status]").innerHTML = html`<option value="">All stages</option>${
+      SPONSOR_PIPELINE_STAGES.map(({ id, label }) => html`<option value="${id}">${label}</option>`).join("")
+    }`;
     setRouteTitle("Sponsors");
     const api = (path, options = {}) =>
         request(workApiUrl(`/api/sponsor-crm${path}`), {
@@ -183,6 +188,8 @@ export function createSponsorCrmSurface(context) {
     }
     function setView(view, redraw = true) {
       currentView = view;
+      if (view === "pipeline") surface.classList.remove("has-booking-detail");
+      surface.classList.toggle("is-pipeline", view === "pipeline");
       surface.querySelectorAll("[data-crm-view]").forEach((button) => {
         const active = button.dataset.crmView === view;
         button.setAttribute("aria-pressed", String(active));
@@ -237,37 +244,11 @@ export function createSponsorCrmSurface(context) {
     });
 
     function drawPipeline(shownIds) {
-      const pipeline = surface.querySelector("[data-crm-pipeline]");
-      const selected = surface.querySelector("[data-crm-status]").value;
-      const counted = deals.filter(
-        (item) =>
-          shownIds.has(item.organizationId) &&
-          (item.status === "open" || item.status === "agreed"),
-      );
-      const statuses = ["open", "agreed"];
-      const counts = Object.fromEntries(statuses.map((status) => [status, 0]));
-      for (const item of counted) {
-        if (counts[item.status] != null) counts[item.status] += 1;
-      }
-      pipeline.innerHTML = html`<button
-          type="button"
-          data-pipeline-status=""
-          aria-pressed="${selected === "" ? "true" : "false"}"
-        >
-          Live <strong>${counted.length}</strong>
-        </button>${statuses
-          .filter((status) => counts[status] > 0 || selected === status)
-          .map(
-            (status) => html`<button
-              type="button"
-              data-pipeline-status="${escapeHtml(status)}"
-              aria-pressed="${selected === status ? "true" : "false"}"
-            >
-              ${escapeHtml(humanizeOptionLabel(status))}
-              <strong>${counts[status]}</strong>
-            </button>`,
-          )
-          .join("")}`;
+      surface.querySelector("[data-crm-pipeline]").innerHTML = renderSponsorPipelineFilters({
+        deals: deals.filter((item) => shownIds.has(item.organizationId)),
+        selected: surface.querySelector("[data-crm-status]").value,
+        escapeHtml,
+      });
     }
     function drawUpcoming(shownIds) {
       if (surface.classList.contains("has-booking-detail")) return;
@@ -383,8 +364,8 @@ export function createSponsorCrmSurface(context) {
         .filter(
           (item) =>
             shownIds.has(item.organizationId) &&
-            (item.status === "open" || item.status === "agreed") &&
-            (!status || item.status === status),
+            sponsorPipelineStage(item) !== null &&
+            (!status || sponsorPipelineStage(item) === status),
         )
         .slice()
         .sort((left, right) =>
@@ -394,44 +375,12 @@ export function createSponsorCrmSurface(context) {
         currentView === "queue"
           ? `${grouped.size} ${grouped.size === 1 ? "company" : "companies"}`
           : `${visible.length} ${visible.length === 1 ? "deal" : "deals"}`;
-      surface.querySelector("[data-crm-bookings]").innerHTML = visible.length
-        ? visible
-            .map((item) => {
-              const nextAction = item.nextAction?.due
-                ? `Next ${humanSponsorDate(item.nextAction.due)}`
-                : item.rotting
-                  ? "Next action not set"
-                  : "No next action";
-              const publication = item.deliverables?.[0]?.plannedPublicationDate
-                ? `Publishes ${humanSponsorDate(item.deliverables[0].plannedPublicationDate)}`
-                : "Publication not set";
-              return html`<article
-                class="crm-booking-row"
-                ${item.id === sponsorCommunications.selectedBookingId ? 'aria-current="true"' : ""}
-              >
-                <div class="crm-booking-content">
-                  <div class="crm-booking-header">
-                    <strong class="crm-booking-name">${escapeHtml(organizationName(item.organizationId))}</strong>
-                    <span class="status-label" data-status="${escapeHtml(item.status)}">${escapeHtml(humanizeOptionLabel(item.status))}</span>
-                  </div>
-                  <p class="crm-deal-meta">
-                    <span class="crm-deal-product">${escapeHtml(({ "one-off": "One-off", package: "Package", course: "Course" }[item.productKind] || "Deal"))}</span>
-                    ${item.money && item.money !== "none" ? html`· <span class="crm-deal-amount">${escapeHtml(humanizeOptionLabel(item.money))}</span>` : ""}
-                    · <span class="crm-deal-action">${escapeHtml(nextAction)}</span>
-                    · <span class="crm-deal-pub">${escapeHtml(publication)}</span>
-                  </p>
-                </div>
-                <div class="row-actions">
-                  <button data-open-deal="${escapeHtml(item.id)}">Open deal</button
-                  ><button data-edit-deal="${escapeHtml(item.id)}">Edit</button>
-                </div>
-              </article>`;
-            })
-            .join("")
-        : html`<div class="honest-state">
-            <strong>No live deals</strong>
-            <p>Create a deal or adjust filters.</p>
-          </div>`;
+      surface.querySelector("[data-crm-bookings]").innerHTML = renderSponsorPipelineBoard({
+        deals: visible,
+        organizationName,
+        escapeHtml,
+        humanSponsorDate,
+      });
       drawUpcoming(shownIds);
     }
 
@@ -568,7 +517,10 @@ export function createSponsorCrmSurface(context) {
       const edit = event.target.closest("[data-edit-deal]")?.dataset.editDeal;
       const dealId = event.target.closest("[data-open-deal]")?.dataset.openDeal;
       const companyId = event.target.closest("[data-open-company]")?.dataset.openCompany;
-      if (edit) openDeal(deals.find((item) => item.id === edit));
+      if (edit) {
+        openDeal(deals.find((item) => item.id === edit));
+        return;
+      }
       if (dealId) {
         if (!showRecord({ dealId })) navigateCanonicalWorkspace("/sponsors", { dealId });
         return;
