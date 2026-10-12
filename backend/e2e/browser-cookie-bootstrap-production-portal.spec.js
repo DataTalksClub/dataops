@@ -40,7 +40,7 @@ test.describe('production portal browser-cookie bootstrap', () => {
       contentType: 'application/json',
       body: JSON.stringify({ error: 'docs intentionally unavailable for auth bootstrap test' }),
     }));
-    const meResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/work/api/me');
+    const meResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/me');
 
     await page.goto('/__e2e__/browser-session');
     const response = await meResponse;

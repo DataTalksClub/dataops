@@ -54,7 +54,7 @@ test.describe("production newsletter planner", () => {
         },
       ];
     let conflict = false;
-    await page.route("**/work/api/newsletter-slots**", async (route) => {
+    await page.route("**/api/newsletter-slots**", async (route) => {
       await gate;
       const request = route.request(),
         method = request.method();
@@ -177,7 +177,7 @@ test.describe("production newsletter planner", () => {
     await context.close();
     const errorContext = await browser.newContext({ baseURL: server.baseURL }),
       errorPage = await errorContext.newPage();
-    await errorPage.route("**/work/api/newsletter-slots**", (route) =>
+    await errorPage.route("**/api/newsletter-slots**", (route) =>
       route.fulfill({
         status: 403,
         json: { error: "Synthetic permission denied" },

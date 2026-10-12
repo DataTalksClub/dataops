@@ -402,7 +402,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       let largerSnapshotResolved = false;
       const largerSnapshot = page.waitForResponse((response) => {
         const url = new URL(response.url());
-        return response.request().method() === 'GET' && url.pathname === '/work/api/cards' && url.searchParams.has('limit');
+        return response.request().method() === 'GET' && url.pathname === '/api/cards' && url.searchParams.has('limit');
       }).then(() => { largerSnapshotResolved = true; });
 
       await page.goto(route);
@@ -423,7 +423,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await setRouteFaults(request, [{ method: 'GET', path: '/api/cards', delayMs: 900 }]);
     const laterSnapshot = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return response.request().method() === 'GET' && url.pathname === '/work/api/cards' && url.searchParams.has('limit');
+      return response.request().method() === 'GET' && url.pathname === '/api/cards' && url.searchParams.has('limit');
     });
     await page.goto(`/#/cards?cardId=${fixture.contextCard.id}&taskId=${fixture.task.id}`);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.task.id);

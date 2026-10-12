@@ -103,7 +103,7 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   let dismissed = false,
     failed = false,
     changed = false;
-  await page.route("**/work/api/calendar-items**", (route) => {
+  await page.route("**/api/calendar-items**", (route) => {
     const u = new URL(route.request().url()),
       method = route.request().method();
     if (failed)
@@ -229,7 +229,7 @@ test("production calendar renders cross-year ISO weeks and Berlin DST boundary d
   await page.clock.setFixedTime(new Date("2026-12-31T12:00:00Z"));
   let savedTimed;
 
-  await page.route("**/work/api/calendar-items**", (route) => {
+  await page.route("**/api/calendar-items**", (route) => {
     const u = new URL(route.request().url());
     if (u.pathname.endsWith("/overlays"))
       return route.fulfill({ json: { items: [] } });
@@ -321,7 +321,7 @@ test("calendar grid is ready before the external overlay response", async ({ pag
   await page.clock.setFixedTime(new Date("2026-07-01T12:00:00Z"));
   let releaseOverlay;
   const overlayReady = new Promise((resolve) => { releaseOverlay = resolve; });
-  await page.route("**/work/api/calendar-items**", async (route) => {
+  await page.route("**/api/calendar-items**", async (route) => {
     if (new URL(route.request().url()).pathname.endsWith("/overlays")) {
       await overlayReady;
       return route.fulfill({ json: { items: [{ id: "late-overlay", provider: "alexey-calendar",
@@ -348,7 +348,7 @@ test("calendar grid is ready before the external overlay response", async ({ pag
 
 test("calendar shared header keeps the mobile grid within the first quarter", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-07-01T12:00:00Z"));
-  await page.route("**/work/api/calendar-items**", (route) => route.fulfill({ json:
+  await page.route("**/api/calendar-items**", (route) => route.fulfill({ json:
     new URL(route.request().url()).pathname.endsWith("/overlays") ? { items: [] }
       : { ...payload, alerts: [], holidays: [] } }));
   await page.route("**/api/**", (route) => new URL(route.request().url()).pathname.includes("/calendar-items")
@@ -378,7 +378,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       { id: "sunday", title: "Sunday workshop", date: "2026-11-01" },
     ].map(({ id, title, date }) => ({ id, title, activityType: "webinar", status: "confirmed",
       allDay: true, startDate: date, endDate: date, startKey: date, endKey: date, version: 1 }));
-    await page.route("**/work/api/calendar-items**", (route) => route.fulfill({ json:
+    await page.route("**/api/calendar-items**", (route) => route.fulfill({ json:
       new URL(route.request().url()).pathname.endsWith("/overlays") ? { items: [] } : {
         items: weekendItems, holidays: [{ kind: "berlin-public-holiday", name: "Weekend holiday",
           startDate: "2026-11-01", endDate: "2026-11-01" }], holidayMetadata: {}, alerts: [],

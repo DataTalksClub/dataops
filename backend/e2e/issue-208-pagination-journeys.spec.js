@@ -59,7 +59,7 @@ test.describe('issue 208 paginated collections', () => {
       assigneeId: '00000000-0000-0000-0000-000000000001', status: 'todo',
       version: 1, taskHistory: [],
     };
-    await page.route('**/work/api/tasks*', (route) => {
+    await page.route('**/api/tasks*', (route) => {
       const params = new URL(route.request().url()).searchParams;
       const empty = params.has('endDate') || params.get('status') === 'waiting' ||
         params.get('cardId') === 'pagination-card-b';
@@ -75,7 +75,7 @@ test.describe('issue 208 paginated collections', () => {
       title,
       version: 1,
     });
-    await page.route('**/work/api/cards*', async (route) => {
+    await page.route('**/api/cards*', async (route) => {
       const cursor = new URL(route.request().url()).searchParams.get('cursor');
       if (!cursor) {
         firstPageRequests += 1;
@@ -152,7 +152,7 @@ test.describe('issue 208 paginated collections', () => {
     expect(taskResponse.status()).toBe(201);
     const taskId = (await taskResponse.json()).id;
     let continuationOnline = false;
-    await page.route('**/work/api/files*', async (route) => {
+    await page.route('**/api/files*', async (route) => {
       const cursor = new URL(route.request().url()).searchParams.get('cursor');
       if (!cursor) {
         return json(route, 200, {
@@ -215,7 +215,7 @@ test.describe('issue 208 paginated collections', () => {
       id,
       message,
     });
-    await page.route('**/work/api/notifications*', async (route) => {
+    await page.route('**/api/notifications*', async (route) => {
       const cursor = new URL(route.request().url()).searchParams.get('cursor');
       if (!cursor) {
         return json(route, 200, {
@@ -294,7 +294,7 @@ test.describe('issue 208 paginated collections', () => {
       message,
       metadata: { sponsorDealId: 'booking-pagination' },
     });
-    await page.route('**/work/api/notifications*', async (route) => {
+    await page.route('**/api/notifications*', async (route) => {
       const cursor = new URL(route.request().url()).searchParams.get('cursor');
       if (!cursor) {
         return json(route, 200, {
@@ -314,7 +314,7 @@ test.describe('issue 208 paginated collections', () => {
         },
       });
     });
-    await page.route('**/work/api/sponsor-crm/**', async (route) => {
+    await page.route('**/api/sponsor-crm/**', async (route) => {
       const pathname = new URL(route.request().url()).pathname;
       if (pathname.endsWith('/organizations')) {
         return json(route, 200, { items: [{ displayName: 'Pagination Sponsor', id: 'sponsor-org' }] });

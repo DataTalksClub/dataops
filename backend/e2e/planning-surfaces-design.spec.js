@@ -39,7 +39,7 @@ const newsletterPayload = {
 };
 
 async function mockPlanningApis(page) {
-  await page.route("**/work/api/calendar-items**", (route) => {
+  await page.route("**/api/calendar-items**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/overlays")) {
       return route.fulfill({ json: { items: [{ provider: "newsletter-slots-readonly", id: "overlay-community", startDate: "2026-08-14", endDate: "2026-08-14", label: "Community highlights", href: "#/newsletter" }] } });
@@ -47,7 +47,7 @@ async function mockPlanningApis(page) {
     if (url.pathname.includes("/alerts/") && route.request().method() === "POST") return route.fulfill({ json: { dismissed: true } });
     return route.fulfill({ json: calendarPayload });
   });
-  await page.route("**/work/api/newsletter-slots**", (route) => route.fulfill({ json: newsletterPayload }));
+  await page.route("**/api/newsletter-slots**", (route) => route.fulfill({ json: newsletterPayload }));
 }
 
 async function useTheme(page, dark) {

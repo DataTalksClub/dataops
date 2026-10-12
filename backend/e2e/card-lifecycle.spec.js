@@ -35,7 +35,7 @@ test.describe('canonical Card lifecycle', () => {
     await expect(page.locator('#task-panel-title')).toContainText(`Synthetic final task ${unique}`);
 
     let conflicts = 0;
-    await page.route(`**/work/api/tasks/${taskId}`, async (route) => {
+    await page.route(`**/api/tasks/${taskId}`, async (route) => {
       if (route.request().method() !== 'PUT' || conflicts > 0) {
         await route.continue();
         return;

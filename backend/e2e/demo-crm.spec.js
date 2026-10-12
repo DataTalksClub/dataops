@@ -115,7 +115,9 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     await expect(page.locator('[data-deal-dialog]')).toBeVisible();
     await expect(page.locator('.sponsor-crm-surface')).not.toHaveClass(/has-booking-detail/);
     await page.locator('[data-deal-dialog] button[value="cancel"]').click();
+    const financeRequest = page.waitForRequest((request) => /\/api\/sponsor-crm\/deals\/[^/]+\/finance$/.test(new URL(request.url()).pathname));
     await page.locator('.crm-pipeline-card [data-open-deal]').first().click();
+    expect(new URL((await financeRequest).url()).pathname).toMatch(/^\/api\/sponsor-crm\/deals\//);
     const detail = page.locator('[data-crm-detail]');
     await expect(detail.locator('.crm-booking-detail')).toBeVisible();
     await expect(page.locator(".crm-master")).toBeHidden();

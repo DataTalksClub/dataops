@@ -25,7 +25,7 @@ async function openEditor(page, surface, viewport) {
       parsed: { frontmatter: { title: 'Synthetic editor' }, sections: [] },
     } : { documents: [{ path: 'content/testing/editor.md', title: 'Synthetic editor' }] } });
   });
-  await page.route('**/work/api/newsletter-slots**', (route) => route.fulfill({ json: {
+  await page.route('**/api/newsletter-slots**', (route) => route.fulfill({ json: {
     items: [{ id: 'synthetic-editor-slot', publicationDate: '2026-10-12',
       campaignLabel: 'Synthetic editor', status: 'draft', version: 1,
       planningNote: content }], alerts: [],

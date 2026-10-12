@@ -106,7 +106,7 @@ test.describe("production portal bookkeeping", () => {
     );
     await expect(page.getByRole("button", { name: /Unlink/ })).toBeVisible();
     const linksResponse = await context.request.get(
-      `${server.baseURL}/work/api/bookkeeping/links`,
+      `${server.baseURL}/api/bookkeeping/links`,
     );
     expect(linksResponse.status()).toBe(200);
     assertOwnedServerResponse(server, linksResponse, "bookkeeping links");

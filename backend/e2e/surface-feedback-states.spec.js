@@ -80,7 +80,7 @@ test.describe('issue 204 owning-surface feedback', () => {
 
     let releaseTasks;
     const tasksReady = new Promise((resolve) => { releaseTasks = resolve; });
-    await page.route('**/work/api/tasks*', async (route) => {
+    await page.route('**/api/tasks*', async (route) => {
       await tasksReady;
       await route.continue();
     });
@@ -92,7 +92,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     await expect(queueSummary).toContainText('No tasks are open in this queue.');
     await expectNoHorizontalOverflow(page);
     await shot(page, 'queue-ready-desktop-1440x900');
-    await page.unroute('**/work/api/tasks*');
+    await page.unroute('**/api/tasks*');
     const taskResponse = await context.request.post('/api/tasks', { data: {
       description: 'Retained work during a source outage', date: berlinBusinessDate(Date.now()),
       assigneeId: '00000000-0000-0000-0000-000000000001',
@@ -134,7 +134,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     // Keyboard-only recovery works from the summary that owns it.
     await retry.focus();
     const [recovered] = await Promise.all([
-      page.waitForResponse((response) => response.url().includes('/work/api/tasks')),
+      page.waitForResponse((response) => response.url().includes('/api/tasks')),
       page.keyboard.press('Enter'),
     ]);
     expect(recovered.status()).toBe(503);
@@ -143,7 +143,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     await retry.focus();
     await expect(retry).toBeFocused();
     const [healthyResponse] = await Promise.all([
-      page.waitForResponse((response) => response.url().includes('/work/api/tasks')),
+      page.waitForResponse((response) => response.url().includes('/api/tasks')),
       page.keyboard.press('Enter'),
     ]);
     expect(healthyResponse.status()).toBe(200);

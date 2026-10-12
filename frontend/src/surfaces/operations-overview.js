@@ -386,7 +386,7 @@ export function createOperationsOverview(context) {
   }
 
   function workApiUrl(path, params = {}) {
-    const url = apiUrl(`/work${path}`);
+    const url = apiUrl(path);
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null && value !== "")
         url.searchParams.set(key, String(value));
@@ -423,7 +423,7 @@ export function createOperationsOverview(context) {
       : "Live work data unavailable";
     const body = document.createElement("span");
     body.textContent = runtime?.connected
-      ? "Some /work/api calls failed. Loaded tasks remain visible, and unavailable parts are not replaced with fake data."
+      ? "Some /api calls failed. Loaded tasks remain visible, and unavailable parts are not replaced with fake data."
       : "The workspace could not load Card and Task data. Templates and internal Processes remain available from their dedicated views.";
     section.append(title, body);
 

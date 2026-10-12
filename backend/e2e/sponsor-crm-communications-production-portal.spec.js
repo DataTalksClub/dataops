@@ -105,7 +105,7 @@ test.describe('production sponsor CRM communications portal', () => {
     };
 
     const routeRole = async (page, role) => {
-      await page.route('**/work/api/notifications*', (route) =>
+      await page.route('**/api/notifications*', (route) =>
         route.fulfill({
           json: {
             notifications: {
@@ -119,7 +119,7 @@ test.describe('production sponsor CRM communications portal', () => {
             },
           },
         }));
-      await page.route('**/work/api/sponsor-crm/**', async (route) => {
+      await page.route('**/api/sponsor-crm/**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         const pathname = url.pathname;
@@ -482,9 +482,9 @@ test.describe('production sponsor CRM communications portal', () => {
 
     const disabledContext = await browser.newContext({ baseURL: server.baseURL });
     const disabledPage = await disabledContext.newPage();
-    await disabledPage.route('**/work/api/notifications*', (route) =>
+    await disabledPage.route('**/api/notifications*', (route) =>
       route.fulfill({ json: { notifications: { items: [] } } }));
-    await disabledPage.route('**/work/api/sponsor-crm/**', (route) => {
+    await disabledPage.route('**/api/sponsor-crm/**', (route) => {
       const url = new URL(route.request().url());
       const pathname = url.pathname;
       if (pathname.endsWith('/organizations')) return route.fulfill({ json: { items: [organization] } });

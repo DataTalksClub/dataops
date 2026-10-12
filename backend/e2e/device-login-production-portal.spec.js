@@ -100,7 +100,7 @@ test.describe('real CLI device login through the configured production portal', 
       expect(fs.existsSync(credentials)).toBe(false);
       const anonymous = await browser.newContext({ baseURL: server.baseURL, storageState: { cookies: [], origins: [] } });
       try {
-        const approval = await anonymous.request.post('/work/api/auth/device/approve', { data: { userCode: code } });
+        const approval = await anonymous.request.post('/api/auth/device/approve', { data: { userCode: code } });
         assertOwnedServerResponse(server, approval);
         expect(approval.status()).toBe(401);
       } finally { await anonymous.close(); }

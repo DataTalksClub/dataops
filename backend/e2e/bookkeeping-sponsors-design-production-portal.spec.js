@@ -76,7 +76,7 @@ async function routeBookkeeping(page) {
       entryType: "expense",
     },
   ];
-  await page.route("**/work/api/bookkeeping/**", (route) => {
+  await page.route("**/api/bookkeeping/**", (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname.endsWith("/transactions")) return route.fulfill({ json: { items: transactions } });
     if (pathname.endsWith("/documents")) return route.fulfill({ json: { items: [{ id: "document-july", originalFilename: "Example Studio invoice.pdf", documentType: "invoice" }] } });
@@ -120,7 +120,7 @@ async function routeSponsors(page) {
     notes: "Confirm the public campaign link before scheduling.",
     version: 2,
   };
-  await page.route("**/work/api/notifications*", (route) => route.fulfill({
+  await page.route("**/api/notifications*", (route) => route.fulfill({
     json: {
       notifications: {
         items: [{
@@ -132,7 +132,7 @@ async function routeSponsors(page) {
       },
     },
   }));
-  await page.route("**/work/api/sponsor-crm/**", (route) => {
+  await page.route("**/api/sponsor-crm/**", (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
     if (pathname.endsWith("/organizations")) return route.fulfill({ json: { items: [organization] } });

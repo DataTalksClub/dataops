@@ -43,7 +43,7 @@
       "apiBoundaries": [
         "/api/me",
         "/api/*",
-        "/work/api/*"
+        "/api/*"
       ],
       "roleIds": [
         "signed-out",
@@ -116,7 +116,7 @@
             "expired-session",
             "disabled-user"
           ],
-          "description": "Unauthenticated /api and /work/api requests return JSON and never the shell.",
+          "description": "Unauthenticated /api and /api requests return JSON and never the shell.",
           "coverage": {
             "status": "runtime"
           }

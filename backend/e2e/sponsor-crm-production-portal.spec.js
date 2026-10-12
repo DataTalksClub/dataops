@@ -228,7 +228,7 @@ test.describe("production sponsor CRM portal", () => {
               paymentLinkCount: financeStage === "limit" ? 20 : paymentLinks,
               paymentLinkLimit: 20,
             };
-    await page.route("**/work/api/sponsor-crm/**", async (route) => {
+    await page.route("**/api/sponsor-crm/**", async (route) => {
       const url = new URL(route.request().url()),
         pathname = url.pathname;
       if (pathname.includes("/finance")) {
@@ -440,7 +440,7 @@ test.describe("production sponsor CRM portal", () => {
       });
     });
     await page.route(
-      "**/work/api/bookkeeping/documents/*/download",
+      "**/api/bookkeeping/documents/*/download",
       async (route) => {
         downloadRequests++;
         return route.fulfill({
@@ -451,7 +451,7 @@ test.describe("production sponsor CRM portal", () => {
         });
       },
     );
-    await page.route("**/work/api/notifications*", async (route) => {
+    await page.route("**/api/notifications*", async (route) => {
       await gate;
       return route.fulfill({
         json: {
@@ -777,13 +777,13 @@ test.describe("production sponsor CRM portal", () => {
     await context.close();
     const errorContext = await browser.newContext({ baseURL: server.baseURL }),
       errorPage = await errorContext.newPage();
-    await errorPage.route("**/work/api/sponsor-crm/**", (route) =>
+    await errorPage.route("**/api/sponsor-crm/**", (route) =>
       route.fulfill({
         status: 403,
         json: { error: "Synthetic permission denied" },
       }),
     );
-    await errorPage.route("**/work/api/notifications*", (route) =>
+    await errorPage.route("**/api/notifications*", (route) =>
       route.fulfill({ json: { notifications: { items: [] } } }),
     );
     await gotoOwnedSponsorPage(errorPage);

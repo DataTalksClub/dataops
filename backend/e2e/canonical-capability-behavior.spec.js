@@ -363,9 +363,9 @@ function freshHomeWork(page) {
     return response.request().method() === 'GET' && predicate(url);
   };
   return Promise.all([
-    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/work/api/tasks' && url.searchParams.has('date'))),
-    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/work/api/tasks' && url.searchParams.get('status') === 'waiting')),
-    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/work/api/cards' && url.searchParams.has('limit'))),
+    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/api/tasks' && url.searchParams.has('date'))),
+    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/api/tasks' && url.searchParams.get('status') === 'waiting')),
+    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/api/cards' && url.searchParams.has('limit'))),
   ]);
 }
 
@@ -383,7 +383,7 @@ test.describe('canonical frontend capability behavior', () => {
 
   test('session and Settings enforce real cookie roles, denial, focus, close, and logout', async ({ browser }, testInfo) => {
     const { context, page } = await portalPage(browser, servers.session);
-    const me = await context.request.get('/work/api/me');
+    const me = await context.request.get('/api/me');
     expect(me.status()).toBe(200);
     expect((await json(me)).user.role).toBe('admin');
     expect(await page.evaluate(() => ({ token: localStorage.getItem('dataops_token'), user: localStorage.getItem('dataops_user') })))
@@ -435,7 +435,7 @@ test.describe('canonical frontend capability behavior', () => {
     expect((await disabled.request.get('/api/me')).status()).toBe(401);
     const disabledWork = await browser.newContext({ baseURL: baseUrl(servers.disabled) });
     expect((await disabledWork.request.get('/__e2e__/browser-session', { maxRedirects: 0 })).status()).toBe(303);
-    const disabledWorkMe = await disabledWork.request.get('/work/api/me', { maxRedirects: 0 });
+    const disabledWorkMe = await disabledWork.request.get('/api/me', { maxRedirects: 0 });
     expect(disabledWorkMe.status()).toBe(401);
     expect(disabledWorkMe.headers()['content-type']).toContain('application/json');
     await disabledWork.close();
@@ -451,7 +451,7 @@ test.describe('canonical frontend capability behavior', () => {
     expect(expiredMe.headers()['content-type']).toContain('application/json');
     const expiredWork = await browser.newContext({ baseURL: baseUrl(servers.expired) });
     expect((await expiredWork.request.get('/__e2e__/browser-session', { maxRedirects: 0 })).status()).toBe(303);
-    const expiredWorkMe = await expiredWork.request.get('/work/api/me', { maxRedirects: 0 });
+    const expiredWorkMe = await expiredWork.request.get('/api/me', { maxRedirects: 0 });
     expect(expiredWorkMe.status()).toBe(401);
     expect(expiredWorkMe.headers()['content-type']).toContain('application/json');
     await expiredWork.close();
@@ -481,11 +481,11 @@ test.describe('canonical frontend capability behavior', () => {
     const browserErrors = observeBrowserErrors(page);
     const initialToday = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return url.pathname === '/work/api/tasks' && url.searchParams.has('date');
+      return url.pathname === '/api/tasks' && url.searchParams.has('date');
     });
     const initialCards = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return url.pathname === '/work/api/cards' && url.searchParams.has('limit');
+      return url.pathname === '/api/cards' && url.searchParams.has('limit');
     });
     await page.goto('/#/');
     expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe('Europe/Berlin');
@@ -576,11 +576,11 @@ test.describe('canonical frontend capability behavior', () => {
     const partialWork = Promise.all([
       page.waitForResponse((response) => {
         const url = new URL(response.url());
-        return url.pathname === '/work/api/tasks' && url.searchParams.has('date');
+        return url.pathname === '/api/tasks' && url.searchParams.has('date');
       }),
       page.waitForResponse((response) => {
         const url = new URL(response.url());
-        return url.pathname === '/work/api/cards' && response.status() === 503;
+        return url.pathname === '/api/cards' && response.status() === 503;
       }),
     ]);
     const partialRender = page.evaluate(() => window.__dataopsRefreshWork());
@@ -645,7 +645,7 @@ test.describe('canonical frontend capability behavior', () => {
     const observedTodayQueries = [];
     page.on('request', (request) => {
       const url = new URL(request.url());
-      if (request.method() !== 'GET' || url.pathname !== '/work/api/tasks') return;
+      if (request.method() !== 'GET' || url.pathname !== '/api/tasks') return;
       const date = url.searchParams.get('date');
       if (date) observedTodayQueries.push(date);
     });
@@ -653,7 +653,7 @@ test.describe('canonical frontend capability behavior', () => {
     const initialToday = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'GET'
-        && url.pathname === '/work/api/tasks'
+        && url.pathname === '/api/tasks'
         && url.searchParams.get('date') === BOUNDARY_OPERATOR_DATE;
     });
     await installBerlinBoundaryClock(page);
@@ -674,7 +674,7 @@ test.describe('canonical frontend capability behavior', () => {
     const refreshedToday = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'GET'
-        && url.pathname === '/work/api/tasks'
+        && url.pathname === '/api/tasks'
         && url.searchParams.get('date') === BOUNDARY_OPERATOR_DATE;
     });
     const refreshedRender = page.evaluate(() => window.__dataopsRefreshWork());
@@ -1605,7 +1605,7 @@ test.describe('canonical frontend capability behavior', () => {
       expect(response.headers()['content-type']).toContain('application/json');
       expect(await response.text()).not.toContain('<!doctype html>');
     }
-    const workUnknown = await context.request.get('/work/api/not-a-retained-route');
+    const workUnknown = await context.request.get('/api/not-a-retained-route');
     expect(workUnknown.status()).toBe(404);
     expect(workUnknown.headers()['content-type']).toContain('application/json');
 
