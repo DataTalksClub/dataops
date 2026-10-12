@@ -831,7 +831,7 @@ describe("Finance surface boundary", () => {
   });
 
   test("renders Queue, Pipeline, Company, and Leads and Convert hits the leads API", async () => {
-    const lead = {
+    let lead = {
       id: "lead-convert",
       version: 1,
       status: "new",
@@ -883,7 +883,8 @@ describe("Finance surface boundary", () => {
           };
         if (path === "/api/sponsor-crm/leads") return { items: [lead] };
         if (path === "/api/sponsor-crm/leads/lead-convert" && options.method === "PATCH") {
-          return { ...lead, status: "converted", version: 2 };
+          lead = { ...lead, status: "converted", version: 2 };
+          return lead;
         }
         throw new Error(`Unexpected request: ${url}`);
       },
@@ -932,6 +933,21 @@ describe("Finance surface boundary", () => {
       version: 1,
       status: "converted",
     });
+    assert.match(leads.innerHTML, /Converted/);
+    assert.doesNotMatch(leads.innerHTML, /data-lead-status|data-lead-id|crm-lead-actions/);
+    for (const status of ["converted", "triaged", "ignored"]) {
+      await leads.dispatch("click", {
+        target: {
+          closest: (selector) => selector === "[data-lead-status]"
+            ? { dataset: { leadId: "lead-convert", leadStatus: status } }
+            : null,
+        },
+      });
+    }
+    await settle();
+    assert.equal(requests.filter(({ url, options }) =>
+      requestPath(url) === "/api/sponsor-crm/leads/lead-convert" && options.method === "PATCH",
+    ).length, 1, "stale converted-lead controls cannot issue another transition");
   });
 
   test("derives bookkeeping totals and evidence relationships from loaded records", async () => {

@@ -48,11 +48,11 @@ export function createSponsorLeads(context) {
         ${sponsor.blurb ? html`<p class="crm-lead-blurb">${escapeHtml(sponsor.blurb)}</p>` : ""}
         ${sponsor.context ? html`<p class="crm-lead-context muted">${escapeHtml(sponsor.context)}</p>` : ""}
       </div>
-      <div class="row-actions crm-lead-actions">
+      ${item.status === "converted" ? "" : html`<div class="row-actions crm-lead-actions">
         ${leadAction(item.id, "converted", "Convert", "primary-button")}
         ${leadAction(item.id, "triaged", "Triage", "crm-lead-triage")}
         ${leadAction(item.id, "ignored", "Ignore", "danger-text-button")}
-      </div>
+      </div>`}
     </article>`;
   }
 
@@ -102,7 +102,7 @@ export function createSponsorLeads(context) {
       const transition = event.target.closest("[data-lead-status]");
       if (!transition) return;
       const lead = leads.find((item) => item.id === transition.dataset.leadId);
-      if (!lead) return;
+      if (!lead || lead.status === "converted") return;
       const { leadStatus } = transition.dataset;
       fail(async () => {
         try {
@@ -134,6 +134,11 @@ export function createSponsorLeads(context) {
       }, "Could not update lead");
     };
     const convert = async (body) => {
+      const lead = leads.find((item) => item.id === body.leadId);
+      if (!lead || lead.status === "converted") {
+        surface.querySelector("[data-convert-dialog]").close();
+        return;
+      }
       await api(`/leads/${encodeURIComponent(body.leadId)}`, {
         method: "PATCH",
         body: JSON.stringify({

@@ -132,3 +132,27 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     await expect(page.locator('.sponsor-crm-surface')).not.toHaveClass(/has-booking-detail/);
   });
 }
+
+// Run after the populated-lead viewport journeys so those still audit review actions.
+test('converted leads stay complete after reload at desktop and mobile sizes', async ({ page }) => {
+  await setupPageWithAuth(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${server.baseURL}/#/sponsors`);
+  await expect(page.locator('[data-crm-message]')).toBeHidden();
+  await page.locator('[data-crm-view="leads"]').click();
+  const lead = page.locator('.crm-lead-row').filter({ hasText: 'Synthetic Newsletter Lead' });
+  await expect(lead.getByRole('button', { name: 'Convert', exact: true })).toBeVisible();
+  await lead.getByRole('button', { name: 'Convert', exact: true }).click();
+  await expect(lead.locator('.status-label')).toHaveText('Converted');
+  for (const [width, height] of [[1440, 900], [1280, 800], [375, 667]]) {
+    await page.setViewportSize({ width, height });
+    await page.reload();
+    await expect(page.locator('[data-crm-message]')).toBeHidden();
+    await page.locator('[data-crm-view="leads"]').click();
+    await expect(lead.locator('.status-label')).toHaveText('Converted');
+    await expect(lead.locator('[data-lead-status]')).toHaveCount(0);
+    await expect(lead.locator('.crm-lead-actions')).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    await page.screenshot({ path: path.join(screenshots, `lead-converted-${width}x${height}.png`) });
+  }
+});
