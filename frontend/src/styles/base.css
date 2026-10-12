@@ -125,10 +125,7 @@ textarea:focus {
   flex: 1 1 auto;
 }.workspace-title h1,
 .workspace-title p {
-  overflow: hidden;
   margin: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }.workspace-title h1 {
   color: var(--dk-text-heading);
   font-size: 16px;
