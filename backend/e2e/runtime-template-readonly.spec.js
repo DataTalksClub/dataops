@@ -21,6 +21,10 @@ test.describe('Git-authored runtime templates', () => {
 
     await page.goto(`/#/templates?templateId=${encodeURIComponent(template.id)}`);
     await expect(page.getByRole('heading', { name: /Synthetic Git-authored workflow/ })).toBeVisible();
+    const definitionDetails = page.locator('.runtime-template-provenance');
+    await expect(definitionDetails).toHaveJSProperty('open', false);
+    await expect(page.getByText('workflow-templates/synthetic-git-workflow.yaml')).toBeHidden();
+    await definitionDetails.getByText('Definition details', { exact: true }).click();
     await expect(page.getByText('workflow-templates/synthetic-git-workflow.yaml')).toBeVisible();
     await expect(page.getByText('0123456789ab')).toBeVisible();
     await expect(page.getByText('This definition is projected from reviewed YAML.')).toBeVisible();

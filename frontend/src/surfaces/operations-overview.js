@@ -289,7 +289,7 @@ export function createOperationsOverview(context) {
         "One queue, most urgent first. Each task names where it came from — a Card, recurring, or ad hoc.",
       workflows:
         "Every active card by stage. Open a card to see its tasks.",
-      templates: "Create cards from reusable Templates.",
+      templates: "Create cards from reusable templates.",
       recurring:
         "Create, edit, pause, and delete the schedules that generate recurring tasks.",
       assistants:

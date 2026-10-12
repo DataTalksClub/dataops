@@ -463,8 +463,10 @@ export function createTemplatesSurface(context) {
 
     const cardUpdates = renderTemplateCardUpdates(selected);
 
-    const definitionSection = document.createElement("section");
+    const definitionSection = document.createElement("details");
     definitionSection.className = "runtime-template-block runtime-template-provenance";
+    const definitionSummary = document.createElement("summary");
+    definitionSummary.textContent = "Definition details";
     const provenanceNote = document.createElement("p");
     provenanceNote.textContent =
       "This definition is projected from reviewed YAML. Changes take effect through the deployment workflow.";
@@ -480,7 +482,7 @@ export function createTemplatesSurface(context) {
       selected.sourceRevision ? String(selected.sourceRevision).slice(0, 12) : "Unavailable",
       selected.sourceRevision ? "runtime-template-mono" : "",
     );
-    definitionSection.append(definition, provenanceNote);
+    definitionSection.append(definitionSummary, definition, provenanceNote);
 
     detail.append(back, header, factsStrip, stepsSection, cardUpdates, definitionSection);
     return detail;
