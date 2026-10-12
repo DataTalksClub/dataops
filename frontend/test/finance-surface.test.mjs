@@ -5,6 +5,7 @@ import { formatAmount } from "../src/surfaces/finance/bookkeeping-format.js";
 import { ledgerTableMarkup, worklistMarkup } from "../src/surfaces/finance/bookkeeping-views.js";
 
 import { createFinanceSurface } from "../src/surfaces/finance/index.js";
+import { createSponsorFinance } from "../src/surfaces/finance/sponsor-finance.js";
 
 const originalGlobals = {
   document: globalThis.document,
@@ -298,6 +299,35 @@ async function settle() {
 }
 
 describe("Finance surface boundary", () => {
+  test("treats missing sponsor finance as an empty state and keeps actual failures visible", async () => {
+    createHarness();
+    const surface = new FakeElement("section");
+    const panel = surface.querySelector('[data-booking-panel="finance"]');
+    const sponsorFinance = createSponsorFinance({
+      surface,
+      escapeHtml,
+      humanizeOptionLabel,
+      message: new FakeElement("p"),
+      request: async () => ({}),
+      workApiUrl: (path) => path,
+    });
+    for (const status of [404, 503]) {
+      globalThis.fetch = async () => ({
+        ok: false,
+        status,
+        json: async () => ({ error: "Synthetic unavailable finance" }),
+      });
+      await sponsorFinance.loadFinance({ id: "missing-finance" });
+      if (status === 404) {
+        assert.match(panel.innerHTML, /No finance recorded yet/);
+        assert.doesNotMatch(panel.innerHTML, /Finance is not enabled|Finance is unavailable/);
+      } else {
+        assert.match(panel.innerHTML, /Finance is unavailable/);
+        assert.doesNotMatch(panel.innerHTML, /No finance recorded yet/);
+      }
+    }
+  });
+
   test("directly imports the production factory and exposes the stable Finance facade", () => {
     const { finance } = createHarness();
     assert.deepEqual(Object.keys(finance).sort(), [

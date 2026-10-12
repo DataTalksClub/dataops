@@ -379,11 +379,8 @@ export function createSponsorFinance(context) {
         </div>`;
       else
         detail.innerHTML = html`<div class="honest-state">
-          <strong>Finance is not enabled</strong>
-          <p>
-            The booking remains available. No finance action can be taken in
-            this workspace.
-          </p>
+          <strong>No finance recorded yet</strong>
+          <p>Invoice and payment details will appear here when finance is recorded for this deal.</p>
         </div>`;
     }
   }
