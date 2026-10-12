@@ -104,6 +104,22 @@ export function createTaskEvidence(context) {
 
     const fileInput = document.createElement("input");
     fileInput.type = "file";
+    label.className = "task-file-drop-zone";
+    const hint = document.createElement("span");
+    hint.className = "task-file-drop-hint";
+    hint.textContent = "Drop a file here or choose a file";
+    label.append(hint);
+    label.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      if (!fileInput.disabled) label.classList.add("is-dragging");
+    });
+    label.addEventListener("dragleave", () => label.classList.remove("is-dragging"));
+    label.addEventListener("drop", (event) => {
+      event.preventDefault();
+      label.classList.remove("is-dragging");
+      const file = event.dataTransfer?.files?.[0];
+      if (file && !fileInput.disabled) uploadTaskFile(task.id, file);
+    });
     fileInput.disabled = detail.activeTaskMutationBusy ||
       detail.activeCardMutationBusy ||
       detail.activeCardTemplateBusy ||

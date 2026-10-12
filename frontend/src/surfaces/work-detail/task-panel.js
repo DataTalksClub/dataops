@@ -407,9 +407,6 @@ export function createTaskPanel(context) {
     badge.className = `task-status-badge ${status}`;
     badge.textContent = status;
     meta.append(badge);
-    const versionRow = document.createElement("div");
-    versionRow.textContent = `Version ${task.version}`;
-    meta.append(versionRow);
     if (task.date) {
       const dateRow = document.createElement("div");
       dateRow.append(
@@ -803,7 +800,7 @@ export function createTaskPanel(context) {
     notice.className = "task-quality-notice";
     const label = document.createElement("div");
     label.className = "task-history-label";
-    label.textContent = `Process quality risk (${findings.length})`;
+    label.textContent = `Process notes (${findings.length})`;
     notice.append(label);
     for (const finding of findings.slice(0, 3)) {
       const row = document.createElement("button");

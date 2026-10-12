@@ -434,7 +434,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     const savedTask = await json(savedLinkResponse);
     expect(savedTask.version).toBe(proofTask.version + 1);
     await expect(requiredLink).toHaveValue(proofUrl);
-    await expect(page.locator('#task-panel .task-detail-meta').first()).toContainText(`Version ${savedTask.version}`);
+    await expect(page.locator('#task-panel .task-detail-meta').first()).not.toContainText('Version');
     await expect(page.locator('#task-panel [data-task-mutation-feedback="success"]'))
       .toHaveText('Task link is saved in the refreshed Task.');
     await expect(fileInput).toBeEnabled();

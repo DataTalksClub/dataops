@@ -1350,3 +1350,55 @@ body[data-workspace-view="tasks"] .workflow-board-card .ops-progress i {
     transition: none;
   }
 }/* Process Docs and document editor ----------------------------------------- */
+
+/* Task attachments and notes share the quieter detail-panel treatment. */
+body[data-workspace-view="tasks"] .task-file-drop-zone {
+  border: 1px dashed var(--dk-border-strong);
+  border-radius: var(--dk-radius-md);
+  padding: 18px;
+  background: var(--dk-bg-muted);
+  text-align: center;
+}
+body[data-workspace-view="tasks"] .task-file-drop-hint {
+  display: block;
+  font-weight: 400;
+  color: var(--dk-text-muted);
+  margin: 6px 0 12px;
+}
+body[data-workspace-view="tasks"] .task-file-drop-zone.is-dragging {
+  border-color: var(--dk-text-link, #315f91);
+  background: var(--dk-bg-hover);
+}
+body[data-workspace-view="tasks"] .task-file-drop-zone input[type="file"] {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+body[data-workspace-view="tasks"] .task-quality-notice {
+  background: var(--dk-bg-muted);
+  border: 1px solid var(--dk-border-default);
+  padding: 10px 14px;
+}
+body[data-workspace-view="tasks"] .task-quality-row {
+  border: 0;
+  background: transparent;
+  padding: 6px 0;
+}
+body[data-workspace-view="tasks"] #task-panel-close {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dk-text-muted);
+  font-size: 0;
+}
+body[data-workspace-view="tasks"] #task-panel-close::before {
+  content: "×";
+  font-size: 24px;
+  line-height: 1;
+}
+body[data-workspace-view="tasks"] #task-panel-close:hover { background: var(--dk-bg-hover); }

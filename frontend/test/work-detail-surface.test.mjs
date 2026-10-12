@@ -874,7 +874,7 @@ describe("Work Detail surface boundary", () => {
     );
 
     await findByText(alert, "Review latest", "button").click();
-    assert.match(harness.taskPanelBody.textContent, /Version 2/);
+    assert.match(harness.taskPanelBody.querySelector(".task-status-badge").textContent, /waiting/);
     assert.equal(
       harness.taskPanelBody
         .querySelectorAll("input")
@@ -906,7 +906,7 @@ describe("Work Detail surface boundary", () => {
       findByText(harness.taskPanelBody, "Retry my change", "button"),
       undefined,
     );
-    assert.match(harness.taskPanelBody.textContent, /Version 3/);
+    assert.match(harness.taskPanelBody.querySelector(".task-status-badge").textContent, /todo/);
     assert.equal(
       harness.taskPanelBody
         .querySelectorAll("input")
