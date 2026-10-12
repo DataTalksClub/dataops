@@ -42,7 +42,6 @@
       "route": "/login | /logout",
       "apiBoundaries": [
         "/api/me",
-        "/api/*",
         "/api/*"
       ],
       "roleIds": [
@@ -116,7 +115,7 @@
             "expired-session",
             "disabled-user"
           ],
-          "description": "Unauthenticated /api and /api requests return JSON and never the shell.",
+          "description": "Unauthenticated /api requests return JSON and never the shell.",
           "coverage": {
             "status": "runtime"
           }

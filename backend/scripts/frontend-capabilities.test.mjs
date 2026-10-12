@@ -107,7 +107,7 @@ const REQUIRED = {
 
 const REQUIRED_ROLES = ["signed-out", "expired-session", "disabled-user", "operator", "admin"];
 const REQUIRED_APIS = {
-  session: ["/api/me", "/api/*", "/work/api/*"],
+  session: ["/api/me", "/api/*"],
   settings: ["/api/me", "/logout"],
   tasks: ["/api/tasks", "/api/files", "/api/artifacts", "/docs", "/content/*"],
   workflows: ["/api/cards", "/api/tasks", "/api/artifacts"],
