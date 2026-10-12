@@ -562,7 +562,16 @@ export function createTaskEvidence(context) {
       }),
     );
     addRow.append(titleInput, urlInput, addBtn);
-    section.append(addRow);
+    if (options.ownerType === "card" && artifacts.length === 0) {
+      const form = document.createElement("details");
+      form.className = "card-add-details";
+      const toggle = document.createElement("summary");
+      toggle.textContent = "+ Add artifact";
+      form.append(toggle, addRow);
+      section.append(form);
+    } else {
+      section.append(addRow);
+    }
     return section;
   }
 

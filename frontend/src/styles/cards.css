@@ -896,3 +896,15 @@
   outline: 2px solid var(--dk-focus-ring);
   outline-offset: -2px;
 }
+
+/* Keep optional Card inputs out of the checklist until requested. */
+.card-add-details > summary {
+  cursor: pointer;
+  color: var(--dk-text-link, #315f91);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 0;
+  list-style: none;
+}
+.card-add-details > summary::-webkit-details-marker { display: none; }
+.card-add-details[open] > summary { margin-bottom: 4px; }

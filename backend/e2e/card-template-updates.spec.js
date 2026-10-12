@@ -75,6 +75,7 @@ test.describe('reviewed Card Template updates', () => {
     await expect(panel.getByRole('button', { name: 'Review template update' })).toBeVisible();
 
     await panel.getByRole('button', { name: 'Review template update' }).click();
+    await panel.getByText('+ Add process reference', { exact: true }).click();
     const draftReference = panel.locator('.card-ref-name');
     const draftReferenceUrl = panel.locator('.card-ref-url');
     await draftReference.fill('Public-safe typed reference');
@@ -99,7 +100,8 @@ test.describe('reviewed Card Template updates', () => {
     await expect(draftReference).toHaveValue('Public-safe typed reference');
     await expect(draftReferenceUrl).toHaveValue('https://example.test/public-safe-draft');
     await panel.getByRole('button', { name: 'Apply reviewed update' }).click();
-    await expect(panel).toContainText('Current at Template v2');
+    await expect(panel).not.toContainText('Update available:');
+    await expect(panel).not.toContainText('Template definition');
 
     const appliedTasks = (await json(await request.get(`/api/tasks?cardId=${card.id}`))).tasks;
     expect(appliedTasks.find(({ id }) => id === completed.id)).toMatchObject({

@@ -2740,7 +2740,7 @@ describe("Work Detail surface boundary", () => {
         entry.options.method === "POST",
     );
     assert.deepEqual(jsonBody(apply), { previewToken: "a".repeat(64) });
-    assert.match(harness.cardPanelBody.textContent, /Current at Template v2/);
+    assert.doesNotMatch(harness.cardPanelBody.textContent, /Template definition|Current at Template/);
   });
 
   test("retains the open review after a stale preview and reloads only on request", async () => {
