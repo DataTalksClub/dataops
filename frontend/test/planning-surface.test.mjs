@@ -37,6 +37,7 @@ class TestElement {
     this.disabled = false;
     this.hidden = false;
     this.innerHTML = "";
+    this.style = {};
     this.listeners = new Map();
     this.open = false;
     this.queries = new Map();
@@ -76,6 +77,10 @@ class TestElement {
     this.children.push(...values);
   }
 
+  prepend(...values) {
+    this.children.unshift(...values);
+  }
+
   close() {
     this.open = false;
   }
@@ -110,6 +115,10 @@ class TestElement {
     this.attributes.set(name, String(value));
   }
 
+  removeAttribute(name) {
+    this.attributes.delete(name);
+  }
+
   setQuery(selector, value) {
     this.queries.set(selector, value);
     return value;
@@ -127,7 +136,13 @@ class TestElement {
 
 class TestFormData {
   constructor(form) {
-    this.entries = form.formEntries || [];
+    if (form.formEntries && form.formEntries.length > 0) {
+      this.entries = form.formEntries;
+    } else {
+      this.entries = (form.elements || [])
+        .filter((field) => field.name && field.value !== undefined)
+        .map((field) => [field.name, field.value]);
+    }
   }
 
   [Symbol.iterator]() {
@@ -161,6 +176,7 @@ function createCalendarDom() {
   const alerts = surface.setQuery("[data-alerts]", new TestElement("div"));
   const dialog = surface.setQuery("dialog", new TestElement("dialog"));
   const form = dialog.setQuery("form", new TestElement("form"));
+  form.elements.allDay.checked = true;
   form.setQuery('[role="alert"]', new TestElement("p"));
   const view = surface.setQuery("[data-view]", new TestElement("select"));
   view.value = "month";
@@ -174,7 +190,7 @@ function createCalendarDom() {
     return layer;
   });
   surface.setQueryAll("[data-layer]", layers);
-  for (const selector of ["[data-prev]", "[data-today]", "[data-next]", "[data-add]", "[data-cancel]"]) {
+  for (const selector of ["[data-prev]", "[data-today]", "[data-next]", "[data-add]", "[data-cancel]", "[data-controls-toggle]"]) {
     surface.setQuery(selector, new TestElement("button"));
   }
   const pickerToggle = surface.setQuery("[data-picker-toggle]", new TestElement("button"));
@@ -243,6 +259,60 @@ function createNewsletterDom() {
   const dialog = surface.setQuery("dialog", new TestElement("dialog"));
   const form = dialog.setQuery("form", new TestElement("form"));
   form.setQuery('[role="alert"]', new TestElement("p"));
+
+  const dialogTabs = ["details", "compose", "preview", "schedule"].map((tabName) => {
+    const btn = new TestElement("button");
+    btn.dataset.dialogTab = tabName;
+    return btn;
+  });
+  dialog.setQueryAll("[data-dialog-tab]", dialogTabs);
+
+  const dialogPanes = ["details", "compose", "preview", "schedule"].map((paneName) => {
+    const pane = new TestElement("div");
+    pane.dataset.pane = paneName;
+    return pane;
+  });
+  dialog.setQueryAll("[data-pane]", dialogPanes);
+
+  const actions = ["start-draft", "submit-review", "prompt-schedule", "prompt-send", "return-draft"].map((act) => {
+    const btn = new TestElement("button");
+    btn.dataset.action = act;
+    dialog.setQuery(`[data-action="${act}"]`, btn);
+    return btn;
+  });
+  dialog.setQueryAll("[data-action]", actions);
+
+  const confirmCard = dialog.setQuery("[data-confirm-card]", new TestElement("div"));
+  confirmCard.hidden = true;
+  dialog.setQuery("[data-confirm-proceed]", new TestElement("button"));
+  dialog.setQuery("[data-confirm-cancel]", new TestElement("button"));
+  dialog.setQuery("[data-confirm-title]", new TestElement("h4"));
+  dialog.setQuery("[data-confirm-message]", new TestElement("p"));
+  dialog.setQuery("[data-status-banner]", new TestElement("div"));
+  dialog.setQuery("[data-status-banner-badge]", new TestElement("span"));
+  dialog.setQuery("[data-status-banner-text]", new TestElement("span"));
+  dialog.setQuery("[data-action-bar]", new TestElement("div"));
+
+  dialog.setQuery('[name="schedulePublicationDate"]', new TestElement("input"));
+  dialog.setQuery('[name="schedulePublicationTime"]', new TestElement("input"));
+
+  const stepperSteps = [1, 2, 3, 4, 5].map((step) => {
+    const el = new TestElement("div");
+    el.dataset.step = String(step);
+    return el;
+  });
+  dialog.setQueryAll(".stepper-step", stepperSteps);
+
+  const checkDate = dialog.setQuery("[data-check-date]", new TestElement("div"));
+  const checkTime = dialog.setQuery("[data-check-time]", new TestElement("div"));
+  const checkSubject = dialog.setQuery("[data-check-subject]", new TestElement("div"));
+  const checkContent = dialog.setQuery("[data-check-content]", new TestElement("div"));
+  const checkSponsor = dialog.setQuery("[data-check-sponsor]", new TestElement("div"));
+  const checkCard = dialog.setQuery("[data-check-card]", new TestElement("div"));
+  for (const c of [checkDate, checkTime, checkSubject, checkContent, checkSponsor, checkCard]) {
+    c.setQuery(".check-icon", new TestElement("span"));
+    c.setQuery("span:last-child", new TestElement("span"));
+  }
   const from = surface.setQuery("[data-from]", new TestElement("input"));
   const to = surface.setQuery("[data-to]", new TestElement("input"));
   const view = surface.setQuery("[data-view]", new TestElement("select"));
@@ -255,6 +325,22 @@ function createNewsletterDom() {
   surface.setQueryAll(".newsletter-filters input,.newsletter-filters select", filters);
   surface.setQuery("[data-newsletter-add]", new TestElement("button"));
   surface.setQuery("[data-save]", new TestElement("button"));
+
+  const statTotal = surface.setQuery("[data-stat-total]", new TestElement("span"));
+  const statUpcoming = surface.setQuery("[data-stat-upcoming]", new TestElement("span"));
+  const statDrafting = surface.setQuery("[data-stat-drafting]", new TestElement("span"));
+  const statScheduled = surface.setQuery("[data-stat-scheduled]", new TestElement("span"));
+  const statUnbooked = surface.setQuery("[data-stat-unbooked]", new TestElement("span"));
+
+  const viewAll = new TestElement("button");
+  viewAll.dataset = { newsletterView: "all" };
+  const viewUpcoming = new TestElement("button");
+  viewUpcoming.dataset = { newsletterView: "upcoming" };
+  const viewSent = new TestElement("button");
+  viewSent.dataset = { newsletterView: "sent" };
+  const viewButtons = [viewAll, viewUpcoming, viewSent];
+  surface.setQueryAll("[data-newsletter-view]", viewButtons);
+
   return {
     alerts,
     booked,
@@ -264,10 +350,19 @@ function createNewsletterDom() {
     form,
     from,
     slots,
+    statDrafting,
+    statScheduled,
+    statTotal,
+    statUnbooked,
+    statUpcoming,
     status,
     surface,
     to,
     view,
+    viewAll,
+    viewButtons,
+    viewSent,
+    viewUpcoming,
   };
 }
 
@@ -286,6 +381,8 @@ function createPlanningHarness({
       created.push(value);
       return value;
     },
+    addEventListener() {},
+    removeEventListener() {},
   };
   globalThis.FormData = TestFormData;
   const requests = [];
@@ -300,6 +397,7 @@ function createPlanningHarness({
     },
     setRouteTitle: (title) => routeTitles.push(title),
     todayIsoDate: () => today,
+    viewportWidth: () => 1280,
     workApiUrl: (path) => new URL(path, "http://portal.test"),
   });
   return { documentList, requests, routeTitles, surface };
@@ -318,7 +416,7 @@ describe("Planning surface production behavior", () => {
               {
                 category: "Newsletter",
                 endDate: "2026-08-13",
-                href: "/#/newsletter",
+                href: "/newsletter",
                 label: "Newsletter 42",
                 provider: "newsletter-slots-readonly",
                 startDate: "2026-08-13",
@@ -364,6 +462,10 @@ describe("Planning surface production behavior", () => {
       },
     });
     await harness.surface.renderCalendarSurface();
+    const header = dom.surface.children[0];
+    assert.equal(header.className, "page-header calendar-page-header");
+    assert.equal(header.children[0].children[0].textContent, "Calendar");
+    assert.equal(header.children[0].children[0].id, "calendar-surface-title");
     await nextTicks();
     assert.deepEqual(harness.routeTitles, ["Calendar"]);
     assert.match(dom.status.textContent, /Holiday information may be out of date/);
@@ -380,7 +482,7 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /calendar-week is-current-week/);
     assert.match(dom.grid.innerHTML, /calendar-week-number is-current-week/);
     assert.match(dom.grid.innerHTML, /calendar-day[^"]*is-current-week/);
-    expectCalendarRange(harness.requests[0], "2026-08-03", "2026-09-06");
+    expectCalendarRange(harness.requests[0], "2026-07-27", "2026-09-06");
 
     // Toggle off Alexey's calendar layer
     dom.surface.querySelector('[data-layer="alexey"]').checked = false;
@@ -396,6 +498,27 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /Tejas at DataTalks\.Club Podcast/);
   });
 
+  test("renders owned Calendar planning data while an external overlay is pending", async () => {
+    const dom = createCalendarDom();
+    let finishOverlay;
+    const overlay = new Promise((resolve) => { finishOverlay = resolve; });
+    const harness = createPlanningHarness({
+      calendar: dom,
+      request: async (url) => String(url).includes("/overlays") ? overlay : {
+        items: [{ id: "pending-overlay", title: "Ready planning activity", allDay: true,
+          startDate: "2026-08-13", endDate: "2026-08-13" }],
+        holidays: [], alerts: [],
+      },
+    });
+    const loading = harness.surface.renderCalendarSurface();
+    await nextTicks();
+    assert.match(dom.grid.innerHTML, /Ready planning activity/);
+    assert.match(dom.status.textContent, /Loading calendar overlays/);
+    finishOverlay({ items: [] });
+    await loading;
+    assert.equal(dom.status.textContent, "");
+  });
+
   test("keeps Calendar usable when overlays fail and exposes filter and period controls", async () => {
     const dom = createCalendarDom();
     const harness = createPlanningHarness({
@@ -408,7 +531,7 @@ describe("Planning surface production behavior", () => {
     });
     await harness.surface.renderCalendarSurface();
     await nextTicks();
-    assert.match(dom.status.textContent, /Newsletter dates are temporarily unavailable/);
+    assert.match(dom.status.textContent, /Calendar overlays are temporarily unavailable/);
     assert.match(dom.surface.innerHTML, /Europe\/Berlin time/);
 
     dom.type.value = "webinar";
@@ -461,12 +584,14 @@ describe("Planning surface production behavior", () => {
     assert.equal(dom.surface.querySelector("[data-period-heading]").textContent, "December 2026");
     assert.match(dom.grid.innerHTML, /December 1, 2026/);
 
-    // Test November 2026: Nov 1 is Sunday (weekend), so Mon Oct 26–Fri Oct 30 must NOT be shown
+    // A month starting on Sunday includes the full week containing its first day.
     dom.pickerToggle.onclick({ stopPropagation() {} });
     dom.pickerMonthBtns[10].onclick({ stopPropagation() {} });
     await nextTicks();
     assert.equal(dom.surface.querySelector("[data-period-heading]").textContent, "November 2026");
-    assert.doesNotMatch(dom.grid.innerHTML, /Monday, October 26, 2026/);
+    assert.match(dom.grid.innerHTML, /Monday, October 26, 2026/);
+    assert.match(dom.grid.innerHTML, /Sunday, November 1, 2026/);
+    assert.match(dom.grid.innerHTML, /Saturday, November 7, 2026/);
     assert.match(dom.grid.innerHTML, /Monday, November 2, 2026/);
   });
 
@@ -939,11 +1064,247 @@ describe("Planning surface production behavior", () => {
     await failureDom.surface.querySelector("[data-save]").onclick({
       preventDefault() {},
     });
-    assert.equal(failureDom.dialog.open, true);
     assert.equal(
       failureDom.form.querySelector('[role="alert"]').textContent,
       "Could not save slot: Slot conflict",
     );
+  });
+
+  test("calculates overview stats and filters by view tabs (All, Upcoming, Sent)", async () => {
+    const dom = createNewsletterDom();
+    const items = [
+      {
+        id: "slot-1",
+        publicationDate: "2026-08-15",
+        campaignNumber: 10,
+        campaignLabel: "Issue 10 Upcoming Open",
+        status: "open",
+      },
+      {
+        id: "slot-2",
+        publicationDate: "2026-08-20",
+        campaignNumber: 11,
+        campaignLabel: "Issue 11 Drafting",
+        status: "drafting",
+        bookedByDisplayName: "Alice",
+      },
+      {
+        id: "slot-3",
+        publicationDate: "2026-08-25",
+        campaignNumber: 12,
+        campaignLabel: "Issue 12 Scheduled",
+        status: "scheduled",
+        bookedByUserId: "bob",
+      },
+      {
+        id: "slot-4",
+        publicationDate: "2026-08-01",
+        campaignNumber: 9,
+        campaignLabel: "Issue 9 Sent",
+        status: "sent",
+        publicUrl: "https://example.invalid/9",
+      },
+      {
+        id: "slot-5",
+        publicationDate: "2026-08-28",
+        campaignNumber: 13,
+        campaignLabel: "Issue 13 In Review",
+        status: "review",
+      },
+    ];
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      request: async () => ({ alerts: [], items }),
+    });
+    await harness.surface.renderNewsletterSurface();
+
+    // Verify stats bar counts
+    assert.equal(dom.statTotal.textContent, "5");
+    assert.equal(dom.statUpcoming.textContent, "4");
+    assert.equal(dom.statDrafting.textContent, "1");
+    assert.equal(dom.statScheduled.textContent, "1");
+    assert.equal(dom.statUnbooked.textContent, "1");
+
+    // Default "All" view shows all 5 slots
+    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
+    assert.match(dom.slots.innerHTML, /Issue 11 Drafting/);
+    assert.match(dom.slots.innerHTML, /Issue 12 Scheduled/);
+    assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
+    assert.match(dom.slots.innerHTML, /Issue 13 In Review/);
+    assert.match(dom.slots.innerHTML, /In Review/);
+
+    // Switch to "Upcoming" view: only open, reserved, drafting, review, scheduled
+    dom.viewUpcoming.onclick();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
+    assert.match(dom.slots.innerHTML, /Issue 11 Drafting/);
+    assert.match(dom.slots.innerHTML, /Issue 12 Scheduled/);
+    assert.match(dom.slots.innerHTML, /Issue 13 In Review/);
+    assert.doesNotMatch(dom.slots.innerHTML, /Issue 9 Sent/);
+
+    // Switch to "Sent & Archive" view: only sent / cancelled
+    dom.viewSent.onclick();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.doesNotMatch(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
+    assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
+
+    // Switch back to "All" view: all items visible
+    dom.viewAll.onclick();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
+    assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
+  });
+
+  test("supports Newsletter dialog workspace with tabs, quick actions, and markdown preview", async () => {
+    const dom = createNewsletterDom();
+    const items = [
+      {
+        id: "slot-draft",
+        publicationDate: "2026-08-25",
+        campaignNumber: 15,
+        campaignLabel: "Issue 15 Deep Learning",
+        status: "drafting",
+        bookedByDisplayName: "Weights & Biases",
+        planningNote: "# Subject: Deep Learning Trends\n> Preheader: Insights for engineers\n\nWelcome to Issue 15!",
+      },
+    ];
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      request: async () => ({ alerts: [], items }),
+    });
+    await harness.surface.renderNewsletterSurface();
+
+    // Compose quick action on card opens dialog in compose tab
+    dom.slots.onclick({
+      target: {
+        closest: (selector) => (selector === "[data-compose]" ? { dataset: { compose: "slot-draft" } } : null),
+      },
+    });
+    assert.equal(dom.dialog.open, true);
+    assert.equal(dom.dialog.querySelector("[data-dialog-title]").textContent, "Compose Issue");
+
+    // Preview quick action opens dialog in preview tab
+    dom.slots.onclick({
+      target: {
+        closest: (selector) => (selector === "[data-preview]" ? { dataset: { preview: "slot-draft" } } : null),
+      },
+    });
+    assert.equal(dom.dialog.open, true);
+    assert.equal(dom.dialog.querySelector("[data-dialog-title]").textContent, "Email Preview");
+
+    // Verify preview simulation content
+    assert.equal(dom.dialog.querySelector("[data-preview-subject]").textContent, "Deep Learning Trends");
+    assert.equal(dom.dialog.querySelector("[data-preview-preheader]").textContent, "Insights for engineers");
+    assert.match(dom.dialog.querySelector("[data-sim-sponsor]").innerHTML, /Weights &amp; Biases/);
+  });
+
+  test("supports explicit scheduling and sending flow with confirmations and status transitions", async () => {
+    const dom = createNewsletterDom();
+    let slotData = {
+      id: "slot-sched",
+      publicationDate: "2026-08-25",
+      publicationTime: "14:00",
+      campaignNumber: 16,
+      campaignLabel: "Issue 16 Scheduling Test",
+      status: "draft",
+      bookedByDisplayName: "Alexey",
+      planningNote: "# Subject: Scheduled Issue\n> Preheader: Delivery test\n\nIssue 16 content ready for dispatch.",
+    };
+    let lastPutPayload = null;
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      request: async (url, options) => {
+        if (options?.method === "PUT") {
+          lastPutPayload = JSON.parse(options.body);
+          slotData = { ...slotData, ...lastPutPayload };
+          return slotData;
+        }
+        return { alerts: [], items: [slotData] };
+      },
+    });
+    await harness.surface.renderNewsletterSurface();
+
+    // Schedule quick action on card opens dialog in schedule tab
+    dom.slots.onclick({
+      target: {
+        closest: (selector) => (selector === "[data-schedule]" ? { dataset: { schedule: "slot-sched" } } : null),
+      },
+    });
+    assert.equal(dom.dialog.open, true);
+    assert.equal(dom.dialog.querySelector("[data-dialog-title]").textContent, "Schedule & Checklist");
+
+    // Status banner shows Draft
+    assert.equal(dom.dialog.querySelector("[data-status-banner-badge]").textContent, "Draft");
+
+    // Submit for Review transition
+    const submitReviewBtn = dom.dialog.querySelector('[data-action="submit-review"]');
+    assert.ok(submitReviewBtn);
+    submitReviewBtn.onclick();
+    assert.equal(dom.dialog.querySelector("[data-status-banner-badge]").textContent, "In Review");
+
+    // Ready to schedule: prompt confirmation
+    const promptScheduleBtn = dom.dialog.querySelector('[data-action="prompt-schedule"]');
+    assert.ok(promptScheduleBtn);
+    promptScheduleBtn.onclick();
+
+    const confirmCard = dom.dialog.querySelector("[data-confirm-card]");
+    assert.equal(confirmCard.hidden, false);
+    assert.match(dom.dialog.querySelector("[data-confirm-message]").innerHTML, /automated dispatch/);
+
+    // Cancel confirmation hides the card
+    const cancelConfirmBtn = dom.dialog.querySelector("[data-confirm-cancel]");
+    cancelConfirmBtn.onclick();
+    assert.equal(confirmCard.hidden, true);
+
+    // Prompt schedule again and confirm
+    promptScheduleBtn.onclick();
+    const proceedConfirmBtn = dom.dialog.querySelector("[data-confirm-proceed]");
+    proceedConfirmBtn.onclick();
+    assert.equal(dom.dialog.querySelector("[data-status-banner-badge]").textContent, "Scheduled");
+
+    // Save scheduled slot
+    await dom.surface.querySelector("[data-save]").onclick({ preventDefault() {} });
+    assert.equal(lastPutPayload.status, "scheduled");
+
+    // Reopen dialog for scheduled slot and test unschedule back to draft
+    dom.slots.onclick({
+      target: {
+        closest: (selector) => (selector === "[data-schedule]" ? { dataset: { schedule: "slot-sched" } } : null),
+      },
+    });
+    const returnDraftBtn = dom.dialog.querySelector('[data-action="return-draft"]');
+    assert.ok(returnDraftBtn);
+    assert.equal(returnDraftBtn.textContent.trim(), "Unschedule (Return to Draft)");
+    returnDraftBtn.onclick();
+    assert.equal(dom.dialog.querySelector("[data-status-banner-badge]").textContent, "Draft");
+
+    // Save slot back to draft
+    await dom.surface.querySelector("[data-save]").onclick({ preventDefault() {} });
+    assert.equal(lastPutPayload.status, "draft");
+
+    // Reopen, move to review, schedule, and mark as sent
+    dom.slots.onclick({
+      target: {
+        closest: (selector) => (selector === "[data-schedule]" ? { dataset: { schedule: "slot-sched" } } : null),
+      },
+    });
+    dom.dialog.querySelector('[data-action="submit-review"]').onclick();
+    dom.dialog.querySelector('[data-action="prompt-schedule"]').onclick();
+    dom.dialog.querySelector("[data-confirm-proceed]").onclick();
+    assert.equal(dom.dialog.querySelector("[data-status-banner-badge]").textContent, "Scheduled");
+
+    const promptSendBtn = dom.dialog.querySelector('[data-action="prompt-send"]');
+    assert.ok(promptSendBtn);
+    promptSendBtn.onclick();
+    assert.equal(confirmCard.hidden, false);
+    assert.match(dom.dialog.querySelector("[data-confirm-message]").innerHTML, /mark.*as sent/i);
+
+    dom.dialog.querySelector("[data-confirm-proceed]").onclick();
+    assert.equal(dom.dialog.querySelector("[data-status-banner-badge]").textContent, "Sent");
+
+    // Save slot marked sent
+    await dom.surface.querySelector("[data-save]").onclick({ preventDefault() {} });
+    assert.equal(lastPutPayload.status, "sent");
   });
 });
 

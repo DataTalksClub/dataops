@@ -66,7 +66,7 @@ export function createClient({ url, token, fetchImpl = fetch }) {
     get: (route, options) => call("GET", route, undefined, options),
     post: (route, body, options) => call("POST", route, body ?? {}, options),
     put: (route, body, options) => call("PUT", route, body ?? {}, options),
-    delete: (route, options) => call("DELETE", route, undefined, options),
+    delete: (route, body, options) => call("DELETE", route, body, options),
   };
 }
 

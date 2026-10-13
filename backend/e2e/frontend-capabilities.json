@@ -42,8 +42,7 @@
       "route": "/login | /logout",
       "apiBoundaries": [
         "/api/me",
-        "/api/*",
-        "/work/api/*"
+        "/api/*"
       ],
       "roleIds": [
         "signed-out",
@@ -116,7 +115,7 @@
             "expired-session",
             "disabled-user"
           ],
-          "description": "Unauthenticated /api and /work/api requests return JSON and never the shell.",
+          "description": "Unauthenticated /api requests return JSON and never the shell.",
           "coverage": {
             "status": "runtime"
           }
@@ -138,7 +137,7 @@
     {
       "id": "settings",
       "surface": "Settings",
-      "route": "/#/ (Settings panel)",
+      "route": "/ (Settings panel)",
       "apiBoundaries": [
         "/api/me",
         "/logout"
@@ -199,7 +198,7 @@
     {
       "id": "tasks",
       "surface": "Tasks and proof",
-      "route": "/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
+      "route": "/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
       "apiBoundaries": [
         "/api/tasks",
         "/api/files",
@@ -329,7 +328,7 @@
     {
       "id": "workflows",
       "surface": "Workflows",
-      "route": "/#/cards?cardId=<id>&taskId=<id>",
+      "route": "/cards?cardId=<id>&taskId=<id>",
       "apiBoundaries": [
         "/api/cards",
         "/api/tasks",
@@ -425,7 +424,7 @@
     {
       "id": "templates",
       "surface": "Runtime templates",
-      "route": "/#/templates?templateId=<id>",
+      "route": "/templates?templateId=<id>",
       "apiBoundaries": [
         "/api/templates",
         "/api/cards"
@@ -496,7 +495,7 @@
     {
       "id": "recurring",
       "surface": "Recurring schedules",
-      "route": "/#/recurring",
+      "route": "/recurring",
       "apiBoundaries": [
         "/api/recurring"
       ],
@@ -592,7 +591,7 @@
     {
       "id": "assistants",
       "surface": "Assistants",
-      "route": "/#/assistants?assistantJobId=<id>",
+      "route": "/assistants?assistantJobId=<id>",
       "apiBoundaries": [
         "/api/assistant-jobs",
         "/api/artifacts"
@@ -663,7 +662,7 @@
     {
       "id": "notifications",
       "surface": "Notifications",
-      "route": "/#/ (Notifications panel)",
+      "route": "/ (Notifications panel)",
       "apiBoundaries": [
         "/api/notifications",
         "/api/tasks"
@@ -718,7 +717,7 @@
     {
       "id": "bookkeeping",
       "surface": "Bookkeeping",
-      "route": "/#/bookkeeping",
+      "route": "/bookkeeping",
       "apiBoundaries": [
         "/api/bookkeeping/*"
       ],
@@ -780,7 +779,7 @@
     {
       "id": "sponsors",
       "surface": "Sponsors",
-      "route": "/#/sponsors?bookingId=<id>",
+      "route": "/sponsors?dealId=<id>",
       "apiBoundaries": [
         "/api/sponsor-crm/*"
       ],
@@ -870,7 +869,7 @@
     {
       "id": "newsletter",
       "surface": "Newsletter",
-      "route": "/#/newsletter",
+      "route": "/newsletter",
       "apiBoundaries": [
         "/api/newsletter-slots"
       ],
@@ -932,7 +931,7 @@
     {
       "id": "calendar",
       "surface": "Calendar",
-      "route": "/#/calendar",
+      "route": "/calendar",
       "apiBoundaries": [
         "/api/calendar-items"
       ],
@@ -1010,7 +1009,7 @@
     {
       "id": "process-docs",
       "surface": "Process Docs and search",
-      "route": "/#/processes",
+      "route": "/processes",
       "apiBoundaries": [
         "/docs",
         "/search",
@@ -1116,7 +1115,7 @@
     {
       "id": "document-review",
       "surface": "Document review workspace",
-      "route": "/#/review",
+      "route": "/review",
       "apiBoundaries": [
         "/api/document-reviews",
         "/docs",
@@ -1148,7 +1147,7 @@
     {
       "id": "admin",
       "surface": "Admin and process quality",
-      "route": "/#/admin",
+      "route": "/admin",
       "apiBoundaries": [
         "/docs/process-quality",
         "/knowledge/status",
@@ -1196,7 +1195,7 @@
     {
       "id": "users",
       "surface": "Users",
-      "route": "/#/users",
+      "route": "/users",
       "apiBoundaries": [
         "/api/users",
         "/api/me"

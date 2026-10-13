@@ -279,16 +279,14 @@ async function listTemplates(client: DynamoDBDocumentClient): Promise<Template[]
 
 /**
  * Keep only the task definitions a Card wants: ungrouped tasks always
- * instantiate, while grouped tasks need their group in the selection. An
- * absent selection means every definition (the pre-group behavior).
+ * instantiate, while grouped tasks need their group in the selection.
  */
 function selectTaskDefinitions(
   definitions: Template['taskDefinitions'],
   selectedGroups?: string[],
 ): NonNullable<Template['taskDefinitions']> {
   const all = definitions || [];
-  if (selectedGroups === undefined) return all;
-  const selected = new Set(selectedGroups);
+  const selected = new Set(selectedGroups || []);
   return all.filter((definition) => !definition.optionalGroup || selected.has(definition.optionalGroup));
 }
 
@@ -349,9 +347,7 @@ async function createCardFromTemplate(
   selectedGroups?: string[],
 ): Promise<{ card: Card; tasks: Task[] }> {
   const definitions = selectTaskDefinitions(template.taskDefinitions, selectedGroups);
-  if (selectedGroups !== undefined) {
-    cardData.selectedOptionalGroups = [...selectedGroups];
-  }
+  cardData.selectedOptionalGroups = [...(selectedGroups || [])];
   const card = buildCard(cardData, {
     taskCount: definitions.length,
     openTaskCount: definitions.length,

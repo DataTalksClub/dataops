@@ -370,10 +370,10 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     page.on('load', () => { loadCount += 1; });
 
     await page.goto(`${stack.origin}/`, { waitUntil: 'domcontentloaded' });
-    await expect(page).toHaveURL(`${stack.origin}/#/`);
+    await expect(page).toHaveURL(`${stack.origin}/`);
     await expect(page.locator('body')).toBeVisible();
 
-    const canonicalRoute = `${stack.origin}/#/tasks?date=2026-08-12`;
+    const canonicalRoute = `${stack.origin}/tasks?date=2026-08-12`;
     await page.goto(canonicalRoute, { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(canonicalRoute);
     await expect(page.locator('body')).toBeVisible();
@@ -397,7 +397,7 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     await expect(page).toHaveURL(canonicalRoute);
     expect(listenerPid(ports.backendPort)).toBe(backendPidBeforeFrontendEdits);
 
-    const login = await browserJson(page, '/work/api/auth/login', {
+    const login = await browserJson(page, '/api/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email: 'alexey@datatalks.club', password: '111' }),
@@ -408,20 +408,20 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     expect(login.body.token).toBeTruthy();
     const authorization = { Authorization: `Bearer ${login.body.token}` };
 
-    const me = await browserJson(page, '/work/api/me', { headers: authorization });
+    const me = await browserJson(page, '/api/me', { headers: authorization });
     expect(me.status).toBe(200);
     expect(me.body.user.name).toBe('Alexey');
 
-    const created = await browserJson(page, '/work/api/tasks', {
+    const created = await browserJson(page, '/api/tasks', {
       method: 'POST',
       headers: { ...authorization, 'content-type': 'application/json' },
       body: JSON.stringify({ description: 'Synthetic proxy task', date: '2026-08-12' }),
     });
     expect(created.status).toBe(201);
-    const tasks = await browserJson(page, '/work/api/tasks?date=2026-08-12', { headers: authorization });
+    const tasks = await browserJson(page, '/api/tasks?date=2026-08-12', { headers: authorization });
     expect(tasks.status).toBe(200);
     expect(tasks.body.tasks.some((task) => task.id === created.body.id)).toBe(true);
-    const workflows = await browserJson(page, '/work/api/cards', { headers: authorization });
+    const workflows = await browserJson(page, '/api/cards', { headers: authorization });
     expect(workflows.status).toBe(200);
     expect(Array.isArray(workflows.body.cards.items)).toBe(true);
 
@@ -437,10 +437,10 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     expect(content.contentType).toContain('text/markdown');
     expect(content.body).toContain('Public-safe content');
 
-    const unauthorized = await browserJson(page, '/work/api/me');
+    const unauthorized = await browserJson(page, '/api/me');
     expect(unauthorized.status).toBe(401);
     expect(unauthorized.contentType).toContain('application/json');
-    const missingApi = await browserJson(page, '/work/api/not-a-real-route', { headers: authorization });
+    const missingApi = await browserJson(page, '/api/not-a-real-route', { headers: authorization });
     expect(missingApi.status).toBe(404);
     expect(missingApi.contentType).toContain('application/json');
     expect(JSON.stringify(missingApi.body)).not.toContain('<!doctype html>');
@@ -451,7 +451,7 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
       form.append('taskId', taskId);
       form.append('category', 'document');
       form.append('file', new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' }), 'synthetic.bin');
-      const response = await fetch('/work/api/files', {
+      const response = await fetch('/api/files', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: form,
@@ -460,7 +460,7 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     }, { taskId: created.body.id, token: login.body.token, bytes: fileBytes });
     expect(upload.status).toBe(201);
     const download = await page.evaluate(async ({ fileId, token }) => {
-      const response = await fetch(`/work/api/files/${fileId}/download`, {
+      const response = await fetch(`/api/files/${fileId}/download`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       return {
@@ -564,19 +564,19 @@ test('representative mode mutates and restores only an isolated loopback Dynalit
     context = await browser.newContext();
     const page = await context.newPage();
     const traffic = observeBrowserTraffic(page, stack);
-    const canonicalRoute = `${stack.origin}/#/tasks?date=2026-08-12`;
+    const canonicalRoute = `${stack.origin}/tasks?date=2026-08-12`;
     await page.goto(canonicalRoute, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#dataops-local-mode-banner')).toHaveCount(0);
 
-    const copiedSessionCannotAuthenticate = await browserJson(page, '/work/api/me', {
+    const copiedSessionCannotAuthenticate = await browserJson(page, '/api/me', {
       headers: { Authorization: 'Bearer synthetic-copied-session' },
     });
     expect(copiedSessionCannotAuthenticate.status).toBe(401);
 
-    const before = await browserJson(page, `/work/api/tasks/${taskId}`);
+    const before = await browserJson(page, `/api/tasks/${taskId}`);
     expect(before.status).toBe(200);
     expect(before.body.description).toBe(originalDescription);
-    const changed = await browserJson(page, `/work/api/tasks/${taskId}`, {
+    const changed = await browserJson(page, `/api/tasks/${taskId}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ description: changedDescription, expectedVersion: before.body.version }),
@@ -586,7 +586,7 @@ test('representative mode mutates and restores only an isolated loopback Dynalit
 
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(canonicalRoute);
-    const afterReload = await browserJson(page, `/work/api/tasks/${taskId}`);
+    const afterReload = await browserJson(page, `/api/tasks/${taskId}`);
     expect(afterReload.status).toBe(200);
     expect(afterReload.body.description).toBe(changedDescription);
     const localRecord = await client.send(new GetCommand({
@@ -595,7 +595,7 @@ test('representative mode mutates and restores only an isolated loopback Dynalit
     }));
     expect(localRecord.Item.description).toBe(changedDescription);
 
-    const restored = await browserJson(page, `/work/api/tasks/${taskId}`, {
+    const restored = await browserJson(page, `/api/tasks/${taskId}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ description: originalDescription, expectedVersion: changed.body.version }),

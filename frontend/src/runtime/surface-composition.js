@@ -140,7 +140,7 @@ export function createSurfaceComposition(context) {
     tasksNavSectionButtons,
     tasksFromWorkPayload,
     windowConsole,
-    workspaceHashPath,
+    workspacePath,
     workspaceNavButtons,
     workspaceState,
   } = context;
@@ -176,7 +176,7 @@ export function createSurfaceComposition(context) {
   }
 
   function workApiUrl(path, params = {}) {
-    const url = apiUrl(`/work${path}`);
+    const url = apiUrl(path);
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null && value !== "") {
         url.searchParams.set(key, String(value));
@@ -234,10 +234,10 @@ export function createSurfaceComposition(context) {
     if (!(await canLeaveCurrentDocument())) return undefined;
     const tasksSection = legacyViewToTasksSection(nextView);
     const path = tasksSection
-      ? workspaceHashPath("tasks", tasksSection)
+      ? workspacePath("tasks", tasksSection)
       : nextView === "tasks"
         ? "/tasks"
-        : workspaceHashPath(
+        : workspacePath(
             nextView === "processes" || nextView === "search"
               ? "docs"
               : nextView,

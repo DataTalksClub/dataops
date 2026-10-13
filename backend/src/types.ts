@@ -408,6 +408,8 @@ export interface Card {
   sponsor?: string;
   /** Additional sponsors beyond the main one. */
   secondarySponsors?: string[];
+  /** Issue number for recurring publications, e.g. "298". */
+  issueNumber?: string;
   references?: CardLink[];
   cardLinks?: CardLink[];
   emoji?: string;

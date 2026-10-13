@@ -70,7 +70,7 @@ describe('sponsor finance contracts', () => {
     delete process.env.SPONSOR_FINANCE_ENABLED;
     let calls = 0;
     const response = await handleSponsorFinanceRoutes(
-      '/api/sponsor-crm/bookings/booking-1/finance',
+      '/api/sponsor-crm/deals/booking-1/finance',
       'GET',
       { headers: { 'x-user-id': 'admin-1' }, body: null },
       { send: async () => { calls++; throw new Error('must not read'); } } as never,
@@ -114,8 +114,8 @@ describe('sponsor finance contracts', () => {
     await assert.rejects(
       () => classifyFinance(client as never, {
         actorId: 'admin-1',
-        bookingId: 'booking-1',
-        bookingVersion: 1,
+        dealId: 'booking-1',
+        dealVersion: 1,
         idempotencyKey: 'unknown-0123456789abcdef',
         body: { invoiceRequirement: 'not-required' },
       }),
@@ -137,8 +137,8 @@ describe('sponsor finance contracts', () => {
     await assert.rejects(
       () => classifyFinance(client as never, {
         actorId: 'admin-1',
-        bookingId: 'booking-1',
-        bookingVersion: 1,
+        dealId: 'booking-1',
+        dealVersion: 1,
         idempotencyKey: 'in-progress-0123456789abcdef',
         body: { invoiceRequirement: 'not-required' },
       }),
@@ -160,8 +160,8 @@ describe('sponsor finance contracts', () => {
     await assert.rejects(
       () => classifyFinance(client as never, {
         actorId: 'admin-1',
-        bookingId: 'booking-1',
-        bookingVersion: 1,
+        dealId: 'booking-1',
+        dealVersion: 1,
         idempotencyKey: 'conditional-0123456789abcdef',
         body: { invoiceRequirement: 'not-required' },
       }),

@@ -210,7 +210,7 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
 
     const page = await context.newPage();
     const entries = observeErrors(page);
-    await page.goto('/#/processes');
+    await page.goto('/processes');
     const outage = page.locator('.ops-surface-docs [data-docs-state="unavailable"]');
     await expect(outage).toBeVisible();
     await expect(outage.locator('strong')).toHaveText('Process documents are unavailable');
@@ -228,7 +228,7 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     expectOnlyDeliberateDocsOutage(entries);
     await context.close();
     recordCapabilityEvidence(testInfo, [
-      { route: '/#/processes', roleId: 'admin', stateIds: ['process-docs.unavailable'] },
+      { route: '/processes', roleId: 'admin', stateIds: ['process-docs.unavailable'] },
     ]);
   });
 
@@ -237,7 +237,7 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     const page = await context.newPage();
     const entries = observeErrors(page);
 
-    await page.goto('/#/processes');
+    await page.goto('/processes');
     await expect(page.locator('.ops-surface-docs')).toBeVisible();
     const banner = page.locator('.ops-surface-docs [data-docs-state="unavailable"]');
     await expect(banner).toHaveCount(1);
@@ -246,8 +246,8 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'processes-outage.png'), fullPage: true });
 
     // The work queue keeps its own independent state during a docs outage.
-    await page.goto('/#/');
-    await expect(page).toHaveURL(`${servers.outage.baseURL}/#/`);
+    await page.goto('/');
+    await expect(page).toHaveURL(`${servers.outage.baseURL}/`);
     await expect(page.locator('.ops-work-queue')).toBeVisible();
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'queue-during-docs-outage.png'), fullPage: true });
 
@@ -300,7 +300,7 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     const page = await context.newPage();
     const entries = observeErrors(page);
 
-    await page.goto('/#/processes');
+    await page.goto('/processes');
     const outage = page.locator('.ops-surface-docs [data-docs-state="unavailable"]');
     await expect(outage).toBeVisible();
     await expect(outage).toContainText(OUTAGE_MESSAGE_PREFIX);
@@ -328,7 +328,7 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     // navigation can abort another page's still-pending bootstrap requests.
     const docsPage = await context.newPage();
     const docsErrors = observeErrors(docsPage);
-    await docsPage.goto('/#/processes');
+    await docsPage.goto('/processes');
     const empty = docsPage.locator('.ops-surface-docs [data-docs-state="empty"]');
     await expect(empty).toBeVisible();
     await expect(empty.locator('strong')).toHaveText('No process documents yet');
@@ -354,7 +354,7 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
           && response.status() === 200;
       },
     );
-    await queuePage.goto('/#/');
+    await queuePage.goto('/');
     await queueCatalogLoaded;
     // The queue repaints after its own bootstrap resolves; an empty corpus is
     // not a docs failure, so the queue must show no docs state at all.
@@ -370,7 +370,7 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
 
     const docsPage = await context.newPage();
     const docsErrors = observeErrors(docsPage);
-    await docsPage.goto('/#/processes');
+    await docsPage.goto('/processes');
     // The surface must list this run's own corpus first. Without that proof
     // "neither state renders" would also be true before the catalog loaded.
     await expect(

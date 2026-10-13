@@ -3,6 +3,13 @@ import {
   setControlPending,
 } from "../operations-overview.js";
 
+function isLambdaHost(hostname) {
+  return (
+    typeof hostname === "string" &&
+    (hostname.includes(".lambda-url.") || hostname.endsWith(".on.aws"))
+  );
+}
+
 export function createDeviceAuthSurface(context) {
   const {
     documentList,
@@ -12,6 +19,32 @@ export function createDeviceAuthSurface(context) {
     setRouteTitle,
     workApiUrl,
   } = context;
+
+  const locationRef =
+    context.locationRef ||
+    (typeof window !== "undefined" ? window.location : null);
+  const canonicalOrigin = context.canonicalOrigin || "https://ops.dtcdev.click";
+
+  function redirectToCanonicalHost(userCode) {
+    if (!locationRef || !locationRef.hostname) return false;
+    if (!isLambdaHost(locationRef.hostname)) return false;
+    let targetOrigin = canonicalOrigin;
+    try {
+      if (new URL(targetOrigin).hostname === locationRef.hostname) return false;
+    } catch {}
+    const target = new URL(targetOrigin);
+    target.pathname = "/device";
+    target.search = userCode ? `?userCode=${encodeURIComponent(userCode)}` : "";
+    const targetUrl = target.toString();
+    if (typeof locationRef.replace === "function") {
+      locationRef.replace(targetUrl);
+    } else if (typeof locationRef.assign === "function") {
+      locationRef.assign(targetUrl);
+    } else {
+      locationRef.href = targetUrl;
+    }
+    return true;
+  }
 
   // Confirming a device code is the one place a browser session is exchanged
   // for a long-lived credential, so the page states plainly what is being
@@ -34,6 +67,11 @@ export function createDeviceAuthSurface(context) {
   }
 
   function renderDeviceSurfaceView() {
+    const route = getActiveWorkspaceRoute();
+    const userCode =
+      route?.path === "/device" ? route.params.get("userCode") || "" : "";
+    if (redirectToCanonicalHost(userCode)) return;
+
     primeFromRoute();
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");

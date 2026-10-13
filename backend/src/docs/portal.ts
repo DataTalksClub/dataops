@@ -178,8 +178,7 @@ function serveFrontend(event: LambdaEvent, method: string, path: string): Lambda
   // Other unknown static-looking requests never fall through to the app shell.
   if (extOf(path)) return null;
 
-  // Extensionless browser deep links render the one app shell. Hash fragments
-  // are client-only and therefore arrive here as their extensionless path.
+  // Extensionless browser deep links render the one app shell on direct load.
   if (!extOf(path)) return serveIndex();
 
   return null;

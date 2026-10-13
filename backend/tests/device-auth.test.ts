@@ -127,6 +127,17 @@ describe('CLI device authorization', () => {
     assert.deepStrictEqual(body(replay), { error: 'expired_token' });
   });
 
+  it('keeps loopback approval links for local development without browser OAuth', async () => {
+    const response = await handler({
+      httpMethod: 'POST', path: '/api/auth/device', body: '{}',
+      headers: { host: 'localhost:3000' },
+    }, {});
+    assert.strictEqual(response.statusCode, 200);
+    const grant = body(response);
+    assert.strictEqual(grant.verificationUri, 'http://localhost:3000/device');
+    assert.strictEqual(grant.verificationUriComplete, `http://localhost:3000/device?userCode=${grant.userCode}`);
+  });
+
   it('authenticates API routes with the issued token and records the acting user', async () => {
     const start = await startDeviceLogin('grace@remote');
     await approve(start.userCode);

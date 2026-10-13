@@ -190,32 +190,32 @@ async function navigateState(page, baseURL, state) {
   await page.goto(`${baseURL}/__parity__/session?role=${role}`);
   const result = { mutation: 'none' };
   if (state === 'home-ready') {
-    await page.goto(`${baseURL}/#/`);
+    await page.goto(`${baseURL}/`);
     await settle(page);
     const home = page.locator('.operations-home-daily');
     await home.waitFor({ state: 'visible' });
     await page.locator('.operations-home-daily[data-operations-work-loaded="true"]').waitFor();
   } else if (state === 'task-proof-waiting-return') {
-    await page.goto(`${baseURL}/#/tasks?taskId=parity-task&date=2026-08-12&cardId=parity-workflow&contextCardId=parity-return`);
+    await page.goto(`${baseURL}/tasks?taskId=parity-task&date=2026-08-12&cardId=parity-workflow&contextCardId=parity-return`);
     await settle(page);
     await page.locator('#task-panel-title').filter({ hasText: 'Verify synthetic publication proof' }).waitFor();
   } else if (state === 'workflow-detail') {
-    await page.goto(`${baseURL}/#/cards?cardId=parity-workflow&taskId=parity-task`);
+    await page.goto(`${baseURL}/cards?cardId=parity-workflow&taskId=parity-task`);
     await settle(page);
     await page.locator('#card-panel-title').filter({ hasText: 'Synthetic publication workflow' }).waitFor();
   } else if (state === 'assistant-detail-baseline') {
-    await page.goto(`${baseURL}/#/assistants?assistantJobId=parity-assistant`);
+    await page.goto(`${baseURL}/assistants?assistantJobId=parity-assistant`);
     await settle(page);
     await page.locator('.assistant-detail h3').filter({ hasText: 'Synthetic assistant baseline' }).waitFor();
     result.mutation = 'non-mutating-list-detail';
   } else if (state === 'template-projection-readonly') {
-    await page.goto(`${baseURL}/#/templates?templateId=parity-template`);
+    await page.goto(`${baseURL}/templates?templateId=parity-template`);
     await settle(page);
     await page.locator('.runtime-template-projection').waitFor();
     await page.getByText('workflow-templates/parity-template.yaml').waitFor();
     result.mutation = 'non-mutating-template-projection';
   } else if (state === 'notifications-dismissed') {
-    await page.goto(`${baseURL}/#/`);
+    await page.goto(`${baseURL}/`);
     await settle(page);
     await page.locator('#work-bell-button').click();
     const items = page.locator('.work-bell-item');
@@ -229,14 +229,14 @@ async function navigateState(page, baseURL, state) {
     await page.getByText('No active notifications.').waitFor();
     result.mutation = 'notification-dismissed';
   } else if (state === 'sponsor-booking-role-safe') {
-    await page.goto(`${baseURL}/#/sponsors?bookingId=parity-booking`);
+    await page.goto(`${baseURL}/sponsors?dealId=parity-booking`);
     await settle(page);
     const sponsorDetail = page.locator("[data-crm-detail] .crm-booking-detail");
     await sponsorDetail.filter({ hasText: "Synthetic Learning Co" }).waitFor();
-    await sponsorDetail.filter({ hasText: "confirmed" }).waitFor();
+    await sponsorDetail.filter({ hasText: "Agreed" }).waitFor();
     result.mutation = 'operator-read-only';
   } else if (state === 'docs-search-detail') {
-    await page.goto(`${baseURL}/#/processes`);
+    await page.goto(`${baseURL}/processes`);
     await settle(page);
     await page.locator('#library-view').waitFor({ state: 'visible' });
     await page.getByRole('heading', { name: 'Docs', exact: true }).waitFor({ state: 'visible' });
@@ -255,7 +255,7 @@ async function navigateState(page, baseURL, state) {
     await page.locator('#rendered-view').getByText('Public-safe local fixture for canonical frontend behavior evidence.').waitFor();
     result.mutation = 'docs-search-detail';
   } else if (state === 'settings-users-role') {
-    await page.goto(`${baseURL}/#/users`);
+    await page.goto(`${baseURL}/users`);
     await settle(page);
     await page.locator('.ops-user-row .ops-user-name').filter({ hasText: 'Synthetic parity operator' }).waitFor();
     const opener = page.viewportSize().width < 700 ? page.locator('#mobile-settings-button') : page.locator('#settings-button');

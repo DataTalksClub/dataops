@@ -1,3 +1,5 @@
+import { createPageHeader } from "./operations-overview.js";
+
 function el(documentRef, tag, className, text = "") {
   const node = documentRef.createElement(tag);
   if (className) node.className = className;
@@ -15,6 +17,7 @@ export function createOperatingModelSurface(context) {
   const { apiUrl, documentList, documentRef = document, getActiveWorkspaceRoute, navigateCanonicalWorkspace, openDocument, request, resolveDocReference, setRouteTitle } = context;
   let model = null;
   let error = "";
+  let definitionsUnavailable = false;
   let loading = false;
   let lastFailureRender = null;
 
@@ -22,6 +25,7 @@ export function createOperatingModelSurface(context) {
     if (loading || model || (error && !force)) return;
     loading = true;
     error = "";
+    definitionsUnavailable = false;
     try {
       const payload = await request(apiUrl("/api/operating-model"));
       const loaded = payload?.model;
@@ -32,6 +36,8 @@ export function createOperatingModelSurface(context) {
       model = loaded;
     } catch (caught) {
       error = caught?.message || "Operating model is unavailable";
+      definitionsUnavailable = caught?.status === 503 &&
+        caught?.payload?.error === "Operating model definitions are unavailable";
     } finally {
       loading = false;
       renderActive();
@@ -56,27 +62,36 @@ export function createOperatingModelSurface(context) {
     return button;
   }
 
-  function header(root, title) {
-    const block = el(documentRef, "header", "operating-model-header");
-    block.append(el(documentRef, "h1", "", title));
-    root.append(block);
+  function header(root, title, subtitle = "") {
+    root.append(createPageHeader({
+      title,
+      subtitle,
+      className: "operating-model-header",
+      documentRef,
+    }));
   }
 
   function unavailable(root) {
     const state = el(documentRef, "section", "review-empty-state");
-    state.append(el(documentRef, "strong", "", loading ? "Loading operating model…" : "Operating model unavailable"));
+    state.append(el(documentRef, "strong", "", loading ? "Loading operating model…" :
+      definitionsUnavailable ? "Definitions aren't available yet" : "Operating model unavailable"));
     state.append(
       el(documentRef, "span", "",
         loading
           ? "Definitions appear here once the model loads."
-          : "Definitions are hidden until the model reloads.",
+          : definitionsUnavailable
+            ? "Published definitions aren't available in this workspace. Browse Process Docs for guidance, or retry to check again."
+            : "We couldn't load the definitions. Check your connection and retry, or browse Process Docs.",
       ),
     );
     if (!loading) {
+      const docs = el(documentRef, "button", "primary-button", "Browse Process Docs");
+      docs.type = "button";
+      docs.addEventListener("click", () => navigateCanonicalWorkspace("/processes"));
       const retry = el(documentRef, "button", "quiet-button", "Retry");
       retry.type = "button";
       retry.addEventListener("click", () => { load(true); renderActive(); });
-      state.append(retry);
+      state.append(docs, retry);
     }
     root.append(state);
   }
@@ -115,7 +130,7 @@ export function createOperatingModelSurface(context) {
     if (keepFailureDOM("operating-model")) return;
     setRouteTitle("Operating Model");
     const root = el(documentRef, "div", "operating-model-surface");
-    header(root, "Operating Model");
+    header(root, "Operating Model", "Business units, responsibilities, systems, and roadmap.");
     if (!model) { load(); unavailable(root); replaceSurface(root); return; }
     if (model.freshness === "stale") root.append(el(documentRef, "p", "status-text", "Showing the last valid model while definitions refresh."));
     const grid = el(documentRef, "section", "operating-model-grid");

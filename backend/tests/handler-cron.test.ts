@@ -7,6 +7,8 @@ import { handler } from '../src/handler';
 import { stopLocal } from '../scripts/local-dynamodb';
 import { useTestDatabase } from './helpers/db';
 import { extractExportArchive } from '../src/export/archive';
+import { SCHEMA_VERSION as DYNAMO_BACKUP_SCHEMA } from '../src/export/dynamoBackup';
+import { DATAOPS_TABLES } from '../src/db/tableNames';
 import { validatePortableExport } from '../src/export/portableValidate';
 
 describe('handler - EventBridge scheduled events', () => {
@@ -115,6 +117,35 @@ describe('handler - EventBridge scheduled events', () => {
       delete process.env.DATAOPS_EXPORT_ARCHIVE_PREFIX;
       delete process.env.DATAOPS_ENV;
       await fs.rm(archiveDir, { recursive: true, force: true });
+    }
+  });
+
+  it('routes scheduled dynamo-backup events to a raw table dump', async () => {
+    const backupDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-handler-dynamo-backup-'));
+    process.env.DATAOPS_DYNAMO_BACKUP_LOCAL_DIR = backupDir;
+    process.env.DATAOPS_DYNAMO_BACKUP_PREFIX = 'dynamo-backups';
+    process.env.DATAOPS_ENV = 'sandbox';
+    delete process.env.DATAOPS_EXPORT_ARCHIVE_BUCKET;
+    try {
+      const result = await handler({
+        source: 'aws.events',
+        'detail-type': 'Scheduled Event',
+        detail: { dataopsAction: 'dynamo-backup' },
+      });
+
+      assert.ok('statusCode' in result, 'should return an HTTP-style dump summary');
+      assert.strictEqual((result as Record<string, unknown>).statusCode, 200);
+      const body = JSON.parse((result as { body: string }).body);
+      assert.strictEqual(body.schema_version, DYNAMO_BACKUP_SCHEMA);
+      assert.strictEqual(body.source_environment, 'sandbox');
+      assert.strictEqual(body.table_count, DATAOPS_TABLES.length);
+      assert.match(body.manifest_key, /^dynamo-backups\/sandbox\/\d{4}-\d{2}-\d{2}\/manifest\.json$/);
+      await fs.access(body.manifest_uri.replace('file://', ''));
+    } finally {
+      delete process.env.DATAOPS_DYNAMO_BACKUP_LOCAL_DIR;
+      delete process.env.DATAOPS_DYNAMO_BACKUP_PREFIX;
+      delete process.env.DATAOPS_ENV;
+      await fs.rm(backupDir, { recursive: true, force: true });
     }
   });
 

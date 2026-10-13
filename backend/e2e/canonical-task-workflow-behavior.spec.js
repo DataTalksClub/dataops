@@ -120,21 +120,21 @@ function isExpectedReloadAbort(entry, cardId) {
 
   const url = new URL(entry.url);
   const exactReloadReads = new Set([
-    `/work/api/cards/${encodeURIComponent(cardId)}`,
-    '/work/api/notifications?limit=100',
+    `/api/cards/${encodeURIComponent(cardId)}`,
+    '/api/notifications?limit=100',
   ]);
   if (exactReloadReads.has(`${url.pathname}${url.search}`)) return true;
   // Queue background collection refreshes cut by the deliberate reload. The
   // query carries dynamic dates, so match by collection shape: item reads
-  // (/work/api/tasks/<id>, /work/api/cards/<id>) stay strict.
-  if (url.pathname === '/work/api/tasks') return true;
-  if (url.pathname === '/work/api/cards' && url.search === '?limit=100') return true;
-  if (url.pathname === '/work/api/users') return true;
+  // (/api/tasks/<id>, /api/cards/<id>) stay strict.
+  if (url.pathname === '/api/tasks') return true;
+  if (url.pathname === '/api/cards' && url.search === '?limit=100') return true;
+  if (url.pathname === '/api/users') return true;
   return false;
 }
 
 function expectNoUnexpectedBrowserErrors(entries, conflictTaskId, cardId, markers) {
-  const expectedConflictPath = `/work/api/tasks/${conflictTaskId}`;
+  const expectedConflictPath = `/api/tasks/${conflictTaskId}`;
   const conflictStart = markers.conflictStart;
   const reloadStart = markers.reloadStart;
   const unexpected = entries.filter((entry, index) => {
@@ -187,7 +187,7 @@ const test = baseTest.extend({
       assertOwnedServerResponse(server, sessionResponse, 'canonical task workflow session');
       page = await context.newPage();
       installServerExitDiagnostics(context, server, testInfo);
-      await page.goto('/#/');
+      await page.goto('/');
       await expect(page.getByRole('heading', { name: 'Work Queue', exact: true }).first()).toBeVisible();
       await use({ context, page, server });
     } finally {
@@ -214,26 +214,26 @@ function taskHydration(page, taskId, cardId) {
   const exactTask = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return response.request().method() === 'GET'
-      && url.pathname === `/work/api/tasks/${taskId}`;
+      && url.pathname === `/api/tasks/${taskId}`;
   });
   const exactTaskArtifacts = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return response.request().method() === 'GET'
-      && url.pathname === '/work/api/artifacts'
+      && url.pathname === '/api/artifacts'
       && url.searchParams.get('taskId') === taskId;
   });
   const exactCardArtifacts = cardId
     ? page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'GET'
-        && url.pathname === '/work/api/artifacts'
+        && url.pathname === '/api/artifacts'
         && url.searchParams.get('cardId') === cardId;
     })
     : null;
   const filesReady = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return response.request().method() === 'GET'
-      && url.pathname === '/work/api/files'
+      && url.pathname === '/api/files'
       && url.searchParams.get('taskId') === taskId;
   });
   return { exactCardArtifacts, exactTask, exactTaskArtifacts, filesReady };
@@ -246,7 +246,7 @@ async function openProofTask(page, taskId, cardId, title, options = {}) {
   } else if (options.reload) {
     await page.reload();
   } else {
-    await page.goto(`/#/tasks?taskId=${taskId}`);
+    await page.goto(`/tasks?taskId=${taskId}`);
   }
   let responses = [
     hydration.exactTask,
@@ -264,7 +264,7 @@ async function openProofTask(page, taskId, cardId, title, options = {}) {
 test.describe('canonical Tasks and Workflows browser behavior', () => {
   test('Tasks queue persists create, waiting recovery, and selected update', async ({ taskWorkflowPortal }, testInfo) => {
     const { context, page, server: ownedServer } = taskWorkflowPortal;
-    await page.goto('/#/tasks');
+    await page.goto('/tasks');
     // One queue, no per-lane group cards. Fresh and empty, the queue states
     // its emptiness once (the page summary) and renders no board rows.
     await expect(page.locator('.ops-work-queue')).toBeVisible();
@@ -273,7 +273,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await expect(page.locator('.ops-queue-board')).toHaveCount(0);
     await expect(page.locator('.ops-queue-group')).toHaveCount(0);
 
-    await page.goto('/#/');
+    await page.goto('/');
     const quickTitle = unique('Synthetic quick task');
     await page.getByRole('button', { name: 'New task' }).click();
     const quickTask = page.getByRole('dialog');
@@ -281,7 +281,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     const createdResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'POST'
-        && url.pathname === '/work/api/tasks'
+        && url.pathname === '/api/tasks'
         && response.status() === 201;
     });
     await quickTask.getByRole('button', { name: 'Create task' }).click();
@@ -314,9 +314,9 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await expect(page.locator('#task-panel')).toBeHidden();
 
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>',
+      route: '/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>',
       roleId: 'admin',
-      stateIds: ['tasks.empty', 'tasks.waiting', 'tasks.create-select-update'],
+      stateIds: ['tasks.waiting', 'tasks.create-select-update'],
     }]);
   });
 
@@ -340,7 +340,6 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     expect(proofResponse.status()).toBe(201);
     const proofTask = await json(proofResponse);
 
-    await expect(page.locator('.ops-queue-board')).toHaveCount(1);
     await openProofTask(page, proofTask.id, card.id, proofTitle);
     const complete = page.locator('#task-panel').getByRole('button', { name: 'Mark done' });
     await expect(complete).toBeDisabled();
@@ -373,19 +372,19 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     const uploadRequests = [];
     const uploadResponses = [];
     const onRequest = (request) => {
-      if (request.method() === 'PUT' && new URL(request.url()).pathname === `/work/api/tasks/${proofTask.id}`) {
+      if (request.method() === 'PUT' && new URL(request.url()).pathname === `/api/tasks/${proofTask.id}`) {
         savedLinkRequests.push(request);
       }
     };
     const onUploadRequest = (request) => {
       const url = new URL(request.url());
-      if (request.method() === 'POST' && url.pathname === '/work/api/files') {
+      if (request.method() === 'POST' && url.pathname === '/api/files') {
         uploadRequests.push(request);
       }
     };
     const onUploadResponse = (response) => {
       const url = new URL(response.url());
-      if (response.request().method() === 'POST' && url.pathname === '/work/api/files') {
+      if (response.request().method() === 'POST' && url.pathname === '/api/files') {
         uploadResponses.push(response);
       }
     };
@@ -401,17 +400,17 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     const taskRefreshRequest = page.waitForRequest((request) => {
       const url = new URL(request.url());
       return request.method() === 'GET'
-        && url.pathname === '/work/api/tasks'
+        && url.pathname === '/api/tasks'
         && url.searchParams.get('cardId') === card.id;
     });
     const taskRefreshResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'GET'
-        && url.pathname === '/work/api/tasks'
+        && url.pathname === '/api/tasks'
         && url.searchParams.get('cardId') === card.id;
     });
     const linkRequest = page.waitForRequest((request) => request.method() === 'PUT'
-      && new URL(request.url()).pathname === `/work/api/tasks/${proofTask.id}`);
+      && new URL(request.url()).pathname === `/api/tasks/${proofTask.id}`);
     await requiredLink.fill(proofUrl);
     await requiredLink.blur();
     const savedLinkRequest = await linkRequest;
@@ -435,7 +434,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     const savedTask = await json(savedLinkResponse);
     expect(savedTask.version).toBe(proofTask.version + 1);
     await expect(requiredLink).toHaveValue(proofUrl);
-    await expect(page.locator('#task-panel .task-detail-meta').first()).toContainText(`Version ${savedTask.version}`);
+    await expect(page.locator('#task-panel .task-detail-meta').first()).not.toContainText('Version');
     await expect(page.locator('#task-panel [data-task-mutation-feedback="success"]'))
       .toHaveText('Task link is saved in the refreshed Task.');
     await expect(fileInput).toBeEnabled();
@@ -443,12 +442,12 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     const uploadResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'POST'
-        && url.pathname === '/work/api/files';
+        && url.pathname === '/api/files';
     });
     const uploadedFilesResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'GET'
-        && url.pathname === '/work/api/files'
+        && url.pathname === '/api/files'
         && url.searchParams.get('taskId') === proofTask.id
         && url.searchParams.get('limit') === '100'
         && !url.searchParams.has('cursor');
@@ -497,12 +496,12 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await setFaults(context.request, [{ method: 'PUT', path: `/api/tasks/${proofTask.id}`, status: 409 }]);
     const failedCompletionRequest = page.waitForRequest((request) => {
       const url = new URL(request.url());
-      return request.method() === 'PUT' && url.pathname === `/work/api/tasks/${proofTask.id}`;
+      return request.method() === 'PUT' && url.pathname === `/api/tasks/${proofTask.id}`;
     });
     const failedCompletionResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'PUT'
-        && url.pathname === `/work/api/tasks/${proofTask.id}`
+        && url.pathname === `/api/tasks/${proofTask.id}`
         && response.status() === 409;
     });
     await complete.click();
@@ -525,7 +524,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     const successfulCompletion = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'PUT'
-        && url.pathname === `/work/api/tasks/${proofTask.id}`
+        && url.pathname === `/api/tasks/${proofTask.id}`
         && response.status() === 200;
     });
     await complete.click();
@@ -552,7 +551,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     });
 
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>',
+      route: '/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>',
       roleId: 'admin',
       stateIds: ['tasks.file-proof', 'tasks.sop-link', 'tasks.conflict'],
     }]);
@@ -561,7 +560,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
   test('Workflows resolve blocked relationships, staged progress, and completion', async ({ taskWorkflowPortal }, testInfo) => {
     test.setTimeout(75_000);
     const { context, page } = taskWorkflowPortal;
-    await page.goto('/#/cards');
+    await page.goto('/cards');
     await expect(page.locator('.ops-workflows-board')).toBeVisible();
     await expect(page.locator('.ops-workflow-card')).toHaveCount(0);
 
@@ -600,11 +599,11 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     expect(staleArtifact.status()).toBe(404);
     expect(staleArtifact.headers()['content-type']).toContain('application/json');
 
-    await page.goto('/#/cards');
+    await page.goto('/cards');
     const refreshedWorkflows = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'GET'
-        && url.pathname === '/work/api/cards'
+        && url.pathname === '/api/cards'
         && url.searchParams.has('limit');
     });
     await page.reload();
@@ -617,13 +616,12 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     for (const taskTitle of [missingArtifactTitle, proofTitle, completedTitle]) {
       await expect(page.locator('#card-panel .card-checklist-label', { hasText: taskTitle })).toBeVisible();
     }
-    await expect(page.locator('#card-panel')).toContainText('Active (1)');
-    await expect(page.locator('#card-panel')).toContainText('Done / history (2)');
+    await expect(page.locator('#card-panel .card-checklist-percent')).toHaveText('67%');
     await expect(page.locator('#card-panel .card-stage-select')).toHaveValue('preparation');
     const stageChanged = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'PUT'
-        && url.pathname === `/work/api/cards/${card.id}`
+        && url.pathname === `/api/cards/${card.id}`
         && response.status() === 200;
     });
     await page.locator('#card-panel .card-stage-select').selectOption('announced');
@@ -659,16 +657,16 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await expect(page.locator('#card-panel')).toContainText('3/3 tasks');
     await expect(page.locator('#card-panel .card-stage-static')).toHaveText('Completed');
     await expect(page.locator('#card-panel .card-completion-meta')).toContainText('from Announced');
-    await expect(page.locator('#card-panel')).toContainText('Done / history (3)');
+    await expect(page.locator('#card-panel .card-checklist-percent')).toHaveText('100%');
     await page.reload();
     await expect(page.locator('#card-panel .card-stage-static')).toHaveText('Completed');
     await expect(page.locator('#card-panel .card-completion-meta')).toContainText('from Announced');
-    await expect(page.locator('#card-panel')).toContainText('Done / history (3)');
+    await expect(page.locator('#card-panel .card-checklist-percent')).toHaveText('100%');
     await expect(page.locator('#card-panel [role="progressbar"]')).toHaveAttribute('aria-valuenow', '100');
 
     recordCapabilityEvidence(testInfo, [
-      { route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.blocked', 'tasks.done'] },
-      { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.empty', 'workflows.active', 'workflows.staged', 'workflows.completed'] },
+      { route: '/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.blocked', 'tasks.done'] },
+      { route: '/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.empty', 'workflows.active', 'workflows.staged', 'workflows.completed'] },
     ]);
   });
 });

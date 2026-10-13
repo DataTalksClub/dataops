@@ -1,4 +1,5 @@
 import { html } from "./shared.js";
+import { formatAmount, ledgerDate } from "./bookkeeping-format.js";
 
 export function createSponsorFinance(context) {
   const {
@@ -18,7 +19,7 @@ export function createSponsorFinance(context) {
   const financeApi = async (bookingId, suffix = "", options = {}) => {
     const response = await fetch(
       workApiUrl(
-        `/api/sponsor-crm/bookings/${encodeURIComponent(bookingId)}/finance${suffix}`,
+        `/api/sponsor-crm/deals/${encodeURIComponent(bookingId)}/finance${suffix}`,
       ),
       {
         headers: {
@@ -43,7 +44,6 @@ export function createSponsorFinance(context) {
   financeDialog.dataset.financeDialog = "";
   financeDialog.innerHTML = html`<form>
     <header>
-      <p class="surface-eyebrow">Booking finance</p>
       <h3>Classify sponsor finance</h3>
       <p>Record what must be invoiced before linking evidence.</p>
     </header>
@@ -90,7 +90,6 @@ export function createSponsorFinance(context) {
   financeCandidateDialog.dataset.financeCandidateDialog = "";
   financeCandidateDialog.innerHTML = html`<form>
     <header>
-      <p class="surface-eyebrow">Booking finance</p>
       <h3 data-title>Link finance evidence</h3>
       <p>Only eligible, unclaimed Bookkeeping evidence is shown.</p>
     </header>
@@ -184,7 +183,7 @@ export function createSponsorFinance(context) {
     }
   };
   const financeMutation = async (booking, suffix, method, body) => {
-    const requestBody = { bookingVersion: booking.version, ...body };
+    const requestBody = { dealVersion: booking.version, ...body };
     const scope = `${booking.id}:${method}:${suffix}:${JSON.stringify(requestBody)}`;
     const idempotencyKey = pendingFinanceKeys.get(scope) || crypto.randomUUID();
     pendingFinanceKeys.set(scope, idempotencyKey);
@@ -220,7 +219,7 @@ export function createSponsorFinance(context) {
         <div class="honest-state">
           <strong>Finance is not classified</strong>
           <p>
-            This booking has not been classified. Record whether an invoice is
+            This deal has not been classified. Record whether an invoice is
             required before linking invoice or payment evidence.
           </p>
           ${
@@ -257,7 +256,7 @@ export function createSponsorFinance(context) {
       .map(
         (payment) => html`
           <button data-finance-unlink-payment="${escapeHtml(payment.id)}">
-            Unlink ${escapeHtml(`${payment.effectiveDate} payment`)}
+            Unlink ${escapeHtml(`${ledgerDate(payment.effectiveDate)} payment`)}
           </button>
         `,
       )
@@ -280,7 +279,7 @@ export function createSponsorFinance(context) {
       ? html`
           <p>
             <strong>${escapeHtml(projection.invoice.label)}</strong>
-            · uploaded ${escapeHtml(projection.invoice.uploadedAt)}
+            · uploaded ${escapeHtml(ledgerDate(projection.invoice.uploadedAt))}
             <button
               data-finance-download="${escapeHtml(projection.invoice.id)}"
             >
@@ -303,8 +302,8 @@ export function createSponsorFinance(context) {
           .map(
             (payment) => html`
               <p>
-                ${escapeHtml(payment.effectiveDate)} ·
-                ${escapeHtml(payment.amount)} ${escapeHtml(payment.currency)}
+                ${escapeHtml(ledgerDate(payment.effectiveDate))} ·
+                ${escapeHtml(formatAmount(payment.amount, payment.currency))}
               </p>
             `,
           )
@@ -326,7 +325,6 @@ export function createSponsorFinance(context) {
       >
       <header>
         <div>
-          <p class="section-kicker">Payment position</p>
           <h3>${escapeHtml(humanizeOptionLabel(projection.paymentState))}</h3>
           <p>
             ${escapeHtml(humanizeOptionLabel(projection.invoiceState))} ·
@@ -334,30 +332,30 @@ export function createSponsorFinance(context) {
           </p>
         </div>
         <span class="finance-status"
-          >${escapeHtml(humanizeOptionLabel(projection.reconciliationStatus))}</span
+          >${projection.reconciliationStatus === "coherent" ? "Evidence consistent" : "Review evidence"}</span
         >
       </header>
       <dl>
         <div>
           <dt>Amount due</dt>
           <dd>
-            ${escapeHtml(finance.amountDue ? `${finance.amountDue} ${finance.currency}` : "Not applicable")}
+            ${escapeHtml(finance.amountDue ? formatAmount(finance.amountDue, finance.currency) : "Not applicable")}
           </dd>
         </div>
         <div>
           <dt>Outstanding</dt>
           <dd>
-            ${escapeHtml(projection.outstanding ? `${projection.outstanding} ${finance.currency}` : "Not applicable")}
+            ${escapeHtml(projection.outstanding ? formatAmount(projection.outstanding, finance.currency) : "Not applicable")}
           </dd>
         </div>
         <div>
           <dt>Tax</dt>
-          <dd>${escapeHtml(finance.taxMode || "Not applicable")}</dd>
+          <dd>${escapeHtml(finance.taxMode ? humanizeOptionLabel(finance.taxMode) : "Not applicable")}</dd>
         </div>
         <div>
           <dt>Due</dt>
           <dd>
-            ${escapeHtml(finance.dueOn || finance.expectedInvoiceBy || "Not set")}
+            ${escapeHtml(finance.dueOn || finance.expectedInvoiceBy ? ledgerDate(finance.dueOn || finance.expectedInvoiceBy) : "Not set")}
           </dd>
         </div>
       </dl>
@@ -382,11 +380,8 @@ export function createSponsorFinance(context) {
         </div>`;
       else
         detail.innerHTML = html`<div class="honest-state">
-          <strong>Finance is not enabled</strong>
-          <p>
-            The booking remains available. No finance action can be taken in
-            this workspace.
-          </p>
+          <strong>No finance recorded yet</strong>
+          <p>Invoice and payment details will appear here when finance is recorded for this deal.</p>
         </div>`;
     }
   }

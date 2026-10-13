@@ -434,7 +434,7 @@ describe('portal API request telemetry', () => {
       ['/api/calendar-items/event-thirteen', 'calendar_newsletter'],
       ['/api/newsletter-slots/slot-fourteen', 'calendar_newsletter'],
       ['/api/bookkeeping/entry-fifteen', 'bookkeeping'],
-      ['/api/sponsor-crm/bookings/booking-sixteen/communications', 'sponsor_crm'],
+      ['/api/sponsor-crm/deals/booking-sixteen/communications', 'sponsor_crm'],
       ['/api/mailing-exports/export-seventeen', 'other'],
       ['/api/conversational/readiness', 'conversational_telegram'],
       ['/api/webhook/telegram', 'conversational_telegram'],

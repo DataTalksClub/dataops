@@ -3,13 +3,17 @@
  *
  * Trello-imported Cards carry structure inside a free-text title:
  * a `[Tag]` prefix naming the source Template, an event date
- * (`2026-AUG-17`) or a newsletter issue date (`(12OCT 2026)`), a trailing
- * person segment on event Cards (`- Tony Zeljkovic & Juan Manuel Perafan`)
- * or sponsor segment on newsletter Cards (`- Astronomer`), and the remaining
- * human title. The board renders the Template as a badge, the date as the
- * anchor chip, and the person/sponsor as a subtitle, so the stored title
- * keeps only the topic remainder.
+ * (`2026-AUG-17`) or a newsletter issue date (`(12OCT 2026)`), an issue
+ * number (`#298`), a trailing person segment on event Cards (`- Tony Zeljkovic`),
+ * a trailing sponsor segment on newsletter Cards (`- Astronomer`), and the
+ * remaining human title.
+ *
+ * The board renders the Template as a badge, the issue number and date as chips,
+ * and person/sponsor in the subtitle/byline, so the stored/projected title
+ * keeps only the clean remainder.
  */
+
+import type { Card } from '../types';
 
 export interface ParsedCardTitle {
   /** Raw `[Tag]` text, e.g. "Newsletter". Absent when the title has no tag. */
@@ -18,21 +22,25 @@ export interface ParsedCardTitle {
   templateType: string | null;
   /** ISO date parsed from the title, e.g. "2026-10-12". */
   date: string | null;
-  /** People parsed from the trailing person segment of event Cards. */
+  /** Issue number for recurring publications, e.g. "298". */
+  issueNumber: string | null;
+  /** People named by the Card (speakers/guests on events). */
   people: string[];
-  /** Sponsor parsed from the trailing sponsor segment of newsletter Cards. */
+  /** Primary sponsor for newsletters. */
   sponsor: string | null;
-  /** Title with tag, date, and person/sponsor segments removed and tidied. */
+  /** Secondary sponsors for newsletters. */
+  secondarySponsors?: string[];
+  /** Title with tag, date, issue number, people, and sponsors removed and tidied. */
   cleanTitle: string;
 }
 
 const TAG_PATTERN = /^(?:[\p{Extended_Pictographic}\u2699\u26a1\ufe0f\u200d]+\s*)?\[([^\]]+)\]\s*/u;
 
 /** Newsletter issue dates: `(12OCT 2026)`, `(14 SEP 2026)`, `(24  AUG 2026)`. */
-const PAREN_DATE_PATTERN = /\(\s*(\d{1,2})\s*([A-Za-z]{3,9})\s*(20\d{2})\s*\)/;
+const PAREN_DATE_PATTERN = /\(\s*(\d{1,2})\s*([A-Za-z]{3,9}|\d{1,2})\s*(20\d{2})\s*\)/;
 
-/** Event dates: `2026-AUG-17`, `2026-SEPT-07`. */
-const PREFIX_DATE_PATTERN = /\b(20\d{2})-([A-Za-z]{3,9})-(\d{1,2})\b/;
+/** Event dates: `2026-AUG-17`, `2026-SEPT-07`, `2026-08-17`. */
+const PREFIX_DATE_PATTERN = /\b(20\d{2})-([A-Za-z]{3,9}|\d{1,2})-(\d{1,2})\b/;
 
 const MONTH_BY_NAME: Record<string, string> = {
   JAN: '01',
@@ -61,7 +69,13 @@ function monthNumber(raw: string): string | null {
 }
 
 function toIsoDate(year: string, month: string, day: string): string | null {
-  const monthDigits = monthNumber(month);
+  let monthDigits: string | null = null;
+  if (/^\d{1,2}$/.test(month)) {
+    const num = Number(month);
+    if (num >= 1 && num <= 12) monthDigits = String(num).padStart(2, '0');
+  } else {
+    monthDigits = monthNumber(month);
+  }
   if (!monthDigits) return null;
   const dayNumber = Number(day);
   if (!Number.isInteger(dayNumber) || dayNumber < 1 || dayNumber > 31) return null;
@@ -172,31 +186,47 @@ function splitPeople(tail: string): string[] {
     .filter((name) => name.length > 0 && !PLACEHOLDER_PEOPLE.has(name.toLowerCase()));
 }
 
+function splitSponsors(tail: string): { sponsor: string | null; secondarySponsors: string[] } {
+  const parts = tail
+    .split(/\s*(?:&|,|\band\b)\s*/i)
+    .map(tidyName)
+    .filter((s) => s.length > 0 && !PLACEHOLDER_PEOPLE.has(s.toLowerCase()));
+  if (parts.length === 0) return { sponsor: null, secondarySponsors: [] };
+  return {
+    sponsor: parts[0],
+    secondarySponsors: parts.slice(1),
+  };
+}
+
 export interface CardStructurePatch {
   templateId?: string;
   anchorDate?: string;
   title?: string;
+  issueNumber?: string;
   people?: string[];
   sponsor?: string;
+  secondarySponsors?: string[];
 }
 
 export interface StructuredCardShape {
   templateId?: string | null;
   anchorDate?: string;
   title?: string | null;
+  issueNumber?: string | null;
   people?: string[];
   sponsor?: string | null;
+  secondarySponsors?: string[];
 }
 
-function samePeople(left: string[] | undefined, right: string[]): boolean {
-  return JSON.stringify(left || []) === JSON.stringify(right);
+function sameList(left: string[] | undefined, right: string[] | undefined): boolean {
+  return JSON.stringify(left || []) === JSON.stringify(right || []);
 }
 
 /**
  * Decide the backfill patch for one Card. Returns null when nothing should
- * change. Existing `templateId`, `people`, and `sponsor` values are never
- * overwritten, and titles are only rewritten when the tag names a known
- * Template (so unknown tags keep their full title instead of losing parts).
+ * change. Existing `templateId`, `people`, `sponsor`, and `issueNumber` values
+ * are never overwritten unless stale, and titles are only rewritten when the tag
+ * names a known Template (so unknown tags keep their full title instead of losing parts).
  */
 export function planCardStructureUpdate(
   card: StructuredCardShape,
@@ -220,16 +250,26 @@ export function planCardStructureUpdate(
   if (parsed.tag && parsed.templateType && parsed.cleanTitle !== String(card.title || '')) {
     patch.title = parsed.cleanTitle;
   }
-  if (parsed.people.length > 0 && !samePeople(card.people, parsed.people)) {
+  if (parsed.issueNumber && card.issueNumber !== parsed.issueNumber) {
+    patch.issueNumber = parsed.issueNumber;
+  }
+  if (parsed.people.length > 0 && !sameList(card.people, parsed.people)) {
     patch.people = parsed.people;
   }
   if (parsed.sponsor !== null && (card.sponsor || null) !== parsed.sponsor) {
     patch.sponsor = parsed.sponsor;
   }
+  if (parsed.secondarySponsors && parsed.secondarySponsors.length > 0 && !sameList(card.secondarySponsors, parsed.secondarySponsors)) {
+    patch.secondarySponsors = parsed.secondarySponsors;
+  }
   return Object.keys(patch).length > 0 ? patch : null;
 }
 
-export function parseCardTitle(title: string): ParsedCardTitle {
+export interface ParseCardTitleOptions {
+  templateType?: string | null;
+}
+
+export function parseCardTitle(title: string, options?: ParseCardTitleOptions): ParsedCardTitle {
   const input = String(title ?? '');
   const tagMatch = input.match(TAG_PATTERN);
   const tag = tagMatch ? tagMatch[1].trim() : null;
@@ -267,16 +307,23 @@ export function parseCardTitle(title: string): ParsedCardTitle {
   clean = clean.replace(/\(\s*\)/g, '').replace(/\s{2,}/g, ' ').trim();
   if (!clean) clean = rest.trim();
 
-  const templateType = tag ? templateTypeForTag(tag) : null;
+  const templateType = tag ? templateTypeForTag(tag) : (options?.templateType ?? null);
   let people: string[] = [];
   let sponsor: string | null = null;
+  let secondarySponsors: string[] = [];
+  let issueNumber: string | null = null;
   let topic = clean;
+
   if (templateType) {
     const trailer = splitTrailer(clean);
     if (trailer) {
       if (templateType === 'newsletter') {
-        sponsor = tidyName(trailer.tail);
-        topic = trailer.head;
+        const sp = splitSponsors(trailer.tail);
+        if (sp.sponsor) {
+          sponsor = sp.sponsor;
+          secondarySponsors = sp.secondarySponsors;
+          topic = trailer.head;
+        }
       } else if (PERSON_TEMPLATE_TYPES.has(templateType)) {
         const names = splitPeople(trailer.tail);
         if (names.length > 0) {
@@ -285,14 +332,92 @@ export function parseCardTitle(title: string): ParsedCardTitle {
         }
       }
     }
+
+    // Extract issue number: `#298`, `# 298`
+    const issueMatch = topic.match(/#\s*(\d+)\b/);
+    if (issueMatch) {
+      issueNumber = issueMatch[1];
+      const stripped = topic.slice(0, issueMatch.index) + topic.slice(issueMatch.index! + issueMatch[0].length);
+      const cleaned = stripped.replace(/\s{2,}/g, ' ').replace(/^[-–:;\s]+|[-–:;\s]+$/g, '').trim();
+      if (cleaned.length > 0) {
+        topic = tidySeparators(cleaned);
+      }
+    }
   }
+
+  // Untagged titles with no known template are left untouched
+  const cleanTitle = (tag || templateType)
+    ? (topic || (issueNumber ? `#${issueNumber}` : clean))
+    : (input.trim() || 'Untitled card');
 
   return {
     tag,
     templateType,
     date,
+    issueNumber,
     people,
     sponsor,
-    cleanTitle: topic,
+    secondarySponsors,
+    cleanTitle,
   };
+}
+
+export function findTemplateTypeById(
+  templateId: string,
+  templateIdByType?: Map<string, string> | Record<string, string>,
+): string | null {
+  if (!templateId || !templateIdByType) return null;
+  if (templateIdByType instanceof Map) {
+    for (const [type, id] of templateIdByType.entries()) {
+      if (id === templateId) return type;
+    }
+  } else {
+    for (const [type, id] of Object.entries(templateIdByType)) {
+      if (id === templateId) return type;
+    }
+  }
+  return null;
+}
+
+/**
+ * Derive structured fields from a Card's raw title on read when they are not
+ * stored yet. Modifies the Card in-place with non-destructive, safe defaults.
+ */
+export function hydrateStructuredCardFields(
+  card: Card,
+  templateIdByType?: Map<string, string> | Record<string, string>,
+): void {
+  if (!card || !card.title) return;
+  const knownTemplateType = card.templateId
+    ? findTemplateTypeById(card.templateId, templateIdByType)
+    : null;
+  const parsed = parseCardTitle(card.title, { templateType: knownTemplateType });
+
+  if (parsed.tag || parsed.date || (knownTemplateType && (parsed.people.length > 0 || parsed.sponsor || parsed.issueNumber))) {
+    if (!card.templateId && parsed.templateType && templateIdByType) {
+      const lookup =
+        templateIdByType instanceof Map
+          ? templateIdByType.get(parsed.templateType)
+          : (templateIdByType as Record<string, string>)[parsed.templateType];
+      if (lookup) card.templateId = lookup;
+    }
+    if (parsed.date) {
+      card.anchorDate = parsed.date;
+    }
+    if ((card.issueNumber === undefined || card.issueNumber === null) && parsed.issueNumber) {
+      card.issueNumber = parsed.issueNumber;
+    }
+    if ((!card.people || card.people.length === 0) && parsed.people.length > 0) {
+      card.people = parsed.people;
+    }
+    if ((card.sponsor === undefined || card.sponsor === null) && parsed.sponsor) {
+      card.sponsor = parsed.sponsor;
+    }
+    if ((!card.secondarySponsors || card.secondarySponsors.length === 0) && parsed.secondarySponsors && parsed.secondarySponsors.length > 0) {
+      card.secondarySponsors = parsed.secondarySponsors;
+    }
+    if (parsed.cleanTitle && parsed.cleanTitle !== card.title) {
+      card.title = parsed.cleanTitle;
+    }
+  }
 }

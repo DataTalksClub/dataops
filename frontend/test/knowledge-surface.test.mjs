@@ -1645,4 +1645,71 @@ describe("Knowledge surface boundary", () => {
     await unavailable.api.fetchBacklinksForCurrentDoc();
     assert.equal(unavailableHost.hidden, true);
   });
+
+  test("renders nested document tree hierarchy with expand/collapse toggles and action buttons", () => {
+    const harness = createKnowledgeHarness();
+    const documents = [
+      {
+        id: "engineering",
+        path: "content/engineering.md",
+        title: "Engineering",
+        doc_type: "process",
+      },
+      {
+        id: "frontend",
+        parent_id: "engineering",
+        path: "content/engineering/frontend.md",
+        title: "Frontend Guide",
+        doc_type: "process",
+      },
+      {
+        id: "operations",
+        path: "content/operations.md",
+        title: "Operations",
+        doc_type: "process",
+      },
+    ];
+
+    harness.api.renderDocsSurface(documents);
+    const catalog = harness.elements.documentList.querySelector(".ops-docs-tree");
+    assert.ok(catalog, "tree catalog should be rendered");
+
+    const treeNodes = catalog.children;
+    assert.equal(treeNodes.length, 2, "root level should have 2 nodes (Engineering and Operations)");
+
+    const engNode = treeNodes[0];
+    const engRow = engNode.querySelector(".ops-docs-tree-row");
+    assert.ok(engRow, "Engineering row should exist");
+
+    const toggle = engRow.querySelector(".ops-docs-tree-toggle");
+    assert.ok(toggle, "Engineering should have an expand toggle because it has a child");
+    assert.equal(toggle.getAttribute("aria-expanded"), "false");
+
+    const childrenContainer = engNode.querySelector(".ops-docs-tree-children");
+    assert.ok(childrenContainer, "Engineering should have a children container");
+    assert.equal(childrenContainer.hidden, true, "children container should start collapsed");
+
+    // Click toggle to expand
+    toggle.dispatch("click");
+    assert.equal(toggle.getAttribute("aria-expanded"), "true");
+    assert.equal(childrenContainer.hidden, false, "children should be visible after expansion");
+
+    const childRow = childrenContainer.querySelector(".ops-docs-tree-row");
+    assert.ok(childRow, "child row should exist in children container");
+    assert.ok(childRow.textContent.includes("Frontend Guide"));
+
+    // Check action buttons exist on row
+    const actions = engRow.querySelector(".ops-docs-tree-actions");
+    assert.ok(actions, "actions container should exist");
+    const subpageBtn = actions.querySelector(".ops-docs-tree-btn-subpage");
+    const moveBtn = actions.querySelector(".ops-docs-tree-btn-move");
+    assert.ok(subpageBtn, "subpage add button (+) should exist");
+    assert.ok(moveBtn, "move button (⇄) should exist");
+
+    // Leaf node without children has a bullet instead of a toggle
+    const opsNode = treeNodes[1];
+    const opsRow = opsNode.querySelector(".ops-docs-tree-row");
+    assert.equal(opsRow.querySelector(".ops-docs-tree-toggle"), null);
+    assert.ok(opsRow.querySelector(".ops-docs-tree-bullet"), "leaf node should have bullet");
+  });
 });

@@ -735,17 +735,17 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3 {
   line-height: 1.4;
   border: 1px solid transparent;
 }body[data-workspace-view="tasks"] .workflow-card-flag.is-danger {
-  background: rgba(248, 81, 73, 0.12);
-  color: #f85149;
-  border-color: rgba(248, 81, 73, 0.25);
+  background: var(--dk-danger-bg);
+  color: var(--dk-danger-text);
+  border-color: var(--dk-danger-border);
 }body[data-workspace-view="tasks"] .workflow-card-flag.is-warning {
-  background: rgba(210, 153, 34, 0.12);
-  color: #d29922;
-  border-color: rgba(210, 153, 34, 0.25);
+  background: var(--dk-warning-bg);
+  color: var(--dk-warning-text);
+  border-color: var(--dk-warning-border);
 }body[data-workspace-view="tasks"] .workflow-card-flag.is-info {
-  background: rgba(88, 166, 255, 0.12);
-  color: #58a6ff;
-  border-color: rgba(88, 166, 255, 0.25);
+  background: var(--dk-info-bg);
+  color: var(--dk-info-text);
+  border-color: var(--dk-info-border);
 }body[data-workspace-view="tasks"] .workflow-summary-top .workflow-stage-field {
   display: flex;
   align-items: center;
@@ -894,7 +894,7 @@ body[data-workspace-view="tasks"] .card-checklist-header > .task-history-label {
   font-weight: 700;
   color: var(--dk-text-muted);
   font-variant-numeric: tabular-nums;
-  font-family: var(--dk-font-mono, monospace);
+  font-family: var(--dk-font-sans);
 }body[data-workspace-view="tasks"] .workflow-checklist-section .ops-progress {
   height: 6px;
   border-radius: 3px;
@@ -1158,8 +1158,6 @@ body[data-workspace-view="tasks"] .runtime-template-layout {
     display: none;
   }body[data-workspace-view="tasks"] .runtime-template-layout.is-detail .runtime-template-projection {
     display: grid;
-  }body[data-workspace-view="tasks"] .ops-template-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1183,9 +1181,8 @@ body[data-workspace-view="tasks"] .task-context-state {
     scroll-snap-type: x proximity;
   }body[data-workspace-view="tasks"] .workflow-board-column {
     scroll-snap-align: start;
-  }body[data-workspace-view="tasks"] .ops-template-grid {
-    grid-template-columns: 1fr;
-  }body[data-workspace-view="tasks"] .assistant-create-grid,
+  }
+body[data-workspace-view="tasks"] .assistant-create-grid,
 body[data-workspace-view="tasks"] .assistant-editor {
     grid-template-columns: 1fr;
   }body[data-workspace-view="tasks"] .assistant-create-grid button,
@@ -1201,8 +1198,8 @@ body[data-workspace-view="tasks"] .workflow-modal-panel,
 body[data-workspace-view="tasks"] .quick-form-panel {
     width: 100%;
     max-width: none;
-    height: 100vh;
-    max-height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
     margin: 0;
     border: 0;
     border-radius: 0;
@@ -1342,3 +1339,71 @@ body[data-workspace-view="tasks"] .workflow-board-card .ops-progress i {
     transition: none;
   }
 }/* Process Docs and document editor ----------------------------------------- */
+
+/* Task attachments and notes share the quieter detail-panel treatment. */
+body[data-workspace-view="tasks"] .task-file-drop-zone {
+  border: 1px dashed var(--dk-border-strong);
+  border-radius: var(--dk-radius-md);
+  padding: 18px;
+  background: var(--dk-bg-muted);
+  text-align: center;
+}
+body[data-workspace-view="tasks"] .task-file-drop-hint {
+  display: block;
+  font-weight: 400;
+  color: var(--dk-text-muted);
+  margin: 6px 0 12px;
+}
+body[data-workspace-view="tasks"] .task-file-drop-zone.is-dragging {
+  border-color: var(--dk-text-link, #315f91);
+  background: var(--dk-bg-hover);
+}
+body[data-workspace-view="tasks"] .task-file-drop-zone input[type="file"] {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+body[data-workspace-view="tasks"] .task-quality-notice {
+  background: var(--dk-bg-muted);
+  border: 1px solid var(--dk-border-default);
+  padding: 10px 14px;
+}
+body[data-workspace-view="tasks"] .task-quality-row {
+  border: 0;
+  background: transparent;
+  padding: 6px 0;
+}
+body[data-workspace-view="tasks"] #task-panel-close {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dk-text-muted);
+  font-size: 0;
+}
+body[data-workspace-view="tasks"] #task-panel-close::before {
+  content: "×";
+  font-size: 24px;
+  line-height: 1;
+}
+body[data-workspace-view="tasks"] #task-panel-close:hover { background: var(--dk-bg-hover); }
+
+/* The dialog owns its header; padding belongs to the form body. */
+body[data-workspace-view="tasks"] .quick-form-panel { padding: 0; }
+body[data-workspace-view="tasks"] .quick-form-panel .quick-form-header {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--dk-bg-surface);
+}
+body[data-workspace-view="tasks"] .quick-form-panel .quick-form-label input:not([type="checkbox"]),
+body[data-workspace-view="tasks"] .quick-form-panel .quick-form-label select {
+  width: 100%;
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .quick-form-panel .quick-form > .task-action-btn {
+  width: fit-content;
+}

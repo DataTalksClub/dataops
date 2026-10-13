@@ -8,6 +8,7 @@ import {
 import * as recurring from "./commands/recurring.mjs";
 
 import * as invoices from "./commands/invoices.mjs";
+import * as calendar from "./commands/calendar.mjs";
 
 const USAGE = `dataops - command line client for the DataOps portal API
 
@@ -46,6 +47,18 @@ Invoices (automatic publication after field verification)
   invoices reextract <id> --revision N  Re-run extraction on an untouched draft
   invoices process --intake-item-id ID
 
+Calendar activities & operational scheduling
+  calendar list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--type TYPE] [--status STATUS]
+  calendar detail <id>
+  calendar create --title T --type TYPE [--status STATUS] [--date DATE] [--starts-at ISO --ends-at ISO]
+  calendar edit <id> [--title T] [--type TYPE] [--status STATUS] [--date DATE] [--version N]
+  calendar delete <id> [--version N]
+  calendar day <date>                   Show operational slot availability & full day schedule
+  calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all]
+  calendar settings [--connection ID] [--show-available-slots true|false] [--filter-busy true|false] ...
+  calendar dismiss-alert <fingerprint>
+  calendar sync-holidays
+
 Global options
   --url URL     Portal to talk to (default: the profile from the last login)
   --json        Print the raw API response
@@ -72,6 +85,23 @@ const COMMANDS = {
       resume: recurring.resume,
       delete: recurring.remove,
       generate: recurring.generate,
+    },
+  },
+  calendar: {
+    subcommands: {
+      list: calendar.list,
+      detail: calendar.detail,
+      get: calendar.detail,
+      create: calendar.create,
+      edit: calendar.edit,
+      delete: calendar.remove,
+      day: calendar.day,
+      schedule: calendar.day,
+      slots: calendar.slots,
+      overlays: calendar.slots,
+      settings: calendar.settings,
+      "dismiss-alert": calendar.dismissAlert,
+      "sync-holidays": calendar.syncHolidays,
     },
   },
 };

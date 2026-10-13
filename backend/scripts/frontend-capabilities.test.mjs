@@ -20,11 +20,11 @@ const REQUIRED = {
     states: ["signed-out-redirect", "expired-denied", "disabled-denied", "operator-cookie-ready", "admin-cookie-ready", "api-json-denial", "no-bearer-fallback"],
   },
   settings: {
-    route: "/#/ (Settings panel)",
+    route: "/ (Settings panel)",
     states: ["operator-ready", "admin-ready", "desktop-focus-close", "mobile-focus-close", "logout"],
   },
   tasks: {
-    route: "/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
+    route: "/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
     states: [
       "loading",
       "partial-failure",
@@ -43,43 +43,43 @@ const REQUIRED = {
     ],
   },
   workflows: {
-    route: "/#/cards?cardId=<id>&taskId=<id>",
+    route: "/cards?cardId=<id>&taskId=<id>",
     states: ["empty", "active", "staged", "completed", "template-update-review", "template-update-conflict", "deep-link-return", "mismatch", "not-found", "failure"],
   },
   templates: {
-    route: "/#/templates?templateId=<id>",
+    route: "/templates?templateId=<id>",
     states: ["read-only", "source-revision", "create-card", "reviewed-card-batch", "method-not-allowed", "failure", "stale-not-found"],
   },
   recurring: {
-    route: "/#/recurring",
+    route: "/recurring",
     states: ["empty", "ready", "pause", "resume", "delete-unreferenced", "delete-referenced-409", "permission-denied", "failure"],
   },
   assistants: {
-    route: "/#/assistants?assistantJobId=<id>",
+    route: "/assistants?assistantJobId=<id>",
     states: ["loading", "empty", "list", "exact-detail", "deep-link-reload", "stale-not-found", "unavailable"],
   },
   notifications: {
-    route: "/#/ (Notifications panel)",
+    route: "/ (Notifications panel)",
     states: ["empty", "task-linked", "dismiss-success", "dismiss-failure", "counts-update"],
   },
   bookkeeping: {
-    route: "/#/bookkeeping",
+    route: "/bookkeeping",
     states: ["empty", "configured", "validation", "upload-link", "report", "failure"],
   },
   sponsors: {
-    route: "/#/sponsors?bookingId=<id>",
+    route: "/sponsors?dealId=<id>",
     states: ["empty", "ready-detail", "operator-safe-read", "admin-mutation", "operator-denied", "conflict", "not-found", "failure"],
   },
   newsletter: {
-    route: "/#/newsletter",
+    route: "/newsletter",
     states: ["empty", "populated", "create-edit-reload", "validation", "conflict", "failure"],
   },
   calendar: {
-    route: "/#/calendar",
+    route: "/calendar",
     states: ["empty", "populated", "create-edit-reload", "overlays-alerts", "week-date-navigation", "validation", "conflict", "failure"],
   },
   "process-docs": {
-    route: "/#/processes",
+    route: "/processes",
     states: [
       "loading",
       "empty",
@@ -95,19 +95,19 @@ const REQUIRED = {
     ],
   },
   "document-review": {
-    route: "/#/review",
+    route: "/review",
     states: ["ready", "feedback"],
   },
-  admin: { route: "/#/admin", states: ["loading", "empty", "ready-read-only", "failure"] },
+  admin: { route: "/admin", states: ["loading", "empty", "ready-read-only", "failure"] },
   users: {
-    route: "/#/users",
+    route: "/users",
     states: ["operator-read-only", "admin-create", "admin-edit", "admin-disable", "validation", "operator-403", "spoof-denial", "failure"],
   },
 };
 
 const REQUIRED_ROLES = ["signed-out", "expired-session", "disabled-user", "operator", "admin"];
 const REQUIRED_APIS = {
-  session: ["/api/me", "/api/*", "/work/api/*"],
+  session: ["/api/me", "/api/*"],
   settings: ["/api/me", "/logout"],
   tasks: ["/api/tasks", "/api/files", "/api/artifacts", "/docs", "/content/*"],
   workflows: ["/api/cards", "/api/tasks", "/api/artifacts"],
@@ -153,19 +153,19 @@ const REQUIRED_STATE_ROLE_OVERRIDES = {
   "users.spoof-denial": ["operator"],
 };
 const REQUIRED_ROUTE_SET = [
-  "/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
-  "/#/cards?cardId=<id>&taskId=<id>",
-  "/#/assistants?assistantJobId=<id>",
-  "/#/templates?templateId=<id>",
-  "/#/recurring",
-  "/#/bookkeeping",
-  "/#/sponsors?bookingId=<id>",
-  "/#/newsletter",
-  "/#/calendar",
-  "/#/processes",
-  "/#/review",
-  "/#/admin",
-  "/#/users",
+  "/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
+  "/cards?cardId=<id>&taskId=<id>",
+  "/assistants?assistantJobId=<id>",
+  "/templates?templateId=<id>",
+  "/recurring",
+  "/bookkeeping",
+  "/sponsors?dealId=<id>",
+  "/newsletter",
+  "/calendar",
+  "/processes",
+  "/review",
+  "/admin",
+  "/users",
 ];
 const ALLOWED_KINDS = new Set(["loading", "empty", "ready", "stale", "permission", "error"]);
 const FORBIDDEN_EVIDENCE_TYPES = new Set(["api-only", "marker-only", "parity-only", "screenshot-only", "source-string"]);
@@ -229,13 +229,14 @@ test("frontend capability matrix has the canonical schema, routes, APIs, roles, 
   const retainedRoutes = matrix.capabilities
     .filter(
       (capability) =>
-        capability.route.startsWith("/#/") &&
+        capability.route.startsWith("/") &&
         capability.id !== "settings" &&
-        capability.id !== "notifications",
+        capability.id !== "notifications" &&
+        capability.id !== "session",
     )
     .map((capability) => capability.route);
   assert.deepEqual(sorted(retainedRoutes), sorted(REQUIRED_ROUTE_SET), "all 14 retained routes must be classified exactly once");
-  // /# is the Tasks queue, so the queue owns the landing-page evidence.
+  // / is the Tasks queue, so the queue owns the landing-page evidence.
   assert.ok(
     matrix.capabilities
       .find((capability) => capability.id === "tasks")

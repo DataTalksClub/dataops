@@ -37,8 +37,8 @@ describe('handler', () => {
     assert.deepStrictEqual(body, { status: 'ok' });
   });
 
-  it('GET /unknown returns 404', async () => {
-    const event = { httpMethod: 'GET', path: '/unknown' };
+  it('GET /api/unknown returns 404', async () => {
+    const event = { httpMethod: 'GET', path: '/api/unknown' };
     const result = await handler(event, {});
 
     assert.strictEqual(result.statusCode, 404);

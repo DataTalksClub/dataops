@@ -4,6 +4,13 @@ import { afterEach, describe, test } from "node:test";
 import { createDocumentEditor } from "../src/surfaces/document-editor/index.js";
 import { createProcedureRenderer } from "../src/surfaces/document-editor/procedure-renderer.js";
 import {
+  parseListItems,
+  parseMarkdownBlocks,
+  serializeBlocksToMarkdown,
+  serializeListItems,
+} from "../src/surfaces/document-editor/block-editor.js";
+import { createSlashMenu } from "../src/surfaces/document-editor/slash-menu.js";
+import {
   FakeDocument,
   FakeElement,
   findAllByClass,
@@ -351,6 +358,7 @@ describe("Document Editor surface boundary", () => {
       "closeHistory",
       "closeLightbox",
       "createDocument",
+      "createSubpage",
       "deleteCurrentDoc",
       "discardAllDrafts",
       "discardDraft",
@@ -360,6 +368,7 @@ describe("Document Editor surface boundary", () => {
       "escapeRegex",
         "handleClipboardPaste",
       "listDraftPaths",
+      "moveCurrentDoc",
       "openHistory",
       "openLintReport",
       "refreshChangesPanel",
@@ -1151,6 +1160,169 @@ describe("Document Editor surface boundary", () => {
     assert.equal(harness.documentState.lastSavedContent, "# First edit");
     assert.equal(harness.storageValues.get(`dtc-doc-draft:${path}`), "# Typed while saving");
     assert.equal(harness.storageValues.get(`dtc-doc-base:${path}`), "r2");
+  });
+
+  test("parses and serializes Notion markdown blocks (headings, paragraphs, lists, todos, callouts, code, dividers)", () => {
+    const markdown = [
+      "# First heading",
+      "",
+      "This is a regular paragraph.",
+      "",
+      "## Subheading",
+      "",
+      "- Bullet item 1",
+      "- Bullet item 2",
+      "",
+      "1. Numbered item 1",
+      "2. Numbered item 2",
+      "",
+      "- [ ] Open to-do item",
+      "- [x] Done to-do item",
+      "",
+      "> [!NOTE]",
+      "> Important callout note.",
+      "",
+      "```javascript",
+      "const answer = 42;",
+      "```",
+      "",
+      "---",
+    ].join("\n");
+
+    const blocks = parseMarkdownBlocks(markdown);
+    assert.equal(blocks.length, 10);
+    assert.equal(blocks[0].type, "h1");
+    assert.equal(blocks[1].type, "paragraph");
+    assert.equal(blocks[2].type, "h2");
+    assert.equal(blocks[3].type, "bullet");
+    assert.equal(blocks[4].type, "numbered");
+    assert.equal(blocks[5].type, "todo");
+    assert.equal(blocks[5].checked, false);
+    assert.equal(blocks[6].type, "todo");
+    assert.equal(blocks[6].checked, true);
+    assert.equal(blocks[7].type, "callout");
+    assert.equal(blocks[8].type, "code");
+    assert.equal(blocks[9].type, "divider");
+
+    const serialized = serializeBlocksToMarkdown(blocks);
+    assert.match(serialized, /# First heading/);
+    assert.match(serialized, /This is a regular paragraph/);
+    assert.match(serialized, /- \[ \] Open to-do item/);
+    assert.match(serialized, /- \[x\] Done to-do item/);
+    assert.match(serialized, /const answer = 42;/);
+  });
+
+  test("filters and selects block types in the slash menu", () => {
+    createEditorHarness();
+    let chosen = null;
+    const menu = createSlashMenu({
+      onSelectBlockType: (item) => {
+        chosen = item;
+      },
+    });
+
+    const target = element("div");
+    globalThis.document.body.append(target);
+
+    menu.open({ targetEl: target, initialQuery: "" });
+    assert.equal(menu.isOpen(), true);
+
+    const menuEl = globalThis.document.body.querySelector(".block-slash-menu");
+    assert.ok(menuEl);
+    const filterInput = menuEl.querySelector(".slash-menu-filter");
+    assert.ok(filterInput);
+
+    for (const query of ["todo", "to-do", "to do", "/to-do"]) {
+      filterInput.value = query;
+      filterInput.dispatch("input");
+      const matches = findAllByClass(menuEl, "slash-menu-item");
+      assert.equal(matches.length, 1);
+      assert.match(matches[0].textContent, /To-do List/);
+    }
+
+    const items = findAllByClass(menuEl, "slash-menu-item");
+    assert.equal(items.length, 1);
+    assert.match(items[0].textContent, /To-do List/);
+
+    items[0].dispatch("click");
+    assert.equal(chosen?.type, "todo");
+    assert.equal(menu.isOpen(), false);
+    target.remove();
+  });
+
+  test("renders plain documents with interactive Notion blocks, todo toggling, and hierarchy trail", async () => {
+    const content = [
+      "# Project Roadmap",
+      "",
+      "A calm overview of the upcoming milestones.",
+      "",
+      "- [ ] Draft initial scope",
+      "- [x] Align with team",
+      "",
+      "> [!NOTE]",
+      "> Keep milestones focused.",
+    ].join("\n");
+
+    const harness = createEditorHarness({
+      currentDoc: { path: "engineering/roadmaps/2026.md", title: "2026 Roadmap" },
+      content,
+      editorValue: content,
+      mode: "raw",
+    });
+
+    await harness.api.enterRenderedMode();
+    assert.equal(harness.elements.editorView.dataset.mode, "rendered");
+
+    // Location trail
+    const trail = harness.elements.renderedView.querySelector(".doc-hierarchy-nav");
+    assert.ok(trail);
+    assert.ok(findByText(trail, "Docs", "button"));
+    assert.ok(findByText(trail, "Engineering"));
+    assert.ok(findByText(trail, "2026 Roadmap"));
+
+    // Notion blocks
+    const blocksContainer = harness.elements.renderedView.querySelector(".notion-blocks-container");
+    assert.ok(blocksContainer);
+    const blocks = findAllByClass(blocksContainer, "notion-block");
+    assert.equal(blocks.length, 4); // paragraph, 2 todos, callout
+
+    // Checkboxes
+    const checkboxes = blocksContainer.querySelectorAll(".notion-todo-checkbox");
+    assert.equal(checkboxes.length, 2);
+    assert.equal(checkboxes[0].checked, false);
+    assert.equal(checkboxes[1].checked, true);
+
+    // Toggle first checkbox
+    checkboxes[0].checked = true;
+    checkboxes[0].dispatch("change");
+
+    assert.match(harness.elements.editor.value, /- \[x\] Draft initial scope/);
+  });
+
+  test("parses and serializes Notion list items with indentation and renumbering", () => {
+    const rawBullets = "- First item\n  - Sub item\n- Third item";
+    const bullets = parseListItems(rawBullets, "bullet");
+    assert.equal(bullets.length, 3);
+    assert.equal(bullets[0].text, "First item");
+    assert.equal(bullets[1].indent, "  ");
+    assert.equal(bullets[1].text, "Sub item");
+    assert.equal(serializeListItems(bullets, "bullet"), rawBullets);
+
+    const rawNumbered = "1. Item one\n2. Item two\n  1. Sub item\n3. Item three";
+    const numbered = parseListItems(rawNumbered, "numbered");
+    assert.equal(numbered.length, 4);
+    assert.equal(numbered[0].text, "Item one");
+    assert.equal(numbered[2].indent, "  ");
+    assert.equal(numbered[2].text, "Sub item");
+
+    // Adding an item at index 1 and re-serializing renumbers top-level items
+    numbered.splice(1, 0, { indent: "", num: "2", text: "New item" });
+    const reserialized = serializeListItems(numbered, "numbered");
+    assert.match(reserialized, /^1\. Item one\n2\. New item\n3\. Item two\n  1\. Sub item\n4\. Item three$/);
+    assert.equal(serializeListItems(parseListItems(
+      "1. Parent\n  2. Child\n  7. Sibling\n2. Next parent\n  9. New child",
+      "numbered",
+    ), "numbered"), "1. Parent\n  1. Child\n  2. Sibling\n2. Next parent\n  1. New child");
   });
 
 });

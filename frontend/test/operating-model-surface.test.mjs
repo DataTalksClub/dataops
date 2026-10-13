@@ -58,16 +58,40 @@ describe("operating model surface", () => {
   }
 });
 
-function harness(request, view = "operating-model", params = "") {
+function harness(request, view = "operating-model", params = "", navigateCanonicalWorkspace = () => {}) {
   const root = new FakeElement("main");
   let route = { view, params: new URLSearchParams(params) };
   const surface = createOperatingModelSurface({
     apiUrl: (path) => path, documentList: root, documentRef: new FakeDocument(root),
     getActiveWorkspaceRoute: () => route,
-    navigateCanonicalWorkspace() {}, openDocument() {}, resolveDocReference() {}, setRouteTitle() {}, request,
+    navigateCanonicalWorkspace, openDocument() {}, resolveDocReference() {}, setRouteTitle() {}, request,
   });
   return { root, surface, setRoute: (view, params = "") => { route = { view, params: new URLSearchParams(params) }; } };
 }
+
+test("unavailable definitions explain the workspace state and link to Process Docs", async () => {
+  const navigation = [];
+  const { root, surface } = harness(async () => {
+    const error = new Error("Operating model definitions are unavailable");
+    error.status = 503;
+    error.payload = { error: error.message };
+    throw error;
+  }, "operating-model", "", (...args) => navigation.push(args));
+  surface.renderOperatingModel(); await nextTicks();
+  assert.ok(findByText(root, "Definitions aren't available yet"));
+  assert.ok(findByText(root, "Published definitions aren't available in this workspace. Browse Process Docs for guidance, or retry to check again."));
+  assert.ok(findByText(root, "Retry", "button"));
+  await findByText(root, "Browse Process Docs", "button").click();
+  assert.deepEqual(navigation, [["/processes"]]);
+});
+
+test("connection failures retain retry guidance instead of claiming missing definitions", async () => {
+  const { root, surface } = harness(async () => { throw new TypeError("Failed to fetch"); });
+  surface.renderOperatingModel(); await nextTicks();
+  assert.ok(findByText(root, "Operating model unavailable"));
+  assert.ok(findByText(root, "We couldn't load the definitions. Check your connection and retry, or browse Process Docs."));
+  assert.equal(findByText(root, "Definitions aren't available yet"), undefined);
+});
 
 test("late model completion respects navigation, and deep section Retry recovers", async () => {
   let resolve;
@@ -108,7 +132,7 @@ test("stale definitions stay visible while definitions refresh", async () => {
   assert.ok(findByText(root, "Showing the last valid model while definitions refresh."));
 });
 
-test("hub is a named map without kicker, explainer, or chevron buttons", async () => {
+test("hub uses the shared header and remains a named map without redundant labels", async () => {
   const { root, surface } = harness(async (url) => {
     if (url === "/api/operating-model") return { model: model() };
     throw new Error(`Unexpected URL ${url}`);
@@ -116,6 +140,8 @@ test("hub is a named map without kicker, explainer, or chevron buttons", async (
   surface.renderOperatingModel();
   await nextTicks();
   assert.ok(findByText(root, "Operating Model", "h1"));
+  assert.equal(root.querySelector(".page-header").className, "page-header operating-model-header");
+  assert.ok(findByText(root, "Business units, responsibilities, systems, and roadmap.", "p"));
   assert.equal(findByText(root, "Company system"), undefined);
   assert.equal(
     findByText(root, "See how business units, accountable functions, systems, gaps, and lifecycles fit together."),
@@ -150,6 +176,8 @@ test("section uses a title-cased family name and definition rows", async () => {
   surface.renderOperatingModel();
   await nextTicks();
   assert.ok(findByText(root, "Functions", "h1"));
+  assert.equal(root.querySelector(".page-header").className, "page-header operating-model-header");
+  assert.equal(findByText(root, "Business units, responsibilities, systems, and roadmap.", "p"), undefined);
   assert.equal(findByText(root, "functions", "h1"), undefined);
   assert.equal(findByText(root, "1 current definitions"), undefined);
   assert.ok(findByText(root, "Editorial", "h3"));
@@ -159,4 +187,3 @@ test("section uses a title-cased family name and definition rows", async () => {
   assert.equal(findByText(root, "Open source document"), undefined);
   assert.ok(findByText(root, "Overview", "button"));
 });
-

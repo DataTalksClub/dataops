@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { getCrmRecord } from '../db/sponsorCrm';
+import { getCrmRecord, listCrmRecords } from '../db/sponsorCrm';
 import { getUser } from '../db/users';
 import type { LambdaEvent, LambdaResponse, User } from '../types';
 import {
@@ -86,7 +86,7 @@ async function sourceRecords(
   contactId: string,
 ) {
   const [booking, organization, contact] = await Promise.all([
-    getCrmRecord(client, 'booking', suggestion.bookingId),
+    getCrmRecord(client, 'deal', suggestion.dealId),
     getCrmRecord(client, 'organization', suggestion.organizationId),
     getCrmRecord(client, 'contact', contactId),
   ]);
@@ -98,7 +98,9 @@ async function sourceRecords(
     || contact.active === false
     || !Array.isArray(contact.emails) || contact.emails.length < 1
   ) throw Object.assign(new Error('Current sponsor recipient is not eligible'), { statusCode: 409 });
-  return { booking, organization, contact };
+  const deliverables = (await listCrmRecords(client, 'deliverable')).filter((item) => item.dealId === booking.id);
+  const slot = deliverables.find((item) => item.plannedPublicationDate) || deliverables[0] || {};
+  return { booking, organization, contact, deliverable: slot };
 }
 
 function contactAddresses(contact: Record<string, unknown>): string[] {
@@ -131,7 +133,7 @@ async function validatePresentationState(
   if (
     !suggestion || suggestion.status !== 'open' || !suggestion.eligible
     || suggestion.version !== payload.payload.suggestionVersion
-    || suggestion.bookingId !== payload.payload.bookingId
+    || suggestion.dealId !== payload.payload.dealId
     || suggestion.organizationId !== payload.payload.organizationId
     || templates.digest !== config.templateSetDigest
     || templates.card.generation !== config.templateSetGeneration
@@ -149,7 +151,7 @@ async function validatePresentationState(
     })
     : undefined;
   if (
-    booking.version !== payload.payload.bookingVersion
+    booking.version !== payload.payload.dealVersion
     || organization.version !== payload.payload.organizationVersion
     || contact.version !== payload.payload.contactVersion
     || typeof verifiedStoredRecipient !== 'string'
@@ -236,7 +238,7 @@ export async function handleSponsorCommunicationRoutes(
     return json(200, await evaluateCommunicationSuggestions(client, typeof body.today === 'string' ? body.today : undefined));
   }
 
-  const bookingList = path.match(/^\/api\/sponsor-crm\/bookings\/([^/]+)\/communications$/);
+  const bookingList = path.match(/^\/api\/sponsor-crm\/deals\/([^/]+)\/communications$/);
   if (bookingList && method === 'GET') {
     const auth = await currentActor(event, client, ['operator', 'admin']);
     if (auth.response) return auth.response;
@@ -274,7 +276,7 @@ export async function handleSponsorCommunicationRoutes(
       if (!contactId || typeof body.recipient !== 'string' || !body.recipient) {
         return json(400, { error: 'Select exactly one active sponsor contact address' });
       }
-      const { booking, organization, contact } = await sourceRecords(client, suggestion, contactId);
+      const { booking, organization, contact, deliverable } = await sourceRecords(client, suggestion, contactId);
       const canonicalRecipient = normalizeEmail(body.recipient);
       if (!contactAddresses(contact).includes(canonicalRecipient)) return json(409, { error: 'Recipient is not on the selected active contact' });
       const config = await getCurrentConfig(client);
@@ -286,11 +288,12 @@ export async function handleSponsorCommunicationRoutes(
         return json(409, { error: 'Template configuration changed; reconcile before drafting' });
       }
       const template = templates.card.templates.find((item) => item.id === suggestion.communicationType)!;
+      const publicLink = typeof deliverable.requiredLinkUrl === 'string' ? deliverable.requiredLinkUrl : undefined;
       const rendered = renderTemplate(template, {
         organizationName: String(organization.displayName),
-        publicationDate: typeof booking.plannedPublicationDate === 'string' ? booking.plannedPublicationDate : undefined,
-        materialDeadline: typeof booking.materialDeadline === 'string' ? booking.materialDeadline : undefined,
-        publicLink: typeof booking.requiredLinkUrl === 'string' ? booking.requiredLinkUrl : undefined,
+        publicationDate: typeof deliverable.plannedPublicationDate === 'string' ? deliverable.plannedPublicationDate : undefined,
+        materialDeadline: typeof deliverable.materialDeadline === 'string' ? deliverable.materialDeadline : undefined,
+        publicLink,
       });
       const version = await nextDraftVersion(client, suggestion.id);
       const communicationId = suggestion.id;
@@ -303,13 +306,13 @@ export async function handleSponsorCommunicationRoutes(
         version,
         subject: typeof body.subject === 'string' ? body.subject : rendered.subject,
         body: typeof body.body === 'string' ? body.body : rendered.body,
-        publicLinks: normalizePublicLinks(body.publicLinks || (booking.requiredLinkUrl ? [booking.requiredLinkUrl] : [])),
+        publicLinks: normalizePublicLinks(body.publicLinks || (publicLink ? [publicLink] : [])),
         templateId: template.id,
         templateVersion: template.version,
         templateDigest: sha256(JSON.stringify(template)),
         templateSetGeneration: templates.card.generation,
-        bookingId: booking.id,
-        bookingVersion: booking.version,
+        dealId: booking.id,
+        dealVersion: booking.version,
         organizationId: organization.id,
         organizationVersion: organization.version,
         contactId: contact.id,
@@ -332,7 +335,7 @@ export async function handleSponsorCommunicationRoutes(
         id: payloadId,
         recordType: 'communication-draft-version',
         communicationId,
-        bookingId: booking.id,
+        dealId: booking.id,
         version,
         suggestionId: suggestion.id,
         payloadRef: payloadId,
@@ -379,7 +382,7 @@ export async function handleSponsorCommunicationRoutes(
       id: randomUUID(),
       recordType: 'communication-presentation',
       communicationId: draft.communicationId,
-      bookingId: draft.bookingId,
+      dealId: draft.dealId,
       payloadRef: draft.payloadRef,
       draftVersion: draft.version,
       payloadHash: draft.payloadHash,

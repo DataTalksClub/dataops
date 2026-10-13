@@ -454,8 +454,8 @@ describe("runtime and shell production behavior", () => {
       },
       storage: store,
     });
-    assert.equal(String(client.apiUrl("/work/api/tasks")), "https://portal.test/work/api/tasks");
-    assert.deepEqual(await client.request(client.apiUrl("/work/api/tasks")), { ok: true });
+    assert.equal(String(client.apiUrl("/api/tasks")), "https://portal.test/api/tasks");
+    assert.deepEqual(await client.request(client.apiUrl("/api/tasks")), { ok: true });
     assert.equal(calls[0].options.headers.Authorization, "Bearer secret-token");
     assert.equal(calls[0].options.headers["content-type"], "application/json");
 
@@ -468,7 +468,7 @@ describe("runtime and shell production behavior", () => {
       storage: store,
     });
     assert.deepEqual(
-      await explicit.request(new URL("/work/api", "https://portal.test"), {
+      await explicit.request(new URL("/api", "https://portal.test"), {
         headers: { Authorization: "Bearer explicit" },
       }),
       {},
@@ -485,7 +485,7 @@ describe("runtime and shell production behavior", () => {
         storage: storage(),
       });
       await assert.rejects(
-        failing.request(new URL("/work/api", "https://portal.test")),
+        failing.request(new URL("/api", "https://portal.test")),
         (error) => error.message === message && error.status === status,
       );
     }
@@ -901,7 +901,7 @@ describe("runtime and shell production behavior", () => {
         setDarkMode: (value) => calls.push(["dark", value]),
         setTasksNavExpanded: (value) => calls.push(["tasks-expanded", value]),
         showWorkspaceSurface: (view) => calls.push(["workspace", view]),
-        workspaceHashPath: (_view, section) => `/tasks/${section}`,
+        workspacePath: (_view, section) => `/tasks/${section}`,
       },
       {
         get(target, property) {

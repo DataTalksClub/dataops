@@ -10,6 +10,7 @@ export function createPreferencesShell({
   mobileMenuButton,
   pageShell,
   sidebar,
+  sidebarCloseButton,
   sidebarExpandButton,
   sidebarScrim,
   storage,
@@ -106,7 +107,11 @@ export function createPreferencesShell({
     body.classList.add("sidebar-open");
     syncSidebarShellState();
     documentRef.addEventListener("keydown", handleSidebarKeydown);
-    sidebar.querySelector(FOCUSABLE_SELECTOR)?.focus();
+    const initialFocus =
+      sidebarCloseButton && !sidebarCloseButton.hidden
+        ? sidebarCloseButton
+        : sidebar.querySelector(FOCUSABLE_SELECTOR);
+    initialFocus?.focus();
   }
 
   function closeSidebar() {

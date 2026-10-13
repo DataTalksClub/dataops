@@ -3,7 +3,7 @@ import { DeleteCommand, PutCommand, type DynamoDBDocumentClient } from '@aws-sdk
 
 import { TABLE_SESSIONS } from '../db/tableNames';
 import { createBrowserSession, deleteSession, getSession } from '../db/sessions';
-import { getUser, getUsersByNormalizedEmail } from '../db/users';
+import { getUser, getUsersByNormalizedEmail, provisionBrowserOperator } from '../db/users';
 import type { LambdaEvent, LambdaResponse, User } from '../types';
 
 const SESSION_COOKIE = 'dataops_session';
@@ -40,6 +40,7 @@ interface JwtClaims {
   iat?: number;
   nonce?: string;
   email?: string;
+  name?: string;
   email_verified?: boolean | string;
   token_use?: string;
 }
@@ -65,6 +66,11 @@ function authConfig(): AuthConfig {
 export function browserAuthConfigured(): boolean {
   const c = authConfig();
   return Boolean(c.baseUrl && c.issuer && c.clientId && c.callbackUrl && c.logoutUrl);
+}
+
+/** Browser cookies and the OAuth callback must share one origin. */
+export function browserAuthOrigin(): string | null {
+  return browserAuthConfigured() ? new URL(authConfig().callbackUrl).origin : null;
 }
 
 function base64url(input: Buffer): string { return input.toString('base64url'); }
@@ -325,8 +331,15 @@ export async function handleCallback(event: LambdaEvent, client: DynamoDBDocumen
   try {
     const claims = await validateIdToken(await exchangeCode(query.code, transaction.verifier), transaction.nonce, now);
     const users = await getUsersByNormalizedEmail(client, claims.email!);
-    if (users.length !== 1 || users[0].disabled) return callbackFailure();
-    const session = await createBrowserSession(client, users[0].id, { now, lifetimeSeconds: authConfig().sessionLifetimeSeconds });
+    const email = claims.email!.trim().toLowerCase();
+    if (users.length > 1) return callbackFailure();
+    let user = users[0];
+    if (!user) {
+      if (!/^[^@\s]+@datatalks\.club$/.test(email)) return callbackFailure();
+      user = await provisionBrowserOperator(client, email, claims.name?.trim() || email.split('@')[0]);
+    }
+    if (user.disabled) return callbackFailure();
+    const session = await createBrowserSession(client, user.id, { now, lifetimeSeconds: authConfig().sessionLifetimeSeconds });
     return {
       statusCode: 302,
       headers: {

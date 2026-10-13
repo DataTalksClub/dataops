@@ -21,6 +21,7 @@ import {
   taskProofState,
   tasksFromWorkPayload,
   tasksSectionTitle,
+  workCardIssueNumber,
   workCardSubtitle,
   workCardTitle,
   workTaskTitle,
@@ -216,6 +217,7 @@ function createHarness(options = {}) {
         templateId: card.templateId || "",
         title: card.title,
         subtitle: workCardSubtitle(card),
+        issueNumber: workCardIssueNumber(card),
         stage: card.stage,
         risk: progress.risk,
         meta: progress.label,
@@ -429,6 +431,10 @@ describe("Tasks surface boundary", () => {
     });
 
     api.renderTasksSurface([], "queue");
+    const header = documentList.querySelector(".page-header");
+    const createCard = findByText(header, "Create card", "button");
+    assert.equal(createCard.className, "primary-button");
+    assert.equal(findByText(header, "New task", "button").className, "quiet-button");
 
     // One queue: a single bordered list, no per-lane group cards.
     const board = documentList.querySelector(".ops-queue-board");
@@ -905,7 +911,7 @@ describe("Tasks surface boundary", () => {
     assert.equal(findAllByClass(documentList, "cards-archive-grid").length, 2);
   });
 
-  test("shows people and sponsors under the card title", () => {
+  test("shows people, sponsors, and issue chips on board cards", () => {
     const active = [
       {
         id: "pod",
@@ -916,10 +922,11 @@ describe("Tasks surface boundary", () => {
       },
       {
         id: "news",
-        title: "Weekly email #298",
+        title: "Weekly email",
         stage: "preparation",
         anchorDate: "2026-10-20",
         sponsor: "Astronomer",
+        issueNumber: "298",
       },
       {
         id: "plain",
@@ -942,6 +949,11 @@ describe("Tasks surface boundary", () => {
     assert.deepEqual(
       subtitles.map((subtitle) => subtitle.textContent),
       ["Astronomer", "Tony Zeljkovic, Juan Manuel Perafan"],
+    );
+    const issueChips = findAllByClass(documentList, "workflow-card-issue");
+    assert.deepEqual(
+      issueChips.map((chip) => chip.textContent),
+      ["#298"],
     );
   });
 
@@ -1076,6 +1088,9 @@ describe("Tasks surface boundary", () => {
       ["news-1", "news-2"],
     );
     assert.match(documentList.textContent, /2 cards of 3 shown/);
+    const filterAction = documentList.querySelector(".workflow-board-filter-action");
+    assert.ok(filterAction);
+    assert.equal(filterAction.textContent, "+ New card from template");
 
     // A snapshot refresh that leaves no Card behind the chosen Template
     // heals the filter back to "All templates" instead of an empty board.
@@ -1124,6 +1139,11 @@ describe("Tasks surface boundary", () => {
     });
 
     api.renderTasksSurface([], "workflows");
+    const preNews = findAllByClass(documentList, "workflow-board-card")
+      .find((card) => card.dataset.cardId === "news-1");
+    const [preBadge] = findAllByClass(preNews, "workflow-card-template");
+    assert.equal(preBadge.textContent, "Template tpl-news");
+
     await nextTicks();
     api.renderTasksSurface([], "workflows");
 
@@ -1449,7 +1469,8 @@ describe("Tasks surface boundary", () => {
       /workflow-templates\/newsletter.yaml/,
     );
     assert.match(harness.documentList.textContent, /1234567890ab/);
-    assert.ok(findByText(harness.documentList, "Create card", "button"));
+    assert.ok(findByText(harness.documentList, "Start card", "button"));
+    assert.equal(findByText(harness.documentList, "Create card", "button"), undefined);
     for (const mutation of [
       "New runtime template",
       "Save template",
@@ -1460,6 +1481,113 @@ describe("Tasks surface boundary", () => {
         undefined,
       );
     }
+  });
+
+  test("keeps one stable Templates shell from loading through ready", async () => {
+    const template = {
+      id: "template-1",
+      name: "Newsletter",
+      type: "workflow",
+      version: 2,
+      triggerType: "manual",
+      taskDefinitions: [
+        { refId: "draft", description: "Draft", offsetDays: 0 },
+      ],
+    };
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") return { templates: [template] };
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    // Before the fetch resolves the shell is already the shell: header,
+    // list, and detail regions exist, with a quiet loading note in the list.
+    harness.api.renderTasksSurface([], "templates");
+    const loading = harness.documentList.querySelector(".runtime-template-inspector");
+    assert.ok(loading);
+    assert.ok(loading.querySelector(".runtime-template-layout"));
+    assert.ok(loading.querySelector(".runtime-template-list"));
+    assert.match(
+      loading.querySelector(".runtime-template-list").textContent,
+      /Loading templates/,
+    );
+
+    await harness.api.refreshRuntimeTemplates();
+    harness.api.renderTasksSurface([], "templates");
+    const ready = harness.documentList.querySelector(".runtime-template-inspector");
+    assert.ok(ready);
+    assert.equal(
+      ready.querySelectorAll(".runtime-template-row").length,
+      1,
+      "the list fills in; the shell does not swap",
+    );
+    for (const removed of [
+      ".runtime-template-toolbar",
+      ".runtime-template-search",
+      ".runtime-template-sort",
+      ".runtime-template-result-count",
+      ".runtime-template-facts",
+      ".runtime-template-support",
+      ".ops-template-grid",
+    ]) {
+      assert.equal(
+        harness.documentList.querySelector(removed),
+        null,
+        `${removed} stays out of the simplified surface`,
+      );
+    }
+  });
+
+  test("keeps the Template list scroll when a Template is selected", async () => {
+    const templates = [
+      {
+        id: "template-1",
+        name: "Newsletter",
+        type: "workflow",
+        version: 2,
+        triggerType: "manual",
+        taskDefinitions: [],
+      },
+      {
+        id: "template-2",
+        name: "Webinar",
+        type: "workflow",
+        version: 2,
+        triggerType: "manual",
+        taskDefinitions: [],
+      },
+    ];
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") return { templates };
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.refreshRuntimeTemplates();
+    harness.api.renderTasksSurface([], "templates");
+    const list = harness.documentList.querySelector(".runtime-template-list");
+    list.scrollTop = 142;
+    await list.dispatch("scroll");
+
+    const rows = harness.documentList.querySelectorAll(".runtime-template-row");
+    assert.equal(rows.length, 2);
+    await rows[1].click();
+    assert.deepEqual(harness.navigations.at(-1).params, { templateId: "template-2" });
+
+    // The route change re-renders the surface (and the fetch renders it
+    // again); the list must not jump back to the top.
+    harness.api.setRuntimeTemplateRoute(
+      {
+        tasksSection: "templates",
+        params: new URLSearchParams({ templateId: "template-2" }),
+      },
+      { templateId: "template-2" },
+    );
+    harness.api.renderTasksSurface([], "templates");
+    assert.equal(
+      harness.documentList.querySelector(".runtime-template-list").scrollTop,
+      142,
+    );
   });
 
   test("every Templates surface class has an app stylesheet rule", async () => {
@@ -1527,17 +1655,6 @@ describe("Tasks surface boundary", () => {
     harness.api.renderTasksSurface([], "templates");
     collectClasses(harness.documentList);
 
-    // The support-doc grid renders no docs in this harness
-    // (getAllDocuments is empty), so its factory classes are covered
-    // statically. They come from renderWorkflowTemplateCard in
-    // surfaces/tasks/recurring.js.
-    for (const staticClass of [
-      "ops-template-card",
-      "ops-template-grid",
-      "ops-template-actions",
-      "ops-card-chips",
-    ]) renderedClasses.add(staticClass);
-
     // Intentionally rule-less by design: the icons are sized by element
     // selectors (.runtime-template-projection h4 svg,
     // .runtime-template-row strong > svg), and the hooks gate behavior,
@@ -1557,6 +1674,101 @@ describe("Tasks surface boundary", () => {
         `no app stylesheet rule styles .${token} on the Templates surface`,
       );
     }
+  });
+
+  test("opens a template preview with one Start card action and navigates live cards", async () => {
+    const template = {
+      id: "template-1",
+      name: "Newsletter",
+      emoji: "📰",
+      type: "workflow",
+      version: 2,
+    };
+    const liveCard = {
+      id: "card-1",
+      title: "Newsletter run",
+      status: "open",
+      templateId: "template-1",
+      templateVersion: 2,
+      templateSourceRevision: "rev-2",
+      templateDefinitionSnapshot: { version: 2 },
+      openTaskCount: 1,
+      updatedAt: new Date().toISOString(),
+    };
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") return { templates: [template] };
+        throw new Error(`Unexpected request ${url}`);
+      },
+      workSnapshot: { cards: [liveCard] },
+    });
+    await harness.api.refreshRuntimeTemplates();
+    harness.api.renderTasksSurface([], "templates");
+
+    const row = harness.documentList.querySelector(".runtime-template-row");
+    assert.equal(row.querySelector("button"), null, "a template row only opens the preview");
+    assert.equal(findByText(harness.documentList, "Start card", "button"), undefined);
+    const emptyPane = harness.documentList.querySelector(".runtime-template-empty");
+    assert.match(emptyPane.textContent, /Choose a template from the list/);
+    await row.dispatch("click");
+    assert.deepEqual(harness.navigations.at(-1), {
+      path: "/templates",
+      params: { templateId: "template-1" },
+      options: {},
+    });
+
+    harness.api.setRuntimeTemplateRoute(
+      {
+        tasksSection: "templates",
+        params: new URLSearchParams({ templateId: "template-1" }),
+      },
+      { templateId: "template-1" },
+    );
+    harness.api.renderTasksSurface([], "templates");
+
+    const start = findByText(harness.documentList, "Start card", "button");
+    assert.ok(start);
+    assert.equal(
+      harness.documentList.querySelectorAll("button").filter((button) => button.textContent === "Start card").length,
+      1,
+    );
+    await start.dispatch("click");
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    assert.ok(overlay, "the preview action starts a card from the selected template");
+    assert.equal(overlay.querySelector("select").value, template.id);
+    overlay.remove();
+
+    const liveCardsList = harness.documentList.querySelector(".runtime-template-live-cards");
+    const liveCardBtn = liveCardsList.querySelector("li button");
+    assert.ok(liveCardBtn, "live card row must be interactive button");
+    await liveCardBtn.dispatch("click");
+    assert.deepEqual(harness.navigations.at(-1), {
+      path: "/cards",
+      params: { cardId: "card-1" },
+      options: {},
+    });
+  });
+
+  test("formats template select options with emoji prefix and name", async () => {
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") {
+          return {
+            templates: [
+              { id: "tpl-1", name: "Newsletter", emoji: "📰" },
+              { id: "tpl-2", name: "Podcast" },
+            ],
+          };
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.openQuickWorkflowForm();
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    const select = overlay.querySelector("select");
+    const optionTexts = select.children.map((opt) => opt.textContent);
+    assert.deepEqual(optionTexts, ["Select template...", "📰 Newsletter", "Podcast"]);
+    overlay.remove();
   });
 
   test("reviews explicit Card selections and reports partial batch conflicts without retrying", async () => {
@@ -1661,7 +1873,7 @@ describe("Tasks surface boundary", () => {
 
     await findByText(
       harness.documentList,
-      "Review 3 Cards for updates",
+      "Review 3 cards for updates",
       "button",
     ).dispatch("click");
     assert.equal(previewCalls, 1);
@@ -1676,7 +1888,7 @@ describe("Tasks surface boundary", () => {
       /Nothing is selected automatically/,
     );
     assert.equal(
-      findByText(harness.documentList, "Apply 0 selected Cards", "button")
+      findByText(harness.documentList, "Apply 0 selected cards", "button")
         .disabled,
       true,
     );
@@ -1696,7 +1908,7 @@ describe("Tasks surface boundary", () => {
     await checkbox.dispatch("change");
     const apply = findByText(
       harness.documentList,
-      "Apply 2 selected Cards",
+      "Apply 2 selected cards",
       "button",
     );
     assert.equal(apply.disabled, false);
@@ -1713,7 +1925,7 @@ describe("Tasks surface boundary", () => {
     assert.equal(previewCalls, 1);
     assert.match(
       harness.documentList.textContent,
-      /1 Card applied · 1 conflict needs a fresh preview/,
+      /1 card applied · 1 conflict needs a fresh preview/,
     );
     assert.match(
       harness.documentList.textContent,
@@ -1755,7 +1967,10 @@ describe("Tasks surface boundary", () => {
       },
     });
     harness.api.renderTasksSurface([], "recurring");
-    assert.match(harness.documentList.textContent, /Every Monday at 09:00/);
+    const headerActions = harness.documentList.querySelector(".page-header-actions");
+    assert.ok(findByText(headerActions, "New schedule", "button"));
+    assert.equal(findAllByClass(harness.documentList, "recurring-toolbar").length, 0);
+    assert.match(harness.documentList.textContent, /Every Monday/);
     assert.match(harness.documentList.textContent, /Next /);
 
     await findByText(harness.documentList, "Pause", "button").dispatch("click");
@@ -1773,7 +1988,29 @@ describe("Tasks surface boundary", () => {
 
     harness.setModel(baseModel());
     harness.api.renderTasksSurface([], "recurring");
-    assert.match(harness.documentList.textContent, /No recurring configs yet/);
+    assert.match(harness.documentList.textContent, /No recurring schedules yet/);
+    assert.equal(harness.documentList.querySelector(".surface-summary"), null);
+  });
+
+  test("shows the recurring batch in Berlin time across winter and summer", () => {
+    const harness = createHarness();
+    for (const [date, expected] of [
+      ["2026-01-12", /Next Mon 12 Jan at 09:00 CET/],
+      ["2026-07-13", /Next Mon 13 Jul at 10:00 CEST/],
+    ]) {
+      harness.setModel(baseModel({ recurring: recurringSnapshot([{
+        id: "berlin-schedule",
+        description: "Weekly work",
+        enabled: true,
+        scheduleLabel: "Every Monday at 09:00",
+        nextRunDate: date,
+        nextRunLabel: date === "2026-01-12" ? "Mon 12 Jan" : "Mon 13 Jul",
+      }]) }));
+      harness.api.renderTasksSurface([], "recurring");
+      assert.match(harness.documentList.textContent, expected);
+      assert.match(harness.documentList.textContent, /Europe\/Berlin/);
+      assert.equal(harness.documentList.textContent.includes("Every Monday at 09:00"), false);
+    }
   });
 
   test("exposes recurring Active and Paused state as text without prohibited ARIA", () => {

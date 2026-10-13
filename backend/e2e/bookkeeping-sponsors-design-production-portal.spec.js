@@ -20,6 +20,7 @@ const SCREENSHOTS = path.resolve(
 let server;
 
 async function setTheme(page, dark) {
+  await page.emulateMedia({ colorScheme: dark ? "dark" : "light" });
   await page.evaluate((enabled) => {
     document.documentElement.dataset.theme = enabled ? "dark" : "light";
     localStorage.setItem("dakit-theme", enabled ? "dark" : "light");
@@ -75,7 +76,7 @@ async function routeBookkeeping(page) {
       entryType: "expense",
     },
   ];
-  await page.route("**/work/api/bookkeeping/**", (route) => {
+  await page.route("**/api/bookkeeping/**", (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname.endsWith("/transactions")) return route.fulfill({ json: { items: transactions } });
     if (pathname.endsWith("/documents")) return route.fulfill({ json: { items: [{ id: "document-july", originalFilename: "Example Studio invoice.pdf", documentType: "invoice" }] } });
@@ -101,39 +102,61 @@ async function routeSponsors(page) {
     id: "booking-example",
     organizationId: organization.id,
     primaryContactId: contact.id,
-    slotType: "main",
-    status: "materials-pending",
-    plannedPublicationDate: "2026-09-18",
-    materialDeadline: "2026-09-08",
-    nextActionDate: "2026-09-03",
-    cardId: "linked-newsletter",
+    status: "agreed",
+    productKind: "one-off",
+    nextAction: {
+      type: "chase_materials",
+      due: "2026-09-03",
+      owner: "00000000-0000-0000-0000-000000000001",
+      note: "Confirm the public campaign link before scheduling.",
+    },
+    deliverables: [{
+      id: "deliverable-example",
+      dealId: "booking-example",
+      channel: "main",
+      plannedPublicationDate: "2026-09-18",
+      materialDeadline: "2026-09-08",
+    }],
     notes: "Confirm the public campaign link before scheduling.",
     version: 2,
   };
-  await page.route("**/work/api/notifications*", (route) => route.fulfill({
+  await page.route("**/api/notifications*", (route) => route.fulfill({
     json: {
       notifications: {
         items: [{
           message: "Sponsor materials need review",
           dueAt: "2026-09-03",
           dismissed: false,
-          metadata: { sponsorBookingId: booking.id },
+          metadata: { sponsorDealId: booking.id },
         }],
       },
     },
   }));
-  await page.route("**/work/api/sponsor-crm/**", (route) => {
+  await page.route("**/api/sponsor-crm/**", (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
     if (pathname.endsWith("/organizations")) return route.fulfill({ json: { items: [organization] } });
     if (pathname.endsWith("/contacts")) return route.fulfill({ json: { items: [contact] } });
-    if (pathname.endsWith("/bookings")) return route.fulfill({ json: { items: [booking] } });
-    if (pathname.endsWith(`/bookings/${booking.id}/history`)) return route.fulfill({ json: { items: [{ oldStatus: "confirmed", newStatus: "materials-pending", createdAt: "2026-08-28T09:00:00Z", note: "Waiting for reviewed copy." }] } });
-    if (pathname.endsWith(`/bookings/${booking.id}/finance/invoice/invoice-example`) && request.method() === "DELETE") {
+    if (pathname.endsWith("/queue")) return route.fulfill({ json: { items: [{
+      id: "queue-example",
+      kind: "operational",
+      why: "chase_materials",
+      action: "Get materials",
+      companyId: organization.id,
+      companyName: organization.displayName,
+      dealId: booking.id,
+      due: "2026-09-03",
+      owner: "00000000-0000-0000-0000-000000000001",
+    }] } });
+    if (pathname.endsWith("/leads")) return route.fulfill({ json: { items: [] } });
+    if (pathname.endsWith("/messages")) return route.fulfill({ json: { items: [] } });
+    if (pathname.endsWith("/deals")) return route.fulfill({ json: { items: [booking] } });
+    if (pathname.endsWith(`/deals/${booking.id}/history`)) return route.fulfill({ json: { items: [{ oldStatus: "open", newStatus: "agreed", createdAt: "2026-08-28T09:00:00Z", note: "Waiting for reviewed copy." }] } });
+    if (pathname.endsWith(`/deals/${booking.id}/finance/invoice/invoice-example`) && request.method() === "DELETE") {
       unlinkInvoiceRequests += 1;
       return route.fulfill({ json: { status: "unlinked" } });
     }
-    if (pathname.endsWith(`/bookings/${booking.id}/finance`)) return route.fulfill({ json: {
+    if (pathname.endsWith(`/deals/${booking.id}/finance`)) return route.fulfill({ json: {
       enabled: true,
       classified: true,
       role: "admin",
@@ -148,7 +171,7 @@ async function routeSponsors(page) {
       paymentLinkCount: 1,
       paymentLinkLimit: 20,
     } });
-    if (pathname.includes(`/bookings/${booking.id}/communications`)) return route.fulfill({ json: {
+    if (pathname.includes(`/deals/${booking.id}/communications`)) return route.fulfill({ json: {
       items: [
         { id: "suggestion-example", recordType: "communication-suggestion", communicationType: "materials-reminder", status: "open", safeReason: "Materials are due before the publication slot." },
         { id: "draft-example", recordType: "communication-draft-version", communicationId: "communication-example", version: 2, reviewState: "awaiting_review", reviewable: true },
@@ -197,7 +220,7 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     const context = await browser.newContext({ baseURL: server.baseURL, viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     await routeBookkeeping(page);
-    const root = await page.goto("/#/bookkeeping");
+    const root = await page.goto("/bookkeeping");
     assertOwnedServerResponse(server, root, "bookkeeping design root");
     await expect(page.getByRole("heading", { name: "Bookkeeping" })).toBeVisible();
     // The decorative job nav gave way to the month lens close state (#242).
@@ -241,21 +264,43 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     const context = await browser.newContext({ baseURL: server.baseURL, viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     const sponsorRouteState = await routeSponsors(page);
-    const root = await page.goto("/#/sponsors");
+    const root = await page.goto("/sponsors");
     assertOwnedServerResponse(server, root, "sponsor design root");
     await expect(page.getByRole("heading", { name: "Sponsors" })).toBeVisible();
-    await page.getByLabel("Bookings").getByRole("button", { name: "Open booking" }).click();
-    await expect(page.getByRole("heading", { name: "Booking detail" })).toBeVisible();
-    await expect(page.getByRole("navigation", { name: "Booking detail sections" })).toContainText("Finance");
+    await expect(page.getByRole("heading", { name: "Queue" })).toBeVisible();
+    await expect(page.locator("[data-crm-queue] .status-label")).toHaveText("Deal work");
+    await page.getByRole("button", { name: "Pipeline" }).click();
+    await expect(page.locator("[data-crm-pipeline]")).toContainText("Agreed");
+    await expect(page.locator("[data-crm-pipeline]")).not.toContainText("Inquiry");
+    await expect(page.locator("[data-crm-alerts]")).toContainText("Due 3 Sept");
+    await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-queue-light.png") });
+    await page.getByRole("button", { name: "Open deal" }).click();
+    await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Company detail sections" })).toContainText("Finance");
+    const financePanel = page.locator('[data-finance-panel]');
+    await expect(financePanel.locator(".finance-status")).toHaveText("Evidence consistent");
+    await expect(financePanel).toContainText("€1,200.00");
+    await expect(financePanel).toContainText("€700.00");
+    await expect(financePanel).toContainText("30 Sept");
+    await expect(financePanel).toContainText("uploaded 30 Aug");
+    await expect(financePanel).toContainText(/1 Sept(?: 2026)?\s*·\s*€500\.00/);
+    await expect(financePanel.getByRole("button", { name: /^Unlink 1 Sept(?: 2026)? payment$/ })).toBeVisible();
+    await expect(financePanel).not.toContainText("2026-09-30");
+    await expect(page.locator('[data-booking-panel="history"]')).toContainText("Recorded 28 Aug 2026, 11:00 CEST");
     await expect(page.locator('[data-booking-panel="communications"]')).toContainText("Draft version 2");
-    await expect(page.locator(".crm-booking-row[aria-current=true]")).toHaveCSS("border-left-width", "0px");
+    await expect(page.locator(".crm-card[aria-current=true]")).toHaveCSS("border-left-width", "1px");
     await expectPalette(page, false);
     await expectNoPageOverflow(page, 1440);
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-desktop-light.png") });
 
     await setTheme(page, true);
-    await expect(page.getByRole("heading", { name: "Booking detail" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
     await expectPalette(page, true);
+    await expect(page.locator(".booking-detail-header h2")).toHaveCSS(
+      "color",
+      "rgb(240, 246, 252)",
+    );
+    await expect(page.locator("[data-crm-alerts]")).toContainText("Due 3 Sept");
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-desktop-dark.png") });
 
     await page.getByRole("button", { name: "Review exact draft" }).click();
@@ -285,7 +330,7 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await expectNoPageOverflow(page, 390);
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-mobile-dark.png") });
     await setTheme(page, false);
-    await expect(page.getByRole("heading", { name: "Booking detail" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
     await expectPalette(page, false);
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-mobile-light.png") });
 

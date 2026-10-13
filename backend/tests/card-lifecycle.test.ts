@@ -12,7 +12,7 @@ import {
   updateTask,
 } from '../src/db/tasks';
 import { TABLE_AUDIT_EVENTS } from '../src/db/tableNames';
-import { createCardFromTemplate, createTemplate } from '../src/db/templates';
+import { createCardFromTemplate, createTemplate, instantiateTemplate } from '../src/db/templates';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 
 describe('Card lifecycle aggregate', () => {
@@ -321,6 +321,9 @@ describe('Card lifecycle aggregate', () => {
     );
     assert.deepStrictEqual(deselected.tasks.map((task) => task.templateTaskRef), ['core']);
     assert.deepStrictEqual(deselected.card.selectedOptionalGroups, []);
+    // Retrying task instantiation must not reintroduce unchecked groups.
+    await instantiateTemplate(client, template.id, deselected.card.id, '2026-09-07');
+    assert.equal((await getCard(client, deselected.card.id))?.taskCount, 1);
   });
 
   it('rolls back Template Card creation and rejects oversized aggregates before writing', async () => {

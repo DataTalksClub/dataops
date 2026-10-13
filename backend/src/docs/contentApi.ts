@@ -290,6 +290,7 @@ async function dispatch(event: LambdaEvent, path: string, actor: string): Promis
   if (path === '/docs/resolve' && m === 'GET') return resolveDoc(rt, queryParam(event, 'ref'));
   if (path === '/docs/backlinks' && m === 'GET') return listBacklinks(rt, queryParam(event, 'path'));
   if (path === '/docs/rename' && m === 'POST') return renameDoc(rt, jsonBody(event), actor);
+  if (path === '/docs/move' && m === 'POST') return moveDoc(rt, jsonBody(event), actor);
 
   if (path === '/docs' && m === 'GET') {
     const docPath = queryParam(event, 'path');
@@ -422,8 +423,9 @@ async function createDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:s
     typeof body.doc_type === 'string' && body.doc_type.trim() ? body.doc_type.trim() : inferDocType(repoPath);
   const summary = typeof body.summary === 'string' ? body.summary.trim() : '';
   const scaffold = body.scaffold === 'minimal' ? 'minimal' : 'full';
+  const parent = typeof body.parent === 'string' && body.parent.trim() ? body.parent.trim() : undefined;
 
-  const content = newDocContent(title, docType, summary, scaffold);
+  const content = newDocContent(title, docType, summary, scaffold, parent);
   mkdirSync(dirname(filePath), { recursive: true });
   if(body.absent !== true) throw new BadRequest('Creation requires absent: true');
   await rt.store.publish([{path:repoPath,bytes:content,absent:true}],String(body.expectedRevision || ''),actor,`Create ${repoPath}`);
@@ -466,6 +468,117 @@ async function renameDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:s
   await rt.ensureSynced();
   rt.rebuildSearch();
   return jsonResponse(200, { old_path: oldPath, new_path: newPath, revision:rt.store.revision });
+}
+
+async function moveDoc(rt: DocsRuntime, body: Record<string, unknown>, actor: string): Promise<LambdaResponse> {
+  const rawPath = body.path;
+  if (typeof rawPath !== 'string' || !rawPath.trim()) {
+    throw new BadRequest('Request body must include string field: path');
+  }
+  const repoPath = normalizeDocPath(rawPath);
+  validateDocPath(repoPath);
+
+  await rt.ensureSynced();
+  const registry = buildRegistry(rt.contentRoot);
+  const docRecord = registry.byPath.get(repoPath);
+  if (!docRecord) throw new NotFound('Document not found');
+
+  const rawNewParent = body.new_parent;
+  let targetParent: DocumentRecord | null = null;
+
+  if (rawNewParent !== null && rawNewParent !== undefined && typeof rawNewParent === 'string' && rawNewParent.trim() !== '') {
+    const parentRef = rawNewParent.trim();
+    try {
+      targetParent = resolveReference(registry, parentRef);
+    } catch {
+      throw new BadRequest(`Target parent document not found: ${parentRef}`);
+    }
+
+    if (targetParent.id === docRecord.id) {
+      throw new BadRequest('Cannot set document as its own parent');
+    }
+
+    let current: string | undefined = targetParent.parent_id;
+    const visited = new Set<string>();
+    while (current) {
+      if (current === docRecord.id) {
+        throw new BadRequest(`Cannot move document under its own descendant: ${targetParent.id}`);
+      }
+      if (visited.has(current)) break;
+      visited.add(current);
+      const ancestor = registry.byId.get(current);
+      current = ancestor?.parent_id;
+    }
+  } else if (rawNewParent !== null && rawNewParent !== undefined && typeof rawNewParent !== 'string') {
+    throw new BadRequest('new_parent must be a string or null');
+  }
+
+  const content = await rt.store.readFile(repoPath);
+  const updatedContent = updateFrontmatterParent(content, targetParent ? targetParent.id : null);
+
+  const actionMsg = targetParent ? `Move ${repoPath} under ${targetParent.id}` : `Move ${repoPath} to root`;
+  await rt.store.publish(
+    [{ path: repoPath, bytes: updatedContent }],
+    String(body.expectedRevision || ''),
+    actor,
+    actionMsg,
+  );
+  await rt.ensureSynced();
+  rt.rebuildSearch();
+
+  return jsonResponse(200, {
+    path: repoPath,
+    parent: targetParent ? targetParent.id : null,
+    revision: rt.store.revision,
+  });
+}
+
+export function updateFrontmatterParent(content: string, parentId: string | null): string {
+  if (!content.startsWith('---\n') && !content.startsWith('---\r\n')) {
+    if (parentId) {
+      return `---\nparent: "${parentId}"\n---\n\n${content}`;
+    }
+    return content;
+  }
+
+  const isCrlf = content.startsWith('---\r\n');
+  const newline = isCrlf ? '\r\n' : '\n';
+  const startIdx = isCrlf ? 5 : 4;
+  const closingPattern = `${newline}---`;
+  const endIdx = content.indexOf(closingPattern, startIdx);
+  if (endIdx === -1) {
+    if (parentId) {
+      return `---\nparent: "${parentId}"\n---\n\n${content}`;
+    }
+    return content;
+  }
+
+  const rawFm = content.slice(startIdx, endIdx);
+  const rest = content.slice(endIdx + closingPattern.length);
+  const lines = rawFm.split(/\r?\n/);
+  const parentLineIdx = lines.findIndex((l) => /^parent\s*:/.test(l));
+
+  if (parentId) {
+    const newParentLine = `parent: "${parentId}"`;
+    if (parentLineIdx !== -1) {
+      lines[parentLineIdx] = newParentLine;
+    } else {
+      if (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+        lines.splice(lines.length - 1, 0, newParentLine);
+      } else {
+        lines.push(newParentLine);
+      }
+    }
+  } else {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (/^parent\s*:/.test(lines[i])) {
+        lines.splice(i, 1);
+      }
+    }
+  }
+
+  const newFm = lines.join(newline);
+  return `---${newline}${newFm}${closingPattern}${rest}`;
 }
 
 // ── Lint / parse ──────────────────────────────────────────────────────────────

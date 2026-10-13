@@ -33,6 +33,7 @@ export function createApplicationShells(context) {
     mobileMenuButton: dom.mobileMenuButton,
     pageShell: dom.pageShell,
     sidebar: dom.sidebar,
+    sidebarCloseButton: dom.sidebarCloseButton,
     sidebarExpandButton: dom.sidebarExpandButton,
     sidebarScrim: dom.sidebarScrim,
     storage: localStorageRef,

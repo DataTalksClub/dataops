@@ -41,9 +41,8 @@ export function createSponsorCommunications(context) {
       ? html`<div class="honest-state" data-communication-state="disabled">
           <strong>Reviewed sending is disabled</strong>
           <p>
-            History remains visible. A credentialed operator must reconcile
-            private templates, suppression keys, SES identity, and the kill
-            switch before a new preview can be approved.
+            History remains available. Ask an administrator to enable reviewed
+            sending before approving new messages.
           </p>
         </div>`
       : "";
@@ -176,7 +175,7 @@ export function createSponsorCommunications(context) {
       const query = new URLSearchParams({ limit: "50" });
       if (cursor) query.set("cursor", cursor);
       const result = await api(
-        `/bookings/${bookingId}/communications?${query}`,
+        `/deals/${bookingId}/communications?${query}`,
       );
       items.push(...(result.items || []));
       communicationConfig = result.config || { enabled: false };
@@ -266,13 +265,16 @@ export function createSponsorCommunications(context) {
       );
       currentReview = null;
       reviewDialog.close();
-      if (reason !== "navigation")
+      if (reason !== "navigation") {
+        message.hidden = false;
         message.textContent =
           "Exact review revoked. The saved draft remains available for a fresh review.";
+      }
       return true;
     } catch (error) {
       reviewDialog.querySelector("[data-review-status]").textContent =
         `Could not revoke this review: ${error.message}. Retry Reject / close before leaving.`;
+      message.hidden = false;
       message.textContent =
         "The review is still active and visible. Retry revocation before navigating or regenerate after reloading.";
       return false;

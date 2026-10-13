@@ -121,7 +121,7 @@ function createSurfaceHarness(options = {}) {
     windowConsole: {
       warn: (message) => calls.push(["warn", message]),
     },
-    workspaceHashPath: (view, section) =>
+    workspacePath: (view, section) =>
       section ? `/${view}/${section}` : `/${view}`,
     workspaceNavButtons,
     workspaceState,
@@ -241,7 +241,7 @@ describe("runtime surface composition", () => {
     });
     assert.equal(
       String(url),
-      "https://portal.test/work/api/tasks?date=2026-08-13&page=2",
+      "https://portal.test/api/tasks?date=2026-08-13&page=2",
     );
     assert.deepEqual(
       harness.composition.allWorkTasks().map((task) => task.id),
@@ -261,7 +261,7 @@ describe("runtime surface composition", () => {
       normalized: true,
     });
     assert.deepEqual(success.calls, [
-      ["request", "https://portal.test/work/api/recurring"],
+      ["request", "https://portal.test/api/recurring"],
       ["refresh-documents"],
     ]);
 

@@ -1,3 +1,4 @@
+import { createPageHeader } from "../operations-overview.js";
 import {
   buildReviewQueue,
   decisionLabel,
@@ -185,24 +186,17 @@ export function createReviewSurface(context) {
   }
 
   function renderHeader(root, summary) {
-    const header = createElement(documentRef, "header", "review-header");
-    const copy = createElement(documentRef, "div", "review-header-copy");
-    appendText(documentRef, copy, "p", "section-kicker", "Knowledge operations");
-    appendText(documentRef, copy, "h1", "", "Document review");
-    appendText(
-      documentRef,
-      copy,
-      "p",
-      "review-header-description",
-      "Turn the audit backlog into review evidence, feedback, and a clear next action.",
-    );
-    const actions = createElement(documentRef, "div", "review-header-actions");
     const refresh = createElement(documentRef, "button", "quiet-button");
     refresh.type = "button";
     refresh.textContent = "Refresh review data";
     refresh.addEventListener("click", () => refreshReviewSnapshot({ rerender: true }));
-    actions.append(refresh);
-    header.append(copy, actions);
+    const header = createPageHeader({
+      title: "Document review",
+      subtitle: "Turn the audit backlog into review evidence, feedback, and a clear next action.",
+      className: "review-header",
+      actions: [refresh],
+      documentRef,
+    });
 
     const cards = createElement(documentRef, "div", "review-summary");
     const summaryCards = [

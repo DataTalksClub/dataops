@@ -7,26 +7,29 @@ import { describe, test } from "node:test";
 import {
   ENTITY_VOCABULARY,
   TASKS_SECTIONS,
-  WORKSPACE_HASH_BY_VIEW,
+  WORKSPACE_PATH_BY_VIEW,
   WORKSPACE_ROUTE_DEFINITIONS,
   canonicalWorkspaceUrl,
   isRealIsoDate,
-  parseWorkspaceHash,
+  parseWorkspaceLocation,
   tasksSectionTitle,
-  workspaceHashPath,
+  workspacePath,
   workspaceRouteFor,
 } from "../src/core/workspace.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const browserLocation = (hash = "") => ({ pathname: "/", search: "", hash });
+const browserLocation = (path = "/") => {
+  const url = new URL(path || "/", "https://portal.test");
+  return { pathname: url.pathname, search: url.search, hash: url.hash };
+};
 
 describe("canonical workspace routing", () => {
   test("directly imports routing from the production workspace module", () => {
-    assert.equal(typeof parseWorkspaceHash, "function");
+    assert.equal(typeof parseWorkspaceLocation, "function");
     assert.equal(typeof canonicalWorkspaceUrl, "function");
   });
 
-  test("Operations nav and hash map no longer include mailing exports", () => {
+  test("Operations nav and path map no longer include mailing exports", () => {
     const markup = readFileSync(path.join(repoRoot, "frontend/index.html"), "utf8");
     assert.doesNotMatch(markup, /mailing-exports-nav-button/);
     assert.doesNotMatch(markup, /data-workspace-view="mailing-exports"/);
@@ -34,7 +37,7 @@ describe("canonical workspace routing", () => {
     for (const view of ["bookkeeping", "sponsors", "newsletter", "calendar", "review"]) {
       assert.match(markup, new RegExp(`data-workspace-view="${view}"`));
     }
-    assert.equal(Object.hasOwn(WORKSPACE_HASH_BY_VIEW, "mailing-exports"), false);
+    assert.equal(Object.hasOwn(WORKSPACE_PATH_BY_VIEW, "mailing-exports"), false);
   });
 
   test("retains every canonical workspace route", () => {
@@ -68,68 +71,68 @@ describe("canonical workspace routing", () => {
         date: "2026-08-12",
         taskId: "task/1",
       }),
-      "/#/tasks?taskId=task%2F1&date=2026-08-12&cardId=filter+card&contextCardId=return+card",
+      "/tasks?taskId=task%2F1&date=2026-08-12&cardId=filter+card&contextCardId=return+card",
     );
     assert.equal(
       canonicalWorkspaceUrl("/cards/archive", { taskId: "task-1", cardId: "card-1" }),
-      "/#/cards/archive?cardId=card-1&taskId=task-1",
+      "/cards/archive?cardId=card-1&taskId=task-1",
     );
   });
 
   test("parses active, archive, card, and nested task URLs without normalization", () => {
     for (const hash of [
-      "#/cards",
-      "#/cards/archive",
-      "#/cards?cardId=card-1",
-      "#/cards?cardId=card-1&taskId=task-1",
-      "#/cards/archive?cardId=card-2&taskId=task-2",
+      "/cards",
+      "/cards/archive",
+      "/cards?cardId=card-1",
+      "/cards?cardId=card-1&taskId=task-1",
+      "/cards/archive?cardId=card-2&taskId=task-2",
     ]) {
-      const route = parseWorkspaceHash(hash, browserLocation(hash));
+      const route = parseWorkspaceLocation(hash, browserLocation(hash));
       assert.equal(route.invalid, undefined, hash);
       assert.equal(route.view, "tasks", hash);
       assert.equal(route.tasksSection, "workflows", hash);
       assert.equal(route.normalized, false, hash);
-      assert.equal(route.canonicalUrl, `/${hash}`, hash);
+      assert.equal(route.canonicalUrl, hash, hash);
     }
   });
 
   test("rejects orphan tasks, duplicate values, invalid dates, and malformed input", () => {
     const cases = [
-      ["", "empty hash"],
-      ["cards", "malformed hash"],
-      ["#/cards#again", "malformed hash"],
-      ["#/cards?cardId=", "invalid cardId"],
-      ["#/cards?cardId=one&cardId=two", "invalid cardId"],
-      ["#/cards?taskId=task-1", "taskId requires cardId"],
-      ["#/cards/archive?taskId=task-1", "taskId requires cardId"],
-      ["#/processes?type=", "invalid type"],
-      ["#/processes?domain=one&domain=two", "invalid domain"],
-      ["#/tasks?date=2026-02-30", "invalid date"],
-      ["#/tasks?taskId=%E0%A4%A", "malformed encoding"],
-      ["#/unknown", "unknown path"],
-      ["#/mailing-exports", "unknown path"],
+      ["", "empty path"],
+      ["cards", "malformed path"],
+      ["/cards#again", "malformed path"],
+      ["/cards?cardId=", "invalid cardId"],
+      ["/cards?cardId=one&cardId=two", "invalid cardId"],
+      ["/cards?taskId=task-1", "taskId requires cardId"],
+      ["/cards/archive?taskId=task-1", "taskId requires cardId"],
+      ["/processes?type=", "invalid type"],
+      ["/processes?domain=one&domain=two", "invalid domain"],
+      ["/tasks?date=2026-02-30", "invalid date"],
+      ["/tasks?taskId=%E0%A4%A", "malformed encoding"],
+      ["/unknown", "unknown path"],
+      ["/mailing-exports", "unknown path"],
     ];
     for (const [hash, reason] of cases) {
-      assert.deepEqual(parseWorkspaceHash(hash, browserLocation(hash)), { invalid: true, reason }, hash);
+      assert.deepEqual(parseWorkspaceLocation(hash, browserLocation(hash)), { invalid: true, reason }, hash);
     }
   });
 
-  test("keeps explicit null invalid instead of falling back to the browser hash", () => {
-    assert.deepEqual(parseWorkspaceHash(null, browserLocation("#/cards")), {
+  test("keeps explicit null invalid instead of falling back to the browser location", () => {
+    assert.deepEqual(parseWorkspaceLocation(null, browserLocation("/cards")), {
       invalid: true,
-      reason: "empty hash",
+      reason: "empty path",
     });
-    assert.equal(parseWorkspaceHash(undefined, browserLocation("#/cards")).path, "/cards");
+    assert.equal(parseWorkspaceLocation(undefined, browserLocation("/cards")).path, "/cards");
   });
 
   test("normalizes trailing slashes and discards unsupported query parameters", () => {
-    const route = parseWorkspaceHash(
-      "#/cards/archive/?cardId=card-1&unsupported=unsafe",
-      browserLocation("#/cards/archive/?cardId=card-1&unsupported=unsafe"),
+    const route = parseWorkspaceLocation(
+      "/cards/archive/?cardId=card-1&unsupported=unsafe",
+      browserLocation("/cards/archive/?cardId=card-1&unsupported=unsafe"),
     );
     assert.equal(route.invalid, undefined);
     assert.equal(route.path, "/cards/archive");
-    assert.equal(route.canonicalUrl, "/#/cards/archive?cardId=card-1");
+    assert.equal(route.canonicalUrl, "/cards/archive?cardId=card-1");
     assert.equal(route.normalized, true);
     assert.deepEqual([...route.params], [["cardId", "card-1"]]);
   });
@@ -147,9 +150,9 @@ describe("canonical workspace routing", () => {
       ["recurring", "Recurring"],
       ["assistants", "Assistants"],
     ]);
-    assert.equal(workspaceHashPath("tasks", "workflows"), "/cards");
-    assert.equal(workspaceHashPath("tasks", "templates"), "/templates");
-    assert.equal(workspaceHashPath("tasks", "recurring"), "/recurring");
+    assert.equal(workspacePath("tasks", "workflows"), "/cards");
+    assert.equal(workspacePath("tasks", "templates"), "/templates");
+    assert.equal(workspacePath("tasks", "recurring"), "/recurring");
     assert.equal(tasksSectionTitle("workflows"), "Cards");
     assert.equal(tasksSectionTitle("templates"), "Templates");
     assert.equal(tasksSectionTitle("recurring"), "Recurring");
@@ -162,7 +165,7 @@ describe("canonical workspace routing", () => {
       browserLocation(),
     );
     assert.equal(route.path, "/cards/archive");
-    assert.equal(route.canonicalUrl, "/#/cards/archive?cardId=card-a&taskId=task-b");
+    assert.equal(route.canonicalUrl, "/cards/archive?cardId=card-a&taskId=task-b");
     assert.deepEqual([...route.params], [["cardId", "card-a"], ["taskId", "task-b"]]);
   });
 
@@ -175,7 +178,7 @@ describe("canonical workspace routing", () => {
     assert.equal(route.path, "/processes");
     assert.equal(
       route.canonicalUrl,
-      "/#/processes?domain=operations&type=process&system=portal&tag=people",
+      "/processes?domain=operations&type=process&system=portal&tag=people",
     );
     assert.deepEqual([...route.params], [
       ["domain", "operations"],
@@ -184,9 +187,9 @@ describe("canonical workspace routing", () => {
       ["tag", "people"],
     ]);
 
-    const parsed = parseWorkspaceHash(
-      "#/processes?tag=people&system=portal&type=process&domain=operations",
-      browserLocation("#/processes?tag=people&system=portal&type=process&domain=operations"),
+    const parsed = parseWorkspaceLocation(
+      "/processes?tag=people&system=portal&type=process&domain=operations",
+      browserLocation("/processes?tag=people&system=portal&type=process&domain=operations"),
     );
     assert.equal(parsed.normalized, true);
     assert.equal(parsed.canonicalUrl, route.canonicalUrl);

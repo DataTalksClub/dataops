@@ -4,6 +4,7 @@ import { afterEach, describe, test } from "node:test";
 
 import {
   createFormFeedback,
+  renderPageHeaderMarkup,
   renderDataSummary,
   renderSurfaceSummary,
   reportFieldValidation,
@@ -413,4 +414,17 @@ describe("slice 1 mobile control CSS contract", () => {
       );
     }
   });
+});
+
+test("escapes supplied page header text and attributes while keeping authored actions", () => {
+  const markup = renderPageHeaderMarkup({
+    title: '<img src=x onerror="bad()">', subtitle: "A & B",
+    className: 'screen" onclick="bad()', titleId: 'id" autofocus',
+    actionsHtml: '<button type="button">Create card</button>',
+  });
+  assert.ok(markup.includes("&lt;img"));
+  assert.ok(markup.includes("A &amp; B"));
+  assert.ok(markup.includes("screen&quot; onclick=&quot;bad()"));
+  assert.ok(markup.includes('id="id&quot; autofocus"'));
+  assert.ok(markup.includes('<button type="button">Create card</button>'));
 });

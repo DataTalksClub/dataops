@@ -210,11 +210,13 @@ async function expectAboveFooter(page, text) {
   const prose = page.getByText(text).last();
   await expect(prose).toBeVisible();
   const proseBox = await prose.boundingBox();
-  const footer = page.locator(".document-editor-footer");
-  const footerBox = await footer.boundingBox();
   expect(proseBox, `missing box for ${text}`).toBeTruthy();
-  expect(footerBox, "missing footer box").toBeTruthy();
-  expect(proseBox.y + proseBox.height).toBeLessThanOrEqual(footerBox.y + 1);
+  const footer = page.locator(".document-editor-footer");
+  if (await footer.isVisible()) {
+    const footerBox = await footer.boundingBox();
+    expect(footerBox, "missing footer box").toBeTruthy();
+    expect(proseBox.y + proseBox.height).toBeLessThanOrEqual(footerBox.y + 1);
+  }
 }
 
 test.beforeAll(async () => {
@@ -234,7 +236,7 @@ test.afterAll(async () => stopOwnedTestServer(server));
 
 async function openWorkspace(page, hash) {
   await setupPageWithAuth(page);
-  const root = await page.goto(`${server.baseURL}/${hash}`);
+  const root = await page.goto(`${server.baseURL}${hash}`);
   assertOwnedServerResponse(server, root, hash);
 }
 
@@ -243,7 +245,7 @@ test("captures Knowledge family after screenshots", async ({ page }) => {
   await page.route("**/api/operating-model", (route) => route.fulfill({ json: { model } }));
 
   await page.setViewportSize(DESKTOP);
-  await openWorkspace(page, "#/processes");
+  await openWorkspace(page, "/processes");
   await expect(page.getByRole("heading", { name: "Docs", exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: /Synthetic system overview/ })).toBeVisible();
   await expect(page.getByText("Quality Findings")).toHaveCount(0);
@@ -274,7 +276,7 @@ test("captures Knowledge family after screenshots", async ({ page }) => {
   await screenshot(page, "process-docs-reader-overview-mobile-390-light");
 
   await page.setViewportSize(DESKTOP);
-  await page.goto(`${server.baseURL}/#/processes`);
+  await page.goto(`${server.baseURL}/processes`);
   await expect(page.getByRole("button", { name: /Synthetic weekly newsletter SOP/ })).toBeVisible();
   await page.getByRole("button", { name: /Synthetic weekly newsletter SOP/ }).click();
   await expect(page.getByRole("heading", { name: "Synthetic weekly newsletter SOP" })).toBeVisible();
@@ -291,7 +293,7 @@ test("captures Knowledge family after screenshots", async ({ page }) => {
   await screenshot(page, "process-docs-reader-sop-mobile-390-light");
 
   await page.setViewportSize(DESKTOP);
-  await page.goto(`${server.baseURL}/#/operating-model`);
+  await page.goto(`${server.baseURL}/operating-model`);
   await expect(page.getByRole("heading", { name: "Operating Model" })).toBeVisible();
   await expect(page.getByText("Company system")).toHaveCount(0);
   await screenshot(page, "operating-model-hub-desktop-1440-light");

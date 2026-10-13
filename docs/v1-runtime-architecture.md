@@ -197,6 +197,8 @@ Use AWS-native backups for operational recovery:
 - DynamoDB point-in-time recovery on all durable execution tables.
 - On-demand DynamoDB backups before migrations, schema changes, bulk imports,
   and risky releases.
+- Daily raw DynamoDB dumps to the retained export-archive bucket
+  (`dynamo-backups/<env>/<date>/<table>.json.gz`).
 - AWS Backup plan for scheduled long-retention backups once execution data is
   production-critical.
 - S3 versioning/lifecycle/backups for private artifact buckets once introduced.

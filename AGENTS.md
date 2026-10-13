@@ -55,6 +55,11 @@ Commits and worktrees:
   then delete the worktree when the work has landed
   (`git worktree remove`). Stale worktrees on old bases rot: their
   uncommitted diffs silently diverge from `main` and cannot land cleanly.
+- While working, commit regularly: each logical unit gets its own focused
+  commit as it lands, not one big commit at the end.
+- When the task is done: run the tests and fix any failures, merge with
+  `main` and push, then delete your branch and remove your worktree so no
+  stale branches or worktrees are left behind.
 
 Operational knowledge boundary:
 

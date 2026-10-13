@@ -48,13 +48,13 @@
   }.app-shell {
     display: block;
     height: auto;
-    min-height: calc(100vh - var(--mobile-header-height));
+    min-height: calc(100dvh - var(--mobile-header-height));
   }.sidebar {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: 50;
     width: min(310px, 86vw);
-    height: 100vh;
+    height: 100dvh;
     transform: translateX(-102%);
     transition: transform 160ms ease;
     box-shadow: var(--dk-shadow-overlay);
@@ -71,7 +71,7 @@
   }.page-shell {
     display: block;
     height: auto;
-    min-height: calc(100vh - var(--mobile-header-height));
+    min-height: calc(100dvh - var(--mobile-header-height));
     overflow: visible;
   }.view {
     overflow: visible;
@@ -84,7 +84,7 @@
 .planner-alert button,
 .planner-form-actions button { min-height: 44px; }.planner-header > .primary-button { width: fit-content; margin-top: 0; }.calendar-controls { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 14px; }.calendar-period-actions { flex-wrap: wrap; }.calendar-period-actions button { flex: 1 1 auto; }.planner-filter-fields,
 .calendar-controls .planner-filter-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }.planner-filter-fields input,
-.planner-filter-fields select { min-height: 44px; }.calendar-layers { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }.calendar-layers label { min-height: 32px; white-space: nowrap; }.planner-load-state { margin-top: -4px; }.planner-alert { align-items: start; }.calendar-content-header { align-items: start; }.calendar-grid { grid-template-columns: minmax(0, 1fr); }.calendar-weekdays { display: none; }.calendar-day,
+.planner-filter-fields select { min-height: 44px; }.calendar-layers { display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; overflow-x: auto; padding-bottom: 2px; }.calendar-layers label, .calendar-layers .calendar-layer-settings-btn { flex: 0 0 auto; min-height: 32px; white-space: nowrap; }.planner-load-state { margin-top: -4px; }.planner-alert { align-items: start; }.calendar-content-header { align-items: start; }.calendar-grid { grid-template-columns: minmax(0, 1fr); }.calendar-weekdays { display: none; }.calendar-day,
 .calendar-day:nth-of-type(7n),
 .calendar-day:nth-last-child(-n + 7) {
     display: grid;
@@ -106,7 +106,7 @@
     font-size: 22px;
   }.workflow-board-header p {
     max-width: 220px;
-  }.workflow-board-actions .primary-button {
+  }.workflow-board-header .page-header-actions .primary-button {
     min-height: 44px;
   }.ops-workflows-grid {
     grid-template-columns: repeat(3, minmax(272px, 78vw));
@@ -116,8 +116,8 @@
     scroll-snap-align: start;
   }.workflow-modal-panel {
     width: 100%;
-    height: 100vh;
-    max-height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
     margin: 0;
     border: 0;
     border-radius: 0;
@@ -148,8 +148,8 @@
 .diff-panel,
 .quick-form-panel {
     width: 100%;
-    max-height: 100vh;
-    min-height: 100vh;
+    max-height: 100dvh;
+    min-height: 100dvh;
     margin: 0;
     border: 0;
     border-radius: 0;
@@ -190,6 +190,7 @@ body[data-workspace-view="sponsors"] .library-view {
 .finance-panel > header {
     display: grid;
   }.bookkeeping-header h2,
+.crm-header h1,
 .crm-header h2 {
     font-size: 22px;
   }.bookkeeping-header .primary-button,
@@ -258,9 +259,10 @@ body[data-workspace-view="sponsors"] .library-view {
     grid-column: auto;
   }.bookkeeping-document-row,
 .crm-directory-row,
-.crm-alerts .crm-card,
 .booking-detail-section .crm-card {
     display: grid;
+  }.sponsor-crm-surface .crm-alert-row {
+    display: flex;
   }.bookkeeping-document-row .row-actions,
 .crm-directory-row .row-actions {
     justify-content: flex-start;
@@ -274,7 +276,10 @@ body[data-workspace-view="sponsors"] .library-view {
   }.crm-detail-pane,
 .sponsor-crm-surface.has-booking-detail > .crm-header,
 .sponsor-crm-surface.has-booking-detail > .surface-status,
+.sponsor-crm-surface.has-booking-detail > .crm-pipeline,
+.sponsor-crm-surface.has-booking-detail > .crm-alerts,
 .sponsor-crm-surface.has-booking-detail .crm-master,
+.sponsor-crm-surface.has-booking-detail > .crm-directory,
 .sponsor-crm-surface.has-booking-detail > .crm-support-grid {
     display: none;
   }.sponsor-crm-surface.has-booking-detail .crm-detail-pane {
@@ -318,14 +323,14 @@ body[data-workspace-view="sponsors"] .library-view {
 .exact-review-dialog {
     width: 100%;
     max-width: none;
-    max-height: 100vh;
-    min-height: 100vh;
+    max-height: 100dvh;
+    min-height: 100dvh;
     margin: 0;
     border: 0;
     border-radius: 0;
   }.surface-dialog form {
-    min-height: 100vh;
-    max-height: 100vh;
+    min-height: 100dvh;
+    max-height: 100dvh;
   }.surface-dialog form > header,
 .surface-dialog form > footer,
 .dialog-fields {
@@ -340,7 +345,13 @@ body[data-workspace-view="sponsors"] .library-view {
   }
 }
 
-@media (max-width: 420px) {.newsletter-filters .planner-filter-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }.newsletter-filters .planner-filter-fields label:last-child { grid-column: 1 / -1; }.calendar-alert { display: grid; grid-template-columns: minmax(0, 1fr) auto; }.calendar-alert button { align-self: center; }.calendar-content-header { display: grid; gap: 4px; }.newsletter-slot-row { grid-template-columns: minmax(0, 1fr); }.newsletter-slot-actions { grid-column: 1; }.newsletter-slot-title { align-items: start; }.planner-form-grid { grid-template-columns: minmax(0, 1fr); }.planner-field-wide { grid-column: 1; }.bookkeeping-filters,
+@media (max-width: 620px) {
+  .newsletter-surface {
+    gap: 4px !important;
+  }
+}
+
+@media (max-width: 420px) {.newsletter-filters .planner-filter-fields label:last-child { grid-column: 1 / -1; }.calendar-alert { display: grid; grid-template-columns: minmax(0, 1fr) auto; }.calendar-alert button { align-self: center; }.calendar-content-header { display: grid; gap: 4px; }.newsletter-slot-row { grid-template-columns: minmax(0, 1fr); }.newsletter-slot-actions { grid-column: 1; }.newsletter-slot-title { align-items: start; }.planner-form-grid { grid-template-columns: minmax(0, 1fr); }.planner-field-wide { grid-column: 1; }.bookkeeping-filters,
 .crm-filters {
     grid-template-columns: 1fr;
   }.bookkeeping-filters details {
@@ -361,3 +372,648 @@ body[data-workspace-view="sponsors"] .library-view {
     animation-iteration-count: 1 !important;
   }
 }/* Finance and Operations surface refinement.
+
+/* ==========================================================================
+   Mobile second pass: reclaim the vertical space above primary content.
+   The sticky topbar already names the screen, so in-page title blocks are
+   duplicated chrome on mobile: descriptions, kickers, helper hints, stats
+   strips, and count subtitles go; titles stay for the accessibility tree
+   only; header actions drop into one compact row beside the primary
+   filter. Desktop (>820px) never sees these rules. Several base sheets
+   load after this file and scope their rules under body[data-workspace],
+   so contested compaction declarations carry !important on purpose.
+   ========================================================================== */
+@media (max-width: 820px) {
+  /* ---- duplicated chrome: remove ---- */
+  .section-kicker,
+  .surface-eyebrow,
+  .planner-eyebrow,
+  .ops-surface-header p,
+  .workflow-board-header p,
+  .workflow-board-filter-count,
+  .workflow-board-scroll-hint,
+  .calendar-timezone-badge,
+  .bookkeeping-close-state,
+  .bookkeeping-header p,
+  .crm-header p,
+  .review-header p,
+  .planner-header p,
+  .runtime-template-inspector .ops-section-header span {
+    display: none !important;
+  }
+
+  /* ---- titles: keep for the accessibility tree only ---- */
+  .ops-surface-header h1,
+  .workflow-board-header h1,
+  .planner-header h1,
+  .review-header h1,
+  .crm-header h1,
+  .bookkeeping-header h1,
+  .runtime-template-inspector h3 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .library-view {
+    padding: 8px 12px 28px !important;
+  }
+
+  /* ---- compact header actions everywhere: one 32px row, not 44px stacks ---- */
+  .workflow-board-header .page-header-actions button,
+  .workflow-board-filter select,
+  .workflow-board-filter-action,
+  .workflow-archive-tabs button,
+  .surface-actions button,
+  .crm-views button,
+  .crm-pipeline button,
+  .newsletter-view-tab,
+  .planner-header > .primary-button,
+  .review-header-actions button,
+  .review-controls select,
+  .review-controls input,
+  .bookkeeping-header .primary-button,
+  .bookkeeping-lens-step,
+  .bookkeeping-lens-month input,
+  .calendar-today-btn,
+  .calendar-nav-arrow,
+  .calendar-add-button,
+  .calendar-display-controls select,
+  .ops-docs-create,
+  .runtime-template-toolbar input,
+  .runtime-template-toolbar select,
+  .bookkeeping-lens-nav button,
+  .recurring-action {
+    min-height: 32px !important;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+    font-size: 13px !important;
+  }
+
+  /* ---- Cards board: one row — [template select][Create card][Archive] ---- */
+  .ops-workflows-board {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px !important;
+  }
+  .ops-workflows-grid {
+    padding-top: 0 !important;
+  }
+  .workflow-board-header,
+  .workflow-board-header > div,
+  .workflow-board-header .page-header-actions,
+  .workflow-board-filters,
+  .workflow-board-filter {
+    display: contents !important;
+  }
+  .workflow-board-filter > span {
+    display: none !important;
+  }
+  .workflow-board-filter select {
+    flex: 1 1 150px;
+  }
+  /* Only the Archive toggle collapses to an icon; its "Back to board" state
+     and every other quiet action keep their text. The glyph is an archive
+     box, not a trash can: archiving is reversible, delete reads permanent.
+     The accessible name comes from the button's aria-label ("Archive (N)"). */
+  .workflow-board-header .page-header-actions .workflow-archive-toggle {
+    flex: 0 0 34px !important;
+    width: 34px !important;
+    min-width: 34px !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    font-size: 0 !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .workflow-board-header .page-header-actions .workflow-archive-toggle::before {
+    content: "";
+    width: 16px;
+    height: 16px;
+    background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='3' width='20' height='5' rx='1'/%3E%3Cpath d='M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8'/%3E%3Cpath d='M10 12h4'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='3' width='20' height='5' rx='1'/%3E%3Cpath d='M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8'/%3E%3Cpath d='M10 12h4'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  .ops-workflows-grid,
+  .workflow-archive-tabs,
+  .ops-honest-state {
+    flex-basis: 100%;
+  }
+
+  /* ---- Templates: compact inspector toolbar so the list leads ---- */
+  .runtime-template-inspector > .ops-section-header {
+    /* Title and guidance are already hidden; the header is an empty box of
+       padding and border. contents keeps the h3 reachable while removing the
+       box itself. */
+    display: contents !important;
+  }
+  .runtime-template-toolbar {
+    flex-direction: row !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px !important;
+    margin: 0 !important;
+  }
+  .runtime-template-toolbar > * {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+  .runtime-template-toolbar .runtime-template-result-count {
+    flex: 0 1 auto;
+    font-size: 11px !important;
+    white-space: nowrap;
+  }
+  .runtime-template-toolbar .runtime-template-search {
+    flex: 1 1 0 !important;
+    width: 0;
+    min-height: 32px !important;
+  }
+  .runtime-template-toolbar .primary-button,
+  .runtime-template-toolbar .quiet-button {
+    flex: 0 0 auto !important;
+  }
+
+  /* ---- Assistants: filters and jobs first, create form last ---- */
+  .assistant-workspace {
+    display: flex !important;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .assistant-workspace > .surface-summary {
+    order: 4 !important;
+  }
+  .assistant-workspace > .assistant-panel {
+    order: 3;
+  }
+  .assistant-filter-bar {
+    order: 1;
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 4px;
+  }
+  .assistant-filter-bar > * {
+    flex: 0 0 auto !important;
+    min-height: 44px !important;
+  }
+  .assistant-layout {
+    order: 2;
+  }
+
+  /* ---- Bookkeeping: worklist leads; month strip without the close panel ---- */
+  .bookkeeping-surface {
+    display: flex !important;
+    flex-direction: column;
+  }
+  .bookkeeping-surface > .bookkeeping-header { order: 0; }
+  .bookkeeping-surface > .bookkeeping-worklist-section { order: 1; }
+  .bookkeeping-surface > .bookkeeping-monthlens { order: 2; }
+  .bookkeeping-surface > .bookkeeping-section:not(.bookkeeping-worklist-section) { order: 3; }
+  .bookkeeping-header {
+    padding: 0 0 6px !important;
+  }
+  .bookkeeping-lens-nav {
+    flex-direction: row !important;
+    align-items: center;
+  }
+  .bookkeeping-monthlens {
+    padding: 4px 8px !important;
+    margin: 0 0 4px !important;
+  }
+  .bookkeeping-lens-nav {
+    gap: 6px !important;
+  }
+  .bookkeeping-lens-month {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .bookkeeping-section {
+    padding: 0 !important;
+    margin: 0 0 10px !important;
+  }
+  .bookkeeping-surface {
+    gap: 8px !important;
+  }
+  .bookkeeping-header {
+    padding: 0 0 2px !important;
+  }
+  .bookkeeping-section h3 {
+    font-size: 13px !important;
+    margin: 0 0 4px !important;
+  }
+
+  /* ---- Sponsors: header row, tabs + pipeline share a row, panels after ---- */
+  .sponsor-crm-surface {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .crm-header {
+    flex-basis: 100%;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .crm-header .surface-actions {
+    display: flex;
+    gap: 4px;
+  }
+  .crm-views {
+    order: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: 4px;
+    margin: 0 !important;
+  }
+  .crm-views button {
+    flex-shrink: 0;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+  .crm-pipeline {
+    order: 2;
+    flex: 0 0 auto;
+    min-width: 0;
+    margin: 0 !important;
+  }
+  .crm-layout,
+  .crm-directory,
+  .crm-leads,
+  .crm-newsletters {
+    order: 3;
+    flex-basis: 100%;
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  /* ---- Newsletter: header row, tabs, schedule; stats move out ---- */
+  .newsletter-surface {
+    display: flex !important;
+    flex-direction: column;
+  }
+  .newsletter-surface > .planner-header {
+    order: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    padding: 0 !important;
+  }
+  .newsletter-stats-bar {
+    display: none !important;
+  }
+  .newsletter-surface > .newsletter-views {
+    order: 1;
+    display: flex;
+    gap: 4px;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .newsletter-view-tab {
+    flex: 1 1 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 32px;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+    white-space: nowrap;
+  }
+  .newsletter-view-tab[data-count]::after {
+    content: attr(data-count);
+    border: 1px solid var(--dk-border-default);
+    border-radius: 999px;
+    background: var(--dk-bg-muted);
+    color: var(--dk-text-muted);
+    padding: 0 5px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 14px;
+  }
+  .newsletter-surface > .newsletter-schedule {
+    order: 2;
+  }
+  .newsletter-surface > .planner-alerts {
+    order: 3;
+  }
+  .newsletter-surface > .newsletter-filters {
+    order: 4;
+  }
+
+  /* ---- Calendar: one control row ---- */
+  .calendar-controls {
+    padding: 0 0 6px !important;
+    gap: 6px !important;
+  }
+  .calendar-header-main {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .calendar-header-actions {
+    display: flex;
+    gap: 4px;
+  }
+  .calendar-period-title {
+    font-size: 15px !important;
+  }
+  .calendar-add-button {
+    min-width: 32px;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    font-size: 0 !important;
+  }
+  .calendar-add-button::before {
+    content: "+";
+    font-size: 18px;
+    line-height: 1;
+  }
+  .calendar-surface .calendar-controls-toggle {
+    display: inline-flex;
+    flex: 0 0 36px;
+    min-width: 36px;
+    min-height: 32px;
+  }
+  .calendar-controls-toggle svg { width: 20px; height: 20px; }
+  .calendar-surface .calendar-display-controls { display: none; }
+  .calendar-surface.calendar-controls-open .calendar-display-controls {
+    display: block;
+    padding: 6px 0;
+  }
+  .calendar-display-controls-bar { gap: 8px; }
+  .calendar-layer-chip { min-height: 44px; font-size: 12px; }
+  .calendar-layers { gap: 6px; }
+
+  /* ---- Device: compact panel so the form leads with the summary back ---- */
+  .ops-section.device-panel {
+    padding: 4px 8px 6px !important;
+  }
+  .ops-surface-device .surface-summary {
+    margin-bottom: 2px !important;
+  }
+  .ops-section.device-panel .ops-section-header {
+    margin: 0 0 2px !important;
+  }
+  .ops-section.device-panel .ops-section-header span {
+    display: none !important;
+  }
+  .ops-surface-device .surface-summary-message {
+    -webkit-line-clamp: 1;
+  }
+
+  /* ---- Review: compact header and summary tiles ---- */
+  .review-header {
+    padding: 0 0 6px !important;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .review-summary {
+    gap: 4px !important;
+  }
+  .review-summary-card {
+    padding: 4px 6px !important;
+  }
+  .review-summary-value {
+    font-size: 15px !important;
+  }
+  .review-summary-label {
+    font-size: 10px !important;
+  }
+  .review-controls {
+    margin: 6px 0 !important;
+  }
+
+  /* ---- Surface summaries stay visible (feedback contracts) but compact ---- */
+  .surface-summary {
+    padding: 4px 8px !important;
+    margin: 0 0 6px !important;
+    font-size: 12px !important;
+  }
+  .surface-summary-message {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* ---- Recurring: compact toolbar and summary ---- */
+  .recurring-toolbar {
+    margin: 0 0 6px !important;
+  }
+  .recurring-summary {
+    gap: 4px !important;
+  }
+  .recurring-summary-item {
+    padding: 4px 8px !important;
+  }
+
+  .ops-queue-total {
+    padding: 6px 12px !important;
+    font-size: 11px !important;
+  }
+  .task-route-context {
+    padding: 8px 10px !important;
+  }
+  .task-route-context h3 {
+    display: none;
+  }
+
+  /* ---- Newsletter issue cards: one primary action + More overflow ---- */
+  .newsletter-slot-row {
+    padding: 8px 12px;
+    gap: 4px;
+  }
+  .newsletter-slot-date {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+  }
+  .newsletter-date-meta {
+    margin-top: 0;
+  }
+  .newsletter-slot-main p {
+    margin-top: 0;
+  }
+  .newsletter-slot-actions {
+    gap: 6px;
+  }
+  .newsletter-slot-row .newsletter-slot-actions button,
+  .newsletter-slot-row .newsletter-slot-actions a {
+    min-height: 32px !important;
+  }
+  .newsletter-slot-primary {
+    min-height: 32px !important;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+    font-size: 13px !important;
+  }
+  .newsletter-overflow {
+    position: relative;
+    margin-left: auto;
+  }
+  .newsletter-overflow-trigger {
+    min-height: 32px !important;
+    padding: 4px 12px !important;
+    font-size: 13px !important;
+    white-space: nowrap;
+  }
+  .newsletter-overflow-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 40;
+    display: grid;
+    min-width: 176px;
+    padding: 4px;
+    border: 1px solid var(--dk-border-default);
+    border-radius: var(--dk-radius-md);
+    background: var(--dk-bg-surface);
+    box-shadow: var(--dk-shadow-overlay);
+  }
+  .newsletter-overflow-menu[hidden] {
+    display: none;
+  }
+  .newsletter-overflow-item {
+    display: flex;
+    min-height: 40px;
+    align-items: center;
+    justify-content: flex-start;
+    border: 0;
+    background: none;
+    padding: 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    white-space: nowrap;
+    color: var(--dk-text-body, inherit);
+  }
+
+  /* ---- Bookkeeping: the close panel is one expandable summary line when
+         the month is clear, and the month picker stays a single row ---- */
+  .bookkeeping-worklist-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+  }
+  .bookkeeping-worklist-summary .section-header {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+  }
+  .bookkeeping-worklist-summary h3 {
+    margin: 0 !important;
+  }
+  .bookkeeping-worklist-hint {
+    margin: 0;
+    color: var(--dk-text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .bookkeeping-lens-month {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .bookkeeping-lens-month-label {
+    display: none;
+  }
+  .bookkeeping-lens-month input {
+    width: 100%;
+  }
+  .bookkeeping-lens-nav {
+    flex-wrap: nowrap !important;
+  }
+  .bookkeeping-lens-step,
+  .bookkeeping-lens-nav .quiet-button {
+    flex: 0 0 auto;
+  }
+  /* The collapsed close panel is one line: chevron, heading, state hint.
+     The section chrome and long description stay desktop-only. */
+  .bookkeeping-worklist-summary {
+    padding: 4px 10px;
+  }
+  .bookkeeping-worklist-summary .section-header {
+    background: none;
+    border-bottom: 0;
+    padding: 0;
+    align-items: baseline;
+  }
+  .bookkeeping-worklist-summary .section-header div p {
+    display: none !important;
+  }
+  .bookkeeping-worklist-summary .section-header h3 {
+    font-size: 12px !important;
+    margin: 0 !important;
+    min-width: 0;
+  }
+  .bookkeeping-worklist-hint {
+    flex: 0 0 auto;
+    font-size: 11px;
+  }
+  .bookkeeping-worklist-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* ---- Per-item action rows: one compact line, never a wrapped stack ---- */
+  .row-actions,
+  .recurring-row-actions,
+  .ops-user-actions {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .row-actions button,
+  .recurring-row-actions button,
+  .ops-user-actions button {
+    flex: 0 0 auto;
+    min-height: 32px !important;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+    font-size: 12px !important;
+  }
+}
+
+/* The close-worklist section is a details/summary so narrow screens can
+   collapse it to one line. Desktop hides the toggle affordance: the summary
+   renders as the plain section header and never collapses. */
+.bookkeeping-worklist-summary {
+  list-style: none;
+}
+.bookkeeping-worklist-summary::-webkit-details-marker {
+  display: none;
+}
+@media (min-width: 821px) {
+  .bookkeeping-worklist-summary {
+    pointer-events: none;
+  }
+  .bookkeeping-surface details > summary.bookkeeping-worklist-summary::before {
+    display: none;
+  }
+  .bookkeeping-worklist-hint {
+    display: none;
+  }
+}

@@ -98,6 +98,165 @@ describe('S3 authenticated knowledge content routes',()=>{
   assert.equal((await call(ev('GET','/docs',{query:{path:'../secret.md'}}))).status,400);
   assert.equal((await call(ev('POST','/parse',{body:{}}))).status,400);
  });
+ it('creates document with parent frontmatter', async () => {
+  const path = 'content/test/child.md';
+  const res = await call(
+   ev('POST', '/docs', {
+    body: {
+     path,
+     title: 'Child Doc',
+     doc_type: 'doc',
+     parent: 'ref.newsletter',
+     absent: true,
+     expectedRevision: revision,
+    },
+   }),
+  );
+  assert.equal(res.status, 201);
+  assert.ok(res.body.content.includes('parent: "ref.newsletter"'));
+
+  const getRes = await call(ev('GET', '/docs', { query: { path } }));
+  assert.equal(getRes.status, 200);
+  assert.ok(getRes.body.content.includes('parent: "ref.newsletter"'));
+
+  const reg = await call(ev('GET', '/docs/registry'));
+  const docInReg = reg.body.documents.find((d: any) => d.path === path);
+  assert.ok(docInReg);
+  assert.equal(docInReg.parent, 'ref.newsletter');
+  assert.equal(docInReg.parent_id, 'ref.newsletter');
+ });
+ it('moves document to set parent', async () => {
+  const path = 'content/accounts/sops/reset-password.md';
+  const moveRes = await call(
+   ev('POST', '/docs/move', {
+    body: {
+     path,
+     new_parent: 'ref.newsletter',
+     expectedRevision: revision,
+    },
+   }),
+  );
+  assert.equal(moveRes.status, 200);
+  assert.equal(moveRes.body.path, path);
+  assert.equal(moveRes.body.parent, 'ref.newsletter');
+  assert.notEqual(moveRes.body.revision, revision);
+
+  const getRes = await call(ev('GET', '/docs', { query: { path } }));
+  assert.equal(getRes.status, 200);
+  assert.ok(getRes.body.content.includes('parent: "ref.newsletter"'));
+
+  const reg = await call(ev('GET', '/docs/registry'));
+  const docInReg = reg.body.documents.find((d: any) => d.path === path);
+  assert.ok(docInReg);
+  assert.equal(docInReg.parent, 'ref.newsletter');
+  assert.equal(docInReg.parent_id, 'ref.newsletter');
+ });
+ it('moves document to clear parent to root', async () => {
+  const path = 'content/accounts/sops/reset-password.md';
+  const setRes = await call(
+   ev('POST', '/docs/move', {
+    body: {
+     path,
+     new_parent: 'ref.newsletter',
+     expectedRevision: revision,
+    },
+   }),
+  );
+  assert.equal(setRes.status, 200);
+
+  const clearRes = await call(
+   ev('POST', '/docs/move', {
+    body: {
+     path,
+     new_parent: null,
+     expectedRevision: setRes.body.revision,
+    },
+   }),
+  );
+  assert.equal(clearRes.status, 200);
+  assert.equal(clearRes.body.parent, null);
+
+  const getRes = await call(ev('GET', '/docs', { query: { path } }));
+  assert.equal(getRes.status, 200);
+  assert.ok(!getRes.body.content.includes('parent:'));
+
+  const resetRes = await call(
+   ev('POST', '/docs/move', {
+    body: {
+     path,
+     new_parent: 'ref.newsletter',
+     expectedRevision: clearRes.body.revision,
+    },
+   }),
+  );
+  assert.equal(resetRes.status, 200);
+  const clearEmpty = await call(
+   ev('POST', '/docs/move', {
+    body: {
+     path,
+     new_parent: '',
+     expectedRevision: resetRes.body.revision,
+    },
+   }),
+  );
+  assert.equal(clearEmpty.status, 200);
+  assert.equal(clearEmpty.body.parent, null);
+ });
+ it('prevents cycles and rejects move under itself or descendant', async () => {
+  const selfRes = await call(
+   ev('POST', '/docs/move', {
+    body: {
+     path: 'content/newsletter/reference.md',
+     new_parent: 'ref.newsletter',
+     expectedRevision: revision,
+    },
+   }),
+  );
+  assert.equal(selfRes.status, 400);
+
+  const notFoundParent = await call(
+   ev('POST', '/docs/move', {
+    body: {
+     path: 'content/newsletter/reference.md',
+     new_parent: 'nonexistent.doc',
+     expectedRevision: revision,
+    },
+   }),
+  );
+  assert.equal(notFoundParent.status, 400);
+
+  const m1 = await call(
+   ev('POST', '/docs/move', {
+    body: {
+     path: 'content/accounts/sops/reset-password.md',
+     new_parent: 'ref.newsletter',
+     expectedRevision: revision,
+    },
+   }),
+  );
+  assert.equal(m1.status, 200);
+
+  const cycleRes = await call(
+   ev('POST', '/docs/move', {
+    body: {
+     path: 'content/newsletter/reference.md',
+     new_parent: 'sop.accounts.reset-password',
+     expectedRevision: m1.body.revision,
+    },
+   }),
+  );
+  assert.equal(cycleRes.status, 400);
+
+  const missingDoc = await call(
+   ev('POST', '/docs/move', {
+    body: {
+     path: 'content/missing.md',
+     new_parent: 'ref.newsletter',
+    },
+   }),
+  );
+  assert.equal(missingDoc.status, 404);
+ });
 });
 describe('contentApi - docs listing content-root contract (offline)', () => {
   const SCRATCH = resolve(__dirname, '..', '..', '.tmp', 'docs-content-api-tests');

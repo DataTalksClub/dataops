@@ -1,7 +1,9 @@
 import { after, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert';
 
+import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
+import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { getCrmRecord } from '../src/db/sponsorCrm';
@@ -29,6 +31,7 @@ function sponsor(overrides: Record<string, unknown> = {}) {
   return {
     name: 'Acme Gadgets',
     url: 'https://acme.example.test/widgets',
+    category: 'tool',
     blurb: 'A fictional widget vendor used only for tests.',
     context: 'Sponsored segment near the middle of the issue.',
     ...overrides,
@@ -118,6 +121,38 @@ describe('sponsor lead intake and review', () => {
     assert.strictEqual(replay.statusCode, 200);
     assert.strictEqual(JSON.parse(replay.body).status, 'duplicate');
     assert.strictEqual(JSON.parse(replay.body).leads[0].id, JSON.parse(first.body).leads[0].id);
+  });
+
+  it('treats a shuffled stored newsletter as the same lead (DynamoDB key order)', async () => {
+    // Real DynamoDB does not preserve document key order: a stored
+    // newsletter can come back with shuffled keys, which must not read as
+    // a conflict on a byte-identical retry (live 409 regression).
+    const first = await handler(intakeRequest('newsletter-shuffled-keys', [sponsor()]), {});
+    assert.strictEqual(first.statusCode, 201);
+    const id = JSON.parse(first.body).leads[0].id;
+    const stored = await getCrmRecord(await getClient(), 'lead', id);
+    const shuffled = { receivedAt: stored?.newsletter.receivedAt, subject: stored?.newsletter.subject, sender: stored?.newsletter.sender, name: stored?.newsletter.name };
+    await (await getClient()).send(new UpdateCommand({
+      TableName: TABLE_SPONSOR_CRM,
+      Key: { PK: `LEAD#${id}`, SK: `LEAD#${id}` },
+      UpdateExpression: 'SET newsletter = :newsletter',
+      ExpressionAttributeValues: { ':newsletter': shuffled },
+    }));
+    const replay = await handler(intakeRequest('newsletter-shuffled-keys', [sponsor()]), {});
+    assert.strictEqual(replay.statusCode, 200);
+    assert.strictEqual(JSON.parse(replay.body).status, 'duplicate');
+  });
+
+  it('stores the category and treats a changed category as a conflict', async () => {
+    const first = await handler(intakeRequest('newsletter-310', [sponsor()]), {});
+    assert.strictEqual(first.statusCode, 201);
+    const stored = await getCrmRecord(await getClient(), 'lead', JSON.parse(first.body).leads[0].id);
+    assert.strictEqual((stored?.sponsor as Record<string, unknown>)?.category, 'tool');
+    const same = await handler(intakeRequest('newsletter-310', [sponsor()]), {});
+    assert.strictEqual(same.statusCode, 200);
+    const changed = await handler(intakeRequest('newsletter-310', [sponsor({ category: 'event' })]), {});
+    assert.strictEqual(changed.statusCode, 409);
+    assert.strictEqual(JSON.parse(changed.body).error.code, 'idempotency-conflict');
   });
 
   it('rejects the same sponsor identity with different content', async () => {
@@ -278,5 +313,96 @@ describe('sponsor lead intake and review', () => {
     const filtered = JSON.parse((await review('GET', '/api/sponsor-crm/leads', undefined, { status: 'triaged' })).body);
     assert.ok(filtered.items.some((item: Record<string, unknown>) => item.id === alpha.id));
     assert.ok(!filtered.items.some((item: Record<string, unknown>) => item.id === beta.id));
+  });
+
+  it('converts a lead onto an existing company by registrable domain and does not send mail', async () => {
+    process.env.SKIP_AUTH = 'true';
+    const domain = 'linked-convert.example.invalid';
+    const orgResponse = await review('POST', '/api/sponsor-crm/organizations', {
+      displayName: 'Linked Convert Co',
+      domain,
+      sourceKey: 'convert-linked-org',
+    });
+    assert.strictEqual(orgResponse.statusCode, 201, orgResponse.body);
+    const org = JSON.parse(orgResponse.body);
+    const accepted = await handler(intakeRequest('convert-domain-901', [
+      sponsor({ name: 'Linked Convert Co', url: `https://${domain}/about` }),
+    ]), {});
+    assert.strictEqual(accepted.statusCode, 201);
+    const leadId = JSON.parse(accepted.body).leads[0].id;
+    const lead = JSON.parse((await review('GET', `/api/sponsor-crm/leads/${leadId}`)).body);
+    const converted = await review('PATCH', `/api/sponsor-crm/leads/${leadId}`, { version: lead.version, status: 'converted' });
+    assert.strictEqual(converted.statusCode, 200, converted.body);
+    const body = JSON.parse(converted.body);
+    assert.strictEqual(body.status, 'converted');
+    assert.strictEqual(body.organizationId, org.id);
+    assert.strictEqual(body.created, false);
+    assert.strictEqual(body.organization.domain, domain);
+    assert.ok(Array.isArray(body.organization.sightings));
+    assert.strictEqual(body.organization.sightings[0].leadId, leadId);
+    const messages = JSON.parse((await review('GET', `/api/sponsor-crm/organizations/${org.id}/messages`)).body);
+    assert.deepStrictEqual(messages.items, []);
+  });
+
+  it('creates a company when converting a domain that is not yet in the CRM', async () => {
+    process.env.SKIP_AUTH = 'true';
+    const domain = 'fresh-convert.example.invalid';
+    const accepted = await handler(intakeRequest('convert-domain-902', [
+      sponsor({ name: 'Fresh Convert Co', url: `https://www.${domain}/` }),
+    ]), {});
+    assert.strictEqual(accepted.statusCode, 201);
+    const leadId = JSON.parse(accepted.body).leads[0].id;
+    const lead = JSON.parse((await review('GET', `/api/sponsor-crm/leads/${leadId}`)).body);
+    const converted = await review('PATCH', `/api/sponsor-crm/leads/${leadId}`, { version: lead.version, status: 'converted' });
+    assert.strictEqual(converted.statusCode, 200, converted.body);
+    const body = JSON.parse(converted.body);
+    assert.strictEqual(body.created, true);
+    assert.strictEqual(body.organization.domain, domain);
+    assert.strictEqual(body.status, 'converted');
+  });
+
+  it('requires an explicit pick or createNew when converting a name-only lead', async () => {
+    process.env.SKIP_AUTH = 'true';
+    const orgResponse = await review('POST', '/api/sponsor-crm/organizations', {
+      displayName: 'Picker Co',
+      sourceKey: 'convert-picker-org',
+    });
+    assert.strictEqual(orgResponse.statusCode, 201, orgResponse.body);
+    const org = JSON.parse(orgResponse.body);
+    const accepted = await handler(intakeRequest('convert-name-903', [
+      sponsor({ name: 'Picker Co', url: '' }),
+      sponsor({ name: 'Brand New Picker Co', url: '' }),
+    ]), {});
+    assert.strictEqual(accepted.statusCode, 201);
+    const [named, fresh] = JSON.parse(accepted.body).leads;
+    const namedLead = JSON.parse((await review('GET', `/api/sponsor-crm/leads/${named.id}`)).body);
+    const picker = await review('PATCH', `/api/sponsor-crm/leads/${named.id}`, { version: namedLead.version, status: 'converted' });
+    assert.strictEqual(picker.statusCode, 409, picker.body);
+    const pickerBody = JSON.parse(picker.body);
+    assert.strictEqual(pickerBody.error, 'organization-picker-required');
+    assert.ok(pickerBody.candidates.some((item: { id: string }) => item.id === org.id));
+    assert.strictEqual(JSON.parse((await review('GET', `/api/sponsor-crm/leads/${named.id}`)).body).status, 'new');
+
+    const linked = await review('PATCH', `/api/sponsor-crm/leads/${named.id}`, {
+      version: namedLead.version,
+      status: 'converted',
+      organizationId: org.id,
+    });
+    assert.strictEqual(linked.statusCode, 200, linked.body);
+    assert.strictEqual(JSON.parse(linked.body).organizationId, org.id);
+    assert.strictEqual(JSON.parse(linked.body).created, false);
+
+    const freshLead = JSON.parse((await review('GET', `/api/sponsor-crm/leads/${fresh.id}`)).body);
+    const created = await review('PATCH', `/api/sponsor-crm/leads/${fresh.id}`, {
+      version: freshLead.version,
+      status: 'converted',
+      createNew: true,
+    });
+    assert.strictEqual(created.statusCode, 200, created.body);
+    const createdBody = JSON.parse(created.body);
+    assert.strictEqual(createdBody.created, true);
+    assert.notStrictEqual(createdBody.organizationId, org.id);
+    const messages = JSON.parse((await review('GET', `/api/sponsor-crm/organizations/${createdBody.organizationId}/messages`)).body);
+    assert.deepStrictEqual(messages.items, []);
   });
 });

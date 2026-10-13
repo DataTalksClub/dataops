@@ -168,9 +168,10 @@ async function resetFixtures() {
     sourceKey: 'issue-159-parity-organization', version: 1, createdAt: fixedNow, updatedAt: fixedNow,
   };
   const booking = {
-    PK: 'BOOKING#parity-booking', SK: 'BOOKING#parity-booking', id: 'parity-booking', organizationId: organization.id,
-    slotType: 'main', status: 'confirmed', plannedPublicationDate: '2026-08-20', materialDeadline: '2026-08-16',
-    notes: 'Synthetic role-safe booking', version: 1, createdAt: fixedNow, updatedAt: fixedNow,
+    PK: 'DEAL#parity-booking', SK: 'DEAL#parity-booking', id: 'parity-booking', organizationId: organization.id,
+    status: 'agreed', productKind: 'one-off',
+    nextAction: { type: 'follow_up', due: '2026-08-20', owner: '00000000-0000-0000-0000-000000000001', note: 'parity' },
+    notes: 'Synthetic role-safe deal', version: 1, createdAt: fixedNow, updatedAt: fixedNow,
   };
   await Promise.all(Object.values(tables).map((tableName) => deleteAllItems(tableName)));
   await Promise.all([

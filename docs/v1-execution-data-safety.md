@@ -114,6 +114,24 @@ same private-data, encryption, integrity, backup, retention, access, rollback,
 and redaction controls. Existing archives keep their historical keys and
 manifests unchanged.
 
+## Raw DynamoDB dumps
+
+The same retained archive bucket also stores a daily inspectable dump of every
+application DynamoDB table. EventBridge invokes the backend with
+`dataopsAction=dynamo-backup` at 09:00 UTC. The job scans each table named in
+`DATAOPS_TABLES`, including sessions and fields omitted from portable export,
+and writes gzip NDJSON plus a manifest:
+
+```text
+dynamo-backups/<environment>/<YYYY-MM-DD>/<table>.json.gz
+dynamo-backups/<environment>/<YYYY-MM-DD>/manifest.json
+```
+
+Objects under `dynamo-backups/` expire after 90 days. This is the analogue of
+the rds-export / dapier S3 dumps: open the gzip files and read the items. Restore
+and Postgres migration still use the portable execution archive. Trigger a dump
+with `POST /api/cron/dynamo-backup` or `npm --prefix backend run backup:dynamo`.
+
 The archive object is a gzip-compressed tar containing `manifest.json` and the
 portable JSONL entity files. It is still an application-level export and must
 preserve the normal portable export safety rules: no password hashes, live

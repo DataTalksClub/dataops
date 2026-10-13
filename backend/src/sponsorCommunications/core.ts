@@ -61,8 +61,8 @@ export type CanonicalPayload = {
   templateVersion: string;
   templateDigest: string;
   templateSetGeneration: string;
-  bookingId: string;
-  bookingVersion: number;
+  dealId: string;
+  dealVersion: number;
   organizationId: string;
   organizationVersion: number;
   contactId: string;

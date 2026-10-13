@@ -1,5 +1,17 @@
 import { html } from "./shared.js";
 
+function humanAlertDate(value) {
+  if (!value || value === "now") return "now";
+  const iso = String(value).slice(0, 10);
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(parsed);
+}
+
 export function renderSponsorBookingAlerts({
   surface,
   notificationState,
@@ -7,32 +19,35 @@ export function renderSponsorBookingAlerts({
 }) {
   const alerts = notificationState.items.filter(
     (item) =>
-      (item.metadata?.sponsorBookingId || item.metadata?.financeBookingId) &&
+      (item.metadata?.sponsorDealId ||
+        item.metadata?.sponsorDeliverableId) &&
       !item.dismissed,
   );
   const alertCards = alerts.length
     ? alerts
         .map(
           (item) =>
-            html`<article class="crm-card">
+            html`<article class="crm-card crm-alert-row">
               <strong>${escapeHtml(item.message)}</strong>
-              <p>Due ${escapeHtml(item.dueAt || "now")}</p>
+              <p>Due ${escapeHtml(humanAlertDate(item.dueAt))}</p>
               <button
-                data-alert-booking="${escapeHtml(
-                  item.metadata.sponsorBookingId ||
-                    item.metadata.financeBookingId,
+                data-alert-deal="${escapeHtml(
+                  item.metadata.sponsorDealId || "",
+                )}"
+                data-alert-company="${escapeHtml(
+                  new URLSearchParams(String(item.metadata.href || "").split("?")[1] || "").get("companyId") || "",
                 )}"
               >
-                Open booking
+                Open company
               </button>
             </article>`,
         )
         .join("")
     : notificationState.complete && !notificationState.failed
       ? html`<div class="honest-state">
-          <strong>No active sponsor booking alerts</strong>
+          <strong>No active sponsor alerts</strong>
           <p>
-            Check the booking queue for bookings whose next action is not set.
+            Check the queue for companies whose next action is due.
           </p>
         </div>`
       : "";
@@ -41,8 +56,8 @@ export function renderSponsorBookingAlerts({
     continuation = html`<p class="honest-state" role="status">
         ${
           notificationState.loadingMore
-            ? "Loading more booking alerts…"
-            : "Loading booking alerts…"
+            ? "Loading more sponsor alerts…"
+            : "Loading sponsor alerts…"
         }
       </p>`;
   } else if (notificationState.failed && notificationState.moreAvailable) {
@@ -56,14 +71,14 @@ export function renderSponsorBookingAlerts({
       </div>`;
   } else if (notificationState.moreAvailable) {
     continuation = html`<div class="honest-state">
-        <span>More booking alerts are available.</span>
+        <span>More sponsor alerts are available.</span>
         <button type="button" data-load-sponsor-alerts>
           Load more alerts</button
         >
       </div>`;
   } else if (notificationState.failed) {
     continuation = html`<div class="honest-state">
-        <strong role="alert">Booking alerts are unavailable:
+        <strong role="alert">Sponsor alerts are unavailable:
           ${escapeHtml(notificationState.error)}</strong
         ><button type="button" data-load-sponsor-alerts-retry>
           Retry alerts</button
@@ -73,4 +88,15 @@ export function renderSponsorBookingAlerts({
 
   surface.querySelector("[data-crm-alerts]").innerHTML =
     `${alertCards}${continuation}`;
+  const section = surface.querySelector(".crm-alerts");
+  if (section) {
+    const empty =
+      !alerts.length &&
+      notificationState.complete &&
+      !notificationState.failed &&
+      !notificationState.loading &&
+      !notificationState.loadingMore &&
+      !notificationState.moreAvailable;
+    section.hidden = empty;
+  }
 }

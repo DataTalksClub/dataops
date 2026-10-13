@@ -62,6 +62,25 @@ describe('device authentication through the configured portal and router', () =>
     }
   });
 
+  it('returns canonical browser approval links when the CLI calls the Lambda hostname', async () => {
+    const savedPortalUrl = process.env.DATAOPS_PORTAL_URL;
+    process.env.DATAOPS_PORTAL_URL = 'https://different-portal.example.test';
+    try {
+      const response = await request('POST', '/api/auth/device', { label: 'Synthetic CLI' }, {
+        host: 'example.lambda-url.eu-west-1.on.aws',
+        'x-forwarded-host': 'untrusted.example.test',
+        'x-forwarded-proto': 'http',
+      });
+      assert.equal(response.statusCode, 200);
+      const grant = json(response);
+      assert.equal(grant.verificationUri, 'https://ops.example.test/device');
+      assert.equal(grant.verificationUriComplete, `https://ops.example.test/device?userCode=${grant.userCode}`);
+    } finally {
+      if (savedPortalUrl === undefined) delete process.env.DATAOPS_PORTAL_URL;
+      else process.env.DATAOPS_PORTAL_URL = savedPortalUrl;
+    }
+  });
+
   it('does not widen the exception to methods, lookalikes, identity headers or private APIs', async () => {
     const paths = ['/api/auth/device', '/api/auth/device/token'];
     for (const prefix of ['', '/work']) {

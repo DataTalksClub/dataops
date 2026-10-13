@@ -37,7 +37,7 @@ env:
 jobs:
   checks:
     name: Check DataOps v1 app
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
@@ -82,7 +82,7 @@ jobs:
 
   deploy:
     name: Deploy DataOps v1 app
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: checks
     permissions:
       contents: read

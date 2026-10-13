@@ -16,6 +16,7 @@ import {
   taskProofState,
   tasksFromWorkPayload,
   todayIsoDate,
+  workCardIssueNumber,
   workCardSubtitle,
   workCardTitle,
   workTaskTitle,
@@ -679,6 +680,7 @@ export function createOperationsModel({
     return {
       title: workCardTitle(card),
       subtitle: workCardSubtitle(card),
+      issueNumber: workCardIssueNumber(card),
       stage: card.stage || "",
       summary: summaryParts.join(" - "),
       meta: progress ? progress.label : relationshipLabel,

@@ -2,15 +2,16 @@
  * One-off backfill: move structure out of legacy Card titles.
  *
  * Trello-imported Cards carry a `[Tag]` prefix (the source Template), an
- * event/issue date inside the title, a trailing person segment on event
- * Cards (`- Tony Zeljkovic`), a trailing sponsor segment on newsletter
- * Cards (`- Astronomer`), and a sometimes-stale `anchorDate`.
+ * event/issue date inside the title, an issue number (`#298`), a trailing person
+ * segment on event Cards (`- Tony Zeljkovic`), a trailing sponsor segment on
+ * newsletter Cards (`- Astronomer`), and a sometimes-stale `anchorDate`.
  * For each Card this script:
  * - assigns `templateId` from the `[Tag]` when the Card has none,
  * - corrects `anchorDate` from the date embedded in the title,
- * - moves the person segment to `people` and the sponsor segment to
- *   `sponsor`,
- * - rewrites `title` to the remainder (tag, date, and person/sponsor
+ * - moves the person segment to `people` and sponsor segments to `sponsor` /
+ *   `secondarySponsors`,
+ * - extracts `issueNumber`,
+ * - rewrites `title` to the remainder (tag, date, issue number, and person/sponsor
  *   segments removed).
  *
  * Usage against local dynalite (dev server stopped first):
@@ -37,6 +38,8 @@ interface PlannedChange {
   templateId?: { from: string | null; to: string };
   people?: { from: string[]; to: string[] };
   sponsor?: { from: string | null; to: string };
+  secondarySponsors?: { from: string[]; to: string[] };
+  issueNumber?: { from: string | null; to: string };
 }
 
 async function main(): Promise<void> {
@@ -59,6 +62,8 @@ async function main(): Promise<void> {
     if (patch.title) change.title = { from: String(card.title || ''), to: patch.title };
     if (patch.people) change.people = { from: card.people || [], to: patch.people };
     if (patch.sponsor) change.sponsor = { from: card.sponsor ?? null, to: patch.sponsor };
+    if (patch.secondarySponsors) change.secondarySponsors = { from: card.secondarySponsors || [], to: patch.secondarySponsors };
+    if (patch.issueNumber) change.issueNumber = { from: card.issueNumber ?? null, to: patch.issueNumber };
     planned.push(change);
   }
 
@@ -72,6 +77,8 @@ async function main(): Promise<void> {
     templateIds: planned.filter((change) => change.templateId).length,
     people: planned.filter((change) => change.people).length,
     sponsors: planned.filter((change) => change.sponsor).length,
+    secondarySponsors: planned.filter((change) => change.secondarySponsors).length,
+    issueNumbers: planned.filter((change) => change.issueNumber).length,
     applied: false,
   };
 
@@ -90,6 +97,8 @@ async function main(): Promise<void> {
     if (change.title) patch.title = change.title.to;
     if (change.people) patch.people = change.people.to;
     if (change.sponsor) patch.sponsor = change.sponsor.to;
+    if (change.secondarySponsors) patch.secondarySponsors = change.secondarySponsors.to;
+    if (change.issueNumber) patch.issueNumber = change.issueNumber.to;
     await updateCard(client, card.id, { expectedVersion: card.version, patch });
     applied += 1;
   }

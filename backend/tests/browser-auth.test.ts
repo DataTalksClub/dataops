@@ -8,7 +8,7 @@ import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createBrowserSession, createSession, getSession } from '../src/db/sessions';
-import { createUserWithId } from '../src/db/users';
+import { createUserWithId, getUsersByNormalizedEmail, provisionBrowserOperator } from '../src/db/users';
 import { route } from '../src/router';
 import type { LambdaEvent, LambdaResponse } from '../src/types';
 
@@ -287,8 +287,47 @@ describe('shared Cognito browser authentication', () => {
     assert.strictEqual((await complete()).statusCode, 303);
   });
 
-  it('denies unknown, disabled and duplicate local users without provisioning', async () => {
-    assert.strictEqual((await complete('unknown@datatalks.club')).statusCode, 303);
+  it('provisions verified domain identities once as operators and serves their browser session', async () => {
+    tokenClaims.name = 'New Colleague';
+    const response = await complete('  NEW.COLLEAGUE@DataTalks.Club  ');
+    assert.strictEqual(response.statusCode, 302);
+    const users = await getUsersByNormalizedEmail(client, 'new.colleague@datatalks.club');
+    assert.strictEqual(users.length, 1);
+    assert.strictEqual(users[0].email, 'new.colleague@datatalks.club');
+    assert.strictEqual(users[0].name, 'New Colleague');
+    assert.strictEqual(users[0].role, 'operator');
+    const me = await route(event('GET', '/api/me', {}, cookiePair(response, 'dataops_session')), client);
+    assert.strictEqual(me.statusCode, 200);
+    assert.strictEqual(JSON.parse(me.body).user.id, users[0].id);
+    assert.strictEqual(JSON.parse(me.body).user.role, 'operator');
+    assert.strictEqual((await complete('new.colleague@datatalks.club')).statusCode, 302);
+    assert.strictEqual((await getUsersByNormalizedEmail(client, users[0].email)).length, 1);
+  });
+
+  it('does not provision unverified emails or domain lookalikes', async () => {
+    tokenClaims.email_verified = false;
+    assert.strictEqual((await complete('unverified@datatalks.club')).statusCode, 303);
+    assert.strictEqual((await getUsersByNormalizedEmail(client, 'unverified@datatalks.club')).length, 0);
+    tokenClaims.email_verified = true;
+    for (const email of ['outside@example.com', 'user@datatalks.club.evil.test', 'user@sub.datatalks.club', 'user@@datatalks.club']) {
+      assert.strictEqual((await complete(email)).statusCode, 303, email);
+      assert.strictEqual((await getUsersByNormalizedEmail(client, email)).length, 0);
+    }
+  });
+
+  it('shares one user across simultaneous provisioning and preserves disabled accounts', async () => {
+    const users = await Promise.all(Array.from({ length: 4 }, () => provisionBrowserOperator(client, 'concurrent@datatalks.club', 'Concurrent')));
+    assert.strictEqual(new Set(users.map(user => user.id)).size, 1);
+    assert.strictEqual((await getUsersByNormalizedEmail(client, 'concurrent@datatalks.club')).length, 1);
+    await createUserWithId(client, users[0].id, { email: users[0].email, name: 'Disabled', role: 'operator', disabled: true });
+    const existing = await provisionBrowserOperator(client, users[0].email, 'Replacement');
+    assert.strictEqual(existing.disabled, true);
+    assert.strictEqual(existing.name, 'Disabled');
+    assert.strictEqual((await complete(users[0].email)).statusCode, 303);
+  });
+
+  it('denies outside-domain, disabled and duplicate local users', async () => {
+    assert.strictEqual((await complete('unknown@example.com')).statusCode, 303);
     assert.strictEqual((await complete('disabled@datatalks.club')).statusCode, 303);
     await createUserWithId(client, 'duplicate-one', { name: 'Duplicate one', email: 'duplicate@datatalks.club', role: 'operator' });
     await createUserWithId(client, 'duplicate-two', { name: 'Duplicate two', email: 'DUPLICATE@datatalks.club', role: 'operator' });

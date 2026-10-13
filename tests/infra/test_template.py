@@ -648,6 +648,14 @@ def test_five_schedules_are_explicit_identity_stable_resources_with_exact_behavi
             "target_id": "BackendFunctionDailyBackendExportLambdaTarget",
             "input": '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"export"}}',
         },
+        "BackendFunctionDailyDynamoBackup": {
+            "target": "BackendTargetFunctionName",
+            "description": "Dump every DataOps DynamoDB table to the retained archive bucket once per day.",
+            "expression": "cron(0 9 * * ? *)",
+            "state": "ENABLED",
+            "target_id": "BackendFunctionDailyDynamoBackupLambdaTarget",
+            "input": '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"dynamo-backup"}}',
+        },
     }
     for rule_id, expected in schedules.items():
         target = {
@@ -1211,6 +1219,7 @@ def test_dataops_table_outputs_are_available_for_backend_env_wiring():
         "DataOpsSessionsTableName",
         "DataOpsExportArchiveBucketName",
         "DataOpsExportArchivePrefix",
+        "DataOpsDynamoBackupPrefix",
         "BackendFunctionRoleArn",
     ]
 
@@ -1290,6 +1299,7 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "DATAOPS_SESSIONS_TABLE:" not in backend
     assert "DATAOPS_EXPORT_ARCHIVE_BUCKET: !Ref DataOpsExportArchiveBucket" in backend
     assert "DATAOPS_EXPORT_ARCHIVE_PREFIX: !Ref ExportArchivePrefix" in backend
+    assert "DATAOPS_DYNAMO_BACKUP_PREFIX: !Ref DynamoBackupPrefix" in backend
     assert "dynamodb:GetItem" in backend
     assert "dynamodb:PutItem" in backend
     assert "dynamodb:Query" in backend
@@ -1304,8 +1314,11 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "secretsmanager:GetSecretValue" in backend
     assert "s3:PutObject" in backend
     assert "${DataOpsExportArchiveBucket.Arn}/${ExportArchivePrefix}/*" in backend
+    assert "${DataOpsExportArchiveBucket.Arn}/${DynamoBackupPrefix}/*" in backend
     backend_export = _resource_block(template, "BackendFunctionDailyBackendExport")
     assert '"dataopsAction":"export"' in backend_export
+    backend_dump = _resource_block(template, "BackendFunctionDailyDynamoBackup")
+    assert '"dataopsAction":"dynamo-backup"' in backend_dump
     assert "WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}/work-engine/portal-secret" in backend
     assert "EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn" in backend
     assert "!Ref EmailDocumentIntakeSecretArn" in backend
@@ -1424,8 +1437,26 @@ def test_dataops_export_archive_bucket_is_private_retained_and_versioned():
     assert "SSEAlgorithm: AES256" in bucket
     assert "Status: Enabled" in bucket
     assert "NoncurrentVersionExpirationInDays: !Ref ExportArchiveRetentionDays" in bucket
+    assert "Prefix: !Sub ${DynamoBackupPrefix}/" in bucket
+    assert "ExpirationInDays: !Ref DynamoBackupRetentionDays" in bucket
     assert "Value: ExecutionExportArchive" in bucket
     assert "Value: DataOpsV1ExecutionExports" in bucket
+
+
+def test_raw_dynamo_backup_dumps_every_table_to_the_archive_bucket():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    backend = _resource_block(template, "BackendFunction")
+    backup = _resource_block(template, "BackendFunctionDailyDynamoBackup")
+    bucket = _resource_block(template, "DataOpsExportArchiveBucket")
+
+    assert "DATAOPS_DYNAMO_BACKUP_PREFIX: !Ref DynamoBackupPrefix" in backend
+    assert "${DataOpsExportArchiveBucket.Arn}/${DynamoBackupPrefix}/*" in backend
+    assert '"dataopsAction":"dynamo-backup"' in backup
+    assert "ScheduleExpression: cron(0 9 * * ? *)" in backup
+    assert "Prefix: !Sub ${DynamoBackupPrefix}/" in bucket
+    assert "ExpirationInDays: !Ref DynamoBackupRetentionDays" in bucket
+    assert "  DataOpsDynamoBackupPrefix:" in template
+    assert '  DynamoBackupPrefix:\n    Type: String\n    Default: dynamo-backups' in template
 
 
 def test_deployed_environment_is_exactly_sandbox_and_has_exactly_three_consumers():

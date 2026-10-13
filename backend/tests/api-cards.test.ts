@@ -1057,22 +1057,25 @@ describe('API — Cards', () => {
     });
   });
 
-  describe('PUT /api/cards/:id people and sponsor fields', () => {
-    it('stores people, sponsor, and secondarySponsors', async () => {
+  describe('PUT /api/cards/:id structured fields', () => {
+    it('stores people, sponsor, secondarySponsors, and issueNumber', async () => {
       const created = await createCard(client, { title: 'People card', anchorDate: utcDateString() });
       const res = await invoke('PUT', `/api/cards/${created.id}`, {
         expectedVersion: 1,
         people: ['Tony Zeljkovic', 'Juan Manuel Perafan'],
         sponsor: 'Astronomer',
         secondarySponsors: ['Snowplow'],
+        issueNumber: '298',
       });
       assert.strictEqual(res.statusCode, 200);
-      assert.deepStrictEqual(JSON.parse(res.body).card.people, ['Tony Zeljkovic', 'Juan Manuel Perafan']);
-      assert.strictEqual(JSON.parse(res.body).card.sponsor, 'Astronomer');
-      assert.deepStrictEqual(JSON.parse(res.body).card.secondarySponsors, ['Snowplow']);
+      const card = JSON.parse(res.body).card;
+      assert.deepStrictEqual(card.people, ['Tony Zeljkovic', 'Juan Manuel Perafan']);
+      assert.strictEqual(card.sponsor, 'Astronomer');
+      assert.deepStrictEqual(card.secondarySponsors, ['Snowplow']);
+      assert.strictEqual(card.issueNumber, '298');
     });
 
-    it('clears the sponsor with null and rejects malformed values', async () => {
+    it('clears sponsor with null and rejects malformed values', async () => {
       const created = await createCard(client, { title: 'Sponsor card', anchorDate: utcDateString(), sponsor: 'Acme' });
       const cleared = await invoke('PUT', `/api/cards/${created.id}`, { expectedVersion: 1, sponsor: null });
       assert.strictEqual(cleared.statusCode, 200);
@@ -1084,6 +1087,7 @@ describe('API — Cards', () => {
         { expectedVersion: 2, sponsor: '' },
         { expectedVersion: 2, sponsor: 42 },
         { expectedVersion: 2, secondarySponsors: [null] },
+        { expectedVersion: 2, issueNumber: {} },
       ]) {
         const res = await invoke('PUT', `/api/cards/${created.id}`, body);
         assert.strictEqual(res.statusCode, 400);
@@ -1091,21 +1095,74 @@ describe('API — Cards', () => {
     });
   });
 
-  describe('POST /api/cards people and sponsor fields', () => {
-    it('accepts people and sponsor at creation', async () => {
+  describe('POST /api/cards structured fields and title derivation', () => {
+    it('accepts people, sponsor, and issueNumber at creation', async () => {
       const res = await invoke('POST', '/api/cards', {
         title: 'New event',
         anchorDate: utcDateString(),
         people: ['Irina Krotova'],
         sponsor: 'Snowplow',
+        issueNumber: '42',
       });
       assert.strictEqual(res.statusCode, 201);
-      assert.deepStrictEqual(JSON.parse(res.body).card.people, ['Irina Krotova']);
-      assert.strictEqual(JSON.parse(res.body).card.sponsor, 'Snowplow');
+      const card = JSON.parse(res.body).card;
+      assert.deepStrictEqual(card.people, ['Irina Krotova']);
+      assert.strictEqual(card.sponsor, 'Snowplow');
+      assert.strictEqual(card.issueNumber, '42');
+    });
+
+    it('auto-extracts structured fields when created with legacy formatted title', async () => {
+      const res = await invoke('POST', '/api/cards', {
+        title: '[Newsletter] Weekly email #298(12OCT 2026) -Astronomer',
+        anchorDate: '2026-10-12',
+      });
+      assert.strictEqual(res.statusCode, 201);
+      const card = JSON.parse(res.body).card;
+      assert.strictEqual(card.title, 'Weekly email');
+      assert.strictEqual(card.issueNumber, '298');
+      assert.strictEqual(card.sponsor, 'Astronomer');
     });
   });
 
+  describe('GET /api/cards read-time derivation for existing cards', () => {
+    it('derives clean title, issue number, sponsor, and date on read for legacy cards', async () => {
+      const created = await createCard(client, {
+        title: '[Newsletter] Weekly email #298(12OCT 2026) -Astronomer',
+        anchorDate: '2026-08-01',
+      });
+
+      const single = await invoke('GET', `/api/cards/${created.id}`);
+      assert.strictEqual(single.statusCode, 200);
+      const singleCard = JSON.parse(single.body).card;
+      assert.strictEqual(singleCard.title, 'Weekly email');
+      assert.strictEqual(singleCard.issueNumber, '298');
+      assert.strictEqual(singleCard.sponsor, 'Astronomer');
+
+      const list = await invoke('GET', '/api/cards');
+      assert.strictEqual(list.statusCode, 200);
+      const items = JSON.parse(list.body).cards.items;
+      const matched = items.find((item: any) => item.id === created.id);
+      assert.ok(matched);
+      assert.strictEqual(matched.title, 'Weekly email');
+      assert.strictEqual(matched.issueNumber, '298');
+      assert.strictEqual(matched.sponsor, 'Astronomer');
+      });
+    });
+
   describe('POST /api/cards optional task groups', () => {
+    it('rejects group selection without a Template and direct stored-selection writes', async () => {
+      const noTemplate = await invoke('POST', '/api/cards', {
+        title: 'No Template groups', anchorDate: utcDateString(), optionalGroups: [],
+      });
+      assert.strictEqual(noTemplate.statusCode, 400);
+      assert.strictEqual(JSON.parse(noTemplate.body).code, 'invalid-optional-groups');
+      const spoofed = await invoke('POST', '/api/cards', {
+        title: 'Spoofed groups', anchorDate: utcDateString(), selectedOptionalGroups: ['secondary'],
+      });
+      assert.strictEqual(spoofed.statusCode, 400);
+      assert.match(JSON.parse(spoofed.body).error, /selectedOptionalGroups is system-owned/);
+    });
+
     it('instantiates only selected groups and rejects unknown groups', async () => {
       const template = await createTemplate(client, {
         name: 'Grouped API template',
@@ -1134,6 +1191,16 @@ describe('API — Cards', () => {
       assert.strictEqual(deselected.statusCode, 201);
       assert.strictEqual(JSON.parse(deselected.body).tasks.length, 1);
 
+      const defaultSelection = await invoke('POST', '/api/cards', {
+        title: 'Default group card',
+        anchorDate: utcDateString(),
+        templateId: template.id,
+      });
+      assert.strictEqual(defaultSelection.statusCode, 201);
+      const defaultBody = JSON.parse(defaultSelection.body);
+      assert.strictEqual(defaultBody.tasks.length, 1);
+      assert.deepStrictEqual(defaultBody.card.selectedOptionalGroups, []);
+
       const unknown = await invoke('POST', '/api/cards', {
         title: 'Unknown group card',
         anchorDate: utcDateString(),
@@ -1142,6 +1209,15 @@ describe('API — Cards', () => {
       });
       assert.strictEqual(unknown.statusCode, 400);
       assert.strictEqual(JSON.parse(unknown.body).code, 'unknown-optional-group');
+
+      const emptyGroup = await invoke('POST', '/api/cards', {
+        title: 'Empty group card',
+        anchorDate: utcDateString(),
+        templateId: template.id,
+        optionalGroups: [''],
+      });
+      assert.strictEqual(emptyGroup.statusCode, 400);
+      assert.strictEqual(JSON.parse(emptyGroup.body).code, 'unknown-optional-group');
 
       const malformed = await invoke('POST', '/api/cards', {
         title: 'Malformed group card',

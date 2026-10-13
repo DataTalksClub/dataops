@@ -162,7 +162,7 @@ test.describe('issue 204 slice 4 Knowledge feedback', () => {
     await setFaults(context.request, [
       { method: 'GET', path: '/docs', delayMs: 1200 },
     ]);
-    await page.goto('/#/processes');
+    await page.goto('/processes');
     const catalogLoading = page.locator(
       '.ops-surface-docs [data-docs-state="loading"]',
     );
@@ -183,7 +183,7 @@ test.describe('issue 204 slice 4 Knowledge feedback', () => {
     await openDocumentFilters(page);
     await chooseDocumentFilter(page, 0, 'Operations');
     await chooseDocumentFilter(page, 3, 'Product');
-    await expect(page).toHaveURL(/\/\#\/processes\?domain=operations&tag=product$/);
+    await expect(page).toHaveURL(/\/processes\?domain=operations&tag=product$/);
     const filterEmpty = page.locator(
       '.ops-surface-docs [data-docs-state="filter-empty"]',
     );
@@ -200,7 +200,7 @@ test.describe('issue 204 slice 4 Knowledge feedback', () => {
 
     await clearFaults(context.request);
     await page.setViewportSize(DESKTOP);
-    await page.goto('/#/processes');
+    await page.goto('/processes');
     await expect(page.locator('.ops-surface-docs')).toBeVisible();
     await expect(
       page.locator('.ops-surface-docs [data-docs-state]'),
@@ -213,7 +213,7 @@ test.describe('issue 204 slice 4 Knowledge feedback', () => {
     const emptyContext = await ownedContext(browser, { viewport: DESKTOP }, emptyServer);
     const emptyPage = await emptyContext.newPage();
     await setupPageWithAuth(emptyPage);
-    await emptyPage.goto('/#/processes');
+    await emptyPage.goto('/processes');
     const answeredEmpty = emptyPage.locator(
       '.ops-surface-docs [data-docs-state="empty"]',
     );
@@ -224,7 +224,7 @@ test.describe('issue 204 slice 4 Knowledge feedback', () => {
     await expectNoHorizontalOverflow(emptyPage);
     await screenshot(emptyPage, 'process-docs-answered-empty-desktop-1440x900');
     await emptyPage.setViewportSize(MOBILE);
-    await emptyPage.goto('/#/processes');
+    await emptyPage.goto('/processes');
     await expect(emptyPage.locator('.ops-surface-docs [data-docs-state="empty"]')).toBeVisible({ timeout: 20_000 });
     await expectNoHorizontalOverflow(emptyPage);
     await screenshot(emptyPage, 'process-docs-answered-empty-mobile-390x844');
@@ -326,7 +326,7 @@ test.describe('issue 204 slice 4 Knowledge feedback', () => {
     await expect(page.locator('#doc-state')).toBeHidden({ timeout: 20_000 });
     await expect(page.locator('#editor')).toBeEnabled();
     await page.setViewportSize(DESKTOP);
-    await page.goto('/#/processes');
+    await page.goto('/processes');
     await expect(page.locator('.ops-surface-docs [data-docs-state]')).toHaveCount(0);
     await navigateToDocument(page, '/synthetic/missing.md');
     await expect(

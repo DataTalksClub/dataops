@@ -17,3 +17,4 @@ This document is split into four parts:
 - [Part 2: Event templates](templates/part-2-event-templates.md)
 - [Part 3: Periodic operations templates](templates/part-3-periodic-operations-templates.md)
 - [Part 4: Summary and shared tasks](templates/part-4-summary-and-shared-tasks.md)
+- [Part 5: Playbook workflows & personas](templates/part-5-playbook-workflows.md)

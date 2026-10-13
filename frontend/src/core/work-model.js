@@ -361,7 +361,7 @@ export function createWorkModel(context) {
           ? scopedCurrentOperatorId
             ? "No live tasks assigned to you or unassigned due today."
             : "No live tasks due today."
-          : "Live work data unavailable; tasks will appear here when /work/api/tasks is connected.",
+          : "Live work data unavailable; tasks will appear here when /api/tasks is connected.",
         items: todayItems,
       },
       {

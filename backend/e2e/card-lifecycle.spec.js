@@ -29,13 +29,13 @@ test.describe('canonical Card lifecycle', () => {
     const currentTask = await (await request.get(`/api/tasks/${taskId}`)).json();
     const currentCard = (await (await request.get(`/api/cards/${cardId}`)).json()).card;
 
-    await page.goto(`/#/cards?cardId=${cardId}&taskId=${taskId}`);
+    await page.goto(`/cards?cardId=${cardId}&taskId=${taskId}`);
     await expect(page.locator('#card-panel')).toBeVisible();
     await expect(page.locator('#task-panel')).toBeVisible();
     await expect(page.locator('#task-panel-title')).toContainText(`Synthetic final task ${unique}`);
 
     let conflicts = 0;
-    await page.route(`**/work/api/tasks/${taskId}`, async (route) => {
+    await page.route(`**/api/tasks/${taskId}`, async (route) => {
       if (route.request().method() !== 'PUT' || conflicts > 0) {
         await route.continue();
         return;
@@ -63,7 +63,7 @@ test.describe('canonical Card lifecycle', () => {
     await expect(conflict).toContainText('Your retained change: Set status to done');
     await conflict.getByRole('button', { name: 'Retry my change' }).click();
 
-    await expect(page).toHaveURL(new RegExp(`/#/cards/archive\\?cardId=${cardId}&taskId=${taskId}$`));
+    await expect(page).toHaveURL(new RegExp(`/cards/archive\\?cardId=${cardId}&taskId=${taskId}$`));
     await expect(page.locator('#card-panel')).toBeVisible();
     await expect(page.locator('#card-panel')).toContainText('Completed');
     await expect(page.locator('#card-panel')).toContainText('from After Event');
@@ -75,7 +75,7 @@ test.describe('canonical Card lifecycle', () => {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('#task-panel').getByRole('button', { name: 'Reopen' }).click();
-    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${cardId}&taskId=${taskId}$`));
+    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${cardId}&taskId=${taskId}$`));
     await expect(page.locator('#card-panel')).toContainText('After Event');
     await expect(page.getByText('Task reopened. Card restored to after event.')).toBeVisible();
     await expect(page.locator('#task-panel').getByRole('button', { name: 'Mark done' })).toBeVisible();

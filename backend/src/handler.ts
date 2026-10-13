@@ -3,6 +3,7 @@ import { route } from './router';
 import { getClient } from './db/client';
 import { runCron } from './cron/runner';
 import { writePortableExportArchive } from './export/archive';
+import { backupConfigFromEnv, writeRawDynamoBackup } from './export/dynamoBackup';
 import { sanitizeJsonResponse } from './responsePrivacy';
 import type { CronRunnerResult } from './cron/runner';
 import type { LambdaEvent, LambdaResponse } from './types';
@@ -282,6 +283,28 @@ async function handleInvocation(
           checksums: result.manifest.checksums,
           archive_checksum: result.archiveChecksum,
           archive_size_bytes: result.archiveSizeBytes,
+        }),
+      };
+    }
+    if (detail?.dataopsAction === 'dynamo-backup') {
+      const result = await writeRawDynamoBackup(client!, backupConfigFromEnv());
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          schema_version: result.manifest.schema_version,
+          generated_at: result.manifest.generated_at,
+          source_environment: result.manifest.source_environment,
+          manifest_uri: result.manifestUri,
+          manifest_key: result.manifestKey,
+          item_count: result.manifest.item_count,
+          table_count: result.manifest.table_count,
+          tables: Object.fromEntries(
+            Object.entries(result.manifest.tables).map(([name, stats]) => [
+              name,
+              { items: stats.items, bytes: stats.bytes },
+            ]),
+          ),
         }),
       };
     }

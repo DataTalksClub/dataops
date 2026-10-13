@@ -19,9 +19,10 @@ export function renderCardTemplateLink(
   link.className = "card-template-link";
   const labelFor = (cached) =>
     cached
-      ? `${cached.emoji ? `${cached.emoji} ` : ""}${cached.name} · View template`
-      : "View template";
+      ? `Template: ${cached.emoji ? `${cached.emoji} ` : ""}${cached.name} · View template`
+      : "Template · View template";
   link.textContent = labelFor(templateLinkCache.get(templateId));
+  link.title = "View template in Templates";
   link.addEventListener("click", () =>
     navigateCanonicalWorkspace("/templates", { templateId }),
   );
@@ -175,6 +176,7 @@ export function createCardSummary(context) {
     state,
     today,
     updateCardStage,
+    workCardIssueNumber,
     workCardSubtitle,
     workTaskTitle,
   } = context;
@@ -227,6 +229,16 @@ export function createCardSummary(context) {
     anchor.setAttribute("aria-label", `Card date ${card.anchorDate}`);
     anchor.textContent = formatCardAnchorLabel(card.anchorDate, today);
     summaryTop.append(anchor);
+  }
+  const issueNumber = typeof workCardIssueNumber === "function"
+    ? workCardIssueNumber(card)
+    : (card.issueNumber ? String(card.issueNumber).replace(/^/, "") : "");
+  if (issueNumber) {
+    const issue = document.createElement("span");
+    issue.className = "workflow-card-issue";
+    issue.textContent = `#${issueNumber}`;
+    issue.title = `Issue #${issueNumber}`;
+    summaryTop.append(issue);
   }
   const countRow = document.createElement("span");
   countRow.className = "workflow-card-count";

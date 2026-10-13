@@ -205,6 +205,7 @@ export class FakeElement {
   async dispatch(type, values = {}) {
     const event = {
       preventDefault() {},
+      stopPropagation() {},
       target: this,
       currentTarget: this,
       ...values,

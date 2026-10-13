@@ -63,7 +63,7 @@ test.describe('reviewed Card Template updates', () => {
       { refId: 'added', description: 'New reviewed step', offsetDays: 1 },
     ]);
 
-    await page.goto(`/#/cards?cardId=${encodeURIComponent(card.id)}`);
+    await page.goto(`/cards?cardId=${encodeURIComponent(card.id)}`);
     const panel = page.locator('#card-panel');
     await expect(panel).toBeVisible();
     await expect(panel).toContainText('Update available: Template v1 → v2');
@@ -75,6 +75,7 @@ test.describe('reviewed Card Template updates', () => {
     await expect(panel.getByRole('button', { name: 'Review template update' })).toBeVisible();
 
     await panel.getByRole('button', { name: 'Review template update' }).click();
+    await panel.getByText('+ Add process reference', { exact: true }).click();
     const draftReference = panel.locator('.card-ref-name');
     const draftReferenceUrl = panel.locator('.card-ref-url');
     await draftReference.fill('Public-safe typed reference');
@@ -99,7 +100,8 @@ test.describe('reviewed Card Template updates', () => {
     await expect(draftReference).toHaveValue('Public-safe typed reference');
     await expect(draftReferenceUrl).toHaveValue('https://example.test/public-safe-draft');
     await panel.getByRole('button', { name: 'Apply reviewed update' }).click();
-    await expect(panel).toContainText('Current at Template v2');
+    await expect(panel).not.toContainText('Update available:');
+    await expect(panel).not.toContainText('Template definition');
 
     const appliedTasks = (await json(await request.get(`/api/tasks?cardId=${card.id}`))).tasks;
     expect(appliedTasks.find(({ id }) => id === completed.id)).toMatchObject({
@@ -122,7 +124,7 @@ test.describe('reviewed Card Template updates', () => {
       status: 'todo',
     });
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/cards?cardId=<id>&taskId=<id>',
+      route: '/cards?cardId=<id>&taskId=<id>',
       roleId: 'admin',
       stateIds: ['workflows.template-update-review', 'workflows.template-update-conflict'],
     }]);
@@ -139,12 +141,12 @@ test.describe('reviewed Card Template updates', () => {
       { refId: 'publish', description: 'Publish reviewed output', offsetDays: 1 },
     ]);
 
-    await page.goto(`/#/templates?templateId=${encodeURIComponent(template.id)}`);
+    await page.goto(`/templates?templateId=${encodeURIComponent(template.id)}`);
     const inspector = page.locator('.runtime-template-projection');
-    await expect(inspector).toContainText('2 active Cards');
-    await inspector.getByRole('button', { name: 'Review 2 Cards for updates' }).click();
+    await expect(inspector).toContainText('2 active cards');
+    await inspector.getByRole('button', { name: 'Review 2 cards for updates' }).click();
     await expect(inspector).toContainText('Nothing is selected automatically');
-    await expect(inspector.getByRole('button', { name: 'Apply 0 selected Cards' })).toBeDisabled();
+    await expect(inspector.getByRole('button', { name: 'Apply 0 selected cards' })).toBeDisabled();
 
     await expect(inspector.getByRole('checkbox', { name: 'Select Synthetic batch Card A' })).not.toBeChecked();
     await expect(inspector.getByRole('checkbox', { name: 'Select Synthetic batch Card B' })).not.toBeChecked();
@@ -158,8 +160,8 @@ test.describe('reviewed Card Template updates', () => {
         expectedVersion: staleTask.version,
       },
     })).status()).toBe(200);
-    await inspector.getByRole('button', { name: 'Apply 2 selected Cards' }).click();
-    await expect(inspector).toContainText('1 Card applied · 1 conflict needs a fresh preview');
+    await inspector.getByRole('button', { name: 'Apply 2 selected cards' }).click();
+    await expect(inspector).toContainText('1 card applied · 1 conflict needs a fresh preview');
     await expect(inspector).toContainText('Synthetic batch Card A: applied');
     await expect(inspector).toContainText('Synthetic batch Card B: conflict — reload before retrying');
     await expect(inspector.getByRole('button', { name: 'Reload batch previews' })).toBeVisible();
@@ -169,7 +171,7 @@ test.describe('reviewed Card Template updates', () => {
     expect(firstPreview.preview.state).toBe('current');
     expect(secondPreview.preview.state).toBe('update-available');
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/templates?templateId=<id>',
+      route: '/templates?templateId=<id>',
       roleId: 'admin',
       stateIds: ['templates.reviewed-card-batch'],
     }]);

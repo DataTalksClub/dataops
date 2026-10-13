@@ -1,5 +1,6 @@
 import { getClient } from '../db/client';
 import { getUser } from '../db/users';
+import { browserAuthOrigin } from '../auth/browserAuth';
 import {
   DEVICE_POLL_INTERVAL_SECONDS,
   createApiToken,
@@ -49,6 +50,8 @@ function requestIp(event: LambdaEvent): string {
 }
 
 function portalBaseUrl(event: LambdaEvent): string {
+  const browserOrigin = browserAuthOrigin();
+  if (browserOrigin) return browserOrigin;
   const configured = process.env.DATAOPS_PORTAL_URL || '';
   if (configured) return configured.replace(/\/$/, '');
   const host = headerValue(event.headers, 'x-forwarded-host') || headerValue(event.headers, 'host');
@@ -97,8 +100,8 @@ async function handleCliAuthRoutes(
       return json(200, {
         deviceCode,
         userCode,
-        verificationUri: `${base}/#/device`,
-        verificationUriComplete: `${base}/#/device?userCode=${encodeURIComponent(userCode)}`,
+        verificationUri: `${base}/device`,
+        verificationUriComplete: `${base}/device?userCode=${encodeURIComponent(userCode)}`,
         expiresAt: grant.expiresAt,
         expiresIn: Math.max(0, Math.round((Date.parse(grant.expiresAt) - Date.now()) / 1000)),
         interval: DEVICE_POLL_INTERVAL_SECONDS,
