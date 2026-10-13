@@ -183,7 +183,7 @@ test.describe('issue 204 slice 4 Knowledge feedback', () => {
     await openDocumentFilters(page);
     await chooseDocumentFilter(page, 0, 'Operations');
     await chooseDocumentFilter(page, 3, 'Product');
-    await expect(page).toHaveURL(/\/\\/processes\?domain=operations&tag=product$/);
+    await expect(page).toHaveURL(/\/processes\?domain=operations&tag=product$/);
     const filterEmpty = page.locator(
       '.ops-surface-docs [data-docs-state="filter-empty"]',
     );

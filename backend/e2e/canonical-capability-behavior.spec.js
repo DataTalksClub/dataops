@@ -561,7 +561,7 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('#task-panel-close')).toBeFocused();
     await page.locator('#task-panel-close').click();
     await expect(page.locator('#task-panel')).toBeHidden();
-    await expect(page).toHaveURL(/\/\\/$/);
+    await expect(page).toHaveURL(/\/$/);
     await expect(page.locator('.ops-queue-board')).toBeVisible();
     await expect(queueTaskRow).toBeFocused();
     await page.locator('#work-bell-button').click();
