@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   PutCommand,
   GetCommand,
@@ -132,6 +133,27 @@ async function createUserWithId(client: DynamoDBDocumentClient, id: string, data
   return cleanItem(item) as User;
 }
 
+/** Create once per normalized email, so simultaneous first logins share an identity. */
+async function provisionBrowserOperator(client: DynamoDBDocumentClient, email: string, name: string): Promise<User> {
+  const normalized = email.trim().toLowerCase();
+  const id = `email-${createHash('sha256').update(normalized).digest('hex')}`;
+  const item = {
+    PK: `USER#${id}`, SK: `USER#${id}`, id,
+    email: normalized, name, role: 'operator', createdAt: new Date().toISOString(),
+  };
+  try {
+    await client.send(new PutCommand({
+      TableName: TABLE_USERS, Item: item, ConditionExpression: 'attribute_not_exists(PK)',
+    }));
+    return cleanItem(item)!;
+  } catch (error: unknown) {
+    if (!(error && typeof error === 'object' && (error as { name?: string }).name === 'ConditionalCheckFailedException')) throw error;
+    const existing = await getUser(client, id);
+    if (!existing || existing.email.trim().toLowerCase() !== normalized) throw new Error('Browser user identity mismatch');
+    return existing;
+  }
+}
+
 /**
  * Get a user by id. Returns the clean object or null if not found.
  */
@@ -191,6 +213,7 @@ async function getUsersByNormalizedEmail(client: DynamoDBDocumentClient, email: 
       FilterExpression: 'begins_with(PK, :prefix)',
       ExpressionAttributeValues: { ':prefix': 'USER#' },
       ExclusiveStartKey: exclusiveStartKey,
+      ConsistentRead: true,
     }));
     items.push(...(result.Items || []) as Record<string, unknown>[]);
     exclusiveStartKey = result.LastEvaluatedKey;
@@ -207,5 +230,6 @@ export {
   listUsers,
   getUserByEmail,
   getUsersByNormalizedEmail,
+  provisionBrowserOperator,
   updateUser,
 };
