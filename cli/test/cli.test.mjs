@@ -151,9 +151,9 @@ describe("device login", () => {
         body: {
           deviceCode: "device-code",
           userCode: "BCDF-GHJK",
-          verificationUri: "https://portal.test/#/device",
+          verificationUri: "https://portal.test/device",
           verificationUriComplete:
-            "https://portal.test/#/device?userCode=BCDF-GHJK",
+            "https://portal.test/device?userCode=BCDF-GHJK",
           expiresAt: new Date(Date.now() + 600_000).toISOString(),
           // The client floors the interval at a second; keep the test near it.
           interval: 1,
@@ -184,7 +184,7 @@ describe("device login", () => {
     assert.equal(result.token, "dops_issued");
     assert.equal(polls, 2, "keeps polling while the grant is pending");
     assert.match(io.text(), /BCDF-GHJK/);
-    assert.match(io.text(), /#\/device\?userCode=BCDF-GHJK/);
+    assert.match(io.text(), /\/device\?userCode=BCDF-GHJK/);
     assert.match(io.text(), /Signed in as Grace/);
     assert.equal(
       resolveProfile({ url: "https://portal.test" }).token,
@@ -200,7 +200,7 @@ describe("device login", () => {
         body: {
           deviceCode: "device-code",
           userCode: "BCDF-GHJK",
-          verificationUri: "https://portal.test/#/device",
+          verificationUri: "https://portal.test/device",
           expiresAt: new Date(Date.now() + 600_000).toISOString(),
           interval: 1,
         },
@@ -220,14 +220,14 @@ describe("device login", () => {
 
   test("rewrites verification link to the target portal origin when server returns a different host", async () => {
     const rawLambda =
-      "https://el4jt4z2k4lnxwvoqawrdcsedm0axjzc.lambda-url.eu-west-1.on.aws/#/device?userCode=BCDF-GHJK";
+      "https://el4jt4z2k4lnxwvoqawrdcsedm0axjzc.lambda-url.eu-west-1.on.aws/device?userCode=BCDF-GHJK";
     const fetchImpl = fakeFetch({
       "/api/auth/device": {
         body: {
           deviceCode: "device-code",
           userCode: "BCDF-GHJK",
           verificationUri:
-            "https://el4jt4z2k4lnxwvoqawrdcsedm0axjzc.lambda-url.eu-west-1.on.aws/#/device",
+            "https://el4jt4z2k4lnxwvoqawrdcsedm0axjzc.lambda-url.eu-west-1.on.aws/device",
           verificationUriComplete: rawLambda,
           expiresAt: new Date(Date.now() + 600_000).toISOString(),
           interval: 1,
@@ -248,14 +248,14 @@ describe("device login", () => {
     );
     assert.equal(
       rewriteVerificationUri(rawLambda, "https://ops.dtcdev.click"),
-      "https://ops.dtcdev.click/#/device?userCode=BCDF-GHJK",
+      "https://ops.dtcdev.click/device?userCode=BCDF-GHJK",
     );
     assert.equal(
       rewriteVerificationUri(
-        "https://ops.dtcdev.click/#/device?userCode=XYZ",
+        "https://ops.dtcdev.click/device?userCode=XYZ",
         "https://ops.dtcdev.click",
       ),
-      "https://ops.dtcdev.click/#/device?userCode=XYZ",
+      "https://ops.dtcdev.click/device?userCode=XYZ",
     );
     const io = captureIo();
     await login(
@@ -264,7 +264,7 @@ describe("device login", () => {
     );
     assert.match(
       io.text(),
-      /Open in a browser:\s+https:\/\/ops\.dtcdev\.click\/#\/device\?userCode=BCDF-GHJK/,
+      /Open in a browser:\s+https:\/\/ops\.dtcdev\.click\/device\?userCode=BCDF-GHJK/,
     );
     assert.doesNotMatch(io.text(), /lambda-url/);
   });

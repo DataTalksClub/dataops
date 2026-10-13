@@ -134,8 +134,8 @@ describe('CLI device authorization', () => {
     }, {});
     assert.strictEqual(response.statusCode, 200);
     const grant = body(response);
-    assert.strictEqual(grant.verificationUri, 'http://localhost:3000/#/device');
-    assert.strictEqual(grant.verificationUriComplete, `http://localhost:3000/#/device?userCode=${grant.userCode}`);
+    assert.strictEqual(grant.verificationUri, 'http://localhost:3000/device');
+    assert.strictEqual(grant.verificationUriComplete, `http://localhost:3000/device?userCode=${grant.userCode}`);
   });
 
   it('authenticates API routes with the issued token and records the acting user', async () => {

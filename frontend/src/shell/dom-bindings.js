@@ -129,10 +129,6 @@ export function bindAppDomEvents(context) {
     "popstate",
     handlers.scheduleCurrentBrowserLocation,
   );
-  windowRef.addEventListener(
-    "hashchange",
-    handlers.scheduleCurrentBrowserLocation,
-  );
   dom.mobileMenuButton.addEventListener("click", handlers.openSidebar);
   dom.sidebarCloseButton.addEventListener("click", handlers.closeSidebar);
   dom.sidebarScrim?.addEventListener("click", handlers.closeSidebar);

@@ -33,7 +33,7 @@ async function useTheme(page, dark) {
 
 async function openWorkspace(page) {
   await setupPageWithAuth(page);
-  const response = await page.goto(`${server.baseURL}/#/`);
+  const response = await page.goto(`${server.baseURL}/`);
   assertOwnedServerResponse(server, response, 'issue-245 queue');
   await expect(page.locator('.ops-queue-board')).toBeVisible();
   // The Tasks sections are first-class rows, so they need no expansion.
@@ -106,10 +106,10 @@ test('first-class Tasks labels align with every other workspace destination', as
   await shotSidebar(page, 'desktop-1440-dark');
 
   await page.locator('[data-tasks-section="queue"]').click();
-  await expect(page).toHaveURL(/#\/tasks/);
+  await expect(page).toHaveURL(/\/tasks/);
   await expect(page.locator('[data-tasks-section="queue"]')).toHaveClass(/is-active/);
   await page.locator('[data-tasks-section="workflows"]').click();
-  await expect(page).toHaveURL(/#\/cards/);
+  await expect(page).toHaveURL(/\/cards/);
   await expect(page.locator('[data-tasks-section="workflows"]')).toHaveClass(/is-active/);
 
   await page.setViewportSize({ width: 390, height: 844 });

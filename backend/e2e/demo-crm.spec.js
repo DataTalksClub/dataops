@@ -66,7 +66,7 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
       });
       await route.fulfill({ response, json: payload });
     });
-    await page.goto(`${server.baseURL}/#/sponsors`);
+    await page.goto(`${server.baseURL}/sponsors`);
     await expect(page.locator('[data-crm-message]')).toBeHidden();
     await expect(page.locator('[data-crm-queue]')).toBeVisible();
     await expect(page.locator('[data-crm-companies-section]')).toBeHidden();
@@ -139,7 +139,7 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
 test('converted leads stay complete after reload at desktop and mobile sizes', async ({ page }) => {
   await setupPageWithAuth(page);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`${server.baseURL}/#/sponsors`);
+  await page.goto(`${server.baseURL}/sponsors`);
   await expect(page.locator('[data-crm-message]')).toBeHidden();
   await page.locator('[data-crm-view="leads"]').click();
   const lead = page.locator('.crm-lead-row').filter({ hasText: 'Synthetic Newsletter Lead' });

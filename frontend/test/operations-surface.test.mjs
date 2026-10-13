@@ -559,7 +559,7 @@ describe("Operations surface boundary", () => {
     assert.equal(replaced.length, 1);
     assert.equal(
       replaced[0],
-      "https://ops.dtcdev.click/#/device?userCode=BCDF-GHJK",
+      "https://ops.dtcdev.click/device?userCode=BCDF-GHJK",
     );
     assert.equal(
       harness.documentList.children.length,

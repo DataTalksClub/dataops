@@ -114,7 +114,7 @@ async function navigateToDocument(page, visiblePath) {
 }
 
 async function openFromProcesses(page, visiblePath, title) {
-  await page.goto('/#/processes');
+  await page.goto('/processes');
   await expect(page.locator('#document-list')).toBeVisible();
   await navigateToDocument(page, visiblePath);
   await expect(page.locator('#rendered-view .block-title')).toHaveText(title, {

@@ -96,13 +96,13 @@ test.afterAll(async () => stopOwnedTestServer(server));
 
 async function openWorkspace(page, hash) {
   await setupPageWithAuth(page);
-  const root = await page.goto(`${server.baseURL}/${hash}`);
+  const root = await page.goto(`${server.baseURL}${hash}`);
   assertOwnedServerResponse(server, root, hash);
 }
 
 test.describe("Nested Doc Pages", () => {
   test("renders document tree with expand/collapse hierarchy", async ({ page }) => {
-    await openWorkspace(page, "#/processes");
+    await openWorkspace(page, "/processes");
     await expect(page.getByRole("heading", { name: "Docs", exact: true })).toBeVisible({ timeout: 20_000 });
 
     const tree = page.locator(".ops-docs-tree");
@@ -146,7 +146,7 @@ test.describe("Nested Doc Pages", () => {
   });
 
   test("renders full ancestor breadcrumb trail and navigates to parent", async ({ page }) => {
-    await openWorkspace(page, "#/processes");
+    await openWorkspace(page, "/processes");
     await expect(page.getByRole("heading", { name: "Docs", exact: true })).toBeVisible({ timeout: 20_000 });
 
     // Expand to find checklist and open it
@@ -188,7 +188,7 @@ test.describe("Nested Doc Pages", () => {
   });
 
   test("move page dialog prevents cycles by excluding self and descendants", async ({ page }) => {
-    await openWorkspace(page, "#/processes");
+    await openWorkspace(page, "/processes");
     await expect(page.getByRole("heading", { name: "Docs", exact: true })).toBeVisible({ timeout: 20_000 });
 
     const handbookNode = page.locator('.ops-docs-tree-node[data-doc-id="reference.handbook"]');
@@ -226,7 +226,7 @@ test.describe("Nested Doc Pages", () => {
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
-      await openWorkspace(page, "#/processes");
+      await openWorkspace(page, "/processes");
       await expect(page.getByRole("heading", { name: "Docs", exact: true })).toBeVisible({ timeout: 20_000 });
 
       // Expand nodes in tree

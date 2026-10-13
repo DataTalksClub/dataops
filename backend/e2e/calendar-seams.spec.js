@@ -121,7 +121,7 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
               startDate: "2026-06-30",
               endDate: "2026-06-30",
               label: "Synthetic Newsletter",
-              href: "#/newsletter",
+              href: "/newsletter",
             },
           ],
         },
@@ -355,7 +355,7 @@ test("calendar shared header keeps the mobile grid within the first quarter", as
     ? route.fallback() : route.fulfill({ json: { items: [] } }));
   for (const viewport of [{ width: 375, height: 667 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
-    await page.goto(`${frontendBase}/#/calendar`);
+    await page.goto(`${frontendBase}/calendar`);
     const surface = page.locator(".calendar-surface");
     await expect(surface.locator("[role='status']")).toHaveText("");
     await expect(surface.getByRole("heading", { name: "Calendar", exact: true, level: 1 })).toBeVisible();
@@ -385,7 +385,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       } }));
     await page.route("**/api/**", (route) => new URL(route.request().url()).pathname.includes("/calendar-items")
       ? route.fallback() : route.fulfill({ json: { items: [] } }));
-    await page.goto(`${frontendBase}/#/calendar`);
+    await page.goto(`${frontendBase}/calendar`);
     const surface = page.locator(".calendar-surface");
     const grid = surface.locator(".calendar-grid");
     const controls = surface.locator(".calendar-display-controls");

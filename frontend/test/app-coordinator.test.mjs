@@ -335,7 +335,7 @@ describe("app shell coordinator characterization", () => {
     );
   });
 
-  test("restores shell settings before bootstrap and does not gate hash routes on documents", () => {
+  test("restores shell settings before bootstrap and does not gate workspace routes on documents", () => {
     const initializeAppShell = functionSource(
       "initializeAppShell",
       bootstrapSource,
@@ -354,16 +354,13 @@ describe("app shell coordinator characterization", () => {
     const initialize = functionSource("initializeRouting", navigationSource);
     assert.match(
       initialize,
-      /locationRef\.hash \|\| locationRef\.pathname === "\/"[\s\S]*\? openInitialRoute\(\)[\s\S]*: documentsReady\.then\(openInitialRoute\)/,
+      /readCurrentWorkspaceRoute\(\)[\s\S]*\? openInitialRoute\(\)[\s\S]*: documentsReady\.then\(openInitialRoute\)/,
     );
     assert.match(
       domBindingsSource,
       /"popstate",[\s\S]*handlers\.scheduleCurrentBrowserLocation/,
     );
-    assert.match(
-      domBindingsSource,
-      /"hashchange",[\s\S]*handlers\.scheduleCurrentBrowserLocation/,
-    );
+    assert.doesNotMatch(domBindingsSource, /"hashchange"/);
     assert.match(
       applicationEventsSource,
       /scheduleCurrentBrowserLocation:\s*navigationShell\.scheduleCurrentBrowserLocation/,
@@ -376,8 +373,8 @@ describe("app shell coordinator characterization", () => {
     assert.match(browserCharacterization, /locator\("#sidebar-resize"\)\)\.toHaveCount\(0\)/);
     assert.match(browserCharacterization, /locator\("#settings-button"\)\.click\(\)/);
     assert.match(browserCharacterization, /locator\("#sidebar-collapse-button"\)\.click\(\)/);
-    assert.match(browserCharacterization, /invalid hashes recover to the Tasks queue and unknown programmatic navigation is a no-op/);
-    assert.match(browserCharacterization, /toHaveURL\(`\$\{baseURL\}\/\#\/`\)/);
+    assert.match(browserCharacterization, /invalid paths recover to the Tasks queue and unknown programmatic navigation is a no-op/);
+    assert.ok(browserCharacterization.includes("toHaveURL(`${baseURL}/`)"));
     assert.match(browserCharacterization, /expect\(errors\)\.toEqual\(\[\]\)/);
   });
 });

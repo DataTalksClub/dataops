@@ -13,7 +13,7 @@ export function createRouteState(context) {
     getAllDocuments,
     isWorkspaceRouteFresh,
     navigateCanonicalWorkspace,
-    parseWorkspaceHash,
+    parseWorkspaceLocation,
     renderCardPanel,
     renderEntityLoadingState,
     renderTaskPanel,
@@ -28,7 +28,7 @@ export function createRouteState(context) {
   } = context;
 
   function closeTaskPanel(options = {}) {
-    const route = parseWorkspaceHash();
+    const route = parseWorkspaceLocation();
     if (
       options.updateUrl === false ||
       !route ||
@@ -112,7 +112,7 @@ export function createRouteState(context) {
   }
 
   function closeCardPanel(options = {}) {
-    const route = parseWorkspaceHash();
+    const route = parseWorkspaceLocation();
     if (
       options.updateUrl === false ||
       !route ||

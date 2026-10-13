@@ -82,7 +82,7 @@ async function openRouteAt(page, viewport, route) {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: viewport.width, height: viewport.height });
   await setupPageWithAuth(page);
-  const response = await page.goto(`${server.baseURL}/#${route.path}`);
+  const response = await page.goto(`${server.baseURL}${route.path}`);
   assertOwnedServerResponse(server, response, `mobile viewport ${route.path}`);
   await expect(page.locator(route.ready).first()).toBeVisible();
   if (route.contentReady) {

@@ -4,7 +4,7 @@ import { afterEach, describe, test } from "node:test";
 import {
   WORKSPACE_ROUTE_DEFINITIONS,
   canonicalWorkspaceUrl,
-  parseWorkspaceHash,
+  parseWorkspaceLocation,
   workspaceRouteFor,
 } from "../src/core/workspace.js";
 import { emptyOperationsDocsSnapshot } from "../src/core/operations-model.js";
@@ -70,8 +70,8 @@ function createNavigationHarness(options = {}) {
   }
 
   const location = {
-    hash: options.hash ?? "#/",
-    pathname: options.pathname ?? "/",
+    hash: "",
+    pathname: options.pathname ?? options.path ?? "/",
     search: options.search ?? "",
   };
   const history = {
@@ -127,7 +127,7 @@ function createNavigationHarness(options = {}) {
       calls.push(["hydrate-task", id, token, value]),
     locationRef: location,
     openDocument: async (...args) => calls.push(["open-doc", ...args]),
-    parseWorkspaceHash: (hash) => parseWorkspaceHash(hash, location),
+    parseWorkspaceLocation: (hash) => parseWorkspaceLocation(hash, location),
     prepareCardPanel: (id) => calls.push(["prepare-card", id]),
     prepareTaskPanel: (id) => calls.push(["prepare-task", id]),
     refreshDocuments: () => {
@@ -189,12 +189,12 @@ function createNavigationHarness(options = {}) {
 }
 
 describe("canonical navigation shell behavior", () => {
-  test("direct workspace paths normalize without waiting for the document catalog", async () => {
+  test("direct workspace paths open without rewriting or waiting for the document catalog", async () => {
     for (const path of Object.keys(WORKSPACE_ROUTE_DEFINITIONS)) {
       const harness = createNavigationHarness({ hash: "", pathname: path });
       await harness.shell.initializeRouting(new Promise(() => {}));
       assert.equal(harness.shell.getActiveWorkspaceRoute().path, path);
-      assert.equal(harness.history.replaced.at(-1).url, canonicalWorkspaceUrl(path));
+      assert.deepEqual(harness.history.replaced, []);
       assert.deepEqual(harness.history.pushed, []);
     }
   });
@@ -202,8 +202,8 @@ describe("canonical navigation shell behavior", () => {
   test("direct links retain validated entity queries and discard unrelated parameters", async () => {
     const harness = createNavigationHarness({ hash: "", pathname: "/sponsors/", search: "?companyId=company-1&dealId=deal-1&tracking=demo" });
     await harness.shell.initializeRouting(Promise.resolve());
-    assert.equal(harness.shell.getActiveWorkspaceRoute().canonicalUrl, "/#/sponsors?dealId=deal-1&companyId=company-1");
-    assert.equal(harness.history.replaced.at(-1).url, "/#/sponsors?dealId=deal-1&companyId=company-1");
+    assert.equal(harness.shell.getActiveWorkspaceRoute().canonicalUrl, "/sponsors?dealId=deal-1&companyId=company-1");
+    assert.equal(harness.history.replaced.at(-1).url, "/sponsors?dealId=deal-1&companyId=company-1");
   });
 
   test("invalid direct-link parameters return to Queue instead of becoming document paths", async () => {
@@ -211,7 +211,7 @@ describe("canonical navigation shell behavior", () => {
       const harness = createNavigationHarness({ hash: "", pathname, search });
       await harness.shell.initializeRouting(Promise.resolve());
       assert.equal(harness.shell.getActiveWorkspaceRoute().path, "/");
-      assert.equal(harness.history.replaced.at(-1).url, "/#/");
+      assert.equal(harness.history.replaced.at(-1).url, "/");
       assert.equal(harness.calls.some(([name]) => name === "open-doc"), false);
     }
   });
@@ -220,7 +220,7 @@ describe("canonical navigation shell behavior", () => {
     let routeCallback;
     globalThis.setTimeout = (callback) => { routeCallback = callback; return 1; };
     globalThis.clearTimeout = () => {};
-    const harness = createNavigationHarness({ hash: "#/tasks" });
+    const harness = createNavigationHarness({ path: "/tasks" });
     await harness.shell.initializeRouting(Promise.resolve());
     harness.location.hash = "";
     harness.location.pathname = "/sponsors";
@@ -229,7 +229,7 @@ describe("canonical navigation shell behavior", () => {
     routeCallback();
     await nextTicks();
     assert.equal(harness.shell.getActiveWorkspaceRoute().path, "/sponsors");
-    assert.equal(harness.history.replaced.at(-1).url, "/#/sponsors?dealId=deal-1");
+    assert.deepEqual(harness.history.replaced, []);
   });
 
   test("commits canonical entity routes before hydrating their panels", async () => {
@@ -238,7 +238,7 @@ describe("canonical navigation shell behavior", () => {
       cardId: "card-1",
       taskId: "task-nested",
     });
-    assert.equal(result.route.canonicalUrl, "/#/cards?cardId=card-1&taskId=task-nested");
+    assert.equal(result.route.canonicalUrl, "/cards?cardId=card-1&taskId=task-nested");
     assert.equal(result.token, 1);
     assert.equal(harness.history.pushed[0].url, result.route.canonicalUrl);
     assert.equal(harness.active.view, "tasks");
@@ -292,13 +292,13 @@ describe("canonical navigation shell behavior", () => {
   });
 
   test("preserves the prior canonical route when a dirty surface cancels browser navigation", async () => {
-    const harness = createNavigationHarness({ hash: "#/tasks" });
+    const harness = createNavigationHarness({ path: "/tasks" });
     await harness.shell.initializeRouting(Promise.resolve());
     harness.setAllowLeave(false);
     const incoming = workspaceRouteFor("/calendar", {}, harness.location);
     await harness.shell.applyWorkspaceRoute(incoming);
     assert.equal(harness.shell.getActiveWorkspaceRoute().path, "/tasks");
-    assert.equal(harness.history.replaced.at(-1).url, "/#/tasks");
+    assert.equal(harness.history.replaced.at(-1).url, "/tasks");
   });
 
   test("closes open creation dialogs only after navigation is accepted", async () => {
@@ -346,7 +346,7 @@ describe("canonical navigation shell behavior", () => {
     await result.ready;
 
     assert.equal(result.route.canonicalUrl,
-      "/#/processes?domain=operations&type=process&system=portal&tag=people");
+      "/processes?domain=operations&type=process&system=portal&tag=people");
     assert.equal(harness.searchInput.value, "keep this search");
     assert.equal(
       harness.calls.some(([name]) => name === "close-sidebar"),
@@ -391,7 +391,7 @@ describe("canonical navigation shell behavior", () => {
   });
 
   test("restores the Queue task focus recorded on a browser history entry", async () => {
-    const harness = createNavigationHarness({ hash: "#/templates" });
+    const harness = createNavigationHarness({ path: "/templates" });
     await harness.shell.navigateCanonicalWorkspace("/tasks", {}, {
       restoreFocus: { kind: "queue-task", id: "queue-task" },
     }).ready;
@@ -418,9 +418,9 @@ describe("canonical navigation shell behavior", () => {
   });
 
   test("normalizes malformed Home URLs and opens known document or folder URLs", async () => {
-    const malformed = createNavigationHarness({ hash: "#/unknown" });
+    const malformed = createNavigationHarness({ path: "/unknown" });
     await malformed.shell.initializeRouting(Promise.resolve());
-    assert.equal(malformed.history.replaced.at(-1).url, "/#/ ".replace(" ", ""));
+    assert.equal(malformed.history.replaced.at(-1).url, "/ ".replace(" ", ""));
     assert.equal(malformed.shell.getActiveWorkspaceRoute().path, "/");
 
     const doc = createNavigationHarness({
@@ -489,10 +489,10 @@ describe("canonical navigation shell behavior", () => {
     globalThis.clearTimeout = (timer) => {
       timer.cleared = true;
     };
-    const harness = createNavigationHarness({ hash: "#/tasks" });
+    const harness = createNavigationHarness({ path: "/tasks" });
     const ready = harness.shell.initializeRouting(Promise.resolve());
     await ready;
-    harness.location.hash = "#/calendar";
+    harness.location.pathname = "/calendar";
     harness.shell.scheduleCurrentBrowserLocation();
     harness.shell.scheduleCurrentBrowserLocation();
     assert.equal(timers.length, 2);

@@ -1,4 +1,4 @@
-export const WORKSPACE_HASH_BY_VIEW = Object.freeze({
+export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
   "operating-model": "/operating-model",
   docs: "/processes",
   admin: "/admin",
@@ -90,7 +90,7 @@ export function tasksSectionTitle(section, archiveVisible = false) {
   return titles[section] || "Work Queue";
 }
 
-export function workspaceHashPath(view, tasksSection = "queue") {
+export function workspacePath(view, tasksSection = "queue") {
   if (view === "tasks") {
     return (
       {
@@ -102,7 +102,7 @@ export function workspaceHashPath(view, tasksSection = "queue") {
       }[tasksSection] || "/tasks"
     );
   }
-  return WORKSPACE_HASH_BY_VIEW[view] || "/tasks";
+  return WORKSPACE_PATH_BY_VIEW[view] || "/tasks";
 }
 
 export function isRealIsoDate(value) {
@@ -124,22 +124,24 @@ export function canonicalWorkspaceUrl(path, params = new URLSearchParams()) {
     if (value) ordered.set(name, value);
   }
   const query = ordered.toString();
-  return `/#${path}${query ? `?${query}` : ""}`;
+  return `${path}${query ? `?${query}` : ""}`;
 }
 
-export function parseWorkspaceHash(
-  rawHash,
+export function parseWorkspaceLocation(
+  rawLocation,
   location = globalThis.window?.location,
 ) {
   const raw = String(
-    rawHash === undefined ? location?.hash || "" : rawHash || "",
+    rawLocation === undefined
+      ? `${location?.pathname || "/"}${location?.search || ""}`
+      : rawLocation || "",
   );
-  if (!raw) return { invalid: true, reason: "empty hash" };
-  if (!raw.startsWith("#/") || raw.includes("#", 1)) {
-    return { invalid: true, reason: "malformed hash" };
+  if (!raw) return { invalid: true, reason: "empty path" };
+  if (!raw.startsWith("/") || raw.includes("#")) {
+    return { invalid: true, reason: "malformed path" };
   }
 
-  const value = raw.slice(1);
+  const value = raw;
   const queryIndex = value.indexOf("?");
   const rawPath = queryIndex >= 0 ? value.slice(0, queryIndex) : value;
   const rawQuery = queryIndex >= 0 ? value.slice(queryIndex + 1) : "";
@@ -193,7 +195,7 @@ export function parseWorkspaceHash(
   }
 
   const canonicalUrl = canonicalWorkspaceUrl(path, params);
-  const currentUrl = `${location?.pathname || "/"}${location?.search || ""}${raw}`;
+  const currentUrl = `${location?.pathname || "/"}${location?.search || ""}`;
   return {
     view: definition.view,
     tasksSection: definition.tasksSection,
@@ -206,7 +208,7 @@ export function parseWorkspaceHash(
 
 export function workspaceRouteFor(path, params = {}, location) {
   const visible = canonicalWorkspaceUrl(path, params);
-  return parseWorkspaceHash(visible.slice(visible.indexOf("#")), location);
+  return parseWorkspaceLocation(visible, location);
 }
 
 // Pure task, Card, proof, and work view-model helpers.
@@ -549,7 +551,7 @@ export function workCardIssueNumber(card) {
   if (!card || typeof card !== "object") return "";
   if (card.issueNumber !== undefined && card.issueNumber !== null) {
     const raw = String(card.issueNumber).trim();
-    if (raw) return raw.replace(/^#/, "");
+    if (raw) return raw.replace(/^/, "");
   }
   const raw = String(card.title || card.name || "");
   const match = raw.match(/#\s*(\d+)\b/);

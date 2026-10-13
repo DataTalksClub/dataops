@@ -19,7 +19,7 @@ export function createNavigationShell(context) {
     hydrateTaskPanel,
     locationRef,
     openDocument,
-    parseWorkspaceHash,
+    parseWorkspaceLocation,
     prepareCardPanel,
     prepareTaskPanel,
     refreshDocuments,
@@ -94,7 +94,7 @@ export function createNavigationShell(context) {
         target,
       );
     }
-    return parseWorkspaceHash("#/");
+    return parseWorkspaceLocation("/");
   }
 
   function visibleEntityFocusTarget(restoreFocus) {
@@ -350,14 +350,10 @@ export function createNavigationShell(context) {
   }
 
   function readCurrentWorkspaceRoute() {
-    if (locationRef.hash) return parseWorkspaceHash();
-    const pathname = locationRef.pathname || "/";
-    // Only registered workspace paths use hash routing. Document and folder
-    // URLs still need their content catalog before they can be opened.
-    const pathRoute = parseWorkspaceHash(`#${pathname}`);
+    const pathRoute = parseWorkspaceLocation(locationRef.pathname || "/");
+    // Document and folder paths need their content catalog before opening.
     if (pathRoute.invalid) return null;
-    const route = parseWorkspaceHash(`#${pathname}${locationRef.search || ""}`);
-    return { ...route, normalized: true };
+    return parseWorkspaceLocation();
   }
 
   async function openInitialRoute() {
@@ -373,7 +369,7 @@ export function createNavigationShell(context) {
       await applyWorkspaceRoute(workspaceRoute);
       return;
     }
-    if (workspaceRoute) {
+    if (workspaceRoute || (!context.docPathFromLocation() && !folderExists(folderPathFromLocation()))) {
       await applyWorkspaceRoute(replaceWithWorkQueue());
       return;
     }
@@ -417,7 +413,7 @@ export function createNavigationShell(context) {
       await applyWorkspaceRoute(workspaceRoute);
       return;
     }
-    if (workspaceRoute) {
+    if (workspaceRoute || (!context.docPathFromLocation() && !folderExists(folderPathFromLocation()))) {
       await applyWorkspaceRoute(replaceWithWorkQueue());
       return;
     }
@@ -446,7 +442,7 @@ export function createNavigationShell(context) {
 
   function initializeRouting(documentsReady) {
     initialRouteReadyPromise = Promise.resolve().then(() =>
-      locationRef.hash || locationRef.pathname === "/" || readCurrentWorkspaceRoute()
+      readCurrentWorkspaceRoute()
         ? openInitialRoute()
         : documentsReady.then(openInitialRoute),
     );

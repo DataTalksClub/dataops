@@ -42,7 +42,7 @@ async function mockPlanningApis(page) {
   await page.route("**/api/calendar-items**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/overlays")) {
-      return route.fulfill({ json: { items: [{ provider: "newsletter-slots-readonly", id: "overlay-community", startDate: "2026-08-14", endDate: "2026-08-14", label: "Community highlights", href: "#/newsletter" }] } });
+      return route.fulfill({ json: { items: [{ provider: "newsletter-slots-readonly", id: "overlay-community", startDate: "2026-08-14", endDate: "2026-08-14", label: "Community highlights", href: "/newsletter" }] } });
     }
     if (url.pathname.includes("/alerts/") && route.request().method() === "POST") return route.fulfill({ json: { dismissed: true } });
     return route.fulfill({ json: calendarPayload });
@@ -99,7 +99,7 @@ test("Newsletter is a readable, responsive planning queue in light and dark them
   await page.clock.setFixedTime(new Date("2026-08-12T10:00:00Z"));
   await mockPlanningApis(page);
   await page.setViewportSize({ width: 1440, height: 900 });
-  const root = await page.goto(`${server.baseURL}/#/newsletter`);
+  const root = await page.goto(`${server.baseURL}/newsletter`);
   assertOwnedServerResponse(server, root, "planning newsletter root");
   const surface = page.locator(".newsletter-surface");
   await expect(surface.getByRole("heading", { name: "Newsletter planner" })).toBeVisible();
@@ -147,7 +147,7 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   await page.clock.setFixedTime(new Date("2026-08-12T10:00:00Z"));
   await mockPlanningApis(page);
   await page.setViewportSize({ width: 1440, height: 900 });
-  const root = await page.goto(`${server.baseURL}/#/calendar`);
+  const root = await page.goto(`${server.baseURL}/calendar`);
   assertOwnedServerResponse(server, root, "planning calendar root");
   const surface = page.locator(".calendar-surface");
   await expect(surface.getByRole("heading", { name: "Calendar", exact: true, level: 1 })).toBeVisible();

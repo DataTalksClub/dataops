@@ -174,7 +174,7 @@ function createHarness(options = {}) {
     openDocument: (path, openOptions) =>
       openedDocuments.push({ path, options: openOptions }),
     openQualityFinding() {},
-    parseWorkspaceHash: () => route,
+    parseWorkspaceLocation: () => route,
     promptUser: options.promptUser || (() => "Vendor contact"),
     refreshDocuments: async () => {},
     refreshOperationsWorkSnapshot:

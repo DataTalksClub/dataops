@@ -33,10 +33,8 @@ export function createDeviceAuthSurface(context) {
       if (new URL(targetOrigin).hostname === locationRef.hostname) return false;
     } catch {}
     const target = new URL(targetOrigin);
-    target.pathname = "/";
-    target.hash = userCode
-      ? `#/device?userCode=${encodeURIComponent(userCode)}`
-      : "#/device";
+    target.pathname = "/device";
+    target.search = userCode ? `?userCode=${encodeURIComponent(userCode)}` : "";
     const targetUrl = target.toString();
     if (typeof locationRef.replace === "function") {
       locationRef.replace(targetUrl);

@@ -49,7 +49,7 @@ test.describe('production portal browser-cookie bootstrap', () => {
     expect(response.status()).toBe(200);
     expect(requestHeaders.authorization).toBeUndefined();
     expect(requestHeaders.cookie).toContain('dataops_session=');
-    await expect(page).toHaveURL(`${server.baseURL}/#/`);
+    await expect(page).toHaveURL(`${server.baseURL}/`);
     await expect(page.getByRole('heading', { name: 'Work Queue', exact: true }).first()).toBeVisible();
     // The queue is the landing page and states its load state before rows.
     await expect(page.locator('.ops-work-queue')).toBeVisible();

@@ -66,7 +66,7 @@ export function bindApplicationEvents(context) {
         ),
       openTasksSection: (section) => {
         callbacks.navigateCanonicalWorkspace(
-          callbacks.workspaceHashPath("tasks", section),
+          callbacks.workspacePath("tasks", section),
         );
       },
       navigateWorkspaceEvent: (event) =>

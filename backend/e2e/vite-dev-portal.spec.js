@@ -370,10 +370,10 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     page.on('load', () => { loadCount += 1; });
 
     await page.goto(`${stack.origin}/`, { waitUntil: 'domcontentloaded' });
-    await expect(page).toHaveURL(`${stack.origin}/#/`);
+    await expect(page).toHaveURL(`${stack.origin}/`);
     await expect(page.locator('body')).toBeVisible();
 
-    const canonicalRoute = `${stack.origin}/#/tasks?date=2026-08-12`;
+    const canonicalRoute = `${stack.origin}/tasks?date=2026-08-12`;
     await page.goto(canonicalRoute, { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(canonicalRoute);
     await expect(page.locator('body')).toBeVisible();
@@ -564,7 +564,7 @@ test('representative mode mutates and restores only an isolated loopback Dynalit
     context = await browser.newContext();
     const page = await context.newPage();
     const traffic = observeBrowserTraffic(page, stack);
-    const canonicalRoute = `${stack.origin}/#/tasks?date=2026-08-12`;
+    const canonicalRoute = `${stack.origin}/tasks?date=2026-08-12`;
     await page.goto(canonicalRoute, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#dataops-local-mode-banner')).toHaveCount(0);
 

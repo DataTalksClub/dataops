@@ -901,7 +901,7 @@ describe("runtime and shell production behavior", () => {
         setDarkMode: (value) => calls.push(["dark", value]),
         setTasksNavExpanded: (value) => calls.push(["tasks-expanded", value]),
         showWorkspaceSurface: (view) => calls.push(["workspace", view]),
-        workspaceHashPath: (_view, section) => `/tasks/${section}`,
+        workspacePath: (_view, section) => `/tasks/${section}`,
       },
       {
         get(target, property) {

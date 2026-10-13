@@ -16,7 +16,7 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
   test(`Create card remains readable and closes on canonical navigation ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await setupPageWithAuth(page);
-    await page.goto(`${server.baseURL}/#/cards`);
+    await page.goto(`${server.baseURL}/cards`);
     await page.getByRole('button', { name: 'Create card', exact: true }).click();
     const dialog = page.locator('.quick-form-panel');
     await expect(dialog).toBeVisible();
@@ -32,9 +32,9 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     await page.screenshot({ path: path.resolve(repoRoot, `.tmp/demo-audit/create-canonical-${width}x${height}.png`) });
     // Activate the real application nav handler while the modal overlays it.
     await page.locator('[data-tasks-section="templates"]').evaluate((button) => button.click());
-    await expect(page).toHaveURL(/#\/templates$/);
+    await expect(page).toHaveURL(/\/templates$/);
     await expect(page.locator('.quick-form-overlay')).toHaveCount(0);
-    await page.goto(`${server.baseURL}/#/cards`);
+    await page.goto(`${server.baseURL}/cards`);
     await page.getByRole('button', { name: 'Create card', exact: true }).click();
     await page.goBack();
     await expect(page.locator('.quick-form-overlay')).toHaveCount(0);

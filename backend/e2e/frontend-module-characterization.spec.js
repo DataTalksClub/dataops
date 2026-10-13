@@ -151,8 +151,8 @@ test.describe("pre-refactor frontend module characterization", () => {
     const context = await ownedContext(browser, { width: 1440, height: 900 });
     const page = await context.newPage();
     const errors = observeErrors(page);
-    await page.goto(`${baseURL}/#/`);
-    await expect(page).toHaveURL(`${baseURL}/#/`);
+    await page.goto(`${baseURL}/`);
+    await expect(page).toHaveURL(`${baseURL}/`);
     await expect(page.locator(".ops-work-queue")).toBeVisible();
     // Tasks sections are first-class nav destinations beside Operations.
     for (const label of ["Queue", "Cards", "Templates", "Recurring", "Assistants"]) {
@@ -184,30 +184,30 @@ test.describe("pre-refactor frontend module characterization", () => {
     const page = await context.newPage();
     const errors = observeErrors(page);
 
-    await page.goto(`${baseURL}/#/cards`);
+    await page.goto(`${baseURL}/cards`);
     await expect(page.locator(".ops-workflows-board")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Cards" })).toBeVisible();
     await expect(page.locator(".workflow-board-column")).toHaveCount(3);
     await expect(page.getByRole("heading", { name: "Done" })).toHaveCount(0);
 
-    await page.goto(`${baseURL}/#/cards/archive`);
-    await expect(page).toHaveURL(/\/#\/cards\/archive$/);
+    await page.goto(`${baseURL}/cards/archive`);
+    await expect(page).toHaveURL(/\/cards\/archive$/);
     await expect(page.getByRole("button", { name: "Back to board" })).toBeVisible();
     await page.reload();
-    await expect(page).toHaveURL(/\/#\/cards\/archive$/);
+    await expect(page).toHaveURL(/\/cards\/archive$/);
 
-    await page.goto(`${baseURL}/#/cards?cardId=${encodeURIComponent(card.id)}`);
+    await page.goto(`${baseURL}/cards?cardId=${encodeURIComponent(card.id)}`);
     await expect(page.locator("#card-panel")).toBeVisible();
     await expect(page.locator("#card-panel-title")).toHaveText(card.title);
     await page.reload();
     await expect(page.locator("#card-panel-title")).toHaveText(card.title);
 
-    await page.goto(`${baseURL}/#/cards?cardId=${encodeURIComponent(card.id)}&taskId=${encodeURIComponent(task.id)}`);
+    await page.goto(`${baseURL}/cards?cardId=${encodeURIComponent(card.id)}&taskId=${encodeURIComponent(task.id)}`);
     await expect(page.locator("#card-panel")).toBeVisible();
     await expect(page.locator("#task-panel")).toBeVisible();
     await expect(page.locator("#task-panel-title")).toHaveText(task.description);
     await page.locator("#task-panel-close").click();
-    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${card.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${card.id}$`));
     await page.goBack();
     await expect(page.locator("#task-panel-title")).toHaveText(task.description);
     await expectNoHorizontalOverflow(page);
@@ -234,8 +234,8 @@ test.describe("pre-refactor frontend module characterization", () => {
       ["/users", "Users", ".ops-surface-users"],
     ];
     for (const [route, title, marker] of routes) {
-      await page.goto(`${baseURL}/#${route}`);
-      await expect(page).toHaveURL(`${baseURL}/#${route}`);
+      await page.goto(`${baseURL}${route}`);
+      await expect(page).toHaveURL(`${baseURL}${route}`);
       await expectVisibleRouteHeading(page, title);
       await expect(page.locator(marker)).toBeVisible();
       if (route === "/processes") {
@@ -249,36 +249,36 @@ test.describe("pre-refactor frontend module characterization", () => {
       }
       await expectNoHorizontalOverflow(page, route);
     }
-    await page.goto(`${baseURL}/#/templates`);
+    await page.goto(`${baseURL}/templates`);
     await page.locator(".runtime-template-row").first().click();
     await expect(page.locator(".runtime-template-projection")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save template" })).toHaveCount(0);
-    await page.goto(`${baseURL}/#/newsletter`);
+    await page.goto(`${baseURL}/newsletter`);
     await page.getByRole("button", { name: "Add slot" }).click();
     await expect(page.locator(".newsletter-surface dialog")).toBeVisible();
-    await page.goto(`${baseURL}/#/calendar`);
+    await page.goto(`${baseURL}/calendar`);
     await page.getByRole("button", { name: "Add activity" }).click();
     await expect(page.locator(".calendar-surface dialog[data-activity-dialog]")).toBeVisible();
-    await page.goto(`${baseURL}/#/bookkeeping`);
+    await page.goto(`${baseURL}/bookkeeping`);
     await expect(page.locator(".bookkeeping-documents")).toContainText(
       /No private documents uploaded|Download/,
     );
     await page.getByRole("button", { name: "Add entry" }).click();
     await expect(page.locator(".bookkeeping-entry-dialog")).toBeVisible();
-    await page.goto(`${baseURL}/#/admin`);
+    await page.goto(`${baseURL}/admin`);
     await page.getByRole("button", { name: /Diagnostics/ }).click();
     await expect(page.getByRole("heading", { name: "Read-only diagnostics" })).toBeFocused();
     expect(errors).toEqual([]);
     await context.close();
   });
 
-  test("invalid hashes recover to the Tasks queue and unknown programmatic navigation is a no-op", async ({ browser }) => {
+  test("invalid paths recover to the Tasks queue and unknown programmatic navigation is a no-op", async ({ browser }) => {
     const context = await ownedContext(browser, { width: 1440, height: 900 });
     const page = await context.newPage();
     const errors = observeErrors(page);
-    for (const hash of ["#/unknown", "#/mailing-exports", "#/cards?taskId=orphan", "#/tasks?date=2026-02-30", "#/tasks?taskId=%E0%A4%A"]) {
-      await page.goto(`${baseURL}/${hash}`);
-      await expect(page).toHaveURL(`${baseURL}/#/`);
+    for (const hash of ["/unknown", "/mailing-exports", "/cards?taskId=orphan", "/tasks?date=2026-02-30", "/tasks?taskId=%E0%A4%A"]) {
+      await page.goto(`${baseURL}${hash}`);
+      await expect(page).toHaveURL(`${baseURL}/`);
       await expect(page.locator(".ops-work-queue")).toBeVisible();
     }
     const before = page.url();
@@ -313,7 +313,7 @@ test.describe("pre-refactor frontend module characterization", () => {
       "/users",
     ];
     for (const route of routes) {
-      await page.goto(`${baseURL}/#${route}`);
+      await page.goto(`${baseURL}${route}`);
       await expect(page.locator("body")).toBeVisible();
       await expectNoHorizontalOverflow(page, route);
       if (route === "/users") {

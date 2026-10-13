@@ -76,7 +76,7 @@ export async function evaluateSponsorBookingAlerts(client: DynamoDBDocumentClien
           ...(rule.deliverableId ? { sponsorDeliverableId: rule.deliverableId } : {}),
           sponsorAlertRule: rule.code,
           sponsorAlertFingerprint: fingerprint,
-          href: `#/sponsors?${query}`,
+          href: `/sponsors?${query}`,
         },
       });
       created.push(notification.id);

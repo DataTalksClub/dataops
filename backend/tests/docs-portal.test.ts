@@ -340,6 +340,19 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
     assert.doesNotMatch(res.body, /<html|DataOps Portal/i);
   });
 
+  it('serves regular workspace paths directly in portal and local modes', async () => {
+    for (const enabled of ['true', 'false']) {
+      process.env.DATAOPS_DOCS_DOMAIN = enabled;
+      for (const path of ['/tasks', '/cards/archive', '/templates', '/device', '/unknown']) {
+        const res = await route(ev('GET', path, { headers: { cookie: browserCookie } }), client);
+        assert.strictEqual(res.statusCode, 200, `${enabled}: ${path}`);
+        assert.match(res.body, /DataOps Portal/);
+        assert.strictEqual(res.headers?.Location, undefined);
+      }
+    }
+    process.env.DATAOPS_DOCS_DOMAIN = 'true';
+  });
+
   it('renders the SPA shell for an extensionless app route', async () => {
     const res = await route(ev('GET', '/work', { headers: { cookie: browserCookie } }), client);
     assert.strictEqual(res.statusCode, 200);

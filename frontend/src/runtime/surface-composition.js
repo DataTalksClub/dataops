@@ -140,7 +140,7 @@ export function createSurfaceComposition(context) {
     tasksNavSectionButtons,
     tasksFromWorkPayload,
     windowConsole,
-    workspaceHashPath,
+    workspacePath,
     workspaceNavButtons,
     workspaceState,
   } = context;
@@ -234,10 +234,10 @@ export function createSurfaceComposition(context) {
     if (!(await canLeaveCurrentDocument())) return undefined;
     const tasksSection = legacyViewToTasksSection(nextView);
     const path = tasksSection
-      ? workspaceHashPath("tasks", tasksSection)
+      ? workspacePath("tasks", tasksSection)
       : nextView === "tasks"
         ? "/tasks"
-        : workspaceHashPath(
+        : workspacePath(
             nextView === "processes" || nextView === "search"
               ? "docs"
               : nextView,

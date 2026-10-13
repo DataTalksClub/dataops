@@ -413,8 +413,8 @@ export function createCardsSurface(context) {
     if (item.issueNumber) {
       const issue = document.createElement("span");
       issue.className = "workflow-card-issue";
-      issue.textContent = `#${String(item.issueNumber).replace(/^#/, "")}`;
-      issue.title = `Issue #${String(item.issueNumber).replace(/^#/, "")}`;
+      issue.textContent = `#${String(item.issueNumber).replace(/^/, "")}`;
+      issue.title = `Issue #${String(item.issueNumber).replace(/^/, "")}`;
       metaTop.append(issue);
     }
     if (metaTop.children.length > 0) {

@@ -42,8 +42,8 @@ test.afterAll(async () => stopOwnedTestServer(server));
 
 async function queue(page) {
   await setupPageWithAuth(page);
-  await page.goto(`${server.baseURL}/#/`);
-  await expect(page).toHaveURL(`${server.baseURL}/#/`);
+  await page.goto(`${server.baseURL}/`);
+  await expect(page).toHaveURL(`${server.baseURL}/`);
   await expect(page.locator('.ops-work-queue')).toBeVisible();
 }
 

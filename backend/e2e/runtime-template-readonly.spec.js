@@ -19,7 +19,7 @@ test.describe('Git-authored runtime templates', () => {
       expect((await response.json()).authority).toBe('git-authored-workflow-templates');
     }
 
-    await page.goto(`/#/templates?templateId=${encodeURIComponent(template.id)}`);
+    await page.goto(`/templates?templateId=${encodeURIComponent(template.id)}`);
     await expect(page.getByRole('heading', { name: /Synthetic Git-authored workflow/ })).toBeVisible();
     const definitionDetails = page.locator('.runtime-template-provenance');
     await expect(definitionDetails).toHaveJSProperty('open', false);
@@ -43,7 +43,7 @@ test.describe('Git-authored runtime templates', () => {
     await form.getByRole('button', { name: 'Create card' }).click();
     expect((await createdResponse).status()).toBe(201);
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/templates?templateId=<id>',
+      route: '/templates?templateId=<id>',
       roleId: 'admin',
       stateIds: ['templates.read-only', 'templates.source-revision', 'templates.create-card', 'templates.method-not-allowed'],
     }]);
@@ -53,7 +53,7 @@ test.describe('Git-authored runtime templates', () => {
     await request.post('/__e2e__/route-faults', {
       data: { faults: [{ method: 'GET', path: '/api/templates', status: 503 }] },
     });
-    await page.goto('/#/templates');
+    await page.goto('/templates');
     await expect(page.getByText('Runtime templates unavailable')).toBeVisible();
     await expect(page.locator('.runtime-template-inspector')).toContainText('Synthetic route failure (503)');
     // The Templates section also states its own load outcome (#204 slice 1).
@@ -62,10 +62,10 @@ test.describe('Git-authored runtime templates', () => {
     await expect(templatesSummary.locator('.surface-summary-detail')).toHaveText('Synthetic route failure (503)');
     await request.delete('/__e2e__/route-faults');
 
-    await page.goto('/#/templates?templateId=missing-git-template');
+    await page.goto('/templates?templateId=missing-git-template');
     await expect(page.getByText(/template not found/i)).toBeVisible();
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/templates?templateId=<id>',
+      route: '/templates?templateId=<id>',
       roleId: 'admin',
       stateIds: ['templates.failure'],
     }]);
@@ -79,7 +79,7 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     const out = path.resolve(__dirname, '../../.tmp/demo-c-after');
     fs.mkdirSync(out, { recursive: true });
     await page.setViewportSize({ width, height });
-    await page.goto('/#/templates');
+    await page.goto('/templates');
     const empty = page.locator('.runtime-template-empty');
     await expect(empty).toContainText('Choose a template');
     await expect(empty).toContainText('Use Start card');

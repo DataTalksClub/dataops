@@ -84,7 +84,7 @@ test.describe('issue 204 owning-surface feedback', () => {
       await tasksReady;
       await route.continue();
     });
-    await page.goto(`${baseURL}/#/tasks`);
+    await page.goto(`${baseURL}/tasks`);
     const queueSummary = page.locator('[data-summary-id="tasks-queue"]');
     await expect(queueSummary).toHaveAttribute('data-summary-state', 'loading');
     releaseTasks();
@@ -155,8 +155,8 @@ test.describe('issue 204 owning-surface feedback', () => {
     await clearFaults(context.request);
 
     await page.setViewportSize(MOBILE);
-    await page.goto(`${baseURL}/#/tasks`);
-    // The prior Tasks outage snapshot remains in memory across hash routes.
+    await page.goto(`${baseURL}/tasks`);
+    // The prior Tasks outage snapshot remains in memory across workspace routes.
     // Reload after clearing faults to prove the fresh mobile work presentation.
     await page.reload();
     await expect(queueSummary).toHaveCount(0);
@@ -175,7 +175,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     const context = await ownedContext(browser, { viewport: DESKTOP });
     const page = await context.newPage();
     await setupPageWithAuth(page);
-    await page.goto(`${baseURL}/#/`);
+    await page.goto(`${baseURL}/`);
     await expect(page.locator('.operations-home')).toBeVisible();
 
     await page.getByRole('button', { name: 'New task' }).click();
@@ -212,7 +212,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     await setupPageWithAuth(page);
 
     await setFaults(context.request, [{ method: 'GET', path: '/api/users', status: 503, remaining: 5 }]);
-    await page.goto(`${baseURL}/#/users`);
+    await page.goto(`${baseURL}/users`);
     const usersSummary = page.locator('[data-summary-id="users"]');
     await expect(usersSummary).toHaveAttribute('data-summary-state', 'unavailable');
     await expect(usersSummary).toContainText('Synthetic route failure (503)');
@@ -223,7 +223,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     await expect(usersSummary).toHaveAttribute('data-summary-state', /ready|empty/);
     await shot(page, 'users-ready-desktop-1440x900');
 
-    await page.goto(`${baseURL}/#/device`);
+    await page.goto(`${baseURL}/device`);
     const deviceSummary = page.locator('[data-summary-id="device"]');
     await expect(deviceSummary).toContainText('Enter the code shown by the DataOps CLI');
     await page.locator('.device-code-input').fill('ZZZZ-9999');
@@ -250,7 +250,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     const context = await ownedContext(browser, { viewport: DESKTOP });
     const page = await context.newPage();
     await setupPageWithAuth(page);
-    await page.goto(`${baseURL}/#/`);
+    await page.goto(`${baseURL}/`);
     await expect(page.locator('.operations-home')).toBeVisible();
 
     await page.getByRole('button', { name: 'New task' }).click();
@@ -306,7 +306,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     });
     const page = await context.newPage();
     await setupPageWithAuth(page);
-    await page.goto(`${baseURL}/#/users`);
+    await page.goto(`${baseURL}/users`);
     await expect(page.locator('[data-summary-id="users"]')).toHaveAttribute(
       'data-summary-state',
       /ready|empty/,

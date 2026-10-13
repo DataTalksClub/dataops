@@ -169,7 +169,7 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
     const context = await ownedContext(browser, { viewport: DESKTOP });
     const page = await context.newPage();
     await setupPageWithAuth(page);
-    await page.goto(`${baseURL}/#/assistants`);
+    await page.goto(`${baseURL}/assistants`);
 
     const summary = page.locator('[data-summary-id="assistants"]');
     await expect(summary).toBeVisible();
@@ -227,7 +227,7 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
     });
     expect(draftResponse.status()).toBe(201);
     const draft = (await json(draftResponse)).job;
-    await page.goto(`${baseURL}/#/assistants?assistantJobId=${draft.id}`);
+    await page.goto(`${baseURL}/assistants?assistantJobId=${draft.id}`);
     const detail = page.locator('.assistant-detail');
     await expect(detail.getByRole('button', { name: 'Submit' })).toBeVisible();
     await setFaults(context.request, [{
@@ -261,7 +261,7 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
       .toContainText('refreshed queue');
 
     await page.setViewportSize(MOBILE);
-    await page.goto(`${baseURL}/#/assistants`);
+    await page.goto(`${baseURL}/assistants`);
     // A fully loaded queue states nothing: the job list itself is the evidence.
     await expect(page.locator('.assistant-workspace')).toBeVisible();
     await expectNoHorizontalOverflow(page);

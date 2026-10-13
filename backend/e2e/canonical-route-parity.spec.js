@@ -102,11 +102,12 @@ async function expectVisibleRouteHeading(page, routeTitle) {
 }
 
 test.describe('issue 156 canonical route and operator parity', () => {
-  test('boots hash workspace routes without waiting for a delayed docs provider', async ({ page, request }) => {
+  test('boots workspace paths without waiting for a delayed docs provider', async ({ page, request }) => {
+    await createFixtures(request);
     await setRouteFaults(request, [{ method: 'GET', path: '/docs', delayMs: 5000 }]);
     try {
       const docsStarted = page.waitForRequest((req) => new URL(req.url()).pathname === '/docs');
-      await page.goto('/#/');
+      await page.goto('/');
       await docsStarted;
       await expectVisibleRouteHeading(page, 'Work Queue');
       await expect(page.locator('.ops-work-queue')).toBeVisible();
@@ -116,49 +117,71 @@ test.describe('issue 156 canonical route and operator parity', () => {
     }
   });
 
-  test('resolves every supported canonical route and normalizes invalid hashes', async ({ page, request }) => {
+  test('resolves every supported canonical route and normalizes invalid paths', async ({ page, request }) => {
     const fixture = await createFixtures(request);
     const routes = [
-      ['/#/', 'Work Queue'],
-      [`/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&cardId=${encodeURIComponent(fixture.card.id)}&contextCardId=${encodeURIComponent(fixture.contextCard.id)}`, 'Work Queue'],
-      [`/#/cards?cardId=${encodeURIComponent(fixture.card.id)}&taskId=${encodeURIComponent(fixture.task.id)}`, 'Cards'],
-      [`/#/assistants?assistantJobId=${encodeURIComponent(fixture.assistant.id)}`, 'Assistants'],
-      [`/#/templates?templateId=${encodeURIComponent(fixture.template.id)}`, 'Templates'],
-      ['/#/recurring', 'Recurring'],
-      ['/#/bookkeeping', 'Bookkeeping'],
-      [`/#/sponsors?dealId=${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
-      ['/#/newsletter', 'Newsletter'],
-      ['/#/calendar', 'Calendar'],
-      ['/#/processes', 'Docs'],
-      ['/#/review', 'Document review'],
-      ['/#/admin', 'Admin'],
-      ['/#/users', 'Users'],
+      ['/', 'Work Queue'],
+      [`/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&cardId=${encodeURIComponent(fixture.card.id)}&contextCardId=${encodeURIComponent(fixture.contextCard.id)}`, 'Work Queue'],
+      [`/cards?cardId=${encodeURIComponent(fixture.card.id)}&taskId=${encodeURIComponent(fixture.task.id)}`, 'Cards'],
+      [`/assistants?assistantJobId=${encodeURIComponent(fixture.assistant.id)}`, 'Assistants'],
+      [`/templates?templateId=${encodeURIComponent(fixture.template.id)}`, 'Templates'],
+      ['/recurring', 'Recurring'],
+      ['/bookkeeping', 'Bookkeeping'],
+      [`/sponsors?dealId=${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
+      ['/newsletter', 'Newsletter'],
+      ['/calendar', 'Calendar'],
+      ['/processes', 'Docs'],
+      ['/review', 'Document review'],
+      ['/admin', 'Admin'],
+      ['/users', 'Users'],
     ];
     for (const [route, title] of routes) {
       await page.goto(route);
       await expectVisibleRouteHeading(page, title);
-      expect(new URL(page.url()).hash).toBe(new URL(`http://local${route}`).hash);
+      expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe(route);
+      expect(new URL(page.url()).hash).toBe("");
     }
 
-    await page.goto('/#/tasks/?date=2026-08-11&unsupported=%3Cb%3Eunsafe%3C%2Fb%3E');
-    await expect(page).toHaveURL(/\/#\/tasks\?date=2026-08-11$/);
-    await page.evaluate(() => { window.location.hash = '#/tasks?date=2026-02-30'; });
-    await expect(page).toHaveURL(/\/#\/$/);
-    await page.evaluate(() => { window.location.hash = '#/unknown?x=%3Cimg%3E'; });
-    await expect(page).toHaveURL(/\/#\/$/);
-    await page.evaluate(() => { window.location.hash = '#/mailing-exports'; });
-    await expect(page).toHaveURL(/\/#\/$/);
-    await page.evaluate(() => { window.location.hash = '#/cards?taskId=orphan'; });
-    await expect(page).toHaveURL(/\/#\/$/);
+    await page.goto('/tasks/?date=2026-08-11&unsupported=%3Cb%3Eunsafe%3C%2Fb%3E');
+    await expect(page).toHaveURL(/\/tasks\?date=2026-08-11$/);
+    await page.evaluate(() => { history.pushState(null, "", '/tasks?date=2026-02-30'); window.dispatchEvent(new PopStateEvent("popstate")); });
+    await expect(page).toHaveURL(/\/$/);
+    await page.evaluate(() => { history.pushState(null, "", '/unknown?x=%3Cimg%3E'); window.dispatchEvent(new PopStateEvent("popstate")); });
+    await expect(page).toHaveURL(/\/$/);
+    await page.evaluate(() => { history.pushState(null, "", '/mailing-exports'); window.dispatchEvent(new PopStateEvent("popstate")); });
+    await expect(page).toHaveURL(/\/$/);
+    await page.evaluate(() => { history.pushState(null, "", '/cards?taskId=orphan'); window.dispatchEvent(new PopStateEvent("popstate")); });
+    await expect(page).toHaveURL(/\/$/);
+  });
+
+  test('reloads nested paths and restores regular paths with browser history', async ({ page, request }) => {
+    const fixture = await createFixtures(request);
+    const route = `/cards/archive?cardId=${fixture.card.id}&taskId=${fixture.task.id}`;
+    await page.goto(route);
+    await expect(page.locator('#task-panel')).toBeVisible();
+    await page.reload();
+    await expect(page.locator('#task-panel')).toBeVisible();
+    expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe(route);
+    expect(new URL(page.url()).hash).toBe('');
+
+    await page.locator('#task-panel-close').click();
+    await expect(page).toHaveURL(new RegExp(`/cards/archive\\?cardId=${fixture.card.id}$`));
+    await page.goBack();
+    await expect(page.locator('#task-panel')).toBeVisible();
+    expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe(route);
+    await page.goForward();
+    await expect(page.locator('#task-panel')).toBeHidden();
+    await expect(page.locator('#card-panel')).toBeVisible();
+    expect(new URL(page.url()).hash).toBe('');
   });
 
   test('keeps exact entities honest and task/workflow mismatch recoverable', async ({ page, request }, testInfo) => {
     const fixture = await createFixtures(request);
-    await page.goto(`/#/cards?cardId=${fixture.contextCard.id}&taskId=${fixture.task.id}`);
+    await page.goto(`/cards?cardId=${fixture.contextCard.id}&taskId=${fixture.task.id}`);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.task.id);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.contextCard.id);
     recordCapabilityEvidence(testInfo, [
-      { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.mismatch'] },
+      { route: '/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.mismatch'] },
     ]);
   });
 
@@ -170,16 +193,16 @@ test.describe('issue 156 canonical route and operator parity', () => {
       ['templates?templateId=stale-template', 'stale-template'],
       ['sponsors?dealId=stale-booking', 'stale-booking'],
     ]) {
-      await page.goto(`/#/${route}`);
+      await page.goto(`/${route}`);
       await expect(page.locator('.entity-route-not-found:visible')).toContainText(id);
       await expect(page.locator('button:visible', { hasText: 'Retry' }).first()).toBeVisible();
     }
     recordCapabilityEvidence(testInfo, [
-      { route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.stale-not-found'] },
-      { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.not-found'] },
-      { route: '/#/assistants?assistantJobId=<id>', roleId: 'admin', stateIds: ['assistants.stale-not-found'] },
-      { route: '/#/templates?templateId=<id>', roleId: 'admin', stateIds: ['templates.stale-not-found'] },
-      { route: '/#/sponsors?dealId=<id>', roleId: 'admin', stateIds: ['sponsors.not-found'] },
+      { route: '/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.stale-not-found'] },
+      { route: '/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.not-found'] },
+      { route: '/assistants?assistantJobId=<id>', roleId: 'admin', stateIds: ['assistants.stale-not-found'] },
+      { route: '/templates?templateId=<id>', roleId: 'admin', stateIds: ['templates.stale-not-found'] },
+      { route: '/sponsors?dealId=<id>', roleId: 'admin', stateIds: ['sponsors.not-found'] },
     ]);
   });
 
@@ -188,23 +211,23 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const encodedCard = encodeURIComponent(fixture.card.id);
     const encodedContext = encodeURIComponent(fixture.contextCard.id);
 
-    await page.goto('/#/tasks?date=2026-08-11');
+    await page.goto('/tasks?date=2026-08-11');
     await expect(page.locator('.task-route-context')).toContainText('Date 11 Aug');
     await expect(page.locator('.ops-queue-row', { hasText: fixture.task.description })).toBeVisible();
-    await page.goto(`/#/tasks?cardId=${encodedCard}`);
+    await page.goto(`/tasks?cardId=${encodedCard}`);
     await expect(page.locator('.task-route-context')).toContainText(fixture.card.title);
     await expect(page.locator('.ops-queue-row', { hasText: fixture.task.description })).toBeVisible();
-    await page.goto(`/#/tasks?contextCardId=${encodedContext}`);
+    await page.goto(`/tasks?contextCardId=${encodedContext}`);
     await expect(page.locator('.task-route-context')).toContainText(fixture.contextCard.title);
     const openReturnCard = page.getByRole('complementary', { name: 'Task queue route context' }).getByRole('button');
     await expect(openReturnCard).toBeVisible();
     await openReturnCard.click();
-    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.contextCard.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${fixture.contextCard.id}$`));
     await expect(page.locator('#card-panel-title')).toHaveText(fixture.contextCard.title);
-    await page.goto(`/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}`);
+    await page.goto(`/tasks?taskId=${encodeURIComponent(fixture.task.id)}`);
     await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>',
+      route: '/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>',
       roleId: 'admin',
       stateIds: ['tasks.combined-context'],
     }]);
@@ -215,7 +238,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const encodedCard = encodeURIComponent(fixture.card.id);
     const encodedContext = encodeURIComponent(fixture.contextCard.id);
 
-    const route = `/#/tasks?date=2026-08-11&cardId=${encodedCard}&contextCardId=${encodedContext}`;
+    const route = `/tasks?date=2026-08-11&cardId=${encodedCard}&contextCardId=${encodedContext}`;
     await setRouteFaults(request, [{ method: 'GET', path: `/api/cards/${fixture.card.id}`, status: 503 }]);
     await page.goto(route);
     const filterCardFailure = page.locator('[data-context-source="filter-card"]');
@@ -247,31 +270,31 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('.task-route-context')).toContainText(fixture.card.title);
 
     await setRouteFaults(request, [{ method: 'GET', path: `/api/cards/${fixture.card.id}`, status: 503 }]);
-    await page.goto(`/#/cards?cardId=${encodedCard}`);
+    await page.goto(`/cards?cardId=${encodedCard}`);
     const cardFailure = page.locator('#card-panel .entity-route-error');
     await expect(cardFailure).toHaveAttribute('role', 'alert');
     const recoveryControls = cardFailure.getByRole('button');
     await expect(recoveryControls).toHaveCount(2);
     for (const control of await recoveryControls.all()) await expect(control).toBeEnabled();
-    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${fixture.card.id}$`));
     await clearRouteFaults(request);
     recordCapabilityEvidence(testInfo, [
-      { route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.failure'] },
-      { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.failure'] },
+      { route: '/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.failure'] },
+      { route: '/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.failure'] },
     ]);
   });
 
   test('keeps relationship, notification, search, and panel close routes synchronized', async ({ page, request }, testInfo) => {
     const fixture = await createFixtures(request);
 
-    await page.goto(`/#/tasks?taskId=${fixture.task.id}`);
+    await page.goto(`/tasks?taskId=${fixture.task.id}`);
     await page.locator('.task-detail-meta button', { hasText: fixture.card.title }).click();
-    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}&taskId=${fixture.task.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${fixture.card.id}&taskId=${fixture.task.id}$`));
     await page.locator('#task-panel-close').click();
-    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${fixture.card.id}$`));
     await expect(page.locator('#card-panel')).toBeVisible();
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/cards?cardId=<id>&taskId=<id>',
+      route: '/cards?cardId=<id>&taskId=<id>',
       roleId: 'admin',
       stateIds: ['workflows.deep-link-return'],
     }]);
@@ -286,26 +309,26 @@ test.describe('issue 156 canonical route and operator parity', () => {
     expect(dueResponse.ok()).toBe(true);
     const duePayload = await dueResponse.json();
     const dueTask = duePayload.task || duePayload;
-    await page.goto('/#/');
+    await page.goto('/');
     await page.locator('#work-bell-button').click();
     const notice = page.locator('.work-bell-item', { hasText: dueTask.description });
     await notice.getByRole('button', { name: 'Open task' }).click();
-    await expect(page).toHaveURL(new RegExp(`/#/tasks\\?taskId=${dueTask.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/tasks\\?taskId=${dueTask.id}$`));
     await page.locator('#task-panel-close').click();
-    await expect(page).toHaveURL(/\/#\/$/);
+    await expect(page).toHaveURL(/\/$/);
     await page.locator('#work-bell-button').click();
     await page.locator('#work-bell-close').click();
-    await expect(page).toHaveURL(/\/#\/$/);
+    await expect(page).toHaveURL(/\/$/);
 
-    await page.goto('/#/');
+    await page.goto('/');
     await page.locator('#search-input').fill(fixture.assistant.title);
     const assistantResult = page.locator('.unified-search-row.result-assistant-job', { hasText: fixture.assistant.title });
     await expect(assistantResult).toBeVisible();
     await assistantResult.click();
-    await expect(page).toHaveURL(new RegExp(`/#/assistants\\?assistantJobId=${fixture.assistant.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/assistants\\?assistantJobId=${fixture.assistant.id}$`));
     await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/ (Notifications panel)',
+      route: '/ (Notifications panel)',
       roleId: 'admin',
       stateIds: ['notifications.task-linked'],
     }]);
@@ -332,7 +355,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const mobileCount = page.locator('#mobile-work-bell-button .work-bell-count');
 
     const initialTask = await createDueTask('Initial count notification');
-    await page.goto('/#/');
+    await page.goto('/');
     await page.locator('#work-bell-button').click();
     const initialItem = page.locator('.work-bell-item', { hasText: initialTask.description });
     await expect(initialItem).toBeVisible();
@@ -376,7 +399,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(mobileCount).toHaveText(String(afterSuccess.length));
     await expect(page.locator('#work-bell-panel')).toBeVisible();
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/ (Notifications panel)',
+      route: '/ (Notifications panel)',
       roleId: 'admin',
       stateIds: ['notifications.counts-update'],
     }]);
@@ -388,7 +411,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await Promise.all(Array.from({ length: 12 }, (_, index) => request.post('/api/cards', {
       data: { title: `Larger snapshot workflow ${fixture.id} ${index + 1}`, anchorDate: '2026-08-11' },
     })));
-    const route = `/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&cardId=${encodeURIComponent(fixture.card.id)}&contextCardId=${encodeURIComponent(fixture.contextCard.id)}`;
+    const route = `/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&cardId=${encodeURIComponent(fixture.card.id)}&contextCardId=${encodeURIComponent(fixture.contextCard.id)}`;
 
     for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(viewport);
@@ -425,7 +448,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       const url = new URL(response.url());
       return response.request().method() === 'GET' && url.pathname === '/api/cards' && url.searchParams.has('limit');
     });
-    await page.goto(`/#/cards?cardId=${fixture.contextCard.id}&taskId=${fixture.task.id}`);
+    await page.goto(`/cards?cardId=${fixture.contextCard.id}&taskId=${fixture.task.id}`);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.task.id);
     await laterSnapshot;
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.contextCard.id);
@@ -435,11 +458,11 @@ test.describe('issue 156 canonical route and operator parity', () => {
 
   test('keeps Git-authored template Back canonical on mobile detail', async ({ page, request }) => {
     const fixture = await createFixtures(request);
-    const exactRoute = new RegExp(`/#/templates\\?templateId=${fixture.template.id}$`);
+    const exactRoute = new RegExp(`/templates\\?templateId=${fixture.template.id}$`);
     const templateRow = () => page.locator('.runtime-template-row', { hasText: fixture.template.name });
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/#/templates');
+    await page.goto('/templates');
     await templateRow().click();
     await expect(page).toHaveURL(exactRoute);
     await expect(page.locator('.runtime-template-projection')).toContainText(fixture.template.name);
@@ -448,19 +471,19 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const cleanBack = page.getByRole('button', { name: 'Back to template list' });
     await expect(cleanBack).toBeVisible();
     await cleanBack.click();
-    await expect(page).toHaveURL(/\/#\/templates$/);
+    await expect(page).toHaveURL(/\/templates$/);
     await expect(page.locator('.runtime-template-list')).toBeVisible();
     await expect(page.locator('.runtime-template-projection')).toContainText('Choose a template');
     await expect(page.locator('.runtime-template-row').first()).toBeFocused();
     await page.reload();
-    await expect(page).toHaveURL(/\/#\/templates$/);
+    await expect(page).toHaveURL(/\/templates$/);
     await expect(page.locator('.runtime-template-list')).toBeVisible();
     await expect(page.locator('.runtime-template-projection')).toContainText('Choose a template');
     await page.goBack();
     await expect(page).toHaveURL(exactRoute);
     await expect(page.locator('.runtime-template-projection')).toContainText(fixture.template.name);
     await page.goForward();
-    await expect(page).toHaveURL(/\/#\/templates$/);
+    await expect(page).toHaveURL(/\/templates$/);
     await expect(page.locator('.runtime-template-list')).toBeVisible();
 
     await expect(page.getByRole('button', { name: 'Save template' })).toHaveCount(0);
@@ -476,12 +499,12 @@ test.describe('issue 156 canonical route and operator parity', () => {
     })).json();
     const fixture = { card, task };
 
-    const filteredTasksRoute = new RegExp(`/#/tasks\\?cardId=${fixture.card.id}$`);
-    await page.goto(`/#/tasks?cardId=${fixture.card.id}`);
+    const filteredTasksRoute = new RegExp(`/tasks\\?cardId=${fixture.card.id}$`);
+    await page.goto(`/tasks?cardId=${fixture.card.id}`);
     const taskRow = page.locator(`.ops-queue-row[data-task-id="${fixture.task.id}"]`).first();
     await expect(taskRow).toBeVisible();
     await taskRow.click();
-    await expect(page).toHaveURL(new RegExp(`/#/tasks\\?taskId=${fixture.task.id}&cardId=${fixture.card.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/tasks\\?taskId=${fixture.task.id}&cardId=${fixture.card.id}$`));
     await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
     await expect(page.locator('#task-panel-close')).toBeFocused();
     await page.keyboard.press('Shift+Tab');
@@ -493,10 +516,10 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('#task-panel')).toBeHidden();
     await expect(taskRow).toBeFocused();
 
-    await page.goto('/#/tasks?taskId=keyboard-missing-task');
+    await page.goto('/tasks?taskId=keyboard-missing-task');
     await expect(page.locator('#task-panel .entity-route-not-found')).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL(/\/#\/tasks$/);
+    await expect(page).toHaveURL(/\/tasks$/);
     await expectVisibleRouteHeading(page, 'Work Queue');
     await expectStableRouteFocus(page);
   });
@@ -511,14 +534,14 @@ test.describe('issue 156 canonical route and operator parity', () => {
     })).json();
     const fixture = { card, task };
 
-    await page.goto('/#/cards');
+    await page.goto('/cards');
     const workflowCard = page.locator('.ops-workflow-card[data-card-id]').first();
     await expect(workflowCard).toBeVisible();
     const visibleWorkflowId = await workflowCard.getAttribute('data-card-id');
     const visibleWorkflowTitle = await workflowCard.locator('strong').textContent();
     await workflowCard.focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${visibleWorkflowId}$`));
+    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${visibleWorkflowId}$`));
     await expect(page.locator('#card-panel-title')).toHaveText(visibleWorkflowTitle);
     await expect(page.locator('#card-panel-close')).toBeFocused();
     await page.keyboard.press('Shift+Tab');
@@ -526,18 +549,18 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.keyboard.press('Tab');
     await expect(page.locator('#card-panel-close')).toBeFocused();
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL(/\/#\/cards$/);
+    await expect(page).toHaveURL(/\/cards$/);
     await expect(page.locator('#card-panel')).toBeHidden();
     await expect(workflowCard).toBeFocused();
 
-    await page.goto(`/#/cards?cardId=${fixture.card.id}`);
+    await page.goto(`/cards?cardId=${fixture.card.id}`);
     await expect(page.locator('#card-panel-title')).toHaveText(fixture.card.title);
     const fixtureCard = page.locator(`.ops-workflow-card[data-card-id="${fixture.card.id}"]`);
     const fixtureCardWasVisible = await fixtureCard.isVisible().catch(() => false);
     const workflowTaskRow = page.locator(`.card-checklist-label[data-task-id="${fixture.task.id}"]`);
     await workflowTaskRow.focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}&taskId=${fixture.task.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${fixture.card.id}&taskId=${fixture.task.id}$`));
     await expect(page.locator('#task-panel-close')).toBeFocused();
     await expectNoSeriousA11y(page, '#task-panel');
     await page.keyboard.press('Shift+Tab');
@@ -545,36 +568,36 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.keyboard.press('Tab');
     expect(await page.evaluate(() => document.querySelector('#task-panel [role="dialog"]').contains(document.activeElement))).toBe(true);
     await page.locator('#task-panel-close').click();
-    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${fixture.card.id}$`));
     await expect(page.locator('#task-panel')).toBeHidden();
     await expect(page.locator('#card-panel')).toBeVisible();
     await expect(workflowTaskRow).toBeFocused();
     await page.locator('#card-panel-close').click();
-    await expect(page).toHaveURL(/\/#\/cards$/);
+    await expect(page).toHaveURL(/\/cards$/);
     if (fixtureCardWasVisible) await expect(fixtureCard).toBeFocused();
     else await expectStableRouteFocus(page);
 
-    await page.goto('/#/cards?cardId=keyboard-missing-workflow');
+    await page.goto('/cards?cardId=keyboard-missing-workflow');
     await expect(page.locator('#card-panel .entity-route-not-found')).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL(/\/#\/cards$/);
+    await expect(page).toHaveURL(/\/cards$/);
     await expectVisibleRouteHeading(page, 'Cards');
     await expectStableRouteFocus(page);
   });
 
   test('ignores stale real-server entity responses after a newer navigation', async ({ page, request }) => {
     const fixture = await createFixtures(request);
-    await page.goto('/#/');
+    await page.goto('/');
     await expectVisibleRouteHeading(page, 'Work Queue');
     await setRouteFaults(request, [{ method: 'GET', path: `/api/cards/${fixture.card.id}`, delayMs: 900 }]);
     const started = page.waitForRequest((req) => new URL(req.url()).pathname.endsWith(`/api/cards/${fixture.card.id}`));
     const staleCardResponse = page.waitForResponse((response) =>
       new URL(response.url()).pathname.endsWith(`/api/cards/${fixture.card.id}`),
     );
-    await page.evaluate((cardId) => { window.location.hash = `#/cards?cardId=${cardId}`; }, fixture.card.id);
+    await page.evaluate((cardId) => { history.pushState(null, "", `/cards?cardId=${cardId}`); window.dispatchEvent(new PopStateEvent("popstate")); }, fixture.card.id);
     await started;
-    await page.evaluate((assistantId) => { window.location.hash = `#/assistants?assistantJobId=${assistantId}`; }, fixture.assistant.id);
-    await expect(page).toHaveURL(new RegExp(`/#/assistants\\?assistantJobId=${fixture.assistant.id}$`));
+    await page.evaluate((assistantId) => { history.pushState(null, "", `/assistants?assistantJobId=${assistantId}`); window.dispatchEvent(new PopStateEvent("popstate")); }, fixture.assistant.id);
+    await expect(page).toHaveURL(new RegExp(`/assistants\\?assistantJobId=${fixture.assistant.id}$`));
     await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
     await staleCardResponse;
     await expect(page.locator('#card-panel')).toBeHidden();
@@ -586,20 +609,20 @@ test.describe('issue 156 canonical route and operator parity', () => {
   test('captures deterministic Task and stale-entity diagnostics at desktop and mobile sizes', async ({ page, request }) => {
     const fixture = await createFixtures(request);
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(`/#/tasks?taskId=${fixture.task.id}&date=2026-08-11&cardId=${fixture.card.id}&contextCardId=${fixture.contextCard.id}`);
+    await page.goto(`/tasks?taskId=${fixture.task.id}&date=2026-08-11&cardId=${fixture.card.id}&contextCardId=${fixture.contextCard.id}`);
     await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
     await expectNoSeriousA11y(page, '#task-panel');
     await page.screenshot({ path: path.join(SHOTS, 'desktop-task-combined-context-1440x900.png'), fullPage: true });
-    await page.goto('/#/tasks?taskId=missing-for-shot');
+    await page.goto('/tasks?taskId=missing-for-shot');
     await expectNoSeriousA11y(page, '#task-panel');
     await page.screenshot({ path: path.join(SHOTS, 'desktop-entity-not-found-1440x900.png'), fullPage: true });
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`/#/tasks?taskId=${fixture.task.id}&date=2026-08-11&cardId=${fixture.card.id}&contextCardId=${fixture.contextCard.id}`);
+    await page.goto(`/tasks?taskId=${fixture.task.id}&date=2026-08-11&cardId=${fixture.card.id}&contextCardId=${fixture.contextCard.id}`);
     await expectNoHorizontalOverflow(page);
     await expectNoSeriousA11y(page, '#task-panel');
     await page.screenshot({ path: path.join(SHOTS, 'mobile-task-combined-context-390x844.png') });
-    await page.goto('/#/tasks?taskId=missing-mobile-shot');
+    await page.goto('/tasks?taskId=missing-mobile-shot');
     await expectNoSeriousA11y(page, '#task-panel');
     await page.screenshot({ path: path.join(SHOTS, 'mobile-entity-not-found-390x844.png') });
   });
@@ -617,7 +640,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     expect(notification).toBeTruthy();
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/#/');
+    await page.goto('/');
     await page.locator('#work-bell-button').click();
     const notificationItem = page.locator('.work-bell-item', { hasText: dueTask.description });
     await expect(notificationItem.getByRole('button', { name: /Dismiss notification/ })).toBeVisible();
@@ -633,7 +656,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const apiAfterDismiss = await (await request.get('/api/notifications')).json();
     expect(apiAfterDismiss.notifications.items.some((item) => item.id === notification.id)).toBe(false);
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/ (Notifications panel)',
+      route: '/ (Notifications panel)',
       roleId: 'admin',
       stateIds: ['notifications.dismiss-success'],
     }]);
@@ -650,7 +673,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     })).json()).recurringConfig;
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/#/recurring');
+    await page.goto('/recurring');
     const removableRow = page.locator('.ops-recurring-item', { hasText: removableRecurring.description });
     await removableRow.getByRole('button', { name: /Delete recurring schedule/ }).click();
     await expect(page.locator('#confirm-message')).toContainText('removes only the schedule');
@@ -670,7 +693,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expectNoHorizontalOverflow(page);
     await expectNoSeriousA11y(page, '.ops-recurring-section');
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/recurring',
+      route: '/recurring',
       roleId: 'admin',
       stateIds: ['recurring.delete-unreferenced', 'recurring.delete-referenced-409'],
     }]);
@@ -678,7 +701,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
 
   test('uses the shared visible sign-out boundary on desktop and mobile', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/#/');
+    await page.goto('/');
     await page.locator('#settings-button').click();
     await expect(page.getByRole('button', { name: /^Sign out/ })).toBeVisible();
     await expectNoSeriousA11y(page, '#settings-menu');
@@ -694,7 +717,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.waitForURL(/\/logout$/);
     expect(logoutSeen).toBe(true);
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/ (Settings panel)',
+      route: '/ (Settings panel)',
       roleId: 'admin',
       stateIds: ['settings.logout'],
     }]);

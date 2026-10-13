@@ -232,7 +232,7 @@ export function createCardSummary(context) {
   }
   const issueNumber = typeof workCardIssueNumber === "function"
     ? workCardIssueNumber(card)
-    : (card.issueNumber ? String(card.issueNumber).replace(/^#/, "") : "");
+    : (card.issueNumber ? String(card.issueNumber).replace(/^/, "") : "");
   if (issueNumber) {
     const issue = document.createElement("span");
     issue.className = "workflow-card-issue";

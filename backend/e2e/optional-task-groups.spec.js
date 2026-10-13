@@ -33,7 +33,7 @@ for (const includeOptional of [false, true]) {
       });
       expect(fixture.status()).toBe(201);
       const { template } = await fixture.json();
-      await page.goto(`/#/templates?templateId=${encodeURIComponent(template.id)}`);
+      await page.goto(`/templates?templateId=${encodeURIComponent(template.id)}`);
       await page.locator('.runtime-template-projection').getByRole('button', { name: 'Start card' }).click();
       const form = page.locator('.quick-form-overlay');
       await expect(form.locator('.quick-form-select')).toHaveValue(template.id);
@@ -69,7 +69,7 @@ for (const includeOptional of [false, true]) {
           },
         });
         expect(update.status()).toBe(200);
-        await page.goto(`/#/cards?cardId=${encodeURIComponent(card.id)}`);
+        await page.goto(`/cards?cardId=${encodeURIComponent(card.id)}`);
         const panel = page.locator('#card-panel');
         await panel.getByRole('button', { name: 'Review template update' }).click();
         await expect(panel).toContainText('Add Synthetic new required step');

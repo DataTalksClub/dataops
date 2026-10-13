@@ -35,7 +35,7 @@ async function openEditor(page, surface, viewport) {
     await expect(page.locator('#rendered-view .notion-list')).toBeVisible();
     return page.locator('#rendered-view');
   }
-  await page.goto(`${server.baseURL}/#/newsletter`);
+  await page.goto(`${server.baseURL}/newsletter`);
   await page.getByRole('button', { name: 'Compose', exact: true }).click();
   await expect(page.locator('dialog [data-blocks-editor] .notion-list')).toBeVisible();
   return page.locator('dialog [data-blocks-editor]');

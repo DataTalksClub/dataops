@@ -57,7 +57,7 @@ test.describe("sponsor newsletter catalog", () => {
     test.setTimeout(60_000);
     await setupPageWithAuth(page);
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(`${server.baseURL}/#/sponsors`);
+    await page.goto(`${server.baseURL}/sponsors`);
     await expect(page.locator("[data-crm-message]")).toBeHidden();
     await expect(page.locator("[data-crm-view='newsletters']")).toBeVisible();
     await expect(page.locator(".crm-newsletters")).toBeHidden();

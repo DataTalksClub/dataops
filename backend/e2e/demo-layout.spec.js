@@ -32,7 +32,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
     fs.mkdirSync(out, { recursive: true });
     let commonLeft;
     for (const [route, ready] of routes) {
-      await page.goto(`${server.baseURL}/#${route}`);
+      await page.goto(`${server.baseURL}${route}`);
       await expect(page.locator(ready).first()).toBeVisible();
       const header = page.locator('#document-list .page-header').first();
       await expect(header.locator('h1')).toBeVisible();

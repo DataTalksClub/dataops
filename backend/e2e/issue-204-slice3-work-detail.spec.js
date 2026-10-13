@@ -151,7 +151,7 @@ test.describe('issue 204 slice 3 Task/Card action recovery', () => {
       context.request,
       `Synthetic pending Task ${Date.now()}`,
     );
-    await page.goto(`/#/tasks?taskId=${pendingTask.id}`);
+    await page.goto(`/tasks?taskId=${pendingTask.id}`);
     await expect(page.locator('#task-panel-title')).toHaveText(pendingTask.description);
     await setFaults(context.request, [{
       method: 'PUT',
@@ -181,7 +181,7 @@ test.describe('issue 204 slice 3 Task/Card action recovery', () => {
       context.request,
       `Synthetic recoverable Task ${Date.now()}`,
     );
-    await page.goto(`/#/tasks?taskId=${failedTask.id}`);
+    await page.goto(`/tasks?taskId=${failedTask.id}`);
     await expect(page.locator('#task-panel-title')).toHaveText(failedTask.description);
     await setFaults(context.request, [{
       method: 'PUT',
@@ -216,7 +216,7 @@ test.describe('issue 204 slice 3 Task/Card action recovery', () => {
       context.request,
       `Synthetic conflict Task ${Date.now()}`,
     );
-    await page.goto(`/#/tasks?taskId=${conflictTask.id}`);
+    await page.goto(`/tasks?taskId=${conflictTask.id}`);
     await expect(page.locator('#task-panel-title')).toHaveText(conflictTask.description);
     const external = await context.request.put(`/api/tasks/${conflictTask.id}`, {
       data: {
@@ -264,7 +264,7 @@ test.describe('issue 204 slice 3 Task/Card action recovery', () => {
       `Synthetic Card checklist ${Date.now()}`,
       card.id,
     );
-    await page.goto(`/#/cards?cardId=${card.id}`);
+    await page.goto(`/cards?cardId=${card.id}`);
     await expect(page.locator('#card-panel-title')).toHaveText(card.title);
     const stage = page.locator('#card-panel .card-stage-select');
     await setFaults(context.request, [{

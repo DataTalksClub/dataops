@@ -187,7 +187,7 @@ const test = baseTest.extend({
       assertOwnedServerResponse(server, sessionResponse, 'canonical task workflow session');
       page = await context.newPage();
       installServerExitDiagnostics(context, server, testInfo);
-      await page.goto('/#/');
+      await page.goto('/');
       await expect(page.getByRole('heading', { name: 'Work Queue', exact: true }).first()).toBeVisible();
       await use({ context, page, server });
     } finally {
@@ -246,7 +246,7 @@ async function openProofTask(page, taskId, cardId, title, options = {}) {
   } else if (options.reload) {
     await page.reload();
   } else {
-    await page.goto(`/#/tasks?taskId=${taskId}`);
+    await page.goto(`/tasks?taskId=${taskId}`);
   }
   let responses = [
     hydration.exactTask,
@@ -264,7 +264,7 @@ async function openProofTask(page, taskId, cardId, title, options = {}) {
 test.describe('canonical Tasks and Workflows browser behavior', () => {
   test('Tasks queue persists create, waiting recovery, and selected update', async ({ taskWorkflowPortal }, testInfo) => {
     const { context, page, server: ownedServer } = taskWorkflowPortal;
-    await page.goto('/#/tasks');
+    await page.goto('/tasks');
     // One queue, no per-lane group cards. Fresh and empty, the queue states
     // its emptiness once (the page summary) and renders no board rows.
     await expect(page.locator('.ops-work-queue')).toBeVisible();
@@ -273,7 +273,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await expect(page.locator('.ops-queue-board')).toHaveCount(0);
     await expect(page.locator('.ops-queue-group')).toHaveCount(0);
 
-    await page.goto('/#/');
+    await page.goto('/');
     const quickTitle = unique('Synthetic quick task');
     await page.getByRole('button', { name: 'New task' }).click();
     const quickTask = page.getByRole('dialog');
@@ -314,7 +314,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await expect(page.locator('#task-panel')).toBeHidden();
 
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>',
+      route: '/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>',
       roleId: 'admin',
       stateIds: ['tasks.waiting', 'tasks.create-select-update'],
     }]);
@@ -551,7 +551,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     });
 
     recordCapabilityEvidence(testInfo, [{
-      route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>',
+      route: '/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>',
       roleId: 'admin',
       stateIds: ['tasks.file-proof', 'tasks.sop-link', 'tasks.conflict'],
     }]);
@@ -560,7 +560,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
   test('Workflows resolve blocked relationships, staged progress, and completion', async ({ taskWorkflowPortal }, testInfo) => {
     test.setTimeout(75_000);
     const { context, page } = taskWorkflowPortal;
-    await page.goto('/#/cards');
+    await page.goto('/cards');
     await expect(page.locator('.ops-workflows-board')).toBeVisible();
     await expect(page.locator('.ops-workflow-card')).toHaveCount(0);
 
@@ -599,7 +599,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     expect(staleArtifact.status()).toBe(404);
     expect(staleArtifact.headers()['content-type']).toContain('application/json');
 
-    await page.goto('/#/cards');
+    await page.goto('/cards');
     const refreshedWorkflows = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'GET'
@@ -665,8 +665,8 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await expect(page.locator('#card-panel [role="progressbar"]')).toHaveAttribute('aria-valuenow', '100');
 
     recordCapabilityEvidence(testInfo, [
-      { route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.blocked', 'tasks.done'] },
-      { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.empty', 'workflows.active', 'workflows.staged', 'workflows.completed'] },
+      { route: '/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.blocked', 'tasks.done'] },
+      { route: '/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.empty', 'workflows.active', 'workflows.staged', 'workflows.completed'] },
     ]);
   });
 });

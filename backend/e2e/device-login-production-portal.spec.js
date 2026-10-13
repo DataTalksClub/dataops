@@ -59,7 +59,7 @@ async function signedInPage(browser) {
 async function showGrant(page, run) {
   await expect.poll(() => Boolean(run.output.match(/Confirm this code:\s+([A-Z2-9]{4}-[A-Z2-9]{4})/))).toBe(true);
   const code = run.output.match(/Confirm this code:\s+([A-Z2-9]{4}-[A-Z2-9]{4})/)[1];
-  await page.goto(`${server.baseURL}/#/device?userCode=${encodeURIComponent(code)}`);
+  await page.goto(`${server.baseURL}/device?userCode=${encodeURIComponent(code)}`);
   await expect(page.getByRole('heading', { name: 'Authorize this machine?' })).toBeVisible();
   await expect(page.getByText('Synthetic device journey', { exact: true })).toBeVisible();
   return code;

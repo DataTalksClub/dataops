@@ -98,7 +98,7 @@ test.describe('issue 208 paginated collections', () => {
       });
     });
 
-    await page.goto(`${BASE_URL}/#/tasks`);
+    await page.goto(`${BASE_URL}/tasks`);
     const summary = page.locator('[data-summary-id="tasks-queue"]');
     await expect(summary).toHaveAttribute('data-summary-state', 'partial');
     await expect(summary).toContainText('Some task sources are unavailable.');
@@ -122,7 +122,7 @@ test.describe('issue 208 paginated collections', () => {
     expect(firstPageRequests).toBe(retainedFirstPageRequests);
     expect(continuationRequests).toBe(failedContinuationRequests + 1);
     await captureDesktopAndMobile(page, 'cards-continuation-recovered-queue');
-    await page.goto(`${BASE_URL}/#/cards`);
+    await page.goto(`${BASE_URL}/cards`);
     await expect(page.locator('.ops-workflows-board')).toBeVisible();
     await expect(page.locator('.workflow-card-title')).toHaveText([
       'Card page one',
@@ -174,7 +174,7 @@ test.describe('issue 208 paginated collections', () => {
     });
 
     await page.goto(
-      `${BASE_URL}/#/cards?cardId=${encodeURIComponent(card.id)}&taskId=${encodeURIComponent(taskId)}`,
+      `${BASE_URL}/cards?cardId=${encodeURIComponent(card.id)}&taskId=${encodeURIComponent(taskId)}`,
     );
     const files = page.locator('#task-panel .task-file-list');
     const failure = files.locator('.task-file-error');
@@ -239,7 +239,7 @@ test.describe('issue 208 paginated collections', () => {
       });
     });
 
-    await page.goto(`${BASE_URL}/#/`);
+    await page.goto(`${BASE_URL}/`);
     await page.locator('#work-bell-button').click();
     const messages = page.locator('.work-bell-item-message span:not([aria-hidden])');
     await expect(messages).toHaveText([
@@ -335,7 +335,7 @@ test.describe('issue 208 paginated collections', () => {
       return json(route, 404, { error: 'Unexpected sponsor route' });
     });
 
-    await page.goto(`${BASE_URL}/#/sponsors`);
+    await page.goto(`${BASE_URL}/sponsors`);
     const alerts = page.locator('[data-crm-alerts]');
     const articles = alerts.locator('article.crm-card strong');
     await expect(articles).toHaveText(['Sponsor alert one', 'Sponsor alert two']);

@@ -220,7 +220,7 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     const context = await browser.newContext({ baseURL: server.baseURL, viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     await routeBookkeeping(page);
-    const root = await page.goto("/#/bookkeeping");
+    const root = await page.goto("/bookkeeping");
     assertOwnedServerResponse(server, root, "bookkeeping design root");
     await expect(page.getByRole("heading", { name: "Bookkeeping" })).toBeVisible();
     // The decorative job nav gave way to the month lens close state (#242).
@@ -264,7 +264,7 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     const context = await browser.newContext({ baseURL: server.baseURL, viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     const sponsorRouteState = await routeSponsors(page);
-    const root = await page.goto("/#/sponsors");
+    const root = await page.goto("/sponsors");
     assertOwnedServerResponse(server, root, "sponsor design root");
     await expect(page.getByRole("heading", { name: "Sponsors" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Queue" })).toBeVisible();

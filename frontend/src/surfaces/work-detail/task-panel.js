@@ -22,7 +22,7 @@ export function createTaskPanel(context) {
     navigateTaskToWorkflow,
     openDocument,
     openQualityFinding,
-    parseWorkspaceHash,
+    parseWorkspaceLocation,
     recordTaskFollowUpSent,
     recordTaskResponseReceived,
     reviewLatestTask,
@@ -45,7 +45,7 @@ export function createTaskPanel(context) {
   } = context;
 
   function taskRouteParams(taskId) {
-    const route = parseWorkspaceHash();
+    const route = parseWorkspaceLocation();
     if (route && !route.invalid && route.path === "/tasks") {
       const params = new URLSearchParams(route.params);
       params.set("taskId", taskId);
@@ -62,7 +62,7 @@ export function createTaskPanel(context) {
   }
 
   function openTaskPanel(taskId, options = {}) {
-    const currentRoute = parseWorkspaceHash();
+    const currentRoute = parseWorkspaceLocation();
     detail.taskPanelOrigin =
       currentRoute && !currentRoute.invalid && currentRoute.path === "/"
         ? {

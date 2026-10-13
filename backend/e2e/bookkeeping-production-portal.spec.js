@@ -9,7 +9,7 @@ const {
 let server;
 
 async function gotoOwnedBookkeepingPage(page) {
-  const response = await page.goto("/#/bookkeeping");
+  const response = await page.goto("/bookkeeping");
   assertOwnedServerResponse(server, response, "bookkeeping browser session");
   return response;
 }

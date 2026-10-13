@@ -224,7 +224,7 @@ test.describe('issue 201 queue urgency cues', () => {
       },
     ];
 
-    await page.goto(`${baseURL}/#/`);
+    await page.goto(`${baseURL}/`);
     const queue = page.locator('.ops-queue-board');
     await expect(queue).toBeVisible();
 
@@ -267,12 +267,12 @@ test.describe('issue 201 queue urgency cues', () => {
       await page.locator('#task-panel-close').click();
       await expect(page.locator('#task-panel')).toBeHidden();
       if (index < expected.length - 1) {
-        await page.goto(`${baseURL}/#/`);
+        await page.goto(`${baseURL}/`);
         await expect(page.locator('.ops-queue-board')).toBeVisible();
       }
     }
 
-    await page.goto(`${baseURL}/#/`);
+    await page.goto(`${baseURL}/`);
     await expect(page.locator('.ops-queue-board')).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await expectAttentionRowsDoNotOverlap(page);

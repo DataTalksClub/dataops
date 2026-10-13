@@ -121,7 +121,7 @@ function createSurfaceHarness(options = {}) {
     windowConsole: {
       warn: (message) => calls.push(["warn", message]),
     },
-    workspaceHashPath: (view, section) =>
+    workspacePath: (view, section) =>
       section ? `/${view}/${section}` : `/${view}`,
     workspaceNavButtons,
     workspaceState,

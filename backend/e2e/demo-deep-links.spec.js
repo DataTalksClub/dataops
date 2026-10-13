@@ -15,7 +15,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     await setupPageWithAuth(page);
     for (const [route, selector] of [['newsletter', '#newsletter-surface-title'], ['sponsors', '.sponsor-crm-surface']]) {
       await page.goto(`${server.baseURL}/${route}`);
-      await expect(page).toHaveURL(`${server.baseURL}/#/${route}`);
+      await expect(page).toHaveURL(`${server.baseURL}/${route}`);
       await expect(page.locator(selector)).toBeVisible();
       await page.reload();
       await expect(page.locator(selector)).toBeVisible();
@@ -26,6 +26,6 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
 test('direct entity query keeps validated parameters in the canonical hash URL', async ({ page }) => {
   await setupPageWithAuth(page);
   await page.goto(`${server.baseURL}/tasks?date=2026-10-12&tracking=demo`);
-  await expect(page).toHaveURL(`${server.baseURL}/#/tasks?date=2026-10-12`);
+  await expect(page).toHaveURL(`${server.baseURL}/tasks?date=2026-10-12`);
   await expect(page.locator('.ops-work-queue')).toBeVisible();
 });

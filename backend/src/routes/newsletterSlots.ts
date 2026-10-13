@@ -255,7 +255,7 @@ export async function handleNewsletterSlotRoutes(
           campaignLabel: item.campaignLabel,
           status: item.status,
           timeZone: "Europe/Berlin",
-          href: `#/newsletter?slotId=${item.id}`,
+          href: `/newsletter?slotId=${item.id}`,
         })),
       });
     const current = alerts(

@@ -15,7 +15,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 1440, height: 900
   test(`Process Docs remains reachable above the footer at ${viewport.width}x${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await setupPageWithAuth(page);
-    await page.goto(`${server.baseURL}/#/tasks`);
+    await page.goto(`${server.baseURL}/tasks`);
     await expect(page.locator('.ops-work-queue')).toBeVisible();
     if (viewport.width < 821) await page.locator('#mobile-menu-button').click();
     const docs = page.locator('#docs-nav-button');
@@ -26,6 +26,6 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 1440, height: 900
     fs.mkdirSync(out, { recursive: true });
     await page.screenshot({ path: path.join(out, `sidebar-${viewport.width}x${viewport.height}.png`) });
     await docs.click();
-    await expect(page).toHaveURL(/#\/processes/);
+    await expect(page).toHaveURL(/\/processes/);
   });
 }

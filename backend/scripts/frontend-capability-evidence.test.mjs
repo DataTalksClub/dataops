@@ -12,7 +12,7 @@ function matrix(roleIds = ['operator', 'admin'], stateRoleIds) {
   return {
     capabilities: [{
       id: 'home',
-      route: '/#/',
+      route: '/',
       roleIds,
       states: [state],
     }],
@@ -25,7 +25,7 @@ function annotation(overrides = {}) {
     description: JSON.stringify({
       schemaVersion: 1,
       stateId: 'home.ready',
-      route: '/#/',
+      route: '/',
       roleId: 'operator',
       ...overrides,
     }),
@@ -85,7 +85,7 @@ test('unknown states, wrong roles, wrong routes, and duplicate evidence fail', (
   for (const bad of [
     [annotation({ stateId: 'home.unknown' }), /unknown capability state/],
     [annotation({ roleId: 'admin' }), /disallowed role/],
-    [annotation({ route: '/#/tasks' }), /expected \/#\//],
+    [annotation({ route: '/tasks' }), /expected \//],
   ]) {
     const summary = collectCapabilityEvidence(matrix(['operator']), [{ title: 'Bad journey', status: 'passed', annotations: [bad[0]] }]);
     assert.equal(summary.ok, false);

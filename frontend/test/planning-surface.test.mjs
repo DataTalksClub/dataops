@@ -416,7 +416,7 @@ describe("Planning surface production behavior", () => {
               {
                 category: "Newsletter",
                 endDate: "2026-08-13",
-                href: "/#/newsletter",
+                href: "/newsletter",
                 label: "Newsletter 42",
                 provider: "newsletter-slots-readonly",
                 startDate: "2026-08-13",
