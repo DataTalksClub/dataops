@@ -1,5 +1,7 @@
 import { isInvoiceIntakeRoute } from '../invoices/intakeRoute';
 import { processInvoiceIntake, resolveInvoiceIntakeAfterImport } from '../invoices/service';
+import { getInvoice } from '../invoices/store';
+import type { Invoice } from '../invoices/model';
 import { createHash, timingSafeEqual } from 'crypto';
 import { CopyObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
@@ -230,6 +232,46 @@ function publicArtifacts(refs: ArtifactRef[]): Array<{ artifactId: string; statu
   return refs.map((ref) => ({ artifactId: ref.artifactId, status: ref.status }));
 }
 
+// Filename preview for pipe-style callers (Dapier archives the document
+// under a name built from these fields): the first invoice draft filed by
+// this intake, best-effort. Review still happens in Finance; a manual
+// draft simply carries fewer fields.
+interface InvoicePreview {
+  invoiceId: string;
+  counterparty?: string;
+  transactionDate?: string;
+  invoiceNumber?: string;
+  extractionMethod?: string;
+}
+
+function previewOf(record: Invoice): InvoicePreview {
+  const preview: InvoicePreview = { invoiceId: record.id };
+  const counterparty = String(record.fields.counterparty || '').trim();
+  if (counterparty) preview.counterparty = counterparty;
+  const transactionDate = String(record.fields.transactionDate || '').trim();
+  if (transactionDate) preview.transactionDate = transactionDate;
+  const invoiceNumber = String(record.fields.invoiceNumber || '').trim();
+  if (invoiceNumber) preview.invoiceNumber = invoiceNumber;
+  const method = String(record.extraction?.method || '').trim();
+  if (method) preview.extractionMethod = method;
+  return preview;
+}
+
+async function invoicePreviews(client: DynamoDBDocumentClient, ids: unknown): Promise<InvoicePreview[]> {
+  if (!Array.isArray(ids)) return [];
+  const previews: InvoicePreview[] = [];
+  for (const id of ids) {
+    if (typeof id !== 'string' || !id) continue;
+    try {
+      const record = await getInvoice(client, id);
+      if (record) previews.push(previewOf(record));
+    } catch {
+      // Preview is best-effort; the intake result stands without it.
+    }
+  }
+  return previews;
+}
+
 function canonicalRequest(envelope: Record<string, unknown>, documents: EmailDocument[]): string {
   return JSON.stringify({ ...envelope, documents: documents.map(({ source: _source, ...document }) => document) });
 }
@@ -344,7 +386,10 @@ export async function handleEmailDocumentIntake(event: LambdaEvent, client: Dyna
   }
   if (existing && emailDocumentsAlreadyImported(existing, documents)) {
     audit('duplicate', credential, correlation, documents.length);
-    return response(200, { status: 'duplicate', intakeItemId: existing.id, artifacts: publicArtifacts(existing.artifactRefs || []) });
+    const invoices = isInvoiceIntakeRoute(recipientRoute)
+      ? await invoicePreviews(client, existing.metadata?.invoiceReviewIds)
+      : [];
+    return response(200, { status: 'duplicate', intakeItemId: existing.id, artifacts: publicArtifacts(existing.artifactRefs || []), invoices });
   }
 
   const completedUnlinkedArtifacts = new Map<string, ArtifactRecord>();
@@ -407,7 +452,10 @@ export async function handleEmailDocumentIntake(event: LambdaEvent, client: Dyna
   }
   if (!reservation.created && emailDocumentsAlreadyImported(item, documents)) {
     audit('duplicate', credential, correlation, documents.length);
-    return response(200, { status: 'duplicate', intakeItemId: item.id, artifacts: publicArtifacts(item.artifactRefs || []) });
+    const invoices = isInvoiceIntakeRoute(recipientRoute)
+      ? await invoicePreviews(client, item.metadata?.invoiceReviewIds)
+      : [];
+    return response(200, { status: 'duplicate', intakeItemId: item.id, artifacts: publicArtifacts(item.artifactRefs || []), invoices });
   }
 
   const refs = [...(item.artifactRefs || [])];
@@ -443,11 +491,14 @@ export async function handleEmailDocumentIntake(event: LambdaEvent, client: Dyna
 
   if (failures.length) {
     audit('partial-failure', credential, correlation, documents.length, failures.length);
-    return response(207, { status: 'partial-failure', intakeItemId: item.id, artifacts: publicArtifacts(refs), failures });
+    return response(207, { status: 'partial-failure', intakeItemId: item.id, artifacts: publicArtifacts(refs), invoices: [], failures });
   }
+  let invoices: InvoicePreview[] = [];
   if (isInvoiceIntakeRoute(recipientRoute) && !failures.length) {
-    try { await processInvoiceIntake(client, item.id); }
-    catch { /* Import acknowledgement remains distinct from review/publication. Reprocess from Finance. */ }
+    try {
+      const processed = await processInvoiceIntake(client, item.id);
+      invoices = (processed.items || []).map(previewOf);
+    } catch { /* Import acknowledgement remains distinct from review/publication. Reprocess from Finance. */ }
     const latest = await getIntakeItem(client, item.id);
     if (latest && latest.status !== 'archived') {
       try { await resolveInvoiceIntakeAfterImport(client, latest); }
@@ -455,7 +506,7 @@ export async function handleEmailDocumentIntake(event: LambdaEvent, client: Dyna
     }
   }
   audit(reservation.created ? 'accepted' : 'resumed', credential, correlation, documents.length);
-  return response(reservation.created ? 202 : 200, { status: reservation.created ? 'accepted' : 'duplicate', intakeItemId: item.id, artifacts: publicArtifacts(refs) });
+  return response(reservation.created ? 202 : 200, { status: reservation.created ? 'accepted' : 'duplicate', intakeItemId: item.id, artifacts: publicArtifacts(refs), invoices });
 }
 
 function emailDocumentsAlreadyImported(item: IntakeItem | null, documents: EmailDocument[]): boolean {

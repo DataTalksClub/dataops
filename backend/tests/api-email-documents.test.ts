@@ -13,6 +13,8 @@ import { ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { TABLE_INTAKE } from '../src/db/tableNames';
 import { getArtifact, listArtifacts } from '../src/db/artifacts';
 import { getIntakeItem } from '../src/db/intake';
+import { setInvoiceServiceForTests } from '../src/invoices/service';
+import { createHash } from 'crypto';
 import { resetEmailDocumentIntakeStateForTests, setEmailDocumentIntakeClientsForTests } from '../src/routes/emailDocuments';
 import { setArtifactDownloadSignerForTests } from '../src/routes/artifacts';
 import { route } from '../src/router';
@@ -146,6 +148,34 @@ describe('POST /api/v1/intake/email-documents', () => {
     const conflictResult = await handler(conflict, {});
     assert.strictEqual(conflictResult.statusCode, 409);
     assert.strictEqual(JSON.parse(conflictResult.body).error.code, 'idempotency-conflict');
+  });
+
+  it('returns an invoice filename preview for DataOps-first archiving', async () => {
+    const text = 'Acme Ltd\nInvoice\nInvoice number: INV-2026-001\nInvoice date: 2026-09-30\nTotal: 42.00 EUR\n';
+    const pdf = Buffer.from(text, 'utf8');
+    const checksum = `sha256:${createHash('sha256').update(pdf).digest('hex')}`;
+    s3.sources.set('transfer/invoice-preview.pdf', { size: pdf.length, type: 'application/pdf', checksum });
+    setInvoiceServiceForTests({
+      s3: { send: async () => ({ Body: (async function* () { yield new Uint8Array(pdf); })() }) } as unknown as S3Client,
+      extract: async () => text,
+    });
+    try {
+      const document = { kind: 'attachment', storageUri: 's3://email-documents-test/transfer/invoice-preview.pdf', filename: 'invoice-preview.pdf', contentType: 'application/pdf', sizeBytes: pdf.length, checksum };
+      const accepted = await handler(request('invoice-preview-109', [document]), {});
+      assert.strictEqual(accepted.statusCode, 202);
+      const body = JSON.parse(accepted.body);
+      assert.strictEqual(body.invoices.length, 1);
+      assert.strictEqual(body.invoices[0].counterparty, 'Acme Ltd');
+      assert.strictEqual(body.invoices[0].transactionDate, '2026-09-30');
+      assert.strictEqual(body.invoices[0].invoiceNumber, 'INV-2026-001');
+      assert.ok(body.invoices[0].invoiceId);
+
+      const replay = await handler(request('invoice-preview-109', [document]), {});
+      assert.strictEqual(replay.statusCode, 200);
+      assert.deepStrictEqual(JSON.parse(replay.body).invoices, body.invoices);
+    } finally {
+      setInvoiceServiceForTests({ s3: new S3Client({}) });
+    }
   });
 
   it('preserves successful links on partial copy failure and exact retry completes once', async () => {
