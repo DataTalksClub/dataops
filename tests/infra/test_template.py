@@ -698,6 +698,22 @@ def test_email_document_intake_uses_a_precreated_rotatable_secret():
     assert "Default: arn:" not in template
 
 
+def test_backend_reads_only_the_exact_calendar_broker_secret():
+    backend = _load_template()["Resources"]["BackendFunction"]["Properties"]["Policies"]
+    grants = [
+        statement["Statement"]
+        for statement in backend
+        if isinstance(statement, dict)
+        and isinstance(statement.get("Statement"), dict)
+        and "personal-scheduler" in str(statement["Statement"].get("Resource"))
+    ]
+    assert grants == [{
+        "Effect": "Allow",
+        "Action": "secretsmanager:GetSecretValue",
+        "Resource": {"Sub": "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:personal-scheduler/dapier-api-token-??????"},
+    }]
+
+
 def test_email_document_storage_is_private_retained_and_prefix_scoped():
     template = TEMPLATE.read_text(encoding="utf-8")
     bucket = _resource_block(template, "EmailDocumentsBucket")
