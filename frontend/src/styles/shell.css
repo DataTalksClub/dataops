@@ -73,7 +73,7 @@ body:not([data-workspace-view="docs"]) .knowledge-tools { display: none; }
   #main-content a[class]:not([class*="dk-"]) { min-height: var(--dk-size-touch); }
 }
 
-.ops-queue-persona-filter .dk-mono, .ops-queue-total .dk-mono, .ops-queue-due,
+.ops-queue-total .dk-mono, .ops-queue-due,
 .bookkeeping-surface .dk-mono { font-variant-numeric: tabular-nums; }
 .bookkeeping-surface .bookkeeping-close-state { display: grid; gap: var(--dk-space-4); }
 /* Finance sections share one header: title, a one-line hint, actions on the

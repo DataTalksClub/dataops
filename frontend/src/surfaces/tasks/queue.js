@@ -69,8 +69,10 @@ export function createTaskQueue(context) {
 
   function renderPersonaFilterBar(counts, onSelect) {
     const nav = document.createElement("div");
+    // One queue narrowed by assignee: a single-choice filter, so the dakit
+    // segmented control as a radiogroup (docs/segmented.md).
     nav.className = "dk-tabs ops-queue-persona-nav";
-    nav.setAttribute("role", "tablist");
+    nav.setAttribute("role", "radiogroup");
     nav.setAttribute("aria-label", "Filter queue by assignee");
 
     for (const p of PERSONA_FILTERS) {
@@ -80,13 +82,14 @@ export function createTaskQueue(context) {
       btn.type = "button";
       btn.className = "dk-tab ops-queue-persona-filter";
       btn.dataset.persona = p.label.toLowerCase();
-      btn.setAttribute("role", "tab");
-      btn.setAttribute("aria-selected", String(isSelected));
+      btn.setAttribute("role", "radio");
+      btn.setAttribute("aria-checked", String(isSelected));
+      btn.tabIndex = isSelected ? 0 : -1;
       btn.setAttribute("aria-label", `Filter to ${p.name}, ${count} open`);
       btn.append(document.createTextNode(p.label));
       if (count) {
         const quantity = document.createElement("span");
-        quantity.className = "dk-count dk-mono";
+        quantity.className = "dk-count";
         quantity.textContent = String(count);
         btn.append(quantity);
       }
