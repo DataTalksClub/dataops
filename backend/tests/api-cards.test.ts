@@ -840,7 +840,6 @@ describe('API — Cards', () => {
             requiredLinkName: 'Tracker URL',
             proofRequirement: { type: 'url', label: 'Tracker URL' },
             artifactRefs: [{ artifactId: 'artifact-planned', type: 'document' }],
-            assistantJobRefs: [{ assistantJobId: 'assistant-planned', assistantType: 'summary' }],
             auditEventRefs: [{ auditEventId: 'audit-planned', action: 'planned' }],
           },
         ],
@@ -851,7 +850,6 @@ describe('API — Cards', () => {
         anchorDate: '2026-07-20',
         templateId: template.id,
         artifactRefs: [{ artifactId: 'card-artifact-planned', type: 'package' }],
-        assistantJobRefs: [{ assistantJobId: 'card-assistant-planned', assistantType: 'orchestration' }],
       });
 
       assert.strictEqual(res.statusCode, 201);
@@ -866,7 +864,6 @@ describe('API — Cards', () => {
       assert.deepStrictEqual(body.card.cardLinks, [{ name: 'External tracker', url: '' }]);
       assert.deepStrictEqual(body.card.tags, ['ops', 'model']);
       assert.deepStrictEqual(body.card.artifactRefs, [{ artifactId: 'card-artifact-planned', type: 'package' }]);
-      assert.deepStrictEqual(body.card.assistantJobRefs, [{ assistantJobId: 'card-assistant-planned', assistantType: 'orchestration' }]);
 
       assert.strictEqual(body.tasks.length, 1);
       assert.strictEqual(body.tasks[0].cardId, body.card.id);
@@ -879,7 +876,6 @@ describe('API — Cards', () => {
       assert.deepStrictEqual(body.tasks[0].proofRequirement, { type: 'url', label: 'Tracker URL' });
       assert.strictEqual(body.tasks[0].requiredLinkName, 'Tracker URL');
       assert.deepStrictEqual(body.tasks[0].artifactRefs, [{ artifactId: 'artifact-planned', type: 'document' }]);
-      assert.deepStrictEqual(body.tasks[0].assistantJobRefs, [{ assistantJobId: 'assistant-planned', assistantType: 'summary' }]);
       assert.deepStrictEqual(body.tasks[0].auditEventRefs, [{ auditEventId: 'audit-planned', action: 'planned' }]);
     });
 

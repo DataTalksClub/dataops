@@ -79,7 +79,6 @@ export DATAOPS_TEMPLATES_TABLE=dataops-v1-templates
 export DATAOPS_USERS_TABLE=dataops-v1-users
 export DATAOPS_FILES_TABLE=dataops-v1-files
 export DATAOPS_ARTIFACTS_TABLE=dataops-v1-artifacts
-export DATAOPS_ASSISTANT_JOBS_TABLE=dataops-v1-assistant-jobs
 export DATAOPS_AUDIT_EVENTS_TABLE=dataops-v1-audit-events
 export DATAOPS_INTAKE_TABLE=dataops-v1-intake
 export DATAOPS_NOTIFICATIONS_TABLE=dataops-v1-notifications
@@ -89,18 +88,11 @@ export DATAOPS_SPONSOR_CRM_TABLE=dataops-v1-sponsor-crm
 export DATAOPS_NEWSLETTER_SLOTS_TABLE=dataops-v1-newsletter-slots
 export DATAOPS_CALENDAR_TABLE=dataops-v1-calendar
 export DATAOPS_PODCAST_EPISODES_TABLE=dataops-v1-podcast-episodes
-export DATAOPS_CONVERSATIONAL_STATE_TABLE=dataops-v1-conversational-state
 export DATAOPS_DOCS_DOMAIN=1
 export DTC_OFFLINE=1
 export FRONTEND_ROOT="$repo_root/frontend"
 export UPLOAD_DIR="$repo_root/.local/dev-portal/uploads"
 export DATAOPS_EXPORT_ARCHIVE_LOCAL_DIR="$repo_root/.local/dev-portal/exports"
-export CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED=false
-export CONVERSATIONAL_EXECUTION_ENABLED=false
-export CONVERSATIONAL_ENABLED_PLUGINS=none
-export CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED=false
-export CONVERSATIONAL_TELEGRAM_VOICE_ENABLED=false
-export CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED=false
 
 cd "$repo_root"
 npm run dev

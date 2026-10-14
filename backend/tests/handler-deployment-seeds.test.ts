@@ -22,12 +22,6 @@ describe('handler - IAM-only deployment seeds', () => {
   let client: DynamoDBDocumentClient;
 
   before(async () => {
-    process.env.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED = 'false';
-    process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'false';
-    process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'none';
-    process.env.CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED = 'false';
-    process.env.CONVERSATIONAL_TELEGRAM_VOICE_ENABLED = 'false';
-    process.env.CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED = 'false';
     client = (await useTestDatabase()).client;
   });
 

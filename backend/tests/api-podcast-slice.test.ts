@@ -96,7 +96,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     delete process.env.IS_LOCAL;
   });
 
-  it('starts and operates a workflow with proof, waiting, stage, and assistant output', async () => {
+  it('starts and operates a workflow with proof, waiting, stage, and document links', async () => {
     const templatesResponse = await invoke('GET', '/api/templates');
     const workflowTemplate = parse(templatesResponse).templates.find(
       (template: { type?: string }) => template.type === 'synthetic-operator-workflow',
@@ -223,29 +223,21 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
 
     const docTask = tasks.find((task) => task.templateTaskRef === 'create-document') as Task;
     assert.ok(docTask);
-    const jobCreate = await invoke('POST', '/api/assistant-jobs', {
-      assistantType: 'podcast',
-      title: 'Podcast assistant: Jane Guest prep',
-      taskId: docTask.id,
-      cardId: card.id,
-      inputRefs: [{ type: 'url', uri: 'https://example.com/jane' }],
-      approvalRequired: true,
+    const docUrl = 'https://docs.example.com/jane-guest-prep';
+    const currentDocTask = parse(await invoke('GET', `/api/tasks/${docTask.id}`));
+    const docReady = await invoke('PUT', `/api/tasks/${docTask.id}`, {
+      link: docUrl, expectedVersion: currentDocTask.version,
     });
-    assert.strictEqual(jobCreate.statusCode, 201, jobCreate.body);
-    const job = parse(jobCreate).job;
-    const dryRun = await invoke('POST', `/api/assistant-jobs/${job.id}/run-dry`);
-    assert.strictEqual(dryRun.statusCode, 200, dryRun.body);
-    assert.strictEqual(parse(dryRun).job.status, 'waiting_approval');
-    const approve = await invoke('POST', `/api/assistant-jobs/${job.id}/approve`);
-    assert.strictEqual(approve.statusCode, 200, approve.body);
-    const docAfterApproval = await invoke('GET', `/api/tasks/${docTask.id}`);
-    const approvedDocTask = parse(docAfterApproval);
-    assert.ok(approvedDocTask.link.startsWith('local-dev://assistant-jobs/'));
-    assert.ok(approvedDocTask.artifactRefs.some((ref: any) => ref.status === 'approved'));
-    const cardAfterApproval = parse(await invoke('GET', `/api/cards/${card.id}`)).card;
-    assert.ok(cardAfterApproval.cardLinks.some((link: any) => (
-      link.name === 'Synthetic document' && link.url.startsWith('local-dev://assistant-jobs/')
-    )));
+    assert.strictEqual(docReady.statusCode, 200, docReady.body);
+    const approvedDocTask = parse(docReady);
+    const cardBeforeDocDone = parse(await invoke('GET', `/api/cards/${card.id}`)).card;
+    const docCardLinkReady = await invoke('PUT', `/api/cards/${card.id}`, {
+      expectedVersion: cardBeforeDocDone.version,
+      cardLinks: cardBeforeDocDone.cardLinks.map((link: any) => (
+        link.name === 'Synthetic document' ? { name: link.name, url: docUrl } : link
+      )),
+    });
+    assert.strictEqual(docCardLinkReady.statusCode, 200, docCardLinkReady.body);
     const doneDocTask = await invoke('PUT', `/api/tasks/${docTask.id}`, {
       status: 'done', expectedVersion: approvedDocTask.version,
     });

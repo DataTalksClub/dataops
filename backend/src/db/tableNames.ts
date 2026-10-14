@@ -20,7 +20,6 @@ const TABLE_TEMPLATES = tableName('DATAOPS_TEMPLATES_TABLE', 'Templates', 'templ
 const TABLE_USERS = tableName('DATAOPS_USERS_TABLE', 'Users', 'users');
 const TABLE_FILES = tableName('DATAOPS_FILES_TABLE', 'Files', 'files');
 const TABLE_ARTIFACTS = tableName('DATAOPS_ARTIFACTS_TABLE', 'Artifacts', 'artifacts');
-const TABLE_ASSISTANT_JOBS = tableName('DATAOPS_ASSISTANT_JOBS_TABLE', 'AssistantJobs', 'assistant-jobs');
 const TABLE_AUDIT_EVENTS = tableName('DATAOPS_AUDIT_EVENTS_TABLE', 'AuditEvents', 'audit-events');
 const TABLE_DOCUMENT_REVIEWS = tableName('DATAOPS_DOCUMENT_REVIEWS_TABLE', 'DocumentReviews', 'document-reviews');
 const TABLE_INTAKE = tableName('DATAOPS_INTAKE_TABLE', 'IntakeItems', 'intake');
@@ -31,11 +30,6 @@ const TABLE_SPONSOR_CRM = tableName('DATAOPS_SPONSOR_CRM_TABLE', 'SponsorCrm', '
 const TABLE_NEWSLETTER_SLOTS = tableName('DATAOPS_NEWSLETTER_SLOTS_TABLE', 'NewsletterSlots', 'newsletter-slots');
 const TABLE_CALENDAR = tableName('DATAOPS_CALENDAR_TABLE', 'Calendar', 'calendar');
 const TABLE_PODCAST_EPISODES = tableName('DATAOPS_PODCAST_EPISODES_TABLE', 'PodcastEpisodes', 'podcast-episodes');
-const TABLE_CONVERSATIONAL_STATE = tableName(
-  'DATAOPS_CONVERSATIONAL_STATE_TABLE',
-  'ConversationalState',
-  'conversational-state',
-);
 
 const DATAOPS_TABLES = Object.freeze([
   TABLE_TASKS,
@@ -44,7 +38,6 @@ const DATAOPS_TABLES = Object.freeze([
   TABLE_USERS,
   TABLE_FILES,
   TABLE_ARTIFACTS,
-  TABLE_ASSISTANT_JOBS,
   TABLE_AUDIT_EVENTS,
   TABLE_DOCUMENT_REVIEWS,
   TABLE_INTAKE,
@@ -55,7 +48,6 @@ const DATAOPS_TABLES = Object.freeze([
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
   TABLE_PODCAST_EPISODES,
-  TABLE_CONVERSATIONAL_STATE,
 ]);
 
 export {
@@ -65,7 +57,6 @@ export {
   TABLE_USERS,
   TABLE_FILES,
   TABLE_ARTIFACTS,
-  TABLE_ASSISTANT_JOBS,
   TABLE_AUDIT_EVENTS,
   TABLE_DOCUMENT_REVIEWS,
   TABLE_INTAKE,
@@ -76,6 +67,5 @@ export {
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
   TABLE_PODCAST_EPISODES,
-  TABLE_CONVERSATIONAL_STATE,
   DATAOPS_TABLES,
 };

@@ -152,7 +152,6 @@ describe('offsite portable export archives', () => {
     assert.ok(result.archiveSizeBytes > 0);
     assert.strictEqual(result.manifest.entity_counts.tasks, 1);
     assert.strictEqual(result.manifest.entity_files.artifacts, 'artifacts.jsonl');
-    assert.strictEqual(result.manifest.entity_files.assistant_jobs, 'assistant_jobs.jsonl');
     assert.strictEqual(result.manifest.entity_files.audit_events, 'audit_events.jsonl');
 
     const archivePath = result.archiveUri.replace('file://', '');
@@ -217,7 +216,7 @@ describe('offsite portable export archives', () => {
 
       assert.strictEqual(result.archiveBucket, 'dataops-v1-export-archives');
       assert.match(result.archiveUri, /^s3:\/\/dataops-v1-export-archives\/exports\/prod\//);
-      assert.ok(result.manifest.redactions.includes('proposal_presentations.action_token_hash'));
+      assert.ok(result.manifest.redactions.includes('users.password_hash'));
       assert.ok(result.manifest.omitted_entities.includes('provider_credentials'));
       assert.doesNotMatch(result.archiveUri, /[?&](token|credential|signature)=/i);
       assert.strictEqual(sentCommands.length, 1);
@@ -643,7 +642,7 @@ describe('offsite portable export archives', () => {
       maxAggregatePayloadBytes: aggregateSize + 1,
     };
 
-    assert.strictEqual(filenames.length, 29);
+    assert.strictEqual(filenames.length, 15);
     assert.ok(limits.maxCompressedArchiveBytes < DEFAULT_ARCHIVE_EXTRACTION_LIMITS.maxCompressedArchiveBytes);
     assert.ok(limits.maxInflatedArchiveBytes < DEFAULT_ARCHIVE_EXTRACTION_LIMITS.maxInflatedArchiveBytes);
     assert.ok(limits.maxMembers < DEFAULT_ARCHIVE_EXTRACTION_LIMITS.maxMembers);
@@ -667,7 +666,7 @@ describe('offsite portable export archives', () => {
     assert.strictEqual(evidence.report.dry_run_import.totalRecords, 1);
     assert.strictEqual(evidence.report.dry_run_import.wouldWrite.tasks, 1);
     assert.strictEqual(evidence.report.target_environment, 'Below Ceiling Drill');
-    assert.strictEqual((await fs.readdir(evidence.extractedDir)).length, 29);
+    assert.strictEqual((await fs.readdir(evidence.extractedDir)).length, 15);
     await fs.access(evidence.evidencePath);
   });
 });

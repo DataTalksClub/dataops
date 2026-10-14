@@ -68,7 +68,7 @@ describe('authored YAML template mapping', () => {
           closeCondition: 'Synthetic response is recorded', waitingFor: 'Synthetic response',
           followUpAfterDays: 3, recipientRole: 'synthetic-reviewer',
         },
-        artifactRefs: [], assistantJobRefs: [], intakeRefs: [], auditEventRefs: [],
+        artifactRefs: [], intakeRefs: [], auditEventRefs: [],
       }],
     } satisfies Omit<Template, 'id' | 'version' | 'createdAt' | 'updatedAt'>;
     assert.deepStrictEqual(runtime, expected);

@@ -144,7 +144,7 @@ function validateArtifactFields(fields: Record<string, unknown>, requireCoreFiel
   if (fields.sourceType !== undefined && (!isNonEmptyString(fields.sourceType) || !SOURCE_TYPES.has(fields.sourceType))) {
     return `sourceType must be one of: ${Array.from(SOURCE_TYPES).join(', ')}`;
   }
-  for (const field of ['taskId', 'cardId', 'assistantJobId', 'fileId', 'createdBy', 'reviewedBy', 'reviewedAt']) {
+  for (const field of ['taskId', 'cardId', 'fileId', 'createdBy', 'reviewedBy', 'reviewedAt']) {
     if (fields[field] !== undefined && typeof fields[field] !== 'string') return `${field} must be a string`;
   }
   const tagsError = validateStringArray(fields.tags, 'tags');
@@ -197,7 +197,7 @@ async function handleCreate(event: LambdaEvent, client: DynamoDBDocumentClient):
 
   for (const field of [
     'description', 'filename', 'contentType', 'checksum', 'sizeBytes', 'taskId', 'cardId',
-    'assistantJobId', 'fileId', 'createdBy', 'reviewedBy', 'reviewedAt', 'tags', 'metadata',
+    'fileId', 'createdBy', 'reviewedBy', 'reviewedAt', 'tags', 'metadata',
   ]) {
     if (body[field] !== undefined) artifactData[field] = body[field];
   }
@@ -224,7 +224,6 @@ async function handleList(event: LambdaEvent, client: DynamoDBDocumentClient): P
   const artifacts = await listArtifacts(client, {
     taskId: params.taskId,
     cardId: params.cardId,
-    assistantJobId: params.assistantJobId,
     fileId: params.fileId,
     status: params.status,
     type: params.type,
@@ -240,7 +239,7 @@ async function handleUpdate(id: string, event: LambdaEvent, client: DynamoDBDocu
 
   const allowedFields = [
     'type', 'title', 'description', 'status', 'storageProvider', 'storageUri', 'filename', 'contentType',
-    'checksum', 'sizeBytes', 'visibility', 'dataClass', 'taskId', 'cardId', 'assistantJobId', 'fileId',
+    'checksum', 'sizeBytes', 'visibility', 'dataClass', 'taskId', 'cardId', 'fileId',
     'sourceType', 'reviewedBy', 'reviewedAt', 'tags', 'metadata',
   ];
   const updates: Record<string, unknown> = {};

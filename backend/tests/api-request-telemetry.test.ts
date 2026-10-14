@@ -80,12 +80,9 @@ const OPERATIONAL_API_ALIASES: ReadonlyArray<readonly [
 ]> = [
   ['/api', '/work/api', 'other'],
   ['/api/artifacts', '/work/api/artifacts', 'artifacts'],
-  ['/api/assistant-jobs', '/work/api/assistant-jobs', 'assistant_jobs_social_drafts'],
-  ['/api/assistant-social-drafts', '/work/api/assistant-social-drafts', 'assistant_jobs_social_drafts'],
   ['/api/auth', '/work/api/auth', 'health_auth_team'],
   ['/api/bookkeeping', '/work/api/bookkeeping', 'bookkeeping'],
   ['/api/cards', '/work/api/cards', 'cards'],
-  ['/api/conversational', '/work/api/conversational', 'conversational_telegram'],
   ['/api/cron', '/work/api/cron', 'recurring'],
   ['/api/files', '/work/api/files', 'files'],
   ['/api/health', '/work/api/health', 'health_auth_team'],
@@ -100,7 +97,6 @@ const OPERATIONAL_API_ALIASES: ReadonlyArray<readonly [
   ['/api/tokens', '/work/api/tokens', 'users_tokens'],
   ['/api/users', '/work/api/users', 'users_tokens'],
   ['/api/v1/intake/email-documents', '/work/api/v1/intake/email-documents', 'email_documents'],
-  ['/api/webhook/telegram', '/work/api/webhook/telegram', 'conversational_telegram'],
   ['/api/calendar-items', '/work/api/calendar-items', 'calendar_newsletter'],
 ];
 
@@ -425,8 +421,6 @@ describe('portal API request telemetry', () => {
       ['/api/cron/export', 'recurring'],
       ['/api/files/file-five', 'files'],
       ['/api/artifacts/artifact-six', 'artifacts'],
-      ['/api/assistant-jobs/job-seven', 'assistant_jobs_social_drafts'],
-      ['/api/assistant-social-drafts/draft-eight', 'assistant_jobs_social_drafts'],
       ['/api/v1/intake/email-documents', 'email_documents'],
       ['/api/users/user-ten', 'users_tokens'],
       ['/api/tokens/token-eleven', 'users_tokens'],
@@ -436,8 +430,6 @@ describe('portal API request telemetry', () => {
       ['/api/bookkeeping/entry-fifteen', 'bookkeeping'],
       ['/api/sponsor-crm/deals/booking-sixteen/communications', 'sponsor_crm'],
       ['/api/mailing-exports/export-seventeen', 'other'],
-      ['/api/conversational/readiness', 'conversational_telegram'],
-      ['/api/webhook/telegram', 'conversational_telegram'],
       ['/docs/document-name-secret-209.md', 'docs_content_search'],
       ['/search', 'docs_content_search'],
       ['/content/images/image-eighteen.png', 'docs_content_search'],
@@ -455,7 +447,7 @@ describe('portal API request telemetry', () => {
   });
 
   it('maps every operational work API alias to its canonical route family', () => {
-    assert.strictEqual(OPERATIONAL_API_ALIASES.length, 24);
+    assert.strictEqual(OPERATIONAL_API_ALIASES.length, 20);
     for (const [canonicalPath, workAliasPath, family] of OPERATIONAL_API_ALIASES) {
       assert.strictEqual(classifyApiRouteFamily(canonicalPath), family, canonicalPath);
       assert.strictEqual(classifyApiRouteFamily(workAliasPath), family, workAliasPath);
@@ -752,7 +744,7 @@ describe('portal API request telemetry', () => {
       statusCode: 503,
       headers: { 'Content-Type': 'text/plain' },
       body: '{"private":"private-error-page-209"}',
-    }, { path: '/api/webhook/telegram', httpMethod: 'POST' });
+    }, { path: '/api/v1/intake/email-documents', httpMethod: 'POST' });
     assert.strictEqual(nonJson.headers!['x-dataops-request-id'], CONTEXT.awsRequestId);
     assert.strictEqual(nonJson.body, '{"private":"private-error-page-209"}');
 
@@ -760,7 +752,7 @@ describe('portal API request telemetry', () => {
       statusCode: 503,
       headers: {},
       body: '{"error":"legacy-json-contract"}',
-    }, { path: '/api/webhook/telegram', httpMethod: 'POST' });
+    }, { path: '/api/v1/intake/email-documents', httpMethod: 'POST' });
     assert.strictEqual(undeclaredJson.headers!['x-dataops-request-id'], CONTEXT.awsRequestId);
     assert.strictEqual(JSON.parse(undeclaredJson.body).requestId, CONTEXT.awsRequestId);
     assert.strictEqual(metrics.filter((metric) => metric.statusCode >= 500).length, 2);
@@ -839,48 +831,5 @@ describe('portal API request telemetry', () => {
     } finally {
       setDeploymentTemplateLoaderForTest(null);
     }
-  });
-
-  it('correlates an HTTP request rejected by invalid rollout configuration', async () => {
-    const saved: Record<string, string | undefined> = {};
-    for (const key of [
-      'CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED',
-      'CONVERSATIONAL_EXECUTION_ENABLED',
-      'CONVERSATIONAL_ENABLED_PLUGINS',
-      'CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED',
-      'CONVERSATIONAL_TELEGRAM_VOICE_ENABLED',
-      'CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED',
-    ]) {
-      saved[key] = process.env[key];
-    }
-
-    const captured = captureConsoleLog();
-    let response: LambdaResponse | undefined;
-    try {
-      process.env.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED = 'invalid';
-      response = await handler(httpEvent({ path: '/work/api/health' }), CONTEXT) as LambdaResponse;
-    } finally {
-      captured.restore();
-      for (const [key, value] of Object.entries(saved)) {
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
-      }
-    }
-
-    assert.strictEqual(response?.statusCode, 503);
-    assert.strictEqual(response.headers!['x-dataops-request-id'], CONTEXT.awsRequestId);
-    assert.deepStrictEqual(JSON.parse(response.body), {
-      error: 'Conversational rollout configuration is invalid',
-      requestId: CONTEXT.awsRequestId,
-    });
-    const records = portalRecords(captured.lines);
-    assert.strictEqual(records.length, 1);
-    assertEmfRecord(records[0], {
-      routeFamily: 'health_auth_team',
-      method: 'GET',
-      statusCode: 503,
-      requestId: CONTEXT.awsRequestId,
-      errorClass: 'route_handled',
-    });
   });
 });

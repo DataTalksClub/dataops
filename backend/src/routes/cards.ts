@@ -617,7 +617,7 @@ async function handleSingle(
     // Only allow updating known fields
     const allowedFields = [
       'title', 'description', 'anchorDate', 'references', 'cardLinks', 'emoji', 'tags', 'stage',
-      'sourceDocIds', 'artifactRefs', 'assistantJobRefs', 'intakeRefs',
+      'sourceDocIds', 'artifactRefs', 'intakeRefs',
       'people', 'sponsor', 'secondarySponsors', 'issueNumber',
     ];
     const updates: Record<string, unknown> = {};

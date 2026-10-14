@@ -13,15 +13,6 @@ const READY_TIMEOUT_MS = 30000;
 const POLL_INTERVAL_MS = 300;
 const READY_PATH = '/api/health';
 
-const DARK_ROLLOUT_ENVIRONMENT = Object.freeze({
-  CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: 'false',
-  CONVERSATIONAL_EXECUTION_ENABLED: 'false',
-  CONVERSATIONAL_ENABLED_PLUGINS: 'none',
-  CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: 'false',
-  CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: 'false',
-  CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: 'false',
-});
-
 const AUTH_STATE_PATH = path.join(__dirname, '.auth-state.json');
 const GRACE_USER = {
   id: '00000000-0000-0000-0000-000000000001',
@@ -64,7 +55,6 @@ function buildTestServerEnvironment(
     // Server-owned actor for template-admin tests only. Other route permission
     // tests retain their existing explicit actor/no-actor behavior.
     E2E_TEMPLATE_ACTOR_ID: GRACE_USER.id,
-    ...DARK_ROLLOUT_ENVIRONMENT,
   };
 }
 
@@ -464,10 +454,6 @@ async function globalSetup({
   port = TEST_SERVER_PORT,
   readyTimeoutMs = READY_TIMEOUT_MS,
 } = {}) {
-  // Playwright specs also launch isolated test-server children. Keep every
-  // process in this test-only tree on the same explicit dark rollout state.
-  Object.assign(process.env, DARK_ROLLOUT_ENVIRONMENT);
-
   const ownerToken = randomBytes(24).toString('hex');
   if (port > 0) await assertExplicitPortAvailable(port);
 

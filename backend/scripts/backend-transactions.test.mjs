@@ -18,8 +18,8 @@ const aggregateSource = read(aggregateScriptPath);
 
 const retainedCommands = Object.keys(backendPackage.scripts)
   .filter((name) => /^test:.+-transaction$/.test(name) || name === 'test:invoice-publication');
-assert.equal(retainedCommands.length, 8,
-  `expected eight official transaction suites; found ${retainedCommands.join(', ')}`);
+assert.equal(retainedCommands.length, 4,
+  `expected four official transaction suites; found ${retainedCommands.join(', ')}`);
 
 const aggregateDefinition = aggregateSource.match(/^transaction_suites=\(\n((?:  '[^']+'\n)+)\)$/m);
 assert.ok(aggregateDefinition, 'aggregate script must declare its ordered suites in transaction_suites');
@@ -59,7 +59,7 @@ function assertContainerSafety(source, path) {
   assert.match(source, /docker rm -f "\$container_id"/, `${path} must force-remove its DynamoDB Local container`);
 }
 
-test('root aggregate invokes the eight retained transaction suites once', () => {
+test('root aggregate invokes the four retained transaction suites once', () => {
   assert.equal(rootPackage.scripts['test:backend:transactions'], `bash ${aggregateScriptPath}`);
   assert.equal(new Set(aggregatedCommands).size, aggregatedCommands.length,
     'each retained transaction suite must appear exactly once');
@@ -86,36 +86,11 @@ test('every transaction harness owns a bounded isolated loopback DynamoDB Local'
   paths.forEach((path) => assertContainerSafety(read(join('backend', path)), path));
 });
 
-test('provider controls and intentional environments remain in transaction scripts', () => {
-  const providerControls = [
-    'CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED=false',
-    'CONVERSATIONAL_EXECUTION_ENABLED=false',
-    'CONVERSATIONAL_ENABLED_PLUGINS=none',
-    'CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED=false',
-    'CONVERSATIONAL_TELEGRAM_VOICE_ENABLED=false',
-    'CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED=false',
-  ];
-  const controlledPaths = [
-    transactionScriptPath('test:execution-transaction'),
-    transactionScriptPath('test:telegram-transaction'),
-    transactionScriptPath('test:todo-transaction'),
-    transactionScriptPath('test:typefully-transaction'),
-  ];
-  for (const path of controlledPaths) {
-    const source = read(join('backend', path));
-    for (const control of providerControls) {
-      assert.equal(source.includes(control), true, `${path} must retain ${control}`);
-    }
-  }
-
+test('intentional environments remain in transaction scripts', () => {
   const expectedEnvironments = {
-    'test:execution-transaction': 'test',
-    'test:telegram-transaction': 'production',
     'test:sponsor-finance-transaction': 'test',
     'test:sponsor-communications-transaction': 'test',
     'test:task-card-transaction': 'production',
-    'test:todo-transaction': 'test',
-    'test:typefully-transaction': 'production',
   };
   for (const [command, environment] of Object.entries(expectedEnvironments)) {
     const source = transactionScript(command);
@@ -133,7 +108,7 @@ test('make ci uses the same blocking aggregate as deployment checks', () => {
   assert.ok(targetDefinition, `Makefile needs ${targetName}`);
   assert.equal(targetDefinition[1].trim(), aggregateCommand);
   assert.equal(
-    makefile.includes("'make test-backend-transactions' 'Run all eight blocking DynamoDB transaction suites.'"),
+    makefile.includes("'make test-backend-transactions' 'Run all four blocking DynamoDB transaction suites.'"),
     true,
     'help text must document the transaction target',
   );

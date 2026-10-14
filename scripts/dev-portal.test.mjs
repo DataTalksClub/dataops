@@ -314,7 +314,6 @@ test('representative child environment is visibly labeled and fail-closed', () =
     GITHUB_TOKEN: 'must-not-survive',
     AUTH_BASE_URL: 'https://auth.example.test',
     SPONSOR_COMMUNICATION_SEND_ENABLED: 'true',
-    CONVERSATIONAL_EXECUTION_ENABLED: 'true',
   };
   const config = readDevConfig(parentEnv, ROOT);
   const child = buildChildEnvironment(config, parentEnv);
@@ -324,7 +323,6 @@ test('representative child environment is visibly labeled and fail-closed', () =
   assert.equal(child.DATAOPS_DEV_SEED_MODE, 'none');
   assert.equal(child.DATAOPS_AUTO_CREATE_TABLES, 'false');
   assert.equal(child.WORK_ENGINE_AUTH_MODE, 'portal');
-  assert.equal(child.CONVERSATIONAL_EXECUTION_ENABLED, 'false');
   assert.equal(child.SPONSOR_COMMUNICATION_SEND_ENABLED, 'false');
   assert.equal(child.DATAOPS_FILE_STORAGE_PROVIDER, 'local-dev');
   assert.equal(child.AWS_EC2_METADATA_DISABLED, 'true');

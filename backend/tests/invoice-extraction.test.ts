@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { extractInvoiceText, normalizeSubject, pdfText } from '../src/invoices/extract';
 import { missingEvidence, validateFields } from '../src/invoices/model';
 import { sheetValues, validateHeaders } from '../src/invoices/providers';
-import { restoredRecord } from '../src/conversation/portable';
+import { restoredRecord } from '../src/export/portableValidate';
 import type { Invoice } from '../src/invoices/model';
 export const headers=['Date sent','Date paid','Provider','What','Price, $','Price, EUR','Statement','Count','Comment','Entry Type','Type','Period','Category'];
 function pdf(text:string) {

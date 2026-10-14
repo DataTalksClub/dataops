@@ -1,7 +1,7 @@
 /**
  * Field-level checks for portable export validation: string, enum, reference,
  * number, and array field validators; secret and signed-URL payload scanning;
- * the entity-level validators (task history, assistant execution refs, proof
+ * the entity-level validators (task history, proof
  * requirements, template phases and task definitions, completed-task proofs);
  * and the RFC3339/date vocabulary shared by the export writer and validator.
  *
@@ -38,14 +38,11 @@ export const VALID_ARTIFACT_STATUSES = new Set(['draft', 'needs-review', 'approv
 export const VALID_ARTIFACT_STORAGE_PROVIDERS = new Set(['s3', 'dropbox', 'google-drive', 'github', 'external-url', 'local-dev', 'unknown']);
 export const VALID_ARTIFACT_DATA_CLASSES = new Set(['public', 'internal', 'private', 'sensitive']);
 export const VALID_ARTIFACT_SOURCE_TYPES = new Set(['manual-link', 'manual-upload', 'assistant-output', 'import', 'migration', 'system']);
-export const VALID_ASSISTANT_JOB_STATUSES = new Set(['draft', 'queued', 'running', 'waiting_approval', 'approved', 'rejected', 'retrying', 'succeeded', 'failed', 'canceled']);
-export const VALID_ASSISTANT_EVENT_ACTIONS = new Set(['created', 'queued', 'started', 'log-appended', 'artifact-attached', 'approval-requested', 'approved', 'rejected', 'retry-requested', 'failed', 'canceled', 'succeeded']);
 export const VALID_CARD_LIFECYCLE_AUDIT_ACTIONS = new Set(['card-completed', 'card-reactivated']);
 export const VALID_INTAKE_SOURCES = new Set(['telegram', 'email', 'manual', 'file', 'link', 'import', 'assistant', 'unknown']);
 export const VALID_INTAKE_STATUSES = new Set(['new', 'triaged', 'attached', 'converted', 'ignored', 'duplicate', 'blocked', 'archived']);
 export const VALID_INTAKE_PRIORITIES = new Set(['low', 'normal', 'high', 'urgent']);
 export const VALID_INTAKE_DATA_CLASSES = new Set(['public', 'internal', 'private', 'sensitive']);
-export const VALID_INTAKE_ASSISTANT_STATUSES = new Set(['not-applicable', 'candidate', 'ready', 'submitted', 'blocked']);
 const SECRET_EXPORT_PATTERN = /(secret|token|password|credential|cookie|authorization|signed[_-]?url|api[_-]?key)/i;
 const SIGNED_URL_EXPORT_PATTERN = /(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|signature=|sig=|access_token=|token=|password=|secret=|credential=|api[_-]?key=)/i;
 const RFC3339_INSTANT_PATTERN = /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})[Tt](?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})(?:\.(?<fraction>\d{1,3}))?(?:(?<utcZone>[Zz])|(?<offsetSign>[+-])(?<offsetHours>\d{2}):(?<offsetMinutes>\d{2}))$/;
@@ -300,41 +297,6 @@ export function requiredTaskHistoryField(
   }
 }
 
-export function optionalAssistantExecutionRef(
-  task: JsonRecord,
-  errors: string[],
-  context: string
-): void {
-  const value = task.assistant_execution_ref;
-  if (value === undefined || value === null) return;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    errors.push(`${context} field assistant_execution_ref must be an object when present`);
-    return;
-  }
-  const reference = value as JsonRecord;
-  validateNoSecretPayload(reference, errors, `${context}.assistant_execution_ref`);
-  const expected = [
-    'canonicalPayloadHash',
-    'executionAttemptId',
-    'proposalId',
-    'proposalVersion',
-  ];
-  if (
-    Object.keys(reference).sort().join(',') !== expected.sort().join(',')
-    || typeof reference.executionAttemptId !== 'string'
-    || reference.executionAttemptId.length === 0
-    || typeof reference.proposalId !== 'string'
-    || reference.proposalId.length === 0
-    || !Number.isSafeInteger(reference.proposalVersion)
-    || Number(reference.proposalVersion) < 1
-    || typeof reference.canonicalPayloadHash !== 'string'
-    || !/^sha256:[a-f0-9]{64}$/.test(reference.canonicalPayloadHash)
-  ) {
-    errors.push(`${context} field assistant_execution_ref is malformed`);
-    return;
-  }
-}
-
 export function optionalProofRequirementField(
   record: JsonRecord,
   field: string,
@@ -420,7 +382,6 @@ export function validateTaskDefinitionDocContext(
     optionalStringOrObjectField(record, 'validation', errors, definitionContext);
     optionalProofRequirementField(record, 'proofRequirement', errors, definitionContext);
     optionalRefArrayField(record, 'artifactRefs', 'artifactId', errors, definitionContext);
-    optionalRefArrayField(record, 'assistantJobRefs', 'assistantJobId', errors, definitionContext);
     optionalRefArrayField(record, 'intakeRefs', 'intakeItemId', errors, definitionContext);
     optionalRefArrayField(record, 'auditEventRefs', 'auditEventId', errors, definitionContext);
   }

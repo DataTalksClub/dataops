@@ -115,7 +115,6 @@ export function templateTaskProjection(
     templateDefinitionSnapshot: snapshot,
     status: 'todo',
     ...(definition.artifactRefs?.length ? { artifactRefs: copy(definition.artifactRefs) } : {}),
-    ...(definition.assistantJobRefs?.length ? { assistantJobRefs: copy(definition.assistantJobRefs) } : {}),
     ...(definition.auditEventRefs?.length ? { auditEventRefs: copy(definition.auditEventRefs) } : {}),
     ...(definition.intakeRefs?.length ? { intakeRefs: copy(definition.intakeRefs) } : {}),
   };

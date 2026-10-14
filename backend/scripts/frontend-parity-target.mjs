@@ -46,12 +46,6 @@ Object.assign(process.env, {
   AUTH_LOGOUT_URL: 'https://portal.example.test/',
   AUTH_SESSION_LIFETIME_SECONDS: '3600',
   SPONSOR_FINANCE_ENABLED: 'true',
-  CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: 'false',
-  CONVERSATIONAL_EXECUTION_ENABLED: 'false',
-  CONVERSATIONAL_ENABLED_PLUGINS: 'none',
-  CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: 'false',
-  CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: 'false',
-  CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: 'false',
 });
 if (mode === 'sam') delete process.env.FRONTEND_ROOT;
 
@@ -82,7 +76,6 @@ const tables = {
   cards: fixtureSupport.TABLE_CARDS,
   templates: fixtureSupport.TABLE_TEMPLATES,
   artifacts: fixtureSupport.TABLE_ARTIFACTS,
-  assistants: fixtureSupport.TABLE_ASSISTANT_JOBS,
   intake: fixtureSupport.TABLE_INTAKE,
   notifications: fixtureSupport.TABLE_NOTIFICATIONS,
   sponsor: fixtureSupport.TABLE_SPONSOR_CRM,
@@ -138,14 +131,9 @@ async function resetFixtures() {
   const intake = {
     PK: 'INTAKE#parity-intake', SK: 'INTAKE#parity-intake', id: 'parity-intake', source: 'manual', status: 'blocked',
     title: 'Synthetic blocked intake', summary: 'Waiting for a public-safe synthetic response.', waitingFor: 'Synthetic partner',
-    followUpAt: '2026-08-13T09:00:00.000Z', taskIds: [], cardIds: [], assistantJobIds: [], linkRefs: [], fileRefs: [], artifactRefs: [],
+    followUpAt: '2026-08-13T09:00:00.000Z', taskIds: [], cardIds: [], linkRefs: [], fileRefs: [], artifactRefs: [],
     tags: ['synthetic'], priority: 'normal', dataClass: 'internal', createdAt: fixedNow, updatedAt: fixedNow,
     history: [{ id: 'parity-history', action: 'blocked', actorId: adminId, reason: 'Awaiting synthetic response', createdAt: fixedNow }],
-  };
-  const assistant = {
-    PK: 'ASSISTANT_JOB#parity-assistant', SK: 'ASSISTANT_JOB#parity-assistant', id: 'parity-assistant', assistantType: 'podcast',
-    title: 'Synthetic assistant baseline', status: 'draft', cardId: card.id, inputRefs: [{ type: 'card', id: card.id }],
-    outputArtifactIds: [], approvalRequired: true, attempt: 0, maxAttempts: 2, createdAt: fixedNow, updatedAt: fixedNow,
   };
   const artifact = {
     PK: 'ARTIFACT#parity-artifact', SK: 'ARTIFACT#parity-artifact', id: 'parity-artifact', title: 'Synthetic proof artifact',
@@ -176,7 +164,7 @@ async function resetFixtures() {
   await Promise.all(Object.values(tables).map((tableName) => deleteAllItems(tableName)));
   await Promise.all([
     put(tables.cards, card), put(tables.cards, returnCard), put(tables.tasks, task), put(tables.intake, intake),
-    put(tables.assistants, assistant), put(tables.artifacts, artifact), put(tables.templates, template),
+    put(tables.artifacts, artifact), put(tables.templates, template),
     put(tables.notifications, notification), put(tables.sponsor, organization), put(tables.sponsor, booking),
   ]);
 }

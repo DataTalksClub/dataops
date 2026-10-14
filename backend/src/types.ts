@@ -67,7 +67,6 @@ export interface ArtifactRecord {
   dataClass: ArtifactDataClass;
   taskId?: string;
   cardId?: string;
-  assistantJobId?: string;
   fileId?: string;
   sourceType: ArtifactSourceType;
   createdBy?: string;
@@ -77,12 +76,6 @@ export interface ArtifactRecord {
   reviewedAt?: string;
   tags?: string[];
   metadata?: Record<string, unknown>;
-}
-
-export interface AssistantJobRef {
-  assistantJobId: string;
-  assistantType?: string;
-  status?: string;
 }
 
 export interface IntakeRef {
@@ -96,7 +89,6 @@ export type IntakeSource = 'telegram' | 'email' | 'manual' | 'file' | 'link' | '
 export type IntakeStatus = 'new' | 'triaged' | 'attached' | 'converted' | 'ignored' | 'duplicate' | 'blocked' | 'archived';
 export type IntakePriority = 'low' | 'normal' | 'high' | 'urgent';
 export type IntakeDataClass = 'public' | 'internal' | 'private' | 'sensitive';
-export type IntakeAssistantReadinessStatus = 'not-applicable' | 'candidate' | 'ready' | 'submitted' | 'blocked';
 
 export interface IntakeSourceActor {
   name?: string;
@@ -125,13 +117,6 @@ export interface IntakeFileRef {
   sizeBytes?: number;
   title?: string;
   metadata?: Record<string, unknown>;
-}
-
-export interface IntakeAssistantReadiness {
-  assistantType?: string;
-  status: IntakeAssistantReadinessStatus;
-  inputRefs: AssistantJobInputRef[];
-  missingFields: string[];
 }
 
 export interface IntakeHistoryEvent {
@@ -168,8 +153,6 @@ export interface IntakeItem {
   artifactRefs: ArtifactRef[];
   taskIds: string[];
   cardIds: string[];
-  assistantJobIds: string[];
-  assistantReadiness?: IntakeAssistantReadiness;
   duplicateOfIntakeItemId?: string;
   relatedIntakeItemIds: string[];
   tags: string[];
@@ -182,93 +165,6 @@ export interface IntakeItem {
   followUpAt?: string;
   lastFollowUpAt?: string;
   history: IntakeHistoryEvent[];
-}
-
-export type AssistantJobStatus =
-  | 'draft'
-  | 'queued'
-  | 'running'
-  | 'waiting_approval'
-  | 'approved'
-  | 'rejected'
-  | 'retrying'
-  | 'succeeded'
-  | 'failed'
-  | 'canceled';
-
-export type AssistantJobEventAction =
-  | 'created'
-  | 'queued'
-  | 'started'
-  | 'log-appended'
-  | 'artifact-attached'
-  | 'approval-requested'
-  | 'approved'
-  | 'rejected'
-  | 'retry-requested'
-  | 'failed'
-  | 'canceled'
-  | 'succeeded';
-
-export interface AssistantJobInputRef {
-  type: 'source-message' | 'file' | 'url' | 'doc' | 'task' | 'card' | 'artifact' | 'other' | string;
-  id?: string;
-  uri?: string;
-  title?: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface AssistantJobLogRef {
-  artifactId?: string;
-  storageUri?: string;
-  title?: string;
-  type?: string;
-}
-
-export interface AssistantJobApproval {
-  status: 'pending' | 'approved' | 'rejected';
-  decidedBy?: string;
-  decidedAt?: string;
-  reason?: string;
-}
-
-export interface AssistantJobError {
-  code: string;
-  summary: string;
-}
-
-export interface AssistantJobRecord {
-  id: string;
-  assistantType: string;
-  title: string;
-  status: AssistantJobStatus;
-  taskId?: string;
-  cardId?: string;
-  requestedBy?: string;
-  inputRefs: AssistantJobInputRef[];
-  outputArtifactIds: string[];
-  logRefs: AssistantJobLogRef[];
-  approvalRequired: boolean;
-  approval?: AssistantJobApproval;
-  attemptCount: number;
-  maxAttempts: number;
-  retryOfJobId?: string;
-  lastError?: AssistantJobError;
-  createdAt: string;
-  queuedAt?: string;
-  startedAt?: string;
-  completedAt?: string;
-  updatedAt: string;
-}
-
-export interface AssistantJobEvent {
-  id: string;
-  assistantJobId: string;
-  actorId?: string;
-  action: AssistantJobEventAction;
-  summary: string;
-  metadata?: Record<string, unknown>;
-  createdAt: string;
 }
 
 export interface AuditEventRef {
@@ -329,12 +225,6 @@ export interface Task {
   requiresFile?: boolean;
   assigneeId?: string;
   createdBy?: string;
-  assistantExecutionRef?: {
-    executionAttemptId: string;
-    proposalId: string;
-    proposalVersion: number;
-    canonicalPayloadHash: string;
-  };
   tags?: string[];
   cardId?: string;
   templateId?: string;
@@ -353,7 +243,6 @@ export interface Task {
   stageOnComplete?: string;
   recurringConfigId?: string;
   artifactRefs?: ArtifactRef[];
-  assistantJobRefs?: AssistantJobRef[];
   intakeRefs?: IntakeRef[];
   auditEventRefs?: AuditEventRef[];
   taskHistory: TaskHistoryEvent[];
@@ -435,7 +324,6 @@ export interface Card {
   completedBy?: string;
   activeStageBeforeCompletion?: 'preparation' | 'announced' | 'after-event';
   artifactRefs?: ArtifactRef[];
-  assistantJobRefs?: AssistantJobRef[];
   intakeRefs?: IntakeRef[];
   auditEventRefs?: AuditEventRef[];
   createdAt: string;
@@ -502,7 +390,6 @@ export interface TaskDefinition {
   /** Checklist tag split out of the description (e.g. "Podcast page"). */
   tags?: string[];
   artifactRefs?: ArtifactRef[];
-  assistantJobRefs?: AssistantJobRef[];
   intakeRefs?: IntakeRef[];
   auditEventRefs?: AuditEventRef[];
 }

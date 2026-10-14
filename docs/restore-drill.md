@@ -36,11 +36,9 @@ Before any restore, make sure both layers are active:
    - `<stack>-users`
    - `<stack>-files`
    - `<stack>-artifacts`
-   - `<stack>-assistant-jobs`
    - `<stack>-audit-events`
    - `<stack>-intake`
    - `<stack>-notifications`
-   - `<stack>-conversational-state`
 
    This protects against accidental deletes and bad updates. Ephemeral session
    state is excluded. Separately governed sponsor-CRM, calendar,
@@ -72,11 +70,9 @@ Repeat for each durable execution table:
 - `<stack>-users`
 - `<stack>-files`
 - `<stack>-artifacts`
-- `<stack>-assistant-jobs`
 - `<stack>-audit-events`
 - `<stack>-intake`
 - `<stack>-notifications`
-- `<stack>-conversational-state`
 
 Tag or name backups with the environment, date, and reason.
 
@@ -111,26 +107,12 @@ templates.jsonl
 recurring_configs.jsonl
 files.jsonl
 artifacts.jsonl
-assistant_jobs.jsonl
 audit_events.jsonl
 intake_items.jsonl
 notifications.jsonl
-identity_bindings.jsonl
-identity_binding_audits.jsonl
-conversations.jsonl
-channel_bindings.jsonl
-conversation_events.jsonl
-summary_checkpoints.jsonl
-plugin_drafts.jsonl
-proposal_versions.jsonl
-proposal_presentations.jsonl
-execution_attempts.jsonl
-conversation_audit_events.jsonl
-result_notifications.jsonl
-conversational_private_payloads.jsonl
 ```
 
-All 28 JSONL families are required even when a snapshot contains zero records,
+All 14 JSONL families are required even when a snapshot contains zero records,
 so an empty JSONL file is valid. Password hashes and session tokens are redacted.
 The portable export excludes file and artifact binaries; it contains metadata
 only.

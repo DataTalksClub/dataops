@@ -55,7 +55,6 @@ const TASK_FIELDS = [
   ['proofRequirement', 'proof'],
   ['tags', 'tags'],
   ['artifactRefs', 'artifact_refs'],
-  ['assistantJobRefs', 'assistant_job_refs'],
   ['intakeRefs', 'intake_refs'],
   ['auditEventRefs', 'audit_event_refs'],
 ] as const;

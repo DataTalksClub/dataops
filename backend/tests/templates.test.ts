@@ -517,7 +517,6 @@ describe('Templates data layer', () => {
           requiredLinkName: 'Source document',
           proofRequirement: { type: 'url', label: 'Source document' },
           artifactRefs: [{ artifactId: 'artifact-placeholder', type: 'document' }],
-          assistantJobRefs: [{ assistantJobId: 'assistant-job-placeholder', assistantType: 'drafting' }],
           auditEventRefs: [{ auditEventId: 'audit-placeholder', action: 'created' }],
         },
         {
@@ -549,7 +548,6 @@ describe('Templates data layer', () => {
     assert.strictEqual(collectInputs.requiredLinkName, 'Source document');
     assert.deepStrictEqual(collectInputs.proofRequirement, { type: 'url', label: 'Source document' });
     assert.deepStrictEqual(collectInputs.artifactRefs, [{ artifactId: 'artifact-placeholder', type: 'document' }]);
-    assert.deepStrictEqual(collectInputs.assistantJobRefs, [{ assistantJobId: 'assistant-job-placeholder', assistantType: 'drafting' }]);
     assert.deepStrictEqual(collectInputs.auditEventRefs, [{ auditEventId: 'audit-placeholder', action: 'created' }]);
     assert.deepStrictEqual(collectInputs.tags, ['ops', 'v1']);
 

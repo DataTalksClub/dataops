@@ -8,7 +8,6 @@ import {
   TABLE_BOOKKEEPING,
   TABLE_CARDS,
   TABLE_ARTIFACTS,
-  TABLE_ASSISTANT_JOBS,
   TABLE_AUDIT_EVENTS,
   TABLE_FILES,
   TABLE_INTAKE,
@@ -17,13 +16,9 @@ import {
   TABLE_TEMPLATES,
   TABLE_USERS,
 } from '../db/tableNames';
-import {
-  CONVERSATIONAL_ENTITY_SPECS,
-} from '../conversation/portable';
 import { canonicalizeRfc3339Instant } from './portableChecks';
 import {
   mapArtifact,
-  mapAssistantJob,
   mapAuditEvent,
   mapCard,
   mapFile,
@@ -86,27 +81,14 @@ type ExportEntityName =
   | 'recurring_configs'
   | 'files'
   | 'artifacts'
-  | 'assistant_jobs'
   | 'audit_events'
   | 'intake_items'
-  | 'notifications'
-  | 'identity_bindings'
-  | 'conversations'
-  | 'channel_bindings'
-  | 'conversation_events'
-  | 'summary_checkpoints'
-  | 'plugin_drafts'
-  | 'proposal_versions'
-  | 'proposal_presentations'
-  | 'execution_attempts'
-  | 'conversation_audit_events'
-  | 'conversational_private_payloads';
+  | 'notifications';
 
 const SCHEMA_VERSION = 'dataops.execution.v1';
 const EXPORT_FORMAT_VERSION = 1;
 const OMITTED_ENTITIES = [
   'sessions',
-  'media_bytes',
   'provider_credentials',
   'sponsor_finance_state',
   'sponsor_finance_links',
@@ -118,8 +100,6 @@ const OMITTED_ENTITIES = [
 const REDACTIONS = [
   'users.password_hash',
   'sessions',
-  'proposal_presentations.action_token_hash',
-  'callback_tokens',
   'signed_urls',
 ];
 const ENTITY_SPECS: EntitySpec[] = [
@@ -179,13 +159,6 @@ const ENTITY_SPECS: EntitySpec[] = [
     map: mapArtifact,
   },
   {
-    name: 'assistant_jobs',
-    filename: 'assistant_jobs.jsonl',
-    tableName: TABLE_ASSISTANT_JOBS,
-    prefix: 'ASSISTANT_JOB#',
-    map: mapAssistantJob,
-  },
-  {
     name: 'audit_events',
     filename: 'audit_events.jsonl',
     tableName: TABLE_AUDIT_EVENTS,
@@ -210,7 +183,6 @@ const ENTITY_SPECS: EntitySpec[] = [
     ),
     map: mapNotification,
   },
-  ...(CONVERSATIONAL_ENTITY_SPECS as EntitySpec[]),
 ];
 async function scanByPrefix(
   client: DynamoDBDocumentClient,

@@ -51,9 +51,6 @@ export function validateCardRefs(body: Record<string, unknown>): string | null {
   if (body.artifactRefs !== undefined && !isRecordArrayWithStringId(body.artifactRefs, 'artifactId')) {
     return 'artifactRefs must be an array of objects with artifactId';
   }
-  if (body.assistantJobRefs !== undefined && !isRecordArrayWithStringId(body.assistantJobRefs, 'assistantJobId')) {
-    return 'assistantJobRefs must be an array of objects with assistantJobId';
-  }
   if (body.auditEventRefs !== undefined && !isRecordArrayWithStringId(body.auditEventRefs, 'auditEventId')) {
     return 'auditEventRefs must be an array of objects with auditEventId';
   }
@@ -261,7 +258,7 @@ export async function createCardFromInput(
       if (body[field] !== undefined) cardData[field] = body[field];
     }
   }
-  for (const field of ['artifactRefs', 'assistantJobRefs', 'intakeRefs', 'people', 'sponsor', 'secondarySponsors', 'issueNumber']) {
+  for (const field of ['artifactRefs', 'intakeRefs', 'people', 'sponsor', 'secondarySponsors', 'issueNumber']) {
     if (body[field] !== undefined) {
       cardData[field] = body[field] !== null && field === 'issueNumber' ? String(body[field]).trim() : body[field];
     }

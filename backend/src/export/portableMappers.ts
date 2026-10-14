@@ -80,7 +80,6 @@ export function mapTask(item: Record<string, unknown>): JsonRecord {
     requires_file: optionalBoolean(item.requiresFile),
     assignee_id: optionalString(item.assigneeId),
     created_by: optionalString(item.createdBy),
-    assistant_execution_ref: optionalJsonStringOrObject(item.assistantExecutionRef),
     card_id: optionalString(item.cardId),
     template_id: optionalString(item.templateId),
     template_task_ref: optionalString(item.templateTaskRef),
@@ -90,7 +89,6 @@ export function mapTask(item: Record<string, unknown>): JsonRecord {
     recurring_config_id: optionalString(item.recurringConfigId),
     stage_on_complete: optionalString(item.stageOnComplete),
     artifact_refs: jsonArray(item.artifactRefs),
-    assistant_job_refs: jsonArray(item.assistantJobRefs),
     intake_refs: jsonArray(item.intakeRefs),
     audit_event_refs: jsonArray(item.auditEventRefs),
     tags: stringArray(item.tags),
@@ -125,7 +123,6 @@ export function mapCard(item: Record<string, unknown>): JsonRecord {
     emoji: optionalString(item.emoji),
     tags: stringArray(item.tags),
     artifact_refs: jsonArray(item.artifactRefs),
-    assistant_job_refs: jsonArray(item.assistantJobRefs),
     intake_refs: jsonArray(item.intakeRefs),
     audit_event_refs: jsonArray(item.auditEventRefs),
     created_at: optionalString(item.createdAt),
@@ -212,7 +209,6 @@ export function mapArtifact(item: Record<string, unknown>): JsonRecord {
     data_class: optionalString(item.dataClass),
     task_id: optionalString(item.taskId),
     card_id: optionalString(item.cardId),
-    assistant_job_id: optionalString(item.assistantJobId),
     file_id: optionalString(item.fileId),
     source_type: optionalString(item.sourceType),
     created_by: optionalString(item.createdBy),
@@ -225,37 +221,10 @@ export function mapArtifact(item: Record<string, unknown>): JsonRecord {
   });
 }
 
-export function mapAssistantJob(item: Record<string, unknown>): JsonRecord {
-  return stripEmpty({
-    assistant_job_id: optionalString(item.id),
-    assistant_type: optionalString(item.assistantType),
-    title: optionalString(item.title),
-    status: optionalString(item.status),
-    task_id: optionalString(item.taskId),
-    card_id: optionalString(item.cardId),
-    requested_by: optionalString(item.requestedBy),
-    input_refs: jsonArray(item.inputRefs),
-    output_artifact_ids: stringArray(item.outputArtifactIds),
-    log_refs: jsonArray(item.logRefs),
-    approval_required: optionalBoolean(item.approvalRequired),
-    approval: optionalJsonStringOrObject(item.approval),
-    attempt_count: optionalNumber(item.attemptCount),
-    max_attempts: optionalNumber(item.maxAttempts),
-    retry_of_job_id: optionalString(item.retryOfJobId),
-    last_error: optionalJsonStringOrObject(item.lastError),
-    created_at: optionalString(item.createdAt),
-    queued_at: optionalString(item.queuedAt),
-    started_at: optionalString(item.startedAt),
-    completed_at: optionalString(item.completedAt),
-    updated_at: optionalString(item.updatedAt),
-  });
-}
-
 export function mapAuditEvent(item: Record<string, unknown>): JsonRecord {
   return stripEmpty({
     audit_event_id: optionalString(item.id),
     record_type: optionalString(item.recordType),
-    assistant_job_id: optionalString(item.assistantJobId),
     actor_id: optionalString(item.actorId),
     action: optionalString(item.action),
     summary: optionalString(item.summary),
@@ -295,8 +264,6 @@ export function mapIntakeItem(item: Record<string, unknown>): JsonRecord {
     artifact_refs: jsonArray(item.artifactRefs),
     task_ids: stringArray(item.taskIds),
     card_ids: stringArray(item.cardIds),
-    assistant_job_ids: stringArray(item.assistantJobIds),
-    assistant_readiness: optionalJsonStringOrObject(item.assistantReadiness),
     duplicate_of_intake_item_id: optionalString(item.duplicateOfIntakeItemId),
     related_intake_item_ids: stringArray(item.relatedIntakeItemIds),
     tags: stringArray(item.tags),

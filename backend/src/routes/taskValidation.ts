@@ -39,7 +39,6 @@ export const ALLOWED_UPDATE_FIELDS = [
   'templateId',
   'sourceDocIds',
   'artifactRefs',
-  'assistantJobRefs',
   'intakeRefs',
   'auditEventRefs',
 ];
@@ -200,9 +199,6 @@ export function validateTaskDocContext(fields: Record<string, unknown>): string 
 export function validateTaskRefs(fields: Record<string, unknown>): string | null {
   if (fields.artifactRefs !== undefined && !isRecordArrayWithStringId(fields.artifactRefs, 'artifactId')) {
     return 'artifactRefs must be an array of objects with artifactId';
-  }
-  if (fields.assistantJobRefs !== undefined && !isRecordArrayWithStringId(fields.assistantJobRefs, 'assistantJobId')) {
-    return 'assistantJobRefs must be an array of objects with assistantJobId';
   }
   if (fields.intakeRefs !== undefined && !isRecordArrayWithStringId(fields.intakeRefs, 'intakeItemId')) {
     return 'intakeRefs must be an array of objects with intakeItemId';

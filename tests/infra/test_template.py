@@ -20,36 +20,8 @@ DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-dataops-v1.yml"
 E2E_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "validate-backend-e2e.yml"
 SANDBOX_BASELINE_SHA = "6236865e509c0e142d364e6c56f7856d8f932076"
 SANDBOX_CONSUMER_FUNCTIONS = {
-    "ConversationalExecutionWorkerFunction",
-    "ConversationalResultDispatcherFunction",
     "BackendFunction",
 }
-
-ALARM_CONTRACT = {
-    "ConversationalExecutionOutcomeUnknownAlarm": ("execution-outcome-unknown", "ExecutionOutcomeUnknown", 1, 300, 1, "Sum"),
-    "ConversationalExecutionFailureQueueVisibleAlarm": ("execution-failure-queue-visible", "ApproximateNumberOfMessagesVisible", 1, 300, 1, "Maximum"),
-    "ConversationalRecoveryOldestDueAgeAlarm": ("recovery-oldest-due-age", "RecoveryOldestDueAgeSeconds", 300, 300, 2, "Maximum"),
-    "ConversationalExecutionWorkerHeartbeatStaleAlarm": ("execution-worker-heartbeat-stale", "ExecutionWorkerHeartbeatAgeSeconds", 300, 300, 2, "Maximum"),
-    "ConversationalRecoveryHeartbeatStaleAlarm": ("recovery-heartbeat-stale", "RecoveryHeartbeatAgeSeconds", 300, 300, 2, "Maximum"),
-    "ConversationalResultDeliveryOutcomeUnknownAlarm": ("result-delivery-outcome-unknown", "ResultDeliveryOutcomeUnknown", 1, 300, 1, "Sum"),
-    "ConversationalResultDeliveryOldestPendingAlarm": ("result-delivery-oldest-pending", "ResultDeliveryOldestPendingAgeSeconds", 300, 300, 1, "Maximum"),
-    "ConversationalResultDispatcherHeartbeatStaleAlarm": ("result-dispatcher-heartbeat-stale", "ResultDispatcherHeartbeatAgeSeconds", 300, 300, 2, "Maximum"),
-    "ConversationalResultDeliveryFailedAlarm": ("result-delivery-failed", "ResultDeliveryFailed", 1, 300, 1, "Sum"),
-    "ConversationalTelegramWebhookFailuresAlarm": ("telegram-webhook-failures", "TelegramWebhookFailures", 3, 300, 1, "Sum"),
-    "ConversationalModelFailuresAlarm": ("model-failures", "ModelFailures", 3, 900, 1, "Sum"),
-    "ConversationalVoiceFailuresAlarm": ("voice-failures", "VoiceFailures", 3, 900, 1, "Sum"),
-    "ConversationalPhotoFailuresAlarm": ("photo-failures", "PhotoFailures", 3, 900, 1, "Sum"),
-    "ConversationalTypefullyDraftFailedAlarm": ("typefully-draft-failed", "TypefullyDraftFailed", 1, 900, 1, "Sum"),
-    "ConversationalMediaCleanupFailedAlarm": ("media-cleanup-failed", "MediaCleanupFailed", 1, 300, 1, "Sum"),
-    "ConversationalRetentionCleanupFailedAlarm": ("retention-cleanup-failed", "RetentionCleanupFailed", 1, 900, 1, "Sum"),
-    "ConversationalExecutionFailedSafeAlarm": ("execution-failed-safe", "ExecutionFailedSafe", 3, 900, 1, "Sum"),
-}
-HEARTBEAT_ALARMS = {
-    "ConversationalExecutionWorkerHeartbeatStaleAlarm",
-    "ConversationalRecoveryHeartbeatStaleAlarm",
-    "ConversationalResultDispatcherHeartbeatStaleAlarm",
-}
-
 
 class _CloudFormationLoader(yaml.SafeLoader):
     pass
@@ -152,7 +124,7 @@ def _assert_sandbox_provenance_contract(template: dict, workflow: str) -> None:
     deploy = workflow.split("\n  deploy:\n", 1)[1]
     assert deploy.index("sam deploy") < deploy.index(override)
     assert deploy.index("ParameterKey=SponsorFinanceEnabled") < deploy.index(override)
-    assert deploy.index(override) < deploy.index("ParameterKey=ConversationalExecutionEnabled")
+    assert deploy.index(override) < deploy.index("ParameterKey=BackendTargetFunctionName")
 
 
 def _resource_block(template: str, resource_name: str) -> str:
@@ -351,273 +323,11 @@ def test_podcast_episodes_table_is_retained_private_state_with_one_date_index():
     assert "!Sub ${DataOpsPodcastEpisodesTable.Arn}/index/*" in backend
 
 
-def test_conversational_state_table_is_retained_private_stream_ready_state():
-    template = TEMPLATE.read_text(encoding="utf-8")
-    table = _resource_block(template, "DataOpsConversationalStateTable")
-    backend = _resource_block(template, "BackendFunction")
-
-    assert "Type: AWS::DynamoDB::Table" in table
-    assert "DeletionPolicy: Retain" in table
-    assert "UpdateReplacePolicy: Retain" in table
-    assert "BillingMode: PAY_PER_REQUEST" in table
-    assert "SSEEnabled: true" in table
-    assert "PointInTimeRecoveryEnabled: true" in table
-    assert "AttributeName: ttl" in table
-    assert "Enabled: true" in table
-    assert "StreamViewType: NEW_AND_OLD_IMAGES" in table
-    assert "IndexName: GSI1" in table
-    assert "IndexName: GSI2" in table
-    assert "Value: PrivateExecutionState" in table
-    assert "DATAOPS_TABLE_PREFIX: !Ref AWS::StackName" in backend
-    assert "DATAOPS_CONVERSATIONAL_STATE_TABLE:" not in backend
-    assert "!GetAtt DataOpsConversationalStateTable.Arn" in backend
-    assert "${DataOpsConversationalStateTable.Arn}/index/*" in backend
-    assert "DataOpsConversationalStateTableName:" in template
-    assert "DynamoDBEvent" not in table
-
-
-def test_conversational_execution_worker_has_filtered_stream_recovery_pulse_and_failure_delivery():
-    template = TEMPLATE.read_text(encoding="utf-8")
-    worker = _resource_block(template, "ConversationalExecutionWorkerFunction")
-    queue = _resource_block(template, "ConversationalExecutionFailureQueue")
-    backend = _resource_block(template, "BackendFunction")
-
-    assert "Type: AWS::Serverless::Function" in worker
-    assert "Handler: dist/execution-worker-handler.handler" in worker
-    assert "Type: DynamoDB" in worker
-    assert "!GetAtt DataOpsConversationalStateTable.StreamArn" in worker
-    assert "ReportBatchItemFailures" in worker
-    assert "MaximumRetryAttempts: 3" in worker
-    assert "BisectBatchOnFunctionError: true" in worker
-    assert '"recordType":{"S":["execution_attempt"]}' in worker
-    assert '"status":{"S":["queued"]}' in worker
-    assert "Type: SQS" in worker
-    assert "!GetAtt ConversationalExecutionFailureQueue.Arn" in worker
-    assert "Type: Schedule" not in worker
-    assert "dynamodb:Query" in worker
-    assert "dynamodb:Scan" not in worker
-    assert "${DataOpsConversationalStateTable.Arn}/index/GSI2" in worker
-    assert "DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable" in worker
-    assert "DATAOPS_TASKS_TABLE: !Ref DataOpsTasksTable" in worker
-    assert "!GetAtt DataOpsUsersTable.Arn" in worker
-    assert worker.count("!GetAtt DataOpsUsersTable.Arn") == 1
-    user_permissions = worker[
-        worker.index("- !GetAtt DataOpsUsersTable.Arn") - 180:
-        worker.index("- !GetAtt DataOpsUsersTable.Arn") + 50
-    ]
-    assert "dynamodb:GetItem" in user_permissions
-    assert "dynamodb:TransactWriteItems" in user_permissions
-    assert "dynamodb:PutItem" not in user_permissions
-    assert "dynamodb:UpdateItem" not in user_permissions
-    task_permissions = worker[
-        worker.index("- !GetAtt DataOpsTasksTable.Arn") - 220:
-        worker.index("- !GetAtt DataOpsTasksTable.Arn") + 50
-    ]
-    assert "dynamodb:GetItem" in task_permissions
-    assert "dynamodb:PutItem" in task_permissions
-    assert "dynamodb:TransactWriteItems" in task_permissions
-    assert "dynamodb:UpdateItem" not in task_permissions
-    assert "dynamodb:DeleteItem" not in task_permissions
-    assert "dynamodb:Query" not in task_permissions
-    assert "dynamodb:Scan" not in task_permissions
-    assert worker.count("secretsmanager:GetSecretValue") == 1
-    assert "Resource: !Ref WorkEngineTypefullyApiTokenSecretArn" in worker
-    assert "TelegramIntegrationSecretName" not in worker
-    assert "s3:" not in worker
-    assert "Type: AWS::SQS::Queue" in queue
-    assert "DeletionPolicy: Retain" in queue
-    assert "UpdateReplacePolicy: Retain" in queue
-    assert "SqsManagedSseEnabled: true" in queue
-    assert "MessageRetentionPeriod: 1209600" in queue
-    assert "QueuedAttemptStream" not in backend
-    assert "CONVERSATIONAL_EXECUTION_LEASE_SECONDS" not in backend
-    assert "CONVERSATIONAL_EXECUTION_ENABLED: !Ref ConversationalExecutionEnabled" in worker
-    assert "CONVERSATIONAL_ENABLED_PLUGINS: !Ref ConversationalEnabledPlugins" in worker
-
-
-def test_conversational_result_dispatcher_is_private_scheduled_and_least_privilege():
-    template = TEMPLATE.read_text(encoding="utf-8")
-    dispatcher = _resource_block(template, "ConversationalResultDispatcherFunction")
-    worker = _resource_block(template, "ConversationalExecutionWorkerFunction")
-    backend = _resource_block(template, "BackendFunction")
-
-    assert "Type: AWS::Serverless::Function" in dispatcher
-    assert "Handler: dist/result-notification-handler.handler" in dispatcher
-    assert "DATAOPS_CONVERSATIONAL_STATE_TABLE: !Ref DataOpsConversationalStateTable" in dispatcher
-    assert "TELEGRAM_INTEGRATION_SECRET_NAME: !Ref TelegramIntegrationSecretName" in dispatcher
-    assert "Type: Schedule" not in dispatcher
-    assert "CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: !Ref ConversationalTelegramIngressEnabled" in dispatcher
-    assert "dynamodb:GetItem" in dispatcher
-    assert "dynamodb:Query" in dispatcher
-    assert "dynamodb:UpdateItem" in dispatcher
-    assert "dynamodb:PutItem" in dispatcher
-    assert "dynamodb:DeleteItem" not in dispatcher
-    assert "dynamodb:Scan" not in dispatcher
-    assert "${DataOpsConversationalStateTable.Arn}/index/GSI2" in dispatcher
-    assert "!GetAtt DataOpsUsersTable.Arn" in dispatcher
-    assert "secretsmanager:GetSecretValue" in dispatcher
-    assert "secret:${TelegramIntegrationSecretName}-*" in dispatcher
-    assert "DATAOPS_TASKS_TABLE" not in dispatcher
-    assert "ZAI_" not in dispatcher
-    assert "TELEGRAM_INTEGRATION_SECRET_NAME" not in worker
-    assert worker.count("secretsmanager:GetSecretValue") == 1
-    assert "Resource: !Ref WorkEngineTypefullyApiTokenSecretArn" in worker
-    assert "ResultDelivery" not in backend
-    assert "ConversationalResultDispatcherFunctionName:" in template
-
-
-def test_conversational_result_delivery_schedule_transforms_default_off_and_ingress_on():
-    sam_binary = shutil.which("sam")
-    assert sam_binary, "AWS SAM CLI is required for the transform contract test"
-    template = TEMPLATE.read_text(encoding="utf-8")
-    explicit_on_template = _template_with_parameter_default(
-        template,
-        "ConversationalTelegramIngressEnabled",
-        "true",
-    )
-    scratch_root = REPO_ROOT / ".tmp"
-    scratch_root.mkdir(exist_ok=True)
-
-    with tempfile.TemporaryDirectory(prefix="sam-transform-", dir=scratch_root) as scratch_name:
-        scratch_dir = Path(scratch_name)
-        default_off_path = scratch_dir / "template-default-off.yaml"
-        explicit_on_path = scratch_dir / "template-explicit-on.yaml"
-        default_off_path.write_text(template, encoding="utf-8")
-        explicit_on_path.write_text(explicit_on_template, encoding="utf-8")
-
-        transformed_off = _translated_template_from_sam(sam_binary, default_off_path, scratch_dir)
-        transformed_on = _translated_template_from_sam(sam_binary, explicit_on_path, scratch_dir)
-
-    expected_condition = "\n".join(
-        [
-            "  ConversationalIngressIsEnabled:",
-            "    Fn::Equals:",
-            "    - Ref: ConversationalTelegramIngressEnabled",
-            "    - 'true'",
-        ]
-    )
-    expected_state = "\n".join(
-        [
-            "      State:",
-            "        Fn::If:",
-            "        - ConversationalIngressIsEnabled",
-            "        - ENABLED",
-            "        - DISABLED",
-        ]
-    )
-
-    for transformed in (transformed_off, transformed_on):
-        rule = _resource_block(
-            transformed,
-            "ConversationalResultDispatcherFunctionResultDelivery",
-        )
-        permission = _resource_block(
-            transformed,
-            "ConversationalResultDispatcherFunctionResultDeliveryPermission",
-        )
-        assert "Type: AWS::Events::Rule" in rule
-        assert "ScheduleExpression: rate(1 minute)" in rule
-        assert expected_state in rule
-        assert "ConversationalResultDispatcherTargetFunctionName" in rule
-        assert (
-            "Id: ConversationalResultDispatcherFunctionResultDeliveryLambdaTarget"
-            in rule
-        )
-        assert "Type: AWS::Lambda::Permission" in permission
-        assert "Action: lambda:InvokeFunction" in permission
-        assert "Principal: events.amazonaws.com" in permission
-        assert "Ref: ConversationalResultDispatcherTargetFunctionName" in permission
-        assert "- ConversationalResultDispatcherFunctionResultDelivery" in permission
-        assert "- Arn" in permission
-        assert expected_condition in _resource_block(
-            transformed,
-            "ConversationalIngressIsEnabled",
-        )
-
-    default_off_parameter = _resource_block(
-        transformed_off,
-        "ConversationalTelegramIngressEnabled",
-    )
-    explicit_on_parameter = _resource_block(
-        transformed_on,
-        "ConversationalTelegramIngressEnabled",
-    )
-    assert "    Default: 'false'" in default_off_parameter
-    assert "    Default: 'true'" in explicit_on_parameter
-
-
-def test_conversational_execution_schedules_transform_with_exact_rules_permissions_and_inputs():
-    sam_binary = shutil.which("sam")
-    assert sam_binary, "AWS SAM CLI is required for the transform contract test"
-    template = TEMPLATE.read_text(encoding="utf-8")
-    explicit_on_template = _template_with_parameter_default(
-        template,
-        "ConversationalExecutionEnabled",
-        "true",
-    )
-    scratch_root = REPO_ROOT / ".tmp"
-    scratch_root.mkdir(exist_ok=True)
-
-    with tempfile.TemporaryDirectory(prefix="sam-execution-pulses-", dir=scratch_root) as scratch_name:
-        scratch_dir = Path(scratch_name)
-        default_off_path = scratch_dir / "template-default-off.yaml"
-        explicit_on_path = scratch_dir / "template-explicit-on.yaml"
-        default_off_path.write_text(template, encoding="utf-8")
-        explicit_on_path.write_text(explicit_on_template, encoding="utf-8")
-        transformed_off = _translated_template_from_sam(
-            sam_binary, default_off_path, scratch_dir
-        )
-        transformed_on = _translated_template_from_sam(
-            sam_binary, explicit_on_path, scratch_dir
-        )
-
-    expected_state = "\n".join(
-        [
-            "      State:",
-            "        Fn::If:",
-            "        - ConversationalExecutionIsEnabled",
-            "        - ENABLED",
-            "        - DISABLED",
-        ]
-    )
-    events = {
-        "ExecutionRecovery": (
-            "conversational-execution-recovery",
-            "ConversationalExecutionWorkerFunctionExecutionRecoveLambdaTarget",
-        ),
-        "ExecutionHealthPulse": (
-            "conversational-execution-health-pulse",
-            "ConversationalExecutionWorkerFunctionExecutionHealthLambdaTarget",
-        ),
-    }
-    for transformed in (transformed_off, transformed_on):
-        for event_name, (action, target_id) in events.items():
-            rule_id = f"ConversationalExecutionWorkerFunction{event_name}"
-            permission_id = f"{rule_id}Permission"
-            rule = _resource_block(transformed, rule_id)
-            permission = _resource_block(transformed, permission_id)
-            assert "Type: AWS::Events::Rule" in rule
-            assert "ScheduleExpression: rate(2 minutes)" in rule
-            assert expected_state in rule
-            assert "ConversationalExecutionWorkerTargetFunctionName" in rule
-            assert f"Id: {target_id}" in rule
-            assert action in rule
-            assert "Type: AWS::Lambda::Permission" in permission
-            assert "Action: lambda:InvokeFunction" in permission
-            assert "Principal: events.amazonaws.com" in permission
-            assert "FunctionName:" in permission
-            assert "Ref: ConversationalExecutionWorkerTargetFunctionName" in permission
-            assert f"- {rule_id}" in permission
-            assert "- Arn" in permission
-
-
-def test_five_schedules_are_explicit_identity_stable_resources_with_exact_behavior():
+def test_backend_schedules_are_explicit_identity_stable_resources_with_exact_behavior():
     template = _load_template()
     parameters = template["Parameters"]
     resources = template["Resources"]
     target_parameters = {
-        "ConversationalExecutionWorkerTargetFunctionName",
-        "ConversationalResultDispatcherTargetFunctionName",
         "BackendTargetFunctionName",
     }
     for parameter_name in target_parameters:
@@ -627,30 +337,6 @@ def test_five_schedules_are_explicit_identity_stable_resources_with_exact_behavi
         }
 
     schedules = {
-        "ConversationalExecutionWorkerFunctionExecutionRecovery": {
-            "target": "ConversationalExecutionWorkerTargetFunctionName",
-            "description": "Recover due conversational execution attempts through the indexed worker path.",
-            "expression": "rate(2 minutes)",
-            "state": {"If": ["ConversationalExecutionIsEnabled", "ENABLED", "DISABLED"]},
-            "target_id": "ConversationalExecutionWorkerFunctionExecutionRecoveLambdaTarget",
-            "input": '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"conversational-execution-recovery"}}',
-        },
-        "ConversationalExecutionWorkerFunctionExecutionHealthPulse": {
-            "target": "ConversationalExecutionWorkerTargetFunctionName",
-            "description": "Emit the idle-safe conversational execution worker health pulse.",
-            "expression": "rate(2 minutes)",
-            "state": {"If": ["ConversationalExecutionIsEnabled", "ENABLED", "DISABLED"]},
-            "target_id": "ConversationalExecutionWorkerFunctionExecutionHealthLambdaTarget",
-            "input": '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"conversational-execution-health-pulse"}}',
-        },
-        "ConversationalResultDispatcherFunctionResultDelivery": {
-            "target": "ConversationalResultDispatcherTargetFunctionName",
-            "description": "Deliver owner-bound conversational execution results through the shared Telegram channel.",
-            "expression": "rate(1 minute)",
-            "state": {"If": ["ConversationalIngressIsEnabled", "ENABLED", "DISABLED"]},
-            "target_id": "ConversationalResultDispatcherFunctionResultDeliveryLambdaTarget",
-            "input": None,
-        },
         "BackendFunctionDailyBackendCron": {
             "target": "BackendTargetFunctionName",
             "description": "Run DataOps recurring task and automatic template generation once per day.",
@@ -707,11 +393,7 @@ def test_five_schedules_are_explicit_identity_stable_resources_with_exact_behavi
         if resource["Type"] == "AWS::Events::Rule"
         and name in schedules
     }
-    for function_name in (
-        "ConversationalExecutionWorkerFunction",
-        "ConversationalResultDispatcherFunction",
-        "BackendFunction",
-    ):
+    for function_name in ("BackendFunction",):
         events = resources[function_name]["Properties"].get("Events", {})
         assert not any(event.get("Type") == "Schedule" for event in events.values())
 
@@ -777,18 +459,6 @@ def test_processed_template_keeps_baseline_resource_identity_inventory():
     }
     assert candidate_rules == origin_main_rules - {"BackendFunctionDailyMailingExport"}
     rule_targets = {
-        "ConversationalExecutionWorkerFunctionExecutionRecovery": (
-            "ConversationalExecutionWorkerFunction",
-            "ConversationalExecutionWorkerTargetFunctionName",
-        ),
-        "ConversationalExecutionWorkerFunctionExecutionHealthPulse": (
-            "ConversationalExecutionWorkerFunction",
-            "ConversationalExecutionWorkerTargetFunctionName",
-        ),
-        "ConversationalResultDispatcherFunctionResultDelivery": (
-            "ConversationalResultDispatcherFunction",
-            "ConversationalResultDispatcherTargetFunctionName",
-        ),
         "BackendFunctionDailyBackendCron": ("BackendFunction", "BackendTargetFunctionName"),
         "BackendFunctionDailyBackendExport": ("BackendFunction", "BackendTargetFunctionName"),
     }
@@ -835,8 +505,6 @@ def test_deploy_workflow_pins_toolchain_and_resolves_only_existing_schedule_targ
     assert "aws lambda" not in resolver
     assert "StackId:StackId,Outputs:Outputs" in resolver
     for output, parameter, environment in (
-        ("ConversationalExecutionWorkerFunctionName", "ConversationalExecutionWorkerTargetFunctionName", "CONVERSATIONAL_EXECUTION_WORKER_TARGET_FUNCTION_NAME"),
-        ("ConversationalResultDispatcherFunctionName", "ConversationalResultDispatcherTargetFunctionName", "CONVERSATIONAL_RESULT_DISPATCHER_TARGET_FUNCTION_NAME"),
         ("BackendFunctionName", "BackendTargetFunctionName", "BACKEND_TARGET_FUNCTION_NAME"),
     ):
         assert resolver.count(f"stack_output {output}") == 1
@@ -855,241 +523,6 @@ def test_issue_217_candidate_preserves_baseline_environment_and_excludes_146_pro
     }
     assert "ParameterKey=DataOpsEnvironment" not in workflow
     assert "DataOpsEnvironment=sandbox" not in workflow
-
-
-def test_conversational_observability_graph_is_exact_retained_and_conditioned():
-    template = _load_template()
-    resources = template["Resources"]
-    topic = resources["ConversationalRolloutAlarmTopic"]
-    assert topic == {
-        "Type": "AWS::SNS::Topic",
-        "Properties": {
-            "TopicName": {"Sub": "${AWS::StackName}-conversational-rollout-alarms"},
-            "KmsMasterKeyId": "alias/aws/sns",
-        },
-    }
-    assert template["Outputs"]["ConversationalRolloutAlarmTopicArn"] == {
-        "Value": {"Ref": "ConversationalRolloutAlarmTopic"}
-    }
-    assert not any(resource["Type"] in {
-        "AWS::SNS::Subscription",
-        "AWS::SNS::TopicPolicy",
-        "AWS::CloudWatch::CompositeAlarm",
-        "AWS::CloudWatch::Dashboard",
-        "AWS::Logs::SubscriptionFilter",
-        "AWS::Logs::MetricFilter",
-    } for resource in resources.values())
-
-    groups = {
-        "ConversationalBackendLogGroup": (
-            "/dataops/${AWS::StackName}/conversational/backend",
-            "BackendFunction",
-        ),
-        "ConversationalExecutionLogGroup": (
-            "/dataops/${AWS::StackName}/conversational/execution",
-            "ConversationalExecutionWorkerFunction",
-        ),
-        "ConversationalResultDispatcherLogGroup": (
-            "/dataops/${AWS::StackName}/conversational/result-dispatcher",
-            "ConversationalResultDispatcherFunction",
-        ),
-    }
-    assert {
-        logical_id
-        for logical_id, resource in resources.items()
-        if resource["Type"] == "AWS::Logs::LogGroup"
-        and logical_id.startswith("Conversational")
-    } == set(groups)
-    for logical_id, (name, function_id) in groups.items():
-        group = resources[logical_id]
-        assert group["DeletionPolicy"] == "Retain"
-        assert group["UpdateReplacePolicy"] == "Retain"
-        assert group["Properties"] == {
-            "LogGroupName": {"Sub": name},
-            "RetentionInDays": 30,
-        }
-        assert resources[function_id]["Properties"]["LoggingConfig"] == {
-            "LogFormat": "JSON",
-            "LogGroup": {"Ref": logical_id},
-        }
-    assert "/aws/lambda/" not in "\n".join(
-        str(resources[logical_id]) for logical_id in groups
-    )
-
-    actual_alarm_ids = {
-        logical_id
-        for logical_id, resource in resources.items()
-        if resource["Type"] == "AWS::CloudWatch::Alarm"
-    }
-    assert actual_alarm_ids == set(ALARM_CONTRACT)
-    for logical_id, (suffix, metric, threshold, period, periods, statistic) in ALARM_CONTRACT.items():
-        alarm = resources[logical_id]
-        properties = alarm["Properties"]
-        assert alarm["Condition"].startswith("Conversational")
-        assert properties["AlarmName"] == {
-            "Sub": f"${{AWS::StackName}}-conversational-{suffix}"
-        }
-        assert properties["MetricName"] == metric
-        assert properties["Threshold"] == threshold
-        assert properties["Period"] == period
-        assert properties["EvaluationPeriods"] == periods
-        assert properties["DatapointsToAlarm"] == periods
-        assert properties["Statistic"] == statistic
-        expected_missing = (
-            "breaching" if logical_id in HEARTBEAT_ALARMS else "notBreaching"
-        )
-        assert properties["TreatMissingData"] == expected_missing
-        assert properties["AlarmActions"] == [{"Ref": "ConversationalRolloutAlarmTopic"}]
-        assert "Tags" not in properties
-    assert resources["ConversationalExecutionFailureQueueVisibleAlarm"]["Properties"]["Namespace"] == "AWS/SQS"
-    for logical_id in actual_alarm_ids - {"ConversationalExecutionFailureQueueVisibleAlarm"}:
-        assert resources[logical_id]["Properties"]["Namespace"] == "DataOps/ConversationalAgent"
-
-
-def test_heartbeat_alarm_states_distinguish_idle_gap_stopped_disabled_and_errors():
-    resources = _load_template()["Resources"]
-
-    def alarm_state(logical_id: str, samples: list[int | None]) -> str:
-        properties = resources[logical_id]["Properties"]
-        periods = properties["EvaluationPeriods"]
-        datapoints = properties["DatapointsToAlarm"]
-        considered = samples[-periods:]
-        breaching = sum(
-            value is None or value > properties["Threshold"]
-            for value in considered
-        )
-        return "ALARM" if breaching >= datapoints else "OK"
-
-    for logical_id in HEARTBEAT_ALARMS:
-        alarm = resources[logical_id]
-        expected_condition = (
-            "ConversationalIngressIsEnabled"
-            if logical_id == "ConversationalResultDispatcherHeartbeatStaleAlarm"
-            else "ConversationalExecutionIsEnabled"
-        )
-        assert alarm["Condition"] == expected_condition
-        assert alarm["Properties"]["TreatMissingData"] == "breaching"
-        assert alarm_state(logical_id, [0, 0]) == "OK"  # healthy and idle/no-work
-        assert alarm_state(logical_id, [0, None]) == "OK"  # one missing period
-        assert alarm_state(logical_id, [None, None]) == "ALARM"  # stopped/error
-
-    non_heartbeat = set(ALARM_CONTRACT) - HEARTBEAT_ALARMS
-    assert len(non_heartbeat) == 14
-    for logical_id in non_heartbeat:
-        assert resources[logical_id]["Properties"]["TreatMissingData"] == "notBreaching"
-
-    for rule_id in (
-        "ConversationalExecutionWorkerFunctionExecutionRecovery",
-        "ConversationalExecutionWorkerFunctionExecutionHealthPulse",
-    ):
-        assert resources[rule_id]["Properties"]["State"] == {
-            "If": [
-                "ConversationalExecutionIsEnabled",
-                "ENABLED",
-                "DISABLED",
-            ]
-        }
-    dispatcher_rule = resources["ConversationalResultDispatcherFunctionResultDelivery"]
-    assert dispatcher_rule["Properties"]["State"] == {
-        "If": ["ConversationalIngressIsEnabled", "ENABLED", "DISABLED"]
-    }
-
-
-def test_rollout_exposes_only_six_behavior_controls_with_all_off_defaults():
-    template = _load_template()
-    parameters = template["Parameters"]
-    controls = {
-        "ConversationalTelegramIngressEnabled": "false",
-        "ConversationalExecutionEnabled": "false",
-        "ConversationalEnabledPlugins": "none",
-        "ConversationalTypefullyExternalExecutionEnabled": "false",
-        "ConversationalTelegramVoiceEnabled": "false",
-        "ConversationalTelegramPhotoEnabled": "false",
-    }
-    for name, expected in controls.items():
-        assert parameters[name]["Default"] == expected
-    retired = {
-        "ConversationalAgentEnabled",
-        "ConversationalTodoPluginEnabled",
-        "ConversationalTodoExecutorEnabled",
-        "ConversationalTypefullyPluginEnabled",
-        "ConversationalTypefullyExecutionEnabled",
-        "ConversationalResultDeliveryEnabled",
-        "ConversationalTelegramEnabled",
-    }
-    assert retired.isdisjoint(parameters)
-    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
-    for name in retired:
-        assert name not in workflow
-    for environment_name in [
-        "CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED",
-        "CONVERSATIONAL_EXECUTION_ENABLED",
-        "CONVERSATIONAL_ENABLED_PLUGINS",
-        "CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED",
-        "CONVERSATIONAL_TELEGRAM_VOICE_ENABLED",
-        "CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED",
-    ]:
-        assert workflow.count(f"ParameterValue=${environment_name}") == 1
-    assert "aws lambda update-function-configuration" not in workflow
-    _assert_deploy_does_not_read_portal_secret(workflow)
-
-
-def test_fresh_sam_transforms_cover_every_alarm_controlling_switch_state():
-    sam_binary = shutil.which("sam")
-    assert sam_binary, "AWS SAM CLI is required for the transform contract test"
-    source = TEMPLATE.read_text(encoding="utf-8")
-    states = {
-        "dark": {},
-        "execution": {"ConversationalExecutionEnabled": "true"},
-        "ingress": {
-            "ConversationalTelegramIngressEnabled": "true",
-            "ZaiConversationalApiKeySecretArn": "arn:aws:secretsmanager:eu-west-1:000000000000:secret:zai",
-        },
-        "voice": {
-            "ConversationalTelegramIngressEnabled": "true",
-            "ConversationalTelegramVoiceEnabled": "true",
-            "ZaiConversationalApiKeySecretArn": "arn:aws:secretsmanager:eu-west-1:000000000000:secret:zai",
-            "GroqTranscriptionApiKeySecretArn": "arn:aws:secretsmanager:eu-west-1:000000000000:secret:groq",
-        },
-        "photo": {
-            "ConversationalTelegramIngressEnabled": "true",
-            "ConversationalTelegramPhotoEnabled": "true",
-            "ZaiConversationalApiKeySecretArn": "arn:aws:secretsmanager:eu-west-1:000000000000:secret:zai",
-            "ZaiVisionApiKeySecretArn": "arn:aws:secretsmanager:eu-west-1:000000000000:secret:vision",
-        },
-        "typefully-external": {
-            "ConversationalExecutionEnabled": "true",
-            "ConversationalEnabledPlugins": "typefully",
-            "ConversationalTypefullyExternalExecutionEnabled": "true",
-        },
-    }
-    scratch_root = REPO_ROOT / ".tmp"
-    scratch_root.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="sam-rollout-transforms-", dir=scratch_root) as scratch_name:
-        scratch_dir = Path(scratch_name)
-        transformed_by_state = {}
-        for name, defaults in states.items():
-            state_template = _template_with_defaults(source, defaults)
-            path = scratch_dir / f"template-{name}.yaml"
-            path.write_text(state_template, encoding="utf-8")
-            transformed_by_state[name] = _translated_template_from_sam(
-                sam_binary, path, scratch_dir
-            )
-
-    for name, transformed in transformed_by_state.items():
-        assert "ConversationalRolloutAlarmTopic:" in transformed, name
-        assert transformed.count("Type: AWS::CloudWatch::Alarm") == 17, name
-        for logical_id in ALARM_CONTRACT:
-            block = _resource_block(transformed, logical_id)
-            assert "Condition: Conversational" in block, (name, logical_id)
-            expected_missing = (
-                "breaching" if logical_id in HEARTBEAT_ALARMS else "notBreaching"
-            )
-            assert f"TreatMissingData: {expected_missing}" in block, (name, logical_id)
-        assert "Type: AWS::SNS::Subscription" not in transformed, name
-        assert "Type: AWS::SNS::TopicPolicy" not in transformed, name
-        assert "Type: AWS::CloudWatch::CompositeAlarm" not in transformed, name
-        assert "Type: AWS::Logs::MetricFilter" not in transformed, name
 
 
 def test_sam_executable_command_invokes_python_shebang_script():
@@ -1126,103 +559,6 @@ def test_sam_executable_command_invokes_native_binary():
         text=True,
     )
     assert completed.stdout.startswith("Python ")
-
-
-def test_conversational_telegram_media_is_disabled_and_uses_exact_optional_secrets():
-    template = TEMPLATE.read_text(encoding="utf-8")
-    backend = _resource_block(template, "BackendFunction")
-    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
-
-    assert 'ConversationalTelegramIngressEnabled:' in template
-    assert 'ConversationalTelegramVoiceEnabled:' in template
-    assert 'ConversationalTelegramPhotoEnabled:' in template
-    for parameter in [
-        "ConversationalTelegramIngressEnabled",
-        "ConversationalTelegramVoiceEnabled",
-        "ConversationalTelegramPhotoEnabled",
-    ]:
-        assert f'  {parameter}:\n    Type: String\n    Default: "false"' in template
-    assert "TelegramVoiceRequiresConfiguration:" in template
-    assert "TelegramPhotoRequiresConfiguration:" in template
-    assert "CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: !Ref ConversationalTelegramIngressEnabled" in backend
-    assert "CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: !Ref ConversationalTelegramVoiceEnabled" in backend
-    assert "CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: !Ref ConversationalTelegramPhotoEnabled" in backend
-    assert "GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN: !Ref GroqTranscriptionApiKeySecretArn" in backend
-    assert "ZAI_VISION_API_KEY_SECRET_ARN: !Ref ZaiVisionApiKeySecretArn" in backend
-    assert "ZAI_VISION_MODEL: !Ref ZaiVisionModel" in backend
-    assert "ZAI_VISION_BASE_URL: !Ref ZaiVisionBaseUrl" in backend
-    bounded_settings = {
-        "TelegramHandlerDeadlineMs": ("28000", "TELEGRAM_HANDLER_DEADLINE_MS"),
-        "TelegramApiTimeoutMs": ("5000", "TELEGRAM_API_TIMEOUT_MS"),
-        "TelegramApiMaxResponseBytes": ("65536", "TELEGRAM_API_MAX_RESPONSE_BYTES"),
-        "TelegramVoiceMaxBytes": ("20971520", "TELEGRAM_VOICE_MAX_BYTES"),
-        "TelegramVoiceMaxSeconds": ("300", "TELEGRAM_VOICE_MAX_SECONDS"),
-        "TelegramPhotoMaxBytes": ("10485760", "TELEGRAM_PHOTO_MAX_BYTES"),
-        "TelegramPhotoMaxPixels": ("20000000", "TELEGRAM_PHOTO_MAX_PIXELS"),
-        "TelegramMediaDownloadTimeoutMs": ("8000", "TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS"),
-        "TelegramMediaProviderTimeoutMs": ("18000", "TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS"),
-        "TelegramMediaProviderMaxResponseBytes": (
-            "65536",
-            "TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES",
-        ),
-        "TelegramMediaMaxTextBytes": ("16384", "TELEGRAM_MEDIA_MAX_TEXT_BYTES"),
-    }
-    for parameter, (default, environment_name) in bounded_settings.items():
-        assert f"  {parameter}:\n    Type: Number\n    Default: {default}" in template
-        assert f"{environment_name}: !Ref {parameter}" in backend
-        assert f"{environment_name}: ${{{{ vars.{environment_name} }}}}" in workflow
-        assert f'ParameterKey={parameter},ParameterValue=${environment_name}' in workflow
-    telegram_timeout = _load_template()["Parameters"]["TelegramApiTimeoutMs"]
-    assert telegram_timeout["MinValue"] == 100
-    assert telegram_timeout["MaxValue"] == 5000
-    assert "TELEGRAM_API_TIMEOUT_MS must be an integer from 100 through 5000" in workflow
-    assert "HasGroqTranscriptionSecret" in backend
-    assert "HasZaiVisionSecret" in backend
-    assert "!Ref GroqTranscriptionApiKeySecretArn" in backend
-    assert "!Ref ZaiVisionApiKeySecretArn" in backend
-    assert "GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN: ${{ vars.GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN }}" in workflow
-    assert "ZAI_VISION_API_KEY_SECRET_ARN: ${{ vars.ZAI_VISION_API_KEY_SECRET_ARN }}" in workflow
-    assert "ParameterKey=GroqTranscriptionApiKeySecretArn" in workflow
-    assert "ParameterKey=ZaiVisionApiKeySecretArn" in workflow
-    assert "ParameterKey=ZaiVisionModel,ParameterValue=$ZAI_VISION_MODEL" in workflow
-    assert "ParameterKey=ZaiVisionBaseUrl,ParameterValue=$ZAI_VISION_BASE_URL" in workflow
-    _assert_deploy_does_not_read_portal_secret(workflow)
-
-
-def test_conversational_zai_secret_is_optional_disabled_and_exactly_scoped():
-    template = TEMPLATE.read_text(encoding="utf-8")
-    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
-    backend = _resource_block(template, "BackendFunction")
-
-    assert "ConversationalTelegramIngressEnabled:" in template
-    assert 'Default: "false"' in template
-    assert "ZaiConversationalApiKeySecretArn:" in template
-    assert "Default: \"\"" in template
-    assert "ConversationalIngressRequiresZaiSecret:" in template
-    assert "HasZaiConversationalSecret:" in template
-    assert "CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: !Ref ConversationalTelegramIngressEnabled" in backend
-    for parameter in [
-        "ConversationalTelegramIngressEnabled",
-        "ConversationalExecutionEnabled",
-    ]:
-        assert f'  {parameter}:\n    Type: String\n    Default: "false"' in template
-    assert "  ConversationalEnabledPlugins:\n    Type: String\n    Default: none" in template
-    assert "CONVERSATIONAL_EXECUTION_ENABLED: !Ref ConversationalExecutionEnabled" in backend
-    assert "CONVERSATIONAL_ENABLED_PLUGINS: !Ref ConversationalEnabledPlugins" in backend
-    assert "CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED }}" in workflow
-    assert "CONVERSATIONAL_EXECUTION_ENABLED: ${{ vars.CONVERSATIONAL_EXECUTION_ENABLED }}" in workflow
-    assert "CONVERSATIONAL_ENABLED_PLUGINS: ${{ vars.CONVERSATIONAL_ENABLED_PLUGINS }}" in workflow
-    assert "ParameterKey=ConversationalTelegramIngressEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED" in workflow
-    assert "ParameterKey=ConversationalExecutionEnabled,ParameterValue=$CONVERSATIONAL_EXECUTION_ENABLED" in workflow
-    assert "ParameterKey=ConversationalEnabledPlugins,ParameterValue=$CONVERSATIONAL_ENABLED_PLUGINS" in workflow
-    assert "ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: !Ref ZaiConversationalApiKeySecretArn" in backend
-    assert "- !Ref ZaiConversationalApiKeySecretArn" in backend
-    assert "secret:${ZaiConversationalApiKeySecretArn}" not in backend
-    assert "apiKey" not in backend
-    assert "ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: ${{ vars.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN }}" in workflow
-    assert "Telegram ingress cannot be enabled without its z.ai secret ARN" in workflow
-    assert "ParameterKey=ZaiConversationalApiKeySecretArn,ParameterValue=$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" in workflow
-    _assert_deploy_does_not_read_portal_secret(workflow)
 
 
 def test_dataops_table_outputs_are_available_for_backend_env_wiring():
@@ -1478,7 +814,7 @@ def test_raw_dynamo_backup_dumps_every_table_to_the_archive_bucket():
     assert '  DynamoBackupPrefix:\n    Type: String\n    Default: dynamo-backups' in template
 
 
-def test_deployed_environment_is_exactly_sandbox_and_has_exactly_three_consumers():
+def test_deployed_environment_is_exactly_sandbox_and_has_exactly_one_consumer():
     template = _load_template()
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 

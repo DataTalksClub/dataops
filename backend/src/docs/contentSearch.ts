@@ -122,7 +122,6 @@ function sortResults(results: Record<string, unknown>[]): Record<string, unknown
     doc: 3,
     artifact: 4,
     file: 5,
-    'assistant-job': 6,
   };
   // Groups by result type; within a type the index's relevance order stands.
   // Array.prototype.sort is stable, so equal types keep their ranked order.

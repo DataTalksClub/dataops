@@ -1,7 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
 
-import { restoredRecord, validateConversationalEntities } from '../conversation/portable';
 import {
   ENTITY_SPECS,
   EXPORT_FORMAT_VERSION,
@@ -16,10 +15,7 @@ import {
   VALID_ARTIFACT_STATUSES,
   VALID_ARTIFACT_STORAGE_PROVIDERS,
   VALID_ARTIFACT_TYPES,
-  VALID_ASSISTANT_EVENT_ACTIONS,
-  VALID_ASSISTANT_JOB_STATUSES,
   VALID_CARD_LIFECYCLE_AUDIT_ACTIONS,
-  VALID_INTAKE_ASSISTANT_STATUSES,
   VALID_INTAKE_DATA_CLASSES,
   VALID_INTAKE_PRIORITIES,
   VALID_INTAKE_SOURCES,
@@ -28,7 +24,6 @@ import {
   VALID_TASK_STATUSES,
   collectIds,
   isRfc3339Instant,
-  optionalAssistantExecutionRef,
   optionalBooleanField,
   optionalEnum,
   optionalIntegerField,
@@ -66,6 +61,15 @@ export interface ValidationResult {
   errors: string[];
   entityCounts: Record<string, number>;
 }
+/** Restore-safety adjustment: an in-flight invoice lease never survives a restore. */
+export function restoredRecord(entity: string, record: JsonRecord): JsonRecord {
+  if (entity === 'invoice_records') {
+    const { leaseOwner: _owner, leaseUntil: _until, ...safe } = record;
+    return { ...safe, restoredNeedsReconciliation: true };
+  }
+  return record;
+}
+
 async function readJsonLines(filePath: string): Promise<JsonRecord[]> {
   const content = await fs.readFile(filePath, 'utf8');
   if (content.trim().length === 0) return [];
@@ -160,7 +164,6 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
   const recurringConfigIds = collectIds(recordsByEntity.recurring_configs || [], 'recurring_config_id', 'recurring_configs', errors);
   const fileIds = collectIds(recordsByEntity.files || [], 'file_id', 'files', errors);
   const artifactIds = collectIds(recordsByEntity.artifacts || [], 'artifact_id', 'artifacts', errors);
-  const assistantJobIds = collectIds(recordsByEntity.assistant_jobs || [], 'assistant_job_id', 'assistant_jobs', errors);
   collectIds(recordsByEntity.audit_events || [], 'audit_event_id', 'audit_events', errors);
   const intakeItemIds = collectIds(recordsByEntity.intake_items || [], 'intake_item_id', 'intake_items', errors);
   collectIds(recordsByEntity.notifications || [], 'notification_id', 'notifications', errors);
@@ -215,24 +218,15 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     const proofRequirement = optionalProofRequirementField(task, 'proof_requirement', errors, context);
     optionalStringField(task, 'external_status', errors, context);
     optionalRefArrayField(task, 'artifact_refs', 'artifactId', errors, context);
-    optionalRefArrayField(task, 'assistant_job_refs', 'assistantJobId', errors, context);
     optionalRefArrayField(task, 'intake_refs', 'intakeItemId', errors, context);
     optionalRefArrayField(task, 'audit_event_refs', 'auditEventId', errors, context);
     requiredTaskHistoryField(task, errors, context);
     optionalReference(task, 'assignee_id', userIds, errors, context);
     optionalReference(task, 'created_by', userIds, errors, context);
-    optionalAssistantExecutionRef(task, errors, context);
     optionalStringField(task, 'completed_by', errors, context);
     optionalReference(task, 'card_id', cardIds, errors, context);
     optionalReference(task, 'template_id', templateIds, errors, context);
     optionalReference(task, 'recurring_config_id', recurringConfigIds, errors, context);
-    if (Array.isArray(task.assistant_job_refs)) {
-      task.assistant_job_refs.forEach((ref, refIndex) => {
-        if (ref && typeof ref === 'object' && !Array.isArray(ref)) {
-          optionalReference(ref as JsonRecord, 'assistantJobId', assistantJobIds, errors, `${context}.assistant_job_refs[${refIndex}]`);
-        }
-      });
-    }
     if (Array.isArray(task.intake_refs)) {
       task.intake_refs.forEach((ref, refIndex) => {
         if (ref && typeof ref === 'object' && !Array.isArray(ref)) {
@@ -291,16 +285,8 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     optionalStringArrayField(card, 'source_doc_ids', errors, context);
     optionalStringField(card, 'emoji', errors, context);
     optionalRefArrayField(card, 'artifact_refs', 'artifactId', errors, context);
-    optionalRefArrayField(card, 'assistant_job_refs', 'assistantJobId', errors, context);
     optionalRefArrayField(card, 'intake_refs', 'intakeItemId', errors, context);
     optionalRefArrayField(card, 'audit_event_refs', 'auditEventId', errors, context);
-    if (Array.isArray(card.assistant_job_refs)) {
-      card.assistant_job_refs.forEach((ref, refIndex) => {
-        if (ref && typeof ref === 'object' && !Array.isArray(ref)) {
-          optionalReference(ref as JsonRecord, 'assistantJobId', assistantJobIds, errors, `${context}.assistant_job_refs[${refIndex}]`);
-        }
-      });
-    }
     if (Array.isArray(card.intake_refs)) {
       card.intake_refs.forEach((ref, refIndex) => {
         if (ref && typeof ref === 'object' && !Array.isArray(ref)) {
@@ -373,7 +359,6 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     optionalReference(artifact, 'task_id', taskIds, errors, context);
     optionalReference(artifact, 'card_id', cardIds, errors, context);
     optionalReference(artifact, 'file_id', fileIds, errors, context);
-    optionalReference(artifact, 'assistant_job_id', assistantJobIds, errors, context);
     optionalReference(artifact, 'created_by', userIds, errors, context);
     optionalReference(artifact, 'reviewed_by', userIds, errors, context);
     validateNoSecretPayload(artifact, errors, context);
@@ -385,58 +370,6 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     }
   }
 
-  for (const [index, job] of (recordsByEntity.assistant_jobs || []).entries()) {
-    const context = `assistant_jobs[${index}]`;
-    requireString(job, 'assistant_type', errors, context);
-    requireString(job, 'title', errors, context);
-    const status = optionalEnum(job, 'status', VALID_ASSISTANT_JOB_STATUSES, errors, context);
-    optionalReference(job, 'task_id', taskIds, errors, context);
-    optionalReference(job, 'card_id', cardIds, errors, context);
-    if (job.task_id === undefined && job.card_id === undefined) {
-      errors.push(`${context} must reference task_id or card_id`);
-    }
-    optionalReference(job, 'requested_by', userIds, errors, context);
-    optionalReference(job, 'retry_of_job_id', assistantJobIds, errors, context);
-    optionalStringArrayField(job, 'output_artifact_ids', errors, context);
-    if (Array.isArray(job.output_artifact_ids)) {
-      job.output_artifact_ids.forEach((artifactId, artifactIndex) => {
-        if (typeof artifactId === 'string' && !artifactIds.has(artifactId)) {
-          errors.push(`${context}.output_artifact_ids[${artifactIndex}] references missing artifact_id: ${artifactId}`);
-        }
-      });
-    }
-    if (job.input_refs !== undefined && !Array.isArray(job.input_refs)) {
-      errors.push(`${context} field input_refs must be an array when present`);
-    }
-    if (job.log_refs !== undefined && !Array.isArray(job.log_refs)) {
-      errors.push(`${context} field log_refs must be an array when present`);
-    }
-    if (job.approval_required !== undefined && typeof job.approval_required !== 'boolean') {
-      errors.push(`${context} field approval_required must be a boolean when present`);
-    }
-    optionalNumberField(job, 'attempt_count', errors, context);
-    optionalNumberField(job, 'max_attempts', errors, context);
-    validateDateOrTimestampField(job, 'created_at', errors, context, true);
-    validateDateOrTimestampField(job, 'updated_at', errors, context, true);
-    validateDateOrTimestampField(job, 'queued_at', errors, context);
-    validateDateOrTimestampField(job, 'started_at', errors, context);
-    validateDateOrTimestampField(job, 'completed_at', errors, context);
-    validateNoSecretPayload(job, errors, context);
-    if (job.approval !== undefined) {
-      if (job.approval === null || typeof job.approval !== 'object' || Array.isArray(job.approval)) {
-        errors.push(`${context} field approval must be an object when present`);
-      } else {
-        const approval = job.approval as JsonRecord;
-        optionalEnum(approval, 'status', new Set(['pending', 'approved', 'rejected']), errors, `${context}.approval`);
-        optionalReference(approval, 'decidedBy', userIds, errors, `${context}.approval`);
-        validateDateOrTimestampField(approval, 'decidedAt', errors, `${context}.approval`);
-        if (status === 'rejected') requireString(approval, 'reason', errors, `${context}.approval`);
-      }
-    }
-    if (status === 'waiting_approval' && job.approval_required === false) {
-      errors.push(`${context} cannot wait for approval when approval_required is false`);
-    }
-  }
 
   for (const [index, event] of (recordsByEntity.audit_events || []).entries()) {
     const context = `audit_events[${index}]`;
@@ -462,10 +395,6 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
       }
     } else {
       requireString(event, 'summary', errors, context);
-      if (action && !VALID_ASSISTANT_EVENT_ACTIONS.has(action)) {
-        errors.push(`${context} field action has unknown value: ${action}`);
-      }
-      optionalReference(event, 'assistant_job_id', assistantJobIds, errors, context);
       optionalReference(event, 'actor_id', userIds, errors, context);
     }
     validateDateOrTimestampField(event, 'created_at', errors, context, true);
@@ -498,7 +427,6 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     optionalStringArrayField(item, 'received_channels', errors, context);
     optionalStringArrayField(item, 'task_ids', errors, context);
     optionalStringArrayField(item, 'card_ids', errors, context);
-    optionalStringArrayField(item, 'assistant_job_ids', errors, context);
     optionalStringArrayField(item, 'related_intake_item_ids', errors, context);
     optionalStringArrayField(item, 'tags', errors, context);
     optionalStringField(item, 'body_ref', errors, context);
@@ -541,11 +469,6 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
         if (typeof cardId === 'string' && !cardIds.has(cardId)) errors.push(`${context}.card_ids[${cardIndex}] references missing card_id: ${cardId}`);
       });
     }
-    if (Array.isArray(item.assistant_job_ids)) {
-      item.assistant_job_ids.forEach((jobId, jobIndex) => {
-        if (typeof jobId === 'string' && !assistantJobIds.has(jobId)) errors.push(`${context}.assistant_job_ids[${jobIndex}] references missing assistant_job_id: ${jobId}`);
-      });
-    }
     if (Array.isArray(item.related_intake_item_ids)) {
       item.related_intake_item_ids.forEach((relatedId, relatedIndex) => {
         if (typeof relatedId === 'string' && !intakeItemIds.has(relatedId)) errors.push(`${context}.related_intake_item_ids[${relatedIndex}] references missing intake_item_id: ${relatedId}`);
@@ -555,20 +478,6 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
       item.artifact_refs.forEach((ref, refIndex) => {
         if (ref && typeof ref === 'object' && !Array.isArray(ref)) optionalReference(ref as JsonRecord, 'artifactId', artifactIds, errors, `${context}.artifact_refs[${refIndex}]`);
       });
-    }
-    if (item.assistant_readiness !== undefined) {
-      if (item.assistant_readiness === null || typeof item.assistant_readiness !== 'object' || Array.isArray(item.assistant_readiness)) {
-        errors.push(`${context} field assistant_readiness must be an object when present`);
-      } else {
-        const readiness = item.assistant_readiness as JsonRecord;
-        optionalEnum(readiness, 'status', VALID_INTAKE_ASSISTANT_STATUSES, errors, `${context}.assistant_readiness`);
-        if (readiness.inputRefs !== undefined && !Array.isArray(readiness.inputRefs)) {
-          errors.push(`${context}.assistant_readiness field inputRefs must be an array when present`);
-        }
-        if (readiness.missingFields !== undefined && !Array.isArray(readiness.missingFields)) {
-          errors.push(`${context}.assistant_readiness field missingFields must be an array when present`);
-        }
-      }
     }
     validateNoSecretPayload(item, errors, context);
   }
@@ -603,12 +512,6 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     optionalStringOrObjectField(notification, 'metadata', errors, context);
     validateNoSecretPayload(notification, errors, context);
   }
-
-  validateConversationalEntities(
-    recordsByEntity as Record<string, JsonRecord[]>,
-    errors,
-    manifest.generated_at
-  );
 
   const manifestRedactions = new Set(manifest.redactions || []);
   for (const redaction of REDACTIONS) {

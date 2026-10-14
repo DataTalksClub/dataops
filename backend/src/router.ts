@@ -8,11 +8,8 @@ import { handleRecurringRoutes } from './routes/recurring';
 import { handleUserRoutes } from './routes/users';
 import { handleFileRoutes } from './routes/files';
 import { handleArtifactRoutes } from './routes/artifacts';
-import { handleAssistantJobRoutes } from './routes/assistantJobs';
-import { handleSocialDraftAssistantRoutes } from './assistant/socialDraftAssistant';
 import { handleDocsRoutes, isDocsDomainEnabled, isDocsRoute } from './docs';
 import { handlePortal, serveCanonicalFrontend } from './docs/portal';
-import { handleTelegramWebhook } from './routes/telegram';
 import { handleEmailDocumentIntake } from './routes/emailDocuments';
 import { handleNotificationRoutes } from './routes/notifications';
 import { handleCronRoutes } from './routes/cron';
@@ -23,9 +20,6 @@ import { handleSponsorFinanceRoutes } from './routes/sponsorFinance';
 import { handleSponsorCommunicationRoutes } from './routes/sponsorCommunications';
 import { handleNewsletterSlotRoutes } from './routes/newsletterSlots';
 import { handleCalendarRoutes } from './routes/calendar';
-import { handleConversationalExecutionRoutes } from './routes/conversationalExecution';
-import { handleConversationalIdentityBindingRoutes } from './routes/conversationalIdentityBindings';
-import { handleConversationalReadiness } from './routes/conversationalReadiness';
 import { handleDocumentReviewRoutes } from './routes/documentReviews';
 import { handleOperatingModelRoutes } from './routes/operatingModel';
 import { handleAuthRoutes, extractToken } from './routes/auth';
@@ -58,7 +52,6 @@ function isAuthExempt(method: string, path: string): boolean {
   if (AUTH_EXEMPT_PATHS.has(path)) return true;
   if (method === 'POST' && path === '/api/v1/intake/email-documents') return true;
   if (method === 'POST' && path === '/api/v1/intake/leads') return true;
-  if (method === 'POST' && path === '/api/webhook/telegram') return true;
   return false;
 }
 
@@ -140,12 +133,6 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
 
     decodeBase64Body(event);
-
-    // Telegram authenticates with its own rotated webhook secret and must be
-    // handled before the interactive single-origin portal middleware.
-    if (method === 'POST' && reqPath === '/api/webhook/telegram') {
-      return await handleTelegramWebhook(event);
-    }
 
     // ── Single-origin portal layer (docs domain, flag-gated) ─────
     // When the docs domain is enabled, the portal serves the frontend, the docs
@@ -299,36 +286,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     if (reqPath.startsWith('/api/newsletter-slots')) return await handleNewsletterSlotRoutes(reqPath,method,event,client);
     if (reqPath.startsWith('/api/calendar-items')) return await handleCalendarRoutes(reqPath,method,event,client);
 
-    if (reqPath.startsWith('/api/conversational/execution-attempts/')) {
-      const result = await handleConversationalExecutionRoutes(reqPath, method, event, client);
-      if (result) return result;
-    }
-    if (reqPath.startsWith('/api/conversational/identity-bindings')) {
-      const result = await handleConversationalIdentityBindingRoutes(reqPath, method, event, client);
-      if (result) return result;
-    }
-    if (reqPath === '/api/conversational/readiness') {
-      const result = await handleConversationalReadiness(reqPath, method, event, client);
-      if (result) return result;
-    }
-
     // ── Task routes ────────────────────────────────────────────────
     if (reqPath.startsWith('/api/tasks')) {
       const result = await handleTaskRoutes(reqPath, method, event, client);
       if (result) return result;
     }
 
-    // ── Assistant, artifact, and file routes ──────────────────────
-
-    if (reqPath.startsWith('/api/assistant-jobs')) {
-      const result = await handleAssistantJobRoutes(event, client);
-      if (result) return result;
-    }
-
-    if (reqPath.startsWith('/api/assistant-social-drafts')) {
-      const result = await handleSocialDraftAssistantRoutes(event, client);
-      if (result) return result;
-    }
+    // ── Artifact and file routes ──────────────────────
 
     if (reqPath.startsWith('/api/document-reviews')) {
       const result = await handleDocumentReviewRoutes(event, client);

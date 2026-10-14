@@ -172,26 +172,12 @@ templates.jsonl
 recurring_configs.jsonl
 files.jsonl
 artifacts.jsonl
-assistant_jobs.jsonl
 audit_events.jsonl
 intake_items.jsonl
 notifications.jsonl
-identity_bindings.jsonl
-identity_binding_audits.jsonl
-conversations.jsonl
-channel_bindings.jsonl
-conversation_events.jsonl
-summary_checkpoints.jsonl
-plugin_drafts.jsonl
-proposal_versions.jsonl
-proposal_presentations.jsonl
-execution_attempts.jsonl
-conversation_audit_events.jsonl
-result_notifications.jsonl
-conversational_private_payloads.jsonl
 ```
 
-All 28 JSONL files are required, including when they are empty. The manifest's
+All 14 JSONL files are required, including when they are empty. The manifest's
 `omitted_entities` list describes intentionally excluded categories such as live
 sessions and binary payloads; it is not a way to omit implemented entity files.
 
@@ -280,7 +266,7 @@ Portable export includes metadata, not binaries.
 File and artifact records should include:
 
 - `file_id` or `artifact_id`
-- related task, card, or assistant job IDs
+- related task or card IDs
 - status/review metadata for artifacts
 - storage provider
 - `storage_uri`
@@ -299,10 +285,8 @@ remains a separate privately retained responsibility of the authorized
 artifact-storage operator.
 
 `artifacts.jsonl` is implemented in V1 and must be present in normal exports.
-It contains metadata only. It must not contain binary payloads, large assistant
-outputs, raw assistant logs, signed temporary URLs, OAuth tokens, cookies, API
-keys, or private credentials. `assistant_job_id` must reference an exported
-assistant job when present.
+It contains metadata only. It must not contain binary payloads, signed
+temporary URLs, OAuth tokens, cookies, API keys, or private credentials.
 
 ## Restore Validation
 
@@ -327,13 +311,7 @@ Relationship checks:
 - every file `task_id` references an exported task
 - every artifact `task_id`, `card_id`, and `file_id` references an entity
   from the same export or is empty
-- every artifact `assistant_job_id` references an exported assistant job or is
-  empty
-- every assistant job `task_id`, `card_id`, `requested_by`,
-  `output_artifact_ids`, and `retry_of_job_id` references an exported entity or
-  is empty, and each job must reference at least one task or card
-- every audit event `assistant_job_id` and `actor_id` references an exported
-  entity or is empty
+- every audit event `actor_id` references an exported entity or is empty
 - every notification relation references an exported entity or is empty
 
 ## Dry-Run Import
@@ -365,23 +343,9 @@ The export structure should map cleanly to relational tables:
 - `recurring_configs.jsonl` to `recurring_configs`
 - `files.jsonl` to `files`
 - `artifacts.jsonl` to `artifacts`
-- `assistant_jobs.jsonl` to `assistant_jobs`
 - `audit_events.jsonl` to `audit_events`
 - `intake_items.jsonl` to `intake_items`
 - `notifications.jsonl` to `notifications`
-- `identity_bindings.jsonl` to `identity_bindings`
-- `identity_binding_audits.jsonl` to `identity_binding_audits`
-- `conversations.jsonl` to `conversations`
-- `channel_bindings.jsonl` to `channel_bindings`
-- `conversation_events.jsonl` to `conversation_events`
-- `summary_checkpoints.jsonl` to `summary_checkpoints`
-- `plugin_drafts.jsonl` to `plugin_drafts`
-- `proposal_versions.jsonl` to `proposal_versions`
-- `proposal_presentations.jsonl` to `proposal_presentations`
-- `execution_attempts.jsonl` to `execution_attempts`
-- `conversation_audit_events.jsonl` to `conversation_audit_events`
-- `result_notifications.jsonl` to `result_notifications`
-- `conversational_private_payloads.jsonl` to `conversational_private_payloads`
 
 The export shouldn't require DynamoDB to read it. A migration script should be
 able to read the archive from disk or S3 and write to Postgres.

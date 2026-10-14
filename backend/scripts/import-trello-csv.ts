@@ -29,15 +29,14 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
-import { TABLE_TASKS } from '../src/db/tableNames';
+import { TABLE_AUDIT_EVENTS, TABLE_TASKS } from '../src/db/tableNames';
 import { createTemplate, listTemplates } from '../src/db/templates';
 import { createCard, getCard } from '../src/db/cards';
 import { createTask, getTask } from '../src/db/tasks';
 import { createArtifact, getArtifact } from '../src/db/artifacts';
-import { appendAssistantJobEvent } from '../src/db/assistantJobs';
 import { createDueFollowUpNotifications } from '../src/db/notifications';
 import { createRecurringConfig, listRecurringConfigs } from '../src/db/recurring';
 
@@ -1152,18 +1151,25 @@ async function createTrelloActiveCardPlan(
     report.stats.artifactsCreated++;
   }
 
-  await appendAssistantJobEvent(client, {
-    id: stableMigrationId('trello-audit', plan.sourceKey),
-    action: 'created',
-    summary: `Imported Trello active card "${plan.card.title}" as operations-manager work`,
-    metadata: {
-      source: 'trello-active-card-migration',
-      sourceKey: plan.sourceKey,
-      cardId,
-      taskIds: plan.tasks.map((task) => task.id),
-      artifactIds: plan.artifacts.map((artifactPlan) => artifactPlan.artifact.id),
+  const auditEventId = stableMigrationId('trello-audit', plan.sourceKey);
+  await client.send(new PutCommand({
+    TableName: TABLE_AUDIT_EVENTS,
+    Item: {
+      PK: `AUDIT_EVENT#${auditEventId}`,
+      SK: `AUDIT_EVENT#${auditEventId}`,
+      id: auditEventId,
+      createdAt: new Date().toISOString(),
+      action: 'created',
+      summary: `Imported Trello active card "${plan.card.title}" as operations-manager work`,
+      metadata: {
+        source: 'trello-active-card-migration',
+        sourceKey: plan.sourceKey,
+        cardId,
+        taskIds: plan.tasks.map((task) => task.id),
+        artifactIds: plan.artifacts.map((artifactPlan) => artifactPlan.artifact.id),
+      },
     },
-  });
+  }));
 }
 
 async function migrateTrelloActiveCards(

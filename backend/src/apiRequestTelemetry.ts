@@ -12,13 +12,11 @@ export type ApiRouteFamily =
   | 'recurring'
   | 'files'
   | 'artifacts'
-  | 'assistant_jobs_social_drafts'
   | 'users_tokens'
   | 'notifications'
   | 'calendar_newsletter'
   | 'bookkeeping'
   | 'sponsor_crm'
-  | 'conversational_telegram'
   | 'email_documents'
   | 'docs_content_search'
   | 'operating_model'
@@ -62,7 +60,6 @@ const REQUEST_METHODS = new Set([
 
 const ROUTE_FAMILIES: ReadonlyArray<readonly [ApiRouteFamily, string]> = [
   ['email_documents', '/api/v1/intake/email-documents'],
-  ['conversational_telegram', '/api/webhook/telegram'],
   ['health_auth_team', '/api/health'],
   ['health_auth_team', '/api/auth'],
   ['health_auth_team', '/api/me'],
@@ -73,8 +70,6 @@ const ROUTE_FAMILIES: ReadonlyArray<readonly [ApiRouteFamily, string]> = [
   ['recurring', '/api/recurring'],
   ['files', '/api/files'],
   ['artifacts', '/api/artifacts'],
-  ['assistant_jobs_social_drafts', '/api/assistant-jobs'],
-  ['assistant_jobs_social_drafts', '/api/assistant-social-drafts'],
   ['users_tokens', '/api/users'],
   ['users_tokens', '/api/tokens'],
   ['notifications', '/api/notifications'],
@@ -83,7 +78,6 @@ const ROUTE_FAMILIES: ReadonlyArray<readonly [ApiRouteFamily, string]> = [
   ['bookkeeping', '/api/bookkeeping'],
   ['recurring', '/api/cron'],
   ['sponsor_crm', '/api/sponsor-crm'],
-  ['conversational_telegram', '/api/conversational'],
   ['operating_model', '/api/operating-model'],
 ];
 

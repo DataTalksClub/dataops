@@ -43,7 +43,7 @@ export function syntheticAuthoredTemplate(type = 'synthetic-workflow') {
         close_condition: 'Synthetic response is recorded', waiting_for: 'Synthetic response',
         follow_up_after_days: 3, recipient_role: 'synthetic-reviewer',
       },
-      artifact_refs: [], assistant_job_refs: [], intake_refs: [], audit_event_refs: [],
+      artifact_refs: [], intake_refs: [], audit_event_refs: [],
     }],
   };
 }

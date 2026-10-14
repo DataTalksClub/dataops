@@ -104,36 +104,7 @@ jobs:
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN: ${{ secrets.EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN }}
-      CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED }}
       SPONSOR_FINANCE_ENABLED: ${{ vars.SPONSOR_FINANCE_ENABLED }}
-      CONVERSATIONAL_EXECUTION_ENABLED: ${{ vars.CONVERSATIONAL_EXECUTION_ENABLED }}
-      CONVERSATIONAL_ENABLED_PLUGINS: ${{ vars.CONVERSATIONAL_ENABLED_PLUGINS }}
-      CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: ${{ vars.CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED }}
-      CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST: ${{ vars.CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST }}
-      TYPEFULLY_ACCOUNT_CONFIG_REVISION: ${{ vars.TYPEFULLY_ACCOUNT_CONFIG_REVISION }}
-      TYPEFULLY_BASE_URL: ${{ vars.TYPEFULLY_BASE_URL }}
-      WORK_ENGINE_TYPEFULLY_API_TOKEN_SECRET_ARN: ${{ vars.WORK_ENGINE_TYPEFULLY_API_TOKEN_SECRET_ARN }}
-      TYPEFULLY_SOCIAL_SET_ALEXEY: ${{ vars.TYPEFULLY_SOCIAL_SET_ALEXEY }}
-      TYPEFULLY_SOCIAL_SET_DATATALKSCLUB: ${{ vars.TYPEFULLY_SOCIAL_SET_DATATALKSCLUB }}
-      ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: ${{ vars.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN }}
-      CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_VOICE_ENABLED }}
-      CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED }}
-      CONVERSATIONAL_ALARM_SUBSCRIPTION_CONFIRMED: ${{ vars.CONVERSATIONAL_ALARM_SUBSCRIPTION_CONFIRMED }}
-      GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN: ${{ vars.GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN }}
-      ZAI_VISION_API_KEY_SECRET_ARN: ${{ vars.ZAI_VISION_API_KEY_SECRET_ARN }}
-      ZAI_VISION_MODEL: ${{ vars.ZAI_VISION_MODEL }}
-      ZAI_VISION_BASE_URL: ${{ vars.ZAI_VISION_BASE_URL }}
-      TELEGRAM_HANDLER_DEADLINE_MS: ${{ vars.TELEGRAM_HANDLER_DEADLINE_MS }}
-      TELEGRAM_API_TIMEOUT_MS: ${{ vars.TELEGRAM_API_TIMEOUT_MS }}
-      TELEGRAM_API_MAX_RESPONSE_BYTES: ${{ vars.TELEGRAM_API_MAX_RESPONSE_BYTES }}
-      TELEGRAM_VOICE_MAX_BYTES: ${{ vars.TELEGRAM_VOICE_MAX_BYTES }}
-      TELEGRAM_VOICE_MAX_SECONDS: ${{ vars.TELEGRAM_VOICE_MAX_SECONDS }}
-      TELEGRAM_PHOTO_MAX_BYTES: ${{ vars.TELEGRAM_PHOTO_MAX_BYTES }}
-      TELEGRAM_PHOTO_MAX_PIXELS: ${{ vars.TELEGRAM_PHOTO_MAX_PIXELS }}
-      TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS: ${{ vars.TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS }}
-      TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS: ${{ vars.TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS }}
-      TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES: ${{ vars.TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES }}
-      TELEGRAM_MEDIA_MAX_TEXT_BYTES: ${{ vars.TELEGRAM_MEDIA_MAX_TEXT_BYTES }}
       SPONSOR_COMMUNICATION_SEND_ENABLED: ${{ vars.SPONSOR_COMMUNICATION_SEND_ENABLED }}
       SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN: ${{ vars.SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN }}
       SPONSOR_COMMUNICATION_HMAC_SECRET_ARN: ${{ vars.SPONSOR_COMMUNICATION_HMAC_SECRET_ARN }}
@@ -205,8 +176,6 @@ jobs:
             ' <<<"$stack_json"
           }
           {
-            echo "CONVERSATIONAL_EXECUTION_WORKER_TARGET_FUNCTION_NAME=$(stack_output ConversationalExecutionWorkerFunctionName)"
-            echo "CONVERSATIONAL_RESULT_DISPATCHER_TARGET_FUNCTION_NAME=$(stack_output ConversationalResultDispatcherFunctionName)"
             echo "BACKEND_TARGET_FUNCTION_NAME=$(stack_output BackendFunctionName)"
           } >> "$GITHUB_ENV"
 
@@ -230,80 +199,11 @@ jobs:
             exit 1
           fi
           : "${EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX:=transfer/}"
-          : "${CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED:=false}"
           : "${SPONSOR_FINANCE_ENABLED:=false}"
-          : "${CONVERSATIONAL_EXECUTION_ENABLED:=false}"
-          : "${CONVERSATIONAL_ENABLED_PLUGINS:=none}"
-          : "${CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED:=false}"
-          : "${CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST:=sha256:0000000000000000000000000000000000000000000000000000000000000000}"
-          : "${TYPEFULLY_ACCOUNT_CONFIG_REVISION:=unconfigured}"
-          : "${TYPEFULLY_BASE_URL:=https://api.typefully.com}"
-          : "${CONVERSATIONAL_TELEGRAM_VOICE_ENABLED:=false}"
-          : "${CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED:=false}"
-          : "${CONVERSATIONAL_ALARM_SUBSCRIPTION_CONFIRMED:=false}"
-          : "${ZAI_VISION_MODEL:=glm-4.6v}"
-          : "${ZAI_VISION_BASE_URL:=https://api.z.ai/api/paas/v4/chat/completions}"
-          : "${TELEGRAM_HANDLER_DEADLINE_MS:=28000}"
-          : "${TELEGRAM_API_TIMEOUT_MS:=5000}"
-          : "${TELEGRAM_API_MAX_RESPONSE_BYTES:=65536}"
-          : "${TELEGRAM_VOICE_MAX_BYTES:=20971520}"
-          : "${TELEGRAM_VOICE_MAX_SECONDS:=300}"
-          : "${TELEGRAM_PHOTO_MAX_BYTES:=10485760}"
-          : "${TELEGRAM_PHOTO_MAX_PIXELS:=20000000}"
-          : "${TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS:=8000}"
-          : "${TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS:=18000}"
-          : "${TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES:=65536}"
-          : "${TELEGRAM_MEDIA_MAX_TEXT_BYTES:=16384}"
           : "${SPONSOR_COMMUNICATION_SEND_ENABLED:=false}"
           : "${SPONSOR_SES_IDENTITY_ARN:=arn:aws:ses:eu-west-1:000000000000:identity/example.invalid}"
           : "${SPONSOR_SES_FROM_ADDRESS:=no-reply@example.invalid}"
           : "${SPONSOR_SES_CONFIGURATION_SET_NAME:=dataops-sponsor-reviewed-send-disabled}"
-          strict_boolean() {
-            case "$2" in
-              true|false) ;;
-              *) echo "$1 must be exactly true or false" >&2; exit 1 ;;
-            esac
-          }
-          strict_boolean CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED "$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED"
-          strict_boolean CONVERSATIONAL_EXECUTION_ENABLED "$CONVERSATIONAL_EXECUTION_ENABLED"
-          strict_boolean CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED "$CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED"
-          strict_boolean CONVERSATIONAL_TELEGRAM_VOICE_ENABLED "$CONVERSATIONAL_TELEGRAM_VOICE_ENABLED"
-          strict_boolean CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED "$CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED"
-          strict_boolean CONVERSATIONAL_ALARM_SUBSCRIPTION_CONFIRMED "$CONVERSATIONAL_ALARM_SUBSCRIPTION_CONFIRMED"
-          case "$TELEGRAM_API_TIMEOUT_MS" in
-            ''|*[!0-9]*) echo "TELEGRAM_API_TIMEOUT_MS must be an integer from 100 through 5000" >&2; exit 1 ;;
-          esac
-          if [ "$TELEGRAM_API_TIMEOUT_MS" -lt 100 ] || [ "$TELEGRAM_API_TIMEOUT_MS" -gt 5000 ]; then
-            echo "TELEGRAM_API_TIMEOUT_MS must be an integer from 100 through 5000" >&2
-            exit 1
-          fi
-          case "$CONVERSATIONAL_ENABLED_PLUGINS" in
-            none|todo|typefully|todo,typefully) ;;
-            *) echo "CONVERSATIONAL_ENABLED_PLUGINS must be a canonical plugin subset" >&2; exit 1 ;;
-          esac
-          if [ "$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED" = "true" ] && [ -z "$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" ]; then
-            echo "Telegram ingress cannot be enabled without its z.ai secret ARN" >&2
-            exit 1
-          fi
-          if [ "$CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED" = "true" ] && { \
-            [ "$CONVERSATIONAL_EXECUTION_ENABLED" != "true" ] \
-            || { [ "$CONVERSATIONAL_ENABLED_PLUGINS" != "typefully" ] && [ "$CONVERSATIONAL_ENABLED_PLUGINS" != "todo,typefully" ]; } \
-            || [ -z "$WORK_ENGINE_TYPEFULLY_API_TOKEN_SECRET_ARN" ] \
-            || [ -z "$TYPEFULLY_SOCIAL_SET_ALEXEY" ] \
-            || [ -z "$TYPEFULLY_SOCIAL_SET_DATATALKSCLUB" ] \
-            || [ "$TYPEFULLY_ACCOUNT_CONFIG_REVISION" = "unconfigured" ]; \
-          }; then
-            echo "Conversational Typefully execution requires the exact secret ARN, both account mappings, and a configuration revision" >&2
-            exit 1
-          fi
-          if [ "$CONVERSATIONAL_TELEGRAM_VOICE_ENABLED" = "true" ] && { [ "$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED" != "true" ] || [ -z "$GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN" ]; }; then
-            echo "Telegram voice requires the global adapter and Groq secret ARN" >&2
-            exit 1
-          fi
-          if [ "$CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED" = "true" ] && { [ "$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED" != "true" ] || [ -z "$ZAI_VISION_API_KEY_SECRET_ARN" ]; }; then
-            echo "Telegram photo requires the global adapter and z.ai vision secret ARN" >&2
-            exit 1
-          fi
           if [ "$SPONSOR_COMMUNICATION_SEND_ENABLED" = "true" ] && { [ -z "$SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN" ] || [ -z "$SPONSOR_COMMUNICATION_HMAC_SECRET_ARN" ]; }; then
             echo "Sponsor reviewed sending cannot be enabled without separate template and HMAC secret ARNs" >&2
             exit 1
@@ -331,41 +231,9 @@ jobs:
               "ParameterKey=EmailDocumentExternalSourceBucketName,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET" \
               "ParameterKey=EmailDocumentExternalSourcePrefix,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX" \
               "ParameterKey=EmailDocumentExternalSourceKmsKeyArn,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN" \
-              "ParameterKey=ConversationalTelegramIngressEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED" \
               "ParameterKey=SponsorFinanceEnabled,ParameterValue=$SPONSOR_FINANCE_ENABLED" \
               "ParameterKey=DataOpsEnvironment,ParameterValue=sandbox" \
-              "ParameterKey=ConversationalExecutionEnabled,ParameterValue=$CONVERSATIONAL_EXECUTION_ENABLED" \
-              "ParameterKey=ConversationalExecutionWorkerTargetFunctionName,ParameterValue=$CONVERSATIONAL_EXECUTION_WORKER_TARGET_FUNCTION_NAME" \
-              "ParameterKey=ConversationalResultDispatcherTargetFunctionName,ParameterValue=$CONVERSATIONAL_RESULT_DISPATCHER_TARGET_FUNCTION_NAME" \
               "ParameterKey=BackendTargetFunctionName,ParameterValue=$BACKEND_TARGET_FUNCTION_NAME" \
-              "ParameterKey=ConversationalEnabledPlugins,ParameterValue=$CONVERSATIONAL_ENABLED_PLUGINS" \
-              "ParameterKey=ConversationalTypefullyExternalExecutionEnabled,ParameterValue=$CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED" \
-              "ParameterKey=ConversationalTypefullyAccountConfigDigest,ParameterValue=$CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST" \
-              "ParameterKey=TypefullyAccountConfigRevision,ParameterValue=$TYPEFULLY_ACCOUNT_CONFIG_REVISION" \
-              "ParameterKey=TypefullyBaseUrl,ParameterValue=$TYPEFULLY_BASE_URL" \
-              "ParameterKey=WorkEngineTypefullyApiTokenSecretArn,ParameterValue=$WORK_ENGINE_TYPEFULLY_API_TOKEN_SECRET_ARN" \
-              "ParameterKey=TypefullySocialSetAlexey,ParameterValue=$TYPEFULLY_SOCIAL_SET_ALEXEY" \
-              "ParameterKey=TypefullySocialSetDataTalksClub,ParameterValue=$TYPEFULLY_SOCIAL_SET_DATATALKSCLUB" \
-              "ParameterKey=ZaiConversationalApiKeySecretArn,ParameterValue=$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" \
-              "ParameterKey=ConversationalTelegramVoiceEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_VOICE_ENABLED" \
-              "ParameterKey=ConversationalTelegramPhotoEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED" \
-              "ParameterKey=ConversationalAlarmSubscriptionConfirmed,ParameterValue=$CONVERSATIONAL_ALARM_SUBSCRIPTION_CONFIRMED" \
-              "ParameterKey=DataOpsDeploymentId,ParameterValue=$GITHUB_SHA" \
-              "ParameterKey=GroqTranscriptionApiKeySecretArn,ParameterValue=$GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN" \
-              "ParameterKey=ZaiVisionApiKeySecretArn,ParameterValue=$ZAI_VISION_API_KEY_SECRET_ARN" \
-              "ParameterKey=ZaiVisionModel,ParameterValue=$ZAI_VISION_MODEL" \
-              "ParameterKey=ZaiVisionBaseUrl,ParameterValue=$ZAI_VISION_BASE_URL" \
-              "ParameterKey=TelegramHandlerDeadlineMs,ParameterValue=$TELEGRAM_HANDLER_DEADLINE_MS" \
-              "ParameterKey=TelegramApiTimeoutMs,ParameterValue=$TELEGRAM_API_TIMEOUT_MS" \
-              "ParameterKey=TelegramApiMaxResponseBytes,ParameterValue=$TELEGRAM_API_MAX_RESPONSE_BYTES" \
-              "ParameterKey=TelegramVoiceMaxBytes,ParameterValue=$TELEGRAM_VOICE_MAX_BYTES" \
-              "ParameterKey=TelegramVoiceMaxSeconds,ParameterValue=$TELEGRAM_VOICE_MAX_SECONDS" \
-              "ParameterKey=TelegramPhotoMaxBytes,ParameterValue=$TELEGRAM_PHOTO_MAX_BYTES" \
-              "ParameterKey=TelegramPhotoMaxPixels,ParameterValue=$TELEGRAM_PHOTO_MAX_PIXELS" \
-              "ParameterKey=TelegramMediaDownloadTimeoutMs,ParameterValue=$TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS" \
-              "ParameterKey=TelegramMediaProviderTimeoutMs,ParameterValue=$TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS" \
-              "ParameterKey=TelegramMediaProviderMaxResponseBytes,ParameterValue=$TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES" \
-              "ParameterKey=TelegramMediaMaxTextBytes,ParameterValue=$TELEGRAM_MEDIA_MAX_TEXT_BYTES" \
               "ParameterKey=SponsorCommunicationSendEnabled,ParameterValue=$SPONSOR_COMMUNICATION_SEND_ENABLED" \
               "ParameterKey=SponsorCommunicationTemplateSecretArn,ParameterValue=$SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN" \
               "ParameterKey=SponsorCommunicationHmacSecretArn,ParameterValue=$SPONSOR_COMMUNICATION_HMAC_SECRET_ARN" \

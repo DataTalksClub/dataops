@@ -4,16 +4,14 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import {
   TABLE_BOOKKEEPING,
   TABLE_ARTIFACTS,
-  TABLE_ASSISTANT_JOBS,
   TABLE_AUDIT_EVENTS,
   TABLE_CARDS,
-  TABLE_CONVERSATIONAL_STATE,
   TABLE_FILES,
   TABLE_INTAKE,
   TABLE_NOTIFICATIONS,
@@ -23,7 +21,6 @@ import {
 } from '../src/db/tableNames';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
-import { appendAssistantJobEvent, createAssistantJob, updateAssistantJob } from '../src/db/assistantJobs';
 import { createCard, getCard, updateCard } from '../src/db/cards';
 import { createArtifact } from '../src/db/artifacts';
 import { createFile } from '../src/db/files';
@@ -114,7 +111,6 @@ describe('portable execution data export', () => {
           requiresFile: true,
           proofRequirement: { type: 'url', label: 'Source document' },
           artifactRefs: [{ artifactId: 'artifact-template-ref', type: 'document' }],
-          assistantJobRefs: [{ assistantJobId: 'assistant-template-ref', assistantType: 'research' }],
           intakeRefs: [{ intakeItemId: 'intake-template-ref', source: 'manual' }],
           auditEventRefs: [{ auditEventId: 'audit-template-ref', action: 'defined' }],
         },
@@ -129,7 +125,6 @@ describe('portable execution data export', () => {
       emoji: template.emoji,
       status: 'active',
       artifactRefs: [{ artifactId: 'artifact-card-ref', type: 'document' }],
-      assistantJobRefs: [{ assistantJobId: 'assistant-job-export', assistantType: 'podcast' }],
       auditEventRefs: [{ auditEventId: 'audit-card-ref', action: 'created' }],
     });
     const taskHistory = [
@@ -164,12 +159,6 @@ describe('portable execution data export', () => {
       date: '2026-06-20',
       assigneeId: user.id,
       createdBy: user.id,
-      assistantExecutionRef: {
-        executionAttemptId: 'attempt-export-safe',
-        proposalId: 'proposal-export-safe',
-        proposalVersion: 1,
-        canonicalPayloadHash: `sha256:${'a'.repeat(64)}`,
-      },
       cardId: card.id,
       templateId: template.id,
       templateTaskRef: 'send-follow-up',
@@ -186,7 +175,6 @@ describe('portable execution data export', () => {
       requiredLinkName: 'Source document',
       proofRequirement: { type: 'url', label: 'Source document' },
       artifactRefs: [{ artifactId: 'artifact-task-ref', type: 'document' }],
-      assistantJobRefs: [{ assistantJobId: 'assistant-job-export', assistantType: 'podcast' }],
       auditEventRefs: [{ auditEventId: 'audit-task-ref', action: 'completed' }],
       completedBy: 'system:task-lifecycle',
       completedAt: '2026-06-20T12:00:00.000Z',
@@ -225,24 +213,6 @@ describe('portable execution data export', () => {
       category: 'document',
       storagePath: `uploads/${task.id}/proof.txt`,
     });
-    const assistantJob = await createAssistantJob(client, {
-      id: 'assistant-job-export',
-      assistantType: 'podcast',
-      title: 'Podcast prep assistant',
-      status: 'waiting_approval',
-      taskId: task.id,
-      cardId: card.id,
-      requestedBy: user.id,
-      inputRefs: [{ type: 'task', id: task.id }],
-      outputArtifactIds: [],
-      logRefs: [{ artifactId: 'artifact-log-export', title: 'Dry-run log' }],
-      approvalRequired: true,
-      approval: { status: 'pending' },
-      attemptCount: 1,
-      maxAttempts: 2,
-      queuedAt: '2026-06-20T11:00:00.000Z',
-      startedAt: '2026-06-20T11:01:00.000Z',
-    });
     const artifact = await createArtifact(client, {
       type: 'external-link',
       title: 'Reviewed source artifact',
@@ -254,7 +224,6 @@ describe('portable execution data export', () => {
       visibility: 'public',
       taskId: task.id,
       cardId: card.id,
-      assistantJobId: assistantJob.id,
       sourceType: 'manual-link',
       createdBy: user.id,
       reviewedBy: user.id,
@@ -262,7 +231,6 @@ describe('portable execution data export', () => {
       tags: ['proof'],
       metadata: { source: 'operator' },
     });
-    await updateAssistantJob(client, assistantJob.id, { outputArtifactIds: [artifact.id] });
     const intake = (await createIntakeItemIfAbsent(client, {
       id: 'intake-export',
       source: 'manual',
@@ -282,13 +250,6 @@ describe('portable execution data export', () => {
       artifactRefs: [{ artifactId: artifact.id, type: artifact.type, title: artifact.title, status: artifact.status }],
       taskIds: [task.id],
       cardIds: [card.id],
-      assistantJobIds: [assistantJob.id],
-      assistantReadiness: {
-        assistantType: 'podcast',
-        status: 'submitted',
-        inputRefs: [{ type: 'source-message', id: 'intake-export' }],
-        missingFields: [],
-      },
       tags: ['podcast'],
       priority: 'high',
       dataClass: 'private',
@@ -340,14 +301,19 @@ describe('portable execution data export', () => {
       expectedVersion: currentCard.version,
       patch: { intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }] },
     });
-    await appendAssistantJobEvent(client, {
-      assistantJobId: assistantJob.id,
-      actorId: user.id,
-      action: 'approval-requested',
-      summary: 'Assistant output is ready for review',
-      metadata: { artifactIds: [artifact.id] },
-      createdAt: '2026-06-20T11:02:00.000Z',
-    });
+    await client.send(new PutCommand({
+      TableName: TABLE_AUDIT_EVENTS,
+      Item: {
+        PK: 'AUDIT_EVENT#audit-export',
+        SK: 'AUDIT_EVENT#audit-export',
+        id: 'audit-export',
+        actorId: user.id,
+        action: 'artifact-reviewed',
+        summary: 'Artifact is ready for review',
+        metadata: { artifactIds: [artifact.id] },
+        createdAt: '2026-06-20T11:02:00.000Z',
+      },
+    }));
     await createNotification(client, {
       type: 'follow-up-due',
       message: 'Follow up with guest',
@@ -391,14 +357,12 @@ describe('portable execution data export', () => {
     assert.strictEqual(result.manifest.entity_counts.recurring_configs, 1);
     assert.strictEqual(result.manifest.entity_counts.files, 1);
     assert.strictEqual(result.manifest.entity_counts.artifacts, 1);
-    assert.strictEqual(result.manifest.entity_counts.assistant_jobs, 1);
     assert.strictEqual(result.manifest.entity_counts.audit_events, 2);
     assert.strictEqual(result.manifest.entity_counts.intake_items, 2);
     assert.strictEqual(result.manifest.entity_counts.notifications, 3);
     assert.ok(result.manifest.redactions.includes('users.password_hash'));
     assert.ok(result.manifest.omitted_entities.includes('sessions'));
     assert.ok(!result.manifest.omitted_entities.includes('artifacts'));
-    assert.ok(!result.manifest.omitted_entities.includes('assistant_jobs'));
     assert.ok(!result.manifest.omitted_entities.includes('audit_events'));
     assert.ok(!result.manifest.omitted_entities.includes('intake_items'));
 
@@ -414,7 +378,6 @@ describe('portable execution data export', () => {
     assert.match(tasksJsonl, /"task_id"/);
     assert.match(tasksJsonl, /"assignee_id"/);
     assert.match(tasksJsonl, /"created_by"/);
-    assert.match(tasksJsonl, /"assistant_execution_ref":\{"executionAttemptId":"attempt-export-safe"/);
     assert.match(tasksJsonl, /"source":"recurring"/);
     assert.match(tasksJsonl, /"recurring_config_id"/);
     assert.match(tasksJsonl, /"instruction_doc_id":"sop.workflow.collect-inputs"/);
@@ -431,7 +394,6 @@ describe('portable execution data export', () => {
     assert.match(tasksJsonl, /"required_link_name":"Source document"/);
     assert.match(tasksJsonl, /"link":"https:\/\/example.com\/source-document"/);
     assert.match(tasksJsonl, /"artifact_refs":\[\{"artifactId":"artifact-task-ref","type":"document"\}\]/);
-    assert.match(tasksJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-job-export","assistantType":"podcast"\}\]/);
     assert.match(tasksJsonl, /"intake_refs":\[\{"intakeItemId":"intake-export","source":"manual","title":"Exported intake","status":"converted"\}\]/);
     assert.match(tasksJsonl, /"audit_event_refs":\[\{"auditEventId":"audit-task-ref","action":"completed"\}\]/);
     assert.match(tasksJsonl, /"task_history":\[/);
@@ -447,7 +409,6 @@ describe('portable execution data export', () => {
     assert.match(cardsJsonl, /"task_count":\d+/);
     assert.match(cardsJsonl, /"open_task_count":\d+/);
     assert.match(cardsJsonl, /"artifact_refs":\[\{"artifactId":"artifact-card-ref","type":"document"\}\]/);
-    assert.match(cardsJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-job-export","assistantType":"podcast"\}\]/);
     assert.match(cardsJsonl, /"intake_refs":\[\{"intakeItemId":"intake-export","source":"manual","title":"Exported intake","status":"converted"\}\]/);
     assert.match(cardsJsonl, /"audit_event_refs":\[/);
     assert.match(cardsJsonl, /"auditEventId":"audit-card-ref","action":"created"/);
@@ -490,20 +451,12 @@ describe('portable execution data export', () => {
     assert.match(artifactsJsonl, /"status":"approved"/);
     assert.match(artifactsJsonl, /"task_id"/);
     assert.match(artifactsJsonl, /"card_id"/);
-    assert.match(artifactsJsonl, /"assistant_job_id":"assistant-job-export"/);
     assert.match(artifactsJsonl, /"metadata":\{"source":"operator"\}/);
     assert.doesNotMatch(artifactsJsonl, /binary|password|token/i);
 
-    const assistantJobsJsonl = await fs.readFile(path.join(exportDir, 'assistant_jobs.jsonl'), 'utf8');
-    assert.match(assistantJobsJsonl, /"assistant_job_id":"assistant-job-export"/);
-    assert.match(assistantJobsJsonl, /"assistant_type":"podcast"/);
-    assert.match(assistantJobsJsonl, /"status":"waiting_approval"/);
-    assert.match(assistantJobsJsonl, /"output_artifact_ids":\["/);
-    assert.doesNotMatch(assistantJobsJsonl, /password|token|secret/i);
-
     const auditEventsJsonl = await fs.readFile(path.join(exportDir, 'audit_events.jsonl'), 'utf8');
-    assert.match(auditEventsJsonl, /"assistant_job_id":"assistant-job-export"/);
-    assert.match(auditEventsJsonl, /"action":"approval-requested"/);
+    assert.match(auditEventsJsonl, /"audit_event_id":"audit-export"/);
+    assert.match(auditEventsJsonl, /"action":"artifact-reviewed"/);
     assert.doesNotMatch(auditEventsJsonl, /password|token|secret/i);
 
     const intakeJsonl = await fs.readFile(path.join(exportDir, 'intake_items.jsonl'), 'utf8');
@@ -514,8 +467,6 @@ describe('portable execution data export', () => {
     assert.match(intakeJsonl, /"waiting_for":"Requester"/);
     assert.match(intakeJsonl, /"follow_up_at":"2026-06-21T09:00:00.000Z"/);
     assert.match(intakeJsonl, /"task_ids":\["task-export-stable"\]/);
-    assert.match(intakeJsonl, /"assistant_job_ids":\["assistant-job-export"\]/);
-    assert.match(intakeJsonl, /"assistant_readiness":\{"assistantType":"podcast","status":"submitted"/);
     assert.doesNotMatch(intakeJsonl, /api[_-]?key|access_token|X-Amz-Signature|password/i);
 
     const validation = await validatePortableExport(exportDir);
@@ -706,13 +657,6 @@ describe('portable execution data export', () => {
           instruction_doc_id: 123,
           systems: ['github', 42],
           validation: ['not-valid'],
-          assistant_execution_ref: {
-            executionAttemptId: 'attempt',
-            proposalId: 'proposal',
-            proposalVersion: 0,
-            canonicalPayloadHash: 'invalid',
-            rawToken: 'must-never-echo-this-value',
-          },
           proof_requirement: { type: 'url' },
           task_history: [
             {
@@ -749,7 +693,6 @@ describe('portable execution data export', () => {
               validation: ['not-valid'],
               proofRequirement: { type: 'unsupported' },
               artifactRefs: [{ type: 'missing-id' }],
-              assistantJobRefs: [{ assistantType: 'missing-id' }],
               intakeRefs: [{ source: 'missing-id' }],
               auditEventRefs: [{ action: 'missing-id' }],
             },
@@ -827,9 +770,7 @@ describe('portable execution data export', () => {
       const validation = await validatePortableExport(brokenDir);
 
       assert.strictEqual(validation.valid, false);
-      assert.ok(validation.errors.some((error) => error.includes('assistant_execution_ref is malformed')));
       assert.ok(validation.errors.some((error) => error.includes('must not contain secrets')));
-      assert.ok(validation.errors.every((error) => !error.includes('must-never-echo-this-value')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[0] missing required string field waiting_for')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[0] missing required string field follow_up_at')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field date must be a YYYY-MM-DD date')));
@@ -857,7 +798,6 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field validation must be a string or object when present')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field proofRequirement.type must be one of')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].artifactRefs[0] missing required string field artifactId')));
-      assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].assistantJobRefs[0] missing required string field assistantJobId')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].intakeRefs[0] missing required string field intakeItemId')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].auditEventRefs[0] missing required string field auditEventId')));
       assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field instruction_doc_id must be a string when present')));
@@ -1157,7 +1097,7 @@ describe('portable export timestamp anchoring', () => {
       'manifest.json',
       ...ENTITY_SPECS.map((spec) => spec.filename),
     ];
-    assert.strictEqual(ENTITY_SPECS.length, 28);
+    assert.strictEqual(ENTITY_SPECS.length, 14);
     assert.strictEqual(new Set(expectedFiles).size, expectedFiles.length);
 
     const durableTableSuffixBySourceName = new Map<string, string>([
@@ -1168,11 +1108,9 @@ describe('portable export timestamp anchoring', () => {
       [TABLE_USERS, 'users'],
       [TABLE_FILES, 'files'],
       [TABLE_ARTIFACTS, 'artifacts'],
-      [TABLE_ASSISTANT_JOBS, 'assistant-jobs'],
       [TABLE_AUDIT_EVENTS, 'audit-events'],
       [TABLE_INTAKE, 'intake'],
       [TABLE_NOTIFICATIONS, 'notifications'],
-      [TABLE_CONVERSATIONAL_STATE, 'conversational-state'],
     ]);
     const expectedDurableTables = [
       'bookkeeping',
@@ -1182,11 +1120,9 @@ describe('portable export timestamp anchoring', () => {
       'users',
       'files',
       'artifacts',
-      'assistant-jobs',
       'audit-events',
       'intake',
       'notifications',
-      'conversational-state',
     ];
     const actualDurableTables = [
       ...new Set(ENTITY_SPECS.map((spec) => {

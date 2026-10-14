@@ -7,8 +7,6 @@ import http from 'node:http';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 
-import { parseConversationalRolloutSnapshot } from '../src/conversation/rollout';
-
 interface TestServerEnvironment {
   [key: string]: string | undefined;
 }
@@ -79,24 +77,6 @@ const testServerPortModule = require('../e2e/test-server-port.js') as {
   DEFAULT_TEST_SERVER_PORT: number;
   TEST_SERVER_PORT: number;
   resolveTestServerPort(value?: string): number;
-};
-
-const ROLLOUT_KEYS = [
-  'CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED',
-  'CONVERSATIONAL_EXECUTION_ENABLED',
-  'CONVERSATIONAL_ENABLED_PLUGINS',
-  'CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED',
-  'CONVERSATIONAL_TELEGRAM_VOICE_ENABLED',
-  'CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED',
-] as const;
-
-const DARK_ROLLOUT_ENVIRONMENT = {
-  CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: 'false',
-  CONVERSATIONAL_EXECUTION_ENABLED: 'false',
-  CONVERSATIONAL_ENABLED_PLUGINS: 'none',
-  CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: 'false',
-  CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: 'false',
-  CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: 'false',
 };
 
 function listen(server: http.Server): Promise<number> {
@@ -215,34 +195,6 @@ describe('Playwright E2E bootstrap', () => {
     assert.throws(
       () => testServerPortModule.resolveTestServerPort('65536'),
       /between 1 and 65535/,
-    );
-  });
-
-  it('forces exact dark rollout controls independent of the parent environment', () => {
-    const inherited = globalSetupModule.buildTestServerEnvironment({
-      KEEP_ME: 'yes',
-      CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: 'true',
-      CONVERSATIONAL_EXECUTION_ENABLED: 'true',
-      CONVERSATIONAL_ENABLED_PLUGINS: 'todo,typefully',
-      CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: 'true',
-      CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: 'true',
-      CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: 'true',
-    });
-
-    assert.equal(inherited.KEEP_ME, 'yes');
-    for (const [key, value] of Object.entries(DARK_ROLLOUT_ENVIRONMENT)) {
-      assert.equal(inherited[key], value);
-    }
-    assert.deepEqual(
-      parseConversationalRolloutSnapshot(inherited).controls,
-      {
-        telegramIngress: false,
-        executionLeasing: false,
-        enabledPlugins: [],
-        typefullyExternalExecution: false,
-        voice: false,
-        photo: false,
-      }
     );
   });
 
@@ -501,31 +453,15 @@ describe('Playwright E2E bootstrap', () => {
     assert.deepEqual(offenders, []);
   });
 
-  it('starts the real child healthy and dark when all six parent controls are absent', async () => {
-    const saved = Object.fromEntries(ROLLOUT_KEYS.map((key) => [key, process.env[key]]));
-    for (const key of ROLLOUT_KEYS) delete process.env[key];
+  it('starts the real child healthy', async () => {
+    // Reserve an OS-selected loopback port so concurrent worktrees running the
+    // backend suite do not contend for Playwright's fixed browser port.
+    const reservation = http.createServer();
+    const port = await listen(reservation);
+    await close(reservation);
 
-    try {
-      const childEnvironment = globalSetupModule.buildTestServerEnvironment(process.env);
-      for (const [key, value] of Object.entries(DARK_ROLLOUT_ENVIRONMENT)) {
-        assert.equal(childEnvironment[key], value);
-      }
-
-      // Reserve an OS-selected loopback port so concurrent worktrees running the
-      // backend suite do not contend for Playwright's fixed browser port.
-      const reservation = http.createServer();
-      const port = await listen(reservation);
-      await close(reservation);
-
-      await globalSetupModule({ port });
-      assert.equal(await healthStatus(port), 200);
-    } finally {
-      for (const key of ROLLOUT_KEYS) {
-        const value = saved[key];
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
-      }
-    }
+    await globalSetupModule({ port });
+    assert.equal(await healthStatus(port), 200);
   });
 
   it('cleans up the spawned server via globalTeardown when startup wait fails', async () => {

@@ -17,7 +17,6 @@ function runSetupProbe(env: Record<string, string>): Record<string, unknown> {
         users: mod.TABLE_USERS,
         files: mod.TABLE_FILES,
         artifacts: mod.TABLE_ARTIFACTS,
-        assistantJobs: mod.TABLE_ASSISTANT_JOBS,
         auditEvents: mod.TABLE_AUDIT_EVENTS,
         intake: mod.TABLE_INTAKE,
         notifications: mod.TABLE_NOTIFICATIONS,
@@ -27,7 +26,6 @@ function runSetupProbe(env: Record<string, string>): Record<string, unknown> {
         newsletterSlots: mod.TABLE_NEWSLETTER_SLOTS,
         calendar: mod.TABLE_CALENDAR,
         podcastEpisodes: mod.TABLE_PODCAST_EPISODES,
-        conversationalState: mod.TABLE_CONVERSATIONAL_STATE,
       }));
     });
   `;
@@ -56,7 +54,6 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.users, 'Users');
     assert.strictEqual(setup.files, 'Files');
     assert.strictEqual(setup.artifacts, 'Artifacts');
-    assert.strictEqual(setup.assistantJobs, 'AssistantJobs');
     assert.strictEqual(setup.auditEvents, 'AuditEvents');
     assert.strictEqual(setup.intake, 'IntakeItems');
     assert.strictEqual(setup.notifications, 'Notifications');
@@ -71,7 +68,6 @@ describe('DynamoDB table setup environment', () => {
       DATAOPS_USERS_TABLE: 'prod-users',
       DATAOPS_FILES_TABLE: 'prod-files',
       DATAOPS_ARTIFACTS_TABLE: 'prod-artifacts',
-      DATAOPS_ASSISTANT_JOBS_TABLE: 'prod-assistant-jobs',
       DATAOPS_AUDIT_EVENTS_TABLE: 'prod-audit-events',
       DATAOPS_INTAKE_TABLE: 'prod-intake',
       DATAOPS_NOTIFICATIONS_TABLE: 'prod-notifications',
@@ -84,7 +80,6 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.users, 'prod-users');
     assert.strictEqual(setup.files, 'prod-files');
     assert.strictEqual(setup.artifacts, 'prod-artifacts');
-    assert.strictEqual(setup.assistantJobs, 'prod-assistant-jobs');
     assert.strictEqual(setup.auditEvents, 'prod-audit-events');
     assert.strictEqual(setup.intake, 'prod-intake');
     assert.strictEqual(setup.notifications, 'prod-notifications');
@@ -100,7 +95,6 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.users, 'dataops-v1-users');
     assert.strictEqual(setup.files, 'dataops-v1-files');
     assert.strictEqual(setup.artifacts, 'dataops-v1-artifacts');
-    assert.strictEqual(setup.assistantJobs, 'dataops-v1-assistant-jobs');
     assert.strictEqual(setup.auditEvents, 'dataops-v1-audit-events');
     assert.strictEqual(setup.intake, 'dataops-v1-intake');
     assert.strictEqual(setup.notifications, 'dataops-v1-notifications');
@@ -110,7 +104,6 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.newsletterSlots, 'dataops-v1-newsletter-slots');
     assert.strictEqual(setup.calendar, 'dataops-v1-calendar');
     assert.strictEqual(setup.podcastEpisodes, 'dataops-v1-podcast-episodes');
-    assert.strictEqual(setup.conversationalState, 'dataops-v1-conversational-state');
   });
 
   it('has no way for the application to create its own tables', async () => {

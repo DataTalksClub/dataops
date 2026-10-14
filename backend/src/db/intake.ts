@@ -16,7 +16,6 @@ function cleanItem(item: Record<string, unknown> | undefined): IntakeItem | null
     sourceMessageKey,
     ownerStatusKey,
     assigneeStatusKey,
-    assistantStatusKey,
     ...rest
   } = item;
   return rest as unknown as IntakeItem;
@@ -52,15 +51,10 @@ function derivedKeys(item: Record<string, unknown>): Record<string, unknown> {
   const ownerId = typeof item.ownerId === 'string' ? item.ownerId : '';
   const assigneeId = typeof item.assigneeId === 'string' ? item.assigneeId : '';
   const status = typeof item.status === 'string' ? item.status : '';
-  const assistantReadiness = item.assistantReadiness && typeof item.assistantReadiness === 'object' && !Array.isArray(item.assistantReadiness)
-    ? item.assistantReadiness as Record<string, unknown>
-    : null;
-  const assistantStatus = typeof assistantReadiness?.status === 'string' ? assistantReadiness.status : '';
   return withoutUndefined({
     sourceMessageKey: source && sourceMessageId ? `${source}#${sourceMessageId}` : undefined,
     ownerStatusKey: ownerId && status ? `${ownerId}#${status}` : undefined,
     assigneeStatusKey: assigneeId && status ? `${assigneeId}#${status}` : undefined,
-    assistantStatusKey: assistantStatus ? `${assistantStatus}#${status || 'unknown'}` : undefined,
   });
 }
 
@@ -85,7 +79,6 @@ async function createIntakeItemIfAbsent(
     artifactRefs: [],
     taskIds: [],
     cardIds: [],
-    assistantJobIds: [],
     relatedIntakeItemIds: [],
     tags: [],
     priority: 'normal',

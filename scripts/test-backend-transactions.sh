@@ -5,13 +5,9 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 transaction_suites=(
-  'test:execution-transaction'
-  'test:telegram-transaction'
   'test:sponsor-finance-transaction'
   'test:sponsor-communications-transaction'
   'test:task-card-transaction'
-  'test:todo-transaction'
-  'test:typefully-transaction'
   'test:invoice-publication'
 )
 

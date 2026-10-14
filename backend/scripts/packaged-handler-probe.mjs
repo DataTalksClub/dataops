@@ -25,12 +25,6 @@ Object.assign(process.env, {
   AUTH_CALLBACK_URL: '',
   AUTH_LOGOUT_URL: '',
   AUTH_SESSION_LIFETIME_SECONDS: '',
-  CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: 'false',
-  CONVERSATIONAL_EXECUTION_ENABLED: 'false',
-  CONVERSATIONAL_ENABLED_PLUGINS: 'none',
-  CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: 'false',
-  CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: 'false',
-  CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: 'false',
 });
 
 const builtins = new Set([...builtinModules, ...builtinModules.map((name) => `node:${name}`)]);

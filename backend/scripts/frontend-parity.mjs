@@ -20,7 +20,6 @@ const states = [
   'home-ready',
   'task-proof-waiting-return',
   'workflow-detail',
-  'assistant-detail-baseline',
   'template-projection-readonly',
   'notifications-dismissed',
   'sponsor-booking-role-safe',
@@ -203,11 +202,6 @@ async function navigateState(page, baseURL, state) {
     await page.goto(`${baseURL}/cards?cardId=parity-workflow&taskId=parity-task`);
     await settle(page);
     await page.locator('#card-panel-title').filter({ hasText: 'Synthetic publication workflow' }).waitFor();
-  } else if (state === 'assistant-detail-baseline') {
-    await page.goto(`${baseURL}/assistants?assistantJobId=parity-assistant`);
-    await settle(page);
-    await page.locator('.assistant-detail h3').filter({ hasText: 'Synthetic assistant baseline' }).waitFor();
-    result.mutation = 'non-mutating-list-detail';
   } else if (state === 'template-projection-readonly') {
     await page.goto(`${baseURL}/templates?templateId=parity-template`);
     await settle(page);

@@ -8,11 +8,6 @@ import { sanitizeJsonResponse } from './responsePrivacy';
 import type { CronRunnerResult } from './cron/runner';
 import type { LambdaEvent, LambdaResponse } from './types';
 import {
-  ConversationalRolloutConfigurationError,
-  conversationalRolloutSnapshot,
-} from './conversation/rollout';
-import { logConversationalEvent } from './conversation/observability';
-import {
   assertCanonicalDeploymentTemplateLoader,
   seedDeploymentRuntime,
 } from './deploymentSeeds';
@@ -314,27 +309,6 @@ async function handleInvocation(
   return sanitizeJsonResponse(await route(event as LambdaEvent, client!));
 }
 
-async function handleInvocationAfterRolloutCheck(
-  event: LambdaEvent | Record<string, unknown>,
-  context?: unknown
-): Promise<LambdaResponse | CronRunnerResult> {
-  try {
-    conversationalRolloutSnapshot();
-  } catch (error) {
-    if (error instanceof ConversationalRolloutConfigurationError) {
-      logConversationalEvent('configuration_rejected', 'telegram');
-      return {
-        statusCode: 503,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ error: 'Conversational rollout configuration is invalid' }),
-      };
-    }
-    throw error;
-  }
-
-  return await handleInvocation(event, context);
-}
-
 async function handler(
   event: LambdaEvent | Record<string, unknown>,
   context?: unknown
@@ -344,14 +318,14 @@ async function handler(
     || isRuntimeSeedEvent(event)
     || isDeploymentControlEvent(event)
   ) {
-    return handleInvocationAfterRolloutCheck(event, context);
+    return handleInvocation(event, context);
   }
 
   const httpApiEvent = normalizeHttpApiEvent(event);
-  if (!httpApiEvent) return handleInvocationAfterRolloutCheck(event, context);
+  if (!httpApiEvent) return handleInvocation(event, context);
 
   return withApiRequestTelemetry(httpApiEvent, context, async () =>
-    await handleInvocationAfterRolloutCheck(httpApiEvent, context) as LambdaResponse
+    await handleInvocation(httpApiEvent, context) as LambdaResponse
   );
 }
 

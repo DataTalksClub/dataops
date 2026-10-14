@@ -66,10 +66,6 @@ const AUTHENTICATED_ROUTES: RouteCase[] = [
   { method: 'POST', path: '/api/files', body: {} },
   { method: 'GET', path: '/api/artifacts' },
   { method: 'POST', path: '/api/artifacts', body: {} },
-  { method: 'GET', path: '/api/assistant-jobs' },
-  { method: 'POST', path: '/api/assistant-jobs', body: {} },
-  { method: 'GET', path: '/api/assistant-social-drafts' },
-  { method: 'POST', path: '/api/assistant-social-drafts', body: {} },
   { method: 'GET', path: '/api/bookkeeping' },
   { method: 'GET', path: '/api/sponsor-crm/sponsors' },
   { method: 'POST', path: '/api/sponsor-crm/sponsors', body: {} },
@@ -78,10 +74,6 @@ const AUTHENTICATED_ROUTES: RouteCase[] = [
   { method: 'POST', path: '/api/newsletter-slots', body: {} },
   { method: 'GET', path: '/api/calendar-items' },
   { method: 'POST', path: '/api/calendar-items', body: {} },
-  { method: 'GET', path: '/api/conversational/execution-attempts/some-attempt' },
-  { method: 'GET', path: '/api/conversational/identity-bindings?channel=telegram' },
-  { method: 'POST', path: '/api/conversational/identity-bindings', body: {} },
-  { method: 'GET', path: '/api/conversational/readiness' },
   { method: 'POST', path: '/api/cron/run', body: {} },
   { method: 'POST', path: '/api/cron/export', body: {} },
   // A path with no handler must still be refused before the router can reveal
@@ -103,7 +95,6 @@ const EXEMPT_ROUTES: RouteCase[] = [
   { method: 'POST', path: '/api/auth/device/token', body: {} },
   { method: 'POST', path: '/api/v1/intake/email-documents', body: {} },
   { method: 'POST', path: '/api/v1/intake/leads', body: {} },
-  { method: 'POST', path: '/api/webhook/telegram', body: {} },
 ];
 
 /** Mutations an operator must not be able to perform. */
@@ -114,8 +105,6 @@ const ADMIN_ONLY_MUTATIONS: RouteCase[] = [
   { method: 'POST', path: '/api/recurring', body: { description: 'x', cronExpression: '0 9 * * 1' } },
   { method: 'PUT', path: '/api/recurring/some-config', body: { description: 'x' } },
   { method: 'DELETE', path: '/api/recurring/some-config' },
-  { method: 'POST', path: '/api/conversational/identity-bindings', body: { userId: ADMIN_ID, channel: 'telegram', channelUserId: '1' } },
-  { method: 'GET', path: '/api/conversational/readiness' },
 ];
 
 /** The exact shape the session middleware in `src/router.ts` refuses with. */

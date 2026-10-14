@@ -138,7 +138,6 @@ export async function handleTaskRoutes(
     if (body.templateId !== undefined) taskData.templateId = body.templateId;
     if (body.sourceDocIds !== undefined) taskData.sourceDocIds = body.sourceDocIds;
     if (body.artifactRefs !== undefined) taskData.artifactRefs = body.artifactRefs;
-    if (body.assistantJobRefs !== undefined) taskData.assistantJobRefs = body.assistantJobRefs;
     if (body.auditEventRefs !== undefined) taskData.auditEventRefs = body.auditEventRefs;
     taskData.source = (body.source as string) || 'manual';
     if (actor.id) taskData.createdBy = actor.id;
@@ -458,7 +457,7 @@ export async function handleTaskRoutes(
         followUpAt: null,
         followUpChannel: null,
       };
-      for (const field of ['comment', 'link', 'externalStatus', 'artifactRefs', 'assistantJobRefs', 'auditEventRefs']) {
+      for (const field of ['comment', 'link', 'externalStatus', 'artifactRefs', 'auditEventRefs']) {
         if (body[field] !== undefined) updates[field] = body[field];
       }
 
