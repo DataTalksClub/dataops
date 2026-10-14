@@ -472,6 +472,9 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.status.textContent, /outside the verified holiday window/);
     assert.match(dom.grid.innerHTML, /Community podcast/);
     assert.match(dom.grid.innerHTML, /Example Holiday/);
+    // The holiday marks its whole day cell, not just a chip inside it.
+    assert.match(dom.grid.innerHTML, /class="calendar-day[^"]*has-public-holiday"[^>]*aria-label="Thursday, August 13, 2026, public holiday"/);
+    assert.equal((dom.grid.innerHTML.match(/has-public-holiday/g) || []).length, 1);
     assert.match(dom.grid.innerHTML, /Newsletter 42/);
     assert.match(dom.grid.innerHTML, /Tejas at DataTalks\.Club Podcast/);
     assert.match(dom.grid.innerHTML, /is-alexey/);

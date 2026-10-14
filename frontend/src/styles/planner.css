@@ -550,6 +550,38 @@
 }.calendar-day:nth-last-child(-n + 7) { border-bottom: 0; }.calendar-day.is-outside { background: var(--dk-bg-muted); }.calendar-day.is-outside .calendar-day-heading,
 .calendar-day.is-outside .calendar-day-items { color: var(--dk-text-muted); }.calendar-day.is-today {
   background: var(--dk-accent-soft);
+}
+/* A holiday blocks the whole day: tint and hatch the entire cell so the day
+   reads as unavailable at a glance. Public holidays win over school holidays;
+   the holiday chip inside the cell turns into a plain label on that tint. */
+.calendar-day.has-school-holiday,
+.calendar-day.has-public-holiday {
+  --calendar-holiday-tone: var(--dk-warning-text);
+  --calendar-holiday-fill: var(--dk-warning-bg);
+  background-color: var(--dk-bg-surface);
+  background-image:
+    repeating-linear-gradient(
+      135deg,
+      transparent 0 8px,
+      color-mix(in srgb, var(--calendar-holiday-tone) 14%, transparent) 8px 10px
+    ),
+    linear-gradient(var(--calendar-holiday-fill), var(--calendar-holiday-fill));
+}
+.calendar-day.has-public-holiday {
+  --calendar-holiday-tone: var(--dk-danger-text);
+  --calendar-holiday-fill: var(--dk-danger-bg);
+}
+.calendar-day.has-school-holiday .calendar-holiday,
+.calendar-day.has-public-holiday .calendar-holiday {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  min-height: 0;
+}
+.calendar-day.has-school-holiday .calendar-holiday > span,
+.calendar-day.has-public-holiday .calendar-holiday > span {
+  font-weight: 600;
+  white-space: normal;
 }.calendar-day-heading {
   display: flex;
   min-width: 0;

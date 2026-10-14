@@ -450,6 +450,8 @@ export function createPlanningSurface(context) {
           fullDate = dateValue.toLocaleDateString("en", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }),
           compactDate = dateValue.toLocaleDateString("en", { day: "numeric", month: "short", timeZone: "UTC" }),
           weekday = dateValue.toLocaleDateString("en", { weekday: "short", timeZone: "UTC" }),
+          hasPublicHoliday = dayHolidays.some((holiday) => holiday.kind === "berlin-public-holiday"),
+          hasSchoolHoliday = dayHolidays.some((holiday) => holiday.kind !== "berlin-public-holiday"),
           holidayMarkup = dayHolidays.map((holiday) => {
             const kind = holiday.kind === "berlin-public-holiday"
               ? "Public holiday"
@@ -504,10 +506,11 @@ export function createPlanningSurface(context) {
               </div>
           `;
         }
+        const holidayClass = `${hasPublicHoliday ? " has-public-holiday" : ""}${hasSchoolHoliday ? " has-school-holiday" : ""}`;
         weekMarkup += `
           <section
-            class="calendar-day${isOutside ? " is-outside" : ""}${isToday ? " is-today" : ""}${weekIsCurrent ? " is-current-week" : ""}"
-            aria-label="${fullDate}"
+            class="calendar-day${isOutside ? " is-outside" : ""}${isToday ? " is-today" : ""}${weekIsCurrent ? " is-current-week" : ""}${holidayClass}"
+            aria-label="${fullDate}${hasPublicHoliday ? ", public holiday" : hasSchoolHoliday ? ", school holiday" : ""}"
             data-day="${date}"
           >
             <div class="calendar-day-heading">
