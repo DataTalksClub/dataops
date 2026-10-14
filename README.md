@@ -177,6 +177,14 @@ portal broker for `DATAOPS_DEV_ACTOR_EMAIL`, so every request runs as that
 operator. The email must match exactly one active user in the replica, or the
 backend refuses to start. Without it, every API call returns 401.
 
+Sponsor finance (the deal Finance panel and the Sponsors Money tab) is off
+locally, as it is in a deployment without the `SPONSOR_FINANCE_ENABLED`
+repository variable. Opt in the same way the Lambda does:
+
+```bash
+SPONSOR_FINANCE_ENABLED=true scripts/dev/run-home-vite.sh
+```
+
 `package-lock.json` at the repo root is the npm lockfile for the workspace. The
 backend Lambda packaging, CI cache, and Docker Lambda image all use that root
 lockfile; there is no nested `backend/package-lock.json`.

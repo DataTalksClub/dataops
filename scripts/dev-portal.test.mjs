@@ -324,6 +324,11 @@ test('representative child environment is visibly labeled and fail-closed', () =
   assert.equal(child.DATAOPS_AUTO_CREATE_TABLES, 'false');
   assert.equal(child.WORK_ENGINE_AUTH_MODE, 'portal');
   assert.equal(child.SPONSOR_COMMUNICATION_SEND_ENABLED, 'false');
+  assert.equal(child.SPONSOR_FINANCE_ENABLED, 'false');
+  assert.equal(
+    buildChildEnvironment(config, { ...parentEnv, SPONSOR_FINANCE_ENABLED: 'true' }).SPONSOR_FINANCE_ENABLED,
+    'true',
+  );
   assert.equal(child.DATAOPS_FILE_STORAGE_PROVIDER, 'local-dev');
   assert.equal(child.AWS_EC2_METADATA_DISABLED, 'true');
   assert.equal(child.GITHUB_TOKEN, undefined);

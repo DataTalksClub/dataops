@@ -346,7 +346,9 @@ export function buildChildEnvironment(config, parentEnv = process.env) {
     SKIP_AUTH: 'true',
     AWS_EC2_METADATA_DISABLED: 'true',
     SPONSOR_COMMUNICATION_SEND_ENABLED: 'false',
-    SPONSOR_FINANCE_ENABLED: 'false',
+    // Sponsor finance is off unless the developer opts in the same way the
+    // deployed Lambda does: SPONSOR_FINANCE_ENABLED=true in the environment.
+    SPONSOR_FINANCE_ENABLED: parentEnv.SPONSOR_FINANCE_ENABLED === 'true' ? 'true' : 'false',
   });
   if (config.representative) {
     env.DATAOPS_AUTO_CREATE_TABLES = 'false';
