@@ -20,6 +20,14 @@ const normalized = (v: unknown) =>
       : /^\d{4}-\d{2}-\d{2}$/.test(String(value))
         ? String(value)
         : "";
+/**
+ * Slot identity. When the "Newsletter" sheet has an `ID` column, each row's
+ * slot is keyed by that stable ID, so inserting or reordering rows never
+ * changes which slot a row updates. Without the column a slot is keyed by its
+ * row number, date and label, which breaks when rows move; the schedule sheet
+ * is getting an ID column for that reason.
+ */
+const ID_HEADER = /^(id|slot id)$/;
 export async function readNewsletterSlots(file: string) {
   return (await inspectNewsletterSlots(file)).rows;
 }
@@ -83,13 +91,15 @@ export async function inspectNewsletterSlots(file: string) {
     labelCol = pick(patterns.label),
     numberCol = pick(patterns.number),
     statusCol = pick(patterns.status),
-    bookerCol = pick(patterns.booker);
+    bookerCol = pick(patterns.booker),
+    idCol = pick(ID_HEADER);
   if (!dateCol || !labelCol)
     throw new Error("Required schedule columns were not found");
   const rows: ImportSlot[] = [],
     reasons: Record<string, number> = {},
     coordinates: string[] = [];
   let skipped = 0;
+  const seenIds = new Set<string>();
   const reject = (reason: string) => {
     skipped++;
     reasons[reason] = (reasons[reason] || 0) + 1;
@@ -110,6 +120,18 @@ export async function inspectNewsletterSlots(file: string) {
       reject("missing-or-invalid-campaign-label");
       return;
     }
+    const slotId = idCol
+      ? String(row.getCell(idCol).value ?? "").trim()
+      : "";
+    if (idCol && (!slotId || slotId.length > 100)) {
+      reject("missing-or-invalid-id");
+      return;
+    }
+    if (idCol && seenIds.has(slotId)) {
+      reject("duplicate-id");
+      return;
+    }
+    seenIds.add(slotId);
     const numberValue = numberCol ? Number(row.getCell(numberCol).value) : NaN,
       statusRaw = statusCol ? normalized(row.getCell(statusCol).value) : "",
       status = [
@@ -137,7 +159,11 @@ export async function inspectNewsletterSlots(file: string) {
       ...(booker ? { bookedByDisplayName: booker } : {}),
       sourceType: "xlsx-import",
       sourceKey: createHash("sha256")
-        .update(`Newsletter:${rowNumber}:${date}:${label}`)
+        .update(
+          idCol
+            ? `Newsletter:id:${slotId}`
+            : `Newsletter:${rowNumber}:${date}:${label}`,
+        )
         .digest("hex"),
     });
     coordinates.push(`Newsletter!${rowNumber}`);
@@ -147,6 +173,7 @@ export async function inspectNewsletterSlots(file: string) {
     report: {
       sheet: "Newsletter",
       headerRow,
+      keyedBy: idCol ? "id-column" : "row",
       accepted: rows.length,
       skipped,
       reasons,
