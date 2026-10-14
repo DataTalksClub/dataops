@@ -26,6 +26,8 @@ test.beforeAll(async () => {
 test.afterAll(async () => stopOwnedTestServer(server));
 for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }]) {
   test(`shared page headers and content align at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    // Fifteen routes in one test; the default 30s budget is too tight on a loaded runner.
+    test.setTimeout(120000);
     await page.setViewportSize(viewport);
     await setupPageWithAuth(page);
     const out = path.resolve(__dirname, '../../.tmp/demo-b-after/layout');
