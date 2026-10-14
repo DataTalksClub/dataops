@@ -28,40 +28,6 @@ the wrong machine.
 Only confirm a code you started yourself. The approval page shows the machine
 label, the requesting IP, and the time so you can check.
 
-## Import an existing user API token
-
-If a trusted credential source already holds a legitimately issued DataOps user
-API token, pipe its output into:
-
-```bash
-dataops login --token-stdin --url https://portal.datatalks.club
-```
-
-The command requires redirected or piped stdin and rejects interactive terminal
-input so the secret cannot echo. Never put a token in a command argument, shell
-history, chat, or logs. Use your credential manager's secure output mechanism;
-do not type an `echo <token>` command. This command does not issue tokens or
-bypass browser approval. The existing `dataops login` device flow is the
-supported issuance path; importing requires a token already obtained legitimately.
-
-Only user API tokens (`dops_` followed by 64 hexadecimal characters) qualify.
-The CLI verifies the identity at `/api/me` and matches the token's ID and owner
-in `/api/tokens`, then saves its expiry and revocation metadata to the selected
-portal profile. HTTPS is required except for loopback development; redirects
-are refused and each validation request has a 15-second timeout. Validation
-failure leaves stored profiles unchanged. `--json` returns only import status,
-never the credential. Other portal profiles are preserved.
-
-`--url` selects the profile, followed by `DATAOPS_URL`, then the last-used portal.
-`DATAOPS_TOKEN` is ignored during import, but still overrides the saved token
-for subsequent commands until unset. Import does not extend the token's expiry.
-Importing an existing token shares its revocation lifecycle with its original
-holder: `logout` revokes that token everywhere it is used.
-
-Invoice-reader service credentials remain separate: use
-`login --service-token-stdin --url URL` for the restricted `invoices:read` service
-identity. They cannot be imported as user tokens.
-
 ## Credentials
 
 Tokens are stored in `~/.config/dataops/credentials.json` with mode `0600`, one
@@ -76,7 +42,6 @@ UI, and task history records your name.
 
 ```
 dataops login [--url URL] [--label NAME]   Start a device login
-dataops login --token-stdin [--url URL]      Import an existing user API token
 dataops logout                             Revoke this machine's token
 dataops whoami                             Show the signed-in user
 dataops tokens list                        List your API tokens
