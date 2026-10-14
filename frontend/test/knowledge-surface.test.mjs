@@ -780,14 +780,14 @@ describe("Knowledge surface boundary", () => {
 
     harness.api.renderDocsSurface(documents);
     assert.equal(
-      findByText(harness.elements.documentList, "Docs", "h1").textContent,
-      "Docs",
+      findByText(harness.elements.documentList, "Process Docs", "h1").textContent,
+      "Process Docs",
     );
     assert.equal(
       harness.elements.documentList.classList.contains("is-operations-home"),
       true,
     );
-    assert.equal(harness.routeTitles.at(-1), "Docs");
+    assert.equal(harness.routeTitles.at(-1), "Process Docs");
     assert.equal(
       findByText(
         harness.elements.documentList,
@@ -1697,6 +1697,11 @@ describe("Knowledge surface boundary", () => {
     const childRow = childrenContainer.querySelector(".ops-docs-tree-row");
     assert.ok(childRow, "child row should exist in children container");
     assert.ok(childRow.textContent.includes("Frontend Guide"));
+    // Depth is a custom property the stylesheet turns into indentation, not
+    // an inline padding offset.
+    assert.equal(engRow.style.getPropertyValue("--ops-docs-depth"), "0");
+    assert.equal(childRow.style.getPropertyValue("--ops-docs-depth"), "1");
+    assert.equal(childRow.style.paddingLeft, undefined);
 
     // Check action buttons exist on row
     const actions = engRow.querySelector(".ops-docs-tree-actions");

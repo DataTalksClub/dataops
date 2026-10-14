@@ -103,7 +103,7 @@ async function openWorkspace(page, hash) {
 test.describe("Nested Doc Pages", () => {
   test("renders document tree with expand/collapse hierarchy", async ({ page }) => {
     await openWorkspace(page, "/processes");
-    await expect(page.getByRole("heading", { name: "Docs", exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: "Process Docs", exact: true })).toBeVisible({ timeout: 20_000 });
 
     const tree = page.locator(".ops-docs-tree");
     await expect(tree).toBeVisible();
@@ -147,7 +147,7 @@ test.describe("Nested Doc Pages", () => {
 
   test("renders full ancestor breadcrumb trail and navigates to parent", async ({ page }) => {
     await openWorkspace(page, "/processes");
-    await expect(page.getByRole("heading", { name: "Docs", exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: "Process Docs", exact: true })).toBeVisible({ timeout: 20_000 });
 
     // Expand to find checklist and open it
     const handbookNode = page.locator('.ops-docs-tree-node[data-doc-id="reference.handbook"]');
@@ -168,7 +168,7 @@ test.describe("Nested Doc Pages", () => {
     // Breadcrumb links should include Docs, Company Handbook, Employee Onboarding
     const trailItems = breadcrumb.locator(".doc-trail-link");
     await expect(trailItems).toHaveCount(3);
-    await expect(trailItems.nth(0)).toContainText("Docs");
+    await expect(trailItems.nth(0)).toContainText("Process Docs");
     await expect(trailItems.nth(1)).toContainText("Company Handbook");
     await expect(trailItems.nth(2)).toContainText("Employee Onboarding");
 
@@ -189,7 +189,7 @@ test.describe("Nested Doc Pages", () => {
 
   test("move page dialog prevents cycles by excluding self and descendants", async ({ page }) => {
     await openWorkspace(page, "/processes");
-    await expect(page.getByRole("heading", { name: "Docs", exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: "Process Docs", exact: true })).toBeVisible({ timeout: 20_000 });
 
     const handbookNode = page.locator('.ops-docs-tree-node[data-doc-id="reference.handbook"]');
     const moveBtn = handbookNode.locator(".ops-docs-tree-btn-move").first();
@@ -227,7 +227,7 @@ test.describe("Nested Doc Pages", () => {
     ]) {
       await page.setViewportSize(viewport);
       await openWorkspace(page, "/processes");
-      await expect(page.getByRole("heading", { name: "Docs", exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole("heading", { name: "Process Docs", exact: true })).toBeVisible({ timeout: 20_000 });
 
       // Expand nodes in tree
       const handbookNode = page.locator('.ops-docs-tree-node[data-doc-id="reference.handbook"]');

@@ -99,7 +99,10 @@ export class FakeElement {
     this.className = "";
     this.classList = new FakeClassList(this);
     this.dataset = {};
-    this.style = {};
+    this.style = {
+      setProperty(name, value) { this[name] = String(value); },
+      getPropertyValue(name) { return this[name] ?? ""; },
+    };
     this.children = [];
     this.parentElement = null;
     this.attributes = new Map();

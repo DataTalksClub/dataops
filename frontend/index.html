@@ -88,14 +88,14 @@
       <div id="sidebar-scrim" class="dk-scrim" data-dk-drawer-close hidden></div>
       <main class="dk-main page-shell" id="main-content" tabindex="-1">
         <section id="library-view" class="view library-view">
-          <div id="knowledge-tools" class="knowledge-tools dk-stack">
+          <div id="knowledge-tools" class="knowledge-tools dk-toolbar">
         <details id="filters-section" class="filters-section">
-          <summary>
-            <span>Search filters</span>
-            <span id="filter-count" class="filter-count" hidden></span>
+          <summary class="dk-button dk-button--secondary dk-button--sm">
+            <span>Filters</span>
+            <span id="filter-count" class="dk-count" hidden></span>
           </summary>
           <fieldset id="filter-row" class="filter-row">
-            <legend>Document filters</legend>
+            <legend class="dk-visually-hidden">Document filters</legend>
             <label>
               Domain
               <select id="domain-filter">
@@ -123,10 +123,10 @@
                 <option value="">All</option>
               </select>
             </label>
-            <button id="clear-filters-button" class="quiet-button filter-clear" type="button">Clear filters</button>
+            <button id="clear-filters-button" class="dk-button dk-button--secondary dk-button--sm filter-clear" type="button">Clear filters</button>
           </fieldset>
         </details>
-        <div class="dk-toolbar__end"><span id="docs-catalog-count" class="dk-mono dk-muted"></span></div>
+        <div class="dk-toolbar__end"><span id="docs-catalog-count" class="dk-muted"></span></div>
         <section id="knowledge-section" class="knowledge-section" aria-label="Knowledge storage">
           <header class="dk-section-header">
           <div class="knowledge-section__main"><h2 class="dk-section-header__title">Knowledge storage</h2>

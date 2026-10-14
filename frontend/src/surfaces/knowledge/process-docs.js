@@ -27,6 +27,24 @@ export function createProcessDocsSurface(context, services) {
   const expandedDocIds = new Set();
   const knowledgeTools = context.knowledgeTools;
   const exportStatus = knowledgeTools?.querySelector("#knowledge-section");
+  const filtersPopover = knowledgeTools?.querySelector("#filters-section");
+
+  // The Filters disclosure opens as a popover over the catalog, so it closes
+  // like one: a click elsewhere, or Escape (after an open select has taken
+  // its own Escape), which returns focus to the Filters button.
+  if (filtersPopover) {
+    document.addEventListener("click", (event) => {
+      if (filtersPopover.open && !filtersPopover.contains(event.target)) {
+        filtersPopover.open = false;
+      }
+    });
+    filtersPopover.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || event.defaultPrevented || !filtersPopover.open) return;
+      event.preventDefault();
+      filtersPopover.open = false;
+      filtersPopover.querySelector("summary")?.focus();
+    });
+  }
 
   function buildTree(docs) {
     const byId = new Map();
@@ -222,7 +240,7 @@ export function createProcessDocsSurface(context, services) {
 
     const row = document.createElement("div");
     row.className = "ops-docs-tree-row ops-docs-catalog-row";
-    row.style.paddingLeft = `${16 + depth * 20}px`;
+    row.style.setProperty("--ops-docs-depth", String(depth));
     row.setAttribute("draggable", "true");
 
     let childrenContainer = null;
@@ -375,10 +393,10 @@ export function createProcessDocsSurface(context, services) {
     });
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
-    setRouteTitle("Docs");
+    setRouteTitle("Process Docs");
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-docs";
-    const header = renderSurfaceHeader("Docs");
+    const header = renderSurfaceHeader("Process Docs");
     const createButton = document.createElement("button");
     createButton.type = "button";
     createButton.className = "dk-button dk-button--primary ops-docs-create";
@@ -390,15 +408,21 @@ export function createProcessDocsSurface(context, services) {
     header.append(actions);
     wrap.append(header);
     if (knowledgeTools) {
-      knowledgeTools.className = "knowledge-tools dk-toolbar";
-      knowledgeTools.setAttribute("aria-label", "Document filters");
       const count = knowledgeTools.querySelector("#docs-catalog-count");
-      if (count) count.textContent = `${visibleDocuments.length} documents`;
+      if (count) count.replaceChildren(...catalogCount(visibleDocuments.length));
       wrap.append(knowledgeTools);
     }
     wrap.append(renderProcessesSurface(visibleDocuments, model));
     if (exportStatus) wrap.append(exportStatus);
     documentList.replaceChildren(wrap);
+  }
+
+  // The number is data (mono, tabular); the noun stays prose.
+  function catalogCount(total) {
+    const value = document.createElement("span");
+    value.className = "dk-mono";
+    value.textContent = String(total);
+    return [value, total === 1 ? " document" : " documents"];
   }
 
   function renderProcessesSurface(documents, model) {
@@ -461,11 +485,17 @@ export function createProcessDocsSurface(context, services) {
       (ref) => ref.href && !ref.path,
     );
     if (refs.length === 0) return null;
-    const wrap = document.createElement("details");
+    const wrap = document.createElement("section");
     wrap.className = "ops-project-docs";
-    const summary = document.createElement("summary");
-    summary.textContent = "Project docs";
-    wrap.append(summary);
+    wrap.setAttribute("aria-labelledby", "ops-project-docs-title");
+    const header = document.createElement("header");
+    header.className = "dk-section-header";
+    const title = document.createElement("h2");
+    title.className = "dk-section-header__title";
+    title.id = "ops-project-docs-title";
+    title.textContent = "Project docs";
+    header.append(title);
+    wrap.append(header);
     const grid = document.createElement("div");
     grid.className = "ops-reference-grid";
     for (const ref of refs) grid.append(renderOperationsReference(ref));
@@ -513,7 +543,7 @@ export function createProcessDocsSurface(context, services) {
         "No Process Docs match these filters",
         `The catalog contains ${snapshot.documentCount} ${documentLabel}, but none match the ${activeFilters} ${filterLabel}.`,
         "filter-empty",
-        "Use Search filters and choose Clear filters to restore the full catalog.",
+        "Open Filters and choose Clear filters to restore the full catalog.",
       );
     }
     return null;

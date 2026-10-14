@@ -81,55 +81,6 @@ textarea:not([class*="dk-"]):focus-visible {
   color: var(--dk-text-primary);
   padding: 6px 10px;
   text-align: left;
-}.filters-section {
-  margin-top: 10px;
-}.filters-section[open] {
-  border-bottom: 1px solid var(--dk-border-default);
-  padding-bottom: 10px;
-}.filters-section > summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}.filter-count {
-  display: inline-grid;
-  min-width: 18px;
-  min-height: 18px;
-  place-items: center;
-  border-radius: var(--dk-radius-full);
-  background: var(--dk-accent-soft);
-  color: var(--dk-accent-default);
-  padding: 0 5px;
-  font-size: 11px;
-  font-weight: 700;
-}.filter-row {
-  display: grid;
-  gap: 10px;
-  margin: 8px 0 0;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  padding: 10px;
-}.filter-row legend {
-  color: var(--dk-text-heading);
-  padding-inline: 4px;
-  font-size: 12px;
-  font-weight: 650;
-}.filter-row label {
-  display: grid;
-  gap: 5px;
-  color: var(--dk-text-muted);
-  font-size: 12px;
-  font-weight: 600;
-}.filter-row select {
-  width: 100%;
-  min-height: 34px;
-}.filter-clear {
-  justify-self: start;
-  min-height: 32px;
-  margin-top: 2px;
-  padding-inline: 9px;
-  font-size: 12px;
 }.page-shell {
   display: grid;
   grid-template-rows: minmax(0, 1fr);

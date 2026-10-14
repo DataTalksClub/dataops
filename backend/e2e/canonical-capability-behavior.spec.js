@@ -1187,7 +1187,7 @@ test.describe('canonical frontend capability behavior', () => {
     expect(backlinks.status()).toBe(200);
 
     await page.goto('/processes');
-    await expect(page.getByRole('heading', { name: 'Docs', exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Process Docs', exact: true }).first()).toBeVisible();
     await expect(page.locator('.ops-surface-docs')).toBeVisible();
 
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -1271,7 +1271,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.getByRole('link', { name: 'Process Docs', exact: true }).click();
     await expect(page).toHaveURL(/\/processes$/);
     await expect(page.locator('body')).toHaveAttribute('data-view', 'library');
-    await expect(page.getByRole('heading', { name: 'Docs', exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Process Docs', exact: true }).first()).toBeVisible();
     const createProcess = page.locator('.ops-docs-create');
     await expect(createProcess).toBeVisible();
     await createProcess.click();

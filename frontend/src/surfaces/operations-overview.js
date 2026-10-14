@@ -274,7 +274,7 @@ export function createOperationsOverview(context) {
   function operationsViewTitle(view, tasksSection, archiveVisible = false) {
     if (view === "operating-model") return "Operating Model";
     if (view === "tasks") return tasksSectionTitle(tasksSection, archiveVisible);
-    if (view === "docs") return "Docs";
+    if (view === "docs") return "Process Docs";
     if (view === "admin") return "Admin";
     if (view === "users") return "Users";
     if (view === "bookkeeping") return "Bookkeeping";

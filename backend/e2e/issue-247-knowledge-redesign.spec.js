@@ -246,7 +246,7 @@ test("captures Knowledge family after screenshots", async ({ page }) => {
 
   await page.setViewportSize(DESKTOP);
   await openWorkspace(page, "/processes");
-  await expect(page.getByRole("heading", { name: "Docs", exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "Process Docs", exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: /Synthetic system overview/ })).toBeVisible();
   await expect(page.getByText("Quality Findings")).toHaveCount(0);
   await screenshot(page, "process-docs-library-desktop-1440-light");

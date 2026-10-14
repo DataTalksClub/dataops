@@ -244,7 +244,7 @@ export function createDocumentRenderer(context, services) {
     const root = document.createElement("button");
     root.type = "button";
     root.className = "doc-trail-item doc-trail-root doc-trail-link";
-    root.textContent = "Docs";
+    root.textContent = "Process Docs";
     root.addEventListener("click", () => {
       if (context.navigateCanonicalWorkspace) {
         context.navigateCanonicalWorkspace("/docs");

@@ -1276,7 +1276,7 @@ describe("Document Editor surface boundary", () => {
     // Location trail
     const trail = harness.elements.renderedView.querySelector(".doc-hierarchy-nav");
     assert.ok(trail);
-    assert.ok(findByText(trail, "Docs", "button"));
+    assert.ok(findByText(trail, "Process Docs", "button"));
     assert.ok(findByText(trail, "Engineering"));
     assert.ok(findByText(trail, "2026 Roadmap"));
 
