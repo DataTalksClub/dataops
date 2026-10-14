@@ -1970,9 +1970,13 @@ describe("Tasks surface boundary", () => {
       },
     });
     harness.api.renderTasksSurface([], "recurring");
-    const headerActions = harness.documentList.querySelector(".dk-page-header__actions");
-    assert.ok(findByText(headerActions, "New schedule", "button"));
-    assert.equal(findAllByClass(harness.documentList, "recurring-toolbar").length, 0);
+    // Create rides on the Schedules list, not in the page header.
+    assert.equal(harness.documentList.querySelector(".dk-page-header__actions"), null);
+    const schedulesHeader = harness.documentList.querySelector(".collection-header");
+    assert.match(schedulesHeader.textContent, /Schedules/);
+    const create = findByText(schedulesHeader, "New schedule", "button");
+    assert.ok(create);
+    assert.equal(create.getAttribute("aria-keyshortcuts"), "c");
     assert.match(harness.documentList.textContent, /Every Monday/);
     assert.match(harness.documentList.textContent, /Next /);
 

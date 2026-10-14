@@ -131,11 +131,6 @@ export function createTasksSurface(context) {
         quickCard.addEventListener("click", () => openQuickWorkflowForm());
         actions.push(quickTask, quickCard);
       }
-      if (activeSection === "recurring") {
-        const toolbar = recurringSurface.querySelector(".recurring-toolbar");
-        actions.push(toolbar.querySelector("button"));
-        toolbar.remove();
-      }
       const header = createPageHeader({
         title,
         subtitle: surfaceDescription(activeSection),

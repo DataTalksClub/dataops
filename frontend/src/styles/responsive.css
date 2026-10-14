@@ -305,8 +305,7 @@ body[data-workspace-view="sponsors"] .library-view {
   .calendar-nav-arrow,
   .calendar-add-button,
   .calendar-display-controls select,
-  .bookkeeping-lens-nav button,
-  .recurring-action {
+  .bookkeeping-lens-nav button {
     min-height: var(--dk-size-touch);
     padding-top: 4px !important;
     padding-bottom: 4px !important;
@@ -567,10 +566,7 @@ body[data-workspace-view="sponsors"] .library-view {
     overflow: hidden;
   }
 
-  /* ---- Recurring: compact toolbar and summary ---- */
-  .recurring-toolbar {
-    margin: 0 0 6px !important;
-  }
+  /* ---- Recurring: compact summary ---- */
   .recurring-summary {
     gap: 4px !important;
   }

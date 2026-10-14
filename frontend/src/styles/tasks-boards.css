@@ -551,8 +551,7 @@ body[data-workspace-view="tasks"] .ops-queue-due {
   line-height: 1.5;
 }body[data-workspace-view="tasks"] .workflow-board-header .dk-page-header__actions {
   align-items: center;
-}body[data-workspace-view="tasks"] .workflow-board-header .dk-page-header__actions > button,
-body[data-workspace-view="tasks"] .recurring-toolbar button {
+}body[data-workspace-view="tasks"] .workflow-board-header .dk-page-header__actions > button {
   min-height: 40px;
 }body[data-workspace-view="tasks"] .ops-workflows-grid {
   width: min(100%, var(--cards-board-width));

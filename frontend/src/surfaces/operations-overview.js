@@ -44,6 +44,112 @@ export function renderPageHeaderMarkup({
     `<h1 class="dk-page-header__title"${id}>${escape(title)}</h1>${description}</div>${controls}</header>`;
 }
 
+// Collection actions
+// ------------------
+// A create action belongs to the collection it creates into, not to the page
+// header's far corner. The collection header puts the create button straight
+// after the collection's title, so the eye that reads "Schedules" lands on
+// "New schedule"; refresh, export and other secondary actions sit at the
+// header's trailing end. The page header keeps only the title and description.
+// One create button per page carries data-collection-create, which the "c"
+// shortcut presses.
+const COLLECTION_CREATE_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+
+export function collectionCreateButtonMarkup({ label, attributes = "", shortcut = true }) {
+  const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]);
+  const keys = shortcut
+    ? ` data-collection-create aria-keyshortcuts="c" title="${escape(label)} (C)"`
+    : "";
+  // Only application-authored attributes belong in `attributes`.
+  return `<button type="button" class="dk-button dk-button--primary dk-button--sm collection-create"` +
+    `${keys}${attributes ? ` ${attributes}` : ""}><span class="collection-create__icon" aria-hidden="true">` +
+    `${COLLECTION_CREATE_ICON}</span><span>${escape(label)}</span></button>`;
+}
+
+export function createCollectionCreateButton({
+  label, onClick, variant = "primary", shortcut = true, documentRef = document,
+}) {
+  const button = documentRef.createElement("button");
+  button.type = "button";
+  button.className = `dk-button dk-button--${variant} dk-button--sm collection-create`;
+  const icon = documentRef.createElement("span");
+  icon.className = "collection-create__icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.innerHTML = COLLECTION_CREATE_ICON;
+  const text = documentRef.createElement("span");
+  text.textContent = label;
+  button.append(icon, text);
+  if (shortcut) {
+    button.dataset.collectionCreate = "";
+    button.setAttribute("aria-keyshortcuts", "c");
+    button.title = `${label} (C)`;
+    installCollectionCreateShortcut(documentRef);
+  }
+  if (onClick) button.addEventListener("click", onClick);
+  return button;
+}
+
+export function createCollectionHeader({
+  title, titleId = "", level = "h2", meta = "", create = null, actions = [],
+  className = "", documentRef = document,
+}) {
+  const header = documentRef.createElement("header");
+  header.className = `collection-header${className ? ` ${className}` : ""}`;
+  const lead = documentRef.createElement("div");
+  lead.className = "collection-header__lead";
+  const heading = documentRef.createElement(level);
+  heading.className = "collection-header__title";
+  heading.textContent = title;
+  if (titleId) heading.id = titleId;
+  lead.append(heading);
+  if (create) lead.append(create);
+  header.append(lead);
+  if (meta || actions.length > 0) {
+    const trail = documentRef.createElement("div");
+    trail.className = "collection-header__trail";
+    if (meta) {
+      const count = documentRef.createElement("span");
+      count.className = "collection-header__meta";
+      count.textContent = meta;
+      trail.append(count);
+    }
+    trail.append(...actions);
+    header.append(trail);
+  }
+  return header;
+}
+
+const shortcutDocuments = new WeakSet();
+
+function isTypingTarget(target) {
+  if (!target || typeof target.closest !== "function") return false;
+  return Boolean(
+    target.isContentEditable ||
+      target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])"),
+  );
+}
+
+export function installCollectionCreateShortcut(documentRef = document) {
+  if (typeof documentRef?.addEventListener !== "function") return;
+  if (shortcutDocuments.has(documentRef)) return;
+  shortcutDocuments.add(documentRef);
+  documentRef.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.repeat) return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.key !== "c") return;
+    if (isTypingTarget(event.target)) return;
+    if (documentRef.querySelector('dialog[open], [aria-modal="true"]')) return;
+    const button = [...documentRef.querySelectorAll("[data-collection-create]")]
+      .find((candidate) => !candidate.disabled && candidate.getClientRects().length > 0);
+    if (!button) return;
+    event.preventDefault();
+    button.click();
+  });
+}
+
 const SUMMARY_LABELS = {
   loading: "Loading",
   ready: "Ready",

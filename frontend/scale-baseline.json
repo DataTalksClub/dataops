@@ -182,8 +182,8 @@
   },
   "src/styles/operations.css": {
     "font-size: 12px": 4,
-    "font-size: 13px": 5,
-    "font-size: 14px": 4,
+    "font-size: 13px": 4,
+    "font-size: 14px": 2,
     "gap: 14px": 1,
     "gap: 3px": 1,
     "gap: 4px 14px": 1,
@@ -198,7 +198,6 @@
     "padding: 14px": 1,
     "padding: 4px 10px": 1,
     "padding: 5px 10px": 1,
-    "padding: 6px 14px": 1,
     "padding: 8px 10px": 1
   },
   "src/styles/overrides.css": {
@@ -328,7 +327,7 @@
     "gap: 6px": 10,
     "margin-top: -4px": 1,
     "margin: 0 0 10px": 1,
-    "margin: 0 0 6px": 2,
+    "margin: 0 0 6px": 1,
     "margin: 6px 0": 1,
     "padding-bottom: 2px": 1,
     "padding-inline: 14px": 1,

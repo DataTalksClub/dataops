@@ -1,4 +1,8 @@
-import { setControlPending } from "../operations-overview.js";
+import {
+  createCollectionCreateButton,
+  createCollectionHeader,
+  setControlPending,
+} from "../operations-overview.js";
 
 const RECURRING_ICONS = Object.freeze({
   add: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
@@ -65,7 +69,6 @@ export function createRecurringTasks(context) {
     wrap.className = "ops-recurring-surface";
     const recurring = model?.recurring;
 
-    wrap.append(renderRecurringToolbar());
     for (const message of recurring?.errors || []) {
       const error = document.createElement("p");
       error.className = "ops-inline-error";
@@ -77,21 +80,6 @@ export function createRecurringTasks(context) {
     return wrap;
   }
 
-  function renderRecurringToolbar() {
-    const toolbar = document.createElement("div");
-    toolbar.className = "recurring-toolbar";
-    toolbar.setAttribute("aria-label", "Recurring actions");
-
-    const create = document.createElement("button");
-    create.type = "button";
-    create.className = "recurring-action recurring-action-primary";
-    create.append(iconElement("add"), textSpan("New schedule"));
-    create.addEventListener("click", () => openRecurringForm());
-
-    toolbar.append(create);
-    return toolbar;
-  }
-
   function renderRecurringOperationsSection(recurring, options = {}) {
     const section = document.createElement("section");
     section.className = "ops-section ops-recurring-section";
@@ -100,26 +88,41 @@ export function createRecurringTasks(context) {
     const all = Array.isArray(recurring?.configs) ? recurring.configs : [];
     const configs = options.limit ? all.slice(0, options.limit) : all;
 
-    const header = document.createElement("header");
-    header.className = "recurring-section-header";
-    const title = document.createElement("h3");
-    title.textContent = "Schedules";
-    const meta = document.createElement("span");
-    meta.textContent = recurring?.loaded
-      ? countLabel(configs.length, "schedule")
-      : "Not loaded";
-    header.append(title, meta);
-    section.append(header);
+    // The create action rides on the list it creates into.
+    section.append(createCollectionHeader({
+      title: "Schedules",
+      level: "h3",
+      className: "recurring-section-header",
+      meta: recurring?.loaded
+        ? countLabel(configs.length, "schedule")
+        : "Not loaded",
+      create: createCollectionCreateButton({
+        label: "New schedule",
+        onClick: () => openRecurringForm(),
+      }),
+    }));
 
     const list = document.createElement("ul");
     list.className = "ops-recurring-list";
     if (configs.length === 0) {
-      const empty = document.createElement("p");
-      empty.className = "ops-empty";
-      empty.textContent = recurring?.errors?.length
+      const empty = document.createElement("div");
+      empty.className = "ops-empty recurring-empty";
+      const emptyText = document.createElement("p");
+      emptyText.textContent = recurring?.errors?.length
         ? "Recurring configs could not be loaded."
-        : "No recurring schedules yet. Use New schedule to create the first one.";
+        : "No recurring schedules yet.";
+      empty.append(emptyText);
       section.append(empty);
+      if (recurring?.loaded && !recurring?.errors?.length) {
+        const cta = createCollectionCreateButton({
+          label: "Create the first schedule",
+          variant: "secondary",
+          shortcut: false,
+          onClick: () => openRecurringForm(),
+        });
+        cta.classList.add("collection-empty-action");
+        empty.append(cta);
+      }
     } else {
       for (const config of configs)
         list.append(renderRecurringConfigItem(config));

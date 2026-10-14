@@ -275,12 +275,11 @@ describe("owning-surface feedback primitives", () => {
 
 const SLICE1_MOBILE_MEDIA_QUERY = "@media (max-width: 768px)";
 const SLICE1_MOBILE_BLOCK_START =
-  'body[data-workspace-view="tasks"] .ops-surface-recurring .recurring-action';
+  'body[data-workspace-view="tasks"] .recurring-row-actions .task-action-btn';
 const SLICE1_MOBILE_CHECKBOX_SELECTOR =
   'body[data-workspace-view="tasks"] .quick-form-label.quick-form-checkbox input';
 const SLICE1_MOBILE_ORDINARY_SELECTORS = [
   SLICE1_MOBILE_BLOCK_START,
-  'body[data-workspace-view="tasks"] .recurring-row-actions .task-action-btn',
   ".ops-surface-users .primary-button",
   ".ops-users-table .ops-user-actions .quiet-button",
   '.ops-user-form input:not([type="checkbox"])',
