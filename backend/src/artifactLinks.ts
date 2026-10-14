@@ -142,3 +142,42 @@ export function normalizeExternalTitle(title: unknown, cleanUrl: string): string
   if (isUrlLikeTitle(text)) return cleanUrl;
   return text;
 }
+
+export interface CardLinkValue {
+  name: string;
+  url: string;
+}
+
+/**
+ * A card's named link slots (Luma link, YouTube link...) get the same
+ * treatment: a filled URL is stored clean, a slot whose name is just a URL
+ * is named by the clean URL, and two slots that point at the same page
+ * collapse into the first. Empty and non-URL values (a slot still to fill)
+ * pass through untouched.
+ */
+export function normalizeCardLinks(links: unknown): unknown {
+  if (!Array.isArray(links)) return links;
+  const seen = new Set<string>();
+  const result: unknown[] = [];
+  for (const link of links) {
+    if (!link || typeof link !== 'object' || Array.isArray(link)) {
+      result.push(link);
+      continue;
+    }
+    const value = link as Record<string, unknown>;
+    const rawUrl = typeof value.url === 'string' ? value.url.trim() : value.url;
+    const clean = typeof rawUrl === 'string' && rawUrl ? normalizeExternalUrl(rawUrl) : null;
+    if (clean) {
+      const key = externalLinkKey(clean);
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    const name = typeof value.name === 'string' ? value.name : '';
+    result.push({
+      ...value,
+      name: clean && isUrlLikeTitle(name) ? clean : name,
+      url: clean || rawUrl,
+    });
+  }
+  return result;
+}

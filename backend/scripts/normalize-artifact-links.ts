@@ -11,7 +11,8 @@
  * - groups artifacts by owner (card or task) and link identity, keeps the
  *   best one (approved first, then labelled, then oldest) and deletes the
  *   rest, carrying a dropped duplicate's label over to the keeper,
- * - rewrites card and task `artifactRefs` to match.
+ * - rewrites card and task `artifactRefs` to match,
+ * - normalises each card's named link slots (`cardLinks`) the same way.
  *
  * Dry run is the default and prints the plan plus counts.
  *
@@ -29,9 +30,12 @@
  */
 import { readFileSync } from 'node:fs';
 
+import { isDeepStrictEqual } from 'node:util';
+
 import {
   externalLinkKey,
   isUrlLikeTitle,
+  normalizeCardLinks,
   normalizeExternalTitle,
   normalizeExternalUrl,
 } from '../src/artifactLinks';
@@ -140,6 +144,13 @@ export function planArtifactLinkCleanup(artifacts: ArtifactRecord[]): ArtifactLi
   };
 }
 
+/** A card's cleaned link slots, or null when they are already clean. */
+export function rewriteCardLinks(links: unknown): unknown[] | null {
+  if (!Array.isArray(links) || links.length === 0) return null;
+  const next = normalizeCardLinks(links) as unknown[];
+  return isDeepStrictEqual(next, links) ? null : next;
+}
+
 /** Rewrite an owner's artifactRefs to match the plan; null when unchanged. */
 export function rewriteArtifactRefs(refs: ArtifactRef[] | undefined, plan: ArtifactLinkPlan): ArtifactRef[] | null {
   if (!Array.isArray(refs) || refs.length === 0) return null;
@@ -174,9 +185,18 @@ async function main(): Promise<void> {
     for (const rewrite of plan.rewrites) console.log(JSON.stringify({ rewrite }));
     for (const deletion of plan.deletions) console.log(JSON.stringify({ deletion }));
     for (const entry of plan.unparseable) console.log(JSON.stringify({ unparseable: entry }));
-    const cards = CARDS_JSON ? JSON.parse(readFileSync(CARDS_JSON, 'utf8')) as Array<{ artifactRefs?: ArtifactRef[] }> : [];
+    const cards = CARDS_JSON
+      ? JSON.parse(readFileSync(CARDS_JSON, 'utf8')) as Array<{ artifactRefs?: ArtifactRef[]; cardLinks?: unknown }>
+      : [];
     const cardRefUpdates = cards.filter((card) => rewriteArtifactRefs(card.artifactRefs, plan)).length;
-    console.log(JSON.stringify({ ...plan.summary, cardRefUpdates, mode: 'dry-run', source: FROM_JSON }));
+    const cardLinkUpdates = cards.filter((card) => rewriteCardLinks(card.cardLinks)).length;
+    const cardLinksRemoved = cards.reduce((total, card) => {
+      const next = rewriteCardLinks(card.cardLinks);
+      return total + (next && Array.isArray(card.cardLinks) ? card.cardLinks.length - next.length : 0);
+    }, 0);
+    console.log(JSON.stringify({
+      ...plan.summary, cardRefUpdates, cardLinkUpdates, cardLinksRemoved, mode: 'dry-run', source: FROM_JSON,
+    }));
     return;
   }
 
@@ -191,8 +211,12 @@ async function main(): Promise<void> {
   const cards = await listCards(client);
   const tasks = await listAllTasks(client);
   const cardRefChanges = cards
-    .map((card) => ({ card, refs: rewriteArtifactRefs(card.artifactRefs, plan) }))
-    .filter((entry) => entry.refs);
+    .map((card) => ({
+      card,
+      refs: rewriteArtifactRefs(card.artifactRefs, plan),
+      links: rewriteCardLinks(card.cardLinks),
+    }))
+    .filter((entry) => entry.refs || entry.links);
   const taskRefChanges = tasks
     .map((task) => ({ task, refs: rewriteArtifactRefs(task.artifactRefs, plan) }))
     .filter((entry) => entry.refs);
@@ -200,7 +224,12 @@ async function main(): Promise<void> {
   for (const rewrite of plan.rewrites) console.log(JSON.stringify({ rewrite }));
   for (const deletion of plan.deletions) console.log(JSON.stringify({ deletion }));
   for (const entry of plan.unparseable) console.log(JSON.stringify({ unparseable: entry }));
-  const summary = { ...plan.summary, cardRefUpdates: cardRefChanges.length, taskRefUpdates: taskRefChanges.length };
+  const summary = {
+    ...plan.summary,
+    cardRefUpdates: cardRefChanges.filter((entry) => entry.refs).length,
+    cardLinkUpdates: cardRefChanges.filter((entry) => entry.links).length,
+    taskRefUpdates: taskRefChanges.length,
+  };
 
   if (!APPLY) {
     console.log(JSON.stringify({ ...summary, mode: 'dry-run' }));
@@ -216,6 +245,7 @@ async function main(): Promise<void> {
   for (const { card } of cardRefChanges) {
     await updateCardAdditive(client, card, (current) => ({
       artifactRefs: rewriteArtifactRefs(current.artifactRefs, plan) || current.artifactRefs,
+      cardLinks: (rewriteCardLinks(current.cardLinks) || current.cardLinks) as typeof current.cardLinks,
     }));
   }
   for (const { task } of taskRefChanges) {

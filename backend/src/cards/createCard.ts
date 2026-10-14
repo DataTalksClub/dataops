@@ -8,6 +8,7 @@
  */
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { normalizeCardLinks } from '../artifactLinks';
 import { createCard } from '../db/cards';
 import {
   createCardFromTemplate,
@@ -236,7 +237,7 @@ export async function createCardFromInput(
       cardData.references = template.references;
     }
     if (body.cardLinks !== undefined) {
-      cardData.cardLinks = body.cardLinks;
+      cardData.cardLinks = normalizeCardLinks(body.cardLinks);
     } else if (template.cardLinkDefinitions && template.cardLinkDefinitions.length > 0) {
       cardData.cardLinks = template.cardLinkDefinitions.map((def: { name: string }) => ({
         name: def.name,
@@ -254,9 +255,10 @@ export async function createCardFromInput(
       cardData.tags = template.tags;
     }
   } else {
-    for (const field of ['references', 'cardLinks', 'emoji', 'tags', 'sourceDocIds']) {
+    for (const field of ['references', 'emoji', 'tags', 'sourceDocIds']) {
       if (body[field] !== undefined) cardData[field] = body[field];
     }
+    if (body.cardLinks !== undefined) cardData.cardLinks = normalizeCardLinks(body.cardLinks);
   }
   for (const field of ['artifactRefs', 'intakeRefs', 'people', 'sponsor', 'secondarySponsors', 'issueNumber']) {
     if (body[field] !== undefined) {

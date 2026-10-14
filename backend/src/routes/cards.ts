@@ -38,6 +38,7 @@ import {
 } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
 import { projectCard, projectCards, projectTasks } from '../identity/projections';
+import { normalizeCardLinks } from '../artifactLinks';
 import {
   matchesOwnerFilter,
   ownerFilterUserId,
@@ -644,6 +645,8 @@ async function handleSingle(
       if (body[field] !== undefined) {
         if (field === 'issueNumber' && body[field] !== null) {
           updates[field] = String(body[field]).trim();
+        } else if (field === 'cardLinks') {
+          updates[field] = normalizeCardLinks(body[field]);
         } else {
           updates[field] = body[field];
         }

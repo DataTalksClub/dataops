@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   externalLinkKey,
+  normalizeCardLinks,
   normalizeExternalTitle,
   normalizeExternalUrl,
   parseLinkText,
@@ -38,5 +39,21 @@ describe('artifact links', () => {
     assert.equal(normalizeExternalTitle('Speaker profile', 'https://linkedin.com/in/a'), 'Speaker profile');
     assert.equal(normalizeExternalTitle('https://luma.com/x](https://luma.com/x', 'https://luma.com/x'), 'https://luma.com/x');
     assert.equal(normalizeExternalTitle('', 'https://luma.com/x'), 'https://luma.com/x');
+  });
+
+  it('cleans card link slots and collapses slots that open the same page', () => {
+    assert.deepEqual(
+      normalizeCardLinks([
+        { name: 'Luma link', url: 'https://luma.com/x' },
+        { name: 'https://luma.com/x](https://luma.com/x', url: 'https://luma.com/x](https://luma.com/x' },
+        { name: 'Meetup link', url: '' },
+        { name: 'https://www.linkedin.com/in/a/](https://www.linkedin.com/in/a/', url: 'https://www.linkedin.com/in/a/](https://www.linkedin.com/in/a/' },
+      ]),
+      [
+        { name: 'Luma link', url: 'https://luma.com/x' },
+        { name: 'Meetup link', url: '' },
+        { name: 'https://www.linkedin.com/in/a/', url: 'https://www.linkedin.com/in/a/' },
+      ],
+    );
   });
 });
