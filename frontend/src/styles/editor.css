@@ -79,14 +79,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border: 1px solid var(--dk-info-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
   padding: 10px 12px;
   font-size: 12px;
 }.doc-state:has(.ops-docs-state[data-docs-state="unavailable"]) {
-  border-color: var(--dk-danger-border);
   background: var(--dk-danger-bg);
 }.document-title {
   min-height: 48px;
@@ -182,7 +181,7 @@
   color: var(--dk-text-link);
   text-decoration: underline;
 }.fm-pill-type {
-  border-color: var(--dk-info-border);
+  border: 1px solid transparent;
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
 }.fm-editor,
@@ -417,7 +416,7 @@
   background: var(--dk-bg-hover);
   color: var(--dk-text-primary);
 }.block-step-delete {
-  border-color: var(--dk-danger-border);
+  border-color: var(--dk-border-default);
   color: var(--dk-danger-text);
 }.block-step-warning,
 .block-screenshot-alt,
@@ -585,13 +584,12 @@ textarea.inline-editor {
   color: var(--dk-text-muted);
   font-size: 13px;
 }.create-form > .status-text.create-status {
-  border: 1px solid var(--dk-info-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
   padding: 9px 10px;
 }.create-form > .status-text.create-status.is-error {
-  border-color: var(--dk-danger-border);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
 }.create-form h2 {
@@ -635,8 +633,8 @@ textarea.inline-editor {
   border-radius: var(--dk-radius-md);
   padding: 8px;
 }.scaffold-option:has(input:checked) {
-  border-color: var(--dk-info-border);
-  background: var(--dk-info-bg);
+  border-color: var(--dk-border-default);
+  background: var(--dk-accent-soft);
 }.scaffold-option input {
   margin-top: 3px;
 }.scaffold-option span {
@@ -706,7 +704,7 @@ textarea.inline-editor {
   font-size: 11px;
 }.changes-status {
   margin: 0;
-  border: 1px solid var(--dk-info-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
@@ -714,7 +712,6 @@ textarea.inline-editor {
   font-size: 12px;
   overflow-wrap: anywhere;
 }.changes-status.is-error {
-  border-color: var(--dk-danger-border);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
 }.changes-actions {
