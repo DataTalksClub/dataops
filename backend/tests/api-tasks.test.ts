@@ -1654,6 +1654,89 @@ describe('API — CRUD for tasks', () => {
     });
   });
 
+  describe('links pasted into a title move into materials', () => {
+    const doc = 'https://docs.google.com/document/d/abc/edit';
+
+    it('cleans the title on create and stores the link as a material', async () => {
+      const res = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: `[Announce] Announce in Slack ( , [template](${doc}?usp=sharing]))`,
+          date: '2026-04-01',
+        }),
+      }, {});
+      assert.strictEqual(res.statusCode, 201);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.description, 'Announce in Slack');
+      assert.deepStrictEqual(body.tags, ['Announce']);
+      assert.deepStrictEqual(body.materials, [{ url: doc, label: 'template' }]);
+    });
+
+    it('stores supplied materials clean and adds title links after them', async () => {
+      const res = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Record the intro - video https://www.loom.com/share/xyz',
+          date: '2026-04-01',
+          materials: [{ url: `${doc}?usp=sharing`, label: ' Brief ' }],
+        }),
+      }, {});
+      assert.strictEqual(res.statusCode, 201);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.description, 'Record the intro - video');
+      assert.deepStrictEqual(body.materials, [
+        { url: doc, label: 'Brief' },
+        { url: 'https://www.loom.com/share/xyz' },
+      ]);
+    });
+
+    it('merges title links into existing materials on update', async () => {
+      const created = JSON.parse((await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Base task', date: '2026-04-01', materials: [{ url: doc }] }),
+      }, {})).body);
+      const res = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({
+          description: 'Post the recap ([doc](https://docs.google.com/document/d/abc/edit)) - [site](https://github.com/o/r)',
+          expectedVersion: created.version,
+        }),
+      }, {});
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.description, 'Post the recap');
+      assert.deepStrictEqual(body.materials, [{ url: doc }, { url: 'https://github.com/o/r', label: 'site' }]);
+    });
+
+    it('keeps a title that is nothing but a link', async () => {
+      const res = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: `[brief](${doc})`, date: '2026-04-01' }),
+      }, {});
+      assert.strictEqual(res.statusCode, 201);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.description, `[brief](${doc})`);
+      assert.strictEqual(body.materials, undefined);
+    });
+
+    it('rejects malformed materials', async () => {
+      for (const materials of [{ url: doc }, [{ url: 'ftp://x' }], [{ url: doc, label: 3 }], ['x']]) {
+        const res = await handler({
+          httpMethod: 'POST',
+          path: '/api/tasks',
+          body: JSON.stringify({ description: 'Bad materials', date: '2026-04-01', materials }),
+        }, {});
+        assert.strictEqual(res.statusCode, 400, JSON.stringify(materials));
+        assert.match(JSON.parse(res.body).error, /materials/);
+      }
+    });
+  });
+
   describe('PUT /api/tasks/:id with new fields', () => {
     it('updates a task to add new fields', async () => {
       const createRes = await handler({

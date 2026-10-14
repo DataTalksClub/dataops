@@ -205,6 +205,12 @@ export interface TaskHistoryEvent {
   createdAt: string;
 }
 
+/** A supporting link of a Task, stored clean; `label` is absent for a bare URL. */
+export interface TaskMaterial {
+  url: string;
+  label?: string;
+}
+
 export interface Task {
   id: string;
   /** Monotonic optimistic-concurrency token. */
@@ -233,6 +239,8 @@ export interface Task {
   requires?: string[];
   validation?: string | Record<string, unknown>;
   link?: string;
+  /** Supporting links (a message template, a how-to video); never pasted into `description`. */
+  materials?: TaskMaterial[];
   requiredLinkName?: string;
   requiresFile?: boolean;
   assigneeId?: string;

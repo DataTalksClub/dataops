@@ -4,7 +4,8 @@ import { getArtifact, listArtifacts } from '../db/artifacts';
 import { getCard } from '../db/cards';
 import { listFilesByTask } from '../db/files';
 import { requiresError } from '../resources/vocabulary';
-import type { ArtifactRef, Task, TaskHistoryAction, TaskHistoryEvent, TaskStatus } from '../types';
+import { extractTitleLinks, mergeMaterials, normalizeTaskMaterials } from '../taskMaterials';
+import type { ArtifactRef, Task, TaskHistoryAction, TaskHistoryEvent, TaskMaterial, TaskStatus } from '../types';
 
 /**
  * Task write-path validation: allowed update fields, status/waiting gates,
@@ -33,6 +34,7 @@ export const ALLOWED_UPDATE_FIELDS = [
   'requires',
   'validation',
   'link',
+  'materials',
   'requiredLinkName',
   'requiresFile',
   'assigneeId',
@@ -232,7 +234,8 @@ export function validateTaskTags(value: unknown): string | null {
   return null;
 }
 
-const LEADING_TAG_PATTERN = /^\[([^\[\]]{1,40})\]\s*/;
+// A Markdown link (`[label](url)`) is not a tag.
+const LEADING_TAG_PATTERN = /^\[([^\[\]]{1,40})\](?!\()\s*/;
 
 export function extractLeadingTag(description: unknown): { tag: string; clean: string } | null {
   if (typeof description !== 'string') return null;
@@ -258,6 +261,32 @@ export function applyLeadingTagToTaskData(taskData: Record<string, unknown>): vo
   if (!extracted) return;
   taskData.description = extracted.clean;
   taskData.tags = [extracted.tag];
+}
+
+/**
+ * Store supplied `materials` clean and move links pasted into `description`
+ * into them. Runs before the leading-tag split, which would otherwise read a
+ * title's first `[label]` as a tag. `moved` lists the links taken out of the
+ * title; `supplied` says whether the caller sent `materials` itself, so an
+ * update without them can merge into the Task's existing materials.
+ */
+export function applyTitleLinksToTaskData(
+  taskData: Record<string, unknown>,
+): { error: string } | { moved: TaskMaterial[]; supplied: boolean } {
+  const supplied = taskData.materials !== undefined;
+  let materials: TaskMaterial[] = [];
+  if (supplied) {
+    const normalized = normalizeTaskMaterials(taskData.materials);
+    if ('error' in normalized) return normalized;
+    materials = normalized.materials;
+    taskData.materials = materials;
+  }
+  if (typeof taskData.description !== 'string') return { moved: [], supplied };
+  const extracted = extractTitleLinks(taskData.description);
+  if (extracted.materials.length === 0) return { moved: [], supplied };
+  taskData.description = extracted.title;
+  taskData.materials = mergeMaterials(materials, extracted.materials);
+  return { moved: extracted.materials, supplied };
 }
 
 function proofMissingError(type: string, label?: string): string {

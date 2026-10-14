@@ -28,6 +28,7 @@ import { getTemplate } from '../db/templates';
 import { matchesRequiresFilter, parseResourceList } from '../resources/vocabulary';
 import type { RequiresFilter } from '../resources/vocabulary';
 import type { LambdaEvent, LambdaResponse, Task, TaskHistoryEvent } from '../types';
+import { mergeMaterials } from '../taskMaterials';
 import {
   ALLOWED_UPDATE_FIELDS,
   INVALID_STATUS_ERROR,
@@ -37,6 +38,7 @@ import {
   WAITING_FIELDS_ERROR,
   WAITING_TODO_ERROR,
   applyLeadingTagToTaskData,
+  applyTitleLinksToTaskData,
   expectedVersionError,
   isNonEmptyString,
   isTaskStatus,
@@ -137,6 +139,7 @@ export async function handleTaskRoutes(
     if (body.requires !== undefined) taskData.requires = body.requires;
     if (body.validation !== undefined) taskData.validation = body.validation;
     if (body.link !== undefined) taskData.link = body.link;
+    if (body.materials !== undefined) taskData.materials = body.materials;
     if (body.requiredLinkName !== undefined) taskData.requiredLinkName = body.requiredLinkName;
     if (body.requiresFile !== undefined) taskData.requiresFile = body.requiresFile;
     if (body.assigneeId !== undefined) taskData.assigneeId = body.assigneeId;
@@ -185,6 +188,10 @@ export async function handleTaskRoutes(
     }
     if (taskData.cardId !== undefined && !isNonEmptyString(taskData.cardId)) {
       return jsonResponse(400, { error: 'cardId must be a non-empty string' });
+    }
+    const createTitleLinks = applyTitleLinksToTaskData(taskData);
+    if ('error' in createTitleLinks) {
+      return jsonResponse(400, { error: createTitleLinks.error });
     }
     applyLeadingTagToTaskData(taskData);
     const tagsError = validateTaskTags(taskData.tags);
@@ -648,6 +655,10 @@ export async function handleTaskRoutes(
     if (updates.cardId !== undefined && updates.cardId !== null && !isNonEmptyString(updates.cardId)) {
       return jsonResponse(400, { error: 'cardId must be a non-empty string or null' });
     }
+    const titleLinks = applyTitleLinksToTaskData(updates);
+    if ('error' in titleLinks) {
+      return jsonResponse(400, { error: titleLinks.error });
+    }
     applyLeadingTagToTaskData(updates);
     const tagsError = validateTaskTags(updates.tags);
     if (tagsError) {
@@ -681,6 +692,9 @@ export async function handleTaskRoutes(
     }
     if (existing.status === 'skipped') {
       return jsonResponse(400, { error: SKIPPED_TASK_ERROR });
+    }
+    if (titleLinks.moved.length > 0 && !titleLinks.supplied) {
+      updates.materials = mergeMaterials(existing.materials || [], titleLinks.moved);
     }
 
     // Delegated execution must not become assignment or membership
