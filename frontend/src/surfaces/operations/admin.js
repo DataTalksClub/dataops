@@ -1,4 +1,6 @@
 import {
+  createCollectionCreateButton,
+  createCollectionHeader,
   createFormFeedback,
   createPageHeader,
   renderDataSummary,
@@ -98,21 +100,11 @@ export function createAdminSurface(context) {
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-users";
-    const actions = [];
-    if (usersSnapshot.loaded && isCurrentUserAdmin()) {
-      const createButton = document.createElement("button");
-      createButton.type = "button";
-      createButton.className = "primary-button";
-      createButton.textContent = "Add user";
-      createButton.addEventListener("click", () => openUserForm(null));
-      actions.push(createButton);
-    }
     wrap.append(
       createPageHeader({
         title: "Users",
         subtitle: "People who can access this workspace. Admins can add, edit, and disable accounts.",
         className: "ops-surface-header",
-        actions,
       }),
     );
     // A loaded list states nothing: the table is the evidence, and a
@@ -165,6 +157,13 @@ export function createAdminSurface(context) {
     // The summary above already names the outage and owns the retry; repeating
     // it here would be a second voice for the same fact.
     if (!usersSnapshot.loaded) return section;
+    // Add user rides on the account list it adds to; only admins see it.
+    section.append(createCollectionHeader({
+      title: "Accounts",
+      create: isCurrentUserAdmin()
+        ? createCollectionCreateButton({ label: "Add user", onClick: () => openUserForm(null) })
+        : null,
+    }));
 
     const users = [...usersSnapshot.users].sort((a, b) =>
       String(a.name || "").localeCompare(String(b.name || "")),
