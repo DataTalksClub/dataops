@@ -462,7 +462,7 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-}.calendar-layer-chip.is-activities .chip-dot { background: var(--dk-success-text); }.calendar-layer-chip.is-public .chip-dot { background: var(--dk-danger-text); }.calendar-layer-chip.is-school .chip-dot { background: var(--dk-warning-text); }.calendar-layer-chip.is-overlay .chip-dot { background: var(--dk-info-text); }.calendar-layer-chip.is-alexey .chip-dot { background: var(--dk-text-heading); }.calendar-layer-chip:has(input:checked) {
+}.calendar-layer-chip.is-activities .chip-dot { background: var(--dk-success-text); }.calendar-layer-chip.is-public .chip-dot { background: var(--dk-danger-text); }.calendar-layer-chip.is-school .chip-dot { background: var(--dk-warning-text); }.calendar-layer-chip.is-overlay .chip-dot { background: var(--dk-info-text); }.calendar-layer-chip.is-alexey .chip-dot { background: var(--dk-text-heading); }.calendar-layer-chip.is-available .chip-dot { background: var(--dk-success-text); }.calendar-layer-chip:has(input:checked) {
   background: var(--dk-bg-muted);
   border-color: var(--dk-border-strong);
   color: var(--dk-text-heading);
@@ -701,6 +701,19 @@
 }
 .calendar-overlay.is-available-slot small { font-weight: 700; }
 .calendar-overlay.is-available-slot:hover { border-style: solid; }
+/* An open slot on a holiday is not really free: show it struck through with a
+   danger tag instead of the success tone. */
+.calendar-surface .calendar-overlay.is-available-slot.is-holiday-conflict {
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-muted);
+}
+.calendar-surface .calendar-overlay.is-available-slot.is-holiday-conflict small {
+  background: var(--dk-danger-bg);
+  color: var(--dk-danger-text);
+}
+.calendar-surface .calendar-overlay.is-available-slot.is-holiday-conflict span {
+  text-decoration: line-through;
+}
 }.newsletter-schedule { display: grid; gap: 20px; }.newsletter-period { overflow: hidden; border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-md); background: var(--dk-bg-surface); }.newsletter-period > header { display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--dk-border-default); background: var(--dk-bg-muted); padding: 8px 14px; }.newsletter-period h3:not([class*="dk-"]) { color: var(--dk-text-heading); font-size: 14px; font-weight: 600; }.newsletter-period > header span { color: var(--dk-text-muted); font-size: 12px; }.newsletter-slot-row { display: grid; min-width: 0; grid-template-columns: 132px minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 14px; }.newsletter-slot-row + .newsletter-slot-row { border-top: 1px solid var(--dk-border-default); }.newsletter-slot-date,
 .newsletter-slot-main,
 .newsletter-slot-actions { min-width: 0; }.newsletter-slot-date { display: grid; gap: 2px; }.newsletter-slot-date time { color: var(--dk-text-heading); font-size: 13px; font-weight: 600; }.newsletter-slot-date small,

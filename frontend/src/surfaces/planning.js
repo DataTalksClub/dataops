@@ -3,6 +3,13 @@ import { parseIsoDateValue } from "../core/workspace.js";
 import { createNewsletterPlanner } from "./planning-newsletter.js";
 import { setupDayScheduleDialog, setupCalendarSettingsDialog } from "./planning-calendar-dialogs.js";
 
+// Open time is either a free slot projected from Alexey's calendar or a
+// newsletter issue nobody has booked yet.
+function isAvailableOverlay(overlay) {
+  return Boolean(overlay.isAvailableSlot)
+    || (overlay.provider === "newsletter-slots-readonly" && overlay.status === "open");
+}
+
 export function createPlanningSurface(context) {
   const {
     documentList,
@@ -182,6 +189,11 @@ export function createPlanningSurface(context) {
                 <path d="M9 17H7A5 5 0 0 1 7 7h1M15 7h2a5 5 0 0 1 4 8M8 12h4M3 3l18 18"></path>
               </svg>
               <span class="dk-visually-hidden" data-layer-chip-status></span>
+            </label>
+            <label class="calendar-layer-chip is-available" title="Open event slots and free newsletter slots">
+              <input data-layer="available" type="checkbox" checked>
+              <span class="chip-dot"></span>
+              <span>Available slots</span>
             </label>
             <button type="button" class="calendar-layer-settings-btn" data-calendar-settings title="Configure overlay filters & connection">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -416,6 +428,7 @@ export function createPlanningSurface(context) {
         showSchool = surface.querySelector('[data-layer="school"]').checked,
         showOverlay = surface.querySelector('[data-layer="overlay"]')?.checked ?? true,
         showAlexey = surface.querySelector('[data-layer="alexey"]')?.checked ?? true,
+        showAvailable = surface.querySelector('[data-layer="available"]')?.checked ?? true,
         type = surface.querySelector("[data-type]").value,
         visibleItems = showActivities ? items.filter((item) => !type || item.activityType === type) : [],
         periodLabel = isWeek
@@ -451,9 +464,13 @@ export function createPlanningSurface(context) {
           )),
           dayOverlays = overlays.filter((overlay) => {
             if (overlay.startDate > date || overlay.endDate < date) return false;
+            if (isAvailableOverlay(overlay)) return showAvailable;
             if (overlay.provider === "alexey-calendar") return showAlexey;
             return showOverlay;
           }),
+          // A holiday blocks the day whether or not its layer is shown, so an
+          // open slot on it is flagged as a conflict rather than offered as free.
+          blockingHoliday = holidays.find((holiday) => holiday.startDate <= date && holiday.endDate >= date),
           fullDate = dateValue.toLocaleDateString("en", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }),
           compactDate = dateValue.toLocaleDateString("en", { day: "numeric", month: "short", timeZone: "UTC" }),
           weekday = dateValue.toLocaleDateString("en", { weekday: "short", timeZone: "UTC" }),
@@ -486,15 +503,21 @@ export function createPlanningSurface(context) {
           `).join(""),
           overlayMarkup = dayOverlays.map((overlay) => {
             const isAlexey = overlay.provider === "alexey-calendar";
-            const category = overlay.category || (isAlexey ? "Alexey" : "Newsletter");
+            const isAvailable = isAvailableOverlay(overlay);
+            const category = isAvailable
+              ? (isAlexey ? "Open event slot" : "Free newsletter slot")
+              : overlay.category || (isAlexey ? "Alexey" : "Newsletter");
             const hrefAttr = overlay.href ? `href="${escapeHtml(overlay.href)}"` : "";
-            const isAvailable = Boolean(overlay.isAvailableSlot);
             const tag = overlay.href ? "a" : (isAvailable ? "button type=\"button\"" : "span");
-            const slotClass = isAvailable ? " is-available-slot" : "";
-            const openDayAttr = isAvailable ? ` data-open-day="${escapeHtml(date)}"` : "";
+            const conflict = isAvailable && blockingHoliday;
+            const slotClass = `${isAvailable ? " is-available-slot" : ""}${conflict ? " is-holiday-conflict" : ""}`;
+            const openDayAttr = isAvailable && !overlay.href ? ` data-open-day="${escapeHtml(date)}"` : "";
+            const title = conflict
+              ? `${category}: ${overlay.label} (conflicts with ${blockingHoliday.name})`
+              : isAvailable ? `${category}: ${overlay.label}` : overlay.label;
             return `
-              <${tag} class="calendar-overlay ${isAlexey ? "is-alexey" : "is-newsletter"}${slotClass}" ${hrefAttr}${openDayAttr} title="${escapeHtml(overlay.label)}">
-                <small>${escapeHtml(category)}</small>
+              <${tag} class="calendar-overlay ${isAlexey ? "is-alexey" : "is-newsletter"}${slotClass}" ${hrefAttr}${openDayAttr} title="${escapeHtml(title)}">
+                <small>${conflict ? "Blocked" : escapeHtml(category)}</small>
                 <span>${escapeHtml(overlay.label)}</span>
               </${tag}>
             `;

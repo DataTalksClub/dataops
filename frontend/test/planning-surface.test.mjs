@@ -182,7 +182,7 @@ function createCalendarDom() {
   view.value = "month";
   const type = surface.setQuery("[data-type]", new TestElement("select"));
   type.value = "";
-  const layers = ["activities", "public", "school", "overlay", "alexey"].map((name) => {
+  const layers = ["activities", "public", "school", "overlay", "alexey", "available"].map((name) => {
     const layer = new TestElement("input");
     layer.dataset.layer = name;
     layer.checked = true;
@@ -520,6 +520,47 @@ describe("Planning surface production behavior", () => {
     finishOverlay({ items: [] });
     await loading;
     assert.equal(dom.status.textContent, "");
+  });
+
+  test("shows open slots on their own layer and flags those on holidays", async () => {
+    const dom = createCalendarDom();
+    const harness = createPlanningHarness({
+      calendar: dom,
+      request: async (url) => String(url).includes("/overlays")
+        ? {
+          items: [
+            { provider: "alexey-calendar", id: "alexey-slot:2026-08-12:midday", startDate: "2026-08-12", endDate: "2026-08-12",
+              label: "12:30 Available", category: "Available slot", isAvailableSlot: true },
+            { provider: "newsletter-slots-readonly", id: "slot-open", startDate: "2026-08-13", endDate: "2026-08-13",
+              label: "Issue 99", status: "open", href: "/newsletter?slotId=slot-open" },
+            { provider: "newsletter-slots-readonly", id: "slot-booked", startDate: "2026-08-14", endDate: "2026-08-14",
+              label: "Booked issue", status: "scheduled", href: "/newsletter?slotId=slot-booked" },
+          ],
+          sources: {},
+        }
+        : {
+          items: [], alerts: [],
+          holidays: [{ startDate: "2026-08-13", endDate: "2026-08-13", kind: "berlin-public-holiday", name: "Example Holiday" }],
+        },
+    });
+    await harness.surface.renderCalendarSurface();
+    await nextTicks();
+    const html = dom.grid.innerHTML;
+    assert.match(html, /class="calendar-overlay is-alexey is-available-slot"\s+data-open-day="2026-08-12" title="Open event slot: 12:30 Available"/);
+    assert.match(html, /class="calendar-overlay is-newsletter is-available-slot is-holiday-conflict" href="\/newsletter\?slotId=slot-open" title="Free newsletter slot: Issue 99 \(conflicts with Example Holiday\)"/);
+    assert.match(html, /<small>Blocked<\/small>/);
+    assert.match(html, /class="calendar-overlay is-newsletter" href="\/newsletter\?slotId=slot-booked"/);
+
+    // The Available slots chip hides open slots only; booked dates stay.
+    dom.surface.querySelector('[data-layer="available"]').checked = false;
+    dom.surface.querySelector('[data-layer="available"]').onchange();
+    assert.doesNotMatch(dom.grid.innerHTML, /12:30 Available|Issue 99/);
+    assert.match(dom.grid.innerHTML, /Booked issue/);
+    // Alexey's calendar chip no longer controls the open slots.
+    dom.surface.querySelector('[data-layer="available"]').checked = true;
+    dom.surface.querySelector('[data-layer="alexey"]').checked = false;
+    dom.surface.querySelector('[data-layer="alexey"]').onchange();
+    assert.match(dom.grid.innerHTML, /12:30 Available/);
   });
 
   test("marks Alexey's calendar as not connected instead of showing an empty layer", async () => {
