@@ -223,8 +223,7 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--dk-radius-md);
-  padding: 4px 8px;
-  margin: -4px 0 -4px -2px;
+  padding: 0 var(--dk-space-2);
   cursor: pointer;
   color: var(--dk-text-heading);
   font-family: inherit;
@@ -835,8 +834,7 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--dk-radius-sm, 4px);
-  padding: 1px 4px;
-  margin: -1px -4px;
+  padding: 0;
   color: inherit;
   font: inherit;
   cursor: pointer;

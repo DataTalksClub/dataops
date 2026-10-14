@@ -675,8 +675,6 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3:not([class*="dk-"]) 
   cursor: pointer;
   transition: all 0.15s ease;
   flex-shrink: 0;
-  margin-top: -2px;
-  margin-right: -4px;
 }body[data-workspace-view="tasks"] .workflow-modal-close:hover {
   background: var(--dk-bg-hover);
   color: var(--dk-text-primary);
@@ -898,7 +896,7 @@ body[data-workspace-view="tasks"] .card-checklist-header > .task-history-label {
 }body[data-workspace-view="tasks"] .workflow-checklist-section .ops-progress {
   height: 6px;
   border-radius: 3px;
-  margin: -2px 0 6px;
+  margin: 0 0 var(--dk-space-2);
   background: var(--dk-bg-muted);
   overflow: hidden;
 }body[data-workspace-view="tasks"] .workflow-checklist-section .ops-progress > i {

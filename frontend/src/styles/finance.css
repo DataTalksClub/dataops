@@ -36,7 +36,7 @@ body[data-workspace-view="sponsors"] .document-list {
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
   color: var(--dk-text-primary);
-  padding: 5px 10px;
+  padding: var(--dk-space-1) var(--dk-space-3);
   font-weight: 600;
 }.bookkeeping-surface button:not(.dk-button, .primary-button,
 .quiet-button,
@@ -56,7 +56,7 @@ body[data-workspace-view="sponsors"] .document-list {
   border-radius: var(--dk-radius-md);
   background: var(--dk-danger-text);
   color: var(--dk-bg-surface);
-  padding: 5px 12px;
+  padding: var(--dk-space-1) var(--dk-space-3);
   font-weight: 600;
 }:root[data-theme="dark"] .danger-button {
   background: var(--dk-danger-bg);
@@ -67,7 +67,7 @@ body[data-workspace-view="sponsors"] .document-list {
   border-radius: var(--dk-radius-md);
   background: transparent;
   color: var(--dk-danger-text);
-  padding: 5px 9px;
+  padding: var(--dk-space-1) var(--dk-space-2);
   font-weight: 600;
 }.danger-text-button:hover {
   background: var(--dk-danger-bg);
@@ -109,9 +109,9 @@ body[data-workspace-view="sponsors"] .document-list {
   color: var(--dk-text-muted);
 }.surface-eyebrow,
 .section-kicker {
-  margin-bottom: 3px;
+  margin-bottom: var(--dk-space-1);
   color: var(--dk-text-muted);
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -133,8 +133,8 @@ body[data-workspace-view="sponsors"] .document-list {
   border-radius: var(--dk-radius-md);
   background: var(--dk-accent-soft);
   color: var(--dk-text-primary);
-  padding: 10px 14px;
-  font-size: 13px;
+  padding: var(--dk-space-3) var(--dk-space-4);
+  font-size: var(--dk-text-md);
 }
 .bookkeeping-surface .surface-status {
   margin: 0;
@@ -142,8 +142,8 @@ body[data-workspace-view="sponsors"] .document-list {
   border-radius: var(--dk-radius-md);
   background: var(--dk-accent-soft);
   color: var(--dk-text-primary);
-  padding: 10px 14px;
-  font-size: 13px;
+  padding: var(--dk-space-3) var(--dk-space-4);
+  font-size: var(--dk-text-md);
   font-weight: 500;
   line-height: 1.4;
 }
@@ -152,13 +152,13 @@ body[data-workspace-view="sponsors"] .document-list {
 }.section-header {
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
-  padding: 14px 16px;
+  padding: var(--dk-space-4) var(--dk-space-4);
 }.section-header h3:not([class*="dk-"]),
 .booking-detail-section h3:not([class*="dk-"]),
 .finance-panel h3:not([class*="dk-"]) {
-  margin-bottom: 2px;
+  margin-bottom: var(--dk-space-1);
   color: var(--dk-text-heading);
-  font-size: 16px;
+  font-size: var(--dk-text-lg);
 }.section-count,
 .status-label,
 .finance-status {
@@ -169,8 +169,8 @@ body[data-workspace-view="sponsors"] .document-list {
   border-radius: var(--dk-radius-full);
   background: var(--dk-bg-muted);
   color: var(--dk-text-muted);
-  padding: 2px 8px;
-  font-size: 12px;
+  padding: var(--dk-space-1) var(--dk-space-2);
+  font-size: var(--dk-text-sm);
   font-weight: 600;
   white-space: nowrap;
 }.status-label[data-status="open" i],
@@ -220,7 +220,7 @@ body[data-workspace-view="sponsors"] .document-list {
   align-items: center;
   gap: 8px;
   color: var(--dk-text-heading);
-  font-size: 13px;
+  font-size: var(--dk-text-md);
   font-weight: 600;
   margin: 0;
 }
@@ -230,8 +230,8 @@ body[data-workspace-view="sponsors"] .document-list {
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
   color: var(--dk-text-heading);
-  padding: 0 10px;
-  font-size: 13px;
+  padding: 0 var(--dk-space-3);
+  font-size: var(--dk-text-md);
   font-weight: 600;
   cursor: pointer;
   outline: none;
@@ -240,27 +240,27 @@ body[data-workspace-view="sponsors"] .document-list {
   box-shadow: 0 0 0 2px var(--dk-focus-ring);
 }.bookkeeping-close-state {
   display: grid;
-  gap: 14px;
+  gap: var(--dk-space-4);
 }.bookkeeping-close-state h2:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
-  font-size: 20px;
+  font-size: var(--dk-text-xl);
   font-weight: 700;
   letter-spacing: -0.015em;
 }.bookkeeping-lens-note {
   margin: 0;
   color: var(--dk-text-muted);
-  font-size: 14px;
+  font-size: var(--dk-text-body);
   line-height: 1.5;
 }.bookkeeping-close-cta {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--dk-space-3);
   margin-top: 4px;
 }.bookkeeping-close-cta button {
   min-height: 38px;
-  padding: 0 18px;
-  font-size: 13px;
+  padding: 0 var(--dk-space-5);
+  font-size: var(--dk-text-md);
   font-weight: 600;
   border-radius: var(--dk-radius-md);
   cursor: pointer;
@@ -273,7 +273,7 @@ body[data-workspace-view="sponsors"] .document-list {
   justify-content: space-between;
   gap: 16px;
   border-bottom: 1px solid var(--dk-border-default);
-  padding: 14px 20px;
+  padding: var(--dk-space-4) var(--dk-space-5);
   background: var(--dk-bg-surface);
   transition: background 120ms ease;
   position: relative;
@@ -287,12 +287,12 @@ body[data-workspace-view="sponsors"] .document-list {
 .worklist-row.is-evidence .worklist-what::before {
   content: "Missing evidence";
   display: inline-block;
-  font-size: 11px;
+  font-size: var(--dk-text-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--dk-danger-text);
-  margin-bottom: 2px;
+  margin-bottom: var(--dk-space-1);
 }
 .worklist-row.is-evidence button {
   border-color: var(--dk-border-default);
@@ -310,12 +310,12 @@ body[data-workspace-view="sponsors"] .document-list {
 .worklist-row.is-eur .worklist-what::before {
   content: "EUR conversion needed";
   display: inline-block;
-  font-size: 11px;
+  font-size: var(--dk-text-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--dk-warning-text);
-  margin-bottom: 2px;
+  margin-bottom: var(--dk-space-1);
 }
 .worklist-row.is-eur button {
   border-color: var(--dk-border-default);
@@ -331,21 +331,21 @@ body[data-workspace-view="sponsors"] .document-list {
 .worklist-row.is-classify .worklist-what::before {
   content: "Classification needed";
   display: inline-block;
-  font-size: 11px;
+  font-size: var(--dk-text-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--dk-accent-default);
-  margin-bottom: 2px;
+  margin-bottom: var(--dk-space-1);
 }
 .worklist-what {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: var(--dk-space-1);
 }
 .worklist-what strong {
   color: var(--dk-text-heading);
-  font-size: 14px;
+  font-size: var(--dk-text-body);
   font-weight: 600;
 }
 .worklist-what small {
@@ -353,12 +353,12 @@ body[data-workspace-view="sponsors"] .document-list {
   color: var(--dk-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
 }
 .worklist-row .row-actions button {
   min-height: 32px;
-  padding: 0 14px;
-  font-size: 12px;
+  padding: 0 var(--dk-space-4);
+  font-size: var(--dk-text-sm);
   font-weight: 600;
   border-radius: var(--dk-radius-md);
   border: 1px solid var(--dk-border-default);
@@ -377,7 +377,7 @@ body[data-workspace-view="sponsors"] .document-list {
   align-items: center;
   gap: 8px;
   color: var(--dk-text-heading);
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   font-weight: 600;
   margin: 0;
 }
@@ -387,8 +387,8 @@ body[data-workspace-view="sponsors"] .document-list {
   border-radius: var(--dk-radius-md);
   background-color: var(--dk-bg-surface);
   color: var(--dk-text-primary);
-  padding: 0 10px;
-  font-size: 12px;
+  padding: 0 var(--dk-space-3);
+  font-size: var(--dk-text-sm);
   font-weight: 500;
   cursor: pointer;
   transition: all 120ms ease;
@@ -402,7 +402,7 @@ body[data-workspace-view="sponsors"] .document-list {
   color: var(--dk-success-text);
   background: var(--dk-success-bg);
   padding: 16px 20px;
-  font-size: 14px;
+  font-size: var(--dk-text-body);
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -411,8 +411,8 @@ body[data-workspace-view="sponsors"] .document-list {
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-surface);
 }.bookkeeping-upload-panel > summary {
-  padding: 14px 20px;
-  font-size: 13px;
+  padding: var(--dk-space-4) var(--dk-space-5);
+  font-size: var(--dk-text-md);
   font-weight: 600;
   color: var(--dk-text-heading);
   cursor: pointer;
@@ -425,27 +425,27 @@ body[data-workspace-view="sponsors"] .document-list {
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
   color: var(--dk-text-heading);
-  padding: 10px 20px;
-  font-size: 11px;
+  padding: var(--dk-space-3) var(--dk-space-5);
+  font-size: var(--dk-text-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }/* Package review: what the archive will contain, before creating it. */.bookkeeping-package-review {
   display: grid;
-  gap: 14px;
+  gap: var(--dk-space-4);
   border-bottom: 1px solid var(--dk-border-default);
   padding: var(--dk-space-4);
 }.bookkeeping-package-review h4:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
-  font-size: 16px;
+  font-size: var(--dk-text-lg);
   font-weight: 600;
 }/* The statement checklist is a plain list in the review, not a box in it. */.bookkeeping-preflight {
   display: grid;
   gap: var(--dk-space-2);
 }.preflight-row {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--dk-text-md);
   font-weight: 500;
   display: flex;
   align-items: center;
@@ -455,14 +455,14 @@ body[data-workspace-view="sponsors"] .document-list {
 }.preflight-row.is-blocked {
   color: var(--dk-danger-text);
 }.preflight-note {
-  margin: 6px 0 0;
+  margin: var(--dk-space-2) 0 0;
   color: var(--dk-text-muted);
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   line-height: 1.45;
 }.bookkeeping-package-preview {
   margin: 0;
   color: var(--dk-text-muted);
-  font-size: 13px;
+  font-size: var(--dk-text-md);
 }.bookkeeping-package-ready {
   display: flex;
   flex-wrap: wrap;
@@ -472,38 +472,38 @@ body[data-workspace-view="sponsors"] .document-list {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-success-bg);
-  padding: 14px 18px;
+  padding: var(--dk-space-4) var(--dk-space-5);
 }.bookkeeping-package-ready p {
   margin: 0;
   color: var(--dk-success-text);
   font-weight: 500;
-  font-size: 13px;
+  font-size: var(--dk-text-md);
 }.bookkeeping-package-ready button {
   min-height: 34px;
   padding: 0 16px;
-  font-size: 13px;
+  font-size: var(--dk-text-md);
   font-weight: 600;
   border-radius: var(--dk-radius-md);
 }.bookkeeping-package-ready small {
   color: var(--dk-text-muted);
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
 }/* Converted non-EUR amounts show their defensible EUR value inline. */.ledger-eur {
   display: block;
   color: var(--dk-text-muted);
   font-weight: 400;
-  font-size: 11px;
-  margin-top: 2px;
+  font-size: var(--dk-text-xs);
+  margin-top: var(--dk-space-1);
 }/* hidden labels inside grids keep their grid display unless restated. */.bookkeeping-upload label[hidden],
 .dialog-fields label[hidden] {
   display: none;
 }/* Optional details live behind a disclosure inside the entry dialog. */.bookkeeping-entry-optional {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
-  padding: 10px 14px;
+  padding: var(--dk-space-3) var(--dk-space-4);
   background: var(--dk-bg-muted);
 }.bookkeeping-entry-optional > summary {
   color: var(--dk-text-heading);
-  font-size: 13px;
+  font-size: var(--dk-text-md);
   font-weight: 600;
   cursor: pointer;
 }.bookkeeping-entry-optional .dialog-fields {
@@ -524,7 +524,7 @@ body[data-workspace-view="sponsors"] .document-list {
   align-items: end;
   gap: 12px;
   border-bottom: 1px solid var(--dk-border-default);
-  padding: 14px 20px;
+  padding: var(--dk-space-4) var(--dk-space-5);
   background: var(--dk-bg-surface);
 }.bookkeeping-filters label,
 .bookkeeping-upload label,
@@ -536,7 +536,7 @@ body[data-workspace-view="sponsors"] .document-list {
   min-width: 0;
   gap: 4px;
   color: var(--dk-text-heading);
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   font-weight: 600;
 }.bookkeeping-filters input,
 .bookkeeping-filters select,
@@ -557,8 +557,8 @@ body[data-workspace-view="sponsors"] .document-list {
   background-color: var(--dk-bg-surface);
   color: var(--dk-text-primary);
   font-weight: 400;
-  font-size: 13px;
-  padding: 0 10px;
+  font-size: var(--dk-text-md);
+  padding: 0 var(--dk-space-3);
   box-sizing: border-box;
 }.bookkeeping-filters input[data-filter="search"]:focus-visible,
 .bookkeeping-upload input:focus-visible,
@@ -580,9 +580,9 @@ body[data-workspace-view="sponsors"] .document-list {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
-  padding: 0 14px;
+  padding: 0 var(--dk-space-4);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   font-weight: 600;
   color: var(--dk-text-primary);
   user-select: none;
@@ -634,14 +634,14 @@ body[data-workspace-view="sponsors"] .document-list {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
-  padding: 14px;
-  margin-top: 10px;
+  padding: var(--dk-space-4);
+  margin-top: var(--dk-space-3);
 }.bookkeeping-ledger-header-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--dk-space-3);
 }
 .bookkeeping-export-actions {
   display: inline-flex;
@@ -651,7 +651,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .bookkeeping-export-btn {
   min-height: 30px;
   padding: 0 12px;
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   font-weight: 600;
   border-radius: var(--dk-radius-md);
   border: 1px solid var(--dk-border-default);
@@ -679,8 +679,8 @@ body[data-workspace-view="sponsors"] .document-list {
   border-radius: var(--dk-radius-full);
   background: var(--dk-bg-surface);
   color: var(--dk-text-heading) !important;
-  padding: 5px 14px;
-  font-size: 12px;
+  padding: var(--dk-space-1) var(--dk-space-4);
+  font-size: var(--dk-text-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -691,17 +691,17 @@ body[data-workspace-view="sponsors"] .document-list {
 }.bookkeeping-table-wrap table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--dk-text-md);
 }.bookkeeping-table-wrap th,
 .bookkeeping-table-wrap td {
   border-bottom: 1px solid var(--dk-border-default);
-  padding: 12px 18px;
+  padding: var(--dk-space-3) var(--dk-space-5);
   text-align: left;
   vertical-align: middle;
 }.bookkeeping-table-wrap th {
   background: var(--dk-bg-muted);
   color: var(--dk-text-muted);
-  font-size: 11px;
+  font-size: var(--dk-text-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -714,18 +714,18 @@ body[data-workspace-view="sponsors"] .document-list {
   border-bottom: 0;
 }.bookkeeping-table-wrap td strong {
   display: block;
-  font-size: 13px;
+  font-size: var(--dk-text-md);
   font-weight: 600;
   color: var(--dk-text-heading);
 }.bookkeeping-table-wrap td small {
   display: block;
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   color: var(--dk-text-muted);
-  margin-top: 2px;
+  margin-top: var(--dk-space-1);
 }.ledger-amount {
   color: var(--dk-text-heading);
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--dk-text-md);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }.ledger-amount.income {
@@ -736,19 +736,19 @@ body[data-workspace-view="sponsors"] .document-list {
 }.dialog-fields .field-hint {
   margin: 0;
   color: var(--dk-text-muted);
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   font-weight: 400;
 }.bookkeeping-download-hint {
   /* Matches the document-row padding so the note aligns with the actions. */
   margin: 0;
   color: var(--dk-text-muted);
-  font-size: 12px;
-  padding: 12px 20px 6px;
+  font-size: var(--dk-text-sm);
+  padding: var(--dk-space-3) var(--dk-space-5) var(--dk-space-2);
 }.bookkeeping-upload {
   display: grid;
   grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(140px, 0.8fr));
   align-items: end;
-  gap: 14px;
+  gap: var(--dk-space-4);
   border-bottom: 1px solid var(--dk-border-default);
   padding: 20px;
   background: var(--dk-bg-surface);
@@ -775,18 +775,18 @@ body[data-workspace-view="sponsors"] .document-list {
 .crm-alerts .crm-card:last-child {
   border-bottom: 0;
 }.bookkeeping-document-row strong {
-  font-size: 13px;
+  font-size: var(--dk-text-md);
   color: var(--dk-text-heading);
 }.bookkeeping-document-row p,
 .crm-directory-row p,
 .crm-alerts .crm-card p {
-  margin: 2px 0 0;
+  margin: var(--dk-space-1) 0 0;
   color: var(--dk-text-muted);
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
 }.bookkeeping-document-row .row-actions button {
   min-height: 30px;
-  padding: 2px 10px;
-  font-size: 12px;
+  padding: var(--dk-space-1) var(--dk-space-3);
+  font-size: var(--dk-text-sm);
   border-radius: var(--dk-radius-md);
 }.checkbox-label {
   display: flex !important;
@@ -794,7 +794,7 @@ body[data-workspace-view="sponsors"] .document-list {
   gap: 8px !important;
 }.checkbox-label input {
   flex: 0 0 auto;
-  margin-top: 3px;
+  margin-top: var(--dk-space-1);
 }.bookkeeping-package {
   display: flex;
   flex-wrap: wrap;
@@ -809,13 +809,13 @@ body[data-workspace-view="sponsors"] .document-list {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
+  gap: var(--dk-space-1);
   width: fit-content;
   max-width: 100%;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-full);
   background: var(--dk-bg-muted);
-  padding: 3px;
+  padding: var(--dk-space-1);
 }.crm-views button {
   min-height: 32px;
   border: 1px solid transparent !important;
@@ -823,7 +823,7 @@ body[data-workspace-view="sponsors"] .document-list {
   background: transparent !important;
   color: var(--dk-text-muted) !important;
   padding: 4px 16px;
-  font-size: 13px;
+  font-size: var(--dk-text-md);
   font-weight: 500;
   cursor: pointer;
   transition: all 140ms ease;
@@ -850,8 +850,8 @@ body[data-workspace-view="sponsors"] .document-list {
   border-radius: var(--dk-radius-full);
   background: var(--dk-bg-surface);
   color: var(--dk-text-muted);
-  padding: 4px 10px 4px 14px;
-  font-size: 12px;
+  padding: var(--dk-space-1) var(--dk-space-3) var(--dk-space-1) var(--dk-space-4);
+  font-size: var(--dk-text-sm);
   font-weight: 500;
   cursor: pointer;
   transition: all 140ms ease;
@@ -869,9 +869,9 @@ body[data-workspace-view="sponsors"] .document-list {
   border-radius: var(--dk-radius-full);
   background: var(--dk-bg-muted);
   color: var(--dk-text-muted);
-  padding: 0 6px;
+  padding: 0 var(--dk-space-2);
   font-family: var(--dk-font-sans);
-  font-size: 11px;
+  font-size: var(--dk-text-xs);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -939,13 +939,13 @@ body[data-workspace-view="sponsors"] .document-list {
   flex-wrap: wrap;
 }.crm-booking-name {
   color: var(--dk-text-heading);
-  font-size: 14px;
+  font-size: var(--dk-text-body);
   font-weight: 600;
   line-height: 1.3;
 }.crm-deal-meta {
   margin: 0;
   color: var(--dk-text-muted);
-  font-size: 12.5px;
+  font-size: var(--dk-text-sm);
   line-height: 1.4;
 }.crm-deal-product {
   color: var(--dk-text-primary);
@@ -962,14 +962,14 @@ body[data-workspace-view="sponsors"] .document-list {
 }.crm-queue-items {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--dk-space-1);
 }.crm-queue-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--dk-space-2);
   margin: 0;
   color: var(--dk-text-primary);
-  font-size: 12.5px;
+  font-size: var(--dk-text-sm);
   line-height: 1.4;
 }.crm-queue-action {
   font-weight: 500;
@@ -979,7 +979,7 @@ body[data-workspace-view="sponsors"] .document-list {
 }.crm-booking-row .row-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--dk-space-2);
   flex-shrink: 0;
   margin-top: 0;
 }.crm-booking-row .row-actions button[data-open-deal],
@@ -1012,7 +1012,7 @@ body[data-workspace-view="sponsors"] .document-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 16px;
+  padding: var(--dk-space-4) var(--dk-space-4);
 }.crm-lead-row {
   display: flex;
   min-width: 0;
@@ -1022,7 +1022,7 @@ body[data-workspace-view="sponsors"] .document-list {
   border: 1px solid var(--dk-border-default);
   border-radius: 8px;
   background: var(--dk-bg-surface);
-  padding: 14px 16px;
+  padding: var(--dk-space-4) var(--dk-space-4);
   transition: background-color 140ms ease, border-color 140ms ease;
 }.crm-lead-row:hover {
   background: var(--dk-bg-muted);
@@ -1038,12 +1038,12 @@ body[data-workspace-view="sponsors"] .document-list {
   gap: 8px;
   flex-wrap: wrap;
 }.crm-lead-name {
-  font-size: 14px;
+  font-size: var(--dk-text-body);
   font-weight: 600;
   color: var(--dk-text-heading);
 }.crm-lead-source {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   color: var(--dk-text-muted);
 }.crm-lead-source a {
   color: var(--dk-text-link);
@@ -1052,17 +1052,17 @@ body[data-workspace-view="sponsors"] .document-list {
   text-decoration: underline;
 }.crm-lead-blurb {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: var(--dk-text-md);
   color: var(--dk-text-primary);
   line-height: 1.4;
 }.crm-lead-context {
-  margin: 2px 0 0;
-  font-size: 12px;
+  margin: var(--dk-space-1) 0 0;
+  font-size: var(--dk-text-sm);
   color: var(--dk-text-faint);
 }.crm-lead-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--dk-space-2);
   flex-shrink: 0;
 }.crm-lead-triage {
   min-height: 32px;
@@ -1088,7 +1088,7 @@ body[data-workspace-view="sponsors"] .document-list {
   min-height: 0;
 }.crm-select-booking strong {
   display: block;
-  font-size: 15px;
+  font-size: var(--dk-text-body);
   color: var(--dk-text-heading);
   margin-bottom: 4px;
 }.booking-detail-header {
@@ -1096,13 +1096,13 @@ body[data-workspace-view="sponsors"] .document-list {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 20px 22px;
+  padding: var(--dk-space-5) var(--dk-space-6);
   background: var(--dk-bg-muted);
   border-bottom: 1px solid var(--dk-border-default);
 }.booking-detail-header h2:not([class*="dk-"]) {
   margin: 4px 0;
   color: var(--dk-text-heading);
-  font-size: 26px;
+  font-size: var(--dk-text-xl);
   font-weight: 600;
   letter-spacing: -0.02em;
 }.booking-back {
@@ -1110,7 +1110,7 @@ body[data-workspace-view="sponsors"] .document-list {
   background: transparent !important;
   color: var(--dk-text-link) !important;
   padding: 0 !important;
-  font-size: 13px;
+  font-size: var(--dk-text-md);
   font-weight: 500;
   cursor: pointer;
   margin-bottom: 12px;
@@ -1127,15 +1127,15 @@ body[data-workspace-view="sponsors"] .document-list {
   border-top: 1px solid var(--dk-border-default);
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-surface);
-  padding: 6px 8px;
+  padding: var(--dk-space-2) var(--dk-space-2);
 }.booking-section-nav button {
   min-height: 34px;
   border: 1px solid transparent !important;
   border-radius: var(--dk-radius-md) !important;
   background: transparent !important;
   color: var(--dk-text-muted) !important;
-  padding: 6px 10px;
-  font-size: 13px;
+  padding: var(--dk-space-2) var(--dk-space-3);
+  font-size: var(--dk-text-md);
   font-weight: 500;
   cursor: pointer;
   transition: all 120ms ease;
@@ -1152,7 +1152,7 @@ body[data-workspace-view="sponsors"] .document-list {
   min-width: 0;
   scroll-margin-top: 50px;
   border-bottom: 1px solid var(--dk-border-default);
-  padding: 20px 22px;
+  padding: var(--dk-space-5) var(--dk-space-6);
 }.booking-detail-section:last-child {
   border-bottom: 0;
 }.booking-detail-section .crm-card {
@@ -1164,7 +1164,7 @@ body[data-workspace-view="sponsors"] .document-list {
   border: 1px solid var(--dk-border-default);
   border-radius: 8px;
   background: var(--dk-bg-surface);
-  padding: 12px 14px;
+  padding: var(--dk-space-3) var(--dk-space-4);
   margin-bottom: 8px;
   transition: background-color 140ms ease, border-color 140ms ease;
 }.booking-detail-section .crm-card:hover {
@@ -1192,12 +1192,12 @@ body[data-workspace-view="sponsors"] .document-list {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 20px 0 10px;
+  margin: var(--dk-space-5) 0 var(--dk-space-3);
 }.crm-company-section-header h4:not([class*="dk-"]) {
   margin: 0;
 }.crm-mail-search {
   display: grid;
-  gap: 6px;
+  gap: var(--dk-space-2);
 }.crm-mail-search input {
   width: 100%;
 }.crm-mail-empty {
@@ -1227,7 +1227,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .finance-panel dl > div {
   min-width: 0;
   border-bottom: 1px solid var(--dk-border-default);
-  padding: 10px 12px;
+  padding: var(--dk-space-3) var(--dk-space-3);
 }.booking-overview-list > div:nth-child(odd),
 .finance-panel dl > div:nth-child(odd) {
   border-right: 1px solid var(--dk-border-default);
@@ -1238,13 +1238,13 @@ body[data-workspace-view="sponsors"] .document-list {
 .finance-panel dt,
 .communication-preview dt {
   color: var(--dk-text-muted);
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   font-weight: 600;
 }.booking-overview-list dd,
 .finance-panel dd,
 .communication-preview dd {
   min-width: 0;
-  margin: 2px 0 0;
+  margin: var(--dk-space-1) 0 0;
   overflow-wrap: anywhere;
   color: var(--dk-text-heading);
   font-weight: 600;
@@ -1255,13 +1255,13 @@ body[data-workspace-view="sponsors"] .document-list {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
-  padding: 14px;
+  padding: var(--dk-space-4);
 }.booking-notes {
   margin-top: 12px;
 }.booking-notes p,
 .bookkeeping-surface .honest-state p,
 .sponsor-crm-surface .honest-state p {
-  margin: 3px 0 0;
+  margin: var(--dk-space-1) 0 0;
   color: var(--dk-text-muted);
 }.finance-panel > header {
   margin-bottom: 12px;
@@ -1278,7 +1278,7 @@ body[data-workspace-view="sponsors"] .document-list {
   margin-bottom: 12px;
 }.crm-history > div {
   border-bottom: 1px solid var(--dk-border-default);
-  padding: 10px 0;
+  padding: var(--dk-space-3) 0;
 }.crm-history > div:first-child {
   padding-top: 0;
 }.crm-history > div:last-child {
@@ -1286,7 +1286,7 @@ body[data-workspace-view="sponsors"] .document-list {
   padding-bottom: 0;
 }.crm-history small {
   display: block;
-  margin-top: 2px;
+  margin-top: var(--dk-space-1);
   color: var(--dk-text-muted);
 }.surface-dialog {
   width: min(520px, calc(100vw - 32px));
@@ -1315,9 +1315,9 @@ body[data-workspace-view="sponsors"] .document-list {
   background: var(--dk-bg-muted);
   padding: 16px;
 }.surface-dialog form > header h3:not([class*="dk-"]) {
-  margin: 0 0 3px;
+  margin: 0 0 var(--dk-space-1);
   color: var(--dk-text-heading);
-  font-size: 18px;
+  font-size: var(--dk-text-lg);
 }.surface-dialog form > header p:not([class*="dk-"]):last-child {
   margin-bottom: 0;
   color: var(--dk-text-muted);
@@ -1355,49 +1355,49 @@ body[data-workspace-view="sponsors"] .document-list {
 .bookkeeping-entry-dialog form > header,
 .bookkeeping-eur-dialog form > header,
 .bookkeeping-delete-dialog form > header {
-  padding: 18px 22px;
+  padding: var(--dk-space-5) var(--dk-space-6);
   background: var(--dk-bg-muted);
 }
 .bookkeeping-entry-dialog form > header h3:not([class*="dk-"]),
 .bookkeeping-eur-dialog form > header h3:not([class*="dk-"]),
 .bookkeeping-delete-dialog form > header h3:not([class*="dk-"]) {
-  font-size: 18px;
+  font-size: var(--dk-text-lg);
   font-weight: 700;
   margin: 0 0 4px;
 }
 .bookkeeping-entry-dialog .dialog-fields,
 .bookkeeping-eur-dialog .dialog-fields {
-  padding: 20px 22px;
-  gap: 14px;
+  padding: var(--dk-space-5) var(--dk-space-6);
+  gap: var(--dk-space-4);
 }
 .bookkeeping-entry-dialog [role="alert"]:not(:empty),
 .bookkeeping-eur-dialog [role="alert"]:not(:empty) {
-  padding: 10px 14px;
+  padding: var(--dk-space-3) var(--dk-space-4);
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   font-weight: 500;
   line-height: 1.45;
 }
 .bookkeeping-entry-dialog form > footer,
 .bookkeeping-eur-dialog form > footer,
 .bookkeeping-delete-dialog form > footer {
-  padding: 14px 22px;
+  padding: var(--dk-space-4) var(--dk-space-6);
   background: var(--dk-bg-muted);
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--dk-space-3);
 }.finance-candidate {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   border-bottom: 1px solid var(--dk-border-default);
-  padding: 10px 0;
+  padding: var(--dk-space-3) 0;
 }.communication-preview {
-  padding: 10px 12px;
+  padding: var(--dk-space-3) var(--dk-space-3);
 }.exact-review-copy {
   min-width: 0;
   border: 1px solid var(--dk-border-default);
@@ -1446,17 +1446,17 @@ body[data-workspace-view="sponsors"] .document-list {
 }
 .sponsor-crm-surface .crm-pipeline-column > header h3:not([class*="dk-"]) {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--dk-text-body);
 }
 .sponsor-crm-surface .crm-pipeline-column > header span {
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   color: var(--dk-text-muted);
   font-variant-numeric: tabular-nums;
 }
 .sponsor-crm-surface .crm-pipeline-column-cards {
   display: grid;
-  gap: 10px;
-  padding: 10px;
+  gap: var(--dk-space-3);
+  padding: var(--dk-space-3);
   min-height: 110px;
 }
 .sponsor-crm-surface .crm-pipeline-card {
@@ -1473,7 +1473,7 @@ body[data-workspace-view="sponsors"] .document-list {
 }
 .sponsor-crm-surface .crm-pipeline-card h4:not([class*="dk-"]) {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: var(--dk-text-body);
   line-height: 1.4;
 }
 .sponsor-crm-surface .crm-pipeline-card-meta {
@@ -1481,7 +1481,7 @@ body[data-workspace-view="sponsors"] .document-list {
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 4px 8px;
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   color: var(--dk-text-muted);
 }
 .sponsor-crm-surface .crm-pipeline-card-meta strong {
@@ -1491,7 +1491,7 @@ body[data-workspace-view="sponsors"] .document-list {
 }
 .sponsor-crm-surface .crm-pipeline-card-action {
   margin-top: 8px;
-  font-size: 12px;
+  font-size: var(--dk-text-sm);
   line-height: 1.5;
   color: var(--dk-text-muted);
 }
@@ -1499,17 +1499,17 @@ body[data-workspace-view="sponsors"] .document-list {
   margin-top: 12px;
   flex-wrap: wrap;
   justify-content: flex-start;
-  gap: 6px;
+  gap: var(--dk-space-2);
 }
 .sponsor-crm-surface .crm-pipeline-card .row-actions button {
   min-width: 0;
-  padding: 6px 8px;
-  font-size: 12px;
+  padding: var(--dk-space-2) var(--dk-space-2);
+  font-size: var(--dk-text-sm);
   white-space: nowrap;
 }
 .sponsor-crm-surface .crm-pipeline-empty {
-  margin: 10px 0;
-  font-size: 12px;
+  margin: var(--dk-space-3) 0;
+  font-size: var(--dk-text-sm);
   color: var(--dk-text-muted);
   line-height: 1.5;
 }
