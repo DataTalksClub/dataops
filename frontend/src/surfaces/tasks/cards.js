@@ -1,4 +1,4 @@
-import { createPageHeader } from "../operations-overview.js";
+import { createCollectionCreateButton, createPageHeader } from "../operations-overview.js";
 
 export function createCardsSurface(context) {
   const {
@@ -62,21 +62,19 @@ export function createCardsSurface(context) {
     archive.addEventListener("click", () =>
       navigateCanonicalWorkspace(headerModel.archiveRoute),
     );
-    const start = document.createElement("button");
-    start.type = "button";
-    start.className = "primary-button";
-    start.textContent = "Create card";
-    start.addEventListener("click", () => openQuickWorkflowForm());
+    // Board actions live in the toolbar directly above the columns: create
+    // first, next to the filter it honours, the Archive switch trailing.
+    archive.classList.add("workflow-board-toolbar-trail");
     const header = createPageHeader({
       title: headerModel.title,
       subtitle: archiveVisible || cards.length > 0 ? headerModel.summary : "",
       titleId: "workflow-board-title",
       className: "workflow-board-header",
-      actions: headerModel.createVisible ? [archive, start] : [archive],
     });
     section.append(header);
 
     if (displayedCards.length === 0 && !archiveVisible) {
+      section.append(renderBoardToolbar(new Set(), archive));
       const sourceComplete =
         state.workSnapshot.cardsComplete === true;
       const loaded = Boolean(state.workSnapshot.cardsLoaded);
@@ -135,7 +133,10 @@ export function createCardsSurface(context) {
 
     const today = todayIsoDate();
     if (archiveVisible) {
-      section.append(renderArchiveCategoryTabs());
+      const toolbar = document.createElement("div");
+      toolbar.className = "workflow-board-filters";
+      toolbar.append(renderArchiveCategoryTabs(), archive);
+      section.append(toolbar);
       const parked = archiveCategory === "parked";
       if (archiveCards.length === 0) {
         const sourceComplete =
@@ -214,8 +215,7 @@ export function createCardsSurface(context) {
           (item) => templateByCardId.get(item.cardId) === templateFilter,
         )
       : boardItems;
-    const filterBar = renderTemplateFilterBar(templateIds);
-    if (filterBar) section.append(filterBar);
+    section.append(renderBoardToolbar(templateIds, archive));
     section.append(renderWorkflowBoard(visibleItems));
     return section;
   }
@@ -231,15 +231,31 @@ export function createCardsSurface(context) {
     );
   }
 
-  function renderTemplateFilterBar(templateIds) {
+  function renderBoardToolbar(templateIds, archive) {
+    const toolbar = document.createElement("div");
+    toolbar.className = "workflow-board-filters";
+    // Without templated cards there is nothing to filter on, so the toolbar
+    // carries only its actions rather than an always-empty select.
+    if (templateIds.size > 0) toolbar.append(renderTemplateFilter(templateIds));
+    // A filtered board creates into the Template it shows.
+    toolbar.append(
+      createCollectionCreateButton({
+        label: "Create card",
+        onClick: () => openQuickWorkflowForm(
+          templateFilter
+            ? { template: templateMeta(templateFilter) || { id: templateFilter } }
+            : undefined,
+        ),
+      }),
+      archive,
+    );
+    return toolbar;
+  }
+
+  function renderTemplateFilter(templateIds) {
     const options = [...templateIds].sort((a, b) =>
       templateLabel(a).localeCompare(templateLabel(b)),
     );
-    // Without templated cards there is nothing to filter on, so the board
-    // renders without the control rather than as an always-empty select.
-    if (options.length === 0) return null;
-    const filters = document.createElement("div");
-    filters.className = "workflow-board-filters";
     const label = document.createElement("label");
     label.className = "workflow-board-filter";
     const name = document.createElement("span");
@@ -262,24 +278,11 @@ export function createCardsSurface(context) {
       refreshDocuments();
     });
     label.append(name, select);
-    filters.append(label);
-    if (templateFilter) {
-      const newCardBtn = document.createElement("button");
-      newCardBtn.type = "button";
-      newCardBtn.className = "workflow-board-filter-action";
-      newCardBtn.textContent = "+ New card from template";
-      newCardBtn.addEventListener("click", () => {
-        openQuickWorkflowForm({
-          template: templateMeta(templateFilter) || { id: templateFilter },
-        });
-      });
-      filters.append(newCardBtn);
-    }
     if (!templateLabelsRequested) {
       templateLabelsRequested = true;
       loadTemplateLabels();
     }
-    return filters;
+    return label;
   }
 
   // Display names (and badge emoji) come from the same /api/templates

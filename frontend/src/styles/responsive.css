@@ -38,8 +38,6 @@
     font-size: 22px;
   }.workflow-board-header p:not([class*="dk-"]) {
     max-width: 220px;
-  }.workflow-board-header .dk-page-header__actions .primary-button {
-    min-height: 44px;
   }.ops-workflows-grid {
     grid-template-columns: repeat(3, minmax(272px, 78vw));
     scroll-snap-type: x proximity;
@@ -288,9 +286,8 @@ body[data-workspace-view="sponsors"] .library-view {
   }
 
   /* Header controls keep the shared touch metric and reflow as needed. */
-  .workflow-board-header .dk-page-header__actions button,
+  .workflow-board-filters > button,
   .workflow-board-filter select,
-  .workflow-board-filter-action,
   .surface-actions button,
   .crm-views button,
   .crm-pipeline button,
@@ -322,9 +319,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .ops-workflows-grid {
     padding-top: 0 !important;
   }
-  .workflow-board-header,
-  .workflow-board-header > div,
-  .workflow-board-header .dk-page-header__actions,
   .workflow-board-filters,
   .workflow-board-filter {
     display: contents !important;
@@ -333,13 +327,14 @@ body[data-workspace-view="sponsors"] .library-view {
     display: none !important;
   }
   .workflow-board-filter select {
-    flex: 1 1 150px;
+    flex: 1 1 120px;
+    min-width: 0 !important;
   }
   /* Only the Archive toggle collapses to an icon; its "Back to board" state
      and every other quiet action keep their text. The glyph is an archive
      box, not a trash can: archiving is reversible, delete reads permanent.
      The accessible name comes from the button's aria-label ("Archive (N)"). */
-  .workflow-board-header .dk-page-header__actions .workflow-archive-toggle {
+  .workflow-board-filters .workflow-archive-toggle {
     flex: 0 0 34px !important;
     width: 34px !important;
     min-width: 34px !important;
@@ -350,7 +345,7 @@ body[data-workspace-view="sponsors"] .library-view {
     align-items: center;
     justify-content: center;
   }
-  .workflow-board-header .dk-page-header__actions .workflow-archive-toggle::before {
+  .workflow-board-filters .workflow-archive-toggle::before {
     content: "";
     width: 16px;
     height: 16px;
@@ -358,6 +353,7 @@ body[data-workspace-view="sponsors"] .library-view {
     -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='3' width='20' height='5' rx='1'/%3E%3Cpath d='M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8'/%3E%3Cpath d='M10 12h4'/%3E%3C/svg%3E") center / contain no-repeat;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='3' width='20' height='5' rx='1'/%3E%3Cpath d='M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8'/%3E%3Cpath d='M10 12h4'/%3E%3C/svg%3E") center / contain no-repeat;
   }
+  .workflow-board-header,
   .ops-workflows-grid,
   .workflow-archive-tabs,
   .ops-honest-state {

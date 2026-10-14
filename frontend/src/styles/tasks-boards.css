@@ -549,10 +549,6 @@ body[data-workspace-view="tasks"] .ops-queue-due {
   max-width: 620px;
   margin-top: var(--dk-space-1);
   line-height: 1.5;
-}body[data-workspace-view="tasks"] .workflow-board-header .dk-page-header__actions {
-  align-items: center;
-}body[data-workspace-view="tasks"] .workflow-board-header .dk-page-header__actions > button {
-  min-height: 40px;
 }body[data-workspace-view="tasks"] .ops-workflows-grid {
   width: min(100%, var(--cards-board-width));
   gap: var(--dk-space-4);

@@ -1088,9 +1088,11 @@ describe("Tasks surface boundary", () => {
       ["news-1", "news-2"],
     );
     assert.doesNotMatch(documentList.textContent, /shown/);
-    const filterAction = documentList.querySelector(".workflow-board-filter-action");
-    assert.ok(filterAction);
-    assert.equal(filterAction.textContent, "+ New card from template");
+    // The board's one create action sits in the toolbar beside the filter.
+    const toolbar = documentList.querySelector(".workflow-board-filters");
+    const create = findByText(toolbar, "Create card", "button");
+    assert.equal(create.getAttribute("aria-keyshortcuts"), "c");
+    assert.equal(documentList.querySelector(".dk-page-header__actions"), null);
 
     // A snapshot refresh that leaves no Card behind the chosen Template
     // heals the filter back to "All templates" instead of an empty board.
@@ -1188,9 +1190,13 @@ describe("Tasks surface boundary", () => {
 
     api.renderTasksSurface([], "workflows");
     assert.equal(
-      findAllByClass(documentList, "workflow-board-filters").length,
+      findAllByClass(documentList, "workflow-board-filter").length,
       0,
     );
+    // The toolbar still carries the board's actions.
+    const toolbar = documentList.querySelector(".workflow-board-filters");
+    assert.ok(findByText(toolbar, "Create card", "button"));
+    assert.ok(findByText(toolbar, "Archive (0)", "button"));
     assert.deepEqual(requests, []);
   });
 
