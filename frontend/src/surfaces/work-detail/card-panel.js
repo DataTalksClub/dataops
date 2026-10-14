@@ -8,6 +8,7 @@ import {
 import {
   appendBreakableText,
   createCardSummary,
+  renderCardNewsletterSlot,
   renderCardTemplateLink,
 } from "./card-summary.js";
 
@@ -378,6 +379,7 @@ export function createCardPanel(context) {
       );
     }
     main.append(meta);
+    main.append(renderCardNewsletterSlot({ navigateCanonicalWorkspace, request, workApiUrl }, card));
     const templateUpdate = renderCardTemplateUpdate(card, data);
     if (templateUpdate) main.append(templateUpdate);
 

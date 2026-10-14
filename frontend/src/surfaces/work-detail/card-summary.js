@@ -45,6 +45,81 @@ export function renderCardTemplateLink(
   return row;
 }
 
+// A newsletter Card is executed for exactly one slot; the slot owns the link
+// (slot.cardId) and its date. The section appears only when a slot links this
+// Card. Re-renders within a short window reuse the last answer instead of
+// refetching on every stage or task mutation.
+const newsletterSlotCache = new Map();
+const newsletterSlotFreshMs = 30_000;
+
+function formatSlotDate(iso) {
+  const parsed = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime())
+    ? String(iso || "")
+    : new Intl.DateTimeFormat("en-GB", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        timeZone: "UTC",
+      }).format(parsed);
+}
+
+export function renderCardNewsletterSlot(
+  { navigateCanonicalWorkspace, request, workApiUrl },
+  card,
+) {
+  const section = document.createElement("div");
+  section.className = "workflow-detail-section card-newsletter-slot";
+  section.dataset.cardNewsletterSlot = "";
+  const fill = (slots) => {
+    section.replaceChildren();
+    section.hidden = slots.length === 0;
+    if (!slots.length) return;
+    const label = document.createElement("div");
+    label.className = "task-history-label";
+    label.textContent = "Newsletter slot";
+    section.append(label);
+    for (const slot of slots) {
+      const row = document.createElement("p");
+      row.className = "card-newsletter-slot__row";
+      const link = document.createElement("a");
+      link.href = `/newsletter?slotId=${encodeURIComponent(slot.id)}`;
+      link.textContent = `${slot.campaignLabel || "Newsletter slot"} · ${formatSlotDate(slot.publicationDate)}`;
+      link.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button) return;
+        event.preventDefault();
+        navigateCanonicalWorkspace("/newsletter", { slotId: slot.id });
+      });
+      const status = document.createElement("span");
+      status.className = "card-newsletter-slot__status";
+      status.textContent = String(slot.status || "").replaceAll("-", " ");
+      row.append(link, status);
+      const anchor = String(card.anchorDate || "").slice(0, 10);
+      if (anchor && slot.publicationDate && anchor !== slot.publicationDate) {
+        const warning = document.createElement("span");
+        warning.className = "dk-badge dk-badge--warning";
+        warning.dataset.cardDateMismatch = "";
+        warning.textContent = "Card date differs from the slot; the slot's date wins";
+        row.append(warning);
+      }
+      section.append(row);
+    }
+  };
+  const cached = newsletterSlotCache.get(card.id);
+  fill(cached?.slots || []);
+  if (cached && Date.now() - cached.at < newsletterSlotFreshMs) return section;
+  request(workApiUrl(`/api/newsletter-slots?cardId=${encodeURIComponent(card.id)}`)).then(
+    (payload) => {
+      const slots = Array.isArray(payload?.items) ? payload.items : [];
+      newsletterSlotCache.set(card.id, { slots, at: Date.now() });
+      fill(slots);
+    },
+    () => {},
+  );
+  return section;
+}
+
 // Migration provenance is import bookkeeping, not operator content — keep it
 // out of the rendered Card detail without touching the stored description.
 export function displayCardDescription(value) {

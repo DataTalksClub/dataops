@@ -1138,3 +1138,17 @@ body[data-workspace-view="tasks"] .quick-form-panel .quick-form-label select {
 body[data-workspace-view="tasks"] .quick-form-panel .quick-form > .task-action-btn {
   width: fit-content;
 }
+
+/* Card detail: the newsletter slot that links this Card. */
+.card-newsletter-slot__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-2) var(--dk-space-3);
+  margin: 0;
+}
+.card-newsletter-slot__status {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  text-transform: capitalize;
+}
