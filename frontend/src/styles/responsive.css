@@ -586,8 +586,12 @@ body[data-workspace-view="sponsors"] .library-view {
   }
 
   /* ---- Calendar: one control row ---- */
+  /* On phones the controls are a plain row, not a card: no edge for the
+     controls to crowd, and the grid stays in the first quarter. */
   .calendar-controls {
-    padding: 0 0 var(--dk-space-1) !important;
+    padding: 0 !important;
+    border: 0;
+    background: transparent;
     gap: 6px !important;
   }
   .calendar-header-main {
@@ -624,7 +628,7 @@ body[data-workspace-view="sponsors"] .library-view {
   .calendar-surface .calendar-display-controls { display: none; }
   .calendar-surface.calendar-controls-open .calendar-display-controls {
     display: block;
-    padding: 6px 0;
+    padding-top: var(--dk-space-2);
   }
   .calendar-display-controls-bar { gap: 8px; }
   .calendar-layer-chip { min-height: 44px; font-size: 12px; }

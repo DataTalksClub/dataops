@@ -5,7 +5,7 @@
   gap: 12px;
 }
 .calendar-surface .calendar-header-bar {
-  padding-bottom: 0;
+  padding-block: var(--dk-space-4);
   margin-bottom: 0;
   border-bottom: none;
 }
@@ -138,7 +138,6 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-bottom: 2px;
 }.calendar-header-main {
   display: flex;
   align-items: center;
