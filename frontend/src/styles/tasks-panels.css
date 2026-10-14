@@ -17,7 +17,7 @@
   min-height: 36px;
 }body[data-workspace-view="tasks"] .ops-inline-error,
 body[data-workspace-view="tasks"] .recurring-delete-guidance {
-  border: 1px solid var(--dk-danger-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-danger-bg);
   padding: 10px 12px;
@@ -138,7 +138,7 @@ body[data-workspace-view="tasks"] .assistant-job-row small {
 }body[data-workspace-view="tasks"] .assistant-job-row em,
 body[data-workspace-view="tasks"] .assistant-status {
   align-self: start;
-  border: 1px solid var(--dk-info-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-full);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
@@ -226,7 +226,7 @@ body[data-workspace-view="tasks"] .assistant-artifacts {
   padding: 9px 10px;
   text-decoration: none;
 }body[data-workspace-view="tasks"] .assistant-artifacts a:hover {
-  border-color: var(--dk-accent-default);
+  border-color: var(--dk-border-control-hover);
   background: var(--dk-bg-hover);
 }body[data-workspace-view="tasks"] .assistant-artifacts strong {
   overflow-wrap: anywhere;
@@ -291,7 +291,7 @@ body[data-workspace-view="tasks"] .ops-data-row span {
   text-decoration: none;
   white-space: nowrap;
 }body[data-workspace-view="tasks"] .ops-data-row a:hover {
-  border-color: var(--dk-accent-default);
+  border-color: var(--dk-border-control-hover);
   background: var(--dk-accent-soft);
 }/* Task and Card detail ------------------------------------------------------ */body[data-workspace-view="tasks"] .task-modal-panel,
 body[data-workspace-view="tasks"] .workflow-modal-panel {
@@ -362,12 +362,12 @@ body[data-workspace-view="tasks"] .task-quality-notice {
   text-transform: capitalize;
 }body[data-workspace-view="tasks"] .task-status-badge.done,
 body[data-workspace-view="tasks"] .task-status-badge.approved {
-  border-color: var(--dk-success-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-success-bg);
   color: var(--dk-success-text);
 }body[data-workspace-view="tasks"] .task-status-badge.waiting,
 body[data-workspace-view="tasks"] .task-status-badge.needs-review {
-  border-color: var(--dk-warning-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-warning-bg);
   color: var(--dk-warning-text);
 }body[data-workspace-view="tasks"] .task-status-badge.archived {
@@ -377,7 +377,7 @@ body[data-workspace-view="tasks"] .task-status-badge.needs-review {
 }body[data-workspace-view="tasks"] .task-panel-route-context {
   display: grid;
   gap: 4px;
-  border-color: var(--dk-info-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-info-bg);
 }body[data-workspace-view="tasks"] .task-panel-route-context strong {
   color: var(--dk-text-heading);
@@ -461,12 +461,12 @@ body[data-workspace-view="tasks"] .task-action-group button:hover {
   background: var(--dk-bg-hover);
 }body[data-workspace-view="tasks"] .task-action-btn.is-primary,
 body[data-workspace-view="tasks"] .task-action-group button.is-primary {
-  border-color: var(--dk-accent-default);
+  border-color: var(--dk-border-control-hover);
   background: var(--dk-accent-default);
   color: var(--dk-text-on-accent);
 }body[data-workspace-view="tasks"] .task-action-btn.is-primary:hover,
 body[data-workspace-view="tasks"] .task-action-group button.is-primary:hover {
-  border-color: var(--dk-accent-hover);
+  border-color: var(--dk-border-control-hover);
   background: var(--dk-accent-hover);
 }body[data-workspace-view="tasks"] .task-follow-up-row {
   align-items: end;
@@ -517,13 +517,13 @@ body[data-workspace-view="tasks"] .task-quality-notice {
   text-decoration: underline;
   font-weight: 650;
 }body[data-workspace-view="tasks"] .task-quality-notice {
-  border-color: var(--dk-warning-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-warning-bg);
 }body[data-workspace-view="tasks"] .task-quality-row {
   display: grid;
   gap: 3px;
   min-width: 0;
-  border: 1px solid var(--dk-warning-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
   color: var(--dk-text-primary);
@@ -545,7 +545,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback {
   display: grid;
   gap: 8px;
   min-width: 0;
-  border: 1px solid var(--dk-info-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
@@ -553,12 +553,12 @@ body[data-workspace-view="tasks"] .card-mutation-feedback {
   overflow-wrap: anywhere;
 }body[data-workspace-view="tasks"] .task-mutation-feedback.is-error,
 body[data-workspace-view="tasks"] .card-mutation-feedback.is-error {
-  border-color: var(--dk-danger-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
 }body[data-workspace-view="tasks"] .task-mutation-feedback.is-success,
 body[data-workspace-view="tasks"] .card-mutation-feedback.is-success {
-  border-color: var(--dk-success-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-success-bg);
   color: var(--dk-success-text);
 }body[data-workspace-view="tasks"] .task-mutation-feedback-message {
@@ -610,7 +610,7 @@ body[data-workspace-view="tasks"] .entity-route-loading {
 }body[data-workspace-view="tasks"] .entity-route-error,
 body[data-workspace-view="tasks"] .entity-route-not-found,
 body[data-workspace-view="tasks"] .entity-route-mismatch {
-  border-color: var(--dk-danger-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-danger-bg);
 }body[data-workspace-view="tasks"] .entity-route-error h3,
 body[data-workspace-view="tasks"] .entity-route-not-found h3,
@@ -714,7 +714,7 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3 {
   background: var(--dk-bg-muted);
   color: var(--dk-text-primary);
 }body[data-workspace-view="tasks"] .workflow-card-anchor.is-today {
-  border-color: var(--dk-info-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
 }body[data-workspace-view="tasks"] .workflow-card-count {
@@ -737,15 +737,15 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3 {
 }body[data-workspace-view="tasks"] .workflow-card-flag.is-danger {
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
-  border-color: var(--dk-danger-border);
+  border-color: var(--dk-border-default);
 }body[data-workspace-view="tasks"] .workflow-card-flag.is-warning {
   background: var(--dk-warning-bg);
   color: var(--dk-warning-text);
-  border-color: var(--dk-warning-border);
+  border-color: var(--dk-border-default);
 }body[data-workspace-view="tasks"] .workflow-card-flag.is-info {
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
-  border-color: var(--dk-info-border);
+  border-color: var(--dk-border-default);
 }body[data-workspace-view="tasks"] .workflow-summary-top .workflow-stage-field {
   display: flex;
   align-items: center;
@@ -804,7 +804,7 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3 {
   padding: 2px 6px;
   border-radius: var(--dk-radius-sm);
   background: rgba(88, 166, 255, 0.1);
-  border: 1px solid rgba(88, 166, 255, 0.2);
+  border: 1px solid var(--dk-border-default);
   flex-shrink: 0;
   margin-top: 1px;
 }body[data-workspace-view="tasks"] .workflow-next-task strong {
@@ -918,7 +918,7 @@ body[data-workspace-view="tasks"] .card-checklist-header > .task-history-label {
   text-transform: none;
   letter-spacing: normal;
 }body[data-workspace-view="tasks"] .card-template-update {
-  border-color: var(--dk-info-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-info-bg);
 }body[data-workspace-view="tasks"] .card-checklist-item {
   display: flex;
@@ -941,7 +941,7 @@ body[data-workspace-view="tasks"] .card-checklist-header > .task-history-label {
   height: 17px;
   min-width: 17px;
   margin: 2px 0 0;
-  border: 1.5px solid var(--dk-border-strong);
+  border: 1px solid var(--dk-border-strong);
   border-radius: 4px;
   background: var(--dk-bg-surface);
   cursor: pointer;
@@ -949,11 +949,11 @@ body[data-workspace-view="tasks"] .card-checklist-header > .task-history-label {
   place-content: center;
   transition: all 0.12s ease;
 }body[data-workspace-view="tasks"] .card-checklist-item > input[type="checkbox"]:hover {
-  border-color: var(--dk-accent-default);
+  border-color: var(--dk-border-control-hover);
   background: var(--dk-bg-hover);
 }body[data-workspace-view="tasks"] .card-checklist-item > input[type="checkbox"]:checked {
   background: var(--dk-accent-default) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E") no-repeat center center / 11px 11px;
-  border-color: var(--dk-accent-default);
+  border-color: var(--dk-border-control-hover);
 }body[data-workspace-view="tasks"] .card-checklist-label {
   flex: 1;
   min-width: 0;
@@ -981,7 +981,7 @@ body[data-workspace-view="tasks"] .card-checklist-header > .task-history-label {
 }body[data-workspace-view="tasks"] .card-checklist-date.is-overdue {
   color: #f85149;
   background: rgba(248, 81, 73, 0.12);
-  border: 1px solid rgba(248, 81, 73, 0.2);
+  border: 1px solid var(--dk-border-default);
 }body[data-workspace-view="tasks"] .workflow-links-section {
   display: flex;
   flex-direction: column;
@@ -1052,7 +1052,7 @@ body[data-workspace-view="tasks"] .workflow-links-section .task-required-link:ho
   outline: none;
   transition: border-color 0.15s ease;
 }body[data-workspace-view="tasks"] .workflow-links-section .task-required-link input[type="url"]:focus {
-  border-color: var(--dk-accent-default);
+  border-color: var(--dk-border-control-hover);
   color: var(--dk-text-primary);
 }body[data-workspace-view="tasks"] .card-link-open {
   display: inline-flex;
@@ -1355,7 +1355,7 @@ body[data-workspace-view="tasks"] .task-file-drop-hint {
   margin: 6px 0 12px;
 }
 body[data-workspace-view="tasks"] .task-file-drop-zone.is-dragging {
-  border-color: var(--dk-text-link, #315f91);
+  border-color: var(--dk-border-control-hover);
   background: var(--dk-bg-hover);
 }
 body[data-workspace-view="tasks"] .task-file-drop-zone input[type="file"] {

@@ -20,7 +20,7 @@ body[data-workspace-view="tasks"] .operations-home.ops-surface-artifacts {
   font-size: 14px;
 }body[data-workspace-view="tasks"] .operations-home .ops-runtime-state {
   width: 100%;
-  border-color: var(--dk-warning-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-warning-bg);
   color: var(--dk-warning-text);
 }body[data-workspace-view="tasks"] .operations-home .ops-runtime-state strong {
@@ -87,7 +87,7 @@ body[data-workspace-view="tasks"] .operations-home .ops-empty {
   cursor: pointer;
 }body[data-workspace-view="tasks"] .home-quick-action:hover {
   background: var(--dk-bg-muted);
-  border-color: var(--dk-border-subtle);
+  border-color: var(--dk-border-control-hover);
 }body[data-workspace-view="tasks"] .ops-queue-board {
   width: 100%;
   overflow: hidden;
@@ -111,7 +111,7 @@ board reads as one summary followed by one header rather than two headers. */bod
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px 16px;
   align-items: center;
-  border: 1px solid var(--dk-info-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--task-panel-radius);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
@@ -131,7 +131,7 @@ body[data-workspace-view="tasks"] .task-route-context p {
 }body[data-workspace-view="tasks"] .task-route-context button,
 body[data-workspace-view="tasks"] .task-context-state button {
   min-height: 36px;
-  border: 1px solid var(--dk-info-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
   color: var(--dk-info-text);
@@ -139,14 +139,14 @@ body[data-workspace-view="tasks"] .task-context-state button {
   font-weight: 650;
 }body[data-workspace-view="tasks"] .task-route-context button:hover,
 body[data-workspace-view="tasks"] .task-context-state button:hover {
-  border-color: var(--dk-info-text);
+  border-color: var(--dk-border-control-hover);
   background: var(--dk-bg-hover);
 }body[data-workspace-view="tasks"] .task-context-state {
   display: grid;
   grid-column: 1 / -1;
   gap: 5px;
   min-width: 0;
-  border: 1px solid var(--dk-danger-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
@@ -163,7 +163,7 @@ body[data-workspace-view="tasks"] .task-context-state p {
   color: var(--dk-text-primary);
   font-size: 12px;
 }body[data-workspace-view="tasks"] .task-context-state button {
-  border-color: var(--dk-danger-border);
+  border-color: var(--dk-border-default);
   color: var(--dk-danger-text);
 }body[data-workspace-view="tasks"] .ops-queue-list {
   display: grid;
@@ -234,16 +234,16 @@ body[data-workspace-view="tasks"] .ops-queue-check {
   display: block;
   width: 15px;
   height: 15px;
-  border: 1.5px solid var(--dk-border-strong);
+  border: 1px solid var(--dk-border-strong);
   border-radius: var(--dk-radius-sm);
   background: transparent;
   transition: border-color 140ms ease, background 140ms ease;
 }body[data-workspace-view="tasks"] .ops-queue-row:hover .ops-queue-box {
-  border-color: var(--dk-text-muted);
+  border-color: var(--dk-border-control-hover);
 }body[data-workspace-view="tasks"] .ops-queue-check-input:checked + .ops-queue-box {
-  border-color: var(--dk-accent-default);
-  background: var(--dk-accent-default);
-  color: var(--dk-bg-surface);
+  border-color: var(--dk-border-control-hover);
+  background: var(--dk-accent-soft);
+  color: var(--dk-accent-default);
 }body[data-workspace-view="tasks"] .ops-queue-check-input:checked + .ops-queue-box::after {
   content: "✓";
   display: grid;
@@ -259,16 +259,19 @@ body[data-workspace-view="tasks"] .ops-queue-check {
 }body[data-workspace-view="tasks"] .ops-queue-check-input:focus-visible + .ops-queue-box {
   outline: 3px solid var(--dk-focus-ring);
   outline-offset: 2px;
-}/* The box carries urgency so the flat list still scans: overdue rows show a
-   red box, due-today an amber one, everything else the quiet default. */
-body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="overdue"] .ops-queue-box {
-  border-color: var(--dk-danger-text);
-}body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="overdue"]:hover .ops-queue-box {
-  border-color: var(--dk-danger-text);
-}body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="today"] .ops-queue-box {
-  border-color: var(--attention-due);
-}body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="today"]:hover .ops-queue-box {
-  border-color: var(--attention-due);
+}/* Urgency uses tinted fills alongside timing text and row actions. */
+body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="overdue"] .ops-queue-check-input:not(:checked) + .ops-queue-box {
+  border-color: var(--dk-border-default);
+  background: var(--dk-danger-bg);
+}body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="overdue"]:hover .ops-queue-check-input:not(:checked) + .ops-queue-box {
+  border-color: var(--dk-border-default);
+  background: var(--dk-danger-bg);
+}body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="today"] .ops-queue-check-input:not(:checked) + .ops-queue-box {
+  border-color: var(--dk-border-default);
+  background: var(--dk-warning-bg);
+}body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="today"]:hover .ops-queue-check-input:not(:checked) + .ops-queue-box {
+  border-color: var(--dk-border-default);
+  background: var(--dk-warning-bg);
 }body[data-workspace-view="tasks"] .ops-queue-main {
   display: grid;
   min-width: 0;
@@ -551,7 +554,7 @@ body[data-workspace-view="tasks"] .recurring-toolbar button {
   padding: 10px 12px 11px;
   transition: border-color 140ms ease, background 140ms ease;
 }body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card:hover {
-  border-color: var(--dk-accent-default);
+  border-color: var(--dk-border-control-hover);
   background: var(--dk-bg-hover);
 }body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card:focus-visible,
 body[data-workspace-view="tasks"] .runtime-template-row:focus-visible,
