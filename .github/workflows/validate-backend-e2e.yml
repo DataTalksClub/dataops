@@ -31,10 +31,19 @@ jobs:
     name: Validate backend browser flows
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      DTC_AUTH_HOME: ${{ github.workspace }}/.tmp/shared-auth
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+
+      - name: Check out shared CLI device-login loop
+        uses: actions/checkout@v6
+        with:
+          repository: DataTalksClub/auth
+          ref: d286b5cc24fa37a6a6f1e312c770a46bc248063d
+          path: .tmp/shared-auth
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
