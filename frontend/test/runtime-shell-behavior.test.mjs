@@ -666,7 +666,7 @@ describe("runtime and shell production behavior", () => {
     const item = harness.body.children[1];
     assert.equal(item.querySelector(".dk-notif-item__link").textContent, "Sponsor checklist");
     const desc = item.querySelector(".dk-notif-item__desc");
-    assert.equal(desc.textContent, "Waiting for Reply from event host · Due short:2026-08-02");
+    assert.equal(desc.textContent, "Waiting for Reply from event host · Due\u00a0short:2026-08-02");
     assert.equal(desc.querySelector(".dk-mono").textContent, "short:2026-08-02");
     assert.equal(item.querySelector(".dk-notif-item__time").textContent, "now");
   });

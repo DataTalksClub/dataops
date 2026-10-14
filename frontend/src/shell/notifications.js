@@ -74,8 +74,9 @@ export function createNotificationsShell({
       else if (relative) {
         const value = documentRef.createElement("span");
         value.className = "dk-mono";
-        value.textContent = formatShortDate(date);
-        parts.push(["Due ", value]);
+        // Non-breaking, so the two-line touch description never splits a date.
+        value.textContent = formatShortDate(date).replaceAll(" ", "\u00a0");
+        parts.push(["Due\u00a0", value]);
       }
     }
     if (!parts.length) parts.push("Workspace update");
