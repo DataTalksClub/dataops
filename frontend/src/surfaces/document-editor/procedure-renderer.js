@@ -1,14 +1,26 @@
+import { focusEditable, neighbourEditable } from "./editable.js";
+import { toVideoEmbed } from "./embeds.js";
 import { editorFeedbackFor, editorMutationGuard } from "./feedback.js";
 import {
+  convertItem,
+  flowOf,
+  groupsOf,
   insertAfter,
+  joinGroupAbove,
+  mergeIntoPrevious,
+  newProse,
   newScreenshot,
   newStep,
+  newTodo,
+  previousFlowItem,
   removeItem,
   setGroupTitle,
   setProseBody,
   setScreenshotField,
   setStepBody,
   setTodoText,
+  splitStep,
+  startGroupAt,
   todosOf,
 } from "./procedure-model.js";
 
@@ -37,8 +49,71 @@ export function createProcedureRenderer(context, services, editorState) {
   } = services;
   const showFeedback = editorFeedbackFor(context);
 
-  function appendProcedureChildren(container) {
-    const model = readProcedureModel();
+  /** Where an item will be after a re-render (see focusProcedureItem). */
+  function focusOf(model, item, extra = {}) {
+    if (item.kind === "step") return { kind: "step", id: item.id, ...extra };
+    if (item.kind === "group") return { kind: "group", index: groupsOf(model).indexOf(item), ...extra };
+    if (item.kind === "todo") return { kind: "todo", index: todosOf(model).indexOf(item), ...extra };
+    const prose = flowOf(model).filter((entry) => entry.kind === "prose");
+    return { kind: "prose", index: prose.indexOf(item), ...extra };
+  }
+
+  /**
+   * The Notion keyboard model for a step or a free-text block: Enter splits,
+   * Backspace at the start joins the block above, Tab/Shift+Tab join or
+   * start a group (steps only).
+   */
+  function flowKeyboard(item, model) {
+    const setBody = item.kind === "step" ? setStepBody : setProseBody;
+    return {
+      onSplit: (before, after) => {
+        if (item.kind === "step" && !before.trim() && !after.trim()) {
+          // Enter on an empty step leaves the numbered list, like Notion.
+          const prose = convertItem(model, item, "prose");
+          commitProcedure(model, { focus: focusOf(model, prose, { at: "start" }) });
+          return;
+        }
+        let created;
+        if (item.kind === "step") {
+          created = splitStep(model, item, before, after);
+        } else {
+          setBody(item, before);
+          created = insertAfter(model, item, newProse(after));
+        }
+        commitProcedure(model, { focus: focusOf(model, created, { at: "start" }) });
+      },
+      onMergePrevious: (text) => {
+        setBody(item, text);
+        const merged = mergeIntoPrevious(model, item, text);
+        if (!merged) return;
+        commitProcedure(model, {
+          focus: focusOf(model, merged.target, { prefix: merged.target.body.slice(0, merged.caret) }),
+        });
+      },
+      onDeleteBlock: () => {
+        const previous = previousFlowItem(model, item);
+        const steps = flowOf(model).filter((entry) => entry.kind === "step");
+        if (item.kind === "step" && steps.length === 1) return;
+        removeItem(model, item);
+        commitProcedure(model, { focus: previous ? focusOf(model, previous, { at: "end" }) : null });
+      },
+      onIndent: item.kind === "step" ? () => {
+        if (!joinGroupAbove(model, item)) return;
+        commitProcedure(model, { focus: focusOf(model, item, { at: "end" }) });
+      } : undefined,
+      onOutdent: item.kind === "step" ? () => {
+        const group = startGroupAt(model, item);
+        if (!group) return;
+        commitProcedure(model, { focus: focusOf(model, group, { select: true }) });
+      } : undefined,
+      onFiles: item.kind === "step" ? (files) => {
+        for (const file of files) addScreenshot(item, model, file);
+      } : undefined,
+    };
+  }
+
+  function appendProcedureChildren(container, parsedModel = null) {
+    const model = parsedModel || readProcedureModel();
     if (!model) return null;
     const todos = todosOf(model);
     if (todos.length) container.append(renderTodoBlock(model, todos));
@@ -58,7 +133,7 @@ export function createProcedureRenderer(context, services, editorState) {
     button.textContent = "Add a step";
     button.addEventListener("click", () => {
       const step = insertAfter(model, null, newStep(""));
-      commitProcedure(model, { focus: { stepId: step.id } });
+      commitProcedure(model, { focus: focusOf(model, step, { at: "start" }) });
     });
     return button;
   }
@@ -89,6 +164,17 @@ export function createProcedureRenderer(context, services, editorState) {
         multiline: false,
         singleLine: true,
         placeholder: "Describe what is missing",
+        onSplit: (before, after) => {
+          setTodoText(todo, before);
+          const created = insertAfter(model, todo, newTodo(after));
+          commitProcedure(model, { focus: focusOf(model, created, { at: "start" }) });
+        },
+        onDeleteBlock: () => {
+          const index = todosOf(model).indexOf(todo);
+          removeItem(model, todo);
+          const previous = todosOf(model)[Math.max(0, index - 1)];
+          commitProcedure(model, { focus: previous ? focusOf(model, previous, { at: "end" }) : null });
+        },
       });
       const del = document.createElement("button");
       del.type = "button";
@@ -128,9 +214,20 @@ export function createProcedureRenderer(context, services, editorState) {
       restore: () => {
         title.textContent = group.title || "";
       },
+      plain: true,
       multiline: false,
       singleLine: true,
       placeholder: "Group title",
+      onEnterNewBlock: () => {
+        const first = block.querySelector(".block-step-body, .block-prose-body");
+        if (first) focusEditable(first, "start");
+      },
+      // Backspace at the start of a group heading joins it to the group above.
+      onMergePrevious: () => {
+        const first = group.children.find((child) => child.kind === "step");
+        if (!first || !joinGroupAbove(model, first)) return;
+        commitProcedure(model, { focus: focusOf(model, first, { at: "start" }) });
+      },
     });
     header.append(title);
     block.append(header);
@@ -174,6 +271,7 @@ export function createProcedureRenderer(context, services, editorState) {
       restore: () => body.replaceChildren(renderMarkdown(step.body || "")),
       multiline: true,
       placeholder: "Describe this step",
+      ...flowKeyboard(step, model),
     });
     main.append(body);
 
@@ -216,6 +314,7 @@ export function createProcedureRenderer(context, services, editorState) {
       restore: () => body.replaceChildren(renderMarkdown(prose.body || "")),
       multiline: true,
       placeholder: "Write a note",
+      ...flowKeyboard(prose, model),
     });
     block.append(body);
     return block;
@@ -298,6 +397,7 @@ export function createProcedureRenderer(context, services, editorState) {
       },
       multiline: true,
       placeholder: "Add a caption",
+      onEnterNewBlock: () => focusEditable(neighbourEditable(caption, 1), "start"),
     });
     figure.append(caption);
 
@@ -313,9 +413,11 @@ export function createProcedureRenderer(context, services, editorState) {
       restore: () => {
         alt.textContent = shot.alt || "";
       },
+      plain: true,
       multiline: false,
       singleLine: true,
       placeholder: "Describe the image for screen readers",
+      onEnterNewBlock: () => focusEditable(neighbourEditable(alt, 1), "start"),
     });
     figure.append(alt);
     return figure;
@@ -349,7 +451,15 @@ export function createProcedureRenderer(context, services, editorState) {
   }
 
   async function addScreenshot(step, model, file) {
-    if (!documentState.currentDoc) return;
+    const src = await uploadImage(file);
+    if (!src) return;
+    step.screenshots.push(newScreenshot(src));
+    commitProcedure(model);
+  }
+
+  /** Upload an image next to the current doc; resolves with its path. */
+  async function uploadImage(file) {
+    if (!documentState.currentDoc) return null;
     const path = documentState.currentDoc.path;
     const isFresh = editorMutationGuard(context);
     const isCurrentDocument = () =>
@@ -357,7 +467,7 @@ export function createProcedureRenderer(context, services, editorState) {
     showFeedback("Uploading image…", { kind: "pending" });
     try {
       const data = await fileToBase64(file);
-      if (!isCurrentDocument()) return;
+      if (!isCurrentDocument()) return null;
       const payload = await request(apiUrl("/images"), {
         method: "POST",
         body: JSON.stringify({
@@ -367,43 +477,18 @@ export function createProcedureRenderer(context, services, editorState) {
           data,
         }),
       });
-      if (!isCurrentDocument()) return;
+      if (!isCurrentDocument()) return null;
       services.recordPublication(documentState.currentDoc.revision, payload.revision);
-      step.screenshots.push(newScreenshot(payload.absolute_path));
-      commitProcedure(model);
       showFeedback(`Uploaded ${payload.absolute_path}`);
+      return payload.absolute_path;
     } catch (err) {
-      if (!isCurrentDocument()) return;
-      showFeedback(`Upload failed: ${err.message}`, { kind: "error" });
+      if (isCurrentDocument()) showFeedback(`Upload failed: ${err.message}`, { kind: "error" });
+      return null;
     }
   }
 
   return {
     addScreenshot, appendProcedureChildren, renderGroupBlock,
-    renderStepBlock,
+    renderStepBlock, uploadImage,
   };
-}
-
-export function toVideoEmbed(url) {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace(/^www\./, "");
-    if (host === "youtu.be") {
-      const id = u.pathname.replace(/^\//, "");
-      if (id) return { src: `https://www.youtube.com/embed/${id}`, kind: "youtube" };
-    }
-    if (host.endsWith("youtube.com") && u.pathname === "/watch") {
-      const id = u.searchParams.get("v");
-      if (id) return { src: `https://www.youtube.com/embed/${id}`, kind: "youtube" };
-    }
-    if (host === "vimeo.com") {
-      const id = u.pathname.split("/").filter(Boolean)[0];
-      if (id) return { src: `https://player.vimeo.com/video/${id}`, kind: "vimeo" };
-    }
-    if (host === "loom.com") {
-      const match = u.pathname.match(/^\/(?:share|embed)\/([a-z0-9]+)/i);
-      if (match) return { src: `https://www.loom.com/embed/${match[1]}`, kind: "loom" };
-    }
-  } catch {}
-  return null;
 }

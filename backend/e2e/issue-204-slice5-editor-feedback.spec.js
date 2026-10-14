@@ -30,7 +30,6 @@ const EDITOR_TITLE = 'Synthetic Slice Five Editor';
 const RACE_OLD_TITLE = 'Synthetic Stale Save Source';
 const RACE_NEW_TITLE = 'Synthetic Newer Document';
 const UPDATED_STEP_TEXT = 'Commit the updated synthetic editor step.';
-const DISCARDED_SUMMARY_TEXT = 'This keyboard edit must be discarded.';
 
 function syntheticSop(title, summary, step) {
   return [
@@ -222,31 +221,39 @@ test.describe('issue 204 slice 5 editor feedback and race evidence', () => {
     await expect(saveButton).toBeDisabled();
     await expect(stepBody).toContainText('Open the original synthetic editor step.');
 
-    // Escape cancels an inline edit without losing the previously rendered
-    // value; the editor itself is keyboard-entered and receives focus.
-    const originalSummary = await summaryBody.innerText();
-    await summaryBody.click();
-    const summaryEditor = summaryBody.locator('textarea.inline-editor');
-    await expect(summaryEditor).toBeFocused();
-    await summaryEditor.fill(DISCARDED_SUMMARY_TEXT);
-    await summaryEditor.press('Escape');
-    await expect(summaryBody.locator('.inline-editor')).toHaveCount(0);
-    await expect(summaryBody).toContainText(originalSummary);
-    await expect(summaryBody).not.toContainText(DISCARDED_SUMMARY_TEXT);
+    // Blocks are always editable: there is no edit mode to enter or commit.
+    // Typing autosaves a local draft, and Escape only leaves the block.
+    const summaryText = summaryBody.locator('.notion-text-content').first();
+    await expect(summaryText).toHaveAttribute('contenteditable', 'true');
+    await summaryText.click();
+    await expect(summaryText).toBeFocused();
+    await summaryText.press('End');
+    await page.keyboard.type(' Typed while reading.');
+    await summaryText.press('Escape');
+    await expect(summaryText).not.toBeFocused();
+    await expect(summaryText).toContainText('Typed while reading.');
+    await expect(page.locator('#editor')).toHaveValue(/behavior\. Typed while reading\./);
 
-    // Ctrl+Enter commits the multiline inline editor, creates a local draft,
-    // and keeps the changed content visible before a network save.
     await stepBody.click();
-    const stepEditor = stepBody.locator('textarea.inline-editor');
-    await expect(stepEditor).toBeFocused();
-    await stepEditor.fill(UPDATED_STEP_TEXT);
-    await stepEditor.press('Control+Enter');
-    await expect(stepBody.locator('.inline-editor')).toHaveCount(0);
+    await expect(stepBody).toBeFocused();
+    await stepBody.fill(UPDATED_STEP_TEXT);
+    await stepBody.press('Escape');
+    await expect(stepBody).not.toBeFocused();
     await expect(stepBody).toContainText(UPDATED_STEP_TEXT);
     await expect(page.locator('#changes-section')).toBeVisible();
     await expect(saveButton).toBeEnabled();
     await expect(discardButton).toBeEnabled();
-    await expect(saveState).toHaveText('Unsaved changes');
+    await expect(saveState).toHaveText('Draft saved');
+
+    // While there is a draft, the floating save pill and its actions stay
+    // inside a phone viewport.
+    await page.setViewportSize(MOBILE);
+    await expectNoHorizontalOverflow(page);
+    await expectContainedInViewport(page, page.locator('.document-editor-footer'));
+    await expectContainedInViewport(page, discardButton);
+    await expectContainedInViewport(page, saveButton);
+    await capture(page, 'editor-draft-mobile-390x844');
+    await page.setViewportSize(DESKTOP);
 
     // A failed save is announced in the editor-owned live region and retains
     // the valid attempted edit so the operator can recover without retyping.
@@ -262,7 +269,7 @@ test.describe('issue 204 slice 5 editor feedback and race evidence', () => {
     await expect(inlineStatus).toHaveAttribute('role', 'alert');
     await expect(inlineStatus).toHaveAttribute('aria-live', 'assertive');
     await expect(saveButton).toBeEnabled();
-    await expect(saveState).toHaveText('Unsaved changes');
+    await expect(saveState).toHaveText('Draft saved');
     await expect(saveState).toBeFocused();
     await expect(stepBody).toContainText(UPDATED_STEP_TEXT);
     await expect(page.locator('#editor')).toHaveValue(new RegExp(UPDATED_STEP_TEXT));
@@ -301,14 +308,13 @@ test.describe('issue 204 slice 5 editor feedback and race evidence', () => {
     expect((await saved.json()).content).toContain(UPDATED_STEP_TEXT);
 
     // The same successful editor outcome remains readable and contained at
-    // the requested phone viewport, including the sticky action footer.
+    // the requested phone viewport; with no draft left, Save and Discard
+    // are gone and the pill carries only the outcome.
     await page.setViewportSize(MOBILE);
     await expect(inlineStatus).toBeVisible();
     await expect(inlineStatus).toContainText(`Saved ${EDITOR_PATH}.`);
     await expectNoHorizontalOverflow(page);
     await expectContainedInViewport(page, page.locator('.document-editor-footer'));
-    await expectContainedInViewport(page, discardButton);
-    await expectContainedInViewport(page, saveButton);
     await capture(page, 'editor-save-success-mobile-390x844');
   });
 
@@ -323,9 +329,8 @@ test.describe('issue 204 slice 5 editor feedback and race evidence', () => {
       '.block-section[data-section="procedure"] .block-step[data-step-id="1"] .block-step-body',
     );
     await oldStepBody.click();
-    const oldStepEditor = oldStepBody.locator('textarea.inline-editor');
-    await oldStepEditor.fill('A stale save must not repaint the newer route.');
-    await oldStepEditor.press('Control+Enter');
+    await oldStepBody.fill('A stale save must not repaint the newer route.');
+    await oldStepBody.press('Escape');
 
     await setFaults(context.request, [{
       method: 'PUT',

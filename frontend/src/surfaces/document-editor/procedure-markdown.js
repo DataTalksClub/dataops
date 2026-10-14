@@ -1,4 +1,5 @@
 import { editorFeedbackFor } from "./feedback.js";
+import { focusEditable, plainTextLength } from "./editable.js";
 import { emitProcedure, parseProcedure } from "./procedure-model.js";
 
 function sectionPattern(name) {
@@ -51,17 +52,33 @@ export function createProcedureMarkdown(context, services) {
     return true;
   }
 
+  /**
+   * Focus an item after a re-render. Items are found by position because a
+   * re-render parses fresh objects: { kind: "step", id } (ids are renumbered
+   * in document order), { kind: "prose" | "group" | "todo", index }. The caret
+   * goes to `at` ("start", "end", a visible-text offset), after the markdown
+   * `prefix`, or selects the whole text with `select`.
+   */
   function focusProcedureItem(focus) {
+    const section = renderedView.querySelector('.block-section[data-section="procedure"]');
+    if (!section) return;
     let target = null;
-    if (focus.stepId != null) {
-      target = renderedView.querySelector(
-        `.block-step[data-step-id="${focus.stepId}"] .block-step-body`,
-      );
+    if (focus.kind === "step") {
+      target = section.querySelector(`.block-step[data-step-id="${focus.id}"] .block-step-body`);
+    } else if (focus.kind === "prose") {
+      target = section.querySelectorAll(".block-prose-body")[focus.index];
+    } else if (focus.kind === "group") {
+      target = section.querySelectorAll(".block-group-title")[focus.index];
+    } else if (focus.kind === "todo") {
+      target = section.querySelectorAll(".block-todo-text")[focus.index];
     }
-    if (target) {
-      target.scrollIntoView?.({ behavior: "smooth", block: "center" });
-      target.click?.();
+    if (!target) return;
+    let at = focus.at ?? "end";
+    if (focus.prefix != null) {
+      at = target.__editable?.mode === "rich" ? plainTextLength(focus.prefix) : focus.prefix.length;
     }
+    focusEditable(target, at);
+    if (focus.select) target.ownerDocument.getSelection?.()?.selectAllChildren(target);
   }
 
   function snapshotProcedure() {
@@ -91,7 +108,7 @@ export function createProcedureMarkdown(context, services) {
   }
 
   return {
-    commitProcedure, escapeHtmlAttr, escapeRegex, patchSectionInMarkdown,
+    commitProcedure, escapeHtmlAttr, escapeRegex, focusProcedureItem, patchSectionInMarkdown,
     readProcedureModel, restoreProcedure, snapshotProcedure,
   };
 }

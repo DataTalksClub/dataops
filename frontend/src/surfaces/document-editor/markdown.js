@@ -224,7 +224,25 @@ export function createEditorMarkdown(context, services) {
     return s;
   }
 
+  // Display HTML for an inline construct kept verbatim in an editable block
+  // (a wiki link, an image, an escape): the same rendering the reader uses.
+  function renderInlineAtom(raw) {
+    const escaped = String(raw || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    if (/^\\./.test(raw)) return escaped.slice(1);
+    return inlineMd(escaped);
+  }
+
+  /** Where a markdown link points, resolved the way the reader does. */
+  function resolveInlineLink(href) {
+    const doc = resolveMarkdownDocLink(href);
+    if (doc) return { href: visibleDocUrl(doc.path), docPath: doc.path };
+    return { href: resolveLocalAssetHref(href) || "#" };
+  }
+
   return {
-    renderMarkdown, resolveImageSrc, resolveLocalAssetHref, stripFrontmatter, stripLeadingHeading,
+    renderInlineAtom, resolveInlineLink, renderMarkdown, resolveImageSrc, resolveLocalAssetHref, stripFrontmatter, stripLeadingHeading,
   };
 }

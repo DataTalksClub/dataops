@@ -1,3 +1,4 @@
+import { attachEditable } from "./editable.js";
 import { setStepAttrs } from "./procedure-model.js";
 
 export function createStructuredEditor(context, services) {
@@ -8,185 +9,25 @@ export function createStructuredEditor(context, services) {
     "paste", "submit", "verify", "wait", "other",
   ];
 
-  function attachInlineEditor(
-    el,
-    {
-      getValue,
-      commit,
-      restore,
-      multiline = true,
-      singleLine = false,
-      autoSize = true,
-      commitOnEnter = false,
-      autoFocus = false,
-      editorClass,
-      hintClass,
-      hintText,
-      showHint = true,
-      onSlash,
-      onDeleteBlock,
-      onEnterNewBlock,
-      onIndent,
-      onOutdent,
-      placeholder = "",
-      selectionRange = null,
-    },
-  ) {
-    el.tabIndex = 0;
-    el.title = "Click to edit";
-    el.classList.add("inline-editable");
-    el.addEventListener("click", (event) => {
-      if (event.target.closest("a, button, img, .inline-editor, .notion-block-gutter")) return;
-      if (el.classList.contains("editing")) return;
-      event.preventDefault();
-      enter();
+  // Every text block is always editable; see editable.js.
+  function attachInlineEditor(el, options) {
+    return attachEditable(el, {
+      renderAtom: services.renderInlineAtom,
+      resolveLink: services.resolveInlineLink,
+      onActivity: services.markSaving,
+      onFollowLink: followLink,
+      ...options,
     });
-    el.addEventListener("keydown", (event) => {
-      if (event.target !== el) return;
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        enter();
-      }
-    });
-
-    if (autoFocus) {
-      setTimeout(() => {
-        if (el.isConnected && !el.classList.contains("editing")) {
-          enter();
-        }
-      }, 0);
-    }
-
-    function enter() {
-      el.classList.add("editing");
-      const original = getValue();
-      const originalHeight = Math.ceil(el.getBoundingClientRect().height);
-      const editor = document.createElement(multiline ? "textarea" : "input");
-      if (!multiline) editor.type = "text";
-      editor.className = `inline-editor ${editorClass || ""}`.trim();
-      editor.value = original;
-      editor.placeholder = placeholder;
-      editor.style.width = "100%";
-      editor.style.boxSizing = "border-box";
-      if (multiline) {
-        editor.rows = Math.max(2, (editor.value.match(/\n/g) || []).length + 1);
-        if (autoSize) {
-          editor.style.minHeight = `${Math.max(originalHeight, 44)}px`;
-          editor.style.overflow = "hidden";
-        }
-      }
-
-      const hint = document.createElement("div");
-      hint.className = `inline-edit-hint ${hintClass || ""}`.trim();
-      hint.textContent = showHint
-        ? hintText ||
-          (commitOnEnter
-            ? "Enter to save · Esc to cancel"
-            : multiline
-              ? "Cmd/Ctrl+Enter to save · Esc to cancel"
-              : "Enter to save · Esc to cancel")
-        : "";
-
-      if (showHint) el.replaceChildren(editor, hint);
-      else el.replaceChildren(editor);
-      if (autoSize) {
-        resizeInlineEditor(editor);
-        if (typeof requestAnimationFrame !== "undefined") {
-          requestAnimationFrame(() => resizeInlineEditor(editor));
-        }
-      }
-      editor.focus();
-      if (selectionRange) {
-        editor.setSelectionRange(selectionRange.start, selectionRange.end);
-      } else if (multiline) {
-        editor.setSelectionRange(editor.value.length, editor.value.length);
-      } else {
-        editor.select();
-      }
-
-      let done = false;
-      const doCommit = () => {
-        if (done) return;
-        done = true;
-        const newValue = singleLine
-          ? editor.value.replace(/\s*\n+\s*/g, " ")
-          : editor.value;
-        el.classList.remove("editing");
-        if (newValue !== original) commit(newValue);
-        restore();
-      };
-      const doCancel = () => {
-        if (done) return;
-        done = true;
-        el.classList.remove("editing");
-        restore();
-      };
-
-      editor.addEventListener("blur", doCommit);
-      if (autoSize) {
-        editor.addEventListener("input", () => resizeInlineEditor(editor));
-      }
-      editor.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          doCancel();
-        } else if (event.key === "/" && (editor.value === "" || editor.selectionStart === 0)) {
-          if (onSlash) {
-            event.preventDefault();
-            onSlash();
-          }
-        } else if (event.key === "Backspace" && editor.value === "") {
-          if (onDeleteBlock) {
-            event.preventDefault();
-            done = true;
-            el.classList.remove("editing");
-            restore();
-            onDeleteBlock();
-          }
-        } else if (event.key === "Tab") {
-          if (event.shiftKey) {
-            if (onOutdent) {
-              event.preventDefault();
-              const selection = { start: editor.selectionStart, end: editor.selectionEnd };
-              doCommit();
-              onOutdent(selection);
-            }
-          } else {
-            if (onIndent) {
-              event.preventDefault();
-              const selection = { start: editor.selectionStart, end: editor.selectionEnd };
-              doCommit();
-              onIndent(selection);
-            }
-          }
-        } else if (event.key === "Enter") {
-          if (commitOnEnter && !event.shiftKey) {
-            event.preventDefault();
-            doCommit();
-            if (onEnterNewBlock) onEnterNewBlock();
-            return;
-          }
-          if (multiline && !(event.metaKey || event.ctrlKey)) {
-            if (event.shiftKey && onEnterNewBlock) {
-              event.preventDefault();
-              doCommit();
-              onEnterNewBlock();
-            }
-            return;
-          }
-          event.preventDefault();
-          doCommit();
-          if (onEnterNewBlock) onEnterNewBlock();
-        }
-      });
-    }
   }
 
-  function resizeInlineEditor(editor) {
-    if (!editor) return;
-    editor.style.height = "auto";
-    const nextHeight = Math.max(44, editor.scrollHeight || 0);
-    editor.style.height = `${nextHeight}px`;
+  function followLink(link) {
+    const docPath = link.getAttribute("data-doc-path");
+    if (docPath) {
+      context.openDocument?.(docPath);
+      return;
+    }
+    const href = link.getAttribute("href");
+    if (href && href !== "#") globalThis.open?.(href, "_blank", "noopener");
   }
 
   function toggleStepAttrEditor(blockEl, step, model) {

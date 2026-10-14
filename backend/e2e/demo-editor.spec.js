@@ -30,11 +30,6 @@ async function openEditor(page, surface, viewport) {
       campaignLabel: 'Synthetic editor', status: 'draft', version: 1,
       planningNote: content }], alerts: [],
   } }));
-  if (surface === 'Docs') {
-    await page.goto(`${server.baseURL}/testing/editor.md`);
-    await expect(page.locator('#rendered-view .notion-list')).toBeVisible();
-    return page.locator('#rendered-view');
-  }
   await page.goto(`${server.baseURL}/newsletter`);
   await page.getByRole('button', { name: 'Compose', exact: true }).click();
   await expect(page.locator('dialog [data-blocks-editor] .notion-list')).toBeVisible();
@@ -121,7 +116,11 @@ for (const width of [1440, 1280]) {
     await expect(page.locator('[data-sim-body]')).toContainText('Synthetic sponsor copy typed into the new block.');
   });
 
-  for (const surface of ['Docs', 'Compose']) {
+  // The composer keeps its own click-to-edit fields inside the shared block
+  // list; the document editor's always-editable blocks are covered by
+  // notion-editor.spec.js.
+  {
+    const surface = 'Compose';
     test(`${surface}: slash from a new list item focuses a typed to-do block at ${width}px`, async ({ page }) => {
       const root = await openEditor(page, surface, { width, height: width === 1440 ? 900 : 800 });
       await root.locator('.notion-list-item-text').first().click();
@@ -137,7 +136,6 @@ for (const width of [1440, 1280]) {
       await root.locator('.notion-text-content').last().click();
       await expect(todo).toContainText('Task typed after list slash');
       await expect(root.locator('.notion-list-item-text')).toHaveText(['First item', 'Second item']);
-      if (surface === 'Docs') await expect(page.locator('#editor')).toHaveValue(/- \[ \] Task typed after list slash/);
     });
 
     test(`${surface}: Tab indents with fresh numbering and retains the caret at ${width}px`, async ({ page }) => {
@@ -153,18 +151,12 @@ for (const width of [1440, 1280]) {
       }))).toEqual({ nested: true, number: 1 });
       await page.keyboard.type(' continued');
       await expect(item().locator('.inline-editor')).toHaveValue('Nested item continued');
-      if (surface === 'Docs') {
-        await expect(page.locator('#editor')).toHaveValue(/1\. First item\n  1\. Nested item/);
-      }
       await page.keyboard.press('Shift+Tab');
       await expect(item().locator('.inline-editor')).toBeFocused();
       expect(await item().evaluate((span) => span.parentElement.value)).toBe(2);
       await page.keyboard.type(' after outdent');
       await root.locator('.notion-text-content').last().click();
       await expect(item()).toHaveText('Nested item continued after outdent');
-      if (surface === 'Docs') {
-        await expect(page.locator('#editor')).toHaveValue(/2\. Nested item continued after outdent/);
-      }
     });
 
     test(`${surface}: slash choices focus editable headings and to-dos at ${width}px`, async ({ page }) => {
@@ -186,7 +178,6 @@ for (const width of [1440, 1280]) {
         await root.locator('.notion-list-item-text').first().click();
         await expect(block).toContainText(choice.text);
         await expect(block).not.toContainText(choice.label);
-        if (surface === 'Docs') await expect(page.locator('#editor')).toHaveValue(choice.raw);
       }
     });
 
@@ -204,7 +195,6 @@ for (const width of [1440, 1280]) {
       await page.keyboard.type('Replacement heading');
       await root.locator('.notion-list-item-text').first().click();
       await expect(root.locator('[data-block-type="h2"]')).toContainText('Replacement heading');
-      if (surface === 'Docs') await expect(page.locator('#editor')).toHaveValue(/## Replacement heading/);
     });
 
     test(`${surface}: Enter focuses the new list item at ${width}px`, async ({ page }) => {
@@ -218,9 +208,6 @@ for (const width of [1440, 1280]) {
       await expect(next).toHaveValue('Typed immediately after Enter');
       await root.locator('.notion-text-content').last().click();
       await expect(root.locator('.notion-list-item-text').nth(1)).toHaveText('Typed immediately after Enter');
-      if (surface === 'Docs') {
-        await expect(page.locator('#editor')).toHaveValue(/2\. Typed immediately after Enter/);
-      }
     });
   }
 }

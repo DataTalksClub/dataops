@@ -494,7 +494,7 @@ describe("Document Editor surface boundary", () => {
     });
 
     harness.api.updateSaveState();
-    assert.equal(harness.elements.editorSaveState.textContent, "Unsaved changes");
+    assert.equal(harness.elements.editorSaveState.textContent, "Draft saved");
     assert.equal(harness.elements.editorSaveButton.disabled, false);
     assert.equal(harness.elements.editorDiscardButton.disabled, false);
     assert.deepEqual(harness.api.listDraftPaths(), [
@@ -707,7 +707,7 @@ describe("Document Editor surface boundary", () => {
       ),
       harness.elements.editor.value,
     );
-    assert.equal(harness.elements.editorSaveState.textContent, "Unsaved changes");
+    assert.equal(harness.elements.editorSaveState.textContent, "Draft saved");
     assert.equal(harness.routeTitles.at(-1), "Updated process");
   });
 
@@ -984,8 +984,9 @@ describe("Document Editor surface boundary", () => {
     );
     assert.equal(findByText(procedure, "1.").className, "block-step-num");
     assert.equal(procedure.querySelector(".block-step-meta").textContent, "click · mailing");
-    const stepMarkdown = findAllByClass(view, "block-step-body")[0].querySelector(".md");
-    assert.match(stepMarkdown.innerHTML, /Send the newsletter/);
+    const stepBody = findAllByClass(view, "block-step-body")[0];
+    assert.equal(stepBody.dataset.editable, "rich");
+    assert.equal(stepBody.innerHTML, "Send the newsletter.");
   });
 
   test("renders safe internal Markdown navigation and resolves relative media", async () => {
@@ -1007,29 +1008,25 @@ describe("Document Editor surface boundary", () => {
 
     await harness.api.enterRenderedMode();
     assert.ok(findByText(harness.elements.renderedView, "Guide", "h1"));
-    const renderedMarkdown = harness.elements.renderedView.querySelector(".md");
-    assert.equal(/<h1[\s>]/i.test(renderedMarkdown.innerHTML), false);
-    assert.match(
-      renderedMarkdown.innerHTML,
-      /data-doc-path="content\/processes\/related\.md"/,
-    );
-    assert.match(
-      renderedMarkdown.innerHTML,
-      /src="\/content\/images\/shot\.png"/,
-    );
-    assert.match(
-      renderedMarkdown.innerHTML,
-      /src="\/content\/images\/processes\/uploaded-shot\.webp"/,
-    );
-    assert.match(renderedMarkdown.innerHTML, /<a href="#">Unsafe<\/a>/);
-    assert.match(
-      renderedMarkdown.innerHTML,
-      /target="_blank" rel="noopener">External/,
-    );
+    // The paragraph is always editable: its inline markdown is shown formatted.
+    const paragraph = harness.elements.renderedView.querySelector(".notion-text-content");
+    assert.equal(paragraph.dataset.editable, "rich");
+    const html = paragraph.innerHTML;
+    assert.equal(/<h1[\s>]/i.test(html), false);
+    // Wiki links and images are atoms that keep their exact source.
+    assert.match(html, /class="md-atom" contenteditable="false" data-md="\[\[related-process\|Review guide\]\]"/);
+    assert.match(html, /data-doc-path="content\/processes\/related\.md"/);
+    assert.match(html, /src="\/content\/images\/shot\.png"/);
+    assert.match(html, /src="\/content\/images\/processes\/uploaded-shot\.webp"/);
+    assert.match(html, /<a href="#" data-href="javascript:alert\(1\)">Unsafe<\/a>/);
+    assert.match(html, /<a href="https:\/\/example\.com" data-href="https:\/\/example\.com">External<\/a>/);
 
-    const links = renderedMarkdown.querySelectorAll("[data-doc-path]");
+    const links = paragraph.querySelectorAll("[data-doc-path]");
     assert.equal(links.length, 2);
-    await links[0].click();
+    // A plain click places the caret; Cmd/Ctrl+click follows the link.
+    await links[1].dispatch("click", { metaKey: false });
+    assert.deepEqual(harness.openedDocuments, []);
+    await links[1].dispatch("click", { metaKey: true });
     assert.deepEqual(harness.openedDocuments, [
       "content/processes/related.md",
     ]);

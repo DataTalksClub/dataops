@@ -1,3 +1,4 @@
+import { flushActiveEditable } from "./editable.js";
 import {
   editorFeedbackFor,
   editorMutationGuard,
@@ -149,6 +150,7 @@ export function createEditorChanges(context, services) {
   }
 
   async function saveAllDrafts() {
+    flushActiveEditable();
     const paths = listDraftPaths();
     if (paths.length === 0) return;
     if (paths.length > 5) {

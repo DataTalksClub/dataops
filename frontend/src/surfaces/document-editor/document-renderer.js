@@ -8,11 +8,14 @@ import {
   readFrontmatterScalar,
 } from "./frontmatter.js";
 import { procedureHeading, setProcedureHeading } from "./procedure-model.js";
+import { sizeImageFromCache } from "./procedure-renderer.js";
 import {
   createBlockEditor,
+  makeBlock,
   parseMarkdownBlocks,
   serializeBlocksToMarkdown,
 } from "./block-editor.js";
+import { focusEditable, neighbourEditable } from "./editable.js";
 
 export function createDocumentRenderer(context, services) {
   const {
@@ -27,7 +30,43 @@ export function createDocumentRenderer(context, services) {
     resizeDocumentTitle, setMarkdownTitle, stripLeadingHeading, updateSaveState,
   } = services;
   const showFeedback = editorFeedbackFor(context);
-  const blockEditor = createBlockEditor(context, services);
+  const blockEditor = createBlockEditor(context, {
+    ...services,
+    insertImageBlocks,
+    renderImageBlock,
+  });
+
+  /** Upload images and place them as image blocks at `index`. */
+  async function insertImageBlocks(files, blocks, index, replaceCurrent, replace) {
+    const paths = [];
+    for (const file of files) {
+      const src = await services.uploadImage(file);
+      if (src) paths.push(src);
+    }
+    if (!paths.length) return;
+    const images = paths.map((src) => makeBlock("image", `![](${src})`));
+    const first = replaceCurrent ? index : index + 1;
+    blocks.splice(first, replaceCurrent ? 1 : 0, ...images);
+    blocks.splice(first + images.length, 0, makeBlock("paragraph", ""));
+    replace({ index: first + images.length, at: "start" });
+  }
+
+  function renderImageBlock(block) {
+    const match = block.raw.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    const figure = document.createElement("figure");
+    figure.className = "block-screenshot block-image";
+    const media = document.createElement("div");
+    media.className = "block-screenshot-media";
+    const img = document.createElement("img");
+    img.src = services.resolveImageSrc(match ? match[2] : "");
+    img.alt = match ? match[1] : "";
+    img.loading = "lazy";
+    sizeImageFromCache(img, img.src);
+    img.addEventListener("click", () => services.openLightbox(img.src, img.alt));
+    media.append(img);
+    figure.append(media);
+    return figure;
+  }
 
   const DOC_TYPES = [
     "sop", "checklist", "template", "reference", "playbook", "prompt",
@@ -99,11 +138,13 @@ export function createDocumentRenderer(context, services) {
     }
   }
 
-  function renderParsedDocument({ bodyBlocks, focusBlockIndex = -1 } = {}) {
+  function renderParsedDocument({ bodyBlocks, focusBlockIndex = -1, focus = null } = {}) {
     const sections = (documentState.currentParsed && documentState.currentParsed.sections) || {};
     const blocks = [];
     const fm = (documentState.currentParsed && documentState.currentParsed.frontmatter) || {};
     const loomBlock = renderLoomBlock(fm);
+    // Arrow keys move between the editable blocks inside this root.
+    renderedView.dataset.editorRoot = "";
 
     const trail = renderDocHierarchyTrail();
     if (trail) blocks.push(trail);
@@ -116,68 +157,39 @@ export function createDocumentRenderer(context, services) {
       const body = stripFrontmatter(rawFull);
       const cleanBody = stripLeadingHeading(body);
       const docBlocks = bodyBlocks || parseMarkdownBlocks(cleanBody);
+      if (docBlocks.length === 0) docBlocks.push(makeBlock("paragraph", ""));
 
       const wrap = document.createElement("div");
       wrap.className = "block-plain-body";
-
-      if (docBlocks.length === 0) {
-        const emptyBlock = document.createElement("div");
-        emptyBlock.className = "notion-empty-document";
-        const emptyBtn = document.createElement("button");
-        emptyBtn.type = "button";
-        emptyBtn.className = "notion-add-row-btn";
-        emptyBtn.textContent = "+ Click or type '/' to insert text, headings, lists, or callouts…";
-        emptyBtn.addEventListener("click", () => {
-          blockEditor.slashMenu.open({
-            targetEl: emptyBtn,
-            onSelect: (item) => {
-              if (item.type === "page") {
-                if (services.createSubpage) services.createSubpage(documentState.currentDoc);
-                else if (context.createSubpage) context.createSubpage(documentState.currentDoc);
-                return;
-              }
-              applyBlocksChange([
-                {
-                  id: `blk-0-${Date.now()}`,
-                  type: item.type,
-                  raw: item.template || "",
-                },
-              ], { focusBlockIndex: 0 });
-            },
+      wrap.append(blockEditor.renderBlocksContainer({
+        blocks: docBlocks,
+        focusBlockIndex,
+        focus,
+        onChange: (idx, newRaw, options = {}) => {
+          docBlocks[idx] = {
+            ...docBlocks[idx], ...(parseMarkdownBlocks(newRaw)[0] || {}), id: docBlocks[idx].id, raw: newRaw,
+          };
+          applyBlocksChange(docBlocks, options);
+        },
+        onMoveBlock: (fromIdx, toIdx) => {
+          const [moved] = docBlocks.splice(fromIdx, 1);
+          docBlocks.splice(toIdx, 0, moved);
+          applyBlocksChange(docBlocks);
+        },
+        onInsertBlock: (atIdx, template) => {
+          docBlocks.splice(atIdx, 0, {
+            ...(parseMarkdownBlocks(template)[0] || { type: "paragraph" }),
+            id: `blk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            raw: template,
           });
-        });
-        emptyBlock.append(emptyBtn);
-        wrap.append(emptyBlock);
-      } else {
-        const blocksContainer = blockEditor.renderBlocksContainer({
-          blocks: docBlocks,
-          focusBlockIndex,
-          onChange: (idx, newRaw, options = {}) => {
-            docBlocks[idx] = {
-              ...docBlocks[idx], ...parseMarkdownBlocks(newRaw)[0], raw: newRaw,
-            };
-            applyBlocksChange(docBlocks, options);
-          },
-          onMoveBlock: (fromIdx, toIdx) => {
-            const [moved] = docBlocks.splice(fromIdx, 1);
-            docBlocks.splice(toIdx, 0, moved);
-            applyBlocksChange(docBlocks);
-          },
-          onInsertBlock: (atIdx, template) => {
-            docBlocks.splice(atIdx, 0, {
-              ...(parseMarkdownBlocks(template)[0] || { type: "paragraph" }),
-              id: `blk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              raw: template,
-            });
-            applyBlocksChange(docBlocks, { focusBlockIndex: atIdx });
-          },
-          onDeleteBlock: (idx) => {
-            docBlocks.splice(idx, 1);
-            applyBlocksChange(docBlocks);
-          },
-        });
-        wrap.append(blocksContainer);
-      }
+          applyBlocksChange(docBlocks, { focusBlockIndex: atIdx });
+        },
+        onDeleteBlock: (idx) => {
+          docBlocks.splice(idx, 1);
+          applyBlocksChange(docBlocks);
+        },
+        onReplaceBlocks: (next, options = {}) => applyBlocksChange(next, options),
+      }));
 
       blocks.push(wrap);
       blocks.push(loomBlock);
@@ -199,15 +211,16 @@ export function createDocumentRenderer(context, services) {
       "references",
     ];
     const seen = new Set();
+    const sectionFocus = (name) => (focus && focus.section === name ? focus : null);
     for (const name of order) {
       if (sections[name]) {
-        blocks.push(renderSectionBlock(name, sections[name]));
+        blocks.push(renderSectionBlock(name, sections[name], sectionFocus(name)));
         seen.add(name);
       }
     }
     for (const [name, sec] of Object.entries(sections)) {
       if (seen.has(name)) continue;
-      blocks.push(renderSectionBlock(name, sec));
+      blocks.push(renderSectionBlock(name, sec, sectionFocus(name)));
     }
 
     blocks.push(renderRelatedDocsBlock(fm));
@@ -225,7 +238,7 @@ export function createDocumentRenderer(context, services) {
     fetchBacklinksForCurrentDoc();
   }
 
-  function applyBlocksChange(newBlocks, { rerender = true, focusBlockIndex = -1 } = {}) {
+  function applyBlocksChange(newBlocks, { rerender = true, focusBlockIndex = -1, focus = null } = {}) {
     const rawFull = editor.value || "";
     const fmRange = frontmatterRange(rawFull);
     const fmText = fmRange ? rawFull.slice(0, fmRange.end + 5) : "";
@@ -240,7 +253,7 @@ export function createDocumentRenderer(context, services) {
       newBodyMarkdown;
     storeDraft();
     updateSaveState();
-    if (rerender) renderParsedDocument({ bodyBlocks: newBlocks, focusBlockIndex });
+    if (rerender) renderParsedDocument({ bodyBlocks: newBlocks, focusBlockIndex, focus });
   }
 
   function renderDocHierarchyTrail() {
@@ -401,25 +414,23 @@ export function createDocumentRenderer(context, services) {
 
   function renderTitleBlock(parsedFm) {
     const fm = { ...parsedFm, title: readFrontmatterScalar(editor.value || "", "title") || parsedFm.title };
+    const fallback = documentState.currentDoc ? basename(documentState.currentDoc.path) : "";
     const wrap = document.createElement("div");
     wrap.className = "block-title-wrap";
     const h1 = document.createElement("h1");
     h1.className = "block-title";
-    h1.textContent =
-      fm.title || (documentState.currentDoc ? basename(documentState.currentDoc.path) : "Untitled");
     attachInlineEditor(h1, {
-      getValue: () => fm.title || "",
+      getValue: () => fm.title || fallback,
       commit: (value) => applyTitleEdit(fm, value),
-      restore: () => {
-        h1.textContent =
-          fm.title || (documentState.currentDoc ? basename(documentState.currentDoc.path) : "Untitled");
-      },
-      multiline: true,
+      plain: true,
+      multiline: false,
       singleLine: true,
-      autoSize: true,
-      commitOnEnter: true,
-      editorClass: "block-title-editor",
-      showHint: false,
+      placeholder: "Untitled",
+      // Enter in the title moves into the page body, like Notion.
+      onEnterNewBlock: () => focusEditable(
+        renderedView.querySelector(".block-plain-body [data-editable], .block-section [data-editable]"),
+        "start",
+      ),
     });
     wrap.append(h1);
     return wrap;
@@ -602,7 +613,7 @@ export function createDocumentRenderer(context, services) {
     updateSaveState();
   }
 
-  function renderSectionBlock(name, section) {
+  function renderSectionBlock(name, section, focus = null) {
     const block = document.createElement("section");
     block.className = "block-section";
     block.dataset.section = name;
@@ -615,10 +626,10 @@ export function createDocumentRenderer(context, services) {
     const headingText = () => (procedure
       ? procedureHeading(procedure)
       : headingFromBody(section.body_md)) || humanSectionName(name);
-    title.textContent = headingText();
     attachInlineEditor(title, {
       getValue: headingText,
       commit: (value) => {
+        if (!value.trim()) return;
         if (procedure) {
           setProcedureHeading(procedure, value);
           commitProcedure(procedure, { rerender: false });
@@ -626,12 +637,11 @@ export function createDocumentRenderer(context, services) {
           applySectionHeadingEdit(name, section, value);
         }
       },
-      restore: () => {
-        title.textContent = headingText();
-      },
+      plain: true,
       multiline: false,
       singleLine: true,
       placeholder: humanSectionName(name),
+      onEnterNewBlock: () => focusEditable(neighbourEditable(title, 1), "start"),
     });
     header.append(title);
     block.append(header);
@@ -640,7 +650,7 @@ export function createDocumentRenderer(context, services) {
     body.className = "block-section-body";
 
     if (structured) {
-      appendProcedureChildren(body);
+      appendProcedureChildren(body, procedure);
     } else if (section.raw === true) {
       body.append(renderMarkdown(section.body_md || ""));
       body.classList.add("is-raw");
@@ -654,17 +664,40 @@ export function createDocumentRenderer(context, services) {
         multiline: true,
       });
     } else {
-      body.append(renderMarkdown(stripLeadingHeading(section.body_md || "")));
-      attachInlineEditor(body, {
-        getValue: () => stripLeadingHeading(section.body_md || ""),
-        commit: (value) => applySectionBodyEdit(name, section, value, false),
-        restore: () =>
-          body.replaceChildren(
-            renderMarkdown(stripLeadingHeading(section.body_md || "")),
-          ),
-        multiline: true,
-        placeholder: "Empty",
-      });
+      // Ordinary sections are block lists: each paragraph, bullet and to-do
+      // is its own editable block.
+      const sectionBlocks = parseMarkdownBlocks(stripLeadingHeading(section.body_md || ""));
+      if (sectionBlocks.length === 0) sectionBlocks.push(makeBlock("paragraph", ""));
+      const write = (next, options = {}) => {
+        applySectionBodyEdit(name, section, serializeBlocksToMarkdown(next), false);
+        if (options.rerender !== false) {
+          renderParsedDocument({ focus: options.focus ? { ...options.focus, section: name } : null });
+        }
+      };
+      body.append(blockEditor.renderBlocksContainer({
+        blocks: sectionBlocks,
+        focus,
+        onChange: (idx, newRaw, options = {}) => {
+          sectionBlocks[idx] = {
+            ...sectionBlocks[idx], ...(parseMarkdownBlocks(newRaw)[0] || {}), id: sectionBlocks[idx].id, raw: newRaw,
+          };
+          write(sectionBlocks, options);
+        },
+        onMoveBlock: (fromIdx, toIdx) => {
+          const [moved] = sectionBlocks.splice(fromIdx, 1);
+          sectionBlocks.splice(toIdx, 0, moved);
+          write(sectionBlocks);
+        },
+        onInsertBlock: (atIdx, template) => {
+          sectionBlocks.splice(atIdx, 0, makeBlock("paragraph", template));
+          write(sectionBlocks, { focus: { index: atIdx, at: "end" } });
+        },
+        onDeleteBlock: (idx) => {
+          sectionBlocks.splice(idx, 1);
+          write(sectionBlocks);
+        },
+        onReplaceBlocks: (next, options = {}) => write(next, options),
+      }));
     }
 
     block.append(body);

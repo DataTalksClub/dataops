@@ -1,3 +1,4 @@
+import { flushActiveEditable } from "./editable.js";
 import { editorMutationGuard, feedbackKindForError } from "./feedback.js";
 
 export function createEditorLifecycle(context, services) {
@@ -33,6 +34,7 @@ export function createEditorLifecycle(context, services) {
   }
 
   async function saveCurrentDocument() {
+    flushActiveEditable();
     if (!documentState.currentDoc || saveInFlight) return;
     saveInFlight = true;
 
@@ -261,8 +263,9 @@ export function createEditorLifecycle(context, services) {
     const hasChanges = editor.value !== documentState.lastSavedContent;
     editorSaveButton.disabled = !hasChanges;
     editorDiscardButton.disabled = !documentState.hasDraft;
+    // Edits autosave to a local draft as you type; Save publishes it.
     if (hasChanges) {
-      setSaveState("Unsaved changes");
+      setSaveState("Draft saved");
     } else {
       setSaveState("");
     }
@@ -270,6 +273,14 @@ export function createEditorLifecycle(context, services) {
     if (footer) {
       footer.classList.toggle("has-unsaved", hasUnsaved);
     }
+  }
+
+  /** Typing is pending its debounced write to the draft. */
+  function markSaving() {
+    if (!documentState.currentDoc) return;
+    // Cmd/Ctrl+S right after typing saves the pending keystrokes too.
+    editorSaveButton.disabled = false;
+    if (editorSaveState.textContent !== "Saving…") setSaveState("Saving…");
   }
 
   function flashSaveState(message, duration = 1800) {
@@ -389,7 +400,7 @@ export function createEditorLifecycle(context, services) {
   return {
     canLeaveDocumentEditor, createDocument, discardDraft, draftKey,
     draftRevisionKey, recordPublication, showRevisionConflict,
-    listDraftPaths, resizeDocumentTitle, saveCurrentDocument, setMarkdownTitle,
+    listDraftPaths, markSaving, resizeDocumentTitle, saveCurrentDocument, setMarkdownTitle,
     setSaveState,
     showCreate, storeDraft, syncTitleToMarkdown, titleFromMarkdown,
     updateSaveState,

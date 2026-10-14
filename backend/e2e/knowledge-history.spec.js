@@ -96,6 +96,11 @@ async function openDoc(page) {
   await expect(page.locator('#document-path')).toHaveText(docPath);
   await expect(page.locator('#editor')).toBeEnabled();
 }
+// History lives in the page menu; the editor footer only appears for a draft.
+async function openHistoryFromDocMenu(page) {
+  await page.getByRole('button', { name: 'Doc actions', exact: true }).click();
+  await page.locator('.doc-menu-popover').getByRole('button', { name: 'History', exact: true }).click();
+}
 for (const width of [1440, 1280]) {
   test(`document actions History opens without a runtime error at ${width}px`, async ({ page }) => {
     const failures = [];
@@ -113,7 +118,7 @@ for (const width of [1440, 1280]) {
 }
 test('file history compares and restores a version with actor metadata', async ({ page }) => {
   const state = await fixtures(page); await openDoc(page);
-  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await openHistoryFromDocMenu(page);
   await expect(page.locator('#history-versions')).toContainText('Grace');
   await expect(page.locator('#history-versions')).toContainText('Alexey');
   await page.getByRole('button', { name: 'Compare version', exact: true }).last().click();
@@ -129,9 +134,8 @@ test('file history compares and restores a version with actor metadata', async (
 });
 test('stale save preserves draft across reload with its original revision', async ({ page }) => {
   const state = await fixtures(page, true); await openDoc(page);
-  await page.locator('.block-title').click();
-  await page.locator('.block-title-editor').fill('My unsaved work.');
-  await page.locator('.block-title-editor').press('Enter');
+  await page.locator('.block-title').fill('My unsaved work.');
+  await page.locator('.block-title').press('Escape');
   await page.locator('#editor-save-button').click();
   await expect(page.locator('#editor-inline-status')).toContainText('Your unsaved draft is preserved');
   await expect(page.locator('#editor')).toHaveValue(/My unsaved work\./);
@@ -148,7 +152,7 @@ test('stale save preserves draft across reload with its original revision', asyn
 });
 test('binary history downloads authenticated bytes without a text comparison', async ({ page }) => {
   const state = await fixtures(page); await openDoc(page);
-  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await openHistoryFromDocMenu(page);
   await page.locator('#history-path').fill('content/images/synthetic.png');
   await page.getByRole('button', { name: 'Load history', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Download version', exact: true })).toHaveCount(2);
@@ -167,7 +171,7 @@ test('binary history downloads authenticated bytes without a text comparison', a
 
 test('deleted-file history compares and explicitly recovers an older version', async ({ page }) => {
   const state = await fixtures(page); await openDoc(page);
-  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await openHistoryFromDocMenu(page);
   await page.locator('#history-path').fill('content/testing/deleted.md');
   await page.getByRole('button', { name: 'Load history', exact: true }).click();
   await expect(page.locator('#history-versions')).toContainText('delete · deleted');

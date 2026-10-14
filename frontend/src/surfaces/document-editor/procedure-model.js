@@ -19,7 +19,7 @@ const PROSE_OPEN_RE = /<!--\s*sop-prose-start\s*-->/;
 const PROSE_CLOSE_RE = /<!--\s*sop-prose-end\s*-->/;
 const TODO_RE = /<!--\s*sop-todo:\s*"([^"]*)"\s*-->/;
 const IMAGE_RE = /!\[([^\]]*)\]\(([^)]+)\)/;
-const NUMBER_RE = /^(\s*)(\d+)\.\s+/;
+const NUMBER_RE = /^(\s*)(\d+)\.(?:\s+|$)/;
 const ATTR_RE = /(\w+)\s*=\s*(?:"([^"]*)"|(\S+))/g;
 
 let uidCounter = 0;
@@ -268,7 +268,10 @@ export function setProcedureHeading(model, heading) {
 
 function formatStepBody(body, number) {
   const lines = String(body ?? "").split("\n");
-  const out = [`${number}.  ${lines[0] ?? ""}`.replace(/\s+$/, "")];
+  // An empty step keeps its "N.  " marker: the server parser needs the
+  // space after the number to tell the number from the step text.
+  const first = (lines[0] ?? "").replace(/\s+$/, "");
+  const out = [`${number}.  ${first}`];
   for (const line of lines.slice(1)) out.push(line.trim() ? `    ${line}` : "");
   return out;
 }
@@ -612,6 +615,7 @@ export function startGroupAt(model, step, title = "New group") {
     if (where.index === 0) return null;
     const moved = where.list.splice(where.index);
     const group = newGroup(title, moved);
+    group.closeGap = [...(where.group.closeGap || [])];
     const groupIndex = model.items.indexOf(where.group);
     model.items.splice(groupIndex + 1, 0, group);
     renumber(model);

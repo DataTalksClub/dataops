@@ -261,4 +261,13 @@ describe("procedure model", () => {
     assert.match(out, / {4}<!-- sop-screenshot-end -->\n\n {4}<!-- sop-screenshot-start -->\n {4}!\[\]\(content\/images\/new\.png\)\n {4}<!-- sop-screenshot-end -->\n<!-- sop-step-end -->/);
     assert.equal(stepsOf(parseProcedure(out))[0].screenshots.length, 2);
   });
+
+  test("an empty step keeps its number marker and parses back empty", () => {
+    const model = parseProcedure(FLAT);
+    insertAfter(model, findStep(model, 1), newStep(""));
+    const out = emitProcedure(model);
+    assert.match(out, /<!-- sop-step-start id=2 -->\n2\. {2}\n<!-- sop-step-end -->/);
+    assert.equal(findStep(parseProcedure(out), 2).body, "");
+    assert.equal(findStep(parseProcedure("<!-- sop-step-start id=1 -->\n1.\n<!-- sop-step-end -->"), 1).body, "");
+  });
 });
