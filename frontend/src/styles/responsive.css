@@ -316,7 +316,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .surface-actions button,
   .crm-views button,
   .crm-pipeline button,
-  .newsletter-view-tab,
   .planner-header > .primary-button,
   .review-header-actions button,
   .review-controls select,
@@ -520,32 +519,7 @@ body[data-workspace-view="sponsors"] .library-view {
   }
   .newsletter-surface > .newsletter-views {
     order: 1;
-    display: flex;
-    gap: 4px;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-  .newsletter-view-tab {
-    flex: 1 1 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    min-height: 32px;
-    padding-left: 8px !important;
-    padding-right: 8px !important;
-    white-space: nowrap;
-  }
-  .newsletter-view-tab[data-count]::after {
-    content: attr(data-count);
-    border: 1px solid var(--dk-border-default);
-    border-radius: 999px;
-    background: var(--dk-bg-muted);
-    color: var(--dk-text-muted);
-    padding: 0 5px;
-    font-size: 10px;
-    font-weight: 600;
-    line-height: 14px;
+    margin: 0;
   }
   .newsletter-surface > .newsletter-schedule {
     order: 2;

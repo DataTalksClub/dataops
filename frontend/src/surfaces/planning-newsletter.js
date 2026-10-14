@@ -234,11 +234,17 @@ export function createNewsletterPlanner(context) {
         className: "planner-header",
         actionsHtml: '<button class="primary-button" data-newsletter-add>Add slot</button>',
       })}
-      <nav class="newsletter-views" data-newsletter-views aria-label="Newsletter views">
-        <button type="button" data-newsletter-view="all" class="newsletter-view-tab" aria-pressed="true">All Issues</button>
-        <button type="button" data-newsletter-view="upcoming" class="newsletter-view-tab" aria-pressed="false">Upcoming</button>
-        <button type="button" data-newsletter-view="sent" class="newsletter-view-tab" aria-pressed="false">Sent & Archive</button>
-      </nav>
+      <div class="dk-tabs newsletter-views" role="radiogroup" data-newsletter-views aria-label="Filter newsletter issues">
+        <button type="button" data-newsletter-view="all" class="dk-tab"
+          role="radio"
+          aria-checked="true" tabindex="0">All issues <span class="dk-count" data-view-count hidden></span></button>
+        <button type="button" data-newsletter-view="upcoming" class="dk-tab"
+          role="radio"
+          aria-checked="false" tabindex="-1">Upcoming <span class="dk-count" data-view-count hidden></span></button>
+        <button type="button" data-newsletter-view="sent" class="dk-tab"
+          role="radio"
+          aria-checked="false" tabindex="-1">Sent &amp; archive <span class="dk-count" data-view-count hidden></span></button>
+      </div>
       <div class="newsletter-stats-bar" data-newsletter-stats aria-label="Newsletter overview statistics">
         <div class="newsletter-stat-item">
           <span class="newsletter-stat-number" data-stat-total>0</span>
@@ -478,9 +484,8 @@ export function createNewsletterPlanner(context) {
         if (statScheduled) statScheduled.textContent = String(scheduledCount);
         if (statUnbooked) statUnbooked.textContent = String(unbookedCount);
 
-        // The mobile layout keeps the tab row but drops the stats strip, so
-        // each view tab carries its count (data-count rendered as a chip by
-        // the mobile stylesheet; desktop shows the full stats bar instead).
+        // Each filter segment carries its count (the mobile layout drops the
+        // stats strip, so this is where a phone sees them).
         const sentCount = items.filter((i) =>
           ["sent", "cancelled"].includes(i.status)
         ).length;
@@ -490,8 +495,11 @@ export function createNewsletterPlanner(context) {
           sent: sentCount,
         };
         for (const [view, count] of Object.entries(viewCounts)) {
-          const tab = surface.querySelector(`[data-newsletter-view="${view}"]`);
-          if (tab) tab.dataset.count = String(count);
+          const badge = surface.querySelector(`[data-newsletter-view="${view}"] [data-view-count]`);
+          if (badge) {
+            badge.textContent = String(count);
+            badge.hidden = false;
+          }
         }
 
         const uniqueAlerts = [
@@ -550,7 +558,8 @@ export function createNewsletterPlanner(context) {
       btn.onclick = () => {
         currentView = btn.dataset.newsletterView;
         surface.querySelectorAll("[data-newsletter-view]").forEach((b) => {
-          b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+          b.setAttribute("aria-checked", b === btn ? "true" : "false");
+          b.tabIndex = b === btn ? 0 : -1;
         });
         load();
       };
