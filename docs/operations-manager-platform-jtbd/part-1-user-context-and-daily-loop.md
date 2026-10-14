@@ -42,12 +42,6 @@ The analysis is grounded in:
 - Private operations-knowledge content, or sanitized fixtures when referenced
   from this public repo: schedule, newsletter, operations reference material,
   SOPs, and templates used as contextual instructions.
-- `assistants/podcast/README.md`: current assistant module overview.
-- `assistants/podcast/process/podcast.md` and
-  `assistants/podcast/templates/podcast_guest_intake.md`: current assistant
-  process/template inputs for turning raw inputs into prepared operating
-  documents; long-term reusable process/template content belongs in the
-  private knowledge repo.
 
 ## The User
 

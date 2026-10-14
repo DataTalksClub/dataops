@@ -265,9 +265,6 @@ def validate_jtbd_reference_set(repo_root: Path) -> list[str]:
         "backend/docs/templates.md",
         "backend/src/types.ts",
         "frontend/src/app.js",
-        "assistants/podcast/README.md",
-        "assistants/podcast/process/podcast.md",
-        "assistants/podcast/templates/podcast_guest_intake.md",
     }
     missing_refs = sorted(required - set(refs))
     for ref in missing_refs:

@@ -3,12 +3,12 @@ SAM_LOCAL_AWS_DIR := .tmp/aws-empty
 SAM_LOCAL_AWS_CONFIG := $(SAM_LOCAL_AWS_DIR)/config
 SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
-.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend test-backend-transactions typecheck-backend build-backend test-backend-e2e test-cli test-cli-e2e test-assistant sam-local-aws-config sam-validate sam-build test-sam-workspace-isolation verify-sam-frontend verify-sam-runtime-boundary test-sam-frontend-isolation ci clean
+.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend test-backend-transactions typecheck-backend build-backend test-backend-e2e test-cli test-cli-e2e sam-local-aws-config sam-validate sam-build test-sam-workspace-isolation verify-sam-frontend verify-sam-runtime-boundary test-sam-frontend-isolation ci clean
 
 help:
 	@printf '%s\n' 'DataOps development targets:'
 	@printf '%s\n' ''
-	@printf '%-28s %s\n' 'make setup' 'Install root npm workspace and Python project dependencies.'
+	@printf '%-28s %s\n' 'make setup' 'Install root npm workspace dependencies.'
 	@printf '%-28s %s\n' 'make dev-frontend' 'Run a static frontend server in the foreground on port 5173.'
 	@printf '%-28s %s\n' 'make dev' 'Run the consolidated backend (frontend + docs + work) on port 3000.'
 	@printf '%-28s %s\n' 'make dev-compose' 'Run the current Docker Compose portal stack in the foreground.'
@@ -23,7 +23,6 @@ help:
 	@printf '%-28s %s\n' 'make test-backend-e2e' 'Run backend Playwright E2E tests; browsers must be installed.'
 	@printf '%-28s %s\n' 'make test-cli' 'Run CLI unit tests against a fake portal.'
 	@printf '%-28s %s\n' 'make test-cli-e2e' 'Run the CLI binary against a local backend with synthetic data.'
-	@printf '%-28s %s\n' 'make test-assistant' 'Run DataOps podcast assistant pytest.'
 	@printf '%-28s %s\n' 'make sam-validate' 'Validate SAM template locally with empty AWS config; never deploys.'
 	@printf '%-28s %s\n' 'make sam-build' 'Build the full-sandbox SAM artifact locally; never deploys.'
 	@printf '%-28s %s\n' 'make test-sam-workspace-isolation' 'Run one clean SAM build beside fresh root dependency imports.'
@@ -36,7 +35,6 @@ help:
 	@printf '%s\n' 'Local dev is a single backend (frontend + docs + work): make dev'
 
 setup:
-	uv sync --project assistants/podcast
 	npm ci
 
 dev-frontend:
@@ -90,9 +88,6 @@ test-cli:
 
 test-cli-e2e:
 	npm run test:e2e --workspace dataops-cli
-
-test-assistant:
-	uv run --project assistants/podcast pytest
 
 sam-local-aws-config: .tmp
 	mkdir -p $(SAM_LOCAL_AWS_DIR)
