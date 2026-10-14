@@ -1114,41 +1114,6 @@ a.calendar-day-timeline-title:hover {
   min-width: 0;
   width: 100%;
 }
-.newsletter-dialog-tabs {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-  border-bottom: 1px solid var(--dk-border-default);
-  padding: 0;
-  margin: 0;
-  background: transparent;
-  overflow-x: auto;
-}
-.dialog-tab-btn {
-  padding: 6px 12px;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: var(--dk-radius-md) var(--dk-radius-md) 0 0;
-  background: transparent;
-  color: var(--dk-text-muted);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  margin-bottom: -1px;
-  transition: all 120ms ease;
-  white-space: nowrap;
-}
-.dialog-tab-btn:hover {
-  color: var(--dk-text-primary);
-}
-.dialog-tab-btn[aria-pressed="true"] {
-  border-color: var(--dk-border-default);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-heading);
-  font-weight: 600;
-}
-
 .issue-pane {
   display: flex;
   flex-direction: column;
@@ -1239,6 +1204,7 @@ a.calendar-day-timeline-title:hover {
 /* Preview styles */
 .newsletter-preview-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -1246,27 +1212,6 @@ a.calendar-day-timeline-title:hover {
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
   border: 1px solid var(--dk-border-default);
-}
-.preview-device-toggle {
-  display: inline-flex;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-full);
-  overflow: hidden;
-  background: var(--dk-bg-surface);
-}
-.preview-device-btn {
-  padding: 4px 12px;
-  border: none;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--dk-text-muted);
-  cursor: pointer;
-}
-.preview-device-btn.is-active {
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-heading);
-  font-weight: 600;
 }
 .preview-envelope {
   border: 1px solid var(--dk-border-default);

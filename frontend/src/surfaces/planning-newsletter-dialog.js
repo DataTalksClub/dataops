@@ -148,18 +148,26 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
               Keep the publication plan, content drafting, and email preview together.
             </p>
           </div>
-          <nav class="newsletter-dialog-tabs" aria-label="Issue tabs">
-            <button type="button" data-dialog-tab="details" class="dialog-tab-btn" aria-pressed="true">Details</button>
-            <button type="button" data-dialog-tab="compose" class="dialog-tab-btn" aria-pressed="false">Compose</button>
-            <button type="button" data-dialog-tab="preview" class="dialog-tab-btn" aria-pressed="false">Email Preview</button>
-            <button type="button" data-dialog-tab="schedule" class="dialog-tab-btn" aria-pressed="false">Schedule & Checklist</button>
-          </nav>
+          <div class="dk-tabs newsletter-dialog-tabs" role="tablist" aria-label="Issue views">
+            <button type="button" data-dialog-tab="details" class="dk-tab"
+              role="tab" id="newsletter-tab-details"
+              aria-controls="newsletter-pane-details" aria-selected="true" tabindex="0">Details</button>
+            <button type="button" data-dialog-tab="compose" class="dk-tab"
+              role="tab" id="newsletter-tab-compose"
+              aria-controls="newsletter-pane-compose" aria-selected="false" tabindex="-1">Compose</button>
+            <button type="button" data-dialog-tab="preview" class="dk-tab"
+              role="tab" id="newsletter-tab-preview"
+              aria-controls="newsletter-pane-preview" aria-selected="false" tabindex="-1">Email preview</button>
+            <button type="button" data-dialog-tab="schedule" class="dk-tab"
+              role="tab" id="newsletter-tab-schedule"
+              aria-controls="newsletter-pane-schedule" aria-selected="false" tabindex="-1">Schedule &amp; checklist</button>
+          </div>
         </div>
         <div class="dk-dialog__body">
           <input name="id" type="hidden">
           <input name="version" type="hidden">
 
-          <div class="issue-pane" data-pane="details">
+          <div class="issue-pane" data-pane="details" role="tabpanel" id="newsletter-pane-details" aria-labelledby="newsletter-tab-details">
             <div class="planner-form-grid">
               <label>Publication date <input name="publicationDate" type="date" required></label>
               <label>Publication time <input name="publicationTime" type="time" placeholder="14:00" title="Time in Europe/Berlin"></label>
@@ -180,7 +188,7 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
             </div>
           </div>
 
-          <div class="issue-pane" data-pane="compose" hidden>
+          <div class="issue-pane" data-pane="compose" role="tabpanel" id="newsletter-pane-compose" aria-labelledby="newsletter-tab-compose" hidden>
             <div class="newsletter-composer-header">
               <div class="newsletter-composer-field">
                 <label for="newsletter-issue-subject">Subject Line</label>
@@ -207,11 +215,11 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
             <div class="newsletter-blocks-wrapper" data-blocks-editor></div>
           </div>
 
-          <div class="issue-pane" data-pane="preview" hidden>
+          <div class="issue-pane" data-pane="preview" role="tabpanel" id="newsletter-pane-preview" aria-labelledby="newsletter-tab-preview" hidden>
             <div class="newsletter-preview-toolbar">
-              <div class="preview-device-toggle">
-                <button type="button" class="preview-device-btn is-active" data-device="desktop">Desktop (600px)</button>
-                <button type="button" class="preview-device-btn" data-device="mobile">Mobile (360px)</button>
+              <div class="dk-tabs dk-tabs--sm" role="radiogroup" aria-label="Preview width">
+                <button type="button" class="dk-tab" role="radio" aria-checked="true" tabindex="0" data-device="desktop">Desktop <span class="dk-count">600px</span></button>
+                <button type="button" class="dk-tab" role="radio" aria-checked="false" tabindex="-1" data-device="mobile">Mobile <span class="dk-count">360px</span></button>
               </div>
               <button type="button" class="newsletter-template-btn" data-copy-preview>Copy preview text</button>
             </div>
@@ -274,7 +282,7 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
             </div>
           </div>
 
-          <div class="issue-pane" data-pane="schedule" hidden>
+          <div class="issue-pane" data-pane="schedule" role="tabpanel" id="newsletter-pane-schedule" aria-labelledby="newsletter-tab-schedule" hidden>
             <div class="newsletter-status-banner" data-status-banner>
               <span class="status-banner-badge" data-status-banner-badge hidden></span>
               <span class="status-banner-text" data-status-banner-text>Editorial campaign slot planned.</span>
@@ -661,7 +669,9 @@ export function setupNewsletterDialog(options) {
   function switchDialogTab(tabName) {
     blockEditor.slashMenu.close();
     dialog.querySelectorAll("[data-dialog-tab]").forEach((btn) => {
-      btn.setAttribute("aria-pressed", btn.dataset.dialogTab === tabName ? "true" : "false");
+      const selected = btn.dataset.dialogTab === tabName;
+      btn.setAttribute("aria-selected", selected ? "true" : "false");
+      btn.tabIndex = selected ? 0 : -1;
     });
     dialog.querySelectorAll("[data-pane]").forEach((pane) => {
       const match = pane.dataset.pane === tabName;
@@ -779,7 +789,8 @@ export function setupNewsletterDialog(options) {
       const device = btn.dataset.device;
       currentDevice = device;
       dialog.querySelectorAll("[data-device]").forEach((b) => {
-        b.classList.toggle("is-active", b === btn);
+        b.setAttribute("aria-checked", b === btn ? "true" : "false");
+        b.tabIndex = b === btn ? 0 : -1;
       });
       const card = dialog.querySelector("[data-sim-card]");
       if (card) {
