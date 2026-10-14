@@ -31,6 +31,7 @@ import fs from 'fs';
 import path from 'path';
 import { DynamoDBDocumentClient, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 
+import { externalLinkKey, normalizeExternalTitle, normalizeExternalUrl } from '../src/artifactLinks';
 import { getClient } from '../src/db/client';
 import { TABLE_AUDIT_EVENTS, TABLE_TASKS } from '../src/db/tableNames';
 import { createTemplate, listTemplates } from '../src/db/templates';
@@ -938,14 +939,17 @@ function buildTrelloArtifactPlans(card: TrelloCard, cardId: string, warnings: st
   const artifacts: TrelloArtifactPlan[] = [];
   const seen = new Set<string>();
   for (const candidate of candidates) {
-    if (!candidate.url || seen.has(candidate.url)) continue;
-    seen.add(candidate.url);
-    if (!/^https?:\/\//i.test(candidate.url)) {
+    if (!candidate.url) continue;
+    const url = normalizeExternalUrl(candidate.url);
+    if (!url) {
       warnings.push(`invalid URL: ${candidate.url}`);
       continue;
     }
-    if (!isSafeExternalUrl(candidate.url)) {
-      warnings.push(`unsafe artifact URL: ${candidate.url}`);
+    const linkKey = externalLinkKey(url);
+    if (seen.has(linkKey)) continue;
+    seen.add(linkKey);
+    if (!isSafeExternalUrl(url)) {
+      warnings.push(`unsafe artifact URL: ${url}`);
       continue;
     }
     const sourceKey = `trello:card:${card.id}:artifact:${candidate.sourceId}`;
@@ -954,11 +958,11 @@ function buildTrelloArtifactPlans(card: TrelloCard, cardId: string, warnings: st
       artifact: {
         id: stableMigrationId('trello-artifact', `${card.id}-${candidate.sourceId}`),
         type: artifactTypeForUrl(candidate.name, candidate.url),
-        title: candidate.name,
+        title: normalizeExternalTitle(candidate.name, url),
         description: `Imported from Trello ${candidate.source} on card "${card.name}".`,
         status: 'approved',
         storageProvider: 'external-url',
-        storageUri: candidate.url,
+        storageUri: url,
         visibility: 'internal',
         dataClass: 'internal',
         cardId,

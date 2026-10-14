@@ -125,6 +125,53 @@ describe('API - Artifacts', () => {
     assert.strictEqual(JSON.parse(archiveRes.body).artifact.status, 'archived');
   });
 
+  it('stores external links in one clean shape and refuses duplicates on the same card', async () => {
+    const card = await createCard();
+    const artifact = await registerArtifact({
+      cardId: card.id,
+      title: 'https://luma.com/abc123](https://luma.com/abc123',
+      storageUri: 'https://luma.com/abc123](https://luma.com/abc123',
+    });
+    assert.strictEqual(artifact.storageUri, 'https://luma.com/abc123');
+    assert.strictEqual(artifact.title, 'https://luma.com/abc123');
+
+    const labelled = await registerArtifact({
+      cardId: card.id,
+      title: '[Episode doc](https://docs.google.com/document/d/doc-1/edit?usp=sharing)',
+      storageUri: 'https://docs.google.com/document/d/doc\\_1/edit?usp=sharing&tab=t.0',
+    });
+    assert.strictEqual(labelled.storageUri, 'https://docs.google.com/document/d/doc_1/edit');
+    assert.strictEqual(labelled.title, 'Episode doc');
+
+    const duplicate = await handler({
+      httpMethod: 'POST',
+      path: '/api/artifacts',
+      body: JSON.stringify({
+        type: 'event-page',
+        title: 'Luma again',
+        storageUri: 'https://luma.com/abc123?utm_source=share',
+        cardId: card.id,
+      }),
+    }, {});
+    assert.strictEqual(duplicate.statusCode, 409, duplicate.body);
+    assert.strictEqual(JSON.parse(duplicate.body).artifact.id, artifact.id);
+
+    const malformed = await handler({
+      httpMethod: 'POST',
+      path: '/api/artifacts',
+      body: JSON.stringify({ type: 'external-link', title: 'Nope', storageUri: 'not a link', cardId: card.id }),
+    }, {});
+    assert.strictEqual(malformed.statusCode, 400, malformed.body);
+
+    const renamed = await handler({
+      httpMethod: 'PUT',
+      path: `/api/artifacts/${artifact.id}`,
+      body: JSON.stringify({ title: '  ' + 'https://luma.com/abc123]' }),
+    }, {});
+    assert.strictEqual(renamed.statusCode, 200, renamed.body);
+    assert.strictEqual(JSON.parse(renamed.body).artifact.title, 'https://luma.com/abc123');
+  });
+
   it('requires approved artifact proof before task completion', async () => {
     const task = await createTask({
       proofRequirement: { type: 'artifact', label: 'Reviewed draft' },

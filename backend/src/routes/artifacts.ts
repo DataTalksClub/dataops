@@ -2,6 +2,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+import { externalLinkKey, normalizeExternalTitle, normalizeExternalUrl } from '../artifactLinks';
 import { getClient } from '../db/client';
 import { createArtifact, getArtifact, listArtifacts, updateArtifact } from '../db/artifacts';
 import { getCard, updateCardAdditive } from '../db/cards';
@@ -92,6 +93,55 @@ function validateMetadata(value: unknown, path = 'metadata'): string | null {
         stack.push({ prefix: childPath, record: child as Record<string, unknown> });
       }
     }
+  }
+  return null;
+}
+
+/** Statuses that no longer stand for the link; registering it again is fine. */
+const RETIRED_STATUSES = new Set(['archived', 'rejected', 'superseded']);
+
+function isOwnedStorage(storageUri: string): boolean {
+  return storageUri.startsWith('s3://') || storageUri.startsWith('local-dev://');
+}
+
+/**
+ * External links are stored in one canonical shape: a clean http(s) URL and a
+ * title that is either an operator-written label or that URL. Broken Markdown
+ * (`url](url`), escapes and tracking parameters never reach the table.
+ */
+function normalizeLinkFields(fields: Record<string, unknown>, existing?: ArtifactRecord): string | null {
+  const touchesUri = fields.storageUri !== undefined;
+  const touchesTitle = fields.title !== undefined;
+  if (!touchesUri && !touchesTitle) return null;
+  const rawUri = String(touchesUri ? fields.storageUri : existing?.storageUri || '').trim();
+  if (!rawUri || isOwnedStorage(rawUri)) return null;
+  const clean = normalizeExternalUrl(rawUri);
+  if (!clean) return 'storageUri must be an http(s) link';
+  if (touchesUri) fields.storageUri = clean;
+  fields.title = normalizeExternalTitle(touchesTitle ? fields.title : existing?.title, clean);
+  return null;
+}
+
+async function findDuplicateLink(
+  client: DynamoDBDocumentClient,
+  fields: Record<string, unknown>,
+  excludeId?: string,
+): Promise<ArtifactRecord | null> {
+  const storageUri = String(fields.storageUri || '');
+  if (!storageUri || isOwnedStorage(storageUri)) return null;
+  const owners: Array<{ cardId?: string; taskId?: string }> = [];
+  if (isNonEmptyString(fields.cardId)) owners.push({ cardId: fields.cardId });
+  if (isNonEmptyString(fields.taskId)) owners.push({ taskId: fields.taskId });
+  const key = externalLinkKey(storageUri);
+  for (const owner of owners) {
+    const siblings = await listArtifacts(client, owner);
+    const duplicate = siblings.find((artifact) =>
+      artifact.id !== excludeId
+      && !RETIRED_STATUSES.has(artifact.status)
+      && artifact.storageUri
+      && !isOwnedStorage(artifact.storageUri)
+      && externalLinkKey(artifact.storageUri) === key);
+    if (duplicate) return duplicate;
   }
   return null;
 }
@@ -210,10 +260,16 @@ async function handleCreate(event: LambdaEvent, client: DynamoDBDocumentClient):
     artifactData.reviewedBy = artifactData.reviewedBy || artifactData.createdBy;
   }
 
+  const linkError = normalizeLinkFields(artifactData);
+  if (linkError) return jsonResponse(400, { error: linkError });
   const validationError = validateArtifactFields(artifactData, true);
   if (validationError) return jsonResponse(400, { error: validationError });
   const relationshipError = await validateRelationships(client, artifactData);
   if (relationshipError) return jsonResponse(404, { error: relationshipError });
+  const duplicate = await findDuplicateLink(client, artifactData);
+  if (duplicate) {
+    return jsonResponse(409, { error: 'This link is already registered here', artifact: publicArtifact(duplicate) });
+  }
 
   const artifact = await createArtifact(client, artifactData);
   return jsonResponse(201, { artifact: publicArtifact(artifact) });
@@ -254,10 +310,18 @@ async function handleUpdate(id: string, event: LambdaEvent, client: DynamoDBDocu
   }
 
   if (Object.keys(updates).length === 0) return jsonResponse(400, { error: 'No valid fields to update' });
+  const linkError = normalizeLinkFields(updates, existing);
+  if (linkError) return jsonResponse(400, { error: linkError });
   const validationError = validateArtifactFields({ ...existing, ...updates }, false);
   if (validationError) return jsonResponse(400, { error: validationError });
   const relationshipError = await validateRelationships(client, updates);
   if (relationshipError) return jsonResponse(404, { error: relationshipError });
+  if (updates.storageUri !== undefined || updates.cardId !== undefined || updates.taskId !== undefined) {
+    const duplicate = await findDuplicateLink(client, { ...existing, ...updates }, id);
+    if (duplicate) {
+      return jsonResponse(409, { error: 'This link is already registered here', artifact: publicArtifact(duplicate) });
+    }
+  }
 
   const artifact = await updateArtifact(client, id, updates);
   return jsonResponse(200, { artifact: artifact ? publicArtifact(artifact) : artifact });
