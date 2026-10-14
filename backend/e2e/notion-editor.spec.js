@@ -307,3 +307,79 @@ test('"/" opens the block menu in place, filters as you type and inserts blocks'
   await page.keyboard.type('After the line.');
   await expect(draft(page)).toHaveValue(/Last paragraph\.\n\n## Slash heading\n\n---\n\nAfter the line\.$/);
 });
+
+test('the gutter: hover shows "+" and the handle; drag shows a 1px line and moves; the handle opens the menu', async ({ page }) => {
+  await openDoc(page, SOP_PATH, 'Synthetic Notion SOP');
+  const block = (id) => page.locator(`.block-step[data-step-id="${id}"]`);
+  const gutter = (id) => block(id).locator('> .block-gutter');
+  await expect(gutter(1)).toHaveCSS('opacity', '0');
+  await step(page, 1).hover();
+  await expect(gutter(1)).toHaveCSS('opacity', '1');
+  await expect(gutter(1).locator('.block-gutter-add')).toBeVisible();
+  await capture(page, 'gutter-hover');
+
+  // Drag step 3 above step 1: a 1px neutral line marks the drop edge.
+  const handle = gutter(3).locator('.block-gutter-handle');
+  await step(page, 3).hover();
+  const from = await handle.boundingBox();
+  const to = await block(1).boundingBox();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 40, to.y + 4, { steps: 8 });
+  await expect(block(1)).toHaveClass(/drop-above/);
+  const line = await block(1).evaluate((node) => {
+    const after = getComputedStyle(node, '::after');
+    return { height: after.height, top: after.top };
+  });
+  expect(line).toEqual({ height: '1px', top: '0px' });
+  await capture(page, 'gutter-drag');
+  await page.mouse.up();
+  await expect(draft(page)).toHaveValue(
+    /<!-- sop-step-start id=1 -->\n1\. {2}Check the synthetic result\.[\s\S]*<!-- sop-step-start id=2 action="click" -->\n2\. {2}Open the \*\*synthetic\*\* dashboard\./,
+  );
+  // The prose stayed first in its group.
+  await expect(draft(page)).toHaveValue(/### Prepare\n\n<!-- sop-prose-start -->/);
+
+  await step(page, 2).hover();
+  await gutter(2).locator('.block-gutter-handle').click();
+  const menu = page.getByRole('menu', { name: 'Step actions' });
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Turn into text', 'Start a group here⇧Tab', 'Duplicate', 'Add screenshot…', 'Step properties…',
+    'Move up', 'Move down', 'Delete',
+  ]);
+  await capture(page, 'gutter-menu');
+  await menu.getByRole('menuitem', { name: 'Duplicate' }).click();
+  await expect(page.locator('.block-step')).toHaveCount(4);
+  await expect(draft(page)).toHaveValue(/2\. {2}Open the \*\*synthetic\*\* dashboard\.[\s\S]*3\. {2}Open the \*\*synthetic\*\* dashboard\./);
+  await step(page, 3).hover();
+  await gutter(3).locator('.block-gutter-handle').click();
+  await page.getByRole('menu', { name: 'Step actions' }).getByRole('menuitem', { name: 'Delete' }).click();
+  await expect(page.locator('.block-step')).toHaveCount(3);
+
+  // "+" inserts a step below and opens the "/" menu in it.
+  await step(page, 1).hover();
+  await gutter(1).locator('.block-gutter-add').click();
+  await expect(page.locator('.block-slash-menu.is-inline')).toBeVisible();
+  await expect(step(page, 2)).toBeFocused();
+});
+
+test.describe('on a touch phone', () => {
+  test.use({ viewport: MOBILE, hasTouch: true, isMobile: true });
+
+  test('the gutter appears above the block being edited and a tap opens its menu', async ({ page }) => {
+    await openDoc(page, SOP_PATH, 'Synthetic Notion SOP', MOBILE);
+    const gutter = page.locator('.block-step[data-step-id="2"] > .block-gutter');
+    await expect(gutter).toHaveCSS('opacity', '0');
+    await step(page, 2).tap();
+    await expect(gutter).toHaveCSS('opacity', '1');
+    const box = await gutter.boundingBox();
+    const blockBox = await page.locator('.block-step[data-step-id="2"]').boundingBox();
+    expect(box.y + box.height).toBeLessThanOrEqual(blockBox.y + 1);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(MOBILE.width);
+    await capture(page, 'gutter-mobile');
+    await gutter.locator('.block-gutter-handle').tap();
+    await expect(page.getByRole('menu', { name: 'Step actions' })).toBeVisible();
+    await capture(page, 'gutter-mobile-menu');
+  });
+});

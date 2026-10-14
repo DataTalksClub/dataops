@@ -79,6 +79,7 @@ export function createProcedureMarkdown(context, services) {
     }
     focusEditable(target, at);
     if (focus.select) target.ownerDocument.getSelection?.()?.selectAllChildren(target);
+    if (focus.slash) target.ownerDocument.execCommand("insertText", false, "/");
   }
 
   function snapshotProcedure() {

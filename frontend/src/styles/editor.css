@@ -545,9 +545,7 @@ textarea.inline-editor {
 .notion-block:hover {
   background: var(--dk-bg-hover);
 }
-.notion-block.is-dragging {
-  opacity: 0.4;
-}
+
 /* The drop position is a 1px neutral line on the edge the block lands on. */
 .notion-block.drop-above::after,
 .notion-block.drop-below::after {
@@ -561,47 +559,12 @@ textarea.inline-editor {
 }
 .notion-block.drop-above::after { top: 0; }
 .notion-block.drop-below::after { bottom: 0; }
-.notion-block-gutter {
-  position: absolute;
-  left: -44px;
-  top: 3px;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-  user-select: none;
-  z-index: 5;
-}
-.notion-block:hover > .notion-block-gutter,
-.notion-block:focus-within > .notion-block-gutter {
-  opacity: 1;
-}
-.notion-block-btn {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--dk-text-muted);
-  font-size: 13px;
-  line-height: 1;
-  padding: 0;
-  cursor: pointer;
-}
-.notion-block-btn:hover {
-  background: var(--dk-bg-hover);
-  color: var(--dk-text-primary);
-}
-.notion-block-drag {
-  cursor: grab;
-  font-size: 14px;
-}
-.notion-block-drag:active {
-  cursor: grabbing;
-}
+
+
+
+
+
+
 .notion-block-content {
   flex: 1;
   min-width: 0;
@@ -1790,13 +1753,24 @@ blockquote p,
   vertical-align: middle;
 }
 
+/* Clicking below the last block adds one, like the empty space at the end
+   of a Notion page; inside an SOP section the target is a thin strip. */
 .rendered-view .notion-add-row-btn:empty {
   display: block;
   width: 100%;
-  min-height: calc(2 * var(--dk-space-8));
+  min-height: var(--dk-space-3);
   border: 0;
   background: transparent;
+  padding: 0;
   cursor: text;
+}
+
+.rendered-view .notion-add-block-row {
+  padding: 0;
+}
+
+.block-plain-body .notion-add-row-btn:empty {
+  min-height: calc(2 * var(--dk-space-8));
 }
 
 .rendered-view .notion-text-content.h1,
@@ -1878,4 +1852,188 @@ blockquote p,
   color: var(--dk-text-primary);
   padding: 0 var(--dk-space-3);
   font-size: var(--dk-text-md);
+}
+
+/* Block gutter: a "+" and a drag handle beside each block, outside the
+   text column. A mouse sees it on hover; touch sees it on the block being
+   edited, floating above its right edge, so nothing needs hover. */
+.doc-block,
+.notion-block {
+  position: relative;
+}
+
+.block-gutter {
+  position: absolute;
+  top: var(--dk-space-1);
+  right: 100%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  padding-right: var(--dk-space-1);
+  opacity: 0;
+  transition: opacity 120ms ease;
+  user-select: none;
+}
+
+.block-group-header > .block-gutter {
+  top: 0;
+}
+
+.doc-block:hover > .block-gutter,
+.notion-block:hover > .block-gutter,
+.block-gutter:focus-within {
+  opacity: 1;
+}
+
+.block-gutter-button {
+  display: grid;
+  place-items: center;
+  width: var(--dk-space-6);
+  height: var(--dk-space-6);
+  border: 0;
+  border-radius: var(--dk-radius-sm);
+  background: transparent;
+  color: var(--dk-text-faint);
+  padding: 0;
+  cursor: pointer;
+}
+
+.block-gutter-button:hover,
+.block-gutter-button[aria-expanded="true"] {
+  background: var(--dk-bg-hover);
+  color: var(--dk-text-muted);
+}
+
+.block-gutter-handle {
+  cursor: grab;
+}
+
+.block-gutter-handle:active {
+  cursor: grabbing;
+}
+
+.block-gutter-button svg {
+  width: var(--dk-space-4);
+  height: var(--dk-space-4);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.block-gutter-handle svg circle {
+  fill: currentColor;
+  stroke: none;
+}
+
+.doc-block.is-dragging,
+.block-group:has(> .block-group-header.is-dragging),
+.notion-block.is-dragging {
+  opacity: 0.4;
+}
+
+/* The drop position is a 1px neutral line on the edge the block lands on. */
+.doc-block.drop-above::after,
+.doc-block.drop-below::after,
+.block-group.drop-above::after,
+.block-group.drop-below::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--dk-border-strong);
+  pointer-events: none;
+}
+
+.block-group {
+  position: relative;
+}
+
+.doc-block.drop-above::after,
+.block-group.drop-above::after {
+  top: 0;
+}
+
+.doc-block.drop-below::after,
+.block-group.drop-below::after {
+  bottom: 0;
+}
+
+.block-step.drop-file {
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-accent-soft);
+}
+
+.block-menu {
+  position: fixed;
+  z-index: 80;
+  display: grid;
+  min-width: var(--dk-size-menu);
+  max-height: min(420px, calc(100vh - 2 * var(--dk-space-4)));
+  overflow-y: auto;
+  border: 1px solid var(--dk-border-strong);
+  border-radius: var(--dk-radius-lg);
+  background: var(--dk-bg-surface);
+  box-shadow: var(--dk-shadow-overlay);
+  padding: var(--dk-space-1);
+}
+
+.block-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dk-space-3);
+  min-height: var(--dk-size-control-md);
+  border: 0;
+  border-radius: var(--dk-radius-sm);
+  background: transparent;
+  color: var(--dk-text-primary);
+  padding: 0 var(--dk-space-2);
+  font-size: var(--dk-text-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.block-menu-item:hover,
+.block-menu-item:focus-visible {
+  background: var(--dk-bg-hover);
+  outline: none;
+}
+
+.block-menu-item.is-danger {
+  color: var(--dk-danger-text);
+}
+
+.block-menu-hint {
+  color: var(--dk-text-faint);
+  font-family: var(--dk-font-mono);
+  font-size: var(--dk-text-xs);
+}
+
+.block-menu-separator {
+  margin: var(--dk-space-1) 0;
+  border-top: 1px solid var(--dk-border-default);
+}
+
+@media (hover: none) {
+  .block-gutter {
+    top: auto;
+    right: 0;
+    bottom: 100%;
+    gap: var(--dk-space-1);
+    border: 1px solid var(--dk-border-default);
+    border-radius: var(--dk-radius-md);
+    background: var(--dk-bg-surface);
+    box-shadow: var(--dk-shadow-overlay);
+    padding: var(--dk-space-1);
+    pointer-events: none;
+  }
+
+  .doc-block:focus-within > .block-gutter,
+  .notion-block:focus-within > .block-gutter,
+  .block-gutter:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }

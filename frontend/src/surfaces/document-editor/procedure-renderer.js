@@ -1,19 +1,25 @@
 import { focusEditable, neighbourEditable } from "./editable.js";
 import { toVideoEmbed } from "./embeds.js";
+import { makeBlockGutter, openBlockMenu } from "./block-menu.js";
 import { pickImageFiles, promptInline } from "./inline-prompt.js";
 import { createSlashMenu, PROCEDURE_BLOCKS } from "./slash-menu.js";
 import { editorFeedbackFor, editorMutationGuard } from "./feedback.js";
 import {
   convertItem,
+  duplicateStep,
   flowOf,
   groupsOf,
   insertAfter,
+  insertBefore,
   joinGroupAbove,
+  locate,
   mergeIntoPrevious,
+  moveItem,
   newProse,
   newScreenshot,
   newStep,
   newTodo,
+  nudgeItem,
   previousFlowItem,
   removeItem,
   setGroupTitle,
@@ -91,6 +97,239 @@ export function createProcedureRenderer(context, services, editorState) {
       }
       commitProcedure(model, { focus: focusOf(model, item, { at: "end" }) });
     }
+  }
+
+  // ---------- gutter: "+", drag handle, block menu ----------
+
+  function attachGutter(blockEl, item, model) {
+    const gutter = makeBlockGutter({
+      addLabel: item.kind === "group" ? "Add a step to this group" : "Insert below",
+      onAdd: () => {
+        let created;
+        if (item.kind === "group") {
+          created = item.children.length
+            ? insertBefore(model, item.children[0], newStep(""))
+            : insertAfter(model, null, newStep(""));
+        } else {
+          created = insertAfter(model, item, item.kind === "prose" ? newProse("") : newStep(""));
+        }
+        commitProcedure(model, { focus: focusOf(model, created, { at: "start", slash: true }) });
+      },
+      onMenu: (handle) => openBlockMenu(handle, blockMenuItems(item, model), {
+        label: item.kind === "group" ? "Group actions" : item.kind === "step" ? "Step actions" : "Text actions",
+      }),
+      onDragStart: (event) => {
+        editorState.drag = { item, model, blockEl };
+        blockEl.classList.add("is-dragging");
+        event.dataTransfer.effectAllowed = "move";
+        try {
+          event.dataTransfer.setData("text/plain", item.kind);
+          event.dataTransfer.setDragImage?.(blockEl, 0, 0);
+        } catch {}
+      },
+      onDragEnd: endDrag,
+    });
+    blockEl.prepend(gutter);
+  }
+
+  function endDrag() {
+    editorState.drag?.blockEl?.classList.remove("is-dragging");
+    editorState.drag = null;
+    for (const el of renderedView.querySelectorAll(".drop-above, .drop-below, .drop-file")) {
+      el.classList.remove("drop-above", "drop-below", "drop-file");
+    }
+  }
+
+  /**
+   * `blockEl` accepts drops: steps and free text drop between each other
+   * (across groups); a group drops before or after another group; image
+   * files dropped on a step become its screenshots.
+   */
+  function bindDropTarget(blockEl, target, model) {
+    const accepts = (drag) => drag && drag.model === model && drag.item !== target &&
+      ((drag.item.kind === "group") === (target.kind === "group"));
+    blockEl.addEventListener("dragover", (event) => {
+      if (target.kind === "step" && event.dataTransfer?.types?.includes("Files")) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        blockEl.classList.add("drop-file");
+        return;
+      }
+      const drag = editorState.drag;
+      if (!accepts(drag)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = "move";
+      const rect = blockEl.getBoundingClientRect();
+      const above = event.clientY - rect.top < rect.height / 2;
+      blockEl.classList.toggle("drop-above", above);
+      blockEl.classList.toggle("drop-below", !above);
+    });
+    blockEl.addEventListener("dragleave", (event) => {
+      if (!blockEl.contains(event.relatedTarget)) {
+        blockEl.classList.remove("drop-above", "drop-below", "drop-file");
+      }
+    });
+    blockEl.addEventListener("drop", (event) => {
+      blockEl.classList.remove("drop-file");
+      const files = [...(event.dataTransfer?.files || [])].filter((file) => file.type?.startsWith("image/"));
+      if (target.kind === "step" && files.length) {
+        event.preventDefault();
+        event.stopPropagation();
+        (async () => {
+          for (const file of files) await addScreenshot(target, model, file);
+        })();
+        return;
+      }
+      const drag = editorState.drag;
+      if (!accepts(drag)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const above = blockEl.classList.contains("drop-above");
+      endDrag();
+      if (moveItem(model, drag.item, target, above)) commitProcedure(model);
+    });
+  }
+
+  function withUndo(message, change) {
+    const snapshot = snapshotProcedure();
+    change();
+    showUndoToast(message, () => restoreProcedure(snapshot));
+  }
+
+  function blockMenuItems(item, model) {
+    const steps = flowOf(model).filter((entry) => entry.kind === "step");
+    const move = (direction) => {
+      if (nudgeItem(model, item, direction)) commitProcedure(model);
+    };
+    if (item.kind === "group") {
+      const groups = groupsOf(model);
+      const index = groups.indexOf(item);
+      const firstStep = item.children.find((child) => child.kind === "step");
+      const items = [
+        {
+          label: "Rename",
+          run: () => {
+            const title = renderedView.querySelectorAll(".block-group-title")[index];
+            if (title) {
+              focusEditable(title, "end");
+              title.ownerDocument.getSelection()?.selectAllChildren(title);
+            }
+          },
+        },
+      ];
+      if (firstStep && (index > 0 || groups.length === 1)) {
+        items.push({
+          label: index > 0 ? "Join the group above" : "Remove grouping",
+          hint: "Tab",
+          run: () => {
+            if (joinGroupAbove(model, firstStep)) commitProcedure(model);
+          },
+        });
+      }
+      items.push(
+        "separator",
+        {
+          label: "Move up",
+          run: () => index > 0 && moveItem(model, item, groups[index - 1], true) && commitProcedure(model),
+        },
+        {
+          label: "Move down",
+          run: () => index < groups.length - 1 && moveItem(model, item, groups[index + 1], false) && commitProcedure(model),
+        },
+        "separator",
+        {
+          label: "Delete group and its steps",
+          danger: true,
+          run: () => withUndo(`Group "${item.title || "Untitled"}" deleted.`, () => {
+            removeItem(model, item);
+            commitProcedure(model);
+          }),
+        },
+      );
+      return items;
+    }
+    if (item.kind === "prose") {
+      return [
+        {
+          label: "Turn into step",
+          run: () => {
+            const converted = convertItem(model, item, "step");
+            commitProcedure(model, { focus: focusOf(model, converted, { at: "end" }) });
+          },
+        },
+        "separator",
+        { label: "Move up", run: () => move(-1) },
+        { label: "Move down", run: () => move(1) },
+        "separator",
+        {
+          label: "Delete",
+          danger: true,
+          run: () => withUndo("Text deleted.", () => {
+            removeItem(model, item);
+            commitProcedure(model);
+          }),
+        },
+      ];
+    }
+    const where = locate(model, item);
+    const canGroup = where && (!where.group || where.list.indexOf(item) > 0);
+    const items = [
+      {
+        label: "Turn into text",
+        run: () => {
+          const converted = convertItem(model, item, "prose");
+          commitProcedure(model, { focus: focusOf(model, converted, { at: "end" }) });
+        },
+      },
+    ];
+    if (canGroup) {
+      items.push({
+        label: "Start a group here",
+        hint: "⇧Tab",
+        run: () => {
+          const group = startGroupAt(model, item);
+          if (group) commitProcedure(model, { focus: focusOf(model, group, { select: true }) });
+        },
+      });
+    }
+    items.push(
+      {
+        label: "Duplicate",
+        run: () => {
+          const copy = duplicateStep(model, item);
+          commitProcedure(model, { focus: focusOf(model, copy, { at: "end" }) });
+        },
+      },
+      {
+        label: "Add screenshot…",
+        run: async () => {
+          const files = await pickImageFiles();
+          for (const file of files) await addScreenshot(item, model, file);
+        },
+      },
+      {
+        label: "Step properties…",
+        run: () => {
+          const blockEl = renderedView.querySelector(`.block-step[data-step-id="${item.id}"]`);
+          if (blockEl) services.toggleStepAttrEditor(blockEl, item, model);
+        },
+      },
+      "separator",
+      { label: "Move up", run: () => move(-1) },
+      { label: "Move down", run: () => move(1) },
+    );
+    if (steps.length > 1) {
+      items.push("separator", {
+        label: "Delete",
+        danger: true,
+        run: () => withUndo(`Step ${item.number} deleted.`, () => {
+          removeItem(model, item);
+          commitProcedure(model);
+        }),
+      });
+    }
+    return items;
   }
 
   /** Where an item will be after a re-render (see focusProcedureItem). */
@@ -257,6 +496,8 @@ export function createProcedureRenderer(context, services, editorState) {
 
     const header = document.createElement("header");
     header.className = "block-group-header doc-block";
+    attachGutter(header, group, model);
+    bindDropTarget(block, group, model);
     const title = document.createElement("h3");
     title.className = "block-group-title";
     title.textContent = group.title || "";
@@ -305,6 +546,8 @@ export function createProcedureRenderer(context, services, editorState) {
     };
     block.addEventListener("focusin", remember);
     block.addEventListener("click", remember);
+    attachGutter(block, step, model);
+    bindDropTarget(block, step, model);
 
     const num = document.createElement("span");
     num.className = "block-step-num";
@@ -357,6 +600,8 @@ export function createProcedureRenderer(context, services, editorState) {
     const block = document.createElement("div");
     block.className = "block-prose doc-block";
     block.dataset.uid = prose.uid;
+    attachGutter(block, prose, model);
+    bindDropTarget(block, prose, model);
     const body = document.createElement("div");
     body.className = "block-prose-body";
     body.append(renderMarkdown(prose.body || ""));

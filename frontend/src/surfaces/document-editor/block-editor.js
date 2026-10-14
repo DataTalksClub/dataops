@@ -15,6 +15,7 @@ import {
   splitBlock,
 } from "./block-model.js";
 import { toVideoEmbed } from "./embeds.js";
+import { makeBlockGutter, openBlockMenu } from "./block-menu.js";
 import { pickImageFiles, promptInline } from "./inline-prompt.js";
 import { createSlashMenu, DOCUMENT_BLOCKS } from "./slash-menu.js";
 
@@ -371,6 +372,67 @@ export function createBlockEditor(context, services) {
     });
   }
 
+  const TURN_INTO = [
+    ["paragraph", "Text"], ["h1", "Heading 1"], ["h2", "Heading 2"], ["h3", "Heading 3"],
+    ["bullet", "Bulleted list"], ["numbered", "Numbered list"], ["todo", "To-do list"],
+    ["quote", "Quote"], ["callout", "Callout"],
+  ];
+
+  /** The menu behind a block's handle. */
+  function blockActions({ block, index, blocks, structural, replace, onMoveBlock, onDeleteBlock }) {
+    const move = (to) => {
+      if (to < 0 || to >= blocks.length) return;
+      if (structural) {
+        const [moved] = blocks.splice(index, 1);
+        blocks.splice(to, 0, moved);
+        replace(null);
+      } else {
+        onMoveBlock(index, to);
+      }
+    };
+    const remove = () => {
+      if (!structural) {
+        onDeleteBlock(index);
+        return;
+      }
+      blocks.splice(index, 1);
+      if (!blocks.length) blocks.push(makeBlock("paragraph", ""));
+      replace({ index: Math.max(0, index - 1), at: "end" });
+    };
+    const actions = [];
+    const convertible = TEXT_TYPES.has(block.type) || block.type === "bullet" || block.type === "numbered";
+    if (structural && convertible) {
+      for (const [type, label] of TURN_INTO) {
+        if (type === block.type) continue;
+        actions.push({
+          label: `Turn into ${label.toLowerCase()}`,
+          run: () => {
+            blocks[index] = { ...convertBlock(block, type), id: block.id };
+            const isList = type === "bullet" || type === "numbered";
+            replace(isList ? { index, item: 0, at: "end" } : { index, at: "end" });
+          },
+        });
+      }
+      actions.push("separator");
+    }
+    if (structural) {
+      actions.push({
+        label: "Duplicate",
+        run: () => {
+          blocks.splice(index + 1, 0, { ...block, id: blockId() });
+          replace({ index: index + 1, at: "end" });
+        },
+      });
+    }
+    actions.push(
+      { label: "Move up", run: () => move(index - 1) },
+      { label: "Move down", run: () => move(index + 1) },
+      "separator",
+      { label: "Delete", danger: true, run: remove },
+    );
+    return actions;
+  }
+
   function textBlockKeyboard({ block, index, blocks, structural, replace }) {
     if (!structural) return {};
     return {
@@ -425,58 +487,45 @@ export function createBlockEditor(context, services) {
     el.dataset.blockId = block.id;
     el.dataset.blockType = block.type;
 
-    const gutter = document.createElement("div");
-    gutter.className = "notion-block-gutter";
-    gutter.contentEditable = "false";
-
-    const addBtn = document.createElement("button");
-    addBtn.type = "button";
-    addBtn.className = "notion-block-btn notion-block-add";
-    addBtn.textContent = "+";
-    addBtn.title = "Add block below";
-    addBtn.setAttribute("aria-label", "Add block below");
-    addBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (structural) {
-        blocks.splice(index + 1, 0, makeBlock("paragraph", ""));
-        replace({ index: index + 1, at: "start", slash: true });
-        return;
-      }
-      slashMenu.open({
-        targetEl: addBtn,
-        onSelect: (item) => {
-          if (item.type === "page") {
-            if (services.createSubpage) services.createSubpage(context.documentState?.currentDoc);
-            return;
-          }
-          onInsertBlock(index + 1, item.template || "");
-        },
-      });
+    const gutter = makeBlockGutter({
+      addLabel: "Add block below",
+      onAdd: (addBtn) => {
+        if (structural) {
+          blocks.splice(index + 1, 0, makeBlock("paragraph", ""));
+          replace({ index: index + 1, at: "start", slash: true });
+          return;
+        }
+        slashMenu.open({
+          targetEl: addBtn,
+          onSelect: (item) => {
+            if (item.type === "page") {
+              if (services.createSubpage) services.createSubpage(context.documentState?.currentDoc);
+              return;
+            }
+            onInsertBlock(index + 1, item.template || "");
+          },
+        });
+      },
+      onMenu: (handle) => openBlockMenu(handle, blockActions({
+        block, index, blocks, structural, replace, onMoveBlock, onDeleteBlock,
+      })),
+      onDragStart: (e) => {
+        dragBlockIndex = index;
+        el.classList.add("is-dragging");
+        try {
+          e.dataTransfer.setData("text/plain", String(index));
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setDragImage?.(el, 0, 0);
+        } catch {}
+      },
+      onDragEnd: () => {
+        el.classList.remove("is-dragging");
+        dragBlockIndex = null;
+        container.querySelectorAll(".drop-above, .drop-below").forEach((node) => {
+          node.classList.remove("drop-above", "drop-below");
+        });
+      },
     });
-
-    const dragHandle = document.createElement("span");
-    dragHandle.className = "notion-block-btn notion-block-drag";
-    dragHandle.textContent = "⠿";
-    dragHandle.title = "Drag to reorder";
-    dragHandle.setAttribute("draggable", "true");
-    dragHandle.setAttribute("aria-label", "Drag to reorder");
-    dragHandle.addEventListener("dragstart", (e) => {
-      dragBlockIndex = index;
-      el.classList.add("is-dragging");
-      try {
-        e.dataTransfer.setData("text/plain", String(index));
-        e.dataTransfer.effectAllowed = "move";
-      } catch {}
-    });
-    dragHandle.addEventListener("dragend", () => {
-      el.classList.remove("is-dragging");
-      dragBlockIndex = null;
-      container.querySelectorAll(".drop-above, .drop-below").forEach((node) => {
-        node.classList.remove("drop-above", "drop-below");
-      });
-    });
-
-    gutter.append(addBtn, dragHandle);
     el.append(gutter);
 
     el.addEventListener("dragover", (e) => {
