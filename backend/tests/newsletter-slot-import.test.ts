@@ -46,4 +46,30 @@ describe("newsletter slot import", () => {
     assert.equal(result.report.keyedBy, "row");
     assert.equal(result.rows.length, 1);
   });
+  it("derives label, issue and status from the schedule sheet layout", async () => {
+    const url = (issue: number) => ({ text: `https://mailchi.mp/example/weekly-${issue}`, hyperlink: `https://mailchi.mp/example/weekly-${issue}` });
+    const header = ["Date", "Sponsor", "Promo Type", "URL", "Doc", "Newsletter deliveries", "Newsletter views (opens)", "ID"];
+    const result = await inspectNewsletterSlots(await workbook([
+      header,
+      [new Date("2027-01-04T00:00:00Z"), "Sponsor A", "Primary Slot", url(310), "", 1000, 400, "NL-310"],
+      [{ formula: "A2+0", result: new Date("2027-01-04T00:00:00Z") }, "Sponsor B", "Secondary Slot", url(310), "", "", "", "NL-310-secondary"],
+      [new Date("2027-01-06T00:00:00Z"), "N/A", "Stand-Alone Newsletter", "", "", "", "", "NL-2027-01-06-standalone"],
+      [new Date("2027-01-11T00:00:00Z"), "Sponsor C", "Primary Slot", url(311), "", "", "", "NL-311"],
+      [new Date("2027-01-18T00:00:00Z"), "", "Primary Slot", url(312), "", "", "", "NL-312"],
+      [new Date("2027-01-25T00:00:00Z"), "N/A", "Vacation", "Vacation", "", "", "", "NL-2027-01-25-vacation"],
+    ]), { today: "2027-01-05" });
+    assert.deepEqual(result.report.reasons, {});
+    assert.deepEqual(
+      result.rows.map(({ publicationDate, campaignLabel, campaignNumber, status, bookedByDisplayName }) =>
+        ({ publicationDate, campaignLabel, campaignNumber, status, bookedByDisplayName })),
+      [
+        { publicationDate: "2027-01-04", campaignLabel: "Weekly #310", campaignNumber: 310, status: "sent", bookedByDisplayName: "Sponsor A" },
+        { publicationDate: "2027-01-04", campaignLabel: "Weekly #310 secondary slot", campaignNumber: undefined, status: "sent", bookedByDisplayName: "Sponsor B" },
+        { publicationDate: "2027-01-06", campaignLabel: "Stand-Alone Newsletter", campaignNumber: undefined, status: "open", bookedByDisplayName: undefined },
+        { publicationDate: "2027-01-11", campaignLabel: "Weekly #311", campaignNumber: 311, status: "reserved", bookedByDisplayName: "Sponsor C" },
+        { publicationDate: "2027-01-18", campaignLabel: "Weekly #312", campaignNumber: 312, status: "open", bookedByDisplayName: undefined },
+        { publicationDate: "2027-01-25", campaignLabel: "Vacation", campaignNumber: undefined, status: "cancelled", bookedByDisplayName: undefined },
+      ],
+    );
+  });
 });

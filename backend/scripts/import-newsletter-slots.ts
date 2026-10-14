@@ -9,36 +9,93 @@ export type ImportSlot = {
   sourceType: string;
   sourceKey: string;
 };
-const normalized = (v: unknown) =>
-    String(v ?? "")
+/** A cell's plain value: formula results, hyperlink text and rich text unwrapped. */
+const cellValue = (value: unknown): unknown => {
+    if (value && typeof value === "object" && !(value instanceof Date)) {
+      const cell = value as Record<string, any>;
+      if ("result" in cell) return cellValue(cell.result);
+      if ("text" in cell) return cellValue(cell.text);
+      if (Array.isArray(cell.richText))
+        return cell.richText.map((part: any) => part.text).join("");
+    }
+    return value;
+  },
+  normalized = (v: unknown) =>
+    String(cellValue(v) ?? "")
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, " "),
-  iso = (value: unknown) =>
-    value instanceof Date
+  iso = (raw: unknown) => {
+    const value = cellValue(raw);
+    return value instanceof Date
       ? value.toISOString().slice(0, 10)
       : /^\d{4}-\d{2}-\d{2}$/.test(String(value))
         ? String(value)
         : "";
+  },
+  text = (value: unknown) => String(cellValue(value) ?? "").trim();
+const SHEET_STATUSES = [
+  "open",
+  "reserved",
+  "drafting",
+  "scheduled",
+  "sent",
+  "cancelled",
+];
 /**
  * Slot identity. When the "Newsletter" sheet has an `ID` column, each row's
  * slot is keyed by that stable ID, so inserting or reordering rows never
  * changes which slot a row updates. Without the column a slot is keyed by its
  * row number, date and label, which breaks when rows move; the schedule sheet
- * is getting an ID column for that reason.
+ * has an ID column for that reason.
  */
 const ID_HEADER = /^(id|slot id)$/;
+/**
+ * The DataTalks.Club schedule sheet has no label, issue or status column. A
+ * row there has a Promo Type (Primary Slot, Secondary Slot, Stand-Alone
+ * Newsletter, Vacation), a Mailchimp URL ending in `weekly-<issue>`, and
+ * post-send metrics once sent. For that layout the label and issue number come
+ * from the type and URL. A Secondary Slot shares its issue with the Primary
+ * Slot, so it carries no campaignNumber: the issue's Card links to the Primary
+ * Slot and the pair is not reported as a duplicate.
+ */
+const scheduleLabel = (type: string, issue: number | undefined) => {
+  const kind = normalized(type).trim();
+  if (issue !== undefined && kind === "primary slot")
+    return { label: `Weekly #${issue}`, campaignNumber: issue };
+  if (issue !== undefined && kind === "secondary slot")
+    return { label: `Weekly #${issue} secondary slot` };
+  return { label: type };
+};
+/**
+ * Status for a sheet without a status column: a Vacation week is cancelled,
+ * a row with send metrics or a past date has been sent, a row with a sponsor
+ * is reserved, and anything else is open.
+ */
+const inferredStatus = (row: { type: string; sent: boolean; booked: boolean }) =>
+  normalized(row.type).trim() === "vacation"
+    ? "cancelled"
+    : row.sent
+      ? "sent"
+      : row.booked
+        ? "reserved"
+        : "open";
 export async function readNewsletterSlots(file: string) {
   return (await inspectNewsletterSlots(file)).rows;
 }
-export async function inspectNewsletterSlots(file: string) {
+export async function inspectNewsletterSlots(
+  file: string,
+  options: { today?: string } = {},
+) {
+  const today = options.today || new Date().toISOString().slice(0, 10);
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(file);
   const sheet = workbook.getWorksheet("Newsletter");
   if (!sheet) throw new Error("Newsletter worksheet is required");
   const patterns = {
     date: /\b(date|publication|publish|send|scheduled)\b/,
-    label: /\b(newsletter|campaign|subject|title|label)\b/,
+    label: /^(newsletter|campaign|campaign label|subject|title|label)$/,
+    type: /^promo type$/,
     number: /\b(number|issue|campaign no|newsletter no)\b/,
     status: /\b(status|state)\b/,
     booker: /\b(booked|sponsor|client|booking owner)\b/,
@@ -92,8 +149,11 @@ export async function inspectNewsletterSlots(file: string) {
     numberCol = pick(patterns.number),
     statusCol = pick(patterns.status),
     bookerCol = pick(patterns.booker),
-    idCol = pick(ID_HEADER);
-  if (!dateCol || !labelCol)
+    idCol = pick(ID_HEADER),
+    typeCol = pick(patterns.type),
+    urlCol = pick(/^url$/),
+    sentMetricCol = pick(/^newsletter deliveries$/);
+  if (!dateCol || !(labelCol || typeCol))
     throw new Error("Required schedule columns were not found");
   const rows: ImportSlot[] = [],
     reasons: Record<string, number> = {},
@@ -111,7 +171,13 @@ export async function inspectNewsletterSlots(file: string) {
       return;
     }
     const date = iso(row.getCell(dateCol).value),
-      label = String(row.getCell(labelCol).value ?? "").trim();
+      issueMatch = urlCol
+        ? /weekly-(\d+)\b/.exec(text(row.getCell(urlCol).value))
+        : null,
+      issue = issueMatch ? Number(issueMatch[1]) : undefined,
+      type = typeCol ? text(row.getCell(typeCol).value) : "",
+      derived = labelCol ? undefined : scheduleLabel(type, issue),
+      label = labelCol ? text(row.getCell(labelCol).value) : derived!.label;
     if (!date) {
       reject("missing-or-invalid-date");
       return;
@@ -121,7 +187,7 @@ export async function inspectNewsletterSlots(file: string) {
       return;
     }
     const slotId = idCol
-      ? String(row.getCell(idCol).value ?? "").trim()
+      ? text(row.getCell(idCol).value)
       : "";
     if (idCol && (!slotId || slotId.length > 100)) {
       reject("missing-or-invalid-id");
@@ -132,23 +198,26 @@ export async function inspectNewsletterSlots(file: string) {
       return;
     }
     seenIds.add(slotId);
-    const numberValue = numberCol ? Number(row.getCell(numberCol).value) : NaN,
+    const numberValue = numberCol
+        ? Number(cellValue(row.getCell(numberCol).value))
+        : (derived?.campaignNumber ?? NaN),
       statusRaw = statusCol ? normalized(row.getCell(statusCol).value) : "",
-      status = [
-        "open",
-        "reserved",
-        "drafting",
-        "scheduled",
-        "sent",
-        "cancelled",
-      ].includes(statusRaw)
-        ? statusRaw
-        : "open",
-      booker = bookerCol
-        ? String(row.getCell(bookerCol).value ?? "")
-            .trim()
-            .slice(0, 200)
-        : "";
+      sheetBooker = bookerCol
+        ? text(row.getCell(bookerCol).value).slice(0, 200)
+        : "",
+      booker = /^n\/?a$/i.test(sheetBooker) ? "" : sheetBooker,
+      status = statusCol
+        ? SHEET_STATUSES.includes(statusRaw)
+          ? statusRaw
+          : "open"
+        : inferredStatus({
+            type,
+            sent:
+              (sentMetricCol !== undefined &&
+                text(row.getCell(sentMetricCol).value) !== "") ||
+              date < today,
+            booked: Boolean(booker),
+          });
     rows.push({
       publicationDate: date,
       campaignLabel: label,
