@@ -661,7 +661,12 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "dynamodb:Scan" in backend
     assert "dynamodb:UpdateItem" in backend
     assert "dynamodb:DeleteItem" in backend
-    assert "dynamodb:BatchGetItem" not in backend
+    assert backend.count("dynamodb:BatchGetItem") == 1
+    assert """Action:
+              - dynamodb:BatchGetItem
+            Resource:
+              - !GetAtt DataOpsBookkeepingTable.Arn
+        - Statement:""" in backend
     assert "dynamodb:BatchWriteItem" not in backend
     assert "dynamodb:DescribeTable" not in backend
     assert "${DataOpsTasksTable.Arn}/index/*" in backend

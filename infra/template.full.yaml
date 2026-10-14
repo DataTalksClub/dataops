@@ -1248,6 +1248,12 @@ Resources:
         - Statement:
             Effect: Allow
             Action:
+              - dynamodb:BatchGetItem
+            Resource:
+              - !GetAtt DataOpsBookkeepingTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
               - dynamodb:TransactWriteItems
               - dynamodb:ConditionCheckItem
             Resource:
