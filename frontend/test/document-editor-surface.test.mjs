@@ -8,7 +8,7 @@ import {
   parseMarkdownBlocks,
   serializeBlocksToMarkdown,
   serializeListItems,
-} from "../src/surfaces/document-editor/block-editor.js";
+} from "../src/surfaces/document-editor/block-model.js";
 import { createSlashMenu } from "../src/surfaces/document-editor/slash-menu.js";
 import { emitProcedure, parseProcedure, stepsOf } from "../src/surfaces/document-editor/procedure-model.js";
 import {

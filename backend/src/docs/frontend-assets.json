@@ -45,6 +45,7 @@
     "src/styles/editor.css",
     "src/styles/overrides.css",
     "src/surfaces/document-editor/block-editor.js",
+    "src/surfaces/document-editor/block-model.js",
     "src/surfaces/document-editor/changes.js",
     "src/surfaces/document-editor/document-renderer.js",
     "src/surfaces/document-editor/editable.js",

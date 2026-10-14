@@ -10,7 +10,7 @@ import {
   parseMarkdownBlocks,
   serializeBlocksToMarkdown,
   splitBlock,
-} from "../src/surfaces/document-editor/block-editor.js";
+} from "../src/surfaces/document-editor/block-model.js";
 import { plainTextLength } from "../src/surfaces/document-editor/editable.js";
 import {
   asSingleUrl,

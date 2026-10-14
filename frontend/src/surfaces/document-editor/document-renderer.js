@@ -9,12 +9,8 @@ import {
 } from "./frontmatter.js";
 import { procedureHeading, setProcedureHeading } from "./procedure-model.js";
 import { sizeImageFromCache } from "./procedure-renderer.js";
-import {
-  createBlockEditor,
-  makeBlock,
-  parseMarkdownBlocks,
-  serializeBlocksToMarkdown,
-} from "./block-editor.js";
+import { createBlockEditor } from "./block-editor.js";
+import { makeBlock, parseMarkdownBlocks, serializeBlocksToMarkdown } from "./block-model.js";
 import { focusEditable, neighbourEditable } from "./editable.js";
 
 export function createDocumentRenderer(context, services) {

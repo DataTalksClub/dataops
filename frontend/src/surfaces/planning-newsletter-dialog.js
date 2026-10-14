@@ -1,8 +1,5 @@
-import {
-  createBlockEditor,
-  parseMarkdownBlocks,
-  serializeBlocksToMarkdown,
-} from "./document-editor/block-editor.js";
+import { createBlockEditor } from "./document-editor/block-editor.js";
+import { parseMarkdownBlocks, serializeBlocksToMarkdown } from "./document-editor/block-model.js";
 
 export const NEWSLETTER_TEMPLATES = {
   weekly: `# DataTalks.Club Weekly
