@@ -131,7 +131,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       [`/sponsors?dealId=${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
       ['/newsletter', 'Newsletter'],
       ['/calendar', 'Calendar'],
-      ['/processes', 'Docs'],
+      ['/processes', 'Process Docs'],
       ['/review', 'Document review'],
       ['/admin', 'Admin'],
       ['/users', 'Users'],
