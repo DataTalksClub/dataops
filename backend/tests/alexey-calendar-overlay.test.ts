@@ -7,6 +7,7 @@ import {
   shouldFilterAlexeyCalendarEvent,
 } from '../src/calendar/alexeyCalendarOverlay';
 import { resetCalendarOverlayProvidersForTests } from '../src/calendar/overlays';
+import { DEFAULT_CALENDAR_OVERLAY_SETTINGS } from '../src/db/calendar';
 
 describe('Alexey calendar overlay and filtering', () => {
   beforeEach(() => {
@@ -347,7 +348,7 @@ describe('Alexey calendar overlay and filtering', () => {
         },
       });
 
-      const items = await provider.project('2026-10-01', '2026-10-31');
+      const { items } = await provider.project('2026-10-01', '2026-10-31');
       assert.equal(requestedConnectionId, 'work-calendar');
       assert.equal(items.length, 1);
       assert.equal(items[0].id, 'alexey-calendar:evt-custom-1');
@@ -366,8 +367,35 @@ describe('Alexey calendar overlay and filtering', () => {
       });
 
       const provider = alexeyCalendarOverlay({ brokerCredential: '' });
-      const items = await provider.project('2026-10-01', '2026-10-31');
+      const { items, connection } = await provider.project('2026-10-01', '2026-10-31');
       assert.deepEqual(items, []);
+      assert.equal(connection.state, 'not-configured');
+      assert.equal(connection.reason, 'The calendar broker secret could not be read in this environment (Error).');
+    });
+
+    it('names a missing secret permission as the reason the layer is not connected', async () => {
+      setAlexeyCalendarProviderClientsForTests({
+        secrets: {
+          send: async () => {
+            throw Object.assign(new Error('denied'), { name: 'AccessDeniedException' });
+          },
+        } as any,
+      });
+      const { connection } = await alexeyCalendarOverlay({ settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS }).project('2026-10-01', '2026-10-31');
+      assert.deepEqual(connection, {
+        state: 'not-configured',
+        reason: 'This environment is not allowed to read the calendar broker secret personal-scheduler/dapier-api-token.',
+      });
+    });
+
+    it('reports the broker refusal instead of an empty connected layer', async () => {
+      setAlexeyCalendarProviderClientsForTests({
+        fetch: (async () => new Response('Unauthorized', { status: 401 })) as typeof fetch,
+      });
+      const provider = alexeyCalendarOverlay({ brokerCredential: 'test-token', settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS });
+      const { items, connection } = await provider.project('2026-10-01', '2026-10-31');
+      assert.deepEqual(items, []);
+      assert.deepEqual(connection, { state: 'unavailable', reason: 'The calendar broker refused the token request (HTTP 401).' });
     });
 
     it('fetches Google access token via Dapier and projects filtered raw events when showAvailableSlots is false', async () => {
@@ -463,7 +491,7 @@ describe('Alexey calendar overlay and filtering', () => {
         },
       });
 
-      const items = await provider.project('2026-10-01', '2026-10-31');
+      const { items } = await provider.project('2026-10-01', '2026-10-31');
 
       assert.equal(items.length, 3);
 
@@ -554,7 +582,8 @@ describe('Alexey calendar overlay and filtering', () => {
       });
 
       // Project Oct 12 to Oct 18 (one full week Mon–Sun)
-      const items = await provider.project('2026-10-12', '2026-10-18');
+      const { items, connection } = await provider.project('2026-10-12', '2026-10-18');
+      assert.deepEqual(connection, { state: 'connected' });
 
       // 1. All-day blocker is projected:
       const vacation = items.find((i) => i.id === 'alexey-calendar:evt-vacation');
@@ -655,7 +684,7 @@ describe('Alexey calendar overlay and filtering', () => {
           filterTransparent: true,
         },
       });
-      const defaultItems = await defaultProvider.project('2026-10-13', '2026-10-13');
+      const { items: defaultItems } = await defaultProvider.project('2026-10-13', '2026-10-13');
       assert.equal(defaultItems.length, 1);
       assert.equal(defaultItems[0].id, 'alexey-calendar:evt-midday');
       assert.equal(defaultItems[0].slot, 'midday');
@@ -666,7 +695,7 @@ describe('Alexey calendar overlay and filtering', () => {
         brokerCredential: 'token',
         includeAll: true,
       });
-      const allItems = await allProvider.project('2026-10-13', '2026-10-13');
+      const { items: allItems } = await allProvider.project('2026-10-13', '2026-10-13');
       assert.equal(allItems.length, 2);
       assert.equal(allItems[0].id, 'alexey-calendar:evt-morning');
       assert.equal(allItems[0].slot, 'outside');

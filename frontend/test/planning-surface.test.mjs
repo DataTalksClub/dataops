@@ -522,6 +522,31 @@ describe("Planning surface production behavior", () => {
     assert.equal(dom.status.textContent, "");
   });
 
+  test("marks Alexey's calendar as not connected instead of showing an empty layer", async () => {
+    const dom = createCalendarDom();
+    const chip = dom.surface.setQuery('[data-layer-chip="alexey"]', new TestElement("label"));
+    const chipStatus = chip.setQuery("[data-layer-chip-status]", new TestElement("span"));
+    const reason = "No calendar broker credential is available in this environment.";
+    const harness = createPlanningHarness({
+      calendar: dom,
+      request: async (url) => String(url).includes("/overlays")
+        ? { items: [], sources: { "alexey-calendar": { state: "not-configured", reason } } }
+        : { items: [], holidays: [], alerts: [] },
+    });
+    await harness.surface.renderCalendarSurface();
+    await nextTicks();
+    assert.equal(chip.classList.contains("is-disconnected"), true);
+    assert.equal(chip.title, `Alexey's calendar is not connected: ${reason}`);
+    assert.equal(chipStatus.textContent, ` (not connected: ${reason})`);
+    assert.equal(dom.status.textContent, `Alexey's calendar is not connected: ${reason}`);
+
+    // Hiding the layer drops the notice; the chip keeps its disconnected state.
+    dom.surface.querySelector('[data-layer="alexey"]').checked = false;
+    dom.surface.querySelector('[data-layer="alexey"]').onchange();
+    assert.equal(dom.status.textContent, "");
+    assert.equal(chip.classList.contains("is-disconnected"), true);
+  });
+
   test("keeps Calendar usable when overlays fail and exposes filter and period controls", async () => {
     const dom = createCalendarDom();
     const harness = createPlanningHarness({

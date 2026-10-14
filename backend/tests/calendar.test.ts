@@ -251,6 +251,8 @@ describe("operations calendar", () => {
           i.provider === "newsletter-slots-readonly",
       ),
     );
+    assert.deepEqual(parse(response).sources["newsletter-slots-readonly"], { state: "connected" });
+    assert.ok(parse(response).sources["alexey-calendar"].state);
     response = await invoke("POST", "/api/calendar-items", {
       activityType: "webinar",
       title: "Dismissible synthetic",

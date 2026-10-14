@@ -14,9 +14,24 @@ export type CalendarOverlayItem = {
   isAvailableSlot?: boolean;
 };
 
+/**
+ * Whether an overlay source could be read. An empty `items` list only means
+ * "nothing in range" when the source is `connected`; otherwise the reason says
+ * why the layer is blank. Reasons are operator-facing and never carry secrets.
+ */
+export type CalendarOverlayConnection = {
+  state: 'connected' | 'not-configured' | 'unavailable';
+  reason?: string;
+};
+
+export type CalendarOverlayProjection = {
+  items: CalendarOverlayItem[];
+  connection: CalendarOverlayConnection;
+};
+
 export type CalendarOverlayProvider = {
   name: string;
-  project(from: string, to: string): Promise<CalendarOverlayItem[]>;
+  project(from: string, to: string): Promise<CalendarOverlayProjection>;
 };
 
 const providers: CalendarOverlayProvider[] = [];
@@ -30,9 +45,23 @@ export function registerCalendarOverlayProvider(provider: CalendarOverlayProvide
   }
 }
 
-export async function projectCalendarOverlays(from: string, to: string): Promise<CalendarOverlayItem[]> {
+export async function projectCalendarOverlays(from: string, to: string): Promise<{
+  items: CalendarOverlayItem[];
+  sources: Record<string, CalendarOverlayConnection>;
+}> {
   const settled = await Promise.allSettled(providers.map((p) => p.project(from, to)));
-  return settled.flatMap((s) => (s.status === 'fulfilled' ? s.value : []));
+  const items: CalendarOverlayItem[] = [];
+  const sources: Record<string, CalendarOverlayConnection> = {};
+  settled.forEach((result, index) => {
+    const name = providers[index].name;
+    if (result.status === 'fulfilled') {
+      items.push(...result.value.items);
+      sources[name] = result.value.connection;
+    } else {
+      sources[name] = { state: 'unavailable', reason: 'The overlay source failed to load.' };
+    }
+  });
+  return { items, sources };
 }
 
 export function resetCalendarOverlayProvidersForTests() {

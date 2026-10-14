@@ -1,6 +1,6 @@
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import type { CalendarOverlayItem, CalendarOverlayProvider } from './overlays';
+import type { CalendarOverlayConnection, CalendarOverlayItem, CalendarOverlayProjection, CalendarOverlayProvider } from './overlays';
 import {
   CalendarOverlaySettings,
   DEFAULT_CALENDAR_OVERLAY_SETTINGS,
@@ -209,22 +209,38 @@ const DAPIER_AGENT = 'personal-scheduler';
 const DAPIER_SECRET_NAME = 'personal-scheduler/dapier-api-token';
 const DEFAULT_CALENDAR_CONNECTION = 'google-calendar';
 
-async function resolveDapierCredential(explicit?: string): Promise<string | undefined> {
-  if (explicit) return explicit;
+type DapierCredential = { credential: string; problem?: undefined } | { credential?: undefined; problem: string };
+
+async function readDapierCredential(explicit?: string): Promise<DapierCredential> {
+  if (explicit) return { credential: explicit };
   try {
     const res = await secretClient.send(new GetSecretValueCommand({ SecretId: DAPIER_SECRET_NAME }));
     if (res.SecretString) {
       try {
         const parsed = JSON.parse(res.SecretString);
-        return parsed.api_token || parsed.token || res.SecretString;
+        return { credential: parsed.api_token || parsed.token || res.SecretString };
       } catch {
-        return res.SecretString;
+        return { credential: res.SecretString };
       }
     }
-  } catch {
-    // Secrets manager not configured or inaccessible
+    return { problem: `The calendar broker secret ${DAPIER_SECRET_NAME} is empty.` };
+  } catch (error) {
+    const name = (error as { name?: string })?.name || 'Error';
+    if (name === 'ResourceNotFoundException') {
+      return { problem: `The calendar broker secret ${DAPIER_SECRET_NAME} does not exist in this environment.` };
+    }
+    if (name === 'UnrecognizedClientException' || name === 'CredentialsProviderError' || name === 'InvalidSignatureException') {
+      return { problem: 'This environment has no AWS credentials that can read the calendar broker secret.' };
+    }
+    if (name === 'AccessDeniedException') {
+      return { problem: `This environment is not allowed to read the calendar broker secret ${DAPIER_SECRET_NAME}.` };
+    }
+    return { problem: `The calendar broker secret could not be read in this environment (${name}).` };
   }
-  return undefined;
+}
+
+async function resolveDapierCredential(explicit?: string): Promise<string | undefined> {
+  return (await readDapierCredential(explicit)).credential;
 }
 
 export async function fetchDapierConnections(config?: AlexeyCalendarConfig): Promise<DapierConnectionOption[]> {
@@ -260,7 +276,9 @@ export async function fetchDapierConnections(config?: AlexeyCalendarConfig): Pro
 export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOverlayProvider {
   return {
     name: 'alexey-calendar',
-    async project(from: string, to: string): Promise<CalendarOverlayItem[]> {
+    async project(from: string, to: string): Promise<CalendarOverlayProjection> {
+      const blank = (connection: CalendarOverlayConnection): CalendarOverlayProjection => ({ items: [], connection });
+      const connected = (items: CalendarOverlayItem[]): CalendarOverlayProjection => ({ items, connection: { state: 'connected' } });
       let activeSettings = config?.settings;
       if (!activeSettings && config?.client) {
         try {
@@ -276,10 +294,10 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
       const brokerUrl = (config?.brokerUrl || DAPIER_BASE_URL).replace(/\/$/, '');
       const agent = config?.agent || DAPIER_AGENT;
       const connectionId = config?.connectionId || activeSettings.connectionId || DEFAULT_CALENDAR_CONNECTION;
-      const credential = await resolveDapierCredential(config?.brokerCredential);
+      const { credential, problem } = await readDapierCredential(config?.brokerCredential);
 
       if (!credential) {
-        return [];
+        return blank({ state: 'not-configured', reason: problem });
       }
 
       // 1. Obtain Google access token from Dapier
@@ -295,13 +313,17 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
           signal: AbortSignal.timeout(10000),
         });
       } catch {
-        return [];
+        return blank({ state: 'unavailable', reason: 'The calendar broker could not be reached.' });
       }
 
-      if (!tokenRes.ok) return [];
+      if (!tokenRes.ok) {
+        return blank({ state: 'unavailable', reason: `The calendar broker refused the token request (HTTP ${tokenRes.status}).` });
+      }
 
       const tokenData = (await tokenRes.json()) as { access_token?: string; provider_account_id?: string };
-      if (!tokenData.access_token) return [];
+      if (!tokenData.access_token) {
+        return blank({ state: 'unavailable', reason: `Calendar connection "${connectionId}" returned no access token.` });
+      }
 
       // 2. Query Google Calendar API
       const timeMin = `${from}T00:00:00Z`;
@@ -315,10 +337,12 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
           signal: AbortSignal.timeout(15000),
         });
       } catch {
-        return [];
+        return blank({ state: 'unavailable', reason: 'Google Calendar could not be reached.' });
       }
 
-      if (!calRes.ok) return [];
+      if (!calRes.ok) {
+        return blank({ state: 'unavailable', reason: `Google Calendar returned HTTP ${calRes.status}.` });
+      }
 
       const calData = (await calRes.json()) as { items?: any[] };
       const events = calData.items || [];
@@ -418,7 +442,7 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
             isAvailableSlot: false,
           });
         }
-        return result;
+        return connected(result);
       }
 
       // Available slots mode (month calendar view):
@@ -511,7 +535,7 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
         }
       }
 
-      return result;
+      return connected(result);
     },
   };
 }

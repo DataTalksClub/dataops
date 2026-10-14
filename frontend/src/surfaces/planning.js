@@ -173,10 +173,15 @@ export function createPlanningSurface(context) {
               <span class="chip-dot"></span>
               <span>Newsletter dates</span>
             </label>
-            <label class="calendar-layer-chip is-alexey">
+            <label class="calendar-layer-chip is-alexey" data-layer-chip="alexey">
               <input data-layer="alexey" type="checkbox" checked>
               <span class="chip-dot"></span>
               <span>Alexey's calendar</span>
+              <svg class="chip-disconnected-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 17H7A5 5 0 0 1 7 7h1M15 7h2a5 5 0 0 1 4 8M8 12h4M3 3l18 18"></path>
+              </svg>
+              <span class="dk-visually-hidden" data-layer-chip-status></span>
             </label>
             <button type="button" class="calendar-layer-settings-btn" data-calendar-settings title="Configure overlay filters & connection">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -369,7 +374,9 @@ export function createPlanningSurface(context) {
     let cursor = parseIsoDateValue(todayIsoDate()),
       items = [],
       holidays = [],
-      overlays = [];
+      overlays = [],
+      overlaySources = {},
+      overlaysFailed = false;
     const api = (path, options = {}) =>
       request(workApiUrl(`/api/calendar-items${path}`), {
         headers: { "content-type": "application/json", ...(options.headers || {}) },
@@ -551,6 +558,34 @@ export function createPlanningSurface(context) {
       `;
     }
 
+    let planningStatus = "";
+    // An empty overlay layer only means "nothing scheduled" when its source is
+    // connected; otherwise say why it is blank on the chip and in the status.
+    function alexeyConnectionProblem() {
+      if (overlaysFailed) return "Calendar overlays failed to load.";
+      const connection = overlaySources["alexey-calendar"];
+      if (!connection || connection.state === "connected") return "";
+      return connection.reason || "The calendar source is not connected.";
+    }
+
+    function renderOverlayStatus() {
+      const problem = alexeyConnectionProblem(),
+        chip = surface.querySelector('[data-layer-chip="alexey"]'),
+        showAlexey = surface.querySelector('[data-layer="alexey"]')?.checked ?? true;
+      if (chip) {
+        chip.classList.toggle("is-disconnected", Boolean(problem));
+        chip.title = problem ? `Alexey's calendar is not connected: ${problem}` : "Alexey's calendar";
+        const chipStatus = chip.querySelector("[data-layer-chip-status]");
+        if (chipStatus) chipStatus.textContent = problem ? ` (not connected: ${problem})` : "";
+      }
+      const overlayMessage = overlaysFailed
+        ? "Calendar overlays are temporarily unavailable. "
+        : problem && showAlexey
+          ? `Alexey's calendar is not connected: ${problem} `
+          : "";
+      status.textContent = `${planningStatus}${overlayMessage}`.trimEnd();
+    }
+
     let loadRevision = 0;
     async function load() {
       const revision = ++loadRevision;
@@ -608,11 +643,11 @@ export function createPlanningSurface(context) {
         const overlayResult = await overlayPromise;
         if (revision !== loadRevision) return;
         overlays = overlayResult.status === "fulfilled" ? overlayResult.value.items || [] : [];
+        overlaySources = overlayResult.status === "fulfilled" ? overlayResult.value.sources || {} : {};
+        overlaysFailed = overlayResult.status === "rejected";
         render();
-        const overlayMessage = overlayResult.status === "rejected"
-          ? "Calendar overlays are temporarily unavailable. "
-          : "";
-        status.textContent = `${planningWarnings}${overlayMessage}`.trimEnd();
+        planningStatus = planningWarnings;
+        renderOverlayStatus();
       } catch (error) {
         if (revision !== loadRevision) return;
         items = [];
@@ -747,7 +782,12 @@ export function createPlanningSurface(context) {
     };
     surface.querySelector("[data-view]").onchange = load;
     surface.querySelector("[data-type]").onchange = render;
-    surface.querySelectorAll("[data-layer]").forEach((control) => { control.onchange = render; });
+    surface.querySelectorAll("[data-layer]").forEach((control) => {
+      control.onchange = () => {
+        render();
+        renderOverlayStatus();
+      };
+    });
     const deleteBtn = dialog.querySelector("[data-delete-activity]");
     function updateTimeFields() {
       const allDay = form.elements.allDay.checked;
