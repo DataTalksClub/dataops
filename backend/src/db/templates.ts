@@ -466,8 +466,35 @@ async function createCardFromDefinition(
   return { card, tasks };
 }
 
+/**
+ * Remove a Template-backed Card and its Tasks that were just created and never
+ * touched, e.g. when linking the new Card to its owning record fails. Each
+ * delete is conditional on the created version, so work done on the Card in
+ * the meantime is never discarded.
+ */
+async function discardCreatedTemplateCard(
+  client: DynamoDBDocumentClient,
+  card: Card,
+  tasks: Task[],
+): Promise<void> {
+  const deletes = [
+    ...tasks.map((task) => ({ table: TABLE_TASKS, key: taskKey(task.id), version: task.version })),
+    { table: TABLE_CARDS, key: cardKey(card.id), version: card.version },
+  ];
+  for (const entry of deletes) {
+    await client.send(new DeleteCommand({
+      TableName: entry.table,
+      Key: entry.key,
+      ConditionExpression: '#version = :version',
+      ExpressionAttributeNames: { '#version': 'version' },
+      ExpressionAttributeValues: { ':version': entry.version },
+    }));
+  }
+}
+
 export {
   createTemplate,
+  discardCreatedTemplateCard,
   getTemplate,
   updateTemplate,
   replaceTemplate,

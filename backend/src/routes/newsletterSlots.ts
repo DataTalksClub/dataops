@@ -5,6 +5,7 @@ import {
   deleteNewsletterSlot,
   getNewsletterSlot,
   listNewsletterSlots,
+  listNewsletterSlotsByCardId,
   listNewsletterAlertRecords,
   putNewsletterAlertRecord,
   updateNewsletterAlertRecord,
@@ -14,6 +15,16 @@ import {
 import { createHash } from "crypto";
 import { getCrmRecord } from "../db/sponsorCrm";
 import { getCard } from "../db/cards";
+import type { Card } from "../types";
+import { resolveInteractiveActor } from "../identity/actor";
+import { newsletterCardTitle } from "../cards/cardTitleStructure";
+import {
+  checkCardLink,
+  createLinkedCard,
+  pushFieldsToCard,
+  summarizeCard,
+  type CardSummary,
+} from "../cards/recordCardLink";
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
     statusCode,
     headers: { "Content-Type": "application/json" },
@@ -191,6 +202,58 @@ function alerts(items: NewsletterSlot[], today: string) {
         });
   return out;
 }
+const NEWSLETTER_CARD_TYPES = ["newsletter", "newsletter-standalone"];
+const checkSlotCardLink = (
+  client: DynamoDBDocumentClient,
+  cardId: string,
+  slotId: string | null,
+) =>
+  checkCardLink(client, cardId, NEWSLETTER_CARD_TYPES, slotId, async (id) =>
+    (await listNewsletterSlotsByCardId(client, id)).map((slot) => slot.id),
+  );
+/** The slot wins: its date and issue number are pushed onto the linked Card. */
+async function pushSlotToCard(
+  client: DynamoDBDocumentClient,
+  slot: Record<string, unknown>,
+) {
+  try {
+    await pushFieldsToCard(client, String(slot.cardId), {
+      anchorDate: String(slot.publicationDate),
+      issueNumber:
+        slot.campaignNumber == null ? null : String(slot.campaignNumber),
+    });
+    return "synced";
+  } catch (error) {
+    console.error("Newsletter slot card sync failed:", error);
+    return "failed";
+  }
+}
+async function linkedCards(
+  client: DynamoDBDocumentClient,
+  items: NewsletterSlot[],
+) {
+  const cards = new Map<string, Card | null>();
+  for (const id of new Set(
+    items.map((item) => item.cardId).filter(Boolean) as string[],
+  ))
+    cards.set(id, await getCard(client, id));
+  return cards;
+}
+async function withCardSummaries(
+  client: DynamoDBDocumentClient,
+  items: NewsletterSlot[],
+  cards: Map<string, Card | null>,
+) {
+  const summaries = new Map<string, CardSummary>();
+  for (const [id, card] of cards)
+    if (card) summaries.set(id, await summarizeCard(client, card));
+  return items.map(
+    (item): NewsletterSlot & { card: CardSummary | null } => ({
+      ...item,
+      card: item.cardId ? summaries.get(String(item.cardId)) || null : null,
+    }),
+  );
+}
 export async function handleNewsletterSlotRoutes(
   path: string,
   method: string,
@@ -212,6 +275,11 @@ export async function handleNewsletterSlotRoutes(
       return json(404, { error: "Alert not found" });
     }
   }
+  const createCard = path.match(/^\/api\/newsletter-slots\/([^/]+)\/card$/);
+  if (createCard) {
+    if (method !== "POST") return json(405, { error: "Method not allowed" });
+    return createSlotCard(createCard[1], event, client);
+  }
   const projection = path === "/api/newsletter-slots/projection",
     match = path.match(/^\/api\/newsletter-slots(?:\/([^/]+))?$/);
   if (!projection && !match) return json(404, { error: "Not found" });
@@ -221,6 +289,17 @@ export async function handleNewsletterSlotRoutes(
   if (projection && method !== "GET")
     return json(405, { error: "Method not allowed" });
   if ((method === "GET" && !match?.[1]) || projection) {
+    if (query.cardId !== undefined && !projection) {
+      if (!ID.test(query.cardId)) return json(400, { error: "Invalid cardId" });
+      const linked = await listNewsletterSlotsByCardId(client, query.cardId);
+      return json(200, {
+        items: await withCardSummaries(
+          client,
+          linked,
+          await linkedCards(client, linked),
+        ),
+      });
+    }
     if (!realDate(from) || !realDate(to) || from > to)
       return json(400, { error: "Invalid range" });
     let items = await listNewsletterSlots(client, from, to);
@@ -262,10 +341,25 @@ export async function handleNewsletterSlotRoutes(
       items,
       query.today || new Date().toISOString().slice(0, 10),
     );
-    for (const item of items.filter(
+    const cards = await linkedCards(client, items),
+      enriched = await withCardSummaries(client, items, cards);
+    for (const item of enriched.filter(
       (value) => value.cardId && value.status !== "cancelled",
     )) {
-      const card = await getCard(client, String(item.cardId));
+      const card = cards.get(String(item.cardId));
+      if (
+        item.card &&
+        (item.card.anchorDate !== item.publicationDate ||
+          (item.campaignNumber != null &&
+            card?.issueNumber != null &&
+            String(card.issueNumber) !== String(item.campaignNumber)))
+      )
+        current.push({
+          reasonCode: "card-date-mismatch",
+          severity: "warning",
+          slotId: item.id,
+          fingerprint: `${item.id}#card-date-mismatch#${item.publicationDate}`,
+        });
       const links = card?.cardLinks || [];
       const hasCampaign = links.some(
         (link) =>
@@ -313,7 +407,7 @@ export async function handleNewsletterSlotRoutes(
           active: false,
           resolvedAt: new Date().toISOString(),
         });
-    return json(200, { items, alerts: visible });
+    return json(200, { items: enriched, alerts: visible });
   }
   const id = match?.[1];
   if (method === "GET" && id) {
@@ -334,7 +428,12 @@ export async function handleNewsletterSlotRoutes(
           status: deliverable.status,
         };
     }
-    return json(200, { ...item, sponsor });
+    const card = item.cardId ? await getCard(client, String(item.cardId)) : null;
+    return json(200, {
+      ...item,
+      sponsor,
+      card: card ? await summarizeCard(client, card) : null,
+    });
   }
   const body = parse(event);
   if (!body) return json(400, { error: "Invalid JSON" });
@@ -346,14 +445,21 @@ export async function handleNewsletterSlotRoutes(
       !(await getCrmRecord(client, "deliverable", String(body.sponsorBookingId)))
     )
       return json(422, { error: "Sponsor booking unavailable" });
-    if (body.cardId && !(await getCard(client, String(body.cardId))))
-      return json(422, { error: "Card unavailable" });
+    if (body.cardId) {
+      const link = await checkSlotCardLink(client, String(body.cardId), null);
+      if (!link.ok) return json(link.statusCode, { error: link.error });
+    }
     try {
       const result = await createNewsletterSlot(client, {
         ...body,
         timeZone: "Europe/Berlin",
         sourceType: body.sourceType || "portal",
       });
+      if (result.item.cardId && !result.duplicate)
+        return json(201, {
+          ...result.item,
+          cardSync: await pushSlotToCard(client, result.item),
+        });
       return json(result.duplicate ? 200 : 201, result.item);
     } catch (error) {
       return json((error as any).statusCode || 409, {
@@ -384,11 +490,26 @@ export async function handleNewsletterSlotRoutes(
       !(await getCrmRecord(client, "deliverable", String(body.sponsorBookingId)))
     )
       return json(422, { error: "Sponsor booking unavailable" });
+    const linking =
+      body.cardId != null && String(body.cardId) !== String(existing.cardId);
+    if (linking) {
+      const link = await checkSlotCardLink(client, String(body.cardId), id);
+      if (!link.ok) return json(link.statusCode, { error: link.error });
+    }
+    let next;
     try {
-      return json(200, await updateNewsletterSlot(client, existing, body));
+      next = await updateNewsletterSlot(client, existing, body);
     } catch {
       return json(409, { error: "Conflicting update" });
     }
+    if (
+      next.cardId &&
+      (linking ||
+        next.publicationDate !== existing.publicationDate ||
+        next.campaignNumber !== existing.campaignNumber)
+    )
+      return json(200, { ...next, cardSync: await pushSlotToCard(client, next) });
+    return json(200, next);
   }
   if (method === "DELETE" && id) {
     const existing = await getNewsletterSlot(client, id);
@@ -403,4 +524,57 @@ export async function handleNewsletterSlotRoutes(
     }
   }
   return json(405, { error: "Method not allowed" });
+}
+
+/**
+ * POST /api/newsletter-slots/:id/card: create the issue's Card from the
+ * newsletter Template and link it with a version-conditional slot write. When
+ * the link write loses (slot changed or linked meanwhile) the new Card is
+ * discarded.
+ */
+async function createSlotCard(
+  id: string,
+  event: LambdaEvent,
+  client: DynamoDBDocumentClient,
+) {
+  const resolved = await resolveInteractiveActor(client, event, "work-write");
+  if (!resolved.ok) return resolved.response;
+  const body = event.body ? parse(event) : {};
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    return json(400, { error: "Invalid JSON" });
+  const slot = await getNewsletterSlot(client, id);
+  if (!slot) return json(404, { error: "Not found" });
+  if (body.version !== undefined && body.version !== slot.version)
+    return json(409, { error: "Slot changed; reload and retry" });
+  if (slot.cardId)
+    return json(409, { error: "Slot already has a Card", cardId: slot.cardId });
+  const campaignNumber =
+    typeof slot.campaignNumber === "number" ? slot.campaignNumber : null;
+  let linked: NewsletterSlot | null = null;
+  try {
+    const created = await createLinkedCard(
+      client,
+      resolved.actor,
+      "newsletter",
+      {
+        title: newsletterCardTitle(slot.publicationDate, campaignNumber),
+        anchorDate: slot.publicationDate,
+        ...(campaignNumber === null
+          ? {}
+          : { issueNumber: String(campaignNumber) }),
+      },
+      async (card) => {
+        linked = await updateNewsletterSlot(client, slot, { cardId: card.id });
+      },
+    );
+    if (!created.ok) return created.response;
+    return json(201, {
+      slot: linked,
+      card: await summarizeCard(client, created.card),
+    });
+  } catch (error) {
+    if ((error as Error).name === "ConditionalCheckFailedException")
+      return json(409, { error: "Slot changed; reload and retry" });
+    throw error;
+  }
 }

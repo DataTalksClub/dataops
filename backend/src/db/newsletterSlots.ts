@@ -75,6 +75,32 @@ export async function listNewsletterSlots(
       left.id.localeCompare(right.id),
   );
 }
+/**
+ * Slots linked to one Card. `slot.cardId` is the single canonical link, so the
+ * reverse lookup scans; the table holds a few hundred slots at most.
+ */
+export async function listNewsletterSlotsByCardId(
+  client: DynamoDBDocumentClient,
+  cardId: string,
+) {
+  const items: Record<string, unknown>[] = [];
+  let ExclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const page = await client.send(
+      new ScanCommand({
+        TableName: TABLE_NEWSLETTER_SLOTS,
+        FilterExpression: "begins_with(PK,:prefix) AND cardId=:cardId",
+        ExpressionAttributeValues: { ":prefix": "SLOT#", ":cardId": cardId },
+        ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+      }),
+    );
+    items.push(...((page.Items || []) as Record<string, unknown>[]));
+    ExclusiveStartKey = page.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return (items.map(clean).filter(Boolean) as NewsletterSlot[]).sort(
+    (left, right) => left.publicationDate.localeCompare(right.publicationDate),
+  );
+}
 export async function createNewsletterSlot(
   client: DynamoDBDocumentClient,
   value: Record<string, unknown>,
@@ -151,7 +177,7 @@ export async function updateNewsletterSlot(
       ExpressionAttributeValues: { ":version": existing.version },
     }),
   );
-  return next;
+  return next as NewsletterSlot;
 }
 export async function deleteNewsletterSlot(
   client: DynamoDBDocumentClient,

@@ -9,7 +9,11 @@ import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createSession } from "../src/db/sessions";
 import { createNewsletterSlot } from "../src/db/newsletterSlots";
 import { createCrmRecord } from "../src/db/sponsorCrm";
-import { createCard } from "../src/db/cards";
+import { createCard, getCard, updateCard } from "../src/db/cards";
+import { createTemplate } from "../src/db/templates";
+import { listTasksByCard } from "../src/db/tasks";
+import { PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { TABLE_CARDS, TABLE_NEWSLETTER_SLOTS } from "../src/db/tableNames";
 import { handleNewsletterSlotRoutes } from "../src/routes/newsletterSlots";
 const invoke = (
     method: string,
@@ -303,7 +307,7 @@ describe("newsletter slots", () => {
     assert.notEqual(recurred.id, alert.id);
 
     const card = await createCard(client, {
-      title: "Synthetic incomplete newsletter",
+      title: "[Newsletter] Synthetic incomplete newsletter (20NOV 2026)",
       anchorDate: "2026-11-20",
       stage: "planning",
       cardLinks: [{ name: "Mailchimp campaign", url: "" }],
@@ -418,6 +422,123 @@ describe("newsletter slots", () => {
       (client as any).send = originalSend;
       delete process.env.NEWSLETTER_OPEN_ALERT_LEAD_DAYS;
     }
+  });
+  describe("card links", () => {
+    const slot = async (sourceKey: string, extra: Record<string, unknown> = {}) =>
+      data(
+        await invoke("POST", "/api/newsletter-slots", {
+          ...valid,
+          sourceKey,
+          ...extra,
+        }),
+      );
+    const newsletterCard = (title: string) =>
+      createCard(client, { title, anchorDate: "2026-01-01", stage: "preparation" });
+    it("validates the linked Card, keeps links unique, and unlinks with null", async () => {
+      const first = await slot("link-a", { publicationDate: "2026-12-07", campaignNumber: 310 });
+      const second = await slot("link-b", { publicationDate: "2026-12-14", campaignNumber: 311 });
+      const missing = await invoke("PUT", `/api/newsletter-slots/${first.id}`, { version: first.version, cardId: "no-such-card" });
+      assert.equal(missing.statusCode, 422, missing.body);
+      const podcast = await createCard(client, { title: "[Podcast] 2026-DEC-07 - Topic - Ada Example", anchorDate: "2026-12-07", stage: "preparation" });
+      const wrongType = await invoke("PUT", `/api/newsletter-slots/${first.id}`, { version: first.version, cardId: podcast.id });
+      assert.equal(wrongType.statusCode, 422, wrongType.body);
+
+      const card = await newsletterCard("[Newsletter] Weekly email #300(01DEC 2026) -Example Sponsor");
+      const linked = await invoke("PUT", `/api/newsletter-slots/${first.id}`, { version: first.version, cardId: card.id });
+      assert.equal(linked.statusCode, 200, linked.body);
+      assert.equal(data(linked).cardSync, "synced");
+      const pushed = (await getCard(client, card.id))!;
+      assert.equal(pushed.anchorDate, "2026-12-07");
+      assert.equal(pushed.issueNumber, "310");
+      assert.equal(pushed.title, "[Newsletter] Weekly email #310(7DEC 2026) -Example Sponsor");
+
+      const taken = await invoke("PUT", `/api/newsletter-slots/${second.id}`, { version: second.version, cardId: card.id });
+      assert.equal(taken.statusCode, 409, taken.body);
+      const takenOnCreate = await invoke("POST", "/api/newsletter-slots", { ...valid, sourceKey: "link-c", cardId: card.id });
+      assert.equal(takenOnCreate.statusCode, 409, takenOnCreate.body);
+
+      const reverse = data(await invoke("GET", "/api/newsletter-slots", undefined, {}, { cardId: card.id }));
+      assert.deepEqual(reverse.items.map((item: any) => item.id), [first.id]);
+      assert.equal(reverse.items[0].card.id, card.id);
+      assert.equal(reverse.items[0].card.anchorDate, "2026-12-07");
+
+      const unlinked = await invoke("PUT", `/api/newsletter-slots/${first.id}`, { version: data(linked).version, cardId: null });
+      assert.equal(unlinked.statusCode, 200, unlinked.body);
+      assert.equal(data(await invoke("GET", "/api/newsletter-slots", undefined, {}, { cardId: card.id })).items.length, 0);
+      const relinked = await invoke("PUT", `/api/newsletter-slots/${second.id}`, { version: second.version, cardId: card.id });
+      assert.equal(relinked.statusCode, 200, relinked.body);
+    });
+    it("pushes slot date and issue changes to the Card and flags drift", async () => {
+      const card = await newsletterCard("[Newsletter] Weekly email #320(05JAN 2027) -Example Sponsor");
+      const created = await slot("push-a", { publicationDate: "2027-01-04", campaignNumber: 320, cardId: card.id });
+      assert.equal(created.cardSync, "synced");
+      const moved = await invoke("PUT", `/api/newsletter-slots/${created.id}`, { version: created.version, publicationDate: "2027-01-11", campaignNumber: 321 });
+      assert.equal(moved.statusCode, 200, moved.body);
+      let current = (await getCard(client, card.id))!;
+      assert.equal(current.anchorDate, "2027-01-11");
+      assert.equal(current.issueNumber, "321");
+      assert.match(String(current.title), /#321\(11JAN 2027\)/);
+
+      const range = { from: "2027-01-01", to: "2027-01-31", today: "2027-01-01" };
+      let listed = data(await invoke("GET", "/api/newsletter-slots", undefined, {}, range));
+      const item = listed.items.find((value: any) => value.id === created.id);
+      assert.deepEqual(Object.keys(item.card).sort(), ["anchorDate", "id", "openTaskCount", "stage", "status", "taskCount", "title"]);
+      assert.ok(!listed.alerts.some((alert: any) => alert.reasonCode === "card-date-mismatch"));
+
+      current = await updateCard(client, card.id, {
+        expectedVersion: current.version,
+        patch: { anchorDate: "2027-01-12", title: "[Newsletter] Weekly email #321 -Example Sponsor" },
+      });
+      listed = data(await invoke("GET", "/api/newsletter-slots", undefined, {}, range));
+      assert.ok(listed.alerts.some((alert: any) => alert.slotId === created.id && alert.reasonCode === "card-date-mismatch"));
+    });
+    it("creates a Card from the newsletter Template and rolls it back when linking fails", async () => {
+      await createTemplate(client, {
+        name: "Newsletter",
+        type: "newsletter",
+        taskDefinitions: [
+          { refId: "draft", description: "Draft issue", offsetDays: -3 },
+          { refId: "send", description: "Send issue", offsetDays: 0 },
+        ],
+      });
+      const target = await slot("create-a", { publicationDate: "2027-02-08", campaignNumber: 330 });
+      const created = await invoke("POST", `/api/newsletter-slots/${target.id}/card`, { version: target.version });
+      assert.equal(created.statusCode, 201, created.body);
+      const result = data(created);
+      assert.equal(result.slot.cardId, result.card.id);
+      const card = (await getCard(client, result.card.id))!;
+      assert.equal(card.title, "Newsletter #330 (8FEB 2027)");
+      assert.equal(card.anchorDate, "2027-02-08");
+      assert.equal(card.issueNumber, "330");
+      assert.equal((await listTasksByCard(client, card.id)).length, 2);
+      assert.equal((await invoke("POST", `/api/newsletter-slots/${target.id}/card`, {})).statusCode, 409);
+      assert.equal((await invoke("GET", `/api/newsletter-slots/${target.id}/card`)).statusCode, 405);
+
+      const doomed = await slot("create-b", { publicationDate: "2027-02-15", campaignNumber: 331 });
+      const originalSend = client.send.bind(client);
+      (client as any).send = (command: any) => {
+        if (command instanceof PutCommand && command.input.TableName === TABLE_NEWSLETTER_SLOTS && command.input.Item?.cardId)
+          return Promise.reject(Object.assign(new Error("synthetic race"), { name: "ConditionalCheckFailedException" }));
+        return originalSend(command);
+      };
+      let failed;
+      try {
+        failed = await handleNewsletterSlotRoutes(
+          `/api/newsletter-slots/${doomed.id}/card`,
+          "POST",
+          { httpMethod: "POST", path: `/api/newsletter-slots/${doomed.id}/card`, headers: {}, queryStringParameters: {}, body: "{}" },
+          client,
+        );
+      } finally {
+        (client as any).send = originalSend;
+      }
+      assert.equal(failed.statusCode, 409, failed.body);
+      const leftovers = await client.send(new ScanCommand({ TableName: TABLE_CARDS, FilterExpression: "title = :title", ExpressionAttributeValues: { ":title": "Newsletter #331 (15FEB 2027)" } }));
+      assert.equal(leftovers.Items?.length, 0);
+      const reread = data(await invoke("GET", `/api/newsletter-slots/${doomed.id}`));
+      assert.equal(reread.cardId, undefined);
+      assert.equal(reread.card, null);
+    });
   });
   it("accepts an existing bearer session while rejecting unauthenticated and Basic writes", async () => {
     Object.assign(process.env, {
