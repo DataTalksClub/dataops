@@ -69,8 +69,7 @@ body[data-workspace-view="sponsors"] .document-list {
 }.bookkeeping-counter,
 .bookkeeping-package-ready {
   border-radius: var(--dk-radius-md);
-}.worklist-classify select,
-.bookkeeping-lens-month input {
+}.worklist-classify select {
   background-color: var(--dk-bg-surface);
 }.bookkeeping-section,
 .crm-directory,

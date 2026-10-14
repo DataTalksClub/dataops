@@ -295,13 +295,10 @@ body[data-workspace-view="sponsors"] .library-view {
   .review-controls select,
   .review-controls input,
   .bookkeeping-header .primary-button,
-  .bookkeeping-lens-step,
-  .bookkeeping-lens-month input,
   .period-nav__today,
   .period-nav__arrow,
   .calendar-add-button,
-  .calendar-display-controls select,
-  .bookkeeping-lens-nav button {
+  .calendar-display-controls select {
     min-height: var(--dk-size-touch);
     padding-top: 4px !important;
     padding-bottom: 4px !important;
@@ -366,11 +363,6 @@ body[data-workspace-view="sponsors"] .library-view {
   }
   .bookkeeping-header {
     padding: 0 0 6px !important;
-  }
-  .bookkeeping-lens-month {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
   }
   .bookkeeping-section {
     padding: 0 !important;
@@ -647,21 +639,7 @@ body[data-workspace-view="sponsors"] .library-view {
   }
 
   /* ---- Bookkeeping: the close panel is one expandable summary line when
-         the month is clear, and the month picker stays a single row ---- */
-  .bookkeeping-lens-month {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-  .bookkeeping-lens-month-label {
-    display: none;
-  }
-  .bookkeeping-lens-month input {
-    width: 100%;
-  }
-  .bookkeeping-lens-step,
-  .bookkeeping-lens-nav .quiet-button {
-    flex: 0 0 auto;
-  }
+         the month is clear ---- */
   /* The collapsed close panel is one line: chevron, heading, state hint. */
   .bookkeeping-worklist-summary {
     display: flex;

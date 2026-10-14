@@ -268,16 +268,13 @@ test('bookkeeping at 375x667: no stat strip, period controls reflow, and the led
   // No counter tiles restate the worklist (dakit principle 4).
   await expect(page.locator('.bookkeeping-close-state h2')).toBeVisible();
   await expect(page.locator('.bookkeeping-close-state .dk-stat-strip')).toHaveCount(0);
-  // The period is one row on a phone: [prev] [year] [month] [next]. All
-  // years in the year select stands in for the All months button.
-  await expect(page.locator('[data-lens-toggle]')).toBeHidden();
-  const periodControls = await page.locator('.bookkeeping-lens-nav :is(button, select):visible').all();
+  // The period is one row on a phone, shared with Calendar:
+  // [This month] [prev] [next] [Month YYYY ▾]; the picker holds the rest.
+  const periodControls = await page.locator('[data-period-toolbar] :is([data-today], [data-prev], [data-next], [data-picker-toggle]):visible').all();
   expect(periodControls).toHaveLength(4);
   const periodBoxes = await Promise.all(periodControls.map((control) => control.boundingBox()));
   for (const box of periodBoxes) expect(box.height).toBeGreaterThanOrEqual(44);
-  expect(new Set(periodBoxes.map((box) => Math.round(box.y))).size).toBe(1);
-  const previous = await page.locator('[data-lens-prev]').boundingBox();
-  expect(previous.width).toBeGreaterThanOrEqual(44);
+  expect(new Set(periodBoxes.map((box) => Math.round(box.y + box.height / 2))).size).toBe(1);
   await page.locator('#bookkeeping-ledger-heading').scrollIntoViewIfNeeded();
   await expect(page.locator('#bookkeeping-ledger-heading')).toBeInViewport();
   // Main is the scroller: the page overflows it, not the document.

@@ -3,94 +3,48 @@
 import {
   copyToClipboard, downloadCsv, formatFullCsv, formatReportCsv,
   formatReportTsv, isReportExempt, latestActivityMonth, monthLabel,
-  shiftMonth, yearsOf,
+  shiftMonth,
 } from "./bookkeeping-format.js";
+import { mountPeriodNav } from "../period-nav.js";
 
 export function mountBookkeepingNavigation({
   surface, closeState, status, setLens, lensEntries, todayIsoDate,
   getEntries, getLens,
 }) {
-  const yearSelect = surface.querySelector("[data-lens-year]");
-  const monthSelect = surface.querySelector("[data-lens-month-select]");
   let lens = getLens();
   let entries = getEntries();
-  const MONTH_NAMES = {
-    "01": "January",
-    "02": "February",
-    "03": "March",
-    "04": "April",
-    "05": "May",
-    "06": "June",
-    "07": "July",
-    "08": "August",
-    "09": "September",
-    "10": "October",
-    "11": "November",
-    "12": "December",
-  };
+  const thisMonth = () => String(todayIsoDate?.() || new Date().toISOString()).slice(0, 7);
+  const toolbar = surface.querySelector("[data-period-toolbar]");
+  const periodNav = mountPeriodNav(toolbar, {
+    dismissScope: surface,
+    selected: () => {
+      if (/^\d{4}-\d{2}$/.test(lens)) return { year: Number(lens.slice(0, 4)), month: Number(lens.slice(5)) - 1 };
+      if (/^\d{4}$/.test(lens)) return { year: Number(lens), month: null };
+      return { year: Number(latestActivityMonth(entries, thisMonth()).slice(0, 4)), month: null };
+    },
+    current: () => ({ year: Number(thisMonth().slice(0, 4)), month: Number(thisMonth().slice(5)) - 1 }),
+    onToday: () => setLens(thisMonth()),
+    onPrev: () => { if (lens !== "all") setLens(shiftMonth(lens, -1)); },
+    onNext: () => { if (lens !== "all") setLens(shiftMonth(lens, 1)); },
+    onMonth: (year, month) => setLens(`${year}-${String(month + 1).padStart(2, "0")}`),
+    onShortcut: (action, year) => {
+      if (action === "current") setLens(thisMonth());
+      else if (action === "year") setLens(String(year));
+      else setLens("all");
+    },
+  });
+  // The title names the lens: a month, a whole year, or every record.
   function refresh() {
     lens = getLens();
     entries = getEntries();
-    if (!yearSelect || !monthSelect) return;
-    const years = yearsOf(entries, lens);
-    yearSelect.innerHTML = [
-      '<option value="all">All years</option>',
-      ...years.map((y) => `<option value="${y}">${y}</option>`),
-    ].join("");
-
-    monthSelect.innerHTML = [
-      '<option value="all">All months (full year)</option>',
-      ...Object.entries(MONTH_NAMES).sort(([a], [b]) => a.localeCompare(b)).map(
-        ([m, name]) => `<option value="${m}">${name}</option>`,
-      ),
-    ].join("");
-
-    syncLensSelectors();
+    const isYear = /^\d{4}$/.test(lens);
+    periodNav.setTitle(lens === "all" ? "All records" : isYear ? `${lens} (whole year)` : monthLabel(lens));
+    periodNav.setStep({
+      prevLabel: isYear ? "Previous year" : "Previous month",
+      nextLabel: isYear ? "Next year" : "Next month",
+      disabled: lens === "all",
+    });
   }
-  function syncLensSelectors() {
-    if (!yearSelect || !monthSelect) return;
-    if (lens === "all") {
-      yearSelect.value = "all";
-      monthSelect.value = "all";
-      monthSelect.disabled = true;
-    } else if (/^\d{4}$/.test(lens)) {
-      yearSelect.value = lens;
-      monthSelect.value = "all";
-      monthSelect.disabled = false;
-    } else if (/^\d{4}-\d{2}$/.test(lens)) {
-      const [y, m] = lens.split("-");
-      yearSelect.value = y;
-      monthSelect.value = m;
-      monthSelect.disabled = false;
-    }
-  }
-  yearSelect?.addEventListener("change", () => {
-    const y = yearSelect.value;
-    if (y === "all") {
-      setLens("all");
-      return;
-    }
-    const m = monthSelect.value;
-    if (m === "all") {
-      setLens(y);
-    } else {
-      setLens(`${y}-${m}`);
-    }
-  });
-  monthSelect?.addEventListener("change", () => {
-    const m = monthSelect.value;
-    let y = yearSelect.value;
-    if (y === "all") {
-      const years = yearsOf(entries, lens);
-      y = years[0] || String(new Date().getFullYear());
-      yearSelect.value = y;
-    }
-    if (m === "all") {
-      setLens(y);
-    } else {
-      setLens(`${y}-${m}`);
-    }
-  });
   const exportReport = () => {
     const period = lens === "all" ? "all-records" : lens;
     const filename = `datatalksclub-${period}.csv`;
@@ -131,22 +85,5 @@ export function mountBookkeepingNavigation({
   surface
     .querySelector("[data-copy-report]")
     ?.addEventListener("click", copyReport);
-  const stepLens = (step) => {
-    if (lens !== "all") setLens(shiftMonth(lens, step));
-  };
-  surface.querySelector("[data-lens-prev]").addEventListener("click", () => stepLens(-1));
-  surface.querySelector("[data-lens-next]").addEventListener("click", () => stepLens(1));
-  surface
-    .querySelector("[data-lens-toggle]")
-    .addEventListener("click", () => {
-      setLens(
-        lens === "all"
-          ? latestActivityMonth(
-              entries,
-              String(todayIsoDate?.() || new Date().toISOString()).slice(0, 7),
-            )
-          : "all",
-      );
-    });
   return { refresh };
 }

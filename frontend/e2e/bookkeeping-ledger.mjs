@@ -18,7 +18,7 @@ const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     if (url.pathname === "/fixture") {
       res.setHeader("content-type", "text/html");
-      res.end('<html><head><link rel="stylesheet" href="/src/dakit/tokens.css"><link rel="stylesheet" href="/src/dakit/dakit.css"><link rel="stylesheet" href="/src/styles/base.css"><link rel="stylesheet" href="/src/styles/review.css"><link rel="stylesheet" href="/src/styles/chrome.css"><link rel="stylesheet" href="/src/styles/finance.css"><link rel="stylesheet" href="/src/styles/operations.css"><link rel="stylesheet" href="/src/styles/cards.css"><link rel="stylesheet" href="/src/styles/planner.css"><link rel="stylesheet" href="/src/styles/responsive.css"><link rel="stylesheet" href="/src/styles/refinements.css"><link rel="stylesheet" href="/src/styles/admin.css"><link rel="stylesheet" href="/src/styles/tasks-boards.css"><link rel="stylesheet" href="/src/styles/tasks-panels.css"><link rel="stylesheet" href="/src/styles/knowledge.css"><link rel="stylesheet" href="/src/styles/editor.css"><link rel="stylesheet" href="/src/styles/overrides.css"></head><body data-workspace-view="bookkeeping"><main id="finance"></main></body></html>');
+      res.end('<html><head><link rel="stylesheet" href="/src/dakit/tokens.css"><link rel="stylesheet" href="/src/dakit/dakit.css"><link rel="stylesheet" href="/src/styles/base.css"><link rel="stylesheet" href="/src/styles/review.css"><link rel="stylesheet" href="/src/styles/chrome.css"><link rel="stylesheet" href="/src/styles/finance.css"><link rel="stylesheet" href="/src/styles/operations.css"><link rel="stylesheet" href="/src/styles/cards.css"><link rel="stylesheet" href="/src/styles/planner.css"><link rel="stylesheet" href="/src/styles/responsive.css"><link rel="stylesheet" href="/src/styles/refinements.css"><link rel="stylesheet" href="/src/styles/admin.css"><link rel="stylesheet" href="/src/styles/tasks-boards.css"><link rel="stylesheet" href="/src/styles/tasks-panels.css"><link rel="stylesheet" href="/src/styles/knowledge.css"><link rel="stylesheet" href="/src/styles/editor.css"><link rel="stylesheet" href="/src/styles/overrides.css"><link rel="stylesheet" href="/src/styles/period-nav.css"></head><body data-workspace-view="bookkeeping"><main id="finance"></main></body></html>');
       return;
     }
     const file = path.resolve(root, `.${url.pathname}`);
@@ -314,15 +314,18 @@ try {
   );
   await page.screenshot({ path: ".tmp/screenshots/bookkeeping-ledger-package-ready.png", fullPage: true });
 
-  // The all-time lookup stays reachable; stepping months works both ways.
-  await page.locator("[data-lens-toggle]").click();
-  assert.match(await page.$eval("[data-close-state]", el => el.textContent), /All months — 5 transactions/);
-  await page.locator("[data-lens-toggle]").click();
+  // The period picker reaches every record; stepping months works both ways.
+  const period = page.locator("[data-period-toolbar]");
+  await period.locator("[data-picker-toggle]").click();
+  await period.locator('[data-picker-shortcut="all"]').click();
+  assert.match(await page.$eval("[data-close-state]", el => el.textContent), /All records — 5 transactions/);
+  await period.locator("[data-picker-toggle]").click();
+  await period.locator('[data-picker-month="8"]').click();
   assert.match(await page.$eval("[data-close-state]", el => el.textContent), /September 2026 close/);
-  await page.locator("[data-lens-prev]").click();
+  await period.locator("[data-prev]").click();
   assert.match(await page.$eval("[data-close-state]", el => el.textContent), /August 2026 close/);
   assert.match(await page.$eval(".bookkeeping-ledger", el => el.textContent), /No bookkeeping entries in August 2026/);
-  await page.locator("[data-lens-next]").click();
+  await period.locator("[data-next]").click();
   assert.match(await page.$eval("[data-close-state]", el => el.textContent), /September 2026 close/);
 
   // Mobile 390: same page re-rendered; the in-flow filters panel must still

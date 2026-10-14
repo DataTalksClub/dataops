@@ -27,7 +27,8 @@ body[data-workspace-view="sponsors"] .document-list {
 }.bookkeeping-surface button:not(.dk-button, .primary-button,
 .quiet-button,
 .danger-button,
-.danger-text-button),
+.danger-text-button,
+[class*="period-nav__"]),
 .sponsor-crm-surface button:not(.dk-button, .dk-split__item, .dk-split__back, .primary-button,
 .quiet-button,
 .danger-button,
@@ -44,7 +45,8 @@ body[data-workspace-view="sponsors"] .document-list {
 }.bookkeeping-surface button:not(.dk-button, .primary-button,
 .quiet-button,
 .danger-button,
-.danger-text-button):hover,
+.danger-text-button,
+[class*="period-nav__"]):hover,
 .sponsor-crm-surface button:not(.dk-button, .dk-split__item, .dk-split__back, .primary-button,
 .quiet-button,
 .danger-button,
@@ -215,29 +217,6 @@ body[data-workspace-view="sponsors"] .document-list {
    It answers "what is left for this month" above the fold (#242). */.bookkeeping-monthlens {
   display: grid;
   gap: var(--dk-space-4);
-}.bookkeeping-lens-month {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--dk-text-heading);
-  font-size: var(--dk-text-md);
-  font-weight: 600;
-  margin: 0;
-}
-.bookkeeping-lens-month input {
-  min-height: 34px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-heading);
-  padding: 0 var(--dk-space-3);
-  font-size: var(--dk-text-md);
-  font-weight: 600;
-  cursor: pointer;
-  outline: none;
-}
-.bookkeeping-lens-month input:focus-visible {
-  box-shadow: 0 0 0 2px var(--dk-focus-ring);
 }.bookkeeping-close-state {
   display: grid;
   gap: var(--dk-space-4);

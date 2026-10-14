@@ -199,16 +199,19 @@ test.describe("production portal bookkeeping", () => {
       expect(response.ok(), await response.text()).toBe(true);
     }
     await gotoOwnedBookkeepingPage(page);
-    const year = page.getByRole("combobox", { name: "Year", exact: true });
-    const month = page.getByRole("combobox", { name: "Month", exact: true });
-    await expect(year).toBeVisible();
-    await expect(month.locator("option")).toHaveText([
-      "All months (full year)",
-      "January", "February", "March", "April", "May", "June",
-      "July", "August", "September", "October", "November", "December",
+    const period = page.locator("[data-period-toolbar]");
+    await period.locator("[data-picker-toggle]").click();
+    await expect(period.locator("[data-picker-month]")).toHaveText([
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ]);
-    await month.selectOption("all");
-    await year.selectOption("2024");
+    const pickerYear = period.locator("[data-picker-year]");
+    for (let step = 0; step < 20 && (await pickerYear.textContent()) !== "2024"; step += 1) {
+      const shown = Number(await pickerYear.textContent());
+      await period.locator(shown > 2024 ? "[data-picker-prev-year]" : "[data-picker-next-year]").click();
+    }
+    await expect(pickerYear).toHaveText("2024");
+    await period.getByRole("button", { name: "Whole year", exact: true }).click();
+    await expect(period.locator("[data-period-heading]")).toHaveText("2024 (whole year)");
     const ledger = page.locator(".bookkeeping-ledger");
     await expect(ledger).toContainText("January Export Vendor");
     await expect(ledger).toContainText('December, "Export" Vendor');
@@ -240,21 +243,29 @@ test.describe("production portal bookkeeping", () => {
     expect(copied).toContain("January Export Vendor");
     expect(copied).not.toContain("Excluded Export Tax");
 
-    await month.selectOption("12");
+    const heading = period.locator("[data-period-heading]");
+    await period.locator("[data-picker-toggle]").click();
+    await expect(pickerYear).toHaveText("2024");
+    await period.locator('[data-picker-month="11"]').click();
+    await expect(heading).toHaveText("December 2024");
     await expect(ledger).not.toContainText("January Export Vendor");
     await expect(page.locator("[data-report]")).toBeEnabled();
-    await page.getByRole("button", { name: "Next month", exact: true }).click();
-    await expect(year).toHaveValue("2025");
-    await expect(month).toHaveValue("01");
+    await period.getByRole("button", { name: "Next month", exact: true }).click();
+    await expect(heading).toHaveText("January 2025");
     await expect(ledger).toContainText("Next Year Export Vendor");
-    await month.selectOption("all");
-    await page.getByRole("button", { name: "Previous year", exact: true }).click();
-    await expect(year).toHaveValue("2024");
-    await page.getByRole("button", { name: "Previous year", exact: true }).click();
-    await expect(year).toHaveValue("2023");
+    await period.locator("[data-picker-toggle]").click();
+    await period.getByRole("button", { name: "Whole year", exact: true }).click();
+    await expect(heading).toHaveText("2025 (whole year)");
+    await period.locator("[data-prev]").click();
+    await expect(heading).toHaveText("2024 (whole year)");
+    await expect(period.locator("[data-prev]")).toHaveAttribute("aria-label", "Previous year");
+    await period.locator("[data-prev]").click();
+    await expect(heading).toHaveText("2023 (whole year)");
     await expect(ledger).toContainText("No bookkeeping entries in 2023");
-    await year.selectOption("all");
-    await expect(month).toBeDisabled();
+    await period.locator("[data-picker-toggle]").click();
+    await period.getByRole("button", { name: "All records", exact: true }).click();
+    await expect(heading).toHaveText("All records");
+    await expect(period.locator("[data-prev]")).toBeDisabled();
     await expect(ledger).toContainText("Next Year Export Vendor");
     await context.close();
   });

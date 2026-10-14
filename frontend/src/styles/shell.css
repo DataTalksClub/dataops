@@ -103,16 +103,7 @@ body:not([data-workspace-view="docs"]) .knowledge-tools { display: none; }
 .bookkeeping-worklist-summary > .finance-section-head { flex: 1 1 auto; border-bottom: 0; }
 .bookkeeping-worklist-section[open] > .bookkeeping-worklist-summary { border-bottom: 1px solid var(--dk-border-default); }
 .bookkeeping-worklist-hint { margin: 0; color: var(--dk-text-muted); font-size: var(--dk-text-sm); white-space: nowrap; }
-/* Period: [prev] [year] [month] [next] on one row, All months beside it; on
-   a phone the selects share the row and All years in the year select
-   replaces the All months button. */
-.bookkeeping-lens-nav { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--dk-space-2); }
-.bookkeeping-lens-field { display: block; min-width: 0; margin: 0; }
-.bookkeeping-lens-all { margin-left: var(--dk-space-2); }
 @media (max-width: 820px) {
-  .bookkeeping-lens-field { flex: 1 1 0; }
-  .bookkeeping-lens-field select { width: 100%; }
-  .bookkeeping-lens-all { display: none; }
   .finance-section-head { padding: var(--dk-space-3) var(--dk-space-4); }
   .finance-section-head__main { flex-basis: 100%; }
 }

@@ -1565,8 +1565,21 @@ describe("Finance surface boundary", () => {
         entryType: "expense",
       },
     ];
+    const periodToolbar = new FakeElement("div");
+    const periodShortcuts = Object.fromEntries(["current", "year", "all"].map((action) => {
+      const button = new FakeElement("button");
+      button.dataset.pickerShortcut = action;
+      return [action, button];
+    }));
+    periodToolbar.setQueryAll("[data-picker-shortcut]", Object.values(periodShortcuts));
+    const periodMonths = periodToolbar.setQueryAll("[data-picker-month]", Array.from({ length: 12 }, (_, month) => {
+      const button = new FakeElement("button");
+      button.dataset.pickerMonth = String(month);
+      return button;
+    }));
     const { document, finance } = createHarness({
       setupSurface: (surface) => {
+        surface.setQuery("[data-period-toolbar]", periodToolbar);
         surface.setQuery("[data-pdf]", pdfInput);
         surface.setQuery("[data-transaction]", transactionSelect);
         surface.setQuery("#bookkeeping-evidence", evidenceSection);
@@ -1711,23 +1724,28 @@ describe("Finance surface boundary", () => {
       /Attach evidence for Sponsor LLC/,
     );
 
-    // The all-time lookup stays reachable, and stepping months works.
-    await surface.querySelector("[data-lens-toggle]").dispatch("click");
+    // The period picker reaches every record and whole years; the arrows
+    // step months and "This month" returns to the month being closed now.
+    await periodShortcuts.all.dispatch("click");
+    assert.equal(periodToolbar.querySelector("[data-period-heading]").textContent, "All records");
+    assert.equal(periodToolbar.querySelector("[data-prev]").disabled, true);
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
-      /All months — <span class="dk-mono">4<\/span>&nbsp;transactions\s*on record/,
+      /All records — <span class="dk-mono">4<\/span>&nbsp;transactions\s*on record/,
     );
     assert.equal(surface.querySelector("[data-worklist-section]").hidden, true);
     assert.match(
       surface.querySelector(".bookkeeping-ledger").innerHTML,
       /August Payee/,
     );
-    await surface.querySelector("[data-lens-toggle]").dispatch("click");
+    await periodToolbar.querySelector("[data-picker-toggle]").dispatch("click");
+    await periodMonths[8].dispatch("click");
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
       /September 2026 close/,
     );
-    await surface.querySelector("[data-lens-prev]").dispatch("click");
+    assert.equal(periodToolbar.querySelector("[data-period-heading]").textContent, "September 2026");
+    await periodToolbar.querySelector("[data-prev]").dispatch("click");
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
       /August 2026 close/,
@@ -1741,14 +1759,10 @@ describe("Finance surface boundary", () => {
       /Hosting GmbH/,
     );
 
-    // Year/month selector navigation
-    const yearSelect = surface.querySelector("[data-lens-year]");
-    const monthSelect = surface.querySelector("[data-lens-month-select]");
-    assert.ok(yearSelect);
-    assert.ok(monthSelect);
-    yearSelect.value = "2026";
-    monthSelect.value = "all";
-    await yearSelect.dispatch("change");
+    await periodToolbar.querySelector("[data-picker-toggle]").dispatch("click");
+    await periodShortcuts.year.dispatch("click");
+    assert.equal(periodToolbar.querySelector("[data-period-heading]").textContent, "2026 (whole year)");
+    assert.equal(periodToolbar.querySelector("[data-prev]").getAttribute("aria-label"), "Previous year");
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
       /2026 close/,

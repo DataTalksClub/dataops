@@ -36,7 +36,7 @@ export function closeStateMonthMarkup({ title, cta, e }) {
 
 export function closeStateAllMarkup(transactions) {
   return html`<p class="bookkeeping-lens-note">
-    All months — <span class="dk-mono">${transactions}</span>&nbsp;transaction${transactions === 1 ? "" : "s"}
+    All records — <span class="dk-mono">${transactions}</span>&nbsp;transaction${transactions === 1 ? "" : "s"}
     on record. Select a month above to see its close state.
   </p>`;
 }

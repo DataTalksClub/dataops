@@ -216,18 +216,19 @@
   color: var(--dk-accent-default);
 }
 .period-nav__foot {
-  display: flex;
-  gap: var(--dk-space-2);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: var(--dk-space-1);
   border-top: 1px solid var(--dk-border-default);
   padding-top: var(--dk-space-2);
 }
 .period-nav__foot:empty { display: none; }
 .period-nav__shortcut {
-  flex: 1 1 0;
+  min-width: 0;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
-  padding: var(--dk-space-2) var(--dk-space-3);
+  padding: var(--dk-space-2) var(--dk-space-1);
   color: var(--dk-text-primary);
   font-size: var(--dk-text-sm);
   font-weight: var(--dk-weight-semibold);
@@ -248,9 +249,17 @@
     background: transparent;
     padding: 0;
   }
-  .period-nav { gap: var(--dk-space-2); }
+  .period-nav,
+  .period-nav__picker { gap: var(--dk-space-1); }
+  .period-nav__today { padding-inline: var(--dk-space-3); }
   .period-nav__badge { display: none; }
   .period-nav__today,
   .period-nav__arrow { min-height: var(--dk-size-touch); }
   .period-nav__title-btn { min-height: var(--dk-size-touch); }
+  /* The title sits at the row's end on a phone; open the picker leftwards. */
+  .period-nav__popover { right: 0; left: auto; }
+  .period-nav__year-btn,
+  .period-nav__month,
+  .period-nav__shortcut { min-height: var(--dk-size-touch); }
+  .period-nav__year-btn { width: var(--dk-size-touch); height: var(--dk-size-touch); }
 }

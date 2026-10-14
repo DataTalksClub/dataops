@@ -4,6 +4,7 @@
 // .bookkeeping-ledger, .bookkeeping-documents and [data-package-review].
 import { financeSectionHead, html } from "./shared.js";
 import { collectionCreateButtonMarkup, renderPageHeaderMarkup } from "../operations-overview.js";
+import { periodNavMarkup } from "../period-nav.js";
 
 export function bookkeepingSurfaceMarkup() {
   return html`${renderPageHeaderMarkup({
@@ -16,34 +17,17 @@ export function bookkeepingSurfaceMarkup() {
         aria-label="Month close state"
         data-monthlens
       >
-        <div class="bookkeeping-lens-nav">
-          <button
-            class="dk-icon-button bookkeeping-lens-step"
-            type="button"
-            data-lens-prev
-            aria-label="Previous month"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>
-          </button>
-          <label class="bookkeeping-lens-field"
-            ><span class="dk-visually-hidden">Year</span>
-            <select class="dk-select dk-mono" data-lens-year></select
-          ></label>
-          <label class="bookkeeping-lens-field"
-            ><span class="dk-visually-hidden">Month</span>
-            <select class="dk-select" data-lens-month-select></select
-          ></label>
-          <button
-            class="dk-icon-button bookkeeping-lens-step"
-            type="button"
-            data-lens-next
-            aria-label="Next month"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>
-          </button>
-          <button class="dk-button dk-button--secondary bookkeeping-lens-all" type="button" data-lens-toggle>
-            All months
-          </button>
+        <div class="period-toolbar bookkeeping-period" data-period-toolbar>
+          ${periodNavMarkup({
+            headingId: "bookkeeping-period-heading",
+            todayLabel: "This month",
+            groupLabel: "Change bookkeeping period",
+            shortcuts: [
+              { action: "current", label: "This month" },
+              { action: "year", label: "Whole year" },
+              { action: "all", label: "All records" },
+            ],
+          })}
         </div>
         <div class="bookkeeping-close-state" data-close-state></div>
       </section>

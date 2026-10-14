@@ -147,8 +147,6 @@ export function createBookkeepingSurface(context) {
     function renderCloseState() {
       const lensSection = surface.querySelector("[data-monthlens]");
       lensSection.classList.toggle("is-lens-all", lens === "all");
-      surface.querySelector("[data-lens-toggle]").textContent =
-        lens === "all" ? "Back to month view" : "All months";
       if (lens === "all") {
         closeState.innerHTML = closeStateAllMarkup(entries.length);
         return;
@@ -160,8 +158,6 @@ export function createBookkeepingSurface(context) {
         open.conversions.length +
         open.unclassified.length;
       const isYear = /^\d{4}$/.test(lens);
-      surface.querySelector("[data-lens-prev]").setAttribute("aria-label", isYear ? "Previous year" : "Previous month");
-      surface.querySelector("[data-lens-next]").setAttribute("aria-label", isYear ? "Next year" : "Next month");
       const report = monthReport();
       closeState.innerHTML = closeStateMonthMarkup({
         title: monthLabel(lens),
