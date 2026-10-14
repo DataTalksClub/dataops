@@ -39,6 +39,33 @@ export function createDevicePage({
     if (text !== undefined) node.textContent = text;
     return node;
   };
+  function appendMessage(node, message) {
+    const [before, ...after] = message.split("dataops login");
+    node.append(documentRef.createTextNode(before));
+    if (after.length) node.append(el("code", "dk-mono", "dataops login"), documentRef.createTextNode(after.join("dataops login")));
+  }
+  // Kit icons are 24-grid outline glyphs; shapes are [tag, attributes] pairs.
+  function strokeIcon(className, shapes) {
+    const svgNs = "http://www.w3.org/2000/svg";
+    const icon = documentRef.createElementNS(svgNs, "svg");
+    const attributes = {
+      class: className,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": "1.8",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+      "aria-hidden": "true",
+    };
+    for (const [name, value] of Object.entries(attributes)) icon.setAttribute(name, value);
+    for (const [tag, shapeAttributes] of shapes) {
+      const shape = documentRef.createElementNS(svgNs, tag);
+      for (const [name, value] of Object.entries(shapeAttributes)) shape.setAttribute(name, value);
+      icon.append(shape);
+    }
+    return icon;
+  }
   function switchAccount() {
     const next = `/device${code ? `?userCode=${encodeURIComponent(formatUserCode(code))}` : ""}`;
     locationRef.assign(`/login?return_to=${encodeURIComponent(next)}`);
@@ -51,7 +78,7 @@ export function createDevicePage({
       event.preventDefault();
       switchAccount();
     });
-    identity.append(link);
+    identity.append(documentRef.createTextNode(" · "), link);
   }
   function stopTimer() {
     if (timer !== null) clearIntervalImpl(timer);
@@ -62,7 +89,9 @@ export function createDevicePage({
     if (result) wrap.setAttribute("role", "status");
     const heading = el("h1", "dk-auth-card__title", title);
     heading.tabIndex = -1;
-    wrap.append(heading, el("p", "dk-auth-card__lede", lede));
+    const description = el("p", "dk-auth-card__lede");
+    appendMessage(description, lede);
+    wrap.append(heading, description);
     card.append(wrap);
     return heading;
   }
@@ -92,8 +121,12 @@ export function createDevicePage({
       const alert = el(
         "div",
         `dk-callout${failure.tone ? ` dk-callout--${failure.tone}` : ""}`,
-        failure.message,
       );
+      const sentence = el("span");
+      appendMessage(sentence, failure.message);
+      const body = el("div", "dk-callout__body");
+      body.append(sentence);
+      alert.append(body);
       alert.setAttribute("role", "alert");
       card.append(alert);
       const recovery = button(failure.action, true, () => {
@@ -116,9 +149,8 @@ export function createDevicePage({
         const tick = () => {
           const seconds = Math.max(0, Math.ceil((retryAt - now()) / 1000));
           recovery.disabled = seconds > 0;
-          recovery.textContent = seconds
-            ? `Try again (${seconds}s)`
-            : "Try again";
+          recovery.replaceChildren(documentRef.createTextNode("Try again"));
+          if (seconds) recovery.append(documentRef.createTextNode(" "), el("span", "dk-mono", `(${seconds}s)`));
           if (!seconds) stopTimer();
         };
         tick();
@@ -133,15 +165,20 @@ export function createDevicePage({
         true,
       );
       if (phase === "approved") {
-        const icon = el("span", "dk-auth-card__success", "✓");
-        icon.setAttribute("aria-hidden", "true");
+        const icon = strokeIcon("dk-auth-card__icon--success", [
+          ["circle", { cx: "12", cy: "12", r: "10" }],
+          ["path", { d: "m8 12 3 3 5-6" }],
+        ]);
         heading.prepend(icon);
         const block = el("div", "dk-code-block");
         const command = el("code", "", "dataops logout");
         command.id = "device-logout-command";
-        const copy = button("Copy", false, () => {});
+        const copy = el("button", "dk-button dk-button--secondary dk-button--sm", "Copy");
+        copy.type = "button";
         copy.dataset.dkCopy = "#device-logout-command";
-        block.append(command, copy);
+        const pre = el("pre");
+        pre.append(command);
+        block.append(pre, copy);
         card.append(
           block,
           el("p", "dk-hint", "Run this on that machine to sign it out."),
@@ -205,13 +242,16 @@ export function createDevicePage({
       if (differentNetwork) {
         const warning = el("div", "dk-callout dk-callout--warning");
         warning.id = "network-warning";
-        warning.append(
-          el(
-            "p",
-            "",
-            "This request came from a different network. Only continue if you started this login yourself on that machine.",
-          ),
+        const alert = strokeIcon("dk-callout__icon", [
+          ["path", { d: "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 20h16a2 2 0 0 0 1.73-2" }],
+          ["path", { d: "M12 9v4M12 17h.01" }],
+        ]);
+        const body = el("div", "dk-callout__body");
+        body.append(
+          el("span", "dk-callout__title", "This request came from a different network."),
+          el("span", "", "Only continue if you started this login yourself on that machine."),
         );
+        warning.append(alert, body);
         const label = el("label", "dk-check");
         const check = el("input");
         check.type = "checkbox";
@@ -224,7 +264,7 @@ export function createDevicePage({
           check,
           el("span", "", "I started this login on that machine"),
         );
-        warning.append(label);
+        body.append(label);
         card.append(warning);
         approve.setAttribute("aria-describedby", "network-warning");
       }
@@ -354,7 +394,9 @@ export function createDevicePage({
         action: "Enter another code",
         tone: "danger",
       };
-    else if (error.status === 401)
+    else if (error.status === 401) {
+      actor = null;
+      updateIdentity();
       failure = {
         kind: "signin",
         title: "Sign in to continue",
@@ -363,7 +405,7 @@ export function createDevicePage({
         action: "Sign in",
         tone: "warning",
       };
-    else if (error.status === 429) {
+    } else if (error.status === 429) {
       retryAt = now() + (error.retryAfter || 60) * 1000;
       failure = {
         kind: "ratelimit",

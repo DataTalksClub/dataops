@@ -308,6 +308,12 @@ export class FakeDocument {
     return element;
   }
 
+  createElementNS(namespace, tagName) {
+    const element = this.createElement(tagName);
+    element.namespaceURI = namespace;
+    return element;
+  }
+
   createTextNode(value) {
     const node = new FakeTextNode(value);
     node.ownerDocument = this;

@@ -20,11 +20,11 @@ function harness(options = {}) {
   };
   globalThis.document = doc;
   globalThis.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init.detail; } };
-  const calls = [], urls = [], ticks = [];
+  const calls = [], urls = [], ticks = [], history = [];
   const locationRef = { href: options.href || 'https://ops.example.test/device?userCode=bcdfghjk', hostname: 'ops.example.test', assign: url => urls.push(url), replace: url => urls.push(url) };
   let clock = Date.parse('2026-10-14T10:00:00Z');
   const controller = createDevicePage({
-    documentRef: doc, locationRef, historyRef: { replaceState() {} }, now: () => clock,
+    documentRef: doc, locationRef, historyRef: { replaceState: (...args) => history.push(args) }, now: () => clock,
     setIntervalImpl: callback => { ticks.push(callback); return ticks.length; }, clearIntervalImpl() {},
     request: async (url, opts) => {
       calls.push([url, opts]);
@@ -37,7 +37,7 @@ function harness(options = {}) {
   const input = () => card.querySelector('#device-code');
   const type = async value => { input().value = value; await input().dispatch('input'); };
   const submit = async () => { await card.querySelector('form').dispatch('submit'); await nextTicks(); };
-  return { card, controller, calls, urls, input, type, submit, advance: ms => { clock += ms; ticks.at(-1)?.(); } };
+  return { card, identity, controller, calls, urls, history, input, type, submit, advance: ms => { clock += ms; ticks.at(-1)?.(); } };
 }
 test('a prefilled link requires Continue, normalizes without truncation, then explicitly approves', async () => {
   const h = harness(); await h.controller.start();
@@ -118,5 +118,37 @@ test('identity failures block consent until the identity is known', async () => 
   await findByText(h.card, 'Try again', 'button').click(); await nextTicks();
   assert.equal(h.input().value, 'BCDF-GHJK');
   await h.submit(); assert.match(h.card.textContent, /operator@example.test/);
+  h.controller.destroy();
+});
+
+test('userCode survives sign-in and switch-account round trips before history is cleaned', async () => {
+  for (const signedIn of [false, true]) {
+    const h = harness({ meRequest: async () => {
+      if (!signedIn) throw Object.assign(new Error('Sign in'), { status: 401 });
+      return { user: { email: 'operator@example.test' } };
+    } });
+    await h.controller.start();
+    assert.deepEqual(h.history, [[null, '', '/device']]);
+    if (signedIn) {
+      assert.equal(h.input().value, 'BCDF-GHJK');
+      assert.match(h.card.textContent, /matches your terminal/);
+      await h.identity.querySelector('a').dispatch('click');
+    } else await findByText(h.card, 'Sign in', 'button').click();
+    const login = new URL(h.urls[0], 'https://ops.example.test');
+    assert.equal(login.searchParams.get('return_to'), '/device?userCode=BCDF-GHJK');
+    h.controller.destroy();
+    const returned = harness({ href: 'https://ops.example.test' + login.searchParams.get('return_to') });
+    await returned.controller.start();
+    assert.equal(returned.input().value, 'BCDF-GHJK');
+    assert.deepEqual(returned.calls.map(([url]) => url), ['/api/me']);
+    assert.deepEqual(returned.history, [[null, '', '/device']]);
+    returned.controller.destroy();
+  }
+});
+test('device entry follows the userCode protocol without a code alias', async () => {
+  const h = harness({ href: 'https://ops.example.test/device?code=bcdfghjk' });
+  await h.controller.start();
+  assert.equal(h.input().value, '');
+  assert.deepEqual(h.calls.map(([url]) => url), ['/api/me']);
   h.controller.destroy();
 });

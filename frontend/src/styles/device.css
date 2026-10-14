@@ -1,7 +1,4 @@
 .dk-auth-card__reported { display: block; margin-top: var(--dk-space-1); color: var(--dk-text-muted); font-size: var(--dk-text-sm); font-family: var(--dk-font-sans); }
-.dk-auth-card__success { color: var(--dk-success-text); margin-right: var(--dk-space-2); }
-.dk-auth-page__identity { display: flex; gap: var(--dk-space-3); font-size: var(--dk-text-sm); color: var(--dk-text-muted); min-width: 0; }
-.dk-auth-page__identity > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dk-dl dd { overflow-wrap: anywhere; }
 .dk-session-list { border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-md); width: min(var(--dk-size-measure), 100%); }
 .dk-session-list__row { display: flex; gap: var(--dk-space-4); justify-content: space-between; align-items: center; padding: var(--dk-space-4); }
