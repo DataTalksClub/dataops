@@ -86,7 +86,7 @@ export function templateTaskDefinitionSnapshot(
     instructionDocId: definition.instructionDocId,
     instructionStepId: definition.instructionStepId,
     phase: definition.phase,
-    systems: definition.systems ? copy(definition.systems) : undefined,
+    requires: definition.requires ? copy(definition.requires) : undefined,
     validation: definition.validation ? copy(definition.validation) : undefined,
     requiredLinkName: definition.requiredLinkName,
     requiresFile: definition.requiresFile,

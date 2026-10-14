@@ -59,8 +59,8 @@ describe('Seed recurring script', () => {
       if (expected.instructionDocId) {
         assert.strictEqual(matches[0].instructionDocId, expected.instructionDocId);
       }
-      if (expected.systems) {
-        assert.deepStrictEqual(matches[0].systems, expected.systems);
+      if (expected.requires) {
+        assert.deepStrictEqual(matches[0].requires, expected.requires);
       }
     }
 
@@ -72,7 +72,7 @@ describe('Seed recurring script', () => {
       slackConfig.instructionDocId,
       'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form'
     );
-    assert.deepStrictEqual(slackConfig.systems, ['airtable', 'slack']);
+    assert.deepStrictEqual(slackConfig.requires, ['airtable', 'slack']);
 
     const trelloConfig = configsAfterFirstRun.find(
       (config) => config.description === 'Create new Trello cards and review existing ones'
@@ -82,7 +82,7 @@ describe('Seed recurring script', () => {
       trelloConfig.instructionDocId,
       'sop.internal-admin.trello.how-to-create-an-event-through-trello'
     );
-    assert.deepStrictEqual(trelloConfig.systems, ['trello']);
+    assert.deepStrictEqual(trelloConfig.requires, ['trello']);
 
     const second = await seedRecurring();
     assert.deepStrictEqual(second, {
@@ -143,7 +143,7 @@ describe('Seed recurring script', () => {
       assert.ok(task.recurringConfigId);
       assert.strictEqual(task.assigneeId, OPERATOR_USER_ID);
       assert.ok(task.instructionDocId, `${task.description} should include instructionDocId`);
-      assert.ok(Array.isArray(task.systems), `${task.description} should include systems`);
+      assert.ok(Array.isArray(task.requires), `${task.description} should include requires`);
     }
 
     const slackTask = tasks.find((task) => task.description === 'Invite people to Slack from Airtable');
@@ -152,7 +152,7 @@ describe('Seed recurring script', () => {
       slackTask.instructionDocId,
       'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form'
     );
-    assert.deepStrictEqual(slackTask.systems, ['airtable', 'slack']);
+    assert.deepStrictEqual(slackTask.requires, ['airtable', 'slack']);
 
     const trelloTask = tasks.find(
       (task) => task.description === 'Create new Trello cards and review existing ones'
@@ -162,7 +162,7 @@ describe('Seed recurring script', () => {
       trelloTask.instructionDocId,
       'sop.internal-admin.trello.how-to-create-an-event-through-trello'
     );
-    assert.deepStrictEqual(trelloTask.systems, ['trello']);
+    assert.deepStrictEqual(trelloTask.requires, ['trello']);
 
     const notificationsAfterFirstCron = (await listUndismissedNotifications(client)).filter(
       (notification) => notification.type === 'recurring-due'
@@ -189,13 +189,13 @@ describe('Seed recurring script', () => {
 
     await updateTask(client, slackTask.id, {
       expectedVersion: slackTask.version,
-      patch: { instructionDocId: '', systems: [] },
+      patch: { instructionDocId: '', requires: [] },
     });
     await updateTask(client, trelloTask.id, {
       expectedVersion: trelloTask.version,
       patch: {
         instructionDocId: 'sop.operator.override',
-        systems: ['operator-system'],
+        requires: ['github'],
       },
     });
     const manualTask = await createTask(client, {
@@ -226,21 +226,21 @@ describe('Seed recurring script', () => {
       repairedSlackTask.instructionDocId,
       'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form'
     );
-    assert.deepStrictEqual(repairedSlackTask.systems, ['airtable', 'slack']);
+    assert.deepStrictEqual(repairedSlackTask.requires, ['airtable', 'slack']);
 
     const preservedTrelloTask = tasksAfterRepair.find(
       (task) => task.description === 'Create new Trello cards and review existing ones'
     );
     assert.ok(preservedTrelloTask);
     assert.strictEqual(preservedTrelloTask.instructionDocId, 'sop.operator.override');
-    assert.deepStrictEqual(preservedTrelloTask.systems, ['operator-system']);
+    assert.deepStrictEqual(preservedTrelloTask.requires, ['github']);
 
     const manualTaskAfterRepair = (await listTasksByDate(client, '2029-01-05')).find(
       (task) => task.id === manualTask.id
     );
     assert.ok(manualTaskAfterRepair);
     assert.strictEqual(manualTaskAfterRepair.instructionDocId, undefined);
-    assert.strictEqual(manualTaskAfterRepair.systems, undefined);
+    assert.strictEqual(manualTaskAfterRepair.requires, undefined);
 
     const idempotentRepair = await seedRecurring();
     assert.deepStrictEqual(idempotentRepair, {

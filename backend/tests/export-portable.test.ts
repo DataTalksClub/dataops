@@ -105,7 +105,7 @@ describe('portable execution data export', () => {
           instructionDocId: 'sop.workflow.collect-inputs',
           instructionStepId: '4',
           phase: 'preparation',
-          systems: ['google-drive'],
+          requires: ['google-drive'],
           validation: { requiredEvidence: 'Source document link' },
           requiredLinkName: 'Source document',
           requiresFile: true,
@@ -169,7 +169,7 @@ describe('portable execution data export', () => {
       instructionDocId: 'sop.workflow.collect-inputs',
       instructionStepId: '4',
       phase: 'preparation',
-      systems: ['google-drive'],
+      requires: ['google-drive'],
       validation: { requiredEvidence: 'Source document link' },
       link: 'https://example.com/source-document',
       requiredLinkName: 'Source document',
@@ -192,7 +192,7 @@ describe('portable execution data export', () => {
       assigneeId: user.id,
       instructionDocId: 'sop.workflow.collect-inputs',
       instructionStepId: '2',
-      systems: ['google-drive'],
+      requires: ['google-drive'],
       proofRequirement: { type: 'comment', label: 'Backup reviewed', required: false },
       requiredLinkName: 'Backup folder',
       requiresFile: true,
@@ -383,7 +383,7 @@ describe('portable execution data export', () => {
     assert.match(tasksJsonl, /"instruction_doc_id":"sop.workflow.collect-inputs"/);
     assert.match(tasksJsonl, /"instruction_step_id":"4"/);
     assert.match(tasksJsonl, /"phase":"preparation"/);
-    assert.match(tasksJsonl, /"systems":\["google-drive"\]/);
+    assert.match(tasksJsonl, /"requires":\["google-drive"\]/);
     assert.match(tasksJsonl, /"validation":\{"requiredEvidence":"Source document link"\}/);
     assert.match(tasksJsonl, /"template_id"/);
     assert.match(tasksJsonl, /"template_task_ref":"send-follow-up"/);
@@ -429,7 +429,7 @@ describe('portable execution data export', () => {
     const recurringConfigsJsonl = await fs.readFile(path.join(exportDir, 'recurring_configs.jsonl'), 'utf8');
     assert.match(recurringConfigsJsonl, /"instruction_doc_id":"sop.workflow.collect-inputs"/);
     assert.match(recurringConfigsJsonl, /"instruction_step_id":"2"/);
-    assert.match(recurringConfigsJsonl, /"systems":\["google-drive"\]/);
+    assert.match(recurringConfigsJsonl, /"requires":\["google-drive"\]/);
     assert.match(recurringConfigsJsonl, /"proof_requirement":\{"type":"comment","label":"Backup reviewed","required":false\}/);
     assert.match(recurringConfigsJsonl, /"required_link_name":"Backup folder"/);
     assert.match(recurringConfigsJsonl, /"requires_file":true/);
@@ -655,7 +655,7 @@ describe('portable execution data export', () => {
           is_milestone: 'yes',
           source_doc_ids: ['valid', 42],
           instruction_doc_id: 123,
-          systems: ['github', 42],
+          requires: ['github', 42],
           validation: ['not-valid'],
           proof_requirement: { type: 'url' },
           task_history: [
@@ -689,7 +689,7 @@ describe('portable execution data export', () => {
               offsetDays: 'zero',
               isMilestone: 'yes',
               instructionDocId: 42,
-              systems: ['github', 42],
+              requires: ['github', 42],
               validation: ['not-valid'],
               proofRequirement: { type: 'unsupported' },
               artifactRefs: [{ type: 'missing-id' }],
@@ -709,7 +709,7 @@ describe('portable execution data export', () => {
           description: 'Broken recurring doc context',
           cron_expression: '0 9 * * *',
           instruction_doc_id: 42,
-          systems: ['github', 42],
+          requires: ['github', 42],
           proof_requirement: { type: 'unsupported' },
           requires_file: 'yes',
           tags: ['daily', 42],
@@ -775,7 +775,7 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('tasks[0] missing required string field follow_up_at')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field date must be a YYYY-MM-DD date')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field instruction_doc_id must be a string when present')));
-      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field systems must be an array of strings when present')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field requires must be an array of strings when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field validation must be a string or object when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field template_offset_days must be an integer')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field is_milestone must be a boolean')));
@@ -794,14 +794,14 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field offsetDays must be an integer')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field isMilestone must be a boolean')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field instructionDocId must be a string when present')));
-      assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field systems must be an array of strings when present')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field requires must be an array of strings when present')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field validation must be a string or object when present')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field proofRequirement.type must be one of')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].artifactRefs[0] missing required string field artifactId')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].intakeRefs[0] missing required string field intakeItemId')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].auditEventRefs[0] missing required string field auditEventId')));
       assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field instruction_doc_id must be a string when present')));
-      assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field systems must be an array of strings when present')));
+      assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field requires must be an array of strings when present')));
       assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field proof_requirement.type must be one of')));
       assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field requires_file must be a boolean when present')));
       assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field tags must be an array of strings when present')));

@@ -229,7 +229,8 @@ export interface Task {
   instructionDocId?: string;
   instructionStepId?: string;
   phase?: string;
-  systems?: string[];
+  /** Required resource ids (see resources/vocabulary.ts) needed to do this Task. */
+  requires?: string[];
   validation?: string | Record<string, unknown>;
   link?: string;
   requiredLinkName?: string;
@@ -393,7 +394,7 @@ export interface TaskDefinition {
   instructionDocId?: string;
   instructionStepId?: string;
   phase?: string;
-  systems?: string[];
+  requires?: string[];
   validation?: string | Record<string, unknown>;
   requiredLinkName?: string;
   requiresFile?: boolean;
@@ -430,7 +431,7 @@ export interface TemplateTaskDefinitionSnapshot {
   instructionDocId?: string;
   instructionStepId?: string;
   phase?: string;
-  systems?: string[];
+  requires?: string[];
   validation?: string | Record<string, unknown>;
   requiredLinkName?: string;
   requiresFile?: boolean;
@@ -493,7 +494,7 @@ export interface RecurringConfig {
   instructionsUrl?: string;
   instructionDocId?: string;
   instructionStepId?: string;
-  systems?: string[];
+  requires?: string[];
   proofRequirement?: ProofRequirement;
   requiredLinkName?: string;
   requiresFile?: boolean;

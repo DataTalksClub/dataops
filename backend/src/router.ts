@@ -26,6 +26,7 @@ import { handleDocumentReviewRoutes } from './routes/documentReviews';
 import { handleOperatingModelRoutes } from './routes/operatingModel';
 import { handleAuthRoutes, extractToken } from './routes/auth';
 import { handleTeamMemberRoutes } from './routes/teamMembers';
+import { handleResourceRoutes } from './routes/resources';
 import { handleTaskRoutes } from './routes/tasks';
 import { resolveInteractiveActor } from './identity/actor';
 import { identityProjection } from './identity/projections';
@@ -291,6 +292,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     if (reqPath.startsWith('/api/newsletter-slots')) return await handleNewsletterSlotRoutes(reqPath,method,event,client);
     if (reqPath === '/api/podcast-episodes' || reqPath.startsWith('/api/podcast-episodes/')) return await handlePodcastEpisodeRoutes(reqPath, method, event, client);
     if (reqPath.startsWith('/api/calendar-items')) return await handleCalendarRoutes(reqPath,method,event,client);
+
+    if (reqPath.startsWith('/api/resources')) {
+      const result = await handleResourceRoutes(reqPath, method, event, client);
+      if (result) return result;
+    }
 
     // ── Task routes ────────────────────────────────────────────────
     if (reqPath.startsWith('/api/tasks')) {

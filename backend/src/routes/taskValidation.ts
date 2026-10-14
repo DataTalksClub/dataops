@@ -3,6 +3,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getArtifact, listArtifacts } from '../db/artifacts';
 import { getCard } from '../db/cards';
 import { listFilesByTask } from '../db/files';
+import { requiresError } from '../resources/vocabulary';
 import type { ArtifactRef, Task, TaskHistoryAction, TaskHistoryEvent, TaskStatus } from '../types';
 
 /**
@@ -29,7 +30,7 @@ export const ALLOWED_UPDATE_FIELDS = [
   'instructionDocId',
   'instructionStepId',
   'phase',
-  'systems',
+  'requires',
   'validation',
   'link',
   'requiredLinkName',
@@ -191,8 +192,9 @@ export function validateTaskDocContext(fields: Record<string, unknown>): string 
       return `${field} must be a string`;
     }
   }
-  if (fields.systems !== undefined && !isStringArray(fields.systems)) {
-    return 'systems must be an array of strings';
+  if (fields.requires !== undefined) {
+    const error = requiresError(fields.requires);
+    if (error) return error;
   }
   if (fields.sourceDocIds !== undefined && !isStringArray(fields.sourceDocIds)) {
     return 'sourceDocIds must be an array of strings';

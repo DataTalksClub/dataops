@@ -316,7 +316,7 @@ describe('Tasks data layer', () => {
       instructionDocId: 'sop.media.podcast.create-podcast-document',
       instructionStepId: '4',
       phase: 'preparation',
-      systems: ['google-drive', 'github'],
+      requires: ['google-drive', 'github'],
       validation: { requiredEvidence: 'Podcast document link' },
       link: 'https://luma.com/event-123',
       requiredLinkName: 'Luma',
@@ -329,7 +329,7 @@ describe('Tasks data layer', () => {
     assert.strictEqual((task as any).instructionDocId, 'sop.media.podcast.create-podcast-document');
     assert.strictEqual((task as any).instructionStepId, '4');
     assert.strictEqual((task as any).phase, 'preparation');
-    assert.deepStrictEqual((task as any).systems, ['google-drive', 'github']);
+    assert.deepStrictEqual((task as any).requires, ['google-drive', 'github']);
     assert.deepStrictEqual((task as any).validation, { requiredEvidence: 'Podcast document link' });
     assert.strictEqual((task as any).link, 'https://luma.com/event-123');
     assert.strictEqual((task as any).requiredLinkName, 'Luma');
@@ -343,7 +343,7 @@ describe('Tasks data layer', () => {
     assert.strictEqual((fetched as any).instructionDocId, 'sop.media.podcast.create-podcast-document');
     assert.strictEqual((fetched as any).instructionStepId, '4');
     assert.strictEqual((fetched as any).phase, 'preparation');
-    assert.deepStrictEqual((fetched as any).systems, ['google-drive', 'github']);
+    assert.deepStrictEqual((fetched as any).requires, ['google-drive', 'github']);
     assert.deepStrictEqual((fetched as any).validation, { requiredEvidence: 'Podcast document link' });
     assert.strictEqual((fetched as any).link, 'https://luma.com/event-123');
     assert.strictEqual((fetched as any).requiredLinkName, 'Luma');
@@ -366,7 +366,7 @@ describe('Tasks data layer', () => {
         instructionDocId: 'sop.media.podcast.updated',
         instructionStepId: '7',
         phase: 'after-event',
-        systems: ['youtube'],
+        requires: ['youtube'],
         validation: 'Confirm the doc is shared',
         assigneeId: 'user-valeriia',
         tags: ['newsletter'],
@@ -379,7 +379,7 @@ describe('Tasks data layer', () => {
     assert.strictEqual((updated as any).instructionDocId, 'sop.media.podcast.updated');
     assert.strictEqual((updated as any).instructionStepId, '7');
     assert.strictEqual((updated as any).phase, 'after-event');
-    assert.deepStrictEqual((updated as any).systems, ['youtube']);
+    assert.deepStrictEqual((updated as any).requires, ['youtube']);
     assert.strictEqual((updated as any).validation, 'Confirm the doc is shared');
     assert.strictEqual((updated as any).assigneeId, 'user-valeriia');
     assert.deepStrictEqual((updated as any).tags, ['newsletter']);
@@ -397,7 +397,7 @@ describe('Tasks data layer', () => {
     assert.strictEqual((task as any).instructionDocId, undefined);
     assert.strictEqual((task as any).instructionStepId, undefined);
     assert.strictEqual((task as any).phase, undefined);
-    assert.strictEqual((task as any).systems, undefined);
+    assert.strictEqual((task as any).requires, undefined);
     assert.strictEqual((task as any).validation, undefined);
     assert.strictEqual((task as any).link, undefined);
     assert.strictEqual((task as any).requiredLinkName, undefined);

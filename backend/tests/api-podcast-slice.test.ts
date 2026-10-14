@@ -55,7 +55,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
           requiredLinkName: 'Synthetic event',
           instructionDocId: 'sop.synthetic.create-event',
           phase: 'preparation',
-          systems: ['synthetic-calendar'],
+          requires: ['google-calendar'],
           validation: { operatorAction: 'Create a synthetic event' },
         },
         {
@@ -126,7 +126,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     assert.strictEqual(lumaTask.requiredLinkName, 'Synthetic event');
     assert.strictEqual(lumaTask.instructionDocId, 'sop.synthetic.create-event');
     assert.strictEqual(lumaTask.phase, 'preparation');
-    assert.ok(lumaTask.systems?.includes('synthetic-calendar'));
+    assert.ok(lumaTask.requires?.includes('google-calendar'));
     assert.strictEqual((lumaTask.validation as any).operatorAction, 'Create a synthetic event');
 
     const blockedLink = await invoke('PUT', `/api/tasks/${lumaTask.id}`, {

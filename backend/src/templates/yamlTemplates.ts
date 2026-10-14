@@ -15,6 +15,7 @@
  * throughout the content corpus and the workflow-template JSON Schema.
  */
 
+import { requiresError } from '../resources/vocabulary';
 import { isTemplateIcon, TEMPLATE_ICONS } from './templateIcons';
 
 const TEMPLATE_FIELDS = [
@@ -50,7 +51,7 @@ const TASK_FIELDS = [
   ['instructionDocId', 'instruction_doc_id'],
   ['instructionStepId', 'instruction_step_id'],
   ['phase', 'phase_id'],
-  ['systems', 'systems'],
+  ['requires', 'requires'],
   ['validation', 'validation'],
   ['requiredLinkName', 'required_link'],
   ['requiresFile', 'requires_file'],
@@ -260,6 +261,11 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
     seen.add(id);
     if (typeof task.optional_group === 'string' && !/^[a-z0-9][a-z0-9-]*$/.test(task.optional_group)) {
       fail(`task '${id}' optional_group must be a slug`);
+    }
+
+    if (task.requires !== undefined) {
+      const error = requiresError(task.requires);
+      if (error) fail(`task '${id}' ${error}`);
     }
 
     const schedule = (task.schedule as Dict | undefined) || {};

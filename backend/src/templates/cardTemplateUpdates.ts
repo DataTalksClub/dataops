@@ -36,7 +36,7 @@ const TASK_FIELDS = [
   'instructionDocId',
   'instructionStepId',
   'phase',
-  'systems',
+  'requires',
   'validation',
   'requiredLinkName',
   'requiresFile',

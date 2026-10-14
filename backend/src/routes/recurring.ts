@@ -13,6 +13,7 @@ import { recurringConfigView } from '../cron/scheduleView';
 import { parseCronExpression } from '../cron/cronMatch';
 import { berlinDate } from '../sponsorFinance/core';
 import { getUser } from '../db/users';
+import { requiresError } from '../resources/vocabulary';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -94,6 +95,11 @@ function validateRecurringData(body: Record<string, unknown>, isUpdate: boolean)
   // Validate enabled type if provided
   if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
     return 'enabled must be a boolean';
+  }
+
+  if (body.requires !== undefined) {
+    const error = requiresError(body.requires);
+    if (error) return error;
   }
 
   return null;
@@ -188,7 +194,7 @@ async function handleCollection(
       };
     }
 
-    const allowedFields = ['description', 'cronExpression', 'assigneeId', 'enabled'];
+    const allowedFields = ['description', 'cronExpression', 'assigneeId', 'enabled', 'requires'];
     const data: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -280,7 +286,7 @@ async function handleSingle(
       };
     }
 
-    const allowedFields = ['description', 'cronExpression', 'assigneeId', 'enabled'];
+    const allowedFields = ['description', 'cronExpression', 'assigneeId', 'enabled', 'requires'];
     const updates: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined) {

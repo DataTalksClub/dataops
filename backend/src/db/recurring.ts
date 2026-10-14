@@ -253,7 +253,7 @@ function recurringTaskDefaults(config: RecurringConfig): Record<string, unknown>
     'instructionsUrl',
     'instructionDocId',
     'instructionStepId',
-    'systems',
+    'requires',
     'proofRequirement',
     'requiredLinkName',
     'requiresFile',

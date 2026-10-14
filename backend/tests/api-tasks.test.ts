@@ -1549,7 +1549,7 @@ describe('API — CRUD for tasks', () => {
           instructionDocId: 'sop.media.podcast.create-podcast-document',
           instructionStepId: '4',
           phase: 'preparation',
-          systems: ['luma', 'airtable'],
+          requires: ['luma', 'airtable'],
           validation: { requiredEvidence: 'Luma link' },
           link: 'https://luma.com/event-123',
           requiredLinkName: 'Luma',
@@ -1570,7 +1570,7 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(body.instructionDocId, 'sop.media.podcast.create-podcast-document');
       assert.strictEqual(body.instructionStepId, '4');
       assert.strictEqual(body.phase, 'preparation');
-      assert.deepStrictEqual(body.systems, ['luma', 'airtable']);
+      assert.deepStrictEqual(body.requires, ['luma', 'airtable']);
       assert.deepStrictEqual(body.validation, { requiredEvidence: 'Luma link' });
       assert.strictEqual(body.link, 'https://luma.com/event-123');
       assert.strictEqual(body.requiredLinkName, 'Luma');
@@ -1671,7 +1671,7 @@ describe('API — CRUD for tasks', () => {
           instructionDocId: 'sop.media.podcast.create-podcast-document',
           instructionStepId: '2',
           phase: 'preparation',
-          systems: ['google-drive'],
+          requires: ['google-drive'],
           validation: 'Check the shared doc',
           assigneeId: 'user-valeriia',
           tags: ['newsletter'],
@@ -1685,7 +1685,7 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(body.instructionDocId, 'sop.media.podcast.create-podcast-document');
       assert.strictEqual(body.instructionStepId, '2');
       assert.strictEqual(body.phase, 'preparation');
-      assert.deepStrictEqual(body.systems, ['google-drive']);
+      assert.deepStrictEqual(body.requires, ['google-drive']);
       assert.strictEqual(body.validation, 'Check the shared doc');
       assert.strictEqual(body.assigneeId, 'user-valeriia');
       assert.deepStrictEqual(body.tags, ['newsletter']);
@@ -1700,13 +1700,13 @@ describe('API — CRUD for tasks', () => {
       }, {});
       const created = JSON.parse(createRes.body);
 
-      const badSystems = await handler({
+      const badRequires = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ systems: ['github', 42], expectedVersion: created.version }),
+        body: JSON.stringify({ requires: ['github', 42], expectedVersion: created.version }),
       }, {});
-      assert.strictEqual(badSystems.statusCode, 400);
-      assert.match(JSON.parse(badSystems.body).error, /systems/);
+      assert.strictEqual(badRequires.statusCode, 400);
+      assert.match(JSON.parse(badRequires.body).error, /requires/);
 
       const badValidation = await handler({
         httpMethod: 'PUT',

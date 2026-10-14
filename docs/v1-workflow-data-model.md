@@ -119,7 +119,7 @@ Fields:
 - `instruction_doc_id`
 - `instruction_step_id`
 - `phase`
-- `systems`
+- `requires`
 - `validation`
 - `required_link_name`
 - `requires_file`
@@ -128,8 +128,15 @@ Fields:
 - `audit_event_refs`
 
 Document context reuses the existing registry fields: `source_doc_ids` at the
-workflow level and `instruction_doc_id`, `instruction_step_id`, `phase`,
-`systems`, and `validation` at the task level. `instructions_url` remains a
+workflow level and `instruction_doc_id`, `instruction_step_id`, `phase`, and `validation` at the
+task level.
+
+`requires` lists the resources (accounts or access, such as `youtube`, `luma`,
+`mailchimp`) a task cannot be done without. Ids come from the controlled
+vocabulary in `backend/src/resources/requiredResources.json`, served at
+`GET /api/resources`; templates and the API reject unknown ids. Instantiating
+a card copies each step's `requires` onto its task. An agent that lacks one of
+them leaves the task for an agent or person who has it. `instructions_url` remains a
 legacy fallback when no registered document ID is available.
 
 For workflow-critical process docs, `source_doc_ids` and `instruction_doc_id`
@@ -187,7 +194,7 @@ Fields:
 - `instruction_doc_id`
 - `instruction_step_id`
 - `phase`
-- `systems`
+- `requires`
 - `validation`
 - `link`
 - `required_link_name`

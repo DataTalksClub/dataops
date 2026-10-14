@@ -25,6 +25,8 @@ import type { TaskPatch } from '../db/tasks';
 import { getCard } from '../db/cards';
 import { listFilesByTask } from '../db/files';
 import { getTemplate } from '../db/templates';
+import { matchesRequiresFilter, parseResourceList } from '../resources/vocabulary';
+import type { RequiresFilter } from '../resources/vocabulary';
 import type { LambdaEvent, LambdaResponse, Task, TaskHistoryEvent } from '../types';
 import {
   ALLOWED_UPDATE_FIELDS,
@@ -132,7 +134,7 @@ export async function handleTaskRoutes(
     if (body.instructionDocId !== undefined) taskData.instructionDocId = body.instructionDocId;
     if (body.instructionStepId !== undefined) taskData.instructionStepId = body.instructionStepId;
     if (body.phase !== undefined) taskData.phase = body.phase;
-    if (body.systems !== undefined) taskData.systems = body.systems;
+    if (body.requires !== undefined) taskData.requires = body.requires;
     if (body.validation !== undefined) taskData.validation = body.validation;
     if (body.link !== undefined) taskData.link = body.link;
     if (body.requiredLinkName !== undefined) taskData.requiredLinkName = body.requiredLinkName;
@@ -235,6 +237,19 @@ export async function handleTaskRoutes(
     if (!ownerParse.ok) return jsonResponse(400, { error: ownerParse.error });
     const ownerFilter = ownerParse.filter;
 
+    // Required-resource filters narrow whichever list the primary filter
+    // selects: `requires` keeps Tasks needing any of the ids, `excludeRequires`
+    // drops them, and `canDo` keeps only Tasks whose every requirement is in
+    // the caller's declared set.
+    const requiresFilter: RequiresFilter = {};
+    for (const [param, key] of [['requires', 'anyOf'], ['excludeRequires', 'noneOf'], ['canDo', 'within']] as const) {
+      const raw = params[param];
+      if (raw === undefined) continue;
+      const parsed = parseResourceList(raw, param);
+      if (!parsed.ok) return jsonResponse(400, { error: parsed.error });
+      requiresFilter[key] = parsed.ids;
+    }
+
     if (!date && !startDate && !endDate && !cardId && !status && !ownerFilter) {
       return jsonResponse(400, {
         error: 'At least one filter is required: owner, date, startDate+endDate, cardId, or status',
@@ -246,9 +261,10 @@ export async function handleTaskRoutes(
     const activeMemberIds = await directory.activeMemberIds();
 
     async function ownerListResponse(tasks: Task[]): Promise<LambdaResponse> {
-      const visible = ownerFilter
-        ? tasks.filter((task) => matchesOwnerFilter(task.assigneeId, ownerFilter, activeMemberIds))
-        : tasks;
+      const visible = tasks.filter((task) => (
+        (!ownerFilter || matchesOwnerFilter(task.assigneeId, ownerFilter, activeMemberIds))
+        && matchesRequiresFilter(task.requires, requiresFilter)
+      ));
       const responseBody: Record<string, unknown> = { tasks: await projectTasks(directory, visible) };
       const ownerReference = ownerFilterUserId(ownerFilter);
       // A concrete reference always answers with its honest availability,

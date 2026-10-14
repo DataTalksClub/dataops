@@ -35,7 +35,7 @@ export function syntheticAuthoredTemplate(type = 'synthetic-workflow') {
       runtime_instruction_source: 'synthetic-input',
       milestone: false, stage_on_complete: 'preparation', assignee_id: 'synthetic-user',
       instruction_doc_id: 'synthetic.instructions', instruction_step_id: 'check', phase_id: 'prepare',
-      systems: [], validation: { enabled: false, attempts: 0, checks: [] },
+      requires: [], validation: { enabled: false, attempts: 0, checks: [] },
       required_link: 'Synthetic result', requires_file: false,
       proof: { type: 'comment', label: 'Synthetic check result', required: false },
       closure: {

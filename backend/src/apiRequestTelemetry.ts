@@ -65,6 +65,7 @@ const ROUTE_FAMILIES: ReadonlyArray<readonly [ApiRouteFamily, string]> = [
   ['health_auth_team', '/api/me'],
   ['health_auth_team', '/api/team-members'],
   ['tasks', '/api/tasks'],
+  ['tasks', '/api/resources'],
   ['cards', '/api/cards'],
   ['templates', '/api/templates'],
   ['recurring', '/api/recurring'],

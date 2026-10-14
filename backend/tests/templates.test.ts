@@ -243,7 +243,7 @@ describe('Templates data layer', () => {
           instructionDocId: 'sop.media.podcast.create-podcast-document',
           instructionStepId: '4',
           phase: 'preparation',
-          systems: ['google-drive', 'github'],
+          requires: ['google-drive', 'github'],
           validation: { requiredEvidence: 'Podcast document link' },
           requiredLinkName: 'Luma',
           requiresFile: false,
@@ -268,7 +268,7 @@ describe('Templates data layer', () => {
     assert.strictEqual(td0.instructionDocId, 'sop.media.podcast.create-podcast-document');
     assert.strictEqual(td0.instructionStepId, '4');
     assert.strictEqual(td0.phase, 'preparation');
-    assert.deepStrictEqual(td0.systems, ['google-drive', 'github']);
+    assert.deepStrictEqual(td0.requires, ['google-drive', 'github']);
     assert.deepStrictEqual(td0.validation, { requiredEvidence: 'Podcast document link' });
     assert.strictEqual(td0.requiredLinkName, 'Luma');
     assert.strictEqual(td0.requiresFile, false);
@@ -380,7 +380,7 @@ describe('Templates data layer', () => {
           instructionDocId: 'sop.media.podcast.create-podcast-document',
           instructionStepId: '4',
           phase: 'preparation',
-          systems: ['google-drive', 'github'],
+          requires: ['google-drive', 'github'],
           validation: { requiredEvidence: 'Podcast document link' },
         },
       ],
@@ -394,13 +394,13 @@ describe('Templates data layer', () => {
     assert.strictEqual(tasks[0].instructionDocId, 'sop.media.podcast.create-podcast-document');
     assert.strictEqual(tasks[0].instructionStepId, '4');
     assert.strictEqual(tasks[0].phase, 'preparation');
-    assert.deepStrictEqual(tasks[0].systems, ['google-drive', 'github']);
+    assert.deepStrictEqual(tasks[0].requires, ['google-drive', 'github']);
     assert.deepStrictEqual(tasks[0].validation, { requiredEvidence: 'Podcast document link' });
 
     const fetched = await getTask(client, tasks[0].id);
     assert.ok(fetched);
     assert.strictEqual(fetched.instructionDocId, 'sop.media.podcast.create-podcast-document');
-    assert.deepStrictEqual(fetched.systems, ['google-drive', 'github']);
+    assert.deepStrictEqual(fetched.requires, ['google-drive', 'github']);
   });
 
   it('instantiateTemplate sets assigneeId from task def, falls back to defaultAssigneeId', async () => {
@@ -512,7 +512,7 @@ describe('Templates data layer', () => {
           instructionDocId: 'sop.workflow.collect-inputs',
           instructionStepId: '2',
           phase: 'prep',
-          systems: ['github', 'google-drive'],
+          requires: ['github', 'google-drive'],
           validation: { requiredEvidence: 'Source document link' },
           requiredLinkName: 'Source document',
           proofRequirement: { type: 'url', label: 'Source document' },
@@ -543,7 +543,7 @@ describe('Templates data layer', () => {
     assert.strictEqual(collectInputs.instructionDocId, 'sop.workflow.collect-inputs');
     assert.strictEqual(collectInputs.instructionStepId, '2');
     assert.strictEqual(collectInputs.phase, 'prep');
-    assert.deepStrictEqual(collectInputs.systems, ['github', 'google-drive']);
+    assert.deepStrictEqual(collectInputs.requires, ['github', 'google-drive']);
     assert.deepStrictEqual(collectInputs.validation, { requiredEvidence: 'Source document link' });
     assert.strictEqual(collectInputs.requiredLinkName, 'Source document');
     assert.deepStrictEqual(collectInputs.proofRequirement, { type: 'url', label: 'Source document' });

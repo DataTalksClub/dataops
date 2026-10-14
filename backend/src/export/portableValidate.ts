@@ -215,7 +215,7 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     optionalStringField(task, 'instruction_doc_id', errors, context);
     optionalStringField(task, 'instruction_step_id', errors, context);
     optionalStringField(task, 'phase', errors, context);
-    optionalStringArrayField(task, 'systems', errors, context);
+    optionalStringArrayField(task, 'requires', errors, context);
     optionalStringArrayField(task, 'source_doc_ids', errors, context);
     optionalIntegerField(task, 'template_offset_days', errors, context);
     optionalBooleanField(task, 'is_milestone', errors, context);
@@ -326,7 +326,7 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     optionalStringField(recurring, 'instructions_url', errors, context);
     optionalStringField(recurring, 'instruction_doc_id', errors, context);
     optionalStringField(recurring, 'instruction_step_id', errors, context);
-    optionalStringArrayField(recurring, 'systems', errors, context);
+    optionalStringArrayField(recurring, 'requires', errors, context);
     optionalProofRequirementField(recurring, 'proof_requirement', errors, context);
     optionalStringField(recurring, 'required_link_name', errors, context);
     optionalBooleanField(recurring, 'requires_file', errors, context);

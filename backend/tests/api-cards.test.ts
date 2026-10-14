@@ -835,7 +835,7 @@ describe('API — Cards', () => {
             instructionDocId: 'sop.workflow.prepare-packet',
             instructionStepId: '1',
             phase: 'intake',
-            systems: ['github', 'google-drive'],
+            requires: ['github', 'google-drive'],
             validation: { expectedEvidence: 'Tracker URL' },
             requiredLinkName: 'Tracker URL',
             proofRequirement: { type: 'url', label: 'Tracker URL' },
@@ -872,7 +872,7 @@ describe('API — Cards', () => {
       assert.strictEqual(body.tasks[0].date, '2026-07-17');
       assert.strictEqual(body.tasks[0].instructionDocId, 'sop.workflow.prepare-packet');
       assert.strictEqual(body.tasks[0].phase, 'intake');
-      assert.deepStrictEqual(body.tasks[0].systems, ['github', 'google-drive']);
+      assert.deepStrictEqual(body.tasks[0].requires, ['github', 'google-drive']);
       assert.deepStrictEqual(body.tasks[0].proofRequirement, { type: 'url', label: 'Tracker URL' });
       assert.strictEqual(body.tasks[0].requiredLinkName, 'Tracker URL');
       assert.deepStrictEqual(body.tasks[0].artifactRefs, [{ artifactId: 'artifact-planned', type: 'document' }]);

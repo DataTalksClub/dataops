@@ -379,7 +379,7 @@ export function validateTaskDefinitionDocContext(
     }
     optionalBooleanField(record, 'isMilestone', errors, definitionContext);
     optionalBooleanField(record, 'requiresFile', errors, definitionContext);
-    optionalStringArrayField(record, 'systems', errors, definitionContext);
+    optionalStringArrayField(record, 'requires', errors, definitionContext);
     optionalStringArrayField(record, 'tags', errors, definitionContext);
     optionalStringOrObjectField(record, 'validation', errors, definitionContext);
     optionalProofRequirementField(record, 'proofRequirement', errors, definitionContext);

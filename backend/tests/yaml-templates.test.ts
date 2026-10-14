@@ -61,7 +61,7 @@ describe('authored YAML template mapping', () => {
         instructionExemptReason: 'Synthetic self-contained check', runtimeInstructionSource: 'synthetic-input',
         isMilestone: false, stageOnComplete: 'preparation', assigneeId: 'synthetic-user',
         instructionDocId: 'synthetic.instructions', instructionStepId: 'check', phase: 'prepare',
-        systems: [], validation: { enabled: false, attempts: 0, checks: [] },
+        requires: [], validation: { enabled: false, attempts: 0, checks: [] },
         requiredLinkName: 'Synthetic result', requiresFile: false,
         proofRequirement: { type: 'comment', label: 'Synthetic check result', required: false },
         closure: {

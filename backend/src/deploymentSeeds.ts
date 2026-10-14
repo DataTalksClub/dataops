@@ -37,7 +37,7 @@ type BaselineRecurringConfig = Pick<
   | 'instructionsUrl'
   | 'instructionDocId'
   | 'instructionStepId'
-  | 'systems'
+  | 'requires'
   | 'requiredLinkName'
   | 'requiresFile'
   | 'tags'
@@ -50,14 +50,14 @@ export const BASELINE_RECURRING_CONFIGS: readonly BaselineRecurringConfig[] = [
     description: 'Invite people to Slack from Airtable',
     cronExpression: '0 9 * * *',
     instructionDocId: SLACK_INVITE_DOC_ID,
-    systems: ['airtable', 'slack'],
+    requires: ['airtable', 'slack'],
     tags: ['community', 'book-of-the-week', 'airtable', 'slack'],
   },
   {
     description: 'Create new Trello cards and review existing ones',
     cronExpression: '0 9 * * *',
     instructionDocId: TRELLO_EVENT_DOC_ID,
-    systems: ['trello'],
+    requires: ['trello'],
     tags: ['internal-admin', 'trello', 'podcast'],
   },
   { description: 'Ensure newsletter for next week is prepared', cronExpression: '0 9 * * 2' },
