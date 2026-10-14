@@ -597,7 +597,7 @@ body[data-workspace-view="sponsors"] .library-view {
 
   /* ---- Calendar: one control row ---- */
   .calendar-controls {
-    padding: 0 0 6px !important;
+    padding: 0 0 var(--dk-space-1) !important;
     gap: 6px !important;
   }
   .calendar-header-main {
