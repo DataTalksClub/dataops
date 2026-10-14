@@ -220,7 +220,8 @@ test.describe('issue 204 owning-surface feedback', () => {
 
     await clearFaults(context.request);
     await usersSummary.getByRole('button', { name: /Retry loading users/ }).click();
-    await expect(usersSummary).toHaveAttribute('data-summary-state', /ready|empty/);
+    // Loaded: the table speaks; only an empty list keeps a summary line.
+    await expect(page.locator('.ops-users-table, [data-summary-id="users"][data-summary-state="empty"]').first()).toBeVisible();
     await shot(page, 'users-ready-desktop-1440x900');
 
     await page.route('**/work/api/me', route => route.fulfill({ json: { user: { email: 'operator@example.test' } } }));
@@ -303,10 +304,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     const page = await context.newPage();
     await setupPageWithAuth(page);
     await page.goto(`${baseURL}/users`);
-    await expect(page.locator('[data-summary-id="users"]')).toHaveAttribute(
-      'data-summary-state',
-      /ready|empty/,
-    );
+    await expect(page.locator('.ops-users-table, [data-summary-id="users"][data-summary-state="empty"]').first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add user' })).toBeVisible();
     await page.getByRole('button', { name: 'Add user' }).click();
     const userForm = page.locator('.ops-user-form');

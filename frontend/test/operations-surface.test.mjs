@@ -350,9 +350,8 @@ describe("Operations surface boundary", () => {
     await outage.querySelector(".surface-summary-retry").dispatch("click");
     await nextTicks();
     harness.api.renderUsersSurfaceView();
-    const ready = harness.documentList.querySelector(".surface-summary");
-    assert.equal(ready.dataset.summaryState, "ready");
-    assert.match(ready.textContent, /2 users\./);
+    // Loaded: no count bar restates the table.
+    assert.equal(harness.documentList.querySelector(".surface-summary"), null);
 
     const graceRow = findAllByClass(harness.documentList, "ops-user-row").find(
       (row) => row.textContent.includes("Grace"),
@@ -582,10 +581,7 @@ describe("Operations surface boundary", () => {
       "Cancel reads the account again instead of trusting stale form state",
     );
     assert.equal(findByText(harness.documentList, "Save changes", "button"), undefined);
-    assert.match(
-      findAllByClass(harness.documentList, "surface-summary")[0].textContent,
-      /2 users\./,
-    );
+    assert.equal(findAllByClass(harness.documentList, "surface-summary").length, 0);
   });
 
   test("enforces Users admin denial, then validates create/edit/disable role controls", async () => {

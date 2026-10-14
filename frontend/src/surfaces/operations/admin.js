@@ -114,8 +114,11 @@ export function createAdminSurface(context) {
         className: "ops-surface-header",
         actions,
       }),
-      renderUsersSummary(),
     );
+    // A loaded list states nothing: the table is the evidence, and a
+    // "3 users." bar would restate it (dakit principle 4).
+    const summary = renderUsersSummary();
+    if (summary.dataset.summaryState !== "ready") wrap.append(summary);
     if (usersOutcome) {
       const outcome = document.createElement("p");
       outcome.className = "ops-users-outcome";
@@ -133,8 +136,8 @@ export function createAdminSurface(context) {
     documentList.replaceChildren(wrap);
   }
 
-  // Users reports its own load state: still fetching, unreachable, empty, or a
-  // real count. Recovery is a retry of the same fetch, in the surface itself.
+  // Users reports its own load state while it is fetching, unreachable,
+  // empty, or partial. Recovery is a retry of the same fetch, in the surface.
   function renderUsersSummary() {
     const count = usersSnapshot.users.length;
     return renderDataSummary({
@@ -148,7 +151,6 @@ export function createAdminSurface(context) {
         unavailable: "Users could not be loaded, so no accounts are listed.",
         empty: "No users have access to this workspace yet.",
         partial: `${count} ${count === 1 ? "user" : "users"}. Some account data is unavailable.`,
-        ready: `${count} ${count === 1 ? "user" : "users"}.`,
       },
       retryLabel: "Retry loading users",
       onRetry: () => refreshUsersSurface({ rerender: true }),
