@@ -13,7 +13,7 @@ body[data-workspace-view="tasks"] .operations-home.ops-surface-artifacts {
   background: transparent;
   padding: 0 2px;
   text-align: left;
-}body[data-workspace-view="tasks"] .operations-home .ops-surface-header p {
+}body[data-workspace-view="tasks"] .operations-home .ops-surface-header p:not([class*="dk-"]) {
   max-width: 680px;
   margin: 0;
   color: var(--dk-text-muted);
@@ -116,11 +116,11 @@ board reads as one summary followed by one header rather than two headers. */bod
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
   padding: 14px 16px;
-}body[data-workspace-view="tasks"] .task-route-context h3,
+}body[data-workspace-view="tasks"] .task-route-context h3:not([class*="dk-"]),
 body[data-workspace-view="tasks"] .task-route-context p {
   min-width: 0;
   margin: 0;
-}body[data-workspace-view="tasks"] .task-route-context h3 {
+}body[data-workspace-view="tasks"] .task-route-context h3:not([class*="dk-"]) {
   color: var(--dk-text-heading);
   font-size: 13px;
 }body[data-workspace-view="tasks"] .task-route-context p {
@@ -522,7 +522,7 @@ body[data-workspace-view="tasks"] .ops-queue-owner {
   border-radius: var(--task-panel-radius);
   background: var(--dk-bg-surface);
   padding: 16px 18px;
-}body[data-workspace-view="tasks"] .workflow-board-header p {
+}body[data-workspace-view="tasks"] .workflow-board-header p:not([class*="dk-"]) {
   max-width: 620px;
   margin-top: 5px;
   line-height: 1.5;
@@ -606,7 +606,7 @@ body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-heade
   min-width: 0;
   gap: 3px;
 }
-body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header h3 {
+body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header h3:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 15px;
@@ -809,12 +809,12 @@ body[data-workspace-view="tasks"] .runtime-template-projection > header > div {
   min-width: 0;
   gap: 4px;
 }
-body[data-workspace-view="tasks"] .runtime-template-projection h4,
+body[data-workspace-view="tasks"] .runtime-template-projection h4:not([class*="dk-"]),
 body[data-workspace-view="tasks"] .runtime-template-projection p {
   min-width: 0;
   margin: 0;
 }
-body[data-workspace-view="tasks"] .runtime-template-projection h4 {
+body[data-workspace-view="tasks"] .runtime-template-projection h4:not([class*="dk-"]) {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -824,11 +824,11 @@ body[data-workspace-view="tasks"] .runtime-template-projection h4 {
   font-weight: var(--dk-weight-bold);
   line-height: 1.2;
 }
-body[data-workspace-view="tasks"] .runtime-template-projection h4 svg {
+body[data-workspace-view="tasks"] .runtime-template-projection h4:not([class*="dk-"]) svg {
   flex: none;
   color: var(--dk-text-faint);
 }
-body[data-workspace-view="tasks"] .runtime-template-projection > header p {
+body[data-workspace-view="tasks"] .runtime-template-projection > header p:not([class*="dk-"]) {
   color: var(--dk-text-muted);
   font-size: 12px;
   line-height: 1.5;
@@ -844,7 +844,7 @@ body[data-workspace-view="tasks"] .runtime-template-block {
   gap: 10px;
   min-width: 0;
 }
-body[data-workspace-view="tasks"] .runtime-template-block > h5 {
+body[data-workspace-view="tasks"] .runtime-template-block > h5:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   padding: 9px 10px;

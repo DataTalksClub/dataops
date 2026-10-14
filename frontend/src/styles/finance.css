@@ -12,13 +12,13 @@ body[data-workspace-view="sponsors"] .document-list {
   display: grid;
   min-width: 0;
   gap: 24px;
-}.bookkeeping-surface h1,
-.bookkeeping-surface h2,
-.bookkeeping-surface h3,
+}.bookkeeping-surface h1:not([class*="dk-"]),
+.bookkeeping-surface h2:not([class*="dk-"]),
+.bookkeeping-surface h3:not([class*="dk-"]),
 .bookkeeping-surface p,
-.sponsor-crm-surface h2,
-.sponsor-crm-surface h3,
-.sponsor-crm-surface h4,
+.sponsor-crm-surface h2:not([class*="dk-"]),
+.sponsor-crm-surface h3:not([class*="dk-"]),
+.sponsor-crm-surface h4:not([class*="dk-"]),
 .sponsor-crm-surface p {
   margin-top: 0;
 }.bookkeeping-surface button:not(.primary-button,
@@ -89,22 +89,22 @@ body[data-workspace-view="sponsors"] .document-list {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-}.bookkeeping-header h1,
-.bookkeeping-header h2,
-.crm-header h1,
-.crm-header h2,
-.booking-detail-header h2 {
+}.bookkeeping-header h1:not([class*="dk-"]),
+.bookkeeping-header h2:not([class*="dk-"]),
+.crm-header h1:not([class*="dk-"]),
+.crm-header h2:not([class*="dk-"]),
+.booking-detail-header h2:not([class*="dk-"]) {
   margin-bottom: 4px;
   color: var(--dk-text-heading);
   font-size: var(--dk-text-page);
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.2;
-}.bookkeeping-header > div > p:last-child,
-.crm-header > div > p:last-child,
-.section-header p,
-.booking-detail-header p,
-.booking-detail-section > header > p:last-child {
+}.bookkeeping-header > div > p:not([class*="dk-"]):last-child,
+.crm-header > div > p:not([class*="dk-"]):last-child,
+.section-header p:not([class*="dk-"]),
+.booking-detail-header p:not([class*="dk-"]),
+.booking-detail-section > header > p:not([class*="dk-"]):last-child {
   margin-bottom: 0;
   color: var(--dk-text-muted);
 }.surface-eyebrow,
@@ -153,9 +153,9 @@ body[data-workspace-view="sponsors"] .document-list {
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
   padding: 14px 16px;
-}.section-header h3,
-.booking-detail-section h3,
-.finance-panel h3 {
+}.section-header h3:not([class*="dk-"]),
+.booking-detail-section h3:not([class*="dk-"]),
+.finance-panel h3:not([class*="dk-"]) {
   margin-bottom: 2px;
   color: var(--dk-text-heading);
   font-size: 16px;
@@ -322,7 +322,7 @@ body[data-workspace-view="sponsors"] .document-list {
 }.bookkeeping-close-state {
   display: grid;
   gap: 14px;
-}.bookkeeping-close-state h2 {
+}.bookkeeping-close-state h2:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 20px;
@@ -532,7 +532,7 @@ body[data-workspace-view="sponsors"] .document-list {
   border-bottom: 1px solid transparent;
 }.bookkeeping-upload-panel[open] > summary {
   border-bottom: 1px solid var(--dk-border-default);
-}/* Evidence grouped by the month each document belongs to. */.bookkeeping-doc-group h4 {
+}/* Evidence grouped by the month each document belongs to. */.bookkeeping-doc-group h4:not([class*="dk-"]) {
   margin: 0;
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
@@ -547,7 +547,7 @@ body[data-workspace-view="sponsors"] .document-list {
   gap: 14px;
   border-bottom: 1px solid var(--dk-border-default);
   padding: 20px;
-}.bookkeeping-package-review h4 {
+}.bookkeeping-package-review h4:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 16px;
@@ -974,18 +974,18 @@ body[data-workspace-view="sponsors"] .document-list {
   border-bottom: 0;
   background: transparent;
   padding: 0 0 14px;
-}.bookkeeping-vat h4 {
+}.bookkeeping-vat h4:not([class*="dk-"]) {
   color: var(--dk-text-heading);
   font-size: 15px;
   font-weight: 600;
   margin: 0 0 3px;
-}.bookkeeping-vat .section-header p {
+}.bookkeeping-vat .section-header p:not([class*="dk-"]) {
   max-width: 600px;
   font-size: 13px;
   line-height: 1.45;
   color: var(--dk-text-muted);
 }
-.bookkeeping-surface .section-header p {
+.bookkeeping-surface .section-header p:not([class*="dk-"]) {
   max-width: 600px;
   font-size: 13px;
   line-height: 1.45;
@@ -1291,7 +1291,7 @@ body[data-workspace-view="sponsors"] .document-list {
   padding: 20px 22px;
   background: var(--dk-bg-muted);
   border-bottom: 1px solid var(--dk-border-default);
-}.booking-detail-header h2 {
+}.booking-detail-header h2:not([class*="dk-"]) {
   margin: 4px 0;
   color: var(--dk-text-heading);
   font-size: 26px;
@@ -1386,7 +1386,7 @@ body[data-workspace-view="sponsors"] .document-list {
   justify-content: space-between;
   gap: 12px;
   margin: 20px 0 10px;
-}.crm-company-section-header h4 {
+}.crm-company-section-header h4:not([class*="dk-"]) {
   margin: 0;
 }.crm-mail-search {
   display: grid;
@@ -1507,11 +1507,11 @@ body[data-workspace-view="sponsors"] .document-list {
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
   padding: 16px;
-}.surface-dialog form > header h3 {
+}.surface-dialog form > header h3:not([class*="dk-"]) {
   margin: 0 0 3px;
   color: var(--dk-text-heading);
   font-size: 18px;
-}.surface-dialog form > header p:last-child {
+}.surface-dialog form > header p:not([class*="dk-"]):last-child {
   margin-bottom: 0;
   color: var(--dk-text-muted);
 }.dialog-fields {
@@ -1551,9 +1551,9 @@ body[data-workspace-view="sponsors"] .document-list {
   padding: 18px 22px;
   background: var(--dk-bg-muted);
 }
-.bookkeeping-entry-dialog form > header h3,
-.bookkeeping-eur-dialog form > header h3,
-.bookkeeping-delete-dialog form > header h3 {
+.bookkeeping-entry-dialog form > header h3:not([class*="dk-"]),
+.bookkeeping-eur-dialog form > header h3:not([class*="dk-"]),
+.bookkeeping-delete-dialog form > header h3:not([class*="dk-"]) {
   font-size: 18px;
   font-weight: 700;
   margin: 0 0 4px;
@@ -1596,7 +1596,7 @@ body[data-workspace-view="sponsors"] .document-list {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   padding: 12px;
-}.exact-review-copy h4 {
+}.exact-review-copy h4:not([class*="dk-"]) {
   overflow-wrap: anywhere;
 }.exact-review-copy pre {
   max-height: 38vh;
@@ -1637,7 +1637,7 @@ body[data-workspace-view="sponsors"] .document-list {
   gap: 8px;
   border-bottom: 1px solid var(--dk-border-default);
 }
-.sponsor-crm-surface .crm-pipeline-column > header h3 {
+.sponsor-crm-surface .crm-pipeline-column > header h3:not([class*="dk-"]) {
   margin: 0;
   font-size: 14px;
 }
@@ -1664,7 +1664,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .sponsor-crm-surface .crm-pipeline-card:hover {
   border-color: var(--dk-border-strong);
 }
-.sponsor-crm-surface .crm-pipeline-card h4 {
+.sponsor-crm-surface .crm-pipeline-card h4:not([class*="dk-"]) {
   margin: 0 0 8px;
   font-size: 14px;
   line-height: 1.4;

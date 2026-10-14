@@ -1,13 +1,13 @@
-.workflow-board-header h1,
-.workflow-board-header p {
+.workflow-board-header h1:not([class*="dk-"]),
+.workflow-board-header p:not([class*="dk-"]) {
   margin: 0;
-}.workflow-board-header h1 {
+}.workflow-board-header h1:not([class*="dk-"]) {
   color: var(--dk-text-heading);
   font-size: var(--dk-text-page);
   font-weight: 650;
   letter-spacing: -0.025em;
   line-height: 1.15;
-}.workflow-board-header p {
+}.workflow-board-header p:not([class*="dk-"]) {
   margin-top: 3px;
   color: var(--dk-text-muted);
   font-size: 13px;
@@ -149,7 +149,7 @@
   gap: 8px;
   min-height: 28px;
   padding: 2px 4px 6px;
-}.workflow-column-header h3 {
+}.workflow-column-header h3:not([class*="dk-"]) {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -159,17 +159,17 @@
   font-weight: 650;
   letter-spacing: -0.01em;
   text-transform: none;
-}.workflow-column-header h3::before {
+}.workflow-column-header h3:not([class*="dk-"])::before {
   content: "";
   width: 7px;
   height: 7px;
   border-radius: var(--dk-radius-full);
   background: var(--dk-text-faint);
-}.workflow-board-column[data-stage="preparation"] .workflow-column-header h3::before {
+}.workflow-board-column[data-stage="preparation"] .workflow-column-header h3:not([class*="dk-"])::before {
   background: var(--dk-accent-default);
-}.workflow-board-column[data-stage="announced"] .workflow-column-header h3::before {
+}.workflow-board-column[data-stage="announced"] .workflow-column-header h3:not([class*="dk-"])::before {
   background: var(--dk-warning-text);
-}.workflow-board-column[data-stage="after-event"] .workflow-column-header h3::before {
+}.workflow-board-column[data-stage="after-event"] .workflow-column-header h3:not([class*="dk-"])::before {
   background: var(--dk-success-text);
 }.workflow-column-header span {
   display: grid;
@@ -670,12 +670,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-}.runtime-template-card-updates-heading h5,
-.runtime-template-card-updates > p,
+}.runtime-template-card-updates-heading h5:not([class*="dk-"]),
+.runtime-template-card-updates > p:not([class*="dk-"]),
 .runtime-template-batch-results {
   margin: 0;
 }.runtime-template-card-updates-heading span,
-.runtime-template-card-updates > p,
+.runtime-template-card-updates > p:not([class*="dk-"]),
 .runtime-template-card-update-row small {
   color: var(--dk-text-muted);
   font-size: 12px;

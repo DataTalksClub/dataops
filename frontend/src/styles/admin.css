@@ -14,8 +14,8 @@
   gap: 5px;
   background: transparent;
   text-align: left;
-}.ops-surface-admin .ops-surface-header p,
-.ops-surface-users .ops-surface-header p{
+}.ops-surface-admin .ops-surface-header p:not([class*="dk-"]),
+.ops-surface-users .ops-surface-header p:not([class*="dk-"]){
   margin: 0;
 }/* Admin reads as one bordered panel with divided rows: the two entry rows
    and the diagnostics table share the container instead of a three-card
@@ -76,7 +76,7 @@
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
   padding: 14px 16px;
-}.ops-admin-diagnostics h3 {
+}.ops-admin-diagnostics h3:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 15px;
@@ -171,7 +171,7 @@
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
   padding: 20px;
-}.ops-user-form-panel h3 {
+}.ops-user-form-panel h3:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 20px;
@@ -213,7 +213,7 @@
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
   padding: 13px 16px;
-}.ops-section-header h3 {
+}.ops-section-header h3:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 15px;
@@ -315,7 +315,7 @@
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
   padding: 13px 16px;
-}.ops-lane > header h3 {
+}.ops-lane > header h3:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 15px;
@@ -443,10 +443,10 @@ body[data-workspace-view="calendar"] .document-list {
     display: grid;
     gap: 14px;
     padding-bottom: 16px;
-  }.bookkeeping-header h2,
-.crm-header h1,
-.crm-header h2,
-.planner-heading h1 {
+  }.bookkeeping-header h2:not([class*="dk-"]),
+.crm-header h1:not([class*="dk-"]),
+.crm-header h2:not([class*="dk-"]),
+.planner-heading h1:not([class*="dk-"]) {
     font-size: 24px;
   }.surface-actions,
 .bookkeeping-header > button,
@@ -506,7 +506,7 @@ body[data-workspace-view="calendar"] .document-list {
   }.booking-detail-header,
 .booking-detail-section {
     padding: 16px 14px;
-  }.booking-detail-header h2 {
+  }.booking-detail-header h2:not([class*="dk-"]) {
     font-size: 23px;
   }.booking-detail-section {
     margin-inline: 0;

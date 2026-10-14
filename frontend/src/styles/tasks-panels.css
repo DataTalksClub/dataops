@@ -65,13 +65,13 @@ body[data-workspace-view="tasks"] .assistant-filter-bar button.is-active {
   min-width: 0;
 }body[data-workspace-view="tasks"] .assistant-panel {
   min-width: 0;
-}body[data-workspace-view="tasks"] .assistant-panel h3,
-body[data-workspace-view="tasks"] .assistant-panel h4 {
+}body[data-workspace-view="tasks"] .assistant-panel h3:not([class*="dk-"]),
+body[data-workspace-view="tasks"] .assistant-panel h4:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
-}body[data-workspace-view="tasks"] .assistant-panel h3 {
+}body[data-workspace-view="tasks"] .assistant-panel h3:not([class*="dk-"]) {
   font-size: 15px;
-}body[data-workspace-view="tasks"] .assistant-panel h4 {
+}body[data-workspace-view="tasks"] .assistant-panel h4:not([class*="dk-"]) {
   font-size: 13px;
 }body[data-workspace-view="tasks"] .assistant-create-grid,
 body[data-workspace-view="tasks"] .assistant-editor {
@@ -101,7 +101,7 @@ body[data-workspace-view="tasks"] .assistant-editor button {
   min-height: 40px;
 }body[data-workspace-view="tasks"] .assistant-queue {
   padding: 0;
-}body[data-workspace-view="tasks"] .assistant-queue > h3 {
+}body[data-workspace-view="tasks"] .assistant-queue > h3:not([class*="dk-"]) {
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
   padding: 14px 16px;
@@ -165,11 +165,11 @@ body[data-workspace-view="tasks"] .assistant-status {
   display: grid;
   min-width: 0;
   gap: 3px;
-}body[data-workspace-view="tasks"] .assistant-detail > header h3,
+}body[data-workspace-view="tasks"] .assistant-detail > header h3:not([class*="dk-"]),
 body[data-workspace-view="tasks"] .assistant-detail > header small {
   min-width: 0;
   overflow-wrap: anywhere;
-}body[data-workspace-view="tasks"] .assistant-detail > header h3 {
+}body[data-workspace-view="tasks"] .assistant-detail > header h3:not([class*="dk-"]) {
   font-size: 18px;
 }body[data-workspace-view="tasks"] .assistant-detail > header small {
   color: var(--dk-text-muted);
@@ -589,12 +589,12 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
   padding: 18px;
-}body[data-workspace-view="tasks"] .entity-route-state h3,
+}body[data-workspace-view="tasks"] .entity-route-state h3:not([class*="dk-"]),
 body[data-workspace-view="tasks"] .entity-route-state p {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
-}body[data-workspace-view="tasks"] .entity-route-state h3 {
+}body[data-workspace-view="tasks"] .entity-route-state h3:not([class*="dk-"]) {
   color: var(--dk-text-heading);
   font-size: 15px;
 }body[data-workspace-view="tasks"] .entity-route-state p,
@@ -612,9 +612,9 @@ body[data-workspace-view="tasks"] .entity-route-not-found,
 body[data-workspace-view="tasks"] .entity-route-mismatch {
   border-color: var(--dk-border-default);
   background: var(--dk-danger-bg);
-}body[data-workspace-view="tasks"] .entity-route-error h3,
-body[data-workspace-view="tasks"] .entity-route-not-found h3,
-body[data-workspace-view="tasks"] .entity-route-mismatch h3 {
+}body[data-workspace-view="tasks"] .entity-route-error h3:not([class*="dk-"]),
+body[data-workspace-view="tasks"] .entity-route-not-found h3:not([class*="dk-"]),
+body[data-workspace-view="tasks"] .entity-route-mismatch h3:not([class*="dk-"]) {
   color: var(--dk-danger-text);
 }body[data-workspace-view="tasks"] .entity-route-actions {
   display: flex;

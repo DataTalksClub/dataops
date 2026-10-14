@@ -23,9 +23,9 @@ body[data-workspace-view="sponsors"] .document-list {
   min-width: 0;
   border-bottom: 1px solid var(--dk-border-default);
   padding: 4px 0 20px;
-}.bookkeeping-header h2,
-.crm-header h2,
-.planner-heading h1 {
+}.bookkeeping-header h2:not([class*="dk-"]),
+.crm-header h2:not([class*="dk-"]),
+.planner-heading h1:not([class*="dk-"]) {
   color: var(--dk-text-heading);
   font-weight: 650;
   letter-spacing: -0.025em;
@@ -35,11 +35,11 @@ body[data-workspace-view="sponsors"] .document-list {
 .ops-surface-admin .ops-surface-header,
 .ops-surface-users .ops-surface-header{
   min-width: 0;
-}.bookkeeping-header > div > p:last-child,
-.crm-header > div > p:last-child,
-.planner-heading > p:last-child,
-.ops-surface-admin .ops-surface-header p,
-.ops-surface-users .ops-surface-header p{
+}.bookkeeping-header > div > p:not([class*="dk-"]):last-child,
+.crm-header > div > p:not([class*="dk-"]):last-child,
+.planner-heading > p:not([class*="dk-"]):last-child,
+.ops-surface-admin .ops-surface-header p:not([class*="dk-"]),
+.ops-surface-users .ops-surface-header p:not([class*="dk-"]){
   max-width: 720px;
   color: var(--dk-text-muted);
   line-height: 1.55;
@@ -83,10 +83,10 @@ body[data-workspace-view="sponsors"] .document-list {
   padding: 16px 18px;
 }.section-header > div {
   min-width: 0;
-}.section-header h3 {
+}.section-header h3:not([class*="dk-"]) {
   font-size: 17px;
   letter-spacing: -0.01em;
-}.section-header p:last-child {
+}.section-header p:not([class*="dk-"]):last-child {
   max-width: 640px;
   font-size: 13px;
   line-height: 1.45;
@@ -194,7 +194,7 @@ body[data-workspace-view="sponsors"] .document-list {
 }.bookkeeping-actions,
 .sponsor-crm-surface .surface-dialog form > footer {
   justify-content: flex-start;
-}/* Sponsor CRM: pipeline first, then a booking queue beside one record. */.sponsor-crm-surface .crm-header h1 {
+}/* Sponsor CRM: pipeline first, then a booking queue beside one record. */.sponsor-crm-surface .crm-header h1:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: var(--dk-text-page);
@@ -251,7 +251,7 @@ body[data-workspace-view="sponsors"] .document-list {
   margin: 18px;
 }.sponsor-crm-surface [data-crm-upcoming] {
   padding: 0 18px 18px;
-}.sponsor-crm-surface [data-crm-upcoming] h3 {
+}.sponsor-crm-surface [data-crm-upcoming] h3:not([class*="dk-"]) {
   margin: 16px 0 8px;
   color: var(--dk-text-heading);
   font-size: 13px;
@@ -278,9 +278,9 @@ body[data-workspace-view="sponsors"] .document-list {
   background: var(--dk-bg-muted);
 }.booking-detail-header > div {
   min-width: 0;
-}.booking-detail-header h2 {
+}.booking-detail-header h2:not([class*="dk-"]) {
   font-size: 28px;
-}.booking-detail-header > div > p:last-child {
+}.booking-detail-header > div > p:not([class*="dk-"]):last-child {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -322,7 +322,7 @@ body[data-workspace-view="sponsors"] .document-list {
   margin-bottom: 0;
 }.finance-panel > header > div {
   min-width: 0;
-}.finance-panel > header h3 {
+}.finance-panel > header h3:not([class*="dk-"]) {
   font-size: 18px;
 }.finance-panel dl {
   margin: 0;
@@ -374,7 +374,7 @@ body[data-workspace-view="sponsors"] .document-list {
 }/* Newsletter and Calendar: the planner controls should feel like one
    instrument panel, while the content remains a calm list/grid below it. */.planner-header {
   padding-bottom: 22px;
-}.planner-heading h1 {
+}.planner-heading h1:not([class*="dk-"]) {
   font-size: 34px;
 }.newsletter-filters,
 .calendar-controls {
@@ -434,7 +434,7 @@ body[data-workspace-view="sponsors"] .document-list {
   transform: translateY(-1px);
 }.calendar-content-header {
   margin-bottom: 12px;
-}.calendar-content-header h3 {
+}.calendar-content-header h3:not([class*="dk-"]) {
   font-size: 20px;
   letter-spacing: -0.015em;
 }.newsletter-schedule {
@@ -444,7 +444,7 @@ body[data-workspace-view="sponsors"] .document-list {
 }.newsletter-period > header {
   min-height: 48px;
   padding: 10px 16px;
-}.newsletter-period h3 {
+}.newsletter-period h3:not([class*="dk-"]) {
   font-size: 15px;
 }.newsletter-slot-row {
   min-height: 82px;
@@ -454,7 +454,7 @@ body[data-workspace-view="sponsors"] .document-list {
   background: var(--dk-bg-hover);
 }.newsletter-slot-date time {
   font-variant-numeric: tabular-nums;
-}.newsletter-slot-title h4 {
+}.newsletter-slot-title h4:not([class*="dk-"]) {
   min-width: 0;
 }.newsletter-slot-actions a,
 .newsletter-slot-actions button {

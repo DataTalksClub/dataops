@@ -46,7 +46,7 @@
   background: transparent;
   padding: 0;
   text-align: left;
-}.ops-surface-recurring .ops-surface-header p {
+}.ops-surface-recurring .ops-surface-header p:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-muted);
   font-size: 14px;
@@ -98,7 +98,7 @@
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
   padding: 12px 16px;
-}.recurring-section-header h3 {
+}.recurring-section-header h3:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 14px;
@@ -317,21 +317,6 @@ body[data-view="library"] .library-view .document-list .dk-page-header {
   text-align: left;
 }
 .dk-page-header__main { min-width: 0; }
-body[data-view="library"] .library-view .document-list .dk-page-header__main h1 {
-  margin: 0;
-  color: var(--dk-text-heading);
-  font-size: 32px;
-  font-weight: 650;
-  letter-spacing: -0.025em;
-  line-height: 1.2;
-}
-body[data-view="library"] .library-view .document-list .dk-page-header__main p {
-  max-width: 72ch;
-  margin: 6px 0 0;
-  color: var(--dk-text-muted);
-  font-size: 14px;
-  line-height: 1.45;
-}
 .dk-page-header__actions {
   display: flex;
   flex-wrap: wrap;
@@ -351,8 +336,7 @@ body[data-view="library"] .library-view .document-list .dk-page-header > .ops-do
     flex-wrap: wrap;
     gap: 8px;
   }
-  body[data-view="library"] .library-view .document-list .dk-page-header__main p { display: none; }
-  body[data-view="library"] .library-view .document-list .dk-page-header__main h1 { font-size: 22px; }
+  body[data-view="library"] .library-view .document-list .dk-page-header__subtitle { display: none; }
   .dk-page-header__actions {
     justify-content: flex-start;
     padding-top: 0;
@@ -377,13 +361,6 @@ body[data-view="library"] .library-view .document-list .dk-page-header > .ops-do
     align-items: center;
     justify-content: space-between;
     margin: 0;
-  }
-  body[data-view="library"] .library-view .document-list .calendar-page-header .dk-page-header__main h1 {
-    font-size: 22px;
-    line-height: 1.2;
-  }
-  body[data-view="library"] .library-view .document-list .calendar-page-header .dk-page-header__main p {
-    display: none;
   }
   body[data-view="library"] .library-view .document-list .calendar-page-header .dk-page-header__actions {
     flex-wrap: nowrap;

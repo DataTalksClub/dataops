@@ -16,8 +16,8 @@
   gap: 16px;
   border-bottom: 1px solid var(--dk-border-default);
   padding-bottom: 18px;
-}.review-header h2,
-.review-document-header h3 {
+}.review-header h2:not([class*="dk-"]),
+.review-document-header h3:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 26px;
@@ -142,7 +142,7 @@
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
   padding: 12px 14px;
-}.review-panel-heading h3,
+}.review-panel-heading h3:not([class*="dk-"]),
 .review-section-title {
   margin: 0;
   color: var(--dk-text-heading);

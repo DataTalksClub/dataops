@@ -10,7 +10,7 @@
   }.library-view {
     padding: 14px 14px 28px;
   }.newsletter-surface,
-.calendar-surface { gap: 16px; }.planner-header { display: grid; gap: 12px; padding-bottom: 16px; }.planner-heading h1 { font-size: var(--dk-text-xl); }.planner-heading > p:last-child { margin-top: 4px; font-size: 13px; }.planner-header > .primary-button,
+.calendar-surface { gap: 16px; }.planner-header { display: grid; gap: 12px; padding-bottom: 16px; }.planner-heading h1:not([class*="dk-"]) { font-size: var(--dk-text-xl); }.planner-heading > p:not([class*="dk-"]):last-child { margin-top: 4px; font-size: 13px; }.planner-header > .primary-button,
 .calendar-period-actions button,
 .newsletter-slot-actions button,
 .planner-alert button,
@@ -34,9 +34,9 @@
     overflow-x: hidden;
   }.workflow-board-header {
     align-items: flex-start;
-  }.workflow-board-header h1 {
+  }.workflow-board-header h1:not([class*="dk-"]) {
     font-size: 22px;
-  }.workflow-board-header p {
+  }.workflow-board-header p:not([class*="dk-"]) {
     max-width: 220px;
   }.workflow-board-header .dk-page-header__actions .primary-button {
     min-height: 44px;
@@ -97,9 +97,9 @@ body[data-workspace-view="sponsors"] .library-view {
 .booking-detail-header,
 .finance-panel > header {
     display: grid;
-  }.bookkeeping-header h2,
-.crm-header h1,
-.crm-header h2 {
+  }.bookkeeping-header h2:not([class*="dk-"]),
+.crm-header h1:not([class*="dk-"]),
+.crm-header h2:not([class*="dk-"]) {
     font-size: 22px;
   }.bookkeeping-header .primary-button,
 .crm-header button,
@@ -296,16 +296,16 @@ body[data-workspace-view="sponsors"] .library-view {
   .section-kicker,
   .surface-eyebrow,
   .planner-eyebrow,
-  .ops-surface-header p,
-  .workflow-board-header p,
+  .ops-surface-header p:not([class*="dk-"]),
+  .workflow-board-header p:not([class*="dk-"]),
   .workflow-board-filter-count,
   .workflow-board-scroll-hint,
   .calendar-timezone-badge,
   .bookkeeping-close-state,
-  .bookkeeping-header p,
-  .crm-header p,
-  .review-header p,
-  .planner-header p,
+  .bookkeeping-header p:not([class*="dk-"]),
+  .crm-header p:not([class*="dk-"]),
+  .review-header p:not([class*="dk-"]),
+  .planner-header p:not([class*="dk-"]),
   .runtime-template-inspector .ops-section-header span {
     display: none !important;
   }
@@ -495,7 +495,7 @@ body[data-workspace-view="sponsors"] .library-view {
   .bookkeeping-header {
     padding: 0 0 2px !important;
   }
-  .bookkeeping-section h3 {
+  .bookkeeping-section h3:not([class*="dk-"]) {
     font-size: 13px !important;
     margin: 0 0 4px !important;
   }
@@ -705,7 +705,7 @@ body[data-workspace-view="sponsors"] .library-view {
   .task-route-context {
     padding: 8px 10px !important;
   }
-  .task-route-context h3 {
+  .task-route-context h3:not([class*="dk-"]) {
     display: none;
   }
 
@@ -797,7 +797,7 @@ body[data-workspace-view="sponsors"] .library-view {
     gap: 8px;
     min-width: 0;
   }
-  .bookkeeping-worklist-summary h3 {
+  .bookkeeping-worklist-summary h3:not([class*="dk-"]) {
     margin: 0 !important;
   }
   .bookkeeping-worklist-hint {
@@ -835,10 +835,10 @@ body[data-workspace-view="sponsors"] .library-view {
     padding: 0;
     align-items: baseline;
   }
-  .bookkeeping-worklist-summary .section-header div p {
+  .bookkeeping-worklist-summary .section-header div p:not([class*="dk-"]) {
     display: none !important;
   }
-  .bookkeeping-worklist-summary .section-header h3 {
+  .bookkeeping-worklist-summary .section-header h3:not([class*="dk-"]) {
     font-size: 12px !important;
     margin: 0 !important;
     min-width: 0;

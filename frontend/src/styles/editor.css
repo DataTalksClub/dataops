@@ -233,7 +233,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-}.block-section-header h2 {
+}.block-section-header h2:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: var(--dk-text-lg);
@@ -261,18 +261,18 @@
 .block-plain-body > :last-child,
 .md > :last-child {
   margin-bottom: 0;
-}.block-section-body h1,
-.block-section-body h2,
-.block-section-body h3,
-.block-prose-body h1,
-.block-prose-body h2,
-.block-prose-body h3,
-.block-plain-body h1,
-.block-plain-body h2,
-.block-plain-body h3,
-.md h1,
-.md h2,
-.md h3 {
+}.block-section-body h1:not([class*="dk-"]),
+.block-section-body h2:not([class*="dk-"]),
+.block-section-body h3:not([class*="dk-"]),
+.block-prose-body h1:not([class*="dk-"]),
+.block-prose-body h2:not([class*="dk-"]),
+.block-prose-body h3:not([class*="dk-"]),
+.block-plain-body h1:not([class*="dk-"]),
+.block-plain-body h2:not([class*="dk-"]),
+.block-plain-body h3:not([class*="dk-"]),
+.md h1:not([class*="dk-"]),
+.md h2:not([class*="dk-"]),
+.md h3:not([class*="dk-"]) {
   color: var(--dk-text-heading);
   line-height: 1.3;
 }.block-section-body a,
@@ -491,7 +491,7 @@ textarea.inline-editor {
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
   padding: 0;
-}.block-related h2 {
+}.block-related h2:not([class*="dk-"]) {
   margin: 0;
   padding: 12px 16px 8px;
   color: var(--dk-text-heading);
@@ -592,7 +592,7 @@ textarea.inline-editor {
 }.create-form > .status-text.create-status.is-error {
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
-}.create-form h2 {
+}.create-form h2:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 26px;
@@ -684,7 +684,7 @@ textarea.inline-editor {
   padding: 14px;
 }.changes-section[hidden] {
   display: none;
-}.changes-header h3 {
+}.changes-header h3:not([class*="dk-"]) {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -794,7 +794,7 @@ textarea.inline-editor {
     padding: 20px 16px 96px;
   }.document-title,
 .block-title,
-.operating-model-header h1 {
+.operating-model-header h1:not([class*="dk-"]) {
     font-size: 22px;
   }.document-editor-actions {
     margin-left: 0;
@@ -1340,7 +1340,7 @@ textarea.inline-editor {
   align-items: center;
   justify-content: space-between;
 }
-.doc-subpages-header h3 {
+.doc-subpages-header h3:not([class*="dk-"]) {
   margin: 0;
   font-size: 12px;
   font-weight: 700;
