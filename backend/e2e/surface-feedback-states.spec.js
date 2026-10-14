@@ -312,7 +312,6 @@ test.describe('issue 204 owning-surface feedback', () => {
     const userForm = page.locator('.ops-user-form');
     await userForm.getByLabel('Name').fill('Synthetic User');
     await userForm.getByLabel('Email').fill('synthetic-user@datatalks.club');
-    await userForm.getByLabel('Password').fill('1111');
     await userForm.getByRole('button', { name: 'Create user' }).click();
     const usersOutcome = page.locator('.ops-users-outcome');
     await expect(usersOutcome).toBeVisible();

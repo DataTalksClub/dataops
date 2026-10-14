@@ -1502,13 +1502,16 @@ test.describe('canonical frontend capability behavior', () => {
     await adminPage.getByRole('button', { name: 'Add user' }).click();
     await adminPage.getByLabel('Name').fill('Synthetic Capability User');
     await adminPage.getByLabel('Email').fill(`${unique('capability')}@example.invalid`);
-    await adminPage.getByLabel('Password').fill('synthetic-password');
     await adminPage.getByRole('button', { name: 'Create user' }).click();
     await expect(adminPage.locator('.ops-user-row', { hasText: 'Synthetic Capability User' })).toBeVisible();
     await adminPage.reload();
     let createdRow = adminPage.locator('.ops-user-row', { hasText: 'Synthetic Capability User' });
     await expect(createdRow).toBeVisible();
     await createdRow.getByRole('button', { name: 'Edit' }).click();
+    // Sign-in is through SSO: no password field, and the email is read-only.
+    await expect(adminPage.locator('.ops-user-form input[type="password"]')).toHaveCount(0);
+    await expect(adminPage.locator('.ops-user-form input[type="email"]')).toHaveCount(0);
+    await expect(adminPage.locator('.ops-user-form .ops-field-static')).toContainText('@example.invalid');
     await adminPage.getByLabel('Name').fill('Synthetic Capability User Updated');
     await adminPage.getByRole('button', { name: 'Save changes' }).click();
     createdRow = adminPage.locator('.ops-user-row', { hasText: 'Synthetic Capability User Updated' });
@@ -1528,7 +1531,6 @@ test.describe('canonical frontend capability behavior', () => {
     await adminPage.getByRole('button', { name: 'Add user' }).click();
     await adminPage.getByLabel('Name').fill('Synthetic Failed User');
     await adminPage.getByLabel('Email').fill(`${unique('failed')}@example.invalid`);
-    await adminPage.getByLabel('Password').fill('synthetic-password');
     await adminPage.getByRole('button', { name: 'Create user' }).click();
     await expect(adminPage.locator('.ops-user-form-result .form-feedback-error')).toContainText('Synthetic route failure (503)');
     await expect(adminPage.getByLabel('Name')).toHaveValue('Synthetic Failed User');
@@ -1539,7 +1541,7 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(operatorPage.getByRole('button', { name: 'Add user' })).toHaveCount(0);
     const before = await json(await operator.request.get('/api/users'));
     const denied = await operator.request.post('/api/users', {
-      data: { name: 'Denied User', email: 'denied-user@example.invalid', role: 'admin', password: 'not-created' },
+      data: { name: 'Denied User', email: 'denied-user@example.invalid', role: 'admin' },
       headers: { 'x-user-id': ADMIN_ID },
     });
     expect(denied.status()).toBe(403);
