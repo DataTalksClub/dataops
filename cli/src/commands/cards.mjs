@@ -21,6 +21,7 @@ Usage
   dataops cards stage <card-id> <preparation|announced|after-event>
   dataops cards link <card-id> <link-name> <url>  Fill a Card link (e.g. a template's required link)
   dataops cards park <card-id> | resume <card-id>
+  dataops cards delete <card-id> --yes          Delete the Card and all its Tasks (admin)
   dataops cards template-update <card-id> [--apply]  Preview, then apply, the Template's newer version
 
 --date is the Card's anchor date: Template Tasks are scheduled relative to it.
@@ -203,6 +204,26 @@ async function parkResume(args, io, verb) {
 export const park = (args, io) => parkResume(args, io, "park");
 export const resume = (args, io) => parkResume(args, io, "resume");
 
+export async function remove(args, io) {
+  const id = positional(args, 0, "dataops cards delete <card-id> --yes");
+  const api = apiFor(args);
+  const { card } = await api.get(`/api/cards/${enc(id)}`);
+  const taskCount = Number(card.taskCount || 0);
+  if (!args.yes) {
+    throw new UsageError(
+      `This deletes Card "${card.title || id}" and its ${taskCount} Task${taskCount === 1 ? "" : "s"}. `
+      + `Re-run with --yes to confirm: dataops cards delete ${id} --yes`,
+    );
+  }
+  const expectedVersion = integer(args.expectedVersion, "expected-version") ?? card.version;
+  const result = await api.delete(`/api/cards/${enc(id)}`, { expectedVersion });
+  if (args.json) return result;
+  const deleted = result.deleted || {};
+  const removedTasks = (deleted.deletedTaskIds || []).length;
+  io.print(`Deleted ${id} - ${deleted.title || card.title || ""} and ${removedTasks} Task${removedTasks === 1 ? "" : "s"}.`);
+  return result;
+}
+
 export async function templateUpdate(args, io) {
   const id = positional(args, 0, "dataops cards template-update <card-id> [--apply]");
   const api = apiFor(args);
@@ -229,5 +250,6 @@ export const commands = {
   link,
   park,
   resume,
+  delete: remove,
   "template-update": templateUpdate,
 };

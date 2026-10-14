@@ -167,6 +167,19 @@ describe("dataops CLI against a local backend", () => {
     assert.equal(unblocked.json.status, "todo");
   });
 
+  test("skip resolves a Task without proof and unskip reopens it", () => {
+    assert.equal(cli("tasks", "skip", taskId).code, 2);
+    const skipped = cli("tasks", "skip", taskId, "--reason", "Synthetic: not applicable", "--json");
+    assert.equal(skipped.code, 0, skipped.stderr);
+    assert.equal(skipped.json.status, "skipped");
+    assert.equal(skipped.json.skipReason, "Synthetic: not applicable");
+    const card = cli("cards", "show", cardId, "--json");
+    assert.equal(card.json.card.openTaskCount, 0);
+    const unskipped = cli("tasks", "unskip", taskId, "--json");
+    assert.equal(unskipped.code, 0, unskipped.stderr);
+    assert.equal(unskipped.json.status, "todo");
+  });
+
   test("knowledge base: tree, search with snippets, show, and related", () => {
     const tree = cli("kb", "tree", "--json");
     assert.equal(tree.code, 0, tree.stderr);
@@ -215,6 +228,15 @@ describe("dataops CLI against a local backend", () => {
     const lookup = cli("newsletter", "list", "--card", linked.json.card.id, "--json");
     assert.deepEqual(lookup.json.items.map((item) => item.id), [slot.json.id]);
     assert.equal(cli("newsletter", "create-card", slot.json.id).code, 2);
+
+    const cardToDelete = linked.json.card.id;
+    assert.equal(cli("cards", "delete", cardToDelete).code, 2);
+    const deleted = cli("cards", "delete", cardToDelete, "--yes", "--json");
+    assert.equal(deleted.code, 0, deleted.stderr);
+    assert.deepEqual(deleted.json.deleted.unlinked.newsletterSlots, [slot.json.id]);
+    assert.equal(cli("cards", "show", cardToDelete).code, 4);
+    const unlinked = cli("newsletter", "list", "--card", cardToDelete, "--json");
+    assert.deepEqual(unlinked.json.items, []);
   });
 
   test("unknown records and bad input use their exit codes", () => {

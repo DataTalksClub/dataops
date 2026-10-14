@@ -6,7 +6,7 @@ import { UsageError } from "../errors.mjs";
 import { enc, fields, integer, isoDate, list as csv, optionalString, positional, required, table } from "../format.mjs";
 import { apiFor, today } from "../session.mjs";
 
-export const summary = "List, inspect, create, complete, and follow up Tasks";
+export const summary = "List, inspect, create, complete, skip, and follow up Tasks";
 
 export const help = `dataops tasks - Tasks are the checklist items inside Cards
 
@@ -19,6 +19,8 @@ Usage
       [--external-status S] [--tags a,b] [--card ID|none] [--instruction-doc DOC-ID]
   dataops tasks done <task-id> [--link URL] [--comment C] [--external-status S] [--file PATH]
   dataops tasks reopen <task-id>
+  dataops tasks skip <task-id> --reason R        Resolve as not applicable (no proof needed)
+  dataops tasks unskip <task-id>                 Back to todo
   dataops tasks wait <task-id> --for WHO --follow-up YYYY-MM-DD --channel CHANNEL --note NOTE
   dataops tasks followed-up <task-id> --channel CHANNEL --note NOTE [--next YYYY-MM-DD]
   dataops tasks unblock <task-id> --note NOTE [--unblocked]   (default: response received)
@@ -28,7 +30,7 @@ Usage
 List views (default: --queue)
   --queue      Open work in the web queue's order: overdue, follow-ups due, today, waiting
   --today      Due today          --overdue    Open and past due     --waiting   Waiting on someone
-  --status S   todo|waiting|done|archived      --date D    One day     --from D --to D   A range
+  --status S   todo|waiting|done|skipped       --date D    One day     --from D --to D   A range
   --card ID    Every Task of a Card
   --owner me|team|unassigned|<user-id>, or --mine for --owner me
   --as-of YYYY-MM-DD   Treat this date as today (default: the local date)
@@ -339,6 +341,16 @@ export async function unblock(args, io) {
   }, "Unblocked");
 }
 
+export async function skip(args, io) {
+  positional(args, 0, "dataops tasks skip <task-id> --reason R");
+  return action(args, io, "skip", { reason: required(args, "reason", "reason") }, "Skipped");
+}
+
+export async function unskip(args, io) {
+  positional(args, 0, "dataops tasks unskip <task-id>");
+  return action(args, io, "unskip", {}, "Unskipped");
+}
+
 export async function assign(args, io) {
   const id = positional(args, 0, "dataops tasks assign <task-id> <user-id|me>");
   const who = positional(args, 1, "dataops tasks assign <task-id> <user-id|me>");
@@ -368,6 +380,8 @@ export const commands = {
   wait,
   "followed-up": followedUp,
   unblock,
+  skip,
+  unskip,
   assign,
   delete: remove,
 };

@@ -151,6 +151,20 @@ describe("tasks", () => {
     assert.equal(await run(["tasks", "wait", "t-4", "--for", "Sponsor"], io), 2);
   });
 
+  test("skip requires a reason and unskip returns the Task to todo", async () => {
+    const calls = fakePortal({
+      "GET /api/tasks/t-6": task({ id: "t-6", version: 4 }),
+      "POST /api/tasks/t-6/actions/skip": ({ body }) => task({ id: "t-6", status: "skipped", skipReason: body.reason, version: 5 }),
+      "POST /api/tasks/t-6/actions/unskip": () => task({ id: "t-6", status: "todo", version: 6 }),
+    });
+    assert.equal(await run(["tasks", "skip", "t-6"], captureIo()), 2);
+    assert.equal(await run(["tasks", "skip", "t-6", "--reason", "Self-hosted, no recording"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { reason: "Self-hosted, no recording", expectedVersion: 4 });
+    assert.equal(await run(["tasks", "unskip", "t-6"], captureIo()), 0);
+    assert.equal(calls.at(-1).route, "/api/tasks/t-6/actions/unskip");
+    assert.deepEqual(calls.at(-1).body, { expectedVersion: 4 });
+  });
+
   test("assign me resolves the signed-in user", async () => {
     const calls = fakePortal({
       "GET /api/me": { user: { id: "u-me" } },
@@ -172,6 +186,21 @@ describe("tasks", () => {
 });
 
 describe("cards and templates", () => {
+  test("delete names the Card and Task count, and needs --yes", async () => {
+    const calls = fakePortal({
+      "GET /api/cards/c-9": { card: { id: "c-9", title: "Synthetic duplicate", version: 7, taskCount: 15 } },
+      "DELETE /api/cards/c-9": () => ({ deleted: { cardId: "c-9", title: "Synthetic duplicate", deletedTaskIds: ["a", "b"] } }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["cards", "delete", "c-9"], io), 2);
+    assert.match(io.errors.join("\n"), /Synthetic duplicate" and its 15 Tasks/);
+    assert.equal(calls.some(({ method }) => method === "DELETE"), false);
+    const done = captureIo();
+    assert.equal(await run(["cards", "delete", "c-9", "--yes"], done), 0);
+    assert.deepEqual(calls.at(-1).body, { expectedVersion: 7 });
+    assert.match(done.text(), /Deleted c-9 - Synthetic duplicate and 2 Tasks/);
+  });
+
   const template = { id: "tpl-1", type: "newsletter-issue", name: "Newsletter issue", taskDefinitions: [{ description: "Draft", offsetDays: -3 }] };
 
   test("create resolves a template by type and anchors the card on --date", async () => {

@@ -80,6 +80,10 @@ Blocked on someone else? Record it instead of leaving the Task open silently:
 `dataops tasks wait <task-id> --for "Who" --follow-up 2026-11-02 --channel email --note "Asked for X"`.
 When they answer: `dataops tasks unblock <task-id> --note "Got X"`.
 
+Task does not apply (cancelled event, self-hosted, duplicate)? Skip it with a reason
+instead of faking proof: `dataops tasks skip <task-id> --reason "Self-hosted, no recording"`.
+A skipped Task counts as resolved for its Card; `dataops tasks unskip <task-id>` undoes it.
+
 ## Workflow: start new work from a Template
 
 ```bash
