@@ -17,6 +17,7 @@ Usage
 
 Auth
   login [--url URL] [--label NAME]   Sign in with a device code confirmed in the browser
+  login --token-stdin [--url URL]      Validate and save an existing user API token from stdin
   login --service-token-stdin --url URL   Configure an invoice reader service token from stdin
   logout                             Revoke this machine's token
   whoami                             Show the signed-in user

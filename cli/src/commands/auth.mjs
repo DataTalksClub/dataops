@@ -1,4 +1,6 @@
-import { existsSync } from "node:fs";
+import { existsSync, readSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { isatty } from "node:tty";
 import { readFileSync } from "node:fs";
 import { hostname, userInfo } from "node:os";
 import path from "node:path";
@@ -76,6 +78,71 @@ function deviceStartFromPortal(payload) {
   };
 }
 
+/** Import only an already-issued user API token, never a browser session. */
+async function importUserToken(url, args, io) {
+  if (args.tokenStdin !== true || args.serviceTokenStdin !== undefined || args._?.length) {
+    throw new Error("Use --token-stdin alone and pass the token through stdin, never as an argument.");
+  }
+  let parsed;
+  try { parsed = new URL(url); } catch { throw new Error("A valid portal URL is required for token import."); }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash ||
+      (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)))) {
+    throw new Error("User token import requires HTTPS (HTTP is allowed only on loopback), without URL credentials, query, or fragment.");
+  }
+  if (isatty(0)) throw new Error("Token input must be piped or redirected; terminal input could echo the secret.");
+  // Bound memory before reading, including when stdin is an arbitrarily large file.
+  const input = Buffer.alloc(128);
+  let length = 0;
+  try {
+    while (length < input.length) {
+      const count = readSync(0, input, length, input.length - length, null);
+      if (!count) break;
+      length += count;
+    }
+  } catch { throw new Error("Could not read the user token from stdin."); }
+  const token = input.subarray(0, length).toString("utf8").trim();
+  if (length === input.length || !/^dops_[a-f0-9]{64}$/.test(token)) {
+    throw new Error("Invalid user API token. Expected one issued dops_ user token on stdin.");
+  }
+  const client = createClient({
+    url, token,
+    // No redirect may forward this credential to a different endpoint or downgrade HTTPS.
+    fetchImpl: (target, options) => fetch(target, {
+      ...options, redirect: "error", signal: AbortSignal.timeout(15_000),
+    }),
+  });
+  let identity, listed;
+  try {
+    identity = await client.get("/api/me");
+    listed = await client.get("/api/tokens");
+  } catch (error) {
+    // Never print server bodies or underlying transport errors: they may echo a credential.
+    if (error instanceof ApiError) {
+      if ([401, 403].includes(error.status)) throw new Error("User token rejected: invalid, expired, revoked, or access denied. Stored credentials unchanged.");
+      throw new Error(`User token validation failed (HTTP ${error.status}). Stored credentials unchanged.`);
+    }
+    throw new Error("Could not validate user token: network, timeout, or redirect failure. Stored credentials unchanged.");
+  }
+  const user = identity?.user;
+  const tokenId = createHash("sha256").update(token).digest("hex");
+  const entry = Array.isArray(listed?.tokens) ? listed.tokens.find(item => item?.id === tokenId) : null;
+  if (!identity || identity.service !== undefined || !user ||
+      typeof user.id !== "string" || !user.id.trim() ||
+      typeof user.email !== "string" || !user.email.trim() || user.disabled === true ||
+      !entry || entry.userId !== user.id || typeof entry.expiresAt !== "string" ||
+      !Number.isFinite(Date.parse(entry.expiresAt)) || Date.parse(entry.expiresAt) <= Date.now()) {
+    throw new Error("The portal did not verify an active user API token and its owner. Stored credentials unchanged.");
+  }
+  // Only persist known fields; never echo arbitrary server payloads, even with --json.
+  saveProfile(client.base, {
+    token, tokenId, kind: "user", expiresAt: entry.expiresAt,
+    user: { id: user.id, email: user.email, ...(typeof user.name === "string" ? { name: user.name } : {}) },
+  });
+  const result = { status: "signed-in", kind: "user" };
+  if (!args.json) io.print("User token validated and saved.");
+  return result;
+}
+
 /**
  * Device authorization grant. The browser half runs wherever the operator
  * already has a portal session, which is why this works over SSH: nothing
@@ -83,6 +150,7 @@ function deviceStartFromPortal(payload) {
  */
 export async function login(args, io) {
   const url = args.url || process.env.DATAOPS_URL || resolveProfile().url;
+  if (args.tokenStdin !== undefined) return importUserToken(url, args, io);
   if (args.serviceTokenStdin !== undefined) {
     if (args.serviceTokenStdin !== true) throw new Error("Pass the service token through stdin, never as an argument.");
     const parsed = new URL(url);

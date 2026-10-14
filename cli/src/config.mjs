@@ -1,4 +1,5 @@
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -33,10 +34,16 @@ function readStore() {
 
 function writeStore(store) {
   mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
-  writeFileSync(CREDENTIALS_PATH, `${JSON.stringify(store, null, 2)}\n`, {
-    mode: 0o600,
-  });
-  chmodSync(CREDENTIALS_PATH, 0o600);
+  chmodSync(CONFIG_DIR, 0o700);
+  const temporary = path.join(CONFIG_DIR, `.credentials-${randomUUID()}.tmp`);
+  try {
+    writeFileSync(temporary, `${JSON.stringify(store, null, 2)}\n`, {
+      mode: 0o600, flag: "wx",
+    });
+    renameSync(temporary, CREDENTIALS_PATH);
+  } finally {
+    try { unlinkSync(temporary); } catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
 }
 
 export function saveProfile(url, profile) {
