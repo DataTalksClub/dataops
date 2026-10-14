@@ -1,3 +1,4 @@
+import { resourcesFromPayload } from "./resources.js";
 import {
   cardAnchorTone,
   compareIsoDate,
@@ -41,6 +42,7 @@ export function emptyOperationsWorkSnapshot() {
     cardsComplete: false,
     cardTasksComplete: false,
     usersLoaded: false,
+    resources: [],
   };
 }
 
@@ -479,6 +481,7 @@ export function createOperationsModel({
       ? snapshot.cards
       : cardsFromWorkPayload(snapshot);
     const users = usersFromWorkPayload(snapshot.users || []);
+    const resources = resourcesFromPayload({ resources: snapshot.resources });
     const cardTasks = normalizeCardTaskMap(
       snapshot.cardTasks || {},
       allTasks,
@@ -546,6 +549,8 @@ export function createOperationsModel({
           .map((user) => [user.id, user]),
       ),
       cardTasks,
+      resources,
+      resourcesById: new Map(resources.map((resource) => [resource.id, resource])),
       errors: Array.isArray(snapshot.errors) ? snapshot.errors : [],
     };
   }

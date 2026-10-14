@@ -144,6 +144,9 @@ export function createTaskActions(context) {
     ) {
       return false;
     }
+    if (intent.kind === "requires") {
+      return JSON.stringify(task.requires || []) === JSON.stringify(intent.payload.requires);
+    }
     const expected = intent.kind === "status"
       ? { status: intent.payload.status }
       : intent.kind === "link"
@@ -495,6 +498,29 @@ export function createTaskActions(context) {
     return submitTaskIntent(intent, expectedVersion);
   }
 
+  async function saveTaskRequires(taskId, requires, explicitVersion) {
+    const intent = {
+      taskId,
+      kind: "requires",
+      label: requires.length ? `Needs: ${requires.join(", ")}` : "Needs nothing outside DataOps",
+      method: "PUT",
+      path: `/api/tasks/${encodeURIComponent(taskId)}`,
+      payload: { requires },
+      pendingMessage: "Saving what this Task needs…",
+      successMessage: "Required resources are saved in the refreshed Task.",
+      errorPrefix: "Could not save required resources",
+    };
+    const owner = taskIntentOwner(intent);
+    let expectedVersion;
+    try {
+      expectedVersion = displayedVersion(taskId, explicitVersion);
+    } catch (err) {
+      showIntentFailure(owner, intent, err, expectedVersion);
+      return null;
+    }
+    return submitTaskIntent(intent, expectedVersion);
+  }
+
   async function markTaskWaiting(taskId) {
     const today = todayIsoDate();
     const followUp = defaultNextFollowUpDate();
@@ -747,6 +773,7 @@ export function createTaskActions(context) {
     retryTaskIntent,
     refreshTaskPanel,
     saveTaskLink,
+    saveTaskRequires,
     setCardPanelFeedback,
     setTaskPanelFeedback,
     skipTask,

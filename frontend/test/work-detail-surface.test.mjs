@@ -1102,6 +1102,61 @@ describe("Work Detail surface boundary", () => {
     );
   });
 
+  test("names what a Task needs and saves an edited list with the Task version", async () => {
+    const resources = [
+      { id: "youtube", name: "YouTube", icon: "video", access: "Channel" },
+      { id: "luma", name: "Luma", icon: "ticket", access: "Calendar" },
+      { id: "gmail", name: "Gmail", icon: "mail", access: "Mailbox" },
+    ];
+    const task = {
+      id: "task-requires",
+      version: 4,
+      taskHistory: [],
+      description: "Create events on Luma",
+      status: "todo",
+      requires: ["luma", "youtube"],
+    };
+    const harness = createHarness({
+      workSnapshot: {
+        resources,
+        resourcesById: new Map(resources.map((resource) => [resource.id, resource])),
+      },
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
+          const body = JSON.parse(requestOptions.body);
+          return { ...task, requires: body.requires, version: 5 };
+        }
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const section = findAllByClass(harness.taskPanelBody, "task-requires")[0];
+    assert.deepEqual(
+      findAllByClass(section, "ops-resource-name").map((name) => name.textContent),
+      ["Luma", "YouTube"],
+    );
+    const boxes = section.querySelectorAll("input");
+    assert.deepEqual(boxes.map((box) => [box.value, box.checked]), [
+      ["youtube", true],
+      ["luma", true],
+      ["gmail", false],
+    ]);
+    boxes[0].checked = false;
+    boxes[2].checked = true;
+    await findByText(section, "Save", "button").click();
+    await waitFor(
+      () => harness.requests.find((entry) => entry.options.method === "PUT"),
+      "requires write",
+    );
+    const write = harness.requests.find((entry) => entry.options.method === "PUT");
+    assert.deepEqual(jsonBody(write), { requires: ["luma", "gmail"], expectedVersion: 4 });
+    assert.deepEqual(harness.errors, []);
+  });
+
   test("keeps generic Task failures in the owning panel and retries the retained link intent", async () => {
     const task = {
       id: "task-generic-failure",

@@ -2,6 +2,7 @@ import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { displayCardDescription } from "./card-summary.js";
 import { renderTaskContext, renderTaskInstructions, taskDisplayParts } from "./task-overview.js";
 import { openSkipTaskDialog } from "./work-dialogs.js";
+import { renderResourceMarks } from "../../core/resources.js";
 
 export function createTaskPanel(context) {
   const {
@@ -37,6 +38,7 @@ export function createTaskPanel(context) {
     resolveDocReference = () => null,
     saveTaskLink,
     skipTask,
+    saveTaskRequires,
     state,
     taskPanelBody,
     taskPanelTitle,
@@ -445,6 +447,7 @@ export function createTaskPanel(context) {
     // notes and history fold away underneath.
     const view = taskDisplayParts(task, overviewDeps);
     taskPanelBody.append(renderTaskContext(task, view, overviewDeps));
+    taskPanelBody.append(renderTaskRequires(task, panelMutationBusy));
     const proofSlot = document.createElement("div");
     proofSlot.className = "task-proof";
     // Required link field
@@ -709,7 +712,7 @@ export function createTaskPanel(context) {
       more.append(history);
     }
 
-    // The process doc's phase, step, systems and validation detail.
+    // The process doc's phase, step and validation detail.
     if (task.instructionDocId) more.append(renderTaskInstructionDoc(task));
     const taskQuality = taskProcessQualityFindings(task);
     if (taskQuality.length > 0) more.append(renderTaskQualityNotice(taskQuality));
@@ -732,6 +735,66 @@ export function createTaskPanel(context) {
         { restoreFocus: !conflictClaimedFocus && !feedbackClaimedFocus },
       );
     }
+  }
+
+  // What the task needs outside DataOps. Whoever lacks one of these
+  // accounts leaves the task for someone who has it, so the panel names each
+  // one and lets the operator correct the list.
+  function renderTaskRequires(task, busy) {
+    const resources = state.workSnapshot.resources || [];
+    const resourcesById = state.workSnapshot.resourcesById || new Map();
+    const requires = Array.isArray(task.requires) ? task.requires : [];
+    const section = document.createElement("section");
+    section.className = "task-requires";
+    section.setAttribute("aria-label", "Required resources");
+    const label = document.createElement("div");
+    label.className = "task-history-label";
+    label.textContent = "Needs";
+    section.append(label);
+    const marks = renderResourceMarks(requires, resourcesById, { withName: true });
+    if (marks) {
+      section.append(marks);
+    } else {
+      const none = document.createElement("p");
+      none.className = "task-requires-empty";
+      none.textContent = "Nothing outside DataOps.";
+      section.append(none);
+    }
+    if (!["todo", "waiting"].includes(task.status) || resources.length === 0) return section;
+
+    const editor = document.createElement("details");
+    editor.className = "task-requires-editor";
+    const summary = document.createElement("summary");
+    summary.textContent = "Edit what this task needs";
+    editor.append(summary);
+    const options = document.createElement("div");
+    options.className = "task-requires-options";
+    const boxes = [];
+    for (const resource of resources) {
+      const option = document.createElement("label");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = resource.id;
+      box.checked = requires.includes(resource.id);
+      box.disabled = busy;
+      boxes.push(box);
+      option.append(box, document.createTextNode(resource.name));
+      options.append(option);
+    }
+    const save = createTaskActionButton("Save", () => {
+      // Keep the task's existing order, then append newly ticked ids in
+      // vocabulary order.
+      const ticked = boxes.filter((box) => box.checked).map((box) => box.value);
+      const next = [
+        ...requires.filter((id) => ticked.includes(id)),
+        ...ticked.filter((id) => !requires.includes(id)),
+      ];
+      return saveTaskRequires(task.id, next, task.version);
+    });
+    save.disabled = busy;
+    editor.append(options, save);
+    section.append(editor);
+    return section;
   }
 
   function renderTaskInstructionDoc(task) {
@@ -781,11 +844,7 @@ export function createTaskPanel(context) {
       instruction.append(missing);
     }
 
-    if (
-      task.phase ||
-      task.instructionStepId ||
-      (Array.isArray(task.systems) && task.systems.length > 0)
-    ) {
+    if (task.phase || task.instructionStepId) {
       const context = document.createElement("div");
       context.className = "task-detail-meta";
       if (task.phase) {
@@ -797,16 +856,6 @@ export function createTaskPanel(context) {
         const step = document.createElement("span");
         step.textContent = `Step: ${task.instructionStepId}`;
         context.append(step);
-      }
-      if (Array.isArray(task.systems) && task.systems.length > 0) {
-        const systems = document.createElement("div");
-        systems.className = "ops-card-chips";
-        for (const system of task.systems) {
-          const chip = document.createElement("small");
-          chip.textContent = system;
-          systems.append(chip);
-        }
-        context.append(systems);
       }
       instruction.append(context);
     }

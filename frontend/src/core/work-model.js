@@ -1,4 +1,5 @@
 import { createCollectionLoader } from "./collection-loader.js";
+import { resourcesFromPayload } from "./resources.js";
 import {
   addDaysIso,
   deriveScopedWorkState,
@@ -489,6 +490,7 @@ export function createWorkModel(context) {
     }
     const usersUrl = workApiUrl("/api/users");
     const meUrl = workApiUrl("/api/me");
+    const resourcesUrl = workApiUrl("/api/resources");
     const localContext = await readLocalPreviewContext();
     const meRequest = localContext?.actorEmail
       ? Promise.resolve({})
@@ -513,6 +515,7 @@ export function createWorkModel(context) {
       usersResult,
       meResult,
       templatesResult,
+      resourcesResult,
     ] = await Promise.allSettled([
       request(todayUrl),
       request(overdueUrl),
@@ -521,6 +524,7 @@ export function createWorkModel(context) {
       request(usersUrl),
       meRequest,
       request(workApiUrl("/api/templates")),
+      request(resourcesUrl),
     ]);
 
     const snapshot = emptyOperationsWorkSnapshot();
@@ -578,6 +582,9 @@ export function createWorkModel(context) {
     snapshot.templates = Array.isArray(templatesPayload?.templates)
       ? templatesPayload.templates
       : Array.isArray(templatesPayload) ? templatesPayload : [];
+    // The resource vocabulary only labels Task requirements; without it the
+    // queue still renders and shows the raw ids.
+    snapshot.resources = resourcesFromPayload(settledPayload(resourcesResult));
     snapshot.currentOperatorId = currentOperatorIdFromPayload(
       settledPayload(meResult),
     );

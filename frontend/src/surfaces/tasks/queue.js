@@ -5,6 +5,7 @@ import { taskMaterials, taskTitleParts } from "../../core/task-display.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { openSkipTaskDialog } from "../work-detail/work-dialogs.js";
 import { renderQueueMaterials } from "./queue-materials.js";
+import { renderResourceMarks, resourceLabel } from "../../core/resources.js";
 
 // One queue, not one section per state. Every open task the snapshot knows
 // about lands in the same list, sorted by urgency. The list is a checklist
@@ -51,6 +52,64 @@ export function createTaskQueue(context) {
   ];
 
   let activePersonaFilter = "all";
+  // "all", "none" (needs nothing outside DataOps), or one resource id.
+  let activeResourceFilter = "all";
+
+  function taskMatchesResource(task, filterId) {
+    if (!filterId || filterId === "all") return true;
+    const requires = Array.isArray(task.requires) ? task.requires : [];
+    if (filterId === "none") return requires.length === 0;
+    return requires.includes(filterId);
+  }
+
+  // Which external systems the open work needs, narrowed to one: who can
+  // take a task depends on the accounts they hold. Only resources some open
+  // task requires are offered, most-needed first.
+  function renderResourceFilter(openTasks, onSelect) {
+    const resourcesById = state.workSnapshot.resourcesById || new Map();
+    const counts = new Map();
+    let unneeded = 0;
+    for (const { task } of openTasks) {
+      const requires = Array.isArray(task.requires) ? task.requires : [];
+      if (requires.length === 0) unneeded += 1;
+      for (const id of requires) counts.set(id, (counts.get(id) || 0) + 1);
+    }
+    if (counts.size === 0) {
+      activeResourceFilter = "all";
+      return null;
+    }
+    const label = document.createElement("label");
+    label.className = "ops-queue-resource-filter";
+    const text = document.createElement("span");
+    text.textContent = "Needs";
+    const select = document.createElement("select");
+    select.className = "dk-select";
+    select.setAttribute("aria-label", "Filter queue by required resource");
+    const option = (value, name) => {
+      const entry = document.createElement("option");
+      entry.value = value;
+      entry.textContent = name;
+      entry.selected = value === activeResourceFilter;
+      select.append(entry);
+    };
+    option("all", "Any resource");
+    const ordered = [...counts.entries()].sort(
+      (left, right) => right[1] - left[1] ||
+        resourceLabel(left[0], resourcesById).localeCompare(resourceLabel(right[0], resourcesById)),
+    );
+    for (const [id, count] of ordered) option(id, `${resourceLabel(id, resourcesById)} (${count})`);
+    option("none", `Nothing external (${unneeded})`);
+    if (activeResourceFilter !== "all" && activeResourceFilter !== "none" && !counts.has(activeResourceFilter)) {
+      activeResourceFilter = "all";
+      select.value = "all";
+    }
+    select.addEventListener("change", () => {
+      activeResourceFilter = select.value;
+      onSelect();
+    });
+    label.append(text, select);
+    return label;
+  }
 
   function taskMatchesPersona(task, filterId) {
     if (!filterId || filterId === "all") return true;
@@ -149,32 +208,46 @@ export function createTaskQueue(context) {
 
     function populateBoard() {
       board.replaceChildren();
-      section.querySelector(".ops-queue-persona-nav")?.remove();
+      section.querySelector(".ops-queue-filters")?.remove();
       if (!anySourceLoaded) {
         board.append(renderUnavailableState());
         return;
       }
 
-      const visibleOpen = activePersonaFilter === "all"
+      const personaOpen = activePersonaFilter === "all"
         ? allOpenTasks
         : allOpenTasks.filter((entry) => taskMatchesPersona(entry.task, activePersonaFilter));
+      const resourceFilter = renderResourceFilter(personaOpen, () => populateBoard());
+      const visibleOpen = personaOpen.filter((entry) => taskMatchesResource(entry.task, activeResourceFilter));
 
-      const visibleDone = activePersonaFilter === "all"
-        ? doneTasks
-        : doneTasks.filter((task) => taskMatchesPersona(task, activePersonaFilter));
+      const visibleDone = doneTasks.filter((task) =>
+        taskMatchesPersona(task, activePersonaFilter) && taskMatchesResource(task, activeResourceFilter));
 
       const activePersona = PERSONA_FILTERS.find((p) => p.id === activePersonaFilter);
       const personaLabel = activePersona?.label || "All";
 
       if (allOpenTasks.length > 0 || doneTasks.length > 0) {
         const counts = countOpenByPersona(allOpenTasks);
-        section.prepend(renderPersonaFilterBar(counts, () => populateBoard()));
+        // Who and what: the assignee filter and the required-resource filter
+        // share one toolbar row.
+        const filters = document.createElement("div");
+        filters.className = "ops-queue-filters";
+        filters.append(renderPersonaFilterBar(counts, () => populateBoard()));
+        if (resourceFilter) filters.append(resourceFilter);
+        section.prepend(filters);
 
         if (visibleOpen.length > 0) {
           board.append(renderQueueTotalLine(visibleOpen.length, allOpenTasks.length, personaLabel));
           board.append(renderQueueRows(visibleOpen, today, cardsById));
           const expander = renderQueueExpander(visibleOpen.length);
           if (expander) board.append(expander);
+        } else if (activeResourceFilter !== "all" && personaOpen.length > 0) {
+          const emptyMsg = document.createElement("p");
+          emptyMsg.className = "ops-empty ops-queue-resource-empty";
+          emptyMsg.textContent = activeResourceFilter === "none"
+            ? "Every open task here needs an external system."
+            : `No open tasks here need ${resourceLabel(activeResourceFilter, state.workSnapshot.resourcesById)}.`;
+          board.append(emptyMsg);
         } else if (activePersonaFilter !== "all" && allOpenTasks.length > 0) {
           const emptyMsg = document.createElement("p");
           emptyMsg.className = "ops-empty ops-queue-persona-empty";
@@ -862,6 +935,14 @@ export function createTaskQueue(context) {
     // Titles truncate to one line; the full name stays one hover away.
     title.title = parts.title;
     titleRow.append(title);
+    // What the task needs outside DataOps, as glyphs named on hover: an
+    // operator or agent without that access can see it is not theirs.
+    const resources = renderResourceMarks(task.requires, state.workSnapshot.resourcesById);
+    if (resources) {
+      titleRow.append(resources);
+      const needs = task.requires.map((id) => resourceLabel(id, state.workSnapshot.resourcesById));
+      open.setAttribute("aria-label", `Open task ${cleanTaskTitle(task)}, needs ${needs.join(", ")}`);
+    }
     open.append(titleRow);
     const note = taskBlockerNote(task, today);
     if (note) open.append(note);

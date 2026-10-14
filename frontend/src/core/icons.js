@@ -36,6 +36,15 @@ const ICON_PATHS = Object.freeze({
   link: "M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1 M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1",
   file: "M6 3h9l4 4v14H6Z M14 3v5h5",
   external: "M14 4h6v6 M20 4l-9 9 M18 14v6H4V6h6",
+  // Required-resource glyphs (backend/src/resources/requiredResources.json).
+  film: "M4 4h16v16H4Z M8 4v16 M16 4v16 M4 9h4 M4 15h4 M16 9h4 M16 15h4",
+  ticket: "M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4Z M14 7v10",
+  mail: "M3 6h18v12H3Z M3 7l9 6 9-6",
+  folder: "M3 6h6l2 2h10v11H3Z",
+  image: "M4 5h16v14H4Z M4 16l5-5 4 4 3-3 4 4 M16.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z",
+  globe: "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z M3 12h18 M12 3c3.5 3.5 3.5 14.5 0 18 M12 3c-3.5 3.5-3.5 14.5 0 18",
+  board: "M4 4h16v16H4Z M8 8v7 M12 8v4 M16 8v9",
+  bank: "M3 10l9-6 9 6 M5 10v8 M9.5 10v8 M14.5 10v8 M19 10v8 M3 20h18",
 });
 
 // Kept in step with backend/src/templates/templateIcons.ts (a test checks).

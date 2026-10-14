@@ -9,6 +9,7 @@
     "src/core/identity.js",
     "src/core/links.js",
     "src/core/operations-model.js",
+    "src/core/resources.js",
     "src/core/route-patterns.js",
     "src/core/sponsor-routes.js",
     "src/core/task-display.js",

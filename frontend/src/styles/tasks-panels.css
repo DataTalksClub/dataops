@@ -1421,3 +1421,47 @@ body[data-workspace-view="tasks"] .work-dialog-lead {
 .task-panel-more[open] > summary {
   margin-bottom: var(--dk-space-2);
 }
+
+/* The task panel names every required resource next to its glyph. */
+.task-requires {
+  display: grid;
+  gap: var(--dk-space-2);
+}
+.ops-resources--named {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dk-space-2);
+  color: var(--dk-text-primary);
+}
+.ops-resources--named .ops-resource {
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-sm);
+  background: var(--dk-bg-muted);
+  padding: 0 var(--dk-space-2);
+  font-size: var(--dk-text-sm);
+  line-height: 1.8;
+}
+.ops-resources--named .ops-resource > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--dk-text-muted);
+}
+.task-requires-empty {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+.task-requires-editor {
+  display: grid;
+  gap: var(--dk-space-2);
+}
+.task-requires-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: var(--dk-space-1) var(--dk-space-3);
+  font-size: var(--dk-text-sm);
+}
+.task-requires-options label {
+  display: flex;
+  align-items: center;
+  gap: var(--dk-space-2);
+}

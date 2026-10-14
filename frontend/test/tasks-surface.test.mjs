@@ -811,6 +811,61 @@ describe("Tasks surface boundary", () => {
     assert.deepEqual(notes, []);
   });
 
+  test("marks what each task needs and filters the queue by required resource", async () => {
+    const resources = [
+      { id: "youtube", name: "YouTube", icon: "video", access: "Channel" },
+      { id: "luma", name: "Luma", icon: "ticket", access: "Calendar" },
+      { id: "mailchimp", name: "Mailchimp", icon: "megaphone", access: "Audience" },
+    ];
+    const tasks = [
+      canonicalTask({ id: "stream", description: "Actual stream", date: "2026-08-12", requires: ["youtube"] }),
+      canonicalTask({ id: "event", description: "Create events on Luma", date: "2026-08-12", requires: ["luma", "youtube"] }),
+      canonicalTask({ id: "think", description: "Plan the quarter", date: "2026-08-12" }),
+    ];
+    const { api, documentList } = createHarness({
+      workSnapshot: {
+        resources,
+        resourcesById: new Map(resources.map((resource) => [resource.id, resource])),
+      },
+      taskRouteContext: {
+        date: "",
+        tasks,
+        cardId: "",
+        filterCard: null,
+        contextCardId: "",
+        contextCard: null,
+        failures: [],
+      },
+    });
+
+    api.renderTasksSurface([], "queue");
+    const marks = findAllByClass(documentList, "ops-queue-row").map((row) =>
+      findAllByClass(row, "ops-resource").map((mark) => mark.getAttribute("aria-label")),
+    );
+    assert.deepEqual(marks, [["YouTube"], ["Luma", "YouTube"], []]);
+    const firstMark = findAllByClass(documentList, "ops-resource")[0];
+    assert.equal(firstMark.title, "YouTube: Channel");
+    assert.match(
+      findAllByClass(documentList, "ops-queue-main")[1].getAttribute("aria-label"),
+      /needs Luma, YouTube$/,
+    );
+
+    const filter = findAllByClass(documentList, "ops-queue-resource-filter")[0];
+    const select = filter.querySelector("select");
+    assert.deepEqual(
+      select.children.map((option) => [option.value, option.textContent]),
+      [["all", "Any resource"], ["youtube", "YouTube (2)"], ["luma", "Luma (1)"], ["none", "Nothing external (1)"]],
+    );
+    select.value = "luma";
+    await select.dispatch("change");
+    assert.deepEqual(queueRowTitles(documentList), ["Create events on Luma"]);
+    const again = findAllByClass(documentList, "ops-queue-resource-filter")[0].querySelector("select");
+    again.value = "none";
+    await again.dispatch("change");
+    assert.deepEqual(queueRowTitles(documentList), ["Plan the quarter"]);
+    assert.equal(findAllByClass(documentList, "ops-queue-resource-filter").length, 1);
+  });
+
   test("names recurring origin with its own icon", () => {
     const tasks = [
       canonicalTask({

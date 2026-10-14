@@ -69,6 +69,7 @@ export function createWorkDetailSurface(context) {
     renderTaskPanel: (...args) => taskPanelApi.renderTaskPanel(...args),
     reloadTaskIntent: (...args) => taskActionsApi.reloadTaskIntent(...args),
     saveTaskLink: (...args) => taskActionsApi.saveTaskLink(...args),
+    saveTaskRequires: (...args) => taskActionsApi.saveTaskRequires(...args),
     setCardPanelFeedback: (...args) =>
       taskActionsApi.setCardPanelFeedback(...args),
     setTaskPanelFeedback: (...args) =>

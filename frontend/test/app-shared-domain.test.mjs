@@ -186,6 +186,7 @@ describe("app shared operations domain characterization", () => {
       cardsComplete: false,
       cardTasksComplete: false,
       usersLoaded: false,
+      resources: [],
     });
     assert.deepEqual(emptyOperationsRecurringSnapshot(), {
       loaded: false,

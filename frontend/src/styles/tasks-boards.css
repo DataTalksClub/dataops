@@ -1031,3 +1031,40 @@ body[data-workspace-view="tasks"] .ops-card-chips small {
   font-size: var(--dk-text-xs);
   font-weight: var(--dk-weight-semibold);
 }
+
+/* Required resources: what a task needs outside DataOps, as muted glyphs
+   after the title (named on hover), and the queue filter that narrows to
+   one of them. */
+.ops-resources {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--dk-space-1);
+  align-self: center;
+  color: var(--dk-text-muted);
+}
+.ops-resource {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--dk-space-1);
+}
+.ops-resources:not(.ops-resources--named) .ops-resource > svg {
+  width: 16px;
+  height: 16px;
+}
+body[data-workspace-view="tasks"] .ops-queue-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-3) var(--dk-space-4);
+}
+body[data-workspace-view="tasks"] .ops-queue-resource-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--dk-space-2);
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+body[data-workspace-view="tasks"] .ops-queue-resource-filter .dk-select {
+  width: auto;
+}
