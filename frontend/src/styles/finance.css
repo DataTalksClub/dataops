@@ -199,7 +199,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .status-label[data-status="talking" i],
 .status-label[data-status="partner" i] {
   background: var(--dk-accent-soft);
-  color: var(--dk-accent-deep);
+  color: var(--dk-accent-default);
 }.status-label[data-health="overdue"],
 .status-label[data-health="missing"] {
   background: var(--dk-danger-bg);
@@ -869,7 +869,7 @@ body[data-workspace-view="sponsors"] .document-list {
 }.crm-pipeline button[aria-pressed="true"] {
   border-color: var(--dk-border-default);
   background: var(--dk-accent-soft);
-  color: var(--dk-accent-deep);
+  color: var(--dk-accent-default);
   font-weight: 600;
   box-shadow: none;
 }.crm-pipeline button[aria-pressed="true"] strong {
@@ -1025,7 +1025,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .booking-section-nav button[aria-pressed="true"] {
   border-color: var(--dk-border-default) !important;
   background: var(--dk-accent-soft) !important;
-  color: var(--dk-accent-deep) !important;
+  color: var(--dk-accent-default) !important;
   font-weight: 600;
 }.booking-detail-section {
   min-width: 0;

@@ -180,7 +180,7 @@ export function createSponsorCompanyDetail({
           Edit deal
         </button>
       </header>
-      <article class="dk-split__scroll crm-booking-detail">
+      <article class="dk-split__scroll dk-split__scroll--flush crm-booking-detail">
       <nav class="booking-section-nav dk-split__sticky" aria-label="Company detail sections">
         <button
           class="is-active"
