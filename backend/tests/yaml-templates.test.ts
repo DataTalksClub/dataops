@@ -10,6 +10,7 @@ const RUNTIME_TEMPLATE = {
   type: 'synthetic-workflow',
   name: 'Synthetic workflow',
   emoji: '',
+  icon: 'video',
   tags: ['synthetic'],
   triggerType: 'automatic',
   triggerSchedule: '0 9 * * 1',
@@ -39,7 +40,7 @@ describe('authored YAML template mapping', () => {
       department: 'synthetic-department', businessSystem: 'synthetic-system', ownerRole: 'synthetic-owner',
       status: 'draft', criticality: 'supporting', outcome: 'A synthetic result is checked',
       tools: ['synthetic-editor', 'synthetic-checker'], reviewCycleDays: 30,
-      lastReviewedAt: null, nextReviewAt: '2030-06-15', emoji: '', tags: [],
+      lastReviewedAt: null, nextReviewAt: '2030-06-15', emoji: '', icon: 'mic', tags: [],
       defaultAssigneeId: 'synthetic-user', sourceDocIds: [], externalSourceDocuments: [{
         id: 'synthetic.source', location: 'https://example.invalid/synthetic-source',
         kind: 'external-process', status: 'provenance-only', note: 'Synthetic reference only',
@@ -117,6 +118,14 @@ describe('authored YAML template mapping', () => {
     task.instruction_doc_id = 'sop.synthetic.missing';
     const issues = validateAuthoredTemplate(authored, new Set()).map((issue) => issue.message);
     assert.ok(issues.some((message) => message.includes('unknown process document')));
+  });
+
+  it('accepts only curated template icons', () => {
+    const authored = templateToYaml(RUNTIME_TEMPLATE);
+    assert.strictEqual(authored.icon, 'video');
+    assert.deepStrictEqual(validateAuthoredTemplate(authored), []);
+    const issues = validateAuthoredTemplate({ ...authored, icon: 'rocket-ship' }).map((issue) => issue.message);
+    assert.ok(issues.some((message) => message.startsWith('icon must be one of')));
   });
 
   it('round-trips optional task groups and rejects malformed group slugs', () => {

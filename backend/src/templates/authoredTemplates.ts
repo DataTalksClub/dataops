@@ -50,6 +50,7 @@ const AUTHORITATIVE_FIELDS = [
   'name',
   'type',
   'emoji',
+  'icon',
   'tags',
   'defaultAssigneeId',
   'phases',

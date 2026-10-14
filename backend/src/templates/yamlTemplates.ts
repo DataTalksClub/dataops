@@ -15,6 +15,8 @@
  * throughout the content corpus and the workflow-template JSON Schema.
  */
 
+import { isTemplateIcon, TEMPLATE_ICONS } from './templateIcons';
+
 const TEMPLATE_FIELDS = [
   ['authoredId', 'id'],
   ['schemaVersion', 'schema_version'],
@@ -29,6 +31,7 @@ const TEMPLATE_FIELDS = [
   ['lastReviewedAt', 'last_reviewed_at'],
   ['nextReviewAt', 'next_review_at'],
   ['emoji', 'emoji'],
+  ['icon', 'icon'],
   ['tags', 'tags'],
   ['defaultAssigneeId', 'default_assignee_id'],
   ['sourceDocIds', 'source_document_ids'],
@@ -218,6 +221,9 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
 
   if (!doc.type || !/^[a-z0-9][a-z0-9-]*$/.test(String(doc.type))) fail('type must be a slug');
   if (!doc.name) fail('name is required');
+  if (doc.icon !== undefined && !isTemplateIcon(doc.icon)) {
+    fail(`icon must be one of: ${TEMPLATE_ICONS.join(', ')}`);
+  }
 
   const trigger = (doc.trigger as Dict | undefined) || {};
   if (!trigger.mode) fail('trigger.mode is required');

@@ -310,6 +310,7 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     optionalStringField(template, 'source_path', errors, context);
     optionalStringField(template, 'source_revision', errors, context);
     optionalStringField(template, 'emoji', errors, context);
+    optionalStringField(template, 'icon', errors, context);
     optionalStringArrayField(template, 'source_doc_ids', errors, context);
     optionalBooleanField(template, 'trigger_enabled', errors, context);
     requiredIntegerField(template, 'version', errors, context, 1);

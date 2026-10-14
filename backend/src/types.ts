@@ -458,6 +458,8 @@ export interface Template {
   name: string;
   type?: string;
   emoji?: string;
+  /** Curated icon name (`templates/templateIcons.ts`) shown wherever the template's cards appear. */
+  icon?: string;
   tags?: string[];
   defaultAssigneeId?: string;
   phases?: WorkflowPhase[];

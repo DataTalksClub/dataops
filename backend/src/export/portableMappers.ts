@@ -139,6 +139,7 @@ export function mapTemplate(item: Record<string, unknown>): JsonRecord {
     name: optionalString(item.name),
     type: optionalString(item.type),
     emoji: optionalString(item.emoji),
+    icon: optionalString(item.icon),
     tags: stringArray(item.tags),
     default_assignee_id: optionalString(item.defaultAssigneeId),
     phases: jsonArray(item.phases),
