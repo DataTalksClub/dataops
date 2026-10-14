@@ -55,7 +55,6 @@ function cardFrom(source: Template): Card {
     templateVersion: source.version,
     templateSourceRevision: source.sourceRevision,
     templateDefinitionSnapshot: templateCardDefinitionSnapshot(source),
-    emoji: source.emoji,
     tags: structuredClone(source.tags),
     sourceDocIds: structuredClone(source.sourceDocIds),
     references: structuredClone(source.references),

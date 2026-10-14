@@ -313,7 +313,6 @@ export interface Card {
   issueNumber?: string;
   references?: CardLink[];
   cardLinks?: CardLink[];
-  emoji?: string;
   tags?: string[];
   /**
    * Administrative owner of the Card. Optional: existing and system-created
@@ -408,7 +407,6 @@ export interface TaskDefinition {
 
 /** Definition-owned Card defaults captured when a Template is applied. */
 export interface TemplateCardDefinitionSnapshot {
-  emoji?: string;
   tags: string[];
   sourceDocIds: string[];
   references: Reference[];
@@ -458,7 +456,6 @@ export interface Template {
   externalSourceDocuments?: ExternalSourceDocument[];
   name: string;
   type?: string;
-  emoji?: string;
   /** Curated icon name (`templates/templateIcons.ts`) shown wherever the template's cards appear. */
   icon?: string;
   tags?: string[];

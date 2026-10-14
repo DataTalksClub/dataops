@@ -140,7 +140,7 @@ Columns: `Date, Task, Notes, Status, Date finished, Process document title, Proc
   id: UUID,
   name: string,            // e.g. "Newsletter"
   type: string,            // e.g. "newsletter", "podcast", "webinar"
-  emoji: string | null,    // e.g. "📰", "🎙️"
+  icon: string | null,     // curated DataOps icon name, e.g. "mic"
   tags: string[],          // e.g. ["Newsletter"]
   defaultAssigneeId: string | null,
   references: [{ name: string, url: string }],       // fixed links for every card
@@ -177,7 +177,6 @@ Templates are flat: one level of task definitions. No nested checklists or sub-s
   description: string | null,
   templateId: string | null,
   status: "active" | "archived",
-  emoji: string | null,    // inherited from template
   references: [{ name: string, url: string }],  // from template, read-only
   cardLinks: [{ name: string, url: string }],  // fillable slots
   tags: string[],          // inherited from template
@@ -254,7 +253,7 @@ Each non-template Trello card in active lists (Preparation, Announced, After eve
 | Card due date or date from name | Card `anchorDate` |
 | Card description | Card `description` |
 | Card attachments (non-Trello URLs) | Card `cardLinks` |
-| Card label emoji + tag | Card `emoji` + `tags` |
+| Card name emoji prefix + label tag | dropped (the Template `icon` is shown instead) + Card `tags` |
 | Checklist items | Tasks (linked via `cardId`) |
 | Item text | Task `description` |
 | Item state (complete/incomplete) | Task `status` (done/todo) |

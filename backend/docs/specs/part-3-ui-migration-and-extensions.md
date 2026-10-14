@@ -42,7 +42,7 @@ Cards ordered/grouped by template type. Each card shows title, anchor date, desc
 
 ### Card Detail View
 
-- Card title, emoji, and anchor date
+- Card title, template icon, and anchor date
 - Description (with markdown links)
 - References section: read-only links inherited from template (process docs, server links)
 - Card links section: fillable link slots defined by template. Inline input for each. Users can also add custom extra links.
@@ -56,7 +56,7 @@ Cards ordered/grouped by template type. Each card shows title, anchor date, desc
 Cards (not a table). Each card shows name, type, tags, and task count. Clicking opens the template editor.
 
 Template editor:
-- Edit name, type, emoji, tags, default assignee
+- Edit name, type, icon, tags, default assignee
 - Trigger config: trigger type (automatic/manual), cron expression, lead days
 - References: manage fixed links (add/edit/remove)
 - Card link definitions: manage link slot names (add/edit/remove)

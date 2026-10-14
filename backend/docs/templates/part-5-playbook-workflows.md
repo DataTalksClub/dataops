@@ -7,7 +7,6 @@
 
 - Type: `course`
 - Display:
-  - Emoji: 🎓
   - Tags: Course, Education, Launch
   - Title: {COURSE_NAME} {YEAR} Cohort
 - Anchor date: Course start date ($T+0$, always a Monday)
@@ -46,7 +45,6 @@
 
 - Type: `social-media`
 - Display:
-  - Emoji: 📱
   - Tags: Social media, Content, Typefully
   - Title: Weekly social posts (Week of {DATE})
 - Anchor date: Monday of the target week
@@ -66,7 +64,6 @@
 
 - Type: `newsletter`
 - Display:
-  - Emoji: 📰
   - Tags: Newsletter, Mailchimp, Sponsors
   - Title: Weekly email #{NUMBER}
 - Anchor date: Newsletter publish day (Thursday)

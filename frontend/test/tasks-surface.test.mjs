@@ -1911,7 +1911,6 @@ describe("Tasks surface boundary", () => {
     const template = {
       id: "template-1",
       name: "Newsletter",
-      emoji: "📰",
       type: "workflow",
       version: 2,
     };
@@ -1980,13 +1979,13 @@ describe("Tasks surface boundary", () => {
     });
   });
 
-  test("formats template select options with emoji prefix and name", async () => {
+  test("labels template select options with the template name", async () => {
     const harness = createHarness({
       request: async (url) => {
         if (url === "/api/templates") {
           return {
             templates: [
-              { id: "tpl-1", name: "Newsletter", emoji: "📰" },
+              { id: "tpl-1", name: "Newsletter" },
               { id: "tpl-2", name: "Podcast" },
             ],
           };
@@ -1998,7 +1997,7 @@ describe("Tasks surface boundary", () => {
     const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
     const select = overlay.querySelector("select");
     const optionTexts = select.children.map((opt) => opt.textContent);
-    assert.deepEqual(optionTexts, ["Select template...", "📰 Newsletter", "Podcast"]);
+    assert.deepEqual(optionTexts, ["Select template...", "Newsletter", "Podcast"]);
     overlay.remove();
   });
 

@@ -191,7 +191,6 @@ describe('Templates data layer', () => {
     const template = await createTemplate(client, {
       name: 'Newsletter',
       type: 'newsletter',
-      emoji: '\u{1F4F0}',
       tags: ['newsletter', 'weekly'],
       defaultAssigneeId: 'user-grace',
       sourceDocIds: ['task-template.tasks.newsletter'],
@@ -206,7 +205,6 @@ describe('Templates data layer', () => {
     });
 
     assert.ok(template.id);
-    assert.strictEqual(template.emoji, '\u{1F4F0}');
     assert.deepStrictEqual(template.tags, ['newsletter', 'weekly']);
     assert.strictEqual(template.defaultAssigneeId, 'user-grace');
     assert.deepStrictEqual(template.sourceDocIds, ['task-template.tasks.newsletter']);
@@ -219,7 +217,6 @@ describe('Templates data layer', () => {
     // Verify persisted via getTemplate
     const fetched = await getTemplate(client, template.id);
     assert.ok(fetched);
-    assert.strictEqual(fetched.emoji, '\u{1F4F0}');
     assert.deepStrictEqual(fetched.tags, ['newsletter', 'weekly']);
     assert.strictEqual(fetched.defaultAssigneeId, 'user-grace');
     assert.deepStrictEqual(fetched.sourceDocIds, ['task-template.tasks.newsletter']);
@@ -290,7 +287,6 @@ describe('Templates data layer', () => {
     await new Promise((r) => setTimeout(r, 10));
 
     const updated = await updateTemplate(client, created.id, {
-      emoji: '\u{1F399}\u{FE0F}',
       tags: ['podcast', 'content'],
       sourceDocIds: ['task-template.tasks.podcast'],
       references: [{ name: 'Recording guide', url: 'https://docs.google.com/rec' }],
@@ -300,7 +296,6 @@ describe('Templates data layer', () => {
     });
 
     assert.ok(updated);
-    assert.strictEqual(updated.emoji, '\u{1F399}\u{FE0F}');
     assert.deepStrictEqual(updated.tags, ['podcast', 'content']);
     assert.deepStrictEqual(updated.sourceDocIds, ['task-template.tasks.podcast']);
     assert.deepStrictEqual(updated.references, [{ name: 'Recording guide', url: 'https://docs.google.com/rec' }]);
@@ -326,7 +321,6 @@ describe('Templates data layer', () => {
     assert.strictEqual(fetched.name, 'Minimal');
     assert.strictEqual(fetched.type, 'test');
     // New optional fields should be absent
-    assert.strictEqual(fetched.emoji, undefined);
     assert.strictEqual(fetched.tags, undefined);
     assert.strictEqual(fetched.defaultAssigneeId, undefined);
     assert.strictEqual(fetched.sourceDocIds, undefined);

@@ -288,7 +288,6 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
       errors.push(`${context} must use the canonical archived Card lifecycle shape`);
     }
     optionalStringArrayField(card, 'source_doc_ids', errors, context);
-    optionalStringField(card, 'emoji', errors, context);
     optionalRefArrayField(card, 'artifact_refs', 'artifactId', errors, context);
     optionalRefArrayField(card, 'intake_refs', 'intakeItemId', errors, context);
     optionalRefArrayField(card, 'audit_event_refs', 'auditEventId', errors, context);
@@ -309,7 +308,6 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     validateDateOrTimestampField(template, 'updated_at', errors, context);
     optionalStringField(template, 'source_path', errors, context);
     optionalStringField(template, 'source_revision', errors, context);
-    optionalStringField(template, 'emoji', errors, context);
     optionalStringField(template, 'icon', errors, context);
     optionalStringArrayField(template, 'source_doc_ids', errors, context);
     optionalBooleanField(template, 'trigger_enabled', errors, context);

@@ -17,7 +17,6 @@ import {
 type Dict = Record<string, unknown>;
 
 const CARD_FIELDS = [
-  'emoji',
   'tags',
   'sourceDocIds',
   'references',

@@ -11,7 +11,6 @@
 - Trello name: `🎙️ [Podcast] 2026-MMM-DD - Topic - Name`
 - Type: podcast
 - Display:
-  - Emoji: 🎙️
   - Tags: Podcast
   - Title: {TOPIC} - {SPEAKER}
 - Anchor date: Live stream date
@@ -125,7 +124,6 @@ Tasks (40):
 - Trello name: `📺 [Webinar] 2026-MMM-DD - Topic - Speaker`
 - Type: webinar
 - Display:
-  - Emoji: 📺
   - Tags: Webinar
   - Title: {TOPIC} - {SPEAKER}
 - Anchor date: Live stream date
@@ -212,7 +210,6 @@ Tasks (28):
 - Trello name: `🔧 [Workshop] 2026-MMM-DD - Title - Name`
 - Type: workshop
 - Display:
-  - Emoji: 🔧
   - Tags: Workshop
   - Title: {TOPIC} - {SPEAKER}
 - Anchor date: Live stream date

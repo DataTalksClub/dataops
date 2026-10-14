@@ -149,8 +149,7 @@ function appliedCard(
   now: string,
 ): Card {
   const next = structuredClone(card) as Card & Dict;
-  for (const field of ['emoji', 'tags', 'sourceDocIds', 'references', 'cardLinks']) delete next[field];
-  if (plan.targetCardSnapshot.emoji !== undefined) next.emoji = plan.targetCardSnapshot.emoji;
+  for (const field of ['tags', 'sourceDocIds', 'references', 'cardLinks']) delete next[field];
   next.tags = structuredClone(plan.targetCardSnapshot.tags);
   next.sourceDocIds = structuredClone(plan.targetCardSnapshot.sourceDocIds);
   next.references = structuredClone(plan.targetCardSnapshot.references);

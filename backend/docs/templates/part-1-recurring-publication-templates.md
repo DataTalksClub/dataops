@@ -11,7 +11,6 @@
 - Trello name: `📰 [Newsletter] Weekly email #XXX (DD MMM YYYY) -sponsored -book-of-the-week`
 - Type: newsletter
 - Display:
-  - Emoji: 📰
   - Tags: Newsletter
   - Title: Weekly email #{NUMBER}
 - Anchor date: Newsletter publish day
@@ -69,7 +68,6 @@ Tasks (15):
 - Trello name: `📚 [Book of the Week] YYYY-MM-DD - Book - Author(s)`
 - Type: book-of-the-week
 - Display:
-  - Emoji: 📚
   - Tags: Book of the Week
   - Title: {BOOK} - {AUTHOR}
 - Anchor date: Monday of event week (Mon-Fri)
@@ -134,7 +132,6 @@ Tasks (21):
 - Trello name: `⚙️ [Open-Source Spotlight] - Tool - Name`
 - Type: oss
 - Display:
-  - Emoji: ⚙️
   - Tags: Open-Source Spotlight
   - Title: {TOOL} - {AUTHOR}
 - Anchor date: planned YouTube publication date, usually Wednesday 17:00 Europe/Berlin
@@ -195,7 +192,6 @@ Tasks (14):
 - Trello name: `🎓 [Course] Course- YYYY`
 - Type: course
 - Display:
-  - Emoji: 🎓
   - Tags: Course
   - Title: {COURSE NAME}
 - Anchor date: Course start date
@@ -226,7 +222,6 @@ Tasks (8):
 - Trello name: `📱[Social media] Weekly posts (DD MMM 2024)`
 - Type: social-media
 - Display:
-  - Emoji: 📱
   - Tags: Social media
   - Title: Weekly posts
 - Anchor date: Week start (Monday)

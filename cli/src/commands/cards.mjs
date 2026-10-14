@@ -17,7 +17,7 @@ Usage
   dataops cards create --title T --date YYYY-MM-DD [--template ID|TYPE|NAME]
       [--optional-groups a,b] [--stage S] [--description D] [--owner ID] [--tags a,b]
   dataops cards update <card-id> [--title T] [--description D] [--date D] [--owner ID|none]
-      [--tags a,b] [--emoji E]
+      [--tags a,b]
   dataops cards stage <card-id> <preparation|announced|after-event>
   dataops cards link <card-id> <link-name> <url>  Fill a Card link (e.g. a template's required link)
   dataops cards park <card-id> | resume <card-id>
@@ -155,7 +155,7 @@ async function write(args, io, id, change, verb) {
 export async function update(args, io) {
   const id = positional(args, 0, "dataops cards update <card-id> [--title T] ...");
   const body = {};
-  for (const [flag, key] of [["title", "title"], ["description", "description"], ["emoji", "emoji"]]) {
+  for (const [flag, key] of [["title", "title"], ["description", "description"]]) {
     const value = optionalString(args, flag);
     if (value !== undefined) body[key] = value;
   }

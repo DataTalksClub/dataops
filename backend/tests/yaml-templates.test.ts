@@ -9,7 +9,6 @@ import { syntheticAuthoredTemplate } from './helpers/authoredTemplates';
 const RUNTIME_TEMPLATE = {
   type: 'synthetic-workflow',
   name: 'Synthetic workflow',
-  emoji: '',
   icon: 'video',
   tags: ['synthetic'],
   triggerType: 'automatic',
@@ -40,7 +39,7 @@ describe('authored YAML template mapping', () => {
       department: 'synthetic-department', businessSystem: 'synthetic-system', ownerRole: 'synthetic-owner',
       status: 'draft', criticality: 'supporting', outcome: 'A synthetic result is checked',
       tools: ['synthetic-editor', 'synthetic-checker'], reviewCycleDays: 30,
-      lastReviewedAt: null, nextReviewAt: '2030-06-15', emoji: '', icon: 'mic', tags: [],
+      lastReviewedAt: null, nextReviewAt: '2030-06-15', icon: 'mic', tags: [],
       defaultAssigneeId: 'synthetic-user', sourceDocIds: [], externalSourceDocuments: [{
         id: 'synthetic.source', location: 'https://example.invalid/synthetic-source',
         kind: 'external-process', status: 'provenance-only', note: 'Synthetic reference only',

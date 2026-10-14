@@ -61,7 +61,7 @@ Existing tools (Trello, Monday, Asana, Jira) don't fit because:
 Templates (playbooks) define reusable task sets for repeating workflows (newsletter, course, event, etc.).
 
 - Displayed as cards (like cards), not a table
-- Card display format: emoji, tag, title - with anchor date shown as a separate UI element (badge/tag), not part of the title text
+- Card display format: icon, tag, title - with anchor date shown as a separate UI element (badge/tag), not part of the title text
 - Clicking a card opens it for editing, including arranging items within
 - Can contain variables in the title (e.g., day)
 - Each template has an anchor date - the main event day
@@ -86,7 +86,7 @@ Templates (playbooks) define reusable task sets for repeating workflows (newslet
 
 A card is an instance of a template with a concrete anchor date. When created, all template tasks are generated with calculated due dates.
 
-- Displayed as cards with same format as templates: emoji, tag, title - with anchor date as a separate badge
+- Displayed as cards with same format as templates: icon, tag, title - with anchor date as a separate badge
 - Progress badge showing completed/total tasks
 - Ordered/grouped by template type (which template they were created from)
 - Inherit tags from templates

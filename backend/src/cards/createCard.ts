@@ -244,18 +244,13 @@ export async function createCardFromInput(
         url: '',
       }));
     }
-    if (body.emoji !== undefined) {
-      cardData.emoji = body.emoji;
-    } else if (template.emoji) {
-      cardData.emoji = template.emoji;
-    }
     if (body.tags !== undefined) {
       cardData.tags = body.tags;
     } else if (template.tags && template.tags.length > 0) {
       cardData.tags = template.tags;
     }
   } else {
-    for (const field of ['references', 'emoji', 'tags', 'sourceDocIds']) {
+    for (const field of ['references', 'tags', 'sourceDocIds']) {
       if (body[field] !== undefined) cardData[field] = body[field];
     }
     if (body.cardLinks !== undefined) cardData.cardLinks = normalizeCardLinks(body.cardLinks);

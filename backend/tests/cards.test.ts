@@ -35,7 +35,6 @@ describe('Cards data layer', () => {
       description: 'Operations work',
       references: [{ name: 'Guide', url: 'https://example.com/guide' }],
       cardLinks: [{ name: 'Event', url: '' }],
-      emoji: '📋',
       tags: ['operations'],
     });
     assert.ok(card.id);
@@ -71,7 +70,6 @@ describe('Cards data layer', () => {
         stage: 'announced',
         references: [{ name: 'Runbook', url: 'https://example.com/runbook' }],
         cardLinks: [{ name: 'Event', url: 'https://example.com/event' }],
-        emoji: '🎙️',
         tags: ['podcast'],
       },
     });

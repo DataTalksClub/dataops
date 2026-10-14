@@ -90,7 +90,6 @@ describe('portable execution data export', () => {
       type: 'workflow',
       sourcePath: 'workflow-templates/representative-workflow.yaml',
       sourceRevision: 'synthetic-source-revision',
-      emoji: '🧭',
       phases: [
         { id: 'preparation', name: 'Preparation', stage: 'preparation' },
       ],
@@ -122,7 +121,6 @@ describe('portable execution data export', () => {
       anchorDate: '2026-06-27',
       templateId: template.id,
       sourceDocIds: ['workflow.definition.example'],
-      emoji: template.emoji,
       status: 'active',
       artifactRefs: [{ artifactId: 'artifact-card-ref', type: 'document' }],
       auditEventRefs: [{ auditEventId: 'audit-card-ref', action: 'created' }],
@@ -413,7 +411,6 @@ describe('portable execution data export', () => {
     assert.match(cardsJsonl, /"audit_event_refs":\[/);
     assert.match(cardsJsonl, /"auditEventId":"audit-card-ref","action":"created"/);
     assert.match(cardsJsonl, /"action":"card-completed"/);
-    assert.match(cardsJsonl, /"emoji":"🧭"/);
     assert.match(cardsJsonl, /"source_doc_ids":\["workflow.definition.example"\]/);
 
     const templatesJsonl = await fs.readFile(path.join(exportDir, 'templates.jsonl'), 'utf8');
@@ -421,7 +418,6 @@ describe('portable execution data export', () => {
     assert.match(templatesJsonl, /"source_doc_ids":\["workflow.definition.example"\]/);
     assert.match(templatesJsonl, /"instructionDocId":"sop.workflow.collect-inputs"/);
     assert.match(templatesJsonl, /"proofRequirement":\{"type":"url","label":"Source document"\}/);
-    assert.match(templatesJsonl, /"emoji":"🧭"/);
     assert.match(templatesJsonl, /"version":2/);
     assert.match(templatesJsonl, /"source_path":"workflow-templates\/representative-workflow.yaml"/);
     assert.match(templatesJsonl, /"source_revision":"synthetic-source-revision"/);
@@ -679,7 +675,7 @@ describe('portable execution data export', () => {
           template_id: 'template-broken-doc-context',
           name: 'Broken doc context',
           type: 'podcast',
-          emoji: 42,
+          icon: 42,
           version: 0,
           source_doc_ids: ['task-template.tasks.podcast', 42],
           task_definitions: [
@@ -789,7 +785,7 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field created_at must be a string when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field updated_at must be a parseable date or timestamp')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0] field source_doc_ids must be an array of strings when present')));
-      assert.ok(validation.errors.some((error) => error.includes('templates[0] field emoji must be a string when present')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0] field icon must be a string when present')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0] field version must be an integer >= 1')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field offsetDays must be an integer')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field isMilestone must be a boolean')));

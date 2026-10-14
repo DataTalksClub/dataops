@@ -33,7 +33,6 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     await createTemplate(client, {
       name: 'Synthetic operator workflow',
       type: 'synthetic-operator-workflow',
-      emoji: '🧪',
       tags: ['Synthetic'],
       defaultAssigneeId: '00000000-0000-0000-0000-000000000001',
       phases: [

@@ -11,7 +11,6 @@
 - Trello name: `Tax Report (MM/YYYY)`
 - Type: tax-report
 - Display:
-  - Emoji: (none)
   - Tags: Tax, Finance
   - Title: Tax Report
 - Anchor date: First day of the month when the workflow is generated
@@ -70,7 +69,6 @@ Tasks (9):
 - Trello name: `📺 [Maven LL] 2026-MM-DD - Topic - Speaker`
 - Type: maven-ll
 - Display:
-  - Emoji: 📺
   - Tags: Maven, Maven Lightning Lesson
   - Title: {TOPIC} - {SPEAKER}
 - Anchor date: Event date
@@ -104,7 +102,6 @@ Tasks (7):
 - Trello name: `📺 [Office Hours] 2026-MM-DD - Topic - Alexey Grigorev`
 - Type: office-hours
 - Display:
-  - Emoji: 📺
   - Tags: Office Hours
   - Title: {COURSE} - {WEEK NUMBER}
 - Anchor date: Event date

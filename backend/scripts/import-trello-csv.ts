@@ -297,14 +297,12 @@ function mapTriggerType(templateType: string): string {
 }
 
 /**
- * Extract leading emoji from a card name.
- * Returns the emoji string or null if no emoji prefix found.
+ * Strip the leading emoji Trello card names carry (including multi-codepoint
+ * emoji like flags and skin tones). Templates and Cards use a curated icon
+ * instead, so the emoji is dropped rather than stored.
  */
-function extractEmoji(name: string): string | null {
-  // Match leading emoji characters (including multi-codepoint emoji like flags, skin tones)
-  const match = name.match(/^([\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\u{FE0F}\u{1F3FB}-\u{1F3FF}]+)/u);
-  if (match) return match[1];
-  return null;
+function stripLeadingEmoji(name: string): string {
+  return name.replace(/^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\u{FE0F}\u{1F3FB}-\u{1F3FF}]+\s*/u, '').trim();
 }
 
 /**
@@ -406,9 +404,6 @@ function trelloTemplateToAppTemplate(card: TrelloCard, boardChecklists: TrelloCh
     taskDefinitions,
     triggerType: mapTriggerType(templateType),
   };
-
-  const emoji = extractEmoji(card.name);
-  if (emoji) result.emoji = emoji;
 
   const tags = extractTags(card.labels);
   if (tags.length > 0) result.tags = tags;
@@ -660,9 +655,7 @@ function cardFromTrello(trelloCard: TrelloCard, listName: string) {
     ? trelloCard.due.split('T')[0]
     : extractDateFromCardName(trelloCard.name) || fallbackDate;
 
-  // Extract emoji from trelloCard name and strip it from title
-  const emoji = extractEmoji(trelloCard.name);
-  const title = emoji ? trelloCard.name.replace(/^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\u{FE0F}\u{1F3FB}-\u{1F3FF}]+\s*/u, '').trim() : trelloCard.name;
+  const title = stripLeadingEmoji(trelloCard.name);
 
   const card: Record<string, unknown> = {
     title,
@@ -671,8 +664,6 @@ function cardFromTrello(trelloCard: TrelloCard, listName: string) {
     status: trelloCard.closed ? 'archived' : 'active',
     stage: mapStageFromList(listName),
   };
-
-  if (emoji) card.emoji = emoji;
 
   // Extract tags from labels
   const tags = extractTags(trelloCard.labels);
@@ -1858,9 +1849,8 @@ async function main() {
         continue;
       }
 
-      const emoji = template.emoji ? `${template.emoji} ` : '';
       const tags = template.tags ? ` tags=${JSON.stringify(template.tags)}` : '';
-      console.log(`  Template: ${emoji}${template.name} (${template.type}) - ${(template.taskDefinitions as unknown[]).length} task definitions${tags} trigger=${template.triggerType}`);
+      console.log(`  Template: ${template.name} (${template.type}) - ${(template.taskDefinitions as unknown[]).length} task definitions${tags} trigger=${template.triggerType}`);
 
       if (DRY_RUN) {
         for (const td of (template.taskDefinitions as { offsetDays: number; description: string; instructionsUrl?: string }[])) {
@@ -1891,10 +1881,9 @@ async function main() {
       selection.skippedRecords
     );
     for (const plan of trelloReport.plans) {
-      const emoji = plan.card.emoji ? `${plan.card.emoji} ` : '';
       const tags = plan.card.tags ? ` tags=${JSON.stringify(plan.card.tags)}` : '';
       const stage = plan.card.stage ? ` stage=${plan.card.stage}` : '';
-      console.log(`  Card: ${emoji}${String(plan.card.title).substring(0, 70)} [${plan.listName}]${stage}${tags} tasks=${plan.tasks.length} artifacts=${plan.artifacts.length}`);
+      console.log(`  Card: ${String(plan.card.title).substring(0, 70)} [${plan.listName}]${stage}${tags} tasks=${plan.tasks.length} artifacts=${plan.artifacts.length}`);
       if (DRY_RUN) {
         for (const task of plan.tasks) {
           const instr = task.instructionDocId ? ` [doc: ${task.instructionDocId}]` : task.instructionsUrl ? ` [instructions: ${task.instructionsUrl}]` : '';
@@ -1964,7 +1953,6 @@ async function main() {
 // ---------------------------------------------------------------------------
 
 export {
-  extractEmoji,
   extractTags,
   mapStageFromList,
   extractReferences,

@@ -26,7 +26,6 @@ export function dateFromTemplateOffset(anchorDate: string, offsetDays: number): 
 
 export function templateCardDefinitionSnapshot(template: Template): TemplateCardDefinitionSnapshot {
   return withoutUndefined({
-    emoji: template.emoji,
     tags: copy(template.tags || []),
     sourceDocIds: copy(template.sourceDocIds || []),
     references: copy(template.references || []),
@@ -38,7 +37,6 @@ export function templateCardProjection(template: Template): Dict {
   const snapshot = templateCardDefinitionSnapshot(template);
   const cardLinks: CardLink[] = snapshot.cardLinkDefinitions.map(({ name }) => ({ name, url: '' }));
   return withoutUndefined({
-    emoji: snapshot.emoji,
     tags: copy(snapshot.tags),
     sourceDocIds: copy(snapshot.sourceDocIds),
     references: copy(snapshot.references),

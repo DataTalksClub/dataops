@@ -50,7 +50,6 @@ Fields:
 - templateId: string, optional
 - status: "active", "parked", or "archived" - defaults to "active" (parked cards keep open work in the parked Archive category; archived cards are done)
 - stage: "preparation", "announced", "after-event", or "done" - defaults to "preparation"
-- emoji: string, optional (inherited from template)
 - references: array of { name: string, url: string }, optional (fixed links inherited from template - process docs, server links)
 - cardLinks: array of { name: string, url: string }, optional (slots to fill during execution - e.g., Luma URL, YouTube link)
 - tags: array of strings, optional (inherited from template)
@@ -69,7 +68,7 @@ Fields:
 - id: UUID, auto-generated
 - name: string, required
 - type: string, required (e.g., "newsletter", "podcast", "webinar")
-- emoji: string, optional (e.g., "📰", "🎙️")
+- icon: string, optional (curated DataOps icon name, e.g., "mic")
 - tags: array of strings, optional
 - defaultAssigneeId: string, optional (default user for tasks)
 - references: array of { name: string, url: string }, optional (fixed links same for every card - process docs, server links)
@@ -139,9 +138,9 @@ All endpoints accept and return JSON. All endpoints are auth-gated - unauthentic
 ### Cards API
 
 - `GET /api/cards` - list all cards
-- `POST /api/cards` - create a card (body: { title, anchorDate, description?, templateId?, emoji?, references?, cardLinks?, tags? })
+- `POST /api/cards` - create a card (body: { title, anchorDate, description?, templateId?, references?, cardLinks?, tags? })
 - `GET /api/cards/:id` - get a single card
-- `PUT /api/cards/:id` - update a card (body: subset of { title, description, anchorDate, status, stage, emoji, references, cardLinks, tags })
+- `PUT /api/cards/:id` - update a card (body: subset of { title, description, anchorDate, status, stage, references, cardLinks, tags })
 - `POST /api/cards/:id/park` - park an active card (body: { expectedVersion })
 - `POST /api/cards/:id/resume` - resume a parked card to the board (body: { expectedVersion })
 - `PUT /api/cards/:id/archive` - archive a card
@@ -154,9 +153,9 @@ When creating or updating a card, each array replaces the entire existing array.
 ### Templates API
 
 - `GET /api/templates` - list all templates
-- `POST /api/templates` - create a template (body: { name, type, emoji?, tags?, defaultAssigneeId?, references?, cardLinkDefinitions?, triggerType?, triggerSchedule?, triggerLeadDays?, taskDefinitions })
+- `POST /api/templates` - create a template (body: { name, type, icon?, tags?, defaultAssigneeId?, references?, cardLinkDefinitions?, triggerType?, triggerSchedule?, triggerLeadDays?, taskDefinitions })
 - `GET /api/templates/:id` - get a single template
-- `PUT /api/templates/:id` - update a template (body: subset of { name, type, emoji, tags, defaultAssigneeId, references, cardLinkDefinitions, triggerType, triggerSchedule, triggerLeadDays, taskDefinitions })
+- `PUT /api/templates/:id` - update a template (body: subset of { name, type, icon, tags, defaultAssigneeId, references, cardLinkDefinitions, triggerType, triggerSchedule, triggerLeadDays, taskDefinitions })
 - `DELETE /api/templates/:id` - delete a template
 
 Each task definition: { refId, description, offsetDays, isMilestone?, assigneeId?, instructionsUrl?, requiredLinkName?, requiresFile? }.

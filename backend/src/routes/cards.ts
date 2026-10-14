@@ -636,7 +636,7 @@ async function handleSingle(
 
     // Only allow updating known fields
     const allowedFields = [
-      'title', 'description', 'anchorDate', 'references', 'cardLinks', 'emoji', 'tags', 'stage',
+      'title', 'description', 'anchorDate', 'references', 'cardLinks', 'tags', 'stage',
       'sourceDocIds', 'artifactRefs', 'intakeRefs',
       'people', 'sponsor', 'secondarySponsors', 'issueNumber',
     ];

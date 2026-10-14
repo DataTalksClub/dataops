@@ -49,7 +49,6 @@ const AUTHORITATIVE_FIELDS = [
   'externalSourceDocuments',
   'name',
   'type',
-  'emoji',
   'icon',
   'tags',
   'defaultAssigneeId',

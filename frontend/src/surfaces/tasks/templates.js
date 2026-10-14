@@ -47,8 +47,8 @@ export function createTemplatesSurface(context) {
     event: "Event",
   };
 
-  // One icon language: authored emoji stay in the data, but the UI draws from
-  // the family 24-grid stroke glyphs (stroke 1.8) like every other row.
+  // One icon language: the UI draws from the family 24-grid stroke glyphs
+  // (stroke 1.8) like every other row.
   // Namespaces degrade gracefully for DOM shims without createElementNS.
   function strokeIcon(pathData) {
     const svgNs = "http://www.w3.org/2000/svg";

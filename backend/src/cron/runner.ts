@@ -192,9 +192,6 @@ async function runCron(
       };
 
       // Copy template fields to card
-      if (template.emoji) {
-        cardData.emoji = template.emoji;
-      }
       if (template.tags && template.tags.length > 0) {
         cardData.tags = template.tags;
       }

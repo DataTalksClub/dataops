@@ -97,7 +97,6 @@ describe('API — Cards', () => {
       const res = await invoke('POST', '/api/cards', {
         title: 'Newsletter Mar 2026',
         anchorDate: '2026-03-15',
-        emoji: '📰',
         tags: ['newsletter'],
         references: [{ name: 'Style guide', url: 'https://docs.google.com/style' }],
         cardLinks: [{ name: 'Luma', url: '' }],
@@ -105,7 +104,6 @@ describe('API — Cards', () => {
 
       assert.strictEqual(res.statusCode, 201);
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.card.emoji, '📰');
       assert.deepStrictEqual(body.card.tags, ['newsletter']);
       assert.deepStrictEqual(body.card.references, [{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
       assert.deepStrictEqual(body.card.cardLinks, [{ name: 'Luma', url: '' }]);
@@ -123,7 +121,6 @@ describe('API — Cards', () => {
       const body = JSON.parse(res.body);
       assert.strictEqual(body.card.stage, 'preparation');
       assert.strictEqual(body.card.status, 'active');
-      assert.strictEqual(body.card.emoji, undefined);
       assert.strictEqual(body.card.tags, undefined);
       assert.strictEqual(body.card.references, undefined);
       assert.strictEqual(body.card.cardLinks, undefined);
@@ -297,7 +294,6 @@ describe('API — Cards', () => {
       const created = await createCard(client, {
         title: 'Full Card',
         anchorDate: '2026-07-01',
-        emoji: '🎙️',
         tags: ['podcast'],
         references: [{ name: 'Overview', url: 'https://example.com/overview' }],
         cardLinks: [{ name: 'YouTube', url: 'https://youtube.com/123' }],
@@ -309,7 +305,6 @@ describe('API — Cards', () => {
       assert.strictEqual(res.statusCode, 200);
 
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.card.emoji, '🎙️');
       assert.deepStrictEqual(body.card.tags, ['podcast']);
       assert.deepStrictEqual(body.card.references, [{ name: 'Overview', url: 'https://example.com/overview' }]);
       assert.deepStrictEqual(body.card.cardLinks, [{ name: 'YouTube', url: 'https://youtube.com/123' }]);
@@ -421,21 +416,19 @@ describe('API — Cards', () => {
       assert.deepStrictEqual(body.card.cardLinks, [{ name: 'YouTube', url: 'https://youtube.com/watch?v=123' }]);
     });
 
-    it('updates emoji and tags', async () => {
+    it('updates tags', async () => {
       const created = await createCard(client, {
-        title: 'Emoji tags update',
+        title: 'Tags update',
         anchorDate: '2026-01-01',
       });
 
       const res = await invoke('PUT', `/api/cards/${created.id}`, {
         expectedVersion: created.version,
-        emoji: '📰',
         tags: ['newsletter', 'weekly'],
       });
 
       assert.strictEqual(res.statusCode, 200);
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.card.emoji, '📰');
       assert.deepStrictEqual(body.card.tags, ['newsletter', 'weekly']);
     });
 
@@ -663,11 +656,10 @@ describe('API — Cards', () => {
   // ---- Issue #20: Template instantiation with new fields ----
 
   describe('Template instantiation with new fields (issue #20)', () => {
-    it('card inherits emoji, tags, references, and cardLinks from template', async () => {
+    it('card inherits tags, references, and cardLinks from template', async () => {
       const template = await createTemplate(client, {
         name: 'Full Template',
         type: 'event',
-        emoji: '📰',
         tags: ['newsletter', 'weekly'],
         references: [{ name: 'Style guide', url: 'https://docs.google.com/style' }],
         cardLinkDefinitions: [{ name: 'Luma' }, { name: 'YouTube' }],
@@ -685,7 +677,6 @@ describe('API — Cards', () => {
       assert.strictEqual(res.statusCode, 201);
       const body = JSON.parse(res.body);
 
-      assert.strictEqual(body.card.emoji, '📰');
       assert.deepStrictEqual(body.card.tags, ['newsletter', 'weekly']);
       assert.deepStrictEqual(body.card.references, [{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
       assert.deepStrictEqual(body.card.cardLinks, [{ name: 'Luma', url: '' }, { name: 'YouTube', url: '' }]);
@@ -695,7 +686,6 @@ describe('API — Cards', () => {
       const template = await createTemplate(client, {
         name: 'Override Template',
         type: 'event',
-        emoji: '📰',
         tags: ['newsletter'],
         taskDefinitions: [
           { refId: 'prep', description: 'Prepare', offsetDays: 0 },
@@ -706,14 +696,12 @@ describe('API — Cards', () => {
         title: 'Override Card',
         anchorDate: '2026-06-15',
         templateId: template.id,
-        emoji: '🎉',
         tags: ['custom'],
       });
 
       assert.strictEqual(res.statusCode, 201);
       const body = JSON.parse(res.body);
 
-      assert.strictEqual(body.card.emoji, '🎉');
       assert.deepStrictEqual(body.card.tags, ['custom']);
     });
 

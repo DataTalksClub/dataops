@@ -31,7 +31,6 @@ const TEMPLATE_FIELDS = [
   ['reviewCycleDays', 'review_cycle_days'],
   ['lastReviewedAt', 'last_reviewed_at'],
   ['nextReviewAt', 'next_review_at'],
-  ['emoji', 'emoji'],
   ['icon', 'icon'],
   ['tags', 'tags'],
   ['defaultAssigneeId', 'default_assignee_id'],
