@@ -508,9 +508,9 @@ describe('API — Cards', () => {
       assert.strictEqual((await invoke('PUT', `/api/cards/${created.id}/archive`)).statusCode, 404);
     });
 
-    it('does not expose Card deletion', async () => {
+    it('refuses a Card deletion without expectedVersion and keeps the Card', async () => {
       const created = await createCard(client, { title: 'Retained', anchorDate: '2026-01-01' });
-      assert.strictEqual((await invoke('DELETE', `/api/cards/${created.id}`)).statusCode, 405);
+      assert.strictEqual((await invoke('DELETE', `/api/cards/${created.id}`)).statusCode, 400);
       assert.strictEqual((await invoke('GET', `/api/cards/${created.id}`)).statusCode, 200);
     });
 

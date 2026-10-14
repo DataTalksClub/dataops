@@ -48,7 +48,7 @@ AWS_ACCESS_KEY_ID=local \
 AWS_SECRET_ACCESS_KEY=local \
 AWS_REGION=us-east-1 \
 NODE_ENV=production \
-node --import tsx --test --test-concurrency=1 --test-force-exit tests/task-card-transaction.ddb.ts
+node --import tsx --test --test-concurrency=1 --test-force-exit tests/task-card-transaction.ddb.ts tests/card-deletion-transaction.ddb.ts
 test_status=$?
 set -e
 

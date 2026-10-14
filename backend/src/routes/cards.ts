@@ -10,6 +10,12 @@ import {
   updateCard,
   listCardsPage,
 } from '../db/cards';
+import {
+  CardDeletionBlockedError,
+  CardDeletionConflictError,
+  CardDeletionTooLargeError,
+  deleteCardCascade,
+} from '../db/cardDeletion';
 import { CollectionCursorError, encodeCollectionCursor } from '../db/collectionPagination';
 import { getTemplate } from '../db/templates';
 import {
@@ -342,6 +348,19 @@ async function handleCardRoutes(
         currentCard,
       });
     }
+    if (err instanceof CardDeletionBlockedError) {
+      return json(409, {
+        error: err.message,
+        code: 'card_has_references',
+        references: err.references,
+      });
+    }
+    if (err instanceof CardDeletionConflictError) {
+      return json(409, { error: err.message, code: 'card_delete_conflict' });
+    }
+    if (err instanceof CardDeletionTooLargeError) {
+      return json(422, { error: err.message, code: 'card_delete_too_large' });
+    }
     if (err instanceof CardStatusTransitionError) {
       return json(422, {
         error: err.message,
@@ -648,6 +667,38 @@ async function handleSingle(
     });
     const templateIdByType = await getTemplateIdByType(client);
     return json(200, { card: await projectCard(new TeamDirectory(client), card, undefined, templateIdByType) });
+  }
+
+  if (method === 'DELETE') {
+    // Deleting a Card removes every Task it contains: administration only an
+    // admin performs, never the Card owner alone.
+    const deleteActor = await resolveInteractiveActor(client, event, 'work-write');
+    if (!deleteActor.ok) return deleteActor.response;
+    if (!deleteActor.actor.testBypass && !deleteActor.actor.isAdmin) {
+      return workAdminForbidden('Deleting a Card requires an admin');
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(rawBody || '');
+    } catch {
+      return json(400, { error: 'Request body with expectedVersion is required' });
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return json(400, { error: 'Request body with expectedVersion is required' });
+    }
+    if (Object.hasOwn(body, 'version')) {
+      return json(400, { error: 'version is response-only; use expectedVersion' });
+    }
+    if (!Number.isInteger(body.expectedVersion) || Number(body.expectedVersion) < 1) {
+      return json(400, { error: 'expectedVersion must be an integer greater than or equal to 1' });
+    }
+    const deleted = await deleteCardCascade(
+      client,
+      id,
+      body.expectedVersion as number,
+      deleteActor.actor.id || 'system',
+    );
+    return json(200, { deleted });
   }
 
   // Method not allowed

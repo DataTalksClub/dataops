@@ -848,6 +848,32 @@ describe('signed-in identity, teammate projections, and the work authorization b
     assert.strictEqual(invalid.statusCode, 400);
   });
 
+  it('lets only an admin delete a Card, even one the operator owns', async () => {
+    const card = await createCard(client, {
+      title: 'Avery disposable checklist', anchorDate: '2031-04-01', ownerId: AVERY,
+    });
+    await createTask(client, {
+      id: 'task-disposable', description: 'Disposable task', date: '2031-04-01', assigneeId: AVERY, cardId: card.id,
+    });
+    const current = (await getCardConsistent(client, card.id))!;
+    const owner = await invoke({
+      method: 'DELETE', path: `/api/cards/${card.id}`, bearer: sessions[AVERY],
+      body: { expectedVersion: current.version },
+    });
+    assert.strictEqual(owner.statusCode, 403);
+    assert.strictEqual(body(owner).code, 'work_admin_forbidden');
+    assert.ok(await getCardConsistent(client, card.id));
+
+    const admin = await invoke({
+      method: 'DELETE', path: `/api/cards/${card.id}`, bearer: sessions[RILEY],
+      body: { expectedVersion: current.version },
+    });
+    assert.strictEqual(admin.statusCode, 200, admin.body);
+    assert.deepStrictEqual(body(admin).deleted.deletedTaskIds, ['task-disposable']);
+    assert.strictEqual(await getCardConsistent(client, card.id), null);
+    assert.strictEqual(await getTaskConsistent(client, 'task-disposable'), null);
+  });
+
   it('never lets a browser-supplied identity header widen authority', async () => {
     const current = (await getTaskConsistent(client, 'task-morgan'))!;
     const spoofedAdmin = await invoke({
