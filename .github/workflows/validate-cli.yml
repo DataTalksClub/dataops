@@ -32,6 +32,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      # `dataops login` runs the shared device-login loop from DataTalksClub/auth.
+      - name: Check out the shared auth repository
+        uses: actions/checkout@v6
+        with:
+          repository: DataTalksClub/auth
+          path: .shared-auth
+          persist-credentials: false
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -44,6 +52,8 @@ jobs:
 
       - name: Run CLI unit tests
         run: make test-cli
+        env:
+          DTC_AUTH_HOME: ${{ github.workspace }}/.shared-auth
 
       - name: Run the CLI against a local backend
         run: make test-cli-e2e
