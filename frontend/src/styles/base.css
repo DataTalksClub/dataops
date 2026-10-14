@@ -67,7 +67,6 @@ textarea::placeholder {
 }input:focus,
 select:focus,
 textarea:focus {
-  border-color: var(--dk-accent-default);
   outline: none;
   box-shadow: 0 0 0 3px var(--dk-focus-ring);
 }svg {
@@ -407,11 +406,10 @@ textarea:focus {
   stroke-linecap: round;
   stroke-linejoin: round;
 }.primary-button {
-  border: 1px solid var(--dk-accent-default);
+  border: 1px solid transparent;
   background: var(--dk-accent-default);
   color: var(--dk-text-on-accent);
 }.primary-button:hover {
-  border-color: var(--dk-accent-hover);
   background: var(--dk-accent-hover);
 }:root[data-theme="dark"] .primary-button:disabled,
 :root[data-theme="dark"] .primary-button[aria-disabled="true"] {
@@ -429,7 +427,7 @@ textarea:focus {
   place-items: center;
   border-radius: var(--dk-radius-full);
   background: var(--dk-danger-bg);
-  border: 1px solid var(--dk-danger-border);
+  border: 1px solid transparent;
   color: var(--dk-danger-text);
   padding: 0 5px;
   font-size: 11px;
@@ -509,9 +507,9 @@ body[data-view="create"] .editor-view {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }.surface-summary[data-summary-state="unavailable"] {
-  border-color: var(--dk-danger-border);
+  background: var(--dk-danger-bg);
 }.surface-summary[data-summary-state="partial"] {
-  border-color: var(--dk-warning-border);
+  background: var(--dk-warning-bg);
 }.surface-summary-detail {
   color: var(--dk-text-muted);
   font-size: 12px;
