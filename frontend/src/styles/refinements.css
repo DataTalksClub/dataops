@@ -62,7 +62,7 @@ body[data-workspace-view="sponsors"] .document-list {
   display: flex;
   min-height: 38px;
   align-items: center;
-  border-color: var(--dk-info-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
 }/* An empty status renders nothing; messages fill it when there is news. */.bookkeeping-surface .surface-status[role="status"]:empty {
@@ -98,7 +98,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .finance-status,
 .evidence-state,
 .ops-user-badge {
-  border-color: var(--dk-info-border);
+  border: 1px solid transparent;
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
 }.bookkeeping-filters,
@@ -213,7 +213,7 @@ body[data-workspace-view="sponsors"] .document-list {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 8px 16px;
-  border: 1px solid var(--dk-warning-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
   padding: 10px 14px;
@@ -360,14 +360,14 @@ body[data-workspace-view="sponsors"] .document-list {
   white-space: nowrap;
 }.crm-card[data-communication-state="outcome_unknown"],
 .crm-card[data-communication-state="rejected"] {
-  border-color: var(--dk-danger-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-danger-bg);
 }.crm-card[data-communication-state="delivered"],
 .crm-card[data-communication-state="accepted"] {
-  border-color: var(--dk-success-border);
+  border-color: var(--dk-border-default);
 }.crm-card[data-communication-state="disabled"],
 .crm-card[data-communication-state="awaiting_review"] {
-  border-color: var(--dk-warning-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-warning-bg);
 }.crm-history {
   border: 1px solid var(--dk-border-default);
@@ -465,11 +465,11 @@ body[data-workspace-view="sponsors"] .document-list {
 }.planner-alert {
   border-radius: var(--dk-radius-md);
 }.planner-alert.is-danger {
-  border-color: var(--dk-danger-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
 }.planner-alert.is-info {
-  border-color: var(--dk-info-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
 }
