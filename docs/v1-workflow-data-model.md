@@ -24,12 +24,11 @@ related_docs:
 DataOps V1 uses one shared workflow model for daily operations. A workflow
 definition describes repeatable work in Git. A workflow card is one runtime
 execution of that definition in DynamoDB. Tasks, reminders, file metadata,
-artifact references, assistant job references, and audit event references all
+artifact references, and audit event references all
 use stable application IDs so the data can be exported and later migrated.
 
 This document defines the shared contract. It does not define the first Podcast
-workflow content, detailed artifact lifecycle, or detailed assistant job
-lifecycle.
+workflow content or detailed artifact lifecycle.
 
 ## Ownership Boundary
 
@@ -47,7 +46,6 @@ Store in DynamoDB:
 - recurring configs
 - notifications/reminders
 - file and artifact metadata
-- assistant job metadata
 - append-only audit events
 
 Store outside DynamoDB:
@@ -72,7 +70,6 @@ Required stable IDs:
 - `notification_id`
 - `file_id`
 - `artifact_id`
-- `assistant_job_id`
 - `audit_event_id`
 - `user_id`
 
@@ -128,7 +125,6 @@ Fields:
 - `requires_file`
 - `proof_requirement`
 - `artifact_refs`
-- `assistant_job_refs`
 - `audit_event_refs`
 
 Document context reuses the existing registry fields: `source_doc_ids` at the
@@ -161,7 +157,6 @@ Fields:
 - `card_links`
 - `tags`
 - `artifact_refs`
-- `assistant_job_refs`
 - `audit_event_refs`
 - `created_at`
 - `updated_at`
@@ -204,7 +199,6 @@ Fields:
 - `recurring_config_id`
 - `stage_on_complete`
 - `artifact_refs`
-- `assistant_job_refs`
 - `audit_event_refs`
 - `tags`
 - `created_at`
@@ -312,7 +306,6 @@ Fields:
   `sensitive`
 - `task_id`
 - `card_id`
-- `assistant_job_id`
 - `file_id`
 - `source_type`: `manual-link`, `manual-upload`, `assistant-output`, `import`,
   `migration`, or `system`
@@ -324,28 +317,8 @@ Fields:
 - `tags`
 - small redacted `metadata`
 
-`assistant_job_id` references an assistant job when present. DataOps podcast assistant local folders such as `documents/`, `inbox/`,
-and `heru_runs/` are local runtime/dev storage; attached assistant outputs must
-be represented by artifact metadata instead of committed as durable artifacts.
-
-## Assistant Job References
-
-Assistant job references connect workflow state to assistant runs without
-embedding job internals into tasks or cards.
-
-Fields:
-
-- `assistant_job_id`
-- `assistant_type`
-- `status`
-
-Assistant job records hold the detailed lifecycle: `draft`, `queued`,
-`running`, `waiting_approval`, `approved`, `rejected`, `retrying`,
-`succeeded`, `failed`, and `canceled`. Jobs are linked to a task, card, or
-both; output artifacts are linked through `output_artifact_ids` and the
-artifact table. Workflow screens show the lightweight refs so the operator can
-request help, see whether a job is waiting/running/failed/needs approval, and
-act on the next step without leaving the task or card context.
+External assistants attach their outputs as artifact metadata through the
+artifacts API; outputs are not committed as durable files.
 
 ## Audit Events
 
@@ -378,6 +351,6 @@ Every durable workflow entity must export with:
 - omitted entity markers for entities that are not implemented yet
 
 The V1 portable export includes `templates.jsonl`, `cards.jsonl`,
-`tasks.jsonl`, `notifications.jsonl`, `files.jsonl`, `artifacts.jsonl`,
-`assistant_jobs.jsonl`, and `audit_events.jsonl`. Omitted entity markers are
+`tasks.jsonl`, `notifications.jsonl`, `files.jsonl`, `artifacts.jsonl`, and
+`audit_events.jsonl`. Omitted entity markers are
 reserved for durable entities that are not implemented yet.

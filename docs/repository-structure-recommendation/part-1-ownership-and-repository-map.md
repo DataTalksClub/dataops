@@ -60,7 +60,7 @@ It should contain:
 - Work engine: tasks, workflows, templates, recurring operations, reminders,
   notifications, files metadata, users, auth, and audit.
 - Docs portal integration code.
-- Assistant integration code and job model.
+- The work API that external assistants use.
 - Tests.
 - Local development scripts.
 - Product specs and implementation docs.
@@ -80,9 +80,6 @@ dataops/
   app/
     frontend/
     backend/
-    shared/
-  assistants/
-    podcast/
     shared/
   content/
     README.md
@@ -112,7 +109,6 @@ dataops/
   frontend/             # existing docs portal frontend
   lambda-functions/     # existing docs portal backend/lambda
   work-engine/          # DataOps work-engine module, to be folded into app/
-  assistants/podcast/   # DataOps podcast assistant module
   content/              # existing process docs and templates
   docs/                 # product/architecture/recommendation docs
   tests/                # docs portal tests
@@ -285,12 +281,6 @@ Recommended storage:
 
 ```text
 s3://dtc-dataops-artifacts/
-  assistant-jobs/
-    podcast/
-      {job_id}/
-        inputs/
-        outputs/
-        logs/
   files/
     tasks/{task_id}/
     cards/{card_id}/
@@ -309,7 +299,6 @@ DataOps should store metadata in DynamoDB:
 - URL or storage path;
 - task ID;
 - card ID;
-- assistant job ID;
 - owner;
 - status;
 - created/updated timestamps;

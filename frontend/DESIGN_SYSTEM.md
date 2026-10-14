@@ -140,10 +140,10 @@ Device authorization uses a standalone page outside the workspace shell.
 - Global search precedes navigation in both DOM and visual order. Its persistent
   accessible name and scope hint explain that it searches work and process docs.
 - Tasks is an expandable sidebar group for `Queue`, `Cards`, `Templates`,
-  `Recurring`, `Assistants`, and `Artifacts`. Its child routes appear as indented sidebar
+  `Recurring`, and `Artifacts`. Its child routes appear as indented sidebar
   items only while the group is expanded; do not repeat them as tabs or a
-  selector above the page. Assistants and Artifacts remain in this group until
-  their long-term top-level placement is decided.
+  selector above the page. Artifacts remains in this group until its
+  long-term top-level placement is decided.
 - The Cards surface uses a compact board of cards. A card shows
   only its title, stage, progress, and summary metadata; never render its task
   list inside the card. Opening a card presents the full card and its tasks

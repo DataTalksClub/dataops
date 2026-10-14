@@ -3,8 +3,8 @@
 ## Project Context
 
 DataOps is the combined DataTalks.Club operations portal, merging DTC Operations
-process docs and docs app, DataTasks task execution, and Podcast Assistant
-intake and drafting.
+process docs and docs app and DataTasks task execution. It has no built-in
+assistant: assistants run externally and work through the portal's API.
 
 The project is in the consolidation stage. Source systems have been merged into
 a single TypeScript backend; see `docs/TARGET_ARCHITECTURE.md`. The single
@@ -25,7 +25,7 @@ Technology direction:
 - Execution state: DynamoDB
 - Process docs: GitHub markdown
 - Package management: `npm` for TypeScript, `uv` for Python tooling
-  (content validation, podcast assistant)
+  (content validation)
 
 ## Engineering Rules
 

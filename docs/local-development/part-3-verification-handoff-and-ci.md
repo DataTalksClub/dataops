@@ -43,12 +43,6 @@ npm --prefix work-engine run build
 Add `npm --prefix work-engine run test:e2e` for changed operator flows, browser
 UI, route behavior, or end-to-end task/workflow behavior.
 
-For assistant/podcast changes:
-
-```bash
-uv run --project assistants/podcast pytest
-```
-
 For cross-system workflow changes that touch portal, content links, task state,
 templates, and operator flows, run the docs app tests, search-index build,
 work-engine unit/type/build checks, and the relevant work-engine E2E tests.
@@ -97,12 +91,6 @@ If it changes operator browser flows, add:
 
 ```bash
 npm --prefix work-engine run test:e2e
-```
-
-If it touches `assistants/podcast/**`, add:
-
-```bash
-uv run --project assistants/podcast pytest
 ```
 
 If it touches SAM templates, deployment workflow, package/build behavior, or

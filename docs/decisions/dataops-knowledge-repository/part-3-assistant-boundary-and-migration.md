@@ -9,6 +9,10 @@
 
 ## Assistant Boundary
 
+> Superseded: `assistants/podcast/` and the in-app assistant have been removed
+> from `dataops`. Assistants now run externally and use the work API. The
+> boundary below is kept as the record of the original decision.
+
 `assistants/podcast/` remains the canonical product-code location for the
 DataOps podcast assistant module in `dataops`.
 

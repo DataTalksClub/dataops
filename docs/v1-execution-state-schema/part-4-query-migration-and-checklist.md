@@ -44,7 +44,6 @@ Postgres tables can map almost directly from the application entities:
 - `files`
 - `notifications`
 - `artifacts`
-- `assistant_jobs`
 - `audit_events`
 
 ## Implementation Checklist

@@ -56,7 +56,7 @@ The deployed function is `BackendFunction`, a single TypeScript/Node Lambda
   another `/git/*` route, and every method other than GET on those routes,
   returns HTTP 405.
 - All work `/api/*` routes (tasks, cards, templates, recurring, files,
-  artifacts, assistant jobs, notifications, intake, users) served in-process.
+  artifacts, notifications, intake, users) served in-process.
 
 One Lambda serves everything from a single Function URL. There is no separate
 work-engine Lambda and no `/work/api/*` proxy hop -- docs and work are one

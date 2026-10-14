@@ -135,7 +135,6 @@ Execution data belongs in DynamoDB, not Markdown:
 - notifications
 - file metadata
 - artifact metadata
-- assistant jobs
 - reminders and follow-up state
 - audit/history events
 
@@ -160,7 +159,6 @@ The current work-engine code expects these logical entities:
 - artifact metadata
 - notifications
 - sessions
-- assistant jobs
 - audit events
 
 For production V1, CloudFormation/SAM should own table lifecycle, and
@@ -223,7 +221,6 @@ recurring_configs.jsonl
 files.jsonl
 notifications.jsonl
 artifacts.jsonl
-assistant_jobs.jsonl
 audit_events.jsonl
 ```
 
@@ -288,7 +285,6 @@ This matters for:
 - podcast raw inputs
 - recordings
 - transcripts
-- assistant job logs
 - generated draft artifacts.
 
 ## Frontend Direction
@@ -301,7 +297,6 @@ The frontend should evolve toward:
 - Operations Home
 - Workflows
 - Tasks
-- Assistants
 - Knowledge
 - Templates
 - Recurring

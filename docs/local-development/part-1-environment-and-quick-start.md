@@ -14,7 +14,6 @@ The commands here are source-of-truth wrappers or package-local commands from:
 - root `Makefile`
 - root `package.json`
 - `work-engine/package.json`
-- `assistants/podcast/pyproject.toml`
 - `lambda-functions/Makefile`
 - `.github/workflows/deploy-dataops-v1.yml`
 - `.github/workflows/validate-dataops-content.yml`
@@ -55,11 +54,10 @@ uv run python -c "import httpx, openpyxl, PIL, slugify, uvicorn"
 uv run python -m pytest tests/test_import_sources.py
 ```
 
-It does not package the Lambda or assistant modules and it does not manage Node
+It does not package the Lambda modules and it does not manage Node
 dependencies. Keep package-local commands package-local:
 
 - Lambda/docs portal: `uv run --project lambda-functions ...`
-- Podcast assistant: `uv run --project assistants/podcast ...`
 - Work-engine: `npm --prefix work-engine ...`
 
 External command-line tools used by some scripts remain external prerequisites:

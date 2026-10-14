@@ -67,7 +67,6 @@ Store in DynamoDB:
 - recurring task configs
 - reminders and notifications
 - file and artifact metadata
-- assistant job metadata
 - audit events
 
 Store in S3 or external private systems:
@@ -104,7 +103,6 @@ Environment variables:
 - `DATAOPS_ARTIFACTS_TABLE`
 - `DATAOPS_NOTIFICATIONS_TABLE`
 - `DATAOPS_SESSIONS_TABLE`
-- `DATAOPS_ASSISTANT_JOBS_TABLE`
 - `DATAOPS_AUDIT_EVENTS_TABLE`
 
 Local defaults may map to the existing prototype names:
@@ -115,7 +113,6 @@ Local defaults may map to the existing prototype names:
 - `Users`
 - `Files`
 - `Artifacts`
-- `AssistantJobs`
 - `AuditEvents`
 - `Notifications`
 - `Sessions`

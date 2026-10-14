@@ -26,8 +26,9 @@ Current state:
   it is audited and moved behind the private knowledge boundary.
 - `content/tasks/templates/` contains DataOps workflow templates that encode
   repeatable operational process.
-- `assistants/podcast/` is the canonical in-repo DataOps podcast assistant
-  module.
+- `assistants/podcast/` was the in-repo DataOps podcast assistant module. It
+  has since been removed: DataOps no longer runs an assistant, and external
+  assistants use the work API.
 - Runtime workflow state is stored in DynamoDB execution tables managed by the
   deployed stack.
 - Private or bulky files must remain outside the public app repository and

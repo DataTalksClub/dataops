@@ -61,7 +61,6 @@ flowchart TB
   subgraph Backend[Portal backend — single TypeScript Lambda]
     Docs[docs domain<br/>content API · S3 knowledge store · SOP engine · search]
     Work[work domain<br/>tasks · cards · templates · recurring · artifacts · files]
-    Asst[assistant domain<br/>job orchestration]
     Plat[platform<br/>auth · notifications · cron · http · db · secrets]
   end
 
@@ -72,8 +71,7 @@ flowchart TB
   Mirror --> GitHub[(Private GitHub history mirror)]
   Docs -->|read/write index| Index[/zerosearch-node index<br/>portable format/]
   Work --> Dynamo[(DynamoDB: execution state)]
-  Asst -->|enqueue / track jobs| Podcast[Podcast assistant<br/>Python worker]
-  Podcast --> Knowledge
+  Assistant[External assistants] -->|work API| Work
   Backend --> Secrets[(AWS Secrets Manager)]
 ```
 
@@ -89,9 +87,9 @@ Unchanged from today:
 - **Deploy is SAM/CloudFormation via GitHub Actions OIDC.**
 
 Key change: the cross-service `/work/api` proxy disappears — docs and work are
-one process. The only remaining language boundary is the **podcast assistant**,
-which stays a Python worker (it does AI drafting, not request serving) invoked
-through assistant-job records.
+one process. There is no language boundary left and no built-in assistant:
+assistants run outside the portal and use the same work API as the UI (cards,
+tasks, templates, artifacts, files).
 
 ## Target repository structure
 
@@ -100,13 +98,11 @@ backend/                 # single TS Lambda app  ←  work-engine/ + lambda-func
   src/
     docs/                #   content API, S3 knowledge store, SOP parse/lint, search wiring
     work/                #   tasks, cards, templates, recurring, artifacts, files
-    assistant/           #   assistant-job orchestration (enqueue, status, review)
     platform/            #   auth, sessions, notifications, cron, http, db, secrets
     router.ts  handler.ts
   scripts/               # seed, export, migration, + sop CLI (Node; replaces scripts/*.py)
   tests/   e2e/          # node:test + Playwright
 frontend/                # static vanilla-JS shell                  (unchanged)
-assistants/podcast/      # Python assistant worker                  (unchanged)
 content/                 # Transitional public-sensitive migration debt; private S3 is authoritative
 infra/                   # Application SAM; external infrastructure belongs in aws-infra
 docs/  docs/            # repo-meta + planning/process docs

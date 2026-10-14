@@ -1,6 +1,6 @@
 > Part 3 of 4 of the [V1 Execution State Schema](../v1-execution-state-schema.md):
 > the supporting-entity tables (users, files, artifacts, notifications,
-> sessions, assistant jobs, and audit events). [Part 1](part-1-overview-storage-and-id-rules.md)
+> sessions, and audit events). [Part 1](part-1-overview-storage-and-id-rules.md)
 > covers the overview, storage boundary, table ownership, and ID rules;
 > [Part 2](part-2-work-entity-tables.md) covers the work-entity tables; [Part 4](part-4-query-migration-and-checklist.md) closes the reference.
 
@@ -52,7 +52,7 @@ The current prototype uses `storagePath`, but production should use
 ## Artifacts Table
 
 Artifacts store metadata for generated or operational outputs. DynamoDB does
-not store binaries, large generated documents, raw assistant logs, signed URLs,
+not store binaries, large generated documents, raw logs, signed URLs,
 or secrets.
 
 Application fields:
@@ -72,7 +72,6 @@ Application fields:
 - `data_class`
 - `task_id`
 - `card_id`
-- `assistant_job_id`
 - `file_id`
 - `source_type`
 - `created_by`
@@ -87,12 +86,11 @@ Recommended key:
 
 - `PK=ARTIFACT#{artifact_id}`, `SK=ARTIFACT#{artifact_id}`
 
-The V1 implementation filters artifacts by task, card, assistant job, file,
+The V1 implementation filters artifacts by task, card, file,
 status, and type. Dedicated GSIs can be added when production access patterns
 and volume require them.
 
 `status=approved` is the only status that satisfies an artifact proof gate.
-`assistant_job_id` references an exported assistant job when present.
 
 ## Notifications Table
 
@@ -130,49 +128,13 @@ Application fields:
 Sessions aren't part of normal portable exports, so they may use TTL and don't
 need long-retention backups.
 
-## Assistant Jobs Table
-
-Assistant jobs track long-running assistant work.
-
-Fields:
-
-- `assistant_job_id`
-- `assistant_type`
-- `title`
-- `status`
-- `task_id`
-- `card_id`
-- `requested_by`
-- `input_refs`
-- `output_artifact_ids`
-- `log_refs`
-- `approval_required`
-- `approval`
-- `attempt_count`
-- `max_attempts`
-- `retry_of_job_id`
-- `last_error`
-- `created_at`
-- `queued_at`
-- `started_at`
-- `completed_at`
-- `updated_at`
-
-Statuses are `draft`, `queued`, `running`, `waiting_approval`, `approved`,
-`rejected`, `retrying`, `succeeded`, `failed`, and `canceled`. Jobs must link to
-at least one task or card. Outputs link to artifact metadata through
-`output_artifact_ids`; raw transcripts and unbounded logs are artifact/log
-references, not DynamoDB blobs.
-
 ## Audit Events Table
 
-Audit events record assistant lifecycle changes and can later hold broader
-workflow history.
+Audit events record card lifecycle, template, and import history.
 
 Fields:
 
 - `audit_event_id`
-- `assistant_job_id`
 - `actor_id`
 - `action`
 - `summary`

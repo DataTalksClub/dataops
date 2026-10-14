@@ -11,10 +11,9 @@
 | `content/**` | Docs link validation; build the search index. | Docs app tests when frontmatter, document IDs, routing, registry behavior, templates, archive rules, or content shape changes. Process Curator review for operational usefulness. |
 | `frontend/**` | Docs app tests for served portal behavior; focused browser/manual check of changed pages. | Screenshots for changed UI flows. Work-engine E2E if the UI crosses `/work/*` operator flows. |
 | `backend/**` | Backend tests, typecheck, and build. | Search-index build for search/content behavior; SAM validation/build for dependency, packaging, or Lambda runtime changes; E2E for changed operator flows. |
-| `assistants/podcast/**` | DataOps podcast assistant module pytest command. | `[HUMAN]` or opt-in integration checks for Telegram, Groq, live Heru, Codex, or Claude. |
 | `.github/workflows/**` | Inspect changed workflow paths and commands; run the nearest local equivalent. | For deployment workflow changes, SAM validation. |
 | `infra/template.full.yaml`, `infra/sam-build/**`, or `samconfig.toml` | SAM template validation. | `make sam-build` when package/build behavior changes. Production deploy remains CI/OIDC after `main` is pushed. |
-| root `pyproject.toml` or `uv.lock` | `uv lock --check`; root import smoke check; relevant root pytest command. | Package-local lock checks and canonical Lambda/assistant/work-engine commands when proving boundaries for deployment-relevant metadata changes. |
+| root `pyproject.toml` or `uv.lock` | `uv lock --check`; root import smoke check; relevant root pytest command. | Package-local lock checks and canonical Lambda/work-engine commands when proving boundaries for deployment-relevant metadata changes. |
 | root `package.json` | Affected root wrapper command and underlying package-local command. | Work-engine tests/typecheck/build when wrappers target work-engine. |
 
 ## Canonical Commands
@@ -145,31 +144,6 @@ The Makefile also exposes the local seed wrapper:
 make seed-work-engine
 ```
 
-### DataOps Podcast Assistant Module
-
-Run safe local DataOps podcast assistant module tests from the repo root:
-
-```bash
-make test-assistant
-```
-
-Underlying command:
-
-```bash
-uv run --project assistants/podcast pytest
-```
-
-This is the default non-credentialed check for `assistants/podcast/**`.
-
-Checks that require real Telegram delivery, Groq credentials, live Heru
-execution, Codex, Claude, or other external accounts are opt-in only and must be
-marked `[HUMAN]` in issue acceptance criteria. They are not required for normal
-local verification or default CI.
-
-At the time of this document, the deploy workflow path filters do not run for
-`assistants/podcast/**`; use the local command above until assistant CI coverage
-is added.
-
 ### Infrastructure And Deployment
 
 Validate the SAM/CloudFormation template from `lambda-functions/`:
@@ -213,7 +187,7 @@ work is committed, merged locally to `main`, and pushed, GitHub Actions uses
 OIDC to assume `arn:aws:iam::817685572750:role/dataops-github-actions-deploy`
 and deploys the `dataops-v1` stack.
 
-Local AWS deploys, live stack mutation, real cache refreshes, Telegram delivery,
+Local AWS deploys, live stack mutation, real cache refreshes,
 OAuth flows, sponsor/client-facing messages, and destructive restore or
 migration checks need explicit human approval and scoping.
 

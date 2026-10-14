@@ -266,7 +266,6 @@ Required variants:
 - Reminder and follow-up.
 - Proof required and proof missing.
 - Progress.
-- Assistant job status.
 
 Usage rules:
 
@@ -309,32 +308,6 @@ Current mapping:
   `.doc-menu-popover`, `.custom-select-menu`.
 - Work-engine: notification dropdown, notification page, error banners,
   `confirm()` for deletion, empty state actions.
-
-### Assistant Job And Output Panels
-
-Canonical primitives: `do-assistant-job-row`, `do-assistant-output-panel`,
-`do-artifact-row`, `do-review-action`, `do-run-log`.
-
-Usage rules:
-
-- DataOps podcast assistant and future assistant UI must reuse DataOps shell, panels,
-  cards, buttons, status badges, file rows, empty states, and proof/artifact
-  controls.
-- Assistant jobs are workflow-linked operational items. They should show job
-  status, owner, linked workflow/task, input artifacts, outputs, logs, retry
-  state, approval state, and next action.
-- Assistant outputs become artifacts that can satisfy proof requirements only
-  when the workflow/task explicitly accepts that artifact type.
-- Assistant review actions use the same primary/quiet/danger button rules.
-- Assistant-specific icons or colors may identify the source, but they must sit
-  inside the shared badge/card/panel system.
-
-Current mapping:
-
-- Portal: Operations Home future section `Assistant Jobs` already previews the
-  surface as an operational card.
-- Work-engine: no assistant UI yet. Future #44 work should consume this spec
-  instead of creating separate assistant styling.
 
 ## Current Surface Mapping
 
@@ -407,7 +380,4 @@ Work-engine drift to address:
 6. Work-engine shell cleanup.
    Replace the imported work-engine top nav and generated inline class
    fragments after tokens and core primitives are stable.
-7. Assistant UI reuse.
-   Build DataOps podcast assistant and future assistant surfaces only on shared panels,
-   artifacts, status badges, buttons, and empty states.
 

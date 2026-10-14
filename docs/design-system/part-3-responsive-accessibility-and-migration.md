@@ -83,7 +83,6 @@
 - Define shared badge classes while keeping current class names as aliases.
 - Add reduced-motion CSS rules.
 - Adjust panel/drawer z-index tokens and scrim behavior in current DOM.
-- Document assistant job/output components and use them when #44 work starts.
 
 ### Needs DOM Or Generated HTML Cleanup
 
@@ -104,8 +103,6 @@
 - Full shared router or cross-app shell composition.
 - Rich editor replacement beyond the current Markdown textarea/rendered view.
 - Virtualized task/workflow lists.
-- Complex assistant run timeline components if the assistant job lifecycle is
-  still changing.
 
 ### Should Not Change In V1
 
@@ -147,14 +144,7 @@ Phase 4: Unified task and workflow execution.
 - Use the same status/proof/progress language in portal panels and
   work-engine detail pages.
 
-Phase 5: Assistant surfaces.
-
-- Build DataOps podcast assistant and future assistant UI with shared shell, panel,
-  artifact row, status badge, empty state, and review action primitives.
-- Link assistant artifacts to workflows and tasks using the same proof/evidence
-  controls.
-
-Phase 6: Framework decision, if needed.
+Phase 5: Framework decision, if needed.
 
 - Decide on a frontend framework only after V1 component vocabulary is stable
   and repeated DOM/class cleanup shows real maintenance pain.
