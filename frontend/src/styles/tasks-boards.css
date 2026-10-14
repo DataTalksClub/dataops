@@ -1,3 +1,6 @@
+/* Templates holds a dakit list–detail split that fills the content area, so
+   its surface passes the height down as a flex column. */
+body[data-workspace-view="tasks"] .operations-home.dk-fill { display: flex; flex-direction: column; }
 body[data-workspace-view="tasks"] .operations-home.ops-surface-queue,
 body[data-workspace-view="tasks"] .operations-home.ops-surface-templates,
 body[data-workspace-view="tasks"] .operations-home.ops-surface-artifacts {
@@ -578,7 +581,6 @@ body[data-workspace-view="tasks"] .recurring-toolbar button {
   border-color: var(--dk-border-control-hover);
   background: var(--dk-bg-hover);
 }body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card:focus-visible,
-body[data-workspace-view="tasks"] .runtime-template-row:focus-visible,
 body[data-workspace-view="tasks"] .ops-queue-row:focus-visible {
   outline: 3px solid var(--dk-focus-ring);
   outline-offset: 2px;
@@ -602,35 +604,6 @@ body[data-workspace-view="tasks"] .ops-queue-row:focus-visible {
    (20px) > row name and block headings (14-15px) > facts (12px) > provenance
    (11px). Provenance sits at the foot because only maintainers read it, and the
    unselected pane stays quiet so the list keeps the page's attention. */
-body[data-workspace-view="tasks"] .runtime-template-inspector {
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--task-panel-radius);
-  background: var(--dk-bg-surface);
-  padding: 0;
-}
-
-body[data-workspace-view="tasks"] .runtime-template-inspector > .ops-section-header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-muted);
-  padding: var(--dk-space-3) var(--dk-space-4);
-}
-body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header > div {
-  display: grid;
-  min-width: 0;
-  gap: var(--dk-space-1);
-}
-body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header h3:not([class*="dk-"]) {
-  margin: 0;
-  color: var(--dk-text-heading);
-  font-size: var(--dk-text-body);
-  font-weight: var(--dk-weight-semibold);
-}
 body[data-workspace-view="tasks"] .runtime-template-loading {
   margin: 0;
   color: var(--dk-text-muted);
@@ -639,24 +612,10 @@ body[data-workspace-view="tasks"] .runtime-template-loading {
   padding: 16px;
 }
 
-body[data-workspace-view="tasks"] .runtime-template-layout {
-  display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(0, 1.15fr);
-  min-width: 0;
-}
-body[data-workspace-view="tasks"] .runtime-template-list {
-  display: grid;
-  align-content: start;
-  min-width: 0;
-  max-height: 640px;
-  overflow: auto;
-  border-right: 1px solid var(--dk-border-default);
-}
-
-/* Row: name, then the facts that change the decision, then the consequence.
-   The whole row is the control, so hover and focus both say so. */
+/* Row content inside the kit's .dk-split__item (frame, hover and selection
+   come from dakit): name, then the facts that change the decision, then the
+   consequence. */
 body[data-workspace-view="tasks"] .runtime-template-row {
-  display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   grid-template-areas:
     "name name name"
@@ -664,48 +623,14 @@ body[data-workspace-view="tasks"] .runtime-template-row {
     "summary start open";
   align-items: center;
   gap: var(--dk-space-2) var(--dk-space-3);
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  border-bottom: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-primary);
-  padding: var(--dk-space-3) var(--dk-space-4) var(--dk-space-3) var(--dk-space-4);
-  text-align: left;
-  transition: background 140ms ease, box-shadow 140ms ease;
 }
-body[data-workspace-view="tasks"] .runtime-template-row:hover {
-  background: var(--dk-bg-hover);
-}
-/* Selection and hover used to paint the same fill, so the operator could not
-   tell which Template the pane was describing. Selection now takes the tinted
-   ground plus accented, heavier name, matching how the sidebar marks the
-   active route; hover only lifts the ground. The app has no coloured edge
-   accents by contract, so there is no rail. */
-body[data-workspace-view="tasks"] .runtime-template-row.is-selected {
-  background: var(--dk-accent-soft);
-}
-body[data-workspace-view="tasks"] .runtime-template-row.is-selected strong {
-  color: var(--dk-accent-default);
-  font-weight: var(--dk-weight-bold);
-}
-body[data-workspace-view="tasks"] .runtime-template-row strong {
-  grid-area: name;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--dk-text-heading);
-  font-size: var(--dk-text-body);
-  font-weight: var(--dk-weight-medium);
-  line-height: 1.3;
-}
-body[data-workspace-view="tasks"] .runtime-template-row strong > svg {
+body[data-workspace-view="tasks"] .runtime-template-row .dk-split__name { grid-area: name; }
+body[data-workspace-view="tasks"] .runtime-template-row .dk-split__name > svg,
+body[data-workspace-view="tasks"] .runtime-template-title > svg {
   flex: none;
   color: var(--dk-text-faint);
 }
-body[data-workspace-view="tasks"] .runtime-template-row.is-selected strong > svg {
+body[data-workspace-view="tasks"] .runtime-template-row[aria-current="true"] .dk-split__name > svg {
   color: var(--dk-accent-default);
 }
 
@@ -769,91 +694,24 @@ body[data-workspace-view="tasks"] .runtime-template-row:focus-visible .runtime-t
   display: block;
 }
 
-body[data-workspace-view="tasks"] .runtime-template-projection {
+/* The detail scroller (.dk-split__scroll) stacks the preview blocks. */
+body[data-workspace-view="tasks"] .runtime-template-preview {
   display: grid;
   align-content: start;
-  min-width: 0;
-  max-height: 640px;
-  overflow: auto;
   gap: var(--dk-space-5);
-  background: var(--dk-bg-surface);
-  padding: 0 var(--dk-space-5) var(--dk-space-5);
 }
-body[data-workspace-view="tasks"] .runtime-template-projection > header {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: var(--dk-space-5) 0 var(--dk-space-3);
-  background: var(--dk-bg-surface);
-}
-
-/* Unselected detail. This pane is scaffolding, so it says the minimum and
-   stays quiet; it never competes with the row the operator is reading. */
-@media (max-width: 920px) {body[data-workspace-view="tasks"]
-    .runtime-template-projection.runtime-template-empty {
-    display: none;
-  }
-}
-body[data-workspace-view="tasks"] .runtime-template-empty {
-  align-content: center;
-  justify-items: center;
-  gap: var(--dk-space-2);
-  text-align: center;
-}
-body[data-workspace-view="tasks"] .runtime-template-empty-glyph {
-  color: var(--dk-text-faint);
-  opacity: 0.6;
-}
-body[data-workspace-view="tasks"] .runtime-template-empty p {
-  margin: 0;
-  color: var(--dk-text-muted);
-  font-size: var(--dk-text-md);
-  font-weight: var(--dk-weight-medium);
-}
-body[data-workspace-view="tasks"] .runtime-template-empty > span:last-child {
-  color: var(--dk-text-faint);
-  font-size: var(--dk-text-sm);
-}
-
-body[data-workspace-view="tasks"] .runtime-template-projection > header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 16px;
-  min-width: 0;
-}
-body[data-workspace-view="tasks"] .runtime-template-projection > header > div {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-body[data-workspace-view="tasks"] .runtime-template-projection h4:not([class*="dk-"]),
-body[data-workspace-view="tasks"] .runtime-template-projection p {
+body[data-workspace-view="tasks"] .runtime-template-preview p {
   min-width: 0;
   margin: 0;
 }
-body[data-workspace-view="tasks"] .runtime-template-projection h4:not([class*="dk-"]) {
+body[data-workspace-view="tasks"] .runtime-template-title {
   display: flex;
   align-items: center;
   gap: var(--dk-space-2);
-  overflow-wrap: anywhere;
-  color: var(--dk-text-heading);
-  font-size: var(--dk-text-xl);
-  font-weight: var(--dk-weight-bold);
-  line-height: 1.2;
 }
-body[data-workspace-view="tasks"] .runtime-template-projection h4:not([class*="dk-"]) svg {
-  flex: none;
-  color: var(--dk-text-faint);
-}
-body[data-workspace-view="tasks"] .runtime-template-projection > header p:not([class*="dk-"]) {
+body[data-workspace-view="tasks"] .runtime-template-guidance {
   color: var(--dk-text-muted);
   font-size: var(--dk-text-sm);
-  line-height: 1.5;
-}
-body[data-workspace-view="tasks"] .runtime-template-projection .primary-button {
-  flex: none;
-  white-space: nowrap;
 }
 
 /* Block headings tie the pane together; they sit above the facts they label. */
@@ -1032,40 +890,6 @@ body[data-workspace-view="tasks"] .runtime-template-definition dd {
 body[data-workspace-view="tasks"] .runtime-template-definition dt:nth-last-of-type(1),
 body[data-workspace-view="tasks"] .runtime-template-definition dd:nth-last-of-type(1) {
   border-bottom: 0;
-}
-
-/* The back control belongs to the stacked layout only. It used to render on
-   desktop, directly above the pane the list was already showing beside it. */
-body[data-workspace-view="tasks"] .runtime-mobile-back {
-  display: none;
-}
-@media (max-width: 920px) {body[data-workspace-view="tasks"] .runtime-mobile-back {
-    display: block;
-    width: fit-content;
-    min-height: 34px;
-    border: 1px solid var(--dk-border-default);
-    border-radius: var(--dk-radius-md);
-    background: var(--dk-bg-muted);
-    color: var(--dk-text-primary);
-    padding: var(--dk-space-1) var(--dk-space-3);
-    font-size: var(--dk-text-sm);
-    font-weight: var(--dk-weight-semibold);
-  }body[data-workspace-view="tasks"] .runtime-mobile-back:hover {
-    border-color: var(--dk-border-control-hover);
-    background: var(--dk-bg-hover);
-  }
-}
-
-/* Stacked layout: the pane is the page. Capping it would put a nested scroll
-   inside a scrolling page, and a sticky header would eat the viewport. */
-@media (max-width: 920px) {body[data-workspace-view="tasks"] .runtime-template-projection {
-    max-height: none;
-    overflow: visible;
-  }body[data-workspace-view="tasks"] .runtime-template-projection > header {
-    position: static;
-    margin: 0;
-    padding: 0;
-  }
 }
 
 body[data-workspace-view="tasks"] .ops-card-chips {

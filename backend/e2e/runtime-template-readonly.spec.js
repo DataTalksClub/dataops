@@ -80,13 +80,13 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     fs.mkdirSync(out, { recursive: true });
     await page.setViewportSize({ width, height });
     await page.goto('/templates');
-    const empty = page.locator('.runtime-template-empty');
+    const empty = page.locator('.runtime-template-projection .dk-split__empty');
     await expect(empty).toContainText('Choose a template');
     await expect(empty).toContainText('Use Start card');
     await expect(page.locator('.runtime-template-row-open')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Start card', exact: true })).toHaveCount(0);
     if (width > 1000) {
-      const listBox = await page.locator('.runtime-template-list').boundingBox();
+      const listBox = await page.locator('.runtime-template-inspector .dk-split__list').boundingBox();
       const emptyBox = await empty.boundingBox();
       expect(emptyBox.x).toBeGreaterThanOrEqual(listBox.x + listBox.width);
     }

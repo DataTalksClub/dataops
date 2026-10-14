@@ -1415,10 +1415,10 @@ test.describe('canonical frontend capability behavior', () => {
     await page.goto('/review');
     await expect(page.getByRole('heading', { name: 'Document review', exact: true })).toBeVisible();
     await expect(page.locator('.review-surface')).toBeVisible();
-    await expect(page.locator('.review-queue-item')).toHaveCount(1);
-    await expect(page.locator('.review-queue-item').first()).toContainText('Synthetic Capability Procedure');
+    await expect(page.locator('.review-surface .dk-split__item')).toHaveCount(1);
+    await expect(page.locator('.review-surface .dk-split__item').first()).toContainText('Synthetic Capability Procedure');
 
-    await page.locator('.review-queue-item').first().click();
+    await page.locator('.review-surface .dk-split__item').first().click();
     await expect(page).toHaveURL(/\/review\?documentId=sop\.synthetic\.capability$/);
     await expect(page.locator('.review-markdown-preview')).toContainText('Verify the synthetic capability.');
     await expect(page.getByRole('heading', { name: 'Record review evidence', exact: true })).toBeVisible();

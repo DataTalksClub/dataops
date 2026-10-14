@@ -96,17 +96,17 @@ export function createNavigationShell(context) {
   }
 
   function visibleEntityFocusTarget(restoreFocus) {
-    if (restoreFocus?.kind === "runtime-template-list") {
-      // The Templates surface has no search field; returning to the list
-      // lands focus back on the operator's Template, or the first row.
-      const rows = [...documentRef.querySelectorAll(".runtime-template-row")].filter(
+    if (restoreFocus?.kind === "split-list") {
+      // Back from a list–detail pane lands focus on the row the operator
+      // came from, or the first visible row.
+      const rows = [...documentRef.querySelectorAll(".dk-split__item")].filter(
         (candidate) =>
           candidate instanceof HTMLElementClass &&
           candidate.isConnected &&
           candidate.offsetParent !== null,
       );
       return (
-        rows.find((candidate) => candidate.classList.contains("is-selected"))
+        rows.find((candidate) => candidate.getAttribute("aria-current") === "true")
         || rows[0]
         || null
       );
@@ -303,6 +303,13 @@ export function createNavigationShell(context) {
         "",
         visible,
       );
+    }
+    // A surface that already shows the entity (a list–detail selection opened
+    // in place) only records it: the URL and the active route move, nothing
+    // re-renders. Back/Forward still re-render through applyWorkspaceRoute.
+    if (options.render === false) {
+      activeRoute = route;
+      return { route, token, ready: Promise.resolve() };
     }
     commitWorkspaceRoute(route, token, options);
     const hydration =

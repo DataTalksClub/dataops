@@ -215,28 +215,8 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
   background: none;
   box-shadow: none;
   padding: 0 4px;
-}/* Adversarial round 2 (390px): the Authored template list must not clip
-   behind an internal scroll now that the layout stacks; the board actions
-   and artifact links meet the 44px mobile target. */
-@media (max-width: 820px) {body[data-workspace-view="tasks"] .runtime-template-list {
-    max-height: none;
-    overflow: visible;
-    border-right: 0;
-  }body[data-workspace-view="tasks"] .workflow-board-actions > button {
-    min-height: 44px;
-  }body[data-workspace-view="tasks"] .ops-state-list .ops-data-row a {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-  }
-}/* Adversarial round 2 (390px): the Authored template list must not clip
-   behind an internal scroll now that the layout stacks; the board actions
-   and artifact links meet the 44px mobile target. */
-@media (max-width: 820px) {body[data-workspace-view="tasks"] .runtime-template-list {
-    max-height: none;
-    overflow: visible;
-    border-right: 0;
-  }body[data-workspace-view="tasks"] .workflow-board-actions > button {
+}/* Board actions and artifact links meet the 44px mobile target. */
+@media (max-width: 820px) {body[data-workspace-view="tasks"] .workflow-board-actions > button {
     min-height: 44px;
   }body[data-workspace-view="tasks"] .ops-state-list .ops-data-row a {
     display: inline-flex;
@@ -328,13 +308,6 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
     display: flex;
     align-items: center;
     min-height: 44px;
-  }/* Sponsors: bookings precede the filter controls inside the two-pane
-     master. (The bookkeeping ledger keeps its toolbar above the records at
-     every width, so focus order and visual order agree.) */.sponsor-crm-surface .crm-master {
-    display: flex;
-    flex-direction: column;
-  }.sponsor-crm-surface .crm-master .crm-filters {
-    order: 9;
   }
 }/* ── Slice 5 review round 1 (#229): knowledge family, panels, finance r2 ── *//* Docs and Admin share the knowledge-family header: eyebrow, H1, subtitle on
    the normal content column, left-aligned like Review. */.operations-home .ops-surface-header,
@@ -433,17 +406,6 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
 }.task-panel-body input[type="file"]::file-selector-button:hover {
   border-color: var(--dk-border-control-hover);
   background: var(--dk-bg-hover);
-}
-
-/* Sponsors: the booking queue column is narrow on desktop, so the row
-   stacks its actions under the text instead of squeezing the meta line. */
-@media (min-width: 821px) {.crm-booking-list .crm-booking-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-  }.crm-booking-list .crm-booking-row .row-actions {
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 820px) {/* Knowledge-family controls meet the 44px floor on mobile. */.operating-model-surface button,
@@ -580,16 +542,6 @@ body[data-workspace-view] .task-modal-panel button,
   font-variant-numeric: tabular-nums;
   font-size: 12px;
   font-weight: 500;
-}/* The booking card is narrow on the sponsors desktop grid: let the text take
-   the line and the actions wrap below instead of squeezing the copy into
-   mid-phrase breaks. */.crm-booking-row {
-  flex-wrap: wrap;
-}.crm-booking-row > div:first-child {
-  flex: 1 1 170px;
-  min-width: 0;
-}.crm-booking-row .row-actions {
-  flex: 0 0 auto;
-  margin-left: auto;
 }
 
 .ops-quality-row {

@@ -296,7 +296,7 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await setTheme(page, true);
     await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
     await expectPalette(page, true);
-    await expect(page.locator(".booking-detail-header h2")).toHaveCSS(
+    await expect(page.locator("[data-crm-detail] .dk-split__title")).toHaveCSS(
       "color",
       "rgb(240, 246, 252)",
     );

@@ -186,14 +186,14 @@ describe("Document review surface", () => {
     await refresh.click();
     await nextTicks(3);
     assert.ok(calls.filter(([method]) => method === "GET").length > requestsBeforeRefresh);
-    assert.equal(findAllByClass(documentList, "review-queue-item").length, 1);
+    assert.equal(findAllByClass(documentList, "dk-split__item").length, 1);
     assert.ok(findByText(documentList, "# Publish the newsletter\n\nRun the documented steps.", ".review-markdown-preview"));
     assert.ok(findByText(documentList, "Add a validation example."));
 
     const filter = documentList.querySelector('[name="review-filter"]');
     filter.value = "changes";
     await filter.dispatch("change");
-    assert.equal(findAllByClass(documentList, "review-queue-item").length, 1);
+    assert.equal(findAllByClass(documentList, "dk-split__item").length, 1);
     assert.ok(findByText(documentList, "Archive a process"));
 
     const feedback = documentList.querySelector('[name="feedback"]');

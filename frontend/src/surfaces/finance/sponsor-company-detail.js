@@ -1,3 +1,4 @@
+import { SPLIT_BACK_ICON } from "../split-back-icon.js";
 import { html } from "./shared.js";
 
 /**
@@ -67,6 +68,11 @@ export function createSponsorCompanyDetail({
       orgDeals[0];
     if (deal) sponsorCommunications.selectedBookingId = deal.id;
     surface.classList.add("has-booking-detail");
+    // The queue marks this company as the selected row; on a phone the split
+    // shows the detail pane.
+    surface.dataset.selectedCompany = organization.id;
+    const split = surface.querySelector("[data-crm-split]");
+    split.dataset.view = "detail";
     draw();
     const history = deal ? await api(`/deals/${deal.id}/history`) : { items: [] };
     const mail = await api(`/organizations/${organization.id}/messages`);
@@ -156,16 +162,15 @@ export function createSponsorCompanyDetail({
           ${escapeHtml(humanizeOptionLabel(deal.status))}
         </span>`
       : "";
-    surface.querySelector("[data-crm-detail]").innerHTML = html`<article
-      class="crm-booking-detail"
-    >
-      <header class="booking-detail-header">
-        <div>
-          <button type="button" class="booking-back" data-close-booking>
-            ← Sponsors
-          </button>
+    surface.querySelector("[data-crm-detail]").innerHTML = html`<header
+        class="dk-split__head"
+      >
+        <button type="button" class="dk-split__back" data-close-booking aria-label="Back to Sponsors">
+          ${SPLIT_BACK_ICON}Sponsors
+        </button>
+        <div class="booking-detail-title">
           <p class="booking-kind">${escapeHtml(kindLabel)}</p>
-          <h2>${escapeHtml(organization.displayName || "Unknown sponsor")}</h2>
+          <h2 class="dk-split__title" tabindex="-1">${escapeHtml(organization.displayName || "Unknown sponsor")}</h2>
           <p>${domainChip}${dealChip}</p>
         </div>
         <button
@@ -175,7 +180,8 @@ export function createSponsorCompanyDetail({
           Edit deal
         </button>
       </header>
-      <nav class="booking-section-nav" aria-label="Company detail sections">
+      <article class="dk-split__scroll crm-booking-detail">
+      <nav class="booking-section-nav dk-split__sticky" aria-label="Company detail sections">
         <button
           class="is-active"
           aria-pressed="true"
@@ -263,8 +269,9 @@ export function createSponsorCompanyDetail({
       </div>
     </article>`;
     surface.querySelector("[data-close-booking]").addEventListener("click", () => {
-      navigateCanonicalWorkspace("/sponsors");
+      navigateCanonicalWorkspace("/sponsors", {}, { restoreFocus: { kind: "split-list" } });
     });
+    globalThis.dakitSplit?.show(split, "detail");
     surface
       .querySelector("[data-crm-detail] [data-edit-deal]")
       ?.addEventListener("click", (event) => {

@@ -909,19 +909,6 @@ body[data-workspace-view="tasks"] .recurring-form-footer button {
   100% { background-position: -100% 0; }
 }
 
-@media (max-width: 920px) {body[data-workspace-view="tasks"] .runtime-template-layout {
-    grid-template-columns: 1fr;
-  }body[data-workspace-view="tasks"] .runtime-template-list {
-    max-height: 320px;
-    border-right: 0;
-    border-bottom: 1px solid var(--dk-border-default);
-  }body[data-workspace-view="tasks"] .runtime-template-layout.is-detail .runtime-template-list {
-    display: none;
-  }body[data-workspace-view="tasks"] .runtime-template-layout.is-detail .runtime-template-projection {
-    display: grid;
-  }
-}
-
 @media (max-width: 760px) {body[data-workspace-view="tasks"] .operations-home {
     gap: 16px;
   }body[data-workspace-view="tasks"] .task-route-context {
@@ -986,10 +973,6 @@ body[data-workspace-view="tasks"] .workflow-references-section .task-history .ta
   }body[data-workspace-view="tasks"] .workflow-references-section .task-follow-up-row {
     display: grid;
     grid-template-columns: 1fr;
-  }body[data-workspace-view="tasks"] .runtime-template-projection > header {
-    display: grid;
-  }body[data-workspace-view="tasks"] .runtime-template-projection > header .primary-button {
-    width: fit-content;
   }
 }
 

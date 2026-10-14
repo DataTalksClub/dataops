@@ -34,11 +34,9 @@ function createNavigationHarness(options = {}) {
   routeHeading.offsetParent = {};
   documentList.append(routeHeading);
   const searchInput = new FakeElement("input");
-  const templateRow = visibleButton("runtime-template-row", {});
-  const selectedTemplateRow = visibleButton(
-    "runtime-template-row is-selected",
-    {},
-  );
+  const templateRow = visibleButton("dk-split__item", {});
+  const selectedTemplateRow = visibleButton("dk-split__item", {});
+  selectedTemplateRow.setAttribute("aria-current", "true");
   const taskButton = visibleButton("ops-queue-row", { taskId: "task-1" });
   const queueTaskButton = visibleButton("queue-task-action", { taskId: "queue-task" });
   const nestedTask = visibleButton("card-checklist-label", {
@@ -354,7 +352,7 @@ describe("canonical navigation shell behavior", () => {
     ]);
   });
 
-  test("restores focus to visible Task, Card, nested Task, and Template list controls", async () => {
+  test("restores focus to visible Task, Card, nested Task, and list–detail rows", async () => {
     const cases = [
       ["/tasks", { taskId: "task-1" }, { id: "task-1", kind: "task" }, "taskButton"],
       ["/cards", { cardId: "card-1" }, { id: "card-1", kind: "workflow" }, "cardButton"],
@@ -364,7 +362,7 @@ describe("canonical navigation shell behavior", () => {
         { id: "task-nested", kind: "task", surface: "workflows" },
         "nestedTask",
       ],
-      ["/templates", {}, { kind: "runtime-template-list" }, "selectedTemplateRow"],
+      ["/templates", {}, { kind: "split-list" }, "selectedTemplateRow"],
       ["/tasks", {}, { id: "queue-task", kind: "queue-task" }, "queueTaskButton"],
     ];
     for (const [path, params, restoreFocus, targetName] of cases) {

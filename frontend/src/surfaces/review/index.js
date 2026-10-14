@@ -1,3 +1,4 @@
+import { SPLIT_BACK_ICON } from "../split-back-icon.js";
 import { createPageHeader } from "../operations-overview.js";
 import {
   buildReviewQueue,
@@ -100,6 +101,15 @@ function createEmptyState(documentRef, title, body) {
   appendText(documentRef, state, "strong", "", title);
   appendText(documentRef, state, "span", "", body);
   return state;
+}
+
+function createSplitEmpty(documentRef, title, body) {
+  const holder = createElement(documentRef, "div", "dk-split__empty");
+  const state = createElement(documentRef, "div", "dk-empty");
+  appendText(documentRef, state, "p", "dk-empty__title", title);
+  appendText(documentRef, state, "p", "dk-empty__desc", body);
+  holder.append(state);
+  return holder;
 }
 
 function createReviewSnapshot() {
@@ -259,19 +269,19 @@ export function createReviewSurface(context) {
   }
 
   function renderQueuePanel(items, selectedItem) {
-    const panel = createElement(documentRef, "section", "review-queue-panel");
-    panel.setAttribute("aria-label", "Documents to review");
-    const heading = createElement(documentRef, "header", "review-panel-heading");
-    appendText(documentRef, heading, "h3", "", "Review queue");
+    const panel = createElement(documentRef, "section", "dk-split__list");
+    panel.setAttribute("aria-labelledby", "review-queue-title");
+    const heading = createElement(documentRef, "header", "dk-split__head");
+    appendText(documentRef, heading, "h2", "dk-split__title", "Review queue").id = "review-queue-title";
     appendText(
       documentRef,
       heading,
       "span",
-      "review-panel-count",
+      "dk-split__count",
       `${items.length} ${items.length === 1 ? "document" : "documents"}`,
     );
     panel.append(heading);
-    const list = createElement(documentRef, "div", "review-queue-list");
+    const list = createElement(documentRef, "div", "dk-split__scroll");
     if (items.length === 0) {
       list.append(
         createEmptyState(
@@ -284,12 +294,11 @@ export function createReviewSurface(context) {
       );
     }
     for (const item of items) {
-      const button = createElement(documentRef, "button", "review-queue-item");
+      const button = createElement(documentRef, "button", "dk-split__item");
       button.type = "button";
       button.dataset.documentId = item.id;
-      button.classList.toggle("is-selected", item.id === selectedItem?.id);
-      button.setAttribute("aria-pressed", String(item.id === selectedItem?.id));
-      const title = createElement(documentRef, "strong");
+      if (item.id === selectedItem?.id) button.setAttribute("aria-current", "true");
+      const title = createElement(documentRef, "span", "dk-split__name");
       title.textContent = text(item.document.title, item.id);
       const meta = createElement(documentRef, "span", "review-queue-meta");
       meta.textContent = `${labelize(item.document.criticality)} · ${labelize(item.document.status)}`;
@@ -308,11 +317,17 @@ export function createReviewSurface(context) {
 
   function renderDocumentHeader(parent, item) {
     const document = item.document;
-    const header = createElement(documentRef, "header", "review-document-header");
-    const titleGroup = createElement(documentRef, "div");
-    appendText(documentRef, titleGroup, "p", "section-kicker", "Selected document");
-    appendText(documentRef, titleGroup, "h3", "", text(document.title, item.id));
-    appendText(documentRef, titleGroup, "p", "review-document-path", document.path);
+    const header = createElement(documentRef, "header", "dk-split__head");
+    const back = createElement(documentRef, "button", "dk-split__back");
+    back.type = "button";
+    back.setAttribute("aria-label", "Back to Review queue");
+    back.innerHTML = `${SPLIT_BACK_ICON}Review queue`;
+    back.addEventListener("click", () => {
+      navigateCanonicalWorkspace("/review", {}, { restoreFocus: { kind: "split-list" } });
+    });
+    const title = appendText(documentRef, header, "h2", "dk-split__title", text(document.title, item.id));
+    title.tabIndex = -1;
+    header.prepend(back);
     const badges = createElement(documentRef, "div", "review-document-badges");
     badges.append(
       makeStatusBadge(documentRef, document.status, "review-badge-lifecycle"),
@@ -322,7 +337,7 @@ export function createReviewSurface(context) {
     open.type = "button";
     open.textContent = "Open in editor";
     open.addEventListener("click", () => openDocument(document.path));
-    header.append(titleGroup, badges, open);
+    header.append(badges, open);
     parent.append(header);
   }
 
@@ -509,10 +524,10 @@ export function createReviewSurface(context) {
     parent.append(section);
   }
 
-  function renderDetail(parent, item) {
+  function renderDetail(pane, item) {
     if (!item) {
-      parent.append(
-        createEmptyState(
+      pane.append(
+        createSplitEmpty(
           documentRef,
           "Select a document",
           "Choose a document from the queue to read it and record review evidence.",
@@ -520,7 +535,10 @@ export function createReviewSurface(context) {
       );
       return;
     }
-    renderDocumentHeader(parent, item);
+    renderDocumentHeader(pane, item);
+    const parent = createElement(documentRef, "div", "dk-split__scroll dk-split__scroll--flush review-detail");
+    pane.append(parent);
+    appendText(documentRef, parent, "p", "review-document-path", item.document.path);
     renderMetadata(parent, item);
     renderPreview(parent, item);
     const historySection = createElement(documentRef, "section", "review-history");
@@ -555,7 +573,7 @@ export function createReviewSurface(context) {
     documentList.classList.remove("is-unified-search");
     documentList.classList.add("is-review-surface");
     setRouteTitle("Review");
-    const root = createElement(documentRef, "div", "review-surface");
+    const root = createElement(documentRef, "div", "review-surface dk-fill");
     renderHeader(root, summary);
     if (notice) {
       const saved = createElement(documentRef, "p", "review-notice");
@@ -579,9 +597,12 @@ export function createReviewSurface(context) {
       return;
     }
     renderFilterBar(root, queue);
-    const layout = createElement(documentRef, "div", "review-layout");
+    // The route decides which pane a phone shows; desktop shows both and
+    // still opens the first document when the route names none.
+    const layout = createElement(documentRef, "div", "dk-split");
+    layout.dataset.view = routeId && selectedItem?.id === routeId ? "detail" : "list";
     layout.append(renderQueuePanel(items, selectedItem));
-    const detail = createElement(documentRef, "section", "review-detail");
+    const detail = createElement(documentRef, "section", "dk-split__detail");
     detail.setAttribute("aria-label", "Selected document review");
     renderDetail(detail, selectedItem);
     layout.append(detail);

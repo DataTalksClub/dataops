@@ -456,23 +456,23 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('.runtime-template-projection')).toContainText(fixture.template.name);
 
     await page.setViewportSize({ width: 390, height: 844 });
-    const cleanBack = page.getByRole('button', { name: 'Back to template list' });
+    const cleanBack = page.getByRole('button', { name: 'Back to Templates' });
     await expect(cleanBack).toBeVisible();
     await cleanBack.click();
     await expect(page).toHaveURL(/\/templates$/);
-    await expect(page.locator('.runtime-template-list')).toBeVisible();
+    await expect(page.locator('.runtime-template-inspector .dk-split__list')).toBeVisible();
     await expect(page.locator('.runtime-template-projection')).toContainText('Choose a template');
     await expect(page.locator('.runtime-template-row').first()).toBeFocused();
     await page.reload();
     await expect(page).toHaveURL(/\/templates$/);
-    await expect(page.locator('.runtime-template-list')).toBeVisible();
+    await expect(page.locator('.runtime-template-inspector .dk-split__list')).toBeVisible();
     await expect(page.locator('.runtime-template-projection')).toContainText('Choose a template');
     await page.goBack();
     await expect(page).toHaveURL(exactRoute);
     await expect(page.locator('.runtime-template-projection')).toContainText(fixture.template.name);
     await page.goForward();
     await expect(page).toHaveURL(/\/templates$/);
-    await expect(page.locator('.runtime-template-list')).toBeVisible();
+    await expect(page.locator('.runtime-template-inspector .dk-split__list')).toBeVisible();
 
     await expect(page.getByRole('button', { name: 'Save template' })).toHaveCount(0);
   });

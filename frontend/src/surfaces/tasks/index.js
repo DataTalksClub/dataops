@@ -113,6 +113,8 @@ export function createTasksSurface(context) {
 
     const wrap = document.createElement("div");
     wrap.className = `operations-home ops-surface ops-surface-${activeSection}`;
+    // Templates is a list–detail split that fills the content area.
+    if (activeSection === "templates") wrap.classList.add("dk-fill");
     const recurringSurface = activeSection === "recurring" ? renderRecurringSurface(model) : null;
     if (activeSection !== "workflows") {
       const actions = [];

@@ -116,3 +116,9 @@ body:not([data-workspace-view="docs"]) .knowledge-tools { display: none; }
   .finance-section-head { padding: var(--dk-space-3) var(--dk-space-4); }
   .finance-section-head__main { flex-basis: 100%; }
 }
+
+/* A list–detail split (dakit docs/list-detail.md) fills the content area:
+   main and the persistent view wrappers pass the height down to it, so the
+   page never scrolls and each pane scrolls on its own. */
+.dk-main.page-shell:has(.dk-split:not([hidden])) { display: flex; flex-direction: column; }
+:is(#library-view, #document-list):has(.dk-split:not([hidden])) { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }

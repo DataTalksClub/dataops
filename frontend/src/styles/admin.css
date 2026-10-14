@@ -482,30 +482,11 @@ body[data-workspace-view="calendar"] .document-list {
 .bookkeeping-table-wrap th:last-child,
 .bookkeeping-table-wrap td:last-child {
     padding-inline: 0;
-  }.sponsor-crm-surface .crm-layout,
-.sponsor-crm-surface .crm-support-grid {
-    display: block;
-  }.sponsor-crm-surface .crm-layout {
-    margin-inline: 0;
-  }.crm-master,
-.crm-detail-pane,
-.crm-directory,
+  }.crm-directory,
 .crm-alerts {
     border-radius: var(--dk-radius-md);
-  }.crm-booking-row {
-    grid-template-columns: 1fr;
-    align-items: start;
-    gap: 10px;
-    padding: 14px;
-  }.crm-booking-row .row-actions {
-    justify-content: flex-start;
-  }.crm-support-grid > section + section {
-    margin-top: 16px;
-  }.booking-detail-header,
-.booking-detail-section {
+  }.booking-detail-section {
     padding: 16px 14px;
-  }.booking-detail-header h2:not([class*="dk-"]) {
-    font-size: 23px;
   }.booking-detail-section {
     margin-inline: 0;
   }.finance-panel {
@@ -629,7 +610,6 @@ body[data-workspace-view="calendar"] .document-list {
 @media (prefers-reduced-motion: reduce) {.bookkeeping-table-wrap tbody tr,
 .bookkeeping-document-row,
 .crm-directory-row,
-.crm-booking-row,
 .crm-alerts .crm-card,
 .booking-detail-section .crm-card,
 .calendar-activity,

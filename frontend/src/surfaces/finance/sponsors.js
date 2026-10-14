@@ -198,7 +198,11 @@ export function createSponsorCrmSurface(context) {
     }
     function setView(view, redraw = true) {
       currentView = view;
-      if (view === "pipeline") surface.classList.remove("has-booking-detail");
+      if (view === "pipeline") {
+        surface.classList.remove("has-booking-detail");
+        // The board is the list pane; a phone shows it again.
+        surface.querySelector("[data-crm-split]").dataset.view = "list";
+      }
       surface.classList.toggle("is-pipeline", view === "pipeline");
       surface.querySelectorAll("[data-crm-view]").forEach((button) => {
         const active = button.dataset.crmView === view;
@@ -211,8 +215,13 @@ export function createSponsorCrmSurface(context) {
       if (view === "companies") {
         companies.insertBefore(filters, surface.querySelector("[data-crm-orgs]"));
       } else if (view === "queue" || view === "pipeline") {
-        surface.querySelector(".crm-master").insertBefore(filters, queue);
+        surface.querySelector(".crm-master").insertBefore(
+          filters,
+          surface.querySelector("[data-crm-list-scroll]"),
+        );
       }
+      // Inside the list pane the filters are its tool band.
+      filters.classList.toggle("dk-split__tools", view !== "companies");
       queue.hidden = view !== "queue";
       pipeline.hidden = view !== "pipeline";
       companies.hidden = view !== "companies";
@@ -220,6 +229,8 @@ export function createSponsorCrmSurface(context) {
       surface.querySelector(".crm-newsletters").hidden = view !== "newsletters";
       surface.querySelector(".crm-layout").hidden =
         view === "companies" || view === "leads" || view === "newsletters";
+      // Queue and Pipeline fill the content area; the other views scroll the page.
+      surface.classList.toggle("dk-fill", !surface.querySelector(".crm-layout").hidden);
       surface.querySelector("[data-crm-pipeline]").hidden = view !== "pipeline";
       const heading = surface.querySelector("[data-crm-list-heading]");
       heading.textContent =
@@ -343,34 +354,28 @@ export function createSponsorCrmSurface(context) {
         ? [...grouped.entries()]
             .map(([companyId, items]) => {
               const name = items[0].companyName || organizationName(companyId);
-              return html`<article class="crm-booking-row">
-                <div class="crm-booking-content">
-                  <div class="crm-booking-header">
-                    <strong class="crm-booking-name">${escapeHtml(name)}</strong>
-                  </div>
-                  <div class="crm-booking-items">
+              const current = surface.dataset.selectedCompany === companyId ? ' aria-current="true"' : "";
+              return html`<button
+                type="button"
+                class="dk-split__item crm-booking-row"
+                data-open-company="${escapeHtml(companyId)}"
+                data-open-deal="${escapeHtml(items.find((item) => item.dealId)?.dealId || "")}"${current}
+              >
+                <span class="dk-split__name crm-booking-name">${escapeHtml(name)}</span>
+                  <span class="crm-booking-items">
                     ${items
                       .map(
-                        (item) => html`<p class="crm-queue-item">
+                        (item) => html`<span class="dk-split__meta crm-queue-item">
                           <span class="status-label" data-status="${escapeHtml(item.kind)}">${escapeHtml(
                             { relationship: "Follow up", operational: "Deal work" }[item.kind] || "Work",
                           )}</span>
                           <span class="crm-queue-action">${escapeHtml(humanizeOptionLabel(String(item.action || "Follow up")))}</span>
-                          <span class="crm-queue-due">· ${escapeHtml(humanSponsorDate(item.due))}</span>
-                        </p>`,
+                          <span class="crm-queue-due">${escapeHtml(humanSponsorDate(item.due))}</span>
+                        </span>`,
                       )
                       .join("")}
-                  </div>
-                </div>
-                <div class="row-actions">
-                  <button
-                    data-open-company="${escapeHtml(companyId)}"
-                    data-open-deal="${escapeHtml(items.find((item) => item.dealId)?.dealId || "")}"
-                  >
-                    Open company
-                  </button>
-                </div>
-              </article>`;
+                </span>
+              </button>`;
             })
             .join("")
         : html`<div class="honest-state">
@@ -498,8 +503,8 @@ export function createSponsorCrmSurface(context) {
     surface.querySelector("[data-crm-detail]").addEventListener("click", (event) => {
       if (surface.classList.contains("has-booking-detail")) return;
       const dealId = event.target.closest("[data-open-deal]")?.dataset.openDeal;
-      if (dealId && !showRecord({ dealId })) {
-        navigateCanonicalWorkspace("/sponsors", { dealId });
+      if (dealId) {
+        navigateCanonicalWorkspace("/sponsors", { dealId }, showRecord({ dealId }) ? { render: false } : {});
       }
     });
     surface.querySelector("[data-add-org]").onclick = () =>
@@ -510,9 +515,11 @@ export function createSponsorCrmSurface(context) {
       const contact = event.target.closest("[data-contact-org]")?.dataset.contactOrg;
       const archive = event.target.closest("[data-archive-org]")?.dataset.archiveOrg;
       if (company) {
-        if (!showRecord({ companyId: company })) {
-          navigateCanonicalWorkspace("/sponsors", { companyId: company });
-        }
+        navigateCanonicalWorkspace(
+          "/sponsors",
+          { companyId: company },
+          showRecord({ companyId: company }) ? { render: false } : {},
+        );
         return;
       }
       if (contact) {
@@ -544,12 +551,13 @@ export function createSponsorCrmSurface(context) {
         openDeal(deals.find((item) => item.id === edit));
         return;
       }
+      // An in-place open still records the selection in the URL (no re-render).
       if (dealId) {
-        if (!showRecord({ dealId })) navigateCanonicalWorkspace("/sponsors", { dealId });
+        navigateCanonicalWorkspace("/sponsors", { dealId }, showRecord({ dealId }) ? { render: false } : {});
         return;
       }
-      if (companyId && !showRecord({ companyId })) {
-        navigateCanonicalWorkspace("/sponsors", { companyId });
+      if (companyId) {
+        navigateCanonicalWorkspace("/sponsors", { companyId }, showRecord({ companyId }) ? { render: false } : {});
       }
     };
     surface.querySelector("[data-crm-bookings]").onclick = openFromList;

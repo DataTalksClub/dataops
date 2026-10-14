@@ -1,3 +1,5 @@
+import { SPLIT_BACK_ICON } from "../split-back-icon.js";
+
 export function createTemplatesSurface(context) {
   const {
     countLabel,
@@ -144,16 +146,8 @@ export function createTemplatesSurface(context) {
   // opening Templates never flashes one interface and then another.
   function renderRuntimeTemplateInspector() {
     const section = document.createElement("section");
-    section.className = "ops-section runtime-template-inspector";
-    section.classList.toggle("has-selection", Boolean(runtimeState.selectedId));
-    const header = document.createElement("div");
-    header.className = "ops-section-header";
-    const heading = document.createElement("div");
-    const title = document.createElement("h3");
-    title.textContent = "Authored templates";
-    heading.append(title);
-    header.append(heading);
-    section.append(header);
+    section.className = "runtime-template-inspector dk-fill";
+    section.setAttribute("aria-label", "Authored templates");
 
     const entity = getWorkspaceEntityState();
     if (
@@ -175,11 +169,28 @@ export function createTemplatesSurface(context) {
       return section;
     }
 
+    // The route decides which pane a phone shows (dakit list–detail split).
     const layout = document.createElement("div");
-    layout.className = "runtime-template-layout";
-    layout.classList.toggle("is-detail", Boolean(runtimeState.selectedId));
+    layout.className = "dk-split";
+    layout.dataset.view = runtimeState.selectedId ? "detail" : "list";
+    const pane = document.createElement("section");
+    pane.className = "dk-split__list";
+    pane.setAttribute("aria-labelledby", "runtime-templates-title");
+    const head = document.createElement("header");
+    head.className = "dk-split__head";
+    const title = document.createElement("h2");
+    title.className = "dk-split__title";
+    title.id = "runtime-templates-title";
+    title.textContent = "Authored templates";
+    head.append(title);
+    if (runtimeState.loaded && !runtimeState.error) {
+      const count = document.createElement("span");
+      count.className = "dk-split__count";
+      count.textContent = String(orderedTemplates().length);
+      head.append(count);
+    }
     const list = document.createElement("div");
-    list.className = "runtime-template-list";
+    list.className = "dk-split__scroll";
     list.addEventListener("scroll", () => {
       listScrollTop = list.scrollTop || 0;
     }, { passive: true });
@@ -194,7 +205,8 @@ export function createTemplatesSurface(context) {
     } else {
       renderTemplateRows(list);
     }
-    layout.append(list, renderTemplateDetail());
+    pane.append(head, list);
+    layout.append(pane, renderTemplateDetail());
     section.append(layout);
     return section;
   }
@@ -222,11 +234,12 @@ export function createTemplatesSurface(context) {
     const button = document.createElement("button");
     button.type = "button";
     const selected = template.id === runtimeState.selectedId;
-    button.className = `runtime-template-row${selected ? " is-selected" : ""}`;
-    button.setAttribute("aria-pressed", String(selected));
+    button.className = "dk-split__item runtime-template-row";
+    if (selected) button.setAttribute("aria-current", "true");
     const facts = templateFacts(template);
 
-    const name = document.createElement("strong");
+    const name = document.createElement("span");
+    name.className = "dk-split__name";
     name.appendChild(triggerIcon(template.triggerType));
     name.append(document.createTextNode(template.name || "Unnamed template"));
 
@@ -255,7 +268,7 @@ export function createTemplatesSurface(context) {
     button.append(name, meta, summary);
     button.addEventListener("click", () => {
       if (template.id === runtimeState.selectedId) return;
-      listScrollTop = button.closest(".runtime-template-list")?.scrollTop || 0;
+      listScrollTop = button.closest(".dk-split__scroll")?.scrollTop || 0;
       navigateCanonicalWorkspace("/templates", { templateId: template.id });
     });
     return button;
@@ -263,53 +276,60 @@ export function createTemplatesSurface(context) {
 
   function renderTemplateDetail() {
     const selected = runtimeState.templates.find((template) => template.id === runtimeState.selectedId);
+    const pane = document.createElement("section");
+    pane.className = "dk-split__detail runtime-template-projection";
+    pane.setAttribute("aria-label", "Selected template");
     if (!selected) {
       const empty = document.createElement("div");
-      empty.className =
-        "runtime-template-projection runtime-template-readonly runtime-template-empty";
-      const glyph = document.createElement("span");
-      glyph.className = "runtime-template-empty-glyph";
-      glyph.setAttribute("aria-hidden", "true");
-      glyph.appendChild(templateIcon());
+      empty.className = "dk-split__empty";
+      const state = document.createElement("div");
+      state.className = "dk-empty";
       const prompt = document.createElement("p");
+      prompt.className = "dk-empty__title";
       prompt.textContent = "Choose a template";
-      const hint = document.createElement("span");
+      const hint = document.createElement("p");
+      hint.className = "dk-empty__desc";
       hint.textContent = "Choose a template from the list to preview its steps and existing cards. Use Start card in the preview when you’re ready to begin.";
-      empty.append(glyph, prompt, hint);
-      return empty;
+      state.append(prompt, hint);
+      empty.append(state);
+      pane.append(empty);
+      return pane;
     }
 
     const facts = templateFacts(selected);
     const detail = document.createElement("article");
-    detail.className = "runtime-template-projection runtime-template-readonly";
+    detail.className = "dk-split__scroll runtime-template-preview runtime-template-readonly";
     const back = document.createElement("button");
     back.type = "button";
-    back.className = "runtime-mobile-back";
-    back.textContent = "Back to template list";
+    back.className = "dk-split__back";
+    back.setAttribute("aria-label", "Back to Templates");
+    back.innerHTML = `${SPLIT_BACK_ICON}Templates`;
     back.addEventListener("click", () => navigateCanonicalWorkspace(
       "/templates",
       {},
-      { restoreFocus: { kind: "runtime-template-list" } },
+      { restoreFocus: { kind: "split-list" } },
     ));
 
     const header = document.createElement("header");
-    const title = document.createElement("div");
-    const heading = document.createElement("h4");
+    header.className = "dk-split__head";
+    const heading = document.createElement("h2");
+    heading.className = "dk-split__title runtime-template-title";
+    heading.tabIndex = -1;
     heading.appendChild(templateIcon());
     heading.append(document.createTextNode(selected.name || selected.id));
     const guidance = document.createElement("p");
+    guidance.className = "runtime-template-guidance";
     guidance.textContent = `${triggerLabel(selected.triggerType)} · ${
       facts.cards.length
         ? `Last used ${relativeDayLabel(facts.lastUsed) || "recently"}`
         : "Not started yet"
     }`;
-    title.append(heading, guidance);
     const create = document.createElement("button");
     create.type = "button";
     create.className = "primary-button";
     create.textContent = "Start card";
     create.addEventListener("click", () => openQuickWorkflowForm({ template: selected }));
-    header.append(title, create);
+    header.append(back, heading, create);
 
     // What the Template does comes before where it came from. Provenance is
     // maintainer detail and belongs at the foot of the pane.
@@ -359,8 +379,9 @@ export function createTemplatesSurface(context) {
     );
     definitionSection.append(definitionSummary, definition, provenanceNote);
 
-    detail.append(back, header, stepsSection, cardUpdates, definitionSection);
-    return detail;
+    detail.append(guidance, stepsSection, cardUpdates, definitionSection);
+    pane.append(header, detail);
+    return pane;
   }
 
   function cardsForTemplate(templateId) {

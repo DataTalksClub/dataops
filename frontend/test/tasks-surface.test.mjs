@@ -1505,10 +1505,11 @@ describe("Tasks surface boundary", () => {
     harness.api.renderTasksSurface([], "templates");
     const loading = harness.documentList.querySelector(".runtime-template-inspector");
     assert.ok(loading);
-    assert.ok(loading.querySelector(".runtime-template-layout"));
-    assert.ok(loading.querySelector(".runtime-template-list"));
+    assert.ok(loading.querySelector(".dk-split"));
+    assert.ok(loading.querySelector(".dk-split__list"));
+    assert.ok(loading.querySelector(".dk-split__detail"));
     assert.match(
-      loading.querySelector(".runtime-template-list").textContent,
+      loading.querySelector(".dk-split__list").textContent,
       /Loading templates/,
     );
 
@@ -1565,7 +1566,8 @@ describe("Tasks surface boundary", () => {
     });
     await harness.api.refreshRuntimeTemplates();
     harness.api.renderTasksSurface([], "templates");
-    const list = harness.documentList.querySelector(".runtime-template-list");
+    // The list pane's scroller (the first .dk-split__scroll in the split).
+    const list = harness.documentList.querySelector(".dk-split__scroll");
     list.scrollTop = 142;
     await list.dispatch("scroll");
 
@@ -1585,7 +1587,7 @@ describe("Tasks surface boundary", () => {
     );
     harness.api.renderTasksSurface([], "templates");
     assert.equal(
-      harness.documentList.querySelector(".runtime-template-list").scrollTop,
+      harness.documentList.querySelector(".dk-split__scroll").scrollTop,
       142,
     );
   });
@@ -1655,15 +1657,16 @@ describe("Tasks surface boundary", () => {
     harness.api.renderTasksSurface([], "templates");
     collectClasses(harness.documentList);
 
-    // Intentionally rule-less by design: the icons are sized by element
-    // selectors (.runtime-template-projection h4 svg,
-    // .runtime-template-row strong > svg), and the hooks gate behavior,
-    // not paint.
+    // Intentionally rule-less by design: the icons are styled by descendant
+    // selectors (.runtime-template-title > svg,
+    // .runtime-template-row .dk-split__name > svg), the inspector is laid out
+    // by the kit (.dk-fill, .dk-split), and the hooks gate behavior, not paint.
     const unstyledByDesign = new Set([
       "runtime-template-icon",
       "runtime-template-trigger-icon",
       "runtime-template-readonly",
-      "has-selection",
+      "runtime-template-inspector",
+      "runtime-template-projection",
     ]);
     const styles = uncommentCss(readAppCss());
     for (const token of [...renderedClasses].sort()) {
@@ -1708,7 +1711,7 @@ describe("Tasks surface boundary", () => {
     const row = harness.documentList.querySelector(".runtime-template-row");
     assert.equal(row.querySelector("button"), null, "a template row only opens the preview");
     assert.equal(findByText(harness.documentList, "Start card", "button"), undefined);
-    const emptyPane = harness.documentList.querySelector(".runtime-template-empty");
+    const emptyPane = harness.documentList.querySelector(".dk-split__empty");
     assert.match(emptyPane.textContent, /Choose a template from the list/);
     await row.dispatch("click");
     assert.deepEqual(harness.navigations.at(-1), {

@@ -94,7 +94,6 @@ body[data-workspace-view="sponsors"] .library-view {
   }.bookkeeping-header,
 .crm-header,
 .section-header,
-.booking-detail-header,
 .finance-panel > header {
     display: grid;
   }.bookkeeping-header h2:not([class*="dk-"]),
@@ -104,7 +103,6 @@ body[data-workspace-view="sponsors"] .library-view {
   }.bookkeeping-header .primary-button,
 .crm-header button,
 .section-header button,
-.booking-detail-header button,
 .bookkeeping-surface button,
 .sponsor-crm-surface button {
     min-height: 44px;
@@ -174,40 +172,22 @@ body[data-workspace-view="sponsors"] .library-view {
     display: grid;
   }.bookkeeping-package label {
     width: 100%;
-  }.crm-layout,
-.crm-support-grid {
-    display: block;
-  }.crm-detail-pane,
-.sponsor-crm-surface.has-booking-detail > .crm-header,
+  }/* The open company gets the screen: the split shows only its detail pane
+     (dakit), and the surface chrome above it steps aside. The id outranks the
+     library page-header rule that would keep the header visible. */#document-list .sponsor-crm-surface.has-booking-detail > .crm-header,
 .sponsor-crm-surface.has-booking-detail > .surface-status,
 .sponsor-crm-surface.has-booking-detail > .crm-pipeline,
 .sponsor-crm-surface.has-booking-detail > .crm-alerts,
-.sponsor-crm-surface.has-booking-detail .crm-master,
-.sponsor-crm-surface.has-booking-detail > .crm-directory,
-.sponsor-crm-surface.has-booking-detail > .crm-support-grid {
+.sponsor-crm-surface.has-booking-detail > .crm-directory {
     display: none;
-  }.sponsor-crm-surface.has-booking-detail .crm-detail-pane {
-    display: block;
-    overflow: visible;
-    border: 0;
-  }.crm-master {
-    width: 100%;
-  }.crm-support-grid > section {
-    margin-top: 16px;
-  }.booking-detail-header {
-    padding: 0 0 16px;
   }.booking-section-nav {
-    top: var(--mobile-header-height);
     gap: 2px;
-    margin-inline: -14px;
     padding-inline: 8px;
   }.booking-section-nav button {
     min-width: 0;
     padding-inline: 4px !important;
     font-size: 12px;
   }.booking-detail-section {
-    margin-inline: -14px;
-    scroll-margin-top: 120px;
     padding: 16px 14px;
   }.booking-overview-list,
 .finance-panel dl,
@@ -299,8 +279,7 @@ body[data-workspace-view="sponsors"] .library-view {
   .bookkeeping-header p:not([class*="dk-"]),
   .crm-header p:not([class*="dk-"]),
   .review-header p:not([class*="dk-"]),
-  .planner-header p:not([class*="dk-"]),
-  .runtime-template-inspector .ops-section-header span {
+  .planner-header p:not([class*="dk-"]) {
     display: none !important;
   }
 
@@ -326,8 +305,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .calendar-nav-arrow,
   .calendar-add-button,
   .calendar-display-controls select,
-  .runtime-template-toolbar input,
-  .runtime-template-toolbar select,
   .bookkeeping-lens-nav button,
   .recurring-action {
     min-height: var(--dk-size-touch);
@@ -388,39 +365,6 @@ body[data-workspace-view="sponsors"] .library-view {
     flex-basis: 100%;
   }
 
-  /* ---- Templates: compact inspector toolbar so the list leads ---- */
-  .runtime-template-inspector > .ops-section-header {
-    /* Title and guidance are already hidden; the header is an empty box of
-       padding and border. contents keeps the h3 reachable while removing the
-       box itself. */
-    display: contents !important;
-  }
-  .runtime-template-toolbar {
-    flex-direction: row !important;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px !important;
-    margin: 0 !important;
-  }
-  .runtime-template-toolbar > * {
-    flex: 0 0 auto;
-    min-width: 0;
-  }
-  .runtime-template-toolbar .runtime-template-result-count {
-    flex: 0 1 auto;
-    font-size: 11px !important;
-    white-space: nowrap;
-  }
-  .runtime-template-toolbar .runtime-template-search {
-    flex: 1 1 0 !important;
-    width: 0;
-    min-height: var(--dk-size-touch);
-  }
-  .runtime-template-toolbar .primary-button,
-  .runtime-template-toolbar .quiet-button {
-    flex: 0 0 auto !important;
-  }
-
   /* ---- Bookkeeping: the sections keep their desktop order at every width ---- */
   .bookkeeping-surface {
     display: flex !important;
@@ -456,6 +400,18 @@ body[data-workspace-view="sponsors"] .library-view {
     align-items: center;
     gap: 6px;
   }
+  /* Queue and Pipeline fill the screen: one column, the split takes the rest. */
+  .sponsor-crm-surface.dk-fill {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+  .sponsor-crm-surface.dk-fill > :not(.dk-split) {
+    flex: none;
+  }
+  .sponsor-crm-surface > .crm-layout {
+    order: 3;
+  }
   .crm-header {
     flex-basis: 100%;
     display: flex;
@@ -490,7 +446,6 @@ body[data-workspace-view="sponsors"] .library-view {
     min-width: 0;
     margin: 0 !important;
   }
-  .crm-layout,
   .crm-directory,
   .crm-leads,
   .crm-newsletters {

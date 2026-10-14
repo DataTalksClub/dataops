@@ -50,15 +50,13 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
     <section class="crm-alerts" aria-label="Alerts">
       <div data-crm-alerts>Loading alerts…</div>
     </section>
-    <div class="crm-layout">
-      <section class="crm-master" aria-labelledby="crm-queue-heading">
-        <header class="section-header">
-          <div>
-            <h3 id="crm-queue-heading" data-crm-list-heading>Queue</h3>
-          </div>
-          <span data-booking-count class="section-count"></span>
+    <div class="dk-split crm-layout" data-crm-split data-view="list">
+      <section class="dk-split__list crm-master" aria-labelledby="crm-queue-heading">
+        <header class="dk-split__head">
+          <h2 class="dk-split__title" id="crm-queue-heading" data-crm-list-heading>Queue</h2>
+          <span data-booking-count class="dk-split__count"></span>
         </header>
-        <div class="crm-filters">
+        <div class="crm-filters dk-split__tools">
           <label
             >Search sponsors
             <input
@@ -73,18 +71,22 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
             </select></label
           >
         </div>
-        <div data-crm-queue class="crm-booking-list">Loading queue…</div>
-        <div data-crm-bookings class="crm-booking-list" hidden>Loading pipeline…</div>
-      </section>
-      <section class="crm-detail-pane" data-crm-detail aria-live="polite">
-        <div class="honest-state crm-select-booking">
-          <strong>Select a company</strong>
-          <p>
-            Open a queue row or pipeline deal to review people, deals, mail, and
-            finance in one place.
-          </p>
+        <div class="dk-split__scroll" data-crm-list-scroll>
+          <div data-crm-queue class="crm-booking-list">Loading queue…</div>
+          <div data-crm-bookings class="crm-booking-list" hidden>Loading pipeline…</div>
         </div>
-        <div data-crm-upcoming></div>
+      </section>
+      <section class="dk-split__detail crm-detail-pane" data-crm-detail aria-label="Selected sponsor" aria-live="polite">
+        <div class="dk-split__scroll crm-detail-empty">
+          <div class="dk-empty">
+            <p class="dk-empty__title">Select a company</p>
+            <p class="dk-empty__desc">
+              Open a queue row or pipeline deal to review people, deals, mail, and
+              finance in one place.
+            </p>
+          </div>
+          <div data-crm-upcoming></div>
+        </div>
       </section>
     </div>
     <section class="crm-directory" data-crm-companies-section hidden aria-labelledby="crm-sponsors-heading">
