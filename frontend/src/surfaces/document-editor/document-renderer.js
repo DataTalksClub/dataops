@@ -1,5 +1,14 @@
 import { editorFeedbackFor, editorMutationGuard } from "./feedback.js";
 import {
+  ensureFrontmatter,
+  frontmatterRange,
+  patchFrontmatterList,
+  patchFrontmatterScalar,
+  readFrontmatterList,
+  readFrontmatterScalar,
+} from "./frontmatter.js";
+import { procedureHeading, setProcedureHeading } from "./procedure-model.js";
+import {
   createBlockEditor,
   parseMarkdownBlocks,
   serializeBlocksToMarkdown,
@@ -13,8 +22,8 @@ export function createDocumentRenderer(context, services) {
     setRouteTitle, viewToggleButton,
   } = context;
   const {
-    appendProcedureChildren, attachInlineEditor, escapeRegex, makeAttrRow,
-    patchSectionInMarkdown, renderMarkdown, storeDraft, stripFrontmatter,
+    appendProcedureChildren, attachInlineEditor, commitProcedure,
+    patchSectionInMarkdown, readProcedureModel, renderMarkdown, storeDraft, stripFrontmatter,
     resizeDocumentTitle, setMarkdownTitle, stripLeadingHeading, updateSaveState,
   } = services;
   const showFeedback = editorFeedbackFor(context);
@@ -100,7 +109,7 @@ export function createDocumentRenderer(context, services) {
     if (trail) blocks.push(trail);
 
     blocks.push(renderTitleBlock(fm));
-    blocks.push(renderFrontmatterBlock(fm));
+    blocks.push(renderFrontmatterBlock());
     blocks.push(renderWarningsBlock());
     if (Object.keys(sections).length === 0) {
       const rawFull = editor.value || "";
@@ -218,7 +227,7 @@ export function createDocumentRenderer(context, services) {
 
   function applyBlocksChange(newBlocks, { rerender = true, focusBlockIndex = -1 } = {}) {
     const rawFull = editor.value || "";
-    const fmRange = _frontmatterRange(rawFull);
+    const fmRange = frontmatterRange(rawFull);
     const fmText = fmRange ? rawFull.slice(0, fmRange.end + 5) : "";
     const bodyAfterFm = fmRange ? rawFull.slice(fmRange.end + 5) : rawFull;
     const h1Match = bodyAfterFm.match(/^#{1,2}\s+[^\n]*\n+/);
@@ -250,7 +259,6 @@ export function createDocumentRenderer(context, services) {
         context.navigateCanonicalWorkspace("/docs");
       }
     });
-    nav.append(root);
 
     const allDocs = context.knowledgeState?.allDocuments || [];
     const matchedDoc = allDocs.find((d) => d.path === path);
@@ -278,33 +286,20 @@ export function createDocumentRenderer(context, services) {
       curr = parentDoc;
     }
 
+    const middle = [];
+    const folder = (label) => {
+      const item = document.createElement("span");
+      item.className = "doc-trail-item doc-trail-folder";
+      item.textContent = label;
+      return item;
+    };
     if (ancestors.length === 0) {
       const parts = path.split("/").filter((p) => Boolean(p) && p.toLowerCase() !== "content");
-      for (let i = 0; i < parts.length - 1; i++) {
-        const sep = document.createElement("span");
-        sep.className = "doc-trail-sep";
-        sep.textContent = " / ";
-        const folder = document.createElement("span");
-        folder.className = "doc-trail-item doc-trail-folder";
-        folder.textContent = humanizeDocType(parts[i]);
-        nav.append(sep, folder);
-      }
+      for (const part of parts.slice(0, -1)) middle.push(folder(humanizeDocType(part)));
     } else {
-      const firstParent = ancestors[0];
-      const domain = firstParent.domain || partsFirstDomain(firstParent.path);
-      if (domain && domain !== "docs") {
-        const sep = document.createElement("span");
-        sep.className = "doc-trail-sep";
-        sep.textContent = " / ";
-        const folder = document.createElement("span");
-        folder.className = "doc-trail-item doc-trail-folder";
-        folder.textContent = humanizeDocType(domain);
-        nav.append(sep, folder);
-      }
+      const domain = ancestors[0].domain || partsFirstDomain(ancestors[0].path);
+      if (domain && domain !== "docs") middle.push(folder(humanizeDocType(domain)));
       for (const ancestor of ancestors) {
-        const sep = document.createElement("span");
-        sep.className = "doc-trail-sep";
-        sep.textContent = " / ";
         const item = document.createElement("button");
         item.type = "button";
         item.className = "doc-trail-item doc-trail-ancestor doc-trail-link";
@@ -312,20 +307,34 @@ export function createDocumentRenderer(context, services) {
         item.addEventListener("click", () => {
           if (context.openDocument) context.openDocument(ancestor.path);
         });
-        nav.append(sep, item);
+        middle.push(item);
       }
     }
+    // Long locations collapse to "Process Docs / … / parent / page", like a
+    // page path in Notion; the full path stays available as a tooltip.
+    let shown = middle;
+    if (middle.length > 2) {
+      const ellipsis = document.createElement("span");
+      ellipsis.className = "doc-trail-item doc-trail-ellipsis";
+      ellipsis.textContent = "…";
+      ellipsis.title = middle.map((item) => item.textContent).join(" / ");
+      shown = [ellipsis, middle.at(-1)];
+    }
 
-    const sep = document.createElement("span");
-    sep.className = "doc-trail-sep";
-    sep.textContent = " / ";
     const current = document.createElement("span");
     current.className = "doc-trail-item doc-trail-current";
     current.textContent =
+      readFrontmatterScalar(editor.value || "", "title") ||
       documentState.currentParsed?.frontmatter?.title ||
       documentState.currentDoc?.title ||
       basename(path);
-    nav.append(sep, current);
+    nav.append(root);
+    for (const item of [...shown, current]) {
+      const sep = document.createElement("span");
+      sep.className = "doc-trail-sep";
+      sep.textContent = " / ";
+      nav.append(sep, item);
+    }
     return nav;
   }
 
@@ -350,47 +359,34 @@ export function createDocumentRenderer(context, services) {
          (d.path.startsWith(docStemPath) && !d.parent_id)),
     );
 
+    if (children.length === 0) return null;
+
     const section = document.createElement("section");
     section.className = "doc-subpages";
     const header = document.createElement("header");
     header.className = "doc-subpages-header";
     const heading = document.createElement("h3");
     heading.textContent = "Sub-pages";
-    const addBtn = document.createElement("button");
-    addBtn.type = "button";
-    addBtn.className = "quiet-button doc-add-subpage-btn";
-    addBtn.textContent = "+ Add sub-page";
-    addBtn.addEventListener("click", () => {
-      if (services.createSubpage) services.createSubpage(currentDoc);
-      else if (context.createSubpage) context.createSubpage(currentDoc);
-    });
-    header.append(heading, addBtn);
+    header.append(heading);
     section.append(header);
 
     const list = document.createElement("div");
     list.className = "doc-subpages-list";
-    if (children.length === 0) {
-      const empty = document.createElement("span");
-      empty.className = "doc-subpages-empty";
-      empty.textContent = "No sub-pages yet.";
-      list.append(empty);
-    } else {
-      for (const child of children) {
-        const row = document.createElement("button");
-        row.type = "button";
-        row.className = "doc-subpage-item";
-        const icon = document.createElement("span");
-        icon.className = "doc-subpage-icon";
-        icon.textContent = "📄";
-        const title = document.createElement("span");
-        title.className = "doc-subpage-title";
-        title.textContent = child.title || basename(child.path);
-        row.append(icon, title);
-        row.addEventListener("click", () => {
-          if (context.openDocument) context.openDocument(child.path);
-        });
-        list.append(row);
-      }
+    for (const child of children) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "doc-subpage-item";
+      const icon = document.createElement("span");
+      icon.className = "doc-subpage-icon";
+      icon.textContent = "📄";
+      const title = document.createElement("span");
+      title.className = "doc-subpage-title";
+      title.textContent = child.title || basename(child.path);
+      row.append(icon, title);
+      row.addEventListener("click", () => {
+        if (context.openDocument) context.openDocument(child.path);
+      });
+      list.append(row);
     }
     section.append(list);
     return section;
@@ -403,7 +399,8 @@ export function createDocumentRenderer(context, services) {
     return div;
   }
 
-  function renderTitleBlock(fm) {
+  function renderTitleBlock(parsedFm) {
+    const fm = { ...parsedFm, title: readFrontmatterScalar(editor.value || "", "title") || parsedFm.title };
     const wrap = document.createElement("div");
     wrap.className = "block-title-wrap";
     const h1 = document.createElement("h1");
@@ -428,28 +425,6 @@ export function createDocumentRenderer(context, services) {
     return wrap;
   }
 
-  function computeDocStats() {
-    if (!documentState.currentParsed) return "";
-    const proc = documentState.currentParsed.sections?.procedure;
-    if (!proc || proc.raw) return "";
-    let steps = 0;
-    let groups = (proc.groups || []).length;
-    let shots = 0;
-    for (const g of proc.groups || []) {
-      steps += (g.steps || []).length;
-      for (const s of g.steps || []) shots += (s.screenshots || []).length;
-    }
-    for (const s of proc.flat_steps || []) {
-      steps += 1;
-      shots += (s.screenshots || []).length;
-    }
-    const parts = [];
-    if (steps) parts.push(`${steps} step${steps === 1 ? "" : "s"}`);
-    if (groups) parts.push(`${groups} group${groups === 1 ? "" : "s"}`);
-    if (shots) parts.push(`${shots} screenshot${shots === 1 ? "" : "s"}`);
-    return parts.join(" · ");
-  }
-
   function applyTitleEdit(fm, newTitle) {
     const title = newTitle.trim();
     if (!title) return;
@@ -469,49 +444,59 @@ export function createDocumentRenderer(context, services) {
     updateSaveState();
   }
 
-  function renderFrontmatterBlock(fm) {
-    if (!fm) fm = {};
-    const wrap = document.createElement("div");
-    wrap.className = "fm-block";
-
-    const row = document.createElement("div");
-    row.className = "fm-row";
-
-    const line = document.createElement("p");
-    line.className = "fm-meta";
-    line.textContent = formatFrontmatterMeta(fm);
-    row.append(line);
-
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.className = "quiet-button fm-edit";
-    editBtn.textContent = "Edit metadata";
-    editBtn.title = "Edit doc metadata";
-    editBtn.addEventListener("click", () => toggleFrontmatterEditor(wrap, fm));
-    row.append(editBtn);
-
-    wrap.append(row);
-    return wrap;
-  }
-
-  function formatFrontmatterMeta(fm) {
-    const type = humanizeDocType(fm.doc_type);
-    const systems = Array.isArray(fm.systems) ? fm.systems : [];
-    const tags = Array.isArray(fm.tags) ? fm.tags : [];
-    const seen = new Set();
-    const parts = [];
-    const remember = (value) => {
-      const key = String(value || "").trim().toLowerCase();
-      if (!key || seen.has(key)) return;
-      seen.add(key);
-      parts.push(value);
+  function renderFrontmatterBlock() {
+    const markdown = editor.value || "";
+    const fm = {
+      doc_type: readFrontmatterScalar(markdown, "doc_type"),
+      summary: readFrontmatterScalar(markdown, "summary"),
+      tags: readFrontmatterList(markdown, "tags"),
+      systems: readFrontmatterList(markdown, "systems"),
     };
-    remember(type);
-    for (const value of systems) remember(value);
-    for (const value of tags) remember(value);
-    const stats = computeDocStats();
-    if (stats) parts.push(stats);
-    return parts.join(" · ");
+    const list = document.createElement("dl");
+    list.className = "doc-properties";
+    list.setAttribute("aria-label", "Properties");
+
+    const row = (label, valueEl) => {
+      const wrap = document.createElement("div");
+      wrap.className = "doc-property";
+      const dt = document.createElement("dt");
+      dt.textContent = label;
+      const dd = document.createElement("dd");
+      dd.append(valueEl);
+      wrap.append(dt, dd);
+      list.append(wrap);
+    };
+
+    const type = document.createElement("select");
+    type.className = "doc-property-select";
+    type.setAttribute("aria-label", "Doc type");
+    const types = DOC_TYPES.includes(fm.doc_type) || !fm.doc_type
+      ? DOC_TYPES
+      : [fm.doc_type, ...DOC_TYPES];
+    type.innerHTML = types.map(
+      (t) => `<option value="${t}"${t === fm.doc_type ? " selected" : ""}>${humanizeDocType(t)}</option>`,
+    ).join("");
+    type.addEventListener("change", () => applyFrontmatterEdit(fm, { doc_type: type.value }));
+    row("Type", type);
+
+    const summary = document.createElement("div");
+    summary.className = "doc-property-text";
+    summary.textContent = fm.summary || "";
+    attachInlineEditor(summary, {
+      getValue: () => fm.summary || "",
+      commit: (value) => applyFrontmatterEdit(fm, { summary: value.trim() }),
+      restore: () => {
+        summary.textContent = fm.summary || "";
+      },
+      multiline: false,
+      singleLine: true,
+      placeholder: "Add a summary",
+    });
+    row("Summary", summary);
+
+    row("Tags", makeChipListEditor(fm, "tags", "Add a tag"));
+    row("Systems", makeChipListEditor(fm, "systems", "Add a system"));
+    return list;
   }
 
   function humanizeDocType(value) {
@@ -521,219 +506,132 @@ export function createDocumentRenderer(context, services) {
     return raw.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
-  function toggleFrontmatterEditor(wrap, fm) {
-    const existing = wrap.querySelector(".fm-editor");
-    if (existing) {
-      existing.remove();
-      return;
-    }
-    const editor = document.createElement("form");
-    editor.className = "fm-editor";
-
-    const docTypeRow = makeAttrRow("Doc type");
-    const sel = document.createElement("select");
-    sel.innerHTML = DOC_TYPES.map(
-      (t) =>
-        `<option value="${t}"${t === fm.doc_type ? " selected" : ""}>${t}</option>`,
-    ).join("");
-    docTypeRow.append(sel);
-    editor.append(docTypeRow);
-
-    const summaryRow = makeAttrRow("Summary");
-    const sumInput = document.createElement("textarea");
-    sumInput.rows = 2;
-    sumInput.value = fm.summary || "";
-    summaryRow.append(sumInput);
-    editor.append(summaryRow);
-
-    const tagsRow = makeAttrRow("Tags");
-    const tagsEditor = makeChipListEditor(
-      Array.isArray(fm.tags) ? fm.tags.slice() : [],
-    );
-    tagsRow.append(tagsEditor.element);
-    editor.append(tagsRow);
-
-    const systemsRow = makeAttrRow("Systems");
-    const systemsEditor = makeChipListEditor(
-      Array.isArray(fm.systems) ? fm.systems.slice() : [],
-    );
-    systemsRow.append(systemsEditor.element);
-    editor.append(systemsRow);
-
-    const actionsRow = document.createElement("div");
-    actionsRow.className = "block-step-attr-actions";
-    const cancel = document.createElement("button");
-    cancel.type = "button";
-    cancel.className = "quiet-button";
-    cancel.textContent = "Cancel";
-    cancel.addEventListener("click", () => editor.remove());
-    const save = document.createElement("button");
-    save.type = "submit";
-    save.className = "primary-button";
-    save.textContent = "Apply";
-    actionsRow.append(cancel, save);
-    editor.append(actionsRow);
-
-    editor.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const updates = {
-        doc_type: sel.value,
-        summary: sumInput.value.trim(),
-        tags: tagsEditor.getValues(),
-        systems: systemsEditor.getValues(),
-      };
-      applyFrontmatterEdit(fm, updates);
-      editor.remove();
-    });
-
-    wrap.append(editor);
-  }
-
-  function makeChipListEditor(initial) {
+  function makeChipListEditor(fm, key, placeholder) {
     const wrap = document.createElement("div");
-    wrap.className = "fm-chips-editor";
-    const chips = [...initial];
+    wrap.className = "doc-chips";
+    const chips = Array.isArray(fm[key]) ? [...fm[key]] : [];
+    const save = () => applyFrontmatterEdit(fm, { [key]: [...chips] });
 
-    const render = () => {
+    const render = (focusInput = false, draft = "") => {
       wrap.replaceChildren();
-      for (let i = 0; i < chips.length; i++) {
+      chips.forEach((value, index) => {
         const chip = document.createElement("span");
-        chip.className = "fm-chip";
-        chip.textContent = chips[i];
-        const x = document.createElement("button");
-        x.type = "button";
-        x.className = "fm-chip-x";
-        x.textContent = "×";
-        x.addEventListener("click", () => {
-          chips.splice(i, 1);
-          render();
+        chip.className = "doc-chip";
+        const label = document.createElement("span");
+        label.className = "doc-chip-label";
+        label.textContent = value;
+        label.title = "Edit";
+        // Tapping a chip moves it into the input for editing; on touch this
+        // is also how a chip is removed (the remove button is desktop-only).
+        label.addEventListener("click", () => {
+          chips.splice(index, 1);
+          save();
+          render(true, value);
         });
-        chip.append(x);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "doc-chip-remove";
+        remove.setAttribute("aria-label", `Remove ${value}`);
+        remove.textContent = "×";
+        remove.addEventListener("click", () => {
+          chips.splice(index, 1);
+          save();
+          render(true);
+        });
+        chip.append(label, remove);
         wrap.append(chip);
-      }
+      });
       const input = document.createElement("input");
       input.type = "text";
-      input.className = "fm-chip-input";
-      input.placeholder = "+ Add";
+      input.className = "doc-chip-input";
+      input.placeholder = chips.length ? "" : placeholder;
+      input.setAttribute("aria-label", placeholder);
+      const add = () => {
+        const value = input.value.trim().replace(/,$/, "");
+        if (!value || chips.includes(value)) return false;
+        chips.push(value);
+        save();
+        render(true);
+        return true;
+      };
       input.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === ",") {
           event.preventDefault();
-          const v = input.value.trim().replace(/,$/, "");
-          if (v) {
-            chips.push(v);
-            render();
-            // Refocus the (new) input element.
-            wrap.querySelector(".fm-chip-input")?.focus();
-          }
+          add();
         } else if (event.key === "Backspace" && !input.value && chips.length) {
           chips.pop();
-          render();
-          wrap.querySelector(".fm-chip-input")?.focus();
+          save();
+          render(true);
+        } else if (event.key === "Escape") {
+          input.value = "";
+          input.blur();
         }
       });
+      input.addEventListener("blur", () => {
+        add();
+      });
+      input.value = draft;
       wrap.append(input);
+      if (focusInput) {
+        input.focus();
+        if (draft) input.select?.();
+      }
     };
     render();
-    return { element: wrap, getValues: () => chips.slice() };
+    return wrap;
   }
 
   function applyFrontmatterEdit(fm, updates) {
-    let next = editor.value;
-    next = patchFrontmatterScalar(next, "doc_type", updates.doc_type);
-    next = patchFrontmatterScalar(next, "summary", updates.summary, {
-      quoted: true,
-    });
-    next = patchFrontmatterList(next, "tags", updates.tags);
-    next = patchFrontmatterList(next, "systems", updates.systems);
-    editor.value = next;
-    if (documentState.currentParsed && documentState.currentParsed.frontmatter) {
-      Object.assign(documentState.currentParsed.frontmatter, {
-        doc_type: updates.doc_type,
-        summary: updates.summary,
-        tags: updates.tags,
-        systems: updates.systems,
-      });
+    let next = ensureFrontmatter(editor.value);
+    if ("doc_type" in updates) next = patchFrontmatterScalar(next, "doc_type", updates.doc_type);
+    if ("summary" in updates) {
+      next = patchFrontmatterScalar(next, "summary", updates.summary, { quoted: true });
     }
+    if ("tags" in updates) next = patchFrontmatterList(next, "tags", updates.tags);
+    if ("systems" in updates) next = patchFrontmatterList(next, "systems", updates.systems);
+    Object.assign(fm, updates);
+    if (documentState.currentParsed) {
+      documentState.currentParsed.frontmatter = {
+        ...(documentState.currentParsed.frontmatter || {}),
+        ...updates,
+      };
+    }
+    if (next === editor.value) return;
+    editor.value = next;
     storeDraft();
     updateSaveState();
-    renderParsedDocument();
-  }
-
-  function _frontmatterRange(markdown) {
-    if (!markdown.startsWith("---\n")) return null;
-    const end = markdown.indexOf("\n---\n", 4);
-    if (end === -1) return null;
-    return { start: 4, end };
-  }
-
-  function patchFrontmatterScalar(markdown, key, value, options = {}) {
-    const range = _frontmatterRange(markdown);
-    if (!range) return markdown;
-    const body = markdown.slice(range.start, range.end);
-    const before = markdown.slice(0, range.start);
-    const after = markdown.slice(range.end);
-    const re = new RegExp(`^${escapeRegex(key)}:\\s*.*$`, "m");
-    const formatted = options.quoted
-      ? `${key}: "${(value || "").replace(/"/g, '\\"')}"`
-      : `${key}: ${value}`;
-    if (re.test(body)) {
-      return before + body.replace(re, formatted) + after;
-    }
-    // Insert at end of frontmatter.
-    const trimmed = body.endsWith("\n") ? body : body + "\n";
-    return before + trimmed + formatted + "\n" + after.replace(/^\n?/, "");
-  }
-
-  function patchFrontmatterList(markdown, key, items) {
-    const range = _frontmatterRange(markdown);
-    if (!range) return markdown;
-    const before = markdown.slice(0, range.start);
-    const body = markdown.slice(range.start, range.end);
-    const after = markdown.slice(range.end);
-
-    // Match either `key: [...]` inline OR `key:\n  - item\n  - item`.
-    const blockRe = new RegExp(
-      `^${escapeRegex(key)}:[\\t ]*(?:\\[[^\\]]*\\])?(?:\\n[\\t ]+-[^\\n]*)*`,
-      "m",
-    );
-    const formatted =
-      items && items.length
-        ? `${key}:\n` +
-          items.map((v) => `  - ${JSON.stringify(String(v))}`).join("\n")
-        : `${key}: []`;
-    if (blockRe.test(body)) {
-      return before + body.replace(blockRe, formatted) + after;
-    }
-    const trimmed = body.endsWith("\n") ? body : body + "\n";
-    return before + trimmed + formatted + "\n" + after.replace(/^\n?/, "");
-  }
-
-  function pill(kind, text) {
-    const span = document.createElement("span");
-    span.className = `fm-pill fm-pill-${kind}`;
-    span.textContent = text;
-    return span;
   }
 
   function renderSectionBlock(name, section) {
     const block = document.createElement("section");
     block.className = "block-section";
     block.dataset.section = name;
+    const structured = name === "procedure" && section.raw === false;
+    const procedure = structured ? readProcedureModel() : null;
 
     const header = document.createElement("header");
     header.className = "block-section-header";
     const title = document.createElement("h2");
-    title.textContent =
-      headingFromBody(section.body_md) || humanSectionName(name);
+    const headingText = () => (procedure
+      ? procedureHeading(procedure)
+      : headingFromBody(section.body_md)) || humanSectionName(name);
+    title.textContent = headingText();
     attachInlineEditor(title, {
-      getValue: () => headingFromBody(section.body_md) || humanSectionName(name),
-      commit: (value) => applySectionHeadingEdit(name, section, value),
+      getValue: headingText,
+      commit: (value) => {
+        if (procedure) {
+          setProcedureHeading(procedure, value);
+          commitProcedure(procedure, { rerender: false });
+        } else {
+          applySectionHeadingEdit(name, section, value);
+        }
+      },
       restore: () => {
-        title.textContent =
-          headingFromBody(section.body_md) || humanSectionName(name);
+        title.textContent = headingText();
       },
       multiline: false,
-      editorClass: "block-section-title-editor",
+      singleLine: true,
+      placeholder: humanSectionName(name),
     });
     header.append(title);
     block.append(header);
@@ -741,8 +639,8 @@ export function createDocumentRenderer(context, services) {
     const body = document.createElement("div");
     body.className = "block-section-body";
 
-    if (name === "procedure" && section.raw === false) {
-      appendProcedureChildren(body, section);
+    if (structured) {
+      appendProcedureChildren(body);
     } else if (section.raw === true) {
       body.append(renderMarkdown(section.body_md || ""));
       body.classList.add("is-raw");
@@ -765,6 +663,7 @@ export function createDocumentRenderer(context, services) {
             renderMarkdown(stripLeadingHeading(section.body_md || "")),
           ),
         multiline: true,
+        placeholder: "Empty",
       });
     }
 
@@ -801,7 +700,7 @@ export function createDocumentRenderer(context, services) {
     if (isRaw) {
       combined = newBody;
     } else {
-      const heading = `## ${humanSectionName(name)}`;
+      const heading = `## ${headingFromBody(section.body_md) || humanSectionName(name)}`;
       const trimmed = newBody.replace(/^\n+/, "");
       combined = `${heading}\n\n${trimmed}`;
     }
@@ -825,8 +724,7 @@ export function createDocumentRenderer(context, services) {
 
 
   return {
-    emptyNote, enterRenderedMode, humanSectionName, patchFrontmatterList,
-    patchFrontmatterScalar, pill, refreshParsedFromApi,
+    emptyNote, enterRenderedMode, humanSectionName, refreshParsedFromApi,
     renderParsedDocument, renderSectionBlock, toggleViewMode,
     updateViewToggleAvailability,
   };

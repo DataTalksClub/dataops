@@ -10,6 +10,7 @@ import {
   serializeListItems,
 } from "../src/surfaces/document-editor/block-editor.js";
 import { createSlashMenu } from "../src/surfaces/document-editor/slash-menu.js";
+import { emitProcedure, parseProcedure, stepsOf } from "../src/surfaces/document-editor/procedure-model.js";
 import {
   FakeDocument,
   FakeElement,
@@ -907,7 +908,7 @@ describe("Document Editor surface boundary", () => {
     assert.equal(findByText(harness.elements.historyVersions, "Restore version"), undefined);
   });
 
-  test("renders structured SOP frontmatter, ordered sections, and procedure steps", async () => {
+  test("renders structured SOP properties, ordered sections, and procedure steps from the markdown", async () => {
     const parsed = {
       frontmatter: {
         title: "Run newsletter",
@@ -920,25 +921,39 @@ describe("Document Editor surface boundary", () => {
           raw: false,
           body_md: "## Summary\n\nPrepare the weekly issue.",
         },
-        procedure: {
-          raw: false,
-          body_md: "## Procedure\n\n### Step 1\nSend it.",
-          todos: ["Confirm links"],
-          groups: [],
-          flat_steps: [
-            {
-              id: 1,
-              rendered_number: 1,
-              attrs: { action: "click", systems: ["mailing"] },
-              body_md: "Send the newsletter.",
-              screenshots: [],
-            },
-          ],
-          prose: [],
-        },
+        procedure: { raw: false, groups: [], flat_steps: [], prose: [], todos: [] },
       },
     };
-    const content = "# Run newsletter\n";
+    const content = [
+      "---",
+      'title: "Run newsletter"',
+      "doc_type: sop",
+      "tags:",
+      "- weekly",
+      "systems: [mailing]",
+      "---",
+      "# Run newsletter",
+      "",
+      "<!-- sop-section-start: summary -->",
+      "## Summary",
+      "",
+      "Prepare the weekly issue.",
+      "<!-- sop-section-end -->",
+      "",
+      "<!-- sop-section-start: procedure -->",
+      "## Procedure",
+      "",
+      '<!-- sop-todo: "Confirm links" -->',
+      "",
+      "<!-- sop-prose-start -->",
+      "Before the steps.",
+      "<!-- sop-prose-end -->",
+      "",
+      '<!-- sop-step-start id=1 action="click" systems="mailing" -->',
+      "1.  Send the newsletter.",
+      "<!-- sop-step-end -->",
+      "<!-- sop-section-end -->",
+    ].join("\n");
     const harness = createEditorHarness({
       parsed,
       content,
@@ -947,27 +962,29 @@ describe("Document Editor surface boundary", () => {
     });
 
     await harness.api.enterRenderedMode();
+    const view = harness.elements.renderedView;
     assert.equal(harness.elements.editorView.dataset.mode, "rendered");
-    assert.ok(findByText(harness.elements.renderedView, "Run newsletter", "h1"));
-    assert.ok(
-      findByText(harness.elements.renderedView, "SOP · mailing · weekly · 1 step"),
+    assert.ok(findByText(view, "Run newsletter", "h1"));
+    // Properties replace the old stat strip and "Edit metadata" form.
+    const properties = view.querySelector(".doc-properties");
+    assert.ok(properties);
+    assert.deepEqual(findAllByClass(properties, "doc-property").map((row) => row.querySelector("dt").textContent),
+      ["Type", "Summary", "Tags", "Systems"]);
+    assert.deepEqual(findAllByClass(properties, "doc-chip").map((chip) => chip.textContent.replace("×", "")),
+      ["weekly", "mailing"]);
+    assert.equal(findByText(view, "Edit metadata", "button"), undefined);
+    assert.equal(findAllByClass(view, "fm-meta").length, 0);
+    assert.ok(findByText(view, "Summary", "h2"));
+    assert.ok(findByText(view, "Procedure", "h2"));
+    // The procedure renders from the markdown, in document order.
+    const procedure = view.querySelector('.block-section[data-section="procedure"] .block-section-body');
+    assert.deepEqual(
+      procedure.children.map((child) => child.className),
+      ["block-todos", "block-prose doc-block", "block-step doc-block", "doc-add-row"],
     );
-    assert.ok(findByText(harness.elements.renderedView, "Edit metadata", "button"));
-    assert.equal(findByText(harness.elements.renderedView, "Section"), undefined);
-    assert.equal(
-      findAllByClass(harness.elements.renderedView.querySelector(".fm-block"), "fm-pill").length,
-      0,
-    );
-    assert.ok(findByText(harness.elements.renderedView, "Summary", "h2"));
-    assert.ok(findByText(harness.elements.renderedView, "Procedure", "h2"));
-    assert.equal(
-      findAllByClass(harness.elements.renderedView, "block-step").length,
-      1,
-    );
-    const stepMarkdown = findAllByClass(
-      harness.elements.renderedView,
-      "block-step-body",
-    )[0].querySelector(".md");
+    assert.equal(findByText(procedure, "1.").className, "block-step-num");
+    assert.equal(procedure.querySelector(".block-step-meta").textContent, "click · mailing");
+    const stepMarkdown = findAllByClass(view, "block-step-body")[0].querySelector(".md");
     assert.match(stepMarkdown.innerHTML, /Send the newsletter/);
   });
 
@@ -1020,10 +1037,10 @@ describe("Document Editor surface boundary", () => {
 
   test("stores uploaded screenshots at their repository-absolute path", async () => {
     const renderedView = new FakeElement("section");
-    const rewrites = [];
+    const commits = [];
     const editorInlineStatus = new FakeElement("div");
-    const step = { id: 1, screenshots: [] };
-    const procedure = { flat_steps: [step] };
+    const model = parseProcedure("## Procedure\n\n<!-- sop-step-start id=1 -->\n1.  Upload.\n<!-- sop-step-end -->");
+    const [step] = stepsOf(model);
     const rendererContext = {
       apiUrl: (path) => new URL(path, "https://portal.test"),
       documentState: { currentDoc: { path: "content/processes/existing.md" } },
@@ -1037,17 +1054,17 @@ describe("Document Editor surface boundary", () => {
     const renderer = createProcedureRenderer(
       rendererContext,
       {
-        applyProcedureRewrite: (rewrittenProcedure, focusStepId) =>
-          rewrites.push([rewrittenProcedure, focusStepId]),
+        commitProcedure: (committed) => commits.push(emitProcedure(committed)),
         recordPublication() {},
         fileToBase64: async () => "YWJj",
       },
       {},
     );
 
-    await renderer.addScreenshot(step, procedure, { name: "uploaded-shot.webp" });
+    await renderer.addScreenshot(step, model, { name: "uploaded-shot.webp" });
     assert.equal(step.screenshots[0].src, "content/images/existing/uploaded-shot.webp");
-    assert.deepEqual(rewrites, [[procedure, null]]);
+    assert.equal(commits.length, 1);
+    assert.match(commits[0], /1\. {2}Upload\.\n\n {4}<!-- sop-screenshot-start -->\n {4}!\[\]\(content\/images\/existing\/uploaded-shot\.webp\)\n {4}<!-- sop-screenshot-end -->\n<!-- sop-step-end -->/);
     assert.match(
       editorInlineStatus.textContent,
       /Uploaded content\/images\/existing\/uploaded-shot\.webp/,
