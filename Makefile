@@ -120,9 +120,9 @@ test-sam-frontend-isolation:
 ci:
 	$(MAKE) test-frontend-coverage
 	$(MAKE) test-backend
+	$(MAKE) test-backend-transactions
 	$(MAKE) test-cli
 	$(MAKE) test-cli-e2e
-	$(MAKE) test-backend-transactions
 	$(MAKE) typecheck-backend
 	$(MAKE) build-backend
 	$(MAKE) sam-validate
