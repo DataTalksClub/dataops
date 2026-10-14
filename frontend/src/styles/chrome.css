@@ -94,11 +94,10 @@
   border-color: var(--dk-border-control-hover);
   background: var(--dk-bg-hover);
 }.work-bell-action-primary {
-  border-color: var(--dk-accent-default);
+  border-color: transparent;
   background: var(--dk-accent-default);
   color: var(--dk-text-on-accent);
 }.work-bell-action-primary:hover {
-  border-color: var(--dk-accent-hover);
   background: var(--dk-accent-hover);
 }.work-bell-item-error {
   margin-block: 0;
@@ -330,7 +329,7 @@
   border-top: 1px solid var(--dk-border-default);
   padding-top: 10px;
 }.task-delegation-notice {
-  border: 1px solid var(--dk-info-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
@@ -338,7 +337,7 @@
 }.task-delegation-notice p {
   margin: 2px 0 0;
 }.task-version-conflict {
-  border: 1px solid var(--dk-danger-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
