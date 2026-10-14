@@ -14,15 +14,20 @@ import { createTables, TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_USERS } from 
 import { getClient } from '../src/db/client';
 import {
   classifyFinance,
+  deleteRecordedPayment,
+  issueInvoice,
   linkInvoice,
   linkPayment,
   listFinanceCandidates,
   listFinanceHistory,
   projectFinance,
   recordInvoiceRequest,
+  recordPayment,
   unlinkFinanceSource,
+  updateFollowThrough,
   voidFinance,
 } from '../src/sponsorFinance/repository';
+import { financeLedger } from '../src/sponsorFinance/ledger';
 import {
   berlinDate,
   claimKey,
@@ -1137,6 +1142,167 @@ describe('sponsor finance production DynamoDB transactions', () => {
       idempotencyKey: idem('overpay-link'),
     }));
     assert.equal((await projectFinance(client, overpay.dealId, 'operator')).paymentLinkCount, 0);
+  });
+
+  it('issues without a PDF, records evidence payments, swaps them for ledger rows, and projects the portfolio', async () => {
+    const dealId = 'booking-evidence-1';
+    const organizationId = 'organization-evidence-1';
+    await put(client, TABLE_SPONSOR_CRM, {
+      ...key('ORGANIZATION', organizationId), id: organizationId, version: 1, displayName: 'Synthetic Evidence Sponsor',
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await put(client, TABLE_SPONSOR_CRM, {
+      ...key('DEAL', dealId), id: dealId, version: 1, status: 'agreed', active: true, organizationId,
+      title: 'Synthetic workshop', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await put(client, TABLE_SPONSOR_CRM, {
+      ...key('DELIVERABLE', 'deliverable-evidence-1'), id: 'deliverable-evidence-1', dealId, organizationId,
+      channel: 'workshop', plannedPublicationDate: '2026-08-18', publishedAt: '2026-08-18T16:00:00Z', version: 1,
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const base = { actorId: adminId, dealId, dealVersion: 1 };
+    let version = (await classifyFinance(client, {
+      ...base, idempotencyKey: idem('evidence-classify'),
+      body: { invoiceRequirement: 'required', amountDue: '5000', currency: 'EUR', taxMode: 'unknown' },
+    })).financeVersion;
+    const context = { today: '2026-08-25', deliveredOn: '2026-08-18' };
+    let projection = await projectFinance(client, dealId, 'admin', context);
+    assert.equal(projection.invoiceState, 'to-request');
+    assert.deepEqual(projection.followUp, { code: 'send-invoice', party: 'us', since: '2026-08-18' });
+
+    await assert.rejects(() => issueInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('evidence-issue-bad'),
+      invoiceNumber: 'SYN/1', issuedOn: '2026-08-20', dueOn: '2026-08-19',
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 400);
+    await assert.rejects(() => recordPayment(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('evidence-pay-early'),
+      receivedOn: '2026-08-20', amount: '1', currency: 'EUR', method: 'bank-report',
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
+    const issue = {
+      ...base, expectedVersion: version, idempotencyKey: idem('evidence-issue'),
+      invoiceNumber: 'SYN/2026/1', issuedOn: '2026-08-20', sentOn: '2026-08-20', dueOn: '2026-09-19',
+    };
+    version = (await issueInvoice(client, issue)).financeVersion;
+    assert.equal((await issueInvoice(client, issue)).outcome, 'replayed');
+    projection = await projectFinance(client, dealId, 'operator', { today: '2026-10-14', deliveredOn: '2026-08-18' });
+    assert.equal(projection.invoiceState, 'issued');
+    assert.equal(projection.timingState, 'overdue');
+    assert.equal(projection.daysOverdue, 25);
+    assert.equal(projection.finance?.invoiceNumber, 'SYN/2026/1');
+    assert.equal(projection.finance?.sentOn, '2026-08-20');
+    assert.deepEqual(projection.followUp, { code: 'chase-payment', party: 'us', since: '2026-09-19', daysOverdue: 25 });
+
+    version = (await updateFollowThrough(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('evidence-waiting'),
+      body: {
+        waitingOn: { party: 'us', reason: 'payment-link', since: '2026-09-25', note: 'Sponsor asked to pay by card' },
+        evidence: [{ kind: 'email', ref: 'thread:synthetic-1', label: 'Invoice sent', on: '2026-08-20' }],
+      },
+    })).financeVersion;
+    await assert.rejects(() => updateFollowThrough(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('evidence-waiting-bad'),
+      body: { evidence: [{ kind: 'url', ref: 'http://insecure.example.invalid' }] },
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 400);
+    projection = await projectFinance(client, dealId, 'operator', { today: '2026-10-14' });
+    assert.deepEqual(projection.followUp, { code: 'unblock', party: 'us', since: '2026-09-25', reason: 'payment-link' });
+    assert.equal(projection.finance?.evidence?.[0].ref, 'thread:synthetic-1');
+
+    version = (await updateFollowThrough(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('evidence-unblocked'), body: { waitingOn: null },
+    })).financeVersion;
+    const partial = await recordPayment(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('evidence-pay-1'),
+      receivedOn: '2026-09-30', amount: '2000', currency: 'EUR', method: 'bank-report', reference: 'September report',
+    });
+    version = partial.financeVersion;
+    await assert.rejects(() => recordPayment(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('evidence-pay-over'),
+      receivedOn: '2026-10-01', amount: '3000.0001', currency: 'EUR', method: 'sponsor-confirmation',
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
+    await assert.rejects(() => recordPayment(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('evidence-pay-usd'),
+      receivedOn: '2026-10-01', amount: '1', currency: 'USD', method: 'processor',
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
+    projection = await projectFinance(client, dealId, 'operator', { today: '2026-10-14' });
+    assert.equal(projection.paymentState, 'partially-paid');
+    assert.equal(projection.outstanding, '3000');
+    assert.equal(projection.paid, '2000');
+    assert.equal(projection.lastPaymentOn, '2026-09-30');
+    assert.deepEqual(projection.payments.map((item) => [item.source, item.amount, item.method]), [['recorded', '2000', 'bank-report']]);
+    await assert.rejects(() => voidFinance(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('evidence-void'),
+    }));
+
+    const ledger = await financeLedger(client, '2026-10-14');
+    const row = ledger.rows.find((item) => item.dealId === dealId)!;
+    assert.equal(row.organizationName, 'Synthetic Evidence Sponsor');
+    assert.equal(row.dealTitle, 'Synthetic workshop');
+    assert.equal(row.outstanding, '3000');
+    assert.equal(row.deliveredOn, '2026-08-18');
+    assert.ok(ledger.chase.some((item) => item.dealId === dealId && item.followUp.code === 'chase-payment'));
+    const overdue = ledger.forecast.find((item) => item.bucket === 'overdue' && item.currency === 'EUR')!;
+    assert.ok(overdue.dealIds.includes(dealId));
+
+    const ledgerRow = {
+      ...key('BOOKKEEPING', 'payment-evidence-ledger'), id: 'payment-evidence-ledger', amount: '2000', currency: 'EUR',
+      paidDate: '2026-09-30', createdAt: '2026-10-05T00:00:00.000Z', updatedAt: '2026-10-05T00:00:00.000Z',
+    };
+    await put(client, TABLE_BOOKKEEPING, ledgerRow);
+    await assert.rejects(() => linkPayment(client, {
+      ...base, expectedVersion: version, sourceId: ledgerRow.id, identityToken: paymentIdentity(ledgerRow),
+      idempotencyKey: idem('evidence-double-count'),
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 409, 'a look-alike recorded payment blocks double counting');
+    const recordedId = projection.payments[0].id;
+    const extra = await recordPayment(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('evidence-pay-extra'),
+      receivedOn: '2026-10-02', amount: '10', currency: 'EUR', method: 'other',
+    });
+    version = (await deleteRecordedPayment(client, {
+      ...base, expectedVersion: extra.financeVersion, idempotencyKey: idem('evidence-delete'),
+      paymentId: String(extra.recordId).split('#').at(-1)!,
+    })).financeVersion;
+    version = (await linkPayment(client, {
+      ...base, expectedVersion: version, sourceId: ledgerRow.id, identityToken: paymentIdentity(ledgerRow),
+      idempotencyKey: idem('evidence-ledger-link'), replacesPaymentId: recordedId,
+    })).financeVersion;
+    assert.equal((await client.send(new GetCommand({
+      TableName: TABLE_SPONSOR_CRM, Key: key('SPONSOR_FINANCE_PAYMENT', `${dealId}#${recordedId}`),
+    }))).Item, undefined, 'the replaced recorded payment is removed atomically');
+    version = (await recordPayment(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('evidence-pay-rest'),
+      receivedOn: '2026-10-10', amount: '3000', currency: 'EUR', method: 'sponsor-confirmation',
+    })).financeVersion;
+    projection = await projectFinance(client, dealId, 'operator', { today: '2026-10-14' });
+    assert.equal(projection.paymentState, 'paid');
+    assert.equal(projection.timingState, 'settled');
+    assert.deepEqual(projection.followUp, { code: 'none', party: 'none' });
+    assert.deepEqual(projection.payments.map((item) => item.source), ['ledger', 'recorded']);
+    assert.equal(projection.paymentLinkCount, 2);
+
+    const pdf = {
+      ...key('DOCUMENT', 'invoice-evidence-1'), id: 'invoice-evidence-1', documentType: 'invoice', status: 'active',
+      sha256: 'c'.repeat(64), objectVersionId: 'version-evidence', verifiedByteSize: 900,
+      createdAt: '2026-10-05T00:00:00.000Z', updatedAt: '2026-10-05T00:00:00.000Z',
+    };
+    await put(client, TABLE_BOOKKEEPING, pdf);
+    version = (await linkInvoice(client, {
+      ...base, expectedVersion: version, sourceId: pdf.id, identityToken: invoiceIdentity(pdf),
+      idempotencyKey: idem('evidence-pdf'),
+    })).financeVersion;
+    projection = await projectFinance(client, dealId, 'operator', { today: '2026-10-14' });
+    assert.equal(projection.invoice?.id, pdf.id);
+    assert.equal(projection.finance?.dueOn, '2026-09-19', 'attaching the PDF keeps the recorded invoice dates');
+    await unlinkFinanceSource(client, {
+      ...base, expectedVersion: version, kind: 'document', sourceId: pdf.id, idempotencyKey: idem('evidence-pdf-unlink'),
+    });
+    projection = await projectFinance(client, dealId, 'operator', { today: '2026-10-14' });
+    assert.equal(projection.invoiceState, 'issued');
+    assert.equal(projection.invoice, undefined);
+    const history = await listFinanceHistory(client, dealId);
+    for (const code of ['invoice-issued', 'payment-recorded', 'payment-record-deleted', 'follow-through-updated']) {
+      assert.ok(history.some((item) => item.eventCode === code), code);
+    }
+    assert.equal(JSON.stringify(history).includes('September report'), false);
   });
 
   it('fails closed at the real DynamoDB 5,000-evaluated-row discovery boundary', async () => {

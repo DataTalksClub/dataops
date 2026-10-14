@@ -4,16 +4,22 @@ import {
   classifyFinance,
   financeActor,
   financeEnabled,
+  deleteRecordedPayment,
   getFinanceState,
+  issueInvoice,
   linkInvoice,
   linkPayment,
   listFinanceCandidates,
   listFinanceHistory,
   projectFinance,
   recordInvoiceRequest,
+  recordPayment,
   unlinkFinanceSource,
+  updateFollowThrough,
   voidFinance,
 } from '../sponsorFinance/repository';
+import { financeLedger } from '../sponsorFinance/ledger';
+import { dealProjectionContext } from '../sponsorFinance/context';
 import { OPAQUE } from '../sponsorFinance/core';
 
 const headers = {
@@ -39,6 +45,19 @@ export async function handleSponsorFinanceRoutes(
 ): Promise<LambdaResponse | null> {
   if (!path.includes('/finance')) return null;
   if (!financeEnabled()) return json(404, { error: 'Finance follow-through is disabled' });
+  if (path === '/api/sponsor-crm/finance/ledger') {
+    if (method !== 'GET') return json(405, { error: 'Method not allowed' });
+    try {
+      await financeActor(client, header(event, 'x-user-id'));
+      const today = event.queryStringParameters?.today;
+      return json(200, await financeLedger(client, today && /^\d{4}-\d{2}-\d{2}$/.test(today) ? today : undefined));
+    } catch (error) {
+      const statusCode = Number((error as { statusCode?: number }).statusCode || 503);
+      return json(statusCode, {
+        error: statusCode === 401 ? 'Unauthorized' : statusCode === 403 ? 'Forbidden' : 'Finance data is temporarily unavailable; retry',
+      });
+    }
+  }
   const match = path.match(/^\/api\/sponsor-crm\/deals\/([^/]+)\/finance(?:\/(.*))?$/);
   if (!match || !OPAQUE.test(match[1])) return json(404, { error: 'Not found' });
   const dealId = match[1], action = match[2] || '';
@@ -48,7 +67,8 @@ export async function handleSponsorFinanceRoutes(
   try {
     const write = method !== 'GET';
     const actor = await financeActor(client, actorId, write || action.startsWith('candidates/'));
-    if (method === 'GET' && !action) return json(200, await projectFinance(client, dealId, actor.role));
+    const project = async () => projectFinance(client, dealId, actor.role, await dealProjectionContext(client, dealId));
+    if (method === 'GET' && !action) return json(200, await project());
     if (method === 'GET' && action === 'history') return json(200, { items: await listFinanceHistory(client, dealId) });
     if (method === 'GET' && (action === 'candidates/invoices' || action === 'candidates/payments')) {
       const state = await getFinanceState(client, dealId);
@@ -72,11 +92,11 @@ export async function handleSponsorFinanceRoutes(
     };
     if (method === 'PUT' && !action) {
       const result = await classifyFinance(client, { ...common, body });
-      return json(200, { result, projection: await projectFinance(client, dealId, actor.role) });
+      return json(200, { result, projection: await project() });
     }
     if (method === 'POST' && action === 'request') {
       const result = await recordInvoiceRequest(client, { ...common, expectedVersion: Number(body.expectedVersion) });
-      return json(200, { result, projection: await projectFinance(client, dealId, actor.role) });
+      return json(200, { result, projection: await project() });
     }
     if (method === 'POST' && action === 'invoice') {
       const result = await linkInvoice(client, {
@@ -84,10 +104,10 @@ export async function handleSponsorFinanceRoutes(
         expectedVersion: Number(body.expectedVersion),
         sourceId: String(body.sourceId || ''),
         identityToken: String(body.identityToken || ''),
-        issuedOn: String(body.issuedOn || ''),
-        dueOn: String(body.dueOn || ''),
+        ...(body.issuedOn !== undefined ? { issuedOn: String(body.issuedOn) } : {}),
+        ...(body.dueOn !== undefined ? { dueOn: String(body.dueOn) } : {}),
       });
-      return json(200, { result, projection: await projectFinance(client, dealId, actor.role) });
+      return json(200, { result, projection: await project() });
     }
     if (method === 'POST' && action === 'payments') {
       const result = await linkPayment(client, {
@@ -95,8 +115,9 @@ export async function handleSponsorFinanceRoutes(
         expectedVersion: Number(body.expectedVersion),
         sourceId: String(body.sourceId || ''),
         identityToken: String(body.identityToken || ''),
+        ...(body.replacesPaymentId !== undefined ? { replacesPaymentId: String(body.replacesPaymentId) } : {}),
       });
-      return json(200, { result, projection: await projectFinance(client, dealId, actor.role) });
+      return json(200, { result, projection: await project() });
     }
     const unlink = action.match(/^(invoice|payments)\/([^/]+)$/);
     if (method === 'DELETE' && unlink) {
@@ -106,14 +127,48 @@ export async function handleSponsorFinanceRoutes(
         kind: unlink[1] === 'invoice' ? 'document' : 'transaction',
         sourceId: unlink[2],
       });
-      return json(200, { result, projection: await projectFinance(client, dealId, actor.role) });
+      return json(200, { result, projection: await project() });
+    }
+    if (method === 'POST' && action === 'issue') {
+      const result = await issueInvoice(client, {
+        ...common,
+        expectedVersion: Number(body.expectedVersion),
+        invoiceNumber: String(body.invoiceNumber || ''),
+        issuedOn: String(body.issuedOn || ''),
+        dueOn: String(body.dueOn || ''),
+        ...(body.sentOn !== undefined ? { sentOn: String(body.sentOn) } : {}),
+      });
+      return json(200, { result, projection: await project() });
+    }
+    if (method === 'POST' && action === 'recorded-payments') {
+      const result = await recordPayment(client, {
+        ...common,
+        expectedVersion: Number(body.expectedVersion),
+        receivedOn: String(body.receivedOn || ''),
+        amount: String(body.amount || ''),
+        currency: String(body.currency || ''),
+        method: String(body.method || ''),
+        ...(body.reference !== undefined ? { reference: String(body.reference) } : {}),
+      });
+      return json(200, { result, projection: await project() });
+    }
+    const recorded = action.match(/^recorded-payments\/([^/]+)$/);
+    if (method === 'DELETE' && recorded) {
+      const result = await deleteRecordedPayment(client, {
+        ...common, expectedVersion: Number(body.expectedVersion), paymentId: recorded[1],
+      });
+      return json(200, { result, projection: await project() });
+    }
+    if (method === 'PUT' && action === 'follow-through') {
+      const result = await updateFollowThrough(client, { ...common, expectedVersion: Number(body.expectedVersion), body });
+      return json(200, { result, projection: await project() });
     }
     if (method === 'POST' && action === 'void') {
       const result = await voidFinance(client, { ...common, expectedVersion: Number(body.expectedVersion) });
-      return json(200, { result, projection: await projectFinance(client, dealId, actor.role) });
+      return json(200, { result, projection: await project() });
     }
     if (method === 'POST' && action === 'reconcile') {
-      return json(200, { projection: await projectFinance(client, dealId, actor.role) });
+      return json(200, { projection: await project() });
     }
     return json(405, { error: 'Method not allowed' });
   } catch (error) {

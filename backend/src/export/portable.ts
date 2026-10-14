@@ -92,6 +92,7 @@ const OMITTED_ENTITIES = [
   'provider_credentials',
   'sponsor_finance_state',
   'sponsor_finance_links',
+  'sponsor_finance_recorded_payments',
   'sponsor_finance_claims',
   'sponsor_finance_history',
   'sponsor_finance_receipts',

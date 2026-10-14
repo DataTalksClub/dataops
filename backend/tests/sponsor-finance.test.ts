@@ -12,7 +12,8 @@ import {
 } from '../src/sponsorFinance/core';
 import { handleSponsorFinanceRoutes } from '../src/routes/sponsorFinance';
 import { ENTITY_SPECS, OMITTED_ENTITIES } from '../src/export/portable';
-import { classifyFinance, listFinanceCandidates } from '../src/sponsorFinance/repository';
+import { classifyFinance, listFinanceCandidates, validateEvidence, validateWaitingOn } from '../src/sponsorFinance/repository';
+import { deriveFollowUp, deriveStates } from '../src/sponsorFinance/followUp';
 
 describe('sponsor finance contracts', () => {
   it('uses exact four-place scaled integer money arithmetic', () => {
@@ -86,6 +87,7 @@ describe('sponsor finance contracts', () => {
     for (const name of [
       'sponsor_finance_state',
       'sponsor_finance_links',
+      'sponsor_finance_recorded_payments',
       'sponsor_finance_claims',
       'sponsor_finance_history',
       'sponsor_finance_receipts',
@@ -224,5 +226,48 @@ describe('sponsor finance contracts', () => {
       (error: Error & { statusCode?: number }) => error.statusCode === 503,
     );
     assert.deepEqual(limits, [5_001, 5_001, 2]);
+  });
+
+  it('derives exactly one next money step and who owns it', () => {
+    const today = '2026-10-14';
+    const base = { invoiceState: 'to-request' as const, paymentState: 'unpaid' as const };
+    assert.deepEqual(deriveFollowUp({ ...base, invoiceState: 'unclassified', paymentState: 'not-applicable', dealStatus: 'agreed' }, today), { code: 'classify', party: 'us' });
+    assert.deepEqual(deriveFollowUp({ ...base, invoiceState: 'unclassified', paymentState: 'not-applicable', dealStatus: 'open' }, today), { code: 'none', party: 'none' });
+    assert.deepEqual(deriveFollowUp({ ...base, deliveredOn: '2026-10-01' }, today), { code: 'send-invoice', party: 'us', since: '2026-10-01' });
+    assert.deepEqual(deriveFollowUp({ ...base, deliveredOn: '2026-10-20' }, today), { code: 'invoice-later', party: 'none' });
+    assert.deepEqual(deriveFollowUp({ ...base, requestBy: '2026-12-01' }, today), { code: 'invoice-later', party: 'none', since: '2026-12-01' });
+    assert.deepEqual(
+      deriveFollowUp({ ...base, waitingOn: { party: 'sponsor', reason: 'billing-details', since: '2026-09-07' }, deliveredOn: '2026-08-24' }, today),
+      { code: 'await-sponsor', party: 'sponsor', since: '2026-09-07', reason: 'billing-details' },
+    );
+    const issued = { invoiceState: 'issued' as const, paymentState: 'unpaid' as const, dueOn: '2026-09-20' };
+    assert.deepEqual(deriveFollowUp(issued, today), { code: 'chase-payment', party: 'us', since: '2026-09-20', daysOverdue: 24 });
+    assert.deepEqual(
+      deriveFollowUp({ ...issued, waitingOn: { party: 'us', reason: 'payment-link', since: '2026-09-25' } }, today),
+      { code: 'unblock', party: 'us', since: '2026-09-25', reason: 'payment-link' },
+    );
+    assert.deepEqual(
+      deriveFollowUp({ ...issued, dueOn: '2026-11-04', waitingOn: { party: 'sponsor', reason: 'payment-details', since: '2026-10-06' } }, today),
+      { code: 'await-sponsor', party: 'sponsor', since: '2026-10-06', reason: 'payment-details' },
+    );
+    assert.deepEqual(deriveFollowUp({ ...issued, dueOn: '2026-11-04' }, today), { code: 'await-payment', party: 'sponsor', since: '2026-11-04' });
+    assert.deepEqual(deriveFollowUp({ ...issued, paymentState: 'paid' }, today), { code: 'none', party: 'none' });
+    assert.deepEqual(deriveFollowUp({ ...issued, paymentState: 'reconciliation-required' }, today), { code: 'reconcile', party: 'us' });
+    assert.deepEqual(
+      deriveStates({ invoiceRequirement: 'required', issuedOn: '2026-08-01', dueOn: '2026-09-01' }, 5n, 10n, true, today),
+      { invoiceState: 'issued', paymentState: 'partially-paid', timingState: 'overdue' },
+    );
+  });
+
+  it('validates follow-through blockers and evidence strictly', () => {
+    assert.equal(validateWaitingOn(null), null);
+    assert.deepEqual(validateWaitingOn({ party: 'us', reason: 'payment-link', since: '2026-09-25' }), { party: 'us', reason: 'payment-link', since: '2026-09-25' });
+    for (const bad of [{ party: 'them', reason: 'other', since: '2026-01-01' }, { party: 'us', reason: 'other', since: '2026-02-30' }, { party: 'us', reason: 'other', since: '2026-01-01', note: 'x'.repeat(301) }]) {
+      assert.throws(() => validateWaitingOn(bad), bad.party);
+    }
+    assert.deepEqual(validateEvidence([{ kind: 'email', ref: 'thread:abc', on: '2026-08-20' }]), [{ kind: 'email', ref: 'thread:abc', on: '2026-08-20' }]);
+    assert.throws(() => validateEvidence([{ kind: 'url', ref: 'javascript:alert(1)' }]));
+    assert.throws(() => validateEvidence([{ kind: 'email', ref: 'line\nbreak' }]));
+    assert.throws(() => validateEvidence(Array.from({ length: 21 }, () => ({ kind: 'note', ref: 'x' }))));
   });
 });

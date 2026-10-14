@@ -8,6 +8,7 @@ import {
 import { TABLE_NOTIFICATIONS, TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { berlinDate, digest } from './core';
 import { financeEnabled, projectFinance } from './repository';
+import { deliveredOn } from './context';
 
 type Condition = { dealId: string; rule: string; basisDate: string; version: number };
 
@@ -28,10 +29,25 @@ export async function evaluateSponsorFinanceAlerts(
     deals.push(...(page.Items || []));
     cursor = page.LastEvaluatedKey;
   } while (cursor);
+  const deliverables: Record<string, unknown>[] = [];
+  cursor = undefined;
+  do {
+    const page: ScanCommandOutput = await client.send(new ScanCommand({
+      TableName: TABLE_SPONSOR_CRM,
+      FilterExpression: 'begins_with(PK, :prefix)',
+      ExpressionAttributeValues: { ':prefix': 'DELIVERABLE#' },
+      ExclusiveStartKey: cursor,
+    }));
+    deliverables.push(...(page.Items || []));
+    cursor = page.LastEvaluatedKey;
+  } while (cursor);
   const conditions: Condition[] = [];
   for (const deal of deals) {
     if (deal.archivedAt || deal.active !== true || ['lost'].includes(String(deal.status))) continue;
-    const projection = await projectFinance(client, String(deal.id), 'operator');
+    const delivered = deliveredOn(deliverables.filter((item) => item.dealId === deal.id));
+    const projection = await projectFinance(client, String(deal.id), 'operator', {
+      today, dealStatus: String(deal.status), ...(delivered ? { deliveredOn: delivered } : {}),
+    });
     if (!projection.classified && deal.status === 'agreed') {
       conditions.push({ dealId: String(deal.id), rule: 'finance-unclassified', basisDate: today, version: Number(deal.version) });
       continue;
@@ -43,6 +59,13 @@ export async function evaluateSponsorFinanceAlerts(
     }
     if (finance.invoiceRequestedAt && projection.invoiceState !== 'issued' && finance.expectedInvoiceBy && finance.expectedInvoiceBy < today) {
       conditions.push({ dealId: String(deal.id), rule: 'invoice-missing', basisDate: finance.expectedInvoiceBy, version: finance.version });
+    }
+    const invoiceChased = conditions.some((item) => item.dealId === String(deal.id));
+    if (!invoiceChased && projection.followUp.code === 'send-invoice' && delivered) {
+      conditions.push({ dealId: String(deal.id), rule: 'invoice-after-delivery', basisDate: delivered, version: finance.version });
+    }
+    if (projection.followUp.code === 'unblock' && finance.waitingOn) {
+      conditions.push({ dealId: String(deal.id), rule: 'finance-waiting-on-us', basisDate: finance.waitingOn.since, version: finance.version });
     }
     if (
       finance.dueOn

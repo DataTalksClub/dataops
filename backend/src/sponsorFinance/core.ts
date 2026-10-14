@@ -83,3 +83,13 @@ export const claimKey = (kind: 'document' | 'transaction', sourceId: string) =>
   `SPONSOR_FINANCE_CLAIM#${kind}#${sourceId}`;
 export const sourceKey = (kind: 'document' | 'transaction', sourceId: string) =>
   `${kind === 'document' ? 'DOCUMENT' : 'BOOKKEEPING'}#${sourceId}`;
+export const recordedPaymentKey = (dealId: string, paymentId: string) =>
+  `SPONSOR_FINANCE_PAYMENT#${dealId}#${paymentId}`;
+
+export const INVOICE_NUMBER = /^[A-Za-z0-9][A-Za-z0-9 ./_#-]{0,63}$/;
+const SAFE_TEXT = /^[^\u0000-\u001f\u007f]*$/;
+export const MAX_EVIDENCE = 20;
+
+export function boundedText(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= max && SAFE_TEXT.test(value);
+}

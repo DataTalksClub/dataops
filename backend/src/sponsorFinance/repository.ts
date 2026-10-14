@@ -25,8 +25,25 @@ import {
   realDate,
   scaledMoney,
   sourceKey,
+  recordedPaymentKey,
+  INVOICE_NUMBER,
+  MAX_EVIDENCE,
+  boundedText,
 } from './core';
-import type { FinanceLink, FinanceProjection, FinanceState } from './types';
+import { daysBetween, deriveFollowUp, deriveStates } from './followUp';
+import {
+  EVIDENCE_KINDS,
+  RECORDED_PAYMENT_METHODS,
+  WAITING_PARTIES,
+  WAITING_REASONS,
+  type FinanceEvidence,
+  type FinanceLink,
+  type FinancePayment,
+  type FinanceProjection,
+  type FinanceState,
+  type RecordedPayment,
+  type WaitingOn,
+} from './types';
 
 const singleton = (key: string) => ({ PK: key, SK: key });
 const clean = <T>(item?: Record<string, unknown>): T | null => {
@@ -264,7 +281,7 @@ export async function classifyFinance(
   if (replay) return replay;
   const existing = await getFinanceState(client, input.dealId);
   if (existing?.voidedAt) throw safeConflict();
-  if (existing && (existing.invoiceLinkId || existing.paymentLinkIds.length) && (
+  if (existing && (existing.invoiceLinkId || existing.paymentLinkIds.length || existing.recordedPaymentIds.length) && (
     existing.amountDue !== (values as any).amountDue || existing.currency !== (values as any).currency
     || existing.taxMode !== (values as any).taxMode || existing.taxAmount !== (values as any).taxAmount
   )) throw safeConflict();
@@ -278,10 +295,15 @@ export async function classifyFinance(
     version: nextVersion,
     ...values,
     ...(existing?.invoiceRequestedAt ? { invoiceRequestedAt: existing.invoiceRequestedAt } : {}),
+    ...(existing?.invoiceNumber ? { invoiceNumber: existing.invoiceNumber } : {}),
     ...(existing?.issuedOn ? { issuedOn: existing.issuedOn } : {}),
+    ...(existing?.sentOn ? { sentOn: existing.sentOn } : {}),
     ...(existing?.dueOn ? { dueOn: existing.dueOn } : {}),
     ...(existing?.invoiceLinkId ? { invoiceLinkId: existing.invoiceLinkId } : {}),
     paymentLinkIds: existing?.paymentLinkIds || [],
+    recordedPaymentIds: existing?.recordedPaymentIds || [],
+    ...(existing?.waitingOn ? { waitingOn: existing.waitingOn } : {}),
+    ...(existing?.evidence ? { evidence: existing.evidence } : {}),
     actorId: input.actorId,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
@@ -355,10 +377,14 @@ export async function linkInvoice(
   client: DynamoDBDocumentClient,
   input: {
     actorId: string; dealId: string; dealVersion: number; expectedVersion: number;
-    sourceId: string; identityToken: string; issuedOn: string; dueOn: string; idempotencyKey: string;
+    sourceId: string; identityToken: string; issuedOn?: string; dueOn?: string; idempotencyKey: string;
   },
 ) {
-  if (!OPAQUE.test(input.sourceId) || !realDate(input.issuedOn) || !realDate(input.dueOn) || input.dueOn < input.issuedOn) {
+  const dated = input.issuedOn !== undefined || input.dueOn !== undefined;
+  if (
+    !OPAQUE.test(input.sourceId)
+    || (dated && (!realDate(input.issuedOn) || !realDate(input.dueOn) || input.dueOn! < input.issuedOn!))
+  ) {
     throw Object.assign(new Error('Invalid invoice link'), { statusCode: 400 });
   }
   const request = {
@@ -380,9 +406,8 @@ export async function linkInvoice(
   const [state, source] = await Promise.all([getFinanceState(client, input.dealId), sourceItem(client, 'document', input.sourceId)]);
   if (
     !state || state.version !== input.expectedVersion || state.invoiceRequirement !== 'required' || state.invoiceLinkId
-    || !state.invoiceRequestedAt || state.taxMode === 'unknown' || state.voidedAt || !source
-    || invoiceIdentity(source) !== input.identityToken
-    || input.issuedOn < berlinDate(new Date(state.invoiceRequestedAt))
+    || state.voidedAt || !source || invoiceIdentity(source) !== input.identityToken
+    || (!dated && !state.issuedOn)
   ) throw safeConflict();
   const id = linkKey(input.dealId, 'document', input.sourceId);
   const nextVersion = state.version + 1;
@@ -392,6 +417,7 @@ export async function linkInvoice(
     sourceId: input.sourceId, identityToken: input.identityToken, actorId: input.actorId,
     financeVersion: nextVersion, createdAt: now,
   };
+  const dates = dated ? ', issuedOn = :issued, dueOn = :due' : '';
   return executeMutation(client, {
     actorId: input.actorId, operation: 'link-invoice', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
     request,
@@ -419,10 +445,262 @@ export async function linkInvoice(
       {
         Update: {
           TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
-          UpdateExpression: 'SET invoiceLinkId = :link, issuedOn = :issued, dueOn = :due, updatedAt = :now, actorId = :actor, #version = #version + :one',
+          UpdateExpression: `SET invoiceLinkId = :link${dates}, updatedAt = :now, actorId = :actor, #version = #version + :one`,
           ConditionExpression: '#version = :version AND attribute_not_exists(invoiceLinkId) AND attribute_not_exists(voidedAt)',
           ExpressionAttributeNames: { '#version': 'version' },
-          ExpressionAttributeValues: { ':link': id, ':issued': input.issuedOn, ':due': input.dueOn, ':now': now, ':actor': input.actorId, ':one': 1, ':version': state.version },
+          ExpressionAttributeValues: {
+            ':link': id, ':now': now, ':actor': input.actorId, ':one': 1, ':version': state.version,
+            ...(dated ? { ':issued': input.issuedOn, ':due': input.dueOn } : {}),
+          },
+        },
+      },
+    ],
+  });
+}
+
+function validateIssue(input: { invoiceNumber: unknown; issuedOn: unknown; dueOn: unknown; sentOn?: unknown }) {
+  if (
+    typeof input.invoiceNumber !== 'string' || !INVOICE_NUMBER.test(input.invoiceNumber)
+    || !realDate(input.issuedOn) || !realDate(input.dueOn) || String(input.dueOn) < String(input.issuedOn)
+    || (input.sentOn !== undefined && (!realDate(input.sentOn) || String(input.sentOn) < String(input.issuedOn)))
+  ) throw Object.assign(new Error('Invalid invoice issue'), { statusCode: 400 });
+}
+
+/**
+ * Record that an invoice exists: its number and issue, sent and due dates.
+ * Re-issuing (a corrected invoice) replaces the details. The PDF is linked
+ * separately once it reaches bookkeeping.
+ */
+export async function issueInvoice(
+  client: DynamoDBDocumentClient,
+  input: {
+    actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string;
+    invoiceNumber: string; issuedOn: string; dueOn: string; sentOn?: string;
+  },
+) {
+  validateIssue(input);
+  const request = {
+    dealVersion: input.dealVersion, expectedVersion: input.expectedVersion,
+    invoiceNumber: input.invoiceNumber, issuedOn: input.issuedOn, dueOn: input.dueOn, sentOn: input.sentOn,
+  };
+  const replay = await replayMutation(client, {
+    actorId: input.actorId, operation: 'issue-invoice', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
+  });
+  if (replay) return replay;
+  const state = await getFinanceState(client, input.dealId);
+  if (!state || state.version !== input.expectedVersion || state.invoiceRequirement !== 'required' || state.voidedAt) throw safeConflict();
+  const now = nowIso();
+  return executeMutation(client, {
+    actorId: input.actorId, operation: 'issue-invoice', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
+    financeVersion: state.version + 1, recordId: state.id, eventCode: state.issuedOn ? 'invoice-reissued' : 'invoice-issued',
+    transactItems: [
+      adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
+      {
+        Update: {
+          TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
+          UpdateExpression: `SET invoiceNumber = :number, issuedOn = :issued, dueOn = :due, ${input.sentOn ? 'sentOn = :sent, ' : ''}updatedAt = :now, actorId = :actor, #version = #version + :one${input.sentOn ? '' : ' REMOVE sentOn'}`,
+          ConditionExpression: '#version = :version AND invoiceRequirement = :required AND attribute_not_exists(voidedAt)',
+          ExpressionAttributeNames: { '#version': 'version' },
+          ExpressionAttributeValues: {
+            ':number': input.invoiceNumber, ':issued': input.issuedOn, ':due': input.dueOn,
+            ...(input.sentOn ? { ':sent': input.sentOn } : {}),
+            ':now': now, ':actor': input.actorId, ':one': 1, ':version': state.version, ':required': 'required',
+          },
+        },
+      },
+    ],
+  });
+}
+
+function paidTotal(projection: FinanceProjection): bigint {
+  return projection.payments.reduce((sum, item) => sum + scaledMoney(item.amount), 0n);
+}
+
+export async function recordPayment(
+  client: DynamoDBDocumentClient,
+  input: {
+    actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string;
+    receivedOn: string; amount: string; currency: string; method: string; reference?: string;
+  },
+) {
+  try { scaledMoney(input.amount); } catch { throw Object.assign(new Error('Invalid payment'), { statusCode: 400 }); }
+  if (
+    !realDate(input.receivedOn) || !CURRENCY.test(input.currency)
+    || !(RECORDED_PAYMENT_METHODS as readonly string[]).includes(input.method)
+    || (input.reference !== undefined && !boundedText(input.reference, 200))
+  ) throw Object.assign(new Error('Invalid payment'), { statusCode: 400 });
+  const request = {
+    dealVersion: input.dealVersion, expectedVersion: input.expectedVersion, receivedOn: input.receivedOn,
+    amount: input.amount, currency: input.currency, method: input.method, reference: input.reference,
+  };
+  const replay = await replayMutation(client, {
+    actorId: input.actorId, operation: 'record-payment', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
+  });
+  if (replay) return replay;
+  const projection = await projectFinance(client, input.dealId, 'admin');
+  const state = await getFinanceState(client, input.dealId);
+  if (
+    !state || state.version !== input.expectedVersion || state.voidedAt || state.invoiceRequirement !== 'required'
+    || !state.issuedOn || state.currency !== input.currency || projection.reconciliationStatus !== 'coherent'
+    || state.paymentLinkIds.length + state.recordedPaymentIds.length >= PAYMENT_LINK_LIMIT
+    || paidTotal(projection) + scaledMoney(input.amount) > scaledMoney(state.amountDue)
+  ) throw safeConflict();
+  const paymentId = digest({ dealId: input.dealId, actorId: input.actorId, idempotencyKey: input.idempotencyKey }).slice(0, 32);
+  const id = recordedPaymentKey(input.dealId, paymentId);
+  const nextVersion = state.version + 1;
+  const now = nowIso();
+  const record: RecordedPayment = {
+    id, recordType: 'sponsor-finance-payment', dealId: input.dealId, paymentId,
+    receivedOn: input.receivedOn, amount: input.amount, currency: input.currency,
+    method: input.method as RecordedPayment['method'],
+    ...(input.reference ? { reference: input.reference } : {}),
+    actorId: input.actorId, financeVersion: nextVersion, createdAt: now,
+  };
+  const nextIds = [...state.recordedPaymentIds, id].sort();
+  return executeMutation(client, {
+    actorId: input.actorId, operation: 'record-payment', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
+    financeVersion: nextVersion, recordId: id, eventCode: 'payment-recorded',
+    transactItems: [
+      adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
+      { Put: { TableName: TABLE_SPONSOR_CRM, Item: { ...singleton(id), ...record }, ConditionExpression: 'attribute_not_exists(PK)' } },
+      {
+        Update: {
+          TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
+          UpdateExpression: 'SET recordedPaymentIds = :next, updatedAt = :now, actorId = :actor, #version = #version + :one',
+          ConditionExpression: '#version = :version AND recordedPaymentIds = :prior AND attribute_not_exists(voidedAt)',
+          ExpressionAttributeNames: { '#version': 'version' },
+          ExpressionAttributeValues: {
+            ':next': nextIds, ':prior': state.recordedPaymentIds, ':now': now, ':actor': input.actorId,
+            ':one': 1, ':version': state.version,
+          },
+        },
+      },
+    ],
+  });
+}
+
+export async function deleteRecordedPayment(
+  client: DynamoDBDocumentClient,
+  input: { actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string; paymentId: string },
+) {
+  if (!/^[a-f0-9]{32}$/.test(input.paymentId)) throw Object.assign(new Error('Invalid payment'), { statusCode: 400 });
+  const id = recordedPaymentKey(input.dealId, input.paymentId);
+  const request = { dealVersion: input.dealVersion, expectedVersion: input.expectedVersion, paymentId: input.paymentId };
+  const replay = await replayMutation(client, {
+    actorId: input.actorId, operation: 'delete-payment', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
+  });
+  if (replay) return replay;
+  const state = await getFinanceState(client, input.dealId);
+  if (!state || state.version !== input.expectedVersion || !state.recordedPaymentIds.includes(id)) throw safeConflict();
+  const now = nowIso();
+  return executeMutation(client, {
+    actorId: input.actorId, operation: 'delete-payment', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
+    financeVersion: state.version + 1, recordId: id, eventCode: 'payment-record-deleted',
+    transactItems: [
+      adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
+      {
+        Delete: {
+          TableName: TABLE_SPONSOR_CRM, Key: singleton(id),
+          ConditionExpression: 'dealId = :deal', ExpressionAttributeValues: { ':deal': input.dealId },
+        },
+      },
+      {
+        Update: {
+          TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
+          UpdateExpression: 'SET recordedPaymentIds = :next, updatedAt = :now, actorId = :actor, #version = #version + :one',
+          ConditionExpression: '#version = :version AND recordedPaymentIds = :prior',
+          ExpressionAttributeNames: { '#version': 'version' },
+          ExpressionAttributeValues: {
+            ':next': state.recordedPaymentIds.filter((item) => item !== id), ':prior': state.recordedPaymentIds,
+            ':now': now, ':actor': input.actorId, ':one': 1, ':version': state.version,
+          },
+        },
+      },
+    ],
+  });
+}
+
+export function validateWaitingOn(value: unknown): WaitingOn | null {
+  if (value === null) return null;
+  const record = value as Record<string, unknown>;
+  if (
+    !record || typeof record !== 'object' || Array.isArray(record)
+    || !(WAITING_PARTIES as readonly string[]).includes(String(record.party))
+    || !(WAITING_REASONS as readonly string[]).includes(String(record.reason))
+    || !realDate(record.since)
+    || (record.note !== undefined && !boundedText(record.note, 300))
+  ) throw Object.assign(new Error('Invalid waitingOn'), { statusCode: 400 });
+  return {
+    party: record.party as WaitingOn['party'],
+    reason: record.reason as WaitingOn['reason'],
+    since: String(record.since),
+    ...(record.note !== undefined ? { note: String(record.note) } : {}),
+  };
+}
+
+export function validateEvidence(value: unknown): FinanceEvidence[] {
+  if (!Array.isArray(value) || value.length > MAX_EVIDENCE) throw Object.assign(new Error('Invalid evidence'), { statusCode: 400 });
+  return value.map((item) => {
+    const record = item as Record<string, unknown>;
+    if (
+      !record || typeof record !== 'object' || Array.isArray(record)
+      || !(EVIDENCE_KINDS as readonly string[]).includes(String(record.kind))
+      || !boundedText(record.ref, 300)
+      || (record.kind === 'url' && !/^https:\/\/[^\s]+$/.test(String(record.ref)))
+      || (record.label !== undefined && !boundedText(record.label, 160))
+      || (record.on !== undefined && !realDate(record.on))
+    ) throw Object.assign(new Error('Invalid evidence'), { statusCode: 400 });
+    return {
+      kind: record.kind as FinanceEvidence['kind'],
+      ref: String(record.ref),
+      ...(record.label !== undefined ? { label: String(record.label) } : {}),
+      ...(record.on !== undefined ? { on: String(record.on) } : {}),
+    };
+  });
+}
+
+/** Who the money is waiting on, and where the evidence lives. Omitted fields stay unchanged. */
+export async function updateFollowThrough(
+  client: DynamoDBDocumentClient,
+  input: {
+    actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string;
+    body: Record<string, unknown>;
+  },
+) {
+  const hasWaiting = input.body.waitingOn !== undefined;
+  const hasEvidence = input.body.evidence !== undefined;
+  if (!hasWaiting && !hasEvidence) throw Object.assign(new Error('Nothing to update'), { statusCode: 400 });
+  const waitingOn = hasWaiting ? validateWaitingOn(input.body.waitingOn) : undefined;
+  const evidence = hasEvidence ? validateEvidence(input.body.evidence) : undefined;
+  const request = { dealVersion: input.dealVersion, expectedVersion: input.expectedVersion, waitingOn, evidence };
+  const replay = await replayMutation(client, {
+    actorId: input.actorId, operation: 'follow-through', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
+  });
+  if (replay) return replay;
+  const state = await getFinanceState(client, input.dealId);
+  if (!state || state.version !== input.expectedVersion || state.voidedAt) throw safeConflict();
+  const now = nowIso();
+  const sets = ['updatedAt = :now', 'actorId = :actor', '#version = #version + :one'];
+  const removes: string[] = [];
+  const values: Record<string, unknown> = { ':now': now, ':actor': input.actorId, ':one': 1, ':version': state.version };
+  if (hasWaiting) {
+    if (waitingOn) { sets.push('waitingOn = :waiting'); values[':waiting'] = waitingOn; } else removes.push('waitingOn');
+  }
+  if (hasEvidence) {
+    if (evidence!.length) { sets.push('evidence = :evidence'); values[':evidence'] = evidence; } else removes.push('evidence');
+  }
+  return executeMutation(client, {
+    actorId: input.actorId, operation: 'follow-through', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
+    financeVersion: state.version + 1, recordId: state.id, eventCode: 'follow-through-updated',
+    transactItems: [
+      adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
+      {
+        Update: {
+          TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
+          UpdateExpression: `SET ${sets.join(', ')}${removes.length ? ` REMOVE ${removes.join(', ')}` : ''}`,
+          ConditionExpression: '#version = :version AND attribute_not_exists(voidedAt)',
+          ExpressionAttributeNames: { '#version': 'version' },
+          ExpressionAttributeValues: values,
         },
       },
     ],
@@ -434,14 +712,19 @@ export async function linkPayment(
   input: {
     actorId: string; dealId: string; dealVersion: number; expectedVersion: number;
     sourceId: string; identityToken: string; idempotencyKey: string;
+    /** A recorded (pre-ledger) payment this ledger row confirms; removed in the same transaction. */
+    replacesPaymentId?: string;
   },
 ) {
-  if (!OPAQUE.test(input.sourceId)) throw Object.assign(new Error('Invalid payment link'), { statusCode: 400 });
+  if (!OPAQUE.test(input.sourceId) || (input.replacesPaymentId !== undefined && !/^[a-f0-9]{32}$/.test(input.replacesPaymentId))) {
+    throw Object.assign(new Error('Invalid payment link'), { statusCode: 400 });
+  }
   const request = {
     dealVersion: input.dealVersion,
     expectedVersion: input.expectedVersion,
     sourceId: input.sourceId,
     identityToken: input.identityToken,
+    replacesPaymentId: input.replacesPaymentId,
   };
   const replay = await replayMutation(client, {
     actorId: input.actorId,
@@ -455,12 +738,25 @@ export async function linkPayment(
   const state = await getFinanceState(client, input.dealId);
   const source = await sourceItem(client, 'transaction', input.sourceId);
   if (
-    !state || state.version !== input.expectedVersion || state.voidedAt || !state.invoiceLinkId
-    || state.paymentLinkIds.length >= PAYMENT_LINK_LIMIT || !source || paymentIdentity(source) !== input.identityToken
+    !state || state.version !== input.expectedVersion || state.voidedAt || !state.issuedOn
+    || state.paymentLinkIds.length + state.recordedPaymentIds.length >= PAYMENT_LINK_LIMIT || !source || paymentIdentity(source) !== input.identityToken
     || source.currency !== state.currency || projection.reconciliationStatus !== 'coherent'
   ) throw safeConflict();
-  const paid = projection.payments.reduce((sum, item) => sum + scaledMoney(item.amount), 0n);
-  if (paid + scaledMoney(source.amount) > scaledMoney(state.amountDue)) throw safeConflict();
+  const replaced = input.replacesPaymentId
+    ? projection.payments.find((item) => item.source === 'recorded' && item.id === input.replacesPaymentId)
+    : undefined;
+  if (input.replacesPaymentId && !replaced) throw safeConflict();
+  const sourceDate = String(source.paidDate || source.transactionDate || '');
+  const lookalike = projection.payments.find((item) => item.source === 'recorded' && item !== replaced
+    && item.amount === String(source.amount) && realDate(sourceDate)
+    && Math.abs(daysBetween(item.effectiveDate, sourceDate)) <= 14);
+  if (lookalike) {
+    throw Object.assign(new Error('A recorded payment looks like this ledger row; link it as its replacement'), { statusCode: 409 });
+  }
+  const replacedAmount = replaced ? scaledMoney(replaced.amount) : 0n;
+  if (paidTotal(projection) - replacedAmount + scaledMoney(source.amount) > scaledMoney(state.amountDue)) throw safeConflict();
+  const replacedKey = replaced ? recordedPaymentKey(input.dealId, replaced.id) : undefined;
+  const nextRecorded = state.recordedPaymentIds.filter((item) => item !== replacedKey);
   const id = linkKey(input.dealId, 'transaction', input.sourceId);
   const nextIds = [...state.paymentLinkIds, id].sort();
   const nextVersion = state.version + 1;
@@ -471,7 +767,7 @@ export async function linkPayment(
     financeVersion: nextVersion, createdAt: now,
   };
   const existingTupleChecks: any[] = [];
-  for (const payment of projection.payments) {
+  for (const payment of projection.payments.filter((item) => item.source === 'ledger')) {
     const linkedSource = await sourceItem(client, 'transaction', payment.id);
     if (!linkedSource) throw safeConflict();
     const existingLinkId = linkKey(input.dealId, 'transaction', payment.id);
@@ -526,13 +822,23 @@ export async function linkPayment(
         },
       },
       { Put: { TableName: TABLE_SPONSOR_CRM, Item: { ...singleton(id), ...link }, ConditionExpression: 'attribute_not_exists(PK)' } },
+      ...(replacedKey ? [{
+        Delete: {
+          TableName: TABLE_SPONSOR_CRM, Key: singleton(replacedKey),
+          ConditionExpression: 'dealId = :deal', ExpressionAttributeValues: { ':deal': input.dealId },
+        },
+      }] : []),
       {
         Update: {
           TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
-          UpdateExpression: 'SET paymentLinkIds = :next, updatedAt = :now, actorId = :actor, #version = #version + :one',
-          ConditionExpression: '#version = :version AND paymentLinkIds = :prior AND size(paymentLinkIds) < :limit AND attribute_not_exists(voidedAt)',
+          UpdateExpression: 'SET paymentLinkIds = :next, recordedPaymentIds = :nextRecorded, updatedAt = :now, actorId = :actor, #version = #version + :one',
+          ConditionExpression: '#version = :version AND paymentLinkIds = :prior AND recordedPaymentIds = :priorRecorded AND size(paymentLinkIds) < :limit AND attribute_not_exists(voidedAt)',
           ExpressionAttributeNames: { '#version': 'version' },
-          ExpressionAttributeValues: { ':next': nextIds, ':prior': state.paymentLinkIds, ':now': now, ':actor': input.actorId, ':one': 1, ':version': state.version, ':limit': PAYMENT_LINK_LIMIT },
+          ExpressionAttributeValues: {
+            ':next': nextIds, ':prior': state.paymentLinkIds, ':nextRecorded': nextRecorded,
+            ':priorRecorded': state.recordedPaymentIds, ':now': now, ':actor': input.actorId, ':one': 1,
+            ':version': state.version, ':limit': PAYMENT_LINK_LIMIT,
+          },
         },
       },
     ],
@@ -565,7 +871,7 @@ export async function unlinkFinanceSource(
   const now = nowIso();
   const update = input.kind === 'document'
     ? {
-      UpdateExpression: 'SET updatedAt = :now, actorId = :actor, #version = #version + :one REMOVE invoiceLinkId, issuedOn, dueOn',
+      UpdateExpression: 'SET updatedAt = :now, actorId = :actor, #version = #version + :one REMOVE invoiceLinkId',
       ConditionExpression: '#version = :version AND invoiceLinkId = :link',
       ExpressionAttributeNames: { '#version': 'version' },
       ExpressionAttributeValues: { ':now': now, ':actor': input.actorId, ':one': 1, ':version': state.version, ':link': id },
@@ -619,7 +925,10 @@ export async function voidFinance(
   });
   if (replay) return replay;
   const state = await getFinanceState(client, input.dealId);
-  if (!state || state.version !== input.expectedVersion || state.invoiceLinkId || state.paymentLinkIds.length || state.voidedAt) throw safeConflict();
+  if (
+    !state || state.version !== input.expectedVersion || state.invoiceLinkId || state.paymentLinkIds.length
+    || state.recordedPaymentIds.length || state.voidedAt
+  ) throw safeConflict();
   const now = nowIso();
   return executeMutation(client, {
     actorId: input.actorId, operation: 'void', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
@@ -631,7 +940,7 @@ export async function voidFinance(
         Update: {
           TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
           UpdateExpression: 'SET voidedAt = :now, updatedAt = :now, actorId = :actor, #version = #version + :one',
-          ConditionExpression: '#version = :version AND size(paymentLinkIds) = :zero AND attribute_not_exists(invoiceLinkId) AND attribute_not_exists(voidedAt)',
+          ConditionExpression: '#version = :version AND size(paymentLinkIds) = :zero AND size(recordedPaymentIds) = :zero AND attribute_not_exists(invoiceLinkId) AND attribute_not_exists(voidedAt)',
           ExpressionAttributeNames: { '#version': 'version' },
           ExpressionAttributeValues: { ':now': now, ':actor': input.actorId, ':one': 1, ':zero': 0, ':version': state.version },
         },
@@ -640,23 +949,32 @@ export async function voidFinance(
   });
 }
 
+export type ProjectionContext = { today?: string; deliveredOn?: string; dealStatus?: string };
+
 export async function projectFinance(
   client: DynamoDBDocumentClient,
   dealId: string,
   role: 'admin' | 'operator',
+  context: ProjectionContext = {},
 ): Promise<FinanceProjection> {
+  const today = context.today || berlinDate();
   for (let retry = 0; retry < 3; retry++) {
     const orphanDiscovery = await discoverFinanceClaims(client, dealId);
     const discovered = await getFinanceState(client, dealId);
-    if (!discovered) return {
-      enabled: true, classified: false, dealId, role, invoiceState: 'unclassified',
-      paymentState: orphanDiscovery.complete && orphanDiscovery.keys.length === 0
-        ? 'not-applicable' : 'reconciliation-required',
-      timingState: 'not-applicable', payments: [],
-      reconciliationStatus: orphanDiscovery.complete && orphanDiscovery.keys.length === 0
-        ? 'coherent' : 'reconciliation-required',
-      paymentLinkCount: 0, paymentLinkLimit: PAYMENT_LINK_LIMIT,
-    };
+    if (!discovered) {
+      const coherentEmpty = orphanDiscovery.complete && orphanDiscovery.keys.length === 0;
+      return {
+        enabled: true, classified: false, dealId, role, invoiceState: 'unclassified',
+        paymentState: coherentEmpty ? 'not-applicable' : 'reconciliation-required',
+        timingState: 'not-applicable', payments: [],
+        followUp: coherentEmpty
+          ? deriveFollowUp({ dealStatus: context.dealStatus, invoiceState: 'unclassified', paymentState: 'not-applicable' }, today)
+          : { code: 'reconcile', party: 'us' },
+        reconciliationStatus: coherentEmpty ? 'coherent' : 'reconciliation-required',
+        paymentLinkCount: 0, paymentLinkLimit: PAYMENT_LINK_LIMIT,
+      };
+    }
+    const recordedIds = discovered.recordedPaymentIds || [];
     const ids = [...(discovered.invoiceLinkId ? [discovered.invoiceLinkId] : []), ...discovered.paymentLinkIds];
     const linkKinds = ids.map((id) => id.includes('#document#') ? 'document' as const : 'transaction' as const);
     const sourceIds = ids.map((id) => id.split('#').at(-1)!);
@@ -671,18 +989,24 @@ export async function projectFinance(
         { Get: { TableName: TABLE_BOOKKEEPING, Key: singleton(sourceKey(linkKinds[index], sourceIds[index])) } },
       );
     });
+    recordedIds.forEach((id) => getItems.push({ Get: { TableName: TABLE_SPONSOR_CRM, Key: singleton(id) } }));
     const result = await client.send(new TransactGetCommand({ TransactItems: getItems }));
     const responses = result.Responses || [];
     const state = clean<FinanceState>(responses[0]?.Item as Record<string, unknown>);
     const booking = responses[1]?.Item;
-    if (!state || state.version !== discovered.version || JSON.stringify(state.paymentLinkIds) !== JSON.stringify(discovered.paymentLinkIds) || state.invoiceLinkId !== discovered.invoiceLinkId) continue;
+    if (
+      !state || state.version !== discovered.version
+      || JSON.stringify(state.paymentLinkIds) !== JSON.stringify(discovered.paymentLinkIds)
+      || JSON.stringify(state.recordedPaymentIds || []) !== JSON.stringify(recordedIds)
+      || state.invoiceLinkId !== discovered.invoiceLinkId
+    ) continue;
     const confirmedClaims = await discoverFinanceClaims(client, dealId);
     if (
       !confirmedClaims.complete
       || JSON.stringify(confirmedClaims.keys) !== JSON.stringify(orphanDiscovery.keys)
     ) continue;
     let coherent = !!booking && !booking.archivedAt && booking.active === true && !['cancelled', 'complete'].includes(String(booking.status));
-    const payments: FinanceProjection['payments'] = [];
+    const payments: FinancePayment[] = [];
     let invoice: FinanceProjection['invoice'];
     let total = 0n;
     for (let index = 0; index < ids.length; index++) {
@@ -711,9 +1035,28 @@ export async function projectFinance(
           effectiveDate: String(source.paidDate || source.transactionDate),
           amount,
           currency: String(source.currency),
+          source: 'ledger',
         });
       }
     }
+    const recordedOffset = 2 + ids.length * 3;
+    recordedIds.forEach((id, index) => {
+      const record = clean<RecordedPayment>(responses[recordedOffset + index]?.Item as Record<string, unknown>);
+      if (!record || record.id !== id || record.dealId !== dealId || record.currency !== state.currency) {
+        coherent = false;
+        return;
+      }
+      try { total += scaledMoney(record.amount); } catch { coherent = false; }
+      payments.push({
+        id: record.paymentId,
+        effectiveDate: record.receivedOn,
+        amount: record.amount,
+        currency: record.currency,
+        source: 'recorded',
+        method: record.method,
+        ...(record.reference ? { reference: record.reference } : {}),
+      });
+    });
     const expectedClaims = new Set(ids.map((id, index) => claimKey(linkKinds[index], sourceIds[index])));
     if (
       !orphanDiscovery.complete
@@ -722,18 +1065,20 @@ export async function projectFinance(
     ) coherent = false;
     if (state.amountDue && total > scaledMoney(state.amountDue)) coherent = false;
     const outstandingValue = state.amountDue ? scaledMoney(state.amountDue) - total : 0n;
-    const invoiceState = state.voidedAt ? 'voided'
-      : state.invoiceRequirement === 'not-required' ? 'not-required'
-        : state.invoiceLinkId ? 'issued'
-          : state.invoiceRequestedAt ? 'requested' : 'to-request';
-    const paymentState = !coherent ? 'reconciliation-required'
-      : state.invoiceRequirement === 'not-required' ? 'not-applicable'
-        : total === 0n ? 'unpaid'
-          : outstandingValue === 0n ? 'paid' : 'partially-paid';
-    const today = berlinDate();
-    const timingState = paymentState === 'not-applicable' ? 'not-applicable'
-      : paymentState === 'paid' ? 'settled'
-        : state.dueOn && state.dueOn < today ? 'overdue' : 'not-due';
+    const { invoiceState, paymentState, timingState } = deriveStates(
+      state, total, state.amountDue ? scaledMoney(state.amountDue) : undefined, coherent, today,
+    );
+    const visiblePayments = coherent
+      ? payments.sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate) || a.id.localeCompare(b.id))
+      : [];
+    const lastPaymentOn = visiblePayments.at(-1)?.effectiveDate;
+    const followUp = deriveFollowUp({
+      dealStatus: context.dealStatus ?? (booking ? String(booking.status) : undefined),
+      invoiceState, paymentState,
+      requestBy: state.invoiceRequestedAt ? undefined : state.requestBy,
+      expectedInvoiceBy: state.expectedInvoiceBy,
+      dueOn: state.dueOn, waitingOn: state.waitingOn, deliveredOn: context.deliveredOn,
+    }, today);
     return {
       enabled: true, classified: true, dealId, role,
       finance: {
@@ -745,16 +1090,23 @@ export async function projectFinance(
         ...(state.requestBy ? { requestBy: state.requestBy } : {}),
         ...(state.invoiceRequestedAt ? { invoiceRequestedAt: state.invoiceRequestedAt } : {}),
         ...(state.expectedInvoiceBy ? { expectedInvoiceBy: state.expectedInvoiceBy } : {}),
+        ...(state.invoiceNumber ? { invoiceNumber: state.invoiceNumber } : {}),
         ...(state.issuedOn ? { issuedOn: state.issuedOn } : {}),
+        ...(state.sentOn ? { sentOn: state.sentOn } : {}),
         ...(state.dueOn ? { dueOn: state.dueOn } : {}),
+        ...(state.waitingOn ? { waitingOn: state.waitingOn } : {}),
+        ...(state.evidence?.length ? { evidence: state.evidence } : {}),
         ...(state.voidedAt ? { voidedAt: state.voidedAt } : {}),
       },
       invoiceState, paymentState, timingState,
-      ...(state.amountDue && coherent ? { outstanding: displayMoney(outstandingValue) } : {}),
+      ...(state.amountDue && coherent ? { outstanding: displayMoney(outstandingValue), paid: displayMoney(total) } : {}),
+      ...(timingState === 'overdue' && state.dueOn ? { daysOverdue: daysBetween(state.dueOn, today) } : {}),
+      ...(lastPaymentOn ? { lastPaymentOn } : {}),
       ...(invoice ? { invoice } : {}),
-      payments: coherent ? payments.sort((a, b) => a.id.localeCompare(b.id)) : [],
+      payments: visiblePayments,
+      followUp,
       reconciliationStatus: coherent ? 'coherent' : 'reconciliation-required',
-      paymentLinkCount: state.paymentLinkIds.length,
+      paymentLinkCount: state.paymentLinkIds.length + recordedIds.length,
       paymentLinkLimit: PAYMENT_LINK_LIMIT,
     };
   }
