@@ -191,12 +191,31 @@ lockfile; there is no nested `backend/package-lock.json`.
 
 ## What the editor does
 
-- Opens every SOP in a **block view** — Section / Group / Step / Free-form /
-  Screenshot / TODO. Click any text to edit inline; Cmd/Ctrl+Enter to commit.
-- Add, delete, drag-reorder steps; cross-group moves; convert flat ↔ grouped
-  procedures; renumber automatically. Roundtrips through the SOP linter.
-- Image upload via file picker, drag-and-drop onto a step, or clipboard paste.
-- Frontmatter editor: `doc_type`, summary, tags, systems (chips).
+- Opens every doc as a **page**, like Notion: one centered column with the
+  title, a compact property list (type, summary, tags, systems) and the body.
+  SOPs show their sections, groups, numbered steps, free text, screenshots and
+  TODOs as blocks, with nothing boxed.
+- Every block is **always editable**: click and type. Edits autosave to a local
+  draft ("Saving…" → "Draft saved"); Save publishes it.
+- Keyboard: Enter splits a block (a step into two steps), Backspace at the
+  start joins the block above (or un-formats a heading or list item),
+  Shift+Tab starts a group at a step and Tab joins it back, arrow keys move
+  between blocks, Escape leaves the block.
+- `/` opens the block menu and filters as you type: headings, lists, to-dos,
+  quotes, callouts, code, dividers, images, videos and sub-pages in pages and
+  sections; steps, text, groups, screenshots, videos and TODOs in a procedure.
+- The left gutter (on hover; on touch, above the block being edited) has "+"
+  and a drag handle: drag to reorder with a thin drop line, click for Turn
+  into, Duplicate, Move, Delete and step properties.
+- Select text for bold, italic, code and link; markdown shortcuts as you type
+  (`#`, `##`, `-`, `1.`, `[]`, `>`, ```` ``` ````, `---`, `**bold**`,
+  `*italic*`, `` `code` ``).
+- Paste a link over text to link it, a Loom/YouTube/Vimeo link into an empty
+  block to embed it, markdown to get blocks; paste or drop images to upload
+  them as step screenshots or image blocks.
+- Round-trips through the SOP linter: an edit rewrites only the markdown it
+  changed, and procedure edits keep prose, groups and step attributes where
+  they are.
 - Pending-changes panel aggregates every local draft; **Save all** from the
   sidebar, then review lint and commit from the publish dialog.
 - Search (server-side), tag/system/domain/type filters, quick-nav palette
@@ -212,8 +231,9 @@ lockfile; there is no nested `backend/package-lock.json`.
 - `Cmd/Ctrl + P` opens quick navigation.
 - `Cmd/Ctrl + S` saves the current doc.
 - `Cmd/Ctrl + Shift + S` saves all drafts.
-- `Cmd/Ctrl + Enter` commits an inline edit.
-- `Esc` cancels inline edits and closes modals.
+- `Cmd/Ctrl + B / I / E / K` bold, italic, code, link in a block.
+- `/` inside a block opens the block menu.
+- `Esc` leaves the block being edited and closes menus and modals.
 - `?` shows keyboard shortcut help.
 
 ## SOP format
