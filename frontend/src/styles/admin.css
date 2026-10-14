@@ -161,7 +161,7 @@
 }.ops-user-badge {
   display: inline-flex;
   margin-left: 6px;
-  border-color: var(--dk-warning-border);
+  border: 1px solid transparent;
   background: var(--dk-warning-bg);
   color: var(--dk-warning-text);
   padding: 1px 6px;
@@ -222,7 +222,7 @@
   gap: 6px;
 }.device-code-input {
   min-height: 48px;
-  border-color: var(--dk-info-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-accent-soft);
   color: var(--dk-text-heading);
   font-size: 20px;
@@ -248,7 +248,7 @@
   border-top: 1px solid var(--dk-border-default);
   padding-top: 14px;
 }.device-outcome {
-  border: 1px solid var(--dk-success-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-success-bg);
   padding: 16px;
@@ -329,7 +329,7 @@
   font-size: 14px;
 }.ops-quality-row-head span {
   flex: 0 0 auto;
-  border: 1px solid var(--dk-warning-border);
+  border: 1px solid transparent;
   border-radius: var(--dk-radius-full);
   background: var(--dk-warning-bg);
   color: var(--dk-warning-text);
@@ -337,11 +337,9 @@
   font-size: 11px;
   font-weight: 700;
 }.ops-quality-blocking .ops-quality-row-head span {
-  border-color: var(--dk-danger-border);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
 }.ops-quality-info .ops-quality-row-head span {
-  border-color: var(--dk-info-border);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
 }.ops-quality-row > small {
@@ -458,7 +456,7 @@
   padding-bottom: 8px;
 }.ops-subnav-tab[aria-pressed="true"],
 .ops-subnav-tab.is-active {
-  border-color: var(--dk-info-border);
+  border-color: var(--dk-border-default);
   background: var(--dk-accent-soft);
   color: var(--dk-accent-default);
   font-weight: 600;
