@@ -33,6 +33,8 @@ export type SnapshotDeliverable = {
   materialDeadline?: string;
   publishedAt?: string;
   artifactUrls?: string[];
+  cardId?: string;
+  scheduleEntryId?: string;
   sourceKey?: string;
 };
 export type SnapshotDeal = {
@@ -83,6 +85,7 @@ export type CrmSnapshot = {
 };
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot: CrmSnapshot, actorId: string) {
   const companies = snapshot.companies || [];
@@ -203,7 +206,12 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
     if (result.duplicate) created.duplicates += 1;
     else created.deals += 1;
     for (const deliverable of deal.deliverables || []) {
-      if (!CHANNELS.has(deliverable.channel)) throw Object.assign(new Error('Invalid deliverable'), { statusCode: 400 });
+      if (
+        !CHANNELS.has(deliverable.channel)
+        || (deliverable.cardId !== undefined && !OPAQUE_ID.test(deliverable.cardId))
+        || (deliverable.scheduleEntryId !== undefined && !OPAQUE_ID.test(deliverable.scheduleEntryId))
+        || (deliverable.plannedPublicationDate !== undefined && !realDate(deliverable.plannedPublicationDate))
+      ) throw Object.assign(new Error('Invalid deliverable'), { statusCode: 400 });
       const made = await createDeliverableAtomic(client, {
         dealId: result.item.id,
         organizationId,
@@ -212,6 +220,8 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
         materialDeadline: deliverable.materialDeadline,
         publishedAt: deliverable.publishedAt,
         artifactUrls: deliverable.artifactUrls || [],
+        ...(deliverable.cardId ? { cardId: deliverable.cardId } : {}),
+        ...(deliverable.scheduleEntryId ? { scheduleEntryId: deliverable.scheduleEntryId } : {}),
         sourceType: 'import',
         sourceKey: deliverable.sourceKey || `${sourceKey}:deliverable:${deliverable.channel}:${deliverable.plannedPublicationDate || 'none'}`,
       }, actorId);

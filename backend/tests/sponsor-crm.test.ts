@@ -127,7 +127,7 @@ describe('sponsor CRM', () => {
     process.env.SPONSOR_FINANCE_ENABLED = 'true';
     try {
       const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Money Sponsor', lastOutboundAt: '2026-06-20', lastInboundAt: '2026-06-21', sourceKey: 'money-org' }));
-      const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, title: 'Synthetic package', status: 'agreed', nextAction: { ...ACTION, due: '2026-09-01' }, sourceKey: 'money-deal' }));
+      const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, title: 'Synthetic package', status: 'agreed', nextAction: { type: 'chase_payment', due: '2026-06-15', owner: GRACE_USER_ID, note: 'chase' }, sourceKey: 'money-deal' }));
       const at = (today: string) => handler({ httpMethod: 'GET', path: `/api/sponsor-crm/deals/${deal.id}`, headers: {}, queryStringParameters: { today }, body: null }, {}).then(data);
       assert.equal((await at('2026-07-01')).money, 'none');
       const financeItem = {
@@ -144,8 +144,9 @@ describe('sponsor CRM', () => {
       assert.deepEqual(fetched.finance.followUp, { code: 'chase-payment', party: 'us', since: '2026-06-01', daysOverdue: 30 });
       assert.equal((await at('2026-05-15')).money, 'invoiced');
       const queue = data(await handler({ httpMethod: 'GET', path: '/api/sponsor-crm/queue', headers: grace, queryStringParameters: { today: '2026-07-01', limit: '100' }, body: null }, {})).items;
-      const chase = queue.find((item: any) => item.dealId === deal.id && item.why === 'chase_payment');
-      assert.ok(chase, 'overdue invoice must be chased');
+      const chases = queue.filter((item: any) => item.dealId === deal.id && item.why === 'chase_payment');
+      assert.equal(chases.length, 1, 'the finance follow-up and the next action raise one chase');
+      const [chase] = chases;
       assert.equal(chase.due, '2026-06-01');
       const paymentKey = `SPONSOR_FINANCE_PAYMENT#${deal.id}#${'a'.repeat(32)}`;
       await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: {
@@ -330,6 +331,7 @@ describe('sponsor CRM', () => {
     assert.ok(verbal, 'verbal deal missing');
     assert.equal(packaged.money, 'none', 'money comes only from sponsor finance');
     assert.equal(packaged.deliverables.length, 1);
+    assert.equal(packaged.deliverables[0].cardId, 'synthetic-card-1');
     assert.equal(body.activity, 1);
     const orgs = data(await invoke('GET', '/api/sponsor-crm/organizations?limit=100&today=2026-07-01')).items;
     const cashOrg = orgs.find((item: any) => item.domain === 'cash.example.invalid');

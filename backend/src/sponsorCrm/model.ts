@@ -129,6 +129,13 @@ export function dealIsComplete(
   return money === 'paid' && (fulfillment === 'delivered' || fulfillment === 'none');
 }
 
+const FINANCE_CHORES: Record<string, string> = { send_invoice: 'send-invoice', chase_payment: 'chase-payment' };
+
+/** A money chore the finance follow-up already raises is not raised twice from the deal's next action. */
+function financeOwns(facts: DealMoneyFacts | undefined, actionType: string): boolean {
+  return Boolean(facts && FINANCE_CHORES[actionType] && facts.followUp.code === FINANCE_CHORES[actionType]);
+}
+
 export function defaultOwner(why: string, channel = ''): string {
   if (why === 'yes' || why === 'price' || why === 'lost') return ALEXEY_USER_ID;
   if ((why === 'chase_materials' || why === 'copy') && (channel === 'workshop' || channel === 'course')) return VALERIIA_USER_ID;
@@ -212,7 +219,7 @@ export function computeQueue(input: {
           due: today,
           owner: String(deal.owner || defaultOwner('follow_up')),
         });
-      } else if (action && action.due <= today) {
+      } else if (action && action.due <= today && !financeOwns(facts, action.type)) {
         push(items, {
           kind: 'operational',
           why: action.type,

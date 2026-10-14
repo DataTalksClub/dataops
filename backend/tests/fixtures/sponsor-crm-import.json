@@ -39,7 +39,8 @@
         {
           "channel": "main",
           "plannedPublicationDate": "2026-03-01",
-          "publishedAt": "2026-03-01"
+          "publishedAt": "2026-03-01",
+          "cardId": "synthetic-card-1"
         }
       ],
       "title": "Synthetic newsletter package"
