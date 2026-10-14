@@ -1706,7 +1706,18 @@ describe("Knowledge surface boundary", () => {
     const subpageBtn = actions.querySelector(".ops-docs-tree-btn-subpage");
     const moveBtn = actions.querySelector(".ops-docs-tree-btn-move");
     assert.ok(subpageBtn, "subpage add button (+) should exist");
-    assert.ok(moveBtn, "move button (⇄) should exist");
+    assert.ok(moveBtn, "move button should exist");
+    // Kit icon buttons with accessible names; touch folds them into a menu.
+    assert.ok(subpageBtn.classList.contains("dk-icon-button"));
+    assert.equal(subpageBtn.getAttribute("aria-label"), "Add sub-page");
+    assert.equal(moveBtn.getAttribute("aria-label"), "Move page");
+    const moreBtn = actions.querySelector(".ops-docs-tree-more");
+    const menu = actions.querySelector(".ops-docs-tree-menu");
+    assert.ok(moreBtn && menu, "overflow button and menu should exist");
+    assert.equal(moreBtn.getAttribute("aria-haspopup"), "menu");
+    assert.equal(moreBtn.getAttribute("aria-expanded"), "false");
+    assert.equal(menu.hidden, true);
+    assert.deepEqual([...menu.querySelectorAll("[role=menuitem]")].map((item) => item.textContent), ["Add sub-page", "Move page"]);
 
     // Leaf node without children has a bullet instead of a toggle
     const opsNode = treeNodes[1];

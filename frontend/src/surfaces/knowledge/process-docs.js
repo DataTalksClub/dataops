@@ -302,29 +302,93 @@ export function createProcessDocsSurface(context, services) {
     const actions = document.createElement("div");
     actions.className = "ops-docs-tree-actions";
 
-    const addSubBtn = document.createElement("button");
-    addSubBtn.type = "button";
-    addSubBtn.className = "ops-docs-tree-btn ops-docs-tree-btn-subpage";
-    addSubBtn.title = "Add sub-page";
-    addSubBtn.setAttribute("aria-label", "Add sub-page");
-    addSubBtn.textContent = "+";
+    // Fine pointers get two icon buttons revealed on row hover/focus; coarse
+    // pointers get one overflow button opening a menu with the same actions.
+    const iconButton = (className, label, icon) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `dk-icon-button dk-icon-button--sm ${className}`;
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">${icon}</svg>`;
+      return button;
+    };
+    const runAddSubpage = () => createSubpageForDoc(doc);
+    const runMove = () => openMoveDialogForDoc(doc);
+
+    const addSubBtn = iconButton("ops-docs-tree-btn-subpage", "Add sub-page", '<path d="M12 5v14M5 12h14"/>');
     addSubBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      createSubpageForDoc(doc);
+      runAddSubpage();
     });
-
-    const moveBtn = document.createElement("button");
-    moveBtn.type = "button";
-    moveBtn.className = "ops-docs-tree-btn ops-docs-tree-btn-move";
-    moveBtn.title = "Move to another parent";
-    moveBtn.setAttribute("aria-label", "Move page");
-    moveBtn.textContent = "⇄";
+    const moveBtn = iconButton(
+      "ops-docs-tree-btn-move",
+      "Move page",
+      '<path d="M7 7h12m0 0-3-3m3 3-3 3M17 17H5m0 0 3-3m-3 3 3 3"/>',
+    );
     moveBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      openMoveDialogForDoc(doc);
+      runMove();
     });
 
-    actions.append(addSubBtn, moveBtn);
+    const moreBtn = iconButton(
+      "ops-docs-tree-more",
+      "Page actions",
+      '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
+    );
+    moreBtn.setAttribute("aria-haspopup", "menu");
+    moreBtn.setAttribute("aria-expanded", "false");
+    const menu = document.createElement("div");
+    menu.className = "dk-menu ops-docs-tree-menu";
+    menu.setAttribute("role", "menu");
+    menu.setAttribute("aria-label", `Actions for ${doc.title || basename(doc.path)}`);
+    menu.hidden = true;
+    const closeMenu = ({ restoreFocus = false } = {}) => {
+      if (menu.hidden) return;
+      menu.hidden = true;
+      moreBtn.setAttribute("aria-expanded", "false");
+      document.removeEventListener("click", closeOnOutside, true);
+      if (restoreFocus) moreBtn.focus();
+    };
+    function closeOnOutside(event) {
+      if (!actions.contains(event.target)) closeMenu();
+    }
+    for (const [label, run] of [["Add sub-page", runAddSubpage], ["Move page", runMove]]) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "dk-menu__item";
+      item.setAttribute("role", "menuitem");
+      item.textContent = label;
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeMenu();
+        run();
+      });
+      menu.append(item);
+    }
+    moreBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!menu.hidden) return closeMenu({ restoreFocus: true });
+      menu.hidden = false;
+      moreBtn.setAttribute("aria-expanded", "true");
+      document.addEventListener("click", closeOnOutside, true);
+      menu.querySelector("button")?.focus();
+    });
+    menu.addEventListener("keydown", (e) => {
+      const items = [...menu.querySelectorAll("button")];
+      const at = items.indexOf(document.activeElement);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeMenu({ restoreFocus: true });
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        items[(at + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
+      } else if (e.key === "Tab") {
+        closeMenu();
+      }
+    });
+
+    actions.append(addSubBtn, moveBtn, moreBtn, menu);
     row.append(actions);
 
     row.addEventListener("dragstart", (e) => {
