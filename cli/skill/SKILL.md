@@ -84,8 +84,9 @@ dataops cards show <card-id>                  # the generated Tasks
 For a one-off Task: `dataops tasks create --description "..." --date 2026-11-02 [--card <card-id>]`.
 
 For a newsletter issue: `dataops newsletter list`, then
-`dataops newsletter create-card <slot-id> --template <type>` creates the Card on the
-slot's date and links it.
+`dataops newsletter create-card <slot-id>` creates the issue Card from the newsletter
+Template on the slot's date and links it. `dataops newsletter list --card <card-id>`
+finds the slot a Card belongs to.
 
 ## What is on my plate
 

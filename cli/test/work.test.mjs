@@ -251,19 +251,31 @@ describe("api passthrough", () => {
 });
 
 describe("newsletter", () => {
-  test("create-card anchors a card on the slot date and links it with the slot version", async () => {
-    const slot = { id: "s-1", publicationDate: "2026-11-02", campaignLabel: "Main", status: "open", version: 6 };
+  test("create-card asks the server to create and link the issue Card at the slot's version", async () => {
+    const slot = { id: "s-1", publicationDate: "2026-11-02", status: "open", version: 6 };
     const calls = fakePortal({
       "GET /api/newsletter-slots/s-1": slot,
-      "GET /api/templates/tpl-1": { template: { id: "tpl-1", type: "newsletter-issue", name: "Issue" } },
-      "POST /api/cards": ({ body }) => ({ status: 201, body: { card: { id: "c-1", ...body }, tasks: [] } }),
-      "PUT /api/newsletter-slots/s-1": ({ body }) => ({ ...slot, ...body, version: 7 }),
+      "POST /api/newsletter-slots/s-1/card": ({ body }) => ({
+        status: 201,
+        body: { slot: { ...slot, cardId: "c-1", version: body.version + 1 }, card: { id: "c-1", title: "Newsletter #12" } },
+      }),
     });
     const io = captureIo();
-    assert.equal(await run(["newsletter", "create-card", "s-1", "--template", "tpl-1", "--json"], io), 0);
-    assert.deepEqual(calls.find((call) => call.method === "POST").body, { title: "Newsletter 2026-11-02 - Main", anchorDate: "2026-11-02", templateId: "tpl-1" });
-    assert.deepEqual(calls.at(-1).body, { cardId: "c-1", version: 6 });
+    assert.equal(await run(["newsletter", "create-card", "s-1", "--json"], io), 0);
+    assert.deepEqual(calls.at(-1).body, { version: 6 });
     assert.equal(io.json().slot.cardId, "c-1");
+  });
+
+  test("list --card is the reverse lookup; link-card none unlinks", async () => {
+    const calls = fakePortal({
+      "GET /api/newsletter-slots": { items: [] },
+      "GET /api/newsletter-slots/s-3": { id: "s-3", cardId: "c-1", version: 2 },
+      "PUT /api/newsletter-slots/s-3": ({ body }) => ({ id: "s-3", publicationDate: "2026-11-02", status: "open", ...body }),
+    });
+    assert.equal(await run(["newsletter", "list", "--card", "c-1"], captureIo()), 0);
+    assert.deepEqual(calls[0].query, { cardId: "c-1" });
+    assert.equal(await run(["newsletter", "link-card", "s-3", "none"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { cardId: null, version: 2 });
   });
 
   test("create-card refuses a slot that already has a card", async () => {
