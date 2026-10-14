@@ -1,7 +1,7 @@
 import { SPONSORS_TABS, sponsorsPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
 import { leadsSectionMarkup } from "./sponsor-leads.js";
-import { renderPageHeaderMarkup } from "../operations-overview.js";
+import { collectionCreateButtonMarkup, renderPageHeaderMarkup } from "../operations-overview.js";
 
 const DEAL_STATUSES = ["open", "agreed", "lost"];
 const PRODUCT_KINDS = ["one-off", "package", "course"];
@@ -29,14 +29,12 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
   const ownerOptions = OWNERS.map(
     ([id, name]) => html`<option value="${id}">${name}</option>`,
   ).join("");
+  // Each create rides on the collection it creates into: Add deal on the
+  // Queue/Pipeline list head, Add sponsor on the Companies header. Refresh
+  // suggestions trails the list head. The page header holds no actions.
   return html`${renderPageHeaderMarkup({
     title: "Sponsors",
     className: "crm-header",
-    actionsHtml: html`<div class="surface-actions">
-      <button data-evaluate-communications>Refresh suggestions</button
-      ><button data-add-org>Add sponsor</button
-      ><button class="primary-button" data-add-deal>Add deal</button>
-    </div>`,
   })}
     <p data-crm-message class="surface-status" role="status">
       Loading sponsor CRM…
@@ -52,9 +50,18 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
     </section>
     <div class="dk-split crm-layout" data-crm-split data-view="list">
       <section class="dk-split__list crm-master" aria-labelledby="crm-queue-heading">
-        <header class="dk-split__head">
-          <h2 class="dk-split__title" id="crm-queue-heading" data-crm-list-heading>Queue</h2>
-          <span data-booking-count class="dk-split__count"></span>
+        <header class="dk-split__head crm-list-head">
+          <div class="collection-header__lead">
+            <h2 class="dk-split__title" id="crm-queue-heading" data-crm-list-heading>Queue</h2>
+            ${collectionCreateButtonMarkup({ label: "Add deal", attributes: "data-add-deal" })}
+          </div>
+          <div class="collection-header__trail">
+            <span data-booking-count class="dk-split__count"></span>
+            <button type="button" class="dk-icon-button dk-icon-button--sm" data-evaluate-communications
+              aria-label="Refresh suggestions" title="Refresh suggestions"><svg viewBox="0 0 24 24" aria-hidden="true"
+              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path
+              d="M20 12a8 8 0 1 1-2.34-5.66 M20 4v4h-4"/></svg></button>
+          </div>
         </header>
         <div class="crm-filters dk-split__tools">
           <label
@@ -91,8 +98,9 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
     </div>
     <section class="crm-directory" data-crm-companies-section hidden aria-labelledby="crm-sponsors-heading">
       <header class="section-header">
-        <div>
+        <div class="collection-header__lead">
           <h3 id="crm-sponsors-heading">Companies</h3>
+          ${collectionCreateButtonMarkup({ label: "Add sponsor", attributes: "data-add-org" })}
         </div>
         <label
           >Show

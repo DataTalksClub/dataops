@@ -104,8 +104,6 @@ body[data-workspace-view="sponsors"] .library-view {
 .bookkeeping-surface button,
 .sponsor-crm-surface button {
     min-height: 44px;
-  }.surface-actions {
-    align-items: stretch;
   }.bookkeeping-filters {
     grid-template-columns: minmax(0, 1fr) auto;
   }.bookkeeping-filters details {
@@ -287,7 +285,6 @@ body[data-workspace-view="sponsors"] .library-view {
   /* Header controls keep the shared touch metric and reflow as needed. */
   .workflow-board-filters > button,
   .workflow-board-filter select,
-  .surface-actions button,
   .crm-pipeline button,
   .planner-header > .primary-button,
   .review-header-actions button,
@@ -403,10 +400,6 @@ body[data-workspace-view="sponsors"] .library-view {
     align-items: center;
     padding: 0 !important;
     margin: 0 !important;
-  }
-  .crm-header .surface-actions {
-    display: flex;
-    gap: 4px;
   }
   .crm-views {
     order: 1;

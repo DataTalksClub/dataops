@@ -41,3 +41,16 @@ test("board and filters agree on derived stages and keep read actions bound to d
   assert.match(filters, /data-pipeline-status="invoiced"\s+aria-pressed="true"/);
   assert.deepEqual(deals, snapshot, "rendering never mutates deal status or records");
 });
+
+test("Sponsors creates ride on their collections, never the page header", async () => {
+  const { sponsorSurfaceMarkup } = await import("../src/surfaces/finance/sponsor-layout.js");
+  const markup = sponsorSurfaceMarkup((value) => value);
+  const pageHeader = markup.slice(0, markup.indexOf("</header>"));
+  assert.match(pageHeader, /dk-page-header/);
+  assert.doesNotMatch(pageHeader, /<button/);
+  // Add deal follows the Queue/Pipeline list title; Refresh suggestions trails.
+  assert.match(markup, /crm-list-head">[\s\S]*?data-crm-list-heading>Queue<\/h2>\s*<button[^>]*data-collection-create[^>]*data-add-deal/);
+  assert.match(markup, /collection-header__trail">[\s\S]*?data-booking-count[\s\S]*?data-evaluate-communications\s+aria-label="Refresh suggestions"/);
+  // Add sponsor follows the Companies title.
+  assert.match(markup, /Companies<\/h3>\s*<button[^>]*data-collection-create[^>]*data-add-org/);
+});

@@ -314,6 +314,7 @@ body[data-view="library"] .library-view .document-list .dk-page-header {
 .collection-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--dk-space-2) var(--dk-gap-control); min-width: 0; }
 .collection-header__lead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-3); min-width: 0; }
 .collection-header__title { margin: 0; color: var(--dk-text-heading); font-size: var(--dk-text-lg); font-weight: var(--dk-weight-semibold); }
+.collection-header__lead > :is(h2, h3) { margin: 0; }
 .collection-header__trail { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-2); margin-left: auto; }
 .collection-header__meta { color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
 .collection-create { display: inline-flex; align-items: center; gap: var(--dk-space-1); white-space: nowrap; }

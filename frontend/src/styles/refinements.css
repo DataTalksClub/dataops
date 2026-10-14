@@ -43,12 +43,10 @@ body[data-workspace-view="sponsors"] .document-list {
   max-width: 720px;
   color: var(--dk-text-muted);
   line-height: 1.55;
-}.surface-actions,
-.bookkeeping-header > button,
+}.bookkeeping-header > button,
 .planner-header > .primary-button {
   flex: 0 0 auto;
-}.surface-actions button,
-.bookkeeping-header > button,
+}.bookkeeping-header > button,
 .planner-header > .primary-button {
   white-space: nowrap;
 }.bookkeeping-surface .surface-status,

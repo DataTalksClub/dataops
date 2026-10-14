@@ -446,12 +446,9 @@ body[data-workspace-view="calendar"] .document-list {
 .crm-header h2:not([class*="dk-"]),
 .planner-heading h1:not([class*="dk-"]) {
     font-size: 24px;
-  }.surface-actions,
-.bookkeeping-header > button,
+  }.bookkeeping-header > button,
 .planner-header > .primary-button {
     justify-self: start;
-  }.surface-actions {
-    align-items: stretch;
   }.section-header {
     padding: 14px;
   }.bookkeeping-filters,

@@ -29,7 +29,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .danger-button,
 .danger-text-button,
 [class*="period-nav__"]),
-.sponsor-crm-surface button:not(.dk-button, .dk-tab, .dk-split__item, .dk-split__back, .primary-button,
+.sponsor-crm-surface button:not(.dk-button, .dk-icon-button, .dk-tab, .dk-split__item, .dk-split__back, .primary-button,
 .quiet-button,
 .danger-button,
 .danger-text-button),
@@ -47,7 +47,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .danger-button,
 .danger-text-button,
 [class*="period-nav__"]):hover,
-.sponsor-crm-surface button:not(.dk-button, .dk-tab, .dk-split__item, .dk-split__back, .primary-button,
+.sponsor-crm-surface button:not(.dk-button, .dk-icon-button, .dk-tab, .dk-split__item, .dk-split__back, .primary-button,
 .quiet-button,
 .danger-button,
 .danger-text-button):hover,
@@ -118,8 +118,7 @@ body[data-workspace-view="sponsors"] .document-list {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}.surface-actions,
-.row-actions,
+}.row-actions,
 .finance-actions,
 .crm-communication-controls {
   display: flex;

@@ -100,10 +100,13 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
         await expect(header.getByRole('button', { name: 'Add activity', exact: true })).toHaveCount(0);
         await expect(page.locator('.calendar-controls').getByRole('button', { name: 'Add activity', exact: true })).toBeVisible();
       }
-      const financeAction = { '/sponsors': 'Add deal' }[route];
-      if (financeAction) {
-        const action = await header.getByRole('button', { name: financeAction, exact: true }).boundingBox();
-        expect(Math.abs(action.x + action.width - canvas.x - canvas.width), `${route}: action right edge`).toBeLessThan(1);
+      if (route === '/sponsors') {
+        // Add deal follows the list title it creates into.
+        await expect(header.getByRole('button')).toHaveCount(0);
+        const lead = page.locator('.crm-list-head .collection-header__lead');
+        const title = await lead.locator('h2').boundingBox();
+        const action = await lead.getByRole('button', { name: 'Add deal', exact: true }).boundingBox();
+        expect(action.x - (title.x + title.width), `${route}: action follows its collection title`).toBeLessThan(24);
       }
       await page.screenshot({ path: path.join(out, `${route.slice(1).replaceAll('/', '-')}-${viewport.width}x${viewport.height}.png`) });
     }
