@@ -151,6 +151,8 @@ test('converted leads stay complete after reload at desktop and mobile sizes', a
     await page.reload();
     await expect(page.locator('[data-crm-message]')).toBeHidden();
     await page.locator('[data-crm-view="leads"]').click();
+    // The Leads tab opens on New; converted leads sit under their own filter.
+    await page.getByRole('radio', { name: 'Converted' }).click();
     await expect(lead.locator('.status-label')).toHaveText('Converted');
     await expect(lead.locator('[data-lead-status]')).toHaveCount(0);
     await expect(lead.locator('.crm-lead-actions')).toHaveCount(0);

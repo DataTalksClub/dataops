@@ -29,7 +29,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .danger-button,
 .danger-text-button,
 [class*="period-nav__"]),
-.sponsor-crm-surface button:not(.dk-button, .dk-split__item, .dk-split__back, .primary-button,
+.sponsor-crm-surface button:not(.dk-button, .dk-tab, .dk-split__item, .dk-split__back, .primary-button,
 .quiet-button,
 .danger-button,
 .danger-text-button),
@@ -47,7 +47,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .danger-button,
 .danger-text-button,
 [class*="period-nav__"]):hover,
-.sponsor-crm-surface button:not(.dk-button, .dk-split__item, .dk-split__back, .primary-button,
+.sponsor-crm-surface button:not(.dk-button, .dk-tab, .dk-split__item, .dk-split__back, .primary-button,
 .quiet-button,
 .danger-button,
 .danger-text-button):hover,
@@ -1055,6 +1055,34 @@ body[data-workspace-view="sponsors"] .document-list {
 .crm-lead-row[aria-current="true"] {
   border-color: var(--dk-border-strong);
   background: var(--dk-bg-muted);
+}
+/* Leads: status filter, search and newsletter above the paged list. */
+.crm-lead-tools {
+  margin: 0;
+  padding: var(--dk-space-4) var(--dk-space-4) 0;
+}
+.crm-lead-tools label {
+  display: flex;
+  align-items: center;
+  gap: var(--dk-space-2);
+}
+.crm-lead-search input {
+  width: 16rem;
+  max-width: 100%;
+}
+.crm-lead-tools select {
+  max-width: 14rem;
+}
+.crm-lead-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-2);
+  margin: var(--dk-space-3) var(--dk-space-4) 0;
+}
+.crm-lead-more {
+  display: flex;
+  justify-content: center;
 }/* Nothing selected: the prompt, then the next actions across sponsors. */.crm-detail-empty {
   display: grid;
   align-content: start;

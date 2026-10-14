@@ -564,7 +564,9 @@ describe("Finance surface boundary", () => {
         if (path === "/api/sponsor-crm/leads") {
           if (!leadsOnline) throw new Error("Leads offline");
           assert.equal(query.get("limit"), "50");
-          return { items: [lead] };
+          if (query.get("cursor") === "page-2")
+            return { items: [{ ...lead, id: "lead-2", sponsor: { name: "Older Sponsor" } }], nextCursor: null, newsletters: ["Example Newsletter"] };
+          return { items: [lead], nextCursor: "page-2", newsletters: ["Example Newsletter"] };
         }
         if (path === "/api/sponsor-crm/leads/lead-1" && options.method === "PATCH") {
           const body = JSON.parse(options.body);
@@ -607,14 +609,49 @@ describe("Finance surface boundary", () => {
     assert.ok(patch);
     assert.equal(patch.options.method, "PATCH");
 
+    // The default view is the review queue: new leads only.
+    const first = requests.find((entry) => requestPath(entry.url) === "/api/sponsor-crm/leads");
+    assert.equal(new URL(first.url, "http://dataops.test").searchParams.get("status"), "new");
+    assert.match(
+      document.surface.querySelector("[data-crm-lead-newsletter]").innerHTML,
+      /<option value="Example Newsletter">Example Newsletter<\/option>/,
+    );
+
+    // The triaged lead stays in place with its new status, without a reload.
+    assert.match(leads.innerHTML, /data-status="triaged"/);
+    assert.equal(requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/leads").length, 2);
     const filter = document.surface.querySelector("[data-crm-lead-status]");
-    await filter.dispatch("input", { target: { value: "triaged" } });
+    await filter.dispatch("click", {
+      target: {
+        closest: (candidate) =>
+          candidate === "[data-lead-filter-status]" ? { dataset: { leadFilterStatus: "triaged" } } : null,
+      },
+    });
     await settle();
-    const filtered = requests.find((entry) =>
+    const filtered = requests.filter((entry) =>
       entry.url.includes("/api/sponsor-crm/leads?") &&
       entry.url.includes("status=triaged"),
     );
-    assert.ok(filtered);
+    assert.equal(filtered.length, 1);
+    assert.match(leads.innerHTML, /data-leads-more/);
+
+    await leads.dispatch("click", {
+      target: {
+        closest: (candidate) =>
+          candidate === "[data-leads-more]" ? { getAttribute: () => null, setAttribute() {}, removeAttribute() {} } : null,
+      },
+    });
+    await settle();
+    const more = requests.find((entry) => entry.url.includes("cursor=page-2"));
+    assert.ok(more);
+    assert.equal(new URL(more.url, "http://dataops.test").searchParams.get("status"), "triaged");
+    assert.match(leads.innerHTML, /Acme Gadgets[\s\S]*Older Sponsor/);
+    assert.doesNotMatch(leads.innerHTML, /data-leads-more/);
+
+    const newsletterFilter = document.surface.querySelector("[data-crm-lead-newsletter]");
+    await newsletterFilter.dispatch("change", { target: { value: "Example Newsletter" } });
+    await settle();
+    assert.ok(requests.some((entry) => entry.url.includes("newsletter=Example+Newsletter") && entry.url.includes("status=triaged")));
   });
 
   test("renders only safe sponsor communication projections and preserves the operator action hierarchy", async () => {
