@@ -813,6 +813,33 @@ Resources:
             - { AttributeName: rangeKey, KeyType: HASH }
             - { AttributeName: publicationKey, KeyType: RANGE }
           Projection: { ProjectionType: ALL }
+  DataOpsPodcastEpisodesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-podcast-episodes
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+        - { AttributeName: rangeKey, AttributeType: S }
+        - { AttributeName: dateKey, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: GSI-Date
+          KeySchema:
+            - { AttributeName: rangeKey, KeyType: HASH }
+            - { AttributeName: dateKey, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      Tags:
+        - { Key: Project, Value: DataOps }
+        - { Key: App, Value: DataOpsV1 }
+        - { Key: DataClass, Value: PrivateExecutionState }
   DataOpsSponsorCrmTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -2008,6 +2035,8 @@ Resources:
               - !Sub ${DataOpsNewsletterSlotsTable.Arn}/index/*
               - !GetAtt DataOpsCalendarTable.Arn
               - !Sub ${DataOpsCalendarTable.Arn}/index/*
+              - !GetAtt DataOpsPodcastEpisodesTable.Arn
+              - !Sub ${DataOpsPodcastEpisodesTable.Arn}/index/*
               - !GetAtt DataOpsConversationalStateTable.Arn
               - !Sub ${DataOpsConversationalStateTable.Arn}/index/*
         - Statement:
@@ -2107,6 +2136,7 @@ Resources:
           DATAOPS_DOCUMENT_REVIEWS_TABLE: !Ref DataOpsDocumentReviewsTable
           DATAOPS_ENV: !Ref DataOpsEnvironment
           DATAOPS_TABLE_PREFIX: !Ref AWS::StackName
+          DATAOPS_PODCAST_EPISODES_TABLE: !Ref DataOpsPodcastEpisodesTable
           SPONSOR_FINANCE_ENABLED: !Ref SponsorFinanceEnabled
           NEWSLETTER_OPEN_ALERT_LEAD_DAYS: !Ref NewsletterOpenAlertLeadDays
           NEWSLETTER_WORKFLOW_ALERT_LEAD_DAYS: !Ref NewsletterWorkflowAlertLeadDays

@@ -88,6 +88,7 @@ export DATAOPS_BOOKKEEPING_TABLE=dataops-v1-bookkeeping
 export DATAOPS_SPONSOR_CRM_TABLE=dataops-v1-sponsor-crm
 export DATAOPS_NEWSLETTER_SLOTS_TABLE=dataops-v1-newsletter-slots
 export DATAOPS_CALENDAR_TABLE=dataops-v1-calendar
+export DATAOPS_PODCAST_EPISODES_TABLE=dataops-v1-podcast-episodes
 export DATAOPS_CONVERSATIONAL_STATE_TABLE=dataops-v1-conversational-state
 export DATAOPS_DOCS_DOMAIN=1
 export DTC_OFFLINE=1

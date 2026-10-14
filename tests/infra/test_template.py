@@ -332,6 +332,25 @@ def test_backend_has_no_retired_runtime_template_transaction_permission():
     assert {"GetAtt": "DataOpsTemplatesTable.Arn"} not in transaction_resources
 
 
+def test_podcast_episodes_table_is_retained_private_state_with_one_date_index():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    table = _resource_block(template, "DataOpsPodcastEpisodesTable")
+    backend = _resource_block(template, "BackendFunction")
+
+    assert "TableName: !Sub ${AWS::StackName}-podcast-episodes" in table
+    assert "DeletionPolicy: Retain" in table
+    assert "UpdateReplacePolicy: Retain" in table
+    assert "SSEEnabled: true" in table
+    assert "PointInTimeRecoveryEnabled: true" in table
+    assert "Value: PrivateExecutionState" in table
+    assert table.count("IndexName:") == 1
+    assert "IndexName: GSI-Date" in table
+    assert "AttributeName: dateKey" in table
+    assert "DATAOPS_PODCAST_EPISODES_TABLE: !Ref DataOpsPodcastEpisodesTable" in backend
+    assert "!GetAtt DataOpsPodcastEpisodesTable.Arn" in backend
+    assert "!Sub ${DataOpsPodcastEpisodesTable.Arn}/index/*" in backend
+
+
 def test_conversational_state_table_is_retained_private_stream_ready_state():
     template = TEMPLATE.read_text(encoding="utf-8")
     table = _resource_block(template, "DataOpsConversationalStateTable")

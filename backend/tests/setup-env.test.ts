@@ -26,6 +26,7 @@ function runSetupProbe(env: Record<string, string>): Record<string, unknown> {
         sponsorCrm: mod.TABLE_SPONSOR_CRM,
         newsletterSlots: mod.TABLE_NEWSLETTER_SLOTS,
         calendar: mod.TABLE_CALENDAR,
+        podcastEpisodes: mod.TABLE_PODCAST_EPISODES,
         conversationalState: mod.TABLE_CONVERSATIONAL_STATE,
       }));
     });
@@ -108,6 +109,7 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.sponsorCrm, 'dataops-v1-sponsor-crm');
     assert.strictEqual(setup.newsletterSlots, 'dataops-v1-newsletter-slots');
     assert.strictEqual(setup.calendar, 'dataops-v1-calendar');
+    assert.strictEqual(setup.podcastEpisodes, 'dataops-v1-podcast-episodes');
     assert.strictEqual(setup.conversationalState, 'dataops-v1-conversational-state');
   });
 

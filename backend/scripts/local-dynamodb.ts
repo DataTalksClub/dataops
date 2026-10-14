@@ -29,6 +29,7 @@ import {
   TABLE_SPONSOR_CRM,
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
+  TABLE_PODCAST_EPISODES,
   TABLE_CONVERSATIONAL_STATE,
 } from '../src/db/tableNames';
 
@@ -124,6 +125,7 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
       BillingMode: 'PAY_PER_REQUEST' as const,
     },
     {TableName:TABLE_CALENDAR,KeySchema:[{AttributeName:'PK',KeyType:'HASH' as const},{AttributeName:'SK',KeyType:'RANGE' as const}],AttributeDefinitions:[{AttributeName:'PK',AttributeType:'S' as const},{AttributeName:'SK',AttributeType:'S' as const},{AttributeName:'rangeMonth',AttributeType:'S' as const},{AttributeName:'rangeStart',AttributeType:'S' as const}],GlobalSecondaryIndexes:[{IndexName:'GSI-Range',KeySchema:[{AttributeName:'rangeMonth',KeyType:'HASH' as const},{AttributeName:'rangeStart',KeyType:'RANGE' as const}],Projection:{ProjectionType:'ALL' as const}}],BillingMode:'PAY_PER_REQUEST' as const},
+    {TableName:TABLE_PODCAST_EPISODES,KeySchema:[{AttributeName:'PK',KeyType:'HASH' as const},{AttributeName:'SK',KeyType:'RANGE' as const}],AttributeDefinitions:[{AttributeName:'PK',AttributeType:'S' as const},{AttributeName:'SK',AttributeType:'S' as const},{AttributeName:'rangeKey',AttributeType:'S' as const},{AttributeName:'dateKey',AttributeType:'S' as const}],GlobalSecondaryIndexes:[{IndexName:'GSI-Date',KeySchema:[{AttributeName:'rangeKey',KeyType:'HASH' as const},{AttributeName:'dateKey',KeyType:'RANGE' as const}],Projection:{ProjectionType:'ALL' as const}}],BillingMode:'PAY_PER_REQUEST' as const},
     {TableName:TABLE_NEWSLETTER_SLOTS,KeySchema:[{AttributeName:'PK',KeyType:'HASH' as const},{AttributeName:'SK',KeyType:'RANGE' as const}],AttributeDefinitions:[{AttributeName:'PK',AttributeType:'S' as const},{AttributeName:'SK',AttributeType:'S' as const},{AttributeName:'rangeKey',AttributeType:'S' as const},{AttributeName:'publicationKey',AttributeType:'S' as const}],GlobalSecondaryIndexes:[{IndexName:'GSI-Date',KeySchema:[{AttributeName:'rangeKey',KeyType:'HASH' as const},{AttributeName:'publicationKey',KeyType:'RANGE' as const}],Projection:{ProjectionType:'ALL' as const}}],BillingMode:'PAY_PER_REQUEST' as const},
     {
       TableName: TABLE_SPONSOR_CRM,
@@ -435,6 +437,7 @@ async function deleteTables(client: DynamoDBDocumentClient): Promise<void> {
     TABLE_SPONSOR_CRM,
     TABLE_NEWSLETTER_SLOTS,
     TABLE_CALENDAR,
+    TABLE_PODCAST_EPISODES,
     TABLE_CONVERSATIONAL_STATE,
   ];
 
@@ -480,5 +483,6 @@ export {
   TABLE_SPONSOR_CRM,
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
+  TABLE_PODCAST_EPISODES,
   TABLE_CONVERSATIONAL_STATE,
 };

@@ -8,7 +8,7 @@
  * Nothing under `src/` may import this file.
  *
  * Node's test runner gives every test file its own process, so "once" here
- * means once per test-file process: the dynalite server and the 17 table
+ * means once per test-file process: the dynalite server and the 18 table
  * definitions are built at most one time no matter how many suites, hooks, or
  * helpers in that file ask for the database.
  *
@@ -45,6 +45,7 @@ import {
   TABLE_SPONSOR_CRM,
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
+  TABLE_PODCAST_EPISODES,
   TABLE_CONVERSATIONAL_STATE,
 } from '../../scripts/local-dynamodb';
 
@@ -65,6 +66,7 @@ const ALL_TABLES = [
   TABLE_SPONSOR_CRM,
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
+  TABLE_PODCAST_EPISODES,
   TABLE_CONVERSATIONAL_STATE,
 ];
 
