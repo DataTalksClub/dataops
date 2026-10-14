@@ -105,4 +105,64 @@ describe('sponsor CRM newsletters', () => {
     assert.equal(data(again).newsletters, 0);
     assert.ok(data(again).duplicates >= 1);
   });
+
+  it('records issues with their sponsors as leads and shows them per newsletter', async () => {
+    const newsletter = data(await invoke('POST', '/api/sponsor-crm/newsletters', {
+      name: 'Example Signals',
+      url: 'https://signals.example.invalid',
+      senders: ['signals@news.example.invalid'],
+      expectedIntervalDays: 7,
+      subscriptionStatus: 'subscribed',
+    }));
+    const path = `/api/sponsor-crm/newsletters/${newsletter.id}/issues`;
+    const first = await invoke('POST', path, {
+      issueKey: 'signals.example.invalid/p/issue-1',
+      title: 'Issue 1',
+      publishedAt: '2026-09-01',
+      url: 'https://signals.example.invalid/p/issue-1',
+      source: 'public-archive',
+      sponsors: [{ name: 'Acme Data', url: 'https://acme.example.invalid', blurb: 'Pipelines' }],
+    });
+    assert.equal(first.statusCode, 201, first.body);
+    assert.equal(data(first).leads[0].outcome, 'created');
+    const replay = await invoke('POST', path, {
+      issueKey: 'signals.example.invalid/p/issue-1',
+      title: 'Issue 1',
+      publishedAt: '2026-09-01',
+      source: 'public-archive',
+      sponsors: [{ name: 'Acme Data', url: 'https://acme.example.invalid', blurb: 'Pipelines' }],
+    });
+    assert.equal(replay.statusCode, 200, replay.body);
+    assert.equal(data(replay).outcome, 'duplicate');
+    assert.equal(data(replay).leads[0].outcome, 'duplicate');
+    const empty = await invoke('POST', path, {
+      issueKey: 'signals.example.invalid/p/issue-2',
+      title: 'Issue 2',
+      publishedAt: '2026-09-08',
+      source: 'public-archive',
+      sponsors: [],
+    });
+    assert.equal(empty.statusCode, 201, empty.body);
+    assert.equal((await invoke('POST', path, { issueKey: 'x', title: 'X', publishedAt: 'soon', source: 'public-archive' })).statusCode, 400);
+    assert.equal((await invoke('POST', path, { issueKey: 'x', title: 'X', publishedAt: '2026-09-08', source: 'public-archive', extra: 1 })).statusCode, 400);
+
+    const issues = data(await invoke('GET', path)).items;
+    assert.deepEqual(issues.map((item: any) => [item.title, item.sponsors.map((sponsor: any) => sponsor.name)]), [
+      ['Issue 2', []],
+      ['Issue 1', ['Acme Data']],
+    ]);
+    assert.ok(issues[1].sponsors[0].leadId);
+    const lead = data(await invoke('GET', `/api/sponsor-crm/leads/${issues[1].sponsors[0].leadId}`));
+    assert.equal(lead.sourceType, 'newsletter-archive');
+    assert.equal(lead.newsletter.name, 'Example Signals');
+    assert.equal(lead.newsletter.sender, 'signals@news.example.invalid');
+
+    const listed = data(await invoke('GET', '/api/sponsor-crm/newsletters?search=example-signals')).items[0];
+    assert.equal(listed.issues.issueCount, 2);
+    assert.equal(listed.issues.lastIssueAt, '2026-09-08');
+    assert.equal(listed.issues.issuesWithoutSponsors, 1);
+    assert.deepEqual(listed.issues.sponsors, [{ name: 'Acme Data', count: 1 }]);
+    assert.equal(data(await invoke('GET', `/api/sponsor-crm/newsletters/${newsletter.id}`)).issues.issueCount, 2);
+    assert.equal((await invoke('GET', '/api/sponsor-crm/newsletters/missing-id/issues')).statusCode, 404);
+  });
 });

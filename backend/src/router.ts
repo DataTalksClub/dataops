@@ -16,6 +16,7 @@ import { handleCronRoutes } from './routes/cron';
 import { handleBookkeepingRoutes } from './routes/bookkeeping';
 import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
 import { handleSponsorLeadIntake, handleSponsorLeadRoutes } from './routes/sponsorLeads';
+import { handleSponsorNewsletterRoutes } from './routes/sponsorNewsletters';
 import { handleSponsorFinanceRoutes } from './routes/sponsorFinance';
 import { handleSponsorCommunicationRoutes } from './routes/sponsorCommunications';
 import { handleNewsletterSlotRoutes } from './routes/newsletterSlots';
@@ -275,6 +276,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath === '/api/sponsor-crm/leads' || reqPath.startsWith('/api/sponsor-crm/leads/')) {
       return await handleSponsorLeadRoutes(reqPath, method, event, client);
+    }
+    if (reqPath === '/api/sponsor-crm/newsletters' || reqPath.startsWith('/api/sponsor-crm/newsletters/')) {
+      return await handleSponsorNewsletterRoutes(reqPath, method, event, client);
     }
     if (reqPath.startsWith('/api/sponsor-crm')) {
       if (isSponsorCommunicationRoute(reqPath)) {

@@ -181,3 +181,111 @@ export function newsletterPatch(existing: Record<string, unknown>, body: Record<
   if (body.notes !== undefined) next.notes = body.notes || undefined;
   return next;
 }
+
+// ── Issues ───────────────────────────────────────────────────────────────────
+// One record per newsletter issue we have seen, whether it arrived in the
+// newsletter inbox or was read from the publication's public archive. The
+// sponsors of an issue are the leads whose messageId equals the issue key, so
+// an issue with no leads was checked and carried no sponsor.
+
+export const ISSUE_SOURCES = new Set(['inbox', 'public-archive']);
+const CONTROL = /[\u0000-\u001f\u007f]/;
+
+export function validateNewsletterIssue(body: Record<string, unknown>): string {
+  if (typeof body.issueKey !== 'string' || !body.issueKey.trim() || body.issueKey.length > 500 || CONTROL.test(body.issueKey)) {
+    return 'Invalid issueKey';
+  }
+  if (typeof body.title !== 'string' || !body.title.trim() || body.title.length > 500 || CONTROL.test(body.title)) return 'Invalid title';
+  if (typeof body.publishedAt !== 'string' || Number.isNaN(Date.parse(body.publishedAt)) || !realDate(body.publishedAt.slice(0, 10))) {
+    return 'Invalid publishedAt';
+  }
+  if (body.url !== undefined && body.url !== '' && !httpsUrl(body.url)) return 'Invalid url';
+  if (!ISSUE_SOURCES.has(String(body.source))) return 'Invalid source';
+  if (body.sender !== undefined && body.sender !== '' && (typeof body.sender !== 'string' || !EMAIL.test(body.sender.trim()))) {
+    return 'Invalid sender';
+  }
+  return '';
+}
+
+export function newsletterIssueRecord(
+  newsletter: Record<string, unknown> | null,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const issueKey = String(body.issueKey).trim();
+  return {
+    issueKey,
+    newsletterId: newsletter ? String(newsletter.id) : undefined,
+    newsletterName: String(newsletter?.name || body.newsletterName || ''),
+    title: String(body.title).trim(),
+    publishedAt: String(body.publishedAt),
+    url: httpsUrl(body.url) || undefined,
+    source: String(body.source),
+    sender: typeof body.sender === 'string' && body.sender.trim() ? body.sender.trim().toLowerCase() : undefined,
+    sourceKey: `issue:${issueKey}`,
+  };
+}
+
+/**
+ * Lead-intake issues name their newsletter by sender and display name only;
+ * an issue that matched no newsletter on arrival links once one matches.
+ */
+export function issueNewsletter(
+  newsletters: Array<Record<string, unknown>>,
+  sender: string,
+  name: string,
+): Record<string, unknown> | null {
+  const bySender = matchNewsletterBySender(newsletters, sender);
+  if (bySender) return bySender;
+  const slug = slugifyNewsletter(name);
+  const byName = newsletters.filter((item) => item.slug === slug);
+  return byName.length === 1 ? byName[0] : null;
+}
+
+export function issueBelongsTo(
+  issue: Record<string, unknown>,
+  newsletter: Record<string, unknown>,
+  newsletters: Array<Record<string, unknown>>,
+): boolean {
+  if (issue.newsletterId) return issue.newsletterId === newsletter.id;
+  return issueNewsletter(newsletters, String(issue.sender || ''), String(issue.newsletterName || ''))?.id === newsletter.id;
+}
+
+type LeadLike = Record<string, unknown>;
+
+export function issueSponsors(issue: Record<string, unknown>, leads: LeadLike[]) {
+  return leads
+    .filter((lead) => lead.messageId === issue.issueKey)
+    .map((lead) => {
+      const sponsor = (lead.sponsor || {}) as Record<string, unknown>;
+      return {
+        leadId: lead.id,
+        name: sponsor.name,
+        url: sponsor.url || undefined,
+        category: sponsor.category || undefined,
+        status: lead.status,
+        organizationId: lead.organizationId || undefined,
+      };
+    })
+    .sort((left, right) => String(left.name).localeCompare(String(right.name)));
+}
+
+export function newsletterIssueStats(issues: Array<Record<string, unknown>>, leads: LeadLike[]) {
+  const keys = new Set(issues.map((issue) => issue.issueKey));
+  const sponsorLeads = leads.filter((lead) => keys.has(lead.messageId));
+  const withSponsors = new Set(sponsorLeads.map((lead) => lead.messageId));
+  const names = new Map<string, number>();
+  for (const lead of sponsorLeads) {
+    const name = String(((lead.sponsor || {}) as Record<string, unknown>).name || '').trim();
+    if (name) names.set(name, (names.get(name) || 0) + 1);
+  }
+  const lastIssueAt = issues.map((issue) => String(issue.publishedAt || '')).sort().at(-1) || null;
+  return {
+    issueCount: issues.length,
+    lastIssueAt,
+    issuesWithoutSponsors: issues.length - withSponsors.size,
+    sponsorSightings: sponsorLeads.length,
+    sponsors: [...names.entries()]
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .map(([name, count]) => ({ name, count })),
+  };
+}

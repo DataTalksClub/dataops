@@ -22,8 +22,8 @@ let secretsClient: SecretsManagerClient | null = null;
 let cachedCredential: { value: string; id: string; expiresAt: number } | null = null;
 
 interface Credential { value: string; id: string }
-interface LeadNewsletter { name: string; sender: string; subject: string; receivedAt: string }
-interface LeadSponsor { name: string; url: string; category: string; blurb: string; context: string }
+export interface LeadNewsletter { name: string; sender: string; subject: string; receivedAt: string }
+export interface LeadSponsor { name: string; url: string; category: string; blurb: string; context: string }
 
 function response(statusCode: number, body: unknown, headers: Record<string, string> = {}): LambdaResponse {
   return { statusCode, headers: { ...JSON_HEADERS, ...headers }, body: JSON.stringify(body) };
@@ -192,7 +192,7 @@ function parseNewsletter(value: unknown): LeadNewsletter {
   };
 }
 
-function parseSponsors(value: unknown): LeadSponsor[] {
+export function parseSponsors(value: unknown): LeadSponsor[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > MAX_SPONSORS) {
     throw new Error(`sponsors must be an array with 1 to ${MAX_SPONSORS} items`);
   }
@@ -221,7 +221,7 @@ function audit(outcome: string, credential: Credential | null, correlation: stri
   console.info(JSON.stringify({ event: 'sponsor-lead-intake', outcome, credentialId: credential?.id || 'unknown', contractVersion: CONTRACT_VERSION, correlation, sponsorCount, failureCount }));
 }
 
-interface LeadValue {
+export interface LeadValue {
   sourceKey: string;
   messageId: string;
   newsletter: LeadNewsletter;
@@ -284,7 +284,27 @@ function sameCanonical(existing: CrmRecord, value: LeadValue): boolean {
   }) === stableStringify(canonicalLead(value));
 }
 
-async function storeLead(client: DynamoDBDocumentClient, value: LeadValue): Promise<{ id: string; outcome: 'created' | 'duplicate' }> {
+export function leadValue(messageId: string, newsletter: LeadNewsletter, sponsor: LeadSponsor, sourceType: string): LeadValue {
+  return {
+    sourceKey: leadSourceKey(messageId, sponsor.name, sponsor.url),
+    messageId: messageId.trim(),
+    newsletter: { ...newsletter },
+    sponsor: {
+      name: sponsor.name.trim(),
+      url: sponsor.url.trim(),
+      category: sponsor.category,
+      blurb: sponsor.blurb,
+      context: sponsor.context,
+      normalizedName: normalizeLeadName(sponsor.name),
+      normalizedUrl: normalizeLeadUrl(sponsor.url),
+    },
+    status: 'new',
+    active: true,
+    sourceType,
+  };
+}
+
+export async function storeLead(client: DynamoDBDocumentClient, value: LeadValue): Promise<{ id: string; outcome: 'created' | 'duplicate' }> {
   const id = deterministicCrmId('lead', value.sourceKey);
   const existing = await getCrmRecord(client, 'lead', id);
   if (existing) {
@@ -372,26 +392,8 @@ export async function handleSponsorLeadIntake(event: LambdaEvent, client: Dynamo
   const failures: Array<{ index: number; code: string }> = [];
   try {
     for (const [index, sponsor] of sponsors.entries()) {
-      const sourceKey = leadSourceKey(messageId, sponsor.name, sponsor.url);
-      const value = {
-        sourceKey,
-        messageId: messageId.trim(),
-        newsletter: { ...newsletter },
-        sponsor: {
-          name: sponsor.name.trim(),
-          url: sponsor.url.trim(),
-          category: sponsor.category,
-          blurb: sponsor.blurb,
-          context: sponsor.context,
-          normalizedName: normalizeLeadName(sponsor.name),
-          normalizedUrl: normalizeLeadUrl(sponsor.url),
-        },
-        status: 'new',
-        active: true,
-        sourceType: 'leads-intake',
-      };
       try {
-        const stored = await storeLead(client, value);
+        const stored = await storeLead(client, leadValue(messageId, newsletter, sponsor, 'leads-intake'));
         leads.push({ index, id: stored.id, outcome: stored.outcome });
       } catch (error) {
         if ((error as { statusCode?: number })?.statusCode === 409) {
