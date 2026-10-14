@@ -1,8 +1,14 @@
 import * as auth from "./commands/auth.mjs";
 import * as calendar from "./commands/calendar.mjs";
+import * as cards from "./commands/cards.mjs";
+import * as files from "./commands/files.mjs";
 import * as invoices from "./commands/invoices.mjs";
+import * as notifications from "./commands/notifications.mjs";
+import * as people from "./commands/people.mjs";
 import * as raw from "./commands/raw.mjs";
 import * as recurring from "./commands/recurring.mjs";
+import * as tasks from "./commands/tasks.mjs";
+import * as templates from "./commands/templates.mjs";
 import { EXIT, UsageError, errorPayload, exitCodeFor, hintFor } from "./errors.mjs";
 
 const AUTH_HELP = `dataops login | logout | whoami | tokens
@@ -23,6 +29,9 @@ Non-interactive use: set DATAOPS_TOKEN (and DATAOPS_URL for a non-default portal
  * with `run` takes no subcommand. Order here is the order in `--help`.
  */
 export const FAMILIES = {
+  tasks: { group: "Work", summary: tasks.summary, help: tasks.help, commands: tasks.commands },
+  cards: { group: "Work", summary: cards.summary, help: cards.help, commands: cards.commands },
+  templates: { group: "Work", summary: templates.summary, help: templates.help, commands: templates.commands },
   recurring: {
     group: "Work",
     summary: recurring.summary,
@@ -37,6 +46,9 @@ export const FAMILIES = {
       generate: recurring.generate,
     },
   },
+  notifications: { group: "Work", summary: notifications.summary, help: notifications.help, commands: notifications.commands },
+  files: { group: "Work", summary: files.filesSummary, help: files.filesHelp, commands: files.filesCommands },
+  artifacts: { group: "Work", summary: files.artifactsSummary, help: files.artifactsHelp, commands: files.artifactsCommands },
   calendar: {
     group: "Planning",
     summary: calendar.summary,
@@ -75,6 +87,8 @@ export const FAMILIES = {
       process: invoices.processIntake,
     },
   },
+  team: { group: "People", summary: people.teamSummary, help: people.teamHelp, commands: people.teamCommands },
+  users: { group: "People", summary: people.usersSummary, help: people.usersHelp, commands: people.usersCommands },
   login: { group: "Account", summary: "Sign in with a device code confirmed in the browser", help: AUTH_HELP, run: auth.login },
   logout: { group: "Account", summary: "Revoke this machine's token", help: AUTH_HELP, run: auth.logout },
   whoami: { group: "Account", summary: "Show who the credential acts as", help: AUTH_HELP, run: auth.whoami },
