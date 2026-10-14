@@ -288,7 +288,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .workflow-board-filters > button,
   .workflow-board-filter select,
   .surface-actions button,
-  .crm-views button,
   .crm-pipeline button,
   .planner-header > .primary-button,
   .review-header-actions button,
@@ -412,19 +411,8 @@ body[data-workspace-view="sponsors"] .library-view {
   }
   .crm-views {
     order: 1;
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-    gap: 4px;
+    max-width: 100%;
     margin: 0 !important;
-  }
-  .crm-views button {
-    flex-shrink: 0;
-    padding-left: 8px !important;
-    padding-right: 8px !important;
   }
   .crm-pipeline {
     order: 2;

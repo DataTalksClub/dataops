@@ -211,9 +211,9 @@ export function createSponsorCrmSurface(context) {
         surface.querySelector("[data-crm-split]").dataset.view = "list";
       }
       surface.classList.toggle("is-pipeline", view === "pipeline");
-      surface.querySelectorAll("[data-crm-view]").forEach((button) => {
-        const active = button.dataset.crmView === view;
-        button.setAttribute("aria-pressed", String(active));
+      surface.querySelectorAll("[data-crm-view]").forEach((link) => {
+        if (link.dataset.crmView === view) link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
       });
       const queue = surface.querySelector("[data-crm-queue]");
       const pipeline = surface.querySelector("[data-crm-bookings]");
@@ -478,7 +478,9 @@ export function createSponsorCrmSurface(context) {
     );
     surface.querySelector("[data-crm-views]").addEventListener("click", (event) => {
       const button = event.target.closest("[data-crm-view]");
-      if (!button) return;
+      // Tabs are links: a modified click opens the tab's URL in a new tab.
+      if (!button || event.metaKey || event.ctrlKey || event.shiftKey || event.button > 0) return;
+      event.preventDefault();
       const view = button.dataset.crmView;
       if (view === "newsletters") sponsorNewsletters.showList();
       setView(view);

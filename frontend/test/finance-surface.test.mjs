@@ -936,6 +936,7 @@ describe("Finance surface boundary", () => {
     assert.match(leads.innerHTML, /Queue Vendor/);
 
     await document.surface.querySelector("[data-crm-views]").dispatch("click", {
+      preventDefault() {},
       target: {
         closest: (selector) =>
           selector === "[data-crm-view]"

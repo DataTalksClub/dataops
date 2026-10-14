@@ -775,37 +775,6 @@ body[data-workspace-view="sponsors"] .document-list {
   background: var(--dk-bg-surface);
 }.bookkeeping-package label {
   width: 200px;
-}.crm-views {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--dk-space-1);
-  width: fit-content;
-  max-width: 100%;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-full);
-  background: var(--dk-bg-muted);
-  padding: var(--dk-space-1);
-}.crm-views button {
-  min-height: 32px;
-  border: 1px solid transparent !important;
-  border-radius: var(--dk-radius-full) !important;
-  background: transparent !important;
-  color: var(--dk-text-muted) !important;
-  padding: 4px 16px;
-  font-size: var(--dk-text-md);
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 140ms ease;
-  user-select: none;
-}.crm-views button:hover:not([aria-pressed="true"]) {
-  background: var(--dk-bg-hover) !important;
-  color: var(--dk-text-primary) !important;
-}.crm-views button[aria-pressed="true"] {
-  border-color: var(--dk-border-default) !important;
-  background: var(--dk-bg-surface) !important;
-  color: var(--dk-text-heading) !important;
-  font-weight: 600;
 }.crm-pipeline {
   display: flex;
   flex-wrap: wrap;

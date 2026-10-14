@@ -151,7 +151,7 @@ test.describe("sponsor newsletter catalog", () => {
       await page.goto(`${server.baseURL}/sponsors/${tab}`);
       await expect(page.locator("[data-crm-message]")).toBeHidden({ timeout: 20_000 });
       await expect(page).toHaveURL(new RegExp(`/sponsors/${tab}$`));
-      await expect(page.locator(`[data-crm-view='${tab}']`)).toHaveAttribute("aria-pressed", "true");
+      await expect(page.locator(`[data-crm-view='${tab}']`)).toHaveAttribute("aria-current", "page");
       await expect(page.locator(visible).first()).toBeVisible();
       await expect(page.locator("#sponsors-nav-button")).toHaveAttribute("aria-current", "page");
       if (SCREENSHOTS) await page.screenshot({ path: `${SCREENSHOTS}/sponsors-${tab}.png` });
@@ -167,7 +167,7 @@ test.describe("sponsor newsletter catalog", () => {
     await page.goBack();
     await expect(page).toHaveURL(/\/sponsors\/leads$/);
     await expect(page.locator(".crm-leads")).toBeVisible();
-    await expect(page.locator("[data-crm-view='leads']")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("[data-crm-view='leads']")).toHaveAttribute("aria-current", "page");
     await page.goForward();
     await expect(page.locator(".crm-newsletters")).toBeVisible();
 

@@ -1,3 +1,4 @@
+import { SPONSORS_TABS, sponsorsPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
 import { renderPageHeaderMarkup } from "../operations-overview.js";
 
@@ -39,12 +40,10 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
     <p data-crm-message class="surface-status" role="status">
       Loading sponsor CRM…
     </p>
-    <nav class="crm-views" data-crm-views aria-label="Sponsors views">
-      <button type="button" data-crm-view="queue" aria-pressed="true">Queue</button
-      ><button type="button" data-crm-view="pipeline" aria-pressed="false">Pipeline</button
-      ><button type="button" data-crm-view="companies" aria-pressed="false">Companies</button
-      ><button type="button" data-crm-view="leads" aria-pressed="false">Leads</button
-      ><button type="button" data-crm-view="newsletters" aria-pressed="false">Newsletters</button>
+    <nav class="dk-tabs crm-views" data-crm-views aria-label="Sponsors views">
+      ${SPONSORS_TABS.map(
+        ([id, label]) => html`<a class="dk-tab" href="${sponsorsPath(id)}" data-crm-view="${id}">${label}</a>`,
+      ).join("")}
     </nav>
     <nav class="crm-pipeline" data-crm-pipeline aria-label="Deal pipeline"></nav>
     <section class="crm-alerts" aria-label="Alerts">
