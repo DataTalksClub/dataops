@@ -12,6 +12,7 @@ import { sizeImageFromCache } from "./procedure-renderer.js";
 import { createBlockEditor } from "./block-editor.js";
 import { makeBlock, parseMarkdownBlocks, serializeBlocksToMarkdown } from "./block-model.js";
 import { focusEditable, neighbourEditable } from "./editable.js";
+import { installSelectionToolbar } from "./selection-toolbar.js";
 
 export function createDocumentRenderer(context, services) {
   const {
@@ -26,6 +27,10 @@ export function createDocumentRenderer(context, services) {
     resizeDocumentTitle, setMarkdownTitle, stripLeadingHeading, updateSaveState,
   } = services;
   const showFeedback = editorFeedbackFor(context);
+  // Select text in a block for bold, italic, code and link.
+  if (renderedView && typeof renderedView.ownerDocument?.getSelection === "function") {
+    installSelectionToolbar(renderedView);
+  }
   const blockEditor = createBlockEditor(context, {
     ...services,
     insertImageBlocks,

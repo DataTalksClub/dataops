@@ -2037,3 +2037,53 @@ blockquote p,
     pointer-events: auto;
   }
 }
+
+/* Formatting toolbar over a text selection. */
+.selection-toolbar {
+  position: fixed;
+  z-index: 85;
+  display: flex;
+  gap: var(--dk-space-1);
+  border: 1px solid var(--dk-border-strong);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  box-shadow: var(--dk-shadow-overlay);
+  padding: var(--dk-space-1);
+}
+
+.selection-toolbar[hidden] {
+  display: none;
+}
+
+.selection-toolbar-button {
+  min-width: var(--dk-size-control-sm);
+  min-height: var(--dk-size-control-sm);
+  border: 0;
+  border-radius: var(--dk-radius-sm);
+  background: transparent;
+  color: var(--dk-text-primary);
+  padding: 0 var(--dk-space-2);
+  font-size: var(--dk-text-md);
+  cursor: pointer;
+}
+
+.selection-toolbar-button:hover {
+  background: var(--dk-bg-hover);
+}
+
+.selection-toolbar-button[aria-pressed="true"] {
+  background: var(--dk-accent-soft);
+  color: var(--dk-accent-default);
+}
+
+.selection-toolbar-button.is-strong {
+  font-weight: var(--dk-weight-bold);
+}
+
+.selection-toolbar-button.is-em {
+  font-style: italic;
+}
+
+.selection-toolbar-button.is-code {
+  font-family: var(--dk-font-mono);
+}

@@ -383,3 +383,34 @@ test.describe('on a touch phone', () => {
     await capture(page, 'gutter-mobile-menu');
   });
 });
+
+test('selecting text shows a formatting toolbar; Cmd/Ctrl+B and K format too', async ({ page }) => {
+  await openDoc(page, SOP_PATH, 'Synthetic Notion SOP');
+  const toolbar = page.getByRole('toolbar', { name: 'Format text' });
+  await expect(toolbar).toBeHidden();
+  // Select "file" in step 2 by double-clicking it.
+  await step(page, 2).getByText('Upload the synthetic file.').dblclick({ position: { x: 150, y: 8 } });
+  await expect(toolbar).toBeVisible();
+  await capture(page, 'selection-toolbar');
+  const selected = await page.evaluate(() => getSelection().toString().trim());
+  await toolbar.getByRole('button', { name: 'Bold' }).click();
+  const bolded = 'Upload the synthetic file.'.replace(selected, `**${selected}**`)
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  await expect(draft(page)).toHaveValue(new RegExp(`2\\. {2}${bolded}`));
+  await expect(toolbar.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'true');
+
+  // Cmd/Ctrl+K links the selection through a small inline field.
+  await step(page, 3).getByText('Check the synthetic result.').dblclick({ position: { x: 10, y: 8 } });
+  await page.keyboard.press('ControlOrMeta+k');
+  const field = page.getByRole('dialog', { name: 'Paste a link' }).locator('input');
+  await expect(field).toBeFocused();
+  await field.fill('https://example.test/result');
+  await field.press('Enter');
+  await expect(draft(page)).toHaveValue(/3\. {2}\[Check\]\(https:\/\/example\.test\/result\) the synthetic result\./);
+  // Typing **…** formats as you type and stays markdown.
+  await step(page, 3).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Then **save** it.');
+  await expect(step(page, 3).locator('strong')).toHaveText('save');
+  await expect(draft(page)).toHaveValue(/the synthetic result\. Then \*\*save\*\* it\./);
+});
