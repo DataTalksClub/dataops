@@ -1,5 +1,8 @@
-import { hostname, userInfo } from "node:os";
+import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
+import { hostname, userInfo } from "node:os";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ApiError, createClient } from "../api.mjs";
 import {
@@ -9,8 +12,6 @@ import {
   credentialsPath,
 } from "../config.mjs";
 
-const DEFAULT_INTERVAL_SECONDS = 5;
-
 function defaultLabel() {
   try {
     return `${userInfo().username}@${hostname()}`;
@@ -19,7 +20,27 @@ function defaultLabel() {
   }
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** The device-login loop lives in DataTalksClub/auth. Find that checkout. */
+async function sharedDeviceLogin() {
+  const home = process.env.DTC_AUTH_HOME;
+  const candidates = [];
+  if (home) candidates.push(path.join(home, "dtc_device_login", "login.mjs"));
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 8; i += 1) {
+    candidates.push(path.join(dir, "auth", "dtc_device_login", "login.mjs"));
+    candidates.push(path.join(path.dirname(dir), "auth", "dtc_device_login", "login.mjs"));
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (!found) {
+    throw new Error(
+      "Shared device login was not found. Clone DataTalksClub/auth next to this repo or set DTC_AUTH_HOME.",
+    );
+  }
+  return import(pathToFileURL(found).href);
+}
 
 /**
  * When the server returns a verification URI hosted on a raw internal hostname
@@ -38,6 +59,21 @@ export function rewriteVerificationUri(rawUri, targetBaseUrl) {
   } catch {
     return rawUri;
   }
+}
+
+/** The portal speaks camelCase. The shared loop speaks the device-grant names. */
+function deviceStartFromPortal(payload) {
+  const expiresIn = Number.isFinite(payload.expiresIn)
+    ? payload.expiresIn
+    : Math.max(0, Math.round((Date.parse(payload.expiresAt) - Date.now()) / 1000));
+  return {
+    device_code: payload.deviceCode,
+    user_code: payload.userCode,
+    verification_uri: payload.verificationUri,
+    verification_uri_complete: payload.verificationUriComplete,
+    expires_in: expiresIn,
+    interval: payload.interval,
+  };
 }
 
 /**
@@ -66,77 +102,53 @@ export async function login(args, io) {
   }
   const client = createClient({ url });
   const label = args.label || defaultLabel();
-
-  const start = await client.post(
-    "/api/auth/device",
-    { label },
-    { anonymous: true },
-  );
-  const rawVerificationUri =
-    start.verificationUriComplete || start.verificationUri;
-  const verificationUri = rewriteVerificationUri(
-    rawVerificationUri,
-    client.base,
-  );
-
-  io.print("");
-  io.print(`  Confirm this code:  ${start.userCode}`);
-  io.print(`  Open in a browser:  ${verificationUri}`);
-  io.print("");
-  io.print("  Open that link on a machine you trust and sign in as usual.");
-  io.print("  Waiting for confirmation... (Ctrl-C to cancel)");
-
-  let intervalMs =
-    Math.max(1, Number(start.interval) || DEFAULT_INTERVAL_SECONDS) * 1000;
-  const deadline = Date.parse(start.expiresAt) || Date.now() + 10 * 60 * 1000;
-
-  while (Date.now() < deadline) {
-    await sleep(intervalMs);
-    let result = null;
+  const { deviceLogin, DeviceLoginError } = await sharedDeviceLogin();
+  const post = async (target, body) => {
+    const route = target.startsWith(client.base) ? target.slice(client.base.length) : target;
+    const polling = route === "/api/auth/device/token";
+    const wireBody = polling ? { deviceCode: body.device_code } : body;
     try {
-      result = await client.post(
-        "/api/auth/device/token",
-        { deviceCode: start.deviceCode },
-        { anonymous: true },
-      );
+      const payload = await client.post(route, wireBody, { anonymous: true });
+      return { status: 200, body: polling ? payload : deviceStartFromPortal(payload) };
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
-      const code = String(error.message || "");
-      // RFC 8628 polling vocabulary: back off when told to, keep waiting while
-      // pending, and stop on a terminal answer.
-      if (code === "slow_down") {
-        intervalMs += 5000;
-        continue;
-      }
-      if (code === "authorization_pending") continue;
-      if (code === "access_denied")
-        throw new Error("The login was denied in the browser.");
-      if (code === "expired_token")
-        throw new Error("The code expired. Run `dataops login` again.");
-      throw error;
+      const payload = error.body && typeof error.body === "object" ? error.body : { error: error.message };
+      return { status: error.status, body: payload };
     }
-
-    saveProfile(client.base, {
-      token: result.token,
-      tokenId: result.tokenId,
-      expiresAt: result.expiresAt,
-      user: result.user,
-      label,
+  };
+  let result;
+  try {
+    result = await deviceLogin({
+      post,
+      baseUrl: client.base,
+      startBody: { label },
+      prompt: (text) => io.print(text),
+      presentUri: (uri) => rewriteVerificationUri(uri, client.base),
     });
-    if (args.json) return result;
-    io.print("");
-    io.print(
-      `  Signed in as ${result.user?.name || result.user?.email || "unknown user"}.`,
-    );
-    io.print(
-      `  Token stored in ${credentialsPath()} (expires ${result.expiresAt.slice(0, 10)}).`,
-    );
-    return result;
+  } catch (error) {
+    if (!(error instanceof DeviceLoginError)) throw error;
+    if (error.code === "expired_token" || error.code === "timeout") {
+      throw new Error("The code expired. Run `dataops login` again.");
+    }
+    throw new Error(error.message);
   }
 
-  throw new Error(
-    "The code expired before it was confirmed. Run `dataops login` again.",
+  saveProfile(client.base, {
+    token: result.token,
+    tokenId: result.tokenId,
+    expiresAt: result.expiresAt,
+    user: result.user,
+    label,
+  });
+  if (args.json) return result;
+  io.print("");
+  io.print(
+    `  Signed in as ${result.user?.name || result.user?.email || "unknown user"}.`,
   );
+  io.print(
+    `  Token stored in ${credentialsPath()} (expires ${result.expiresAt.slice(0, 10)}).`,
+  );
+  return result;
 }
 
 export async function logout(args, io) {
