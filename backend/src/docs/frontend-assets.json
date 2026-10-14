@@ -6,6 +6,8 @@
     "src/core/collection-loader.js",
     "src/core/identity.js",
     "src/core/operations-model.js",
+    "src/core/route-patterns.js",
+    "src/core/sponsor-routes.js",
     "src/core/workspace.js",
     "src/core/work-model.js",
     "src/runtime/application-events.js",

@@ -13,6 +13,7 @@ export function createSponsorCompanyDetail({
   humanizeOptionLabel,
   humanSponsorDate,
   navigateCanonicalWorkspace,
+  listPath,
   getOrganizations,
   getContacts,
   getDeals,
@@ -269,7 +270,7 @@ export function createSponsorCompanyDetail({
       </div>
     </article>`;
     surface.querySelector("[data-close-booking]").addEventListener("click", () => {
-      navigateCanonicalWorkspace("/sponsors", {}, { restoreFocus: { kind: "split-list" } });
+      navigateCanonicalWorkspace(listPath(), {}, { restoreFocus: { kind: "split-list" } });
     });
     globalThis.dakitSplit?.show(split, "detail");
     surface

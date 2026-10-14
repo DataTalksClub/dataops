@@ -65,18 +65,17 @@ export async function evaluateSponsorBookingAlerts(client: DynamoDBDocumentClien
     active.add(fingerprint);
     const found = existing.find((item) => !item.dismissed && (item.metadata as { sponsorAlertFingerprint?: string })?.sponsorAlertFingerprint === fingerprint);
     if (!found) {
-      const query = new URLSearchParams({ companyId: rule.organizationId, dealId: rule.dealId });
-      if (rule.deliverableId) query.set('deliverableId', rule.deliverableId);
       const notification = await createNotification(client, {
         type: 'follow-up-due',
         message: rule.message,
         dueAt: rule.dueDate,
         metadata: {
           sponsorDealId: rule.dealId,
+          sponsorCompanyId: rule.organizationId,
           ...(rule.deliverableId ? { sponsorDeliverableId: rule.deliverableId } : {}),
           sponsorAlertRule: rule.code,
           sponsorAlertFingerprint: fingerprint,
-          href: `/sponsors?${query}`,
+          href: `/sponsors/deals/${encodeURIComponent(rule.dealId)}`,
         },
       });
       created.push(notification.id);

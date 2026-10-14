@@ -1,3 +1,5 @@
+import { concreteRoutePath, matchRoutePath } from "./route-patterns.js";
+
 export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
   "operating-model": "/operating-model",
   docs: "/processes",
@@ -5,7 +7,7 @@ export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
   users: "/users",
   device: "/device",
   bookkeeping: "/bookkeeping",
-  sponsors: "/sponsors",
+  sponsors: "/sponsors/queue",
   newsletter: "/newsletter",
   calendar: "/calendar",
   review: "/review",
@@ -36,11 +38,17 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   },
   "/recurring": { view: "tasks", tasksSection: "recurring", params: [] },
   "/bookkeeping": { view: "bookkeeping", tasksSection: "queue", params: [] },
-  "/sponsors": {
-    view: "sponsors",
-    tasksSection: "queue",
-    params: ["dealId", "companyId"],
-  },
+  // Bare /sponsors opens the default tab; every tab and record is a path.
+  "/sponsors": { view: "sponsors", tasksSection: "queue", params: [], canonicalPath: "/sponsors/queue" },
+  "/sponsors/queue": { view: "sponsors", tasksSection: "queue", sponsorsTab: "queue", params: [] },
+  "/sponsors/pipeline": { view: "sponsors", tasksSection: "queue", sponsorsTab: "pipeline", params: [] },
+  "/sponsors/companies": { view: "sponsors", tasksSection: "queue", sponsorsTab: "companies", params: [] },
+  "/sponsors/leads": { view: "sponsors", tasksSection: "queue", sponsorsTab: "leads", params: [] },
+  "/sponsors/newsletters": { view: "sponsors", tasksSection: "queue", sponsorsTab: "newsletters", params: [] },
+  "/sponsors/deals/:dealId": { view: "sponsors", tasksSection: "queue", sponsorsTab: "queue", params: [] },
+  "/sponsors/companies/:companyId": { view: "sponsors", tasksSection: "queue", sponsorsTab: "queue", params: [] },
+  "/sponsors/leads/:leadId": { view: "sponsors", tasksSection: "queue", sponsorsTab: "leads", params: [] },
+  "/sponsors/newsletters/:newsletterId": { view: "sponsors", tasksSection: "queue", sponsorsTab: "newsletters", params: [] },
   "/newsletter": { view: "newsletter", tasksSection: "queue", params: [] },
   "/calendar": { view: "calendar", tasksSection: "queue", params: [] },
   "/processes": {
@@ -107,8 +115,15 @@ export function isRealIsoDate(value) {
 }
 
 export function canonicalWorkspaceUrl(path, params = new URLSearchParams()) {
-  const definition =
-    WORKSPACE_ROUTE_DEFINITIONS[path] || WORKSPACE_ROUTE_DEFINITIONS["/"];
+  let matched;
+  try {
+    matched = matchRoutePath(WORKSPACE_ROUTE_DEFINITIONS, path);
+  } catch {
+    matched = null;
+  }
+  const definition = matched?.definition || WORKSPACE_ROUTE_DEFINITIONS["/"];
+  if (definition.canonicalPath) path = definition.canonicalPath;
+  else if (matched?.pattern.includes(":")) path = concreteRoutePath(matched.pattern, matched.pathParams);
   const ordered = new URLSearchParams();
   for (const name of definition.params) {
     const value =
@@ -161,10 +176,15 @@ export function parseWorkspaceLocation(
     return { invalid: true, reason: "malformed encoding" };
   }
 
-  const path =
+  const trimmedPath =
     rawPath.endsWith("/") && rawPath !== "/" ? rawPath.slice(0, -1) : rawPath;
-  const definition = WORKSPACE_ROUTE_DEFINITIONS[path];
-  if (!definition) return { invalid: true, reason: "unknown path" };
+  const matched = matchRoutePath(WORKSPACE_ROUTE_DEFINITIONS, trimmedPath);
+  if (!matched) return { invalid: true, reason: "unknown path" };
+  const definition = matched.definition.canonicalPath
+    ? WORKSPACE_ROUTE_DEFINITIONS[matched.definition.canonicalPath]
+    : matched.definition;
+  const path = matched.definition.canonicalPath
+    || (matched.pattern.includes(":") ? concreteRoutePath(matched.pattern, matched.pathParams) : trimmedPath);
 
   const incoming = new URLSearchParams(rawQuery);
   const params = new URLSearchParams();
@@ -187,10 +207,12 @@ export function parseWorkspaceLocation(
   }
 
   const canonicalUrl = canonicalWorkspaceUrl(path, params);
+  for (const [name, value] of Object.entries(matched.pathParams)) params.set(name, value);
   const currentUrl = `${location?.pathname || "/"}${location?.search || ""}`;
   return {
     view: definition.view,
     tasksSection: definition.tasksSection,
+    ...(definition.sponsorsTab ? { sponsorsTab: definition.sponsorsTab } : {}),
     path,
     params,
     canonicalUrl,

@@ -111,18 +111,21 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
           <p class="section-kicker">Inbound sources</p>
           <h3 id="crm-newsletters-heading">Newsletters</h3>
         </div>
-        <label
-          >Show
-          <select data-crm-newsletter-health>
-            <option value="">All</option>
-            <option value="attention">Needs attention</option>
-            <option value="current">Current</option>
-            <option value="pending">Signup pending</option>
-          </select></label
-        >
-        <button type="button" data-add-newsletter>Add newsletter</button>
+        <div class="crm-newsletters-toolbar" data-crm-newsletters-toolbar>
+          <label
+            >Show
+            <select data-crm-newsletter-health>
+              <option value="">All</option>
+              <option value="attention">Needs attention</option>
+              <option value="current">Current</option>
+              <option value="pending">Signup pending</option>
+            </select></label
+          >
+          <button type="button" data-add-newsletter>Add newsletter</button>
+        </div>
       </header>
       <div data-crm-newsletters>Loading newsletters…</div>
+      <div data-crm-newsletter-detail hidden></div>
     </section>
     <section class="crm-leads" hidden aria-labelledby="crm-leads-heading">
       <header class="section-header">

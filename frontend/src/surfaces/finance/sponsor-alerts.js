@@ -35,7 +35,7 @@ export function renderSponsorBookingAlerts({
                   item.metadata.sponsorDealId || "",
                 )}"
                 data-alert-company="${escapeHtml(
-                  new URLSearchParams(String(item.metadata.href || "").split("?")[1] || "").get("companyId") || "",
+                  item.metadata.sponsorCompanyId || "",
                 )}"
               >
                 Open company

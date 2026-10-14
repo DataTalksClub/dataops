@@ -63,7 +63,7 @@ const REQUIRED = {
     states: ["empty", "configured", "validation", "upload-link", "report", "failure"],
   },
   sponsors: {
-    route: "/sponsors?dealId=<id>",
+    route: "/sponsors/deals/<id>",
     states: ["empty", "ready-detail", "operator-safe-read", "admin-mutation", "operator-denied", "conflict", "not-found", "failure"],
   },
   newsletter: {
@@ -153,7 +153,7 @@ const REQUIRED_ROUTE_SET = [
   "/templates?templateId=<id>",
   "/recurring",
   "/bookkeeping",
-  "/sponsors?dealId=<id>",
+  "/sponsors/deals/<id>",
   "/newsletter",
   "/calendar",
   "/processes",

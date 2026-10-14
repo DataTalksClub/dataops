@@ -7,6 +7,7 @@ import { createSponsorCompanyDetail } from "./sponsor-company-detail.js";
 import { sponsorSurfaceMarkup } from "./sponsor-layout.js";
 import { SPONSOR_PIPELINE_STAGES, renderSponsorPipelineBoard, renderSponsorPipelineFilters, sponsorPipelineStage } from "./sponsor-pipeline.js";
 import { createCollectionLoader } from "../../core/collection-loader.js";
+import { sponsorRecordPath, sponsorsPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
 
 function focusFirstUsableControl(dialog) {
@@ -53,14 +54,15 @@ export function createSponsorCrmSurface(context) {
   async function renderSponsorCrmSurface() {
     const routeAtStart = getPendingLegacyRoute();
     const routeToken = routeAtStart?.token;
-    const requestedDealId =
-      routeAtStart?.path === "/sponsors"
-        ? routeAtStart.params.get("dealId")
-        : null;
-    const requestedCompanyId =
-      routeAtStart?.path === "/sponsors"
-        ? routeAtStart.params.get("companyId")
-        : null;
+    const sponsorsRoute = routeAtStart?.view === "sponsors" ? routeAtStart : null;
+    const initialTab = sponsorsRoute?.sponsorsTab || "queue";
+    const requested = (name) => sponsorsRoute?.params.get(name) || null;
+    const requestedDealId = requested("dealId");
+    const requestedCompanyId = requested("companyId");
+    const requestedLeadId = requested("leadId");
+    const requestedNewsletterId = requested("newsletterId");
+    // Opening a tab or record in place records it in the URL without a re-render.
+    const recordRoute = (path) => navigateCanonicalWorkspace(path, {}, { render: false });
     documentList.replaceChildren();
     const surface = document.createElement("section");
     surface.className = "sponsor-crm-surface";
@@ -128,6 +130,11 @@ export function createSponsorCrmSurface(context) {
       message,
       surface,
       openDialog,
+      newsletterPath: (id) => sponsorRecordPath("newsletter", id),
+      recordPath: sponsorRecordPath,
+      listPath: () => sponsorsPath("newsletters"),
+      navigate: (path, options = {}) => navigateCanonicalWorkspace(path, {}, options),
+      renderEntityLoadState,
     });
     sponsorNewsletters.wireNewsletterControls();
     const { loadFinance } = sponsorFinance;
@@ -248,6 +255,8 @@ export function createSponsorCrmSurface(context) {
       humanizeOptionLabel,
       humanSponsorDate,
       navigateCanonicalWorkspace,
+      // Closing a record returns to the tab it was opened from.
+      listPath: () => sponsorsPath(currentView),
       getOrganizations: () => organizations,
       getContacts: () => contacts,
       getDeals: () => deals,
@@ -429,8 +438,7 @@ export function createSponsorCrmSurface(context) {
       drawAlerts();
       orgOptions();
       draw();
-      await sponsorLeads.loadLeads();
-      await sponsorNewsletters.loadNewsletters();
+      await Promise.all([sponsorLeads.loadLeads(), sponsorNewsletters.loadNewsletters()]);
       message.textContent = "";
       message.hidden = true;
     }
@@ -470,7 +478,11 @@ export function createSponsorCrmSurface(context) {
     );
     surface.querySelector("[data-crm-views]").addEventListener("click", (event) => {
       const button = event.target.closest("[data-crm-view]");
-      if (button) setView(button.dataset.crmView);
+      if (!button) return;
+      const view = button.dataset.crmView;
+      if (view === "newsletters") sponsorNewsletters.showList();
+      setView(view);
+      recordRoute(sponsorsPath(view));
     });
     surface.querySelector("[data-crm-pipeline]").addEventListener("click", (event) => {
       const button = event.target.closest("[data-pipeline-status]");
@@ -478,6 +490,7 @@ export function createSponsorCrmSurface(context) {
       surface.querySelector("[data-crm-status]").value =
         button.getAttribute("data-pipeline-status") || "";
       setView("pipeline");
+      recordRoute(sponsorsPath("pipeline"));
     });
     function showRecord({ dealId, companyId } = {}) {
       const deal = dealId ? deals.find((item) => item.id === dealId) : null;
@@ -500,11 +513,16 @@ export function createSponsorCrmSurface(context) {
       }
       return false;
     }
+    // An in-place open records the record path; an unknown record renders it.
+    function openRecord(kind, id) {
+      const shown = showRecord(kind === "deal" ? { dealId: id } : { companyId: id });
+      navigateCanonicalWorkspace(sponsorRecordPath(kind, id), {}, shown ? { render: false } : {});
+    }
     surface.querySelector("[data-crm-detail]").addEventListener("click", (event) => {
       if (surface.classList.contains("has-booking-detail")) return;
       const dealId = event.target.closest("[data-open-deal]")?.dataset.openDeal;
       if (dealId) {
-        navigateCanonicalWorkspace("/sponsors", { dealId }, showRecord({ dealId }) ? { render: false } : {});
+        openRecord("deal", dealId);
       }
     });
     surface.querySelector("[data-add-org]").onclick = () =>
@@ -515,11 +533,7 @@ export function createSponsorCrmSurface(context) {
       const contact = event.target.closest("[data-contact-org]")?.dataset.contactOrg;
       const archive = event.target.closest("[data-archive-org]")?.dataset.archiveOrg;
       if (company) {
-        navigateCanonicalWorkspace(
-          "/sponsors",
-          { companyId: company },
-          showRecord({ companyId: company }) ? { render: false } : {},
-        );
+        openRecord("company", company);
         return;
       }
       if (contact) {
@@ -553,11 +567,11 @@ export function createSponsorCrmSurface(context) {
       }
       // An in-place open still records the selection in the URL (no re-render).
       if (dealId) {
-        navigateCanonicalWorkspace("/sponsors", { dealId }, showRecord({ dealId }) ? { render: false } : {});
+        openRecord("deal", dealId);
         return;
       }
       if (companyId) {
-        navigateCanonicalWorkspace("/sponsors", { companyId }, showRecord({ companyId }) ? { render: false } : {});
+        openRecord("company", companyId);
       }
     };
     surface.querySelector("[data-crm-bookings]").onclick = openFromList;
@@ -586,11 +600,8 @@ export function createSponsorCrmSurface(context) {
       const button = event.target.closest("[data-alert-deal],[data-alert-booking]");
       const id = button?.dataset.alertDeal || button?.dataset.alertBooking;
       const companyId = button?.dataset.alertCompany;
-      if (id && !showRecord({ dealId: id })) {
-        navigateCanonicalWorkspace("/sponsors", { dealId: id });
-      } else if (companyId && !showRecord({ companyId })) {
-        navigateCanonicalWorkspace("/sponsors", { companyId });
-      }
+      if (id) openRecord("deal", id);
+      else if (companyId) openRecord("company", companyId);
     };
     for (const dialog of surface.querySelectorAll("dialog")) {
       const cancel = dialog.querySelector('[value="cancel"],[data-cancel]');
@@ -919,48 +930,42 @@ export function createSponsorCrmSurface(context) {
         await loadCommunications(sponsorCommunications.selectedBookingId);
       }, "Approval was not applied");
     };
-    setView("queue", false);
+    setView(initialTab, false);
     try {
       await refresh();
       if (routeToken && (!isWorkspaceRouteFresh(routeToken) || !surface.isConnected)) return;
-      if (requestedDealId) {
-        let deal = deals.find((item) => item.id === requestedDealId);
-        try {
+      const stale = () => routeToken && (!isWorkspaceRouteFresh(routeToken) || !surface.isConnected);
+      if (requestedNewsletterId) await sponsorNewsletters.showNewsletter(requestedNewsletterId);
+      // [id, kind, where its load state renders, tab to return to, open it]
+      const record = [
+        [requestedDealId, "deal", "[data-crm-detail]", "queue", async (id) => {
+          let deal = deals.find((item) => item.id === id);
           if (!deal) {
-            deal = await api(`/deals/${encodeURIComponent(requestedDealId)}`);
-            if (routeToken && (!isWorkspaceRouteFresh(routeToken) || !surface.isConnected)) return;
+            deal = await api(`/deals/${encodeURIComponent(id)}`);
+            if (stale()) return;
             deals = [deal, ...deals];
             draw();
           }
           await reopenDealDetail(deal);
-        } catch (error) {
-          if (routeToken && (!isWorkspaceRouteFresh(routeToken) || !surface.isConnected)) return;
-          const detail = surface.querySelector("[data-crm-detail]");
-          renderEntityLoadState(detail, {
-            kind: "deal",
-            id: requestedDealId,
-            status: error.status === 404 ? "not-found" : "error",
-            error: error.message,
-            retry: () => renderSponsorCrmSurface(),
-            returnToList: () => navigateCanonicalWorkspace("/sponsors"),
-          });
-        }
-      } else if (requestedCompanyId) {
-        let organization = organizations.find((item) => item.id === requestedCompanyId);
+        }],
+        [requestedCompanyId, "company", "[data-crm-detail]", "queue", async (id) => reopenCompanyDetail(
+          organizations.find((item) => item.id === id) || await api(`/organizations/${encodeURIComponent(id)}`),
+        )],
+        [requestedLeadId, "lead", "[data-crm-leads]", "leads", (id) => sponsorLeads.focusLead(id)],
+      ].find(([id]) => id);
+      if (record) {
+        const [id, kind, container, tab, open] = record;
         try {
-          if (!organization) {
-            organization = await api(`/organizations/${encodeURIComponent(requestedCompanyId)}`);
-          }
-          await reopenCompanyDetail(organization);
+          await open(id);
         } catch (error) {
-          if (routeToken && (!isWorkspaceRouteFresh(routeToken) || !surface.isConnected)) return;
-          renderEntityLoadState(surface.querySelector("[data-crm-detail]"), {
-            kind: "company",
-            id: requestedCompanyId,
+          if (stale()) return;
+          renderEntityLoadState(surface.querySelector(container), {
+            kind,
+            id,
             status: error.status === 404 ? "not-found" : "error",
             error: error.message,
             retry: () => renderSponsorCrmSurface(),
-            returnToList: () => navigateCanonicalWorkspace("/sponsors"),
+            returnToList: () => navigateCanonicalWorkspace(sponsorsPath(tab)),
           });
         }
       }

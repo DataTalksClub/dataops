@@ -146,7 +146,7 @@ function push(
   items: QueueItem[],
   item: Omit<QueueItem, 'id' | 'href'> & { href?: string },
 ) {
-  const href = item.href || `/sponsors?companyId=${encodeURIComponent(item.companyId)}`;
+  const href = item.href || `/sponsors/companies/${encodeURIComponent(item.companyId)}`;
   items.push({ ...item, href, id: `${item.kind}:${item.companyId}:${item.dealId || ''}:${item.why}:${item.due}` });
 }
 

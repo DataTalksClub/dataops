@@ -626,7 +626,9 @@ describe("Finance surface boundary", () => {
     };
     const { document, finance } = createHarness({
       route: {
-        path: "/sponsors",
+        view: "sponsors",
+        sponsorsTab: "queue",
+        path: `/sponsors/deals/${booking.id}`,
         token: 1,
         params: new URLSearchParams({ dealId: booking.id }),
       },
@@ -736,7 +738,9 @@ describe("Finance surface boundary", () => {
     const seen = [];
     const { document, finance } = createHarness({
       route: {
-        path: "/sponsors",
+        view: "sponsors",
+        sponsorsTab: "queue",
+        path: `/sponsors/deals/${booking.id}`,
         token: 1,
         params: new URLSearchParams({ dealId: booking.id }),
       },

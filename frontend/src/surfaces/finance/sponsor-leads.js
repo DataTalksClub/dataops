@@ -4,6 +4,7 @@ export function createSponsorLeads(context) {
   const { api, escapeHtml, humanizeOptionLabel, message, surface, openDialog } = context;
   let leads = [];
   let leadStatusFilter = "";
+  let focusedLeadId = null;
 
   const fail = async (action, label) => {
     try {
@@ -36,7 +37,8 @@ export function createSponsorLeads(context) {
     const source = [link, escapeHtml(newsletter.name || "Unknown newsletter")]
       .filter(Boolean)
       .join(" · ");
-    return html`<article class="crm-lead-row">
+    const focused = item.id === focusedLeadId ? ' aria-current="true"' : "";
+    return html`<article class="crm-lead-row" data-lead-row="${escapeHtml(item.id)}"${focused}>
       <div class="crm-lead-body">
         <div class="crm-lead-header">
           <strong class="crm-lead-name">${escapeHtml(sponsor.name || "Unnamed sponsor")}</strong>
@@ -85,6 +87,19 @@ export function createSponsorLeads(context) {
         </p>
       </div>`;
     }
+  }
+
+  /** Show one lead (from a newsletter issue link) highlighted in the list. */
+  async function focusLead(id) {
+    focusedLeadId = id;
+    if (!leads.some((item) => item.id === id)) {
+      const lead = await api(`/leads/${encodeURIComponent(id)}`);
+      leads = [lead, ...leads];
+    }
+    drawLeads();
+    const row = surface.querySelector(`[data-lead-row="${CSS.escape(id)}"]`);
+    row?.scrollIntoView({ block: "center" });
+    row?.querySelector("button, a")?.focus({ preventScroll: true });
   }
 
   function wireLeadControls() {
@@ -175,5 +190,5 @@ export function createSponsorLeads(context) {
     });
   }
 
-  return { loadLeads, wireLeadControls };
+  return { focusLead, loadLeads, wireLeadControls };
 }

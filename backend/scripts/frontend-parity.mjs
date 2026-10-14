@@ -223,7 +223,7 @@ async function navigateState(page, baseURL, state) {
     await page.getByText('No active notifications.').waitFor();
     result.mutation = 'notification-dismissed';
   } else if (state === 'sponsor-booking-role-safe') {
-    await page.goto(`${baseURL}/sponsors?dealId=parity-booking`);
+    await page.goto(`${baseURL}/sponsors/deals/parity-booking`);
     await settle(page);
     const sponsorDetail = page.locator("[data-crm-detail] .crm-booking-detail");
     await sponsorDetail.filter({ hasText: "Synthetic Learning Co" }).waitFor();

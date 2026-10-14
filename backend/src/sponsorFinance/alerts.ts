@@ -117,7 +117,7 @@ export async function evaluateSponsorFinanceAlerts(
             financeRule: condition.rule,
             financeBasisDate: condition.basisDate,
             financeFingerprint: condition.fingerprint,
-            route: `/sponsors?dealId=${condition.dealId}`,
+            route: `/sponsors/deals/${encodeURIComponent(condition.dealId)}`,
           },
         },
         ConditionExpression: 'attribute_not_exists(PK)',

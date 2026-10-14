@@ -16,6 +16,7 @@ import {
   workspacePath,
   workspaceRouteFor,
 } from "../src/core/workspace.js";
+import { SPONSORS_TABS, sponsorRecordPath, sponsorsPath } from "../src/core/sponsor-routes.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const browserLocation = (path = "/") => {
@@ -51,6 +52,15 @@ describe("canonical workspace routing", () => {
       "/recurring",
       "/bookkeeping",
       "/sponsors",
+      "/sponsors/queue",
+      "/sponsors/pipeline",
+      "/sponsors/companies",
+      "/sponsors/leads",
+      "/sponsors/newsletters",
+      "/sponsors/deals/:dealId",
+      "/sponsors/companies/:companyId",
+      "/sponsors/leads/:leadId",
+      "/sponsors/newsletters/:newsletterId",
       "/newsletter",
       "/calendar",
       "/processes",
@@ -59,6 +69,44 @@ describe("canonical workspace routing", () => {
       "/users",
       "/device",
     ]);
+  });
+
+  test("gives every Sponsors tab and record its own path", () => {
+    for (const [tab] of SPONSORS_TABS) {
+      const url = sponsorsPath(tab);
+      const route = parseWorkspaceLocation(url, browserLocation(url));
+      assert.equal(route.view, "sponsors", url);
+      assert.equal(route.sponsorsTab, tab, url);
+      assert.equal(route.canonicalUrl, url, url);
+      assert.equal(route.normalized, false, url);
+    }
+    assert.equal(WORKSPACE_PATH_BY_VIEW.sponsors, "/sponsors/queue");
+    for (const [kind, param, tab] of [
+      ["deal", "dealId", "queue"],
+      ["company", "companyId", "queue"],
+      ["lead", "leadId", "leads"],
+      ["newsletter", "newsletterId", "newsletters"],
+    ]) {
+      const url = sponsorRecordPath(kind, "id 1/2");
+      const route = parseWorkspaceLocation(url, browserLocation(url));
+      assert.equal(route.params.get(param), "id 1/2", url);
+      assert.equal(route.sponsorsTab, tab, url);
+      assert.equal(route.canonicalUrl, url, url);
+      assert.equal(workspaceRouteFor(url).canonicalUrl, url, url);
+    }
+  });
+
+  test("redirects bare /sponsors to the default tab and rejects unknown tabs", () => {
+    for (const url of ["/sponsors", "/sponsors/", "/sponsors?dealId=old"]) {
+      const route = parseWorkspaceLocation(url, browserLocation(url));
+      assert.equal(route.canonicalUrl, "/sponsors/queue", url);
+      assert.equal(route.sponsorsTab, "queue", url);
+      assert.equal(route.normalized, true, url);
+    }
+    assert.equal(workspaceRouteFor("/sponsors").canonicalUrl, "/sponsors/queue");
+    for (const url of ["/sponsors/finance", "/sponsors/deals", "/sponsors/companies/a/b"]) {
+      assert.deepEqual(parseWorkspaceLocation(url, browserLocation(url)), { invalid: true, reason: "unknown path" }, url);
+    }
   });
 
   test("serializes only supported parameters in stable canonical order", () => {

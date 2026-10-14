@@ -971,6 +971,121 @@ body[data-workspace-view="sponsors"] .document-list {
 }.crm-lead-triage:hover {
   border-color: var(--dk-border-strong);
   background: var(--dk-bg-hover);
+}
+/* Newsletters: a row links to the newsletter's issues and their sponsors. */
+.crm-newsletters-toolbar {
+  display: flex;
+  align-items: end;
+  gap: var(--dk-space-3);
+}
+.crm-newsletter-link {
+  text-decoration: none;
+}
+.crm-newsletter-link:hover {
+  text-decoration: underline;
+}
+.crm-newsletter-issues {
+  margin: 0;
+  font-size: var(--dk-text-sm);
+  color: var(--dk-text-primary);
+}
+[data-crm-newsletter-detail] {
+  padding: var(--dk-space-4);
+}
+.crm-newsletter-detail {
+  display: grid;
+  gap: var(--dk-space-4);
+}
+.crm-newsletter-detail-head {
+  display: grid;
+  justify-items: start;
+  gap: var(--dk-space-2);
+}
+.crm-newsletter-back {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--dk-text-link);
+  font: inherit;
+  font-size: var(--dk-text-sm);
+  cursor: pointer;
+}
+.crm-newsletter-back:hover {
+  text-decoration: underline;
+}
+.crm-newsletter-detail-title {
+  margin: 0;
+  font-size: var(--dk-text-lg);
+  color: var(--dk-text-heading);
+}
+.crm-newsletter-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--dk-space-3);
+  margin: 0;
+}
+.crm-newsletter-stats dt {
+  font-size: var(--dk-text-sm);
+  color: var(--dk-text-muted);
+}
+.crm-newsletter-stats dd {
+  margin: 0;
+  font-family: var(--dk-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--dk-text-heading);
+}
+.crm-issue-list {
+  display: grid;
+  gap: var(--dk-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.crm-issue-row {
+  display: grid;
+  gap: var(--dk-space-1);
+  border-top: 1px solid var(--dk-border-default);
+  padding-top: var(--dk-space-2);
+}
+.crm-issue-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--dk-space-2);
+  min-width: 0;
+}
+.crm-issue-date {
+  flex: 0 0 auto;
+  font-family: var(--dk-font-mono);
+  font-size: var(--dk-text-sm);
+  color: var(--dk-text-muted);
+}
+.crm-issue-title {
+  flex: 1 1 16rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.crm-issue-sponsors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dk-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.crm-issue-sponsor {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--dk-space-1);
+  font-size: var(--dk-text-sm);
+}
+.crm-issue-none {
+  margin: 0;
+  font-size: var(--dk-text-sm);
+}
+.crm-lead-row[aria-current="true"] {
+  border-color: var(--dk-border-strong);
+  background: var(--dk-bg-muted);
 }/* Nothing selected: the prompt, then the next actions across sponsors. */.crm-detail-empty {
   display: grid;
   align-content: start;

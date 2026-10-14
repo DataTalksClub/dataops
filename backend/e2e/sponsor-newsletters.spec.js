@@ -7,6 +7,8 @@ const {
 } = require("./helpers/isolated-capability-server");
 
 let server;
+const INTAKE_SECRET = "sponsor-newsletters-e2e-secret";
+const SCREENSHOTS = process.env.SPONSOR_SCREENSHOT_DIR || "";
 
 async function api(path, options = {}) {
   const response = await fetch(`${server.baseURL}/api/sponsor-crm${path}`, {
@@ -23,6 +25,7 @@ test.describe("sponsor newsletter catalog", () => {
     server = await startOwnedTestServer({
       environment: {
         DTC_CACHE_ROOT: createDocsCacheRoot("sponsor-newsletters"),
+        EMAIL_DOCUMENT_INTAKE_SECRET: INTAKE_SECRET,
       },
     });
     await api("/newsletters", {
@@ -96,19 +99,104 @@ test.describe("sponsor newsletter catalog", () => {
     await expect(dialog).toBeHidden();
     await expect(page.locator(".crm-newsletter-row").filter({ hasText: "Data Elixir" })).toBeVisible();
 
-    await api("/newsletters/receipts", {
+    // Dapier reports every inbox issue through lead intake, sponsors or not.
+    const intake = await fetch(`${server.baseURL}/api/v1/intake/leads`, {
       method: "POST",
+      headers: { "content-type": "application/json", "x-dataops-intake-secret": INTAKE_SECRET },
       body: JSON.stringify({
-        sender: "dataengineeringweekly@substack.com",
-        subject: "Data Engineering Weekly #290",
-        receivedAt: new Date().toISOString(),
+        version: "2026-10-10",
         messageId: "e2e-dew-290",
+        newsletter: {
+          name: "Data Engineering Weekly",
+          sender: "dataengineeringweekly@substack.com",
+          subject: "Data Engineering Weekly #290",
+          receivedAt: new Date(Date.now() - 60_000).toISOString().replace(/\.\d{3}Z$/, "Z"),
+        },
+        sponsors: [],
       }),
     });
+    expect(intake.status, await intake.text()).toBe(201);
     await page.reload();
+    await expect(page).toHaveURL(/\/sponsors\/newsletters$/);
     await expect(page.locator("[data-crm-message]")).toBeHidden();
-    await page.locator("[data-crm-view='newsletters']").click();
+    await expect(page.locator(".crm-newsletters")).toBeVisible();
     await expect(weekly.locator("[data-health='current']")).toHaveText("Current");
     await expect(weekly).toContainText("Data Engineering Weekly #290");
+    await expect(weekly.locator("[data-newsletter-issues]")).toContainText("1 issue");
+    await expect(weekly.locator("[data-newsletter-issues]")).toContainText("no sponsors found");
+  });
+
+  test("gives every tab and newsletter its own URL with working history", async ({ page }) => {
+    test.setTimeout(300_000);
+    const newsletters = (await api("/newsletters?search=data-engineering-weekly")).items;
+    const weekly = newsletters.find((item) => item.slug === "data-engineering-weekly");
+    await api(`/newsletters/${weekly.id}/issues`, {
+      method: "POST",
+      body: JSON.stringify({
+        issueKey: "dataengineeringweekly.example.invalid/p/289",
+        title: "Data Engineering Weekly #289",
+        publishedAt: "2026-10-05",
+        url: "https://dataengineeringweekly.example.invalid/p/289",
+        source: "public-archive",
+        sponsors: [{ name: "Example Orchestrator", url: "https://orchestrator.example.invalid" }],
+      }),
+    });
+    await setupPageWithAuth(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto(`${server.baseURL}/sponsors`);
+    await expect(page).toHaveURL(/\/sponsors\/queue$/);
+    const tabs = { queue: ".crm-layout", pipeline: "[data-crm-bookings]", companies: "[data-crm-companies-section]", leads: ".crm-leads", newsletters: ".crm-newsletters" };
+    for (const [tab, visible] of Object.entries(tabs)) {
+      await page.goto(`${server.baseURL}/sponsors/${tab}`);
+      await expect(page.locator("[data-crm-message]")).toBeHidden({ timeout: 20_000 });
+      await expect(page).toHaveURL(new RegExp(`/sponsors/${tab}$`));
+      await expect(page.locator(`[data-crm-view='${tab}']`)).toHaveAttribute("aria-pressed", "true");
+      await expect(page.locator(visible).first()).toBeVisible();
+      await expect(page.locator("#sponsors-nav-button")).toHaveAttribute("aria-current", "page");
+      if (SCREENSHOTS) await page.screenshot({ path: `${SCREENSHOTS}/sponsors-${tab}.png` });
+    }
+
+    // Tabs push history in place; Back and Forward restore them.
+    await page.goto(`${server.baseURL}/sponsors/queue`);
+    await expect(page.locator("[data-crm-message]")).toBeHidden({ timeout: 20_000 });
+    await page.locator("[data-crm-view='leads']").click();
+    await expect(page).toHaveURL(/\/sponsors\/leads$/);
+    await page.locator("[data-crm-view='newsletters']").click();
+    await expect(page).toHaveURL(/\/sponsors\/newsletters$/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/sponsors\/leads$/);
+    await expect(page.locator(".crm-leads")).toBeVisible();
+    await expect(page.locator("[data-crm-view='leads']")).toHaveAttribute("aria-pressed", "true");
+    await page.goForward();
+    await expect(page.locator(".crm-newsletters")).toBeVisible();
+
+    // A newsletter opens its issues and their sponsors at its own path.
+    const row = page.locator(".crm-newsletter-row").filter({ hasText: "Data Engineering Weekly" });
+    await expect(row.locator("[data-newsletter-issues]")).toContainText("2 issues");
+    await expect(row.locator("[data-newsletter-issues]")).toContainText("Example Orchestrator");
+    await row.locator("[data-open-newsletter]").click();
+    await expect(page).toHaveURL(new RegExp(`/sponsors/newsletters/${weekly.id}$`));
+    const detail = page.locator(".crm-newsletter-detail");
+    await expect(detail.locator(".crm-issue-row")).toHaveCount(2);
+    await expect(detail.locator(".crm-issue-row").filter({ hasText: "#290" })).toContainText("No sponsor found");
+    const sponsored = detail.locator(".crm-issue-row").filter({ hasText: "#289" });
+    await expect(sponsored.locator(".crm-issue-sponsor")).toContainText("Example Orchestrator");
+    if (SCREENSHOTS) await page.screenshot({ path: `${SCREENSHOTS}/sponsors-newsletter-detail.png` });
+
+    await page.reload();
+    await expect(page.locator(".crm-newsletter-detail .crm-issue-row")).toHaveCount(2);
+    await page.locator("[data-close-newsletter]").click();
+    await expect(page).toHaveURL(/\/sponsors\/newsletters$/);
+    await expect(page.locator("[data-crm-newsletters]")).toBeVisible();
+
+    // A sponsor links to its lead.
+    await page.goto(`${server.baseURL}/sponsors/newsletters/${weekly.id}`);
+    await page.locator(".crm-issue-sponsor a").filter({ hasText: "Example Orchestrator" }).click();
+    await expect(page).toHaveURL(/\/sponsors\/leads\/[0-9a-f]+$/);
+    await expect(page.locator(".crm-lead-row[aria-current='true']")).toContainText("Example Orchestrator");
+
+    await page.goto(`${server.baseURL}/sponsors/newsletters/missing-newsletter`);
+    await expect(page.locator(".entity-route-not-found:visible")).toContainText("missing-newsletter");
   });
 });

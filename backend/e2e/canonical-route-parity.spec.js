@@ -124,7 +124,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       [`/templates?templateId=${encodeURIComponent(fixture.template.id)}`, 'Templates'],
       ['/recurring', 'Recurring'],
       ['/bookkeeping', 'Bookkeeping'],
-      [`/sponsors?dealId=${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
+      [`/sponsors/deals/${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
       ['/newsletter', 'Newsletter'],
       ['/calendar', 'Calendar'],
       ['/processes', 'Process Docs'],
@@ -187,7 +187,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       ['tasks?taskId=stale-task', 'stale-task'],
       ['cards?cardId=stale-workflow', 'stale-workflow'],
       ['templates?templateId=stale-template', 'stale-template'],
-      ['sponsors?dealId=stale-booking', 'stale-booking'],
+      ['sponsors/deals/stale-booking', 'stale-booking'],
     ]) {
       await page.goto(`/${route}`);
       await expect(page.locator('.entity-route-not-found:visible')).toContainText(id);
@@ -197,7 +197,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       { route: '/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.stale-not-found'] },
       { route: '/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.not-found'] },
       { route: '/templates?templateId=<id>', roleId: 'admin', stateIds: ['templates.stale-not-found'] },
-      { route: '/sponsors?dealId=<id>', roleId: 'admin', stateIds: ['sponsors.not-found'] },
+      { route: '/sponsors/deals/<id>', roleId: 'admin', stateIds: ['sponsors.not-found'] },
     ]);
   });
 

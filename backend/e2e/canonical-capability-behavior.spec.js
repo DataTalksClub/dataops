@@ -859,13 +859,13 @@ test.describe('canonical frontend capability behavior', () => {
     }, headers: { 'idempotency-key': `${id}-operator-denied` } });
     expect(operatorMutation.status()).toBe(403);
 
-    await page.goto(`/sponsors?dealId=${updatedBooking.id}`);
+    await page.goto(`/sponsors/deals/${updatedBooking.id}`);
     await expect(page.locator('[data-crm-detail]')).toContainText(`Synthetic Sponsor ${id}`);
     await expect(page.locator('[data-crm-detail] .status-label').first()).toHaveText('Agreed');
     await expect(page.locator('[data-crm-detail]')).not.toContainText('Synthetic private note');
     await page.reload();
     await expect(page.locator('[data-crm-detail]')).toContainText(`Synthetic Sponsor ${id}`);
-    await page.goto(`/sponsors?dealId=${updatedBooking.id}`);
+    await page.goto(`/sponsors/deals/${updatedBooking.id}`);
     await page.locator(`[data-edit-deal="${updatedBooking.id}"]:visible`).first().click();
     const latestBooking = await json(await admin.request.get(`/api/sponsor-crm/deals/${updatedBooking.id}`));
     expect((await admin.request.put(`/api/sponsor-crm/deals/${updatedBooking.id}`, { data: {
@@ -888,7 +888,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.locator('[data-crm-view="companies"]').click();
     await expect(page.locator('.crm-directory-row').filter({ hasText: `Synthetic Sponsor ${id}` })).toBeVisible();
     const operatorPage = await operator.newPage();
-    await operatorPage.goto(`/sponsors?dealId=${operatorBooking.id}`);
+    await operatorPage.goto(`/sponsors/deals/${operatorBooking.id}`);
     await expect(operatorPage.locator('[data-crm-detail]')).toContainText(`Synthetic Operator Sponsor ${id}`);
     await expect(operatorPage.locator('[data-finance-panel]')).toContainText('This deal has not been classified');
     await expect(operatorPage.locator('[data-finance-panel] [data-finance-classify]')).toHaveCount(0);
@@ -896,8 +896,8 @@ test.describe('canonical frontend capability behavior', () => {
     await admin.close();
     await operator.close();
     recordCapabilityEvidence(testInfo, [
-      { route: '/sponsors?dealId=<id>', roleId: 'admin', stateIds: ['sponsors.empty', 'sponsors.ready-detail', 'sponsors.admin-mutation', 'sponsors.conflict', 'sponsors.failure'] },
-      { route: '/sponsors?dealId=<id>', roleId: 'operator', stateIds: ['sponsors.operator-safe-read', 'sponsors.operator-denied'] },
+      { route: '/sponsors/deals/<id>', roleId: 'admin', stateIds: ['sponsors.empty', 'sponsors.ready-detail', 'sponsors.admin-mutation', 'sponsors.conflict', 'sponsors.failure'] },
+      { route: '/sponsors/deals/<id>', roleId: 'operator', stateIds: ['sponsors.operator-safe-read', 'sponsors.operator-denied'] },
     ]);
   });
 

@@ -183,7 +183,9 @@ function createNavigationHarness(options = {}) {
 
 describe("canonical navigation shell behavior", () => {
   test("direct workspace paths open without rewriting or waiting for the document catalog", async () => {
-    for (const path of Object.keys(WORKSPACE_ROUTE_DEFINITIONS)) {
+    for (const [pattern, definition] of Object.entries(WORKSPACE_ROUTE_DEFINITIONS)) {
+      if (definition.canonicalPath) continue;
+      const path = pattern.replace(/:[A-Za-z]+/g, "record-1");
       const harness = createNavigationHarness({ hash: "", pathname: path });
       await harness.shell.initializeRouting(new Promise(() => {}));
       assert.equal(harness.shell.getActiveWorkspaceRoute().path, path);
@@ -193,14 +195,21 @@ describe("canonical navigation shell behavior", () => {
   });
 
   test("direct links retain validated entity queries and discard unrelated parameters", async () => {
-    const harness = createNavigationHarness({ hash: "", pathname: "/sponsors/", search: "?companyId=company-1&dealId=deal-1&tracking=demo" });
+    const harness = createNavigationHarness({ hash: "", pathname: "/cards/", search: "?taskId=task-1&cardId=card-1&tracking=demo" });
     await harness.shell.initializeRouting(Promise.resolve());
-    assert.equal(harness.shell.getActiveWorkspaceRoute().canonicalUrl, "/sponsors?dealId=deal-1&companyId=company-1");
-    assert.equal(harness.history.replaced.at(-1).url, "/sponsors?dealId=deal-1&companyId=company-1");
+    assert.equal(harness.shell.getActiveWorkspaceRoute().canonicalUrl, "/cards?cardId=card-1&taskId=task-1");
+    assert.equal(harness.history.replaced.at(-1).url, "/cards?cardId=card-1&taskId=task-1");
+  });
+
+  test("bare /sponsors opens the default Sponsors tab", async () => {
+    const harness = createNavigationHarness({ hash: "", pathname: "/sponsors", search: "?dealId=old" });
+    await harness.shell.initializeRouting(Promise.resolve());
+    assert.equal(harness.shell.getActiveWorkspaceRoute().canonicalUrl, "/sponsors/queue");
+    assert.equal(harness.history.replaced.at(-1).url, "/sponsors/queue");
   });
 
   test("invalid direct-link parameters return to Queue instead of becoming document paths", async () => {
-    for (const [pathname, search] of [["/tasks", "?date=2026-02-30"], ["/cards", "?taskId=orphan"], ["/sponsors", "?dealId=one&dealId=two"]]) {
+    for (const [pathname, search] of [["/tasks", "?date=2026-02-30"], ["/cards", "?taskId=orphan"], ["/sponsors/bogus", ""]]) {
       const harness = createNavigationHarness({ hash: "", pathname, search });
       await harness.shell.initializeRouting(Promise.resolve());
       assert.equal(harness.shell.getActiveWorkspaceRoute().path, "/");
@@ -216,13 +225,25 @@ describe("canonical navigation shell behavior", () => {
     const harness = createNavigationHarness({ path: "/tasks" });
     await harness.shell.initializeRouting(Promise.resolve());
     harness.location.hash = "";
-    harness.location.pathname = "/sponsors";
-    harness.location.search = "?dealId=deal-1";
+    harness.location.pathname = "/sponsors/deals/deal-1";
+    harness.location.search = "";
     harness.shell.scheduleCurrentBrowserLocation();
     routeCallback();
     await nextTicks();
-    assert.equal(harness.shell.getActiveWorkspaceRoute().path, "/sponsors");
+    assert.equal(harness.shell.getActiveWorkspaceRoute().path, "/sponsors/deals/deal-1");
+    assert.equal(harness.shell.getActiveWorkspaceRoute().params.get("dealId"), "deal-1");
     assert.deepEqual(harness.history.replaced, []);
+  });
+
+  test("render:false records an in-place selection without re-rendering", async () => {
+    const harness = createNavigationHarness();
+    await harness.shell.initializeRouting(Promise.resolve());
+    const before = harness.calls.length;
+    const result = harness.shell.navigateCanonicalWorkspace("/sponsors/newsletters/n-1", {}, { render: false });
+    assert.equal(result.route.params.get("newsletterId"), "n-1");
+    assert.equal(harness.shell.getActiveWorkspaceRoute().canonicalUrl, "/sponsors/newsletters/n-1");
+    assert.equal(harness.history.pushed.at(-1).url, "/sponsors/newsletters/n-1");
+    assert.deepEqual(harness.calls.slice(before), []);
   });
 
   test("commits canonical entity routes before hydrating their panels", async () => {
