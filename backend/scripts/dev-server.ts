@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import http from 'node:http';
 import https from 'node:https';
 import type { ClientRequest, RequestOptions } from 'node:http';
@@ -7,6 +8,7 @@ const PORT = parsePort(process.env.PORT || '3001');
 const HOST = process.env.DATAOPS_DEV_BACKEND_HOST || '127.0.0.1';
 const REPRESENTATIVE_MODE = process.env.DATAOPS_DEV_REPRESENTATIVE_MODE === 'true';
 const SEED_MODE = process.env.DATAOPS_DEV_SEED_MODE || 'default';
+const ACTOR_EMAIL = String(process.env.DATAOPS_DEV_ACTOR_EMAIL || '').trim();
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 function parsePort(value: string): number {
@@ -24,6 +26,44 @@ function assertLoopbackListener(): void {
   if (REPRESENTATIVE_MODE && SEED_MODE !== 'none') {
     throw new Error('Representative mode requires DATAOPS_DEV_SEED_MODE=none');
   }
+  if (ACTOR_EMAIL && !REPRESENTATIVE_MODE) {
+    throw new Error('DATAOPS_DEV_ACTOR_EMAIL requires representative mode');
+  }
+}
+
+interface PortalBroker {
+  userId: string;
+  secret: string;
+}
+
+/**
+ * Representative mode has no browser sign-in: Cognito is not configured and
+ * browser credentials are stripped. This development server therefore plays
+ * the deployed portal broker for the configured operator, asserting their
+ * identity with a per-process secret through the same portal-trust path the
+ * router already verifies (`x-portal-auth` + `x-portal-secret` + `x-user-id`).
+ */
+async function resolvePortalBroker(): Promise<PortalBroker | null> {
+  if (!REPRESENTATIVE_MODE) return null;
+  if (!ACTOR_EMAIL) {
+    console.log('DATAOPS_DEV_ACTOR_EMAIL is unset; API requests stay anonymous and return 401.');
+    return null;
+  }
+  const [{ getClient }, { getUsersByNormalizedEmail }] = await Promise.all([
+    import('../src/db/client'),
+    import('../src/db/users'),
+  ]);
+  const matches = (await getUsersByNormalizedEmail(await getClient(), ACTOR_EMAIL))
+    .filter((user) => !user.disabled);
+  if (matches.length !== 1) {
+    throw new Error(
+      `DATAOPS_DEV_ACTOR_EMAIL ${ACTOR_EMAIL} must match exactly one active user in the replica (found ${matches.length})`,
+    );
+  }
+  const secret = randomBytes(32).toString('base64url');
+  process.env.WORK_ENGINE_PORTAL_SECRET = secret;
+  console.log(`Acting as ${ACTOR_EMAIL} (${matches[0].id}) through the local portal broker.`);
+  return { userId: matches[0].id, secret };
 }
 
 function requestHostname(input: string | URL | RequestOptions): string {
@@ -129,6 +169,7 @@ async function main(): Promise<void> {
     await seedRecurring();
   }
 
+  const broker = await resolvePortalBroker();
   const { handler } = await import('../src/handler');
 
   const server = http.createServer(async (request, response) => {
@@ -152,6 +193,13 @@ async function main(): Promise<void> {
       delete headers.authorization;
       delete headers.cookie;
       delete headers['x-user-id'];
+      delete headers['x-portal-auth'];
+      delete headers['x-portal-secret'];
+      if (broker) {
+        headers['x-portal-auth'] = 'true';
+        headers['x-portal-secret'] = broker.secret;
+        headers['x-user-id'] = broker.userId;
+      }
     }
     const event: LambdaEvent = {
       httpMethod: request.method || 'GET',

@@ -614,3 +614,96 @@ test('representative mode mutates and restores only an isolated loopback Dynalit
     await closeServer(dynamo);
   }
 });
+
+test('representative mode acts as the configured operator without the test auth bypass', async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const ports = await freePortPair();
+  const dynamoPort = await freePort();
+  const dynamo = await startDynalite(dynamoPort);
+  const client = representativeClient(dynamoPort);
+  const actorId = 'synthetic-representative-operator';
+  const taskId = 'synthetic-operator-task';
+  await createRepresentativeTaskTable(client);
+  await client.send(new CreateTableCommand({
+    TableName: 'Users',
+    KeySchema: [
+      { AttributeName: 'PK', KeyType: 'HASH' },
+      { AttributeName: 'SK', KeyType: 'RANGE' },
+    ],
+    AttributeDefinitions: [
+      { AttributeName: 'PK', AttributeType: 'S' },
+      { AttributeName: 'SK', AttributeType: 'S' },
+    ],
+    BillingMode: 'PAY_PER_REQUEST',
+  }));
+  await client.send(new PutCommand({
+    TableName: 'Users',
+    Item: {
+      PK: `USER#${actorId}`,
+      SK: `USER#${actorId}`,
+      id: actorId,
+      name: 'Synthetic Operator',
+      email: 'operator@example.invalid',
+      role: 'operator',
+      createdAt: '2026-08-12T00:00:00.000Z',
+    },
+  }));
+  await client.send(new PutCommand({
+    TableName: 'Tasks',
+    Item: {
+      PK: `TASK#${taskId}`,
+      SK: `TASK#${taskId}`,
+      id: taskId,
+      description: 'Synthetic operator task',
+      date: '2026-08-12',
+      status: 'todo',
+      cardId: 'synthetic-card',
+      source: 'import',
+      version: 1,
+      taskHistory: [],
+      createdAt: '2026-08-12T00:00:00.000Z',
+      updatedAt: '2026-08-12T00:00:00.000Z',
+    },
+  }));
+
+  const stack = startStack(testInfo, {
+    ports,
+    env: {
+      NODE_ENV: 'development',
+      DYNAMODB_ENDPOINT: `http://127.0.0.1:${dynamoPort}`,
+      AWS_ACCESS_KEY_ID: 'local',
+      AWS_SECRET_ACCESS_KEY: 'local',
+      IS_LOCAL: 'true',
+      DATAOPS_DEV_SEED_MODE: 'none',
+      DATAOPS_DEV_ACTOR_EMAIL: 'Operator@Example.invalid',
+    },
+  });
+  let context;
+  try {
+    await waitForStack(stack);
+    expect(stack.stdout()).toContain(`Acting as Operator@Example.invalid (${actorId})`);
+
+    context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`${stack.origin}/tasks?date=2026-08-12`, { waitUntil: 'domcontentloaded' });
+
+    const me = await browserJson(page, '/api/me');
+    expect(me.status).toBe(200);
+    expect(me.body.user.id).toBe(actorId);
+
+    const forged = await browserJson(page, '/api/me', {
+      headers: { 'x-user-id': 'someone-else', 'x-portal-auth': 'true', 'x-portal-secret': 'guessed' },
+    });
+    expect(forged.status).toBe(200);
+    expect(forged.body.user.id).toBe(actorId);
+
+    const task = await browserJson(page, `/api/tasks/${taskId}`);
+    expect(task.status).toBe(200);
+    expect(task.body.description).toBe('Synthetic operator task');
+  } finally {
+    if (context) await context.close();
+    await stopStack(stack);
+    client.destroy();
+    await closeServer(dynamo);
+  }
+});
