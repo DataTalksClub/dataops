@@ -968,7 +968,7 @@ function buildTrelloArtifactPlans(card: TrelloCard, cardId: string, warnings: st
         cardId,
         sourceType: 'migration',
         reviewedAt: card.dateLastActivity || new Date().toISOString(),
-        tags: ['trello-import', candidate.source],
+        tags: [candidate.source],
         metadata: {
           source: 'trello-active-card-migration',
           sourceCardId: card.id,
@@ -990,7 +990,7 @@ function planTrelloActiveCard(
   const card = cardFromTrello(trelloCard, listName);
   const warnings: string[] = [];
   const templateType = mapTemplateType(trelloCard.name, trelloCard.labels);
-  const cardTags = new Set([...(Array.isArray(card.tags) ? card.tags as string[] : []), 'trello-import', templateType]);
+  const cardTags = new Set([...(Array.isArray(card.tags) ? card.tags as string[] : []), templateType]);
   const cardLinks = extractCardLinks(trelloCard);
 
   Object.assign(card, {
@@ -1072,7 +1072,7 @@ function planTrelloActiveCard(
         cardId,
         templateTaskRef: `${refId}-${item.id || itemIndex}`,
         phase,
-        tags: [checklist.name, 'trello-import', templateType],
+        tags: [checklist.name, templateType],
         comment: appendMigrationProvenance(waiting?.note, [
           `source=trello-active-trelloCard`,
           `source_card_id=${trelloCard.id}`,
