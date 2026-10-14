@@ -64,7 +64,7 @@ body[data-workspace-view="tasks"] .operations-home .ops-empty {
    Each row's source chip names where the task came from; the quiet line
    above the rows owns the counts, and completed work folds away below. */body[data-workspace-view="tasks"] .ops-work-queue {
   display: grid;
-  gap: 14px;
+  gap: var(--dk-space-3);
   min-width: 0;
   min-height: 1px;
 }body[data-workspace-view="tasks"] .home-quick-actions {
@@ -374,7 +374,7 @@ body[data-workspace-view="tasks"] .ops-queue-due {
   white-space: nowrap;
 }body[data-workspace-view="tasks"] .ops-queue-due[data-due="overdue"] {
   color: var(--dk-danger-text);
-  font-family: var(--dk-font-sans);
+  font-family: var(--dk-font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
 }body[data-workspace-view="tasks"] .ops-queue-due[data-due="today"] {

@@ -1106,7 +1106,7 @@ describe("Finance surface boundary", () => {
     // every other typed entry is an expense; only untyped rows are
     // unclassified. No mixed income+expenses sum.
     assert.equal(
-      surface.querySelector(".bookkeeping-totals").textContent,
+      surface.querySelector(".bookkeeping-totals").innerHTML.replace(/<[^>]*>/g, ""),
       "Income €240.00 · Expenses €145.50 · Unclassified €10.00",
     );
     // The page opens quiet: the download-expiry note lives next to the
@@ -1156,7 +1156,7 @@ describe("Finance surface boundary", () => {
     filters[1].value = "expense";
     await filters[1].dispatch("input");
     assert.equal(
-      surface.querySelector(".bookkeeping-totals").textContent,
+      surface.querySelector(".bookkeeping-totals").innerHTML.replace(/<[^>]*>/g, ""),
       "Expenses €125.50",
     );
   });
@@ -1612,13 +1612,13 @@ describe("Finance surface boundary", () => {
     );
     // The four close counters answer "what is left for this month".
     const counters = surface.querySelector("[data-close-state]").innerHTML;
-    assert.match(counters, /<strong>3<\/strong\s*>\s*transactions/);
-    assert.match(counters, /<strong>2<\/strong\s*>\s*evidence missing/);
-    assert.match(counters, /<strong>1<\/strong\s*>\s*EUR conversions open/);
+    assert.match(counters, /Transactions<\/span>\s*<span class="dk-stat__value">3<\/span>/);
+    assert.match(counters, /Evidence missing<\/span>\s*<span class="dk-stat__value">2<\/span>/);
+    assert.match(counters, /EUR conversions open<\/span>\s*<span class="dk-stat__value">1<\/span>/);
     // Three missing-evidence/conversion/unclassified items drive the CTA.
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
-      /Review 4 open items/,
+      /Review <span class="dk-mono">4<\/span> open items/,
     );
     // The worklist is the reconcile output with its fixes attached.
     const worklist = surface.querySelector("[data-worklist]");
@@ -1670,7 +1670,7 @@ describe("Finance surface boundary", () => {
     );
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
-      /<strong>0<\/strong\s*>\s*EUR conversions open/,
+      /EUR conversions open<\/span>\s*<span class="dk-stat__value">0<\/span>/,
     );
 
     // Classifying happens inline from the worklist row.
@@ -1688,7 +1688,7 @@ describe("Finance surface boundary", () => {
     assert.deepEqual(savedPuts[1], { entryType: "income" });
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
-      /Review 2 open items/,
+      /Review <span class="dk-mono">2<\/span> open items/,
     );
 
     // Attaching evidence from the worklist scopes the upload form.
@@ -1711,7 +1711,7 @@ describe("Finance surface boundary", () => {
     await surface.querySelector("[data-lens-toggle]").dispatch("click");
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
-      /All months — 4 transactions\s*on record/,
+      /All months — <span class="dk-mono">4<\/span> transactions\s*on record/,
     );
     assert.equal(surface.querySelector("[data-worklist-section]").hidden, true);
     assert.match(

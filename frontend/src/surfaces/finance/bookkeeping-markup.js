@@ -10,7 +10,7 @@ export function bookkeepingSurfaceMarkup() {
     title: "Bookkeeping",
     subtitle: "One month at a time: record the transactions, attach the evidence, and close the month with a reviewable package.",
     className: "bookkeeping-header",
-    actionsHtml: html`<button class="primary-button" data-bookkeeping-add>Add entry</button>`,
+    actionsHtml: html`<button class="dk-button dk-button--primary" data-bookkeeping-add>Add entry</button>`,
   })}
       <section
         class="bookkeeping-monthlens"
@@ -20,33 +20,33 @@ export function bookkeepingSurfaceMarkup() {
         <div class="bookkeeping-lens-nav">
           <div class="bookkeeping-lens-steppers">
             <button
-              class="bookkeeping-lens-step"
+              class="dk-icon-button bookkeeping-lens-step"
               type="button"
               data-lens-prev
               aria-label="Previous month"
             >
-              ‹
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>
             </button>
             <button
-              class="bookkeeping-lens-step"
+              class="dk-icon-button bookkeeping-lens-step"
               type="button"
               data-lens-next
               aria-label="Next month"
             >
-              ›
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>
             </button>
           </div>
           <div class="bookkeeping-lens-selectors">
             <label class="bookkeeping-lens-field"
               ><span class="lens-label">Year</span>
-              <select data-lens-year aria-label="Select year"></select
+              <select class="dk-select dk-mono" data-lens-year aria-label="Select year"></select
             ></label>
             <label class="bookkeeping-lens-field"
               ><span class="lens-label">Month</span>
-              <select data-lens-month-select aria-label="Select month"></select
+              <select class="dk-select dk-mono" data-lens-month-select aria-label="Select month"></select
             ></label>
           </div>
-          <button class="quiet-button" type="button" data-lens-toggle>
+          <button class="dk-button dk-button--secondary" type="button" data-lens-toggle>
             All months
           </button>
         </div>
@@ -80,13 +80,13 @@ export function bookkeepingSurfaceMarkup() {
         class="bookkeeping-section bookkeeping-ledger-section"
         aria-labelledby="bookkeeping-ledger-heading"
       >
-        <header class="section-header">
-          <div>
+        <header class="dk-section-header bookkeeping-ledger-head">
+          <div class="bookkeeping-ledger-head__main">
             <p class="section-kicker">Ledger</p>
-            <h3 id="bookkeeping-ledger-heading">
+            <h3 id="bookkeeping-ledger-heading" class="dk-section-header__title">
               Record and review the ledger
             </h3>
-            <p>
+            <p class="bookkeeping-ledger-head__hint">
               Transactions for the selected period. Open an entry only when it
               needs work.
             </p>
@@ -95,7 +95,7 @@ export function bookkeepingSurfaceMarkup() {
             <p class="bookkeeping-totals" aria-live="polite"></p>
             <div class="bookkeeping-export-actions">
               <button
-                class="quiet-button bookkeeping-export-btn"
+                class="dk-button dk-button--secondary dk-button--sm bookkeeping-export-btn"
                 type="button"
                 data-export-report-csv
                 title="Export accountant report CSV (with signed EUR prices and report columns)"
@@ -103,7 +103,7 @@ export function bookkeepingSurfaceMarkup() {
                 Export report CSV
               </button>
               <button
-                class="quiet-button bookkeeping-export-btn"
+                class="dk-button dk-button--secondary dk-button--sm bookkeeping-export-btn"
                 type="button"
                 data-copy-report
                 title="Copy formatted report table to clipboard for email or spreadsheet"
@@ -111,7 +111,7 @@ export function bookkeepingSurfaceMarkup() {
                 Copy for report
               </button>
               <button
-                class="quiet-button bookkeeping-export-btn"
+                class="dk-button dk-button--secondary dk-button--sm bookkeeping-export-btn"
                 type="button"
                 data-export-full-csv
                 title="Export full raw ledger CSV"
@@ -121,7 +121,7 @@ export function bookkeepingSurfaceMarkup() {
             </div>
           </div>
         </header>
-        <div class="bookkeeping-filters">
+        <div class="dk-toolbar bookkeeping-filters">
           <label
             >Search
             <input

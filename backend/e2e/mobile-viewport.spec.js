@@ -34,7 +34,7 @@ const ROUTES = [
   { path: '/templates', ready: '.runtime-template-layout', content: '.runtime-template-layout, .ops-template-grid' },
   { path: '/recurring', ready: '.ops-recurring-surface', content: '.recurring-toolbar, .ops-recurring-section' },
   { path: '/assistants', ready: '.assistant-workspace', content: '.assistant-layout' },
-  { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bookkeeping-worklist, .bookkeeping-section' },
+  { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bookkeeping-worklist, .bookkeeping-monthlens' },
   { path: '/sponsors', ready: '.sponsor-crm-surface', content: '.crm-layout, .crm-upcoming-list, .crm-directory-row, .crm-booking-row', contentReady: '.crm-master .crm-booking-row, .crm-master .honest-state' },
   { path: '/newsletter', ready: '.newsletter-surface', content: '.newsletter-slot-row, .newsletter-slot-list, .newsletter-schedule' },
   { path: '/calendar', ready: '.calendar-surface', content: '.calendar-grid', contentReady: '.calendar-grid', mockCalendar: true },
@@ -129,10 +129,9 @@ async function measureContentStart(page, contentSelector) {
 // 232px per card at 375x667: four full-size action buttons wrapped onto two
 // rows under the date and booking lines. The compact card carries one
 // primary button plus a "More" overflow, so half the baseline plus a small
-// rounding margin is the hard budget.
-const NEWSLETTER_CARD_BUDGET_PX = 124;
+// margin for 44px touch targets is the hard budget.
+const NEWSLETTER_CARD_BUDGET_PX = 132;
 const NEWSLETTER_CARD_BASELINE_PX = 232;
-const BOOKKEEPING_LEDGER_TOP_RATIO = 0.4;
 
 for (const viewport of VIEWPORTS) {
   for (const route of ROUTES) {
@@ -180,24 +179,18 @@ for (const viewport of VIEWPORTS) {
         `${route.path}: primary content starts at ${contentTop}px, budget is ${contentBudget}px`,
       ).toBeLessThanOrEqual(contentBudget);
 
-      // The body is not scroll-locked, and a tall page actually scrolls to
-      // reveal its bottom. A page that fits the viewport must not scroll.
-      expect(layout.bodyOverflowY).not.toBe('hidden');
-      expect(layout.htmlOverflowY).not.toBe('hidden');
-      const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
-      const scrollable = scrollHeight > layout.viewport.height + 4;
-      const scrolled = await page.evaluate(() => {
-        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
-        return window.scrollY;
+      // The kit main is the page scroller; views contribute their full height.
+      const main = page.locator('#main-content');
+      await expect(main).toHaveCSS('overflow-y', 'auto');
+      await expect(main).toHaveCSS('padding-left', '16px');
+      await expect(main).toHaveCSS('padding-right', '16px');
+      const scrolling = await main.evaluate(node => {
+        node.scrollTop = node.scrollHeight;
+        return { top: node.scrollTop, extent: node.scrollHeight - node.clientHeight };
       });
-      if (scrollable) {
-        expect(scrolled).toBeGreaterThan(0);
-        expect(scrolled).toBeGreaterThanOrEqual(
-          scrollHeight - layout.viewport.height - 2,
-        );
-      } else {
-        expect(scrolled).toBeLessThanOrEqual(2);
-      }
+      if (scrolling.extent > 4) expect(scrolling.top).toBeGreaterThan(0);
+      expect(scrolling.top).toBeGreaterThanOrEqual(Math.max(0, scrolling.extent - 2));
+      await main.evaluate(node => { node.scrollTop = 0; });
 
       await page.screenshot({
         path: path.join(
@@ -266,39 +259,28 @@ test('newsletter at 375x667: issue cards fit the compaction budget and the overf
   await expect(menu).toBeHidden();
 });
 
-test('bookkeeping at 375x667: ledger starts within the top 40% behind a one-line close summary', async ({ page }) => {
+test('bookkeeping at 375x667: period controls reflow, the shared stat strip keeps zeros, and the ledger scrolls into view', async ({ page }) => {
   test.setTimeout(60_000);
   const viewport = VIEWPORTS[0];
   const route = ROUTES.find((candidate) => candidate.path === '/bookkeeping');
   await openRouteAt(page, viewport, route);
-
-  // The ledger section must start within the top 40% of the viewport: the
-  // close panel and month picker may not push the actual ledger mid-screen.
-  const ledgerTop = await page.evaluate(() =>
-    Math.round(
-      document.querySelector('#bookkeeping-ledger').getBoundingClientRect().top,
-    ),
-  );
-  const ledgerBudget = Math.round(viewport.height * BOOKKEEPING_LEDGER_TOP_RATIO);
-  test.info().annotations.push({
-    type: 'bookkeeping-ledger-top',
-    description: `${ledgerTop}px (budget ${ledgerBudget}px)`,
-  });
-  expect(
-    ledgerTop,
-    `ledger starts at ${ledgerTop}px, budget is ${ledgerBudget}px`,
-  ).toBeLessThanOrEqual(ledgerBudget);
-
-  // The month picker stays one compact row.
-  const lensHeight = await page.evaluate(() =>
-    Math.round(
-      document.querySelector('.bookkeeping-monthlens').getBoundingClientRect().height,
-    ),
-  );
-  expect(
-    lensHeight,
-    `month picker is ${lensHeight}px tall, expected a single row`,
-  ).toBeLessThanOrEqual(56);
+  await expect(page.locator('.bookkeeping-close-state .dk-stat-strip')).toHaveCount(1);
+  const values = page.locator('.dk-stat__value');
+  await expect(values).toHaveCount(4);
+  expect(await values.allTextContents()).toContain('0');
+  const monoFamily = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--dk-font-mono').split(',')[0].trim().replace(/['"]/g, ''));
+  for (const value of await values.all()) {
+    expect(await value.evaluate(node => getComputedStyle(node).fontFamily)).toContain(monoFamily);
+    expect(await value.evaluate(node => getComputedStyle(node).color)).toBe(await page.locator('h1').evaluate(node => getComputedStyle(node).color));
+  }
+  for (const control of await page.locator('.bookkeeping-lens-nav button,.bookkeeping-lens-nav select').all()) {
+    expect((await control.boundingBox()).height).toBeGreaterThanOrEqual(44);
+  }
+  const previous = await page.locator('[data-lens-prev]').boundingBox();
+  expect(previous.width).toBeGreaterThanOrEqual(44);
+  await page.locator('#bookkeeping-ledger-heading').scrollIntoViewIfNeeded();
+  await expect(page.locator('#bookkeeping-ledger-heading')).toBeInViewport();
+  expect(await page.locator('#main-content').evaluate(node => node.scrollTop)).toBeGreaterThan(0);
 
   // The seeded month has no open items, so the close panel is collapsed to
   // its one-line summary; expanding it reveals the reconcile list.

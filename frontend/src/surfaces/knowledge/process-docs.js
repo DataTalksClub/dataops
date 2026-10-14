@@ -381,12 +381,21 @@ export function createProcessDocsSurface(context, services) {
     const header = renderSurfaceHeader("Docs");
     const createButton = document.createElement("button");
     createButton.type = "button";
-    createButton.className = "primary-button ops-docs-create";
+    createButton.className = "dk-button dk-button--primary ops-docs-create";
     createButton.textContent = "New process doc";
     createButton.addEventListener("click", () => showCreate());
-    header.append(createButton);
+    const actions = document.createElement("div");
+    actions.className = "dk-page-header__actions";
+    actions.append(createButton);
+    header.append(actions);
     wrap.append(header);
-    if (knowledgeTools) wrap.append(knowledgeTools);
+    if (knowledgeTools) {
+      knowledgeTools.className = "knowledge-tools dk-toolbar";
+      knowledgeTools.setAttribute("aria-label", "Document filters");
+      const count = knowledgeTools.querySelector("#docs-catalog-count");
+      if (count) count.textContent = `${visibleDocuments.length} documents`;
+      wrap.append(knowledgeTools);
+    }
     wrap.append(renderProcessesSurface(visibleDocuments, model));
     if (exportStatus) wrap.append(exportStatus);
     documentList.replaceChildren(wrap);

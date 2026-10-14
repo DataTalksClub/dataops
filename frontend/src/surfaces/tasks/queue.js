@@ -83,7 +83,13 @@ export function createTaskQueue(context) {
       btn.setAttribute("role", "tab");
       btn.setAttribute("aria-selected", String(isSelected));
       btn.setAttribute("aria-label", `Filter to ${p.name}, ${count} open`);
-      btn.textContent = `${p.label} (${count})`;
+      btn.append(document.createTextNode(p.label));
+      if (count) {
+        const quantity = document.createElement("span");
+        quantity.className = "dk-count dk-mono";
+        quantity.textContent = String(count);
+        btn.append(quantity);
+      }
       btn.addEventListener("click", () => {
         if (activePersonaFilter === p.id) return;
         activePersonaFilter = p.id;
@@ -265,6 +271,14 @@ export function createTaskQueue(context) {
           ? `Showing ${QUEUE_VISIBLE_LIMIT} of ${count} open, most urgent first`
           : `${count} open, most urgent first`;
     }
+    const copy = total.textContent;
+    total.textContent = "";
+    for (const part of copy.split(/(\d+)/)) {
+      const span = document.createElement("span");
+      span.textContent = part;
+      if (/^\d+$/.test(part)) span.className = "dk-mono";
+      total.append(span);
+    }
     total.setAttribute("role", "status");
     return total;
   }
@@ -329,6 +343,7 @@ export function createTaskQueue(context) {
     const label = document.createElement("span");
     label.textContent = "Recently completed";
     const count = document.createElement("span");
+    count.className = "dk-mono";
     count.dataset.queueCount = "known";
     count.textContent = String(doneTasks.length);
     count.setAttribute(
@@ -711,7 +726,7 @@ export function createTaskQueue(context) {
   // completion claim here; the row's blocker note carries that.
   function taskDueCell(task, today) {
     const cell = document.createElement("span");
-    cell.className = "ops-queue-due";
+    cell.className = "ops-queue-due dk-mono";
     const due = String(task.date || "").slice(0, 10);
     const debt = isOpenWorkTask(task) ? overdueDays(due, today) : 0;
     if (debt > 0) {

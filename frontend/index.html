@@ -44,7 +44,7 @@
       <a class="dk-skip-link" href="#main-content">Skip to content</a>
       <header class="dk-topbar">
         <button id="mobile-menu-button" class="dk-icon-button" type="button" data-dk-drawer-toggle aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-        <span id="mobile-title" class="dk-topbar__title">DataOps</span>
+        <a id="mobile-title" class="dk-topbar__title" href="/">DataOps</a>
         <div class="dk-topbar__end"></div>
       </header>
       <aside id="sidebar" class="dk-sidebar" aria-label="Workspace">
@@ -126,12 +126,15 @@
             <button id="clear-filters-button" class="quiet-button filter-clear" type="button">Clear filters</button>
           </fieldset>
         </details>
+        <div class="dk-toolbar__end"><span id="docs-catalog-count" class="dk-mono dk-muted"></span></div>
         <section id="knowledge-section" class="knowledge-section" aria-label="Knowledge storage">
-          <p id="knowledge-status-text" role="status">Checking daily GitHub export…</p>
+          <header class="dk-section-header">
+          <div class="knowledge-section__main"><h2 class="dk-section-header__title">Knowledge storage</h2>
+          <p id="knowledge-status-text" class="knowledge-section__status" role="status">Checking daily GitHub export…</p></div>
           <div class="knowledge-actions-row">
-            <button id="knowledge-status-button" class="quiet-button" type="button">Refresh export status</button>
-            <button id="history-button" class="quiet-button" type="button">File history</button>
-          </div>
+            <button id="knowledge-status-button" class="dk-button dk-button--secondary dk-button--sm" type="button">Refresh export status</button>
+            <button id="history-button" class="dk-button dk-button--secondary dk-button--sm" type="button">File history</button>
+          </div></header>
         </section>
           </div>
           <div id="document-list" class="document-list" aria-label="Documents"></div>

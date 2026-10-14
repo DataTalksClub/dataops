@@ -200,7 +200,7 @@ async function screenshot(page, name) {
 
 async function scrollReaderToEnd(page) {
   await page.evaluate(() => {
-    const view = [...document.querySelectorAll(".view")].find(node => getComputedStyle(node).display !== "none");
+    const view = document.querySelector("#main-content");
     if (view) view.scrollTop = view.scrollHeight;
     window.scrollTo(0, document.body.scrollHeight);
   });

@@ -21,11 +21,11 @@ body[data-workspace-view="sponsors"] .document-list {
 .sponsor-crm-surface h4:not([class*="dk-"]),
 .sponsor-crm-surface p {
   margin-top: 0;
-}.bookkeeping-surface button:not(.primary-button,
+}.bookkeeping-surface button:not(.dk-button, .primary-button,
 .quiet-button,
 .danger-button,
 .danger-text-button),
-.sponsor-crm-surface button:not(.primary-button,
+.sponsor-crm-surface button:not(.dk-button, .primary-button,
 .quiet-button,
 .danger-button,
 .danger-text-button),
@@ -38,11 +38,11 @@ body[data-workspace-view="sponsors"] .document-list {
   color: var(--dk-text-primary);
   padding: 5px 10px;
   font-weight: 600;
-}.bookkeeping-surface button:not(.primary-button,
+}.bookkeeping-surface button:not(.dk-button, .primary-button,
 .quiet-button,
 .danger-button,
 .danger-text-button):hover,
-.sponsor-crm-surface button:not(.primary-button,
+.sponsor-crm-surface button:not(.dk-button, .primary-button,
 .quiet-button,
 .danger-button,
 .danger-text-button):hover,
@@ -215,12 +215,7 @@ body[data-workspace-view="sponsors"] .document-list {
 }/* Month lens: the close-state header that replaced the decorative job nav.
    It answers "what is left for this month" above the fold (#242). */.bookkeeping-monthlens {
   display: grid;
-  gap: 16px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-lg);
-  background: var(--dk-bg-surface);
-  padding: 20px 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  gap: var(--dk-space-4);
 }.bookkeeping-lens-nav {
   display: flex;
   flex-wrap: wrap;
@@ -252,49 +247,6 @@ body[data-workspace-view="sponsors"] .document-list {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-.bookkeeping-lens-field select {
-  min-height: 36px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-heading);
-  padding: 0 10px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  outline: none;
-  transition: all 120ms ease;
-}
-.bookkeeping-lens-field select:focus {
-  box-shadow: 0 0 0 2px var(--dk-focus-ring);
-}
-.bookkeeping-lens-field select:hover:not(:disabled) {
-  background: var(--dk-bg-hover);
-  border-color: var(--dk-border-control-hover);
-}
-.bookkeeping-lens-field select:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.bookkeeping-lens-step {
-  min-width: 34px;
-  min-height: 34px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-primary);
-  font-size: 16px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 120ms ease;
-}
-.bookkeeping-lens-step:hover {
-  background: var(--dk-bg-hover);
-  border-color: var(--dk-border-control-hover);
 }
 .bookkeeping-lens-month {
   display: inline-flex;
@@ -333,35 +285,6 @@ body[data-workspace-view="sponsors"] .document-list {
   color: var(--dk-text-muted);
   font-size: 14px;
   line-height: 1.5;
-}.bookkeeping-counters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-}.bookkeeping-counter {
-  display: grid;
-  gap: 4px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-muted);
-  padding: 12px 16px;
-  font-size: 12px;
-  font-weight: 500;
-  transition: all 120ms ease;
-}.bookkeeping-counter strong {
-  color: var(--dk-text-heading);
-  font-size: 22px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-}.bookkeeping-counter.is-open {
-  background: var(--dk-danger-bg);
-}.bookkeeping-counter.is-open strong {
-  color: var(--dk-danger-text);
-}.bookkeeping-counter.is-done {
-  background: var(--dk-success-bg);
-}.bookkeeping-counter.is-done strong {
-  color: var(--dk-success-text);
 }.bookkeeping-close-cta {
   display: flex;
   flex-wrap: wrap;
@@ -795,6 +718,7 @@ body[data-workspace-view="sponsors"] .document-list {
   margin: 0;
   display: inline-flex;
   align-items: center;
+  gap: var(--dk-space-1);
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-full);
   background: var(--dk-bg-surface);
@@ -1747,9 +1671,7 @@ body[data-workspace-view="sponsors"] .document-list {
   .bookkeeping-lens-field { min-width: 0; }
   .bookkeeping-lens-field:last-child { flex: 1; }
   .bookkeeping-lens-field .lens-label { display: none; }
-  .bookkeeping-lens-field select { width: 100%; min-width: 0; min-height: 32px; padding: 0 4px; font-size: 12px; }
   .bookkeeping-lens-steppers { flex: 0 0 auto; gap: 2px; }
-  .bookkeeping-lens-steppers .bookkeeping-lens-step { min-width: 24px; width: 24px; padding: 0; }
   .bookkeeping-export-actions { flex-wrap: wrap; }
   .bookkeeping-ledger-header-actions { min-width: 0; }
 }

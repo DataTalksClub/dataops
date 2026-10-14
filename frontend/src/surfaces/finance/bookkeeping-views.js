@@ -17,47 +17,59 @@ export function closeStateMonthMarkup({
 }) {
   const ctaButton =
     cta.kind === "worklist"
-      ? html`<button class="primary-button" type="button" data-cta-worklist>
-          Review ${cta.count} open item${cta.count === 1 ? "" : "s"}
+      ? html`<button class="dk-button dk-button--primary" type="button" data-cta-worklist>
+          <span>Review <span class="dk-mono">${cta.count}</span> open item${cta.count === 1 ? "" : "s"}</span>
         </button>`
       : cta.kind === "download"
-        ? html`<button class="primary-button" type="button" data-cta-download>
+        ? html`<button class="dk-button dk-button--primary" type="button" data-cta-download>
             Download the monthly package
           </button>`
         : cta.kind === "package"
-          ? html`<button class="primary-button" type="button" data-cta-package>
+          ? html`<button class="dk-button dk-button--primary" type="button" data-cta-package>
               Prepare the monthly package
             </button>`
           : cta.kind === "export"
-            ? html`<button class="primary-button" type="button" data-export-report-csv>
+            ? html`<button class="dk-button dk-button--primary" type="button" data-export-report-csv>
                 Export report data
               </button>`
-            : html`<button class="primary-button" type="button" data-cta-add>
+            : html`<button class="dk-button dk-button--primary" type="button" data-cta-add>
                 Add the first entry
               </button>`;
   return html`<h2>${e(title)} close</h2>
-    <div class="bookkeeping-counters">
-      <span class="bookkeeping-counter"
-        ><strong>${transactions}</strong
-        >transaction${transactions === 1 ? "" : "s"}</span
-      ><span
-        class="bookkeeping-counter ${missingEvidence ? "is-open" : "is-done"}"
-        ><strong>${missingEvidence}</strong
-        >evidence missing</span
-      ><span
-        class="bookkeeping-counter ${conversions ? "is-open" : "is-done"}"
-        ><strong>${conversions}</strong
-        >EUR conversions open</span
-      ><span class="bookkeeping-counter ${packageReady ? "is-done" : ""}"
-        ><strong>${packageReady ? "Ready" : "Pending"}</strong>package</span
-      >
+    <div class="dk-stat-strip" aria-label="Month close summary">
+      <div class="dk-stat">
+        <span class="dk-stat__label">Transactions</span>
+        <span class="dk-stat__value">${transactions}</span>
+        <span class="dk-stat__meta">Selected month</span>
+      </div>
+      <div class="dk-stat">
+        <span class="dk-stat__label">Evidence missing</span>
+        <span class="dk-stat__value">${missingEvidence}</span>
+        <span class="dk-stat__meta">
+          <span class="dk-badge dk-badge--${missingEvidence ? "danger" : "success"}">${missingEvidence ? "Needs evidence" : "All attached"}</span>
+        </span>
+      </div>
+      <div class="dk-stat">
+        <span class="dk-stat__label">EUR conversions open</span>
+        <span class="dk-stat__value">${conversions}</span>
+        <span class="dk-stat__meta">
+          <span class="dk-badge dk-badge--${conversions ? "warning" : "success"}">${conversions ? "Needs conversion" : "Recorded"}</span>
+        </span>
+      </div>
+      <div class="dk-stat">
+        <span class="dk-stat__label">Package</span>
+        <span class="dk-stat__value">${packageReady ? "Ready" : "Pending"}</span>
+        <span class="dk-stat__meta">
+          <span class="dk-badge dk-badge--${packageReady ? "success" : "warning"}">${packageReady ? "Complete" : "Not prepared"}</span>
+        </span>
+      </div>
     </div>
     <div class="bookkeeping-close-cta">${ctaButton}</div>`;
 }
 
 export function closeStateAllMarkup(transactions) {
   return html`<p class="bookkeeping-lens-note">
-    All months — ${transactions} transaction${transactions === 1 ? "" : "s"}
+    All months — <span class="dk-mono">${transactions}</span> transaction${transactions === 1 ? "" : "s"}
     on record. Select a month above to see its close state.
   </p>`;
 }
@@ -94,16 +106,16 @@ export function worklistMarkup({ rows, monthTitle, e }) {
     .map(({ kind, entry }) => {
       const what = html`<strong>${e(entry.counterparty)}</strong>
         <small
-          >${e(ledgerDate(entry.transactionDate))} ·
-          ${e(formatAmount(entry.amount, entry.currency))}${entry.description ? ` · ${e(entry.description)}` : ""}</small
+          ><span class="dk-mono">${e(ledgerDate(entry.transactionDate))} ·
+          ${e(formatAmount(entry.amount, entry.currency))}</span>${entry.description ? ` · ${e(entry.description)}` : ""}</small
         >`;
       const fix =
         kind === "evidence"
-          ? html`<button type="button" data-attach-evidence="${e(entry.id)}">
+          ? html`<button class="dk-button dk-button--secondary dk-button--sm" type="button" data-attach-evidence="${e(entry.id)}">
               Attach evidence
             </button>`
           : kind === "eur"
-            ? html`<button type="button" data-add-eur="${e(entry.id)}">
+            ? html`<button class="dk-button dk-button--secondary dk-button--sm" type="button" data-add-eur="${e(entry.id)}">
                 Add EUR value
               </button>`
             : html`<label class="worklist-classify"
@@ -143,24 +155,24 @@ export function ledgerTableMarkup({ shown, hasEvidence, lensTitle, e }) {
               .map(
                 (entry) =>
                   html`<tr>
-                    <td data-label="Transaction date">
+                    <td data-label="Transaction date" class="dk-mono">
                       ${e(ledgerDate(entry.transactionDate))}
                     </td>
-                    <td data-label="Paid" class="${entry.paidDate ? "is-paid" : "is-unpaid"}">
+                    <td data-label="Paid" class="${entry.paidDate ? "is-paid dk-mono" : "is-unpaid"}">
                       ${e(entry.paidDate ? ledgerDate(entry.paidDate) : "Unpaid")}
                     </td>
                     <td data-label="Entry">
                       <strong>${e(entry.counterparty)}</strong
                       ><small>${e(entry.description)}</small>
                     </td>
-                    <td data-label="Amount" class="ledger-amount ${entryDirection(entry)}">
+                    <td data-label="Amount" class="ledger-amount dk-mono ${entryDirection(entry)}">
                       ${e(
                         formatAmount(`${entryDirection(entry) === "expense" ? "-" : ""}${entry.amount}`, entry.currency),
                       )}${entry.currency !== "EUR" && entry.amountEur
-                        ? `<small class="ledger-eur">≈ ${e(formatAmount(entry.amountEur))}</small>`
+                        ? `<small class="ledger-eur dk-mono">≈ ${e(formatAmount(entry.amountEur))}</small>`
                         : ""}
                     </td>
-                    <td data-label="VAT" class="ledger-vat">
+                    <td data-label="VAT" class="ledger-vat dk-mono">
                       ${e(
                         entry.vatAmount
                           ? formatAmount(entry.vatAmount, entry.vatCurrency || entry.currency)

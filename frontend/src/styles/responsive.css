@@ -151,11 +151,6 @@ body[data-workspace-view="sponsors"] .library-view {
     margin-top: 4px;
   }.bookkeeping-table-wrap td:last-child .row-actions {
     justify-content: flex-start;
-  }.bookkeeping-monthlens {
-    padding: 12px 14px;
-  }/* Counters wrap two-up instead of squeezing into one row. */.bookkeeping-counter {
-    flex: 1 1 40%;
-    min-width: 0;
   }.worklist-row {
     display: grid;
     gap: 8px;
@@ -301,7 +296,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .workflow-board-filter-count,
   .workflow-board-scroll-hint,
   .calendar-timezone-badge,
-  .bookkeeping-close-state,
   .bookkeeping-header p:not([class*="dk-"]),
   .crm-header p:not([class*="dk-"]),
   .review-header p:not([class*="dk-"]),
@@ -311,10 +305,10 @@ body[data-workspace-view="sponsors"] .library-view {
   }
 
   .library-view {
-    padding: 8px 12px 28px !important;
+    padding: 0;
   }
 
-  /* ---- compact header actions everywhere: one 32px row, not 44px stacks ---- */
+  /* Header controls keep the shared touch metric and reflow as needed. */
   .workflow-board-header .dk-page-header__actions button,
   .workflow-board-filter select,
   .workflow-board-filter-action,
@@ -334,12 +328,11 @@ body[data-workspace-view="sponsors"] .library-view {
   .calendar-nav-arrow,
   .calendar-add-button,
   .calendar-display-controls select,
-  .ops-docs-create,
   .runtime-template-toolbar input,
   .runtime-template-toolbar select,
   .bookkeeping-lens-nav button,
   .recurring-action {
-    min-height: 32px !important;
+    min-height: var(--dk-size-touch);
     padding-top: 4px !important;
     padding-bottom: 4px !important;
     font-size: 13px !important;
@@ -423,7 +416,7 @@ body[data-workspace-view="sponsors"] .library-view {
   .runtime-template-toolbar .runtime-template-search {
     flex: 1 1 0 !important;
     width: 0;
-    min-height: 32px !important;
+    min-height: var(--dk-size-touch);
   }
   .runtime-template-toolbar .primary-button,
   .runtime-template-toolbar .quiet-button {
@@ -472,10 +465,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .bookkeeping-lens-nav {
     flex-direction: row !important;
     align-items: center;
-  }
-  .bookkeeping-monthlens {
-    padding: 4px 8px !important;
-    margin: 0 0 4px !important;
   }
   .bookkeeping-lens-nav {
     gap: 6px !important;
@@ -731,10 +720,10 @@ body[data-workspace-view="sponsors"] .library-view {
   }
   .newsletter-slot-row .newsletter-slot-actions button,
   .newsletter-slot-row .newsletter-slot-actions a {
-    min-height: 32px !important;
+    min-height: var(--dk-size-touch);
   }
   .newsletter-slot-primary {
-    min-height: 32px !important;
+    min-height: var(--dk-size-touch);
     padding-top: 4px !important;
     padding-bottom: 4px !important;
     font-size: 13px !important;
@@ -744,7 +733,7 @@ body[data-workspace-view="sponsors"] .library-view {
     margin-left: auto;
   }
   .newsletter-overflow-trigger {
-    min-height: 32px !important;
+    min-height: var(--dk-size-touch);
     padding: 4px 12px !important;
     font-size: 13px !important;
     white-space: nowrap;
@@ -818,7 +807,7 @@ body[data-workspace-view="sponsors"] .library-view {
     width: 100%;
   }
   .bookkeeping-lens-nav {
-    flex-wrap: nowrap !important;
+    flex-wrap: wrap;
   }
   .bookkeeping-lens-step,
   .bookkeeping-lens-nav .quiet-button {
@@ -862,7 +851,7 @@ body[data-workspace-view="sponsors"] .library-view {
   .recurring-row-actions button,
   .ops-user-actions button {
     flex: 0 0 auto;
-    min-height: 32px !important;
+    min-height: var(--dk-size-touch);
     padding-top: 4px !important;
     padding-bottom: 4px !important;
     font-size: 12px !important;

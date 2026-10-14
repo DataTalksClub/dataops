@@ -234,15 +234,15 @@ export function createBookkeepingSurface(context) {
         else if (direction === "expense") bucket.expense += amount;
         else bucket.unclassified += amount;
       });
-      totals.textContent =
+      totals.innerHTML =
         Object.entries(sums)
           .flatMap(([currency, s]) => [
-            ...(s.income ? [`Income ${formatAmount(s.income, currency)}`] : []),
+            ...(s.income ? [`Income <span class="dk-mono">${escapeHtml(formatAmount(s.income, currency))}</span>`] : []),
             ...(s.expense
-              ? [`Expenses ${formatAmount(s.expense, currency)}`]
+              ? [`Expenses <span class="dk-mono">${escapeHtml(formatAmount(s.expense, currency))}</span>`]
               : []),
             ...(s.unclassified
-              ? [`Unclassified ${formatAmount(s.unclassified, currency)}`]
+              ? [`Unclassified <span class="dk-mono">${escapeHtml(formatAmount(s.unclassified, currency))}</span>`]
               : []),
           ])
           .join(" · ") || "No filtered total";
