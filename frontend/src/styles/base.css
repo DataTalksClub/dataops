@@ -42,10 +42,14 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-}/* Disabled buttons keep the portal's quieter 0.65 fade; dakit's base layer
-   is brighter. */button:not([class*="dk-"]):disabled {
+}/* Disabled matches the kit's role-based treatment (muted fill, muted text,
+   neutral border, no fade) for every legacy button. */button:not([class*="dk-"]):disabled,
+button:not([class*="dk-"])[aria-disabled="true"] {
+  border-color: var(--dk-border-default);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
   cursor: not-allowed;
-  opacity: 0.65;
+  opacity: 1;
 }button:not([class*="dk-"]):focus-visible,
 input:not([class*="dk-"], .dk-search input):focus-visible,
 select:not([class*="dk-"]):focus-visible,
@@ -126,12 +130,6 @@ textarea:not([class*="dk-"]):focus-visible {
   color: var(--dk-text-on-accent);
 }.primary-button:hover {
   background: var(--dk-accent-hover);
-}/* Disabled matches the kit's role-based treatment in both themes. */.primary-button:disabled,
-.primary-button[aria-disabled="true"] {
-  border-color: var(--dk-border-default);
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-muted);
-  opacity: 1;
 }.view {
   min-height: 0;
   overflow: auto;
