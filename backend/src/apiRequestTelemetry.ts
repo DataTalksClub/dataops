@@ -75,6 +75,7 @@ const ROUTE_FAMILIES: ReadonlyArray<readonly [ApiRouteFamily, string]> = [
   ['notifications', '/api/notifications'],
   ['calendar_newsletter', '/api/calendar-items'],
   ['calendar_newsletter', '/api/newsletter-slots'],
+  ['calendar_newsletter', '/api/podcast-episodes'],
   ['bookkeeping', '/api/bookkeeping'],
   ['recurring', '/api/cron'],
   ['sponsor_crm', '/api/sponsor-crm'],

@@ -74,6 +74,8 @@ const AUTHENTICATED_ROUTES: RouteCase[] = [
   { method: 'POST', path: '/api/newsletter-slots', body: {} },
   { method: 'GET', path: '/api/calendar-items' },
   { method: 'POST', path: '/api/calendar-items', body: {} },
+  { method: 'GET', path: '/api/podcast-episodes' },
+  { method: 'POST', path: '/api/podcast-episodes', body: {} },
   { method: 'POST', path: '/api/cron/run', body: {} },
   { method: 'POST', path: '/api/cron/export', body: {} },
   // A path with no handler must still be refused before the router can reveal

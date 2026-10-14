@@ -19,6 +19,7 @@ import { handleSponsorLeadIntake, handleSponsorLeadRoutes } from './routes/spons
 import { handleSponsorFinanceRoutes } from './routes/sponsorFinance';
 import { handleSponsorCommunicationRoutes } from './routes/sponsorCommunications';
 import { handleNewsletterSlotRoutes } from './routes/newsletterSlots';
+import { handlePodcastEpisodeRoutes } from './routes/podcastEpisodes';
 import { handleCalendarRoutes } from './routes/calendar';
 import { handleDocumentReviewRoutes } from './routes/documentReviews';
 import { handleOperatingModelRoutes } from './routes/operatingModel';
@@ -284,6 +285,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       return await handleSponsorCrmRoutes(reqPath, method, event, client);
     }
     if (reqPath.startsWith('/api/newsletter-slots')) return await handleNewsletterSlotRoutes(reqPath,method,event,client);
+    if (reqPath === '/api/podcast-episodes' || reqPath.startsWith('/api/podcast-episodes/')) return await handlePodcastEpisodeRoutes(reqPath, method, event, client);
     if (reqPath.startsWith('/api/calendar-items')) return await handleCalendarRoutes(reqPath,method,event,client);
 
     // ── Task routes ────────────────────────────────────────────────

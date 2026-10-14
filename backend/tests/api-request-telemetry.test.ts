@@ -98,6 +98,7 @@ const OPERATIONAL_API_ALIASES: ReadonlyArray<readonly [
   ['/api/users', '/work/api/users', 'users_tokens'],
   ['/api/v1/intake/email-documents', '/work/api/v1/intake/email-documents', 'email_documents'],
   ['/api/calendar-items', '/work/api/calendar-items', 'calendar_newsletter'],
+  ['/api/podcast-episodes', '/work/api/podcast-episodes', 'calendar_newsletter'],
 ];
 
 type MetricCollector = ApiRequestMetricInput[] & {
@@ -447,7 +448,7 @@ describe('portal API request telemetry', () => {
   });
 
   it('maps every operational work API alias to its canonical route family', () => {
-    assert.strictEqual(OPERATIONAL_API_ALIASES.length, 20);
+    assert.strictEqual(OPERATIONAL_API_ALIASES.length, 21);
     for (const [canonicalPath, workAliasPath, family] of OPERATIONAL_API_ALIASES) {
       assert.strictEqual(classifyApiRouteFamily(canonicalPath), family, canonicalPath);
       assert.strictEqual(classifyApiRouteFamily(workAliasPath), family, workAliasPath);
