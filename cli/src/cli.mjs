@@ -10,6 +10,7 @@ import * as kb from "./commands/kb.mjs";
 import * as newsletter from "./commands/newsletter.mjs";
 import * as notifications from "./commands/notifications.mjs";
 import * as people from "./commands/people.mjs";
+import * as podcast from "./commands/podcast.mjs";
 import * as raw from "./commands/raw.mjs";
 import * as recurring from "./commands/recurring.mjs";
 import * as resources from "./commands/resources.mjs";
@@ -65,6 +66,7 @@ export const FAMILIES = {
   artifacts: { group: "Work", summary: files.artifactsSummary, help: files.artifactsHelp, commands: files.artifactsCommands },
   kb: { group: "Knowledge", summary: kb.summary, help: kb.help, commands: kb.commands },
   newsletter: { group: "Planning", summary: newsletter.summary, help: newsletter.help, commands: newsletter.commands },
+  podcast: { group: "Planning", summary: podcast.summary, help: podcast.help, commands: podcast.commands },
   calendar: {
     group: "Planning",
     summary: calendar.summary,

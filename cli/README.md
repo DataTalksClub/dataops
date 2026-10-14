@@ -56,6 +56,7 @@ subcommands, flags, and examples.
 | `templates` | `list`, `show` (read-only; authored in Git) |
 | `kb` | knowledge base: `search`, `related <task|card>`, `show`, `tree`, `ls`, `resolve`, `backlinks`, `history`, `write` |
 | `newsletter` | slots: `list`, `show`, `create`, `update`, `link-card`, `create-card`, `delete`, `dismiss-alert` |
+| `podcast` | episodes: `list`, `show`, `create`, `update`, `create-card` |
 | `calendar` | activities and operational slot scheduling |
 | `recurring` | schedules that generate Tasks |
 | `notifications` | `list`, `dismiss`, `dismiss-all` |
