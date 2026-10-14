@@ -40,6 +40,7 @@ import { createTask, getTask } from '../src/db/tasks';
 import { createArtifact, getArtifact } from '../src/db/artifacts';
 import { createDueFollowUpNotifications } from '../src/db/notifications';
 import { createRecurringConfig, listRecurringConfigs } from '../src/db/recurring';
+import { inferRequires } from './required-resource-inference';
 
 // ---------------------------------------------------------------------------
 // CLI flags
@@ -887,22 +888,6 @@ function appendMigrationProvenance(text: string | null | undefined, lines: strin
   return cleanText ? `${cleanText}\n\n${provenance}` : provenance;
 }
 
-function systemsForText(text: string): string[] {
-  const systems = new Set<string>();
-  const lower = text.toLowerCase();
-  if (/(google doc|google drive|docs\.google\.com|spreadsheet|google sheet)/.test(lower)) systems.add('google-drive');
-  if (/(mailchimp|newsletter)/.test(lower)) systems.add('mailchimp');
-  if (/(luma|lu\.ma)/.test(lower)) systems.add('luma');
-  if (/\bmeetup\b/.test(lower)) systems.add('meetup');
-  if (/\byoutube\b|youtu\.be/.test(lower)) systems.add('youtube');
-  if (/\bslack\b/.test(lower)) systems.add('slack');
-  if (/\bairtable\b/.test(lower)) systems.add('airtable');
-  if (/\blinkedin\b/.test(lower)) systems.add('linkedin');
-  if (/\btwitter\b|\bx\b/.test(lower)) systems.add('x');
-  if (/\bfinom\b|invoice|receipt/.test(lower)) systems.add('finom');
-  return [...systems].sort();
-}
-
 function addReportWarning(report: TrelloActiveCardReport, warning: string, context: string): void {
   if (warning.startsWith('unresolved process doc:')) {
     report.stats.unresolvedProcessDocs++;
@@ -1084,8 +1069,10 @@ function planTrelloActiveCard(
         auditEventRefs: [{ auditEventId: stableMigrationId('trello-audit', sourceKey), action: 'created' }],
       };
 
-      const systems = systemsForText(contextText);
-      if (systems.length > 0) task.systems = systems;
+      // Inferred from the item's own text: the Trello card name and
+      // description describe the whole event, not what this Task needs.
+      const requires = inferRequires(finalName, docResolution.instructionDocId);
+      if (requires.length > 0) task.requires = requires;
       if (instructionsUrl) task.instructionsUrl = instructionsUrl;
       if (docResolution.instructionDocId) task.instructionDocId = docResolution.instructionDocId;
       if (assigneeId) task.assigneeId = assigneeId;
