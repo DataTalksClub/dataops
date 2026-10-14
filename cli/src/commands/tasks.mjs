@@ -15,8 +15,10 @@ Usage
   dataops tasks show <task-id>
   dataops tasks create --description D [--date YYYY-MM-DD] [--card ID] [--assignee ID|me]
       [--comment C] [--link URL] [--tags a,b] [--required-link-name NAME] [--instruction-doc DOC-ID]
+      [--requires youtube,luma]
   dataops tasks update <task-id> [--description D] [--date D] [--comment C] [--link URL]
       [--external-status S] [--tags a,b] [--card ID|none] [--instruction-doc DOC-ID]
+      [--requires a,b|none]
   dataops tasks done <task-id> [--link URL] [--comment C] [--external-status S] [--file PATH]
   dataops tasks reopen <task-id>
   dataops tasks skip <task-id> --reason R        Resolve as not applicable (no proof needed)
@@ -35,6 +37,14 @@ List views (default: --queue)
   --owner me|team|unassigned|<user-id>, or --mine for --owner me
   --as-of YYYY-MM-DD   Treat this date as today (default: the local date)
 
+Required resources (ids from \`dataops resources list\`)
+  --requires a,b           Only Tasks that need at least one of these
+  --exclude-requires a,b   Drop Tasks that need any of these
+  --can-do a,b             Only Tasks whose every requirement is in this set: what you have
+                           access to. Defaults to DATAOPS_CAPABILITIES; --can-do all turns
+                           it off.
+                           A Task that needs something you lack is for someone else.
+
 Proof
   done saves the proof and completes the Task in one versioned write. --link (alias
   --proof-url) fills the Task's link/required link; --comment and --external-status
@@ -45,6 +55,8 @@ Proof
 
 Examples
   dataops tasks list --mine
+  dataops tasks list --can-do youtube,luma,gmail
+  dataops tasks list --status todo --requires mailchimp
   dataops tasks list --card 542df0a6-... --json
   dataops tasks done b6fc790f-... --link https://example.com/published-post
   dataops tasks wait b6fc790f-... --for "Sponsor" --follow-up 2026-11-02 --channel email --note "Asked for logo"
@@ -60,6 +72,24 @@ function tasksOf(payload) {
 function ownerOf(args) {
   if (args.mine) return "me";
   return optionalString(args, "owner");
+}
+
+/**
+ * Required-resource filters for GET /api/tasks. `--can-do` falls back to the
+ * DATAOPS_CAPABILITIES the agent declared; `--can-do all` disables it.
+ */
+export function requiresQuery(args, env = process.env) {
+  const query = {};
+  if (args.requires !== undefined) query.requires = csv(required(args, "requires", "requires")).join(",");
+  if (args.excludeRequires !== undefined) {
+    query.excludeRequires = csv(required(args, "excludeRequires", "exclude-requires")).join(",");
+  }
+  const canDo = args.canDo !== undefined ? args.canDo : env.DATAOPS_CAPABILITIES || undefined;
+  if (canDo === true || String(canDo ?? "x").trim() === "") {
+    throw new UsageError("--can-do needs a comma-separated list of resource ids, or all.");
+  }
+  if (canDo !== undefined && String(canDo).trim() !== "all") query.canDo = csv(String(canDo)).join(",");
+  return query;
 }
 
 function isWaitingOrFollowUp(task) {
@@ -108,12 +138,13 @@ export async function list(args, io) {
   if (Boolean(from) !== Boolean(to)) throw new UsageError("--from and --to go together.");
   const status = optionalString(args, "status");
   const card = optionalString(args, "card");
+  const resources = requiresQuery(args);
 
   let tasks;
   let view;
   if (date || from || status || card) {
     view = "filter";
-    const query = { owner, cardId: card, status, date, startDate: from, endDate: to };
+    const query = { owner, cardId: card, status, date, startDate: from, endDate: to, ...resources };
     tasks = tasksOf(await api.get("/api/tasks", { query }));
   } else {
     const wanted = ["today", "overdue", "waiting"].filter((name) => args[name]);
@@ -124,14 +155,14 @@ export async function list(args, io) {
       overdue: { startDate: "1970-01-01", endDate: yesterday(day) },
       waiting: { status: "waiting" },
     };
-    const pages = await Promise.all(lanes.map((lane) => api.get("/api/tasks", { query: { ...queries[lane], owner } })));
+    const pages = await Promise.all(lanes.map((lane) => api.get("/api/tasks", { query: { ...queries[lane], owner, ...resources } })));
     tasks = orderQueue(pages.flatMap(tasksOf), day);
     if (view === "overdue") tasks = tasks.filter((task) => task.queueSegment === "overdue");
     if (view === "today") tasks = tasks.filter((task) => String(task.date || "").slice(0, 10) === day);
     if (view === "waiting") tasks = tasks.filter(isWaitingOrFollowUp);
   }
 
-  const result = { view, today: day, owner: owner || null, tasks };
+  const result = { view, today: day, owner: owner || null, ...(resources.canDo !== undefined ? { canDo: csv(resources.canDo) } : {}), tasks };
   if (args.json) return result;
   table(
     io,
@@ -142,6 +173,7 @@ export async function list(args, io) {
       ["DUE", (task) => String(task.date || "").slice(0, 10)],
       ...(view === "filter" ? [] : [["WHEN", (task) => task.queueSegment]]),
       ["ASSIGNEE", (task) => task.assignee?.name || ""],
+      ["REQUIRES", (task) => (task.requires || []).join(",")],
       ["DESCRIPTION", (task) => task.description],
     ],
     "No Tasks match.",
@@ -165,6 +197,7 @@ export async function show(args, io) {
     ["card", task.cardId],
     ["assignee", task.assignee ? `${task.assignee.name} (${task.assignee.id})` : task.assigneeId],
     ["link", task.link],
+    ["requires", task.requires?.length ? task.requires.join(", ") : ""],
     ["required link", task.requiredLinkName],
     ["requires file", task.requiresFile ? "yes" : ""],
     ["proof", task.proofRequirement ? `${task.proofRequirement.type}${task.proofRequirement.label ? ` (${task.proofRequirement.label})` : ""}` : ""],
@@ -212,6 +245,10 @@ function writableFields(args) {
   if (instructionDoc !== undefined) body.instructionDocId = instructionDoc;
   const requiredLinkName = optionalString(args, "requiredLinkName");
   if (requiredLinkName !== undefined) body.requiredLinkName = requiredLinkName;
+  if (args.requires !== undefined) {
+    const requires = required(args, "requires", "requires");
+    body.requires = requires === "none" ? [] : csv(requires);
+  }
   return body;
 }
 

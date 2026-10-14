@@ -51,10 +51,34 @@ dataops whoami                           # confirm identity and role before writ
   required proof (a link, a file, a comment, an external status, an approved artifact).
 - **Knowledge base (kb)**: process docs - SOPs, references, playbooks - with stable ids.
 
+## Required resources: only take Tasks you can do
+
+Many Tasks need an account or access you may not have: YouTube, Luma, Meetup,
+Mailchimp, the DataTalks.Club mailbox, Slack, LinkedIn, the website repo, the
+bank. A Task lists them in `requires` (`dataops tasks show` prints it, `--json`
+has `requires`); `dataops resources list` gives every id.
+
+Declare what you have once, then list only Tasks you can finish:
+
+```bash
+export DATAOPS_CAPABILITIES=youtube,google-docs,website   # what you can log in to
+dataops tasks list --mine                     # filtered by DATAOPS_CAPABILITIES
+dataops tasks list --can-do youtube,luma      # or say it per command
+dataops tasks list --can-do all               # ignore DATAOPS_CAPABILITIES
+dataops tasks list --status todo --requires mailchimp   # who needs Mailchimp access
+```
+
+If a Task requires something you do not have, leave it for another agent or a
+person who has it. Do not attempt it, do not work around the missing access,
+and do not mark it waiting or done. A Task with no `requires` needs nothing
+beyond DataOps itself. If a Task obviously needs a resource it does not list,
+add it: `dataops tasks update <task-id> --requires youtube,luma`.
+
 ## Workflow: "here is a task, do it"
 
 1. Find the work item if you were given words instead of an id:
-   `dataops tasks list --mine --json` or `dataops cards list --json`.
+   `dataops tasks list --mine --json` or `dataops cards list --json`. Check its
+   `requires` against what you have access to before you start.
 2. Find the docs for it:
    `dataops kb related <task-id|card-id>` lists the docs the Task, its Card, and its
    Template link explicitly, then the best search matches for its title.

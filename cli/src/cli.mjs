@@ -12,6 +12,7 @@ import * as notifications from "./commands/notifications.mjs";
 import * as people from "./commands/people.mjs";
 import * as raw from "./commands/raw.mjs";
 import * as recurring from "./commands/recurring.mjs";
+import * as resources from "./commands/resources.mjs";
 import * as sponsors from "./commands/sponsors.mjs";
 import * as tasks from "./commands/tasks.mjs";
 import * as templates from "./commands/templates.mjs";
@@ -44,6 +45,7 @@ export const FAMILIES = {
   tasks: { group: "Work", summary: tasks.summary, help: tasks.help, commands: tasks.commands },
   cards: { group: "Work", summary: cards.summary, help: cards.help, commands: cards.commands },
   templates: { group: "Work", summary: templates.summary, help: templates.help, commands: templates.commands },
+  resources: { group: "Work", summary: resources.summary, help: resources.help, commands: resources.commands },
   recurring: {
     group: "Work",
     summary: recurring.summary,
@@ -149,6 +151,7 @@ export function usage() {
     "",
     "Environment",
     "  DATAOPS_TOKEN, DATAOPS_URL   Override the stored login token and the default portal",
+    "  DATAOPS_CAPABILITIES         Resources you can use (youtube,luma,...): default for tasks list --can-do",
     "",
     "Exit codes",
     "  0 ok   1 error   2 usage   3 auth/forbidden   4 not found   5 conflict (re-read, retry)",

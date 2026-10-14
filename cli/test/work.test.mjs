@@ -4,13 +4,15 @@ import { afterEach, describe, test } from "node:test";
 import { captureIo, fakePortal, isolateConfig } from "./helpers.mjs";
 
 isolateConfig();
+delete process.env.DATAOPS_CAPABILITIES;
 const realFetch = globalThis.fetch;
 const { run, FAMILIES } = await import("../src/cli.mjs");
-const { orderQueue, queueSegment, multipart } = await import("../src/commands/tasks.mjs");
+const { orderQueue, queueSegment, multipart, requiresQuery } = await import("../src/commands/tasks.mjs");
 
 afterEach(() => {
   globalThis.fetch = realFetch;
   process.env.DATAOPS_TOKEN = "dops_test";
+  delete process.env.DATAOPS_CAPABILITIES;
 });
 
 const task = (fields) => ({ status: "todo", version: 3, description: "Synthetic task", ...fields });
@@ -185,6 +187,72 @@ describe("tasks", () => {
   });
 });
 
+describe("required resources", () => {
+  test("requires filters go to every queue lane and --can-do defaults to DATAOPS_CAPABILITIES", async () => {
+    process.env.DATAOPS_CAPABILITIES = "youtube, luma";
+    const calls = fakePortal({ "GET /api/tasks": { tasks: [] } });
+    const io = captureIo();
+    assert.equal(await run(["tasks", "list", "--mine", "--requires", "youtube", "--as-of", "2026-10-14", "--json"], io), 0);
+    assert.equal(calls.length, 3);
+    for (const call of calls) {
+      assert.equal(call.query.requires, "youtube");
+      assert.equal(call.query.canDo, "youtube,luma");
+    }
+    assert.deepEqual(io.json().canDo, ["youtube", "luma"]);
+  });
+
+  test("--can-do overrides the environment and all turns the filter off", () => {
+    const env = { DATAOPS_CAPABILITIES: "youtube" };
+    assert.deepEqual(requiresQuery({ canDo: "mailchimp,gmail" }, env), { canDo: "mailchimp,gmail" });
+    assert.deepEqual(requiresQuery({ canDo: "all" }, env), {});
+    assert.deepEqual(requiresQuery({}, env), { canDo: "youtube" });
+    assert.deepEqual(requiresQuery({}, { DATAOPS_CAPABILITIES: "" }), {});
+    assert.deepEqual(requiresQuery({ excludeRequires: "luma" }, {}), { excludeRequires: "luma" });
+    assert.throws(() => requiresQuery({ canDo: true }, {}), /--can-do needs/);
+  });
+
+  test("an explicit filter carries the resource filters in its one query", async () => {
+    const calls = fakePortal({ "GET /api/tasks": { tasks: [] } });
+    assert.equal(await run(["tasks", "list", "--status", "todo", "--exclude-requires", "finom,revolut"], captureIo()), 0);
+    assert.deepEqual(calls.map((call) => call.query), [{ status: "todo", excludeRequires: "finom,revolut" }]);
+  });
+
+  test("list and show print requires", async () => {
+    fakePortal({
+      "GET /api/tasks": { tasks: [task({ id: "t-r", date: "2026-10-14", requires: ["youtube", "luma"] })] },
+      "GET /api/tasks/t-r": task({ id: "t-r", requires: ["youtube", "luma"] }),
+    });
+    let io = captureIo();
+    assert.equal(await run(["tasks", "list", "--date", "2026-10-14"], io), 0);
+    assert.match(io.text(), /REQUIRES/);
+    assert.match(io.text(), /youtube,luma/);
+    io = captureIo();
+    assert.equal(await run(["tasks", "show", "t-r"], io), 0);
+    assert.match(io.text(), /requires:\s+youtube, luma/);
+  });
+
+  test("create and update send requires; none clears it", async () => {
+    const calls = fakePortal({
+      "POST /api/tasks": ({ body }) => ({ status: 201, body: task({ id: "t-n", ...body }) }),
+      "GET /api/tasks/t-n": task({ id: "t-n", version: 2 }),
+      "PUT /api/tasks/t-n": ({ body }) => task({ id: "t-n", ...body }),
+    });
+    assert.equal(await run(["tasks", "create", "--description", "Cut video", "--date", "2026-10-20", "--requires", "youtube,dropbox"], captureIo()), 0);
+    assert.deepEqual(calls[0].body.requires, ["youtube", "dropbox"]);
+    assert.equal(await run(["tasks", "update", "t-n", "--requires", "none"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { requires: [], expectedVersion: 2 });
+  });
+
+  test("resources list prints the vocabulary", async () => {
+    fakePortal({
+      "GET /api/resources": { resources: [{ id: "youtube", name: "YouTube", icon: "video", access: "Channel access" }] },
+    });
+    const io = captureIo();
+    assert.equal(await run(["resources", "list"], io), 0);
+    assert.match(io.text(), /youtube\s+YouTube\s+Channel access/);
+  });
+});
+
 describe("cards and templates", () => {
   test("delete names the Card and Task count, and needs --yes", async () => {
     const calls = fakePortal({
@@ -320,5 +388,7 @@ describe("agent guide", () => {
     assert.equal(await run(["agent-guide"], io), 0);
     assert.match(io.text(), /^# DataOps CLI for agents/);
     assert.match(io.text(), /dataops kb related/);
+    assert.match(io.text(), /DATAOPS_CAPABILITIES/);
+    assert.match(io.text(), /leave it for another agent/);
   });
 });

@@ -39,6 +39,10 @@ your tokens and `dataops logout` or `dataops tokens revoke <id>` revokes one.
 Tokens act as the user who approved them: every permission check behaves
 exactly as it does in the web UI, and task history records that user's name.
 
+`DATAOPS_CAPABILITIES=youtube,luma,...` declares the resources this agent can
+use; `dataops tasks list` then shows only Tasks whose `requires` it covers
+(same as `--can-do`; `--can-do all` ignores it).
+
 ## Commands
 
 `dataops --help` lists every family; `dataops <family> --help` shows its
@@ -46,7 +50,8 @@ subcommands, flags, and examples.
 
 | Family | What it covers |
 | --- | --- |
-| `tasks` | the work queue (`list` defaults to the web queue), `show`, `create`, `update`, `done` with proof, `reopen`, `wait` / `followed-up` / `unblock`, `assign`, `delete` |
+| `tasks` | the work queue (`list` defaults to the web queue; `--requires`, `--exclude-requires`, `--can-do` filter by required resources), `show`, `create`, `update`, `done` with proof, `reopen`, `wait` / `followed-up` / `unblock`, `assign`, `delete` |
+| `resources` | `list` the resource ids a Task can require (youtube, luma, mailchimp, ...) |
 | `cards` | `list`, `show` (with Tasks), `create --template`, `update`, `stage`, `link`, `park` / `resume`, `template-update` |
 | `templates` | `list`, `show` (read-only; authored in Git) |
 | `kb` | knowledge base: `search`, `related <task|card>`, `show`, `tree`, `ls`, `resolve`, `backlinks`, `history`, `write` |
