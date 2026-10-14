@@ -208,6 +208,7 @@ export async function show(args, io) {
     ["instruction doc", task.instructionDocId],
     ["source docs", task.sourceDocIds],
     ["instructions", task.instructionsUrl],
+    ["materials", task.materials?.length ? task.materials.map((m) => (m.label ? `${m.label} ${m.url}` : m.url)).join(", ") : ""],
     ["tags", task.tags],
     ["template", task.templateId],
     ["version", task.version],

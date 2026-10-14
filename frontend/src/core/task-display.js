@@ -1,11 +1,11 @@
-import { extractTextLinks, isHttpLink, linkLabel, linkService, linkTarget } from "./links.js";
+import { isHttpLink, linkLabel, linkService, linkTarget } from "./links.js";
 
-// How a task reads on screen: its title without import debris, an optional
-// checklist tag, and the supporting materials (process doc, instructions,
-// links that were pasted into the title) gathered into one list the UI can
-// put behind a single icon instead of strings under the title.
+// How a task reads on screen: its title, an optional checklist tag, and the
+// supporting materials (process doc, instructions, the task's stored
+// `materials` links) gathered into one list the UI can put behind a single
+// icon instead of strings under the title.
 
-const TITLE_TAG = /^\[([^[\]]{1,40})\]\s*/;
+const TITLE_TAG = /^\[([^[\]]{1,40})\](?!\()\s*/;
 
 function capitalize(text) {
   const value = String(text || "").trim();
@@ -22,9 +22,8 @@ export function taskTitleParts(rawTitle, tags, kindType = "") {
   const raw = String(rawTitle || "");
   const prefix = raw.match(TITLE_TAG);
   const withoutPrefix = prefix ? raw.replace(TITLE_TAG, "") || raw : raw;
-  const { text, links } = extractTextLinks(withoutPrefix);
   const tag = fieldTag ? fieldTag.trim() : prefix ? prefix[1].trim() : "";
-  return { title: text, tag: tag.toLowerCase() === kind ? "" : tag, links };
+  return { title: withoutPrefix, tag: tag.toLowerCase() === kind ? "" : tag };
 }
 
 function humanizeDocId(docId) {
@@ -35,7 +34,7 @@ function humanizeDocId(docId) {
 // Every supporting material of a task, most authoritative first, one entry
 // per destination. `resolveDoc` maps a process-doc id to its document.
 export function taskMaterials(task, options = {}) {
-  const { links = [], resolveDoc = () => null } = options;
+  const { resolveDoc = () => null } = options;
   const materials = [];
   const seen = new Set();
   const add = (material) => {
@@ -59,7 +58,7 @@ export function taskMaterials(task, options = {}) {
     const href = linkTarget(task.instructionsUrl);
     add({ kind: "link", icon: "instructions", label: "Instructions", detail: linkService(href).name, href });
   }
-  for (const link of links) {
+  for (const link of Array.isArray(task?.materials) ? task.materials : []) {
     if (!isHttpLink(link.url)) continue;
     const service = linkService(link.url);
     add({

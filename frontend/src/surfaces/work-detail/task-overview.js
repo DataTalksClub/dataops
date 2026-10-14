@@ -79,7 +79,7 @@ export function renderTaskInstructions(task, view, deps) {
   label.className = "task-history-label";
   label.textContent = "How to do it";
   section.append(label);
-  const materials = taskMaterials(task, { links: view.parts.links, resolveDoc: deps.resolveDocReference });
+  const materials = taskMaterials(task, { resolveDoc: deps.resolveDocReference });
   if (materials.length === 0) {
     const empty = document.createElement("p");
     empty.className = "task-instructions-empty";

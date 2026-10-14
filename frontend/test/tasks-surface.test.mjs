@@ -957,7 +957,7 @@ describe("Tasks surface boundary", () => {
     assert.deepEqual(queueTags(documentList), ["Emails", ""]);
   });
 
-  test("puts instructions and links from the title behind one icon, not a note", () => {
+  test("puts instructions and the task's material links behind one icon, not a note", () => {
     const tasks = [
       canonicalTask({
         id: "one",
@@ -967,7 +967,8 @@ describe("Tasks surface boundary", () => {
       }),
       canonicalTask({
         id: "many",
-        description: "Add the event to the webpage ( , [website](https://github.com/DataTalksClub/site))",
+        description: "Add the event to the webpage",
+        materials: [{ url: "https://github.com/DataTalksClub/site", label: "website" }],
         date: "2026-08-12",
         instructionsUrl: "https://docs.google.com/document/d/sop1/edit",
       }),

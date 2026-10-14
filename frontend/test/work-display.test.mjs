@@ -6,7 +6,7 @@ import { describe, test } from "node:test";
 
 import { cardKind } from "../src/core/card-kind.js";
 import { hasIcon, TEMPLATE_ICON_NAMES } from "../src/core/icons.js";
-import { extractTextLinks, linkLabel, linkService, linkTarget } from "../src/core/links.js";
+import { linkLabel, linkService, linkTarget } from "../src/core/links.js";
 import { taskMaterials, taskTitleParts } from "../src/core/task-display.js";
 import { renderArtifactGroups } from "../src/surfaces/work-detail/artifact-rows.js";
 import { FakeDocument, FakeElement, findAllByClass } from "./support/fake-dom.mjs";
@@ -45,22 +45,26 @@ describe("work display helpers", () => {
     assert.equal(linkService("https://example.com/a").id, "link");
   });
 
-  test("moves links out of an imported title and tidies what is left", () => {
-    assert.deepEqual(
-      extractTextLinks("Announce in Slack ( , [template](https://docs.google.com/document/d/x/edit?usp=sharing]))"),
-      { text: "Announce in Slack", links: [{ label: "template", url: "https://docs.google.com/document/d/x/edit?usp=sharing" }] },
-    );
-    assert.deepEqual(extractTextLinks("Plain title"), { text: "Plain title", links: [] });
-    const parts = taskTitleParts("[Emails] Ask ([doc](https://docs.google.com/document/d/y/edit))", ["podcast"], "podcast");
+  test("lists a task's materials after its process doc and instructions", () => {
+    const parts = taskTitleParts("[Emails] Ask", ["podcast"], "podcast");
     assert.equal(parts.title, "Ask");
     assert.equal(parts.tag, "Emails");
+    assert.deepEqual(taskTitleParts("[brief](https://docs.google.com/document/d/y/edit)").tag, "");
     const materials = taskMaterials(
-      { instructionDocId: "sop.events.create-event", instructionsUrl: "https://docs.google.com/document/d/y/edit" },
-      { links: parts.links, resolveDoc: () => ({ title: "Create an event", path: "content/x.md" }) },
+      {
+        instructionDocId: "sop.events.create-event",
+        instructionsUrl: "https://docs.google.com/document/d/y/edit",
+        materials: [
+          { url: "https://docs.google.com/document/d/y/edit", label: "doc" },
+          { url: "https://www.loom.com/share/abc" },
+          { url: "https://github.com/o/r", label: "website" },
+        ],
+      },
+      { resolveDoc: () => ({ title: "Create an event", path: "content/x.md" }) },
     );
     assert.deepEqual(
       materials.map((material) => [material.label, material.detail]),
-      [["Create an event", "Process doc"], ["Instructions", "Google Doc"]],
+      [["Create an event", "Process doc"], ["Instructions", "Google Doc"], ["Loom · abc", "Loom"], ["Website", "GitHub"]],
     );
   });
 

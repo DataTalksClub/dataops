@@ -108,26 +108,3 @@ export function linkLabel(url, title) {
   if (service === GENERIC) return id ? `${address.hostname.replace(/^www\./, "")} · ${id}` : address.hostname;
   return id ? `${service.name} · ${id}` : service.name;
 }
-
-// Pull Markdown and bare links out of free text (an imported task title):
-// returns the text without them and the links as { label, url }.
-export function extractTextLinks(text) {
-  const links = [];
-  let rest = String(text || "").replace(/\[([^\]]+)\]\(([^)\s\]]+)\]?\)?/g, (_, label, url) => {
-    links.push({ label: label.trim(), url: linkTarget(url) });
-    return "";
-  });
-  rest = rest.replace(/https?:\/\/[^\s)]+/g, (url) => {
-    links.push({ label: "", url: linkTarget(url) });
-    return "";
-  });
-  if (links.length === 0) return { text: String(text || ""), links };
-  const clean = rest
-    .replace(/\(\s*[,;]?\s*\)/g, "")
-    .replace(/\(\s*,\s*/g, "(")
-    .replace(/\s+([,.;:])/g, "$1")
-    .replace(/\s{2,}/g, " ")
-    .replace(/[\s\-–—,:(]+$/, "")
-    .trim();
-  return { text: clean || String(text || ""), links };
-}

@@ -957,7 +957,7 @@ export function createTaskQueue(context) {
     const materialsCell = document.createElement("span");
     materialsCell.className = "ops-queue-materials-cell";
     const materials = renderQueueMaterials(
-      taskMaterials(task, { links: parts.links, resolveDoc: resolveDocReference }),
+      taskMaterials(task, { resolveDoc: resolveDocReference }),
       {
         taskTitle: parts.title,
         openDoc: (material) => {
