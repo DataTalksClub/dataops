@@ -178,7 +178,7 @@
   place-items: center;
   border: none;
   border-radius: var(--dk-radius-full);
-  background: rgba(128, 128, 128, 0.12);
+  background: var(--dk-bg-inset);
   color: var(--dk-text-muted);
   font-size: 10.5px;
   font-weight: 600;
@@ -205,15 +205,12 @@
   color: var(--dk-text-primary);
   padding: 10px 12px 11px;
   text-align: left;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   transition:
     border-color 0.15s ease,
-    background 0.15s ease,
-    box-shadow 0.15s ease;
+    background 0.15s ease;
 }.ops-workflow-card.workflow-board-card:hover {
   border-color: var(--dk-border-strong);
   background: var(--dk-bg-surface);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
 }.workflow-card-header {
   display: flex;
   flex-wrap: wrap;
@@ -264,7 +261,7 @@
   display: inline-flex;
   align-items: center;
   border-radius: 4px;
-  background: rgba(128, 128, 128, 0.08);
+  background: var(--dk-bg-inset);
   color: var(--dk-text-muted);
   padding: 1px 6px;
   font-size: 11px;
@@ -294,7 +291,7 @@
   overflow: hidden;
   border: 1px solid transparent;
   border-radius: 4px;
-  background: rgba(128, 128, 128, 0.08);
+  background: var(--dk-bg-inset);
   color: var(--dk-text-muted);
   padding: 1px 6px;
   font-size: 11px;
@@ -367,22 +364,22 @@
   white-space: nowrap;
 }.workflow-card-flag.is-danger {
   border-color: transparent;
-  background: rgba(220, 38, 38, 0.09);
+  background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
   font-weight: 600;
 }.workflow-card-flag.is-warning {
   border-color: transparent;
-  background: rgba(217, 119, 6, 0.12);
+  background: var(--dk-warning-bg);
   color: var(--dk-warning-text);
   font-weight: 550;
 }.workflow-card-flag.is-info,
 .workflow-card-flag.is-waiting {
   border-color: transparent;
-  background: rgba(37, 99, 235, 0.08);
+  background: var(--dk-info-bg);
   color: var(--dk-info-text);
 }.workflow-card-flag.is-success {
   border-color: transparent;
-  background: rgba(22, 163, 74, 0.1);
+  background: var(--dk-success-bg);
   color: var(--dk-success-text);
   font-weight: 550;
 }.ops-workflow-card small {
@@ -392,7 +389,7 @@
 }.workflow-board-card .ops-progress {
   height: 3px;
   margin: 2px 0 1px;
-  background: rgba(128, 128, 128, 0.12);
+  background: var(--dk-bg-inset);
   border-radius: 3px;
   overflow: hidden;
 }.workflow-board-card .ops-progress i,
@@ -412,7 +409,7 @@
   height: 3px;
   overflow: hidden;
   border-radius: var(--dk-radius-full);
-  background: rgba(128, 128, 128, 0.12);
+  background: var(--dk-bg-inset);
 }.ops-progress i {
   display: block;
   min-width: 2px;
@@ -436,7 +433,7 @@
   border-radius: 12px;
   border: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.16);
+  box-shadow: var(--dk-shadow-overlay);
 }.workflow-modal-panel > .task-panel-header {
   min-height: 64px;
   border-bottom: 0;
@@ -918,7 +915,7 @@
 /* Keep optional Card inputs out of the checklist until requested. */
 .card-add-details > summary {
   cursor: pointer;
-  color: var(--dk-text-link, #315f91);
+  color: var(--dk-text-link);
   font-size: 13px;
   font-weight: 600;
   padding: 8px 0;

@@ -64,9 +64,9 @@ textarea:not([class*="dk-"]) {
 }input:not([class*="dk-"], .dk-search input)::placeholder,
 textarea:not([class*="dk-"])::placeholder {
   color: var(--dk-text-faint);
-}input:not([class*="dk-"], .dk-search input):focus,
-select:not([class*="dk-"]):focus,
-textarea:not([class*="dk-"]):focus {
+}input:not([class*="dk-"], .dk-search input):focus-visible,
+select:not([class*="dk-"]):focus-visible,
+textarea:not([class*="dk-"]):focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--dk-focus-ring);
 }svg {

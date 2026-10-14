@@ -269,7 +269,7 @@ body[data-workspace-view="sponsors"] .document-list {
   cursor: pointer;
   outline: none;
 }
-.bookkeeping-lens-month input:focus {
+.bookkeeping-lens-month input:focus-visible {
   box-shadow: 0 0 0 2px var(--dk-focus-ring);
 }.bookkeeping-close-state {
   display: grid;
@@ -335,7 +335,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .worklist-row.is-evidence button:hover {
   border-color: var(--dk-border-control-hover);
   background: var(--dk-danger-text);
-  color: #ffffff;
+  color: var(--dk-text-on-accent);
 }
 .worklist-row.is-eur {
   background: var(--dk-warning-bg);
@@ -357,8 +357,6 @@ body[data-workspace-view="sponsors"] .document-list {
 }
 .worklist-row.is-eur button:hover {
   border-color: var(--dk-border-control-hover);
-  background: var(--dk-warning-text);
-  color: #ffffff;
 }
 .worklist-row.is-classify {
   background: var(--dk-accent-soft);
@@ -428,7 +426,7 @@ body[data-workspace-view="sponsors"] .document-list {
   cursor: pointer;
   transition: all 120ms ease;
 }
-.worklist-classify select:focus {
+.worklist-classify select:focus-visible {
   box-shadow: 0 0 0 2px var(--dk-focus-ring);
   outline: none;
 }.bookkeeping-worklist-done {
@@ -599,13 +597,13 @@ body[data-workspace-view="sponsors"] .document-list {
   font-size: 13px;
   padding: 0 10px;
   box-sizing: border-box;
-}.bookkeeping-filters input[data-filter="search"]:focus,
-.bookkeeping-upload input:focus,
-.bookkeeping-upload select:focus,
-.bookkeeping-package input:focus,
-.dialog-fields input:focus,
-.dialog-fields select:focus,
-.dialog-fields textarea:focus {
+}.bookkeeping-filters input[data-filter="search"]:focus-visible,
+.bookkeeping-upload input:focus-visible,
+.bookkeeping-upload select:focus-visible,
+.bookkeeping-package input:focus-visible,
+.dialog-fields input:focus-visible,
+.dialog-fields select:focus-visible,
+.dialog-fields textarea:focus-visible {
   box-shadow: 0 0 0 2px var(--dk-focus-ring);
   outline: none;
 }.bookkeeping-filters details {
@@ -727,7 +725,6 @@ body[data-workspace-view="sponsors"] .document-list {
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
   white-space: nowrap;
 }.bookkeeping-table-wrap {
   width: 100%;
@@ -793,7 +790,7 @@ body[data-workspace-view="sponsors"] .document-list {
   transition: all 120ms ease;
 }.bookkeeping-surface .bookkeeping-ledger button.evidence-state:hover {
   background: var(--dk-danger-text);
-  color: #ffffff;
+  color: var(--dk-text-on-accent);
 }.dialog-fields .required-mark {
   color: var(--dk-danger-text);
   font-style: normal;
@@ -950,7 +947,6 @@ body[data-workspace-view="sponsors"] .document-list {
   background: var(--dk-bg-surface) !important;
   color: var(--dk-text-heading) !important;
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }.crm-pipeline {
   display: flex;
   flex-wrap: wrap;
@@ -1033,7 +1029,6 @@ body[data-workspace-view="sponsors"] .document-list {
 }.crm-booking-row:hover {
   background: var(--dk-bg-muted);
   border-color: var(--dk-border-strong);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
 }.crm-booking-row[aria-current="true"] {
   border-color: var(--dk-border-default);
   background: var(--dk-accent-soft);
@@ -1244,7 +1239,6 @@ body[data-workspace-view="sponsors"] .document-list {
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-surface);
   padding: 6px 8px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }.booking-section-nav button {
   min-height: 34px;
   border: 1px solid transparent !important;
@@ -1467,7 +1461,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .bookkeeping-delete-dialog {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-lg);
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--dk-shadow-overlay);
 }
 .bookkeeping-entry-dialog form > header,
 .bookkeeping-eur-dialog form > header,

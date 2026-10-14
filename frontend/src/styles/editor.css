@@ -531,7 +531,7 @@ textarea.inline-editor {
 .block-loom-embed {
   overflow: hidden;
   border-radius: var(--dk-radius-md);
-  background: #000; /* media letterbox, not a UI surface role */
+  background: black; /* media letterbox, not a UI surface role */
 }.block-video-embed iframe,
 .block-loom-embed iframe {
   display: block;
@@ -1097,7 +1097,7 @@ textarea.inline-editor {
   min-height: 28px;
 }
 .notion-block:hover {
-  background: rgba(128, 128, 128, 0.04);
+  background: var(--dk-bg-hover);
 }
 .notion-block.is-dragging {
   opacity: 0.4;

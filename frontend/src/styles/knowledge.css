@@ -561,8 +561,8 @@ body[data-view="library"] .library-view {
   background: var(--dk-bg-hover);
 }
 .ops-docs-tree-row.is-drop-target {
-  background: rgba(59, 130, 246, 0.1);
-  outline: 2px dashed #3b82f6;
+  background: var(--dk-accent-soft);
+  box-shadow: 0 0 0 1px var(--dk-border-strong);
 }
 .ops-docs-tree-row.is-dragging {
   opacity: 0.5;

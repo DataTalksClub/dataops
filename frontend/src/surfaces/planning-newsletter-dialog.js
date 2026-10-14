@@ -46,7 +46,7 @@ function formatInline(escaped) {
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
     .replace(
       /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-      '<a href="$2" target="_blank" rel="noreferrer" style="color: #2563eb; text-decoration: underline;">$1</a>',
+      '<a href="$2" target="_blank" rel="noreferrer">$1</a>',
     );
 }
 
