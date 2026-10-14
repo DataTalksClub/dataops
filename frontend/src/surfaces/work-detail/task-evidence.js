@@ -137,7 +137,7 @@ export function createTaskEvidence(context) {
     fileList.className = "task-file-list";
     section.append(fileList);
 
-    taskPanelBody.append(section);
+    (options.container || taskPanelBody).append(section);
     loadTaskFiles(task.id, fileList, options);
   }
 
@@ -368,13 +368,22 @@ export function createTaskEvidence(context) {
     );
   }
 
-  function renderTaskArtifactSection(task) {
-    taskPanelBody.append(
+  // When the task needs approved artifact proof, every candidate counts —
+  // the task's own and its card's. Otherwise the task shows only what was
+  // attached to it; the card's links belong to the card.
+  function renderTaskArtifactSection(task, options = {}) {
+    const required = taskRequiresApprovedArtifact(task);
+    const artifacts = (detail.activeTaskPanelArtifacts || []).filter(
+      (artifact) =>
+        required ||
+        !(task.cardId && artifact?.cardId === task.cardId && artifact?.taskId !== task.id),
+    );
+    (options.container || taskPanelBody).append(
       renderArtifactList({
         ownerType: "task",
         ownerId: task.id,
-        artifacts: detail.activeTaskPanelArtifacts,
-        required: taskRequiresApprovedArtifact(task),
+        artifacts,
+        required,
         onRefresh: () => refreshTaskPanel(task.id),
       }),
     );

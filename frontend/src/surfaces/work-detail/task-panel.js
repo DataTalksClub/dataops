@@ -1,4 +1,6 @@
 import { isCanonicalWorkTask } from "../../core/workspace.js";
+import { displayCardDescription } from "./card-summary.js";
+import { renderTaskContext, renderTaskInstructions, taskDisplayParts } from "./task-overview.js";
 import { openSkipTaskDialog } from "./work-dialogs.js";
 
 export function createTaskPanel(context) {
@@ -44,8 +46,40 @@ export function createTaskPanel(context) {
     updateTaskStatus,
     retryTaskIntent,
     workApiUrl,
+    workCardTitle = (card) => card?.title || "Card",
     workTaskTitle,
   } = context;
+
+  const overviewDeps = {
+    formatDate: (value) => formatTaskDateMeta(value, todayIsoDate()) || String(value || "").slice(0, 10),
+    isOverdue: (task) =>
+      !["done", "skipped"].includes(task.status) && Boolean(task.date) && String(task.date).slice(0, 10) < todayIsoDate(),
+    navigateTaskToWorkflow: (task) => navigateTaskToWorkflow(task),
+    openMaterialDoc: (material, task) => {
+      const doc = material.docPath ? { path: material.docPath } : resolveDocReference(material.docId);
+      if (!doc?.path) return;
+      openDocument(doc.path, {
+        returnContext: { type: "task", id: task.id, title: taskDisplayParts(task, overviewDeps).parts.title },
+      });
+    },
+    fetchCard: (cardId) =>
+      request(workApiUrl(`/api/cards/${encodeURIComponent(cardId)}`))
+        .then((payload) => {
+          const card = payload?.card || payload;
+          if (card?.id && state.workSnapshot.cardsById) state.workSnapshot.cardsById.set(cardId, card);
+          return card;
+        })
+        .catch(() => null),
+    resolveAssigneeLabel: (id) => resolveAssigneeLabel(id),
+    resolveCard: (cardId) => resolveCard(cardId),
+    resolveCardLabel: (cardId) => resolveCardLabel(cardId),
+    resolveDocReference,
+    templates: () => state.workSnapshot.templates || [],
+    workCardTitle: (card) => workCardTitle(card),
+    workTaskTitle,
+  };
+
+  const taskPanelMoreOpen = new Set();
 
   function taskRouteParams(taskId) {
     const route = parseWorkspaceLocation();
@@ -291,7 +325,9 @@ export function createTaskPanel(context) {
     const preserveDrafts = options.preserveDrafts === true;
     const capturedFields = preserveDrafts ? captureTaskPanelFields() : new Map();
     const focusedFieldKey = getFocusedPanelFieldKey();
-    taskPanelTitle.textContent = task ? workTaskTitle(task) : "Task";
+    taskPanelTitle.textContent = task
+      ? taskDisplayParts(task, overviewDeps).parts.title
+      : "Task";
     taskPanelRebuilding = true;
     try {
       taskPanelBody.replaceChildren();
@@ -404,59 +440,13 @@ export function createTaskPanel(context) {
       taskPanelBody.append(delegation);
     }
 
-    const meta = document.createElement("div");
-    meta.className = "task-detail-meta";
-    const badge = document.createElement("span");
-    badge.className = `task-status-badge ${status}`;
-    badge.textContent = status;
-    meta.append(badge);
-    if (task.date) {
-      const dateRow = document.createElement("div");
-      dateRow.append(
-        document.createTextNode("Due "),
-        formatMetaDate(task.date, today),
-      );
-      meta.append(dateRow);
-    }
-    if (task.cardId) {
-      const cardRow = document.createElement("div");
-      cardRow.append(document.createTextNode("Card "));
-      const link = document.createElement("button");
-      link.type = "button";
-      link.className = "task-instruction-doc-link";
-      link.textContent = resolveCardLabel(task.cardId);
-      if (link.textContent === "Open card") {
-        request(workApiUrl(`/api/cards/${encodeURIComponent(task.cardId)}`))
-          .then((cardPayload) => {
-            const card = cardPayload?.card || cardPayload;
-            if (card?.title) {
-              if (state.workSnapshot.cardsById) {
-                state.workSnapshot.cardsById.set(task.cardId, card);
-              }
-              if (link.isConnected) {
-                link.textContent = card.title;
-              }
-            }
-          })
-          .catch(() => {});
-      }
-      link.addEventListener("click", () => navigateTaskToWorkflow(task));
-      cardRow.append(link);
-      meta.append(cardRow);
-    }
-    if (task.assigneeId) {
-      const assigneeRow = document.createElement("div");
-      assigneeRow.append(
-        document.createTextNode("Assignee "),
-        formatMetaText(resolveAssigneeLabel(task.assigneeId)),
-      );
-      meta.append(assigneeRow);
-    }
-    taskPanelBody.append(meta);
-    const taskQuality = taskProcessQualityFindings(task);
-    if (taskQuality.length > 0)
-      taskPanelBody.append(renderTaskQualityNotice(taskQuality));
-
+    // Context first: the card (with its template icon and kind), status,
+    // due date and owner. Then what to do and how; attachments, process
+    // notes and history fold away underneath.
+    const view = taskDisplayParts(task, overviewDeps);
+    taskPanelBody.append(renderTaskContext(task, view, overviewDeps));
+    const proofSlot = document.createElement("div");
+    proofSlot.className = "task-proof";
     // Required link field
     if (task.requiredLinkName) {
       const wrap = document.createElement("div");
@@ -495,7 +485,7 @@ export function createTaskPanel(context) {
       });
       label.append(input);
       wrap.append(label);
-      taskPanelBody.append(wrap);
+      proofSlot.append(wrap);
     }
 
     // Waiting/follow-up info
@@ -637,15 +627,35 @@ export function createTaskPanel(context) {
     for (const button of actions.querySelectorAll("button")) {
       if (panelMutationBusy) button.disabled = true;
     }
-    // File upload for required-file tasks
+    taskPanelBody.append(actions);
+    taskPanelBody.append(renderTaskInstructions(task, view, overviewDeps));
+
+    // Proof the task asks for sits in the open; optional attachments,
+    // process notes and history fold into one disclosure below.
+    const more = document.createElement("details");
+    more.className = "task-panel-more";
+    // Rerenders after a mutation keep the disclosure as the operator left it.
+    more.open = taskPanelMoreOpen.has(task.id);
+    more.addEventListener("toggle", () => {
+      if (more.open) taskPanelMoreOpen.add(task.id);
+      else taskPanelMoreOpen.delete(task.id);
+    });
+    const moreSummary = document.createElement("summary");
+    moreSummary.textContent = "Attachments, notes and history";
+    more.append(moreSummary);
     renderTaskFileSection(task, {
       onFilesSettled: syncCompletionForFiles,
+      container: task.requiresFile ? proofSlot : more,
     });
-    renderTaskArtifactSection(task);
+    renderTaskArtifactSection(task, {
+      container: taskRequiresApprovedArtifact(task) ? proofSlot : more,
+    });
+    if (proofSlot.children.length > 0) taskPanelBody.append(proofSlot);
 
-    taskPanelBody.append(actions);
-
-    if (task.comment) {
+    // Import provenance rides in some comments; like the card description,
+    // it stays stored but is not operator content.
+    const commentText = displayCardDescription(task.comment);
+    if (commentText) {
       const comment = document.createElement("div");
       comment.className = "task-history";
       const commentLabel = document.createElement("div");
@@ -653,7 +663,7 @@ export function createTaskPanel(context) {
       commentLabel.textContent = "Comment";
       const commentBody = document.createElement("div");
       commentBody.className = "task-history-event";
-      commentBody.textContent = String(task.comment);
+      commentBody.textContent = commentText;
       comment.append(commentLabel, commentBody);
       taskPanelBody.append(comment);
     }
@@ -696,23 +706,14 @@ export function createTaskPanel(context) {
         list.append(event);
       }
       history.append(list);
-      taskPanelBody.append(history);
+      more.append(history);
     }
 
-    // Instructions link
-    if (task.instructionDocId) {
-      taskPanelBody.append(renderTaskInstructionDoc(task));
-    } else if (task.instructionsUrl) {
-      const instructions = document.createElement("div");
-      instructions.className = "task-detail-meta";
-      const link = document.createElement("a");
-      link.href = String(task.instructionsUrl);
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.textContent = "Open instructions";
-      instructions.append(link);
-      taskPanelBody.append(instructions);
-    }
+    // The process doc's phase, step, systems and validation detail.
+    if (task.instructionDocId) more.append(renderTaskInstructionDoc(task));
+    const taskQuality = taskProcessQualityFindings(task);
+    if (taskQuality.length > 0) more.append(renderTaskQualityNotice(taskQuality));
+    taskPanelBody.append(more);
 
     if (feedbackClaimedFocus && detail.activeTaskPanelFeedback?.focusSelector) {
       const focusTarget = taskPanelBody.querySelector(
@@ -878,6 +879,16 @@ export function createTaskPanel(context) {
   // rows. Exact route-owned card responses take precedence over the coarse
   // work snapshot, which can still be hydrating on a fresh deep link. The route
   // context and active card data are both token-guarded before assignment.
+
+  function resolveCard(cardId) {
+    const exactCards = [
+      detail.taskRouteContext.filterCard,
+      detail.taskRouteContext.contextCard,
+      detail.activeCardPanelData?.card,
+    ];
+    return exactCards.find((candidate) => candidate?.id === cardId) ||
+      state.workSnapshot.cardsById?.get(cardId) || null;
+  }
 
   function resolveCardLabel(cardId) {
     if (!cardId) return "Open card";

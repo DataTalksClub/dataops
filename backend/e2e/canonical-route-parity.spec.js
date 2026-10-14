@@ -283,7 +283,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const fixture = await createFixtures(request);
 
     await page.goto(`/tasks?taskId=${fixture.task.id}`);
-    await page.locator('.task-detail-meta button', { hasText: fixture.card.title }).click();
+    await page.locator('#task-panel .task-context-card', { hasText: fixture.card.title }).click();
     await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${fixture.card.id}&taskId=${fixture.task.id}$`));
     await page.locator('#task-panel-close').click();
     await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${fixture.card.id}$`));
@@ -419,7 +419,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       await page.goto(route);
       await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
       await expect(page.locator('.task-panel-route-context')).toContainText(fixture.card.title);
-      const workflowLink = page.locator('.task-detail-meta button.task-instruction-doc-link');
+      const workflowLink = page.locator('#task-panel .task-context-card strong');
       await expect(workflowLink).toHaveText(fixture.card.title);
       await expect(workflowLink).not.toHaveText('—');
       expect(largerSnapshotResolved).toBe(false);
@@ -440,7 +440,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.task.id);
     await laterSnapshot;
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.contextCard.id);
-    await expect(page.locator('#task-panel .task-detail-meta button')).toHaveCount(0);
+    await expect(page.locator('#task-panel .task-context-card')).toHaveCount(0);
     await clearRouteFaults(request);
   });
 

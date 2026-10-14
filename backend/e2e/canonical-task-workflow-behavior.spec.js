@@ -309,6 +309,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     expect(recoveredTask.status).toBe('todo');
     expect(recoveredTask.version).toBeGreaterThan(1);
     await expect(page.locator('#task-panel .task-status-badge')).toHaveText('todo');
+    await page.locator('#task-panel .task-panel-more > summary').click();
     await expect(page.locator('#task-panel .task-history-event', { hasText: 'Response received' })).toBeVisible();
     await page.locator('#task-panel-close').click();
     await expect(page.locator('#task-panel')).toBeHidden();
@@ -352,7 +353,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
         && url.pathname === '/docs'
         && url.searchParams.get('path') === 'content/synthetic/capability.md';
     });
-    await page.locator('#task-panel .task-instruction-doc-link', { hasText: 'Synthetic Capability Procedure' }).click();
+    await page.locator('#task-panel .task-instructions .artifact-row-label', { hasText: 'Synthetic Capability Procedure' }).click();
     expect((await instructionReady).status()).toBe(200);
     await expect(page.locator('#document-title')).toHaveValue('Synthetic Capability Procedure');
     await expect(page.locator('#doc-context-return')).toContainText(`Opened from task: ${proofTitle}`);
@@ -434,7 +435,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     const savedTask = await json(savedLinkResponse);
     expect(savedTask.version).toBe(proofTask.version + 1);
     await expect(requiredLink).toHaveValue(proofUrl);
-    await expect(page.locator('#task-panel .task-detail-meta').first()).not.toContainText('Version');
+    await expect(page.locator('#task-panel .task-context')).not.toContainText('Version');
     await expect(page.locator('#task-panel [data-task-mutation-feedback="success"]'))
       .toHaveText('Task link is saved in the refreshed Task.');
     await expect(fileInput).toBeEnabled();

@@ -23,6 +23,7 @@ import { createWorkDetailSurface } from "../src/surfaces/work-detail/index.js";
 import {
   FakeDocument,
   FakeElement,
+  findAllByClass,
   findByText,
   nextTicks,
 } from "./support/fake-dom.mjs";
@@ -897,7 +898,7 @@ describe("Work Detail surface boundary", () => {
     );
 
     await findByText(alert, "Review latest", "button").click();
-    assert.match(harness.taskPanelBody.querySelector(".task-status-badge").textContent, /waiting/);
+    assert.match(harness.taskPanelBody.querySelector(".task-status-badge").textContent, /waiting/i);
     assert.equal(
       harness.taskPanelBody
         .querySelectorAll("input")
@@ -929,7 +930,7 @@ describe("Work Detail surface boundary", () => {
       findByText(harness.taskPanelBody, "Retry my change", "button"),
       undefined,
     );
-    assert.match(harness.taskPanelBody.querySelector(".task-status-badge").textContent, /todo/);
+    assert.match(harness.taskPanelBody.querySelector(".task-status-badge").textContent, /todo/i);
     assert.equal(
       harness.taskPanelBody
         .querySelectorAll("input")
@@ -1639,6 +1640,63 @@ describe("Work Detail surface boundary", () => {
     );
     assert.ok(!refs.textContent.includes("Sponsor proof document"));
     assert.deepEqual(harness.errors, []);
+  });
+
+  test("opens a task with its card context first and folds attachments and history", async () => {
+    const card = { id: "card-ctx", version: 1, title: "LLM evals in practice", tags: ["webinar"] };
+    const task = {
+      id: "task-ctx",
+      version: 1,
+      cardId: card.id,
+      taskHistory: [{ action: "reopened", createdAt: "2026-08-01T10:00:00Z" }],
+      description: "[Emails] Announce in Slack ( , [template](https://docs.google.com/document/d/tpl1/edit))",
+      tags: ["webinar"],
+      instructionsUrl: "https://docs.google.com/document/d/sop1/edit",
+      status: "todo",
+      date: "2026-08-20",
+    };
+    const harness = createHarness({
+      cards: [card],
+      workSnapshot: { templates: [{ id: "tpl-webinar", type: "webinar", name: "Webinar", icon: "video" }] },
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url === `/api/artifacts?cardId=${card.id}`) {
+          return { artifacts: [{ id: "card-link", cardId: card.id, status: "approved", storageUri: "https://luma.com/x", title: "x" }] };
+        }
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const body = harness.taskPanelBody;
+    assert.equal(harness.taskPanelTitle.textContent, "Announce in Slack");
+    const context = body.querySelector(".task-context");
+    assert.ok(context);
+    assert.equal(body.children[0], context);
+    const cardButton = context.querySelector(".task-context-card");
+    assert.match(cardButton.textContent, /LLM evals in practice/);
+    assert.match(cardButton.textContent, /Webinar card/);
+    assert.equal(cardButton.querySelector("svg").dataset.icon, "video");
+    const chips = findAllByClass(context, "task-context-chip").map((chip) => chip.textContent);
+    assert.match(chips[0], /^Due /);
+    assert.deepEqual(chips.slice(1), ["Unassigned", "Emails"]);
+    const instructions = body.querySelector(".task-instructions");
+    assert.deepEqual(
+      findAllByClass(instructions, "artifact-row-label").map((link) => [link.textContent, link.href]),
+      [
+        ["Instructions", "https://docs.google.com/document/d/sop1/edit"],
+        ["Template", "https://docs.google.com/document/d/tpl1/edit"],
+      ],
+    );
+    // The card's own links stay on the card; history and the optional
+    // attachment controls fold into one disclosure.
+    assert.ok(!body.textContent.includes("luma"));
+    const more = body.querySelector(".task-panel-more");
+    assert.equal(more.tagName, "DETAILS");
+    assert.ok(findByText(more, "History"));
+    assert.ok(more.querySelector('[data-panel-field="artifact-url"]'));
   });
 
   test("keeps evidence registration failures in the Task panel and recovers with retained fields", async () => {

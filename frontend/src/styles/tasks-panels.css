@@ -334,13 +334,13 @@ body[data-workspace-view="tasks"] .task-quality-notice {
 .artifact-row-text {
   display: grid;
   flex: 1 1 auto;
+  align-content: center;
   min-width: 0;
   line-height: 1.3;
 }
 .artifact-row-label {
   overflow: hidden;
   width: fit-content;
-  min-height: var(--dk-space-6);
   max-width: 100%;
   border: 0;
   background: none;
@@ -354,6 +354,24 @@ body[data-workspace-view="tasks"] .task-quality-notice {
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
+}
+/* The whole row is the link's hit area (at least 44px tall), so the label
+   itself can stay one text line on touch screens too. Row actions sit
+   above the stretched area. */
+.artifact-row {
+  position: relative;
+}
+.artifact-row-label::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+#main-content .artifact-rows .artifact-row a.artifact-row-label {
+  min-height: 0;
+}
+.artifact-row > button {
+  position: relative;
+  z-index: 1;
 }
 .artifact-row-label:hover {
   color: var(--dk-text-link-hover);
@@ -1286,4 +1304,120 @@ body[data-workspace-view="tasks"] .work-dialog-field {
 body[data-workspace-view="tasks"] .work-dialog-lead {
   margin: 0 0 var(--dk-space-3);
   overflow-wrap: anywhere;
+/* Task dialog: context first (the card with its template icon and kind,
+   then status, due date and owner as chips), the actions, "How to do it",
+   any proof the task requires, and one disclosure for attachments, process
+   notes and history. */
+.task-context {
+  display: grid;
+  gap: var(--dk-space-3);
+  min-width: 0;
+}
+.task-context-card {
+  display: flex;
+  align-items: center;
+  gap: var(--dk-space-3);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--dk-size-touch);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-primary);
+  padding: var(--dk-space-2) var(--dk-space-3);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.task-context-card:hover {
+  border-color: var(--dk-border-control-hover);
+  background: var(--dk-bg-hover);
+}
+.task-context-card-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-accent-soft);
+  color: var(--dk-accent-default);
+}
+.task-context-card-text {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.3;
+}
+.task-context-card-text strong {
+  overflow: hidden;
+  color: var(--dk-text-heading);
+  font-size: var(--dk-text-sm);
+  font-weight: var(--dk-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-context-card-text span {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs);
+}
+.task-context-card-open {
+  flex: none;
+  color: var(--dk-text-link);
+  font-size: var(--dk-text-sm);
+  font-weight: var(--dk-weight-medium);
+}
+.task-context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-2);
+}
+.task-context-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--dk-radius-full);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+  padding: 0 var(--dk-space-2);
+  font-size: var(--dk-text-xs);
+  font-weight: var(--dk-weight-medium);
+  line-height: 22px;
+}
+.task-context-chip.is-overdue {
+  background: var(--dk-danger-bg);
+  color: var(--dk-danger-text);
+}
+.task-instructions,
+.task-proof {
+  display: grid;
+  gap: var(--dk-space-2);
+  min-width: 0;
+}
+.task-instructions-empty {
+  margin: 0;
+  color: var(--dk-text-faint);
+  font-size: var(--dk-text-sm);
+}
+.task-panel-more {
+  display: grid;
+  gap: var(--dk-space-3);
+  min-width: 0;
+  border-top: 1px solid var(--dk-border-default);
+  padding-top: var(--dk-space-3);
+}
+.task-panel-more > summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--dk-size-control-md);
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  font-weight: var(--dk-weight-semibold);
+  cursor: pointer;
+}
+.task-panel-more > summary:hover {
+  color: var(--dk-text-heading);
+}
+.task-panel-more[open] > summary {
+  margin-bottom: var(--dk-space-2);
 }
