@@ -1,20 +1,21 @@
 {
   "version": "0.2.0",
-  "commit": "57aa1c4",
+  "commit": "31cac34",
   "files": {
-    "dakit.css": "591124b8d22f452f31d9ad0570512273c4648070de1021bdf9262dfe0ad6860b",
-    "device-code.js": "eda947c90648c942a6c35ec62065d57ca2833cf85c12f092c408e66c0f8b6c0e",
-    "dialogs.js": "9eb5991ae90bfadeaddad0820196e39c58a510891b3b7d9e62d9b939aea868a5",
-    "shell.js": "a342c21469ff0bab1efe9977ddb60ea36f8bb3ad8fc4c524864b3dbf8b8ae983",
-    "tokens.css": "ae50a3f74bbe9731e9d622bf139f42ab2bc42f01600f65de1c8845d587085ca2",
-    "tokens.d.ts": "8ede7b9313ec34fe64c81a8ea1fa72a5ab05734492d0ce2b9edc8aef10fa5c88",
-    "tokens.global.js": "072bdcc835c6bb8cb5311ad7d44f7a7203770c56e06783e4f6d37f66b141b2cc",
-    "tokens.js": "c84d2de90198b13f3d3b49ae8c21e9dcf7fc58deacbc3f7185f946e81161f356",
+    "dakit.css": "ecb3e7b87b63ead2e79b6c062a81898ad786cc4b9e47399cf58ee6af52bd55c3",
+    "device-code.js": "3ff735b9817d43e946ecde52c318dc7421d657c8ed2715f55f5c32b09fabc59d",
+    "dialogs.js": "cf73e3b91e8d38152cc7b07ba2bd79c5ad689fbabcce69e8f7285ad07836bc88",
+    "shell.js": "d11368e6c7ec9fab8f74f72cac974a810b809ee50caf0df596498c7f6d7f9770",
+    "tokens.css": "5ddd743d5799a51d892e20a0e6e9d16b1f321c0a6595432a807a5cceb52080a2",
+    "tokens.d.ts": "01057ab1406e1177b5a23ef455b11da88ac581e702e56ec1e9c7a596e6ba03d2",
+    "tokens.global.js": "dc3839e6a7d7c087091b47e23da0e9fb5a9a1b678feb0164c66b9f278b93cd29",
+    "tokens.js": "d93960cc9d755ec1dc275e5f44639c1fcb724ab9d131e201919588c23e9034c7",
     "fonts/LICENSE.md": "b60aff866100b45a70650055da26a9fcde60d1a0dcafd1b49711a68a913670c5",
     "fonts/ibm-plex-mono-400.woff2": "08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7",
     "fonts/ibm-plex-mono-500.woff2": "01d285447409c8a588692162439a038b8cbd7871309ee20267b0d2d91c6e8e22",
     "fonts/inter-var.woff2": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62",
-    "check-borders.mjs": "c8f36a9c100d1c2b6fd56cdecf050714e77cb6a317eaa9539b861559c944bce8",
-    "sync.mjs": "45ba817fe090c5e6c12b6d04e8d1dc62840893f6ef907493ca328dc7b5b8145b"
+    "check-borders.mjs": "f2e16207433484d8cd8f6a8dc2b6c1ec58b477b0ff9bab21e47aa8dd0fbf3cc1",
+    "check-colors.mjs": "9d519c9eda6688f22ff7b1f8fbe31779dbf2dd4a10736668214302d06c2792c8",
+    "sync.mjs": "050ba10ec2e825e588fdde2122ecc82f01e2d719a4be9745cff21a3d7892989d"
   }
 }

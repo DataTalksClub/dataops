@@ -309,6 +309,9 @@
   background: var(--dk-bg-muted);
   padding: 1px 4px;
   font-size: 0.9em;
+  /* Process docs may hold long paths; they wrap rather than widen the page. */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }.block-section-body pre,
 .block-prose-body pre,
 .block-step-body pre,

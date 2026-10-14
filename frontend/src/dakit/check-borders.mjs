@@ -107,6 +107,11 @@ const CANDIDATE_EXTENSIONS = new Set([
 
 // --- Color parsing and Chroma measurement -----------------------------------
 
+// Raw colour literals: hex and the CSS colour functions. Shared with
+// check-colors.mjs, which bans them from app CSS outright.
+export const COLOR_LITERAL =
+  /#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*(?:\([^()]*\)[^()]*)*\)/gi;
+
 function parseRgb(colorStr) {
   const s = colorStr.trim();
   if (s.startsWith("#")) {
@@ -145,6 +150,17 @@ function hasNoticeableChroma(colorStr, customProps = new Map(), visited = new Se
   const s = colorStr.trim().replace(/!important/g, "").trim();
   if (!s) return { colored: false };
 
+  // A compound value (outline shorthand, a shadow) is coloured when any of
+  // its parts is: `2px dashed #3b82f6`, `inset 0 0 0 1px rgba(...)`.
+  const parts = tokenizeValue(s);
+  if (parts.length > 1) {
+    for (const part of parts) {
+      const res = hasNoticeableChroma(part, customProps, visited);
+      if (res.colored) return res;
+    }
+    return { colored: false };
+  }
+
   const lower = s.toLowerCase();
   if (NEUTRAL_KEYWORDS.has(lower)) {
     return { colored: false };
@@ -182,6 +198,11 @@ function hasNoticeableChroma(colorStr, customProps = new Map(), visited = new Se
           return { colored: true, reason: `unresolved variable ${varName} appears to be colored` };
         }
       }
+    }
+    // A raw fallback inside var(--role, #3b82f6) is still a colour.
+    for (const literal of s.match(COLOR_LITERAL) || []) {
+      const res = hasNoticeableChroma(literal, customProps, visited);
+      if (res.colored) return { colored: true, reason: `fallback ${res.reason}` };
     }
     // If all var(...) references inside the color string are neutral
     if (s.startsWith("var(")) {
@@ -397,7 +418,8 @@ function emitDeclaration(list, declStr, scopeStack, line, file) {
   const prop = declStr.slice(0, colon).trim().toLowerCase();
   const val = declStr.slice(colon + 1).trim();
   const selector = scopeStack.join(" ");
-  list.push({ property: prop, value: val, selector, line, file });
+  const rule = scopeStack[scopeStack.length - 1] || "";
+  list.push({ property: prop, value: val, selector, rule, line, file });
 }
 
 function parseInlineStyles(styleAttr, line, file) {
@@ -445,8 +467,9 @@ function parseInlineStyles(styleAttr, line, file) {
   return declarations;
 }
 
-// Extracts CSS declarations from files of various formats
-function extractDeclarations(filePath) {
+// Extracts CSS declarations from files of various formats. A JS template
+// literal is read as CSS only when it declares one of `templateProps`.
+export function extractDeclarations(filePath, templateProps = /(border|outline|box-shadow)\s*:/i) {
   const content = readFileSync(filePath, "utf8");
   const ext = extname(filePath).toLowerCase();
 
@@ -479,7 +502,7 @@ function extractDeclarations(filePath) {
     while ((match = templateLitRegex.exec(content)) !== null) {
       const templateContent = match[1];
       // If it contains border or box-shadow and rule blocks
-      if (/(border|outline|box-shadow)\s*:/i.test(templateContent)) {
+      if (templateProps.test(templateContent)) {
         const upToMatch = content.slice(0, match.index);
         const startLine = upToMatch.split("\n").length;
         if (templateContent.includes("{") && templateContent.includes("}")) {
@@ -511,7 +534,7 @@ function isVendoredDakit(fullPath) {
   return false;
 }
 
-function collectFiles(targetPath, out = []) {
+export function collectFiles(targetPath, out = []) {
   const stat = statSync(targetPath);
   if (stat.isFile()) {
     const ext = extname(targetPath).toLowerCase();
@@ -578,8 +601,30 @@ const SINGLE_SIDE_COLOR_PROPS = new Set([
   "border-block-end-color",
 ]);
 
+// Every selector in the list must target :focus-visible, so
+// `.a, .b:focus-visible { outline: … }` doesn't smuggle a ring onto .a.
+function isFocusVisibleRule(rule = "") {
+  return splitTopLevel(rule, ",").every((part) => /:focus-visible\b/i.test(part));
+}
+
+function splitTopLevel(text, sep) {
+  const out = [];
+  let cur = "";
+  let depth = 0;
+  for (const c of text) {
+    if (c === "(" || c === "[") depth++;
+    else if ((c === ")" || c === "]") && depth > 0) depth--;
+    if (c === sep && depth === 0) {
+      out.push(cur);
+      cur = "";
+    } else cur += c;
+  }
+  out.push(cur);
+  return out.map((part) => part.trim()).filter(Boolean);
+}
+
 function checkDeclaration(decl, customProps) {
-  const { property, value, selector, line, file } = decl;
+  const { property, value, rule, line, file } = decl;
   const p = property;
   const v = value;
 
@@ -605,6 +650,15 @@ function checkDeclaration(decl, customProps) {
     if (cur.trim()) shadows.push(cur.trim());
 
     for (const shadow of shadows) {
+      // A spread-only shadow (0 0 0 Npx) draws a ring: a coloured one is an
+      // accent perimeter, allowed only as the :focus-visible indicator.
+      const lengths = [...shadow.replace(/\([^)]*\)/g, "").matchAll(/(-?[\d.]+)(px|rem|em)?/g)].map((m) => parseFloat(m[1]));
+      if (lengths.length >= 4 && lengths[0] === 0 && lengths[1] === 0 && lengths[2] === 0 && lengths[3] !== 0 && !isFocusVisibleRule(rule)) {
+        const ring = hasNoticeableChroma(shadow, customProps);
+        if (ring.colored) {
+          return { file, line, reason: `forbidden colored box-shadow ring '${shadow}' (${ring.reason})` };
+        }
+      }
       if (/\binset\b/i.test(shadow)) {
         // Condition: box-shadow with inset and a colored value
         const chromaCheck = hasNoticeableChroma(shadow, customProps);
@@ -637,16 +691,15 @@ function checkDeclaration(decl, customProps) {
     return null;
   }
 
-  // 2. Outline Checks
+  // 2. Outline Checks: only the keyboard focus ring may be coloured.
   if (p === "outline" || p === "outline-color") {
-    const isFocusRule = /:focus\b|:focus-visible\b/i.test(selector);
-    if (!isFocusRule) {
+    if (!isFocusVisibleRule(rule)) {
       const chroma = hasNoticeableChroma(v, customProps);
       if (chroma.colored) {
         return {
           file,
           line,
-          reason: `forbidden colored outline outside :focus/:focus-visible '${v}' (${chroma.reason})`,
+          reason: `forbidden colored outline outside :focus-visible '${v}' (${chroma.reason})`,
         };
       }
     }

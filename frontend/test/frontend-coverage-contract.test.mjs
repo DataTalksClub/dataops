@@ -36,7 +36,8 @@ describe("frontend coverage development contract", () => {
     const gitignore = read(".gitignore");
 
     assert.equal(rootPackage.scripts["test:frontend:borders"], "node frontend/src/dakit/check-borders.mjs frontend");
-    assert.match(rootPackage.scripts["test:frontend:coverage"], /^npm run test:frontend:vendor && npm run test:frontend:borders && c8 /);
+    assert.equal(rootPackage.scripts["test:frontend:colors"], "node frontend/src/dakit/check-colors.mjs frontend");
+    assert.match(rootPackage.scripts["test:frontend:coverage"], /^npm run test:frontend:vendor && npm run test:frontend:borders && npm run test:frontend:colors && c8 /);
     assert.match(makefile, /^test-frontend-coverage:/m);
     assert.match(makefile, /npm run test:frontend:coverage/);
     assert.match(makefile, /^ci:[\s\S]*\$\(MAKE\) test-frontend-coverage/m);

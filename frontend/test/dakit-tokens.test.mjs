@@ -40,16 +40,18 @@ describe("dakit adoption contract", () => {
     );
   });
 
-  test("the vendored border checker is a byte-copy of dakit scripts/check-borders.mjs", (t) => {
-    const upstream = path.join(repoRoot, "../dakit/scripts/check-borders.mjs");
-    if (!existsSync(upstream)) return t.skip("no ../dakit checkout beside this repo");
-    assert.equal(
-      read("frontend/src/dakit/check-borders.mjs"),
-      readFileSync(upstream, "utf8"),
-      "frontend/src/dakit/check-borders.mjs drifted from ../dakit/scripts/check-borders.mjs;"
-        + " re-copy it: scripts/sync_dakit.sh",
-    );
-  });
+  for (const checker of ["check-borders.mjs", "check-colors.mjs"]) {
+    test(`the vendored ${checker} is a byte-copy of dakit scripts/${checker}`, (t) => {
+      const upstream = path.join(repoRoot, `../dakit/scripts/${checker}`);
+      if (!existsSync(upstream)) return t.skip("no ../dakit checkout beside this repo");
+      assert.equal(
+        read(`frontend/src/dakit/${checker}`),
+        readFileSync(upstream, "utf8"),
+        `frontend/src/dakit/${checker} drifted from ../dakit/scripts/${checker};`
+          + " re-copy it: scripts/sync_dakit.sh",
+      );
+    });
+  }
 
   test("the entry surface loads the bundle once before app styles in that order", () => {
     const head = read("frontend/index.html");
