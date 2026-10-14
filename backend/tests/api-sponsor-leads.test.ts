@@ -286,9 +286,13 @@ describe('sponsor lead intake and review', () => {
 
     const page = JSON.parse((await review('GET', '/api/sponsor-crm/leads', undefined, { limit: '1' })).body);
     assert.strictEqual(page.items.length, 1);
-    assert.strictEqual(page.nextCursor, '1');
-    const secondPage = JSON.parse((await review('GET', '/api/sponsor-crm/leads', undefined, { limit: '1', cursor: '1' })).body);
+    assert.strictEqual(typeof page.nextCursor, 'string');
+    assert.ok(page.newsletters.includes('Example Newsletter'));
+    const secondPage = JSON.parse((await review('GET', '/api/sponsor-crm/leads', undefined, { limit: '1', cursor: page.nextCursor })).body);
     assert.strictEqual(secondPage.items.length, 1);
+    assert.notStrictEqual(secondPage.items[0].id, page.items[0].id);
+    assert.strictEqual((await review('GET', '/api/sponsor-crm/leads', undefined, { cursor: '1' })).statusCode, 400);
+    assert.strictEqual((await review('GET', '/api/sponsor-crm/leads', undefined, { group: 'bogus' })).statusCode, 400);
 
     assert.strictEqual((await review('GET', '/api/sponsor-crm/leads', undefined, { status: 'bogus' })).statusCode, 400);
     assert.strictEqual((await review('GET', '/api/sponsor-crm/leads', undefined, { limit: '101' })).statusCode, 400);

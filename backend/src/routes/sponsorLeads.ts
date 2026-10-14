@@ -449,6 +449,136 @@ function publicLead(lead: CrmRecord): Record<string, unknown> {
   };
 }
 
+// ---- review list -----------------------------------------------------------
+// Leads are one row per sighting: (issue messageId, sponsor name, url). The
+// list reads every lead (the table holds hundreds, not millions), filters and
+// sorts in memory, and pages with a keyset cursor over the sort order, so a
+// lead that changes status between pages never shifts the next page.
+
+export interface LeadListFilters {
+  limit: number;
+  cursor: { at: string; id: string } | null;
+  status: string;
+  newsletter: string;
+  sponsor: string;
+  search: string;
+  group: '' | 'sponsor';
+}
+
+function encodeCursor(at: string, id: string): string {
+  return Buffer.from(JSON.stringify([at, id]), 'utf8').toString('base64url');
+}
+
+function decodeCursor(raw: string): { at: string; id: string } | null {
+  try {
+    const parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+    if (Array.isArray(parsed) && parsed.length === 2 && parsed.every((part) => typeof part === 'string')) {
+      return { at: parsed[0], id: parsed[1] };
+    }
+  } catch {
+    // fall through
+  }
+  return null;
+}
+
+export function parseLeadListQuery(query: Record<string, string | undefined>): LeadListFilters | string {
+  const limit = Number(query.limit || 50);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) return 'Invalid pagination';
+  let cursor: LeadListFilters['cursor'] = null;
+  if (query.cursor) {
+    cursor = decodeCursor(query.cursor);
+    if (!cursor) return 'Invalid pagination';
+  }
+  const status = query.status || '';
+  if (status && !LEAD_STATUSES.has(status)) return 'Invalid status filter';
+  for (const name of ['newsletter', 'sponsor', 'search'] as const) {
+    if ((query[name] || '').length > 200) return `Invalid ${name} filter`;
+  }
+  const group = query.group || '';
+  if (group !== '' && group !== 'sponsor') return 'Invalid group';
+  return {
+    limit,
+    cursor,
+    status,
+    newsletter: query.newsletter || '',
+    sponsor: query.sponsor ? normalizeLeadName(query.sponsor) : '',
+    search: (query.search || '').trim().toLowerCase(),
+    group,
+  };
+}
+
+function leadSponsor(item: CrmRecord): Record<string, unknown> {
+  return (item.sponsor || {}) as Record<string, unknown>;
+}
+
+function leadNewsletter(item: CrmRecord): Record<string, unknown> {
+  return (item.newsletter || {}) as Record<string, unknown>;
+}
+
+/** When the sponsor was seen: the issue's date, else when the lead landed. */
+function leadSeenAt(item: CrmRecord): string {
+  return String(leadNewsletter(item).receivedAt || item.createdAt || '');
+}
+
+function leadSponsorKey(item: CrmRecord): string {
+  const sponsor = leadSponsor(item);
+  return String(sponsor.normalizedName || normalizeLeadName(String(sponsor.name || '')));
+}
+
+/** Newest first; id breaks ties so the order (and the cursor) is total. */
+function newestFirst<T>(rows: T[], at: (row: T) => string, id: (row: T) => string): T[] {
+  return rows.sort((a, b) => at(b).localeCompare(at(a)) || id(b).localeCompare(id(a)));
+}
+
+function afterCursor<T>(rows: T[], cursor: LeadListFilters['cursor'], at: (row: T) => string, id: (row: T) => string): T[] {
+  if (!cursor) return rows;
+  return rows.filter((row) => at(row) < cursor.at || (at(row) === cursor.at && id(row) < cursor.id));
+}
+
+function page<T>(rows: T[], filters: LeadListFilters, at: (row: T) => string, id: (row: T) => string) {
+  const rest = afterCursor(newestFirst(rows, at, id), filters.cursor, at, id);
+  const items = rest.slice(0, filters.limit);
+  const last = items[items.length - 1];
+  return { items, nextCursor: rest.length > filters.limit && last ? encodeCursor(at(last), id(last)) : null };
+}
+
+export function leadListPage(all: CrmRecord[], filters: LeadListFilters): Record<string, unknown> {
+  // The newsletter picker lists every newsletter that has leads, whatever
+  // the other filters say, so narrowing never hides a way back out.
+  const newsletters = [...new Set(all.map((item) => String(leadNewsletter(item).name || '')).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+  const matches = all.filter((item) => {
+    if (filters.status && item.status !== filters.status) return false;
+    if (filters.newsletter && leadNewsletter(item).name !== filters.newsletter) return false;
+    if (filters.sponsor && leadSponsorKey(item) !== filters.sponsor) return false;
+    if (!filters.search) return true;
+    const sponsor = leadSponsor(item);
+    const newsletter = leadNewsletter(item);
+    return [sponsor.name, sponsor.url, sponsor.blurb, newsletter.name, newsletter.subject]
+      .some((value) => String(value || '').toLowerCase().includes(filters.search));
+  });
+
+  if (filters.group === 'sponsor') {
+    const groups = new Map<string, { key: string; name: string; url: string; latestAt: string; sightings: number; newsletters: string[] }>();
+    // Walk newest first so the first sighting sets the display name and url.
+    for (const item of newestFirst([...matches], leadSeenAt, (row) => row.id)) {
+      const key = leadSponsorKey(item);
+      const sponsor = leadSponsor(item);
+      const newsletter = String(leadNewsletter(item).name || '');
+      const group = groups.get(key) || { key, name: String(sponsor.name || ''), url: '', latestAt: leadSeenAt(item), sightings: 0, newsletters: [] };
+      group.sightings += 1;
+      if (!group.url && sponsor.url) group.url = String(sponsor.url);
+      if (newsletter && !group.newsletters.includes(newsletter)) group.newsletters.push(newsletter);
+      groups.set(key, group);
+    }
+    const result = page([...groups.values()], filters, (row) => row.latestAt, (row) => row.key);
+    return { items: result.items, nextCursor: result.nextCursor, newsletters };
+  }
+
+  const result = page(matches, filters, leadSeenAt, (row) => row.id);
+  return { items: result.items.map(publicLead), nextCursor: result.nextCursor, newsletters };
+}
+
 export async function handleSponsorLeadRoutes(path: string, method: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const match = path.match(/^\/api\/sponsor-crm\/leads(?:\/([^/]+))?$/);
   if (!match) return response(404, { error: 'Not found' });
@@ -456,26 +586,10 @@ export async function handleSponsorLeadRoutes(path: string, method: string, even
 
   if (method === 'GET' && !id) {
     const query = event.queryStringParameters || {};
-    const limit = Number(query.limit || 50);
-    const cursor = Number(query.cursor || 0);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(cursor) || cursor < 0) {
-      return response(400, { error: 'Invalid pagination' });
-    }
-    if (query.status !== undefined && !LEAD_STATUSES.has(query.status)) return response(400, { error: 'Invalid status filter' });
-    if (query.search !== undefined && (typeof query.search !== 'string' || query.search.length > 200)) return response(400, { error: 'Invalid search filter' });
-    let items = await listCrmRecords(client, 'lead');
-    if (query.status) items = items.filter((item) => item.status === query.status);
-    if (query.search) {
-      const needle = query.search.toLowerCase();
-      items = items.filter((item) => {
-        const sponsor = (item.sponsor || {}) as Record<string, unknown>;
-        const newsletter = (item.newsletter || {}) as Record<string, unknown>;
-        return [sponsor.name, sponsor.url, sponsor.normalizedName, newsletter.name, item.messageId]
-          .some((value) => String(value || '').toLowerCase().includes(needle));
-      });
-    }
-    const sliced = items.slice(cursor, cursor + limit);
-    return response(200, { items: sliced.map(publicLead), nextCursor: cursor + limit < items.length ? String(cursor + limit) : null });
+    const filters = parseLeadListQuery(query);
+    if (typeof filters === 'string') return response(400, { error: filters });
+    const all = await listCrmRecords(client, 'lead');
+    return response(200, leadListPage(all, filters));
   }
 
   if (method === 'GET' && id) {
