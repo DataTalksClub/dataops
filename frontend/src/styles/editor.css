@@ -1839,3 +1839,43 @@ blockquote p,
   color: var(--dk-text-muted);
   padding: var(--dk-space-2) var(--dk-space-3);
 }
+
+/* The "/" menu typed inside a block filters as you type; the caret stays
+   in the block, so the menu has no field of its own. */
+.block-slash-menu.is-inline {
+  padding: var(--dk-space-1);
+}
+
+.slash-menu-empty {
+  color: var(--dk-text-muted);
+  padding: var(--dk-space-2);
+  font-size: var(--dk-text-md);
+}
+
+.inline-prompt {
+  position: fixed;
+  z-index: 85;
+  display: flex;
+  gap: var(--dk-space-2);
+  width: min(360px, calc(100vw - 2 * var(--dk-space-4)));
+  border: 1px solid var(--dk-border-strong);
+  border-radius: var(--dk-radius-lg);
+  background: var(--dk-bg-surface);
+  box-shadow: var(--dk-shadow-overlay);
+  padding: var(--dk-space-2);
+}
+
+.inline-prompt .inline-prompt-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.inline-prompt-submit {
+  flex: 0 0 auto;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-primary);
+  padding: 0 var(--dk-space-3);
+  font-size: var(--dk-text-md);
+}

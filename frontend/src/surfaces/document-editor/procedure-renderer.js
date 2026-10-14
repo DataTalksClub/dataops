@@ -1,5 +1,7 @@
 import { focusEditable, neighbourEditable } from "./editable.js";
 import { toVideoEmbed } from "./embeds.js";
+import { pickImageFiles, promptInline } from "./inline-prompt.js";
+import { createSlashMenu, PROCEDURE_BLOCKS } from "./slash-menu.js";
 import { editorFeedbackFor, editorMutationGuard } from "./feedback.js";
 import {
   convertItem,
@@ -48,6 +50,48 @@ export function createProcedureRenderer(context, services, editorState) {
     snapshotProcedure,
   } = services;
   const showFeedback = editorFeedbackFor(context);
+  const slashMenu = createSlashMenu();
+
+  /** "/" in a step or free text: insert or convert procedure blocks. */
+  async function applyProcedureChoice(choice, item, model, anchorRect) {
+    const empty = !(item.body || "").trim();
+    if (choice.type === "step" || choice.type === "prose") {
+      if (empty && item.kind !== choice.type) {
+        const converted = convertItem(model, item, choice.type);
+        commitProcedure(model, { focus: focusOf(model, converted, { at: "start" }) });
+        return;
+      }
+      const created = insertAfter(model, item, choice.type === "step" ? newStep("") : newProse(""));
+      commitProcedure(model, { focus: focusOf(model, created, { at: "start" }) });
+      return;
+    }
+    if (choice.type === "group") {
+      const group = item.kind === "step" ? startGroupAt(model, item) : null;
+      if (group) commitProcedure(model, { focus: focusOf(model, group, { select: true }) });
+      return;
+    }
+    if (choice.type === "todo") {
+      const todo = newTodo("");
+      model.items.unshift(todo);
+      commitProcedure(model, { focus: focusOf(model, todo, { at: "start" }) });
+      return;
+    }
+    if (choice.type === "image") {
+      const files = await pickImageFiles();
+      for (const file of files) await addScreenshot(item, model, file);
+      return;
+    }
+    if (choice.type === "embed") {
+      const url = await promptInline({
+        anchorRect, placeholder: "Paste a Loom, YouTube or Vimeo link", submitLabel: "Embed",
+      });
+      if (url && toVideoEmbed(url)) {
+        const setBody = item.kind === "step" ? setStepBody : setProseBody;
+        setBody(item, empty ? url : `${item.body}\n\n${url}`);
+      }
+      commitProcedure(model, { focus: focusOf(model, item, { at: "end" }) });
+    }
+  }
 
   /** Where an item will be after a re-render (see focusProcedureItem). */
   function focusOf(model, item, extra = {}) {
@@ -109,6 +153,17 @@ export function createProcedureRenderer(context, services, editorState) {
       onFiles: item.kind === "step" ? (files) => {
         for (const file of files) addScreenshot(item, model, file);
       } : undefined,
+      onSlash: (session) => {
+        if (!session) return;
+        slashMenu.open({
+          targetEl: session.targetEl,
+          anchorRect: session.anchorRect,
+          inline: session,
+          items: PROCEDURE_BLOCKS.filter((choice) =>
+            item.kind === "step" || (choice.type !== "group" && choice.type !== "image")),
+          onSelect: (choice) => applyProcedureChoice(choice, item, model, session.anchorRect),
+        });
+      },
     };
   }
 

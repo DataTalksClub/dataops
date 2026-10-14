@@ -9,7 +9,12 @@ import {
   serializeBlocksToMarkdown,
   serializeListItems,
 } from "../src/surfaces/document-editor/block-model.js";
-import { createSlashMenu } from "../src/surfaces/document-editor/slash-menu.js";
+import {
+  createSlashMenu,
+  DOCUMENT_BLOCKS,
+  filterBlockTypes,
+  PROCEDURE_BLOCKS,
+} from "../src/surfaces/document-editor/slash-menu.js";
 import { emitProcedure, parseProcedure, stepsOf } from "../src/surfaces/document-editor/procedure-model.js";
 import {
   FakeDocument,
@@ -1250,17 +1255,62 @@ describe("Document Editor surface boundary", () => {
       filterInput.dispatch("input");
       const matches = findAllByClass(menuEl, "slash-menu-item");
       assert.equal(matches.length, 1);
-      assert.match(matches[0].textContent, /To-do List/);
+      assert.match(matches[0].textContent, /To-do list/);
     }
 
     const items = findAllByClass(menuEl, "slash-menu-item");
     assert.equal(items.length, 1);
-    assert.match(items[0].textContent, /To-do List/);
+    assert.match(items[0].textContent, /To-do list/);
 
     items[0].dispatch("click");
     assert.equal(chosen?.type, "todo");
     assert.equal(menu.isOpen(), false);
     target.remove();
+  });
+
+  test("an inline slash session filters as the user types and consumes the typed command", () => {
+    createEditorHarness();
+    const target = element("div");
+    globalThis.document.body.append(target);
+    let controller = null;
+    const consumed = [];
+    const chosen = [];
+    const menu = createSlashMenu();
+    menu.open({
+      targetEl: target,
+      anchorRect: { top: 10, bottom: 30, left: 10, right: 20 },
+      items: DOCUMENT_BLOCKS,
+      inline: {
+        attach: (next) => {
+          controller = next;
+        },
+        consume: () => consumed.push(true),
+        detach() {},
+      },
+      onSelect: (item) => chosen.push(item.type),
+    });
+    const menuEl = globalThis.document.body.querySelector(".block-slash-menu");
+    // The caret stays in the block: the inline menu has no filter field.
+    assert.equal(menuEl.querySelector(".slash-menu-filter"), null);
+    assert.equal(findAllByClass(menuEl, "slash-menu-item").length, DOCUMENT_BLOCKS.length);
+    controller.setQuery("vid");
+    // Prefix matches rank before matches inside a word ("di-vid-er").
+    assert.deepEqual(findAllByClass(menuEl, "slash-menu-item").map((row) => row.querySelector("strong").textContent), ["Video", "Divider"]);
+    controller.setQuery("h");
+    assert.equal(findAllByClass(menuEl, "slash-menu-item")[0].querySelector("strong").textContent, "Heading 1");
+    controller.move(1);
+    controller.choose();
+    assert.deepEqual(consumed, [true]);
+    assert.deepEqual(chosen, ["h2"]);
+    assert.equal(menu.isOpen(), false);
+    target.remove();
+  });
+
+  test("procedure and document block catalogues match by title, shortcut and keyword", () => {
+    assert.deepEqual(filterBlockTypes(PROCEDURE_BLOCKS, "shot").map((item) => item.type), ["image"]);
+    assert.deepEqual(filterBlockTypes(PROCEDURE_BLOCKS, "loom").map((item) => item.type), ["embed"]);
+    assert.deepEqual(filterBlockTypes(DOCUMENT_BLOCKS, "[]").map((item) => item.type), ["todo"]);
+    assert.equal(filterBlockTypes(DOCUMENT_BLOCKS, "zzz").length, 0);
   });
 
   test("renders plain documents with interactive Notion blocks, todo toggling, and hierarchy trail", async () => {

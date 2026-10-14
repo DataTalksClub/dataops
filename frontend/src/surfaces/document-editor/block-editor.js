@@ -1,8 +1,10 @@
 import { focusEditable, plainTextLength } from "./editable.js";
 import {
+  blockId,
   blockRaw,
   blockText,
   CALLOUT_RE,
+  convertBlock,
   liftListItem,
   makeBlock,
   mergeBlockBackward,
@@ -13,7 +15,8 @@ import {
   splitBlock,
 } from "./block-model.js";
 import { toVideoEmbed } from "./embeds.js";
-import { createSlashMenu } from "./slash-menu.js";
+import { pickImageFiles, promptInline } from "./inline-prompt.js";
+import { createSlashMenu, DOCUMENT_BLOCKS } from "./slash-menu.js";
 
 // ---------- rendering ----------
 
@@ -111,6 +114,8 @@ export function createBlockEditor(context, services) {
         at = editable.__editable.mode === "rich" ? plainTextLength(target.prefix) : target.prefix.length;
       }
       focusEditable(editable, at);
+      // "+" opens the menu by typing the "/" it listens for.
+      if (target.slash) editable.ownerDocument.execCommand("insertText", false, "/");
       return;
     }
     editable.click();
@@ -258,7 +263,24 @@ export function createBlockEditor(context, services) {
             renderListItems(itemIdx, selection);
           },
           onSlash: (session) => {
-            if (session) return;
+            if (session) {
+              if (!structural) return;
+              slashMenu.open({
+                targetEl: session.targetEl,
+                anchorRect: session.anchorRect,
+                inline: session,
+                items: DOCUMENT_BLOCKS,
+                onSelect: (choice) => {
+                  if (item.text.trim()) {
+                    applySlashChoice(choice, blocks, blockIndex, replace, session.anchorRect);
+                    return;
+                  }
+                  const at = liftListItem(blocks, blockIndex, itemIdx, "");
+                  applySlashChoice(choice, blocks, at, replace, session.anchorRect);
+                },
+              });
+              return;
+            }
             slashMenu.open({
               targetEl: textSpan,
               onSelect: (menuItem) => {
@@ -289,9 +311,72 @@ export function createBlockEditor(context, services) {
     return listEl;
   }
 
+  /**
+   * Apply a "/" choice at block `index`: an empty block turns into the
+   * chosen type, a block with text gets the new block below it.
+   */
+  async function applySlashChoice(item, blocks, index, replace, anchorRect) {
+    const current = blocks[index];
+    const empty = !blockText(current).trim() && current.type !== "divider";
+    const place = (block) => {
+      if (empty) {
+        blocks[index] = { ...block, id: current.id };
+        return index;
+      }
+      blocks.splice(index + 1, 0, block);
+      return index + 1;
+    };
+    if (item.type === "page") {
+      services.createSubpage?.(context.documentState?.currentDoc);
+      return;
+    }
+    if (item.type === "image") {
+      const files = await pickImageFiles();
+      if (files.length) services.insertImageBlocks?.(files, blocks, index, empty, replace);
+      return;
+    }
+    if (item.type === "embed") {
+      const url = await promptInline({
+        anchorRect, placeholder: "Paste a Loom, YouTube or Vimeo link", submitLabel: "Embed",
+      });
+      if (!url || !toVideoEmbed(url)) {
+        replace({ index, at: "end" });
+        return;
+      }
+      const at = place({ ...makeBlock("embed", url) });
+      blocks.splice(at + 1, 0, makeBlock("paragraph", ""));
+      replace({ index: at + 1, at: "start" });
+      return;
+    }
+    if (item.type === "divider") {
+      const at = place(makeBlock("divider"));
+      blocks.splice(at + 1, 0, makeBlock("paragraph", ""));
+      replace({ index: at + 1, at: "start" });
+      return;
+    }
+    const at = place(empty ? convertBlock(current, item.type) : makeBlock(item.type, ""));
+    const isList = item.type === "bullet" || item.type === "numbered";
+    if (isList) replace({ index: at, item: 0, at: "end" });
+    else if (item.type === "code") replace({ index: at, at: 4 });
+    else replace({ index: at, at: "end" });
+  }
+
+  function openSlash(session, blocks, index, replace) {
+    slashMenu.open({
+      targetEl: session.targetEl,
+      anchorRect: session.anchorRect,
+      inline: session,
+      items: DOCUMENT_BLOCKS,
+      onSelect: (item) => applySlashChoice(item, blocks, index, replace, session.anchorRect),
+    });
+  }
+
   function textBlockKeyboard({ block, index, blocks, structural, replace }) {
     if (!structural) return {};
     return {
+      onSlash: (session) => {
+        if (session) openSlash(session, blocks, index, replace);
+      },
       onSplit: (before, after) => {
         const next = splitBlock(blocks, index, before, after);
         replace({ index: next, at: "start" });
@@ -354,7 +439,7 @@ export function createBlockEditor(context, services) {
       e.stopPropagation();
       if (structural) {
         blocks.splice(index + 1, 0, makeBlock("paragraph", ""));
-        replace({ index: index + 1, at: "start" });
+        replace({ index: index + 1, at: "start", slash: true });
         return;
       }
       slashMenu.open({
@@ -457,8 +542,7 @@ export function createBlockEditor(context, services) {
         singleLine: true,
         placeholder: "To-do",
         ...keyboard,
-        onSlash: (session) => {
-          if (session) return;
+        onSlash: structural ? keyboard.onSlash : () => {
           slashMenu.open({
             targetEl: textSpan,
             onSelect: (item) => {
@@ -555,8 +639,7 @@ export function createBlockEditor(context, services) {
         placeholder: isHeading ? `Heading ${level}` : structural ? "Type '/' for commands" : "Start writing…",
         placeholderOnFocus: !isHeading,
         ...(textOnly ? keyboard : {}),
-        onSlash: (session) => {
-          if (session) return;
+        onSlash: structural ? (textOnly ? keyboard.onSlash : undefined) : () => {
           slashMenu.open({
             targetEl: inner,
             onSelect: (item) => {

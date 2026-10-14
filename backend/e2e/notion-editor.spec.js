@@ -262,3 +262,48 @@ test('a plain page: Enter in lists, markdown shortcuts, Backspace un-formats', a
   await expect(view.locator('.notion-text-content').first()).toBeFocused();
   await capture(page, 'plain-keyboard');
 });
+
+test('"/" opens the block menu in place, filters as you type and inserts blocks', async ({ page }) => {
+  await openDoc(page, SOP_PATH, 'Synthetic Notion SOP');
+  const menu = page.locator('.block-slash-menu.is-inline');
+  await step(page, 3).click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/');
+  await expect(menu.locator('.slash-menu-item strong')).toHaveText(
+    ['Step', 'Text', 'Group', 'Screenshot', 'Video', 'TODO'],
+  );
+  await expect(step(page, 4)).toBeFocused();
+  await page.keyboard.type('tex');
+  await expect(menu.locator('.slash-menu-item strong')).toHaveText(['Text']);
+  await capture(page, 'sop-slash');
+  await page.keyboard.press('Enter');
+  await expect(menu).toHaveCount(0);
+  await page.keyboard.type('A note between steps.');
+  await expect(draft(page)).toHaveValue(
+    /3\. {2}Check the synthetic result\.\n<!-- sop-step-end -->\n\n<!-- sop-prose-start -->\nA note between steps\.\n<!-- sop-prose-end -->/,
+  );
+  await expect(draft(page)).not.toHaveValue(/\/tex/);
+
+  // Escape closes the menu and keeps what was typed, like Notion.
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/gro');
+  await expect(menu).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(page.locator('.block-prose-body').last()).toHaveText('/gro');
+
+  await openDoc(page, PLAIN_PATH, 'Synthetic Notion Page');
+  const view = page.locator('#rendered-view');
+  await view.locator('.notion-text-content').last().click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/h2');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Slash heading');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/div');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('After the line.');
+  await expect(draft(page)).toHaveValue(/Last paragraph\.\n\n## Slash heading\n\n---\n\nAfter the line\.$/);
+});
