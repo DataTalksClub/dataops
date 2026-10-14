@@ -93,7 +93,7 @@ for (const width of [1440, 1280]) {
       await expect(menu).toHaveCount(0);
     }
     await trigger.click();
-    await page.getByRole('button', { name: 'Email Preview', exact: true }).click();
+    await page.getByRole('tab', { name: 'Email preview', exact: true }).click();
     await expect(page.locator('.block-slash-menu')).toHaveCount(0);
     await expect(dialog).toBeVisible();
   });
@@ -112,7 +112,7 @@ for (const width of [1440, 1280]) {
     await spotlight.locator('.inline-editor').fill('Synthetic sponsor copy typed into the new block.');
     await root.locator('.notion-list-item-text').first().click();
     await expect(spotlight).toContainText('Synthetic sponsor copy typed into the new block.');
-    await page.getByRole('button', { name: 'Email Preview', exact: true }).click();
+    await page.getByRole('tab', { name: 'Email preview', exact: true }).click();
     await expect(page.locator('[data-sim-body]')).toContainText('Synthetic sponsor copy typed into the new block.');
   });
 
