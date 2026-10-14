@@ -8,7 +8,9 @@ test.beforeAll(async () => {
     AUTH_BASE_URL: 'https://auth.example.test', AUTH_ISSUER: 'https://issuer.example.test/pool',
     AUTH_CLIENT_ID: 'synthetic-device-client', AUTH_CALLBACK_URL: 'http://127.0.0.1/auth/callback', AUTH_LOGOUT_URL: 'http://127.0.0.1/',
     E2E_BROWSER_SESSION_USER_ID: 'synthetic-shell-operator', E2E_BROWSER_SESSION_USER_ROLE: 'admin',
-    DTC_CACHE_ROOT: createDocsCacheRoot('dakit-shell-device'),
+    DTC_CACHE_ROOT: createDocsCacheRoot('dakit-shell-device', {
+      'content/processes/event-review.md': '---\ntitle: Event review\ntype: reference\nsummary: Synthetic process reference\n---\n# Event review\n\nCheck the agenda.\n',
+    }),
   } });
 });
 test.afterAll(async () => stopOwnedTestServer(server));
@@ -112,16 +114,47 @@ test('standalone device consent requires Continue, preserves overflow input, and
   await context.close();
 });
 
+// Every interactive element under `selector` must be a 44px target in both
+// dimensions. The hit area is what a finger lands on: a checkbox or radio is
+// hit through its label (the input itself may be 16px or visually hidden);
+// any other control is measured itself, not a label that stacks a caption
+// over it.
 async function touchControls(page, selector) {
-  const measurements = await page.locator(selector).evaluate(root => [...root.querySelectorAll('button,a,input,select,textarea,summary')].map(node => {
-    // A field wrapped in its <label> is hit anywhere in the label.
-    const target = node.matches('input,select,textarea') ? node.closest('label') || node : node;
-    const style = getComputedStyle(target), box = target.getBoundingClientRect();
-    return { name: `${node.tagName.toLowerCase()}.${node.className} ${node.getAttribute('aria-label') || node.textContent.trim().slice(0, 40) || node.id}`, height: box.height,
-      width: box.width, visible: style.display !== 'none' && style.visibility === 'visible' && box.width > 0 && box.height > 0 };
-  }).filter(item => item.visible));
+  const measurements = await page.locator(selector).evaluate(root => {
+    const interactive = 'a[href],button,input:not([type="hidden"]),select,textarea,summary,label,'
+      + '[role="button"],[role="link"],[role="checkbox"],[role="tab"],[role="menuitem"],[tabindex]:not([tabindex="-1"])';
+    const hitArea = (node) => {
+      if (node.matches('input[type="checkbox"],input[type="radio"]')) {
+        return node.closest('label') || (node.id && root.ownerDocument.querySelector(`label[for="${node.id}"]`)) || node;
+      }
+      // A wrapping label that is only the field's box (the kit search field)
+      // is hit anywhere; a label that stacks a caption over the control is not.
+      const box = node.matches('input,select,textarea') && node.closest('label');
+      if (box && box.getBoundingClientRect().height - node.getBoundingClientRect().height <= 4) return box;
+      return node;
+    };
+    const targets = new Map();
+    for (const node of root.querySelectorAll(interactive)) {
+      // A label is a target only when it is a checkbox or radio's hit area.
+      if (node.matches('label') && !(node.control && node.control.matches('input[type="checkbox"],input[type="radio"]'))) continue;
+      const target = hitArea(node);
+      if (!targets.has(target)) targets.set(target, node);
+    }
+    return [...targets].map(([target, node]) => {
+      const style = getComputedStyle(target), box = target.getBoundingClientRect();
+      return {
+        name: `${node.tagName.toLowerCase()}.${String(node.className).trim().replace(/\s+/g, '.')} ${node.getAttribute('aria-label') || node.textContent.trim().slice(0, 40) || node.id}`,
+        height: box.height, width: box.width,
+        visible: target.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && box.width > 0 && box.height > 0
+          && style.pointerEvents !== 'none',
+      };
+    }).filter(item => item.visible);
+  });
   expect(measurements.length).toBeGreaterThan(0);
-  for (const item of measurements) expect(item.height, `${item.name}: touch height`).toBeGreaterThanOrEqual(44);
+  const small = measurements.filter(item => item.height < 44 || item.width < 44)
+    .map(item => `${item.name}: ${Math.round(item.width)}x${Math.round(item.height)}`);
+  expect(small, `${selector}: targets under 44x44`).toEqual([]);
+  return measurements.length;
 }
 for (const theme of ['light', 'dark']) {
   test(`touch controls, main scrolling, drawer trapping and copy feedback in ${theme}`, async ({ browser }) => {
@@ -144,6 +177,7 @@ for (const theme of ['light', 'dark']) {
     await touchControls(page, '.dk-topbar');
     await page.locator('#settings-button').click();
     await expect(page.locator('#settings-menu')).toBeVisible();
+    await touchControls(page, '#settings-menu');
     await page.locator('#work-bell-button').click();
     await expect(page.locator('#settings-menu')).toBeHidden();
     await expect(page.locator('#work-bell-panel')).toBeVisible();
@@ -152,12 +186,25 @@ for (const theme of ['light', 'dark']) {
       transactionDate: new Date().toISOString().slice(0, 10), counterparty: 'Synthetic touch review', amount: '45.00', currency: 'EUR', description: 'Synthetic touch geometry', category: 'events',
     } });
     expect(seeded.ok()).toBe(true);
-    for (const [route, ready] of [['/bookkeeping', '.bookkeeping-ledger tbody tr'], ['/processes', '.ops-docs-create'], ['/tasks', '.ops-work-queue']]) {
+    const today = new Date().toISOString().slice(0, 10);
+    for (const description of ['Synthetic overdue touch task', 'Synthetic touch task due today']) {
+      const task = await context.request.post('/api/tasks', { data: { description, date: description.includes('overdue') ? '2020-01-01' : today, status: 'todo' } });
+      expect(task.ok(), await task.text()).toBe(true);
+    }
+    // Pilot routes, plus the Docs Filters popover open: every interactive
+    // element in main is measured, the Queue completion tick included.
+    for (const [route, ready, open] of [
+      ['/bookkeeping', '.bookkeeping-ledger tbody tr'],
+      ['/processes', '.ops-docs-tree-row'],
+      ['/processes', '.ops-docs-tree-row', '#filters-section > summary'],
+      ['/tasks', '.ops-queue-row .ops-queue-check'],
+    ]) {
       await page.goto(route); await expect(page.locator(ready).first()).toBeVisible();
+      if (open) { await page.locator(open).click(); await expect(page.locator('#filter-row')).toBeVisible(); }
       await expect(page.locator('#main-content')).toHaveCSS('overflow-y', 'auto');
       await expect(page.locator('#main-content')).toHaveCSS('padding-left', '16px');
       await expect(page.locator('#library-view')).toHaveCSS('overflow-y', 'visible');
-      await touchControls(page, '#main-content');
+      expect(await touchControls(page, '#main-content')).toBeGreaterThan(open ? 8 : 4);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
     await page.route('**/work/api/auth/device/pending?**', route => route.fulfill({ json: {
