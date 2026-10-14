@@ -315,6 +315,79 @@ export async function inspectCalendarImport(
     },
   };
 }
+/** One podcast recording row of the schedule sheet. */
+export type PodcastScheduleRow = {
+  sheet: (typeof ALLOWED_SHEETS)[number];
+  row: number;
+  recordingDate: string;
+  guests: string[];
+  status: string;
+  releaseDate?: string;
+  title?: string;
+  /** Hidden rows are the sheet's archived history. */
+  hidden: boolean;
+};
+/** "Ada Example (Sep 8)" and "Ada Example & Grace Sample" -> guest names. */
+const scheduleGuests = (value: string) =>
+  value
+    .replace(/\([^)]*\)/g, " ")
+    .split(/\s*(?:&|,|\band\b)\s*/)
+    .map((name) => name.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+/**
+ * Read every podcast recording row (past and upcoming) from "Time table"
+ * (podcast live / status / release / podcast title) and "Extra podcast
+ * slots", with the same trusted-date rules as the calendar import. Hidden rows
+ * are the sheet's archived history and are returned flagged. Season and
+ * episode cells are deliberately not read: the website owns numbering.
+ */
+export async function readPodcastSchedule(file: string) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(file);
+  const rows: PodcastScheduleRow[] = [];
+  const timetable = workbook.getWorksheet(ALLOWED_SHEETS[0]);
+  if (!timetable) throw new Error("Time table worksheet is required");
+  const trusted = validateTrustedDateFormulas(workbook, timetable);
+  const date = (cell: ExcelJS.Cell) => {
+    const value: any = cell.value;
+    if (value && typeof value === "object" && ("formula" in value || "sharedFormula" in value))
+      return trusted.has(cell.address) ? iso(value.result) : "";
+    return iso(value);
+  };
+  const add = (
+    sheet: PodcastScheduleRow["sheet"],
+    row: number,
+    hidden: boolean,
+    [dateCell, guestCell, statusCell, releaseCell, titleCell]: ExcelJS.Cell[],
+  ) => {
+    const recordingDate = date(dateCell),
+      guests = scheduleGuests(text(guestCell.value));
+    if (!recordingDate || guests.length === 0) return;
+    const releaseDate = date(releaseCell),
+      title = text(titleCell.value).replace(/\s+/g, " ").trim();
+    rows.push({
+      sheet,
+      row,
+      recordingDate,
+      guests,
+      status: text(statusCell.value).toLowerCase(),
+      ...(releaseDate ? { releaseDate } : {}),
+      ...(title ? { title } : {}),
+      hidden,
+    });
+  };
+  timetable.eachRow((row, n) => {
+    if (n === 1) return;
+    add("Time table", n, row.hidden, [14, 15, 16, 17, 18].map((column) => row.getCell(column)));
+  });
+  const extra = workbook.getWorksheet(ALLOWED_SHEETS[1]);
+  if (!extra) throw new Error("Extra podcast slots worksheet is required");
+  extra.eachRow((row, n) => {
+    if (n === 1) return;
+    add("Extra podcast slots", n, row.hidden, [1, 4, 5, 6, 7].map((column) => row.getCell(column)));
+  });
+  return rows;
+}
 export async function writeCalendarImport(
   rows: ImportItem[],
   options: {

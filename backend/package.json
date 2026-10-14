@@ -31,6 +31,7 @@
     "bookkeeping:import": "tsx scripts/import-bookkeeping.ts",
     "bookkeeping:documents:import": "tsx scripts/import-bookkeeping-documents.ts",
     "calendar:import": "tsx scripts/import-calendar.ts",
+    "podcast:import": "tsx scripts/import-podcast-episodes.ts",
     "sponsor-crm:import": "tsx scripts/import-sponsor-crm.ts",
     "restore:drill": "tsx scripts/restore-drill.ts",
     "cron": "tsx scripts/cron-runner.ts",

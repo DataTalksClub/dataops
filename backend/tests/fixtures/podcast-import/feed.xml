@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+<channel>
+<item>
+  <title><![CDATA[Synthetic Systems - Ada Example]]></title>
+  <link>https://podcasters.example.com/pod/show/example/episodes/Synthetic-Systems---Ada-Example-e1abc01</link>
+  <pubDate>Fri, 15 Jan 2027 17:00:00 GMT</pubDate>
+  <itunes:season>30</itunes:season>
+  <itunes:episode>3</itunes:episode>
+</item>
+<item>
+  <title><![CDATA[Synthetic Data Stories - Grace Example]]></title>
+  <link>https://podcasters.example.com/pod/show/example/episodes/Synthetic-Data-Stories---Grace-Example-e1abc02</link>
+  <pubDate>Fri, 05 Feb 2027 17:00:00 GMT</pubDate>
+  <itunes:season>30</itunes:season>
+  <itunes:episode>2</itunes:episode>
+</item>
+<item>
+  <title><![CDATA[Fixture Conference Interviews]]></title>
+  <link>https://podcasters.example.com/pod/show/example/episodes/Fixture-Conference-e1abc03</link>
+  <pubDate>Fri, 12 Feb 2027 17:00:00 GMT</pubDate>
+</item>
+</channel>
+</rss>
