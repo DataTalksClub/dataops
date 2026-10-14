@@ -238,7 +238,7 @@
         {
           "id": "tasks.ready",
           "kind": "ready",
-          "description": "The queue is the landing page: it shows the prioritized open work with exact Task return focus, and Cards, Templates, Recurring, and Assistants are first-class nav destinations beside it.",
+          "description": "The queue is the landing page: it shows the prioritized open work with exact Task return focus, and Cards, Templates, and Recurring are first-class nav destinations beside it.",
           "coverage": {
             "status": "runtime"
           }
@@ -582,77 +582,6 @@
             "admin"
           ],
           "description": "A failed recurring mutation preserves the row and is retryable.",
-          "coverage": {
-            "status": "runtime"
-          }
-        }
-      ]
-    },
-    {
-      "id": "assistants",
-      "surface": "Assistants",
-      "route": "/assistants?assistantJobId=<id>",
-      "apiBoundaries": [
-        "/api/assistant-jobs",
-        "/api/artifacts"
-      ],
-      "roleIds": [
-        "operator",
-        "admin"
-      ],
-      "states": [
-        {
-          "id": "assistants.loading",
-          "kind": "loading",
-          "description": "The assistant baseline exposes an honest loading state.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "assistants.empty",
-          "kind": "empty",
-          "description": "No assistant jobs renders an honest empty queue.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "assistants.list",
-          "kind": "ready",
-          "description": "Persisted assistant jobs render in the non-mutating baseline list.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "assistants.exact-detail",
-          "kind": "ready",
-          "description": "An exact assistant job detail loads from the real API.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "assistants.deep-link-reload",
-          "kind": "ready",
-          "description": "Assistant exact detail survives fresh deep-link load and reload.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "assistants.stale-not-found",
-          "kind": "stale",
-          "description": "A stale assistant deep link is entity-specific and recoverable.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "assistants.unavailable",
-          "kind": "error",
-          "description": "A non-404 assistant failure remains unavailable and retryable.",
           "coverage": {
             "status": "runtime"
           }

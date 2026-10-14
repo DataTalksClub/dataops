@@ -29,11 +29,6 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
     tasksSection: "workflows",
     params: ["cardId", "taskId"],
   },
-  "/assistants": {
-    view: "tasks",
-    tasksSection: "assistants",
-    params: ["assistantJobId"],
-  },
   "/templates": {
     view: "tasks",
     tasksSection: "templates",
@@ -68,7 +63,6 @@ export const TASKS_SECTIONS = Object.freeze([
   Object.freeze(["workflows", "Cards"]),
   Object.freeze(["templates", "Templates"]),
   Object.freeze(["recurring", "Recurring"]),
-  Object.freeze(["assistants", "Assistants"]),
 ]);
 
 export const ENTITY_VOCABULARY = Object.freeze({
@@ -85,7 +79,6 @@ export function tasksSectionTitle(section, archiveVisible = false) {
     workflows: archiveVisible ? "Card archive" : "Cards",
     templates: "Templates",
     recurring: "Recurring",
-    assistants: "Assistants",
   };
   return titles[section] || "Work Queue";
 }
@@ -98,7 +91,6 @@ export function workspacePath(view, tasksSection = "queue") {
         workflows: "/cards",
         templates: "/templates",
         recurring: "/recurring",
-        assistants: "/assistants",
       }[tasksSection] || "/tasks"
     );
   }

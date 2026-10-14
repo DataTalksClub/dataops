@@ -1,6 +1,5 @@
 export function createWorkspaceState(context) {
   const {
-    emptyOperationsAssistantSnapshot,
     emptyOperationsDocsSnapshot,
     emptyOperationsQualitySnapshot,
     emptyOperationsRecurringSnapshot,
@@ -31,23 +30,11 @@ export function createWorkspaceState(context) {
 
   let workSnapshot = emptyOperationsWorkSnapshot();
   let recurringSnapshot = emptyOperationsRecurringSnapshot();
-  let assistantSnapshot = emptyOperationsAssistantSnapshot();
   let qualitySnapshot = emptyOperationsQualitySnapshot();
   let reviewSnapshot = emptyOperationsReviewSnapshot();
   // Docs availability starts as `loading`: the bootstrap `GET /docs` has not
   // answered yet, and a pending request is not an outage.
   let docsSnapshot = emptyOperationsDocsSnapshot();
-  let assistantMutation = {
-    target: "",
-    action: "",
-    values: {},
-    error: "",
-    busy: false,
-    status: "",
-    phase: "idle",
-    routeToken: 0,
-  };
-  let assistantQueue = { filter: "all", selectedJobId: null };
   let qualityFilters = {
     severity: "",
     category: "",
@@ -94,9 +81,6 @@ export function createWorkspaceState(context) {
     get qualitySnapshot() {
       return qualitySnapshot;
     },
-    get assistantSnapshot() {
-      return assistantSnapshot;
-    },
     get workspaceEntity() {
       return getWorkspaceEntityState();
     },
@@ -114,36 +98,6 @@ export function createWorkspaceState(context) {
     },
     get qualitySnapshot() {
       return qualitySnapshot;
-    },
-  };
-
-  const operationsSurfaceState = {
-    get workSnapshot() {
-      return workSnapshot;
-    },
-    get assistantSnapshot() {
-      return assistantSnapshot;
-    },
-    set assistantSnapshot(snapshot) {
-      assistantSnapshot = snapshot;
-    },
-    get assistantMutation() {
-      return assistantMutation;
-    },
-    set assistantMutation(snapshot) {
-      assistantMutation = snapshot;
-    },
-    get assistantQueue() {
-      return assistantQueue;
-    },
-    set assistantQueue(snapshot) {
-      assistantQueue = snapshot;
-    },
-    get workspaceEntity() {
-      return getWorkspaceEntityState();
-    },
-    set workspaceEntity(snapshot) {
-      setWorkspaceEntityState(snapshot);
     },
   };
 
@@ -171,7 +125,6 @@ export function createWorkspaceState(context) {
   return {
     documentState,
     knowledgeState,
-    operationsSurfaceState,
     qualityFiltersState,
     reviewSurfaceState,
     tasksSurfaceState,
@@ -188,24 +141,6 @@ export function createWorkspaceState(context) {
     },
     set activeWorkspaceView(view) {
       activeWorkspaceView = view;
-    },
-    get assistantQueue() {
-      return assistantQueue;
-    },
-    set assistantQueue(snapshot) {
-      assistantQueue = snapshot;
-    },
-    get assistantSnapshot() {
-      return assistantSnapshot;
-    },
-    set assistantSnapshot(snapshot) {
-      assistantSnapshot = snapshot;
-    },
-    get assistantMutation() {
-      return assistantMutation;
-    },
-    set assistantMutation(snapshot) {
-      assistantMutation = snapshot;
     },
     get docsSnapshot() {
       return docsSnapshot;

@@ -192,7 +192,6 @@ function createWorkModelHarness(options = {}) {
       ...Object.values(work.cardTasks || {}).flat(),
     ],
     apiUrl: (path) => new URL(path, "http://portal.test"),
-    buildOperationsFutureSections: () => [],
     buildOperationsReferenceLinks: () => [],
     compareQualityFindings: (left, right) =>
       String(left.id).localeCompare(String(right.id)),

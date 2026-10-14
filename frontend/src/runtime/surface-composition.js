@@ -219,7 +219,6 @@ export function createSurfaceComposition(context) {
     workflows: "workflows",
     templates: "templates",
     recurring: "recurring",
-    assistants: "assistants",
   };
 
   function legacyViewToTasksSection(view) {

@@ -247,21 +247,19 @@ test.describe('issue 204 slice 4 Knowledge feedback', () => {
       { method: 'GET', path: '/api/cards', status: 503 },
       { method: 'GET', path: '/api/templates', status: 503 },
       { method: 'GET', path: '/api/artifacts', status: 503 },
-      { method: 'GET', path: '/api/assistant-jobs', status: 503 },
     ]);
     await page.locator('#search-input').fill('slice four');
     const unavailableSearch = page.locator(
       '.search-source-state[data-search-state="unavailable"]',
     );
     await expect(unavailableSearch).toBeVisible({ timeout: 20_000 });
-    await expect(unavailableSearch.locator('li')).toHaveCount(6);
+    await expect(unavailableSearch.locator('li')).toHaveCount(5);
     for (const source of [
       'process documents',
       'tasks',
       'workflows',
       'templates',
       'artifacts',
-      'assistant-jobs',
     ]) {
       await expect(unavailableSearch).toContainText(source);
     }

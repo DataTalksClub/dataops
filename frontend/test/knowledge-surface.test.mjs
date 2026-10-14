@@ -238,7 +238,6 @@ function createKnowledgeHarness(options = {}) {
   };
   const api = createKnowledgeSurface({
     apiUrl,
-    assistantJobsFromPayload: (payload) => payload?.jobs || [],
     basename: (path) => String(path || "").split("/").at(-1) || "",
     buildOperationsWorkModel: () => ({
       quality: options.operationsQualityModel || {
@@ -303,7 +302,6 @@ function createKnowledgeHarness(options = {}) {
     qualityFiltersState,
     refreshChangesPanel() {},
     refreshKnowledgeStatus() {},
-    refreshOperationsAssistantSnapshot: refresh("assistants"),
     refreshOperationsQualitySnapshot: refresh("quality"),
     refreshOperationsRecurringSnapshot: refresh("recurring"),
     refreshOperationsWorkSnapshot: refresh("work"),
@@ -454,7 +452,7 @@ describe("Knowledge surface boundary", () => {
     const loading = harness.api.loadDocuments();
     assert.deepEqual(
       harness.refreshes.map((entry) => entry.name),
-      ["work", "recurring", "assistants", "quality"],
+      ["work", "recurring", "quality"],
     );
     assert.ok(
       harness.refreshes.every((entry) => entry.options.rerender === true),
@@ -541,7 +539,7 @@ describe("Knowledge surface boundary", () => {
     assert.deepEqual(failed.api.getAllDocuments(), []);
     assert.deepEqual(
       failed.refreshes.map((entry) => entry.name),
-      ["work", "recurring", "assistants", "quality"],
+      ["work", "recurring", "quality"],
     );
     // A failed load repaints the surface the operator is already looking at.
     assert.equal(failed.renderedWorkspace(), 1);
@@ -1324,14 +1322,13 @@ describe("Knowledge surface boundary", () => {
       '[data-search-state="unavailable"]',
     );
     assert.ok(unavailable);
-    assert.equal(unavailable.querySelectorAll("li").length, 6);
+    assert.equal(unavailable.querySelectorAll("li").length, 5);
     for (const source of [
       "process documents",
       "tasks",
       "workflows",
       "templates",
       "artifacts",
-      "assistant-jobs",
     ]) {
       assert.match(unavailable.textContent, new RegExp(source));
     }

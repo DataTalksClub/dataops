@@ -113,7 +113,7 @@ test('grouped navigation and scoped search remain usable in both themes and resp
     await page.screenshot({ path: path.join(screenshots, `navigation-mobile-${theme}.png`) });
     // Tasks sections are first-class rows: always visible, touch-sized, and
     // laid out on the same text column as every other destination.
-    for (const section of ['queue', 'workflows', 'templates', 'recurring', 'assistants']) {
+    for (const section of ['queue', 'workflows', 'templates', 'recurring']) {
       await expect(page.locator(`[data-tasks-section="${section}"]`)).toBeVisible();
       expect((await page.locator(`[data-tasks-section="${section}"]`).boundingBox()).height).toBeGreaterThanOrEqual(44);
     }
@@ -141,7 +141,7 @@ test('grouped navigation and scoped search remain usable in both themes and resp
         section: row.dataset.tasksSection || row.dataset.workspaceView || '',
       }));
     });
-    for (const section of ['queue', 'workflows', 'templates', 'recurring', 'assistants']) {
+    for (const section of ['queue', 'workflows', 'templates', 'recurring']) {
       const row = columns.find((item) => item.section === section);
       expect(row, section).toBeTruthy();
       expect(row.label).toBeGreaterThan(row.iconRight - 1);

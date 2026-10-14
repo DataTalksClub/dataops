@@ -416,7 +416,6 @@ describe("runtime surface composition", () => {
       workspaceState: {
         overviewState: {
           artifactSnapshot: { loaded: false, artifacts: [] },
-          assistantSnapshot: { loaded: false, jobs: [] },
           qualitySnapshot: { loaded: false, findings: [] },
         },
       },

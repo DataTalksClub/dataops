@@ -117,7 +117,6 @@ function createHarness(options = {}) {
       ...(options.workSnapshot || {}),
     },
     qualitySnapshot: {},
-    assistantSnapshot: { loaded: false },
   };
 
   const defaultRequest = async (url, requestOptions) => {

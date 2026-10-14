@@ -250,7 +250,6 @@ describe("app shell coordinator characterization", () => {
     for (const routePath of [
       "/tasks",
       "/templates",
-      "/assistants",
       "/users",
       "/cards",
       "/cards/archive",

@@ -44,7 +44,6 @@ export function createTasksSurface(context) {
     refreshDocuments,
     refreshOperationsRecurringSnapshot,
     refreshOperationsWorkSnapshot,
-    renderAssistantsSurface,
     renderEntityLoadState,
     renderHonestState,
     renderOperationsRuntimeState,
@@ -158,8 +157,6 @@ export function createTasksSurface(context) {
       wrap.append(renderTemplatesSurface());
     else if (activeSection === "recurring")
       wrap.append(recurringSurface);
-    else if (activeSection === "assistants")
-      wrap.append(renderAssistantsSurface());
 
     documentList.replaceChildren(wrap);
   }
@@ -309,7 +306,7 @@ export function createTasksSurface(context) {
         },
       });
     }
-    // Assistants and Artifacts render their own state; Tasks does not speak for
+    // Other sections render their own state; Tasks does not speak for
     // surfaces it does not own.
     return null;
   }

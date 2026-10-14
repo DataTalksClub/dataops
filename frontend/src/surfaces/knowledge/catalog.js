@@ -9,7 +9,6 @@ export function createKnowledgeCatalog(context, services) {
     apiUrl,
     cleanPath,
     knowledgeState,
-    refreshOperationsAssistantSnapshot,
     refreshOperationsQualitySnapshot,
     refreshOperationsRecurringSnapshot,
     refreshOperationsWorkSnapshot,
@@ -27,11 +26,10 @@ export function createKnowledgeCatalog(context, services) {
     setDocsAvailability(emptyOperationsDocsSnapshot());
 
     // Work APIs are independent of the knowledge docs API. Start their
-    // bootstrap requests before awaiting docs so tasks, assistants, and
+    // bootstrap requests before awaiting docs so tasks and
     // recurring work remain operational during a docs outage.
     refreshOperationsWorkSnapshot({ rerender: true });
     refreshOperationsRecurringSnapshot({ rerender: true });
-    refreshOperationsAssistantSnapshot({ rerender: true });
     refreshOperationsQualitySnapshot({ rerender: true });
 
     try {

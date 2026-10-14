@@ -79,8 +79,6 @@
     "src/surfaces/operating-model.js",
     "src/surfaces/operations-overview.js",
     "src/surfaces/operations/admin.js",
-    "src/surfaces/operations/assistants-create.js",
-    "src/surfaces/operations/assistants.js",
     "src/surfaces/operations/device.js",
     "src/surfaces/operations/index.js",
     "src/surfaces/planning-calendar-dialogs.js",

@@ -1,6 +1,5 @@
 body[data-workspace-view="tasks"] .operations-home.ops-surface-queue,
 body[data-workspace-view="tasks"] .operations-home.ops-surface-templates,
-body[data-workspace-view="tasks"] .operations-home.ops-surface-assistants,
 body[data-workspace-view="tasks"] .operations-home.ops-surface-artifacts {
   border: 0;
   border-radius: 0;
@@ -580,8 +579,7 @@ body[data-workspace-view="tasks"] .recurring-toolbar button {
   background: var(--dk-bg-hover);
 }body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card:focus-visible,
 body[data-workspace-view="tasks"] .runtime-template-row:focus-visible,
-body[data-workspace-view="tasks"] .ops-queue-row:focus-visible,
-body[data-workspace-view="tasks"] .assistant-job-row:focus-visible {
+body[data-workspace-view="tasks"] .ops-queue-row:focus-visible {
   outline: 3px solid var(--dk-focus-ring);
   outline-offset: 2px;
 }body[data-workspace-view="tasks"] .workflow-card-header {

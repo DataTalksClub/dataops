@@ -10,7 +10,7 @@ const {
 } = require('./helpers/isolated-capability-server');
 
 const screenshots = path.resolve(__dirname, '../../.tmp/screenshots/issue-245');
-const TASK_SECTIONS = ['queue', 'workflows', 'templates', 'recurring', 'assistants'];
+const TASK_SECTIONS = ['queue', 'workflows', 'templates', 'recurring'];
 let server;
 
 test.beforeAll(async () => {
@@ -78,7 +78,7 @@ async function tasksLabelAlignment(page) {
 }
 
 function expectTasksLabelsShareTheNavColumn(indent) {
-  expect(indent.labelsX).toHaveLength(5);
+  expect(indent.labelsX).toHaveLength(4);
   for (const x of indent.labelsX) {
     // Tasks rows align with the other destinations, not with an extra inset.
     expect(Math.abs(x - indent.newsletterLabelX)).toBeLessThanOrEqual(2);

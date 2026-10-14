@@ -194,12 +194,10 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
   color: var(--dk-text-muted);
 }
 
-/* Mobile control floor for the Tasks family: templates/artifacts actions and
-   assistants tabs meet the 44px target. */
+/* Mobile control floor for the Tasks family: templates/artifacts actions
+   meet the 44px target. */
 @media (max-width: 820px) {.ops-surface .primary-button,
 .ops-surface .quiet-button,
-.assistant-filter-bar .ops-subnav-tab,
-.assistant-panel button,
 .artifacts-panel a[href] {
     min-height: 44px;
   }
@@ -207,29 +205,6 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
   border-color: var(--dk-border-default);
   background: var(--dk-bg-muted);
   color: var(--dk-text-muted);
-}/* Assistant queue rows: status text stays quiet context; only a state that
-   demands a decision earns a chip (amber approval, red recovery). */body[data-workspace-view="tasks"] .assistant-job-row em {
-  align-self: start;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  padding: 3px 0;
-  color: var(--dk-text-muted);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}body[data-workspace-view="tasks"] .assistant-job-row em.is-attention {
-  border: 1px solid transparent;
-  border-radius: var(--dk-radius-full);
-  background: var(--dk-warning-bg);
-  color: var(--dk-warning-text);
-  padding: 3px 8px;
-}body[data-workspace-view="tasks"] .assistant-job-row em.is-danger {
-  border: 1px solid transparent;
-  border-radius: var(--dk-radius-full);
-  background: var(--dk-danger-bg);
-  color: var(--dk-danger-text);
-  padding: 3px 8px;
 }/* Source revision hashes retain the monospace font. */.runtime-template-definition dd.runtime-template-mono {
   font-family: var(--dk-font-mono);
   font-size: 12px;

@@ -401,26 +401,16 @@
     min-height: 44px;
     background-position: 10px 50%, 21px 28px;
   }
-}.assistant-workspace {
-  min-width: 0;
 }.ops-surface-intro {
   max-width: 760px;
   margin: 0;
   color: var(--dk-text-muted);
-}.assistant-filter-bar {
-  border-bottom: 1px solid var(--dk-border-default);
-  padding-bottom: 8px;
 }.ops-subnav-tab[aria-pressed="true"],
 .ops-subnav-tab.is-active {
   border-color: var(--dk-border-default);
   background: var(--dk-accent-soft);
   color: var(--dk-accent-default);
   font-weight: 600;
-}.assistant-panel {
-  min-width: 0;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
 }.ops-data-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -654,7 +644,7 @@ body[data-workspace-view="calendar"] .document-list {
     transform: none;
   }
 }/* Task workspace visual system ------------------------------------------------
-   Queue, Cards, Templates, Recurring, Assistants, and Artifacts share the same
+   Queue, Cards, Templates, Recurring, and Artifacts share the same
    operator rhythm: a quiet page header, raised work panels, compact metadata,
    and an explicit next action. Keep this block at the end so the task surfaces
    can evolve without disturbing the shared shell or other routes. */body[data-workspace-view="tasks"] .operations-home {

@@ -330,7 +330,6 @@ describe("workspace nav layout contract", () => {
       ["workflows", "Cards"],
       ["templates", "Templates"],
       ["recurring", "Recurring"],
-      ["assistants", "Assistants"],
     ]) {
       assert.match(
         html,

@@ -47,10 +47,6 @@ export function emptyOperationsRecurringSnapshot() {
   return { loaded: false, recurringConfigs: [], errors: [] };
 }
 
-export function emptyOperationsAssistantSnapshot() {
-  return { loaded: false, jobs: [], errors: [] };
-}
-
 export function emptyOperationsQualitySnapshot() {
   return {
     loaded: false,
@@ -180,15 +176,6 @@ export function recurringConfigsFromPayload(payload) {
   if (!payload || typeof payload !== "object") return [];
   if (Array.isArray(payload.recurringConfigs)) return payload.recurringConfigs;
   if (Array.isArray(payload.configs)) return payload.configs;
-  if (Array.isArray(payload.items)) return payload.items;
-  return [];
-}
-
-export function assistantJobsFromPayload(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (!payload || typeof payload !== "object") return [];
-  if (Array.isArray(payload.assistantJobs)) return payload.assistantJobs;
-  if (Array.isArray(payload.jobs)) return payload.jobs;
   if (Array.isArray(payload.items)) return payload.items;
   return [];
 }
@@ -809,19 +796,6 @@ export function createOperationsModel({
     return output;
   }
 
-  function buildOperationsFutureSections() {
-    return [
-      {
-        id: "assistant-jobs",
-        title: "Assistant Jobs",
-        status: "Not connected yet",
-        body:
-          "Assistant run status, approvals, retries, logs, and outputs will " +
-          "appear here after the assistant job lifecycle ships in #30.",
-      },
-    ];
-  }
-
   function buildOperationsReferenceLinks(docs) {
     const indexed = [
       docs.find(
@@ -880,7 +854,6 @@ export function createOperationsModel({
   }
 
   return {
-    buildOperationsFutureSections,
     buildOperationsReferenceLinks,
     dedupeOperationItems,
     isAtRiskWorkflowSlug,

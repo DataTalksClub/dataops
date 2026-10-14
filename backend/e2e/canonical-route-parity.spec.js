@@ -28,9 +28,6 @@ async function createFixtures(request, referenceTime = Date.now()) {
   const task = await (await request.post('/api/tasks', {
     data: { description: `Route task ${id}`, date: '2026-08-11', cardId: card.id },
   })).json();
-  const assistant = (await (await request.post('/api/assistant-jobs', {
-    data: { assistantType: 'podcast', title: `Route assistant ${id}`, cardId: card.id, inputRefs: [{ type: 'card', id: card.id }], approvalRequired: true, maxAttempts: 2 },
-  })).json()).job;
   const templates = (await (await request.get('/api/templates')).json()).templates;
   const organization = await (await request.post('/api/sponsor-crm/organizations', {
     data: { displayName: `Route sponsor ${id}` },
@@ -43,7 +40,7 @@ async function createFixtures(request, referenceTime = Date.now()) {
       deliverable: { channel: 'main', plannedPublicationDate: '2026-09-01' },
     },
   })).json();
-  return { id, card, contextCard, task, assistant, template: templates[0], booking };
+  return { id, card, contextCard, task, template: templates[0], booking };
 }
 
 async function setRouteFaults(request, faults) {
@@ -124,7 +121,6 @@ test.describe('issue 156 canonical route and operator parity', () => {
       ['/', 'Work Queue'],
       [`/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&cardId=${encodeURIComponent(fixture.card.id)}&contextCardId=${encodeURIComponent(fixture.contextCard.id)}`, 'Work Queue'],
       [`/cards?cardId=${encodeURIComponent(fixture.card.id)}&taskId=${encodeURIComponent(fixture.task.id)}`, 'Cards'],
-      [`/assistants?assistantJobId=${encodeURIComponent(fixture.assistant.id)}`, 'Assistants'],
       [`/templates?templateId=${encodeURIComponent(fixture.template.id)}`, 'Templates'],
       ['/recurring', 'Recurring'],
       ['/bookkeeping', 'Bookkeeping'],
@@ -190,7 +186,6 @@ test.describe('issue 156 canonical route and operator parity', () => {
     for (const [route, id] of [
       ['tasks?taskId=stale-task', 'stale-task'],
       ['cards?cardId=stale-workflow', 'stale-workflow'],
-      ['assistants?assistantJobId=stale-assistant', 'stale-assistant'],
       ['templates?templateId=stale-template', 'stale-template'],
       ['sponsors?dealId=stale-booking', 'stale-booking'],
     ]) {
@@ -201,7 +196,6 @@ test.describe('issue 156 canonical route and operator parity', () => {
     recordCapabilityEvidence(testInfo, [
       { route: '/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.stale-not-found'] },
       { route: '/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.not-found'] },
-      { route: '/assistants?assistantJobId=<id>', roleId: 'admin', stateIds: ['assistants.stale-not-found'] },
       { route: '/templates?templateId=<id>', roleId: 'admin', stateIds: ['templates.stale-not-found'] },
       { route: '/sponsors?dealId=<id>', roleId: 'admin', stateIds: ['sponsors.not-found'] },
     ]);
@@ -321,13 +315,6 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/$/);
 
-    await page.goto('/');
-    await page.locator('#search-input').fill(fixture.assistant.title);
-    const assistantResult = page.locator('.unified-search-row.result-assistant-job', { hasText: fixture.assistant.title });
-    await expect(assistantResult).toBeVisible();
-    await assistantResult.click();
-    await expect(page).toHaveURL(new RegExp(`/assistants\\?assistantJobId=${fixture.assistant.id}$`));
-    await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
     recordCapabilityEvidence(testInfo, [{
       route: '/ (Notifications panel)',
       roleId: 'admin',
@@ -597,13 +584,12 @@ test.describe('issue 156 canonical route and operator parity', () => {
     );
     await page.evaluate((cardId) => { history.pushState(null, "", `/cards?cardId=${cardId}`); window.dispatchEvent(new PopStateEvent("popstate")); }, fixture.card.id);
     await started;
-    await page.evaluate((assistantId) => { history.pushState(null, "", `/assistants?assistantJobId=${assistantId}`); window.dispatchEvent(new PopStateEvent("popstate")); }, fixture.assistant.id);
-    await expect(page).toHaveURL(new RegExp(`/assistants\\?assistantJobId=${fixture.assistant.id}$`));
-    await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
+    await page.evaluate(() => { history.pushState(null, "", "/recurring"); window.dispatchEvent(new PopStateEvent("popstate")); });
+    await expect(page).toHaveURL(/\/recurring$/);
+    await expectVisibleRouteHeading(page, 'Recurring');
     await staleCardResponse;
     await expect(page.locator('#card-panel')).toBeHidden();
-    await expectVisibleRouteHeading(page, 'Assistants');
-    await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
+    await expectVisibleRouteHeading(page, 'Recurring');
     await clearRouteFaults(request);
   });
 

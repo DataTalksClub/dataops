@@ -234,7 +234,6 @@ function createHarness(options = {}) {
     refreshOperationsWorkSnapshot: async (refreshOptions = {}) => {
       if (options.refreshWork) await options.refreshWork(refreshOptions);
     },
-    renderAssistantsSurface: () => honestState("Assistants", "Assistant jobs"),
     renderEntityLoadState: (root, entity) => {
       const marker = new FakeElement("p");
       marker.textContent = `${entity.kind} ${entity.status}`;

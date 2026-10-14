@@ -47,7 +47,6 @@ describe("canonical workspace routing", () => {
       "/tasks",
       "/cards",
       "/cards/archive",
-      "/assistants",
       "/templates",
       "/recurring",
       "/bookkeeping",
@@ -148,7 +147,6 @@ describe("canonical workspace routing", () => {
       ["workflows", "Cards"],
       ["templates", "Templates"],
       ["recurring", "Recurring"],
-      ["assistants", "Assistants"],
     ]);
     assert.equal(workspacePath("tasks", "workflows"), "/cards");
     assert.equal(workspacePath("tasks", "templates"), "/templates");

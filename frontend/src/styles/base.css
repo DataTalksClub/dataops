@@ -246,20 +246,6 @@ body[data-view="create"] .editor-view {
 .ops-user-row-error,
 .recurring-row-error {
   color: var(--dk-danger-text);
-}.assistant-mutation-recovery {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}.assistant-mutation-recovery button {
-  min-height: 34px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-primary);
-  padding: 5px 11px;
-  font-size: 12px;
-  font-weight: 600;
 }.field-error {
   display: block;
   margin-top: 4px;

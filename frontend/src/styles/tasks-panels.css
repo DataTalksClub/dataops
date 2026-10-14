@@ -21,239 +21,15 @@ body[data-workspace-view="tasks"] .recurring-delete-guidance {
   border-radius: var(--dk-radius-md);
   background: var(--dk-danger-bg);
   padding: 10px 12px;
-}/* Assistants and Artifacts -------------------------------------------------- */body[data-workspace-view="tasks"] .assistant-workspace,
-body[data-workspace-view="tasks"] .ops-state-list {
+}/* Artifacts -------------------------------------------------- */body[data-workspace-view="tasks"] .ops-state-list {
   display: grid;
   min-width: 0;
   gap: 16px;
-}body[data-workspace-view="tasks"] .assistant-panel,
-body[data-workspace-view="tasks"] .ops-state-list {
+}body[data-workspace-view="tasks"] .ops-state-list {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--task-panel-radius);
   background: var(--dk-bg-surface);
   padding: 16px;
-}body[data-workspace-view="tasks"] .assistant-filter-bar {
-  display: flex;
-  min-width: 0;
-  overflow-x: auto;
-  gap: 4px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  padding: 4px;
-  scrollbar-width: thin;
-}body[data-workspace-view="tasks"] .assistant-filter-bar button {
-  min-height: 38px;
-  flex: 0 0 auto;
-  border: 1px solid transparent;
-  border-radius: var(--dk-radius-md);
-  background: transparent;
-  color: var(--dk-text-muted);
-  padding: 6px 11px;
-  font-size: 12px;
-  font-weight: 650;
-  white-space: nowrap;
-}body[data-workspace-view="tasks"] .assistant-filter-bar button:hover,
-body[data-workspace-view="tasks"] .assistant-filter-bar button.is-active {
-  border-color: var(--dk-border-default);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-heading);
-}body[data-workspace-view="tasks"] .assistant-layout {
-  display: grid;
-  grid-template-columns: minmax(280px, 0.78fr) minmax(0, 1.22fr);
-  gap: 16px;
-  min-width: 0;
-}body[data-workspace-view="tasks"] .assistant-panel {
-  min-width: 0;
-}body[data-workspace-view="tasks"] .assistant-panel h3:not([class*="dk-"]),
-body[data-workspace-view="tasks"] .assistant-panel h4:not([class*="dk-"]) {
-  margin: 0;
-  color: var(--dk-text-heading);
-}body[data-workspace-view="tasks"] .assistant-panel h3:not([class*="dk-"]) {
-  font-size: 15px;
-}body[data-workspace-view="tasks"] .assistant-panel h4:not([class*="dk-"]) {
-  font-size: 13px;
-}body[data-workspace-view="tasks"] .assistant-create-grid,
-body[data-workspace-view="tasks"] .assistant-editor {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 14px;
-}body[data-workspace-view="tasks"] .assistant-create-grid label,
-body[data-workspace-view="tasks"] .assistant-editor label {
-  display: grid;
-  min-width: 0;
-  gap: 5px;
-  color: var(--dk-text-heading);
-  font-size: 12px;
-  font-weight: 650;
-}body[data-workspace-view="tasks"] .assistant-create-grid input,
-body[data-workspace-view="tasks"] .assistant-create-grid select,
-body[data-workspace-view="tasks"] .assistant-editor input,
-body[data-workspace-view="tasks"] .assistant-editor select {
-  width: 100%;
-  min-width: 0;
-  min-height: 40px;
-  font-weight: 400;
-}body[data-workspace-view="tasks"] .assistant-create-grid button,
-body[data-workspace-view="tasks"] .assistant-editor button {
-  align-self: end;
-  min-height: 40px;
-}body[data-workspace-view="tasks"] .assistant-queue {
-  padding: 0;
-}body[data-workspace-view="tasks"] .assistant-queue > h3:not([class*="dk-"]) {
-  border-bottom: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-muted);
-  padding: 14px 16px;
-}body[data-workspace-view="tasks"] .assistant-job-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  min-width: 0;
-  border-top: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-surface);
-  padding: 13px 16px;
-  cursor: pointer;
-}body[data-workspace-view="tasks"] .assistant-job-row:hover,
-body[data-workspace-view="tasks"] .assistant-job-row.is-selected {
-  background: var(--dk-accent-soft);
-}body[data-workspace-view="tasks"] .assistant-job-row > div {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}body[data-workspace-view="tasks"] .assistant-job-row strong,
-body[data-workspace-view="tasks"] .assistant-job-row span,
-body[data-workspace-view="tasks"] .assistant-job-row small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}body[data-workspace-view="tasks"] .assistant-job-row strong {
-  color: var(--dk-text-heading);
-  font-size: 13px;
-}body[data-workspace-view="tasks"] .assistant-job-row span,
-body[data-workspace-view="tasks"] .assistant-job-row small {
-  color: var(--dk-text-muted);
-  font-size: 11px;
-}body[data-workspace-view="tasks"] .assistant-job-row em,
-body[data-workspace-view="tasks"] .assistant-status {
-  align-self: start;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-full);
-  background: var(--dk-info-bg);
-  color: var(--dk-info-text);
-  padding: 3px 8px;
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 700;
-  line-height: 1.35;
-  text-transform: capitalize;
-  white-space: nowrap;
-}body[data-workspace-view="tasks"] .assistant-detail {
-  display: grid;
-  align-content: start;
-  gap: 16px;
-}body[data-workspace-view="tasks"] .assistant-detail > header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 14px;
-  min-width: 0;
-  border-bottom: 1px solid var(--dk-border-default);
-  padding-bottom: 12px;
-}body[data-workspace-view="tasks"] .assistant-detail > header > div {
-  display: grid;
-  min-width: 0;
-  gap: 3px;
-}body[data-workspace-view="tasks"] .assistant-detail > header h3:not([class*="dk-"]),
-body[data-workspace-view="tasks"] .assistant-detail > header small {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}body[data-workspace-view="tasks"] .assistant-detail > header h3:not([class*="dk-"]) {
-  font-size: 18px;
-}body[data-workspace-view="tasks"] .assistant-detail > header small {
-  color: var(--dk-text-muted);
-  font-size: 11px;
-}body[data-workspace-view="tasks"] .assistant-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  padding: 10px;
-}body[data-workspace-view="tasks"] .assistant-actions button,
-body[data-workspace-view="tasks"] .assistant-editor button {
-  min-height: 38px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-primary);
-  padding: 6px 11px;
-  font-size: 12px;
-  font-weight: 650;
-}body[data-workspace-view="tasks"] .assistant-actions button:hover,
-body[data-workspace-view="tasks"] .assistant-editor button:hover {
-  border-color: var(--dk-border-control-hover);
-  background: var(--dk-bg-hover);
-}body[data-workspace-view="tasks"] .assistant-actions span {
-  color: var(--dk-warning-text);
-  font-size: 12px;
-}body[data-workspace-view="tasks"] .assistant-detail > section {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}body[data-workspace-view="tasks"] .assistant-ref-list,
-body[data-workspace-view="tasks"] .assistant-artifacts {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}body[data-workspace-view="tasks"] .assistant-ref-list code {
-  overflow-wrap: anywhere;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-primary);
-  padding: 8px 10px;
-  font-size: 11px;
-}body[data-workspace-view="tasks"] .assistant-artifacts a {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
-  padding: 9px 10px;
-  text-decoration: none;
-}body[data-workspace-view="tasks"] .assistant-artifacts a:hover {
-  border-color: var(--dk-border-control-hover);
-  background: var(--dk-bg-hover);
-}body[data-workspace-view="tasks"] .assistant-artifacts strong {
-  overflow-wrap: anywhere;
-  color: var(--dk-text-link);
-  font-size: 12px;
-}body[data-workspace-view="tasks"] .assistant-artifacts span {
-  color: var(--dk-text-muted);
-  font-size: 11px;
-}body[data-workspace-view="tasks"] .assistant-timeline {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}body[data-workspace-view="tasks"] .assistant-timeline li {
-  display: grid;
-  gap: 2px;
-  border: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-muted);
-  padding: 8px 10px;
-}body[data-workspace-view="tasks"] .assistant-timeline strong {
-  color: var(--dk-text-primary);
-  font-size: 12px;
-  text-transform: capitalize;
-}body[data-workspace-view="tasks"] .assistant-timeline span {
-  color: var(--dk-text-muted);
-  font-size: 11px;
 }body[data-workspace-view="tasks"] .ops-state-list {
   gap: 0;
   overflow: hidden;
@@ -1128,25 +904,12 @@ body[data-workspace-view="tasks"] .recurring-form-footer button {
 
 /* Slice 2 controls must follow denser Tasks rules to preserve the
    44px native mobile target at the requested 390px browser width. */
-@media (max-width: 768px) {body[data-workspace-view="tasks"] .assistant-filter-bar button,
-body[data-workspace-view="tasks"] .assistant-create-grid input,
-body[data-workspace-view="tasks"] .assistant-create-grid select,
-body[data-workspace-view="tasks"] .assistant-create-grid button,
-body[data-workspace-view="tasks"] .assistant-editor input,
-body[data-workspace-view="tasks"] .assistant-editor select,
-body[data-workspace-view="tasks"] .assistant-editor button,
-body[data-workspace-view="tasks"] .assistant-actions button,
-body[data-workspace-view="tasks"] .assistant-mutation-recovery button {
-    min-width: 44px;
-    min-height: 44px;
-  }
-}@keyframes task-state-shimmer {
+@keyframes task-state-shimmer {
   0% { background-position: 100% 0; }
   100% { background-position: -100% 0; }
 }
 
-@media (max-width: 920px) {body[data-workspace-view="tasks"] .assistant-layout,
-body[data-workspace-view="tasks"] .runtime-template-layout {
+@media (max-width: 920px) {body[data-workspace-view="tasks"] .runtime-template-layout {
     grid-template-columns: 1fr;
   }body[data-workspace-view="tasks"] .runtime-template-list {
     max-height: 320px;
@@ -1180,13 +943,7 @@ body[data-workspace-view="tasks"] .task-context-state {
   }body[data-workspace-view="tasks"] .workflow-board-column {
     scroll-snap-align: start;
   }
-body[data-workspace-view="tasks"] .assistant-create-grid,
-body[data-workspace-view="tasks"] .assistant-editor {
-    grid-template-columns: 1fr;
-  }body[data-workspace-view="tasks"] .assistant-create-grid button,
-body[data-workspace-view="tasks"] .assistant-editor button {
-    width: 100%;
-  }body[data-workspace-view="tasks"] .ops-state-list > .ops-data-row {
+body[data-workspace-view="tasks"] .ops-state-list > .ops-data-row {
     grid-template-columns: minmax(0, 1fr) auto;
   }body[data-workspace-view="tasks"] .ops-state-list > .ops-data-row > span {
     grid-column: 1 / -1;
@@ -1238,12 +995,6 @@ body[data-workspace-view="tasks"] .workflow-references-section .task-history .ta
 
 @media (max-width: 480px) {body[data-workspace-view="tasks"] .ops-queue-row {
     padding-right: 12px;
-  }body[data-workspace-view="tasks"] .assistant-job-row {
-    grid-template-columns: 1fr;
-    gap: 7px;
-  }body[data-workspace-view="tasks"] .assistant-job-row em,
-body[data-workspace-view="tasks"] .assistant-status {
-    width: fit-content;
   }body[data-workspace-view="tasks"] .ops-state-list > .ops-data-row {
     grid-template-columns: 1fr;
     gap: 8px;

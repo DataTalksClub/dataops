@@ -33,7 +33,6 @@ const ROUTES = [
   { path: '/cards/archive', ready: '.ops-workflows-board', content: '.workflow-archive-tabs, .cards-archive-grid, .ops-honest-state' },
   { path: '/templates', ready: '.runtime-template-layout', content: '.runtime-template-layout, .ops-template-grid' },
   { path: '/recurring', ready: '.ops-recurring-surface', content: '.recurring-toolbar, .ops-recurring-section' },
-  { path: '/assistants', ready: '.assistant-workspace', content: '.assistant-layout' },
   { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bookkeeping-worklist, .bookkeeping-monthlens' },
   { path: '/sponsors', ready: '.sponsor-crm-surface', content: '.crm-layout, .crm-upcoming-list, .crm-directory-row, .crm-booking-row', contentReady: '.crm-master .crm-booking-row, .crm-master .honest-state' },
   { path: '/newsletter', ready: '.newsletter-surface', content: '.newsletter-slot-row, .newsletter-slot-list, .newsletter-schedule' },

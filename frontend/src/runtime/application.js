@@ -14,10 +14,10 @@ import {
   workspacePath, workspaceRouteFor,
 } from "../core/workspace.js";
 import {
-  assistantJobsFromPayload, cardsFromWorkPayload,
+  cardsFromWorkPayload,
   compareQualityFindings, currentOperatorIdFromPayload,
   dedupeQualityFindings,
-  emptyOperationsAssistantSnapshot, emptyOperationsDocsSnapshot,
+  emptyOperationsDocsSnapshot,
   emptyOperationsQualitySnapshot, emptyOperationsRecurringSnapshot,
   emptyOperationsReviewSnapshot,
   emptyOperationsWorkSnapshot,
@@ -29,7 +29,7 @@ import {
 } from "../core/operations-model.js";
 import { createWorkModel } from "../core/work-model.js";
 import { createFinanceSurface } from "../surfaces/finance/index.js";
-import { createAdminSurface, createOperationsSurface } from "../surfaces/operations/index.js";
+import { createAdminSurface } from "../surfaces/operations/index.js";
 import { createPlanningSurface } from "../surfaces/planning.js";
 import { createTasksSurface } from "../surfaces/tasks/index.js";
 import { createWorkDetailSurface } from "../surfaces/work-detail/index.js";
@@ -75,7 +75,6 @@ const { apiUrl, request } = createApiClient({
   storage: localStorage,
 });
 const workspaceState = createWorkspaceState({
-  emptyOperationsAssistantSnapshot,
   emptyOperationsDocsSnapshot,
   emptyOperationsQualitySnapshot,
   emptyOperationsRecurringSnapshot,
@@ -88,7 +87,6 @@ const workspaceState = createWorkspaceState({
 const {
   documentState,
   knowledgeState,
-  operationsSurfaceState,
   qualityFiltersState,
   reviewSurfaceState,
   tasksSurfaceState,
@@ -236,7 +234,7 @@ const {
   },
   notifications: notificationsShell,
   preferences: {
-    closeSidebar, isMobileShell,
+    closeSidebar,
   },
 } = createApplicationShells({
   canLeaveCurrentDocument,
@@ -263,7 +261,6 @@ const {
 } = notificationsShell;
 
 const {
-  buildOperationsFutureSections,
   buildOperationsReferenceLinks,
   currentOperatorIdForTodayScope,
   dedupeOperationItems,
@@ -326,7 +323,6 @@ const {
   activeWorkOwnerId,
   allWorkTasks,
   apiUrl,
-  buildOperationsFutureSections,
   buildOperationsReferenceLinks,
   compareQualityFindings,
   currentOperatorIdForTodayScope,
@@ -392,8 +388,6 @@ const {
 const {
   closeCardPanel,
   closeTaskPanel,
-  dedupeArtifacts,
-  defaultNextFollowUpDate,
   getTaskRouteContext,
   handleWorkspaceEntityModalKeydown,
   hydrateCardPanel,
@@ -525,7 +519,6 @@ const {
   refreshDocuments,
   refreshOperationsRecurringSnapshot,
   refreshOperationsWorkSnapshot,
-  renderAssistantsSurface: (...args) => renderAssistantsSurface(...args),
   renderEntityLoadState,
   renderHonestState,
   renderOperationsRuntimeState,
@@ -555,41 +548,6 @@ const {
   workTaskTitle,
 });
 
-const {
-  refreshOperationsAssistantSnapshot,
-  renderAssistantsSurface,
-} = createOperationsSurface({
-  assistantJobsFromPayload,
-  cssEscape: (value) => CSS.escape(value),
-  dedupeArtifacts,
-  defaultNextFollowUpDate,
-  documentList,
-  escapeHtml,
-  formatTaskDateMeta,
-  getActiveWorkspaceRoute,
-  getActiveWorkspaceRouteToken,
-  getActiveWorkspaceView: () => workspaceState.activeWorkspaceView,
-  isMobileShell,
-  isOperationsWorkspaceVisible,
-  isWorkspaceRouteFresh,
-  locationRef: window.location,
-  navigateCanonicalWorkspace,
-  openCardPanel,
-  openTaskPanel,
-  promptUser: (message) => window.prompt(message),
-  refreshDocuments,
-  renderEntityLoadState,
-  renderHonestState,
-  renderSurfaceHeader,
-  request,
-  scheduleAnimationFrame: (callback) => requestAnimationFrame(callback),
-  setRouteTitle,
-  state: operationsSurfaceState,
-  tasksFromWorkPayload,
-  todayIsoDate,
-  workApiUrl,
-  workTaskTitle,
-});
 
 
 reviewSurface = createReviewSurface({
@@ -610,7 +568,6 @@ reviewSurface = createReviewSurface({
 knowledgeSurface = createKnowledgeSurface({
   knowledgeTools: document.querySelector("#knowledge-tools"),
   apiUrl,
-  assistantJobsFromPayload,
   basename,
   beginDocumentNavigation,
   buildOperationsWorkModel,
@@ -665,7 +622,6 @@ knowledgeSurface = createKnowledgeSurface({
   renderedView,
   refreshChangesPanel: (...args) => refreshChangesPanel(...args),
   refreshKnowledgeStatus: (...args) => refreshKnowledgeStatus(...args),
-  refreshOperationsAssistantSnapshot,
   refreshOperationsQualitySnapshot,
   refreshOperationsRecurringSnapshot,
   refreshOperationsWorkSnapshot,
@@ -805,7 +761,6 @@ navigationShell = createNavigationShell({
   documentRef: document,
   folderExists,
   folderPathFromLocation,
-  getAssistantQueueState: () => workspaceState.assistantQueue,
   getDocsAvailability: () => workspaceState.docsSnapshot,
   getKnowledgeState: () => knowledgeState,
   getTasksSectionForLegacyView: legacyViewToTasksSection,
@@ -820,7 +775,6 @@ navigationShell = createNavigationShell({
   prepareCardPanel,
   prepareTaskPanel,
   refreshDocuments,
-  refreshOperationsAssistantSnapshot,
   refreshReviewSnapshot: (...args) => reviewSurface.refreshReviewSnapshot(...args),
   refreshUsersSurface,
   restoreDocumentFilters,

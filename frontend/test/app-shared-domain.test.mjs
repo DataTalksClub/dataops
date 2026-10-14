@@ -6,12 +6,10 @@ import { describe, test } from "node:test";
 
 import * as workspace from "../src/core/workspace.js";
 import {
-  assistantJobsFromPayload,
   cardsFromWorkPayload,
   createOperationsModel,
   currentOperatorIdFromPayload,
   docsAvailabilityView,
-  emptyOperationsAssistantSnapshot,
   emptyOperationsDocsSnapshot,
   emptyOperationsQualitySnapshot,
   emptyOperationsRecurringSnapshot,
@@ -65,7 +63,6 @@ const adapterNames = [
   "cardsFromWorkPayload",
   "usersFromWorkPayload",
   "recurringConfigsFromPayload",
-  "assistantJobsFromPayload",
   "currentOperatorIdFromPayload",
 ];
 
@@ -152,7 +149,6 @@ describe("app shared operations domain characterization", () => {
     const card = { id: "card-1" };
     const user = { id: "grace" };
     const recurring = { id: "weekly" };
-    const job = { id: "job-1" };
 
     assert.equal(settledPayload({ status: "fulfilled", value: card }), card);
     assert.deepEqual(plain(settledPayload({ status: "rejected" })), {});
@@ -165,8 +161,6 @@ describe("app shared operations domain characterization", () => {
       recurringConfigsFromPayload({ configs: [recurring] })[0],
       recurring,
     );
-    assert.equal(assistantJobsFromPayload({ jobs: [job] })[0], job);
-    assert.deepEqual(assistantJobsFromPayload(null), []);
     assert.equal(currentOperatorIdFromPayload({ user }), "grace");
     assert.equal(currentOperatorIdFromPayload({ actor: { id: 42 } }), "42");
     assert.equal(currentOperatorIdFromPayload({ id: "alexey" }), "alexey");
@@ -195,11 +189,6 @@ describe("app shared operations domain characterization", () => {
     assert.deepEqual(emptyOperationsRecurringSnapshot(), {
       loaded: false,
       recurringConfigs: [],
-      errors: [],
-    });
-    assert.deepEqual(emptyOperationsAssistantSnapshot(), {
-      loaded: false,
-      jobs: [],
       errors: [],
     });
     assert.equal(emptyOperationsQualitySnapshot().summary.total, 0);
@@ -462,7 +451,6 @@ describe("app shared operations domain characterization", () => {
       resolveDocReference() {},
       showWorkspaceSurface() {},
       state: {
-        assistantSnapshot: { loaded: true, jobs: [{}, {}] },
         qualitySnapshot: { loaded: true, findings: [{}] },
       },
       tasksSectionTitle: workspace.tasksSectionTitle,
@@ -486,7 +474,6 @@ describe("app shared operations domain characterization", () => {
       resolveDocReference: () => null,
       showWorkspaceSurface: (view) => opened.push(["surface", view]),
       state: {
-        assistantSnapshot: { loaded: false, jobs: [] },
         qualitySnapshot: { loaded: false, findings: [] },
       },
       tasksSectionTitle: workspace.tasksSectionTitle,

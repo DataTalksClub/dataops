@@ -294,12 +294,10 @@ export function createOperationsOverview(context) {
       templates: "Create cards from reusable templates.",
       recurring:
         "Create, edit, pause, and delete the schedules that generate recurring tasks.",
-      assistants:
-        "Review assistant jobs that prepare work for your cards.",
       processes:
         "SOPs, templates, and references are contextual support for work.",
       search:
-        "Find Cards, Tasks, Artifacts, Assistant jobs, Templates, and Process Docs from one operator search.",
+        "Find Cards, Tasks, Artifacts, Templates, and Process Docs from one operator search.",
       admin:
         "Maintainer tools for process docs, content publishing, diagnostics, and configuration.",
     };

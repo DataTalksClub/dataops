@@ -52,35 +52,6 @@ test.describe('canonical DataOps frontend', () => {
     await expect(page.locator('#task-panel-title')).toContainText(`Canonical task ${id}`);
   });
 
-  test('runs and reviews an assistant job from the canonical lifecycle UI', async ({ page, request }) => {
-    const id = suffix();
-    const cardResponse = await request.post('/api/cards', {
-      data: { title: `Assistant workflow ${id}`, anchorDate: '2026-08-11' },
-    });
-    const card = (await cardResponse.json()).card;
-    const jobResponse = await request.post('/api/assistant-jobs', {
-      data: {
-        assistantType: 'podcast',
-        title: `Canonical assistant ${id}`,
-        cardId: card.id,
-        inputRefs: [{ type: 'card', id: card.id }],
-        approvalRequired: true,
-        maxAttempts: 2,
-      },
-    });
-    expect(jobResponse.status()).toBe(201);
-    const job = (await jobResponse.json()).job;
-
-    await page.goto(`/assistants?assistantJobId=${job.id}`);
-    await expect(page.getByRole('heading', { name: 'Assistants', exact: true })).toBeVisible();
-    await expect(page.locator('.assistant-detail h3')).toHaveText(`Canonical assistant ${id}`);
-    await expect(page.locator('[data-assistant-save]')).toBeVisible();
-    await expect(page.locator('[data-assistant-lifecycle="submit"]')).toBeVisible();
-    await page.locator('[data-assistant-lifecycle="run-dry"]').click();
-    await expect(page.locator('.assistant-artifacts a')).toHaveCount(1);
-    await expect(page.locator('[data-assistant-lifecycle="approve"]')).toBeVisible();
-  });
-
   test('inspects the database-backed Git projection without mutation controls', async ({ page }) => {
     await page.goto('/templates');
     const row = page.locator('.runtime-template-row', { hasText: 'Synthetic Git-authored workflow' });

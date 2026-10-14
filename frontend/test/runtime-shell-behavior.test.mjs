@@ -161,7 +161,6 @@ function createWorkspaceHarness() {
   let entity = { status: "idle" };
   let account = { signedIn: { id: "alexey" }, scope: { id: "grace" } };
   const snapshots = {
-    assistant: { source: "assistant", loaded: false },
     docs: { source: "docs", state: "loading" },
     quality: { source: "quality", loaded: false },
     recurring: { source: "recurring", loaded: false },
@@ -169,7 +168,6 @@ function createWorkspaceHarness() {
     work: { source: "work", loaded: false },
   };
   const state = createWorkspaceState({
-    emptyOperationsAssistantSnapshot: () => snapshots.assistant,
     emptyOperationsDocsSnapshot: () => snapshots.docs,
     emptyOperationsQualitySnapshot: () => snapshots.quality,
     emptyOperationsRecurringSnapshot: () => snapshots.recurring,
@@ -511,21 +509,14 @@ describe("runtime and shell production behavior", () => {
 
     const work = { loaded: true, tasks: [{ id: "task-1" }] };
     const quality = { loaded: true, findings: [{ id: "finding-1" }] };
-    const assistant = { loaded: true, jobs: [{ id: "job-1" }] };
     state.workModelState.workSnapshot = work;
     state.qualitySnapshot = quality;
-    state.operationsSurfaceState.assistantSnapshot = assistant;
     assert.equal(state.workDetailState.workSnapshot, work);
     assert.equal(state.tasksSurfaceState.qualitySnapshot, quality);
-    assert.equal(state.operationsSurfaceState.assistantSnapshot, assistant);
 
     const docs = { state: "unavailable", error: "docs down", status: 503 };
     state.docsSnapshot = docs;
     assert.equal(state.workModelState.docsSnapshot, docs);
-
-    const queue = { filter: "all", selectedJobId: "job-1" };
-    state.assistantQueue = queue;
-    assert.equal(state.operationsSurfaceState.assistantQueue, queue);
 
     const filters = { severity: "error" };
     state.qualityFiltersState.value = filters;
@@ -538,7 +529,7 @@ describe("runtime and shell production behavior", () => {
     const entity = { status: "ready", id: "task-1" };
     state.workDetailState.workspaceEntity = entity;
     assert.equal(harness.entity, entity);
-    assert.equal(state.operationsSurfaceState.workspaceEntity, entity);
+    assert.equal(state.workDetailState.workspaceEntity, entity);
 
     const nextAccount = { signedIn: { id: "alexey" }, scope: { id: "valeriia" } };
     harness.account = nextAccount;

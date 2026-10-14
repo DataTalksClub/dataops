@@ -19,7 +19,6 @@ export function createWorkModel(context) {
     activeWorkOwnerId,
     allWorkTasks,
     apiUrl,
-    buildOperationsFutureSections,
     buildOperationsReferenceLinks,
     compareQualityFindings,
     currentOperatorIdForTodayScope,
@@ -418,7 +417,6 @@ export function createWorkModel(context) {
         connected: hasLiveWork,
         errors: runtimeErrors,
       },
-      futureSections: buildOperationsFutureSections(),
       stats: {
         totalDocs: docs.length,
         workflowTemplates: templates.length,

@@ -424,33 +424,6 @@ body[data-workspace-view="sponsors"] .library-view {
     flex: 0 0 auto !important;
   }
 
-  /* ---- Assistants: filters and jobs first, create form last ---- */
-  .assistant-workspace {
-    display: flex !important;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .assistant-workspace > .surface-summary {
-    order: 4 !important;
-  }
-  .assistant-workspace > .assistant-panel {
-    order: 3;
-  }
-  .assistant-filter-bar {
-    order: 1;
-    display: flex;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    gap: 4px;
-  }
-  .assistant-filter-bar > * {
-    flex: 0 0 auto !important;
-    min-height: 44px !important;
-  }
-  .assistant-layout {
-    order: 2;
-  }
-
   /* ---- Bookkeeping: the sections keep their desktop order at every width ---- */
   .bookkeeping-surface {
     display: flex !important;

@@ -54,10 +54,6 @@ const REQUIRED = {
     route: "/recurring",
     states: ["empty", "ready", "pause", "resume", "delete-unreferenced", "delete-referenced-409", "permission-denied", "failure"],
   },
-  assistants: {
-    route: "/assistants?assistantJobId=<id>",
-    states: ["loading", "empty", "list", "exact-detail", "deep-link-reload", "stale-not-found", "unavailable"],
-  },
   notifications: {
     route: "/ (Notifications panel)",
     states: ["empty", "task-linked", "dismiss-success", "dismiss-failure", "counts-update"],
@@ -113,7 +109,6 @@ const REQUIRED_APIS = {
   workflows: ["/api/cards", "/api/tasks", "/api/artifacts"],
   templates: ["/api/templates", "/api/cards"],
   recurring: ["/api/recurring"],
-  assistants: ["/api/assistant-jobs", "/api/artifacts"],
   notifications: ["/api/notifications", "/api/tasks"],
   bookkeeping: ["/api/bookkeeping/*"],
   sponsors: ["/api/sponsor-crm/*"],
@@ -155,7 +150,6 @@ const REQUIRED_STATE_ROLE_OVERRIDES = {
 const REQUIRED_ROUTE_SET = [
   "/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
   "/cards?cardId=<id>&taskId=<id>",
-  "/assistants?assistantJobId=<id>",
   "/templates?templateId=<id>",
   "/recurring",
   "/bookkeeping",

@@ -9,7 +9,6 @@ export function createNavigationShell(context) {
     documentRef,
     folderExists,
     folderPathFromLocation,
-    getAssistantQueueState,
     getDocsAvailability,
     getKnowledgeState,
     getTasksSectionForLegacyView,
@@ -23,7 +22,6 @@ export function createNavigationShell(context) {
     prepareCardPanel,
     prepareTaskPanel,
     refreshDocuments,
-    refreshOperationsAssistantSnapshot,
     refreshReviewSnapshot,
     refreshUsersSurface,
     restoreDocumentFilters,
@@ -189,10 +187,6 @@ export function createNavigationShell(context) {
     pendingLegacyRoute = { ...route, token };
     workspaceEntityState = null;
     if (route.view === "tasks") setActiveTasksSection(route.tasksSection);
-    getAssistantQueueState().selectedJobId =
-      route.tasksSection === "assistants"
-        ? route.params.get("assistantJobId")
-        : null;
     setRuntimeTemplateRoute(route, options.entity);
     setTaskRouteContextFromRoute(route);
     resetTaskPanel();
@@ -247,9 +241,6 @@ export function createNavigationShell(context) {
     }
     if (route.path === "/templates") {
       jobs.push(resolveTemplateRouteEntity(route, token));
-    }
-    if (route.path === "/assistants") {
-      jobs.push(refreshOperationsAssistantSnapshot({ rerender: true, token }));
     }
     if (route.path === "/review" && typeof refreshReviewSnapshot === "function") {
       jobs.push(refreshReviewSnapshot({ rerender: true, token }));

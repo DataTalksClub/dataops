@@ -155,7 +155,7 @@ test.describe("pre-refactor frontend module characterization", () => {
     await expect(page).toHaveURL(`${baseURL}/`);
     await expect(page.locator(".ops-work-queue")).toBeVisible();
     // Tasks sections are first-class nav destinations beside Operations.
-    for (const label of ["Queue", "Cards", "Templates", "Recurring", "Assistants"]) {
+    for (const label of ["Queue", "Cards", "Templates", "Recurring"]) {
       await expect(
         page.locator(`.workspace-nav-button[data-tasks-section]:has-text("${label}")`),
       ).toHaveCount(1);
@@ -223,7 +223,6 @@ test.describe("pre-refactor frontend module characterization", () => {
       ["/tasks", "Work Queue", ".ops-work-queue"],
       ["/templates", "Templates", ".runtime-template-inspector"],
       ["/recurring", "Recurring", ".ops-recurring-section"],
-      ["/assistants", "Assistants", ".assistant-workspace"],
       ["/newsletter", "Newsletter", ".newsletter-surface"],
       ["/calendar", "Calendar", ".calendar-surface"],
       ["/bookkeeping", "Bookkeeping", ".bookkeeping-surface"],
@@ -301,7 +300,6 @@ test.describe("pre-refactor frontend module characterization", () => {
       "/cards/archive",
       "/templates",
       "/recurring",
-      "/assistants",
       "/artifacts",
       "/newsletter",
       "/calendar",

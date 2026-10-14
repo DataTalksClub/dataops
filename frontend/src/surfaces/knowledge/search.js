@@ -1,7 +1,6 @@
 export function createKnowledgeSearch(context, services) {
   const {
     apiUrl,
-    assistantJobsFromPayload,
     buildOperationsReferenceLinks,
     cardsFromWorkPayload,
     cleanPath,
@@ -234,12 +233,6 @@ export function createKnowledgeSearch(context, services) {
           Array.isArray(payload) ? payload : payload?.artifacts || [],
         type: "artifact",
       },
-      {
-        source: "assistant-jobs",
-        path: "/api/assistant-jobs",
-        items: assistantJobsFromPayload,
-        type: "assistant-job",
-      },
     ];
     const settled = await Promise.allSettled(
       definitions.map((definition) =>
@@ -268,7 +261,6 @@ export function createKnowledgeSearch(context, services) {
             item.name,
             item.description,
             item.status,
-            item.assistantType,
             item.storageUri,
           ]
             .filter(Boolean)
@@ -298,19 +290,12 @@ export function createKnowledgeSearch(context, services) {
           ? { kind: "workflow", cardId: id }
           : type === "template"
             ? { kind: "template", templateId: id, templateType: item.type }
-            : type === "assistant-job"
-              ? {
-                  kind: "assistant-job",
-                  assistantJobId: id,
-                  taskId: item.taskId,
-                  cardId: item.cardId,
-                }
-              : {
-                  kind: "artifact",
-                  artifactId: id,
-                  taskId: item.taskId,
-                  cardId: item.cardId,
-                };
+            : {
+                kind: "artifact",
+                artifactId: id,
+                taskId: item.taskId,
+                cardId: item.cardId,
+              };
     return {
       type,
       id,
@@ -318,7 +303,6 @@ export function createKnowledgeSearch(context, services) {
       context:
         item.description ||
         item.summary ||
-        item.assistantType ||
         item.storageUri ||
         "",
       source: type,
@@ -609,7 +593,6 @@ export function createKnowledgeSearch(context, services) {
       doc: "Process Docs",
       artifact: "Artifacts",
       file: "Files",
-      "assistant-job": "Assistant Jobs",
     };
     const order = [
       "task",
@@ -618,7 +601,6 @@ export function createKnowledgeSearch(context, services) {
       "doc",
       "artifact",
       "file",
-      "assistant-job",
     ];
     const groups = new Map();
     for (const result of results) {
@@ -783,12 +765,6 @@ export function createKnowledgeSearch(context, services) {
           type: route.templateType || result.fields?.template_type,
           title: result.title,
         },
-      });
-      return;
-    }
-    if (kind === "assistant-job") {
-      navigateCanonicalWorkspace("/assistants", {
-        assistantJobId: route.assistantJobId || result.id,
       });
       return;
     }

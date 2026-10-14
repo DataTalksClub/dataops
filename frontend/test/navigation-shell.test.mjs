@@ -87,7 +87,6 @@ function createNavigationHarness(options = {}) {
       this.replaced.push({ state, url });
     },
   };
-  const assistantQueue = { selectedJobId: null };
   const knowledge = {
     allDocuments: options.documents || [],
     selectedFolder: "existing-folder",
@@ -108,14 +107,12 @@ function createNavigationHarness(options = {}) {
     documentRef: document,
     folderExists: (path) => path === "known-folder",
     folderPathFromLocation: () => options.folderPath || "",
-    getAssistantQueueState: () => assistantQueue,
     getDocsAvailability: () =>
       options.docsAvailability || emptyOperationsDocsSnapshot(),
     getKnowledgeState: () => knowledge,
     getTasksSectionForLegacyView: (view) =>
       ({
         artifacts: "artifacts",
-        assistants: "assistants",
         cards: "workflows",
         templates: "templates",
         workflows: "workflows",
@@ -135,7 +132,6 @@ function createNavigationHarness(options = {}) {
       documentList.append(routeHeading);
     },
     refreshOperationsArtifactSnapshot: async (value) => calls.push(["artifacts", value]),
-    refreshOperationsAssistantSnapshot: async (value) => calls.push(["assistants", value]),
     refreshReviewSnapshot: async (value) => calls.push(["review", value]),
     refreshUsersSurface: async (value) => calls.push(["users", value]),
     renderWorkspaceNav: () => ({
@@ -165,7 +161,6 @@ function createNavigationHarness(options = {}) {
   });
   return {
     active,
-    assistantQueue,
     calls,
     cardButton,
     document,
@@ -262,7 +257,6 @@ describe("canonical navigation shell behavior", () => {
     const cases = [
       ["/tasks", { taskId: "task-1" }, "resolve-queue"],
       ["/templates", { templateId: "template-1" }, "resolve-template"],
-      ["/assistants", { assistantJobId: "job-1" }, "assistants"],
       ["/review", {}, "review"],
       ["/users", {}, "users"],
     ];
@@ -270,9 +264,6 @@ describe("canonical navigation shell behavior", () => {
       const harness = createNavigationHarness();
       await harness.shell.navigateCanonicalWorkspace(path, params).ready;
       assert.equal(harness.calls.some(([name]) => name === expected), true, path);
-      if (path === "/assistants") {
-        assert.equal(harness.assistantQueue.selectedJobId, "job-1");
-      }
     }
 
     const recurring = createNavigationHarness();

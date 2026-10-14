@@ -504,7 +504,7 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('.ops-queue-row')).toHaveCount(0);
     // Tasks sections are first-class nav rows: no group to expand, no
     // Artifacts destination.
-    for (const section of ['queue', 'workflows', 'templates', 'recurring', 'assistants']) {
+    for (const section of ['queue', 'workflows', 'templates', 'recurring']) {
       await expect(page.locator(`.workspace-nav-button[data-tasks-section="${section}"]`)).toBeVisible();
     }
     await expect(page.locator('#tasks-nav-submenu')).toHaveCount(0);
@@ -717,54 +717,6 @@ test.describe('canonical frontend capability behavior', () => {
       fullPage: true,
     });
     await context.close();
-  });
-
-  test('assistants provide non-mutating real list, detail, stale, and relationship behavior', async ({ browser }, testInfo) => {
-    const { context, page } = await portalPage(browser);
-    await page.goto('/assistants');
-    await expect(page.getByText('No matching assistant jobs')).toBeVisible();
-    await setFaults(context.request, [{ method: 'GET', path: '/api/assistant-jobs', status: 503, remaining: 10 }]);
-    await page.reload();
-    await expect(page.getByText('Assistant jobs unavailable')).toBeVisible();
-    await clearFaults(context.request);
-
-    const id = unique('assistant-baseline');
-    const cardResponse = await context.request.post('/api/cards', { data: { title: `Synthetic workflow ${id}`, anchorDate: '2026-08-12' } });
-    const card = (await json(cardResponse)).card;
-    const assistantResponse = await context.request.post('/api/assistant-jobs', { data: {
-      assistantType: 'podcast', title: `Synthetic assistant ${id}`, cardId: card.id,
-      inputRefs: [{ type: 'card', id: card.id }], approvalRequired: true, maxAttempts: 2,
-    } });
-    const assistant = (await json(assistantResponse)).job;
-    const artifactResponse = await context.request.post('/api/artifacts', { data: {
-      type: 'assistant-output', title: `Synthetic artifact ${id}`, storageUri: 'https://example.invalid/synthetic-output',
-      storageProvider: 'external-url', dataClass: 'internal', status: 'draft', sourceType: 'assistant-output',
-      cardId: card.id, assistantJobId: assistant.id,
-    } });
-    expect(artifactResponse.status()).toBe(201);
-    const before = await json(await context.request.get(`/api/assistant-jobs/${assistant.id}`));
-
-    await setFaults(context.request, [{ method: 'GET', path: `/api/assistant-jobs/${assistant.id}`, delayMs: 800 }]);
-    await page.goto(`/assistants?assistantJobId=${assistant.id}`);
-    await expect(page.locator('.assistant-detail h3')).toBeVisible();
-    await expect(page.locator('.assistant-detail h3')).toHaveText(`Synthetic assistant ${id}`);
-    await expect(page.locator('.assistant-queue .assistant-job-row', { hasText: `Synthetic assistant ${id}` })).toBeVisible();
-    // Input references are labeled in operator language, never as a raw
-    // UUID: until the work snapshot resolves the card title the ref degrades
-    // to the honest "Card: link" fallback.
-    await expect(page.locator('.assistant-ref-list')).toContainText('Card:');
-    await page.reload();
-    await expect(page.locator('.assistant-detail h3')).toHaveText(`Synthetic assistant ${id}`);
-    const after = await json(await context.request.get(`/api/assistant-jobs/${assistant.id}`));
-    expect(after.job.status).toBe(before.job.status);
-    expect(after.events).toEqual(before.events);
-
-    await page.goto('/assistants?assistantJobId=stale-synthetic-assistant');
-    await expect(page.locator('.entity-route-not-found')).toContainText('stale-synthetic-assistant');
-    await context.close();
-    recordCapabilityEvidence(testInfo, [
-      { route: '/assistants?assistantJobId=<id>', roleId: 'admin', stateIds: ['assistants.loading', 'assistants.empty', 'assistants.list', 'assistants.exact-detail', 'assistants.deep-link-reload', 'assistants.unavailable'] },
-    ]);
   });
 
   test('Bookkeeping completes a real synthetic account, transaction, PDF evidence, link, and report journey', async ({ browser }, testInfo) => {
@@ -1587,7 +1539,6 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(notificationRow).toHaveCount(0);
 
     for (const endpoint of [
-      '/api/assistant-jobs/stale-capability',
       '/api/artifacts/stale-capability',
       '/api/users/stale-capability',
       '/api/newsletter-slots/stale-capability',
