@@ -1304,6 +1304,7 @@ body[data-workspace-view="tasks"] .work-dialog-field {
 body[data-workspace-view="tasks"] .work-dialog-lead {
   margin: 0 0 var(--dk-space-3);
   overflow-wrap: anywhere;
+}
 /* Task dialog: context first (the card with its template icon and kind,
    then status, due date and owner as chips), the actions, "How to do it",
    any proof the task requires, and one disclosure for attachments, process
