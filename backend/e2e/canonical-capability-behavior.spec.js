@@ -1567,7 +1567,7 @@ test.describe('canonical frontend capability behavior', () => {
     const page = await admin.newPage();
     await page.goto('/recurring');
     await expect(page.getByRole('region', { name: 'Recurring operations' })).toContainText('No recurring schedules yet');
-    await expect(page.locator('.dk-page-header__actions').getByRole('button', { name: 'New schedule' })).toBeVisible();
+    await expect(page.locator('.ops-recurring-section .collection-header').getByRole('button', { name: 'New schedule' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'New schedule' })).toHaveCount(1);
     const id = unique('runtime-template');
     const projections = (await json(await admin.request.get('/api/templates'))).templates;

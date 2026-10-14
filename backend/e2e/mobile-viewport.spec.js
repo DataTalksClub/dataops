@@ -32,7 +32,7 @@ const ROUTES = [
   { path: '/cards', ready: '.ops-workflows-board', content: '.ops-workflows-grid', contentReady: '.ops-workflows-grid' },
   { path: '/cards/archive', ready: '.ops-workflows-board', content: '.workflow-archive-tabs, .cards-archive-grid, .ops-honest-state' },
   { path: '/templates', ready: '.runtime-template-inspector .dk-split', content: '.runtime-template-inspector .dk-split' },
-  { path: '/recurring', ready: '.ops-recurring-surface', content: '.recurring-toolbar, .ops-recurring-section' },
+  { path: '/recurring', ready: '.ops-recurring-surface', content: '.ops-recurring-section' },
   { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bookkeeping-worklist, .bookkeeping-monthlens' },
   { path: '/sponsors', ready: '.sponsor-crm-surface', content: '.crm-layout, .crm-upcoming-list, .crm-directory-row, .crm-booking-row', contentReady: '.crm-master .crm-booking-row, .crm-master .honest-state' },
   { path: '/newsletter', ready: '.newsletter-surface', content: '.newsletter-slot-row, .newsletter-slot-list, .newsletter-schedule' },

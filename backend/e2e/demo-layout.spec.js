@@ -74,11 +74,17 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
         const action = await actionButton.boundingBox();
         expect(Math.abs(action.x + action.width - canvas.x - canvas.width)).toBeLessThan(1);
       }
-      if (route === '/users') {
-        const actionButton = header.getByRole('button', { name: 'Add user', exact: true });
-        await expect(actionButton).toBeVisible();
-        const action = await actionButton.boundingBox();
-        expect(Math.abs(action.x + action.width - canvas.x - canvas.width)).toBeLessThan(1);
+      // Moved create actions sit on their collection, right after its title,
+      // never in the page header's corner.
+      const collectionAction = { '/users': 'Add user', '/bookkeeping': 'Add entry' }[route];
+      if (collectionAction) {
+        await expect(header.getByRole('button', { name: collectionAction, exact: true })).toHaveCount(0);
+        const lead = page.locator('#document-list .collection-header__lead')
+          .filter({ has: page.getByRole('button', { name: collectionAction, exact: true }) });
+        await expect(lead).toHaveCount(1);
+        const title = await lead.locator('h2, h3').first().boundingBox();
+        const action = await lead.getByRole('button', { name: collectionAction, exact: true }).boundingBox();
+        expect(action.x - (title.x + title.width), `${route}: action follows its collection title`).toBeLessThan(24);
       }
       if (route === '/calendar') {
         const grid = await page.locator('.calendar-grid').boundingBox();
@@ -87,7 +93,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
         const action = await header.getByRole('button', { name: 'Add activity', exact: true }).boundingBox();
         expect(Math.abs(action.x + action.width - canvas.x - canvas.width)).toBeLessThan(1);
       }
-      const financeAction = { '/bookkeeping': 'Add entry', '/sponsors': 'Add deal' }[route];
+      const financeAction = { '/sponsors': 'Add deal' }[route];
       if (financeAction) {
         const action = await header.getByRole('button', { name: financeAction, exact: true }).boundingBox();
         expect(Math.abs(action.x + action.width - canvas.x - canvas.width), `${route}: action right edge`).toBeLessThan(1);
