@@ -138,7 +138,7 @@
   align-content: start;
   gap: 8px;
   min-width: 250px;
-  border: 1px solid var(--dk-border-subtle, rgba(0, 0, 0, 0.05));
+  border: 1px solid var(--dk-border-default);
   border-radius: 12px;
   background: var(--dk-bg-muted);
   padding: 8px;
@@ -189,7 +189,7 @@
   gap: 7px;
 }.workflow-column-empty {
   margin: 0;
-  border: 1px dashed var(--dk-border-subtle, rgba(0, 0, 0, 0.06));
+  border: 1px dashed var(--dk-border-default);
   border-radius: 8px;
   color: var(--dk-text-faint);
   padding: 20px 10px;
