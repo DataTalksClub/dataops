@@ -749,20 +749,30 @@ export function createTaskQueue(context) {
   // The second line a row earns, and only when the task is waiting on
   // someone. Proof requirements stay in the task panel — the queue is one
   // compact line per task so the list scans as a checklist.
+  // A date inside a note is data: mono. Words such as "Today" stay prose.
+  function noteDate(text) {
+    if (!/\d/.test(text)) return document.createTextNode(text);
+    const date = document.createElement("span");
+    date.className = "dk-mono";
+    date.textContent = text;
+    return date;
+  }
+
   function taskBlockerNote(task, today) {
     if (task.status === "done") return null;
     if (task.waitingFor) {
       const note = document.createElement("small");
       note.className = "ops-queue-note is-waiting";
-      note.textContent = `Waiting for ${task.waitingFor}${
-        task.followUpAt ? ` · ${queueDueLabel(task.followUpAt, today)}` : ""
-      }`;
+      note.append(`Waiting for ${task.waitingFor}`);
+      if (task.followUpAt) {
+        note.append(" · ", noteDate(queueDueLabel(task.followUpAt, today)));
+      }
       return note;
     }
     if (isFollowUpDueTask(task, today)) {
       const note = document.createElement("small");
       note.className = "ops-queue-note";
-      note.textContent = `Follow up ${queueShortDate(task.followUpAt)}`;
+      note.append("Follow up ", noteDate(queueShortDate(task.followUpAt)));
       return note;
     }
     if (task.instructionDocId || task.instructionsUrl) {

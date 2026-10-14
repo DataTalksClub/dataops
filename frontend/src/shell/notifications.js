@@ -46,16 +46,40 @@ export function createNotificationsShell({
         .replace(/^Recurring task generated:\s*/i, "")
         .replace(/\s+for\s+\d{4}-\d{2}-\d{2}\s*$/i, "");
     }
+    if (notification?.type === "follow-up-due") return followUpParts(message).title;
     return message;
   }
 
-  function notificationDueLabel(value) {
-    const date = String(value || "").slice(0, 10);
-    const relative = formatTaskDateMeta(date, todayIsoDate());
-    if (relative === "Today") return "Due today";
-    if (relative === "Yesterday") return "Due yesterday";
-    if (relative === "Tomorrow") return "Due tomorrow";
-    return relative ? `Due ${formatShortDate(date)}` : "";
+  // "Follow up: <task> — waiting for <who>": the task is the title; the
+  // waiting context belongs in the description line.
+  function followUpParts(message) {
+    const match = /^Follow up:\s*(.*?)(?:\s+—\s+waiting for\s+(.*))?$/i.exec(message);
+    if (!match) return { title: message, waitingFor: "" };
+    return { title: match[1], waitingFor: match[2] || "" };
+  }
+
+  // Description parts: words as text, a calendar date as a mono span.
+  function notificationDescParts(notification) {
+    const parts = [];
+    if (notification.type === "follow-up-due") {
+      const { waitingFor } = followUpParts(String(notification.message || ""));
+      if (waitingFor) parts.push(`Waiting for ${waitingFor}`);
+    }
+    if (notification.dueAt) {
+      const date = String(notification.dueAt).slice(0, 10);
+      const relative = formatTaskDateMeta(date, todayIsoDate());
+      if (relative === "Today") parts.push("Due today");
+      else if (relative === "Yesterday") parts.push("Due yesterday");
+      else if (relative === "Tomorrow") parts.push("Due tomorrow");
+      else if (relative) {
+        const value = documentRef.createElement("span");
+        value.className = "dk-mono";
+        value.textContent = formatShortDate(date);
+        parts.push(["Due ", value]);
+      }
+    }
+    if (!parts.length) parts.push("Workspace update");
+    return parts.flatMap((part, index) => [...(index ? [" · "] : []), ...[part].flat()]);
   }
 
   function compareNotificationsNewestFirst(left, right) {
@@ -222,9 +246,7 @@ export function createNotificationsShell({
       });
       const meta = documentRef.createElement("p");
       meta.className = "dk-notif-item__desc";
-      meta.textContent = notification.dueAt
-        ? notificationDueLabel(notification.dueAt)
-        : "Workspace update";
+      meta.append(...notificationDescParts(notification));
       main.append(link, meta);
       const side = documentRef.createElement("div");
       side.className = "dk-notif-item__side";
@@ -237,7 +259,9 @@ export function createNotificationsShell({
         Math.floor((Date.now() - Date.parse(notification.createdAt)) / 60000),
       );
       time.textContent = Number.isFinite(minutes)
-        ? minutes < 60
+        ? minutes < 1
+          ? "now"
+          : minutes < 60
           ? `${minutes}m`
           : minutes < 1440
             ? `${Math.floor(minutes / 60)}h`

@@ -648,6 +648,31 @@ describe("runtime and shell production behavior", () => {
 
   });
 
+  test("a follow-up names its task, keeps the waiting context and a mono date in the description", async () => {
+    const harness = createNotificationHarness({
+      request: async () => ({
+        notifications: {
+          items: [{
+            createdAt: new Date().toISOString(),
+            dueAt: "2026-08-02",
+            id: "notification-follow-up",
+            message: "Follow up: Sponsor checklist — waiting for Reply from event host",
+            taskId: "task-9",
+            type: "follow-up-due",
+          }],
+        },
+      }),
+    });
+    await harness.shell.refreshWorkBell();
+    harness.shell.openWorkBellPanel();
+    const item = harness.body.children[1];
+    assert.equal(item.querySelector(".dk-notif-item__link").textContent, "Sponsor checklist");
+    const desc = item.querySelector(".dk-notif-item__desc");
+    assert.equal(desc.textContent, "Waiting for Reply from event host · Due short:2026-08-02");
+    assert.equal(desc.querySelector(".dk-mono").textContent, "short:2026-08-02");
+    assert.equal(item.querySelector(".dk-notif-item__time").textContent, "now");
+  });
+
   test("loads notifications, preserves stale state, and supports open and dismiss actions", async () => {
     let payload = {
       notifications: {
