@@ -51,15 +51,17 @@ function issuesOf(newsletter: CrmRecord, newsletters: CrmRecord[], issues: CrmRe
   return issues.filter((issue) => issueBelongsTo(issue, newsletter, newsletters));
 }
 
-async function decorated(client: DynamoDBDocumentClient, newsletters: CrmRecord[], today: string) {
-  const [issues, leads] = await Promise.all([
+/** Every newsletter with its issue stats; three table reads, made together. */
+async function decoratedNewsletters(client: DynamoDBDocumentClient, today: string) {
+  const [newsletters, issues, leads] = await Promise.all([
+    listCrmRecords(client, 'newsletter'),
     listCrmRecords(client, NEWSLETTER_ISSUE_KIND),
     listCrmRecords(client, 'lead'),
   ]);
-  return (newsletter: CrmRecord): Record<string, unknown> => ({
+  return sortNewsletters(newsletters, today).map((newsletter): Record<string, unknown> => ({
     ...publicNewsletter(newsletter, today),
-    issues: newsletterIssueStats(issuesOf(newsletter, newsletters, issues), leads),
-  });
+    issues: newsletterIssueStats(issuesOf(newsletter as CrmRecord, newsletters, issues), leads),
+  }));
 }
 
 async function handleIssues(client: DynamoDBDocumentClient, method: string, newsletter: CrmRecord, body: Record<string, unknown> | null) {
@@ -137,18 +139,14 @@ export async function handleSponsorNewsletterRoutes(
   const id = match[1];
   if (id && !ID.test(id)) return json(400, { error: 'Invalid ID' });
   if (method === 'GET' && id) {
-    const record = await getCrmRecord(client, 'newsletter', id);
-    if (!record) return json(404, { error: 'Not found' });
-    const newsletters = await listCrmRecords(client, 'newsletter');
-    return json(200, (await decorated(client, newsletters, today))(record));
+    const record = (await decoratedNewsletters(client, today)).find((item) => item.id === id);
+    return record ? json(200, record) : json(404, { error: 'Not found' });
   }
   if (method === 'GET') {
     const listError = validateList(event);
     if (listError) return json(400, { error: listError });
     const query = event.queryStringParameters || {};
-    const newsletters = await listCrmRecords(client, 'newsletter');
-    const decorate = await decorated(client, newsletters, today);
-    let items = sortNewsletters(newsletters, today).map((item) => decorate(item as CrmRecord));
+    let items = await decoratedNewsletters(client, today);
     if (query.health) items = items.filter((item) => item.health === query.health);
     if (query.subscriptionStatus) items = items.filter((item) => item.subscriptionStatus === query.subscriptionStatus);
     if (query.search) {
