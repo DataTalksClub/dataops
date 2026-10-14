@@ -56,7 +56,9 @@ export function renderPageHeaderMarkup({
 const COLLECTION_CREATE_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
 
-export function collectionCreateButtonMarkup({ label, attributes = "", shortcut = true }) {
+export function collectionCreateButtonMarkup({
+  label, attributes = "", variant = "primary", className = "", shortcut = true,
+}) {
   const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   })[character]);
@@ -65,7 +67,7 @@ export function collectionCreateButtonMarkup({ label, attributes = "", shortcut 
     : "";
   if (shortcut && typeof document !== "undefined") installCollectionCreateShortcut(document);
   // Only application-authored attributes belong in `attributes`.
-  return `<button type="button" class="dk-button dk-button--primary dk-button--sm collection-create"` +
+  return `<button type="button" class="dk-button dk-button--${variant} dk-button--sm collection-create${className ? ` ${className}` : ""}"` +
     `${keys}${attributes ? ` ${attributes}` : ""}><span class="collection-create__icon" aria-hidden="true">` +
     `${COLLECTION_CREATE_ICON}</span><span>${escape(label)}</span></button>`;
 }

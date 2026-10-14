@@ -833,6 +833,8 @@
 }.rendered-view {
   color: var(--dk-text-primary);
 }/* Newsletter and Calendar planning surfaces */body[data-workspace-view="newsletter"] .document-list { width: 100%; max-width: 920px; }body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 1180px; }.newsletter-surface { display: grid; min-width: 0; gap: 20px; }
+/* Add slot sits right after the view tabs it creates into. */
+.newsletter-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-3); }
 
 /* Template list direct start and live card navigation */
 .runtime-template-start-btn {

@@ -63,10 +63,13 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       expect(Math.abs(heading.x - canvas.x), `${route}: title left edge`).toBeLessThan(1);
       expect(canvas.x + canvas.width).toBeLessThanOrEqual(viewport.width);
       if (route === '/newsletter') {
-        const actionButton = header.getByRole('button', { name: 'Add slot', exact: true });
+        // Add slot follows the view tabs it creates into.
+        await expect(header.getByRole('button', { name: 'Add slot', exact: true })).toHaveCount(0);
+        const actionButton = page.locator('.newsletter-toolbar').getByRole('button', { name: 'Add slot', exact: true });
         await expect(actionButton).toBeVisible();
         const action = await actionButton.boundingBox();
-        expect(Math.abs(action.x + action.width - canvas.x - canvas.width), `${route}: action right edge`).toBeLessThan(1);
+        const tabs = await page.locator('.newsletter-views').boundingBox();
+        expect(action.y, `${route}: action shares or follows the tabs row`).toBeGreaterThanOrEqual(tabs.y - 1);
       }
       if (route === '/tasks') {
         const board = await page.locator('.ops-queue-board').boundingBox();

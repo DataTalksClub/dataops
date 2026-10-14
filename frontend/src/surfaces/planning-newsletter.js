@@ -2,7 +2,7 @@ import {
   renderNewsletterDialogMarkup,
   setupNewsletterDialog,
 } from "./planning-newsletter-dialog.js";
-import { renderPageHeaderMarkup } from "./operations-overview.js";
+import { collectionCreateButtonMarkup, renderPageHeaderMarkup } from "./operations-overview.js";
 
 export function createNewsletterPlanner(context) {
   const {
@@ -283,8 +283,8 @@ export function createNewsletterPlanner(context) {
         titleId: "newsletter-surface-title",
         subtitle: "Plan campaign slots, booking readiness, and publication progress in Europe/Berlin.",
         className: "planner-header",
-        actionsHtml: '<button class="primary-button" data-newsletter-add>Add slot</button>',
       })}
+      <div class="newsletter-toolbar">
       <div class="dk-tabs newsletter-views" role="radiogroup" data-newsletter-views aria-label="Filter newsletter issues">
         <button type="button" data-newsletter-view="all" class="dk-tab"
           role="radio"
@@ -295,6 +295,8 @@ export function createNewsletterPlanner(context) {
         <button type="button" data-newsletter-view="sent" class="dk-tab"
           role="radio"
           aria-checked="false" tabindex="-1">Sent &amp; archive <span class="dk-count" data-view-count hidden></span></button>
+      </div>
+      ${collectionCreateButtonMarkup({ label: "Add slot", attributes: "data-newsletter-add" })}
       </div>
       <details class="newsletter-filters" aria-label="Newsletter filters">
         <summary class="newsletter-filters-summary">
@@ -560,6 +562,13 @@ export function createNewsletterPlanner(context) {
             <div class="honest-state planner-empty">
               <strong>No newsletter slots</strong>
               <p>Create the first slot or adjust the date, status, and booking filters.</p>
+              ${collectionCreateButtonMarkup({
+                label: "Create the first slot",
+                attributes: "data-newsletter-add-first",
+                className: "collection-empty-action",
+                variant: "secondary",
+                shortcut: false,
+              })}
             </div>
           `;
         status.textContent = "";
@@ -639,6 +648,11 @@ export function createNewsletterPlanner(context) {
         || previewBtn?.dataset.preview
         || scheduleBtn?.dataset.schedule;
       if (!slotId) {
+        // The empty schedule repeats Add slot.
+        if (target.closest("[data-newsletter-add-first]")) {
+          openIssueDialog(null, "details");
+          return;
+        }
         const overflowTrigger = target.closest(".newsletter-overflow-trigger");
         if (overflowTrigger) toggleSlotOverflow(overflowTrigger);
         return;

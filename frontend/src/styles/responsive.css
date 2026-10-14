@@ -441,7 +441,7 @@ body[data-workspace-view="sponsors"] .library-view {
     gap: 6px;
     padding: 0 !important;
   }
-  .newsletter-surface > .newsletter-views {
+  .newsletter-surface > .newsletter-toolbar {
     order: 1;
     margin: 0;
   }
