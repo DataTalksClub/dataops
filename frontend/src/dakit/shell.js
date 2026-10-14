@@ -1,4 +1,4 @@
-/* dakit 0.2.0 2cabda6 */
+/* dakit 0.2.0 57aa1c4 */
 // Dakit app shell behaviour — the contract is docs/shell.md.
 //
 // Load once per page, at the end of <body> (no defer, so the persisted
@@ -228,11 +228,8 @@
     if (!source) return;
     const text = source.textContent;
     const initial = button.dataset.dkCopyLabel || (button.dataset.dkCopyLabel = button.textContent.trim());
-    if (!button.style.minWidth) {
-      // Reserve the widest label so the button never changes width.
-      const widths = ["Copied", "Press Ctrl+C", initial].map((label) => { button.textContent = label; return button.offsetWidth; });
-      button.style.minWidth = `${Math.max(...widths)}px`;
-    }
+    // CSS reserves the width of "Copied" before the first click. The rare
+    // "Press Ctrl+C" fallback may widen the button while it shows.
     let label;
     try {
       await navigator.clipboard.writeText(text);
