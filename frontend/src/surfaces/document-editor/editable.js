@@ -13,6 +13,7 @@
 // Moving between blocks with the arrow keys is handled here, in DOM order.
 
 import {
+  asSingleUrl,
   detectBlockShortcut,
   detectInlineShortcut,
   domToInlineMarkdown,
@@ -376,6 +377,18 @@ export function attachEditable(el, options) {
     event.preventDefault();
     event.stopPropagation();
     if (!text) return;
+    const url = asSingleUrl(text);
+    const current = selectionIn(el);
+    if (url && mode === "rich" && current && !current.range.collapsed) {
+      // Pasting a link over selected text links the text, like Notion.
+      el.ownerDocument.execCommand("createLink", false, url);
+      for (const link of el.querySelectorAll("a:not([data-href])")) {
+        link.setAttribute("data-href", link.getAttribute("href"));
+        link.addEventListener("click", onLinkClick);
+      }
+      schedule();
+      return;
+    }
     if (options.onPasteText && options.onPasteText(text, controller)) return;
     insertText(singleLine || !multiline ? text.replace(/\s*\n+\s*/g, " ") : text);
   });
@@ -413,6 +426,7 @@ export function attachEditable(el, options) {
     schedule();
   }
   controller.insertText = insertText;
+  controller.splitAtCaret = () => splitAtCaret();
 
   function splitAtCaret() {
     const current = selectionIn(el);

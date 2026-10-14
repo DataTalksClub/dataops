@@ -414,3 +414,52 @@ test('selecting text shows a formatting toolbar; Cmd/Ctrl+B and K format too', a
   await expect(step(page, 3).locator('strong')).toHaveText('save');
   await expect(draft(page)).toHaveValue(/the synthetic result\. Then \*\*save\*\* it\./);
 });
+
+// A synthetic 1×1 PNG, public-safe.
+const PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+
+async function pasteInto(locator, { text = '', imageBase64 = '' } = {}) {
+  await locator.evaluate((node, payload) => {
+    const data = new DataTransfer();
+    if (payload.text) data.setData('text/plain', payload.text);
+    if (payload.imageBase64) {
+      const bytes = Uint8Array.from(atob(payload.imageBase64), (c) => c.charCodeAt(0));
+      data.items.add(new File([bytes], 'pasted.png', { type: 'image/png' }));
+    }
+    node.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  }, { text, imageBase64 });
+}
+
+test('paste: video links embed, markdown becomes blocks, a link over text links it, images upload', async ({ page }) => {
+  await openDoc(page, PLAIN_PATH, 'Synthetic Notion Page');
+  const view = page.locator('#rendered-view');
+  const last = view.locator('.notion-text-content').last();
+  await last.click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.press('Enter');
+  await pasteInto(view.locator('.notion-text-content').last(), { text: 'https://www.youtube.com/watch?v=synthetic1' });
+  await expect(view.locator('[data-block-type="embed"] iframe')).toHaveAttribute('src', 'https://www.youtube.com/embed/synthetic1');
+  await expect(draft(page)).toHaveValue(/Last paragraph\.\n\nhttps:\/\/www\.youtube\.com\/watch\?v=synthetic1$/);
+
+  // The caret is in the empty block after the embed: paste markdown there.
+  await pasteInto(view.locator('.notion-text-content').last(), { text: '## Pasted heading\n\n- alpha\n- beta' });
+  await expect(view.locator('[data-block-type="h2"]').last()).toHaveText(/Pasted heading/);
+  await expect(draft(page)).toHaveValue(/synthetic1\n\n## Pasted heading\n\n- alpha\n- beta$/);
+
+  // A URL pasted over selected text links the text.
+  const first = view.locator('.notion-text-content').first();
+  await first.getByText('First paragraph of the page.').dblclick({ position: { x: 4, y: 8 } });
+  await pasteInto(first, { text: 'https://example.test/first' });
+  await expect(first.locator('a')).toHaveAttribute('href', 'https://example.test/first');
+  await expect(draft(page)).toHaveValue(/\[First\]\(https:\/\/example\.test\/first\) paragraph of the page\./);
+  await capture(page, 'paste-plain');
+
+  // An image pasted into a step uploads as its screenshot.
+  await openDoc(page, SOP_PATH, 'Synthetic Notion SOP');
+  await step(page, 2).click();
+  await pasteInto(step(page, 2), { imageBase64: PIXEL_PNG });
+  await expect(page.locator('.block-step[data-step-id="2"] .block-screenshot img')).toHaveCount(1, { timeout: 15_000 });
+  await expect(draft(page)).toHaveValue(
+    /2\. {2}Upload the synthetic file\.\n\n {4}<!-- sop-screenshot-start -->\n {4}!\[\]\(content\/images\/[^)]+\.png\)\n {4}<!-- sop-screenshot-end -->\n<!-- sop-step-end -->/,
+  );
+});

@@ -1,4 +1,5 @@
 import { focusEditable, plainTextLength } from "./editable.js";
+import { asSingleUrl } from "./inline-markdown.js";
 import {
   blockId,
   blockRaw,
@@ -433,9 +434,46 @@ export function createBlockEditor(context, services) {
     return actions;
   }
 
+  /**
+   * Paste into a text block. A lone video link in an empty block embeds it;
+   * markdown with more than one block (or a list, heading, …) is split into
+   * blocks at the caret; anything else is typed as plain text.
+   */
+  function pasteIntoBlock(text, controller, { block, index, blocks, replace }) {
+    const url = asSingleUrl(text);
+    const current = controller.read();
+    if (url && toVideoEmbed(url) && !current.trim()) {
+      blocks[index] = { ...makeBlock("embed", url), id: block.id };
+      blocks.splice(index + 1, 0, makeBlock("paragraph", ""));
+      replace({ index: index + 1, at: "start" });
+      return true;
+    }
+    const pasted = parseMarkdownBlocks(text.replace(/\r\n?/g, "\n"));
+    const structuredPaste = pasted.length > 1 || (pasted.length === 1 && pasted[0].type !== "paragraph");
+    if (!structuredPaste || block.type !== "paragraph") return false;
+    const { before, after } = controller.splitAtCaret();
+    const placed = [];
+    if (before.trim()) placed.push({ ...makeBlock("paragraph", before), id: block.id });
+    placed.push(...pasted.map((entry) => ({ ...entry, id: blockId() })));
+    if (after.trim()) placed.push(makeBlock("paragraph", after));
+    blocks.splice(index, 1, ...placed);
+    const lastPasted = index + (before.trim() ? 1 : 0) + pasted.length - 1;
+    const last = blocks[lastPasted];
+    const isList = last.type === "bullet" || last.type === "numbered";
+    replace(isList
+      ? { index: lastPasted, item: Math.max(0, last.raw.split("\n").length - 1), at: "end" }
+      : { index: lastPasted, at: "end" });
+    return true;
+  }
+
   function textBlockKeyboard({ block, index, blocks, structural, replace }) {
     if (!structural) return {};
     return {
+      onPasteText: (text, controller) => pasteIntoBlock(text, controller, { block, index, blocks, replace }),
+      onFiles: (files) => {
+        const empty = !blockText(block).trim();
+        services.insertImageBlocks?.(files, blocks, index, empty && block.type === "paragraph", replace);
+      },
       onSlash: (session) => {
         if (session) openSlash(session, blocks, index, replace);
       },

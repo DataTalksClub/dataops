@@ -389,9 +389,20 @@ export function createProcedureRenderer(context, services, editorState) {
         if (!group) return;
         commitProcedure(model, { focus: focusOf(model, group, { select: true }) });
       } : undefined,
-      onFiles: item.kind === "step" ? (files) => {
-        for (const file of files) addScreenshot(item, model, file);
-      } : undefined,
+      onFiles: async (files) => {
+        if (item.kind === "step") {
+          for (const file of files) await addScreenshot(item, model, file);
+          return;
+        }
+        const images = [];
+        for (const file of files) {
+          const src = await uploadImage(file);
+          if (src) images.push(`![](${src})`);
+        }
+        if (!images.length) return;
+        setProseBody(item, [item.body, ...images].filter(Boolean).join("\n\n"));
+        commitProcedure(model, { focus: focusOf(model, item, { at: "end" }) });
+      },
       onSlash: (session) => {
         if (!session) return;
         slashMenu.open({
