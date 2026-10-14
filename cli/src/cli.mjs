@@ -3,6 +3,7 @@ import * as calendar from "./commands/calendar.mjs";
 import * as cards from "./commands/cards.mjs";
 import * as files from "./commands/files.mjs";
 import * as invoices from "./commands/invoices.mjs";
+import * as kb from "./commands/kb.mjs";
 import * as notifications from "./commands/notifications.mjs";
 import * as people from "./commands/people.mjs";
 import * as raw from "./commands/raw.mjs";
@@ -49,6 +50,7 @@ export const FAMILIES = {
   notifications: { group: "Work", summary: notifications.summary, help: notifications.help, commands: notifications.commands },
   files: { group: "Work", summary: files.filesSummary, help: files.filesHelp, commands: files.filesCommands },
   artifacts: { group: "Work", summary: files.artifactsSummary, help: files.artifactsHelp, commands: files.artifactsCommands },
+  kb: { group: "Knowledge", summary: kb.summary, help: kb.help, commands: kb.commands },
   calendar: {
     group: "Planning",
     summary: calendar.summary,

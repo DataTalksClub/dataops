@@ -1,0 +1,169 @@
+import assert from "node:assert/strict";
+import { afterEach, describe, test } from "node:test";
+
+import { captureIo, fakePortal, isolateConfig } from "./helpers.mjs";
+
+isolateConfig();
+const realFetch = globalThis.fetch;
+const { run } = await import("../src/cli.mjs");
+const { docRefFromUrl } = await import("../src/commands/kb.mjs");
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
+const DOCS = [
+  { id: "news.schedule", path: "content/newsletter/sops/schedule.md", title: "Schedule the newsletter", doc_type: "sop" },
+  { id: "news.ref", path: "content/newsletter/reference.md", title: "Newsletter reference", doc_type: "reference" },
+  { id: "fin.invoice", path: "content/finance/reference/invoice.md", title: "Invoices", doc_type: "reference" },
+];
+
+const byRef = (ref) => DOCS.find((doc) => doc.id === ref || doc.path === ref || doc.path === `content/${ref}`);
+const docsRoutes = {
+  "GET /docs": ({ query }) =>
+    query.path ? { path: query.path, content: `# ${byRef(query.path).title}\n`, revision: "rev-1" } : { documents: DOCS },
+  "GET /docs/resolve": ({ query }) => (byRef(query.ref) ? { document: byRef(query.ref) } : { status: 404, body: { error: `Document reference not found: ${query.ref}` } }),
+};
+
+describe("kb search", () => {
+  test("queries the docs index directly, not through the /work seam, and keeps rank order", async () => {
+    const calls = fakePortal({
+      "GET /search": {
+        query: "invoice",
+        results: [
+          { id: "fin.invoice", path: DOCS[2].path, title: "Invoices", doc_type: "reference", score: 3.2, snippet: "…send the invoice…" },
+          { id: "news.ref", path: DOCS[1].path, title: "Newsletter reference", doc_type: "reference", score: 1.1, summary: "Plan" },
+        ],
+      },
+    });
+    const io = captureIo();
+    assert.equal(await run(["kb", "search", "sponsor", "invoice", "--type", "reference", "--limit", "5", "--json"], io), 0);
+    assert.equal(calls[0].rawPath, "/search");
+    assert.deepEqual(calls[0].query, { q: "sponsor invoice", source: "docs", limit: "5", doc_type: "reference" });
+    const result = io.json();
+    assert.deepEqual(result.results.map((item) => [item.rank, item.id]), [[1, "fin.invoice"], [2, "news.ref"]]);
+    assert.equal(result.results[1].snippet, "Plan");
+  });
+
+  test("an empty query is a usage error", async () => {
+    assert.equal(await run(["kb", "search"], captureIo()), 2);
+  });
+});
+
+describe("kb browse", () => {
+  test("show resolves an id and prints the markdown", async () => {
+    fakePortal(docsRoutes);
+    const io = captureIo();
+    assert.equal(await run(["kb", "show", "news.schedule"], io), 0);
+    assert.equal(io.text(), "# Schedule the newsletter\n");
+  });
+
+  test("an unknown reference exits 4", async () => {
+    fakePortal(docsRoutes);
+    assert.equal(await run(["kb", "show", "missing.doc"], captureIo()), 4);
+  });
+
+  test("ls lists one folder; tree nests folders and respects --depth", async () => {
+    fakePortal(docsRoutes);
+    let io = captureIo();
+    await run(["kb", "ls", "content/newsletter", "--json"], io);
+    const listing = io.json();
+    assert.deepEqual(listing.folders, [{ name: "sops", path: "newsletter/sops", documents: 1 }]);
+    assert.deepEqual(listing.documents.map((doc) => doc.id), ["news.ref"]);
+    io = captureIo();
+    await run(["kb", "tree", "--depth", "1", "--json"], io);
+    const tree = io.json();
+    assert.deepEqual(tree.folders.map((folder) => folder.name), ["finance", "newsletter"]);
+    assert.ok(tree.folders[1].folders[0].collapsed);
+    io = captureIo();
+    await run(["kb", "tree"], io);
+    assert.match(io.text(), /^content\/\n {2}finance\/\n {4}reference\/\n {6}- Invoices \[reference\] fin\.invoice/);
+  });
+});
+
+describe("kb related", () => {
+  test("lists the docs a task links, then search matches that are not already linked", async () => {
+    const calls = fakePortal({
+      ...docsRoutes,
+      "GET /api/tasks/t-1": {
+        id: "t-1",
+        description: "Schedule the 2026-11-02 issue",
+        cardId: "c-1",
+        templateId: "tpl-1",
+        instructionDocId: "news.schedule",
+        instructionsUrl: "https://portal.test/knowledge?path=content/newsletter/reference.md",
+      },
+      "GET /api/cards/c-1": { card: { id: "c-1", title: "Newsletter", sourceDocIds: ["gone.doc"] } },
+      "GET /api/templates/tpl-1": { template: { id: "tpl-1", name: "Newsletter issue", sourceDocIds: ["news.schedule"] } },
+      "GET /search": {
+        results: [
+          { id: "news.schedule", path: DOCS[0].path, title: "Schedule the newsletter", doc_type: "sop", score: 5 },
+          { id: "fin.invoice", path: DOCS[2].path, title: "Invoices", doc_type: "reference", score: 1, snippet: "x" },
+        ],
+      },
+    });
+    const io = captureIo();
+    assert.equal(await run(["kb", "related", "t-1", "--json"], io), 0);
+    const result = io.json();
+    assert.deepEqual(result.subject, { kind: "task", id: "t-1", title: "Schedule the 2026-11-02 issue", cardId: "c-1", templateId: "tpl-1" });
+    assert.deepEqual(result.linked.map((doc) => [doc.id, doc.via]), [
+      ["news.schedule", "task instructions"],
+      ["news.ref", "task instructions link"],
+    ]);
+    assert.deepEqual(result.unresolved.map((item) => item.ref), ["gone.doc"]);
+    assert.equal(result.query, "Schedule the issue Newsletter Newsletter issue");
+    assert.deepEqual(result.matches.map((item) => item.id), ["fin.invoice"]);
+    assert.equal(calls.find((call) => call.route === "/search").query.source, "docs");
+  });
+
+  test("falls back to a card id and reports a missing id as not found", async () => {
+    fakePortal({
+      ...docsRoutes,
+      "GET /api/cards/c-9": { card: { id: "c-9", title: "Invoice run" } },
+      "GET /search": { results: [] },
+    });
+    let io = captureIo();
+    assert.equal(await run(["kb", "related", "c-9", "--json"], io), 0);
+    assert.equal(io.json().subject.kind, "card");
+    io = captureIo();
+    assert.equal(await run(["kb", "related", "nothing"], io), 4);
+    assert.match(io.errors.join("\n"), /No Task or Card with id nothing/);
+  });
+
+  test("doc references are read out of portal and content links", () => {
+    assert.equal(docRefFromUrl("https://ops.example/knowledge?path=content/a/b.md"), "content/a/b.md");
+    assert.equal(docRefFromUrl("/docs?docId=a.b"), "a.b");
+    assert.equal(docRefFromUrl("https://github.com/org/repo/blob/main/content/a/b.md"), "content/a/b.md");
+    assert.equal(docRefFromUrl("https://example.com/unrelated"), "");
+    assert.equal(docRefFromUrl(""), "");
+  });
+});
+
+describe("kb write", () => {
+  test("publishes against the document's current revision", async () => {
+    const calls = fakePortal({
+      ...docsRoutes,
+      "PUT /docs": ({ query, body }) => ({ path: query.path, revision: "rev-2", warnings: [], received: body }),
+    });
+    const file = new URL("../package.json", import.meta.url).pathname;
+    assert.equal(await run(["kb", "write", "newsletter/reference.md", "--file", file], captureIo()), 0);
+    const put = calls.at(-1);
+    assert.equal(put.query.path, "content/newsletter/reference.md");
+    assert.equal(put.body.expectedRevision, "rev-1");
+  });
+
+  test("a new document needs --create, which creates it at the head revision first", async () => {
+    const calls = fakePortal({
+      "GET /docs": { status: 404, body: { error: "Document not found" } },
+      "GET /knowledge/publication": { revision: "rev-head" },
+      "POST /docs": ({ body }) => ({ status: 201, body: { path: body.path, revision: "rev-new" } }),
+      "PUT /docs": ({ query }) => ({ path: query.path, revision: "rev-3" }),
+    });
+    const file = new URL("../package.json", import.meta.url).pathname;
+    assert.equal(await run(["kb", "write", "new/doc.md", "--file", file], captureIo()), 2);
+    assert.equal(await run(["kb", "write", "new/doc.md", "--file", file, "--create", "--title", "New"], captureIo()), 0);
+    const post = calls.find((call) => call.method === "POST");
+    assert.deepEqual(post.body, { path: "content/new/doc.md", absent: true, expectedRevision: "rev-head", title: "New" });
+    assert.equal(calls.at(-1).body.expectedRevision, "rev-new");
+  });
+});
