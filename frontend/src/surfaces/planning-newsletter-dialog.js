@@ -74,19 +74,19 @@ export function renderMarkdownToHtml(md, escapeHtml) {
         const type = match[1].toUpperCase();
         if (match[2].trim()) buf[0] = match[2].trim();
         else buf.shift();
-        const colors = { NOTE: "#3b82f6", TIP: "#10b981", IMPORTANT: "#8b5cf6", WARNING: "#f59e0b", CAUTION: "#ef4444" };
-        const bColor = colors[type] || "#3b82f6";
+        const roles = { NOTE: "info", TIP: "success", IMPORTANT: "info", WARNING: "warning", CAUTION: "danger" };
+        const role = roles[type];
         const inner = buf.map((l) => formatInline(escapeHtml(l))).join("<br>");
         renderedBlocks.push(
           `<div class="newsletter-callout newsletter-callout-${type.toLowerCase()}" ` +
-            `style="padding: 12px 16px; margin: 14px 0; border-left: 4px solid ${bColor}; ` +
-            `background: #f8fafc; border-radius: 6px; line-height: 1.5;">${inner}</div>`,
+            `style="padding: 12px 16px; margin: 14px 0; border: 1px solid var(--dk-border-default); ` +
+            `background: var(--dk-${role}-bg); color: var(--dk-${role}-text); border-radius: 6px; line-height: 1.5;"><strong>${type}</strong><br>${inner}</div>`,
         );
       } else {
         const inner = buf.map((l) => formatInline(escapeHtml(l))).join("<br>");
         renderedBlocks.push(
-          `<blockquote style="margin: 12px 0; padding-left: 12px; ` +
-            `border-left: 3px solid #cbd5e1; color: #64748b; font-style: italic;">${inner}</blockquote>`,
+          `<blockquote style="margin: 12px 0; padding: 12px; ` +
+            `border: 1px solid var(--dk-border-default); color: var(--dk-text-muted); font-style: italic;">${inner}</blockquote>`,
         );
       }
       continue;
