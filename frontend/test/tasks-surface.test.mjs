@@ -1087,7 +1087,7 @@ describe("Tasks surface boundary", () => {
       ),
       ["news-1", "news-2"],
     );
-    assert.match(documentList.textContent, /2 cards of 3 shown/);
+    assert.doesNotMatch(documentList.textContent, /shown/);
     const filterAction = documentList.querySelector(".workflow-board-filter-action");
     assert.ok(filterAction);
     assert.equal(filterAction.textContent, "+ New card from template");

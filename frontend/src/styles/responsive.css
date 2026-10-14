@@ -294,7 +294,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .planner-eyebrow,
   .ops-surface-header p:not([class*="dk-"]),
   .workflow-board-header p:not([class*="dk-"]),
-  .workflow-board-filter-count,
   .workflow-board-scroll-hint,
   .calendar-timezone-badge,
   .bookkeeping-header p:not([class*="dk-"]),

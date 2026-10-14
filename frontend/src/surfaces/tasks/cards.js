@@ -214,10 +214,7 @@ export function createCardsSurface(context) {
           (item) => templateByCardId.get(item.cardId) === templateFilter,
         )
       : boardItems;
-    const filterBar = renderTemplateFilterBar(templateIds, {
-      shown: visibleItems.length,
-      total: boardItems.length,
-    });
+    const filterBar = renderTemplateFilterBar(templateIds);
     if (filterBar) section.append(filterBar);
     section.append(renderWorkflowBoard(visibleItems));
     return section;
@@ -234,7 +231,7 @@ export function createCardsSurface(context) {
     );
   }
 
-  function renderTemplateFilterBar(templateIds, counts) {
+  function renderTemplateFilterBar(templateIds) {
     const options = [...templateIds].sort((a, b) =>
       templateLabel(a).localeCompare(templateLabel(b)),
     );
@@ -277,11 +274,6 @@ export function createCardsSurface(context) {
         });
       });
       filters.append(newCardBtn);
-
-      const shown = document.createElement("span");
-      shown.className = "workflow-board-filter-count";
-      shown.textContent = `${countLabel(counts.shown, "card")} of ${counts.total} shown`;
-      filters.append(shown);
     }
     if (!templateLabelsRequested) {
       templateLabelsRequested = true;
