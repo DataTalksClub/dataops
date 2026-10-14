@@ -35,56 +35,10 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}/* Review summary speaks the family status-strip language: one bordered
-   container, hairline dividers, a status dot and a mono count per cell.
-   Tinted dashboard cards are the Home strip's banned opposite. */.review-summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  overflow: hidden;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
-}.review-summary-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  min-width: 0;
-  gap: 2px;
-  min-height: 58px;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  padding: 10px 14px;
-}.review-summary-card + .review-summary-card {
-  border-left: 1px solid var(--dk-border-default);
-}.review-summary-value {
-  color: var(--dk-text-heading);
-  font-size: 20px;
-  font-weight: 650;
-}.review-summary-label,
-.review-preview-note,
+}.review-preview-note,
 .review-control-label {
   color: var(--dk-text-muted);
   font-size: 12px;
-}.review-summary-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}/* The dot carries the status; the cell stays on the surface. Zeros demote
-   below (.is-zero) exactly like the Home strip's muted zeros. */.review-summary-label::before {
-  content: "";
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--dk-text-faint);
-}.review-summary-attention .review-summary-label::before {
-  background: var(--dk-warning-text);
-}.review-summary-changes .review-summary-label::before,
-.review-summary-blocked .review-summary-label::before {
-  background: var(--dk-danger-text);
-}.review-summary-complete .review-summary-label::before {
-  background: var(--dk-success-text);
 }.review-controls {
   display: flex;
   align-items: end;
@@ -113,11 +67,6 @@
   font-weight: 400;
 }.review-search-control {
   flex: 1 1 280px;
-}.review-result-count {
-  align-self: center;
-  margin-left: auto;
-  color: var(--dk-text-muted);
-  font-size: 12px;
 }.review-refresh {
   align-self: end;
 }.review-surface > .review-refresh {
@@ -311,26 +260,12 @@
   color: var(--dk-text-heading);
 }
 
-@media (max-width: 900px) {/* The summary keeps the Home strip's four-up rhythm on small screens. */.review-summary-card {
-    min-height: 60px;
-    padding: 8px 10px;
-    text-align: center;
-    align-items: center;
-  }.review-summary-value {
-    font-size: 20px;
-  }
-}
-
 @media (max-width: 700px) {.review-header {
     display: grid;
-  }.review-result-count {
-    margin-left: 0;
   }
 }
 
-@media (max-width: 480px) {.review-summary-card {
-    padding: 8px 4px;
-  }.review-meta-grid {
+@media (max-width: 480px) {.review-meta-grid {
     grid-template-columns: minmax(0, 1fr);
   }.review-check-item {
     align-items: flex-start;

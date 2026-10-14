@@ -4,7 +4,6 @@ import { afterEach, describe, test } from "node:test";
 import {
   buildReviewQueue,
   reviewReason,
-  reviewSummary,
 } from "../src/surfaces/review/model.js";
 import { createReviewSurface } from "../src/surfaces/review/index.js";
 import {
@@ -94,13 +93,6 @@ describe("document review model", () => {
     assert.equal(queue.find((item) => item.id === "blocked")?.state, "Blocked");
     assert.equal(queue[0].id, "blocked");
     assert.equal(queue.find((item) => item.id === "historical")?.needsReview, false);
-    assert.deepEqual(reviewSummary(queue), {
-      total: 4,
-      needsReview: 2,
-      reviewed: 1,
-      changesRequested: 0,
-      blocked: 1,
-    });
   });
 });
 

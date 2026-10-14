@@ -353,7 +353,6 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
   font-size: 14px;
   line-height: 1.5;
 }/* Counts across knowledge and card detail use aligned figures in the UI font. */.operating-model-count,
-.review-summary-value,
 .workflow-card-count {
   font-family: var(--dk-font-sans);
   font-variant-numeric: tabular-nums;
@@ -368,11 +367,6 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
   font-family: var(--dk-font-mono);
   font-size: 11px;
   overflow-wrap: anywhere;
-}/* Review stat cells only alarm when the count is non-zero: a zero demotes
-   to a muted dot and numeral, never a filled alarm. */.review-summary-card.is-zero .review-summary-label::before {
-  background: var(--dk-text-faint);
-}.review-summary-card.is-zero .review-summary-value {
-  color: var(--dk-text-muted);
 }/* Review queue paths: quiet mono with middle elision (full path in title). */.review-queue-path {
   font-family: var(--dk-font-mono);
   font-size: 11px;

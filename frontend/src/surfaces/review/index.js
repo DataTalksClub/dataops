@@ -4,7 +4,6 @@ import {
   buildReviewQueue,
   decisionLabel,
   REVIEW_CHECKLIST_FIELDS,
-  reviewSummary,
 } from "./model.js";
 
 const CHECKLIST_LABELS = Object.freeze({
@@ -206,34 +205,19 @@ export function createReviewSurface(context) {
     return refresh;
   }
 
-  function renderHeader(root, summary) {
+  function renderHeader(root) {
     const header = createPageHeader({
       title: "Document review",
       subtitle: "Turn the audit backlog into review evidence, feedback, and a clear next action.",
       className: "review-header",
       documentRef,
     });
-
-    const cards = createElement(documentRef, "div", "review-summary");
-    const summaryCards = [
-      ["Needs review", summary.needsReview, "review-summary-attention"],
-      ["Changes requested", summary.changesRequested, "review-summary-changes"],
-      ["Blocked", summary.blocked, "review-summary-blocked"],
-      ["Reviewed", summary.reviewed, "review-summary-complete"],
-    ];
-    for (const [label, value, className] of summaryCards) {
-      const card = createElement(documentRef, "div", `review-summary-card ${className}`);
-      // A zero only tints when there is something behind it; muted zeros do
-      // not read as resolved alarms.
-      card.classList.toggle("is-zero", Number(value) === 0);
-      appendText(documentRef, card, "strong", "review-summary-value", String(value));
-      appendText(documentRef, card, "span", "review-summary-label", label);
-      cards.append(card);
-    }
-    root.append(header, cards);
+    // No status tiles: the queue below is ordered needs-review first and its
+    // heading carries the one count (dakit principle 4, no vanity metrics).
+    root.append(header);
   }
 
-  function renderFilterBar(root, queue) {
+  function renderFilterBar(root) {
     const controls = createElement(documentRef, "section", "review-controls");
     const filterLabel = createElement(documentRef, "label", "review-filter-control");
     appendText(documentRef, filterLabel, "span", "review-control-label", "Show");
@@ -268,9 +252,7 @@ export function createReviewSurface(context) {
     });
     searchLabel.append(search);
 
-    const count = createElement(documentRef, "span", "review-result-count");
-    count.textContent = `${filteredItems(queue).length} shown`;
-    controls.append(filterLabel, searchLabel, count, refreshButton("Refresh"));
+    controls.append(filterLabel, searchLabel, refreshButton("Refresh"));
     root.append(controls);
   }
 
@@ -565,7 +547,6 @@ export function createReviewSurface(context) {
     const queue = reviewSnapshot.loaded
       ? buildReviewQueue(lastDocuments, reviewSnapshot.reviews)
       : [];
-    const summary = reviewSummary(queue);
     const items = filteredItems(queue);
     const routeId = activeRouteDocumentId();
     const selectedItem = queue.find((item) => item.id === routeId) ||
@@ -580,7 +561,7 @@ export function createReviewSurface(context) {
     documentList.classList.add("is-review-surface");
     setRouteTitle("Review");
     const root = createElement(documentRef, "div", "review-surface dk-fill");
-    renderHeader(root, summary);
+    renderHeader(root);
     if (notice) {
       const saved = createElement(documentRef, "p", "review-notice");
       saved.setAttribute("role", "status");
@@ -603,7 +584,7 @@ export function createReviewSurface(context) {
       documentList.replaceChildren(root);
       return;
     }
-    renderFilterBar(root, queue);
+    renderFilterBar(root);
     // The route decides which pane a phone shows; desktop shows both and
     // still opens the first document when the route names none.
     const layout = createElement(documentRef, "div", "dk-split");

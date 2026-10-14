@@ -519,18 +519,6 @@ body[data-workspace-view="sponsors"] .library-view {
     justify-content: space-between;
     align-items: center;
   }
-  .review-summary {
-    gap: 4px !important;
-  }
-  .review-summary-card {
-    padding: 4px 6px !important;
-  }
-  .review-summary-value {
-    font-size: 15px !important;
-  }
-  .review-summary-label {
-    font-size: 10px !important;
-  }
   .review-controls {
     margin: 6px 0 !important;
   }

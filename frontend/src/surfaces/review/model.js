@@ -140,17 +140,6 @@ export function buildReviewQueue(documents, reviews, now = Date.now()) {
     });
 }
 
-export function reviewSummary(queue) {
-  const items = Array.isArray(queue) ? queue : [];
-  return {
-    total: items.length,
-    needsReview: items.filter((item) => item.needsReview).length,
-    reviewed: items.filter((item) => item.state === "Reviewed").length,
-    changesRequested: items.filter((item) => item.state === "Changes requested").length,
-    blocked: items.filter((item) => item.state === "Blocked").length,
-  };
-}
-
 export function decisionLabel(decision) {
   return {
     approved: "Approved review evidence",
