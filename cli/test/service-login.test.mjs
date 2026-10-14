@@ -50,7 +50,8 @@ test('real CLI configures a verified service profile, identifies it, and removes
     assert.equal(JSON.parse(readFileSync(file, 'utf8')).profiles[url], undefined);
     assert.deepEqual(calls, ['/work/api/me', '/work/api/me']);
     const failedDir = path.join(dir, 'failed');
-    assert.equal((await cli(['login', '--service-token-stdin', '--url', url], failedDir, `dops_svc_${'b'.repeat(64)}`)).code, 1);
+    // The server rejects the unknown credential: exit code 3 (auth).
+    assert.equal((await cli(['login', '--service-token-stdin', '--url', url], failedDir, `dops_svc_${'b'.repeat(64)}`)).code, 3);
     assert.equal(existsSync(path.join(failedDir, 'credentials.json')), false);
     assert.equal((await cli(['login', '--service-token-stdin', '--url', 'http://remote.example.test'], failedDir, token)).code, 1);
   } finally { await new Promise(resolve => server.close(resolve)); rmSync(dir, { recursive: true, force: true }); }

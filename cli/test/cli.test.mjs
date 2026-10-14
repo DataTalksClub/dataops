@@ -340,13 +340,13 @@ describe("command dispatch", () => {
 
   test("reports unknown commands on stderr with a non-zero exit", async () => {
     const io = captureIo();
-    assert.equal(await run(["nope"], io), 1);
+    assert.equal(await run(["nope"], io), 2);
     assert.match(io.errors.join("\n"), /Unknown command: nope/);
   });
 
   test("reports a missing subcommand", async () => {
     const io = captureIo();
-    assert.equal(await run(["recurring"], io), 1);
-    assert.match(io.errors.join("\n"), /list\|create\|edit/);
+    assert.equal(await run(["recurring"], io), 2);
+    assert.match(io.text(), /dataops recurring list/);
   });
 });

@@ -14,6 +14,9 @@ const CONFIG_DIR =
   );
 const CREDENTIALS_PATH = path.join(CONFIG_DIR, "credentials.json");
 
+/** The production portal; used when no --url, DATAOPS_URL, or login names another. */
+export const DEFAULT_URL = "https://ops.dtcdev.click";
+
 export function credentialsPath() {
   return CREDENTIALS_PATH;
 }
@@ -71,7 +74,7 @@ export function deleteProfile(url) {
 export function resolveProfile(options = {}) {
   const store = readStore();
   const url = normalizeUrl(
-    options.url || process.env.DATAOPS_URL || store.defaultUrl || "",
+    options.url || process.env.DATAOPS_URL || store.defaultUrl || DEFAULT_URL,
   );
   const envToken = process.env.DATAOPS_TOKEN || "";
   if (envToken) return { url, token: envToken, source: "environment" };

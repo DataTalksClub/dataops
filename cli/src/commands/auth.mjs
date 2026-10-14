@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ApiError, createClient } from "../api.mjs";
+import { AuthError } from "../errors.mjs";
 import {
   deleteProfile,
   resolveProfile,
@@ -187,12 +188,13 @@ export async function logout(args, io) {
 
 export async function whoami(args, io) {
   const profile = resolveProfile(args);
-  if (!profile.token) throw new Error("Not signed in. Run `dataops login`.");
+  if (!profile.token) throw new AuthError("Not signed in. Run `dataops login`, or set DATAOPS_TOKEN.");
   const client = createClient(profile);
   const result = await client.get("/api/me");
-  if (args.json) return result;
+  if (args.json) return { ...result, portal: client.base, credential: profile.source === "environment" ? "DATAOPS_TOKEN" : "file" };
   const user = result.user || {};
   io.print(result.service ? `${result.service.id} (${result.service.scopes.join(", ")})` : `${user.name || "unknown"} <${user.email || "unknown"}>`);
+  if (user.role) io.print(`role: ${user.role}`);
   io.print(`portal: ${client.base}`);
   io.print(
     `credential: ${profile.source === "environment" ? "DATAOPS_TOKEN" : credentialsPath()}`,

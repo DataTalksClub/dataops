@@ -1,83 +1,33 @@
-import {
-  login,
-  logout,
-  tokensList,
-  tokensRevoke,
-  whoami,
-} from "./commands/auth.mjs";
-import * as recurring from "./commands/recurring.mjs";
-
-import * as invoices from "./commands/invoices.mjs";
+import * as auth from "./commands/auth.mjs";
 import * as calendar from "./commands/calendar.mjs";
+import * as invoices from "./commands/invoices.mjs";
+import * as raw from "./commands/raw.mjs";
+import * as recurring from "./commands/recurring.mjs";
+import { EXIT, UsageError, errorPayload, exitCodeFor, hintFor } from "./errors.mjs";
 
-const USAGE = `dataops - command line client for the DataOps portal API
+const AUTH_HELP = `dataops login | logout | whoami | tokens
 
 Usage
-  dataops <command> [subcommand] [options]
+  dataops login [--url URL] [--label NAME]   Device login: confirm a short code in the browser
+  dataops login --service-token-stdin --url URL   Configure an invoice reader service credential
+  dataops logout                             Revoke this machine's token and forget it
+  dataops whoami                             Who the credential acts as, and the portal
+  dataops tokens list                        Your API tokens
+  dataops tokens revoke <id>                 Revoke one (a unique prefix is enough)
 
-Auth
-  login [--url URL] [--label NAME]   Sign in with a device code confirmed in the browser
-  login --service-token-stdin --url URL   Configure an invoice reader service token from stdin
-  logout                             Revoke this machine's token
-  whoami                             Show the signed-in user
-  tokens list                        List your API tokens
-  tokens revoke <id>                 Revoke a token
-
-Recurring schedules
-  recurring list
-  recurring create --description D --cron "0 9 * * 1" [--assignee ID] [--paused]
-  recurring edit <id> [--description D] [--cron C] [--assignee ID]
-  recurring pause <id>
-  recurring resume <id>
-  recurring delete <id>
-  recurring generate [--date YYYY-MM-DD] [--until YYYY-MM-DD]
-
-Invoices (automatic publication after field verification)
-  invoices list | readiness
-  invoices detail <id> | document <id>
-  invoices edit <id> --revision N [--paid-date YYYY-MM-DD] [--amount-eur N]
-    [--payment-evidence NOTE] [--counterparty NAME] [--invoice-number REF]
-    [--account-context CONTEXT] [--archive-required true|false] [--verified]
-    Other fields: transaction-date, description, amount, currency, statement-ref,
-    quantity, subtype, period, category, comment, archive-exception-reason.
-  invoices verify <id> --revision N   Verify invoice/payment values and publish automatically
-  invoices confirm <id> --revision N  Existing explicit verification action
-  invoices reject <id> --revision N [--reason NOTE]
-  invoices retry <id> --revision N
-  invoices reextract <id> --revision N  Re-run extraction on an untouched draft
-  invoices process --intake-item-id ID
-
-Calendar activities & operational scheduling
-  calendar list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--type TYPE] [--status STATUS]
-  calendar detail <id>
-  calendar create --title T --type TYPE [--status STATUS] [--date DATE] [--starts-at ISO --ends-at ISO]
-  calendar edit <id> [--title T] [--type TYPE] [--status STATUS] [--date DATE] [--version N]
-  calendar delete <id> [--version N]
-  calendar day <date>                   Show operational slot availability & full day schedule
-  calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all]
-  calendar settings [--connection ID] [--show-available-slots true|false] [--filter-busy true|false] ...
-  calendar dismiss-alert <fingerprint>
-  calendar sync-holidays
-
-Global options
-  --url URL     Portal to talk to (default: the profile from the last login)
-  --json        Print the raw API response
-  --help        Show this help
-
-Environment
-  DATAOPS_URL, DATAOPS_TOKEN override the stored profile (use these in CI).
+Non-interactive use: set DATAOPS_TOKEN (and DATAOPS_URL for a non-default portal).
 `;
 
-const COMMANDS = {
-  login: { run: login },
-  logout: { run: logout },
-  whoami: { run: whoami },
-  tokens: {
-    subcommands: { list: tokensList, revoke: tokensRevoke },
-  },
-  invoices: { subcommands: { list: invoices.list, detail: invoices.detail, document: invoices.document, readiness: invoices.readiness, edit: invoices.edit, verify: invoices.verify, confirm: invoices.confirm, reject: invoices.reject, retry: invoices.retry, reextract: invoices.reextract, process: invoices.processIntake } },
+/**
+ * Every command family. `commands` maps a subcommand to its handler; a family
+ * with `run` takes no subcommand. Order here is the order in `--help`.
+ */
+export const FAMILIES = {
   recurring: {
-    subcommands: {
+    group: "Work",
+    summary: recurring.summary,
+    help: recurring.help,
+    commands: {
       list: recurring.list,
       create: recurring.create,
       edit: recurring.edit,
@@ -88,7 +38,10 @@ const COMMANDS = {
     },
   },
   calendar: {
-    subcommands: {
+    group: "Planning",
+    summary: calendar.summary,
+    help: calendar.help,
+    commands: {
       list: calendar.list,
       detail: calendar.detail,
       get: calendar.detail,
@@ -104,35 +57,104 @@ const COMMANDS = {
       "sync-holidays": calendar.syncHolidays,
     },
   },
+  invoices: {
+    group: "Finance",
+    summary: invoices.summary,
+    help: invoices.help,
+    commands: {
+      list: invoices.list,
+      detail: invoices.detail,
+      document: invoices.document,
+      readiness: invoices.readiness,
+      edit: invoices.edit,
+      verify: invoices.verify,
+      confirm: invoices.confirm,
+      reject: invoices.reject,
+      retry: invoices.retry,
+      reextract: invoices.reextract,
+      process: invoices.processIntake,
+    },
+  },
+  login: { group: "Account", summary: "Sign in with a device code confirmed in the browser", help: AUTH_HELP, run: auth.login },
+  logout: { group: "Account", summary: "Revoke this machine's token", help: AUTH_HELP, run: auth.logout },
+  whoami: { group: "Account", summary: "Show who the credential acts as", help: AUTH_HELP, run: auth.whoami },
+  tokens: { group: "Account", summary: "List or revoke your API tokens", help: AUTH_HELP, commands: { list: auth.tokensList, revoke: auth.tokensRevoke } },
+  api: { group: "Other", summary: raw.summary, help: raw.help, run: raw.call },
 };
+
+export function usage() {
+  const lines = [
+    "dataops - command line client for the DataOps portal (the same API as the web app)",
+    "",
+    "Usage",
+    "  dataops <command> [subcommand] [arguments] [--json]",
+    "  dataops <command> --help         Flags and examples for one command",
+    "",
+  ];
+  const width = Math.max(...Object.keys(FAMILIES).map((name) => name.length));
+  let group = "";
+  for (const [name, family] of Object.entries(FAMILIES)) {
+    if (family.group !== group) {
+      group = family.group;
+      lines.push(group);
+    }
+    lines.push(`  ${name.padEnd(width)}  ${family.summary}`);
+  }
+  lines.push(
+    "",
+    "Global options",
+    "  --json        Machine-readable output on stdout (errors as JSON on stderr)",
+    "  --url URL     Portal to talk to (default: DATAOPS_URL, the last login, or https://ops.dtcdev.click)",
+    "  --help        Help for the command",
+    "",
+    "Environment",
+    "  DATAOPS_TOKEN, DATAOPS_URL   Credential and portal for non-interactive use (agents, CI)",
+    "",
+    "Exit codes",
+    "  0 ok   1 error   2 usage   3 auth/forbidden   4 not found   5 conflict (re-read, retry)",
+    "  6 rejected input   7 server or network unavailable",
+  );
+  return lines.join("\n");
+}
+
+// Flags that may repeat; every other flag keeps its last value.
+const REPEATABLE = new Set(["query"]);
 
 /**
  * Minimal flag parser: `--flag value`, `--flag=value`, and `--boolean`.
- * Positional arguments collect into `_`.
+ * Positional arguments collect into `_`; `--` ends flag parsing.
  */
 export function parseArgs(argv) {
   const args = { _: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    if (token === "--") {
+      args._.push(...argv.slice(index + 1));
+      break;
+    }
     if (!token.startsWith("--")) {
       args._.push(token);
       continue;
     }
     const [name, inlineValue] = token.slice(2).split(/=(.*)/s);
-    const key = name.replace(/-([a-z])/g, (_match, letter) =>
-      letter.toUpperCase(),
-    );
+    const key = name.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
+    let value;
     if (inlineValue !== undefined) {
-      args[key] = inlineValue;
-      continue;
+      value = inlineValue;
+    } else {
+      const next = argv[index + 1];
+      if (next === undefined || next.startsWith("--")) {
+        value = true;
+      } else {
+        value = next;
+        index += 1;
+      }
     }
-    const next = argv[index + 1];
-    if (next === undefined || next.startsWith("--")) {
-      args[key] = true;
-      continue;
+    if (REPEATABLE.has(key) && args[key] !== undefined) {
+      args[key] = [...(Array.isArray(args[key]) ? args[key] : [args[key]]), value];
+    } else {
+      args[key] = value;
     }
-    args[key] = next;
-    index += 1;
   }
   return args;
 }
@@ -141,45 +163,59 @@ export async function run(argv, io = console) {
   const print = (line) => io.log(line);
   const output = { print };
   const [commandName, ...rest] = argv;
+  const wantsJson = argv.includes("--json");
 
-  if (!commandName || commandName === "help" || commandName === "--help") {
-    print(USAGE);
-    return 0;
+  if (!commandName || commandName === "--help" || commandName === "-h") {
+    print(usage());
+    return EXIT.ok;
+  }
+  if (commandName === "help") {
+    const family = FAMILIES[rest[0]];
+    print(family ? family.help : usage());
+    return EXIT.ok;
   }
 
-  const command = COMMANDS[commandName];
-  if (!command) {
-    io.error(`Unknown command: ${commandName}\n`);
-    print(USAGE);
-    return 1;
+  const family = FAMILIES[commandName];
+  if (!family) {
+    io.error(`Unknown command: ${commandName}. Run \`dataops --help\`.`);
+    return EXIT.usage;
   }
 
-  let handler = command.run;
+  let handler = family.run;
   let commandArgs = rest;
-  if (command.subcommands) {
+  if (family.commands) {
     const [subcommandName, ...subRest] = rest;
-    handler = command.subcommands[subcommandName];
+    if (!subcommandName || subcommandName === "--help" || subcommandName === "-h") {
+      print(family.help);
+      return subcommandName ? EXIT.ok : EXIT.usage;
+    }
+    handler = family.commands[subcommandName];
     commandArgs = subRest;
     if (!handler) {
-      io.error(
-        `Usage: dataops ${commandName} <${Object.keys(command.subcommands).join("|")}>`,
-      );
-      return 1;
+      io.error(`Unknown subcommand: ${commandName} ${subcommandName}. One of: ${Object.keys(family.commands).join(", ")}.`);
+      return EXIT.usage;
     }
   }
 
   const args = parseArgs(commandArgs);
-  if (args.help) {
-    print(USAGE);
-    return 0;
+  if (args.help || commandArgs.includes("-h")) {
+    print(family.help);
+    return EXIT.ok;
   }
 
   try {
     const result = await handler(args, output);
     if (args.json) print(JSON.stringify(result ?? null, null, 2));
-    return 0;
+    return EXIT.ok;
   } catch (error) {
-    io.error(`error: ${error.message}`);
-    return 1;
+    if (wantsJson) {
+      io.error(JSON.stringify(errorPayload(error)));
+    } else {
+      io.error(`error: ${error.message}`);
+      const hint = hintFor(error);
+      if (hint) io.error(hint);
+      if (error instanceof UsageError) io.error(`Run \`dataops ${commandName} --help\` for usage.`);
+    }
+    return exitCodeFor(error);
   }
 }

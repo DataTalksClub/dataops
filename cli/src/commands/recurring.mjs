@@ -1,11 +1,20 @@
-import { createClient } from "../api.mjs";
-import { resolveProfile } from "../config.mjs";
+import { apiFor } from "../session.mjs";
 
-function client(args) {
-  const profile = resolveProfile(args);
-  if (!profile.token) throw new Error("Not signed in. Run `dataops login`.");
-  return createClient(profile);
-}
+const client = apiFor;
+
+export const summary = "Recurring schedules that generate Tasks";
+
+export const help = `dataops recurring - schedules that generate Tasks on a cron cadence
+
+Usage
+  dataops recurring list
+  dataops recurring create --description D --cron "0 9 * * 1" [--assignee ID] [--paused]
+  dataops recurring edit <id> [--description D] [--cron C] [--assignee ID]
+  dataops recurring pause <id> | resume <id> | delete <id>
+  dataops recurring generate [--date YYYY-MM-DD] [--until YYYY-MM-DD]
+
+<id> may be a unique prefix. Deleting a schedule keeps the Tasks it generated.
+`;
 
 function configsFrom(payload) {
   if (Array.isArray(payload)) return payload;

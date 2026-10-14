@@ -1,13 +1,30 @@
-import { createClient } from "../api.mjs";
-import { resolveProfile } from "../config.mjs";
+import { apiFor } from "../session.mjs";
 
 const base = "/api/bookkeeping/invoices";
 const fieldNames = ["transactionDate", "paidDate", "counterparty", "description", "amount", "currency", "amountEur", "statementRef", "quantity", "subtype", "period", "category", "paymentEvidence", "accountContext", "invoiceNumber", "archiveRequired", "archiveExceptionReason", "comment"];
-function client(args) {
-  const profile = resolveProfile(args);
-  if (!profile.token) throw new Error("Not signed in. Run `dataops login`.");
-  return createClient(profile);
-}
+const client = apiFor;
+
+export const summary = "Bookkeeping invoice drafts: review, verify, publish";
+
+export const help = `dataops invoices - invoice drafts (automatic publication after field verification)
+
+Usage
+  dataops invoices list | readiness
+  dataops invoices detail <id> | document <id>
+  dataops invoices edit <id> --revision N [--paid-date YYYY-MM-DD] [--amount-eur N]
+    [--payment-evidence NOTE] [--counterparty NAME] [--invoice-number REF]
+    [--account-context CONTEXT] [--archive-required true|false] [--verified]
+    Other fields: transaction-date, description, amount, currency, statement-ref,
+    quantity, subtype, period, category, comment, archive-exception-reason.
+  dataops invoices verify <id> --revision N   Verify invoice/payment values and publish automatically
+  dataops invoices confirm <id> --revision N  Existing explicit verification action
+  dataops invoices reject <id> --revision N [--reason NOTE]
+  dataops invoices retry <id> --revision N
+  dataops invoices reextract <id> --revision N  Re-run extraction on an untouched draft
+  dataops invoices process --intake-item-id ID
+
+\`document\` returns a short-lived private PDF URL; treat it as sensitive.
+`;
 function id(args) {
   if (!args._[0]) throw new Error("Invoice ID is required.");
   return encodeURIComponent(args._[0]);

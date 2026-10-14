@@ -1,11 +1,23 @@
-import { createClient } from "../api.mjs";
-import { resolveProfile } from "../config.mjs";
+import { apiFor } from "../session.mjs";
 
-function client(args) {
-  const profile = resolveProfile(args);
-  if (!profile.token) throw new Error("Not signed in. Run `dataops login`.");
-  return createClient(profile);
-}
+const client = apiFor;
+
+export const summary = "Calendar activities and operational slot scheduling";
+
+export const help = `dataops calendar - calendar activities and operational scheduling
+
+Usage
+  dataops calendar list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--type TYPE] [--status STATUS]
+  dataops calendar detail <id>
+  dataops calendar create --title T --type TYPE [--status STATUS] [--date DATE] [--starts-at ISO --ends-at ISO]
+  dataops calendar edit <id> [--title T] [--type TYPE] [--status STATUS] [--date DATE] [--version N]
+  dataops calendar delete <id> [--version N]
+  dataops calendar day <date>              Operational slot availability and the full day schedule
+  dataops calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all]
+  dataops calendar settings [--connection ID] [--show-available-slots true|false] [--filter-busy true|false] ...
+  dataops calendar dismiss-alert <fingerprint>
+  dataops calendar sync-holidays
+`;
 
 function todayBerlin() {
   return new Intl.DateTimeFormat("en-CA", {
