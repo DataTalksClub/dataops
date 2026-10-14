@@ -42,7 +42,10 @@ export const ALLOWED_UPDATE_FIELDS = [
   'intakeRefs',
   'auditEventRefs',
 ];
-const VALID_TASK_STATUSES = new Set<TaskStatus>(['todo', 'waiting', 'done', 'archived']);
+const VALID_TASK_STATUSES = new Set<TaskStatus>(['todo', 'waiting', 'done', 'skipped']);
+export const INVALID_STATUS_ERROR = "Invalid status. Must be 'todo', 'waiting', 'done', or 'skipped'";
+export const SKIPPED_STATUS_ERROR = 'skipped is set with the skip action, which requires a reason';
+export const SKIPPED_TASK_ERROR = 'Skipped Tasks must be unskipped before they can be changed';
 const VALID_PROOF_REQUIREMENT_TYPES = new Set(['url', 'file', 'artifact', 'comment', 'external-status']);
 export const WAITING_FIELDS_ERROR = 'Waiting tasks require waitingFor, followUpAt, and comment';
 export const WAITING_COMPLETION_ERROR = 'Waiting tasks must be resolved with the follow-up resolve action before completion';
@@ -96,6 +99,10 @@ export function validateActionNote(value: unknown, fieldName = 'note'): string |
   if (note.length > 500) return `${fieldName} must be 500 characters or fewer`;
   if (UNSAFE_NOTE_PATTERN.test(note)) return `${fieldName} must not contain tokens, credentials, or signed URLs`;
   return null;
+}
+
+export function validateSkipReason(value: unknown): string | null {
+  return validateActionNote(value, 'reason');
 }
 
 export function validateActionChannel(value: unknown): string | null {

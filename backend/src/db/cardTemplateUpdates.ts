@@ -22,6 +22,7 @@ import {
   type CardLifecycleAuditEvent,
 } from './taskCardLifecycle';
 import { templateTaskProjection } from '../templates/cardTemplateProjection';
+
 import {
   buildCardTemplateUpdatePlan,
   projectedCardLinks,
@@ -30,6 +31,9 @@ import {
   type CardTemplateUpdatePreview,
   type PlannedTaskUpdate,
 } from '../templates/cardTemplateUpdates';
+
+/** The skip reason a reviewed Template update records for a Task it removed. */
+export const TEMPLATE_REMOVED_SKIP_REASON = 'Removed from the Card Template';
 
 type Dict = Record<string, unknown>;
 type TransactionItems = NonNullable<ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']>;
@@ -177,8 +181,16 @@ function appliedExistingTask(
 ): Task {
   const before = update.before as Task;
   const next = structuredClone(before) as Task & Dict;
-  if (update.action === 'archive-removed' || update.action === 'retain-completed') {
-    if (update.action === 'archive-removed') next.status = 'archived';
+  if (update.action === 'skip-removed' || update.action === 'retain-completed') {
+    if (update.action === 'skip-removed') {
+      next.status = 'skipped';
+      next.skipReason = TEMPLATE_REMOVED_SKIP_REASON;
+      next.skippedAt = now;
+      next.skippedBy = actorId;
+      delete next.waitingFor;
+      delete next.followUpAt;
+      delete next.followUpChannel;
+    }
     next.templateRetiredAt = now;
     next.templateRetiredReason = update.target ? 'completed-modified' : 'removed';
     next.taskHistory = [
@@ -197,11 +209,17 @@ function appliedExistingTask(
       clearDefinitionFields(next);
       Object.assign(next, structuredClone(update.target));
     }
-    if (before.templateRetiredReason === 'removed' && before.status === 'archived') {
+    // Only the skip the Template update itself made is undone; an operator's
+    // own skip stays.
+    if (
+      before.templateRetiredReason === 'removed'
+      && before.status === 'skipped'
+      && before.skippedAt === before.templateRetiredAt
+    ) {
       next.status = 'todo';
-      delete next.waitingFor;
-      delete next.followUpAt;
-      delete next.followUpChannel;
+      delete next.skipReason;
+      delete next.skippedAt;
+      delete next.skippedBy;
       next.taskHistory = [
         ...before.taskHistory,
         {

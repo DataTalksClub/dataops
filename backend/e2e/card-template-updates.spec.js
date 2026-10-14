@@ -69,7 +69,7 @@ test.describe('reviewed Card Template updates', () => {
     await expect(panel).toContainText('Update available: Template v1 → v2');
     await panel.getByRole('button', { name: 'Review template update' }).click();
     await expect(panel).toContainText('Retain completed task: Changed completed step');
-    await expect(panel).toContainText('Archive removed task: Remove this incomplete step');
+    await expect(panel).toContainText('Skip removed task: Remove this incomplete step');
     await expect(panel).toContainText('Add New reviewed step');
     await panel.getByRole('button', { name: 'Cancel' }).click();
     await expect(panel.getByRole('button', { name: 'Review template update' })).toBeVisible();
@@ -111,7 +111,8 @@ test.describe('reviewed Card Template updates', () => {
     });
     const retiredTask = appliedTasks.find(({ id }) => id === removed.id);
     expect(retiredTask).toMatchObject({
-      status: 'archived',
+      status: 'skipped',
+      skipReason: 'Removed from the Card Template',
       templateRetiredReason: 'removed',
     });
     expect(retiredTask.taskHistory).toEqual(expect.arrayContaining([

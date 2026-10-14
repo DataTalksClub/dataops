@@ -200,6 +200,11 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     if (status === 'waiting') {
       requireString(task, 'waiting_for', errors, context);
       validateDateOrTimestampField(task, 'follow_up_at', errors, context, true);
+    } else if (status === 'skipped') {
+      requireString(task, 'skip_reason', errors, context);
+      requireString(task, 'skipped_by', errors, context);
+      validateDateOrTimestampField(task, 'skipped_at', errors, context, true);
+      validateDateOrTimestampField(task, 'follow_up_at', errors, context);
     } else {
       validateDateOrTimestampField(task, 'follow_up_at', errors, context);
     }

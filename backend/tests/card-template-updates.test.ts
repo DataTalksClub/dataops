@@ -122,18 +122,39 @@ describe('Card Template update planning', () => {
       cardFields: 0,
       added: 1,
       updated: 1,
-      archived: 1,
+      skipped: 1,
       retainedCompleted: 1,
       reordered: 2,
       operatorOverrides: 0,
     });
     assert.equal(plan.preview.taskChanges.find((change) => change.taskRef === 'host')?.action, 'retain-completed');
-    assert.equal(plan.preview.taskChanges.find((change) => change.taskRef === 'follow-up')?.action, 'archive-removed');
+    assert.equal(plan.preview.taskChanges.find((change) => change.taskRef === 'follow-up')?.action, 'skip-removed');
     assert.equal(plan.preview.taskChanges.find((change) => change.taskRef === 'publish')?.action, 'add');
     const announce = plan.preview.taskChanges.find((change) => change.taskRef === 'announce');
     assert.equal(announce?.action, 'update');
     assert.deepEqual(announce?.changes.map(({ field }) => field), ['templateTaskOrder', 'instructionDocId']);
     assert.deepEqual(announce?.operatorOverrideFields, []);
+  });
+
+  it('retains an operator-skipped Task the new Template version removed', () => {
+    const source = template(1);
+    const target = {
+      ...template(2),
+      taskDefinitions: (source.taskDefinitions || []).filter(({ refId }) => refId !== 'follow-up'),
+    };
+    const tasks = tasksFrom(source);
+    const followUp = tasks.find(({ templateTaskRef }) => templateTaskRef === 'follow-up')!;
+    followUp.status = 'skipped';
+    followUp.skipReason = 'Synthetic: no follow-up needed';
+    followUp.skippedAt = '2026-04-14T12:00:00.000Z';
+    followUp.skippedBy = 'operator-one';
+
+    const plan = buildCardTemplateUpdatePlan(cardFrom(source), tasks, target);
+    assert.equal(plan.preview.counts.skipped, 0);
+    assert.equal(
+      plan.preview.taskChanges.find((change) => change.taskRef === 'follow-up')?.action,
+      'retain-completed',
+    );
   });
 
   it('ignores unselected optional groups when planning Template updates', () => {

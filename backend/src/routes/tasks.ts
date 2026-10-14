@@ -28,6 +28,9 @@ import { getTemplate } from '../db/templates';
 import type { LambdaEvent, LambdaResponse, Task, TaskHistoryEvent } from '../types';
 import {
   ALLOWED_UPDATE_FIELDS,
+  INVALID_STATUS_ERROR,
+  SKIPPED_STATUS_ERROR,
+  SKIPPED_TASK_ERROR,
   WAITING_COMPLETION_ERROR,
   WAITING_FIELDS_ERROR,
   WAITING_TODO_ERROR,
@@ -45,6 +48,7 @@ import {
   validateDoneProofOnCreate,
   validateProofRequirement,
   validateRequiredCardLinks,
+  validateSkipReason,
   validateTaskDocContext,
   validateTaskRefs,
   validateTaskTags,
@@ -163,10 +167,10 @@ export async function handleTaskRoutes(
     }
     if (body.status !== undefined) {
       if (!isTaskStatus(body.status)) {
-        return jsonResponse(400, { error: "Invalid status. Must be 'todo', 'waiting', 'done', or 'archived'" });
+        return jsonResponse(400, { error: INVALID_STATUS_ERROR });
       }
-      if (body.status === 'archived') {
-        return jsonResponse(400, { error: 'archived is system-owned and cannot be set directly' });
+      if (body.status === 'skipped') {
+        return jsonResponse(400, { error: SKIPPED_STATUS_ERROR });
       }
       taskData.status = body.status;
     }
@@ -274,9 +278,7 @@ export async function handleTaskRoutes(
 
     if (status) {
       if (!isTaskStatus(status)) {
-        return jsonResponse(400, {
-          error: "Invalid status. Must be 'todo', 'waiting', 'done', or 'archived'",
-        });
+        return jsonResponse(400, { error: INVALID_STATUS_ERROR });
       }
       return await ownerListResponse(await listTasksByStatus(client, status));
     }
@@ -322,14 +324,75 @@ export async function handleTaskRoutes(
     if (existing.version !== expectedVersion) {
       throw new TaskVersionConflictError(existing.id, expectedVersion);
     }
-    if (existing.status === 'archived') {
-      return jsonResponse(400, {
-        error: 'archived Tasks are system-owned and cannot be changed through manual actions',
-      });
-    }
-
     const actorId = actionActor.actor.id || undefined;
     const now = new Date().toISOString();
+
+    // Skip resolves an open Task as not applicable. It deliberately bypasses
+    // the link, file, and proof gates that completion enforces: the reason is
+    // the evidence. Card completion counts a skipped Task as resolved.
+    if (taskAction.action === 'skip') {
+      if (existing.status === 'skipped') {
+        return jsonResponse(400, { error: 'Task is already skipped' });
+      }
+      if (existing.status === 'done') {
+        return jsonResponse(400, { error: 'Completed tasks must be reopened before skipping' });
+      }
+      const reason = trimmedString(body.reason);
+      const reasonError = validateSkipReason(reason);
+      if (reasonError) return jsonResponse(400, { error: reasonError });
+
+      const historyEvent = makeTaskHistoryEvent('skipped', existing, {
+        actorId,
+        note: reason,
+        createdAt: now,
+      });
+      const updated = await updateTask(client, existing.id, {
+        currentTask: existing,
+        expectedVersion,
+        patch: {
+          status: 'skipped',
+          skipReason: reason,
+          skippedAt: now,
+          skippedBy: actorId || 'system',
+          waitingFor: null,
+          followUpAt: null,
+          followUpChannel: null,
+        },
+        historyEvents: [historyEvent],
+        actorId,
+        triggerKind: 'task-skipped',
+      });
+      return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
+    }
+
+    if (taskAction.action === 'unskip') {
+      if (existing.status !== 'skipped') {
+        return jsonResponse(400, { error: 'Task is not skipped' });
+      }
+      const historyEvent = makeTaskHistoryEvent('unskipped', existing, {
+        actorId,
+        note: existing.skipReason,
+        createdAt: now,
+      });
+      const updated = await updateTask(client, existing.id, {
+        currentTask: existing,
+        expectedVersion,
+        patch: {
+          status: 'todo',
+          skipReason: null,
+          skippedAt: null,
+          skippedBy: null,
+        },
+        historyEvents: [historyEvent],
+        actorId,
+        triggerKind: 'task-unskipped',
+      });
+      return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
+    }
+
+    if (existing.status === 'skipped') {
+      return jsonResponse(400, { error: SKIPPED_TASK_ERROR });
+    }
 
     if (taskAction.action === 'mark-waiting') {
       if (existing.status === 'done') {
@@ -561,10 +624,10 @@ export async function handleTaskRoutes(
       return jsonResponse(400, { error: 'No valid fields to update' });
     }
     if (updates.status !== undefined && !isTaskStatus(updates.status)) {
-      return jsonResponse(400, { error: "Invalid status. Must be 'todo', 'waiting', 'done', or 'archived'" });
+      return jsonResponse(400, { error: INVALID_STATUS_ERROR });
     }
-    if (updates.status === 'archived') {
-      return jsonResponse(400, { error: 'archived is system-owned and cannot be set directly' });
+    if (updates.status === 'skipped') {
+      return jsonResponse(400, { error: SKIPPED_STATUS_ERROR });
     }
     if (updates.cardId !== undefined && updates.cardId !== null && !isNonEmptyString(updates.cardId)) {
       return jsonResponse(400, { error: 'cardId must be a non-empty string or null' });
@@ -600,10 +663,8 @@ export async function handleTaskRoutes(
     if (existing.version !== expectedVersion) {
       throw new TaskVersionConflictError(existing.id, expectedVersion);
     }
-    if (existing.status === 'archived') {
-      return jsonResponse(400, {
-        error: 'archived Tasks are system-owned and cannot be changed through manual updates',
-      });
+    if (existing.status === 'skipped') {
+      return jsonResponse(400, { error: SKIPPED_TASK_ERROR });
     }
 
     // Delegated execution must not become assignment or membership

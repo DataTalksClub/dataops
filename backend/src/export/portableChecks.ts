@@ -10,7 +10,7 @@
 
 import type { JsonRecord, JsonValue } from './portableMappers';
 
-export const VALID_TASK_STATUSES = new Set(['todo', 'waiting', 'done', 'archived']);
+export const VALID_TASK_STATUSES = new Set(['todo', 'waiting', 'done', 'skipped']);
 const VALID_ACTIVE_CARD_STAGES = new Set(['preparation', 'announced', 'after-event']);
 const VALID_TASK_HISTORY_ACTIONS = new Set([
   'waiting-started',
@@ -20,6 +20,8 @@ const VALID_TASK_HISTORY_ACTIONS = new Set([
   'wait-resolved',
   'completed',
   'reopened',
+  'skipped',
+  'unskipped',
   'template-retired',
   'template-restored',
 ]);

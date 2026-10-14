@@ -94,6 +94,9 @@ export function mapTask(item: Record<string, unknown>): JsonRecord {
     tags: stringArray(item.tags),
     completed_by: optionalString(item.completedBy),
     completed_at: optionalString(item.completedAt),
+    skip_reason: optionalString(item.skipReason),
+    skipped_at: optionalString(item.skippedAt),
+    skipped_by: optionalString(item.skippedBy),
     created_at: optionalString(item.createdAt),
     updated_at: optionalString(item.updatedAt),
   });

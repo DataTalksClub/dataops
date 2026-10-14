@@ -373,7 +373,7 @@ describe('portable execution data export', () => {
     const tasksJsonl = await fs.readFile(path.join(exportDir, 'tasks.jsonl'), 'utf8');
     const taskRecords = tasksJsonl.trimEnd().split('\n').map((line) => JSON.parse(line));
     assert.ok(taskRecords.every((record) => Number.isSafeInteger(record.version) && record.version >= 1));
-    assert.ok(taskRecords.every((record) => ['todo', 'waiting', 'done', 'archived'].includes(record.status)));
+    assert.ok(taskRecords.every((record) => ['todo', 'waiting', 'done', 'skipped'].includes(record.status)));
     assert.ok(taskRecords.every((record) => Array.isArray(record.task_history)));
     assert.match(tasksJsonl, /"task_id"/);
     assert.match(tasksJsonl, /"assignee_id"/);

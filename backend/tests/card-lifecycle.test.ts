@@ -191,7 +191,7 @@ describe('Card lifecycle aggregate', () => {
     );
   });
 
-  it('treats archived Tasks as terminal and moves Task aggregates between Cards', async () => {
+  it('treats skipped Tasks as resolved and moves Task aggregates between Cards', async () => {
     const source = await createCard(client, { title: 'Source', anchorDate: '2026-09-04' });
     const target = await createCard(client, { title: 'Target', anchorDate: '2026-09-04' });
     const task = await createTask(client, { description: 'Move', date: '2026-09-04', cardId: source.id });
@@ -210,7 +210,12 @@ describe('Card lifecycle aggregate', () => {
     );
     await updateTask(client, moved.id, {
       expectedVersion: moved.version,
-      patch: { status: 'archived' },
+      patch: {
+        status: 'skipped',
+        skipReason: 'Synthetic not applicable',
+        skippedAt: '2026-09-04T10:00:00.000Z',
+        skippedBy: 'operator-one',
+      },
       actorId: 'operator-one',
     });
     const archived = await getCard(client, target.id);

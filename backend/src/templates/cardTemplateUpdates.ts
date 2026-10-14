@@ -49,7 +49,7 @@ export type CardTemplateUpdateState = 'current' | 'update-available';
 export type TemplateTaskUpdateAction =
   | 'add'
   | 'update'
-  | 'archive-removed'
+  | 'skip-removed'
   | 'retain-completed'
   | 'refresh-provenance';
 
@@ -86,7 +86,7 @@ export interface CardTemplateUpdatePreview {
     cardFields: number;
     added: number;
     updated: number;
-    archived: number;
+    skipped: number;
     retainedCompleted: number;
     reordered: number;
     operatorOverrides: number;
@@ -325,9 +325,10 @@ export function buildCardTemplateUpdatePlan(
   for (const current of relevantTasks) {
     const ref = current.templateTaskRef as string;
     if (targetRefs.has(ref) || alreadyRetainedForCurrentTemplate(card, template, current)) continue;
-    const action: TemplateTaskUpdateAction = current.status === 'done'
+    // A resolved Task keeps its resolution; an open one is skipped.
+    const action: TemplateTaskUpdateAction = current.status === 'done' || current.status === 'skipped'
       ? 'retain-completed'
-      : 'archive-removed';
+      : 'skip-removed';
     taskUpdates.push({ action, taskRef: ref, before: current, target: null, changedFields: [] });
     taskChanges.push({
       action,
@@ -365,7 +366,7 @@ export function buildCardTemplateUpdatePlan(
         cardFields: cardChanges.length,
         added: taskChanges.filter(({ action }) => action === 'add').length,
         updated: taskChanges.filter(({ action }) => action === 'update').length,
-        archived: taskChanges.filter(({ action }) => action === 'archive-removed').length,
+        skipped: taskChanges.filter(({ action }) => action === 'skip-removed').length,
         retainedCompleted: taskChanges.filter(({ action }) => action === 'retain-completed').length,
         reordered: taskChanges.filter(({ changes }) => changes.some(({ field }) => field === 'templateTaskOrder')).length,
         operatorOverrides,

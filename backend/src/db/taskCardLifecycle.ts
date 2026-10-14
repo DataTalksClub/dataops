@@ -114,6 +114,11 @@ function isOpenStatus(status: TaskStatus): boolean {
   return status === 'todo' || status === 'waiting';
 }
 
+/** Optional Task attributes a `null` patch value removes instead of storing. */
+const REMOVABLE_TASK_FIELDS = new Set([
+  'cardId', 'completedAt', 'completedBy', 'skipReason', 'skippedAt', 'skippedBy',
+]);
+
 function taskKey(id: string) {
   return { PK: `TASK#${id}`, SK: `TASK#${id}` };
 }
@@ -323,7 +328,7 @@ function taskTransactionItem(mutation: TaskCardMutation): TransactionItems[numbe
   for (const [key, value] of Object.entries(fields)) {
     const name = `#field${index}`;
     names[name] = key;
-    if (['cardId', 'completedAt', 'completedBy'].includes(key) && value === null) {
+    if (REMOVABLE_TASK_FIELDS.has(key) && value === null) {
       removeParts.push(name);
     } else {
       const token = `:value${index}`;
@@ -563,6 +568,7 @@ async function executeTaskCardTransaction(
 }
 
 export {
+  REMOVABLE_TASK_FIELDS,
   CardLifecycleConflictError,
   TaskCardTransactionConflictError,
   executeTaskCardTransaction,

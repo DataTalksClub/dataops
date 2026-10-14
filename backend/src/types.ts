@@ -1,6 +1,11 @@
 // --- Task ---
 
-export type TaskStatus = 'todo' | 'waiting' | 'done' | 'archived';
+/**
+ * `skipped` resolves a Task as not applicable without doing it. It always
+ * carries `skipReason`, `skippedAt`, and `skippedBy`. An operator skips with a
+ * reason; a reviewed Template update skips Tasks its new version removed.
+ */
+export type TaskStatus = 'todo' | 'waiting' | 'done' | 'skipped';
 export type ProofRequirementType = 'url' | 'file' | 'artifact' | 'comment' | 'external-status';
 export type NotificationType =
   | 'task-due'
@@ -181,6 +186,8 @@ export type TaskHistoryAction =
   | 'wait-resolved'
   | 'completed'
   | 'reopened'
+  | 'skipped'
+  | 'unskipped'
   | 'template-retired'
   | 'template-restored';
 
@@ -212,6 +219,10 @@ export interface Task {
   followUpChannel?: string;
   completedBy?: string;
   completedAt?: string;
+  /** Why the Task does not apply; present exactly when status is `skipped`. */
+  skipReason?: string;
+  skippedAt?: string;
+  skippedBy?: string;
   proofRequirement?: ProofRequirement;
   externalStatus?: string;
   instructionsUrl?: string;

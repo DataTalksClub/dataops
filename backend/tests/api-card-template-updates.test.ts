@@ -161,7 +161,7 @@ describe('API — reviewed Card Template updates', () => {
       cardFields: 1,
       added: 1,
       updated: 1,
-      archived: 1,
+      skipped: 1,
       retainedCompleted: 1,
       reordered: 2,
       operatorOverrides: 1,
@@ -203,8 +203,11 @@ describe('API — reviewed Card Template updates', () => {
 
     const archivedFollowUp = storedByRef.get('follow-up')!;
     assert.equal(archivedFollowUp.id, followUp.id);
-    assert.equal(archivedFollowUp.status, 'archived');
-    assert.equal(archivedFollowUp.waitingFor, 'Synthetic follow-up response');
+    assert.equal(archivedFollowUp.status, 'skipped');
+    assert.equal(archivedFollowUp.skipReason, 'Removed from the Card Template');
+    assert.equal(archivedFollowUp.skippedBy, 'operator-template-review');
+    assert.equal(archivedFollowUp.skippedAt, archivedFollowUp.templateRetiredAt);
+    assert.equal(archivedFollowUp.waitingFor, undefined);
     assert.deepEqual(archivedFollowUp.artifactRefs, [{ artifactId: 'artifact-retained-follow-up' }]);
     assert.equal(archivedFollowUp.templateRetiredReason, 'removed');
     assert.deepEqual(archivedFollowUp.taskHistory.at(-1), {
@@ -257,6 +260,9 @@ describe('API — reviewed Card Template updates', () => {
     const restoredFollowUp = (await getTask(client, followUp.id))!;
     assert.equal(restoredFollowUp.status, 'todo');
     assert.equal(restoredFollowUp.templateRetiredReason, undefined);
+    assert.equal(restoredFollowUp.skipReason, undefined);
+    assert.equal(restoredFollowUp.skippedAt, undefined);
+    assert.equal(restoredFollowUp.skippedBy, undefined);
     assert.equal(restoredFollowUp.waitingFor, undefined);
     assert.equal(restoredFollowUp.followUpAt, undefined);
     assert.equal(restoredFollowUp.followUpChannel, undefined);

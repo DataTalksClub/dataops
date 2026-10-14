@@ -13,6 +13,7 @@ import type { Task, TaskHistoryEvent } from '../types';
 import {
   CardLifecycleConflictError,
   TaskCardTransactionConflictError,
+  REMOVABLE_TASK_FIELDS,
   executeTaskCardTransaction,
   isOpenStatus,
 } from './taskCardLifecycle';
@@ -210,9 +211,11 @@ async function updateTask(
       updatedAt: now,
       taskHistory: [...beforeTask.taskHistory, ...historyEvents],
     } as Task;
-    if (mutation.patch.cardId === null) delete afterTask.cardId;
-    if (mutation.patch.completedAt === null) delete afterTask.completedAt;
-    if (mutation.patch.completedBy === null) delete afterTask.completedBy;
+    for (const field of REMOVABLE_TASK_FIELDS) {
+      if ((mutation.patch as Record<string, unknown>)[field] === null) {
+        delete (afterTask as unknown as Record<string, unknown>)[field];
+      }
+    }
     const beforeCardId = typeof beforeTask.cardId === 'string' && beforeTask.cardId.length > 0
       ? beforeTask.cardId
       : null;
@@ -245,16 +248,21 @@ async function updateTask(
   }
 
   const expressionParts: string[] = [];
+  const removeParts: string[] = [];
   const expressionAttrNames: Record<string, string> = {};
   const expressionAttrValues: Record<string, unknown> = {};
 
   let i = 0;
   for (const [key, value] of Object.entries(fields)) {
     const nameToken = `#f${i}`;
-    const valueToken = `:v${i}`;
-    expressionParts.push(`${nameToken} = ${valueToken}`);
     expressionAttrNames[nameToken] = key;
-    expressionAttrValues[valueToken] = value;
+    if (REMOVABLE_TASK_FIELDS.has(key) && value === null) {
+      removeParts.push(nameToken);
+    } else {
+      const valueToken = `:v${i}`;
+      expressionParts.push(`${nameToken} = ${valueToken}`);
+      expressionAttrValues[valueToken] = value;
+    }
     i++;
   }
   expressionParts.push('#version = :nextVersion');
@@ -272,7 +280,9 @@ async function updateTask(
     const result = await client.send(new UpdateCommand({
       TableName: TABLE_TASKS,
       Key: { PK: `TASK#${id}`, SK: `TASK#${id}` },
-      UpdateExpression: `SET ${expressionParts.join(', ')}`,
+      UpdateExpression: removeParts.length > 0
+        ? `SET ${expressionParts.join(', ')} REMOVE ${removeParts.join(', ')}`
+        : `SET ${expressionParts.join(', ')}`,
       ConditionExpression: 'attribute_exists(PK) AND #version = :expectedVersion',
       ExpressionAttributeNames: expressionAttrNames,
       ExpressionAttributeValues: expressionAttrValues,

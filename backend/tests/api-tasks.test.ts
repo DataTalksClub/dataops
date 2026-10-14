@@ -176,18 +176,18 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(currentCard?.completedAt, task.completedAt);
     });
 
-    it('rejects manual creation in the system-owned archived state', async () => {
+    it('rejects creating a Task already skipped, which needs the reasoned skip action', async () => {
       const res = await handler({
         httpMethod: 'POST',
         path: '/api/tasks',
         body: JSON.stringify({
-          description: 'Cannot start retired',
+          description: 'Cannot start skipped',
           date: '2026-03-10',
-          status: 'archived',
+          status: 'skipped',
         }),
       }, {});
       assert.strictEqual(res.statusCode, 400, res.body);
-      assert.strictEqual(JSON.parse(res.body).error, 'archived is system-owned and cannot be set directly');
+      assert.strictEqual(JSON.parse(res.body).error, 'skipped is set with the skip action, which requires a reason');
     });
 
     it('returns the strongly current Card when attached Task creation loses the Card condition', async () => {
@@ -542,7 +542,7 @@ describe('API — CRUD for tasks', () => {
 
       assert.strictEqual(res.statusCode, 400);
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.error, "Invalid status. Must be 'todo', 'waiting', 'done', or 'archived'");
+      assert.strictEqual(body.error, "Invalid status. Must be 'todo', 'waiting', 'done', or 'skipped'");
     });
   });
 
@@ -866,12 +866,15 @@ describe('API — CRUD for tasks', () => {
       assert.ok(Date.parse(body.completedAt));
     });
 
-    it('rejects every generic update of a Template-retired archived Task without writing', async () => {
+    it('rejects every generic update of a skipped Task without writing', async () => {
       const client = await getClient(port);
       const archived = await createTask(client, {
         description: 'Retired Template Task',
         date: '2026-03-10',
-        status: 'archived',
+        status: 'skipped',
+        skipReason: 'Removed from the Card Template',
+        skippedAt: '2026-03-09T12:00:00.000Z',
+        skippedBy: 'template-operator',
         source: 'template',
         templateRetiredAt: '2026-03-09T12:00:00.000Z',
         templateRetiredReason: 'removed',
@@ -901,7 +904,7 @@ describe('API — CRUD for tasks', () => {
         assert.strictEqual(response.statusCode, 400);
         assert.strictEqual(
           JSON.parse(response.body).error,
-          'archived Tasks are system-owned and cannot be changed through manual updates',
+          'Skipped Tasks must be unskipped before they can be changed',
         );
         assert.deepStrictEqual(await getTask(client, archived.id), archived);
       }
@@ -2277,8 +2280,179 @@ describe('API — CRUD for tasks', () => {
     });
   });
 
-  describe('System-owned archived status', () => {
-    it('rejects a manual transition to archived without mutating the Task', async () => {
+  describe('POST /api/tasks/:id/actions/skip and unskip', () => {
+    async function skipAction(taskId: string, body: Record<string, unknown>, action = 'skip') {
+      return handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${taskId}/actions/${action}`,
+        headers: { 'x-user-id': 'skip-operator' },
+        body: JSON.stringify(body),
+      }, {});
+    }
+
+    it('skips a gated Task with a reason, bypassing link, file, and proof gates', async () => {
+      const client = await getClient(port);
+      const card = await createCard(client, { title: 'Skip gate Card', anchorDate: '2026-05-01' });
+      const gated = await createTask(client, {
+        description: 'Gated step',
+        date: '2026-05-01',
+        cardId: card.id,
+        requiredLinkName: 'Recording',
+        requiresFile: true,
+        proofRequirement: { type: 'url', label: 'Recording URL' },
+      });
+      const done = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${gated.id}`,
+        body: JSON.stringify({ status: 'done', expectedVersion: gated.version }),
+      }, {});
+      assert.strictEqual(done.statusCode, 400, 'completion stays gated');
+
+      const res = await skipAction(gated.id, {
+        expectedVersion: gated.version,
+        reason: '  Self-hosted event, no recording  ',
+      });
+      assert.strictEqual(res.statusCode, 200, res.body);
+      const skipped = JSON.parse(res.body);
+      assert.strictEqual(skipped.status, 'skipped');
+      assert.strictEqual(skipped.skipReason, 'Self-hosted event, no recording');
+      assert.strictEqual(skipped.skippedBy, 'skip-operator');
+      assert.ok(Date.parse(skipped.skippedAt));
+      assert.strictEqual(skipped.version, gated.version + 1);
+      assert.strictEqual(skipped.completedAt, undefined);
+      assert.deepStrictEqual(
+        {
+          action: skipped.taskHistory.at(-1).action,
+          actorId: skipped.taskHistory.at(-1).actorId,
+          note: skipped.taskHistory.at(-1).note,
+          cardId: skipped.taskHistory.at(-1).cardId,
+          createdAt: skipped.taskHistory.at(-1).createdAt,
+        },
+        {
+          action: 'skipped',
+          actorId: 'skip-operator',
+          note: 'Self-hosted event, no recording',
+          cardId: card.id,
+          createdAt: skipped.skippedAt,
+        },
+      );
+    });
+
+    it('requires a reason and the current version, writing nothing otherwise', async () => {
+      const client = await getClient(port);
+      const task = await createTask(client, { description: 'Needs reason', date: '2026-05-02' });
+      for (const body of [
+        { expectedVersion: task.version },
+        { expectedVersion: task.version, reason: '   ' },
+        { expectedVersion: task.version, reason: 'x'.repeat(501) },
+      ]) {
+        const res = await skipAction(task.id, body);
+        assert.strictEqual(res.statusCode, 400, res.body);
+        assert.match(JSON.parse(res.body).error, /^reason /);
+      }
+      const missingVersion = await skipAction(task.id, { reason: 'Not applicable' });
+      assert.strictEqual(missingVersion.statusCode, 400);
+      assert.strictEqual(JSON.parse(missingVersion.body).error, 'expectedVersion is required');
+      const stale = await skipAction(task.id, { expectedVersion: task.version + 5, reason: 'Not applicable' });
+      assert.strictEqual(stale.statusCode, 409, stale.body);
+      assert.deepStrictEqual(await getTask(client, task.id), task);
+    });
+
+    it('completes the Card when its remaining Tasks are done or skipped, and reactivates on unskip', async () => {
+      const client = await getClient(port);
+      const card = await createCard(client, { title: 'Skip completion Card', anchorDate: '2026-05-03', stage: 'announced' });
+      const first = await createTask(client, { description: 'Finished', date: '2026-05-03', cardId: card.id });
+      const second = await createTask(client, { description: 'Not applicable', date: '2026-05-03', cardId: card.id });
+      const finished = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${first.id}`,
+        body: JSON.stringify({ status: 'done', expectedVersion: first.version }),
+      }, {});
+      assert.strictEqual(finished.statusCode, 200, finished.body);
+      assert.strictEqual((await getCard(client, card.id))?.status, 'active');
+
+      const skipRes = await skipAction(second.id, { expectedVersion: second.version, reason: 'Cancelled sponsor' });
+      assert.strictEqual(skipRes.statusCode, 200, skipRes.body);
+      const completed = await getCard(client, card.id);
+      assert.deepStrictEqual(
+        { status: completed?.status, stage: completed?.stage, openTaskCount: completed?.openTaskCount, taskCount: completed?.taskCount },
+        { status: 'archived', stage: 'done', openTaskCount: 0, taskCount: 2 },
+      );
+
+      const skipped = JSON.parse(skipRes.body);
+      const unskipRes = await skipAction(second.id, { expectedVersion: skipped.version }, 'unskip');
+      assert.strictEqual(unskipRes.statusCode, 200, unskipRes.body);
+      const unskipped = JSON.parse(unskipRes.body);
+      assert.strictEqual(unskipped.status, 'todo');
+      assert.strictEqual(unskipped.skipReason, undefined);
+      assert.strictEqual(unskipped.skippedAt, undefined);
+      assert.strictEqual(unskipped.skippedBy, undefined);
+      assert.deepStrictEqual(
+        unskipped.taskHistory.map(({ action }: { action: string }) => action),
+        ['skipped', 'unskipped'],
+      );
+      assert.strictEqual(unskipped.taskHistory.at(-1).note, 'Cancelled sponsor');
+      const reactivated = await getCard(client, card.id);
+      assert.deepStrictEqual(
+        { status: reactivated?.status, stage: reactivated?.stage, openTaskCount: reactivated?.openTaskCount },
+        { status: 'active', stage: 'announced', openTaskCount: 1 },
+      );
+    });
+
+    it('skips a waiting Task, clearing its wait, and refuses done or already-skipped Tasks', async () => {
+      const client = await getClient(port);
+      const waiting = await createTask(client, {
+        description: 'Waiting step',
+        date: '2026-05-04',
+        status: 'waiting',
+        waitingFor: 'Speaker reply',
+        followUpAt: '2026-05-06',
+        followUpChannel: 'email',
+        comment: 'Asked',
+      });
+      const res = await skipAction(waiting.id, { expectedVersion: waiting.version, reason: 'Speaker withdrew' });
+      assert.strictEqual(res.statusCode, 200, res.body);
+      const skipped = JSON.parse(res.body);
+      assert.strictEqual(skipped.status, 'skipped');
+      assert.ok(!skipped.waitingFor && !skipped.followUpAt && !skipped.followUpChannel);
+
+      const again = await skipAction(waiting.id, { expectedVersion: skipped.version, reason: 'Again' });
+      assert.strictEqual(again.statusCode, 400);
+      assert.strictEqual(JSON.parse(again.body).error, 'Task is already skipped');
+      const otherAction = await skipAction(waiting.id, {
+        expectedVersion: skipped.version,
+        waitingFor: 'x',
+        followUpAt: '2026-05-08',
+        channel: 'email',
+        note: 'x',
+      }, 'mark-waiting');
+      assert.strictEqual(otherAction.statusCode, 400);
+      assert.strictEqual(JSON.parse(otherAction.body).error, 'Skipped Tasks must be unskipped before they can be changed');
+
+      const done = await createTask(client, { description: 'Already done', date: '2026-05-04', status: 'done' });
+      const doneRes = await skipAction(done.id, { expectedVersion: done.version, reason: 'Late' });
+      assert.strictEqual(doneRes.statusCode, 400);
+      assert.strictEqual(JSON.parse(doneRes.body).error, 'Completed tasks must be reopened before skipping');
+
+      const open = await createTask(client, { description: 'Open', date: '2026-05-04' });
+      const unskipOpen = await skipAction(open.id, { expectedVersion: open.version }, 'unskip');
+      assert.strictEqual(unskipOpen.statusCode, 400);
+      assert.strictEqual(JSON.parse(unskipOpen.body).error, 'Task is not skipped');
+    });
+
+    it('lists skipped Tasks by status', async () => {
+      const client = await getClient(port);
+      const task = await createTask(client, { description: 'Listed skip', date: '2026-05-05' });
+      const res = await skipAction(task.id, { expectedVersion: task.version, reason: 'Duplicate' });
+      assert.strictEqual(res.statusCode, 200, res.body);
+      const list = await handler({ httpMethod: 'GET', path: '/api/tasks', queryStringParameters: { status: 'skipped' } }, {});
+      assert.strictEqual(list.statusCode, 200, list.body);
+      assert.ok(JSON.parse(list.body).tasks.some(({ id }: { id: string }) => id === task.id));
+    });
+  });
+
+  describe('Skipped status through PUT', () => {
+    it('rejects a reasonless PUT transition to skipped without mutating the Task', async () => {
       const createRes = await handler({
         httpMethod: 'POST',
         path: '/api/tasks',
@@ -2289,10 +2463,10 @@ describe('API — CRUD for tasks', () => {
       const archived = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ status: 'archived', expectedVersion: created.version }),
+        body: JSON.stringify({ status: 'skipped', expectedVersion: created.version }),
       }, {});
       assert.strictEqual(archived.statusCode, 400, archived.body);
-      assert.strictEqual(JSON.parse(archived.body).error, 'archived is system-owned and cannot be set directly');
+      assert.strictEqual(JSON.parse(archived.body).error, 'skipped is set with the skip action, which requires a reason');
       const current = JSON.parse((await handler({
         httpMethod: 'GET',
         path: `/api/tasks/${created.id}`,
