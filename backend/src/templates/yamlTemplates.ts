@@ -55,9 +55,6 @@ const TASK_FIELDS = [
   ['proofRequirement', 'proof'],
   ['tags', 'tags'],
   ['artifactRefs', 'artifact_refs'],
-  // Pending knowledge migration: the private podcast.yaml still carries
-  // assistant_job_refs. Delete this mapping once that key is removed there.
-  ['assistantJobRefs', 'assistant_job_refs'],
   ['intakeRefs', 'intake_refs'],
   ['auditEventRefs', 'audit_event_refs'],
 ] as const;
