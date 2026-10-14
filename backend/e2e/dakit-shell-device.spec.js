@@ -12,8 +12,8 @@ test.beforeAll(async () => {
   } });
 });
 test.afterAll(async () => stopOwnedTestServer(server));
-async function signedIn(browser, viewport) {
-  const context = await browser.newContext({ baseURL: server.baseURL, viewport, reducedMotion: 'reduce' });
+async function signedIn(browser, viewport, options = {}) {
+  const context = await browser.newContext({ baseURL: server.baseURL, viewport, reducedMotion: 'reduce', isMobile: viewport.width <= 820, hasTouch: viewport.width <= 820, ...options });
   const page = await context.newPage();
   await page.goto('/__e2e__/browser-session');
   await expect(page.locator('#account-identity')).toHaveAttribute('data-state', 'ready');
@@ -25,7 +25,7 @@ for (const theme of ['light', 'dark']) {
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.evaluate(t => { document.documentElement.dataset.theme = t; localStorage.setItem('dakit-theme', t); }, theme);
     const fontToken = name => page.evaluate(token => getComputedStyle(document.documentElement).getPropertyValue(token).trim(), name);
-    await expect(page.locator('.dk-page-header__title')).toHaveCSS('font-size', await fontToken('--dk-text-xl'));
+    await expect(page.locator('h1.dk-page-header__title')).toHaveCSS('font-size', await fontToken('--dk-text-xl'));
     await page.locator('#sidebar-collapse-button').click();
     await expect(page.locator('.dk-shell')).toHaveAttribute('data-sidebar', 'collapsed');
     expect((await page.locator('#sidebar').boundingBox()).width).toBe(56);
@@ -109,5 +109,124 @@ test('standalone device consent requires Continue, preserves overflow input, and
   await page.getByRole('button', { name: 'Authorize', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Device authorized' })).toBeFocused();
   expect(decisions).toBe(1);
+  await context.close();
+});
+
+async function touchControls(page, selector) {
+  const measurements = await page.locator(selector).evaluate(root => [...root.querySelectorAll('button,a,input,select,textarea,summary')].map(node => {
+    // A field wrapped in its <label> is hit anywhere in the label.
+    const target = node.matches('input,select,textarea') ? node.closest('label') || node : node;
+    const style = getComputedStyle(target), box = target.getBoundingClientRect();
+    return { name: `${node.tagName.toLowerCase()}.${node.className} ${node.getAttribute('aria-label') || node.textContent.trim().slice(0, 40) || node.id}`, height: box.height,
+      width: box.width, visible: style.display !== 'none' && style.visibility === 'visible' && box.width > 0 && box.height > 0 };
+  }).filter(item => item.visible));
+  expect(measurements.length).toBeGreaterThan(0);
+  for (const item of measurements) expect(item.height, `${item.name}: touch height`).toBeGreaterThanOrEqual(44);
+}
+for (const theme of ['light', 'dark']) {
+  test(`touch controls, main scrolling, drawer trapping and copy feedback in ${theme}`, async ({ browser }) => {
+    const { context, page } = await signedIn(browser, { width: 390, height: 844 }, { permissions: ['clipboard-read', 'clipboard-write'] });
+    await page.evaluate(t => { localStorage.setItem('dakit-theme', t); document.documentElement.dataset.theme = t; }, theme);
+    expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+    await page.locator('#mobile-menu-button').click();
+    await expect(page.locator('#sidebar')).toHaveAttribute('aria-modal', 'true');
+    await expect(page.locator('#sidebar [aria-current="page"]')).toBeFocused();
+    await page.locator('.dk-sidebar__nav').evaluate(node => { node.scrollTop = node.scrollHeight; });
+    const users = page.locator('#sidebar a[href="/users"]');
+    await expect(users).toBeInViewport();
+    await expect(users).toBeVisible();
+    await users.focus(); await expect(users).toBeFocused(); await page.keyboard.press('Tab');
+    await expect(page.locator('#sidebar .dk-brand')).toBeFocused();
+    await page.keyboard.press('Shift+Tab'); await expect(users).toBeFocused();
+    await touchControls(page, '#sidebar');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#mobile-menu-button')).toBeFocused();
+    await touchControls(page, '.dk-topbar');
+    await page.locator('#settings-button').click();
+    await expect(page.locator('#settings-menu')).toBeVisible();
+    await page.locator('#work-bell-button').click();
+    await expect(page.locator('#settings-menu')).toBeHidden();
+    await expect(page.locator('#work-bell-panel')).toBeVisible();
+    await page.keyboard.press('Escape'); await expect(page.locator('#work-bell-button')).toBeFocused();
+    const seeded = await context.request.post('/api/bookkeeping/transactions', { data: {
+      transactionDate: new Date().toISOString().slice(0, 10), counterparty: 'Synthetic touch review', amount: '45.00', currency: 'EUR', description: 'Synthetic touch geometry', category: 'events',
+    } });
+    expect(seeded.ok()).toBe(true);
+    for (const [route, ready] of [['/bookkeeping', '.bookkeeping-ledger tbody tr'], ['/processes', '.ops-docs-create'], ['/tasks', '.ops-work-queue']]) {
+      await page.goto(route); await expect(page.locator(ready).first()).toBeVisible();
+      await expect(page.locator('#main-content')).toHaveCSS('overflow-y', 'auto');
+      await expect(page.locator('#main-content')).toHaveCSS('padding-left', '16px');
+      await expect(page.locator('#library-view')).toHaveCSS('overflow-y', 'visible');
+      await touchControls(page, '#main-content');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+    await page.route('**/work/api/auth/device/pending?**', route => route.fulfill({ json: {
+      label: 'synthetic-machine', requestIp: '203.0.113.7', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600000).toISOString(),
+    } }));
+    await page.route('**/work/api/auth/device/approve', route => route.fulfill({ json: { status: 'approved' } }));
+    await page.goto('/device?userCode=bcdfghjk');
+    await expect(page.getByLabel('Device code', { exact: true })).toHaveValue('BCDF-GHJK');
+    await expect(page).toHaveURL(/\/device$/);
+    await touchControls(page, '.dk-auth-page');
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Authorize this device?' })).toBeFocused();
+    await touchControls(page, '.dk-auth-page');
+    await page.getByRole('button', { name: 'Authorize', exact: true }).click();
+    await expect(page.locator('.dk-code-block pre code')).toHaveText('dataops logout');
+    await touchControls(page, '.dk-auth-page');
+    const copy = page.locator('.dk-code-block [data-dk-copy]');
+    await expect(copy).toHaveAccessibleName('Copy');
+    const initialBox = await copy.boundingBox();
+    await copy.click();
+    await expect(copy).toHaveText('Copied');
+    const feedbackBox = await copy.boundingBox();
+    await expect(copy).toHaveText('Copy');
+    expect((await copy.boundingBox()).width).toBe(feedbackBox.width);
+    expect(feedbackBox.width).toBe(initialBox.width);
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('dataops logout');
+    await context.close();
+  });
+}
+
+test('long identity and machine labels wrap on touch without clipping Switch account', async ({ browser }) => {
+  const { context, page } = await signedIn(browser, { width: 390, height: 844 });
+  const email = 'operations.long-address.for-wrapping-checks@engineering.datatalks.club';
+  await page.route('**/api/me', route => route.fulfill({ json: { user: { email, name: 'Synthetic Operator', role: 'admin' } } }));
+  await page.route('**/work/api/auth/device/pending?**', route => route.fulfill({ json: {
+    label: 'build-runner-with-a-very-long-unbroken-hostname-0123456789abcdef.internal', requestIp: '203.0.113.7',
+    createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600000).toISOString(),
+  } }));
+  await page.goto('/device?userCode=bcdfghjk');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Authorize this device?' })).toBeFocused();
+  await expect(page.locator('.dk-auth-page__identity')).toContainText(email);
+  const layout = await page.evaluate(() => {
+    const identity = document.querySelector('.dk-auth-page__identity'), link = identity.querySelector('a');
+    const card = document.querySelector('.dk-auth-card');
+    return { identityClipped: identity.scrollWidth > identity.clientWidth, linkLines: link.getClientRects().length,
+      linkRight: link.getBoundingClientRect().right, cardOverflow: card.scrollWidth > card.clientWidth,
+      pageOverflow: document.documentElement.scrollWidth > innerWidth, width: innerWidth,
+      brandClipped: (n => n.scrollWidth > n.clientWidth)(document.querySelector('.dk-auth-page__bar .dk-brand__name')),
+      separated: identity.textContent.includes(' · ') };
+  });
+  expect(layout.identityClipped).toBe(false);
+  expect(layout.linkLines).toBe(1);
+  expect(layout.linkRight).toBeLessThanOrEqual(layout.width);
+  expect(layout.cardOverflow).toBe(false);
+  expect(layout.pageOverflow).toBe(false);
+  expect(layout.brandClipped).toBe(false);
+  expect(layout.separated).toBe(true);
+  await touchControls(page, '.dk-auth-page');
+  await context.close();
+});
+
+test('coarse-pointer desktop keeps the 56px rail with 44px controls', async ({ browser }) => {
+  const { context, page } = await signedIn(browser, { width: 1280, height: 800 }, { hasTouch: true });
+  expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+  await touchControls(page, '#sidebar');
+  await page.locator('#sidebar-collapse-button').click();
+  await expect(page.locator('.dk-shell')).toHaveAttribute('data-sidebar', 'collapsed');
+  await expect.poll(() => page.locator('#sidebar').evaluate(node => node.getBoundingClientRect().width)).toBe(56);
+  await touchControls(page, '#sidebar');
   await context.close();
 });
