@@ -272,3 +272,12 @@ describe("newsletter", () => {
     assert.equal(calls.length, 1);
   });
 });
+
+describe("agent guide", () => {
+  test("prints the skill body without its frontmatter", async () => {
+    const io = captureIo();
+    assert.equal(await run(["agent-guide"], io), 0);
+    assert.match(io.text(), /^# DataOps CLI for agents/);
+    assert.match(io.text(), /dataops kb related/);
+  });
+});

@@ -1,8 +1,9 @@
 # DataOps CLI
 
-A command line client for the same `/api/*` routes the portal frontend uses.
-There is one API and one identity model; the CLI is a second client, not a
-second backend.
+A command line client for the same `/api/*` and docs routes the portal frontend
+uses. There is one API and one identity model; the CLI is a second client, not a
+second backend. It is built to be driven by AI agents as well as people: every
+command has `--json` output, a stable exit code, and `--help` with examples.
 
 ## Install
 
@@ -13,17 +14,16 @@ npm link --workspace dataops-cli   # or: node cli/bin/dataops.mjs <command>
 ## Sign in
 
 ```bash
-dataops login --url https://portal.datatalks.club
+dataops login                       # the production portal, https://ops.dtcdev.click
+dataops login --url http://localhost:3000
 ```
 
 `login` starts an [RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)
 device authorization grant. The CLI prints a short code and a URL; open the URL
 in a browser **on a machine you already trust**, sign in with the portal's
 normal SSO, and confirm the code. The CLI polls until you confirm, then stores a
-token.
-
-This works over SSH, where the usual loopback redirect would open a browser on
-the wrong machine.
+token. This works over SSH, where the usual loopback redirect would open a
+browser on the wrong machine.
 
 Only confirm a code you started yourself. The approval page shows the machine
 label, the requesting IP, and the time so you can check.
@@ -32,62 +32,89 @@ label, the requesting IP, and the time so you can check.
 
 Tokens are stored in `~/.config/dataops/credentials.json` with mode `0600`, one
 entry per portal URL. `DATAOPS_TOKEN` and `DATAOPS_URL` override the stored
-profile, which is what CI should use. A token expires after 90 days and can be
-revoked at any time with `dataops logout` or `dataops tokens revoke <id>`.
+profile, which is what agents and CI should use. Without either, the CLI talks
+to `https://ops.dtcdev.click`. A token expires after 90 days and can be revoked
+at any time with `dataops logout` or `dataops tokens revoke <id>`.
 
-Tokens act as you: every permission check behaves exactly as it does in the web
-UI, and task history records your name.
+Tokens act as the user who approved them: every permission check behaves
+exactly as it does in the web UI, and task history records that user's name.
 
 ## Commands
 
-```
-dataops login [--url URL] [--label NAME]   Start a device login
-dataops logout                             Revoke this machine's token
-dataops whoami                             Show the signed-in user
-dataops tokens list                        List your API tokens
-dataops tokens revoke <id>                 Revoke a token by id
+`dataops --help` lists every family; `dataops <family> --help` shows its
+subcommands, flags, and examples.
 
-dataops recurring list                     List recurring schedules
-dataops recurring create --description D --cron "0 9 * * 1" [--assignee ID]
-dataops recurring edit <id> [--description D] [--cron C] [--assignee ID]
-dataops recurring pause <id>
-dataops recurring resume <id>
-dataops recurring delete <id>
-dataops recurring generate [--date YYYY-MM-DD]
+| Family | What it covers |
+| --- | --- |
+| `tasks` | the work queue (`list` defaults to the web queue), `show`, `create`, `update`, `done` with proof, `reopen`, `wait` / `followed-up` / `unblock`, `assign`, `delete` |
+| `cards` | `list`, `show` (with Tasks), `create --template`, `update`, `stage`, `link`, `park` / `resume`, `template-update` |
+| `templates` | `list`, `show` (read-only; authored in Git) |
+| `kb` | knowledge base: `search`, `related <task|card>`, `show`, `tree`, `ls`, `resolve`, `backlinks`, `history`, `write` |
+| `newsletter` | slots: `list`, `show`, `create`, `update`, `link-card`, `create-card`, `delete`, `dismiss-alert` |
+| `calendar` | activities and operational slot scheduling |
+| `recurring` | schedules that generate Tasks |
+| `notifications` | `list`, `dismiss`, `dismiss-all` |
+| `files`, `artifacts` | Task files and artifacts |
+| `sponsors` | CRM queue, records, messages, deal history and finance |
+| `invoices` | bookkeeping invoice drafts |
+| `team`, `users` | the team directory (ids for `--assignee`/`--owner`); accounts (admin) |
+| `api` | any other route: `dataops api GET /api/<route>` |
+| `login`, `logout`, `whoami`, `tokens` | credentials |
+| `agent-guide` | the workflow guide for agents ([skill/SKILL.md](skill/SKILL.md)) |
 
-dataops invoices list | readiness
-dataops invoices detail <id> | document <id>
-dataops invoices process --intake-item-id ID
-dataops invoices edit <id> --revision N --paid-date YYYY-MM-DD --amount-eur N --payment-evidence NOTE
-dataops invoices verify <id> --revision N
-dataops invoices reject <id> --revision N [--reason NOTE]
-dataops invoices retry <id> --revision N
+## Output and exit codes
 
-dataops calendar list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--type TYPE] [--status STATUS]
-dataops calendar detail <id>
-dataops calendar create --title T --type TYPE [--status STATUS] [--date DATE] [--starts-at ISO --ends-at ISO]
-dataops calendar edit <id> [--title T] [--type TYPE] [--status STATUS] [--date DATE] [--version N]
-dataops calendar delete <id> [--version N]
-dataops calendar day <date>                   Show operational slot availability & full day schedule
-dataops calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all]
-dataops calendar settings [--connection ID] [--show-available-slots true|false] [--filter-busy true|false] ...
-dataops calendar dismiss-alert <fingerprint>
-dataops calendar sync-holidays
-```
+Human-readable output by default; `--json` prints the result as JSON on stdout.
+On failure, the message goes to stderr — as `{"error": {"message", "exitCode",
+"status", "code"}}` under `--json`.
 
-Every command accepts `--json` and prints the raw API response, so the CLI
-composes with `jq` and scripts.
+| Code | Meaning |
+| --- | --- |
+| 0 | ok |
+| 1 | any other error |
+| 2 | usage: unknown command, bad or missing argument; nothing was sent |
+| 3 | not signed in, token rejected (401), or the role forbids it (403) |
+| 4 | not found (404) |
+| 5 | conflict (409): the record changed since it was read; re-read and retry |
+| 6 | the API rejected the input (400/422); the message names the problem |
+| 7 | server error or network failure; retry later |
 
-Invoice details include original-document provenance, extraction method and evidence,
-missing payment evidence, review revision, audit history, and separate Dropbox and
-spreadsheet results. Verify invoice and actual payment values for the current revision to publish
-automatically. Use `edit --verified` to save corrected values and verify the new
-revision in one action, or `verify` to verify an unchanged reviewed revision.
-Extraction alone never marks values verified. A verified/confirmed response can still contain incomplete publication; inspect
-both destination states and use `retry` to reconcile unfinished work. Reprocessing
-an intake stages drafts and does not verify fields or publish. `readiness` reports configuration
-checks without exposing credentials. `document` returns a short-lived private PDF
-URL; treat it as sensitive.
+Writes read the record's current version first and send it, so a write never
+overwrites a change it did not see.
+
+## Knowledge-base search
+
+`dataops kb search` queries the server's docs index (`GET /search`). The index
+is built with `zerosearch-node` from the active knowledge publication, kept in
+memory for that publication, and rebuilt when a new publication becomes active
+(an edit in the web editor, a restore, an import) or a new deployment starts.
+The CLI never downloads the corpus.
+
+`dataops kb related <task-id|card-id>` lists the documents the Task, its Card,
+and its Template link explicitly, then the best search matches for their
+titles.
+
+## Agents
+
+Run `dataops agent-guide`, or install [skill/SKILL.md](skill/SKILL.md) as an
+agent skill. It covers the non-interactive setup, the output contract, and the
+common workflows: find the docs for a task, close a Task with proof, start a
+Card from a Template.
+
+## Invoices
+
+Invoice details include original-document provenance, extraction method and
+evidence, missing payment evidence, review revision, audit history, and separate
+Dropbox and spreadsheet results. Verify invoice and actual payment values for the
+current revision to publish automatically. Use `edit --verified` to save
+corrected values and verify the new revision in one action, or `verify` to
+verify an unchanged reviewed revision. Extraction alone never marks values
+verified. A verified/confirmed response can still contain incomplete
+publication; inspect both destination states and use `retry` to reconcile
+unfinished work. Reprocessing an intake stages drafts and does not verify fields
+or publish. `readiness` reports configuration checks without exposing
+credentials. `document` returns a short-lived private PDF URL; treat it as
+sensitive.
 
 `invoices edit` accepts `--transaction-date`, `--paid-date`, `--counterparty`,
 `--description`, `--amount`, `--currency`, `--amount-eur`, `--statement-ref`,
@@ -99,8 +126,20 @@ validation, revision checks, verification, and provider reconciliation.
 payment evidence; it triggers automatic publication only if required evidence
 is complete.
 
+Invoice-reader service credentials are separate:
+`dataops login --service-token-stdin --url URL` configures the restricted
+`invoices:read` service identity.
+
+## Tests
+
+```bash
+npm test --workspace dataops-cli            # unit tests against a fake portal
+npm run test:e2e --workspace dataops-cli    # the real binary against a local backend
+```
+
 ## Adding commands
 
-To wrap another route, add a module under `src/commands/` and register it in
-`src/cli.mjs`; the
-client in `src/api.mjs` already handles auth, errors, and the `/work/api` seam.
+Add a module under `src/commands/` that exports `summary`, `help`, and
+`commands`, and register it in `FAMILIES` in `src/cli.mjs`. `apiFor(args)` in
+`src/session.mjs` returns the signed-in client; it handles auth, errors, and the
+`/work/api` seam.

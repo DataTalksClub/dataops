@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import * as auth from "./commands/auth.mjs";
 import * as calendar from "./commands/calendar.mjs";
 import * as cards from "./commands/cards.mjs";
@@ -13,6 +16,12 @@ import * as sponsors from "./commands/sponsors.mjs";
 import * as tasks from "./commands/tasks.mjs";
 import * as templates from "./commands/templates.mjs";
 import { EXIT, UsageError, errorPayload, exitCodeFor, hintFor } from "./errors.mjs";
+
+const GUIDE_PATH = fileURLToPath(new URL("../skill/SKILL.md", import.meta.url));
+
+export function agentGuide() {
+  return readFileSync(GUIDE_PATH, "utf8").replace(/^---\n[\s\S]*?\n---\n+/, "");
+}
 
 const AUTH_HELP = `dataops login | logout | whoami | tokens
 
@@ -100,6 +109,17 @@ export const FAMILIES = {
   whoami: { group: "Account", summary: "Show who the credential acts as", help: AUTH_HELP, run: auth.whoami },
   tokens: { group: "Account", summary: "List or revoke your API tokens", help: AUTH_HELP, commands: { list: auth.tokensList, revoke: auth.tokensRevoke } },
   api: { group: "Other", summary: raw.summary, help: raw.help, run: raw.call },
+  "agent-guide": {
+    group: "Other",
+    summary: "How an agent should use this CLI: workflows and contract",
+    help: "dataops agent-guide - print the agent workflow guide (also cli/skill/SKILL.md)\n",
+    run: (args, io) => {
+      const text = agentGuide();
+      if (args.json) return { guide: text };
+      io.print(text);
+      return undefined;
+    },
+  },
 };
 
 export function usage() {
@@ -133,6 +153,8 @@ export function usage() {
     "Exit codes",
     "  0 ok   1 error   2 usage   3 auth/forbidden   4 not found   5 conflict (re-read, retry)",
     "  6 rejected input   7 server or network unavailable",
+    "",
+    "Agents: start with `dataops agent-guide`.",
   );
   return lines.join("\n");
 }
