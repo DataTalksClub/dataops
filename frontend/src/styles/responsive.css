@@ -514,9 +514,6 @@ body[data-workspace-view="sponsors"] .library-view {
     gap: 6px;
     padding: 0 !important;
   }
-  .newsletter-stats-bar {
-    display: none !important;
-  }
   .newsletter-surface > .newsletter-views {
     order: 1;
     margin: 0;

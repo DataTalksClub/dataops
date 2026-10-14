@@ -208,6 +208,8 @@ test('newsletter at 375x667: issue cards fit the compaction budget and the overf
   const viewport = VIEWPORTS[0];
   const route = ROUTES.find((candidate) => candidate.path === '/newsletter');
   await openRouteAt(page, viewport, route);
+  // Slots load after the surface mounts; measure the rendered rows.
+  await expect(page.locator('.newsletter-slot-row').first()).toBeVisible();
 
   const heights = await page.evaluate(() =>
     [...document.querySelectorAll('.newsletter-slot-row')].map((card) =>

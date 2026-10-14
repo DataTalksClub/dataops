@@ -326,12 +326,6 @@ function createNewsletterDom() {
   surface.setQuery("[data-newsletter-add]", new TestElement("button"));
   surface.setQuery("[data-save]", new TestElement("button"));
 
-  const statTotal = surface.setQuery("[data-stat-total]", new TestElement("span"));
-  const statUpcoming = surface.setQuery("[data-stat-upcoming]", new TestElement("span"));
-  const statDrafting = surface.setQuery("[data-stat-drafting]", new TestElement("span"));
-  const statScheduled = surface.setQuery("[data-stat-scheduled]", new TestElement("span"));
-  const statUnbooked = surface.setQuery("[data-stat-unbooked]", new TestElement("span"));
-
   const viewAll = new TestElement("button");
   viewAll.dataset = { newsletterView: "all" };
   const viewUpcoming = new TestElement("button");
@@ -350,11 +344,6 @@ function createNewsletterDom() {
     form,
     from,
     slots,
-    statDrafting,
-    statScheduled,
-    statTotal,
-    statUnbooked,
-    statUpcoming,
     status,
     surface,
     to,
@@ -1139,7 +1128,7 @@ describe("Planning surface production behavior", () => {
     );
   });
 
-  test("calculates overview stats and filters by view tabs (All, Upcoming, Sent)", async () => {
+  test("filters by view tabs (All, Upcoming, Sent)", async () => {
     const dom = createNewsletterDom();
     const items = [
       {
@@ -1186,13 +1175,6 @@ describe("Planning surface production behavior", () => {
       request: async () => ({ alerts: [], items }),
     });
     await harness.surface.renderNewsletterSurface();
-
-    // Verify stats bar counts
-    assert.equal(dom.statTotal.textContent, "5");
-    assert.equal(dom.statUpcoming.textContent, "4");
-    assert.equal(dom.statDrafting.textContent, "1");
-    assert.equal(dom.statScheduled.textContent, "1");
-    assert.equal(dom.statUnbooked.textContent, "1");
 
     // Default "All" view shows all 5 slots
     assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Open/);

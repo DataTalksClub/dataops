@@ -245,28 +245,6 @@ export function createNewsletterPlanner(context) {
           role="radio"
           aria-checked="false" tabindex="-1">Sent &amp; archive <span class="dk-count" data-view-count hidden></span></button>
       </div>
-      <div class="newsletter-stats-bar" data-newsletter-stats aria-label="Newsletter overview statistics">
-        <div class="newsletter-stat-item">
-          <span class="newsletter-stat-number" data-stat-total>0</span>
-          <span class="newsletter-stat-label">Total</span>
-        </div>
-        <div class="newsletter-stat-item">
-          <span class="newsletter-stat-number" data-stat-upcoming>0</span>
-          <span class="newsletter-stat-label">Upcoming</span>
-        </div>
-        <div class="newsletter-stat-item">
-          <span class="newsletter-stat-number" data-stat-drafting>0</span>
-          <span class="newsletter-stat-label">Drafting</span>
-        </div>
-        <div class="newsletter-stat-item">
-          <span class="newsletter-stat-number" data-stat-scheduled>0</span>
-          <span class="newsletter-stat-label">Scheduled</span>
-        </div>
-        <div class="newsletter-stat-item">
-          <span class="newsletter-stat-number" data-stat-unbooked>0</span>
-          <span class="newsletter-stat-label">Unbooked</span>
-        </div>
-      </div>
       <details class="newsletter-filters" aria-label="Newsletter filters">
         <summary class="newsletter-filters-summary">
           <span class="newsletter-filters-title">Filter & group</span>
@@ -463,29 +441,8 @@ export function createNewsletterPlanner(context) {
         const upcomingCount = items.filter((i) =>
           ["open", "reserved", "drafting", "draft", "review", "scheduled"].includes(i.status)
         ).length;
-        const draftingCount = items.filter((i) => ["drafting", "draft"].includes(i.status)).length;
-        const scheduledCount = items.filter((i) => i.status === "scheduled").length;
-        const unbookedCount = items.filter(
-          (i) =>
-            i.status === "open" &&
-            !i.bookedByDisplayName &&
-            !i.sponsorBookingId &&
-            !i.bookedByUserId
-        ).length;
-
-        const statTotal = surface.querySelector("[data-stat-total]");
-        const statUpcoming = surface.querySelector("[data-stat-upcoming]");
-        const statDrafting = surface.querySelector("[data-stat-drafting]");
-        const statScheduled = surface.querySelector("[data-stat-scheduled]");
-        const statUnbooked = surface.querySelector("[data-stat-unbooked]");
-        if (statTotal) statTotal.textContent = String(totalCount);
-        if (statUpcoming) statUpcoming.textContent = String(upcomingCount);
-        if (statDrafting) statDrafting.textContent = String(draftingCount);
-        if (statScheduled) statScheduled.textContent = String(scheduledCount);
-        if (statUnbooked) statUnbooked.textContent = String(unbookedCount);
-
-        // Each filter segment carries its count (the mobile layout drops the
-        // stats strip, so this is where a phone sees them).
+        // Each filter segment carries its count. There is no stats strip
+        // restating them (dakit principle 4, no vanity metrics).
         const sentCount = items.filter((i) =>
           ["sent", "cancelled"].includes(i.status)
         ).length;
