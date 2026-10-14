@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, test } from "node:test";
 
 import {
+  installCollectionCreateShortcut,
   createFormFeedback,
   renderPageHeaderMarkup,
   renderDataSummary,
@@ -426,4 +427,37 @@ test("escapes supplied page header text and attributes while keeping authored ac
   assert.ok(markup.includes("screen&quot; onclick=&quot;bad()"));
   assert.ok(markup.includes('id="id&quot; autofocus"'));
   assert.ok(markup.includes('<button type="button">Create card</button>'));
+});
+
+test("the c shortcut presses the page's visible create button unless the operator is typing", () => {
+  let onKeydown;
+  let clicks = 0;
+  let dialogOpen = false;
+  const button = { disabled: false, getClientRects: () => [1], click: () => { clicks += 1; } };
+  const documentRef = {
+    addEventListener: (type, handler) => { if (type === "keydown") onKeydown = handler; },
+    querySelector: () => (dialogOpen ? {} : null),
+    querySelectorAll: () => [button],
+  };
+  installCollectionCreateShortcut(documentRef);
+  installCollectionCreateShortcut(documentRef);
+  const press = (overrides = {}) => {
+    let prevented = false;
+    onKeydown({
+      key: "c", target: { closest: () => null }, preventDefault: () => { prevented = true; },
+      ...overrides,
+    });
+    return prevented;
+  };
+  assert.equal(press(), true);
+  assert.equal(clicks, 1);
+  press({ target: { closest: () => ({}) } });
+  press({ metaKey: true });
+  press({ key: "C", shiftKey: true });
+  dialogOpen = true;
+  press();
+  dialogOpen = false;
+  button.disabled = true;
+  press();
+  assert.equal(clicks, 1);
 });
