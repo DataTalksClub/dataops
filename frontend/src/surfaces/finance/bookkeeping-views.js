@@ -8,7 +8,7 @@ import { entryDirection, entryTypeLabel, formatAmount, ledgerDate } from "./book
 // state. The open items themselves are the Needs attention list below; no
 // counter tiles restate it (dakit principle 4, no vanity metrics).
 export function closeStateMonthMarkup({ title, cta, e }) {
-  // The page header's Add entry is the one solid primary; the close CTA is
+  // The Ledger's Add entry is the one solid primary; the close CTA is
   // secondary whatever the month state.
   const ctaButton =
     cta.kind === "worklist"

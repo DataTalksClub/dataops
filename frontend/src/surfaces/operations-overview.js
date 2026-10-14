@@ -63,6 +63,7 @@ export function collectionCreateButtonMarkup({ label, attributes = "", shortcut 
   const keys = shortcut
     ? ` data-collection-create aria-keyshortcuts="c" title="${escape(label)} (C)"`
     : "";
+  if (shortcut && typeof document !== "undefined") installCollectionCreateShortcut(document);
   // Only application-authored attributes belong in `attributes`.
   return `<button type="button" class="dk-button dk-button--primary dk-button--sm collection-create"` +
     `${keys}${attributes ? ` ${attributes}` : ""}><span class="collection-create__icon" aria-hidden="true">` +

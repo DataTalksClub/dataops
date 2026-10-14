@@ -3,14 +3,13 @@
 // All dynamic state renders into [data-close-state], [data-worklist],
 // .bookkeeping-ledger, .bookkeeping-documents and [data-package-review].
 import { financeSectionHead, html } from "./shared.js";
-import { renderPageHeaderMarkup } from "../operations-overview.js";
+import { collectionCreateButtonMarkup, renderPageHeaderMarkup } from "../operations-overview.js";
 
 export function bookkeepingSurfaceMarkup() {
   return html`${renderPageHeaderMarkup({
     title: "Bookkeeping",
     subtitle: "One month at a time: record the transactions, attach the evidence, and close the month with a reviewable package.",
     className: "bookkeeping-header",
-    actionsHtml: html`<button class="dk-button dk-button--primary" data-bookkeeping-add>Add entry</button>`,
   })}
       <section
         class="bookkeeping-monthlens"
@@ -72,6 +71,7 @@ export function bookkeepingSurfaceMarkup() {
         ${financeSectionHead({
           id: "bookkeeping-ledger-heading",
           title: "Ledger",
+          create: collectionCreateButtonMarkup({ label: "Add entry", attributes: "data-bookkeeping-add" }),
           hint: "Transactions for the selected period. Open an entry only when it needs work.",
           meta: html`<p class="bookkeeping-totals" aria-live="polite"></p>`,
           actions: html`<div class="bookkeeping-export-actions">
