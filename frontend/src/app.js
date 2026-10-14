@@ -1,2 +1,2 @@
-import "./dakit/dakit-dialogs.js";
+import "./dakit/dialogs.js";
 import "./runtime/application.js";

@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "commit": "845bc77",
+  "files": {
+    "dakit.css": "4a681427bca511821ba6e3776322186be4d4029894eaa4916f121d6022d1cc89",
+    "device-code.js": "113a4d27d0212c792e3a914297853f039d97beec7c88b49f02d60ac28cd1719a",
+    "dialogs.js": "7ec9bd2cc87391cfa43d18e357dfcce228c49c1104074fd30b92c0531640ce84",
+    "shell.js": "1ed41e26a17fd36d94d83a75a8b96c8ccb86e841f05675b2ae4a9d4a0ee504d7",
+    "tokens.css": "67fb01ebb0f21c9cd304e4e2ed030d9a179a672eac15df95bdb90f67012c2cd4",
+    "tokens.d.ts": "21928668f7d4a900bfedb055152d30202102fa9eec63dab0b8903e53acd3bdd7",
+    "tokens.global.js": "f63453c6523635fbd90c2f1789d430fb4541c6f48a35b8e52feb2eb0960f490d",
+    "tokens.js": "7ee1536f73c67298e1218c73737bf0497c386dfd2adee416f3c4be6106680939",
+    "fonts/LICENSE.md": "b60aff866100b45a70650055da26a9fcde60d1a0dcafd1b49711a68a913670c5",
+    "fonts/ibm-plex-mono-400.woff2": "08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7",
+    "fonts/ibm-plex-mono-500.woff2": "01d285447409c8a588692162439a038b8cbd7871309ee20267b0d2d91c6e8e22",
+    "fonts/inter-var.woff2": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62",
+    "check-borders.mjs": "c8f36a9c100d1c2b6fd56cdecf050714e77cb6a317eaa9539b861559c944bce8",
+    "sync.mjs": "45ba817fe090c5e6c12b6d04e8d1dc62840893f6ef907493ca328dc7b5b8145b"
+  }
+}

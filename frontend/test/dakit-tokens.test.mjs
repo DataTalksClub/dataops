@@ -31,7 +31,7 @@ describe("dakit adoption contract", () => {
     const upstream = path.join(repoRoot, "../dakit/dist/dakit.css");
     if (!existsSync(upstream)) return t.skip("no ../dakit checkout beside this repo");
     const rebased = readFileSync(upstream, "utf8")
-      .replaceAll("../fonts/", "../assets/fonts/");
+      .replaceAll("../fonts/", "./fonts/");
     assert.equal(
       read("frontend/src/dakit/dakit.css"),
       rebased,
@@ -51,14 +51,13 @@ describe("dakit adoption contract", () => {
     );
   });
 
-  test("the entry surface loads tokens, bundle, and app styles in that order", () => {
+  test("the entry surface loads the bundle once before app styles in that order", () => {
     const head = read("frontend/index.html");
     const links = [...head.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)]
       .map((match) => match[1]);
     assert.deepEqual(
       links,
       [
-        "/src/dakit/tokens.css",
         "/src/dakit/dakit.css",
         "/src/styles/base.css",
         "/src/styles/review.css",

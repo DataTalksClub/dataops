@@ -3,9 +3,6 @@
   "files": [
     "index.html",
     "src/app.js",
-    "src/assets/fonts/ibm-plex-mono-400.woff2",
-    "src/assets/fonts/ibm-plex-mono-500.woff2",
-    "src/assets/fonts/inter-var.woff2",
     "src/core/collection-loader.js",
     "src/core/identity.js",
     "src/core/operations-model.js",
@@ -107,8 +104,13 @@
     "src/surfaces/work-detail/task-actions.js",
     "src/surfaces/work-detail/task-evidence.js",
     "src/dakit/dakit.css",
-    "src/dakit/dakit-dialogs.js",
     "src/dakit/tokens.css",
-    "src/surfaces/work-detail/task-panel.js"
+    "src/surfaces/work-detail/task-panel.js",
+    "src/dakit/dialogs.js",
+    "src/dakit/shell.js",
+    "src/dakit/device-code.js",
+    "src/dakit/fonts/inter-var.woff2",
+    "src/dakit/fonts/ibm-plex-mono-400.woff2",
+    "src/dakit/fonts/ibm-plex-mono-500.woff2"
   ]
 }
