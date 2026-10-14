@@ -458,16 +458,17 @@ export async function linkInvoice(
   });
 }
 
-function validateIssue(input: { invoiceNumber: unknown; issuedOn: unknown; dueOn: unknown; sentOn?: unknown }) {
+function validateIssue(input: { invoiceNumber?: unknown; issuedOn: unknown; dueOn: unknown; sentOn?: unknown }) {
   if (
-    typeof input.invoiceNumber !== 'string' || !INVOICE_NUMBER.test(input.invoiceNumber)
+    (input.invoiceNumber !== undefined && (typeof input.invoiceNumber !== 'string' || !INVOICE_NUMBER.test(input.invoiceNumber)))
     || !realDate(input.issuedOn) || !realDate(input.dueOn) || String(input.dueOn) < String(input.issuedOn)
     || (input.sentOn !== undefined && (!realDate(input.sentOn) || String(input.sentOn) < String(input.issuedOn)))
   ) throw Object.assign(new Error('Invalid invoice issue'), { statusCode: 400 });
 }
 
 /**
- * Record that an invoice exists: its number and issue, sent and due dates.
+ * Record that an invoice exists: its number (when known; sponsor AP portals
+ * sometimes assign none we see) and issue, sent and due dates.
  * Re-issuing (a corrected invoice) replaces the details. The PDF is linked
  * separately once it reaches bookkeeping.
  */
@@ -475,7 +476,7 @@ export async function issueInvoice(
   client: DynamoDBDocumentClient,
   input: {
     actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string;
-    invoiceNumber: string; issuedOn: string; dueOn: string; sentOn?: string;
+    invoiceNumber?: string; issuedOn: string; dueOn: string; sentOn?: string;
   },
 ) {
   validateIssue(input);
@@ -498,11 +499,13 @@ export async function issueInvoice(
       {
         Update: {
           TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
-          UpdateExpression: `SET invoiceNumber = :number, issuedOn = :issued, dueOn = :due, ${input.sentOn ? 'sentOn = :sent, ' : ''}updatedAt = :now, actorId = :actor, #version = #version + :one${input.sentOn ? '' : ' REMOVE sentOn'}`,
+          UpdateExpression: `SET ${input.invoiceNumber ? 'invoiceNumber = :number, ' : ''}issuedOn = :issued, dueOn = :due, ${input.sentOn ? 'sentOn = :sent, ' : ''}updatedAt = :now, actorId = :actor, #version = #version + :one${[
+            ...(input.invoiceNumber ? [] : ['invoiceNumber']), ...(input.sentOn ? [] : ['sentOn']),
+          ].map((name, index) => `${index ? ',' : ' REMOVE'} ${name}`).join('')}`,
           ConditionExpression: '#version = :version AND invoiceRequirement = :required AND attribute_not_exists(voidedAt)',
           ExpressionAttributeNames: { '#version': 'version' },
           ExpressionAttributeValues: {
-            ':number': input.invoiceNumber, ':issued': input.issuedOn, ':due': input.dueOn,
+            ...(input.invoiceNumber ? { ':number': input.invoiceNumber } : {}), ':issued': input.issuedOn, ':due': input.dueOn,
             ...(input.sentOn ? { ':sent': input.sentOn } : {}),
             ':now': now, ':actor': input.actorId, ':one': 1, ':version': state.version, ':required': 'required',
           },

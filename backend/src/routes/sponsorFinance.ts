@@ -133,7 +133,7 @@ export async function handleSponsorFinanceRoutes(
       const result = await issueInvoice(client, {
         ...common,
         expectedVersion: Number(body.expectedVersion),
-        invoiceNumber: String(body.invoiceNumber || ''),
+        ...(body.invoiceNumber !== undefined && body.invoiceNumber !== '' ? { invoiceNumber: String(body.invoiceNumber) } : {}),
         issuedOn: String(body.issuedOn || ''),
         dueOn: String(body.dueOn || ''),
         ...(body.sentOn !== undefined ? { sentOn: String(body.sentOn) } : {}),

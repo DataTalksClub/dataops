@@ -1178,6 +1178,12 @@ describe('sponsor finance production DynamoDB transactions', () => {
       ...base, expectedVersion: version, idempotencyKey: idem('evidence-pay-early'),
       receivedOn: '2026-08-20', amount: '1', currency: 'EUR', method: 'bank-report',
     }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
+    const unnumbered = await issueInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('evidence-issue-portal'),
+      issuedOn: '2026-08-19', dueOn: '2026-09-18',
+    });
+    assert.equal((await projectFinance(client, dealId, 'admin', context)).finance?.invoiceNumber, undefined);
+    version = unnumbered.financeVersion;
     const issue = {
       ...base, expectedVersion: version, idempotencyKey: idem('evidence-issue'),
       invoiceNumber: 'SYN/2026/1', issuedOn: '2026-08-20', sentOn: '2026-08-20', dueOn: '2026-09-19',
