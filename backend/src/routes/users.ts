@@ -1,6 +1,5 @@
 import { getClient } from '../db/client';
 import { getUser, listUsers, createUser, updateUser } from '../db/users';
-import { hashPassword } from './auth';
 import type { LambdaEvent, LambdaResponse, UserRole } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -149,14 +148,6 @@ async function handleCollection(
     } else {
       data.role = 'operator';
     }
-    if (body.password !== undefined) {
-      const password = String(body.password);
-      if (password.length < 4) {
-        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'password must be at least 4 characters' }) };
-      }
-      data.passwordHash = await hashPassword(password);
-    }
-
     const user = await createUser(client, data);
     return {
       statusCode: 201,
@@ -219,12 +210,9 @@ async function handleSingle(
       }
       updates.name = String(body.name).trim();
     }
+    // Email is the SSO identity a user signs in with; it is fixed at creation.
     if (body.email !== undefined) {
-      const email = String(body.email).trim();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'email must be a valid email address' }) };
-      }
-      updates.email = email;
+      return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'email cannot be changed' }) };
     }
     if (body.role !== undefined) {
       if (!VALID_ROLES.has(body.role as UserRole)) {
@@ -237,13 +225,6 @@ async function handleSingle(
         return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'disabled must be a boolean' }) };
       }
       updates.disabled = body.disabled;
-    }
-    if (body.password !== undefined) {
-      const password = String(body.password);
-      if (password.length < 4) {
-        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'password must be at least 4 characters' }) };
-      }
-      updates.passwordHash = await hashPassword(password);
     }
 
     if (Object.keys(updates).length === 0) {

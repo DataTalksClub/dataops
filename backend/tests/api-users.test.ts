@@ -155,7 +155,6 @@ describe('API — Users', () => {
         name: 'New Person',
         email: 'new-person@datatalks.club',
         role: 'operator',
-        password: 'supersecret',
       }, adminHeaders);
       assert.strictEqual(res.statusCode, 201, res.body);
 
@@ -167,7 +166,6 @@ describe('API — Users', () => {
       assert.strictEqual(body.user.role, 'operator');
       assert.strictEqual(body.user.passwordHash, undefined);
 
-      // Persisted with a passwordHash that is stripped on read.
       const stored = await getUser(client, body.user.id);
       assert.ok(stored);
     });
@@ -232,16 +230,6 @@ describe('API — Users', () => {
       assert.ok(JSON.parse(res.body).error.includes('role'));
     });
 
-    it('rejects create with 400 when password is too short', async () => {
-      const res = await invoke('POST', '/api/users', {
-        name: 'Short Pw',
-        email: 'short-pw@datatalks.club',
-        password: '12',
-      }, adminHeaders);
-      assert.strictEqual(res.statusCode, 400);
-      assert.ok(JSON.parse(res.body).error.includes('password'));
-    });
-
     it('rejects create with 400 when body is missing', async () => {
       const res = await invoke('POST', '/api/users', undefined, adminHeaders);
       assert.strictEqual(res.statusCode, 400);
@@ -292,12 +280,22 @@ describe('API — Users', () => {
       assert.strictEqual(body.user.disabled, false);
     });
 
-    it('admin can reset a password', async () => {
+    it('rejects an email change with 400', async () => {
+      const res = await invoke('PATCH', `/api/users/${targetId}`, {
+        email: 'changed@datatalks.club',
+      }, adminHeaders);
+      assert.strictEqual(res.statusCode, 400, res.body);
+      assert.strictEqual(JSON.parse(res.body).error, 'email cannot be changed');
+      const stored = await getUser(client, targetId);
+      assert.strictEqual(stored?.email, 'patch-target@datatalks.club');
+    });
+
+    it('does not accept a password: sign-in is through SSO', async () => {
       const res = await invoke('PATCH', `/api/users/${targetId}`, {
         password: 'newpassword',
       }, adminHeaders);
-      assert.strictEqual(res.statusCode, 200, res.body);
-      assert.strictEqual(JSON.parse(res.body).user.passwordHash, undefined);
+      assert.strictEqual(res.statusCode, 400, res.body);
+      assert.strictEqual(JSON.parse(res.body).error, 'No valid fields to update');
     });
 
     it('rejects edit with 403 when actor is an operator', async () => {

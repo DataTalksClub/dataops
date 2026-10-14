@@ -157,12 +157,10 @@ describe('signed-in identity, teammate projections, and the work authorization b
     await createTables(client);
 
     await createUserWithId(client, AVERY, { name: 'Avery Operator', email: 'avery@example.test', role: 'operator' });
-    await createUserWithId(client, MORGAN, { name: 'Morgan Teammate', email: 'morgan@example.test', role: 'operator' });
-    await createUserWithId(client, CASEY, { name: 'Casey Disabled', email: 'casey@example.test', role: 'operator', disabled: true });
+    await createUserWithId(client, MORGAN, { name: 'Morgan Teammate', email: 'morgan@example.test', role: 'operator', passwordHash: await hashPassword('morgan-correct-password') });
+    await createUserWithId(client, CASEY, { name: 'Casey Disabled', email: 'casey@example.test', role: 'operator', disabled: true, passwordHash: await hashPassword('casey-correct-password') });
     await createUserWithId(client, RILEY, { name: 'Riley Admin', email: 'riley@example.test', role: 'admin' });
     await createUserWithId(client, ROWAN, { name: 'Rowan Unsupported', email: 'rowan@example.test', role: 'auditor' });
-    await updateUser(client, CASEY, { passwordHash: await hashPassword('casey-correct-password') });
-    await updateUser(client, MORGAN, { passwordHash: await hashPassword('morgan-correct-password') });
 
     for (const userId of [AVERY, MORGAN, CASEY, RILEY, ROWAN]) {
       sessions[userId] = (await createSession(client, userId)).token;

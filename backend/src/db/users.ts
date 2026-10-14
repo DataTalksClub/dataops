@@ -33,7 +33,7 @@ function rawItem(item: Record<string, unknown> | undefined): (User & { passwordH
  * Mutable user attributes accepted by {@link updateUser}. PK/SK/id/createdAt
  * are identity and never written here.
  */
-const UPDATEABLE_USER_FIELDS = new Set(['name', 'email', 'role', 'disabled', 'passwordHash']);
+const UPDATEABLE_USER_FIELDS = new Set(['name', 'role', 'disabled']);
 
 /**
  * Patch a user's mutable attributes. Returns the clean updated user or null if
