@@ -168,7 +168,7 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   await expect(page.locator(".iso-week").first()).toHaveText(/^\d+$/);
   const surface = page.locator(".calendar-surface");
   await expect(surface.getByRole("heading", { name: "Calendar", exact: true, level: 1 })).toBeVisible();
-  await expect(surface.locator(".dk-page-header__actions").getByRole("button", { name: "Add activity", exact: true })).toBeVisible();
+  await expect(surface.locator(".calendar-controls").getByRole("button", { name: "Add activity", exact: true })).toBeVisible();
   await page.screenshot({ path: path.join(shots, "calendar-demo-1280x800.png") });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ path: path.join(shots, "calendar-demo-1440x900.png") });
@@ -346,7 +346,9 @@ test("calendar grid is ready before the external overlay response", async ({ pag
 });
 
 
-test("calendar shared header keeps the mobile grid within the first quarter", async ({ page }) => {
+// The toolbar carries the period and, on its own row at phone widths, Add
+// activity and the layers toggle; the grid still starts in the top 30%.
+test("calendar header and toolbar keep the mobile grid within the top 30%", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-07-01T12:00:00Z"));
   await page.route("**/api/calendar-items**", (route) => route.fulfill({ json:
     new URL(route.request().url()).pathname.endsWith("/overlays") ? { items: [] }
@@ -360,8 +362,8 @@ test("calendar shared header keeps the mobile grid within the first quarter", as
     await expect(surface.locator("[role='status']")).toHaveText("");
     await expect(surface.getByRole("heading", { name: "Calendar", exact: true, level: 1 })).toBeVisible();
     const top = await surface.locator(".calendar-grid").evaluate((node) => node.getBoundingClientRect().top);
-    expect(top).toBeLessThanOrEqual(Math.round(viewport.height * 0.25) + 2);
-    await surface.locator(".dk-page-header__actions").getByRole("button", { name: "Add activity", exact: true }).click();
+    expect(top).toBeLessThanOrEqual(Math.round(viewport.height * 0.3) + 2);
+    await surface.locator(".calendar-controls").getByRole("button", { name: "Add activity", exact: true }).click();
     await expect(surface.locator("dialog[open]")).toBeVisible();
     await surface.getByRole("button", { name: "Cancel", exact: true }).click();
     await page.screenshot({ path: path.join(shots, `calendar-page-header-${viewport.width}x${viewport.height}.png`) });
@@ -397,7 +399,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
     if (viewport.width < 821) {
-      expect((await grid.boundingBox()).y).toBeLessThanOrEqual(Math.round(viewport.height * 0.25) + 2);
+      expect((await grid.boundingBox()).y).toBeLessThanOrEqual(Math.round(viewport.height * 0.3) + 2);
       await expect(controls).toBeHidden();
       const toggle = surface.getByRole("button", { name: "Calendar layers and view" });
       await toggle.click();

@@ -92,8 +92,9 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
         const grid = await page.locator('.calendar-grid').boundingBox();
         expect(Math.abs(grid.x - canvas.x)).toBeLessThan(1);
         expect(Math.abs(grid.width - canvas.width)).toBeLessThan(1);
-        const action = await header.getByRole('button', { name: 'Add activity', exact: true }).boundingBox();
-        expect(Math.abs(action.x + action.width - canvas.x - canvas.width)).toBeLessThan(1);
+        // Add activity rides on the calendar toolbar, not the page corner.
+        await expect(header.getByRole('button', { name: 'Add activity', exact: true })).toHaveCount(0);
+        await expect(page.locator('.calendar-controls').getByRole('button', { name: 'Add activity', exact: true })).toBeVisible();
       }
       const financeAction = { '/sponsors': 'Add deal' }[route];
       if (financeAction) {

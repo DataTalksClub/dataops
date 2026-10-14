@@ -81,6 +81,14 @@ class TestElement {
     this.children.unshift(...values);
   }
 
+  before(...values) {
+    this.insertedBefore = values;
+  }
+
+  click() {
+    for (const listener of this.listeners.get("click") || []) listener({ target: this });
+  }
+
   close() {
     this.open = false;
   }
@@ -190,7 +198,7 @@ function createCalendarDom() {
     return layer;
   });
   surface.setQueryAll("[data-layer]", layers);
-  for (const selector of ["[data-prev]", "[data-today]", "[data-next]", "[data-add]", "[data-cancel]", "[data-controls-toggle]"]) {
+  for (const selector of ["[data-prev]", "[data-today]", "[data-next]", "[data-cancel]", "[data-controls-toggle]"]) {
     surface.setQuery(selector, new TestElement("button"));
   }
   const pickerToggle = surface.setQuery("[data-picker-toggle]", new TestElement("button"));
@@ -691,7 +699,12 @@ describe("Planning surface production behavior", () => {
     await harness.surface.renderCalendarSurface();
     await nextTicks();
 
-    dom.surface.querySelector("[data-add]").onclick();
+    // Add activity sits in the calendar toolbar, ahead of the layers toggle,
+    // as the page's one create action.
+    const [addActivity] = dom.surface.querySelector("[data-controls-toggle]").insertedBefore;
+    assert.equal(addActivity.title, "Add activity (C)");
+    assert.equal(addActivity.getAttribute("aria-keyshortcuts"), "c");
+    addActivity.click();
     assert.equal(dom.dialog.open, true);
     assert.notEqual(dom.form.elements.startDate.value, "");
     dom.surface.querySelector("[data-cancel]").onclick();

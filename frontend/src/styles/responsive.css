@@ -296,7 +296,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .bookkeeping-header .primary-button,
   .period-nav__today,
   .period-nav__arrow,
-  .calendar-add-button,
   .calendar-display-controls select {
     min-height: var(--dk-size-touch);
     padding-top: 4px !important;
@@ -472,17 +471,6 @@ body[data-workspace-view="sponsors"] .library-view {
   }
   .period-nav__title {
     font-size: 15px !important;
-  }
-  .calendar-add-button {
-    min-width: 32px;
-    padding-left: 0 !important;
-    padding-right: 0 !important;
-    font-size: 0 !important;
-  }
-  .calendar-add-button::before {
-    content: "+";
-    font-size: 18px;
-    line-height: 1;
   }
   .calendar-surface .calendar-controls-toggle {
     display: inline-flex;

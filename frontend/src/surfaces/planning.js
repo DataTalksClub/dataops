@@ -1,4 +1,4 @@
-import { createPageHeader } from "./operations-overview.js";
+import { createCollectionCreateButton, createPageHeader } from "./operations-overview.js";
 import { parseIsoDateValue } from "../core/workspace.js";
 import { createNewsletterPlanner } from "./planning-newsletter.js";
 import { setupDayScheduleDialog, setupCalendarSettingsDialog } from "./planning-calendar-dialogs.js";
@@ -329,19 +329,20 @@ export function createPlanningSurface(context) {
           <button type="button" data-day-close-foot>Close</button>
         </div>
       </dialog>`;
-    const addActivity = document.createElement("button");
-    addActivity.type = "button";
-    addActivity.className = "primary-button calendar-add-button";
-    addActivity.dataset.add = "";
-    addActivity.setAttribute("aria-label", "Add activity");
-    addActivity.textContent = "Add activity";
+    // Add activity rides on the calendar's own toolbar, right after the
+    // period it adds into; the page header keeps only title and description.
+    const addActivity = createCollectionCreateButton({
+      label: "Add activity",
+      onClick: () => openActivityDialog(),
+    });
+    addActivity.classList.add("calendar-add-button");
     const controlsToggle = surface.querySelector("[data-controls-toggle]");
+    controlsToggle.before(addActivity);
     surface.prepend(createPageHeader({
       title: "Calendar",
       subtitle: "Plan activities alongside holidays and scheduled events.",
       titleId: "calendar-surface-title",
       className: "calendar-page-header",
-      actions: [controlsToggle, addActivity],
     }));
     documentList.append(surface);
     setRouteTitle("Calendar");
@@ -753,7 +754,6 @@ export function createPlanningSurface(context) {
       };
     }
 
-    surface.querySelector("[data-add]").onclick = () => openActivityDialog();
 
     const daySchedule = setupDayScheduleDialog({
       surface,
