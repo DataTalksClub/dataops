@@ -58,7 +58,7 @@ select:not([class*="dk-"]),
 textarea:not([class*="dk-"]) {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-page);
+  background-color: var(--dk-bg-page);
   color: var(--dk-text-primary);
   padding: 7px 10px;
 }input:not([class*="dk-"], .dk-search input)::placeholder,

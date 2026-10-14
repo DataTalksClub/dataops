@@ -107,7 +107,7 @@
   min-height: 34px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-page);
+  background-color: var(--dk-bg-page);
   color: var(--dk-text-primary);
   padding: 6px 9px;
   font: inherit;

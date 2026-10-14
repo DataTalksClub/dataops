@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, test } from "node:test";
 
 import { readAppCss } from "./support/app-css.mjs";
+import { extractDeclarations } from "../src/dakit/check-borders.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -356,6 +357,22 @@ describe("workspace nav layout contract", () => {
     assert.doesNotMatch(styles, /workspace-nav-submenu|workspace-subnav-button/);
     assert.doesNotMatch(styles, /workspace-nav-group|workspace-nav-parent/);
     assert.doesNotMatch(styles, /workspace-nav-chevron/);
+  });
+
+  test("app CSS never resets the kit select chevron with a background shorthand", () => {
+    // The chevron is the kit's select background-image; `background:` on a
+    // rule that reaches selects wipes it, leaving a select that reads as a
+    // text field. Set background-color instead.
+    const stylesDir = path.join(repoRoot, "frontend/src/styles");
+    const offenders = [];
+    for (const file of readdirSync(stylesDir).filter((name) => name.endsWith(".css"))) {
+      for (const decl of extractDeclarations(path.join(stylesDir, file))) {
+        if (decl.property === "background" && /(^|[\s,(>+~])select\b/.test(decl.rule)) {
+          offenders.push(`${file}: ${decl.rule.replace(/\s+/g, " ").slice(0, 80)}`);
+        }
+      }
+    }
+    assert.deepEqual(offenders, []);
   });
 
   test("app CSS never uses a colored single-edge accent", () => {

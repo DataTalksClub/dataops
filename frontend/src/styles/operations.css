@@ -279,7 +279,7 @@
  .calendar-surface .calendar-overlay.is-available-slot { color: var(--dk-success-text); background: var(--dk-success-bg); }
 .calendar-surface .calendar-overlay.is-available-slot small { color: var(--dk-success-text); background: var(--dk-success-bg); }
 
-.calendar-surface .planner-form-grid select { appearance: auto; background: var(--dk-bg-surface); border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-sm); padding: 8px 10px; color: var(--dk-text-primary); font: inherit; }
+.calendar-surface .planner-form-grid select { appearance: auto; background-color: var(--dk-bg-surface); border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-sm); padding: 8px 10px; color: var(--dk-text-primary); font: inherit; }
 .calendar-surface .planner-form-grid [hidden] { display: none; }
 .calendar-surface .calendar-all-day { display: flex; flex-direction: row; align-items: center; gap: 8px; }
 .calendar-surface .calendar-all-day input { width: auto; min-height: auto; }

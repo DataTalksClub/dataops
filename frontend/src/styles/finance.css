@@ -385,7 +385,7 @@ body[data-workspace-view="sponsors"] .document-list {
   min-height: 32px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
+  background-color: var(--dk-bg-surface);
   color: var(--dk-text-primary);
   padding: 0 10px;
   font-size: 12px;
@@ -554,7 +554,7 @@ body[data-workspace-view="sponsors"] .document-list {
   min-height: 36px;
   border-radius: var(--dk-radius-md);
   border: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-surface);
+  background-color: var(--dk-bg-surface);
   color: var(--dk-text-primary);
   font-weight: 400;
   font-size: 13px;

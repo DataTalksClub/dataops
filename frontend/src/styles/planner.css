@@ -384,7 +384,7 @@
   padding: 0 26px 0 14px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-full);
-  background: var(--dk-bg-surface);
+  background-color: var(--dk-bg-surface);
   color: var(--dk-text-primary);
   font-size: 13px;
   font-weight: 500;
