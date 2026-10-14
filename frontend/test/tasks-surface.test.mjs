@@ -994,9 +994,10 @@ describe("Tasks surface boundary", () => {
     const tabs = findAllByClass(documentList, "archive-category-tab");
     assert.deepEqual(
       tabs.map((tab) => tab.textContent),
-      ["Done (1)", "Parked (1)"],
+      ["Done1", "Parked1"],
     );
-    assert.equal(tabs[0].getAttribute("aria-selected"), "true");
+    assert.equal(tabs[0].getAttribute("role"), "radio");
+    assert.equal(tabs[0].getAttribute("aria-checked"), "true");
     assert.deepEqual(
       findAllByClass(documentList, "workflow-board-card").map(
         (card) => card.dataset.cardId,
@@ -1007,7 +1008,7 @@ describe("Tasks surface boundary", () => {
     await tabs[1].dispatch("click");
     api.renderTasksSurface([], "workflows");
     assert.equal(
-      findAllByClass(documentList, "archive-category-tab")[1].getAttribute("aria-selected"),
+      findAllByClass(documentList, "archive-category-tab")[1].getAttribute("aria-checked"),
       "true",
     );
     assert.deepEqual(

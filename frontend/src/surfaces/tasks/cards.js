@@ -96,9 +96,13 @@ export function createCardsSurface(context) {
     }
 
     function renderArchiveCategoryTabs() {
+      // Done/Parked narrows one archive list: a single-choice filter, so the
+      // dakit segmented control as a radiogroup (docs/segmented.md).
+      const wrap = document.createElement("div");
+      wrap.className = "workflow-archive-tabs";
       const tabs = document.createElement("div");
-      tabs.className = "workflow-archive-tabs";
-      tabs.setAttribute("role", "tablist");
+      tabs.className = "dk-tabs";
+      tabs.setAttribute("role", "radiogroup");
       tabs.setAttribute("aria-label", "Archive categories");
       for (
         const [category, label, count] of [
@@ -106,12 +110,17 @@ export function createCardsSurface(context) {
           ["parked", "Parked", parkedCards.length],
         ]
       ) {
+        const checked = archiveCategory === category;
         const tab = document.createElement("button");
         tab.type = "button";
-        tab.className = "archive-category-tab";
-        tab.setAttribute("role", "tab");
-        tab.setAttribute("aria-selected", String(archiveCategory === category));
-        tab.textContent = `${label} (${count})`;
+        tab.className = "dk-tab archive-category-tab";
+        tab.setAttribute("role", "radio");
+        tab.setAttribute("aria-checked", String(checked));
+        tab.tabIndex = checked ? 0 : -1;
+        const quantity = document.createElement("span");
+        quantity.className = "dk-count";
+        quantity.textContent = String(count);
+        tab.append(document.createTextNode(label), quantity);
         tab.addEventListener("click", () => {
           if (archiveCategory !== category) {
             archiveCategory = category;
@@ -120,7 +129,8 @@ export function createCardsSurface(context) {
         });
         tabs.append(tab);
       }
-      return tabs;
+      wrap.append(tabs);
+      return wrap;
     }
 
     const today = todayIsoDate();

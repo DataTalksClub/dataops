@@ -92,28 +92,11 @@
   letter-spacing: 0;
   text-transform: none;
 }.workflow-archive-tabs {
+  /* Layout only: the control itself is the dakit .dk-tabs inside. */
   display: flex;
-  gap: 8px;
   width: min(100%, var(--cards-board-width));
   justify-self: center;
   padding: 0 4px;
-}.archive-category-tab {
-  min-height: 34px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-full);
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-muted);
-  padding: 4px 14px;
-  font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
-}.archive-category-tab:hover {
-  border-color: var(--dk-border-strong);
-  color: var(--dk-text-primary);
-}.archive-category-tab[aria-selected="true"] {
-  border-color: var(--dk-border-control-hover);
-  background: var(--dk-bg-hover);
-  color: var(--dk-text-primary);
 }.cards-archive-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
