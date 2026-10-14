@@ -182,7 +182,6 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
               <label class="planner-field-wide">
                 Sponsor booking reference <input name="sponsorBookingId" autocomplete="off">
               </label>
-              <label class="planner-field-wide">Card reference <input name="cardId" autocomplete="off"></label>
               <label class="planner-field-wide">Public campaign URL <input name="publicUrl" type="url"></label>
               <label class="planner-field-wide">Planning note <textarea name="planningNote" rows="4"></textarea></label>
             </div>
@@ -492,7 +491,7 @@ export function setupNewsletterDialog(options) {
     const labelInput = form?.elements?.campaignLabel || dialog.querySelector('[name="campaignLabel"]');
     const subjectInput = form?.elements?.issueSubject || dialog.querySelector('[name="issueSubject"]');
     const statusSelect = form?.elements?.status || dialog.querySelector('[name="status"]');
-    const cardInput = form?.elements?.cardId || dialog.querySelector('[name="cardId"]');
+    const linkedCard = currentEditingItem?.card || null;
     const bookerInput = form?.elements?.bookedByDisplayName ||
       dialog.querySelector('[name="bookedByDisplayName"]');
 
@@ -516,7 +515,7 @@ export function setupNewsletterDialog(options) {
     const hasSubject = Boolean(subjectText);
     const hasContent = (currentBlocks || []).some((b) => b.raw && b.raw.trim().length > 0);
     const statusVal = statusSelect?.value || "open";
-    const hasCard = Boolean(cardInput?.value);
+    const hasCard = Boolean(linkedCard);
     const isReserved = statusVal === "reserved" || Boolean(bookerInput?.value);
     const hasBooker = Boolean(bookerInput?.value);
 
@@ -547,7 +546,7 @@ export function setupNewsletterDialog(options) {
       isReserved ? `Sponsor confirmed: ${bookerInput?.value || ""}` : "Open editorial / sponsor slot",
       "Confirm sponsor booking context",
     );
-    setCheck(checkCard, hasCard, `Workflow card linked: ${cardInput?.value || ""}`, "Connect workflow card (optional)");
+    setCheck(checkCard, hasCard, `Card linked: ${linkedCard?.title || ""}`, "Create or link a card from the slot row (optional)");
 
     const stepIdx = {
       open: 1, reserved: 1, draft: 2, drafting: 2, review: 3, scheduled: 4, sent: 5, cancelled: 0,

@@ -169,6 +169,7 @@ export function createNewsletterPlanner(context) {
       "publication-date-overlap": "Multiple campaigns share a publication date",
       "publication-missing-workflow": "Publication is missing its workflow card",
       "reserved-missing-booker": "A reserved slot has no booker",
+      "card-date-mismatch": "A linked card's date differs from its slot",
     }[reasonCode] || "Newsletter planning needs review";
   }
 
@@ -184,6 +185,8 @@ export function createNewsletterPlanner(context) {
         "Create or link a workflow card so drafting and publication have a clear owner.",
       "reserved-missing-booker":
         "Add the sponsor contact or team member who reserved this slot.",
+      "card-date-mismatch":
+        "The slot's date wins: save the slot to move the card, or link the right card.",
     }[reasonCode] || "Check the publication date and campaign setup.";
   }
 
@@ -205,6 +208,53 @@ export function createNewsletterPlanner(context) {
     closeAllSlotOverflows(trigger.closest("[data-slots]") || trigger.closest(".newsletter-surface"));
     menu.hidden = !willOpen;
     trigger.setAttribute("aria-expanded", String(willOpen));
+  }
+
+  function stageLabel(stage) {
+    return {
+      preparation: "Preparation",
+      announced: "Announced",
+      "after-event": "After event",
+      done: "Done",
+    }[stage] || plannerLabel(stage);
+  }
+
+  /**
+   * The slot's Card as a chip: title, stage, open/total Tasks, and a warning
+   * when the Card's date drifted from the slot's (the slot wins on the next
+   * save). Unlinked slots offer Create card and Link card instead.
+   */
+  function slotCardMarkup(item) {
+    const slotId = escapeHtml(item.id);
+    if (item.card) {
+      const card = item.card;
+      const mismatch = card.anchorDate && card.anchorDate !== item.publicationDate
+        ? `<span class="dk-badge dk-badge--warning" data-card-date-mismatch>Card dated ${escapeHtml(formatShortPlanningDate(card.anchorDate))}</span>`
+        : "";
+      return `
+        <div class="newsletter-slot-card">
+          <a class="newsletter-card-chip" href="/cards?cardId=${encodeURIComponent(card.id)}"
+            data-open-card="${escapeHtml(card.id)}">
+            <span class="newsletter-card-chip__title">${escapeHtml(card.title || "Untitled card")}</span>
+            <span class="newsletter-card-chip__meta">${escapeHtml(stageLabel(card.stage))} ·
+              <span class="dk-mono">${escapeHtml(`${card.openTaskCount}/${card.taskCount}`)}</span> open</span>
+          </a>
+          ${mismatch}
+        </div>`;
+    }
+    if (item.cardId) {
+      return `
+        <div class="newsletter-slot-card">
+          <span class="dk-badge dk-badge--danger">Linked card unavailable</span>
+          <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-card-link="${slotId}">Link card…</button>
+        </div>`;
+    }
+    if (item.status === "cancelled") return "";
+    return `
+      <div class="newsletter-slot-card">
+        <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-card-create="${slotId}">Create card</button>
+        <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-card-link="${slotId}">Link card…</button>
+      </div>`;
   }
 
   async function renderNewsletterSurface() {
@@ -277,7 +327,14 @@ export function createNewsletterPlanner(context) {
       <div class="planner-alerts" data-alerts></div>
       <div class="newsletter-schedule" data-slots>Loading slots…</div>
       ${renderNewsletterDialogMarkup(newsletterStatusOptions)}`;
-    documentList.append(surface);
+    // The card-link picker sits beside the surface, so the issue dialog stays
+    // the surface's only dialog.
+    const cardLinkDialog = document.createElement("dialog");
+    cardLinkDialog.className = "dk-dialog";
+    cardLinkDialog.dataset.cardLinkDialog = "";
+    cardLinkDialog.setAttribute("aria-labelledby", "newsletter-card-link-title");
+    cardLinkDialog.innerHTML = cardLinkDialogMarkup();
+    documentList.append(surface, cardLinkDialog);
     setRouteTitle("Newsletter");
     const status = surface.querySelector('[role="status"]'),
       dialog = surface.querySelector("dialog"),
@@ -373,6 +430,7 @@ export function createNewsletterPlanner(context) {
                 <button type="button" class="newsletter-overflow-item" role="menuitem" data-preview="${slotId}">Preview</button>
                 <button type="button" class="newsletter-overflow-item" role="menuitem" data-schedule="${slotId}">Schedule</button>
                 <button type="button" class="newsletter-overflow-item" role="menuitem" data-edit="${slotId}">Edit details</button>
+                ${item.cardId ? `<button type="button" class="newsletter-overflow-item" role="menuitem" data-card-link="${slotId}">Change card link…</button>` : ""}
               </div>
             </div>
           `;
@@ -395,6 +453,7 @@ export function createNewsletterPlanner(context) {
             </div>
             ${bookedMarkup}
             ${planningNote}
+            ${slotCardMarkup(item)}
           </div>
           <div class="newsletter-slot-actions">
             ${actions}
@@ -538,8 +597,31 @@ export function createNewsletterPlanner(context) {
       openIssueDialog(null, "details");
     };
 
+    const linking = setupCardLinkDialog(cardLinkDialog, api, load);
+
     surface.querySelector("[data-slots]").onclick = (event) => {
       const target = event.target;
+      const cardChip = target.closest("[data-open-card]");
+      if (cardChip?.dataset.openCard) {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button) return;
+        if (!context.navigateCanonicalWorkspace) return;
+        event.preventDefault();
+        context.navigateCanonicalWorkspace("/cards", { cardId: cardChip.dataset.openCard });
+        return;
+      }
+      const createCardBtn = target.closest("[data-card-create]");
+      if (createCardBtn?.dataset.cardCreate) {
+        const item = items.find((value) => value.id === createCardBtn.dataset.cardCreate);
+        if (item) linking.createCard(createCardBtn, item);
+        return;
+      }
+      const linkCardBtn = target.closest("[data-card-link]");
+      if (linkCardBtn?.dataset.cardLink) {
+        closeAllSlotOverflows(surface);
+        const item = items.find((value) => value.id === linkCardBtn.dataset.cardLink);
+        if (item) linking.open(linkCardBtn, item, items);
+        return;
+      }
       const editBtn = target.closest("[data-edit]");
       const composeBtn = target.closest("[data-compose]");
       const previewBtn = target.closest("[data-preview]");
@@ -580,6 +662,157 @@ export function createNewsletterPlanner(context) {
       closeAllSlotOverflows(surface);
     });
     await load();
+  }
+
+  function cardLinkDialogMarkup() {
+    return `
+        <form method="dialog">
+          <div class="dk-dialog__head">
+            <h2 id="newsletter-card-link-title">Link a card</h2>
+          </div>
+          <div class="dk-dialog__body">
+            <p class="dk-hint" data-card-link-slot></p>
+            <fieldset class="newsletter-card-options" data-card-options>
+              <legend class="dk-visually-hidden">Newsletter cards without a slot</legend>
+            </fieldset>
+            <p role="alert" class="dk-field-error"></p>
+          </div>
+          <div class="dk-dialog__foot">
+            <button type="button" class="dk-button dk-button--danger" data-card-unlink hidden>Unlink card</button>
+            <button value="cancel" class="dk-button dk-button--secondary">Cancel</button>
+            <button class="dk-button dk-button--primary" data-card-link-save>Link card</button>
+          </div>
+        </form>`;
+  }
+
+  async function newsletterCardCandidates(signal) {
+    const templatesPayload = await request(workApiUrl("/api/templates"), { signal });
+    const templates = Array.isArray(templatesPayload)
+      ? templatesPayload
+      : templatesPayload?.templates || [];
+    const newsletterTemplateIds = new Set(
+      templates
+        .filter((template) => ["newsletter", "newsletter-standalone"].includes(template.type))
+        .map((template) => template.id),
+    );
+    const cards = [];
+    let cursor = "";
+    for (let page = 0; page < 10; page += 1) {
+      const query = new URLSearchParams({ limit: "200", ...(cursor ? { cursor } : {}) });
+      const payload = await request(workApiUrl(`/api/cards?${query}`), { signal });
+      cards.push(...(payload?.cards?.items || []));
+      cursor = payload?.cards?.nextCursor || "";
+      if (!cursor) break;
+    }
+    return cards.filter(
+      (card) => newsletterTemplateIds.has(card.templateId) && card.status !== "archived",
+    );
+  }
+
+  function setupCardLinkDialog(dialog, api, load) {
+    const form = dialog.querySelector("form");
+    const alert = form.querySelector('[role="alert"]');
+    const setBusy = (button, busy) => {
+      if (busy) {
+        button.setAttribute("aria-busy", "true");
+        button.setAttribute("aria-disabled", "true");
+      } else {
+        button.removeAttribute("aria-busy");
+        button.removeAttribute("aria-disabled");
+      }
+    };
+
+    async function createCard(button, item) {
+      if (button.getAttribute("aria-busy") === "true") return;
+      setBusy(button, true);
+      try {
+        await api(`/${encodeURIComponent(item.id)}/card`, {
+          method: "POST",
+          body: JSON.stringify({ version: item.version }),
+        });
+        await load();
+      } catch (error) {
+        setBusy(button, false);
+        button.closest(".newsletter-slot-card")?.insertAdjacentHTML(
+          "beforeend",
+          `<span class="dk-field-error" role="alert">Could not create card: ${escapeHtml(error.message)}</span>`,
+        );
+      }
+    }
+
+    function render(item, items, cards) {
+      const linkedElsewhere = new Set(
+        items.filter((slot) => slot.cardId && slot.id !== item.id).map((slot) => slot.cardId),
+      );
+      const options = cards
+        .filter((card) => !linkedElsewhere.has(card.id))
+        .sort((a, b) => String(b.anchorDate || "").localeCompare(String(a.anchorDate || "")));
+      dialog.querySelector("[data-card-link-slot]").textContent =
+        `${item.campaignLabel || "Slot"} · ${formatShortPlanningDate(item.publicationDate)}. Linking moves the card to the slot's date.`;
+      const fieldset = dialog.querySelector("[data-card-options]");
+      fieldset.querySelectorAll(":scope > :not(legend)").forEach((node) => node.remove());
+      fieldset.insertAdjacentHTML(
+        "beforeend",
+        options.length
+          ? options
+              .map((card) => `
+                <label class="newsletter-card-option">
+                  <input type="radio" name="cardId" value="${escapeHtml(card.id)}" ${card.id === item.cardId ? "checked" : ""}>
+                  <span>
+                    <span class="newsletter-card-chip__title">${escapeHtml(card.title || "Untitled card")}</span>
+                    <span class="newsletter-card-chip__meta">${escapeHtml(stageLabel(card.stage))}${
+                      card.anchorDate ? ` · ${escapeHtml(formatShortPlanningDate(card.anchorDate))}` : ""
+                    }</span>
+                  </span>
+                </label>`)
+              .join("")
+          : `<p class="dk-muted">No newsletter card is free to link. Use Create card on the slot instead.</p>`,
+      );
+      alert.textContent = "";
+      const unlink = dialog.querySelector("[data-card-unlink]");
+      unlink.hidden = !item.cardId;
+      const save = async (cardId) => {
+        alert.textContent = "";
+        try {
+          await api(`/${encodeURIComponent(item.id)}`, {
+            method: "PUT",
+            body: JSON.stringify({ version: item.version, cardId }),
+          });
+          dialog.close();
+          await load();
+        } catch (error) {
+          alert.textContent = `Could not ${cardId ? "link" : "unlink"} card: ${error.message}`;
+        }
+      };
+      unlink.onclick = () => save(null);
+      dialog.querySelector("[data-card-link-save]").disabled = options.length === 0;
+      form.onsubmit = (event) => {
+        if (event.submitter?.value === "cancel") return;
+        event.preventDefault();
+        const cardId = new FormData(form).get("cardId");
+        if (!cardId) {
+          alert.textContent = "Choose a card to link.";
+          return;
+        }
+        if (cardId === item.cardId) {
+          dialog.close();
+          return;
+        }
+        save(String(cardId));
+      };
+      return dialog;
+    }
+
+    function open(trigger, item, items) {
+      globalThis.dakitDialogs.openWhenReady(
+        trigger,
+        (signal) => newsletterCardCandidates(signal),
+        (cards) => render(item, items, cards),
+        { label: "Loading cards…" },
+      );
+    }
+
+    return { createCard, open };
   }
 
   return {

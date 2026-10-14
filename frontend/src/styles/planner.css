@@ -1424,3 +1424,68 @@ details.newsletter-filters[open] summary.newsletter-filters-summary {
 details.newsletter-filters .planner-filter-fields {
   padding: 12px 14px;
 }
+
+/* Newsletter slot ↔ Card: the chip on each slot row and the link picker. */
+.newsletter-slot-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-2);
+  margin-top: var(--dk-space-2);
+  min-width: 0;
+}
+.newsletter-card-chip {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: baseline;
+  gap: var(--dk-space-2);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-primary);
+  padding: var(--dk-space-1) var(--dk-space-2);
+  font-size: var(--dk-text-sm);
+  text-decoration: none;
+}
+.newsletter-card-chip:hover {
+  border-color: var(--dk-border-strong);
+}
+.newsletter-card-chip__title {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.newsletter-card-chip__meta {
+  flex: 0 0 auto;
+  color: var(--dk-text-muted);
+  white-space: nowrap;
+}
+.newsletter-card-options {
+  display: grid;
+  gap: var(--dk-space-1);
+  margin: 0;
+  border: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.newsletter-card-option {
+  display: flex;
+  align-items: center;
+  gap: var(--dk-space-3);
+  min-height: 44px;
+  border-radius: var(--dk-radius-md);
+  padding: var(--dk-space-1) var(--dk-space-2);
+}
+.newsletter-card-option:hover {
+  background: var(--dk-bg-muted);
+}
+.newsletter-card-option > span {
+  display: grid;
+  min-width: 0;
+}
+.newsletter-card-option .newsletter-card-chip__meta {
+  font-size: var(--dk-text-sm);
+}

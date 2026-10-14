@@ -209,6 +209,7 @@ const { renderCalendarSurface, renderNewsletterSurface } =
   createPlanningSurface({
     documentList,
     escapeHtml,
+    navigateCanonicalWorkspace,
     request,
     setRouteTitle,
     todayIsoDate,

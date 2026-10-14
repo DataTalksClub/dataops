@@ -31,6 +31,7 @@ test.describe("production newsletter planner", () => {
   test("shows loading, booked/unbooked, alerts, editing, error and mobile states", async ({
     browser,
   }) => {
+    test.setTimeout(90_000);
     const context = await browser.newContext({ baseURL: server.baseURL }),
       page = await context.newPage();
     let release;
@@ -44,6 +45,16 @@ test.describe("production newsletter planner", () => {
           status: "reserved",
           bookedByDisplayName: "Synthetic Booker",
           version: 1,
+          cardId: "card-linked",
+          card: {
+            id: "card-linked",
+            title: "Newsletter #99",
+            stage: "preparation",
+            status: "active",
+            anchorDate: "2026-12-30",
+            taskCount: 6,
+            openTaskCount: 4,
+          },
         },
         {
           id: "slot-2",
@@ -54,10 +65,41 @@ test.describe("production newsletter planner", () => {
         },
       ];
     let conflict = false;
+    const summary = (card) => ({
+      id: card.id, title: card.title, stage: "preparation", status: "active",
+      anchorDate: card.anchorDate, taskCount: 5, openTaskCount: 5,
+    });
+    const freeCard = {
+      id: "card-free", title: "Newsletter spare", templateId: "tpl-newsletter",
+      stage: "preparation", status: "active", anchorDate: "2027-01-05",
+    };
+    await page.route("**/api/templates", (route) =>
+      route.fulfill({ json: { templates: [{ id: "tpl-newsletter", type: "newsletter", name: "Newsletter" }] } }),
+    );
+    await page.route("**/api/cards?**", (route) =>
+      route.fulfill({
+        json: {
+          cards: {
+            items: [
+              freeCard,
+              { ...freeCard, id: "card-linked", title: "Newsletter #99" },
+              { ...freeCard, id: "card-event", title: "Webinar", templateId: "tpl-event" },
+            ],
+          },
+        },
+      }),
+    );
     await page.route("**/api/newsletter-slots**", async (route) => {
       await gate;
       const request = route.request(),
         method = request.method();
+      if (method === "POST" && request.url().endsWith("/card")) {
+        const id = request.url().split("/").at(-2),
+          item = items.find((entry) => entry.id === id),
+          card = { id: `card-for-${id}`, title: `Newsletter for ${item.campaignLabel}`, anchorDate: item.publicationDate };
+        Object.assign(item, { cardId: card.id, card: summary(card), version: item.version + 1 });
+        return route.fulfill({ status: 201, json: { slot: item, card: item.card } });
+      }
       if (method === "POST") {
         const value = request.postDataJSON();
         items.push({ id: "slot-created", version: 1, ...value });
@@ -73,6 +115,7 @@ test.describe("production newsletter planner", () => {
           id = request.url().split("/").at(-1),
           item = items.find((entry) => entry.id === id);
         Object.assign(item, value, { version: item.version + 1 });
+        if ("cardId" in value) item.card = value.cardId ? summary(freeCard) : null;
         return route.fulfill({ json: item });
       }
       const url = new URL(request.url()),
@@ -102,6 +145,30 @@ test.describe("production newsletter planner", () => {
       "No sponsor",
     );
     await expect(page.getByText("An open slot needs booking soon")).toBeVisible();
+    const linkedRow = page.locator('[data-slot-id="slot-1"]');
+    await expect(linkedRow.locator(".newsletter-card-chip")).toContainText("Newsletter #99");
+    await expect(linkedRow.locator(".newsletter-card-chip")).toContainText("4/6");
+    await expect(linkedRow.locator(".newsletter-card-chip")).toHaveAttribute("href", "/cards?cardId=card-linked");
+    await expect(linkedRow.locator("[data-card-date-mismatch]")).toHaveText("Card dated 30 Dec");
+    const freeRow = page.locator('[data-slot-id="slot-2"]');
+    await freeRow.getByRole("button", { name: "Link card…" }).click();
+    const linkDialog = page.locator("[data-card-link-dialog]");
+    await expect(linkDialog).toBeVisible();
+    await expect(linkDialog).toContainText("Newsletter spare");
+    await expect(linkDialog).not.toContainText("Newsletter #99");
+    await expect(linkDialog).not.toContainText("Webinar");
+    await expect(linkDialog.getByRole("button", { name: "Unlink card" })).toBeHidden();
+    await linkDialog.getByLabel(/Newsletter spare/).check();
+    await linkDialog.getByRole("button", { name: "Link card", exact: true }).click();
+    await expect(linkDialog).toBeHidden();
+    await expect(freeRow.locator(".newsletter-card-chip")).toContainText("Newsletter spare");
+    await freeRow.getByRole("button", { name: /More actions for/ }).click();
+    await freeRow.getByRole("menuitem", { name: "Change card link…" }).click();
+    await linkDialog.getByRole("button", { name: "Unlink card" }).click();
+    await expect(linkDialog).toBeHidden();
+    await freeRow.getByRole("button", { name: "Create card" }).click();
+    await expect(freeRow.locator(".newsletter-card-chip")).toContainText("Newsletter for Synthetic New Year");
+    await expect(freeRow.getByRole("button", { name: "Create card" })).toHaveCount(0);
     await page
       .locator(".newsletter-surface")
       .screenshot({ path: ".tmp/newsletter-production-populated-alert.png" });

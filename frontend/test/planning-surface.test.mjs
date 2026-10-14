@@ -1089,6 +1089,46 @@ describe("Planning surface production behavior", () => {
     assert.equal(dom.dialog.open, false);
   });
 
+  test("shows each slot's Card chip and offers Create card or Link card on unlinked slots", async () => {
+    const dom = createNewsletterDom();
+    const items = [
+      {
+        id: "slot-linked",
+        version: 2,
+        campaignLabel: "Linked issue",
+        publicationDate: "2026-08-21",
+        status: "drafting",
+        cardId: "card-1",
+        card: { id: "card-1", title: "Newsletter #42", stage: "preparation", status: "active", anchorDate: "2026-08-20", taskCount: 6, openTaskCount: 4 },
+      },
+      { id: "slot-free", version: 5, campaignLabel: "Free issue", publicationDate: "2026-08-28", status: "open", card: null },
+      { id: "slot-gone", version: 1, campaignLabel: "Gone issue", publicationDate: "2026-09-04", status: "open", cardId: "card-gone", card: null },
+    ];
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      request: async (_url, options) => (options.method ? {} : { alerts: [], items }),
+    });
+    await harness.surface.renderNewsletterSurface();
+    const html = dom.slots.innerHTML;
+    assert.match(html, /href="\/cards\?cardId=card-1"/);
+    assert.match(html, /Newsletter #42/);
+    assert.match(html, /Preparation ·\s+<span class="dk-mono">4\/6<\/span> open/);
+    assert.match(html, /data-card-date-mismatch>Card dated 20 Aug/);
+    assert.match(html, /data-card-create="slot-free"/);
+    assert.match(html, /data-card-link="slot-free"/);
+    assert.match(html, /Linked card unavailable/);
+    assert.doesNotMatch(html, /data-card-create="slot-linked"/);
+
+    const createButton = { dataset: { cardCreate: "slot-free" }, getAttribute: () => null, setAttribute() {}, removeAttribute() {} };
+    dom.slots.onclick({
+      target: { closest: (selector) => (selector === "[data-card-create]" ? createButton : null) },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const create = harness.requests.find((entry) => entry.options.method === "POST");
+    assert.match(create.url, /newsletter-slots\/slot-free\/card$/);
+    assert.deepEqual(JSON.parse(create.options.body), { version: 5 });
+  });
+
   test("renders honest Newsletter empty/failure states and retains failed form edits", async () => {
     const emptyDom = createNewsletterDom();
     const emptyHarness = createPlanningHarness({
