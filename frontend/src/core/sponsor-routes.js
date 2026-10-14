@@ -5,6 +5,7 @@ export const SPONSORS_TABS = Object.freeze([
   Object.freeze(["companies", "Companies"]),
   Object.freeze(["leads", "Leads"]),
   Object.freeze(["newsletters", "Newsletters"]),
+  Object.freeze(["money", "Money"]),
 ]);
 
 export function sponsorsPath(tab = "queue") {

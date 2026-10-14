@@ -42,7 +42,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
     </p>
     <nav class="dk-tabs crm-views" data-crm-views aria-label="Sponsors views">
       ${SPONSORS_TABS.map(
-        ([id, label]) => html`<a class="dk-tab" href="${sponsorsPath(id)}" data-crm-view="${id}">${label}</a>`,
+        ([id, label]) => html`<a class="dk-tab" href="${sponsorsPath(id)}" data-crm-view="${id}"${id === "money" ? " hidden" : ""}>${label}</a>`,
       ).join("")}
     </nav>
     <nav class="crm-pipeline" data-crm-pipeline aria-label="Deal pipeline"></nav>
@@ -125,6 +125,15 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
       </header>
       <div data-crm-newsletters>Loading newsletters…</div>
       <div data-crm-newsletter-detail hidden></div>
+    </section>
+    <section class="crm-money" hidden aria-labelledby="crm-money-heading">
+      <header class="section-header">
+        <div>
+          <h3 id="crm-money-heading">Money</h3>
+          <p>What to chase today, what is open, and when cash should arrive.</p>
+        </div>
+      </header>
+      <div data-crm-money></div>
     </section>
     <section class="crm-leads" hidden aria-labelledby="crm-leads-heading">
       <header class="section-header">

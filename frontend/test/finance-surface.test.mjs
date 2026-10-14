@@ -2000,3 +2000,47 @@ test("follow-up summaries name the fix and who acts", () => {
   assert.equal(followUpSummary({ code: "reconcile", party: "us" }).tone, "danger");
   assert.equal(followUpSummary({ code: "none", party: "none" }).title, "Nothing to chase");
 });
+
+test("Money lists what to chase first with each fix, then outstanding and expected cash without tiles", async () => {
+  const { moneyMarkup, forecastBucketLabel } = await import("../src/surfaces/finance/sponsor-money.js");
+  const markup = moneyMarkup(
+    {
+      asOf: "2026-10-14",
+      rows: [],
+      chase: [
+        {
+          dealId: "deal-1",
+          organizationName: "Sponsor A",
+          dealTitle: "Q4 newsletter",
+          currency: "EUR",
+          amountDue: "2500.00",
+          outstanding: "2500.00",
+          followUp: { code: "chase-payment", party: "us", since: "2026-09-30", daysOverdue: 14 },
+        },
+        { dealId: "deal-2", organizationName: "Sponsor B", followUp: { code: "classify", party: "us" } },
+      ],
+      totals: [
+        { currency: "EUR", outstanding: "2500.00", overdue: "2500.00", notInvoiced: "800.00", paidThisYear: "0.00" },
+        { currency: "USD", outstanding: "0.00", overdue: "0.00", notInvoiced: "0.00", paidThisYear: "100.00" },
+      ],
+      forecast: [
+        { bucket: "overdue", currency: "EUR", amount: "2500.00", dealIds: ["deal-1"] },
+        { bucket: "2026-11", currency: "EUR", amount: "800.00", dealIds: ["deal-3", "deal-4"] },
+      ],
+    },
+    escapeHtml,
+  );
+  assert.ok(markup.indexOf("What to chase") < markup.indexOf("Outstanding"));
+  assert.ok(markup.indexOf("Outstanding") < markup.indexOf("Expected cash"));
+  assert.match(markup, /Chase the payment/);
+  assert.match(markup, /Sponsor A · Q4 newsletter/);
+  assert.match(markup, /data-money-open-deal="deal-2"/);
+  assert.match(markup, /1 agreed deal has no money recorded/);
+  assert.match(markup, /Record what to invoice/);
+  assert.match(markup, /data-money-currency="EUR"/);
+  assert.doesNotMatch(markup, /data-money-currency="USD"/);
+  assert.match(markup, /2 deals/);
+  assert.doesNotMatch(markup, /dk-stat/);
+  assert.equal(forecastBucketLabel("2026-11"), "November 2026");
+  assert.equal(forecastBucketLabel("not-invoiced"), "Not invoiced yet");
+});

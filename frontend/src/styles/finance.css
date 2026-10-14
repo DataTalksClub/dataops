@@ -1530,3 +1530,76 @@ body[data-workspace-view="sponsors"] .document-list {
 .finance-evidence {
   margin-top: var(--dk-space-4);
 }
+
+/* Sponsors Money tab: what to chase, outstanding, expected cash. */
+.crm-money [data-crm-money] {
+  display: grid;
+  gap: var(--dk-space-5);
+  padding: var(--dk-space-4);
+}
+.money-block h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--dk-space-2);
+  margin: 0 0 var(--dk-space-2);
+  color: var(--dk-text-heading);
+  font-size: var(--dk-text-md);
+}
+.money-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+}
+.money-list > li + li {
+  border-top: 1px solid var(--dk-border-default);
+}
+.money-chase-row,
+.money-total-row,
+.money-forecast-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-2) var(--dk-space-4);
+  min-width: 0;
+  padding: var(--dk-space-2) var(--dk-space-4);
+}
+.money-chase-row__main {
+  display: grid;
+  flex: 1 1 16rem;
+  gap: var(--dk-space-1);
+  min-width: 0;
+}
+.money-chase-row__main .dk-muted {
+  font-size: var(--dk-text-sm);
+}
+.money-unclassified {
+  margin-top: var(--dk-space-3);
+}
+.money-unclassified > summary {
+  cursor: pointer;
+  padding: var(--dk-space-2) 0;
+  color: var(--dk-text-muted);
+  font-weight: 600;
+}
+.money-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--dk-space-5);
+}
+.money-chase-row[data-money-tone="danger"] .money-chase-row__main > strong,
+.money-overdue {
+  color: var(--dk-danger-text);
+}
+.money-chase-row__amount {
+  margin-left: auto;
+}
+.money-total-row__currency {
+  min-width: 3rem;
+  font-weight: 600;
+}
+.money-forecast-row > :first-child {
+  flex: 1 1 10rem;
+}

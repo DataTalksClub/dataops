@@ -45,6 +45,7 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/sponsors/companies": { view: "sponsors", tasksSection: "queue", sponsorsTab: "companies", params: [] },
   "/sponsors/leads": { view: "sponsors", tasksSection: "queue", sponsorsTab: "leads", params: [] },
   "/sponsors/newsletters": { view: "sponsors", tasksSection: "queue", sponsorsTab: "newsletters", params: [] },
+  "/sponsors/money": { view: "sponsors", tasksSection: "queue", sponsorsTab: "money", params: [] },
   "/sponsors/deals/:dealId": { view: "sponsors", tasksSection: "queue", sponsorsTab: "queue", params: [] },
   "/sponsors/companies/:companyId": { view: "sponsors", tasksSection: "queue", sponsorsTab: "queue", params: [] },
   "/sponsors/leads/:leadId": { view: "sponsors", tasksSection: "queue", sponsorsTab: "leads", params: [] },

@@ -2,6 +2,7 @@ import { createSponsorCommunications } from "./sponsor-communications.js";
 import { createSponsorFinance } from "./sponsor-finance.js";
 import { createSponsorLeads } from "./sponsor-leads.js";
 import { createSponsorNewsletters } from "./sponsor-newsletters.js";
+import { createSponsorMoney } from "./sponsor-money.js";
 import { renderSponsorBookingAlerts } from "./sponsor-alerts.js";
 import { createSponsorCompanyDetail } from "./sponsor-company-detail.js";
 import { sponsorSurfaceMarkup } from "./sponsor-layout.js";
@@ -22,6 +23,8 @@ function focusFirstUsableControl(dialog) {
   );
   control?.focus();
 }
+
+const PAGE_VIEWS = new Set(["companies", "leads", "newsletters", "money"]); // full-width pages, no split
 
 function openDialog(dialog) {
   dialog.showModal();
@@ -137,6 +140,13 @@ export function createSponsorCrmSurface(context) {
       renderEntityLoadState,
     });
     sponsorNewsletters.wireNewsletterControls();
+    // Money shows only while sponsor finance is enabled (deals carry finance; the ledger is not 404).
+    const moneyTab = surface.querySelector('[data-crm-view="money"]');
+    const sponsorMoney = createSponsorMoney({
+      escapeHtml, request, surface, workApiUrl,
+      openDeal: (dealId) => openRecord("deal", dealId),
+      onAvailability: (enabled) => (moneyTab.hidden = !enabled),
+    });
     const { loadFinance } = sponsorFinance;
     const {
       loadCommunications,
@@ -234,8 +244,8 @@ export function createSponsorCrmSurface(context) {
       companies.hidden = view !== "companies";
       surface.querySelector(".crm-leads").hidden = view !== "leads";
       surface.querySelector(".crm-newsletters").hidden = view !== "newsletters";
-      surface.querySelector(".crm-layout").hidden =
-        view === "companies" || view === "leads" || view === "newsletters";
+      if (!(surface.querySelector(".crm-money").hidden = view !== "money")) sponsorMoney.loadMoney();
+      surface.querySelector(".crm-layout").hidden = PAGE_VIEWS.has(view);
       // Queue and Pipeline fill the content area; the other views scroll the page.
       surface.classList.toggle("dk-fill", !surface.querySelector(".crm-layout").hidden);
       surface.querySelector("[data-crm-pipeline]").hidden = view !== "pipeline";
@@ -245,6 +255,7 @@ export function createSponsorCrmSurface(context) {
         : view === "pipeline" ? "Pipeline"
         : view === "leads" ? "Leads"
         : view === "newsletters" ? "Newsletters"
+        : view === "money" ? "Money"
         : "Companies";
       if (redraw) draw();
     }
@@ -433,6 +444,7 @@ export function createSponsorCrmSurface(context) {
       organizations = organizationsResult.items || [];
       contacts = contactsResult.items || [];
       deals = dealsResult.items || [];
+      if (currentView !== "money") moneyTab.hidden = !deals.some((deal) => deal.finance);
       queueItems = queueResult.items || [];
       notificationState = alertPage;
       drawAlerts();
@@ -500,14 +512,14 @@ export function createSponsorCrmSurface(context) {
         ? organizations.find((item) => item.id === companyId)
         : null;
       if (deal) {
-        if (currentView === "companies" || currentView === "leads" || currentView === "newsletters") {
+        if (PAGE_VIEWS.has(currentView)) {
           setView("queue");
         }
         safe(() => reopenDealDetail(deal), "Could not open deal");
         return true;
       }
       if (organization) {
-        if (currentView === "companies" || currentView === "leads" || currentView === "newsletters") {
+        if (PAGE_VIEWS.has(currentView)) {
           setView("queue");
         }
         safe(() => reopenCompanyDetail(organization), "Could not open company");
