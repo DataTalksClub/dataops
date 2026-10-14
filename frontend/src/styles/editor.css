@@ -1051,16 +1051,19 @@ textarea.inline-editor {
 .notion-block.is-dragging {
   opacity: 0.4;
 }
-.notion-block.drop-above {
-  background: var(--dk-bg-hover);
-  outline: 2px dashed var(--dk-border-strong);
-  outline-offset: -2px;
+/* The drop position is a 1px neutral line on the edge the block lands on. */
+.notion-block.drop-above::after,
+.notion-block.drop-below::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--dk-border-strong);
+  pointer-events: none;
 }
-.notion-block.drop-below {
-  background: var(--dk-bg-hover);
-  outline: 2px dashed var(--dk-border-strong);
-  outline-offset: -2px;
-}
+.notion-block.drop-above::after { top: 0; }
+.notion-block.drop-below::after { bottom: 0; }
 .notion-block-gutter {
   position: absolute;
   left: -44px;
