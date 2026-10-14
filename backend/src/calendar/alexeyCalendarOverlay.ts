@@ -235,7 +235,8 @@ async function readDapierCredential(explicit?: string): Promise<DapierCredential
     if (name === 'AccessDeniedException') {
       return { problem: `This environment is not allowed to read the calendar broker secret ${DAPIER_SECRET_NAME}.` };
     }
-    return { problem: `The calendar broker secret could not be read in this environment (${name}).` };
+    const detail = String((error as { message?: string })?.message || '').trim().slice(0, 160);
+    return { problem: `The calendar broker secret could not be read in this environment (${detail ? `${name}: ${detail}` : name}).` };
   }
 }
 

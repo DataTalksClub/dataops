@@ -370,7 +370,7 @@ describe('Alexey calendar overlay and filtering', () => {
       const { items, connection } = await provider.project('2026-10-01', '2026-10-31');
       assert.deepEqual(items, []);
       assert.equal(connection.state, 'not-configured');
-      assert.equal(connection.reason, 'The calendar broker secret could not be read in this environment (Error).');
+      assert.equal(connection.reason, 'The calendar broker secret could not be read in this environment (Error: Secret not found).');
     });
 
     it('names a missing secret permission as the reason the layer is not connected', async () => {
