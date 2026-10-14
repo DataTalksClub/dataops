@@ -20,7 +20,7 @@ export function closeStateMonthMarkup({
   const ctaButton =
     cta.kind === "worklist"
       ? html`<button class="dk-button dk-button--secondary" type="button" data-cta-worklist>
-          <span>Review <span class="dk-mono">${cta.count}</span> open item${cta.count === 1 ? "" : "s"}</span>
+          <span>Review <span class="dk-mono">${cta.count}</span>&nbsp;open&nbsp;item${cta.count === 1 ? "" : "s"}</span>
         </button>`
       : cta.kind === "download"
         ? html`<button class="dk-button dk-button--secondary" type="button" data-cta-download>
@@ -71,7 +71,7 @@ export function closeStateMonthMarkup({
 
 export function closeStateAllMarkup(transactions) {
   return html`<p class="bookkeeping-lens-note">
-    All months — <span class="dk-mono">${transactions}</span> transaction${transactions === 1 ? "" : "s"}
+    All months — <span class="dk-mono">${transactions}</span>&nbsp;transaction${transactions === 1 ? "" : "s"}
     on record. Select a month above to see its close state.
   </p>`;
 }
@@ -93,7 +93,7 @@ export function worklistRowsFromOpenItems({
 // The one-line state the collapsed close panel shows next to its heading.
 export function worklistHintMarkup(rows) {
   return rows.length
-    ? html`<span class="dk-mono">${rows.length}</span> open item${rows.length === 1 ? "" : "s"}`
+    ? html`<span class="dk-mono">${rows.length}</span>&nbsp;open&nbsp;item${rows.length === 1 ? "" : "s"}`
     : "All clear";
 }
 
@@ -164,15 +164,15 @@ export function ledgerTableMarkup({ shown, hasEvidence, lensTitle, e }) {
                       ${e(entry.paidDate ? ledgerDate(entry.paidDate) : "Unpaid")}
                     </td>
                     <td data-label="Entry">
-                      <strong>${e(entry.counterparty)}</strong
-                      ><small>${e(entry.description)}</small>
+                      <div><strong>${e(entry.counterparty)}</strong
+                      ><small>${e(entry.description)}</small></div>
                     </td>
                     <td data-label="Amount" class="ledger-amount dk-mono ${entryDirection(entry)}">
-                      ${e(
+                      <div>${e(
                         formatAmount(`${entryDirection(entry) === "expense" ? "-" : ""}${entry.amount}`, entry.currency),
                       )}${entry.currency !== "EUR" && entry.amountEur
                         ? `<small class="ledger-eur dk-mono">≈ ${e(formatAmount(entry.amountEur))}</small>`
-                        : ""}
+                        : ""}</div>
                     </td>
                     <td data-label="VAT" class="ledger-vat dk-mono">
                       ${e(
@@ -272,8 +272,8 @@ export function packageReviewMarkup({
     ${ready
       ? html`<div class="bookkeeping-package-ready">
           <p>
-            <strong>Package ready.</strong> <span class="dk-mono">${ready.transactionCount}</span>
-            transactions and <span class="dk-mono">${ready.documentCount}</span> documents inside.
+            <strong>Package ready.</strong> <span class="dk-mono">${ready.transactionCount}</span>&nbsp;transactions
+            and <span class="dk-mono">${ready.documentCount}</span>&nbsp;documents inside.
           </p>
           <button class="dk-button dk-button--secondary dk-button--sm" type="button" data-download-archive="${e(ready.id)}">
             Download package

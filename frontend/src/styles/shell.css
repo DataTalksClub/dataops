@@ -81,6 +81,7 @@ body:not([data-workspace-view="docs"]) .knowledge-tools { display: none; }
 .finance-section-head { align-items: center; padding: var(--dk-space-4); border-bottom: 1px solid var(--dk-border-default); background: var(--dk-bg-surface); }
 .finance-section-head__main { flex: 1 1 320px; min-width: 0; display: grid; gap: var(--dk-space-1); }
 .finance-section-head__main > * { margin: 0; }
+.finance-section-head__main > .bookkeeping-totals { justify-self: start; margin-top: var(--dk-space-1); }
 .finance-section-head__hint { color: var(--dk-text-muted); font-size: var(--dk-text-md); }
 .finance-section-head__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-gap-control); }
 .finance-subhead { margin: 0 0 var(--dk-space-2); color: var(--dk-text-heading); font-size: var(--dk-text-md); font-weight: var(--dk-weight-semibold); }

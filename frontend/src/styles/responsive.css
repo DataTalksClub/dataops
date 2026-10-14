@@ -451,15 +451,11 @@ body[data-workspace-view="sponsors"] .library-view {
     order: 2;
   }
 
-  /* ---- Bookkeeping: worklist leads; month strip without the close panel ---- */
+  /* ---- Bookkeeping: the sections keep their desktop order at every width ---- */
   .bookkeeping-surface {
     display: flex !important;
     flex-direction: column;
   }
-  .bookkeeping-surface > .bookkeeping-header { order: 0; }
-  .bookkeeping-surface > .bookkeeping-worklist-section { order: 1; }
-  .bookkeeping-surface > .bookkeeping-monthlens { order: 2; }
-  .bookkeeping-surface > .bookkeeping-section:not(.bookkeeping-worklist-section) { order: 3; }
   .bookkeeping-header {
     padding: 0 0 6px !important;
   }

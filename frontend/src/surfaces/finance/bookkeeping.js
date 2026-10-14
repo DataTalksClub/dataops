@@ -415,9 +415,9 @@ export function createBookkeepingSurface(context) {
           </p>`
         : "";
       const report = monthReport();
-      const preview = html`<span class="dk-mono">${monthEntries.length}</span> transaction${monthEntries.length === 1 ? "" : "s"} ·
-        <span class="dk-mono">${evidenceDocs.length}</span> linked evidence document${evidenceDocs.length === 1 ? "" : "s"}
-        · <span class="dk-mono">${excludedCount}</span> tax/health-insurance ${excludedCount === 1 ? "entry" : "entries"} kept out`;
+      const preview = html`<span class="dk-mono">${monthEntries.length}</span>&nbsp;transaction${monthEntries.length === 1 ? "" : "s"} ·
+        <span class="dk-mono">${evidenceDocs.length}</span>&nbsp;linked evidence document${evidenceDocs.length === 1 ? "" : "s"}
+        · <span class="dk-mono">${excludedCount}</span>&nbsp;tax/health-insurance ${excludedCount === 1 ? "entry" : "entries"} kept out`;
       review.innerHTML = packageReviewMarkup({
         title: monthLabel(lens),
         preflightRows,

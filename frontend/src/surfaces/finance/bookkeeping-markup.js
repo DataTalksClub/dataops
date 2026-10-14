@@ -73,9 +73,8 @@ export function bookkeepingSurfaceMarkup() {
           id: "bookkeeping-ledger-heading",
           title: "Ledger",
           hint: "Transactions for the selected period. Open an entry only when it needs work.",
-          actions: html`<div class="bookkeeping-ledger-header-actions">
-            <p class="bookkeeping-totals" aria-live="polite"></p>
-            <div class="bookkeeping-export-actions">
+          meta: html`<p class="bookkeeping-totals" aria-live="polite"></p>`,
+          actions: html`<div class="bookkeeping-export-actions">
               <button
                 class="dk-button dk-button--secondary dk-button--sm bookkeeping-export-btn"
                 type="button"
@@ -100,8 +99,7 @@ export function bookkeepingSurfaceMarkup() {
               >
                 Full CSV
               </button>
-            </div>
-          </div>`,
+            </div>`,
         })}
         <div class="dk-toolbar bookkeeping-filters">
           <label

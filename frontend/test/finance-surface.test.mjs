@@ -1498,7 +1498,7 @@ describe("Finance surface boundary", () => {
     assert.match(review.innerHTML, /Package ready/);
     assert.match(
       review.innerHTML,
-      /<span class="dk-mono">0<\/span>\s*transactions and <span class="dk-mono">3<\/span> documents inside/,
+      /<span class="dk-mono">0<\/span>&nbsp;transactions\s+and <span class="dk-mono">3<\/span>&nbsp;documents inside/,
     );
     await review.dispatch("click", {
       target: {
@@ -1622,7 +1622,7 @@ describe("Finance surface boundary", () => {
     // Three missing-evidence/conversion/unclassified items drive the CTA.
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
-      /Review <span class="dk-mono">4<\/span> open items/,
+      /Review <span class="dk-mono">4<\/span>&nbsp;open&nbsp;items/,
     );
     // The worklist is the reconcile output with its fixes attached.
     const worklist = surface.querySelector("[data-worklist]");
@@ -1692,7 +1692,7 @@ describe("Finance surface boundary", () => {
     assert.deepEqual(savedPuts[1], { entryType: "income" });
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
-      /Review <span class="dk-mono">2<\/span> open items/,
+      /Review <span class="dk-mono">2<\/span>&nbsp;open&nbsp;items/,
     );
 
     // Attaching evidence from the worklist scopes the upload form.
@@ -1715,7 +1715,7 @@ describe("Finance surface boundary", () => {
     await surface.querySelector("[data-lens-toggle]").dispatch("click");
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
-      /All months — <span class="dk-mono">4<\/span> transactions\s*on record/,
+      /All months — <span class="dk-mono">4<\/span>&nbsp;transactions\s*on record/,
     );
     assert.equal(surface.querySelector("[data-worklist-section]").hidden, true);
     assert.match(

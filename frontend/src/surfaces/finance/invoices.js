@@ -86,7 +86,7 @@ export function invoiceLedgerMarkup(items, escapeHtml) {
       + `<p class="dk-empty__desc">Forward an invoice PDF to the intake address and it appears here with extracted values.</p></div>`;
   }
   const summary = `<p class="invoice-ledger-summary"><span class="dk-mono">${ordered.length}</span>`
-    + ` invoice${ordered.length === 1 ? "" : "s"} · <span class="dk-mono">${pending}</span> pending review</p>`;
+    + `&nbsp;invoice${ordered.length === 1 ? "" : "s"} · <span class="dk-mono">${pending}</span>&nbsp;pending review</p>`;
   return `${summary}<div class="invoice-ledger-wrap">
 <table class="invoice-ledger">
 <thead>
