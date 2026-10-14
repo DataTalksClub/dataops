@@ -32,6 +32,7 @@ export function createTaskQueue(context) {
     refreshOperationsWorkSnapshot,
     request,
     resolveAssigneeLabel,
+    queueCreateActions,
     resolveDocReference = () => null,
     showUndoToast,
     state,
@@ -206,9 +207,17 @@ export function createTaskQueue(context) {
     board.className = "ops-queue-board";
     board.dataset.loadState = anySourceLoaded ? "ready" : "unavailable";
 
+    // The create actions sit in the toolbar directly above the rows, after
+    // the filters, never in the page header's corner.
+    const createActions = queueCreateActions();
+
     function populateBoard() {
       board.replaceChildren();
       section.querySelector(".ops-queue-filters")?.remove();
+      const filters = document.createElement("div");
+      filters.className = "ops-queue-filters";
+      filters.append(...createActions);
+      section.prepend(filters);
       if (!anySourceLoaded) {
         board.append(renderUnavailableState());
         return;
@@ -229,12 +238,8 @@ export function createTaskQueue(context) {
       if (allOpenTasks.length > 0 || doneTasks.length > 0) {
         const counts = countOpenByPersona(allOpenTasks);
         // Who and what: the assignee filter and the required-resource filter
-        // share one toolbar row.
-        const filters = document.createElement("div");
-        filters.className = "ops-queue-filters";
-        filters.append(renderPersonaFilterBar(counts, () => populateBoard()));
-        if (resourceFilter) filters.append(resourceFilter);
-        section.prepend(filters);
+        // share one toolbar row with the create actions.
+        filters.prepend(renderPersonaFilterBar(counts, () => populateBoard()), ...[resourceFilter].filter(Boolean));
 
         if (visibleOpen.length > 0) {
           board.append(renderQueueTotalLine(visibleOpen.length, allOpenTasks.length, personaLabel));

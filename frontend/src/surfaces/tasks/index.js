@@ -1,4 +1,8 @@
-import { createPageHeader, renderDataSummary } from "../operations-overview.js";
+import {
+  createCollectionCreateButton,
+  createPageHeader,
+  renderDataSummary,
+} from "../operations-overview.js";
 import { createCardsSurface } from "./cards.js";
 import { createQuickTaskActions } from "./quick-create.js";
 import { createTaskQueue } from "./queue.js";
@@ -82,7 +86,20 @@ export function createTasksSurface(context) {
     ...context,
     openQuickWorkflowForm,
   });
-  const { renderWorkQueueSurface } = createTaskQueue(context);
+  // New task is the queue's one primary create; Create card is secondary.
+  const queueCreateActions = () => [
+    createCollectionCreateButton({
+      label: "New task",
+      onClick: () => openQuickTaskForm(),
+    }),
+    createCollectionCreateButton({
+      label: "Create card",
+      variant: "secondary",
+      shortcut: false,
+      onClick: () => openQuickWorkflowForm(),
+    }),
+  ];
+  const { renderWorkQueueSurface } = createTaskQueue({ ...context, queueCreateActions });
   const {
     getRuntimeTemplateState,
     refreshRuntimeTemplates,
@@ -117,24 +134,9 @@ export function createTasksSurface(context) {
     if (activeSection === "templates") wrap.classList.add("dk-fill");
     const recurringSurface = activeSection === "recurring" ? renderRecurringSurface(model) : null;
     if (activeSection !== "workflows") {
-      const actions = [];
-      if (activeSection === "queue") {
-        const quickTask = document.createElement("button");
-        quickTask.type = "button";
-        quickTask.className = "quiet-button";
-        quickTask.textContent = "New task";
-        quickTask.addEventListener("click", () => openQuickTaskForm());
-        const quickCard = document.createElement("button");
-        quickCard.type = "button";
-        quickCard.className = "primary-button";
-        quickCard.textContent = "Create card";
-        quickCard.addEventListener("click", () => openQuickWorkflowForm());
-        actions.push(quickTask, quickCard);
-      }
       const header = createPageHeader({
         title,
         subtitle: surfaceDescription(activeSection),
-        actions,
         className: "ops-surface-header",
       });
       wrap.append(header);

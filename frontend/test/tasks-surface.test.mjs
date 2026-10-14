@@ -430,10 +430,20 @@ describe("Tasks surface boundary", () => {
     });
 
     api.renderTasksSurface([], "queue");
+    // The create actions ride on the queue toolbar after the filters, not
+    // in the page header: New task is the primary create, Create card the
+    // secondary one.
     const header = documentList.querySelector(".dk-page-header");
-    const createCard = findByText(header, "Create card", "button");
-    assert.equal(createCard.className, "primary-button");
-    assert.equal(findByText(header, "New task", "button").className, "quiet-button");
+    assert.equal(findByText(header, "New task", "button"), undefined);
+    assert.equal(findByText(header, "Create card", "button"), undefined);
+    const toolbar = documentList.querySelector(".ops-queue-filters");
+    const newTask = findByText(toolbar, "New task", "button");
+    assert.match(newTask.className, /dk-button--primary/);
+    assert.equal(newTask.getAttribute("aria-keyshortcuts"), "c");
+    const createCard = findByText(toolbar, "Create card", "button");
+    assert.match(createCard.className, /dk-button--secondary/);
+    assert.equal(createCard.getAttribute("aria-keyshortcuts"), null);
+    assert.equal(toolbar.children.at(-1), createCard);
 
     // One queue: a single bordered list, no per-lane group cards.
     const board = documentList.querySelector(".ops-queue-board");

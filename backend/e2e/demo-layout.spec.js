@@ -74,10 +74,11 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       if (route === '/tasks') {
         const board = await page.locator('.ops-queue-board').boundingBox();
         expect(Math.abs(board.width - canvas.width)).toBeLessThan(1);
-        const actionButton = header.getByRole('button', { name: 'Create card', exact: true });
-        await expect(actionButton).toBeVisible();
-        const action = await actionButton.boundingBox();
-        expect(Math.abs(action.x + action.width - canvas.x - canvas.width)).toBeLessThan(1);
+        // The queue's create actions follow its filters, above the rows.
+        await expect(header.getByRole('button', { name: 'New task', exact: true })).toHaveCount(0);
+        const toolbar = page.locator('.ops-queue-filters');
+        await expect(toolbar.getByRole('button', { name: 'New task', exact: true })).toBeVisible();
+        await expect(toolbar.getByRole('button', { name: 'Create card', exact: true })).toBeVisible();
       }
       // Moved create actions sit on their collection, right after its title,
       // never in the page header's corner.
