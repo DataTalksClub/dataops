@@ -4,7 +4,7 @@ export const ALEXEY_USER_ID = '00000000-0000-0000-0000-000000000003';
 
 export const DEAL_STATUSES = new Set(['open', 'agreed', 'lost']);
 export const PRODUCT_KINDS = new Set(['one-off', 'package', 'course']);
-export const CHANNELS = new Set(['main', 'secondary', 'standalone', 'social', 'workshop', 'course', 'other']);
+export const CHANNELS = new Set(['main', 'secondary', 'standalone', 'social', 'podcast', 'webinar', 'workshop', 'course', 'other']);
 export const NEXT_ACTION_TYPES = new Set(['follow_up', 'send_invoice', 'chase_payment', 'chase_materials', 'send_stats', 'other']);
 export const LOST_REASONS = new Set(['no_budget', 'no_reply', 'wrong_fit', 'timing', 'other']);
 export const MONEY_STATES = ['none', 'invoiced', 'partial', 'paid', 'overdue'] as const;
@@ -20,7 +20,6 @@ export type QueueItem = {
   companyName: string;
   dealId?: string;
   deliverableId?: string;
-  invoiceId?: string;
   due: string;
   owner: string;
   href: string;
@@ -70,16 +69,26 @@ export function dealIsRotting(deal: Record<string, unknown>): boolean {
   return !action || !action.type || !action.due || !action.owner;
 }
 
-export function deriveMoney(invoices: Array<Record<string, unknown>>, today: string): MoneyState {
-  if (!invoices.length) return 'none';
-  const amounts = invoices.map((item) => Number(item.amountEur || item.amount || 0));
-  const paid = invoices.filter((item) => item.paidAt);
-  const unpaid = invoices.filter((item) => !item.paidAt);
-  if (paid.length === invoices.length) return 'paid';
-  if (unpaid.some((item) => realDate(item.due) && String(item.due) < today)) return 'overdue';
-  if (paid.length) return 'partial';
-  if (amounts.some((value) => value > 0) || invoices.length) return 'invoiced';
-  return 'none';
+/** The money facts the CRM reads from the deal's sponsor finance state. */
+export type DealMoneyFacts = {
+  invoiceState: string;
+  paymentState: string;
+  timingState: string;
+  followUp: { code: string; party: string; since?: string; daysOverdue?: number };
+  amountDue?: string;
+  currency?: string;
+  invoiceNumber?: string;
+  dueOn?: string;
+  outstanding?: string;
+  lastPaymentOn?: string;
+};
+
+export function deriveMoney(facts: DealMoneyFacts | undefined): MoneyState {
+  if (!facts || facts.invoiceState !== 'issued') return 'none';
+  if (facts.paymentState === 'paid') return 'paid';
+  if (facts.timingState === 'overdue') return 'overdue';
+  if (facts.paymentState === 'partially-paid') return 'partial';
+  return 'invoiced';
 }
 
 export function deriveFulfillment(deliverables: Array<Record<string, unknown>>): 'none' | 'not-started' | 'in-delivery' | 'delivered' {
@@ -94,7 +103,7 @@ export function relationshipTag(
   deals: Array<Record<string, unknown>>,
   today: string,
 ): 'customer' | 'talking' | 'dormant' | 'prospect' {
-  const paid = deals.some((deal) => deal.cash === true || deal.money === 'paid');
+  const paid = deals.some((deal) => deal.money === 'paid');
   const live = deals.some((deal) => deal.status === 'open' || deal.status === 'agreed');
   const last = String(organization.lastInboundAt || organization.lastOutboundAt || '').slice(0, 10);
   const hasLast = Boolean(last && realDate(last));
@@ -111,12 +120,11 @@ export function neverContacted(organization: Record<string, unknown>, deals: Arr
 
 export function dealIsComplete(
   deal: Record<string, unknown>,
-  invoices: Array<Record<string, unknown>>,
+  facts: DealMoneyFacts | undefined,
   deliverables: Array<Record<string, unknown>>,
-  today: string,
 ): boolean {
   if (String(deal.status || '') === 'lost') return true;
-  const money = deriveMoney(invoices, today);
+  const money = facts?.invoiceState === 'not-required' ? 'paid' : deriveMoney(facts);
   const fulfillment = deriveFulfillment(deliverables);
   return money === 'paid' && (fulfillment === 'delivered' || fulfillment === 'none');
 }
@@ -139,11 +147,11 @@ export function computeQueue(input: {
   organizations: Array<Record<string, unknown>>;
   deals: Array<Record<string, unknown>>;
   deliverables: Array<Record<string, unknown>>;
-  invoices: Array<Record<string, unknown>>;
+  finance: Map<string, DealMoneyFacts>;
   today: string;
   actorId: string;
 }): QueueItem[] {
-  const { organizations, deals, deliverables, invoices, today, actorId } = input;
+  const { organizations, deals, deliverables, finance, today, actorId } = input;
   const items: QueueItem[] = [];
   const dealsByOrg = new Map<string, Array<Record<string, unknown>>>();
   for (const deal of deals) {
@@ -159,13 +167,6 @@ export function computeQueue(input: {
     list.push(deliverable);
     deliverablesByDeal.set(dealId, list);
   }
-  const invoicesByDeal = new Map<string, Array<Record<string, unknown>>>();
-  for (const invoice of invoices) {
-    const dealId = String(invoice.dealId || '');
-    const list = invoicesByDeal.get(dealId) || [];
-    list.push(invoice);
-    invoicesByDeal.set(dealId, list);
-  }
 
   for (const organization of organizations) {
     if (organization.archivedAt) continue;
@@ -175,7 +176,7 @@ export function computeQueue(input: {
     const name = String(organization.displayName || 'Unknown sponsor');
     const tag = relationshipTag(organization, orgDeals.map((deal) => ({
       ...deal,
-      money: deriveMoney(invoicesByDeal.get(String(deal.id)) || [], today),
+      money: deriveMoney(finance.get(String(deal.id))),
     })), today);
 
     const outbound = String(organization.lastOutboundAt || '').slice(0, 10);
@@ -194,11 +195,11 @@ export function computeQueue(input: {
 
     for (const deal of orgDeals) {
       const dealId = String(deal.id);
-      const dealInvoices = invoicesByDeal.get(dealId) || [];
+      const facts = finance.get(dealId);
       const dealDeliverables = deliverablesByDeal.get(dealId) || [];
       const status = String(deal.status || '');
       if (status === 'lost') continue;
-      if (dealIsComplete(deal, dealInvoices, dealDeliverables, today)) continue;
+      if (dealIsComplete(deal, facts, dealDeliverables)) continue;
       const action = deal.nextAction as NextAction | null | undefined;
       if (dealIsRotting(deal)) {
         push(items, {
@@ -223,35 +224,26 @@ export function computeQueue(input: {
           owner: action.owner,
         });
       }
-      if (status === 'agreed' && !dealInvoices.length) {
-        const agreedAt = String(deal.agreementDate || deal.createdAt || today).slice(0, 10);
-        if (realDate(agreedAt) && dayDiff(agreedAt, today) >= 7) {
-          push(items, {
-            kind: 'operational',
-            why: 'send_invoice',
-            action: 'Send invoice',
-            companyId: organizationId,
-            companyName: name,
-            dealId,
-            due: today,
-            owner: defaultOwner('send_invoice'),
-          });
-        }
-      }
-      for (const invoice of dealInvoices) {
-        if (!invoice.paidAt && realDate(invoice.due) && String(invoice.due) < today) {
-          push(items, {
-            kind: 'operational',
-            why: 'chase_payment',
-            action: 'Chase payment',
-            companyId: organizationId,
-            companyName: name,
-            dealId,
-            invoiceId: String(invoice.id),
-            due: String(invoice.due),
-            owner: defaultOwner('chase_payment'),
-          });
-        }
+      const followUp = facts?.followUp;
+      const financeWhy: Record<string, [string, string]> = {
+        'send-invoice': ['send_invoice', 'Send invoice'],
+        'chase-payment': ['chase_payment', 'Chase payment'],
+        unblock: ['finance_unblock', 'Unblock payment'],
+        reconcile: ['finance_reconcile', 'Reconcile payments'],
+        classify: ['finance_classify', 'Record deal finance'],
+      };
+      if (followUp && financeWhy[followUp.code]) {
+        const [why, label] = financeWhy[followUp.code];
+        push(items, {
+          kind: 'operational',
+          why,
+          action: label,
+          companyId: organizationId,
+          companyName: name,
+          dealId,
+          due: followUp.since && realDate(followUp.since) && followUp.since < today ? followUp.since : today,
+          owner: defaultOwner(why === 'chase_payment' ? 'chase_payment' : 'send_invoice'),
+        });
       }
       for (const deliverable of dealDeliverables) {
         const publication = String(deliverable.plannedPublicationDate || '');

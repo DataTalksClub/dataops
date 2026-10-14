@@ -3,7 +3,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { before, after, describe, it } from 'node:test';
 import assert from 'node:assert';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { handler } from '../src/handler';
 import { createTables } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
@@ -121,16 +122,52 @@ describe('sponsor CRM', () => {
     assert.equal(lost.status, 'lost');
   });
 
-  it('derives money from invoices and fulfillment from deliverables', async () => {
-    const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Money Sponsor', sourceKey: 'money-org' }));
-    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'agreed', nextAction: ACTION, sourceKey: 'money-deal' }));
-    await invoke('POST', '/api/sponsor-crm/invoices', { dealId: deal.id, amountEur: 1500, due: '2026-06-01', sourceKey: 'money-inv' });
-    let fetched = data(await invoke('GET', `/api/sponsor-crm/deals/${deal.id}`, undefined, {},));
-    fetched = data(await handler({ httpMethod: 'GET', path: `/api/sponsor-crm/deals/${deal.id}`, headers: {}, queryStringParameters: { today: '2026-07-01' }, body: null }, {}));
-    assert.equal(fetched.money, 'overdue');
-    await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'main', publishedAt: '2026-05-01T00:00:00Z', plannedPublicationDate: '2026-05-01', sourceKey: 'money-slot' });
-    fetched = data(await handler({ httpMethod: 'GET', path: `/api/sponsor-crm/deals/${deal.id}`, headers: {}, queryStringParameters: { today: '2026-07-01' }, body: null }, {}));
-    assert.equal(fetched.fulfillment, 'delivered');
+  it('derives money and finance chores from the sponsor finance state', async () => {
+    const previous = process.env.SPONSOR_FINANCE_ENABLED;
+    process.env.SPONSOR_FINANCE_ENABLED = 'true';
+    try {
+      const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Money Sponsor', lastOutboundAt: '2026-06-20', lastInboundAt: '2026-06-21', sourceKey: 'money-org' }));
+      const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, title: 'Synthetic package', status: 'agreed', nextAction: { ...ACTION, due: '2026-09-01' }, sourceKey: 'money-deal' }));
+      const at = (today: string) => handler({ httpMethod: 'GET', path: `/api/sponsor-crm/deals/${deal.id}`, headers: {}, queryStringParameters: { today }, body: null }, {}).then(data);
+      assert.equal((await at('2026-07-01')).money, 'none');
+      const financeItem = {
+        PK: `SPONSOR_FINANCE#${deal.id}`, SK: `SPONSOR_FINANCE#${deal.id}`, id: deal.id, recordType: 'sponsor-finance',
+        dealId: deal.id, version: 3, invoiceRequirement: 'required', amountDue: '1500', currency: 'EUR', taxMode: 'included',
+        invoiceNumber: 'SYN-1', issuedOn: '2026-05-01', dueOn: '2026-06-01', paymentLinkIds: [], recordedPaymentIds: [],
+        actorId: 'admin-1', createdAt: '2026-05-01T00:00:00.000Z', updatedAt: '2026-05-01T00:00:00.000Z',
+      };
+      await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: financeItem }));
+      let fetched = await at('2026-07-01');
+      assert.equal(fetched.money, 'overdue');
+      assert.equal(fetched.title, 'Synthetic package');
+      assert.equal(fetched.finance.invoiceNumber, 'SYN-1');
+      assert.deepEqual(fetched.finance.followUp, { code: 'chase-payment', party: 'us', since: '2026-06-01', daysOverdue: 30 });
+      assert.equal((await at('2026-05-15')).money, 'invoiced');
+      const queue = data(await handler({ httpMethod: 'GET', path: '/api/sponsor-crm/queue', headers: grace, queryStringParameters: { today: '2026-07-01', limit: '100' }, body: null }, {})).items;
+      const chase = queue.find((item: any) => item.dealId === deal.id && item.why === 'chase_payment');
+      assert.ok(chase, 'overdue invoice must be chased');
+      assert.equal(chase.due, '2026-06-01');
+      const paymentKey = `SPONSOR_FINANCE_PAYMENT#${deal.id}#${'a'.repeat(32)}`;
+      await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: {
+        PK: paymentKey, SK: paymentKey, id: paymentKey, recordType: 'sponsor-finance-payment', dealId: deal.id,
+        paymentId: 'a'.repeat(32), receivedOn: '2026-06-20', amount: '1500', currency: 'EUR', method: 'bank-report',
+        actorId: 'admin-1', financeVersion: 4, createdAt: '2026-06-20T00:00:00.000Z',
+      } }));
+      await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { ...financeItem, version: 4, recordedPaymentIds: [paymentKey] } }));
+      fetched = await at('2026-07-01');
+      assert.equal(fetched.money, 'paid');
+      assert.equal(fetched.finance.lastPaymentOn, '2026-06-20');
+      assert.equal(fetched.finance.outstanding, '0');
+      await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'webinar', publishedAt: '2026-05-01T00:00:00Z', plannedPublicationDate: '2026-05-01', sourceKey: 'money-slot' });
+      fetched = await at('2026-07-01');
+      assert.equal(fetched.fulfillment, 'delivered');
+      const org = data(await invoke('GET', `/api/sponsor-crm/organizations/${organization.id}?today=2026-07-01`));
+      assert.equal(org.relationship, 'customer');
+      assert.equal((await invoke('POST', '/api/sponsor-crm/invoices', { dealId: deal.id, amountEur: 1 })).statusCode, 404);
+    } finally {
+      if (previous === undefined) delete process.env.SPONSOR_FINANCE_ENABLED;
+      else process.env.SPONSOR_FINANCE_ENABLED = previous;
+    }
   });
 
   it('atomically prevents duplicate active schedule links and exposes safe summaries', async () => {
@@ -280,21 +317,29 @@ describe('sponsor CRM', () => {
     assert.ok(listed.items.every((item: any) => !item.owner || item.owner === GRACE_USER_ID));
   });
 
-  it('imports a sanitized snapshot distinguishing cash deals from verbal pipeline yeses', async () => {
+  it('imports a sanitized snapshot of companies, deals, deliverables and mail activity', async () => {
     const result = await invoke('POST', '/api/sponsor-crm/imports', IMPORT_FIXTURE);
     assert.equal(result.statusCode, 200, result.body);
     const body = data(result);
     assert.ok(body.companies >= 2);
     assert.ok(body.deals >= 2);
     const deals = data(await handler({ httpMethod: 'GET', path: '/api/sponsor-crm/deals', headers: {}, queryStringParameters: { limit: '100', today: '2026-07-01' }, body: null }, {})).items;
-    const cash = deals.find((item: any) => item.cash === true);
-    const verbal = deals.find((item: any) => item.cash === false && item.amountEur === 2700);
-    assert.ok(cash, 'cash deal missing');
+    const packaged = deals.find((item: any) => item.title === 'Synthetic newsletter package');
+    const verbal = deals.find((item: any) => item.amountEur === 2700);
+    assert.ok(packaged, 'package deal missing');
     assert.ok(verbal, 'verbal deal missing');
-    assert.equal(cash.money, 'paid');
-    assert.equal(verbal.money, 'none');
+    assert.equal(packaged.money, 'none', 'money comes only from sponsor finance');
+    assert.equal(packaged.deliverables.length, 1);
+    assert.equal(body.activity, 1);
     const orgs = data(await invoke('GET', '/api/sponsor-crm/organizations?limit=100&today=2026-07-01')).items;
-    assert.equal(orgs.find((item: any) => item.domain === 'cash.example.invalid').relationship, 'customer');
+    const cashOrg = orgs.find((item: any) => item.domain === 'cash.example.invalid');
+    assert.equal(cashOrg.relationship, 'talking');
+    const messages = data(await invoke('GET', `/api/sponsor-crm/organizations/${cashOrg.id}/messages`)).items;
+    assert.deepEqual(messages.map((item: any) => item.threadId), ['synthetic-thread-1']);
+    const replayed = await invoke('POST', '/api/sponsor-crm/imports', IMPORT_FIXTURE);
+    assert.equal(replayed.statusCode, 200, replayed.body);
+    const replay = data(replayed);
+    assert.equal(replay.activity, 0);
   });
 
   it('imports name-only companies and attaches people by company name', async () => {

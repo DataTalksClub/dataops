@@ -5,9 +5,11 @@ import {
   createDealAtomic,
   createDeliverableAtomic,
   createOrganizationAtomic,
+  deterministicCrmId,
+  getCrmRecord,
   listCrmRecords,
 } from '../db/sponsorCrm';
-import { DEAL_STATUSES, PRODUCT_KINDS, parseNextAction, realDate, registrableDomain } from './model';
+import { CHANNELS, DEAL_STATUSES, PRODUCT_KINDS, parseNextAction, realDate, registrableDomain } from './model';
 import { newsletterRecord, validateNewsletter } from './newsletters';
 
 export type SnapshotCompany = {
@@ -35,21 +37,22 @@ export type SnapshotDeliverable = {
 };
 export type SnapshotDeal = {
   organizationDomain: string;
+  title?: string;
   status: string;
   productKind?: string;
   amountEur?: number;
-  cash?: boolean;
   agreementDate?: string;
   nextAction?: unknown;
   sourceKey?: string;
   deliverables?: SnapshotDeliverable[];
 };
-export type SnapshotInvoice = {
-  dealSourceKey: string;
-  amountEur: number;
-  due?: string;
-  paidAt?: string;
-  sourceKey?: string;
+export type SnapshotActivity = {
+  organizationDomain: string;
+  personEmail?: string | null;
+  threadId: string;
+  direction: 'inbound' | 'outbound';
+  sentAt: string;
+  snippet?: string;
 };
 export type SnapshotLead = {
   name: string;
@@ -74,7 +77,7 @@ export type CrmSnapshot = {
   companies?: SnapshotCompany[];
   people?: SnapshotPerson[];
   deals?: SnapshotDeal[];
-  invoices?: SnapshotInvoice[];
+  activity?: SnapshotActivity[];
   leads?: SnapshotLead[];
   newsletters?: SnapshotNewsletter[];
 };
@@ -85,10 +88,10 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
   const companies = snapshot.companies || [];
   const people = snapshot.people || [];
   const deals = snapshot.deals || [];
-  const invoices = snapshot.invoices || [];
+  const activity = snapshot.activity || [];
   const leads = snapshot.leads || [];
   const newsletters = snapshot.newsletters || [];
-  if (companies.length + people.length + deals.length + invoices.length + leads.length + newsletters.length > 10_000) {
+  if (companies.length + people.length + deals.length + activity.length + leads.length + newsletters.length > 10_000) {
     throw Object.assign(new Error('Snapshot too large'), { statusCode: 400 });
   }
 
@@ -105,7 +108,7 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
       if (typeof email === 'string' && email.trim()) contactByEmail.set(email.toLowerCase(), existing.id);
     }
   }
-  const created = { companies: 0, people: 0, deals: 0, invoices: 0, leads: 0, newsletters: 0, duplicates: 0 };
+  const created = { companies: 0, people: 0, deals: 0, deliverables: 0, activity: 0, leads: 0, newsletters: 0, duplicates: 0 };
   const resolveOrg = (ref: string) => {
     const domain = registrableDomain(ref);
     if (domain && orgByDomain.has(domain)) return orgByDomain.get(domain);
@@ -179,12 +182,18 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
       throw Object.assign(new Error('Invalid next action'), { statusCode: 400 });
     }
     const sourceKey = deal.sourceKey || `import-deal:${deal.organizationDomain}:${deal.status}:${deal.amountEur || 0}`;
+    if (deal.title !== undefined && (typeof deal.title !== 'string' || deal.title.length > 200)) {
+      throw Object.assign(new Error('Invalid deal'), { statusCode: 400 });
+    }
+    if (deal.agreementDate !== undefined && !realDate(deal.agreementDate)) {
+      throw Object.assign(new Error('Invalid deal'), { statusCode: 400 });
+    }
     const result = await createDealAtomic(client, {
       organizationId,
+      ...(deal.title ? { title: deal.title } : {}),
       status: deal.status,
       productKind: deal.productKind || 'one-off',
       amountEur: deal.amountEur,
-      cash: deal.cash === true,
       agreementDate: deal.agreementDate,
       nextAction: nextAction || undefined,
       sourceType: 'import',
@@ -194,7 +203,8 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
     if (result.duplicate) created.duplicates += 1;
     else created.deals += 1;
     for (const deliverable of deal.deliverables || []) {
-      await createDeliverableAtomic(client, {
+      if (!CHANNELS.has(deliverable.channel)) throw Object.assign(new Error('Invalid deliverable'), { statusCode: 400 });
+      const made = await createDeliverableAtomic(client, {
         dealId: result.item.id,
         organizationId,
         channel: deliverable.channel,
@@ -205,29 +215,41 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
         sourceType: 'import',
         sourceKey: deliverable.sourceKey || `${sourceKey}:deliverable:${deliverable.channel}:${deliverable.plannedPublicationDate || 'none'}`,
       }, actorId);
+      if (made.duplicate) created.duplicates += 1;
+      else created.deliverables += 1;
     }
   }
 
-  for (const invoice of invoices) {
-    const dealId = dealIdBySource.get(invoice.dealSourceKey);
-    if (!dealId || typeof invoice.amountEur !== 'number') {
-      throw Object.assign(new Error('Invalid invoice'), { statusCode: 400 });
-    }
-    if (invoice.due && !realDate(invoice.due)) throw Object.assign(new Error('Invalid invoice'), { statusCode: 400 });
-    const result = await createCrmRecord(client, 'invoice', {
-      dealId,
-      amountEur: invoice.amountEur,
-      due: invoice.due,
-      paidAt: invoice.paidAt,
-      sourceType: 'import',
-      sourceKey: invoice.sourceKey || `import-invoice:${invoice.dealSourceKey}`,
+  for (const entry of activity) {
+    const organizationId = resolveOrg(entry.organizationDomain);
+    const email = typeof entry.personEmail === 'string' ? entry.personEmail.toLowerCase() : '';
+    if (
+      !organizationId || typeof entry.threadId !== 'string' || !entry.threadId.trim() || entry.threadId.length > 128
+      || !['inbound', 'outbound'].includes(entry.direction) || Number.isNaN(Date.parse(entry.sentAt))
+      || (email && !EMAIL.test(email))
+    ) throw Object.assign(new Error('Invalid activity'), { statusCode: 400 });
+    const result = await createCrmRecord(client, 'message', {
+      organizationId,
+      ...(email && contactByEmail.has(email) ? { contactId: contactByEmail.get(email) } : {}),
+      ...(email ? { personEmail: email } : {}),
+      threadId: entry.threadId,
+      direction: entry.direction,
+      snippet: typeof entry.snippet === 'string' ? entry.snippet.slice(0, 500) : '',
+      sentAt: entry.sentAt,
+      sourceType: 'gmail',
+      sourceKey: `gmail:${entry.threadId}:${entry.direction}:${entry.sentAt}`,
     });
     if (result.duplicate) created.duplicates += 1;
-    else created.invoices += 1;
+    else created.activity += 1;
   }
 
   for (const lead of leads) {
     if (!lead.name?.trim()) throw Object.assign(new Error('Invalid lead'), { statusCode: 400 });
+    const leadKey = lead.sourceKey || `import-lead:${lead.name.toLowerCase()}`;
+    if (await getCrmRecord(client, 'lead', deterministicCrmId('lead', leadKey))) {
+      created.duplicates += 1;
+      continue;
+    }
     const result = await createCrmRecord(client, 'lead', {
       messageId: lead.sourceKey || `import-lead:${lead.name}`,
       newsletter: { name: lead.newsletter || 'imported', sender: 'import@example.invalid', subject: lead.name, receivedAt: new Date().toISOString() },
@@ -235,7 +257,7 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
       status: 'new',
       active: true,
       sourceType: 'import',
-      sourceKey: lead.sourceKey || `import-lead:${lead.name.toLowerCase()}`,
+      sourceKey: leadKey,
     });
     if (result.duplicate) created.duplicates += 1;
     else created.leads += 1;

@@ -17,6 +17,8 @@ import {
   type CrmRecord,
 } from '../db/sponsorCrm';
 import { importCrmSnapshot } from '../sponsorCrm/importSnapshot';
+import { financeEnabled } from '../sponsorFinance/repository';
+import { financeLedger, type CrmPreload } from '../sponsorFinance/ledger';
 import {
   CHANNELS,
   DEAL_STATUSES,
@@ -24,6 +26,7 @@ import {
   LOST_REASONS,
   PRODUCT_KINDS,
   computeQueue,
+  type DealMoneyFacts,
   dealIsRotting,
   deriveFulfillment,
   deriveMoney,
@@ -94,6 +97,7 @@ function validateDeal(body: Record<string, unknown>, partial = false, existing?:
   const status = String((body.status ?? existing?.status) || '');
   if ((!partial || body.status !== undefined) && !DEAL_STATUSES.has(status)) return 'Invalid status';
   if (body.productKind !== undefined && !PRODUCT_KINDS.has(String(body.productKind))) return 'Invalid productKind';
+  if (body.title !== undefined && body.title !== '' && !text(body.title, 200)) return 'Invalid title';
   if (body.lostReason !== undefined && !LOST_REASONS.has(String(body.lostReason))) return 'Invalid lostReason';
   if (body.amountEur !== undefined && (typeof body.amountEur !== 'number' || !Number.isFinite(body.amountEur))) return 'Invalid amountEur';
   if (body.agreementDate != null && !realDate(body.agreementDate)) return 'Invalid agreementDate';
@@ -135,14 +139,50 @@ function publicDeal(deal: CrmRecord, extras: Record<string, unknown> = {}) {
   return { ...record, rotting: dealIsRotting(deal), ...extras };
 }
 
+async function moneyFacts(client: DynamoDBDocumentClient, today: string, preload: CrmPreload) {
+  const facts = new Map<string, DealMoneyFacts>();
+  if (!financeEnabled()) return facts;
+  for (const row of (await financeLedger(client, today, preload)).rows) facts.set(row.dealId, row);
+  return facts;
+}
+
+const publicMoney = (facts: DealMoneyFacts | undefined) => facts ? {
+  invoiceState: facts.invoiceState,
+  paymentState: facts.paymentState,
+  timingState: facts.timingState,
+  followUp: facts.followUp,
+  ...(facts.amountDue ? { amountDue: facts.amountDue, currency: facts.currency } : {}),
+  ...(facts.invoiceNumber ? { invoiceNumber: facts.invoiceNumber } : {}),
+  ...(facts.dueOn ? { dueOn: facts.dueOn } : {}),
+  ...(facts.outstanding ? { outstanding: facts.outstanding } : {}),
+  ...(facts.lastPaymentOn ? { lastPaymentOn: facts.lastPaymentOn } : {}),
+} : undefined;
+
 async function decorateDeals(client: DynamoDBDocumentClient, deals: CrmRecord[], today: string) {
-  const deliverables = await listCrmRecords(client, 'deliverable');
-  const invoices = await listCrmRecords(client, 'invoice');
+  const [organizations, allDeals, deliverables] = await Promise.all([
+    listCrmRecords(client, 'organization'),
+    listCrmRecords(client, 'deal'),
+    listCrmRecords(client, 'deliverable'),
+  ]);
+  const facts = await moneyFacts(client, today, { organizations, deals: allDeals, deliverables });
   return deals.map((deal) => {
     const kids = deliverables.filter((item) => item.dealId === deal.id);
-    const bills = invoices.filter((item) => item.dealId === deal.id);
-    return publicDeal(deal, { money: deriveMoney(bills, today), fulfillment: deriveFulfillment(kids), deliverables: kids, invoices: bills });
+    const money = facts.get(deal.id);
+    return publicDeal(deal, {
+      money: deriveMoney(money), fulfillment: deriveFulfillment(kids), deliverables: kids,
+      ...(money ? { finance: publicMoney(money) } : {}),
+    });
   });
+}
+
+async function organizationMoney(client: DynamoDBDocumentClient, today: string) {
+  const [organizations, deals, deliverables] = await Promise.all([
+    listCrmRecords(client, 'organization'),
+    listCrmRecords(client, 'deal'),
+    listCrmRecords(client, 'deliverable'),
+  ]);
+  const facts = await moneyFacts(client, today, { organizations, deals, deliverables });
+  return deals.map((deal): CrmRecord => ({ ...deal, money: deriveMoney(facts.get(deal.id)) }));
 }
 
 export async function handleSponsorCrmRoutes(path: string, method: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
@@ -152,8 +192,8 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     const organizations = await listCrmRecords(client, 'organization');
     const deals = await listCrmRecords(client, 'deal');
     const deliverables = await listCrmRecords(client, 'deliverable');
-    const invoices = await listCrmRecords(client, 'invoice');
-    const items = computeQueue({ organizations, deals, deliverables, invoices, today, actorId: user });
+    const finance = await moneyFacts(client, today, { organizations, deals, deliverables });
+    const items = computeQueue({ organizations, deals, deliverables, finance, today, actorId: user });
     return json(200, page(items, event));
   }
 
@@ -313,7 +353,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     return json(405, { error: 'Method not allowed' });
   }
 
-  const match = path.match(/^\/api\/sponsor-crm\/(organizations|contacts|deals|deliverables|invoices)(?:\/([^/]+))?$/);
+  const match = path.match(/^\/api\/sponsor-crm\/(organizations|contacts|deals|deliverables)(?:\/([^/]+))?$/);
   if (!match) return json(404, { error: 'Not found' });
   const plural = match[1], id = match[2];
   const kind = plural === 'deliverables' ? 'deliverable' : plural.slice(0, -1);
@@ -324,9 +364,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     if (!record) return json(404, { error: 'Not found' });
     if (kind === 'deal') return json(200, (await decorateDeals(client, [record], today))[0]);
     if (kind === 'organization') {
-      const deals = (await listCrmRecords(client, 'deal')).filter((item) => item.organizationId === record.id);
-      const invoices = await listCrmRecords(client, 'invoice');
-      const moneyDeals = deals.map((deal) => ({ ...deal, money: deriveMoney(invoices.filter((item) => item.dealId === deal.id), today) }));
+      const moneyDeals = (await organizationMoney(client, today)).filter((item) => item.organizationId === record.id);
       return json(200, { ...record, relationship: relationshipTag(record, moneyDeals, today), deals: moneyDeals });
     }
     return json(200, record);
@@ -349,13 +387,9 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     }
     if (kind === 'deal') return json(200, page(await decorateDeals(client, items, today), event));
     if (kind === 'organization') {
-      const deals = await listCrmRecords(client, 'deal');
-      const invoices = await listCrmRecords(client, 'invoice');
+      const moneyDeals = await organizationMoney(client, today);
       const decorated = items.map((organization) => {
-        const orgDeals = deals.filter((deal) => deal.organizationId === organization.id).map((deal) => ({
-          ...deal,
-          money: deriveMoney(invoices.filter((item) => item.dealId === deal.id), today),
-        }));
+        const orgDeals = moneyDeals.filter((deal) => deal.organizationId === organization.id);
         return { ...organization, relationship: relationshipTag(organization, orgDeals, today) };
       });
       return json(200, page(decorated, event));
@@ -365,17 +399,6 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
 
   if (method === 'POST' && !id) {
     if (!body) return json(400, { error: 'Invalid JSON' });
-    if (kind === 'invoice') {
-      if (!ID.test(String(body.dealId || '')) || typeof body.amountEur !== 'number') return json(400, { error: 'Invalid invoice fields' });
-      const deal = await getCrmRecord(client, 'deal', String(body.dealId));
-      if (!deal || deal.archivedAt) return json(422, { error: 'Invalid deal reference' });
-      try {
-        const created = await createCrmRecord(client, 'invoice', { ...body, sourceType: body.sourceType || 'portal' });
-        return json(created.duplicate ? 200 : 201, created.item);
-      } catch (error) {
-        return json((error as { statusCode?: number }).statusCode || 409, { error: (error as Error).message });
-      }
-    }
     const error = kind === 'organization' ? validateOrganization(body)
       : kind === 'contact' ? validateContact(body)
       : kind === 'deal' ? validateDeal(body)
@@ -424,10 +447,6 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     const existing = await getCrmRecord(client, kind, id);
     if (!existing) return json(404, { error: 'Not found' });
     if (body.version !== existing.version) return json(409, { error: 'Record was changed; reload and retry' });
-    if (kind === 'invoice') {
-      try { return json(200, await updateCrmRecord(client, 'invoice', existing, body)); }
-      catch { return json(409, { error: 'Conflicting update; reload and retry' }); }
-    }
     const error = kind === 'organization' ? validateOrganization(body, true)
       : kind === 'contact' ? validateContact(body, true)
       : kind === 'deal' ? validateDeal(body, true, existing)
@@ -457,7 +476,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     }
   }
 
-  if (method === 'DELETE' && id && kind !== 'deal' && kind !== 'deliverable' && kind !== 'invoice') {
+  if (method === 'DELETE' && id && kind !== 'deal' && kind !== 'deliverable') {
     const existing = await getCrmRecord(client, kind, id);
     if (!existing) return json(404, { error: 'Not found' });
     if (kind === 'contact') return json(200, await updateContactAtomic(client, existing, { archivedAt: new Date().toISOString(), active: false, primary: false }, user));
