@@ -226,15 +226,16 @@ test.describe("pre-refactor frontend module characterization", () => {
       ["/newsletter", "Newsletter", ".newsletter-surface"],
       ["/calendar", "Calendar", ".calendar-surface"],
       ["/bookkeeping", "Bookkeeping", ".bookkeeping-surface"],
-      ["/sponsors", "Sponsors", ".sponsor-crm-surface"],
+      // Bare /sponsors opens its default tab at /sponsors/queue.
+      ["/sponsors", "Sponsors", ".sponsor-crm-surface", "/sponsors/queue"],
       ["/review", "Document review", ".review-surface"],
       ["/processes", "Process Docs", ".ops-surface-docs"],
       ["/admin", "Admin", ".ops-surface-admin"],
       ["/users", "Users", ".ops-surface-users"],
     ];
-    for (const [route, title, marker] of routes) {
+    for (const [route, title, marker, canonical = route] of routes) {
       await page.goto(`${baseURL}${route}`);
-      await expect(page).toHaveURL(`${baseURL}${route}`);
+      await expect(page).toHaveURL(`${baseURL}${canonical}`);
       await expectVisibleRouteHeading(page, title);
       await expect(page.locator(marker)).toBeVisible();
       if (route === "/processes") {
