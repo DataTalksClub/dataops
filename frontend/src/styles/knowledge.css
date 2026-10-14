@@ -98,7 +98,7 @@ body[data-view="library"] .library-view {
   display: grid;
   gap: 4px;
   min-width: 0;
-  border: 1px solid var(--dk-info-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
@@ -204,7 +204,7 @@ body[data-view="library"] .library-view {
   line-height: 1.4;
 }.ops-quality-row-head span {
   flex: 0 0 auto;
-  border: 1px solid var(--dk-warning-border);
+  border: 1px solid transparent;
   border-radius: var(--dk-radius-full);
   background: var(--dk-warning-bg);
   color: var(--dk-warning-text);
@@ -236,7 +236,6 @@ body[data-view="library"] .library-view {
   white-space: nowrap;
 }.ops-quality-row.ops-quality-blocking .ops-quality-row-head span,
 .ops-quality-row.ops-quality-error .ops-quality-row-head span {
-  border-color: var(--dk-danger-border);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
 }/* Reference links read as one bordered list with divided rows — the
@@ -351,7 +350,6 @@ body[data-view="library"] .library-view {
   font-weight: 600;
   line-height: 1.25;
 }.doc-domain {
-  border-color: var(--dk-info-border);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
 }.empty-state,
