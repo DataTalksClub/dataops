@@ -159,6 +159,12 @@ export class DocsRuntime {
 
   async ensureSearch(): Promise<void> {
     await this.ensureSynced();
+    const key = this.publicationKey();
+    if (key && sharedSearch?.key === key) {
+      this.index = sharedSearch.index;
+      this.searchReady = true;
+      return;
+    }
     if (!this.searchReady || this.index === null) {
       this.rebuildSearch();
     }
@@ -171,8 +177,28 @@ export class DocsRuntime {
     index.fit(docs);
     this.index = index;
     this.searchReady = true;
+    const key = this.publicationKey();
+    if (key) sharedSearch = { key, index };
+  }
+
+  /**
+   * A published revision is immutable, so its index can outlive the request
+   * that built it: every request pins the active publication, and a new
+   * publication (an edit, a restore, an import) changes the key and forces a
+   * rebuild. The offline cache is a mutable working directory, so it has no
+   * stable key and is never shared.
+   */
+  private publicationKey(): string {
+    return this.store.offline ? '' : this.store.root;
   }
 }
+
+/**
+ * The search index for the most recently searched publication, shared across
+ * requests in this process. Building it reads and tokenizes the whole corpus,
+ * which costs seconds; reusing it costs nothing.
+ */
+let sharedSearch: { key: string; index: SearchIndex } | null = null;
 
 let runtime: DocsRuntime | null = null;
 
@@ -185,6 +211,7 @@ export function configureDocsRuntime(store: KnowledgeStore): DocsRuntime {
 /** Clear the cached runtime (tests). */
 export function resetDocsRuntime(): void {
   runtime = null;
+  sharedSearch = null;
 }
 
 // ── Response helpers ──────────────────────────────────────────────────────────

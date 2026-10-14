@@ -35,7 +35,7 @@ export async function search(rt: DocsRuntime, event: LambdaEvent): Promise<Lambd
   if (sourceEnabled(params, 'docs')) {
     await rt.ensureSearch();
     const matches = rt.index!.search(query, { filter: filters, numResults: limit });
-    let docResults = matches.map(formatDocResult);
+    let docResults = matches.map((match) => formatDocResult(match, query));
     docResults = docResults.filter((result) => resultMatchesFilters(result, params));
     results.push(...docResults);
     sources.push({ source: 'docs', status: 'ok', count: docResults.length });
@@ -54,11 +54,13 @@ export async function search(rt: DocsRuntime, event: LambdaEvent): Promise<Lambd
   return jsonResponse(200, { query, results: sorted, sources });
 }
 
-function formatDocResult(match: SearchResult): Record<string, unknown> {
+function formatDocResult(match: SearchResult, query: string): Record<string, unknown> {
   const summary = String(match.summary || '');
   const description = String(match.description || summary);
   return {
     type: 'doc',
+    score: typeof match._score === 'number' ? Number(match._score.toFixed(4)) : null,
+    snippet: snippetFor(query, [match.body, match.headings, description, summary]),
     source: 'docs',
     source_label: `Process ${match.doc_type || 'doc'}`,
     action_label: 'Open process doc',
@@ -122,12 +124,66 @@ function sortResults(results: Record<string, unknown>[]): Record<string, unknown
     file: 5,
     'assistant-job': 6,
   };
-  return [...results].sort((a, b) => {
-    const oa = order[String(a.type)] ?? 9;
-    const ob = order[String(b.type)] ?? 9;
-    if (oa !== ob) return oa - ob;
-    return String(a.title || '').toLowerCase().localeCompare(String(b.title || '').toLowerCase());
-  });
+  // Groups by result type; within a type the index's relevance order stands.
+  // Array.prototype.sort is stable, so equal types keep their ranked order.
+  return [...results].sort((a, b) => (order[String(a.type)] ?? 9) - (order[String(b.type)] ?? 9));
+}
+
+const SNIPPET_LENGTH = 220;
+const SNIPPET_LEAD = 60;
+
+/**
+ * The passage of the first field that best covers the query terms, so a
+ * reader (often an agent) can judge a hit without opening the document. The
+ * window that contains the most distinct query terms wins; ties go to the
+ * earliest. Falls back to the opening of the first non-empty field.
+ */
+export function snippetFor(query: string, fields: Array<string | undefined>): string {
+  const terms = [...new Set(query.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) || [])];
+  const texts = fields.map((field) => plainText(String(field || ''))).filter(Boolean);
+  for (const text of texts) {
+    const lower = text.toLowerCase();
+    let best = -1;
+    let bestHits = 0;
+    for (const term of terms) {
+      for (let at = lower.indexOf(term); at !== -1; at = lower.indexOf(term, at + term.length)) {
+        const start = Math.max(0, at - SNIPPET_LEAD);
+        const window = lower.slice(start, start + SNIPPET_LENGTH);
+        const hits = terms.filter((candidate) => window.includes(candidate)).length;
+        if (hits > bestHits || (hits === bestHits && start < best)) {
+          best = start;
+          bestHits = hits;
+        }
+      }
+    }
+    if (best >= 0) return excerpt(text, best);
+  }
+  return texts.length ? excerpt(texts[0], 0) : '';
+}
+
+/** Markdown reduced to the words a reader sees: no comments, markup, or URLs. */
+function plainText(markdown: string): string {
+  return markdown
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[#>*_`|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function excerpt(text: string, start: number): string {
+  let from = start;
+  if (from > 0) {
+    const space = text.indexOf(' ', from);
+    from = space !== -1 && space - from < 20 ? space + 1 : from;
+  }
+  let to = Math.min(text.length, from + SNIPPET_LENGTH);
+  if (to < text.length) {
+    const space = text.lastIndexOf(' ', to);
+    to = space > from ? space : to;
+  }
+  return `${from > 0 ? '…' : ''}${text.slice(from, to).trim()}${to < text.length ? '…' : ''}`;
 }
 
 function listValues(value: unknown): string[] {

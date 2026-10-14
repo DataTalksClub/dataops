@@ -337,3 +337,47 @@ describe('contentApi - docs listing content-root contract (offline)', () => {
     assert.strictEqual(body.error, 'Document not found');
   });
 });
+
+describe('docs search ranking, snippets and the per-publication index',()=>{
+ let dir:string;
+ const files={
+  'content/a/sops/title-match.md':['---','title: Sponsor invoice checklist','summary: Send the sponsor invoice','doc_type: sop','---','','# Steps','','Prepare the sponsor invoice and email it.'].join('\n'),
+  'content/a/reference/body-match.md':['---','title: Alpha reference','summary: Unrelated summary','doc_type: reference','---','','# Notes','','<!-- note -->Some text. Later the [sponsor](https://example.test) pays the invoice in full.'].join('\n'),
+  'content/a/reference/no-match.md':['---','title: Zebra','summary: Nothing relevant','doc_type: reference','---','','Plain body.'].join('\n'),
+ };
+ beforeEach(()=>{mkdirSync(resolve('../.tmp'),{recursive:true});dir=mkdtempSync(resolve('../.tmp/search-rank-'));});
+ afterEach(()=>{resetDocsRuntime();rmSync(dir,{recursive:true,force:true});});
+ it('keeps relevance order with scores and returns a query snippet without markup',async()=>{
+  configureDocsRuntime(syntheticKnowledge(files,dir).store);
+  const search=await call(ev('GET','/search',{query:{q:'sponsor invoice'}}));
+  const paths=search.body.results.map((r:any)=>r.path);
+  assert.deepEqual(paths,['content/a/sops/title-match.md','content/a/reference/body-match.md']);
+  assert.ok(search.body.results[0].score>search.body.results[1].score);
+  const snippet=search.body.results[1].snippet;
+  assert.match(snippet,/sponsor pays the invoice/);
+  assert.doesNotMatch(snippet,/<!--|\]\(|https:/);
+ });
+ it('filters by doc_type inside the index so the limit counts matching documents',async()=>{
+  configureDocsRuntime(syntheticKnowledge(files,dir).store);
+  const search=await call(ev('GET','/search',{query:{q:'sponsor invoice',doc_type:'reference',limit:'1'}}));
+  assert.deepEqual(search.body.results.map((r:any)=>r.path),['content/a/reference/body-match.md']);
+ });
+ it('reuses one index across requests for a publication and rebuilds after a new one',async()=>{
+  const fixture=syntheticKnowledge(files,dir);
+  const freshStore=()=>new KnowledgeStore({bucket:'test-knowledge',client:fixture.s3 as any,cacheDir:dir,offline:false});
+  configureDocsRuntime(freshStore());
+  assert.equal((await call(ev('GET','/search',{query:{q:'sponsor'}}))).body.results.length,2);
+  // A second request (new runtime, new store) on the same publication must not re-read the corpus.
+  const rt=configureDocsRuntime(freshStore());
+  let rebuilt=0;const rebuild=rt.rebuildSearch.bind(rt);rt.rebuildSearch=()=>{rebuilt+=1;rebuild();};
+  assert.equal((await call(ev('GET','/search',{query:{q:'sponsor'}}))).body.results.length,2);
+  assert.equal(rebuilt,0);
+  // Publishing from elsewhere moves the active pointer; the next request rebuilds.
+  const writer=freshStore();const head=await writer.pin();
+  await writer.publish([{path:'content/a/reference/no-match.md',bytes:['---','title: Zebra sponsor','doc_type: reference','---','','Now about sponsors.'].join('\n')}],head.revision,'test','edit');
+  const next=configureDocsRuntime(freshStore());
+  let rebuiltAfter=0;const rebuildNext=next.rebuildSearch.bind(next);next.rebuildSearch=()=>{rebuiltAfter+=1;rebuildNext();};
+  assert.equal((await call(ev('GET','/search',{query:{q:'sponsor'}}))).body.results.length,3);
+  assert.equal(rebuiltAfter,1);
+ });
+});
