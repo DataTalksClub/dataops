@@ -429,15 +429,19 @@ test("escapes supplied page header text and attributes while keeping authored ac
   assert.ok(markup.includes('<button type="button">Create card</button>'));
 });
 
-test("the c shortcut presses the page's visible create button unless the operator is typing", () => {
+test("the c shortcut presses the page's visible create button unless the operator is typing or a modal shows", () => {
   let onKeydown;
   let clicks = 0;
   let dialogOpen = false;
   const button = { disabled: false, getClientRects: () => [1], click: () => { clicks += 1; } };
+  // The shell keeps hidden modal panels in the page; they never block it.
+  const hiddenPanel = { getClientRects: () => [] };
+  const shownDialog = { getClientRects: () => [1] };
   const documentRef = {
     addEventListener: (type, handler) => { if (type === "keydown") onKeydown = handler; },
-    querySelector: () => (dialogOpen ? {} : null),
-    querySelectorAll: () => [button],
+    querySelectorAll: (selector) => (selector.includes("aria-modal")
+      ? [hiddenPanel, ...(dialogOpen ? [shownDialog] : [])]
+      : [button]),
   };
   installCollectionCreateShortcut(documentRef);
   installCollectionCreateShortcut(documentRef);

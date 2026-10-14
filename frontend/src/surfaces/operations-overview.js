@@ -142,7 +142,11 @@ export function installCollectionCreateShortcut(documentRef = document) {
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (event.key !== "c") return;
     if (isTypingTarget(event.target)) return;
-    if (documentRef.querySelector('dialog[open], [aria-modal="true"]')) return;
+    // The shell keeps its modal panels in the page, hidden; only one that is
+    // showing blocks the shortcut.
+    const modalOpen = [...documentRef.querySelectorAll('dialog[open], [aria-modal="true"]')]
+      .some((modal) => modal.getClientRects().length > 0);
+    if (modalOpen) return;
     const button = [...documentRef.querySelectorAll("[data-collection-create]")]
       .find((candidate) => !candidate.disabled && candidate.getClientRects().length > 0);
     if (!button) return;
