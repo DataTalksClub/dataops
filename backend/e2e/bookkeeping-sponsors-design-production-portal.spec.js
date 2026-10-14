@@ -166,7 +166,7 @@ async function routeSponsors(page) {
       timingState: "on-track",
       outstanding: "700.00",
       invoice: { id: "invoice-example", label: "September sponsor invoice", uploadedAt: "2026-08-30" },
-      payments: [{ id: "payment-example", effectiveDate: "2026-09-01", amount: "500.00", currency: "EUR" }],
+      payments: [{ id: "payment-example", effectiveDate: "2026-09-01", amount: "500.00", currency: "EUR", source: "ledger" }],
       reconciliationStatus: "coherent",
       paymentLinkCount: 1,
       paymentLinkLimit: 20,
@@ -269,7 +269,9 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await expect(page.getByRole("heading", { name: "Sponsors" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Queue" })).toBeVisible();
     await expect(page.locator("[data-crm-queue] .status-label")).toHaveText("Deal work");
-    await page.getByRole("button", { name: "Pipeline" }).click();
+    await expect(page).toHaveURL(/\/sponsors\/queue$/);
+    await page.getByRole("link", { name: "Pipeline" }).click();
+    await expect(page).toHaveURL(/\/sponsors\/pipeline$/);
     await expect(page.locator("[data-crm-pipeline]")).toContainText("Agreed");
     await expect(page.locator("[data-crm-pipeline]")).not.toContainText("Inquiry");
     await expect(page.locator("[data-crm-alerts]")).toContainText("Due 3 Sept");
@@ -283,7 +285,8 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await expect(financePanel).toContainText("€700.00");
     await expect(financePanel).toContainText("30 Sept");
     await expect(financePanel).toContainText("uploaded 30 Aug");
-    await expect(financePanel).toContainText(/1 Sept(?: 2026)?\s*·\s*€500\.00/);
+    const ledgerPayment = financePanel.locator('.finance-payment-row[data-finance-payment-source="ledger"]');
+    await expect(ledgerPayment.locator(".dk-mono")).toHaveText([/^1 Sept(?: 2026)?$/, "€500.00"]);
     await expect(financePanel.getByRole("button", { name: /^Unlink 1 Sept(?: 2026)? payment$/ })).toBeVisible();
     await expect(financePanel).not.toContainText("2026-09-30");
     await expect(page.locator('[data-booking-panel="history"]')).toContainText("Recorded 28 Aug 2026, 11:00 CEST");
