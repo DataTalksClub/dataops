@@ -184,7 +184,9 @@ test.describe("Nested Doc Pages", () => {
     const subpagesBlock = page.locator(".doc-subpages");
     await expect(subpagesBlock).toBeVisible();
     await expect(subpagesBlock.locator(".doc-subpage-item")).toContainText("Employee Onboarding");
-    await expect(subpagesBlock.locator(".doc-add-subpage-btn")).toBeVisible();
+    // Adding a sub-page lives in the page menu (and the "/" menu), not in the list.
+    await page.getByRole("button", { name: "Doc actions", exact: true }).click();
+    await expect(page.locator(".doc-menu-popover").getByRole("button", { name: "Add sub-page…" })).toBeVisible();
   });
 
   test("move page dialog prevents cycles by excluding self and descendants", async ({ page }) => {

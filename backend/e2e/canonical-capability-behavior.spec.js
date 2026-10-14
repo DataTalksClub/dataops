@@ -1245,9 +1245,9 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('#document-title')).toHaveValue(createdTitle);
     expect((await json(await context.request.get(`/docs?path=${encodeURIComponent(createdPath)}`))).path).toBe(createdPath);
 
-    await page.locator('.block-title').click();
-    await page.locator('.block-title-editor').fill(updatedTitle);
-    await page.locator('.block-title-editor').press('Enter');
+    // The title is always editable: type over it and leave it with Escape.
+    await page.locator('.block-title').fill(updatedTitle);
+    await page.locator('.block-title').press('Escape');
     await setFaults(context.request, [{ method: 'PUT', path: '/docs', status: 503 }]);
     const failedSave = page.waitForResponse((response) => {
       const url = new URL(response.url());
@@ -1288,9 +1288,9 @@ test.describe('canonical frontend capability behavior', () => {
       }
     }, { paths: draftPaths, draftRevision });
     const thirdDraftTitle = `${updatedTitle} draft`;
-    await page.locator('.block-title').click();
-    await page.locator('.block-title-editor').fill(thirdDraftTitle);
-    await page.locator('.block-title-editor').press('Enter');
+    // The title is always editable: type over it and leave it with Escape.
+    await page.locator('.block-title').fill(thirdDraftTitle);
+    await page.locator('.block-title').press('Escape');
     const draftRows = page.locator('#changes-list .changes-row-wrap');
     await expect(draftRows).toHaveCount(3);
     for (let index = 0; index < 3; index += 1) {
