@@ -122,6 +122,7 @@ export function createSurfaceComposition(context) {
     getRenderDocsSurface,
     getRenderNewsletterSurface,
     getRenderOperatingModel,
+    getRenderPodcastSurface,
     getRenderReviewSurface,
     getRenderSponsorCrmSurface,
     getRenderTasksSurface,
@@ -160,6 +161,7 @@ export function createSurfaceComposition(context) {
     if (view === "sponsors") return getRenderSponsorCrmSurface()();
     if (view === "newsletter") return getRenderNewsletterSurface()();
     if (view === "calendar") return getRenderCalendarSurface()();
+    if (view === "podcast") return getRenderPodcastSurface()();
     if (view === "review") return getRenderReviewSurface()(documents);
     return getRenderTasksSurface()(documents, "queue");
   }

@@ -36,6 +36,7 @@ import { createWorkDetailSurface } from "../surfaces/work-detail/index.js";
 import { createKnowledgeSurface } from "../surfaces/knowledge/index.js";
 import { createDocumentEditor } from "../surfaces/document-editor/index.js";
 import { createReviewSurface } from "../surfaces/review/index.js";
+import { createPodcastSurface } from "../surfaces/podcast/index.js";
 import { createOperatingModelSurface } from "../surfaces/operating-model.js";
 import { createApiClient, resolveApiBase } from "../shell/api.js";
 import { createFeedbackShell } from "../shell/feedback.js";
@@ -50,6 +51,7 @@ import { createSurfaceBridge, createSurfaceComposition } from "./surface-composi
 let knowledgeSurface;
 let documentEditorSurface;
 let reviewSurface;
+let podcastSurface;
 let operatingModelSurface;
 let navigationShell;
 
@@ -153,6 +155,8 @@ const {
   getRenderDocsSurface: () => renderDocsSurface,
   getRenderNewsletterSurface: () => renderNewsletterSurface,
   getRenderOperatingModel: () => operatingModelSurface?.renderOperatingModel || (() => undefined),
+  getRenderPodcastSurface: () =>
+    podcastSurface?.renderPodcastSurface || (() => undefined),
   getRenderReviewSurface: () =>
     reviewSurface?.renderReviewSurface || (() => undefined),
   getRenderSponsorCrmSurface: () => renderSponsorCrmSurface,
@@ -561,6 +565,16 @@ reviewSurface = createReviewSurface({
   setRouteTitle,
 });
 
+podcastSurface = createPodcastSurface({
+  apiUrl,
+  documentList,
+  getActiveWorkspaceRoute,
+  getActiveWorkspaceView: () => workspaceState.activeWorkspaceView,
+  navigateCanonicalWorkspace,
+  request,
+  setRouteTitle,
+});
+
 knowledgeSurface = createKnowledgeSurface({
   knowledgeTools: document.querySelector("#knowledge-tools"),
   apiUrl,
@@ -771,6 +785,7 @@ navigationShell = createNavigationShell({
   prepareCardPanel,
   prepareTaskPanel,
   refreshDocuments,
+  refreshPodcastEpisodes: (...args) => podcastSurface.refreshPodcastEpisodes(...args),
   refreshReviewSnapshot: (...args) => reviewSurface.refreshReviewSnapshot(...args),
   refreshUsersSurface,
   restoreDocumentFilters,

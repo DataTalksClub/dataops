@@ -350,6 +350,24 @@ async function runSeeds() {
         requiredLinkName: 'Synthetic output',
       }],
     });
+    // Specs that create podcast Cards ask for the podcast Template; others
+    // keep the single synthetic Template they count on.
+    if (process.env.E2E_SEED_PODCAST_TEMPLATE === '1') {
+      await createTemplate(await getClient(), {
+        name: 'Synthetic podcast',
+        type: 'podcast',
+        tags: ['synthetic'],
+        sourcePath: 'workflow-templates/podcast.yaml',
+        sourceRevision: '0123456789abcdef0123456789abcdef01234567',
+        triggerType: 'manual',
+        references: [],
+        taskDefinitions: [
+          { refId: 'prepare-questions', description: 'Prepare interview questions', offsetDays: -2 },
+          { refId: 'record', description: 'Record the episode', offsetDays: 0 },
+          { refId: 'edit', description: 'Edit the recording', offsetDays: 7 },
+        ],
+      });
+    }
     const browserUserId = process.env.E2E_BROWSER_SESSION_USER_ID;
     if (browserUserId) {
       if (process.env.E2E_BROWSER_SESSION_USER_ROLE) {

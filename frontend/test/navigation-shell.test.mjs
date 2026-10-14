@@ -130,6 +130,7 @@ function createNavigationHarness(options = {}) {
       documentList.append(routeHeading);
     },
     refreshOperationsArtifactSnapshot: async (value) => calls.push(["artifacts", value]),
+    refreshPodcastEpisodes: async (value) => calls.push(["podcast", value]),
     refreshReviewSnapshot: async (value) => calls.push(["review", value]),
     refreshUsersSurface: async (value) => calls.push(["users", value]),
     renderWorkspaceNav: () => ({
@@ -277,6 +278,8 @@ describe("canonical navigation shell behavior", () => {
       ["/tasks", { taskId: "task-1" }, "resolve-queue"],
       ["/templates", { templateId: "template-1" }, "resolve-template"],
       ["/review", {}, "review"],
+      ["/podcast", {}, "podcast"],
+      ["/podcast/episode-1", {}, "podcast"],
       ["/users", {}, "users"],
     ];
     for (const [path, params, expected] of cases) {

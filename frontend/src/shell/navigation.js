@@ -22,6 +22,7 @@ export function createNavigationShell(context) {
     prepareCardPanel,
     prepareTaskPanel,
     refreshDocuments,
+    refreshPodcastEpisodes,
     refreshReviewSnapshot,
     refreshUsersSurface,
     restoreDocumentFilters,
@@ -241,6 +242,9 @@ export function createNavigationShell(context) {
     }
     if (route.path === "/templates") {
       jobs.push(resolveTemplateRouteEntity(route, token));
+    }
+    if (route.view === "podcast" && typeof refreshPodcastEpisodes === "function") {
+      jobs.push(refreshPodcastEpisodes({ rerender: true }));
     }
     if (route.path === "/review" && typeof refreshReviewSnapshot === "function") {
       jobs.push(refreshReviewSnapshot({ rerender: true, token }));

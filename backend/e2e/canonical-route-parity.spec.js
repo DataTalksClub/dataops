@@ -40,7 +40,10 @@ async function createFixtures(request, referenceTime = Date.now()) {
       deliverable: { channel: 'main', plannedPublicationDate: '2026-09-01' },
     },
   })).json();
-  return { id, card, contextCard, task, template: templates[0], booking };
+  const episode = await (await request.post('/api/podcast-episodes', {
+    data: { title: `Route episode ${id}`, guests: [{ name: 'Route Guest' }], status: 'booked', recordingDate: '2026-09-02' },
+  })).json();
+  return { id, card, contextCard, task, template: templates[0], booking, episode };
 }
 
 async function setRouteFaults(request, faults) {
@@ -127,6 +130,8 @@ test.describe('issue 156 canonical route and operator parity', () => {
       [`/sponsors/deals/${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
       ['/newsletter', 'Newsletter'],
       ['/calendar', 'Calendar'],
+      ['/podcast', 'Podcast'],
+      [`/podcast/${encodeURIComponent(fixture.episode.id)}`, 'Podcast'],
       ['/processes', 'Process Docs'],
       ['/review', 'Document review'],
       ['/admin', 'Admin'],
