@@ -422,15 +422,13 @@ export function createTemplatesSurface(context) {
   }
 
   // The one sentence an operator wants before clicking: what this Template is
-  // currently doing in the world.
+  // currently doing in the world. The chips above already carry the counts,
+  // so the sentence says what to do about them, never the numbers again.
   function templateRowSummary(facts) {
-    if (!facts.cards.length) return "No cards yet. New cards start from this revision.";
-    const live = countLabel(facts.cards.length, "active card");
+    if (!facts.cards.length) return "New cards start from this revision.";
+    if (facts.behind) return "Open it to review the behind cards for updates.";
     const used = relativeDayLabel(facts.lastUsed);
-    if (facts.behind) {
-      return `${live} · ${countLabel(facts.behind, "card")} behind the current revision.`;
-    }
-    return `${live} · all current${used ? ` · last used ${used}` : ""}.`;
+    return `All cards current${used ? ` · last used ${used}` : ""}.`;
   }
 
   // One fixed ordering: the Templates already carrying live work float up,
