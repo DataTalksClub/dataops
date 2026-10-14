@@ -106,6 +106,7 @@
     "src/surfaces/work-detail/task-panel.js",
     "src/dakit/dialogs.js",
     "src/dakit/shell.js",
+    "src/dakit/tabs.js",
     "src/dakit/device-code.js",
     "src/dakit/fonts/inter-var.woff2",
     "src/dakit/fonts/ibm-plex-mono-400.woff2",
