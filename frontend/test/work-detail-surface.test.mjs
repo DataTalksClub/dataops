@@ -3132,7 +3132,7 @@ describe("Work Detail surface boundary", () => {
           return { ready: Promise.resolve() };
         },
         request: async () => ({
-          template: { id: "tpl-news", name: "Newsletter", emoji: "📰" },
+          template: { id: "tpl-news", name: "Newsletter", icon: "newspaper" },
         }),
         workApiUrl: (path) => path,
       },
@@ -3142,7 +3142,8 @@ describe("Work Detail surface boundary", () => {
     const [link] = row.children;
     assert.equal(link.textContent, "Template · View template");
     await nextTicks();
-    assert.equal(link.textContent, "Template: 📰 Newsletter · View template");
+    assert.equal(link.textContent, "Template: Newsletter · View template");
+    assert.equal(link.querySelector("svg").dataset.icon, "newspaper");
     await link.dispatch("click");
     assert.deepEqual(navigations, [
       { path: "/templates", params: { templateId: "tpl-news" } },

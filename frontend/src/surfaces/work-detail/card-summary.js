@@ -1,3 +1,5 @@
+import { renderIcon } from "../../core/icons.js";
+
 // The compact summary head of the Card detail modal: stage control, date and
 // flag chips on one row, the progress bar, the next-up line, and the clamped
 // Card description.
@@ -17,11 +19,13 @@ export function renderCardTemplateLink(
   const link = document.createElement("button");
   link.type = "button";
   link.className = "card-template-link";
-  const labelFor = (cached) =>
-    cached
-      ? `Template: ${cached.emoji ? `${cached.emoji} ` : ""}${cached.name} · View template`
-      : "Template · View template";
-  link.textContent = labelFor(templateLinkCache.get(templateId));
+  const fill = (cached) => {
+    link.replaceChildren(
+      renderIcon(cached?.icon || "card", { size: 16 }),
+      document.createTextNode(cached ? `Template: ${cached.name} · View template` : "Template · View template"),
+    );
+  };
+  fill(templateLinkCache.get(templateId));
   link.title = "View template in Templates";
   link.addEventListener("click", () =>
     navigateCanonicalWorkspace("/templates", { templateId }),
@@ -33,11 +37,9 @@ export function renderCardTemplateLink(
         const template = payload?.template || payload || {};
         templateLinkCache.set(templateId, {
           name: String(template.name || template.title || "Template"),
-          emoji: String(template.emoji || ""),
+          icon: String(template.icon || ""),
         });
-        if (link.isConnected) {
-          link.textContent = labelFor(templateLinkCache.get(templateId));
-        }
+        if (link.isConnected) fill(templateLinkCache.get(templateId));
       },
       () => {},
     );

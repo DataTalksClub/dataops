@@ -1,3 +1,5 @@
+import { cardKind } from "../../core/card-kind.js";
+import { renderIcon } from "../../core/icons.js";
 import { createCollectionCreateButton, createPageHeader } from "../operations-overview.js";
 
 export function createCardsSurface(context) {
@@ -220,9 +222,22 @@ export function createCardsSurface(context) {
     return section;
   }
 
+  // The work snapshot already carries the Template listing; the board's own
+  // fetch only fills in when the snapshot has none.
   function templateMeta(templateId) {
     const meta = templateLabels.get(templateId);
-    return meta ? { id: templateId, ...meta } : null;
+    if (meta) return { id: templateId, ...meta };
+    const template = (state.workSnapshot.templates || []).find(
+      (candidate) => String(candidate?.id) === templateId,
+    );
+    return template
+      ? {
+          id: templateId,
+          name: String(template.name || template.id),
+          icon: String(template.icon || ""),
+          type: String(template.type || ""),
+        }
+      : null;
   }
 
   function templateLabel(templateId) {
@@ -285,7 +300,7 @@ export function createCardsSurface(context) {
     return label;
   }
 
-  // Display names (and badge emoji) come from the same /api/templates
+  // Display names (and badge icons) come from the same /api/templates
   // listing the create-card form uses. Until it answers, options fall back
   // to a short id; one refresh swaps the labels in when the listing arrives.
   async function loadTemplateLabels() {
@@ -306,7 +321,7 @@ export function createCardsSurface(context) {
           {
             id: String(template.id),
             name: String(template.name || template.title || template.id),
-            emoji: String(template.emoji || ""),
+            icon: String(template.icon || ""),
             type: String(template.type || ""),
           },
         ]),
@@ -397,9 +412,14 @@ export function createCardsSurface(context) {
     card.type = "button";
     card.className = `ops-workflow-card workflow-board-card ops-risk-${item.risk || "low"}`;
     card.dataset.cardId = item.cardId;
-    const templateId = String(item.templateId || "");
+    // Cards made before Templates (the Trello import) name their kind with a
+    // type tag; the badge then points at that kind's Template.
+    const kind = item.templateId
+      ? null
+      : cardKind(state.workSnapshot.cardsById?.get(item.cardId), state.workSnapshot.templates);
+    const templateId = String(item.templateId || kind?.templateId || "");
     const template = templateId ? templateMeta(templateId) : null;
-    const templateName = templateId ? templateLabel(templateId) : "";
+    const templateName = item.templateId ? templateLabel(templateId) : kind?.name || "";
     card.setAttribute(
       "aria-label",
       templateName ? `Open ${templateName} card ${item.title}` : `Open card ${item.title}`,
@@ -415,9 +435,10 @@ export function createCardsSurface(context) {
       const badge = document.createElement("span");
       badge.className = "workflow-card-template";
       if (template?.type) badge.dataset.templateType = template.type;
-      badge.textContent = template?.emoji
-        ? `${template.emoji} ${templateName}`
-        : templateName;
+      badge.append(
+        renderIcon(template?.icon || kind?.icon || "card", { size: 14 }),
+        document.createTextNode(templateName),
+      );
       badge.title = `View ${templateName} template`;
       badge.addEventListener("click", (event) => {
         event.stopPropagation();

@@ -268,6 +268,12 @@
   white-space: nowrap;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
+}/* The template's icon leads the badge in the accent, so a board of cards
+   sorts itself by kind at a glance. */
+.workflow-card-template > svg,
+.card-template-link > svg {
+  flex: none;
+  color: var(--dk-accent-default);
 }.workflow-card-template:hover {
   background: var(--dk-bg-hover);
   color: var(--dk-text-heading);

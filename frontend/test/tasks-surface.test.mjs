@@ -1301,7 +1301,7 @@ describe("Tasks surface boundary", () => {
       },
       request: async () => ({
         templates: [
-          { id: "tpl-news", name: "Newsletter", emoji: "📰", type: "newsletter" },
+          { id: "tpl-news", name: "Newsletter", icon: "newspaper", type: "newsletter" },
         ],
       }),
     });
@@ -1319,7 +1319,8 @@ describe("Tasks surface boundary", () => {
     const news = cards.find((card) => card.dataset.cardId === "news-1");
     const plain = cards.find((card) => card.dataset.cardId === "plain");
     const [badge] = findAllByClass(news, "workflow-card-template");
-    assert.equal(badge.textContent, "📰 Newsletter");
+    assert.equal(badge.textContent, "Newsletter");
+    assert.equal(badge.querySelector("svg").dataset.icon, "newspaper");
     assert.equal(badge.title, "View Newsletter template");
     assert.equal(badge.dataset.templateType, "newsletter");
     assert.equal(
