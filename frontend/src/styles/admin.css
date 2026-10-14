@@ -191,6 +191,14 @@
   width: 100%;
   min-height: 40px;
   font-weight: 400;
+}.ops-field-static {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-body);
+  font-weight: 400;
+  overflow-wrap: anywhere;
 }.ops-user-form-actions {
   display: flex;
   flex-wrap: wrap;

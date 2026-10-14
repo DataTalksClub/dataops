@@ -310,11 +310,12 @@ export function createAdminSurface(context) {
       value: user?.name || "",
       required: true,
     });
-    const emailInput = labeledInput("Email", {
-      value: user?.email || "",
-      type: "email",
-      required: true,
-    });
+    // Email is the SSO identity the user signs in with, so it is entered once
+    // at creation and shown read-only afterwards.
+    const emailInput = isEdit
+      ? null
+      : labeledInput("Email", { type: "email", required: true });
+    const emailField = emailInput ? emailInput.wrap : staticField("Email", user.email || "");
     const roleSelect = document.createElement("select");
     for (const [value, label] of Object.entries(USER_ROLE_LABELS)) {
       const option = document.createElement("option");
@@ -327,16 +328,7 @@ export function createAdminSurface(context) {
     roleLabel.className = "ops-field";
     roleLabel.append("Role", roleSelect);
 
-    const passwordInput = labeledInput(
-      isEdit ? "New password (optional)" : "Password",
-      {
-        type: "password",
-        value: "",
-        required: !isEdit,
-      },
-    );
-
-    form.append(nameInput.wrap, emailInput.wrap, roleLabel, passwordInput.wrap);
+    form.append(nameInput.wrap, emailField, roleLabel);
 
     const actions = document.createElement("div");
     actions.className = "ops-user-form-actions";
@@ -369,20 +361,14 @@ export function createAdminSurface(context) {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (userSubmitInFlight) return;
-      const payload = {
-        name: nameInput.input.value.trim(),
-        email: emailInput.input.value.trim(),
-        role: roleSelect.value,
-      };
-      if (passwordInput.input.value)
-        payload.password = passwordInput.input.value;
+      const payload = { name: nameInput.input.value.trim() };
+      if (emailInput) payload.email = emailInput.input.value.trim();
+      payload.role = roleSelect.value;
       const invalid = reportFieldValidation([
         [nameInput, payload.name ? "" : "Name is required."],
-        [emailInput, payload.email ? "" : "Email is required."],
-        [
-          passwordInput,
-          isEdit || passwordInput.input.value ? "" : "Password is required.",
-        ],
+        ...(emailInput
+          ? [[emailInput, payload.email ? "" : "Email is required."]]
+          : []),
       ]);
       if (invalid) {
         feedback.clear();
@@ -490,6 +476,18 @@ export function createAdminSurface(context) {
     label.className = "ops-field";
     label.append(labelText, input);
     return { input, wrap: label };
+  }
+
+  function staticField(labelText, value) {
+    const wrap = document.createElement("div");
+    wrap.className = "ops-field";
+    const label = document.createElement("span");
+    label.textContent = labelText;
+    const text = document.createElement("span");
+    text.className = "ops-field-static";
+    text.textContent = value;
+    wrap.append(label, text);
+    return wrap;
   }
   function renderAdminSurface(model) {
     const section = document.createElement("section");

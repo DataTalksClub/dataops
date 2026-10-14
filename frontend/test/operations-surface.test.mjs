@@ -827,7 +827,6 @@ describe("Operations surface boundary", () => {
     const inputs = harness.documentList.querySelectorAll("input");
     inputs[0].value = "Synthetic User";
     inputs[1].value = "synthetic-user@datatalks.club";
-    inputs[2].value = "1111";
     await submitUserForm(harness.documentList);
     await nextTicks(3);
     harness.api.renderUsersSurfaceView();
@@ -955,7 +954,18 @@ describe("Operations surface boundary", () => {
     const graceRow = findAllByClass(harness.documentList, "ops-user-row").find(
       (row) => row.textContent.includes("Grace"),
     );
+    const inputsBeforeEdit = harness.document.created.filter(
+      (element) => element.tagName === "INPUT",
+    ).length;
     await findByText(graceRow, "Edit", "button").click();
+    const editInputs = harness.document.created
+      .filter((element) => element.tagName === "INPUT")
+      .slice(inputsBeforeEdit);
+    assert.equal(editInputs.length, 1, "only the name is an editable input");
+    assert.equal(
+      findAllByClass(harness.documentList, "ops-field-static")[0].textContent,
+      "grace@datatalks.club",
+    );
     const roleSelect = harness.document.created
       .filter((element) => element.tagName === "SELECT")
       .at(-1);
@@ -1031,17 +1041,21 @@ describe("Operations surface boundary", () => {
     );
     assert.deepEqual(
       validation.map((node) => node.textContent),
-      ["Name is required.", "Email is required.", "Password is required."],
+      ["Name is required.", "Email is required."],
     );
     const inputs = harness.document.created.filter(
       (element) => element.tagName === "INPUT",
     );
-    const [name, email, password] = inputs.slice(-3);
+    const [name, email] = inputs.slice(-2);
+    assert.equal(
+      inputs.some((input) => input.type === "password"),
+      false,
+      "sign-in is through SSO, so the form has no password field",
+    );
     assert.equal(name.getAttribute("aria-invalid"), "true");
     assert.equal(name.focused, true, "focus moves to the first invalid field");
     name.value = "Valeriia";
     email.value = "valeriia@datatalks.club";
-    password.value = "temporary-password";
     await submitUserForm(harness.documentList);
     const created = harness.requests.find(
       (entry) => entry.url === "/api/users" && entry.options.method === "POST",
@@ -1050,14 +1064,24 @@ describe("Operations surface boundary", () => {
       name: "Valeriia",
       email: "valeriia@datatalks.club",
       role: "operator",
-      password: "temporary-password",
     });
 
     harness.api.renderUsersSurfaceView();
     const graceRow = findAllByClass(harness.documentList, "ops-user-row").find(
       (row) => row.textContent.includes("Grace"),
     );
+    const inputsBeforeEdit = harness.document.created.filter(
+      (element) => element.tagName === "INPUT",
+    ).length;
     await findByText(graceRow, "Edit", "button").click();
+    const editInputs = harness.document.created
+      .filter((element) => element.tagName === "INPUT")
+      .slice(inputsBeforeEdit);
+    assert.equal(editInputs.length, 1, "only the name is an editable input");
+    assert.equal(
+      findAllByClass(harness.documentList, "ops-field-static")[0].textContent,
+      "grace@datatalks.club",
+    );
     const roleSelect = harness.document.created
       .filter((element) => element.tagName === "SELECT")
       .at(-1);
@@ -1071,7 +1095,6 @@ describe("Operations surface boundary", () => {
     );
     assert.deepEqual(jsonBody(edited), {
       name: "Grace",
-      email: "grace@datatalks.club",
       role: "admin",
     });
 
