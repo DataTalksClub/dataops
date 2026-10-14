@@ -1081,20 +1081,22 @@ describe("Finance surface boundary", () => {
     await finance.renderBookkeepingSurface();
 
     const surface = document.surface;
-    assert.match(surface.innerHTML, /Record and review the ledger/);
-    assert.match(surface.innerHTML, /Match transaction evidence/);
-    assert.match(surface.innerHTML, /Close the month with a package/);
+    // Every section shares one header: a title, no eyebrow.
+    assert.match(surface.innerHTML, /<h2 id="bookkeeping-ledger-heading" class="dk-section-header__title">Ledger<\/h2>/);
+    assert.match(surface.innerHTML, /<h2 id="bookkeeping-evidence-heading" class="dk-section-header__title">Evidence<\/h2>/);
+    assert.match(surface.innerHTML, /<h2 id="bookkeeping-package-heading" class="dk-section-header__title">Monthly package<\/h2>/);
+    assert.doesNotMatch(surface.innerHTML, /section-kicker/);
     // The forwarded-invoice intake sits below the monthly package instead of
     // opening the page, and the received-intake recovery form has moved off
     // the page entirely (it lives on Admin now).
     assert.ok(
       surface.innerHTML.indexOf("data-invoice-review") >
-        surface.innerHTML.indexOf("Close the month with a package"),
+        surface.innerHTML.indexOf("bookkeeping-package-heading"),
       "invoice intake renders below the monthly-package section",
     );
     assert.match(
       surface.querySelector("[data-invoice-review]").innerHTML,
-      /Invoice ledger/,
+      /Forwarded invoices/,
     );
     assert.equal(
       surface
@@ -1123,10 +1125,9 @@ describe("Finance surface boundary", () => {
     assert.match(ledger, /€40\.00/);
     assert.match(ledger, /Referenced/);
     assert.match(ledger, /Provider Two/);
-    assert.match(
-      ledger,
-      /<button type="button" class="evidence-state is-missing" data-attach-evidence="entry-2">Missing<\/button>/,
-    );
+    // Missing evidence is a status badge with its own Attach action.
+    assert.match(ledger, /<span class="dk-badge dk-badge--danger">Missing<\/span\s*>/);
+    assert.match(ledger, /data-attach-evidence="entry-2">Attach<\/button>/);
     assert.match(ledger, /VAT/);
     assert.match(
       surface.querySelector("[data-vat-summary]").innerHTML,
@@ -1495,7 +1496,10 @@ describe("Finance surface boundary", () => {
       false,
     );
     assert.match(review.innerHTML, /Package ready/);
-    assert.match(review.innerHTML, /0\s*transactions and 3 documents inside/);
+    assert.match(
+      review.innerHTML,
+      /<span class="dk-mono">0<\/span>\s*transactions and <span class="dk-mono">3<\/span> documents inside/,
+    );
     await review.dispatch("click", {
       target: {
         closest: (selector) =>

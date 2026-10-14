@@ -273,14 +273,21 @@ test('bookkeeping at 375x667: period controls reflow, the shared stat strip keep
     expect(await value.evaluate(node => getComputedStyle(node).fontFamily)).toContain(monoFamily);
     expect(await value.evaluate(node => getComputedStyle(node).color)).toBe(await page.locator('h1').evaluate(node => getComputedStyle(node).color));
   }
-  for (const control of await page.locator('.bookkeeping-lens-nav button,.bookkeeping-lens-nav select').all()) {
-    expect((await control.boundingBox()).height).toBeGreaterThanOrEqual(44);
-  }
+  // The period is one row on a phone: [prev] [year] [month] [next]. All
+  // years in the year select stands in for the All months button.
+  await expect(page.locator('[data-lens-toggle]')).toBeHidden();
+  const periodControls = await page.locator('.bookkeeping-lens-nav :is(button, select):visible').all();
+  expect(periodControls).toHaveLength(4);
+  const periodBoxes = await Promise.all(periodControls.map((control) => control.boundingBox()));
+  for (const box of periodBoxes) expect(box.height).toBeGreaterThanOrEqual(44);
+  expect(new Set(periodBoxes.map((box) => Math.round(box.y))).size).toBe(1);
   const previous = await page.locator('[data-lens-prev]').boundingBox();
   expect(previous.width).toBeGreaterThanOrEqual(44);
   await page.locator('#bookkeeping-ledger-heading').scrollIntoViewIfNeeded();
   await expect(page.locator('#bookkeeping-ledger-heading')).toBeInViewport();
-  expect(await page.locator('#main-content').evaluate(node => node.scrollTop)).toBeGreaterThan(0);
+  // Main is the scroller: the page overflows it, not the document.
+  expect(await page.locator('#main-content').evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
+  expect(await page.evaluate(() => document.scrollingElement.scrollHeight <= innerHeight)).toBe(true);
 
   // The seeded month has no open items, so the close panel is collapsed to
   // its one-line summary; expanding it reveals the reconcile list.

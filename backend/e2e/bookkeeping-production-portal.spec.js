@@ -199,14 +199,13 @@ test.describe("production portal bookkeeping", () => {
       expect(response.ok(), await response.text()).toBe(true);
     }
     await gotoOwnedBookkeepingPage(page);
-    const year = page.getByRole("combobox", { name: "Select year", exact: true });
-    const month = page.getByRole("combobox", { name: "Select month", exact: true });
+    const year = page.getByRole("combobox", { name: "Year", exact: true });
+    const month = page.getByRole("combobox", { name: "Month", exact: true });
     await expect(year).toBeVisible();
     await expect(month.locator("option")).toHaveText([
       "All months (full year)",
-      "01 - January", "02 - February", "03 - March", "04 - April",
-      "05 - May", "06 - June", "07 - July", "08 - August",
-      "09 - September", "10 - October", "11 - November", "12 - December",
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December",
     ]);
     await month.selectOption("all");
     await year.selectOption("2024");

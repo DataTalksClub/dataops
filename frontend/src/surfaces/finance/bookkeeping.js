@@ -8,7 +8,7 @@ import {
   ledgerTableMarkup,
   packageReviewMarkup,
   transactionOptionsMarkup,
-  worklistHintText,
+  worklistHintMarkup,
   worklistMarkup,
   worklistRowsFromOpenItems,
 } from "./bookkeeping-views.js";
@@ -189,8 +189,8 @@ export function createBookkeepingSurface(context) {
       // Narrow screens collapse the panel to its one-line summary when the
       // month is clear; open items (or desktop) keep it expanded.
       worklistSection.open = viewportWidth() > 820 || rows.length > 0;
-      surface.querySelector("[data-worklist-hint]").textContent =
-        worklistHintText(rows);
+      surface.querySelector("[data-worklist-hint]").innerHTML =
+        worklistHintMarkup(rows);
     }
     function renderLedger() {
       const filters = Object.fromEntries(
@@ -331,9 +331,9 @@ export function createBookkeepingSurface(context) {
       );
       const documentsHost = surface.querySelector(".bookkeeping-documents");
       if (!documents.length) {
-        documentsHost.innerHTML = html`<div class="honest-state">
-            <strong>No private documents uploaded</strong>
-            <p>Open “Upload evidence PDF” to add the first piece of evidence.</p>
+        documentsHost.innerHTML = html`<div class="dk-empty dk-empty--compact">
+            <p class="dk-empty__title">No private documents uploaded</p>
+            <p class="dk-empty__desc">Open “Upload evidence PDF” to add the first piece of evidence.</p>
           </div>`;
         return;
       }
@@ -363,9 +363,9 @@ export function createBookkeepingSurface(context) {
       reportInput.value = isMonth ? lens : "";
       surface.querySelector("[data-report]").disabled = !isMonth;
       if (!isMonth) {
-        review.innerHTML = html`<div class="honest-state">
-            <strong>Choose a month to review</strong>
-            <p>
+        review.innerHTML = html`<div class="dk-empty dk-empty--compact">
+            <p class="dk-empty__title">Choose a month to review</p>
+            <p class="dk-empty__desc">
               Pick a month with the lens above — the package review follows the
               month being closed.
             </p>
@@ -403,7 +403,7 @@ export function createBookkeepingSurface(context) {
       );
       if (businessAccounts.length < 2)
         preflightRows.push(
-          html`<p class="preflight-row">
+          html`<p class="dk-callout dk-callout--warning">
             Set up two business accounts in Evidence before preparing a monthly package.
           </p>`,
         );
@@ -415,9 +415,9 @@ export function createBookkeepingSurface(context) {
           </p>`
         : "";
       const report = monthReport();
-      const preview = html`${monthEntries.length} transaction${monthEntries.length === 1 ? "" : "s"} ·
-        ${evidenceDocs.length} linked evidence document${evidenceDocs.length === 1 ? "" : "s"}
-        · ${excludedCount} tax/health-insurance ${excludedCount === 1 ? "entry" : "entries"} kept out`;
+      const preview = html`<span class="dk-mono">${monthEntries.length}</span> transaction${monthEntries.length === 1 ? "" : "s"} ·
+        <span class="dk-mono">${evidenceDocs.length}</span> linked evidence document${evidenceDocs.length === 1 ? "" : "s"}
+        · <span class="dk-mono">${excludedCount}</span> tax/health-insurance ${excludedCount === 1 ? "entry" : "entries"} kept out`;
       review.innerHTML = packageReviewMarkup({
         title: monthLabel(lens),
         preflightRows,
@@ -507,11 +507,11 @@ export function createBookkeepingSurface(context) {
                 </tbody>
               </table>
             </div>`
-          : html`<div class="honest-state">
-              <strong>
+          : html`<div class="dk-empty dk-empty--compact">
+              <p class="dk-empty__title">
                 No VAT recorded${year ? ` in ${escapeHtml(year)}` : ""}
-              </strong>
-              <p>
+              </p>
+              <p class="dk-empty__desc">
                 Set a VAT amount on income or expense entries to build the VAT
                 report.
               </p>

@@ -41,7 +41,7 @@ export function mountBookkeepingNavigation({
     monthSelect.innerHTML = [
       '<option value="all">All months (full year)</option>',
       ...Object.entries(MONTH_NAMES).sort(([a], [b]) => a.localeCompare(b)).map(
-        ([m, name]) => `<option value="${m}">${m} - ${name}</option>`,
+        ([m, name]) => `<option value="${m}">${name}</option>`,
       ),
     ].join("");
 

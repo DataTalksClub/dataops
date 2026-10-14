@@ -71,19 +71,47 @@ body:not([data-workspace-view="docs"]) .knowledge-tools { display: none; }
      row and card links (block boxes) get the metric as a min-height. */
   #main-content a:not([class]) { padding-block: var(--dk-space-4); }
   #main-content a[class]:not([class*="dk-"]) { min-height: var(--dk-size-touch); }
-  .bookkeeping-lens-nav { flex-wrap: wrap; }
-  .bookkeeping-lens-selectors { flex-wrap: wrap; min-width: 0; }
-  .bookkeeping-lens-field select { max-width: 100%; }
 }
 
 .ops-queue-persona-filter .dk-mono, .ops-queue-total .dk-mono, .ops-queue-due,
 .bookkeeping-surface .dk-mono { font-variant-numeric: tabular-nums; }
 .bookkeeping-surface .bookkeeping-close-state { display: grid; gap: var(--dk-space-4); }
-.bookkeeping-ledger-head { align-items: flex-end; padding: var(--dk-space-4); }
-.bookkeeping-ledger-head__main { flex: 1 1 320px; min-width: 0; display: grid; gap: var(--dk-space-1); }
-.bookkeeping-ledger-head__main p { margin: 0; }
-.bookkeeping-ledger-head__hint { color: var(--dk-text-muted); font-size: var(--dk-text-md); }
-/* On touch the ledger's evidence state is a 44px tinted button, not a stretched pill. */
-@media (max-width: 820px), (pointer: coarse) {
-  .bookkeeping-surface .bookkeeping-ledger button.evidence-state { border-radius: var(--dk-radius-md); padding: 0 var(--dk-space-3); }
+/* Finance sections share one header: title, a one-line hint, actions on the
+   right, on the section's surface with a hairline under it. */
+.finance-section-head { align-items: center; padding: var(--dk-space-4); border-bottom: 1px solid var(--dk-border-default); background: var(--dk-bg-surface); }
+.finance-section-head__main { flex: 1 1 320px; min-width: 0; display: grid; gap: var(--dk-space-1); }
+.finance-section-head__main > * { margin: 0; }
+.finance-section-head__hint { color: var(--dk-text-muted); font-size: var(--dk-text-md); }
+.finance-section-head__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-gap-control); }
+.finance-subhead { margin: 0 0 var(--dk-space-2); color: var(--dk-text-heading); font-size: var(--dk-text-md); font-weight: var(--dk-weight-semibold); }
+.finance-inline-field { display: inline-flex; align-items: center; gap: var(--dk-space-2); color: var(--dk-text-muted); font-size: var(--dk-text-sm); font-weight: var(--dk-weight-medium); }
+.finance-inline-field select { width: auto; }
+/* Empty states sit in the section body, not in a second bordered box. */
+.bookkeeping-surface .dk-empty { justify-items: start; text-align: left; }
+.bookkeeping-documents > .dk-empty,
+.bookkeeping-vat-summary > .dk-empty,
+.bookkeeping-package-review > .dk-empty { padding: var(--dk-space-4); }
+.invoice-review-section [data-invoice-list] > .dk-empty { padding: var(--dk-space-4) 0; }
+.bookkeeping-surface .bookkeeping-ledger > .dk-empty { padding: var(--dk-space-6) var(--dk-space-4); }
+.bookkeeping-private-statements { display: grid; padding: var(--dk-space-4); }
+.bookkeeping-private-statements [data-private-statements] { display: grid; gap: var(--dk-space-2); color: var(--dk-text-muted); font-size: var(--dk-text-md); }
+.bookkeeping-vat-summary { padding: 0; }
+/* Missing evidence is a status badge with its own Attach action. */
+.evidence-missing { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-2); }
+/* Worklist summary is the section header; the chevron leads it on mobile. */
+.bookkeeping-worklist-summary > .finance-section-head { flex: 1 1 auto; border-bottom: 0; }
+.bookkeeping-worklist-section[open] > .bookkeeping-worklist-summary { border-bottom: 1px solid var(--dk-border-default); }
+.bookkeeping-worklist-hint { margin: 0; color: var(--dk-text-muted); font-size: var(--dk-text-sm); white-space: nowrap; }
+/* Period: [prev] [year] [month] [next] on one row, All months beside it; on
+   a phone the selects share the row and All years in the year select
+   replaces the All months button. */
+.bookkeeping-lens-nav { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--dk-space-2); }
+.bookkeeping-lens-field { display: block; min-width: 0; margin: 0; }
+.bookkeeping-lens-all { margin-left: var(--dk-space-2); }
+@media (max-width: 820px) {
+  .bookkeeping-lens-field { flex: 1 1 0; }
+  .bookkeeping-lens-field select { width: 100%; }
+  .bookkeeping-lens-all { display: none; }
+  .finance-section-head { padding: var(--dk-space-3) var(--dk-space-4); }
+  .finance-section-head__main { flex-basis: 100%; }
 }

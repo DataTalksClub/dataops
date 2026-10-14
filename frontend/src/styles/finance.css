@@ -161,8 +161,7 @@ body[data-workspace-view="sponsors"] .document-list {
   font-size: 16px;
 }.section-count,
 .status-label,
-.finance-status,
-.evidence-state {
+.finance-status {
   display: inline-flex;
   width: fit-content;
   align-items: center;
@@ -216,39 +215,7 @@ body[data-workspace-view="sponsors"] .document-list {
    It answers "what is left for this month" above the fold (#242). */.bookkeeping-monthlens {
   display: grid;
   gap: var(--dk-space-4);
-}.bookkeeping-lens-nav {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-.bookkeeping-lens-steppers {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.bookkeeping-lens-selectors {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-.bookkeeping-lens-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--dk-text-heading);
-  font-size: 13px;
-  font-weight: 600;
-  margin: 0;
-}
-.bookkeeping-lens-field .lens-label {
-  color: var(--dk-text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.bookkeeping-lens-month {
+}.bookkeeping-lens-month {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -467,19 +434,15 @@ body[data-workspace-view="sponsors"] .document-list {
   display: grid;
   gap: 14px;
   border-bottom: 1px solid var(--dk-border-default);
-  padding: 20px;
+  padding: var(--dk-space-4);
 }.bookkeeping-package-review h4:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 16px;
   font-weight: 600;
-}.bookkeeping-preflight {
+}/* The statement checklist is a plain list in the review, not a box in it. */.bookkeeping-preflight {
   display: grid;
-  gap: 8px;
-  padding: 14px 18px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
+  gap: var(--dk-space-2);
 }.preflight-row {
   margin: 0;
   font-size: 13px;
@@ -673,12 +636,7 @@ body[data-workspace-view="sponsors"] .document-list {
   background: var(--dk-bg-muted);
   padding: 14px;
   margin-top: 10px;
-}/* The all-months totals sentence is long: let it wrap on the right instead
-   of squeezing the ledger heading into a sliver. */
-.bookkeeping-ledger-section .section-header > div {
-  flex: 1 0 auto;
-}
-.bookkeeping-ledger-header-actions {
+}.bookkeeping-ledger-header-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -772,25 +730,6 @@ body[data-workspace-view="sponsors"] .document-list {
   white-space: nowrap;
 }.ledger-amount.income {
   color: var(--dk-success-text);
-}.evidence-state.is-attached {
-  border: 1px solid transparent;
-  background: var(--dk-success-bg);
-  color: var(--dk-success-text);
-}/* The "Missing" evidence chip is a button; restate the chip skin above the
-   generic bookkeeping button rule rather than relying on source order. */.bookkeeping-surface .bookkeeping-ledger button.evidence-state {
-  min-height: 22px;
-  padding: 2px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--dk-radius-full);
-  background: var(--dk-danger-bg);
-  color: var(--dk-danger-text);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 120ms ease;
-}.bookkeeping-surface .bookkeeping-ledger button.evidence-state:hover {
-  background: var(--dk-danger-text);
-  color: var(--dk-text-on-accent);
 }.dialog-fields .required-mark {
   color: var(--dk-danger-text);
   font-style: normal;
@@ -849,22 +788,6 @@ body[data-workspace-view="sponsors"] .document-list {
   padding: 2px 10px;
   font-size: 12px;
   border-radius: var(--dk-radius-md);
-}.bookkeeping-private-statements {
-  margin: 20px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  padding: 14px;
-  background: var(--dk-bg-muted);
-}.bookkeeping-private-statements legend {
-  color: var(--dk-text-heading);
-  padding: 0 6px;
-  font-size: 13px;
-  font-weight: 600;
-}.bookkeeping-private-statements [data-private-statements] {
-  display: grid;
-  gap: 8px;
-  color: var(--dk-text-muted);
-  font-size: 13px;
 }.checkbox-label {
   display: flex !important;
   align-items: flex-start;
@@ -882,40 +805,6 @@ body[data-workspace-view="sponsors"] .document-list {
   background: var(--dk-bg-surface);
 }.bookkeeping-package label {
   width: 200px;
-}.bookkeeping-vat {
-  border-top: 1px solid var(--dk-border-default);
-  padding: 20px;
-  background: var(--dk-bg-surface);
-}.bookkeeping-vat .section-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 0;
-  background: transparent;
-  padding: 0 0 14px;
-}.bookkeeping-vat h4:not([class*="dk-"]) {
-  color: var(--dk-text-heading);
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0 0 3px;
-}.bookkeeping-vat .section-header p:not([class*="dk-"]) {
-  max-width: 600px;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--dk-text-muted);
-}
-.bookkeeping-surface .section-header p:not([class*="dk-"]) {
-  max-width: 600px;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--dk-text-muted);
-  margin: 0;
-}.bookkeeping-vat .section-header label {
-  width: 160px;
-}.bookkeeping-vat-summary {
-  padding: 0;
 }.crm-views {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1659,13 +1548,7 @@ body[data-workspace-view="sponsors"] .document-list {
   }
 }
 
-/* Keep year/month navigation on the compact mobile row used by the ledger. */
 @media (max-width: 820px) {
-  .bookkeeping-lens-selectors { flex: 1 1 auto; min-width: 0; gap: 4px; }
-  .bookkeeping-lens-field { min-width: 0; }
-  .bookkeeping-lens-field:last-child { flex: 1; }
-  .bookkeeping-lens-field .lens-label { display: none; }
-  .bookkeeping-lens-steppers { flex: 0 0 auto; gap: 2px; }
   .bookkeeping-export-actions { flex-wrap: wrap; }
   .bookkeeping-ledger-header-actions { min-width: 0; }
 }

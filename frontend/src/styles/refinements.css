@@ -93,7 +93,6 @@ body[data-workspace-view="sponsors"] .document-list {
 }.section-count,
 .status-label,
 .finance-status,
-.evidence-state,
 .ops-user-badge {
   border: 1px solid transparent;
   background: var(--dk-info-bg);
@@ -172,11 +171,6 @@ body[data-workspace-view="sponsors"] .document-list {
 .crm-booking-row p {
   overflow-wrap: anywhere;
   line-height: 1.45;
-}.bookkeeping-private-statements {
-  margin: 18px;
-  background: var(--dk-bg-muted);
-}.bookkeeping-private-statements [data-private-statements] {
-  color: var(--dk-text-primary);
 }.bookkeeping-package {
   align-items: end;
   background: var(--dk-bg-muted);

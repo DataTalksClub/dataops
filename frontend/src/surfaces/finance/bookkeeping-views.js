@@ -15,24 +15,26 @@ export function closeStateMonthMarkup({
   cta,
   e,
 }) {
+  // The page header's Add entry is the one solid primary; the close CTA is
+  // secondary whatever the month state.
   const ctaButton =
     cta.kind === "worklist"
-      ? html`<button class="dk-button dk-button--primary" type="button" data-cta-worklist>
+      ? html`<button class="dk-button dk-button--secondary" type="button" data-cta-worklist>
           <span>Review <span class="dk-mono">${cta.count}</span> open item${cta.count === 1 ? "" : "s"}</span>
         </button>`
       : cta.kind === "download"
-        ? html`<button class="dk-button dk-button--primary" type="button" data-cta-download>
+        ? html`<button class="dk-button dk-button--secondary" type="button" data-cta-download>
             Download the monthly package
           </button>`
         : cta.kind === "package"
-          ? html`<button class="dk-button dk-button--primary" type="button" data-cta-package>
+          ? html`<button class="dk-button dk-button--secondary" type="button" data-cta-package>
               Prepare the monthly package
             </button>`
           : cta.kind === "export"
-            ? html`<button class="dk-button dk-button--primary" type="button" data-export-report-csv>
+            ? html`<button class="dk-button dk-button--secondary" type="button" data-export-report-csv>
                 Export report data
               </button>`
-            : html`<button class="dk-button dk-button--primary" type="button" data-cta-add>
+            : html`<button class="dk-button dk-button--secondary" type="button" data-cta-add>
                 Add the first entry
               </button>`;
   return html`<h2>${e(title)} close</h2>
@@ -58,7 +60,7 @@ export function closeStateMonthMarkup({
       </div>
       <div class="dk-stat">
         <span class="dk-stat__label">Package</span>
-        <span class="dk-stat__value">${packageReady ? "Ready" : "Pending"}</span>
+        <span class="dk-stat__value">—</span>
         <span class="dk-stat__meta">
           <span class="dk-badge dk-badge--${packageReady ? "success" : "warning"}">${packageReady ? "Complete" : "Not prepared"}</span>
         </span>
@@ -89,9 +91,9 @@ export function worklistRowsFromOpenItems({
 }
 
 // The one-line state the collapsed close panel shows next to its heading.
-export function worklistHintText(rows) {
+export function worklistHintMarkup(rows) {
   return rows.length
-    ? `${rows.length} open item${rows.length === 1 ? "" : "s"}`
+    ? html`<span class="dk-mono">${rows.length}</span> open item${rows.length === 1 ? "" : "s"}`
     : "All clear";
 }
 
@@ -184,8 +186,12 @@ export function ledgerTableMarkup({ shown, hasEvidence, lensTitle, e }) {
                     </td>
                     <td data-label="Evidence">
                       ${hasEvidence(entry.id)
-                        ? `<span class="evidence-state is-attached">Referenced</span>`
-                        : `<button type="button" class="evidence-state is-missing" data-attach-evidence="${e(entry.id)}">Missing</button>`}
+                        ? `<span class="dk-badge dk-badge--success">Referenced</span>`
+                        : html`<span class="evidence-missing"
+                            ><span class="dk-badge dk-badge--danger">Missing</span
+                            ><button type="button" class="dk-button dk-button--secondary dk-button--sm"
+                              data-attach-evidence="${e(entry.id)}">Attach</button></span
+                          >`}
                     </td>
                     <td data-label="Actions">
                       <div class="row-actions">
@@ -204,9 +210,9 @@ export function ledgerTableMarkup({ shown, hasEvidence, lensTitle, e }) {
           </tbody>
         </table>
       </div>`
-    : html`<div class="honest-state">
-        <strong>No bookkeeping entries${lensTitle ? ` in ${e(lensTitle)}` : ""}</strong>
-        <p>Adjust the filters or the month, or add an entry.</p>
+    : html`<div class="dk-empty dk-empty--compact">
+        <p class="dk-empty__title">No bookkeeping entries${lensTitle ? ` in ${e(lensTitle)}` : ""}</p>
+        <p class="dk-empty__desc">Adjust the filters or the month, or add an entry.</p>
       </div>`;
 }
 
@@ -266,10 +272,10 @@ export function packageReviewMarkup({
     ${ready
       ? html`<div class="bookkeeping-package-ready">
           <p>
-            <strong>Package ready.</strong> ${ready.transactionCount}
-            transactions and ${ready.documentCount} documents inside.
+            <strong>Package ready.</strong> <span class="dk-mono">${ready.transactionCount}</span>
+            transactions and <span class="dk-mono">${ready.documentCount}</span> documents inside.
           </p>
-          <button type="button" data-download-archive="${e(ready.id)}">
+          <button class="dk-button dk-button--secondary dk-button--sm" type="button" data-download-archive="${e(ready.id)}">
             Download package
           </button>
           <small>Link expires after five minutes.</small>

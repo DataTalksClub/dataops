@@ -2,7 +2,7 @@
 // ledger, evidence and package sections, and the entry/EUR/delete dialogs.
 // All dynamic state renders into [data-close-state], [data-worklist],
 // .bookkeeping-ledger, .bookkeeping-documents and [data-package-review].
-import { html } from "./shared.js";
+import { financeSectionHead, html } from "./shared.js";
 import { renderPageHeaderMarkup } from "../operations-overview.js";
 
 export function bookkeepingSurfaceMarkup() {
@@ -18,35 +18,31 @@ export function bookkeepingSurfaceMarkup() {
         data-monthlens
       >
         <div class="bookkeeping-lens-nav">
-          <div class="bookkeeping-lens-steppers">
-            <button
-              class="dk-icon-button bookkeeping-lens-step"
-              type="button"
-              data-lens-prev
-              aria-label="Previous month"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>
-            </button>
-            <button
-              class="dk-icon-button bookkeeping-lens-step"
-              type="button"
-              data-lens-next
-              aria-label="Next month"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>
-            </button>
-          </div>
-          <div class="bookkeeping-lens-selectors">
-            <label class="bookkeeping-lens-field"
-              ><span class="lens-label">Year</span>
-              <select class="dk-select dk-mono" data-lens-year aria-label="Select year"></select
-            ></label>
-            <label class="bookkeeping-lens-field"
-              ><span class="lens-label">Month</span>
-              <select class="dk-select dk-mono" data-lens-month-select aria-label="Select month"></select
-            ></label>
-          </div>
-          <button class="dk-button dk-button--secondary" type="button" data-lens-toggle>
+          <button
+            class="dk-icon-button bookkeeping-lens-step"
+            type="button"
+            data-lens-prev
+            aria-label="Previous month"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>
+          </button>
+          <label class="bookkeeping-lens-field"
+            ><span class="dk-visually-hidden">Year</span>
+            <select class="dk-select dk-mono" data-lens-year></select
+          ></label>
+          <label class="bookkeeping-lens-field"
+            ><span class="dk-visually-hidden">Month</span>
+            <select class="dk-select" data-lens-month-select></select
+          ></label>
+          <button
+            class="dk-icon-button bookkeeping-lens-step"
+            type="button"
+            data-lens-next
+            aria-label="Next month"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>
+          </button>
+          <button class="dk-button dk-button--secondary bookkeeping-lens-all" type="button" data-lens-toggle>
             All months
           </button>
         </div>
@@ -59,19 +55,12 @@ export function bookkeepingSurfaceMarkup() {
         open
       >
         <summary class="bookkeeping-worklist-summary">
-          <header class="section-header">
-            <div>
-              <p class="section-kicker">Needs attention</p>
-              <h3 id="bookkeeping-worklist-heading">
-                Fix what the close is missing
-              </h3>
-              <p>
-                Every open item for this month with its fix one click away —
-                the monthly reconcile list, made actionable.
-              </p>
-            </div>
-            <p class="bookkeeping-worklist-hint" data-worklist-hint></p>
-          </header>
+          ${financeSectionHead({
+            id: "bookkeeping-worklist-heading",
+            title: "Needs attention",
+            hint: "Every open item for this month, each with its fix.",
+            actions: html`<p class="bookkeeping-worklist-hint" data-worklist-hint></p>`,
+          })}
         </summary>
         <div class="bookkeeping-worklist" data-worklist aria-live="polite"></div>
       </details>
@@ -80,18 +69,11 @@ export function bookkeepingSurfaceMarkup() {
         class="bookkeeping-section bookkeeping-ledger-section"
         aria-labelledby="bookkeeping-ledger-heading"
       >
-        <header class="dk-section-header bookkeeping-ledger-head">
-          <div class="bookkeeping-ledger-head__main">
-            <p class="section-kicker">Ledger</p>
-            <h3 id="bookkeeping-ledger-heading" class="dk-section-header__title">
-              Record and review the ledger
-            </h3>
-            <p class="bookkeeping-ledger-head__hint">
-              Transactions for the selected period. Open an entry only when it
-              needs work.
-            </p>
-          </div>
-          <div class="bookkeeping-ledger-header-actions">
+        ${financeSectionHead({
+          id: "bookkeeping-ledger-heading",
+          title: "Ledger",
+          hint: "Transactions for the selected period. Open an entry only when it needs work.",
+          actions: html`<div class="bookkeeping-ledger-header-actions">
             <p class="bookkeeping-totals" aria-live="polite"></p>
             <div class="bookkeeping-export-actions">
               <button
@@ -119,8 +101,8 @@ export function bookkeepingSurfaceMarkup() {
                 Full CSV
               </button>
             </div>
-          </div>
-        </header>
+          </div>`,
+        })}
         <div class="dk-toolbar bookkeeping-filters">
           <label
             >Search
@@ -149,21 +131,14 @@ export function bookkeepingSurfaceMarkup() {
         class="bookkeeping-section bookkeeping-evidence"
         aria-labelledby="bookkeeping-evidence-heading"
       >
-        <header class="section-header">
-          <div>
-            <p class="section-kicker">Evidence</p>
-            <h3 id="bookkeeping-evidence-heading">
-              Match transaction evidence
-            </h3>
-            <p>
-              Private PDFs grouped by month, each connected to the ledger entry
-              it supports.
-            </p>
-          </div>
-          <button class="quiet-button" type="button" data-setup-accounts disabled>
+        ${financeSectionHead({
+          id: "bookkeeping-evidence-heading",
+          title: "Evidence",
+          hint: "Private PDFs grouped by month, each linked to the ledger entry it supports.",
+          actions: html`<button class="dk-button dk-button--secondary dk-button--sm" type="button" data-setup-accounts disabled>
             Set up business accounts
-          </button>
-        </header>
+          </button>`,
+        })}
         <details class="bookkeeping-upload-panel">
           <summary>Upload evidence PDF</summary>
           <div class="bookkeeping-upload">
@@ -192,7 +167,7 @@ export function bookkeepingSurfaceMarkup() {
               <select data-transaction>
                 <option value="">No transaction</option>
               </select></label
-            ><button class="primary-button" data-upload>Upload PDF</button>
+            ><button class="dk-button dk-button--secondary" data-upload>Upload PDF</button>
           </div>
         </details>
         <div class="bookkeeping-documents" aria-live="polite">
@@ -204,50 +179,48 @@ export function bookkeepingSurfaceMarkup() {
         class="bookkeeping-section bookkeeping-package-section"
         aria-labelledby="bookkeeping-package-heading"
       >
-        <header class="section-header">
-          <div>
-            <p class="section-kicker">Monthly package</p>
-            <h3 id="bookkeeping-package-heading">
-              Close the month with a package
-            </h3>
-            <p>
-              Review what the archive will contain — transactions, evidence,
-              statements — before creating it.
-            </p>
-          </div>
-        </header>
+        ${financeSectionHead({
+          id: "bookkeeping-package-heading",
+          title: "Monthly package",
+          hint: "What the archive will contain, before you create it.",
+        })}
         <div class="bookkeeping-package-review" data-package-review></div>
-        <fieldset class="bookkeeping-private-statements">
-          <legend>Optional private-account statements</legend>
+        <div
+          class="bookkeeping-private-statements"
+          role="group"
+          aria-labelledby="bookkeeping-private-statements-heading"
+        >
+          <h3 id="bookkeeping-private-statements-heading" class="finance-subhead">
+            Optional private-account statements
+          </h3>
           <div data-private-statements>No eligible private statements.</div>
-        </fieldset>
+        </div>
         <div class="bookkeeping-package">
           <label>Report month <input type="month" data-report-month /></label
-          ><button class="primary-button" data-report>
+          ><button class="dk-button dk-button--secondary" data-report>
             Create monthly package
           </button>
         </div>
-        <section class="bookkeeping-vat" aria-labelledby="bookkeeping-vat-heading">
-          <header class="section-header">
-            <div>
-              <h4 id="bookkeeping-vat-heading">VAT summary</h4>
-              <p>
-                Value-added tax recorded on income and expense entries. Tax and
-                health-insurance entries stay out of the monthly package but
-                their VAT payments appear here.
-              </p>
-            </div>
-            <label
-              >VAT year
-              <select data-vat-year><option value="">All years</option></select></label
-            >
-          </header>
-          <div class="bookkeeping-vat-summary" data-vat-summary aria-live="polite">
-            Loading VAT summary…
-          </div>
-        </section>
       </section>
-      <section class="bookkeeping-section invoice-review-section" data-invoice-review></section>
+      <section
+        id="bookkeeping-vat"
+        class="bookkeeping-section bookkeeping-vat"
+        aria-labelledby="bookkeeping-vat-heading"
+      >
+        ${financeSectionHead({
+          id: "bookkeeping-vat-heading",
+          title: "VAT summary",
+          hint: "VAT on income and expenses, including tax and health-insurance payments kept out of the package.",
+          actions: html`<label class="finance-inline-field"
+              >VAT year
+              <select class="dk-select" data-vat-year><option value="">All years</option></select></label
+            >`,
+        })}
+        <div class="bookkeeping-vat-summary" data-vat-summary aria-live="polite">
+          Loading VAT summary…
+        </div>
+      </section>
+      <section class="bookkeeping-section invoice-review-section" aria-labelledby="invoice-review-heading" data-invoice-review></section>
       <dialog class="surface-dialog bookkeeping-entry-dialog">
         <form method="dialog" novalidate>
           <header>

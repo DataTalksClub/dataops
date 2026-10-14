@@ -317,9 +317,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
 }/* ── Slice 4 review round 3 (#229): quantities, ramps, mobile floors ──── *//* Counts, dates, and amounts use aligned figures in the UI font. */.newsletter-period header span,
 .calendar-period ~ span,
 .planner-count,
-.section-count,
-.bookkeeping-totals,
-.ledger-amount {
+.section-count {
   font-family: var(--dk-font-sans);
   font-variant-numeric: tabular-nums;
 }/* Calendar attention banners follow the severity ramps: warnings in the
@@ -355,14 +353,12 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
     display: flex;
     align-items: center;
     min-height: 44px;
-  }/* Primary content (ledger, bookings) precedes the filter controls. The
-     filters sit inside their section (bookkeeping) or the two-pane master
-     (sponsors), so those become the flex boxes. */.bookkeeping-surface .bookkeeping-ledger-section,
-.sponsor-crm-surface .crm-master {
+  }/* Sponsors: bookings precede the filter controls inside the two-pane
+     master. (The bookkeeping ledger keeps its toolbar above the records at
+     every width, so focus order and visual order agree.) */.sponsor-crm-surface .crm-master {
     display: flex;
     flex-direction: column;
-  }.bookkeeping-surface .bookkeeping-filters,
-.sponsor-crm-surface .crm-master .crm-filters {
+  }.sponsor-crm-surface .crm-master .crm-filters {
     order: 9;
   }
 }/* ── Slice 5 review round 1 (#229): knowledge family, panels, finance r2 ── *//* Docs and Admin share the knowledge-family header: eyebrow, H1, subtitle on
@@ -606,9 +602,9 @@ body[data-workspace-view] .task-modal-panel button,
 /* On desktop the Docs quality card carries its own filters; the sidebar
    filters section would be an empty husk there. Mobile keeps it in the
    drawer. */
-/* Ledger amounts and totals use aligned figures in the UI font. */.ledger-amount,
+/* Ledger amounts and totals are data: the markup sets them in mono
+   (.dk-mono); this only sizes them. */.ledger-amount,
 .bookkeeping-totals {
-  font-family: var(--dk-font-sans);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
   font-weight: 500;

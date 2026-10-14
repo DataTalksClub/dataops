@@ -142,9 +142,10 @@ body[data-workspace-view="sponsors"] .library-view {
     border: 0;
     padding: 4px 0;
     overflow-wrap: anywhere;
-  }.bookkeeping-table-wrap td::before {
+  }/* The folded label is a label, even beside a mono value. */.bookkeeping-table-wrap td::before {
     color: var(--dk-text-muted);
     content: attr(data-label);
+    font-family: var(--dk-font-sans);
     font-size: 12px;
     font-weight: 600;
   }.bookkeeping-table-wrap td:last-child {
@@ -462,13 +463,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .bookkeeping-header {
     padding: 0 0 6px !important;
   }
-  .bookkeeping-lens-nav {
-    flex-direction: row !important;
-    align-items: center;
-  }
-  .bookkeeping-lens-nav {
-    gap: 6px !important;
-  }
   .bookkeeping-lens-month {
     display: inline-flex;
     align-items: center;
@@ -771,31 +765,6 @@ body[data-workspace-view="sponsors"] .library-view {
 
   /* ---- Bookkeeping: the close panel is one expandable summary line when
          the month is clear, and the month picker stays a single row ---- */
-  .bookkeeping-worklist-summary {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    cursor: pointer;
-  }
-  .bookkeeping-worklist-summary .section-header {
-    display: flex;
-    flex: 1 1 auto;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-    min-width: 0;
-  }
-  .bookkeeping-worklist-summary h3:not([class*="dk-"]) {
-    margin: 0 !important;
-  }
-  .bookkeeping-worklist-hint {
-    margin: 0;
-    color: var(--dk-text-muted);
-    font-size: 12px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
   .bookkeeping-lens-month {
     flex: 1 1 auto;
     min-width: 0;
@@ -806,36 +775,20 @@ body[data-workspace-view="sponsors"] .library-view {
   .bookkeeping-lens-month input {
     width: 100%;
   }
-  .bookkeeping-lens-nav {
-    flex-wrap: wrap;
-  }
   .bookkeeping-lens-step,
   .bookkeeping-lens-nav .quiet-button {
     flex: 0 0 auto;
   }
-  /* The collapsed close panel is one line: chevron, heading, state hint.
-     The section chrome and long description stay desktop-only. */
+  /* The collapsed close panel is one line: chevron, heading, state hint. */
   .bookkeeping-worklist-summary {
-    padding: 4px 10px;
+    display: flex;
+    align-items: center;
+    padding-left: var(--dk-space-4);
+    cursor: pointer;
   }
-  .bookkeeping-worklist-summary .section-header {
-    background: none;
-    border-bottom: 0;
-    padding: 0;
-    align-items: baseline;
-  }
-  .bookkeeping-worklist-summary .section-header div p:not([class*="dk-"]) {
-    display: none !important;
-  }
-  .bookkeeping-worklist-summary .section-header h3:not([class*="dk-"]) {
-    font-size: 12px !important;
-    margin: 0 !important;
-    min-width: 0;
-  }
-  .bookkeeping-worklist-hint {
-    flex: 0 0 auto;
-    font-size: 11px;
-  }
+  .bookkeeping-worklist-summary .finance-section-head { padding-left: var(--dk-space-2); }
+  .bookkeeping-worklist-summary .finance-section-head__main { flex-basis: auto; }
+  .bookkeeping-worklist-summary .finance-section-head__hint { display: none; }
   .bookkeeping-worklist-summary::-webkit-details-marker {
     display: none;
   }

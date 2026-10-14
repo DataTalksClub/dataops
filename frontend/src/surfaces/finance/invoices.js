@@ -1,3 +1,5 @@
+import { financeSectionHead } from "./shared.js";
+
 const fields = [
   ["transactionDate", "Date sent", "date"],
   ["paidDate", "Actual date paid", "date"],
@@ -76,12 +78,12 @@ export function invoiceLedgerMarkup(items, escapeHtml) {
       ),
   );
   const pending = ordered.filter((record) => record.status === "pending").length;
-  const summary = `<p class="invoice-ledger-summary">${ordered.length} invoice${ordered.length === 1 ? "" : "s"} · ${pending} pending review</p>`;
   if (!ordered.length) {
-    const empty = `<div class="honest-state"><strong>No invoice drafts received.</strong>`
-      + `<p>Forward an invoice PDF to the intake address and it appears here with extracted values.</p></div>`;
-    return `${summary}${empty}`;
+    return `<div class="dk-empty dk-empty--compact"><p class="dk-empty__title">No invoice drafts received.</p>`
+      + `<p class="dk-empty__desc">Forward an invoice PDF to the intake address and it appears here with extracted values.</p></div>`;
   }
+  const summary = `<p class="invoice-ledger-summary"><span class="dk-mono">${ordered.length}</span>`
+    + ` invoice${ordered.length === 1 ? "" : "s"} · <span class="dk-mono">${pending}</span> pending review</p>`;
   return `${summary}<div class="invoice-ledger-wrap">
 <table class="invoice-ledger">
 <thead>
@@ -235,14 +237,12 @@ export async function mountInvoiceReview(host, context) {
       headers: { "content-type": "application/json" },
     });
   const json = (method, body) => ({ method, body: JSON.stringify(body) });
-  host.innerHTML = `<header class="section-header">
-    <div>
-    <p class="section-kicker">Forwarded invoices</p>
-    <h3>Invoice ledger</h3>
-    <p>Forwarded invoices land here with extracted provider, description and price. Open a row to confirm values; verified rows publish automatically.</p>
-    </div>
-    <button type="button" data-invoice-refresh>Refresh invoices</button>
-    </header>
+  host.innerHTML = `${financeSectionHead({
+    id: "invoice-review-heading",
+    title: "Forwarded invoices",
+    hint: "Extracted from forwarded PDFs. Open a row to confirm; verified rows publish automatically.",
+    actions: `<button class="dk-button dk-button--secondary dk-button--sm" type="button" data-invoice-refresh>Refresh invoices</button>`,
+  })}
     <p aria-live="polite" data-invoice-status>
     </p>
     <details>
