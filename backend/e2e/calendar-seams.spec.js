@@ -63,7 +63,7 @@ test.beforeAll(async () => {
     } catch {
       return res.writeHead(400).end();
     }
-    const relative = pathname === "/" ? "index.html" : pathname.slice(1);
+    const relative = pathname === "/" || pathname === "/calendar" ? "index.html" : pathname.slice(1);
     if (
       pathname.includes("\\") ||
       relative !== path.posix.normalize(relative) ||
@@ -157,7 +157,7 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
     return route.fulfill({ json: { items: [] } });
   });
   await page.goto(frontendBase);
-  await page.getByRole("button", { name: "Calendar" }).click();
+  await page.getByRole("link", { name: "Calendar" }).click();
   // The planner status line carries only warnings (stale holidays, holiday
   // horizon, unavailable newsletter overlays); empty means loaded clean.
   await expect(page.locator(".calendar-surface [role='status']")).toHaveText("");
@@ -168,7 +168,7 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   await expect(page.locator(".iso-week").first()).toHaveText(/^\d+$/);
   const surface = page.locator(".calendar-surface");
   await expect(surface.getByRole("heading", { name: "Calendar", exact: true, level: 1 })).toBeVisible();
-  await expect(surface.locator(".page-header-actions").getByRole("button", { name: "Add activity", exact: true })).toBeVisible();
+  await expect(surface.locator(".dk-page-header__actions").getByRole("button", { name: "Add activity", exact: true })).toBeVisible();
   await page.screenshot({ path: path.join(shots, "calendar-demo-1280x800.png") });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ path: path.join(shots, "calendar-demo-1440x900.png") });
@@ -269,7 +269,7 @@ test("production calendar renders cross-year ISO weeks and Berlin DST boundary d
       : route.fulfill({ json: { items: [] } }),
   );
   await page.goto(frontendBase);
-  await page.getByRole("button", { name: "Calendar" }).click();
+  await page.getByRole("link", { name: "Calendar" }).click();
   const surface = page.locator(".calendar-surface");
   await expect(surface.locator("[role='status']")).toHaveText("");
   await surface.locator("select[data-view]").selectOption("week");
@@ -332,7 +332,7 @@ test("calendar grid is ready before the external overlay response", async ({ pag
   await page.route("**/api/**", (route) => new URL(route.request().url()).pathname.includes("/calendar-items")
     ? route.fallback() : route.fulfill({ json: { items: [] } }));
   await page.goto(frontendBase);
-  await page.getByRole("button", { name: "Calendar", exact: true }).click();
+  await page.getByRole("link", { name: "Calendar", exact: true }).click();
   const surface = page.locator(".calendar-surface");
   try {
     await expect(surface.locator(".calendar-activity").first()).toContainText("Synthetic Webinar");
@@ -361,7 +361,7 @@ test("calendar shared header keeps the mobile grid within the first quarter", as
     await expect(surface.getByRole("heading", { name: "Calendar", exact: true, level: 1 })).toBeVisible();
     const top = await surface.locator(".calendar-grid").evaluate((node) => node.getBoundingClientRect().top);
     expect(top).toBeLessThanOrEqual(Math.round(viewport.height * 0.25) + 2);
-    await surface.locator(".page-header-actions").getByRole("button", { name: "Add activity", exact: true }).click();
+    await surface.locator(".dk-page-header__actions").getByRole("button", { name: "Add activity", exact: true }).click();
     await expect(surface.locator("dialog[open]")).toBeVisible();
     await surface.getByRole("button", { name: "Cancel", exact: true }).click();
     await page.screenshot({ path: path.join(shots, `calendar-page-header-${viewport.width}x${viewport.height}.png`) });

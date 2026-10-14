@@ -71,7 +71,7 @@ async function expectStableRouteFocus(page) {
   const focus = await page.evaluate(() => {
     const active = document.activeElement;
     const isRouteFallback = active?.matches?.(
-      '#document-list h1, #document-list h2, #document-list h3, .workspace-nav-button.is-active, .ops-subnav-tab.is-active',
+      '#document-list h1, #document-list h2, #document-list h3, .workflow-board-card, .workspace-nav-button.is-active, .ops-subnav-tab.is-active',
     );
     return {
       connected: Boolean(active?.isConnected),
@@ -81,7 +81,8 @@ async function expectStableRouteFocus(page) {
       visible: Boolean(active && active.offsetParent !== null),
     };
   });
-  expect(focus).toEqual({
+  const activeHtml = await page.evaluate(() => document.activeElement?.outerHTML);
+  expect(focus, activeHtml).toEqual({
     connected: true,
     hiddenDialog: false,
     isBody: false,
@@ -311,13 +312,13 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const dueTask = duePayload.task || duePayload;
     await page.goto('/');
     await page.locator('#work-bell-button').click();
-    const notice = page.locator('.work-bell-item', { hasText: dueTask.description });
-    await notice.getByRole('button', { name: 'Open task' }).click();
+    const notice = page.locator('.dk-notif-item', { hasText: dueTask.description });
+    await notice.getByRole('link').click();
     await expect(page).toHaveURL(new RegExp(`/tasks\\?taskId=${dueTask.id}$`));
     await page.locator('#task-panel-close').click();
     await expect(page).toHaveURL(/\/$/);
     await page.locator('#work-bell-button').click();
-    await page.locator('#work-bell-close').click();
+    await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/$/);
 
     await page.goto('/');
@@ -352,12 +353,12 @@ test.describe('issue 156 canonical route and operator parity', () => {
       return payload.task || payload;
     };
     const desktopCount = page.locator('#work-bell-button .work-bell-count');
-    const mobileCount = page.locator('#mobile-work-bell-button .work-bell-count');
+    const mobileCount = page.locator('#work-bell-button .work-bell-count');
 
     const initialTask = await createDueTask('Initial count notification');
     await page.goto('/');
     await page.locator('#work-bell-button').click();
-    const initialItem = page.locator('.work-bell-item', { hasText: initialTask.description });
+    const initialItem = page.locator('.dk-notif-item', { hasText: initialTask.description });
     await expect(initialItem).toBeVisible();
     const initialNotifications = (await (await request.get('/api/notifications')).json()).notifications.items;
     await expect(desktopCount).toHaveText(String(initialNotifications.length));
@@ -370,7 +371,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     expect(refreshedNotifications.length).toBe(initialNotifications.length + 1);
     await page.reload();
     await page.locator('#work-bell-button').click();
-    const retryItem = page.locator('.work-bell-item', { hasText: retryTask.description });
+    const retryItem = page.locator('.dk-notif-item', { hasText: retryTask.description });
     await expect(retryItem).toBeVisible();
     await expect(desktopCount).toHaveText(String(refreshedNotifications.length));
     await expect(mobileCount).toHaveText(String(refreshedNotifications.length));
@@ -380,10 +381,10 @@ test.describe('issue 156 canonical route and operator parity', () => {
       path: `/api/notifications/${retryNotification.id}/dismiss`,
       status: 503,
     }]);
-    await retryItem.getByRole('button', { name: /Dismiss notification/ }).click();
+    await retryItem.getByRole('button', { name: /Mark read:/ }).click();
     await expect(retryItem).toBeVisible();
-    await expect(retryItem.getByRole('alert')).toContainText('Select Dismiss to retry');
-    await expect(retryItem.getByRole('button', { name: /Dismiss notification/ })).toBeFocused();
+    await expect(retryItem.getByRole('alert')).toContainText('Mark read to retry');
+    await expect(retryItem.getByRole('button', { name: /Mark read:/ })).toBeFocused();
     await expect(desktopCount).toHaveText(String(refreshedNotifications.length));
     await expect(mobileCount).toHaveText(String(refreshedNotifications.length));
     const afterFailure = (await (await request.get('/api/notifications')).json()).notifications.items;
@@ -391,7 +392,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('#work-bell-panel')).toBeVisible();
 
     await clearRouteFaults(request);
-    await retryItem.getByRole('button', { name: /Dismiss notification/ }).click();
+    await retryItem.getByRole('button', { name: /Mark read:/ }).click();
     await expect(retryItem).toHaveCount(0);
     const afterSuccess = (await (await request.get('/api/notifications')).json()).notifications.items;
     expect(afterSuccess.some((item) => item.id === retryNotification.id)).toBe(false);
@@ -642,15 +643,16 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
     await page.locator('#work-bell-button').click();
-    const notificationItem = page.locator('.work-bell-item', { hasText: dueTask.description });
-    await expect(notificationItem.getByRole('button', { name: /Dismiss notification/ })).toBeVisible();
+    const notificationItem = page.locator('.dk-notif-item', { hasText: dueTask.description });
+    await expect(notificationItem.getByRole('button', { name: /Mark read:/ })).toBeVisible();
     await expectNoSeriousA11y(page, '#work-bell-panel');
     await page.screenshot({ path: path.join(SHOTS, 'desktop-notification-dismiss-1440x900.png'), fullPage: true });
 
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator('#work-bell-button').click();
     await expectNoSeriousA11y(page, '#work-bell-panel');
     await page.screenshot({ path: path.join(SHOTS, 'mobile-notification-dismiss-390x844.png') });
-    await notificationItem.getByRole('button', { name: /Dismiss notification/ }).click();
+    await notificationItem.getByRole('button', { name: /Mark read:/ }).click();
     await expect(notificationItem).toHaveCount(0);
     await expect(page.locator('#work-bell-panel')).toBeVisible();
     const apiAfterDismiss = await (await request.get('/api/notifications')).json();
@@ -706,12 +708,12 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.getByRole('button', { name: /^Sign out/ })).toBeVisible();
     await expectNoSeriousA11y(page, '#settings-menu');
     await page.screenshot({ path: path.join(SHOTS, 'desktop-settings-sign-out-1440x900.png'), fullPage: true });
-    await page.locator('#settings-menu-close').click();
+    await page.keyboard.press('Escape');
 
     let logoutSeen = false;
     page.on('request', (req) => { if (new URL(req.url()).pathname === '/logout') logoutSeen = true; });
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.locator('#mobile-settings-button').click();
+    await page.locator('#settings-button').click();
     await page.screenshot({ path: path.join(SHOTS, 'mobile-settings-sign-out-390x844.png') });
     await page.getByRole('button', { name: /^Sign out/ }).click();
     await page.waitForURL(/\/logout$/);

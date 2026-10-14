@@ -82,7 +82,7 @@ test('grouped navigation and scoped search remain usable in both themes and resp
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await queue(page);
   for (const theme of ['light', 'dark']) {
-    await page.evaluate((value) => { document.body.classList.toggle('dark', value === 'dark'); }, theme);
+    await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.evaluate(() => {
       document.querySelectorAll('*').forEach((node) => { if (node.scrollTop) node.scrollTop = 0; });
@@ -90,13 +90,13 @@ test('grouped navigation and scoped search remain usable in both themes and resp
     await expect(page.getByRole('searchbox', { name: 'Search work and docs' })).toBeVisible();
     await accessible(page);
     await page.screenshot({ path: path.join(screenshots, `queue-desktop-${theme}.png`) });
-    await page.getByRole('button', { name: 'Hide sidebar' }).click();
+    await page.getByRole('button', { name: 'Collapse sidebar' }).click();
     await page.evaluate(() => {
       document.querySelectorAll('*').forEach((node) => { if (node.scrollTop) node.scrollTop = 0; });
     });
-    await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible();
     await page.screenshot({ path: path.join(screenshots, `collapsed-${theme}.png`) });
-    await page.getByRole('button', { name: 'Show sidebar' }).click();
+    await page.getByRole('button', { name: 'Expand sidebar' }).click();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => document.querySelector('.page-shell').scrollTo(0, 0));
     await accessible(page);
@@ -105,10 +105,10 @@ test('grouped navigation and scoped search remain usable in both themes and resp
     // The queue is the landing page: its first row must sit above the fold on
     // a 390x844 phone.
     expect(firstRow.y).toBeLessThan(500);
-    await page.getByRole('button', { name: 'Open workspace' }).click();
-    await expect(page.getByRole('button', { name: 'Close workspace' })).toBeFocused();
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+    await expect(page.locator('.dk-sidebar [aria-current="page"]')).toBeFocused();
     await page.keyboard.press('Tab');
-    await expect(page.getByRole('searchbox', { name: 'Search work and docs' })).toBeFocused();
+    await expect(page.locator('[data-tasks-section="workflows"]')).toBeFocused();
     await accessible(page);
     await page.screenshot({ path: path.join(screenshots, `navigation-mobile-${theme}.png`) });
     // Tasks sections are first-class rows: always visible, touch-sized, and
@@ -136,7 +136,7 @@ test('grouped navigation and scoped search remain usable in both themes and resp
       }
       const rows = [...document.querySelectorAll('.workspace-nav-button')];
       return rows.map((row) => ({
-        iconRight: row.querySelector('.workspace-nav-icon')?.getBoundingClientRect().right ?? 0,
+        iconRight: row.querySelector('.dk-nav-item__icon')?.getBoundingClientRect().right ?? 0,
         label: textLeft(row),
         section: row.dataset.tasksSection || row.dataset.workspaceView || '',
       }));
@@ -150,7 +150,7 @@ test('grouped navigation and scoped search remain usable in both themes and resp
     await expect(page.locator('#docs-nav-button')).toBeInViewport();
     await page.screenshot({ path: path.join(screenshots, `navigation-bottom-${theme}.png`) });
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('button', { name: 'Open workspace' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Open navigation' })).toBeFocused();
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   const search = page.getByRole('searchbox', { name: 'Search work and docs' });

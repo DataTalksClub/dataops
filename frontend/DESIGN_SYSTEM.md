@@ -54,8 +54,8 @@ Keep the object model visible in the UI:
 Shared roles — every color, font, radius, control size, and shadow — come from
 **dakit**, the internal design system shared with dapier, dataqna, and relay.
 The portal vendors dakit's generated token file at
-`frontend/src/dakit/tokens.css` (refresh it by running `node build.mjs` in
-`../dakit` and copying `dist/tokens.css`), and styles resolve to `--dk-*`
+`frontend/src/dakit/dakit.css` (refresh it with `scripts/sync_dakit.sh`
+after building `../dakit`; commit the generated checksum lock), and styles resolve to `--dk-*`
 roles (`--dk-bg-page`, `--dk-text-muted`, `--dk-accent-default`, `--dk-*`
 status triplets) directly. Do not hardcode hex values or introduce a second
 token vocabulary.
@@ -123,9 +123,14 @@ identical in meaning.
 
 ## Shell and navigation
 
+The binding shell and consent-page contracts are `dakit/docs/shell.md` and
+`dakit/docs/device-login.md` in the shared design-system repository. The
+vendored `shell.js` owns collapse, drawer, popover, theme, and keyboard behavior.
+Device authorization uses a standalone page outside the workspace shell.
+
 ### Desktop
 
-- Use a persistent 268px sidebar and one main page canvas.
+- Use a persistent 240px sidebar, with a working 56px collapsed icon rail and one main page canvas.
 - The sidebar shows the product mark, workspace name, search, and a short
   primary navigation list.
 - Navigation has three visible named groups: Daily work (`Today`, `My Plan`,
@@ -160,9 +165,9 @@ identical in meaning.
   groups, inbox rows, home attention rows, and callouts use the same 1px even
   `--dk-border-default` (or a status triplet's full perimeter). Status is a
   badge, dot, or timing text; selection is `--dk-accent-soft` fill.
-- The top toolbar owns global actions such as notifications, help, identity,
-  and account access. Page-specific editor controls appear only on pages that
-  need them.
+- The brand row owns the notification bell. The sidebar footer holds the
+  account row and collapse toggle. Help and the Dark mode switch belong in
+  the account disclosure; Admin and Users are navigation destinations.
 - Show the authenticated person with an avatar/initials and name on desktop,
   and the same avatar/initials on mobile. Do not use an anonymous settings gear
   as the account entry point.
@@ -195,12 +200,12 @@ identical in meaning.
   secondary/cancel actions after it.
 - Home Settings does not expose Process Docs Git/review tools. Those controls
   remain contextual to the knowledge workspace.
-- Collapsing the sidebar must leave a visible, keyboard-operable restore
-  control.
+- Collapsing the sidebar keeps every destination, the bell, and the account
+  avatar visible, with a keyboard-operable restore control.
 
 ### Mobile
 
-- Use a 64px top bar with menu, page title, notifications, and settings.
+- Use a 48px top bar with navigation, page title, notifications, and account.
 - The workspace navigation opens as a modal drawer with a scrim, initial focus,
   Escape handling, focus containment, and focus restoration.
 - Show one page or detail state at a time. Do not put a desktop split view into

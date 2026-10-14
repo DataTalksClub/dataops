@@ -43,7 +43,9 @@ function portalRoutingPlugin(config) {
           response.end(JSON.stringify({ error: 'Not found' }));
           return;
         }
-        if (classification === 'app-shell') {
+        if (url.pathname === '/device' || url.pathname === '/device/sessions') {
+          request.url = `/src/device.html${url.search}`;
+        } else if (classification === 'app-shell') {
           request.url = `/index.html${url.search}`;
         }
         next();

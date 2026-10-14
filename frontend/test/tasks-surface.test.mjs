@@ -431,7 +431,7 @@ describe("Tasks surface boundary", () => {
     });
 
     api.renderTasksSurface([], "queue");
-    const header = documentList.querySelector(".page-header");
+    const header = documentList.querySelector(".dk-page-header");
     const createCard = findByText(header, "Create card", "button");
     assert.equal(createCard.className, "primary-button");
     assert.equal(findByText(header, "New task", "button").className, "quiet-button");
@@ -1667,7 +1667,7 @@ describe("Tasks surface boundary", () => {
     ]);
     const styles = uncommentCss(readAppCss());
     for (const token of [...renderedClasses].sort()) {
-      if (unstyledByDesign.has(token)) continue;
+      if (unstyledByDesign.has(token) || token.startsWith("dk-")) continue;
       assert.match(
         styles,
         new RegExp(`\\.${token}(?![\\w-])`),
@@ -1967,7 +1967,7 @@ describe("Tasks surface boundary", () => {
       },
     });
     harness.api.renderTasksSurface([], "recurring");
-    const headerActions = harness.documentList.querySelector(".page-header-actions");
+    const headerActions = harness.documentList.querySelector(".dk-page-header__actions");
     assert.ok(findByText(headerActions, "New schedule", "button"));
     assert.equal(findAllByClass(harness.documentList, "recurring-toolbar").length, 0);
     assert.match(harness.documentList.textContent, /Every Monday/);

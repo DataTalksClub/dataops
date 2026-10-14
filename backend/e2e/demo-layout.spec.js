@@ -15,7 +15,7 @@ const routes = [
   ['/calendar', '.calendar-grid'], ['/newsletter', '.newsletter-views'],
   ['/assistants', '.assistant-layout'], ['/processes', '.ops-docs-catalog'],
   ['/operating-model', '.operating-model-grid, .review-empty-state'], ['/review', '.review-summary'],
-  ['/admin', '.ops-admin-card'], ['/users', '.ops-users-table'], ['/device', '.device-form'],
+  ['/admin', '.ops-admin-card'], ['/users', '.ops-users-table'],
 ];
 test.beforeAll(async () => {
   server = await startOwnedTestServer({ environment: { DTC_CACHE_ROOT: createDocsCacheRoot('demo-layout', {
@@ -34,16 +34,28 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
     for (const [route, ready] of routes) {
       await page.goto(`${server.baseURL}${route}`);
       await expect(page.locator(ready).first()).toBeVisible();
-      const header = page.locator('#document-list .page-header').first();
+      const header = page.locator('#document-list .dk-page-header').first();
       await expect(header.locator('h1')).toBeVisible();
-      const canvas = await page.locator('#document-list').boundingBox();
+      // Hydration can replace an already-visible header. Resolve and measure
+      // both nodes from the current document in one browser evaluation.
+      let geometry;
+      await expect.poll(async () => {
+        geometry = await page.evaluate(() => {
+          const canvas = document.querySelector('#document-list');
+          const heading = canvas?.querySelector('.dk-page-header h1');
+          if (!heading?.getClientRects().length) return null;
+          const a = canvas.getBoundingClientRect(), b = heading.getBoundingClientRect();
+          return { canvas: { x: a.x, width: a.width }, heading: { x: b.x } };
+        });
+        return Boolean(geometry);
+      }).toBe(true);
+      const { canvas, heading } = geometry;
       const availableWidth = await page.locator('#library-view').evaluate((node) => {
         const style = getComputedStyle(node);
         return node.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
       });
-      expect(Math.abs(canvas.width - Math.min(1200, availableWidth)), `${route}: full page canvas width`).toBeLessThan(1);
+      expect(Math.abs(canvas.width - Math.min(1120, availableWidth)), `${route}: full page canvas width`).toBeLessThan(1);
 
-      const heading = await header.locator('h1').boundingBox();
       commonLeft ??= canvas.x;
       expect(Math.abs(canvas.x - commonLeft), `${route}: canvas left edge`).toBeLessThan(1);
       expect(Math.abs(heading.x - canvas.x), `${route}: title left edge`).toBeLessThan(1);

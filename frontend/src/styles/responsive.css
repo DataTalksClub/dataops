@@ -5,74 +5,6 @@
     display: none !important;
   }.mobile-only {
     display: inline-flex !important;
-  }.mobile-topbar {
-    position: sticky;
-    top: 0;
-    z-index: 40;
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) auto 44px;
-    align-items: center;
-    gap: 4px;
-    height: var(--mobile-header-height);
-    border-bottom: 1px solid var(--dk-border-default);
-    background: var(--dk-bg-surface);
-    padding: 0 8px;
-  }.mobile-topbar .icon-button,
-.mobile-topbar .quiet-button,
-.mobile-topbar .account-button {
-    min-width: 44px;
-    min-height: 44px;
-    padding: 0;
-  }.mobile-account-button {
-    width: 44px;
-  }/* The bell holds the 44px control grid on mobile: the count rides as an
-     overlay badge instead of stretching the button wide next to the avatar. */.mobile-work-bell-button {
-    position: relative;
-    width: 44px;
-    justify-content: center;
-  }.mobile-topbar .mobile-work-bell-button .work-bell-count {
-    position: absolute;
-    top: 3px;
-    right: 1px;
-    min-width: 16px;
-    height: 16px;
-    padding: 0 4px;
-    font-size: 10px;
-  }#mobile-title {
-    overflow: hidden;
-    color: var(--dk-text-heading);
-    font-size: 17px;
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }.app-shell {
-    display: block;
-    height: auto;
-    min-height: calc(100dvh - var(--mobile-header-height));
-  }.sidebar {
-    position: fixed;
-    inset: 0 auto 0 0;
-    z-index: 50;
-    width: min(310px, 86vw);
-    height: 100dvh;
-    transform: translateX(-102%);
-    transition: transform 160ms ease;
-    box-shadow: var(--dk-shadow-overlay);
-  }body.sidebar-open .sidebar {
-    transform: translateX(0);
-  }.sidebar-scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 45;
-    display: block;
-    background: var(--dk-bg-backdrop);
-  }.workspace-nav-button {
-    min-height: 48px;
-  }.page-shell {
-    display: block;
-    height: auto;
-    min-height: calc(100dvh - var(--mobile-header-height));
-    overflow: visible;
   }.view {
     overflow: visible;
   }.library-view {
@@ -106,7 +38,7 @@
     font-size: 22px;
   }.workflow-board-header p {
     max-width: 220px;
-  }.workflow-board-header .page-header-actions .primary-button {
+  }.workflow-board-header .dk-page-header__actions .primary-button {
     min-height: 44px;
   }.ops-workflows-grid {
     grid-template-columns: repeat(3, minmax(272px, 78vw));
@@ -153,30 +85,6 @@
     margin: 0;
     border: 0;
     border-radius: 0;
-  }.work-bell-panel,
-.settings-menu {
-    inset: 0;
-    z-index: 60;
-    width: 100%;
-    max-height: none;
-    border: 0;
-    border-radius: 0;
-  }.work-bell-header {
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) 44px;
-    min-height: var(--mobile-header-height);
-    padding: 0 8px;
-  }.work-bell-header strong {
-    grid-column: 2;
-    grid-row: 1;
-    text-align: center;
-  }.overlay-close-button {
-    grid-column: 1;
-    grid-row: 1;
-    width: 44px;
-    min-height: 44px;
-  }.work-bell-action {
-    min-height: 44px;
   }body[data-workspace-view="bookkeeping"] .library-view,
 body[data-workspace-view="sponsors"] .library-view {
     padding: 16px 14px 28px;
@@ -402,31 +310,12 @@ body[data-workspace-view="sponsors"] .library-view {
     display: none !important;
   }
 
-  /* ---- titles: keep for the accessibility tree only ---- */
-  .ops-surface-header h1,
-  .workflow-board-header h1,
-  .planner-header h1,
-  .review-header h1,
-  .crm-header h1,
-  .bookkeeping-header h1,
-  .runtime-template-inspector h3 {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-    border: 0;
-  }
-
   .library-view {
     padding: 8px 12px 28px !important;
   }
 
   /* ---- compact header actions everywhere: one 32px row, not 44px stacks ---- */
-  .workflow-board-header .page-header-actions button,
+  .workflow-board-header .dk-page-header__actions button,
   .workflow-board-filter select,
   .workflow-board-filter-action,
   .workflow-archive-tabs button,
@@ -468,7 +357,7 @@ body[data-workspace-view="sponsors"] .library-view {
   }
   .workflow-board-header,
   .workflow-board-header > div,
-  .workflow-board-header .page-header-actions,
+  .workflow-board-header .dk-page-header__actions,
   .workflow-board-filters,
   .workflow-board-filter {
     display: contents !important;
@@ -483,7 +372,7 @@ body[data-workspace-view="sponsors"] .library-view {
      and every other quiet action keep their text. The glyph is an archive
      box, not a trash can: archiving is reversible, delete reads permanent.
      The accessible name comes from the button's aria-label ("Archive (N)"). */
-  .workflow-board-header .page-header-actions .workflow-archive-toggle {
+  .workflow-board-header .dk-page-header__actions .workflow-archive-toggle {
     flex: 0 0 34px !important;
     width: 34px !important;
     min-width: 34px !important;
@@ -494,7 +383,7 @@ body[data-workspace-view="sponsors"] .library-view {
     align-items: center;
     justify-content: center;
   }
-  .workflow-board-header .page-header-actions .workflow-archive-toggle::before {
+  .workflow-board-header .dk-page-header__actions .workflow-archive-toggle::before {
     content: "";
     width: 16px;
     height: 16px;
@@ -761,23 +650,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .calendar-display-controls-bar { gap: 8px; }
   .calendar-layer-chip { min-height: 44px; font-size: 12px; }
   .calendar-layers { gap: 6px; }
-
-  /* ---- Device: compact panel so the form leads with the summary back ---- */
-  .ops-section.device-panel {
-    padding: 4px 8px 6px !important;
-  }
-  .ops-surface-device .surface-summary {
-    margin-bottom: 2px !important;
-  }
-  .ops-section.device-panel .ops-section-header {
-    margin: 0 0 2px !important;
-  }
-  .ops-section.device-panel .ops-section-header span {
-    display: none !important;
-  }
-  .ops-surface-device .surface-summary-message {
-    -webkit-line-clamp: 1;
-  }
 
   /* ---- Review: compact header and summary tiles ---- */
   .review-header {

@@ -17,8 +17,8 @@ describe('handler', () => {
     assert.ok(result.body.includes('<title>DataOps</title>'));
     assert.ok(result.body.includes('id="document-list"'));
     // Tasks sections are first-class nav buttons; the queue is the landing page.
-    assert.ok(result.body.includes('<h2 class="workspace-nav-label">Tasks</h2>'));
-    assert.ok(result.body.includes('class="workspace-nav-button is-active" type="button" data-tasks-section="queue"'));
+    assert.ok(result.body.includes('<h2 class="dk-nav-group__label">Tasks</h2>'));
+    assert.ok(result.body.includes('class="dk-nav-item workspace-nav-button is-active" aria-current="page" href="/tasks" data-tasks-section="queue"'));
     assert.ok(result.body.includes('data-tasks-section="assistants"'));
     // The Today surface and the Artifacts tab are gone.
     assert.ok(!result.body.includes('id="operations-home-button"'));

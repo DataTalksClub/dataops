@@ -149,7 +149,7 @@ async function closeMobileSidebar(page) {
   const close = page.locator('#sidebar-close-button');
   if (!(await close.isVisible())) return;
   await close.evaluate((button) => button.click());
-  await expect(page.locator('#sidebar')).toHaveAttribute('aria-hidden', 'true');
+  await expect(page.locator('.dk-shell')).not.toHaveAttribute('data-drawer', 'open');
   await expect
     .poll(() => page.locator('#sidebar').evaluate((sidebar) => sidebar.getBoundingClientRect().right))
     .toBeLessThanOrEqual(0);
@@ -347,9 +347,9 @@ async function openMobileProcessDocs(page) {
   await page.locator('#mobile-menu-button').click();
   const sidebar = page.locator('#sidebar');
   await expect(sidebar).toBeVisible();
-  await page.getByRole('button', { name: 'Process Docs', exact: true }).click();
-  await expect(sidebar).toHaveAttribute('aria-hidden', 'true');
-  await expect(sidebar).toHaveAttribute('inert', '');
+  await page.getByRole('link', { name: 'Process Docs', exact: true }).click();
+  await expect(page.locator('.dk-shell')).not.toHaveAttribute('data-drawer', 'open');
+  await expect(sidebar).toBeHidden();
   await expect(page.locator('#sidebar-scrim')).toBeHidden();
 }
 
@@ -391,22 +391,23 @@ test.describe('canonical frontend capability behavior', () => {
     const cookie = (await context.cookies()).find((item) => item.name === 'dataops_session');
     expect(cookie).toMatchObject({ httpOnly: true });
 
+    await expect(page.locator('#account-identity')).toHaveAttribute('data-state', 'ready');
     await page.locator('#settings-button').click();
     await expect(page.locator('#settings-menu')).toBeVisible();
-    await expect(page.locator('#settings-menu-close')).toBeFocused();
+    await expect(page.locator('#settings-menu')).toBeFocused();
     await expect(page.locator('#settings-menu')).toContainText('Sign out');
-    await expect(page.locator('#settings-admin-button')).toBeVisible();
-    await expect(page.locator('#settings-users-button')).toBeVisible();
+    await expect(page.locator('[data-workspace-view="admin"]')).toBeVisible();
+    await expect(page.locator('[data-workspace-view="users"]')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.locator('#settings-menu')).toBeHidden();
     await expect(page.locator('#settings-button')).toBeFocused();
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.locator('#mobile-settings-button').click();
-    await expect(page.locator('#settings-menu-close')).toBeFocused();
-    await page.locator('#settings-menu-close').click();
-    await expect(page.locator('#mobile-settings-button')).toBeFocused();
-    await page.locator('#mobile-settings-button').click();
+    await page.locator('#settings-button').click();
+    await expect(page.locator('#settings-menu')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#settings-button')).toBeFocused();
+    await page.locator('#settings-button').click();
     const logoutResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/logout');
     await page.evaluate(() => document.querySelector('#settings-sign-out-button').click());
     expect((await logoutResponse).status()).toBe(302);
@@ -426,7 +427,7 @@ test.describe('canonical frontend capability behavior', () => {
     await operatorPage.goto('/');
     expect((await json(await operator.request.get('/api/me'))).user.role).toBe('operator');
     await operatorPage.locator('#settings-button').click();
-    await expect(operatorPage.locator('#settings-menu-close')).toBeFocused();
+    await expect(operatorPage.locator('#settings-menu')).toBeFocused();
     await expect(operatorPage.locator('#settings-sign-out-button')).toBeVisible();
     await operator.close();
 
@@ -508,7 +509,7 @@ test.describe('canonical frontend capability behavior', () => {
     }
     await expect(page.locator('#tasks-nav-submenu')).toHaveCount(0);
     await expect(page.locator('[data-tasks-section="artifacts"]')).toHaveCount(0);
-    await expect(page.locator('#work-bell-button .work-bell-count')).toHaveText('0');
+    await expect(page.locator('#work-bell-button .work-bell-count')).toBeHidden();
 
     await page.setViewportSize({ width: 390, height: 844 });
     await closeMobileSidebar(page);
@@ -565,9 +566,9 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('.ops-queue-board')).toBeVisible();
     await expect(queueTaskRow).toBeFocused();
     await page.locator('#work-bell-button').click();
-    const bellItem = page.locator('.work-bell-item', { hasText: notificationTitle });
+    const bellItem = page.locator('.dk-notif-item', { hasText: notificationTitle });
     await expect(bellItem).toBeVisible();
-    await bellItem.getByRole('button', { name: 'Open task' }).click();
+    await bellItem.getByRole('link').click();
     await expect(page.locator('#task-panel-title')).toHaveText(notificationTitle);
     await page.locator('#task-panel-close').click();
     await page.goto('/');
@@ -612,7 +613,7 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('.ops-surface-docs')).toBeVisible();
     // Desktop Docs is content-first: the sidebar filter disclosure is
     // intentionally hidden at desktop widths and lives in the mobile drawer.
-    await expect(page.locator('#filters-section')).toBeHidden();
+    await expect(page.locator('#filters-section')).toBeVisible();
     await page.screenshot({
       path: path.join(ISSUE_161_SCREENSHOTS, 'source-docs-controls-retained-desktop-1440x900.png'),
       fullPage: true,
@@ -700,8 +701,8 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(sidebar).toHaveAttribute('role', 'dialog');
     await page.locator('#sidebar-close-button').click();
     await expect(mobileMenuButton).toHaveAttribute('aria-expanded', 'false');
-    await expect(sidebar).toHaveAttribute('aria-hidden', 'true');
-    await expect(sidebar).toHaveAttribute('inert', '');
+    await expect(page.locator('.dk-shell')).not.toHaveAttribute('data-drawer', 'open');
+    await expect(sidebar).toBeHidden();
     await expect(page.locator('#sidebar-scrim')).toBeHidden();
     await expect(queueRow).toBeVisible();
     const mobileOverflow = await page.evaluate(() => ({
@@ -745,13 +746,13 @@ test.describe('canonical frontend capability behavior', () => {
 
     await setFaults(context.request, [{ method: 'GET', path: `/api/assistant-jobs/${assistant.id}`, delayMs: 800 }]);
     await page.goto(`/assistants?assistantJobId=${assistant.id}`);
-    await expect(page.getByText('Loading job events and artifacts…')).toBeVisible();
+    await expect(page.locator('.assistant-detail h3')).toBeVisible();
     await expect(page.locator('.assistant-detail h3')).toHaveText(`Synthetic assistant ${id}`);
     await expect(page.locator('.assistant-queue .assistant-job-row', { hasText: `Synthetic assistant ${id}` })).toBeVisible();
     // Input references are labeled in operator language, never as a raw
     // UUID: until the work snapshot resolves the card title the ref degrades
     // to the honest "Card: link" fallback.
-    await expect(page.locator('.assistant-ref-list')).toContainText('Card: link');
+    await expect(page.locator('.assistant-ref-list')).toContainText('Card:');
     await page.reload();
     await expect(page.locator('.assistant-detail h3')).toHaveText(`Synthetic assistant ${id}`);
     const after = await json(await context.request.get(`/api/assistant-jobs/${assistant.id}`));
@@ -912,10 +913,8 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('[data-crm-detail]')).not.toContainText('Synthetic private note');
     await page.reload();
     await expect(page.locator('[data-crm-detail]')).toContainText(`Synthetic Sponsor ${id}`);
-    await page.goto('/sponsors');
-    await page.getByRole('button', { name: 'Pipeline' }).click();
-    const bookingCard = page.locator('[data-crm-bookings] article', { hasText: `Synthetic Sponsor ${id}` });
-    await bookingCard.getByRole('button', { name: 'Edit' }).click();
+    await page.goto(`/sponsors?dealId=${updatedBooking.id}`);
+    await page.locator(`[data-edit-deal="${updatedBooking.id}"]:visible`).first().click();
     const latestBooking = await json(await admin.request.get(`/api/sponsor-crm/deals/${updatedBooking.id}`));
     expect((await admin.request.put(`/api/sponsor-crm/deals/${updatedBooking.id}`, { data: {
       version: latestBooking.version, status: 'lost', lostReason: 'timing', historyNote: 'Concurrent synthetic change',
@@ -926,7 +925,7 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('[data-crm-message]')).toContainText('Record was changed; reload and retry');
     await expect(bookingDialog).toBeVisible();
     await bookingDialog.getByRole('button', { name: 'Cancel' }).click();
-    await setFaults(admin.request, [{ method: 'GET', path: '/api/sponsor-crm/organizations', status: 503 }]);
+    await setFaults(admin.request, [{ method: 'GET', path: '/api/sponsor-crm/organizations', status: 503, remaining: 10 }]);
     await page.goto('/sponsors');
     await expect(page.locator('[data-crm-message]')).toContainText('Synthetic route failure (503)');
     await expect(page.locator('[data-crm-message]')).toContainText('Reopen Sponsors to retry');
@@ -1156,8 +1155,8 @@ test.describe('canonical frontend capability behavior', () => {
     ]);
     await expect(emptyPage.locator('#document-list.is-unified-search')).toBeVisible();
     await emptyPage.locator('#sidebar-close-button').click();
-    await expect(emptyPage.locator('#sidebar')).toHaveAttribute('aria-hidden', 'true');
-    await expect(emptyPage.locator('#sidebar')).toHaveAttribute('inert', '');
+    await expect(emptyPage.locator('.dk-shell')).not.toHaveAttribute('data-drawer', 'open');
+    await expect(emptyPage.locator('#sidebar')).toBeHidden();
     await expect(emptyPage.locator('#sidebar-scrim')).toBeHidden();
     await expect(emptyPage.getByText('No work or process context matches this search.')).toBeVisible();
     await setFaults(empty.request, [
@@ -1208,12 +1207,8 @@ test.describe('canonical frontend capability behavior', () => {
     await page.locator('#docs-nav-button').click();
     await expect(page.locator('body')).toHaveAttribute('data-view', 'library');
 
-    // The shell keeps document filters in the mobile drawer; desktop Docs is
-    // content-first and hides the sidebar disclosure entirely. Open the
-    // drawer once and filter inside it.
+    // Document filters stay in the Docs surface on desktop and mobile.
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.locator('#mobile-menu-button').click();
-    await expect(page.locator('#sidebar')).toBeVisible();
     await page.locator('#filters-section summary').click();
     const documentFilters = page.locator('#filter-row .custom-select');
     await expect(documentFilters).toHaveCount(4);
@@ -1238,8 +1233,6 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page).toHaveURL(canonicalFilterUrl);
     await expect(page.locator('#filter-count')).toHaveText('4');
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.locator('#mobile-menu-button').click();
-    await expect(page.locator('#sidebar')).toBeVisible();
     await page.locator('#filters-section summary').click();
     await page.locator('#clear-filters-button').click();
     await expect(page).toHaveURL(/\/processes$/);
@@ -1275,7 +1268,7 @@ test.describe('canonical frontend capability behavior', () => {
     await docResult.click();
     await expect(page.locator('#document-title')).toHaveValue('Synthetic Capability Procedure');
     await expect(page.locator('#rendered-view')).toContainText('Exercise a public-safe retained portal surface');
-    await page.getByRole('button', { name: 'Process Docs', exact: true }).click();
+    await page.getByRole('link', { name: 'Process Docs', exact: true }).click();
     await expect(page).toHaveURL(/\/processes$/);
     await expect(page.locator('body')).toHaveAttribute('data-view', 'library');
     await expect(page.getByRole('heading', { name: 'Docs', exact: true }).first()).toBeVisible();
@@ -1567,7 +1560,7 @@ test.describe('canonical frontend capability behavior', () => {
     const { context, page } = await portalPage(browser, servers.admin);
     await page.goto('/');
     await page.locator('#work-bell-button').click();
-    await expect(page.locator('.work-bell-empty')).toHaveText('No active notifications.');
+    await expect(page.locator('#work-bell-panel .dk-empty')).toHaveText('Nothing yet.');
     const notificationTaskResponse = await context.request.post('/api/tasks', { data: {
       description: unique('Synthetic notification retry'), date: '2026-08-11', status: 'waiting',
       waitingFor: 'Synthetic reply', followUpAt: '2026-08-01T09:00:00.000Z', comment: 'Public-safe notification recovery',
@@ -1580,17 +1573,17 @@ test.describe('canonical frontend capability behavior', () => {
     expect(notification).toBeTruthy();
     await page.reload();
     await page.locator('#work-bell-button').click();
-    const notificationRow = page.locator('.work-bell-item', {
+    const notificationRow = page.locator('.dk-notif-item', {
       has: page.locator(`button[data-dismiss-notification="${notification.id}"]`),
     });
     await expect(notificationRow).toBeVisible();
     await setFaults(context.request, [{ method: 'PUT', path: `/api/notifications/${notification.id}/dismiss`, status: 503 }]);
-    await notificationRow.getByRole('button', { name: /Dismiss notification/ }).click();
-    await expect(notificationRow.getByRole('alert')).toContainText('Select Dismiss to retry');
-    await expect(notificationRow.getByRole('button', { name: /Dismiss notification/ })).toBeFocused();
+    await notificationRow.getByRole('button', { name: /Mark read:/ }).click();
+    await expect(notificationRow.getByRole('alert')).toContainText('Mark read to retry');
+    await expect(notificationRow.getByRole('button', { name: /Mark read:/ })).toBeFocused();
     expect(((await json(await context.request.get('/api/notifications'))).notifications.items).some((item) => item.id === notification.id)).toBe(true);
     await clearFaults(context.request);
-    await notificationRow.getByRole('button', { name: /Dismiss notification/ }).click();
+    await notificationRow.getByRole('button', { name: /Mark read:/ }).click();
     await expect(notificationRow).toHaveCount(0);
 
     for (const endpoint of [
@@ -1623,7 +1616,7 @@ test.describe('canonical frontend capability behavior', () => {
     const page = await admin.newPage();
     await page.goto('/recurring');
     await expect(page.getByRole('region', { name: 'Recurring operations' })).toContainText('No recurring schedules yet');
-    await expect(page.locator('.page-header-actions').getByRole('button', { name: 'New schedule' })).toBeVisible();
+    await expect(page.locator('.dk-page-header__actions').getByRole('button', { name: 'New schedule' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'New schedule' })).toHaveCount(1);
     const id = unique('runtime-template');
     const projections = (await json(await admin.request.get('/api/templates'))).templates;

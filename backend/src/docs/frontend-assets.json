@@ -111,6 +111,11 @@
     "src/dakit/device-code.js",
     "src/dakit/fonts/inter-var.woff2",
     "src/dakit/fonts/ibm-plex-mono-400.woff2",
-    "src/dakit/fonts/ibm-plex-mono-500.woff2"
+    "src/dakit/fonts/ibm-plex-mono-500.woff2",
+    "src/styles/shell.css",
+    "src/device.html",
+    "src/device-page.js",
+    "src/cli-sessions.js",
+    "src/styles/device.css"
   ]
 }

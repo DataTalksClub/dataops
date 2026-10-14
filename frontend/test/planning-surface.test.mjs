@@ -463,7 +463,7 @@ describe("Planning surface production behavior", () => {
     });
     await harness.surface.renderCalendarSurface();
     const header = dom.surface.children[0];
-    assert.equal(header.className, "page-header calendar-page-header");
+    assert.equal(header.className, "dk-page-header calendar-page-header");
     assert.equal(header.children[0].children[0].textContent, "Calendar");
     assert.equal(header.children[0].children[0].id, "calendar-surface-title");
     await nextTicks();

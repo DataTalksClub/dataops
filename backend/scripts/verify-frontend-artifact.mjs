@@ -117,7 +117,18 @@ function validateManifestImports(sourceBytes) {
   }
 
   const reachable = new Set();
-  const pending = ['src/app.js'];
+  // Standalone consent pages have their own module entry. Every entry is
+  // discovered from an allowlisted HTML file rather than bypassing reachability.
+  const pending = [];
+  for (const [canonical, bytes] of sourceBytes) {
+    const sourcePath = SOURCE_BY_CANONICAL.get(canonical);
+    if (!sourcePath.endsWith('.html')) continue;
+    for (const match of bytes.toString('utf8').matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/g)) {
+      const entry = match[1].startsWith('/') ? match[1].slice(1) : posix.normalize(posix.join(dirname(sourcePath), match[1]));
+      if (!declared.has(entry)) errors.push(`frontend entry is missing from asset manifest: ${sourcePath} -> ${entry}`);
+      else pending.push(entry);
+    }
+  }
   while (pending.length) {
     const sourcePath = pending.pop();
     if (reachable.has(sourcePath)) continue;
@@ -126,7 +137,7 @@ function validateManifestImports(sourceBytes) {
   }
   for (const sourcePath of graph.keys()) {
     if (!reachable.has(sourcePath)) {
-      errors.push(`frontend module is not reachable from src/app.js: ${sourcePath}`);
+      errors.push(`frontend module is not reachable from an HTML entry: ${sourcePath}`);
     }
   }
   return errors;

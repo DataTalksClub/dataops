@@ -69,27 +69,20 @@ export function createTaskQueue(context) {
 
   function renderPersonaFilterBar(counts, onSelect) {
     const nav = document.createElement("div");
-    nav.className = "ops-queue-persona-nav";
+    nav.className = "dk-tabs ops-queue-persona-nav";
     nav.setAttribute("role", "tablist");
     nav.setAttribute("aria-label", "Filter queue by assignee");
-    nav.style.display = "flex";
-    nav.style.flexWrap = "wrap";
-    nav.style.gap = "6px";
-    nav.style.margin = "0 0 14px 0";
 
     for (const p of PERSONA_FILTERS) {
       const isSelected = activePersonaFilter === p.id;
       const count = counts[p.id] ?? 0;
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = isSelected ? "primary-button ops-queue-persona-filter" : "quiet-button ops-queue-persona-filter";
+      btn.className = "dk-tab ops-queue-persona-filter";
       btn.dataset.persona = p.label.toLowerCase();
       btn.setAttribute("role", "tab");
       btn.setAttribute("aria-selected", String(isSelected));
       btn.setAttribute("aria-label", `Filter to ${p.name}, ${count} open`);
-      btn.style.fontSize = "12px";
-      btn.style.padding = "4px 10px";
-      btn.style.borderRadius = "var(--dk-radius-sm, 6px)";
       btn.textContent = `${p.label} (${count})`;
       btn.addEventListener("click", () => {
         if (activePersonaFilter === p.id) return;

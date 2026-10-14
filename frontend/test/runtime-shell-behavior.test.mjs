@@ -305,7 +305,7 @@ function createNotificationHarness(options = {}) {
   const panel = element("work-bell-panel");
   panel.hidden = true;
   const body = element("work-bell-body");
-  const close = element("work-bell-close", "button");
+  const close = element("work-bell-read-all", "button");
   const documentBody = element("body", "body");
   const document = new TestDocument(
     documentBody,
@@ -318,7 +318,14 @@ function createNotificationHarness(options = {}) {
   attachDocument(document, ...document.roots);
   const requests = [];
   const openedTasks = [];
+  const kit = {
+    announce() {},
+    setCount(node, count) { node.textContent = String(count); node.hidden = count === 0; },
+    openPopover() { panel.hidden = false; },
+    closePopovers() { panel.hidden = true; },
+  };
   const shell = createNotificationsShell({
+    shell: kit,
     closeSettingsMenu() {},
     documentRef: document,
     encodeURIComponentImpl: encodeURIComponent,
@@ -572,76 +579,15 @@ describe("runtime and shell production behavior", () => {
       windowRef,
     });
     assert.equal(result.documentsReady, documentsReady);
-    assert.deepEqual(calls.slice(0, 6), [
+    assert.deepEqual(calls.slice(0, 3), [
       "enhance:domain",
       "enhance:type",
-      "theme",
-      "collapsed",
-      "sidebar-state",
       "library:false",
     ]);
     assert.ok(calls.indexOf("load-documents") < calls.indexOf("routing"));
     assert.equal(await windowRef.__dataopsRefreshWork(), "refreshed");
     assert.equal(calls.at(-1), "work:true");
     resolveDocuments();
-  });
-
-  test("persists theme and sidebar visibility without custom width state", async () => {
-    const harness = createPreferenceHarness({
-      storage: {
-        "dtc-sidebar-collapsed": "1",
-      },
-    });
-    const { shell } = harness;
-    // The inline boot script resolves the theme before first paint and sets
-    // the dakit attribute; restoreDarkMode only syncs the toggle to it.
-    harness.document.documentElement.dataset.theme = "dark";
-    shell.restoreDarkMode();
-    assert.equal(harness.document.documentElement.dataset.theme, "dark");
-    assert.equal(harness.themeLabel.textContent, "Light mode");
-    assert.equal(harness.themeToggleButton.getAttribute("aria-pressed"), "true");
-    shell.setDarkMode(false);
-    assert.equal(harness.document.documentElement.dataset.theme, "light");
-    assert.equal(harness.store.values.get("dakit-theme"), "light");
-
-    shell.restoreSidebarCollapsed();
-    assert.equal(harness.body.classList.contains("sidebar-collapsed"), true);
-    assert.equal(harness.sidebarExpandButton.hidden, false);
-    shell.setSidebarCollapsed(false);
-    assert.equal(harness.store.values.get("dtc-sidebar-collapsed"), "0");
-    assert.equal(harness.store.values.has("dtc-sidebar-width"), false);
-  });
-
-  test("opens the mobile sidebar as a modal, traps focus, and restores its opener", async () => {
-    const harness = createPreferenceHarness({ mobile: true });
-    harness.shell.syncSidebarShellState();
-    assert.equal(harness.sidebar.inert, true);
-    assert.equal(harness.pageShell.inert, false);
-    harness.document.activeElement = harness.mobileMenuButton;
-    harness.shell.openSidebar();
-    assert.equal(harness.body.classList.contains("sidebar-open"), true);
-    assert.equal(harness.sidebar.getAttribute("role"), "dialog");
-    assert.equal(harness.sidebarScrim.hidden, false);
-    assert.equal(harness.pageShell.inert, true);
-    assert.equal(harness.sidebarButton.focused, true);
-
-    const escape = await harness.document.emit("keydown", { key: "Escape" });
-    assert.equal(escape.defaultPrevented, true);
-    assert.equal(harness.body.classList.contains("sidebar-open"), false);
-    assert.equal(harness.mobileMenuButton.focused, true);
-    assert.equal(harness.sidebar.getAttribute("aria-hidden"), "true");
-    assert.equal(harness.sidebar.inert, true);
-
-    harness.shell.openSidebar();
-    harness.document.activeElement = harness.sidebarButton;
-    const tab = await harness.document.emit("keydown", { key: "Tab" });
-    assert.equal(tab.defaultPrevented, true);
-    assert.equal(harness.sidebarButton.focused, true);
-
-    harness.media.matches = false;
-    harness.shell.syncSidebarShellState();
-    assert.equal(harness.sidebar.getAttribute("role"), null);
-    assert.equal(harness.pageShell.inert, false);
   });
 
   test("renders confirm, entity recovery, undo, and error feedback with focus safety", async () => {
@@ -731,16 +677,15 @@ describe("runtime and shell production behavior", () => {
     });
     await harness.shell.refreshWorkBell();
     assert.equal(harness.desktopCount.textContent, "2");
-    assert.equal(harness.mobileCount.classList.contains("is-visible"), true);
+    assert.equal(harness.desktopCount.hidden, false);
 
     harness.document.activeElement = harness.desktop;
     harness.shell.openWorkBellPanel();
     assert.equal(harness.panel.hidden, false);
     assert.equal(harness.body.children.length, 3);
-    assert.match(harness.body.children[0].className, /is-overdue/);
-    assert.equal(harness.body.children[0].textContent.includes("Due yesterday"), true);
+    assert.equal(harness.body.children[1].textContent.includes("Due yesterday"), true);
     assert.equal(
-      harness.body.children[1].textContent.includes("Weekly review"),
+      harness.body.children[2].textContent.includes("Weekly review"),
       true,
     );
     assert.equal(
@@ -748,7 +693,7 @@ describe("runtime and shell production behavior", () => {
       false,
     );
 
-    const openTask = findByText(harness.body.children[0], "Open task", "button");
+    const openTask = findByText(harness.body.children[1], "Task overdue", "a");
     await openTask.click();
     assert.deepEqual(harness.openedTasks, ["task-1"]);
     assert.equal(harness.panel.hidden, true);
@@ -756,11 +701,11 @@ describe("runtime and shell production behavior", () => {
     harness.shell.openWorkBellPanel();
     const dismiss = harness.body
       .querySelectorAll("[data-dismiss-notification]")
-      .find((button) => button.dataset.dismissNotification === "notification-1");
+      .find((button) => button.dataset.dismissNotification === "notification-2");
     await dismiss.click();
     await nextTicks();
-    assert.equal(harness.desktopCount.textContent, "1");
-    assert.match(harness.requests.at(-1).url, /notification-1\/dismiss$/);
+    assert.equal(harness.desktopCount.textContent, "0");
+    assert.match(harness.requests.at(-1).url, /notification-2\/dismiss$/);
     assert.equal(harness.requests.at(-1).options.method, "PUT");
 
     payload = { notifications: { items: [] } };
@@ -768,32 +713,7 @@ describe("runtime and shell production behavior", () => {
     assert.equal(harness.desktopCount.textContent, "0");
     harness.shell.openWorkBellPanel();
     assert.equal(harness.body.textContent.includes("all caught up"), false);
-    assert.match(harness.body.children[0].innerHTML, /all caught up/);
-  });
-
-  test("opens the bell panel in place and closes it on outside clicks", async () => {
-    const harness = createNotificationHarness({
-      request: async () => ({
-        notifications: { items: [{ id: "notification-1", message: "Review task" }] },
-      }),
-    });
-    harness.shell.bindToggle();
-    await harness.desktop.click();
-    await nextTicks();
-    assert.equal(harness.panel.hidden, false);
-    assert.match(harness.requests.at(-1).url, /api\/notifications\?/);
-
-    await harness.document.emit("click", { target: harness.panel });
-    assert.equal(harness.panel.hidden, false);
-    await harness.document.emit("click", { target: harness.desktop });
-    assert.equal(harness.panel.hidden, false);
-    await harness.document.emit("click", { target: new FakeElement("div") });
-    assert.equal(harness.panel.hidden, true);
-
-    await harness.desktop.click();
-    assert.equal(harness.panel.hidden, false);
-    await harness.mobile.click();
-    assert.equal(harness.panel.hidden, true);
+    assert.match(harness.body.textContent, /Nothing yet/);
   });
 
   test("keeps notification failures retryable", async () => {
@@ -832,10 +752,9 @@ describe("runtime and shell production behavior", () => {
       },
     });
     await unavailable.shell.refreshWorkBell();
-    assert.equal(unavailable.desktopCount.textContent, "!");
-    assert.equal(unavailable.desktopCount.classList.contains("is-error"), true);
+    assert.equal(unavailable.desktopCount.hidden, true);
     unavailable.shell.openWorkBellPanel();
-    assert.match(unavailable.body.textContent, /Notifications offline/);
+    assert.match(unavailable.body.textContent, /Couldn.t load notifications/);
   });
 
   test("keeps notification pagination reachable after dismissing every visible row", async () => {
@@ -874,7 +793,7 @@ describe("runtime and shell production behavior", () => {
     assert.equal(harness.desktopCount.textContent, "1");
     assert.match(harness.body.textContent, /Second page/);
     assert.match(harness.requests.at(-1).url, /cursor=page-two/);
-    assert.match(harness.body.textContent, /All notifications loaded\./);
+    assert.equal(harness.body.querySelector("[data-load-notifications]"), null);
   });
 
   test("binds application events to canonical navigation, editor, and keyboard actions", async () => {
@@ -914,6 +833,7 @@ describe("runtime and shell production behavior", () => {
       activeTasksSection: "queue",
       documentState: { currentDoc: { path: "process/example.md" } },
     };
+    callbacks.closeSidebar = () => calls.push(["close-sidebar"]);
     bindApplicationEvents({
       callbacks,
       documentRef: document,
@@ -931,10 +851,8 @@ describe("runtime and shell production behavior", () => {
       workspaceState,
     });
 
-    await dom.themeToggleButton.click();
-    assert.deepEqual(calls.at(-1), ["dark", true]);
     await dom.tasksNavSectionButtons[0].click();
-    assert.deepEqual(calls.at(-1), ["navigate", "/tasks/cards"]);
+    assert.equal(calls.some(([name, path]) => name === "navigate" && path === "/tasks/cards"), true);
     await dom.editor.dispatch("input");
     assert.equal(calls.some(([name]) => name === "storeDraft"), true);
     assert.equal(calls.some(([name]) => name === "updateSaveState"), true);

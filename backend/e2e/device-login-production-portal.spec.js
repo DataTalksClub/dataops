@@ -60,7 +60,9 @@ async function showGrant(page, run) {
   await expect.poll(() => Boolean(run.output.match(/Confirm this code:\s+([A-Z2-9]{4}-[A-Z2-9]{4})/))).toBe(true);
   const code = run.output.match(/Confirm this code:\s+([A-Z2-9]{4}-[A-Z2-9]{4})/)[1];
   await page.goto(`${server.baseURL}/device?userCode=${encodeURIComponent(code)}`);
-  await expect(page.getByRole('heading', { name: 'Authorize this machine?' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Authorize a device', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Authorize this device?' })).toBeVisible();
   await expect(page.getByText('Synthetic device journey', { exact: true })).toBeVisible();
   return code;
 }
@@ -148,7 +150,7 @@ test.describe('real CLI device login through the configured production portal', 
     try {
       await showGrant(page, run);
       await page.getByRole('button', { name: 'Deny', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'Device denied', exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Request denied', exact: true })).toBeVisible();
       await screenshot(page, 'issue-248-device-denied.png');
       expect(await run.done).toBe(1);
       expect(run.output + run.errors).toContain('login was denied');
@@ -163,12 +165,12 @@ test.describe('real CLI device login through the configured production portal', 
     const expired = cli(['login', '--label', 'Synthetic deadline journey'], expiredDir, { expireOnPending: true });
     expect(await expired.done).toBe(1);
     expect(expired.polls).toContainEqual({ status: 400, error: 'authorization_pending' });
-    expect(expired.errors).toContain('code expired before it was confirmed');
+    expect(expired.errors).toContain('The code expired.');
     expect(fs.existsSync(path.join(expiredDir, 'credentials.json'))).toBe(false);
     const failedDir = path.join(tmp, 'failed');
     const failed = cli(['login'], failedDir, { url: `${server.baseURL}/api` });
     expect(await failed.done).toBe(1);
-    expect(failed.errors).toContain('Unauthorized');
+    expect(failed.errors).toContain('The server did not offer device login.');
     expect(fs.existsSync(path.join(failedDir, 'credentials.json'))).toBe(false);
   });
 });

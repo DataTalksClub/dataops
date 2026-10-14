@@ -145,11 +145,11 @@ test.describe("production portal bookkeeping", () => {
     await expect(createdRow).toContainText("Synthetic Portal Vendor");
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+    await page.evaluate(() => dakitShell.toggleDrawer(document.querySelector(".dk-shell"), false));
     await expect(
-      page.locator(".mobile-topbar").getByRole("button", { name: "New" }),
+      page.locator(".dk-topbar").getByRole("button", { name: "New" }),
     ).toHaveCount(0);
-    const topbarGeometry = await page.locator(".mobile-topbar").evaluate((bar) => {
+    const topbarGeometry = await page.locator(".dk-topbar").evaluate((bar) => {
       const bounds = bar.getBoundingClientRect();
       return {
         top: bounds.top,
@@ -165,7 +165,7 @@ test.describe("production portal bookkeeping", () => {
         }),
       };
     });
-    expect(topbarGeometry.children).toHaveLength(4);
+    expect(topbarGeometry.children).toHaveLength(3);
     for (const child of topbarGeometry.children) {
       expect(child.top).toBeGreaterThanOrEqual(topbarGeometry.top);
       expect(child.bottom).toBeLessThanOrEqual(topbarGeometry.bottom);

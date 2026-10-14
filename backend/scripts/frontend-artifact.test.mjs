@@ -77,7 +77,9 @@ function fixture(name) {
     const artifactPath = canonicalPath.replace(/^dist\//, '');
     mkdirSync(dirname(join(source, sourcePath)), { recursive: true });
     mkdirSync(dirname(join(artifact, artifactPath)), { recursive: true });
-    const bytes = Buffer.from(`synthetic-${sourcePath}\n`);
+    const bytes = Buffer.from(sourcePath.endsWith('.html')
+      ? `<html><script type="module" src="/src/${sourcePath === 'index.html' ? 'app' : 'device-page'}.js"></script></html>`
+      : `synthetic-${sourcePath}\n`);
     writeFileSync(join(source, sourcePath), bytes);
     writeFileSync(join(artifact, artifactPath), bytes);
   }

@@ -471,7 +471,7 @@ test.describe("production sponsor CRM portal", () => {
       });
     });
     await gotoOwnedSponsorPage(page);
-    await page.getByRole("button", { name: "Sponsors" }).click();
+    await page.getByRole("link", { name: "Sponsors" }).click();
     await expect(page.getByText("Loading sponsor CRM…")).toBeVisible();
     await page.screenshot({
       path: ".tmp/sponsor-crm-production-loading.png",
@@ -756,7 +756,7 @@ test.describe("production sponsor CRM portal", () => {
     financeRole = "operator";
     await page.getByRole("button", { name: "Open company" }).first().click();
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+    await page.evaluate(() => dakitShell.toggleDrawer(document.querySelector(".dk-shell"), false));
     await expect
       .poll(async () => {
         const box = await page.locator("#sidebar").boundingBox();
@@ -787,7 +787,7 @@ test.describe("production sponsor CRM portal", () => {
       route.fulfill({ json: { notifications: { items: [] } } }),
     );
     await gotoOwnedSponsorPage(errorPage);
-    await errorPage.getByRole("button", { name: "Sponsors" }).click();
+    await errorPage.getByRole("link", { name: "Sponsors" }).click();
     await expect(errorPage.locator("[data-crm-message]")).toContainText(
       "Permission or API error",
     );

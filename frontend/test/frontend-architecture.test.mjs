@@ -19,7 +19,7 @@ function read(relativePath) {
 
 function frontendJavaScriptFiles() {
   const manifest = JSON.parse(read("backend/src/docs/frontend-assets.json"));
-  return manifest.files.filter((file) => file.endsWith(".js"));
+  return manifest.files.filter((file) => file.endsWith(".js") && !file.startsWith("src/dakit/"));
 }
 
 describe("frontend architecture contract", () => {
@@ -213,12 +213,12 @@ describe("shell ownership contract", () => {
     );
 
     assert.doesNotMatch(markup, /page-toolbar|toolbar-actions/, "the shell has no top toolbar");
-    assert.match(markup, /<footer class="sidebar-footer">/, "global actions live in the sidebar footer");
+    assert.match(markup, /<div class="dk-sidebar__foot">/, "global actions live in the sidebar footer");
     const sidebar = markup.slice(
       markup.indexOf('<aside id="sidebar"'),
       markup.indexOf("</aside>"),
     );
-    for (const id of ["sidebar-expand-button", "help-button", "work-bell-button", "settings-button"]) {
+    for (const id of ["sidebar-collapse-button", "work-bell-button", "settings-button"]) {
       assert.ok(sidebar.includes(`id="${id}"`), `${id} belongs to the sidebar`);
     }
     for (const id of ["view-toggle-button", "doc-menu-button"]) {
@@ -334,20 +334,20 @@ describe("workspace nav layout contract", () => {
       assert.match(
         html,
         new RegExp(
-          `class="workspace-nav-button[^"]*"[^>]*data-tasks-section="${section}"[^>]*>` +
-            `[^<]*<span class="workspace-nav-icon"`,
+          `class="dk-nav-item workspace-nav-button[^"]*"[^>]*data-tasks-section="${section}"[^>]*>` +
+            `[^<]*<span class="dk-nav-item__icon"`,
         ),
         `${label} must be a first-class nav button with an icon`,
       );
-      assert.match(html, new RegExp(`</span><span>${label}</span></button>`));
+      assert.match(html, new RegExp(`</span><span class="dk-nav-item__label">${label}</span></a>`));
     }
 
     // The queue is the landing page, so it carries the initial selection.
     assert.match(
       html,
-      /class="workspace-nav-button is-active"[^>]*data-tasks-section="queue"/,
+      /class="dk-nav-item workspace-nav-button is-active"[^>]*data-tasks-section="queue"/,
     );
-    assert.match(html, /<h2 class="workspace-nav-label">Tasks<\/h2>/);
+    assert.match(html, /<h2 class="dk-nav-group__label">Tasks<\/h2>/);
 
     // The collapsible group and the Artifacts tab are gone from both the
     // markup and the stylesheet.

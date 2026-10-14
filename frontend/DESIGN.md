@@ -41,7 +41,8 @@ On mobile, only one state is visible at a time.
 - One primary action: `New process doc`, content-width.
 - The primary object is the catalog of loaded documents. Each row: title, one
   muted metadata line, whole-row open.
-- Search and filters stay in the Docs sidebar or drawer.
+- Search filters stay in the Docs surface toolbar. Knowledge export status
+  follows the catalog.
 - Quality Findings is not the home of Docs. Omit it when there are zero
   findings. If non-zero, one quiet `N findings` disclosure.
 - GitHub planning docs, if shown at all, sit under a quiet `Project docs`
@@ -85,8 +86,8 @@ On mobile, only one state is visible at a time.
 ## Responsive rules
 
 - The 390×844 workspace baseline applies.
-- Search, filters, and the tree belong in the drawer, not above document
-  content.
+- Document filters and the tree belong to the Docs surface. The global
+  navigation drawer contains destinations only.
 - Touch targets are 44px on 390px. Hub and catalog rows are the control.
 - Avoid layout jumps among loading, browsing, reading, and editing states.
 

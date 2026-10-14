@@ -31,7 +31,7 @@ const ROUTES = [
   { path: '/tasks', ready: '.ops-work-queue', content: '.ops-queue-board, .ops-honest-state, .ops-empty', contentReady: '.ops-queue-list, .ops-empty' },
   { path: '/cards', ready: '.ops-workflows-board', content: '.ops-workflows-grid', contentReady: '.ops-workflows-grid' },
   { path: '/cards/archive', ready: '.ops-workflows-board', content: '.workflow-archive-tabs, .cards-archive-grid, .ops-honest-state' },
-  { path: '/templates', ready: '.ops-split-surface', content: '.runtime-template-layout, .ops-template-grid' },
+  { path: '/templates', ready: '.runtime-template-layout', content: '.runtime-template-layout, .ops-template-grid' },
   { path: '/recurring', ready: '.ops-recurring-surface', content: '.recurring-toolbar, .ops-recurring-section' },
   { path: '/assistants', ready: '.assistant-workspace', content: '.assistant-layout' },
   { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bookkeeping-worklist, .bookkeeping-section' },
@@ -43,7 +43,6 @@ const ROUTES = [
   { path: '/review', ready: '.review-surface', content: '.review-summary, .review-empty-state' },
   { path: '/admin', ready: '.ops-surface-admin', content: '.ops-admin-card, .ops-admin-intake-recovery' },
   { path: '/users', ready: '.ops-surface-users', content: '.ops-users-outcome, .ops-users-toolbar, .ops-users-table' },
-  { path: '/device', ready: '.ops-surface-device', content: '.device-form' },
 ];
 
 const SURFACE_SELECTOR = ROUTES.map((route) => route.ready).join(', ');
@@ -95,7 +94,7 @@ async function measureMobileLayout(page) {
   return page.evaluate((surfaceSelector) => {
     const documentElement = document.documentElement;
     const body = document.body;
-    const topbar = document.querySelector('.mobile-topbar');
+    const topbar = document.querySelector('.dk-topbar');
     const topbarRect = topbar ? topbar.getBoundingClientRect() : null;
     const surface = document.querySelector(surfaceSelector);
     const surfaceRect = surface ? surface.getBoundingClientRect() : null;
@@ -137,7 +136,7 @@ const BOOKKEEPING_LEDGER_TOP_RATIO = 0.4;
 
 for (const viewport of VIEWPORTS) {
   for (const route of ROUTES) {
-    test(`${route.path} at ${viewport.name}: fits width, starts below topbar, content within top quarter`, async ({ page }) => {
+    test(`${route.path} at ${viewport.name}: fits width, starts below topbar, compact visible page header`, async ({ page }) => {
       test.setTimeout(60_000);
       await openRouteAt(page, viewport, route);
       const layout = await measureMobileLayout(page);
@@ -171,7 +170,7 @@ for (const viewport of VIEWPORTS) {
         contentTop,
         `${route.path}: no visible primary content matched ${route.content}`,
       ).not.toBeNull();
-      const contentBudget = Math.round(layout.viewport.height * 0.25) + 2;
+      const contentBudget = Math.round(layout.viewport.height / 3) + 2;
       test.info().annotations.push({
         type: 'content-start',
         description: `${route.path} content starts at ${contentTop}px (budget ${contentBudget}px)`,

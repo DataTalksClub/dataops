@@ -24,19 +24,23 @@ function json(route, status, payload) {
 }
 
 async function captureDesktopAndMobile(page, name) {
+  const notificationsOpen = await page.locator('#work-bell-panel').isVisible();
   await page.setViewportSize(DESKTOP);
+  if (notificationsOpen && !await page.locator('#work-bell-panel').isVisible()) await page.locator('#work-bell-button').click();
   await page.waitForTimeout(200);
   await page.screenshot({
     path: path.join(SHOT_ROOT, `${name}-desktop.png`),
     fullPage: true,
   });
   await page.setViewportSize(MOBILE);
+  if (notificationsOpen && !await page.locator('#work-bell-panel').isVisible()) await page.locator('#work-bell-button').click();
   await page.waitForTimeout(200);
   await page.screenshot({
     path: path.join(SHOT_ROOT, `${name}-mobile.png`),
     fullPage: true,
   });
   await page.setViewportSize(DESKTOP);
+  if (notificationsOpen && !await page.locator('#work-bell-panel').isVisible()) await page.locator('#work-bell-button').click();
 }
 
 async function keyboardRetry(page, control, cursorResponse) {
@@ -241,14 +245,12 @@ test.describe('issue 208 paginated collections', () => {
 
     await page.goto(`${BASE_URL}/`);
     await page.locator('#work-bell-button').click();
-    const messages = page.locator('.work-bell-item-message span:not([aria-hidden])');
+    const messages = page.locator('.dk-notif-item__link');
     await expect(messages).toHaveText([
       'Notification page one newer',
       'Notification page one older',
     ]);
-    await expect(page.locator('.work-bell-continuation')).toContainText(
-      'More notifications are available.',
-    );
+    await expect(page.getByRole('button', { name: 'Load more' })).toBeVisible();
     await captureDesktopAndMobile(page, 'notifications-more-available');
 
     await keyboardRetry(
@@ -258,8 +260,8 @@ test.describe('issue 208 paginated collections', () => {
         Boolean(new URL(response.url()).searchParams.get('cursor')),
       ),
     );
-    const failure = page.locator('.work-bell-item-error');
-    await expect(failure).toContainText('More notifications are available, but loading failed');
+    const failure = page.locator('.notification-error');
+    await expect(failure).toContainText('Could not load more notifications');
     await expect(messages).toHaveText([
       'Notification page one newer',
       'Notification page one older',
@@ -279,9 +281,7 @@ test.describe('issue 208 paginated collections', () => {
       'Notification page one newer',
       'Notification page one older',
     ]);
-    await expect(page.locator('.work-bell-continuation')).toContainText(
-      'All notifications loaded.',
-    );
+    await expect(page.locator('[data-load-notifications]')).toHaveCount(0);
     await captureDesktopAndMobile(page, 'notifications-duplicate-free-recovery');
   });
 

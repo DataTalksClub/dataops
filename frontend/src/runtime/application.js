@@ -100,7 +100,7 @@ const dom = queryAppDom(document);
 const {
   body, sidebar, sidebarScrim, mobileMenuButton,
   sidebarCloseButton, sidebarCollapseButton, themeToggleButton,
-  sidebarExpandButton, changesSection, changesCount, changesStatus,
+  changesSection, changesCount, changesStatus,
   changesList, changesSaveAll, changesDiscardAll, lintOpenButton,
   lintSummary, lintModal, lintBackdrop, lintModalBody, lintModalClose,
   knowledgeSection, knowledgeStatusText, historyButton, knowledgeStatusButton, historyModal, historyClose,
@@ -159,7 +159,6 @@ const {
     reviewSurface?.renderReviewSurface || (() => undefined),
   getRenderSponsorCrmSurface: () => renderSponsorCrmSurface,
   getRenderTasksSurface: () => renderTasksSurface,
-  getRenderDeviceSurfaceView: () => renderDeviceSurfaceView,
   getRenderUsersSurfaceView: () => renderUsersSurfaceView,
   getSearchValue: () => searchInput.value,
   isOpenWorkTask,
@@ -237,10 +236,7 @@ const {
   },
   notifications: notificationsShell,
   preferences: {
-    closeSidebar, isMobileShell, openSidebar,
-    restoreDarkMode, restoreSidebarCollapsed,
-    setDarkMode, setSidebarCollapsed, syncSidebarShellState,
-    syncThemeToggleLabel,
+    closeSidebar, isMobileShell,
   },
 } = createApplicationShells({
   canLeaveCurrentDocument,
@@ -561,7 +557,7 @@ const {
 
 const {
   refreshOperationsAssistantSnapshot,
-  renderAssistantsSurface, renderDeviceSurfaceView,
+  renderAssistantsSurface,
 } = createOperationsSurface({
   assistantJobsFromPayload,
   cssEscape: (value) => CSS.escape(value),
@@ -613,6 +609,7 @@ reviewSurface = createReviewSurface({
 });
 
 knowledgeSurface = createKnowledgeSurface({
+  knowledgeTools: document.querySelector("#knowledge-tools"),
   apiUrl,
   assistantJobsFromPayload,
   basename,
@@ -880,20 +877,16 @@ bindApplicationEvents({
     openDocMenu,
     openLintReport,
     openQuickNav,
-    openSidebar,
     refreshDocuments,
     refreshKnowledgeStatus,
     clearDocumentFilters,
     resizeDocumentTitle,
     saveAllDrafts,
     saveCurrentDocument,
-    setDarkMode,
-    setSidebarCollapsed,
     showCreate,
     showLibrary,
     showWorkspaceSurface,
     storeDraft,
-    syncSidebarShellState,
     syncTitleToMarkdown,
     toggleViewMode,
     updateQuickNavMatches,
@@ -924,10 +917,7 @@ initializeAppShell({
   refreshChangesPanel,
   refreshKnowledgeStatus,
   refreshOperationsWorkSnapshot,
-  restoreDarkMode,
-  restoreSidebarCollapsed,
   showLibrary,
-  syncSidebarShellState,
   updateSaveState,
   windowRef: window,
 });

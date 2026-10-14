@@ -223,24 +223,20 @@ test.describe('issue 204 owning-surface feedback', () => {
     await expect(usersSummary).toHaveAttribute('data-summary-state', /ready|empty/);
     await shot(page, 'users-ready-desktop-1440x900');
 
+    await page.route('**/work/api/me', route => route.fulfill({ json: { user: { email: 'operator@example.test' } } }));
+    await page.route('**/work/api/auth/device/pending?**', route => route.fulfill({ status: 404, json: { error: 'Not found' } }));
     await page.goto(`${baseURL}/device`);
-    const deviceSummary = page.locator('[data-summary-id="device"]');
-    await expect(deviceSummary).toContainText('Enter the code shown by the DataOps CLI');
-    await page.locator('.device-code-input').fill('ZZZZ-9999');
-    await page.getByRole('button', { name: 'Continue' }).click();
-    const deviceError = page.locator('.device-error');
-    await expect(deviceError).toContainText('That code is not waiting for confirmation');
-    await expect(deviceError).toContainText('retry device registration');
-    await expect(deviceError).not.toContainText('Sign in to the portal');
-    await expect(page.locator('.device-code-input')).toHaveValue('ZZZZ-9999');
-    await expect(page.getByRole('button', { name: 'Continue' })).toBeEnabled();
-    await expect(deviceError).toBeVisible();
-    await expect(page.getByText(await deviceError.innerText())).toHaveCount(1);
-    await expect(deviceSummary).toHaveAttribute('data-summary-state', 'ready');
+    await expect(page.locator('.dk-auth-page')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Authorize a device', exact: true })).toBeVisible();
+    await page.getByLabel('Device code', { exact: true }).fill('ZZZZ-9999');
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Code not found' })).toBeVisible();
+    const deviceError = page.getByRole('alert');
+    await expect(deviceError).toContainText('This code is wrong, expired, or already used.');
+    await expect(page.getByRole('button', { name: 'Enter another code' })).toBeEnabled();
     await shot(page, 'device-unknown-code-desktop-1440x900');
-
     await page.setViewportSize(MOBILE);
-    await expect(deviceSummary).toBeVisible();
+    await expect(page.locator('.dk-auth-card')).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await shot(page, 'device-mobile-390x844');
     await context.close();

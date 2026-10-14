@@ -216,25 +216,19 @@ describe("app shell coordinator characterization", () => {
     assert.match(renderIdentity, /const actor = identityState\.user;/);
     assert.match(renderIdentity, /const workOwner = activeWorkOwner\(\);/);
     assert.match(renderIdentity, /Showing work for \$\{menuName\}; signed in as \$\{actorName\}/);
-    assert.match(renderIdentity, /isActor \? "My work" : "Teammate’s work"/);
+    assert.match(renderIdentity, /button\.setAttribute\("role", "radio"\)/);
     assert.match(renderIdentity, /identityState\.selectedOwnerId = String\(member\.id\)/);
     assert.doesNotMatch(renderIdentity, /identityState\.user\s*=/);
     assert.match(refreshIdentity, /user: actor,[\s\S]*selectedOwnerId,/);
-    assert.match(shellMarkup, /<small>Signed in as<\/small>/);
+    assert.match(shellMarkup, /class="dk-menu__identity"/);
     assert.match(shellMarkup, /id="account-work-scope-list"[^>]+role="radiogroup"/);
   });
 
-  test("persists theme and sidebar visibility while deleting custom resize state", () => {
-    assert.match(functionSource("setDarkMode", preferencesSource), /storage\.setItem\("dakit-theme", on \? "dark" : "light"\)/);
-    assert.match(functionSource("restoreDarkMode", preferencesSource), /syncThemeToggleLabel\(\)/);
-    assert.match(functionSource("setSidebarCollapsed", preferencesSource), /storage\.setItem\("dtc-sidebar-collapsed", collapsed \? "1" : "0"\)/);
-    assert.match(functionSource("restoreSidebarCollapsed", preferencesSource), /storage\.getItem\("dtc-sidebar-collapsed"\) === "1"/);
-    assert.doesNotMatch(preferencesSource, /\b(?:attachSidebarResize|restoreSidebarWidth|setSidebarWidth)\b/);
-    assert.doesNotMatch(preferencesSource, /dtc-sidebar-width/);
-    assert.doesNotMatch(shellMarkup, /id="sidebar-resize"/);
-    assert.doesNotMatch(shellMarkup, /<div class="section-label">\s*Workspace\s*<\/div>/);
-    assert.match(shellMarkup, /id="theme-toggle-button"[^>]+aria-pressed="false"/);
-    assert.match(shellMarkup, /id="sidebar-collapse-button"/);
+  test("delegates shell persistence and theme controls to dakit", () => {
+    assert.match(preferencesSource, /shell\.toggleDrawer/);
+    assert.match(preferencesSource, /shell\.toggleDrawer/);
+    assert.match(shellMarkup, /data-dk-theme-toggle/);
+    assert.doesNotMatch(preferencesSource, /dtc-sidebar-collapsed/);
   });
 
   test("commits canonical routes synchronously before route-specific hydration", () => {
@@ -302,11 +296,11 @@ describe("app shell coordinator characterization", () => {
     assert.match(refresh, /await notificationLoader\.load\(\)/);
     assert.doesNotMatch(refresh, /\brequest\s*\(/);
     assert.match(loadMore, /await notificationLoader\.loadMore\(\)/);
-    assert.match(indicators, /notificationState\.failed && count === 0 \? "!" : String\(count\)/);
-    assert.match(panel, /Notifications unavailable:/);
-    assert.match(panel, /You’re all caught up\./);
+    assert.match(indicators, /shell\.setCount\(workBellCount, count\)/);
+    assert.match(panel, /Couldn.t load notifications/);
+    assert.match(panel, /Nothing yet\./);
     assert.match(panel, /dismiss\.dataset\.dismissNotification = notification\.id/);
-    assert.match(panel, /Select Dismiss to retry\./);
+    assert.match(panel, /Mark read to retry\./);
     assert.match(dismiss, /\/dismiss`[\s\S]*\{ method: "PUT" \}/);
     assert.match(dismiss, /locallyDismissedIds\.add\(notification\.id\)/);
     assert.doesNotMatch(dismiss, /notifications\s*=\s*notifications\.filter/);
@@ -341,9 +335,6 @@ describe("app shell coordinator characterization", () => {
       bootstrapSource,
     );
     assertInOrder(initializeAppShell, [
-      "restoreDarkMode();",
-      "restoreSidebarCollapsed();",
-      "syncSidebarShellState();",
       "showLibrary({ updateUrl: false });",
       "refreshChangesPanel();",
       "updateSaveState();",

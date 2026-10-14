@@ -5,7 +5,6 @@ const SELECTORS = Object.freeze({
   sidebarCloseButton: "#sidebar-close-button",
   sidebarCollapseButton: "#sidebar-collapse-button",
   themeToggleButton: "#theme-toggle-button",
-  sidebarExpandButton: "#sidebar-expand-button",
   changesSection: "#changes-section",
   changesCount: "#changes-count",
   changesStatus: "#changes-status",
@@ -129,16 +128,6 @@ export function bindAppDomEvents(context) {
     "popstate",
     handlers.scheduleCurrentBrowserLocation,
   );
-  dom.mobileMenuButton.addEventListener("click", handlers.openSidebar);
-  dom.sidebarCloseButton.addEventListener("click", handlers.closeSidebar);
-  dom.sidebarScrim?.addEventListener("click", handlers.closeSidebar);
-  dom.sidebarCollapseButton.addEventListener("click", () =>
-    handlers.setSidebarCollapsed(true),
-  );
-  dom.sidebarExpandButton.addEventListener("click", () =>
-    handlers.setSidebarCollapsed(false),
-  );
-  dom.themeToggleButton.addEventListener("click", handlers.toggleDarkMode);
   dom.changesSaveAll.addEventListener("click", handlers.saveAllDrafts);
   dom.changesDiscardAll.addEventListener("click", handlers.discardAllDrafts);
   dom.editorHistoryButton?.addEventListener("click", handlers.openHistory);
@@ -146,12 +135,20 @@ export function bindAppDomEvents(context) {
   dom.historyClose.addEventListener("click", handlers.closeHistory);
   dom.historyBackdrop.addEventListener("click", handlers.closeHistory);
   for (const button of dom.workspaceNavButtons) {
-    button.addEventListener("click", () => handlers.workspaceButton(button));
+    button.addEventListener("click", (event) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button > 0) return;
+      event.preventDefault();
+      handlers.workspaceButton(button);
+      handlers.closeSidebar();
+    });
   }
   for (const button of dom.tasksNavSectionButtons) {
-    button.addEventListener("click", () =>
-      handlers.openTasksSection(button.dataset.tasksSection || "queue"),
-    );
+    button.addEventListener("click", (event) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button > 0) return;
+      event.preventDefault();
+      handlers.openTasksSection(button.dataset.tasksSection || "queue");
+      handlers.closeSidebar();
+    });
   }
   documentRef.addEventListener(
     "dataops:navigate-workspace",
@@ -164,7 +161,6 @@ export function bindAppDomEvents(context) {
   dom.documentTitle.addEventListener("input", handlers.syncTitleToMarkdown);
   dom.documentTitle.addEventListener("keydown", handlers.documentTitleKeydown);
   windowRef.addEventListener("resize", handlers.resizeDocumentTitle);
-  windowRef.addEventListener("resize", handlers.syncSidebarShellState);
   dom.editor.addEventListener("input", handlers.editorInput);
   dom.searchForm.addEventListener("submit", handlers.searchSubmit);
   dom.searchInput.addEventListener("input", handlers.searchInput);

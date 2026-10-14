@@ -13,18 +13,13 @@ export function createNotificationsShell({
   request,
   todayIsoDate,
   workApiUrl,
+  shell = globalThis.dakitShell,
 }) {
   const workBellButton = documentRef.querySelector("#work-bell-button");
   const workBellCount = workBellButton?.querySelector(".work-bell-count");
-  const mobileWorkBellButton = documentRef.querySelector(
-    "#mobile-work-bell-button",
-  );
-  const mobileWorkBellCount = mobileWorkBellButton?.querySelector(
-    ".work-bell-count",
-  );
   const workBellPanel = documentRef.querySelector("#work-bell-panel");
   const workBellBody = documentRef.querySelector("#work-bell-body");
-  const workBellClose = documentRef.querySelector("#work-bell-close");
+  const readAll = documentRef.querySelector("#work-bell-read-all");
   const notificationLoader = createCollectionLoader({
     request,
     collection: "notifications",
@@ -37,7 +32,8 @@ export function createNotificationsShell({
   let notificationState = notificationLoader.getSnapshot();
   const dismissErrors = new Map();
   const locallyDismissedIds = new Set();
-  let opener = null;
+  let panelSnapshot = null;
+  let lastAnnouncement = 0;
   let pendingDismissFocusId = "";
   let panelRenderVersion = 0;
 
@@ -62,15 +58,6 @@ export function createNotificationsShell({
     return relative ? `Due ${formatShortDate(date)}` : "";
   }
 
-  function notificationUrgencyClass(notification) {
-    const dueDate = String(notification?.dueAt || "").slice(0, 10);
-    if (!dueDate) return "is-info";
-    const days = isoDayDistance(dueDate, todayIsoDate());
-    if (days < 0) return "is-overdue";
-    if (days === 0) return "is-due";
-    return "is-info";
-  }
-
   function compareNotificationsNewestFirst(left, right) {
     return (
       String(right?.createdAt || "").localeCompare(
@@ -80,47 +67,29 @@ export function createNotificationsShell({
   }
 
   function syncWorkBellIndicators() {
-    const count = [...notificationState.items].filter(
+    const count = notificationState.items.filter(
       (item) => !locallyDismissedIds.has(item.id),
     ).length;
-    const indicatorText =
-      notificationState.failed && count === 0 ? "!" : String(count);
-    for (const indicator of [workBellCount, mobileWorkBellCount]) {
-      if (!indicator) continue;
-      indicator.textContent = indicatorText;
-      indicator.classList.toggle(
-        "is-visible",
-        Boolean(notificationState.failed && count === 0) || count > 0,
-      );
-      indicator.classList.toggle(
-        "is-error",
-        Boolean(notificationState.failed && count === 0),
-      );
-    }
+    shell.setCount(workBellCount, count);
+    readAll.hidden = count === 0;
   }
 
   function closeWorkBellPanel(options = {}) {
     if (workBellPanel.hidden) return;
-    workBellPanel.hidden = true;
+    shell.closePopovers(options);
     pendingDismissFocusId = "";
     panelRenderVersion += 1;
-    if (options.restoreFocus !== false && opener?.isConnected) opener.focus();
-    opener = null;
   }
 
   function openWorkBellPanel() {
-    opener =
-      documentRef.activeElement instanceof HTMLElementClass
-        ? documentRef.activeElement
-        : workBellButton;
+    panelSnapshot = notificationState;
     renderWorkBellPanel();
-    workBellPanel.hidden = false;
-    workBellClose.focus();
+    shell.openPopover("work-bell-panel", { trigger: workBellButton });
   }
 
   async function dismissWorkNotification(notification, button) {
     button.disabled = true;
-    button.textContent = "Dismissing…";
+    button.setAttribute("aria-busy", "true");
     try {
       await request(
         workApiUrl(
@@ -167,188 +136,167 @@ export function createNotificationsShell({
 
   function renderWorkBellPanel() {
     const version = ++panelRenderVersion;
+    const current = panelSnapshot || notificationState;
     workBellBody.replaceChildren();
-    if (notificationState.failed && notificationState.items.length === 0) {
-      const outage = documentRef.createElement("div");
-      outage.className = "work-bell-empty is-error";
-      const message = documentRef.createElement("p");
-      message.setAttribute("role", "alert");
-      message.textContent = `Notifications unavailable: ${notificationState.error}`;
+    if (panelSnapshot && panelSnapshot !== notificationState) {
+      const count = notificationState.items.filter(
+        (item) =>
+          !locallyDismissedIds.has(item.id) &&
+          !panelSnapshot.items.some((previous) => previous.id === item.id),
+      ).length;
+      if (count > 0) {
+        const show = documentRef.createElement("button");
+        show.className = "dk-button dk-button--secondary";
+        show.textContent = `${count} new · Show`;
+        show.addEventListener("click", () => {
+          panelSnapshot = notificationState;
+          renderWorkBellPanel();
+        });
+        workBellBody.append(show);
+      }
+    }
+    if (current.failed && notificationState.items.length === 0) {
+      const error = documentRef.createElement("div");
+      error.className = "dk-callout dk-callout--danger";
+      error.setAttribute("role", "alert");
+      error.textContent = "Couldn't load notifications.";
       const retry = documentRef.createElement("button");
-      retry.type = "button";
-      retry.className = "work-bell-action";
-      retry.dataset.retryNotifications = "true";
-      retry.textContent = "Retry notifications";
-      retry.addEventListener("click", () => {
-        void retryInitialNotifications(retry);
-      });
-      outage.append(message, retry);
-      workBellBody.append(outage);
+      retry.className = "dk-button dk-button--secondary";
+      retry.textContent = "Retry";
+      retry.addEventListener("click", () => retryInitialNotifications(retry));
+      error.append(retry);
+      workBellBody.append(error);
       return;
     }
-    if (
-      !notificationState.loaded &&
-      !notificationState.failed &&
-      notificationState.items.length === 0
-    ) {
-      const loading = documentRef.createElement("p");
-      loading.className = "work-bell-empty";
-      loading.setAttribute("role", "status");
-      loading.textContent = "Loading notifications…";
-      workBellBody.append(loading);
+    if (!current.loaded && !current.failed) {
+      for (let i = 0; i < 3; i++) {
+        const row = documentRef.createElement("div");
+        row.className = "dk-skeleton";
+        row.setAttribute("aria-label", "Loading notifications");
+        workBellBody.append(row);
+      }
       return;
     }
-    const visibleNotifications = notificationState.items.filter(
-      (item) => !locallyDismissedIds.has(item.id),
-    );
-    visibleNotifications.sort(compareNotificationsNewestFirst);
-    if (
-      visibleNotifications.length === 0 &&
-      notificationState.complete &&
-      !notificationState.failed
-    ) {
+    const items = current.items
+      .filter((item) => !locallyDismissedIds.has(item.id))
+      .sort(compareNotificationsNewestFirst);
+    if (!items.length && current.complete && !current.failed) {
       const empty = documentRef.createElement("div");
-      empty.className = "work-bell-empty-state";
-      empty.innerHTML = `
-        <span class="work-bell-empty-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <path d="m7 13 3 3 7-8" />
-            <circle cx="12" cy="12" r="9" />
-          </svg>
-        </span>
-        <strong>You’re all caught up.</strong>
-        <p class="work-bell-empty">No active notifications.</p>
-      `;
+      empty.className = "dk-empty";
+      empty.textContent = "Nothing yet.";
       workBellBody.append(empty);
     }
-    for (const notification of visibleNotifications) {
+    let previousDay = "";
+    for (const notification of items) {
+      const date = String(notification.createdAt || "").slice(0, 10);
+      const days = date ? isoDayDistance(date, todayIsoDate()) : 2;
+      const day = days === 0 ? "Today" : days === -1 ? "Yesterday" : "Earlier";
+      if (day !== previousDay) {
+        const label = documentRef.createElement("div");
+        label.className = "dk-notif-panel__day";
+        label.textContent = day;
+        workBellBody.append(label);
+        previousDay = day;
+      }
       const item = documentRef.createElement("div");
-      item.className = "work-bell-item";
-      item.classList.add(notificationUrgencyClass(notification));
-      const message = documentRef.createElement("div");
-      message.className = "work-bell-item-message";
-      const icon = documentRef.createElement("span");
-      icon.className = "work-bell-item-icon";
-      icon.setAttribute("aria-hidden", "true");
-      icon.innerHTML = notification.taskId
-        ? '<svg viewBox="0 0 24 24"><path d="M12 3 2.8 20h18.4Z"/><path d="M12 9v5M12 17h.01"/></svg>'
-        : '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
-      const text = documentRef.createElement("span");
-      text.textContent = notificationDisplayMessage(notification);
-      message.append(icon, text);
-      item.append(message);
-      const meta = documentRef.createElement("div");
-      meta.className = "work-bell-item-meta";
-      if (notification.dueAt) {
-        meta.textContent = notificationDueLabel(notification.dueAt);
-      } else if (notification.createdAt) {
-        const date = String(notification.createdAt).slice(0, 10);
-        meta.textContent = `Added ${formatShortDate(date)}`;
-      }
-      item.append(meta);
-      const actions = documentRef.createElement("div");
-      actions.className = "work-bell-item-actions";
-      if (notification.taskId) {
-        const open = documentRef.createElement("button");
-        open.type = "button";
-        open.className = "work-bell-action work-bell-action-primary";
-        open.textContent = "Open task";
-        open.addEventListener("click", () => {
-          closeWorkBellPanel();
-          openTaskPanel(notification.taskId);
-        });
-        actions.append(open);
-      }
+      item.className = "dk-notif-item";
+      item.dataset.unread = "true";
+      const marker = documentRef.createElement("span");
+      marker.className = "dk-notif-item__marker";
+      marker.innerHTML =
+        '<span class="dk-dot dk-dot--info"></span><span class="dk-visually-hidden">Unread:</span>';
+      const main = documentRef.createElement("div");
+      main.className = "dk-notif-item__main";
+      const link = documentRef.createElement("a");
+      link.className = "dk-notif-item__link";
+      link.href = notification.taskId
+        ? `/tasks?taskId=${encodeURIComponentImpl(notification.taskId)}`
+        : "/tasks";
+      link.textContent = notificationDisplayMessage(notification);
+      link.addEventListener("click", async (event) => {
+        event.preventDefault();
+        await dismissWorkNotification(notification, dismiss);
+        if (dismissErrors.has(notification.id)) return;
+        closeWorkBellPanel();
+        if (notification.taskId) openTaskPanel(notification.taskId);
+      });
+      const meta = documentRef.createElement("p");
+      meta.className = "dk-notif-item__desc";
+      meta.textContent = notification.dueAt
+        ? notificationDueLabel(notification.dueAt)
+        : "Workspace update";
+      main.append(link, meta);
+      const side = documentRef.createElement("div");
+      side.className = "dk-notif-item__side";
+      const time = documentRef.createElement("time");
+      time.className = "dk-notif-item__time";
+      time.dateTime = notification.createdAt || "";
+      time.title = notification.createdAt || "";
+      const minutes = Math.max(
+        0,
+        Math.floor((Date.now() - Date.parse(notification.createdAt)) / 60000),
+      );
+      time.textContent = Number.isFinite(minutes)
+        ? minutes < 60
+          ? `${minutes}m`
+          : minutes < 1440
+            ? `${Math.floor(minutes / 60)}h`
+            : `${Math.floor(minutes / 1440)}d`
+        : "";
       const dismiss = documentRef.createElement("button");
       dismiss.type = "button";
-      dismiss.className = "work-bell-action";
-      dismiss.textContent = "Dismiss";
+      dismiss.className = "dk-icon-button dk-notif-item__read";
       dismiss.dataset.dismissNotification = notification.id;
-      dismiss.setAttribute(
-        "aria-label",
-        `Dismiss notification: ${
-          notification.message || notification.type || notification.id
-        }`,
+      dismiss.setAttribute("aria-label", `Mark read: ${link.textContent}`);
+      dismiss.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>';
+      dismiss.addEventListener("click", () =>
+        dismissWorkNotification(notification, dismiss),
       );
-      dismiss.addEventListener("click", () => {
-        dismissWorkNotification(notification, dismiss);
-      });
-      actions.append(dismiss);
-      item.append(actions);
+      side.append(time, dismiss);
+      item.append(marker, main, side);
       const failure = dismissErrors.get(notification.id);
       if (failure) {
         const error = documentRef.createElement("p");
-        error.className = "work-bell-item-error";
+        error.className = "notification-error";
         error.setAttribute("role", "alert");
-        error.textContent = `${failure} Select Dismiss to retry.`;
-        item.append(error);
+        error.textContent = `${failure} Mark read to retry.`;
+        main.append(error);
       }
       workBellBody.append(item);
     }
-    if (
-      pendingDismissFocusId &&
-      !visibleNotifications.some((item) => item.id === pendingDismissFocusId)
-    ) {
-      pendingDismissFocusId = "";
-    }
     scheduleDismissRecoveryFocus(version);
-
-    const continuation = documentRef.createElement("div");
-    continuation.className = "work-bell-continuation";
-    if (notificationState.loading || notificationState.loadingMore) {
-      const loading = documentRef.createElement("p");
-      loading.className = "work-bell-empty";
-      loading.setAttribute("role", "status");
-      loading.textContent = notificationState.loadingMore
-        ? "Loading more notifications…"
-        : "Loading notifications…";
-      continuation.append(loading);
-    } else if (
-      notificationState.failed &&
-      notificationState.moreAvailable
-    ) {
-      const error = documentRef.createElement("p");
-      error.className = "work-bell-item-error";
-      error.setAttribute("role", "alert");
-      error.textContent = `More notifications are available, but loading failed: ${notificationState.error}`;
-      const retry = documentRef.createElement("button");
-      retry.type = "button";
-      retry.className = "work-bell-action";
-      retry.dataset.loadNotifications = "retry";
-      retry.textContent = "Retry next page";
-      retry.addEventListener("click", () => {
-        loadMoreNotifications(retry);
-      });
-      continuation.append(error, retry);
-    } else if (notificationState.moreAvailable) {
-      const available = documentRef.createElement("p");
-      available.className = "work-bell-empty";
-      available.textContent = "More notifications are available.";
-      const loadMore = documentRef.createElement("button");
-      loadMore.type = "button";
-      loadMore.className = "work-bell-action";
-      loadMore.dataset.loadNotifications = "next";
-      loadMore.textContent = "Load more";
-      loadMore.addEventListener("click", () => {
-        loadMoreNotifications(loadMore);
-      });
-      continuation.append(available, loadMore);
-    } else if (
-      notificationState.complete &&
-      visibleNotifications.length > 0
-    ) {
-      const exhausted = documentRef.createElement("p");
-      exhausted.className = "work-bell-empty";
-      exhausted.textContent = "All notifications loaded.";
-      continuation.append(exhausted);
+    if (current.moreAvailable) {
+      const continuation = documentRef.createElement("div");
+      continuation.className = "notification-continuation";
+      const more = documentRef.createElement("button");
+      more.className = "dk-button dk-button--secondary";
+      more.textContent = current.failed
+        ? "Retry next page"
+        : current.loadingMore
+          ? "Loading…"
+          : "Load more";
+      more.disabled = current.loadingMore;
+      more.dataset.loadNotifications = current.failed ? "retry" : "next";
+      more.addEventListener("click", () => loadMoreNotifications(more));
+      if (current.failed) {
+        const error = documentRef.createElement("p");
+        error.className = "notification-error";
+        error.setAttribute("role", "alert");
+        error.textContent = "Could not load more notifications. Try again.";
+        continuation.append(error);
+        requestAnimationFrameImpl(() => { if (!workBellPanel.hidden) more.focus(); });
+      }
+      continuation.append(more);
+      workBellBody.append(continuation);
     }
-    if (continuation.children.length > 0) workBellBody.append(continuation);
   }
 
   async function loadMoreNotifications(button) {
     button.disabled = true;
     button.textContent = "Loading…";
     notificationState = await notificationLoader.loadMore();
+    panelSnapshot = notificationState;
     syncWorkBellIndicators();
     renderWorkBellPanel();
   }
@@ -361,44 +309,49 @@ export function createNotificationsShell({
     syncWorkBellIndicators();
     renderWorkBellPanel();
     notificationState = await pendingLoad;
+    panelSnapshot = notificationState;
     syncWorkBellIndicators();
     renderWorkBellPanel();
   }
 
   async function refreshWorkBell() {
     const snapshot = await notificationLoader.load();
+    const previousIds = new Set(notificationState.items.map((item) => item.id));
+    const newCount = snapshot.items.filter(
+      (item) => !previousIds.has(item.id),
+    ).length;
     notificationState = snapshot;
-    locallyDismissedIds.clear();
+    if (panelSnapshot && !panelSnapshot.loaded) panelSnapshot = snapshot;
+    if (newCount && Date.now() - lastAnnouncement >= 60000) {
+      shell.announce(`${newCount} new notifications`);
+      lastAnnouncement = Date.now();
+    }
+    // A read item stays read while a stale refresh response is in flight.
     syncWorkBellIndicators();
     if (!workBellPanel.hidden) renderWorkBellPanel();
   }
 
   function bindToggle() {
-    const toggle = () => {
+    // The shared delegated listener opens the panel after this app listener.
+    workBellButton.addEventListener("click", () => {
       if (workBellPanel.hidden) {
-        closeSettingsMenu();
-        openWorkBellPanel();
-        void refreshWorkBell();
-        return;
+        panelSnapshot = notificationState;
+        renderWorkBellPanel();
       }
-      closeWorkBellPanel();
-    };
-    workBellButton.addEventListener("click", toggle);
-    mobileWorkBellButton?.addEventListener("click", toggle);
-    workBellClose.addEventListener("click", () => closeWorkBellPanel());
-    documentRef.addEventListener("click", (event) => {
-      if (workBellPanel.hidden) return;
-      if (workBellPanel.contains(event.target)) return;
-      if (workBellButton.contains(event.target)) return;
-      if (mobileWorkBellButton?.contains(event.target)) return;
-      closeWorkBellPanel({ restoreFocus: false });
+    });
+    readAll.addEventListener("click", async () => {
+      readAll.disabled = true;
+      const items = notificationState.items.filter(
+        (item) => !locallyDismissedIds.has(item.id),
+      );
+      for (const item of items) await dismissWorkNotification(item, readAll);
+      readAll.disabled = false;
     });
   }
 
   return {
     bindToggle,
     closeWorkBellPanel,
-    getMobileWorkBellButton: () => mobileWorkBellButton,
     isOpen: () => !workBellPanel.hidden,
     openWorkBellPanel,
     refreshWorkBell,

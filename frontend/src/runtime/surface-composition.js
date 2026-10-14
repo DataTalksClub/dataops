@@ -158,7 +158,7 @@ export function createSurfaceComposition(context) {
     if (view === "docs") return getRenderDocsSurface()(documents);
     if (view === "admin") return getRenderAdminSurfaceView()(documents);
     if (view === "users") return context.getRenderUsersSurfaceView()();
-    if (view === "device") return context.getRenderDeviceSurfaceView()();
+    if (view === "device") return window.location.assign("/device");
     if (view === "bookkeeping") return getRenderBookkeepingSurface()();
     if (view === "sponsors") return getRenderSponsorCrmSurface()();
     if (view === "newsletter") return getRenderNewsletterSurface()();

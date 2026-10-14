@@ -90,8 +90,9 @@ function headerValue(event: LambdaEvent, name: string): string {
   return '';
 }
 
-function redirectToLogin(): LambdaResponse {
-  return { statusCode: 302, headers: { location: '/login', 'cache-control': 'no-store' }, body: '' };
+function redirectToLogin(returnTo = ''): LambdaResponse {
+  const location = returnTo ? `/login?return_to=${encodeURIComponent(returnTo)}` : '/login';
+  return { statusCode: 302, headers: { location, 'cache-control': 'no-store' }, body: '' };
 }
 
 // ── Static frontend + content serving ─────────────────────────────────────────
@@ -142,8 +143,8 @@ function resolveFrontendFile(root: string, rel: string): string | null {
   return current;
 }
 
-function serveIndex(): LambdaResponse {
-  const index = resolveFrontendFile(frontendRoot(), 'index.html');
+function serveIndex(entry = 'index.html'): LambdaResponse {
+  const index = resolveFrontendFile(frontendRoot(), entry);
   if (!index) {
     return {
       statusCode: 500,
@@ -157,6 +158,7 @@ function serveIndex(): LambdaResponse {
 function serveFrontend(event: LambdaEvent, method: string, path: string): LambdaResponse | null {
   if (method !== 'GET') return null;
 
+  if (path === '/device' || path === '/device/sessions') return serveIndex('src/device.html');
   if (path === '/' || path === '/index.html') return serveIndex();
 
   const firstSegment = path.replace(/^\/+/, '').split('/')[0].toLowerCase();
@@ -302,6 +304,11 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
   const user = authEnabled ? await browserUser(event, client) : null;
   const authorized = !authEnabled || Boolean(user);
   if (!authorized) {
+    if (path === '/device') {
+      const code = event.queryStringParameters?.userCode || '';
+      const returnTo = code ? `/device?userCode=${encodeURIComponent(code)}` : '/device';
+      return { response: redirectToLogin(returnTo), authorized: false };
+    }
     // Existing non-browser bearer clients continue through the router's own
     // server-side session validation, but a bearer token never serves a page.
     if (isDataPath(path) && /^Bearer\s+\S+$/i.test(headerValue(event, 'authorization'))) return { authorized: false };

@@ -293,7 +293,7 @@ test.describe('production sponsor CRM communications portal', () => {
 
     const openBooking = async (page) => {
       await gotoOwnedCommunicationsPage(page);
-      await page.getByRole('button', { name: 'Sponsors' }).click();
+      await page.getByRole('link', { name: 'Sponsors' }).click();
       await expect(page.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
       await page.getByRole('button', { name: 'Open company' }).first().click();
       await expect(page.locator('[data-crm-communications]')).toContainText('Booking confirmed with an active recipient');
@@ -352,8 +352,8 @@ test.describe('production sponsor CRM communications portal', () => {
       '.tmp/sponsor-communications-operator-awaiting-desktop.png',
     );
     await operatorPage.setViewportSize({ width: 390, height: 844 });
-    await operatorPage.evaluate(() => document.body.classList.remove('sidebar-open'));
-    await operatorPage.addStyleTag({ content: '.mobile-topbar{display:none!important}' });
+    await operatorPage.evaluate(() => dakitShell.toggleDrawer(document.querySelector(".dk-shell"), false));
+    await operatorPage.addStyleTag({ content: '.dk-topbar{display:none!important}' });
     expect(await operatorPage.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await captureCommunications(
       operatorPage,
@@ -361,7 +361,7 @@ test.describe('production sponsor CRM communications portal', () => {
     );
     await operatorPage.setViewportSize({ width: 1280, height: 900 });
     await operatorPage.reload();
-    await operatorPage.getByRole('button', { name: 'Sponsors' }).click();
+    await operatorPage.getByRole('link', { name: 'Sponsors' }).click();
     await expect(operatorPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
     await operatorPage.getByRole('button', { name: 'Open company' }).first().click();
     await expect(operatorPage.locator('[data-crm-communications]')).toContainText('Draft version 1');
@@ -380,8 +380,8 @@ test.describe('production sponsor CRM communications portal', () => {
       '.tmp/sponsor-communications-admin-states-desktop.png',
     );
     await adminPage.setViewportSize({ width: 390, height: 844 });
-    await adminPage.evaluate(() => document.body.classList.remove('sidebar-open'));
-    await adminPage.addStyleTag({ content: '.mobile-topbar{display:none!important}' });
+    await adminPage.evaluate(() => dakitShell.toggleDrawer(document.querySelector(".dk-shell"), false));
+    await adminPage.addStyleTag({ content: '.dk-topbar{display:none!important}' });
     expect(await adminPage.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await captureCommunications(
       adminPage,
@@ -433,9 +433,9 @@ test.describe('production sponsor CRM communications portal', () => {
       );
     });
     await expect.poll(() => presentations.get(navigationReviewId).state).toBe('revoked');
-    await expect(adminPage.getByRole('button', { name: 'Sponsors' })).toBeVisible();
+    await expect(adminPage.getByRole('link', { name: 'Sponsors' })).toBeVisible();
 
-    await adminPage.getByRole('button', { name: 'Sponsors' }).click();
+    await adminPage.getByRole('link', { name: 'Sponsors' }).click();
     await expect(adminPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
     await adminPage.getByRole('button', { name: 'Open company' }).first().click();
     await adminPage.getByRole('button', { name: 'Review exact draft' }).click();
@@ -448,7 +448,7 @@ test.describe('production sponsor CRM communications portal', () => {
 
     await adminPage.getByRole('button', { name: 'Review exact draft' }).click();
     await adminPage.setViewportSize({ width: 390, height: 844 });
-    await adminPage.evaluate(() => document.body.classList.remove('sidebar-open'));
+    await adminPage.evaluate(() => dakitShell.toggleDrawer(document.querySelector(".dk-shell"), false));
     expect(await adminPage.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await adminPage.locator('[data-communication-review-dialog]').screenshot({
       path: '.tmp/sponsor-communications-admin-exact-preview-mobile.png',
@@ -523,7 +523,7 @@ test.describe('production sponsor CRM communications portal', () => {
       return route.fulfill({ status: 404, json: { error: 'missing' } });
     });
     await disabledPage.goto('/');
-    await disabledPage.getByRole('button', { name: 'Sponsors' }).click();
+    await disabledPage.getByRole('link', { name: 'Sponsors' }).click();
     await expect(disabledPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
     await disabledPage.getByRole('button', { name: 'Open company' }).click();
     await expect(disabledPage.getByText('Reviewed sending is disabled')).toBeVisible();
@@ -533,8 +533,8 @@ test.describe('production sponsor CRM communications portal', () => {
       '.tmp/sponsor-communications-disabled-desktop.png',
     );
     await disabledPage.setViewportSize({ width: 390, height: 844 });
-    await disabledPage.evaluate(() => document.body.classList.remove('sidebar-open'));
-    await disabledPage.addStyleTag({ content: '.mobile-topbar{display:none!important}' });
+    await disabledPage.evaluate(() => dakitShell.toggleDrawer(document.querySelector(".dk-shell"), false));
+    await disabledPage.addStyleTag({ content: '.dk-topbar{display:none!important}' });
     expect(await disabledPage.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await captureCommunications(
       disabledPage,

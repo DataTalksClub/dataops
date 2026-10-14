@@ -24,20 +24,8 @@ export function createApplicationShells(context) {
     workApiUrl,
   } = context;
   const preferences = createPreferencesShell({
-    body: dom.body,
     documentRef,
-    getMobileWorkBellButton: () =>
-      documentRef.querySelector("#mobile-work-bell-button"),
-    HTMLElementClass,
     matchMedia: (query) => windowRef.matchMedia(query),
-    mobileMenuButton: dom.mobileMenuButton,
-    pageShell: dom.pageShell,
-    sidebar: dom.sidebar,
-    sidebarCloseButton: dom.sidebarCloseButton,
-    sidebarExpandButton: dom.sidebarExpandButton,
-    sidebarScrim: dom.sidebarScrim,
-    storage: localStorageRef,
-    themeToggleButton: dom.themeToggleButton,
   });
 
   let notifications;
@@ -54,7 +42,6 @@ export function createApplicationShells(context) {
     locationRef: windowRef.location,
     refreshDocuments,
     showWorkspaceSurface,
-    syncThemeToggleLabel: preferences.syncThemeToggleLabel,
     themeToggleButton: dom.themeToggleButton,
   });
   notifications = createNotificationsShell({

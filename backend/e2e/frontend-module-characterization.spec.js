@@ -58,12 +58,12 @@ function observeErrors(page) {
       + `column=${location.columnNumber ?? "unknown"} message=${message.text()}`,
     );
   });
-  page.on("requestfailed", (request) =>
-    errors.push(
-      `requestfailed method=${request.method()} url=${request.url()} `
-      + `resource=${request.resourceType()} failure=${request.failure()?.errorText || "unknown"}`,
-    ),
-  );
+  page.on("requestfailed", (request) => {
+    // Navigating between full pages cancels outstanding requests by design.
+    if (request.failure()?.errorText === "net::ERR_ABORTED") return;
+    errors.push(`requestfailed method=${request.method()} url=${request.url()} `
+      + `resource=${request.resourceType()} failure=${request.failure()?.errorText || "unknown"}`);
+  });
   page.on("response", (response) => {
     if (response.status() < 400) return;
     const request = response.request();
@@ -168,10 +168,10 @@ test.describe("pre-refactor frontend module characterization", () => {
     await page.locator("#settings-button").click();
     await expect(page.locator("#settings-menu")).toBeVisible();
     await expect(page.locator("[data-account-actor-name]")).not.toHaveText("Identity unavailable");
-    await page.locator("#settings-menu-close").click();
+    await page.keyboard.press('Escape');
     await page.locator("#sidebar-collapse-button").click();
-    await expect(page.locator("#sidebar-expand-button")).toBeVisible();
-    await page.locator("#sidebar-expand-button").click();
+    await expect(page.locator("#sidebar-collapse-button")).toBeVisible();
+    await page.locator("#sidebar-collapse-button").click();
     await expect(page.locator("#sidebar-resize")).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
     expect(errors).toEqual([]);

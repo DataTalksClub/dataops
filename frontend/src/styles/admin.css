@@ -1,27 +1,21 @@
    overview, with controls grouped by decision rather than by implementation. */.ops-surface-admin,
-.ops-surface-users,
-.ops-surface-device {
+.ops-surface-users{
   width: min(100%, 62rem);
   border: 0;
   border-radius: 0;
   background: transparent;
   padding: 0;
-}.ops-surface-device {
-  width: min(100%, 42rem);
 }.ops-surface-admin > *,
-.ops-surface-users > *,
-.ops-surface-device > * {
+.ops-surface-users > *{
   width: 100%;
 }.ops-surface-admin .ops-surface-header,
-.ops-surface-users .ops-surface-header,
-.ops-surface-device .ops-surface-header {
+.ops-surface-users .ops-surface-header{
   display: grid;
   gap: 5px;
   background: transparent;
   text-align: left;
 }.ops-surface-admin .ops-surface-header p,
-.ops-surface-users .ops-surface-header p,
-.ops-surface-device .ops-surface-header p {
+.ops-surface-users .ops-surface-header p{
   margin: 0;
 }/* Admin reads as one bordered panel with divided rows: the two entry rows
    and the diagnostics table share the container instead of a three-card
@@ -211,52 +205,6 @@
   .form-feedback[data-feedback-state="success"]
   .form-feedback-status {
   color: var(--dk-success-text);
-}.device-panel {
-  gap: 18px;
-  border-radius: var(--dk-radius-md);
-  padding: 20px;
-}.device-form {
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-}.device-form .quick-form-label {
-  gap: 6px;
-}.device-code-input {
-  min-height: 48px;
-  border-color: var(--dk-border-default);
-  background: var(--dk-accent-soft);
-  color: var(--dk-text-heading);
-  font-size: 20px;
-  font-weight: 650;
-}.device-confirm {
-  border-top: 1px solid var(--dk-border-default);
-  padding-top: 18px;
-}.device-confirm h3,
-.device-outcome h3 {
-  font-size: 18px;
-}.device-facts {
-  gap: 8px 18px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  padding: 12px;
-}.device-facts dd {
-  overflow-wrap: anywhere;
-}.device-warning {
-  line-height: 1.5;
-}.device-actions {
-  justify-content: flex-start;
-  border-top: 1px solid var(--dk-border-default);
-  padding-top: 14px;
-}.device-outcome {
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-success-bg);
-  padding: 16px;
-}.device-outcome h3 {
-  color: var(--dk-success-text);
-}.device-outcome p {
-  color: var(--dk-text-primary);
-  line-height: 1.55;
 }/* Operational overview building blocks. They are also used by the queue and
    quality drill-downs, so the same row language survives outside Today. */.ops-surface-header {
   min-width: 0;
@@ -646,13 +594,6 @@ body[data-workspace-view="calendar"] .document-list {
     content: "Actions";
   }.ops-users-table .ops-user-actions .quiet-button {
     min-height: 40px;
-  }.device-panel {
-    padding: 16px;
-  }.device-form {
-    grid-template-columns: 1fr;
-  }.device-form .primary-button {
-    justify-self: start;
-    min-height: 44px;
   }.ops-future-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }.ops-quality-row,

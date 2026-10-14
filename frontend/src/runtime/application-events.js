@@ -32,6 +32,11 @@ export function bindApplicationEvents(context) {
     );
   };
 
+  documentRef.addEventListener("dk:shortcuts", () => {
+    helpModal.hidden = false;
+    helpClose.focus();
+  });
+
   bindAppDomEvents({
     documentRef,
     dom,
@@ -49,10 +54,6 @@ export function bindApplicationEvents(context) {
       },
       scheduleCurrentBrowserLocation:
         navigationShell.scheduleCurrentBrowserLocation,
-      toggleDarkMode: () =>
-        callbacks.setDarkMode(
-          documentRef.documentElement.dataset.theme !== "dark",
-        ),
       workspaceButton: (button) =>
         documentRef.dispatchEvent(
           new CustomEvent("dataops:navigate-workspace", {
@@ -122,30 +123,6 @@ export function bindApplicationEvents(context) {
         ) {
           event.preventDefault();
           callbacks.openQuickNav();
-        }
-        if (
-          event.key === "/" &&
-          !event.metaKey &&
-          !event.ctrlKey &&
-          !event.altKey &&
-          !isTyping()
-        ) {
-          event.preventDefault();
-          callbacks.showLibrary();
-          searchInput.focus();
-          searchInput.select();
-        }
-        const question =
-          event.key === "?" || (event.key === "/" && event.shiftKey);
-        if (
-          question &&
-          !event.metaKey &&
-          !event.ctrlKey &&
-          !event.altKey &&
-          !isTyping()
-        ) {
-          event.preventDefault();
-          helpModal.hidden = false;
         }
         if (event.key === "Escape" && !helpModal.hidden) {
           event.preventDefault();

@@ -93,7 +93,7 @@ test.describe("production newsletter planner", () => {
       });
     });
     await gotoOwnedNewsletterPage(page);
-    await page.getByRole("button", { name: "Newsletter" }).click();
+    await page.getByRole("link", { name: "Newsletter" }).click();
     await expect(page.getByText("Loading newsletter slots…")).toBeVisible();
     await page.screenshot({ path: ".tmp/newsletter-production-loading.png" });
     release();
@@ -160,7 +160,7 @@ test.describe("production newsletter planner", () => {
       .screenshot({ path: ".tmp/newsletter-production-conflict.png" });
     await page.getByRole("button", { name: "Cancel" }).click();
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+    await page.evaluate(() => dakitShell.toggleDrawer(document.querySelector(".dk-shell"), false));
     await expect
       .poll(async () => {
         const box = await page.locator("#sidebar").boundingBox();
@@ -184,7 +184,7 @@ test.describe("production newsletter planner", () => {
       }),
     );
     await gotoOwnedNewsletterPage(errorPage);
-    await errorPage.getByRole("button", { name: "Newsletter" }).click();
+    await errorPage.getByRole("link", { name: "Newsletter" }).click();
     await expect(
       errorPage.locator(".newsletter-surface [role=\"status\"]"),
     ).toContainText("Could not load");

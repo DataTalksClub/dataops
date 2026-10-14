@@ -62,7 +62,7 @@ async function tasksLabelAlignment(page) {
     // Every nav row is one shape: an icon, then a label. Tasks sections are
     // measured against a non-Tasks destination to prove the shared column.
     const rowText = (row) => ({
-      icon: row.querySelector('.workspace-nav-icon')?.getBoundingClientRect(),
+      icon: row.querySelector('.dk-nav-item__icon')?.getBoundingClientRect(),
       labelX: textLeft(row),
     });
     const queue = rowText(document.querySelector('[data-tasks-section="queue"]'));
@@ -113,7 +113,7 @@ test('first-class Tasks labels align with every other workspace destination', as
   await expect(page.locator('[data-tasks-section="workflows"]')).toHaveClass(/is-active/);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('button', { name: 'Open navigation' }).click();
   for (const section of TASK_SECTIONS) {
     await expect(page.locator(`[data-tasks-section="${section}"]`)).toBeVisible();
     expect((await page.locator(`[data-tasks-section="${section}"]`).boundingBox()).height)

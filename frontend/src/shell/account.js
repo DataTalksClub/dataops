@@ -27,32 +27,15 @@ export function localPreviewActor(members, payload) {
 
 export function createAccountShell({
   canLeaveCurrentDocument,
-  closeNotifications,
   documentRef,
   fetchImpl,
-  getActiveWorkspaceView,
-  historyButton,
-  knowledgeStatusButton,
-  HTMLElementClass,
-  isOperationsHomeVisible,
+  isOperationsWorkspaceVisible,
   locationRef,
   refreshDocuments,
-  showWorkspaceSurface,
-  syncThemeToggleLabel,
-  themeToggleButton,
+  shell = globalThis.dakitShell,
 }) {
   const settingsButton = documentRef.querySelector("#settings-button");
-  const mobileSettingsButton = documentRef.querySelector(
-    "#mobile-settings-button",
-  );
   const settingsMenu = documentRef.querySelector("#settings-menu");
-  const settingsMenuClose = documentRef.querySelector("#settings-menu-close");
-  const settingsAdminButton = documentRef.querySelector(
-    "#settings-admin-button",
-  );
-  const settingsUsersButton = documentRef.querySelector(
-    "#settings-users-button",
-  );
   const settingsSignOutButton = documentRef.querySelector(
     "#settings-sign-out-button",
   );
@@ -66,17 +49,11 @@ export function createAccountShell({
   const accountMenuNameNodes = [
     ...documentRef.querySelectorAll("[data-account-menu-name]"),
   ];
-  const accountActorAvatarNode = documentRef.querySelector(
-    "[data-account-actor-avatar]",
-  );
   const accountActorNameNode = documentRef.querySelector(
     "[data-account-actor-name]",
   );
   const accountMetaNode = documentRef.querySelector("[data-account-meta]");
-  const settingsButtons = [settingsButton, mobileSettingsButton].filter(
-    Boolean,
-  );
-  let settingsMenuOpener = null;
+  const settingsButtons = [settingsButton];
   let identityState = {
     loaded: false,
     localPreview: false,
@@ -106,12 +83,7 @@ export function createAccountShell({
   }
 
   function closeSettingsMenu() {
-    settingsMenu.hidden = true;
-    for (const button of settingsButtons) {
-      button.setAttribute("aria-expanded", "false");
-    }
-    if (settingsMenuOpener?.isConnected) settingsMenuOpener.focus();
-    settingsMenuOpener = null;
+    if (!settingsMenu.hidden) shell.closePopovers();
   }
 
   function renderAccountIdentity() {
@@ -122,9 +94,6 @@ export function createAccountShell({
     const menuInitials = accountInitials(workOwner?.name || actor?.name);
     for (const node of accountMenuAvatarNodes) node.textContent = menuInitials;
     for (const node of accountMenuNameNodes) node.textContent = menuName;
-    if (accountActorAvatarNode) {
-      accountActorAvatarNode.textContent = accountInitials(actor?.name);
-    }
     if (accountActorNameNode) accountActorNameNode.textContent = actorName;
     for (const button of settingsButtons) {
       const scopeDiffers =
@@ -176,12 +145,11 @@ export function createAccountShell({
     }
 
     const options = members.map((member) => {
-      const isActor = String(member.id) === String(actor?.id || "");
       const isSelected =
         String(member.id) === String(identityState.selectedOwnerId || "");
       const button = documentRef.createElement("button");
       button.type = "button";
-      button.className = "account-scope-option";
+      button.className = "dk-menu__item";
       button.setAttribute("role", "radio");
       button.setAttribute("aria-checked", String(isSelected));
       button.setAttribute(
@@ -191,18 +159,16 @@ export function createAccountShell({
         }`,
       );
       const avatar = documentRef.createElement("span");
-      avatar.className = "account-avatar account-scope-avatar";
+      avatar.className = "dk-avatar dk-avatar--xs";
       avatar.setAttribute("aria-hidden", "true");
       avatar.textContent = accountInitials(member.name);
       const copy = documentRef.createElement("span");
-      copy.className = "account-scope-copy";
+      copy.className = "account-scope-name";
       const name = documentRef.createElement("strong");
       name.textContent = member.name || "Workspace member";
-      const detail = documentRef.createElement("small");
-      detail.textContent = isActor ? "My work" : "Teammate’s work";
-      copy.append(name, detail);
+      copy.append(name);
       const check = documentRef.createElement("span");
-      check.className = "account-scope-check";
+      check.className = "dk-menu__check";
       check.setAttribute("aria-hidden", "true");
       check.textContent = isSelected ? "✓" : "";
       button.append(avatar, copy, check);
@@ -215,8 +181,7 @@ export function createAccountShell({
         renderAccountIdentity();
         closeSettingsMenu();
         if (
-          getActiveWorkspaceView() === "home" &&
-          isOperationsHomeVisible()
+          isOperationsWorkspaceVisible()
         ) {
           refreshDocuments();
         }
@@ -224,21 +189,6 @@ export function createAccountShell({
       return button;
     });
     accountWorkScopeList.replaceChildren(...options);
-  }
-
-  function openSettingsMenu() {
-    settingsMenuOpener =
-      documentRef.activeElement instanceof HTMLElementClass
-        ? documentRef.activeElement
-        : settingsButton;
-    closeNotifications();
-    syncThemeToggleLabel();
-    renderAccountIdentity();
-    settingsMenu.hidden = false;
-    for (const button of settingsButtons) {
-      button.setAttribute("aria-expanded", "true");
-    }
-    settingsMenuClose.focus();
   }
 
   async function readLocalPreviewContext() {
@@ -298,22 +248,6 @@ export function createAccountShell({
     renderAccountIdentity();
   }
 
-  function toggleSettingsMenu() {
-    if (settingsMenu.hidden) openSettingsMenu();
-    else closeSettingsMenu();
-  }
-
-  settingsButton.addEventListener("click", toggleSettingsMenu);
-  mobileSettingsButton?.addEventListener("click", toggleSettingsMenu);
-  settingsMenuClose.addEventListener("click", closeSettingsMenu);
-  settingsAdminButton.addEventListener("click", () => {
-    closeSettingsMenu();
-    showWorkspaceSurface("admin");
-  });
-  settingsUsersButton.addEventListener("click", () => {
-    closeSettingsMenu();
-    showWorkspaceSurface("users");
-  });
   settingsSignOutButton.addEventListener("click", async () => {
     if (!(await canLeaveCurrentDocument())) return;
     settingsSignOutButton.disabled = true;
@@ -321,17 +255,8 @@ export function createAccountShell({
       "Ending this browser session…";
     locationRef.assign("/logout");
   });
-  for (const element of [themeToggleButton, knowledgeStatusButton, historyButton]) {
-    element.addEventListener("click", (event) => {
-      event.stopPropagation();
-      closeSettingsMenu();
-    });
-  }
-  documentRef.addEventListener("click", (event) => {
-    if (settingsMenu.hidden) return;
-    if (settingsMenu.contains(event.target)) return;
-    if (settingsButtons.some((button) => button.contains(event.target))) return;
-    closeSettingsMenu();
+  settingsButton.addEventListener("click", () => {
+    renderAccountIdentity();
   });
 
   return {

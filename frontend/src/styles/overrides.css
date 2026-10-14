@@ -183,11 +183,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
 }
 
 /* Bell badge: a red attention badge with "0" is a false zero; the count
-   only shows when there is something to see (or a load failed). */.work-bell-count {
-  visibility: hidden;
-}.work-bell-count.is-visible {
-  visibility: visible;
-}/* My Plan anchors to the same document column in every state, so the page
+   only shows when there is something to see (or a load failed). *//* My Plan anchors to the same document column in every state, so the page
    origin does not move when the operating model is unavailable. */
 
 /* Waiting chips on the cards board follow the same gray. */.ops-card-meta [data-status="waiting"],
@@ -616,10 +612,7 @@ body[data-workspace-view] .task-modal-panel button,
 /* On desktop the Docs quality card carries its own filters; the sidebar
    filters section would be an empty husk there. Mobile keeps it in the
    drawer. */
-@media (min-width: 821px) {#filters-section {
-    display: none;
-  }
-}/* Ledger amounts and totals use aligned figures in the UI font. */.ledger-amount,
+/* Ledger amounts and totals use aligned figures in the UI font. */.ledger-amount,
 .bookkeeping-totals {
   font-family: var(--dk-font-sans);
   font-variant-numeric: tabular-nums;

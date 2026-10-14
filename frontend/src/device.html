@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Authorize a device · DataOps</title>
+  <script>
+    (() => { let theme; try { theme = localStorage.getItem('dakit-theme'); } catch {}
+      document.documentElement.dataset.theme = theme === 'dark' || theme === 'light' ? theme : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; })();
+  </script>
+  <link rel="stylesheet" href="/src/dakit/dakit.css">
+  <link rel="stylesheet" href="/src/styles/device.css">
+</head>
+<body class="dk-auth-page">
+  <header class="dk-auth-page__bar"><a class="dk-brand__name" href="/">DataOps</a><span id="device-identity" class="dk-auth-page__identity" role="status">Loading identity…</span></header>
+  <main class="dk-auth-page__main"><section id="device-card" class="dk-auth-card" aria-label="Device authorization"></section></main>
+  <div id="dk-live" class="dk-visually-hidden" aria-live="polite"></div>
+  <script type="module" src="/src/device-page.js"></script>
+</body>
+</html>

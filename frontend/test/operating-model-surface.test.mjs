@@ -140,7 +140,7 @@ test("hub uses the shared header and remains a named map without redundant label
   surface.renderOperatingModel();
   await nextTicks();
   assert.ok(findByText(root, "Operating Model", "h1"));
-  assert.equal(root.querySelector(".page-header").className, "page-header operating-model-header");
+  assert.equal(root.querySelector(".dk-page-header").className, "dk-page-header operating-model-header");
   assert.ok(findByText(root, "Business units, responsibilities, systems, and roadmap.", "p"));
   assert.equal(findByText(root, "Company system"), undefined);
   assert.equal(
@@ -176,7 +176,7 @@ test("section uses a title-cased family name and definition rows", async () => {
   surface.renderOperatingModel();
   await nextTicks();
   assert.ok(findByText(root, "Functions", "h1"));
-  assert.equal(root.querySelector(".page-header").className, "page-header operating-model-header");
+  assert.equal(root.querySelector(".dk-page-header").className, "dk-page-header operating-model-header");
   assert.equal(findByText(root, "Business units, responsibilities, systems, and roadmap.", "p"), undefined);
   assert.equal(findByText(root, "functions", "h1"), undefined);
   assert.equal(findByText(root, "1 current definitions"), undefined);

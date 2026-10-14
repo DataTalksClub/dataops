@@ -25,6 +25,8 @@ export function createProcessDocsSurface(context, services) {
   } = context;
   const { openDocument, refreshDocuments } = services;
   const expandedDocIds = new Set();
+  const knowledgeTools = context.knowledgeTools;
+  const exportStatus = knowledgeTools?.querySelector("#knowledge-section");
 
   function buildTree(docs) {
     const byId = new Map();
@@ -384,7 +386,9 @@ export function createProcessDocsSurface(context, services) {
     createButton.addEventListener("click", () => showCreate());
     header.append(createButton);
     wrap.append(header);
+    if (knowledgeTools) wrap.append(knowledgeTools);
     wrap.append(renderProcessesSurface(visibleDocuments, model));
+    if (exportStatus) wrap.append(exportStatus);
     documentList.replaceChildren(wrap);
   }
 

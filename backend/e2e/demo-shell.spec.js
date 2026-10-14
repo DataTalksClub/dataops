@@ -21,7 +21,8 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 1440, height: 900
     const docs = page.locator('#docs-nav-button');
     await docs.scrollIntoViewIfNeeded();
     const bottom = (await docs.boundingBox()).y + (await docs.boundingBox()).height;
-    expect(bottom).toBeLessThanOrEqual((await page.locator('.sidebar-footer').boundingBox()).y);
+    const boundary = viewport.width < 821 ? viewport.height : (await page.locator('.dk-sidebar__foot').boundingBox()).y;
+    expect(bottom).toBeLessThanOrEqual(boundary);
     const out = path.resolve(__dirname, '../../.tmp/demo-b-after');
     fs.mkdirSync(out, { recursive: true });
     await page.screenshot({ path: path.join(out, `sidebar-${viewport.width}x${viewport.height}.png`) });

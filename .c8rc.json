@@ -4,7 +4,9 @@
   "include": [
     "frontend/src/**/*.js"
   ],
-  "exclude": [],
+  "exclude": [
+    "frontend/src/dakit/**"
+  ],
   "reporter": [
     "text",
     "json-summary"

@@ -175,11 +175,8 @@ test.describe('issue 204 slice 4 Knowledge feedback', () => {
       page.locator('#domain-filter option[value="operations"]'),
     ).toHaveCount(1, { timeout: 20_000 });
 
-    // The shell keeps document filters in the mobile drawer; desktop Docs is
-    // content-first and hides the sidebar disclosure entirely.
+    // Document filters belong to the Process Docs surface on every viewport.
     await page.setViewportSize(MOBILE);
-    await page.locator('#mobile-menu-button').click();
-    await expect(page.locator('body')).toHaveClass(/sidebar-open/);
     await openDocumentFilters(page);
     await chooseDocumentFilter(page, 0, 'Operations');
     await chooseDocumentFilter(page, 3, 'Product');
@@ -193,8 +190,6 @@ test.describe('issue 204 slice 4 Knowledge feedback', () => {
     await expect(page.locator('#clear-filters-button')).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await screenshot(page, 'process-docs-filter-controls-mobile-390x844');
-    await page.locator('#sidebar-close-button').click();
-    await expect(page.locator('body')).not.toHaveClass(/sidebar-open/);
     await expect(filterEmpty).toBeVisible();
     await screenshot(page, 'process-docs-filter-empty-mobile-390x844');
 

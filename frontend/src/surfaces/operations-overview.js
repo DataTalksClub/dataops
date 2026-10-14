@@ -5,22 +5,24 @@ export function createPageHeader({
   documentRef = document,
 }) {
   const header = documentRef.createElement("header");
-  header.className = `page-header${className ? ` ${className}` : ""}`;
+  header.className = `dk-page-header${className ? ` ${className}` : ""}`;
   const copy = documentRef.createElement("div");
-  copy.className = "page-header-copy";
+  copy.className = "dk-page-header__main";
   const heading = documentRef.createElement("h1");
+  heading.className = "dk-page-header__title";
   heading.textContent = title;
   if (titleId) heading.id = titleId;
   copy.append(heading);
   if (subtitle) {
     const description = documentRef.createElement("p");
+    description.className = "dk-page-header__subtitle";
     description.textContent = subtitle;
     copy.append(description);
   }
   header.append(copy);
   if (actions.length > 0) {
     const controls = documentRef.createElement("div");
-    controls.className = "page-header-actions";
+    controls.className = "dk-page-header__actions";
     controls.append(...actions);
     header.append(controls);
   }
@@ -33,13 +35,13 @@ export function renderPageHeaderMarkup({
   const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   })[character]);
-  const classes = `page-header${className ? ` ${className}` : ""}`;
+  const classes = `dk-page-header${className ? ` ${className}` : ""}`;
   const id = titleId ? ` id="${escape(titleId)}"` : "";
-  const description = subtitle ? `<p>${escape(subtitle)}</p>` : "";
+  const description = subtitle ? `<p class="dk-page-header__subtitle">${escape(subtitle)}</p>` : "";
   // Only application-authored controls belong in actionsHtml.
-  const controls = actionsHtml ? `<div class="page-header-actions">${actionsHtml}</div>` : "";
-  return `<header class="${escape(classes)}"><div class="page-header-copy">` +
-    `<h1${id}>${escape(title)}</h1>${description}</div>${controls}</header>`;
+  const controls = actionsHtml ? `<div class="dk-page-header__actions">${actionsHtml}</div>` : "";
+  return `<header class="${escape(classes)}"><div class="dk-page-header__main">` +
+    `<h1 class="dk-page-header__title"${id}>${escape(title)}</h1>${description}</div>${controls}</header>`;
 }
 
 const SUMMARY_LABELS = {

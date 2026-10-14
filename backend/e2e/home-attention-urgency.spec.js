@@ -116,6 +116,7 @@ async function expectNoHorizontalOverflow(page) {
 }
 
 async function expectAttentionRowsDoNotOverlap(page) {
+  await expect(page.locator(".ops-queue-row")).toHaveCount(4);
   const metrics = await page.evaluate(() => {
     const clientWidth = document.documentElement.clientWidth;
     const rows = [...document.querySelectorAll('.ops-queue-row')].map(

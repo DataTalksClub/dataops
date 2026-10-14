@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-// The vendored dakit dismiss helper (src/dakit/dakit-dialogs.js) is the
+// The vendored dakit dismiss helper (src/dakit/dialogs.js) is the
 // shared click-outside layer for every native <dialog> in the app — the
 // calendar forms, the finance forms, anything opened with showModal().
 // Pin its contract here: a click that began and ended on the backdrop
@@ -23,7 +23,7 @@ class StubDocument {
 
 globalThis.HTMLDialogElement = class HTMLDialogElement {};
 globalThis.document = new StubDocument();
-await import("../src/dakit/dakit-dialogs.js");
+await import("../src/dakit/dialogs.js");
 
 function fire(key, event) {
   for (const listener of listeners.get(key) || []) listener(event);

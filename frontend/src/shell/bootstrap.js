@@ -6,17 +6,11 @@ export function initializeAppShell({
   refreshChangesPanel,
   refreshKnowledgeStatus,
   refreshOperationsWorkSnapshot,
-  restoreDarkMode,
-  restoreSidebarCollapsed,
   showLibrary,
-  syncSidebarShellState,
   updateSaveState,
   windowRef,
 }) {
   for (const select of filterSelects) enhanceSelect(select);
-  restoreDarkMode();
-  restoreSidebarCollapsed();
-  syncSidebarShellState();
 
   showLibrary({ updateUrl: false });
   refreshChangesPanel();

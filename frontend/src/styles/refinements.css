@@ -19,8 +19,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .crm-header,
 .planner-header,
 .ops-surface-admin .ops-surface-header,
-.ops-surface-users .ops-surface-header,
-.ops-surface-device .ops-surface-header {
+.ops-surface-users .ops-surface-header{
   min-width: 0;
   border-bottom: 1px solid var(--dk-border-default);
   padding: 4px 0 20px;
@@ -34,15 +33,13 @@ body[data-workspace-view="sponsors"] .document-list {
 .crm-header > div,
 .planner-heading,
 .ops-surface-admin .ops-surface-header,
-.ops-surface-users .ops-surface-header,
-.ops-surface-device .ops-surface-header {
+.ops-surface-users .ops-surface-header{
   min-width: 0;
 }.bookkeeping-header > div > p:last-child,
 .crm-header > div > p:last-child,
 .planner-heading > p:last-child,
 .ops-surface-admin .ops-surface-header p,
-.ops-surface-users .ops-surface-header p,
-.ops-surface-device .ops-surface-header p {
+.ops-surface-users .ops-surface-header p{
   max-width: 720px;
   color: var(--dk-text-muted);
   line-height: 1.55;

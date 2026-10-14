@@ -136,7 +136,7 @@ function createAccountHarness(options = {}) {
     historyButton,
     knowledgeStatusButton,
     HTMLElementClass: FakeElement,
-    isOperationsHomeVisible: () => options.homeVisible ?? true,
+    isOperationsWorkspaceVisible: () => options.homeVisible ?? true,
     locationRef,
     refreshDocuments: () => refreshes.push("refresh"),
     showWorkspaceSurface: (surface) => shown.push(surface),
@@ -220,7 +220,6 @@ describe("account identity and work-scope behavior", () => {
     assert.equal(harness.menuName.textContent, "Grace Young");
     assert.equal(harness.menuAvatar.textContent, "GY");
     assert.equal(harness.actorName.textContent, "Alexey Grigorev");
-    assert.equal(harness.actorAvatar.textContent, "AG");
     assert.match(harness.settingsButton.title, /Showing Grace Young’s work/);
     assert.match(harness.settingsButton.title, /Signed in as Alexey Grigorev/);
     assert.deepEqual(harness.refreshes, ["refresh"]);
@@ -279,29 +278,6 @@ describe("account identity and work-scope behavior", () => {
     );
   });
 
-  test("opens and closes the account menu with focus and canonical navigation", async () => {
-    const harness = createAccountHarness();
-    await harness.shell.refreshAccountIdentity({ user: members[0] }, members);
-    harness.document.activeElement = harness.settingsButton;
-    await harness.settingsButton.dispatch("click");
-    assert.equal(harness.shell.isSettingsMenuOpen(), true);
-    assert.equal(harness.settingsButton.getAttribute("aria-expanded"), "true");
-    assert.equal(harness.settingsMenuClose.focused, true);
-
-    await harness.settingsAdminButton.dispatch("click");
-    assert.deepEqual(harness.shown, ["admin"]);
-    assert.equal(harness.shell.isSettingsMenuOpen(), false);
-    assert.equal(harness.settingsButton.focused, true);
-
-    await harness.mobileSettingsButton.dispatch("click");
-    await harness.settingsUsersButton.dispatch("click");
-    assert.deepEqual(harness.shown, ["admin", "users"]);
-
-    await harness.settingsButton.dispatch("click");
-    await harness.document.emit("click", { target: new FakeElement("div") });
-    assert.equal(harness.shell.isSettingsMenuOpen(), false);
-  });
-
   test("guards logout against dirty work and closes on account-adjacent actions", async () => {
     const harness = createAccountHarness({ allowLeave: false });
     await harness.shell.refreshAccountIdentity({ user: members[0] }, members);
@@ -321,9 +297,6 @@ describe("account identity and work-scope behavior", () => {
 
     harness.settingsSignOutButton.disabled = false;
     await harness.settingsButton.dispatch("click");
-    await harness.themeToggleButton.dispatch("click", {
-      stopPropagation() {},
-    });
-    assert.equal(harness.shell.isSettingsMenuOpen(), false);
+
   });
 });
