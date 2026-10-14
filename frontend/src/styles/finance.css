@@ -52,7 +52,7 @@ body[data-workspace-view="sponsors"] .document-list {
   background: var(--dk-bg-hover);
 }.danger-button {
   min-height: var(--dk-size-control-md);
-  border: 1px solid var(--dk-danger-text);
+  border: 1px solid transparent;
   border-radius: var(--dk-radius-md);
   background: var(--dk-danger-text);
   color: var(--dk-bg-surface);
@@ -70,7 +70,6 @@ body[data-workspace-view="sponsors"] .document-list {
   padding: 5px 9px;
   font-weight: 600;
 }.danger-text-button:hover {
-  border-color: var(--dk-danger-border);
   background: var(--dk-danger-bg);
 }.visually-hidden {
   position: absolute;
@@ -130,7 +129,7 @@ body[data-workspace-view="sponsors"] .document-list {
   justify-self: start;
 }.surface-status {
   margin: 0;
-  border: 1px solid var(--dk-accent-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-accent-soft);
   color: var(--dk-text-primary);
@@ -139,7 +138,7 @@ body[data-workspace-view="sponsors"] .document-list {
 }
 .bookkeeping-surface .surface-status {
   margin: 0;
-  border: 1px solid var(--dk-accent-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-accent-soft);
   color: var(--dk-text-primary);
@@ -167,7 +166,7 @@ body[data-workspace-view="sponsors"] .document-list {
   display: inline-flex;
   width: fit-content;
   align-items: center;
-  border: 1px solid var(--dk-border-default);
+  border: 1px solid transparent;
   border-radius: var(--dk-radius-full);
   background: var(--dk-bg-muted);
   color: var(--dk-text-muted);
@@ -177,48 +176,40 @@ body[data-workspace-view="sponsors"] .document-list {
   white-space: nowrap;
 }.status-label[data-status="open" i],
 .status-label.status-open {
-  border-color: var(--dk-info-border);
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
 }.status-label[data-status="agreed" i],
 .status-label[data-status="converted" i],
 .status-label.status-agreed,
 .status-label.status-converted {
-  border-color: var(--dk-success-border);
   background: var(--dk-success-bg);
   color: var(--dk-success-text);
 }.status-label[data-status="lost" i],
 .status-label[data-status="ignored" i],
 .status-label.status-lost,
 .status-label.status-ignored {
-  border-color: var(--dk-danger-border);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
 }.status-label[data-status="triaged" i],
 .status-label[data-status="new" i],
 .status-label.status-triaged,
 .status-label.status-new {
-  border-color: var(--dk-warning-border);
   background: var(--dk-warning-bg);
   color: var(--dk-warning-text);
 }.status-label[data-status="relationship" i],
 .status-label[data-status="talking" i],
 .status-label[data-status="partner" i] {
-  border-color: var(--dk-accent-border);
   background: var(--dk-accent-soft);
   color: var(--dk-accent-deep);
 }.status-label[data-health="overdue"],
 .status-label[data-health="missing"] {
-  border-color: var(--dk-danger-border);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
 }.status-label[data-health="pending"],
 .status-label[data-health="waiting"] {
-  border-color: var(--dk-warning-border);
   background: var(--dk-warning-bg);
   color: var(--dk-warning-text);
 }.status-label[data-health="current"] {
-  border-color: var(--dk-success-border);
   background: var(--dk-success-bg);
   color: var(--dk-success-text);
 }/* Month lens: the close-state header that replaced the decorative job nav.
@@ -276,7 +267,6 @@ body[data-workspace-view="sponsors"] .document-list {
   transition: all 120ms ease;
 }
 .bookkeeping-lens-field select:focus {
-  border-color: var(--dk-accent-default);
   box-shadow: 0 0 0 2px var(--dk-focus-ring);
 }
 .bookkeeping-lens-field select:hover:not(:disabled) {
@@ -328,7 +318,6 @@ body[data-workspace-view="sponsors"] .document-list {
   outline: none;
 }
 .bookkeeping-lens-month input:focus {
-  border-color: var(--dk-accent-default);
   box-shadow: 0 0 0 2px var(--dk-focus-ring);
 }.bookkeeping-close-state {
   display: grid;
@@ -366,12 +355,10 @@ body[data-workspace-view="sponsors"] .document-list {
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }.bookkeeping-counter.is-open {
-  border-color: var(--dk-danger-border);
   background: var(--dk-danger-bg);
 }.bookkeeping-counter.is-open strong {
   color: var(--dk-danger-text);
 }.bookkeeping-counter.is-done {
-  border-color: var(--dk-success-border);
   background: var(--dk-success-bg);
 }.bookkeeping-counter.is-done strong {
   color: var(--dk-success-text);
@@ -405,7 +392,6 @@ body[data-workspace-view="sponsors"] .document-list {
 }.worklist-row:hover {
   background: var(--dk-bg-hover);
 }.worklist-row.is-evidence {
-  border: 1px solid var(--dk-danger-border);
   background: var(--dk-danger-bg);
 }
 .worklist-row.is-evidence .worklist-what::before {
@@ -419,17 +405,16 @@ body[data-workspace-view="sponsors"] .document-list {
   margin-bottom: 2px;
 }
 .worklist-row.is-evidence button {
-  border-color: var(--dk-danger-border);
+  border-color: var(--dk-border-default);
   color: var(--dk-danger-text);
   background: var(--dk-danger-bg);
 }
 .worklist-row.is-evidence button:hover {
-  border-color: var(--dk-danger-hover);
+  border-color: var(--dk-border-control-hover);
   background: var(--dk-danger-text);
   color: #ffffff;
 }
 .worklist-row.is-eur {
-  border: 1px solid var(--dk-warning-border);
   background: var(--dk-warning-bg);
 }
 .worklist-row.is-eur .worklist-what::before {
@@ -443,16 +428,16 @@ body[data-workspace-view="sponsors"] .document-list {
   margin-bottom: 2px;
 }
 .worklist-row.is-eur button {
-  border-color: var(--dk-warning-border);
+  border-color: var(--dk-border-default);
   color: var(--dk-warning-text);
   background: var(--dk-warning-bg);
 }
 .worklist-row.is-eur button:hover {
+  border-color: var(--dk-border-control-hover);
   background: var(--dk-warning-text);
   color: #ffffff;
 }
 .worklist-row.is-classify {
-  border: 1px solid var(--dk-accent-border);
   background: var(--dk-accent-soft);
 }
 .worklist-row.is-classify .worklist-what::before {
@@ -521,7 +506,6 @@ body[data-workspace-view="sponsors"] .document-list {
   transition: all 120ms ease;
 }
 .worklist-classify select:focus {
-  border-color: var(--dk-accent-default);
   box-shadow: 0 0 0 2px var(--dk-focus-ring);
   outline: none;
 }.bookkeeping-worklist-done {
@@ -601,7 +585,7 @@ body[data-workspace-view="sponsors"] .document-list {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid var(--dk-success-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-success-bg);
   padding: 14px 18px;
@@ -699,7 +683,6 @@ body[data-workspace-view="sponsors"] .document-list {
 .dialog-fields input:focus,
 .dialog-fields select:focus,
 .dialog-fields textarea:focus {
-  border-color: var(--dk-accent-default);
   box-shadow: 0 0 0 2px var(--dk-focus-ring);
   outline: none;
 }.bookkeeping-filters details {
@@ -869,14 +852,14 @@ body[data-workspace-view="sponsors"] .document-list {
 }.ledger-amount.income {
   color: var(--dk-success-text);
 }.evidence-state.is-attached {
-  border: 1px solid var(--dk-success-border);
+  border: 1px solid transparent;
   background: var(--dk-success-bg);
   color: var(--dk-success-text);
 }/* The "Missing" evidence chip is a button; restate the chip skin above the
    generic bookkeeping button rule rather than relying on source order. */.bookkeeping-surface .bookkeeping-ledger button.evidence-state {
   min-height: 22px;
   padding: 2px 10px;
-  border: 1px solid var(--dk-danger-border);
+  border: 1px solid transparent;
   border-radius: var(--dk-radius-full);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
@@ -885,7 +868,6 @@ body[data-workspace-view="sponsors"] .document-list {
   cursor: pointer;
   transition: all 120ms ease;
 }.bookkeeping-surface .bookkeeping-ledger button.evidence-state:hover {
-  border-color: var(--dk-danger-hover);
   background: var(--dk-danger-text);
   color: #ffffff;
 }.dialog-fields .required-mark {
@@ -1085,7 +1067,7 @@ body[data-workspace-view="sponsors"] .document-list {
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }.crm-pipeline button[aria-pressed="true"] {
-  border-color: var(--dk-accent-default);
+  border-color: var(--dk-border-default);
   background: var(--dk-accent-soft);
   color: var(--dk-accent-deep);
   font-weight: 600;
@@ -1129,7 +1111,7 @@ body[data-workspace-view="sponsors"] .document-list {
   border-color: var(--dk-border-strong);
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
 }.crm-booking-row[aria-current="true"] {
-  border-color: var(--dk-accent-default);
+  border-color: var(--dk-border-default);
   background: var(--dk-accent-soft);
 }.crm-booking-row[aria-current="true"]:hover {
   background: var(--dk-accent-soft);
@@ -1200,7 +1182,7 @@ body[data-workspace-view="sponsors"] .document-list {
   font-weight: 600;
 }.crm-booking-row .row-actions button[data-open-deal]:hover,
 .crm-booking-row .row-actions button[data-open-company]:hover {
-  border-color: var(--dk-accent-default);
+  border-color: var(--dk-border-control-hover);
   background: var(--dk-accent-soft);
   color: var(--dk-accent-deep);
 }.crm-support-grid {
@@ -1355,7 +1337,7 @@ body[data-workspace-view="sponsors"] .document-list {
   color: var(--dk-text-primary) !important;
 }.booking-section-nav button.is-active,
 .booking-section-nav button[aria-pressed="true"] {
-  border-color: var(--dk-accent-border) !important;
+  border-color: var(--dk-border-default) !important;
   background: var(--dk-accent-soft) !important;
   color: var(--dk-accent-deep) !important;
   font-weight: 600;
@@ -1382,7 +1364,7 @@ body[data-workspace-view="sponsors"] .document-list {
   background: var(--dk-bg-muted);
   border-color: var(--dk-border-strong);
 }.booking-detail-section .crm-card[aria-current="true"] {
-  border-color: var(--dk-accent-default);
+  border-color: var(--dk-border-default);
   background: var(--dk-accent-soft);
 }.booking-detail-section .crm-company-deal {
   display: grid;
@@ -1483,7 +1465,6 @@ body[data-workspace-view="sponsors"] .document-list {
 }.finance-payments p {
   margin-bottom: 4px;
 }.finance-recovery {
-  border-color: var(--dk-warning-border);
   background: var(--dk-warning-bg);
   color: var(--dk-warning-text);
 }.crm-communication-controls {
@@ -1585,7 +1566,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .bookkeeping-entry-dialog [role="alert"]:not(:empty),
 .bookkeeping-eur-dialog [role="alert"]:not(:empty) {
   padding: 10px 14px;
-  border: 1px solid var(--dk-danger-border);
+  border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
