@@ -200,7 +200,7 @@ function createCalendarDom() {
   pickerYear.textContent = "2026";
   const pickerPrevYear = surface.setQuery("[data-picker-prev-year]", new TestElement("button"));
   const pickerNextYear = surface.setQuery("[data-picker-next-year]", new TestElement("button"));
-  const pickerCurrentMonth = surface.setQuery("[data-picker-current-month]", new TestElement("button"));
+  const pickerCurrentMonth = surface.setQueryAll("[data-picker-shortcut]", [Object.assign(new TestElement("button"), { dataset: { pickerShortcut: "current" } })])[0];
   const monthBtns = Array.from({ length: 12 }, (_, i) => {
     const btn = new TestElement("button");
     btn.dataset.pickerMonth = String(i);

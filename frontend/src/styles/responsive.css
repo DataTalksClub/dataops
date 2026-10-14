@@ -273,7 +273,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .ops-surface-header p:not([class*="dk-"]),
   .workflow-board-header p:not([class*="dk-"]),
   .workflow-board-scroll-hint,
-  .calendar-timezone-badge,
   .bookkeeping-header p:not([class*="dk-"]),
   .crm-header p:not([class*="dk-"]),
   .review-header p:not([class*="dk-"]),
@@ -298,8 +297,8 @@ body[data-workspace-view="sponsors"] .library-view {
   .bookkeeping-header .primary-button,
   .bookkeeping-lens-step,
   .bookkeeping-lens-month input,
-  .calendar-today-btn,
-  .calendar-nav-arrow,
+  .period-nav__today,
+  .period-nav__arrow,
   .calendar-add-button,
   .calendar-display-controls select,
   .bookkeeping-lens-nav button {
@@ -478,12 +477,7 @@ body[data-workspace-view="sponsors"] .library-view {
   }
 
   /* ---- Calendar: one control row ---- */
-  /* On phones the controls are a plain row, not a card: no edge for the
-     controls to crowd, and the grid stays in the first quarter. */
   .calendar-controls {
-    padding: 0 !important;
-    border: 0;
-    background: transparent;
     gap: 6px !important;
   }
   .calendar-header-main {
@@ -496,7 +490,7 @@ body[data-workspace-view="sponsors"] .library-view {
     display: flex;
     gap: 4px;
   }
-  .calendar-period-title {
+  .period-nav__title {
     font-size: 15px !important;
   }
   .calendar-add-button {

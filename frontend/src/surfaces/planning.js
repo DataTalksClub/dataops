@@ -2,6 +2,7 @@ import { createPageHeader } from "./operations-overview.js";
 import { parseIsoDateValue } from "../core/workspace.js";
 import { createNewsletterPlanner } from "./planning-newsletter.js";
 import { setupDayScheduleDialog, setupCalendarSettingsDialog } from "./planning-calendar-dialogs.js";
+import { mountPeriodNav, periodNavMarkup } from "./period-nav.js";
 
 // Open time is either a free slot projected from Alexey's calendar or a
 // newsletter issue nobody has booked yet.
@@ -96,48 +97,15 @@ export function createPlanningSurface(context) {
     surface.className = "calendar-surface";
     surface.setAttribute("aria-labelledby", "calendar-surface-title");
     surface.innerHTML = `
-      <header class="calendar-controls calendar-header-bar">
+      <header class="calendar-controls period-toolbar">
         <div class="calendar-header-main">
-          <div class="calendar-nav-group">
-            <button type="button" class="calendar-today-btn" data-today>Today</button>
-            <div class="calendar-nav-arrows" role="group" aria-label="Change calendar period">
-              <button type="button" class="calendar-nav-arrow" data-prev aria-label="Previous period" title="Previous period">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-              </button>
-              <button type="button" class="calendar-nav-arrow" data-next aria-label="Next period" title="Next period">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-              </button>
-            </div>
-            <div class="calendar-picker-container">
-              <h2 id="calendar-period-heading" class="calendar-heading-wrapper" aria-label="Calendar period">
-                <button type="button" class="calendar-period-btn" data-picker-toggle aria-haspopup="dialog" aria-expanded="false" title="Choose month and year">
-                  <span class="calendar-period-title" data-period-heading>Calendar</span>
-                  <svg class="calendar-period-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="6 9 12 15 18 9"></polyline>
-                  </svg>
-                </button>
-              </h2>
-              <span class="calendar-timezone-badge">Europe/Berlin time</span>
-              <div class="calendar-month-picker-popover" data-picker-popover hidden role="dialog" aria-label="Choose month and year">
-                <div class="calendar-picker-year-nav">
-                  <button type="button" class="calendar-picker-year-btn" data-picker-prev-year aria-label="Previous year">‹</button>
-                  <span class="calendar-picker-year-label" data-picker-year>2026</span>
-                  <button type="button" class="calendar-picker-year-btn" data-picker-next-year aria-label="Next year">›</button>
-                </div>
-                <div class="calendar-picker-months-grid" role="grid" aria-label="Months">
-                  ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-                    .map((m, i) => `<button type="button" class="calendar-picker-month-btn" data-picker-month="${i}">${m}</button>`)
-                    .join("")}
-                </div>
-                <div class="calendar-picker-foot">
-                  <button type="button" class="calendar-picker-today-btn" data-picker-current-month>Current month</button>
-                </div>
-              </div>
-            </div>
-          </div>
+          ${periodNavMarkup({
+            headingId: "calendar-period-heading",
+            todayLabel: "Today",
+            groupLabel: "Change calendar period",
+            badgeHtml: '<span class="period-nav__badge">Europe/Berlin time</span>',
+            shortcuts: [{ action: "current", label: "Current month" }],
+          })}
 
           <button type="button" class="icon-button calendar-controls-toggle" data-controls-toggle
             aria-label="Calendar layers and view" aria-controls="calendar-display-controls" aria-expanded="false" title="Calendar layers and view">
@@ -434,8 +402,7 @@ export function createPlanningSurface(context) {
         periodLabel = isWeek
           ? `Week of ${new Date(`${from}T00:00:00Z`).toLocaleDateString("en", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}`
           : cursor.toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });
-      const periodHeadingEl = surface.querySelector("[data-period-heading]");
-      if (periodHeadingEl) periodHeadingEl.textContent = periodLabel;
+      periodNav.setTitle(periodLabel);
       const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
       const weekdayHeadings = [
         '<strong class="calendar-week-heading" aria-label="Week number">Week</strong>',
@@ -687,115 +654,32 @@ export function createPlanningSurface(context) {
       }
     }
 
-    surface.querySelector("[data-prev]").onclick = () => {
-      surface.querySelector("[data-view]").value === "week" ? cursor.setUTCDate(cursor.getUTCDate() - 7) : cursor.setUTCMonth(cursor.getUTCMonth() - 1);
+    const showMonthOf = (date) => {
+      cursor = date;
+      const viewSelect = surface.querySelector("[data-view]");
+      if (viewSelect) viewSelect.value = "month";
       load();
     };
-    surface.querySelector("[data-next]").onclick = () => {
-      surface.querySelector("[data-view]").value === "week" ? cursor.setUTCDate(cursor.getUTCDate() + 7) : cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    const step = (direction) => {
+      surface.querySelector("[data-view]").value === "week"
+        ? cursor.setUTCDate(cursor.getUTCDate() + 7 * direction)
+        : cursor.setUTCMonth(cursor.getUTCMonth() + direction);
       load();
     };
-    surface.querySelector("[data-today]").onclick = () => {
-      cursor = parseIsoDateValue(todayIsoDate());
-      load();
-    };
-
-    const pickerToggle = surface.querySelector("[data-picker-toggle]"),
-      pickerPopover = surface.querySelector("[data-picker-popover]"),
-      pickerYearLabel = surface.querySelector("[data-picker-year]"),
-      pickerPrevYear = surface.querySelector("[data-picker-prev-year]"),
-      pickerNextYear = surface.querySelector("[data-picker-next-year]"),
-      pickerCurrentMonth = surface.querySelector("[data-picker-current-month]"),
-      pickerMonthBtns = surface.querySelectorAll("[data-picker-month]");
-
-    let pickerYear = cursor.getUTCFullYear();
-
-    function updatePickerState() {
-      if (!pickerPopover || pickerPopover.hidden) return;
-      if (pickerYearLabel) pickerYearLabel.textContent = String(pickerYear);
-      const today = parseIsoDateValue(todayIsoDate());
-      const selectedYear = cursor.getUTCFullYear();
-      const selectedMonth = cursor.getUTCMonth();
-      const todayYear = today.getUTCFullYear();
-      const todayMonth = today.getUTCMonth();
-
-      pickerMonthBtns.forEach((btn) => {
-        const monthIndex = Number(btn.dataset.pickerMonth);
-        const isSelected = pickerYear === selectedYear && monthIndex === selectedMonth;
-        const isCurrent = pickerYear === todayYear && monthIndex === todayMonth;
-        btn.classList.toggle("is-selected", isSelected);
-        btn.classList.toggle("is-current", isCurrent);
-      });
-    }
-
-    function openPicker() {
-      pickerYear = cursor.getUTCFullYear();
-      updatePickerState();
-      pickerPopover.hidden = false;
-      pickerToggle?.setAttribute("aria-expanded", "true");
-    }
-
-    function closePicker() {
-      if (pickerPopover && !pickerPopover.hidden) {
-        pickerPopover.hidden = true;
-        pickerToggle?.setAttribute("aria-expanded", "false");
-      }
-    }
-
-    if (pickerToggle) {
-      pickerToggle.onclick = (e) => {
-        e.stopPropagation();
-        pickerPopover?.hidden ? openPicker() : closePicker();
-      };
-    }
-
-    if (pickerPrevYear) {
-      pickerPrevYear.onclick = (e) => {
-        e.stopPropagation();
-        pickerYear -= 1;
-        updatePickerState();
-      };
-    }
-
-    if (pickerNextYear) {
-      pickerNextYear.onclick = (e) => {
-        e.stopPropagation();
-        pickerYear += 1;
-        updatePickerState();
-      };
-    }
-
-    pickerMonthBtns.forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        const monthIndex = Number(btn.dataset.pickerMonth);
-        cursor = new Date(Date.UTC(pickerYear, monthIndex, 1));
-        const viewSelect = surface.querySelector("[data-view]");
-        if (viewSelect) viewSelect.value = "month";
-        closePicker();
-        load();
-      };
-    });
-
-    if (pickerCurrentMonth) {
-      pickerCurrentMonth.onclick = (e) => {
-        e.stopPropagation();
+    const periodNav = mountPeriodNav(surface, {
+      selected: () => ({ year: cursor.getUTCFullYear(), month: cursor.getUTCMonth() }),
+      current: () => {
+        const today = parseIsoDateValue(todayIsoDate());
+        return { year: today.getUTCFullYear(), month: today.getUTCMonth() };
+      },
+      onToday: () => {
         cursor = parseIsoDateValue(todayIsoDate());
-        const viewSelect = surface.querySelector("[data-view]");
-        if (viewSelect) viewSelect.value = "month";
-        closePicker();
         load();
-      };
-    }
-
-    surface.addEventListener("click", (e) => {
-      if (pickerPopover && !pickerPopover.contains(e.target) && !pickerToggle?.contains(e.target)) {
-        closePicker();
-      }
-    });
-
-    surface.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closePicker();
+      },
+      onPrev: () => step(-1),
+      onNext: () => step(1),
+      onMonth: (year, month) => showMonthOf(new Date(Date.UTC(year, month, 1))),
+      onShortcut: () => showMonthOf(parseIsoDateValue(todayIsoDate())),
     });
 
     controlsToggle.onclick = () => {
