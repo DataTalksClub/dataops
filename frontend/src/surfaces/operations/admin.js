@@ -10,23 +10,17 @@ import { mountIntakeRecovery } from "../finance/invoices.js";
 export function createAdminSurface(context) {
   const {
     apiUrl,
-    buildOperationsWorkModel,
     currentOperatorIdFromPayload,
     documentList,
     getActiveWorkspaceView,
     getActiveWorkspaceRouteToken,
     isWorkspaceRouteFresh,
-    getOperationsQualitySnapshot,
-    getOperationsRecurringSnapshot,
-    getOperationsWorkSnapshot,
-    listDraftPaths,
     refreshDocuments,
     renderHonestState,
     renderSurfaceHeader,
     request,
     setRouteTitle,
     settledPayload,
-    showWorkspaceSurface,
     surfaceDescription,
     usersFromWorkPayload,
     workApiUrl,
@@ -46,13 +40,7 @@ export function createAdminSurface(context) {
   let usersOutcome = "";
   const userRowErrors = new Map();
 
-  function renderAdminSurfaceView(documents) {
-    const model = buildOperationsWorkModel(documents, {
-      draftPaths: listDraftPaths(),
-      workSnapshot: getOperationsWorkSnapshot(),
-      recurringSnapshot: getOperationsRecurringSnapshot(),
-      qualitySnapshot: getOperationsQualitySnapshot(),
-    });
+  function renderAdminSurfaceView() {
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
     setRouteTitle("Admin");
@@ -62,7 +50,7 @@ export function createAdminSurface(context) {
     // No page eyebrow: the sidebar already names the destination, and an
     // uppercase kicker over the title is the admin-template tell.
     wrap.append(renderSurfaceHeader("Admin", surfaceDescription("admin")));
-    wrap.append(renderAdminSurface(model));
+    wrap.append(renderAdminSurface());
     // The received-intake reprocessor is developer recovery tooling; it lives
     // here, off the bookkeeping page it used to open (#242).
     const intakeRecovery = document.createElement("section");
@@ -489,17 +477,10 @@ export function createAdminSurface(context) {
     wrap.append(label, text);
     return wrap;
   }
-  function renderAdminSurface(model) {
+  function renderAdminSurface() {
     const section = document.createElement("section");
     section.className = "ops-admin-grid";
-    const recurringCount = model.recurring.configs.length;
     const cards = [
-      [
-        "Recurring config",
-        `${recurringCount} recurring ${recurringCount === 1 ? "configuration" : "configurations"} loaded; ` +
-          "generated tasks appear in the Work Queue.",
-        () => showWorkspaceSurface("templates"),
-      ],
       [
         "Diagnostics",
         "Check process quality, daily export status, and the current knowledge revision.",
