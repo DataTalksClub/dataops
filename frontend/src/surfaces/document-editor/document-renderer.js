@@ -324,10 +324,11 @@ export function createDocumentRenderer(context, services) {
         middle.push(item);
       }
     }
-    // Long locations collapse to "Process Docs / … / parent / page", like a
-    // page path in Notion; the full path stays available as a tooltip.
+    // A long folder path collapses to "Process Docs / … / folder / page";
+    // the full path stays available as a tooltip. Parent pages are links
+    // and always show.
     let shown = middle;
-    if (middle.length > 2) {
+    if (ancestors.length === 0 && middle.length > 2) {
       const ellipsis = document.createElement("span");
       ellipsis.className = "doc-trail-item doc-trail-ellipsis";
       ellipsis.textContent = "…";
