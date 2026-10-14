@@ -1526,3 +1526,38 @@ body[data-workspace-view="sponsors"] .document-list {
   .bookkeeping-export-actions { gap: var(--dk-space-1); }
   .bookkeeping-export-actions > .bookkeeping-export-btn { flex: 1 1 auto; justify-content: center; padding: 0 var(--dk-space-2); }
 }
+
+/* Sponsor deal finance: next step, blocker, payments and evidence. */
+.finance-panel > .dk-callout {
+  margin-bottom: var(--dk-space-3);
+}
+.finance-panel .dk-callout p {
+  margin: 0;
+}
+.finance-payment-list,
+.finance-evidence-list {
+  display: grid;
+  gap: var(--dk-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.finance-payment-row,
+.finance-evidence-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-2) var(--dk-space-3);
+  min-width: 0;
+}
+.finance-payment-row > .dk-button,
+.finance-evidence-row > .dk-button {
+  margin-left: auto;
+}
+.finance-evidence-row a {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.finance-evidence {
+  margin-top: var(--dk-space-4);
+}

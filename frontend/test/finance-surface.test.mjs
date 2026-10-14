@@ -6,6 +6,7 @@ import { ledgerTableMarkup, transactionOptionsMarkup, worklistMarkup } from "../
 
 import { createFinanceSurface } from "../src/surfaces/finance/index.js";
 import { createSponsorFinance } from "../src/surfaces/finance/sponsor-finance.js";
+import { followUpSummary } from "../src/surfaces/finance/sponsor-finance-records.js";
 import {
   copyToClipboard,
   formatFullCsv,
@@ -1924,4 +1925,77 @@ test("spreadsheet exports escape text formulas while retaining numeric expense s
   assert.match(tsv, /VAT\tVAT Currency/);
   assert.match(tsv, /'=1\+1\t' @SUM\(A1\)\t-12\.3400/);
   assert.match(tsv, /1\.2500\tUSD\t'\+formula/);
+});
+
+test("sponsor finance panel leads with the derived next step, the blocker, payments and evidence", async () => {
+  createHarness();
+  const surface = new FakeElement("section");
+  const panel = surface.querySelector('[data-booking-panel="finance"]');
+  const sponsorFinance = createSponsorFinance({
+    surface,
+    escapeHtml,
+    humanizeOptionLabel,
+    message: new FakeElement("p"),
+    request: async () => ({}),
+    workApiUrl: (path) => path,
+  });
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      enabled: true,
+      classified: true,
+      dealId: "deal-1",
+      role: "admin",
+      finance: {
+        version: 4,
+        invoiceRequirement: "required",
+        amountDue: "2500.00",
+        currency: "EUR",
+        taxMode: "included",
+        issuedOn: "2026-09-01",
+        sentOn: "2026-09-02",
+        dueOn: "2026-09-30",
+        waitingOn: { party: "sponsor", reason: "purchase-order", since: "2026-09-05", note: "AP queue" },
+        evidence: [
+          { kind: "email", ref: "https://mail.example.invalid/thread/1", label: "Invoice thread" },
+          { kind: "ledger", ref: "row-42" },
+        ],
+      },
+      invoiceState: "issued",
+      paymentState: "partially-paid",
+      timingState: "overdue",
+      outstanding: "1500.00",
+      payments: [
+        { id: "a".repeat(32), effectiveDate: "2026-09-20", amount: "1000.00", currency: "EUR", source: "recorded", method: "sponsor-confirmation" },
+      ],
+      followUp: { code: "chase-payment", party: "us", since: "2026-09-30", daysOverdue: 14 },
+      reconciliationStatus: "coherent",
+      paymentLinkCount: 0,
+      paymentLinkLimit: 10,
+    }),
+  });
+  await sponsorFinance.loadFinance({ id: "deal-1", version: 3 });
+  const markup = panel.innerHTML;
+  assert.ok(markup.indexOf("Chase the payment") < markup.indexOf("Waiting on the sponsor for a purchase order"));
+  assert.match(markup, /data-finance-next-step="chase-payment"/);
+  assert.match(markup, /Overdue 14 days, due/);
+  assert.match(markup, /AP queue/);
+  assert.match(markup, /data-finance-waiting-clear/);
+  assert.match(markup, /Invoice without number/);
+  assert.match(markup, /data-finance-issue[^>]*>\s*Correct invoice/);
+  assert.match(markup, /data-finance-record-payment/);
+  assert.match(markup, /Sponsor confirmation/);
+  assert.match(markup, new RegExp(`data-finance-delete-payment="${"a".repeat(32)}"`));
+  assert.match(markup, /href="https:\/\/mail\.example\.invalid\/thread\/1"[^>]*>Invoice thread/);
+  assert.match(markup, /Ledger row/);
+  assert.match(markup, /data-finance-evidence-remove="1"/);
+});
+
+test("follow-up summaries name the fix and who acts", () => {
+  assert.equal(followUpSummary({ code: "send-invoice", party: "us", since: "2026-10-01" }).title, "Send the invoice");
+  assert.equal(followUpSummary({ code: "unblock", party: "us", reason: "payment-link" }).title, "Send the sponsor a payment link");
+  assert.equal(followUpSummary({ code: "await-sponsor", party: "sponsor", reason: "billing-details" }).tone, "info");
+  assert.equal(followUpSummary({ code: "reconcile", party: "us" }).tone, "danger");
+  assert.equal(followUpSummary({ code: "none", party: "none" }).title, "Nothing to chase");
 });

@@ -1,5 +1,12 @@
 import { html } from "./shared.js";
 import { formatAmount, ledgerDate } from "./bookkeeping-format.js";
+import {
+  EVIDENCE_KIND_LABELS,
+  PAYMENT_SOURCE_LABELS,
+  WAITING_REASON_LABELS,
+  createFinanceRecordForms,
+  followUpSummary,
+} from "./sponsor-finance-records.js";
 
 export function createSponsorFinance(context) {
   const {
@@ -212,6 +219,13 @@ export function createSponsorFinance(context) {
       throw error;
     }
   };
+  const { openIssueInvoice, openRecordPayment, openWaitingOn, openAddEvidence } =
+    createFinanceRecordForms({
+      surface,
+      financeMutation,
+      reopenBookingDetail: (booking) => reopenBookingDetail(booking),
+      safe,
+    });
   function financeMarkup(projection) {
     const admin = projection.role === "admin";
     if (!projection.classified) {
@@ -235,46 +249,99 @@ export function createSponsorFinance(context) {
       </section>`;
     }
     const finance = projection.finance;
+    const live = admin && !finance.voidedAt;
+    const required = finance.invoiceRequirement === "required";
+    const coherent = projection.reconciliationStatus === "coherent";
+    const next = followUpSummary(projection.followUp);
+    const nextStep = html`<div
+      class="dk-callout dk-callout--${next.tone} finance-next-step"
+      role="status"
+      data-finance-next-step="${escapeHtml(projection.followUp?.code || "none")}"
+    >
+      <div class="dk-callout__body">
+        <div class="dk-callout__title">${escapeHtml(next.title)}</div>
+        ${next.detail ? html`<p>${escapeHtml(next.detail)}</p>` : ""}
+      </div>
+    </div>`;
+    const waiting = finance.waitingOn;
+    const waitingBanner = waiting
+      ? html`<div
+          class="dk-callout dk-callout--${waiting.party === "us" ? "warning" : "info"} finance-waiting"
+          data-finance-waiting="${escapeHtml(waiting.party)}"
+        >
+          <div class="dk-callout__body">
+            <div class="dk-callout__title">
+              ${escapeHtml(
+                waiting.party === "us"
+                  ? `The sponsor is waiting on us for ${WAITING_REASON_LABELS[waiting.reason] || waiting.reason}`
+                  : `Waiting on the sponsor for ${WAITING_REASON_LABELS[waiting.reason] || waiting.reason}`,
+              )}
+            </div>
+            <p>
+              Since ${escapeHtml(ledgerDate(waiting.since))}${waiting.note ? html` · ${escapeHtml(waiting.note)}` : ""}
+            </p>
+          </div>
+          ${live
+            ? html`<div class="dk-callout__actions">
+                <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-finance-waiting-edit>Change</button>
+                <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-finance-waiting-clear>Clear</button>
+              </div>`
+            : ""}
+        </div>`
+      : "";
     const requestInvoiceAction =
-      finance.invoiceRequirement === "required" && !finance.invoiceRequestedAt
+      required && !finance.invoiceRequestedAt && !finance.issuedOn
         ? html` <button data-finance-request>Record invoice request</button> `
         : "";
+    const issueAction =
+      required && projection.paymentState !== "paid"
+        ? html` <button class="primary-button" data-finance-issue>
+            ${finance.issuedOn ? "Correct invoice" : "Record invoice"}
+          </button>`
+        : "";
+    const recordPaymentAction =
+      required &&
+      finance.issuedOn &&
+      coherent &&
+      projection.paymentState !== "paid" &&
+      projection.paymentLinkCount < projection.paymentLinkLimit
+        ? html` <button data-finance-record-payment>Record payment</button> `
+        : "";
     const linkInvoiceAction =
-      finance.invoiceRequirement === "required" &&
+      required &&
       finance.invoiceRequestedAt &&
       !projection.invoice &&
       finance.taxMode !== "unknown"
-        ? html` <button data-finance-invoice>Link invoice</button> `
+        ? html` <button data-finance-invoice>Link invoice PDF</button> `
         : "";
     const linkPaymentAction =
       projection.invoice &&
-      projection.reconciliationStatus === "coherent" &&
+      coherent &&
       projection.paymentLinkCount < projection.paymentLinkLimit
-        ? html` <button data-finance-payment>Link payment</button> `
+        ? html` <button data-finance-payment>Link ledger payment</button> `
         : "";
-    const unlinkPaymentActions = projection.payments
-      .map(
-        (payment) => html`
-          <button data-finance-unlink-payment="${escapeHtml(payment.id)}">
-            Unlink ${escapeHtml(`${ledgerDate(payment.effectiveDate)} payment`)}
-          </button>
-        `,
-      )
-      .join("");
     const voidAction =
       !projection.invoice && projection.paymentLinkCount === 0
         ? html` <button data-finance-void>Void follow-through</button> `
         : "";
-    const actions =
-      admin && !finance.voidedAt
-        ? html`<div class="finance-actions">
-            <button data-finance-classify>Update classification</button>
-            ${requestInvoiceAction} ${linkInvoiceAction} ${linkPaymentAction}
-            <button data-finance-reconcile>Reconcile current evidence</button>
-            ${projection.invoice ? html`<button data-finance-unlink-invoice="${escapeHtml(projection.invoice.id)}">Unlink invoice</button>` : ""}
-            ${unlinkPaymentActions} ${voidAction}
-          </div>`
-        : "";
+    const actions = live
+      ? html`<div class="finance-actions">
+          ${issueAction} ${recordPaymentAction} ${requestInvoiceAction}
+          ${waiting ? "" : html`<button data-finance-waiting-edit>Set waiting on</button>`}
+          <button data-finance-classify>Update classification</button>
+          ${linkInvoiceAction} ${linkPaymentAction}
+          <button data-finance-reconcile>Reconcile current evidence</button>
+          ${projection.invoice ? html`<button data-finance-unlink-invoice="${escapeHtml(projection.invoice.id)}">Unlink invoice</button>` : ""}
+          ${voidAction}
+        </div>`
+      : "";
+    const invoiceFacts = finance.issuedOn
+      ? html`<p class="finance-invoice-facts" data-finance-invoice-facts>
+          <strong>${escapeHtml(finance.invoiceNumber ? `Invoice ${finance.invoiceNumber}` : "Invoice without number")}</strong>
+          · issued ${escapeHtml(ledgerDate(finance.issuedOn))}${finance.sentOn ? html` · sent ${escapeHtml(ledgerDate(finance.sentOn))}` : ""}
+          · due ${escapeHtml(ledgerDate(finance.dueOn))}
+        </p>`
+      : "";
     const invoiceMarkup = projection.invoice
       ? html`
           <p>
@@ -288,27 +355,47 @@ export function createSponsorFinance(context) {
           </p>
         `
       : "";
-    const reconciliationWarning =
-      projection.reconciliationStatus === "reconciliation-required"
-        ? html`
-            <p class="finance-recovery" role="alert">
-              Evidence is unavailable or changed. No payment is counted until an
-              admin reconciles the current records.
-            </p>
-          `
-        : "";
+    const reconciliationWarning = !coherent
+      ? html`
+          <p class="finance-recovery" role="alert">
+            Evidence is unavailable or changed. No payment is counted until an
+            admin reconciles the current records.
+          </p>
+        `
+      : "";
+    const paymentRow = (payment) => {
+      const source =
+        payment.source === "recorded"
+          ? PAYMENT_SOURCE_LABELS[payment.method] || "Recorded"
+          : "Ledger";
+      const unlink =
+        live && payment.source === "recorded"
+          ? html`<button
+              class="dk-button dk-button--secondary dk-button--sm"
+              data-finance-delete-payment="${escapeHtml(payment.id)}"
+              aria-label="Remove ${escapeHtml(ledgerDate(payment.effectiveDate))} recorded payment"
+            >
+              Remove
+            </button>`
+          : live
+            ? html`<button
+                class="dk-button dk-button--secondary dk-button--sm"
+                data-finance-unlink-payment="${escapeHtml(payment.id)}"
+                aria-label="Unlink ${escapeHtml(ledgerDate(payment.effectiveDate))} payment"
+              >
+                Unlink
+              </button>`
+            : "";
+      return html`<li class="finance-payment-row" data-finance-payment-source="${escapeHtml(payment.source)}">
+        <span class="dk-mono">${escapeHtml(ledgerDate(payment.effectiveDate))}</span>
+        <span class="dk-mono">${escapeHtml(formatAmount(payment.amount, payment.currency))}</span>
+        <span class="dk-muted">${escapeHtml(source)}${payment.reference ? ` · ${escapeHtml(payment.reference)}` : ""}</span>
+        ${unlink}
+      </li>`;
+    };
     const paymentMarkup = projection.payments.length
-      ? projection.payments
-          .map(
-            (payment) => html`
-              <p>
-                ${escapeHtml(ledgerDate(payment.effectiveDate))} ·
-                ${escapeHtml(formatAmount(payment.amount, payment.currency))}
-              </p>
-            `,
-          )
-          .join("")
-      : html` <p>No linked payments.</p> `;
+      ? html`<ul class="finance-payment-list">${projection.payments.map(paymentRow).join("")}</ul>`
+      : html` <p class="dk-muted">No payments yet.</p> `;
     const paymentLimitWarning =
       projection.paymentLinkCount >= projection.paymentLinkLimit
         ? html`
@@ -319,10 +406,40 @@ export function createSponsorFinance(context) {
             </p>
           `
         : "";
+    const evidence = finance.evidence || [];
+    const evidenceRow = (item, index) => {
+      const link = /^https:\/\//.test(item.ref)
+        ? html`<a href="${escapeHtml(item.ref)}" target="_blank" rel="noopener">${escapeHtml(item.label || item.ref)}</a>`
+        : html`<span>${escapeHtml(item.label ? `${item.label} · ${item.ref}` : item.ref)}</span>`;
+      return html`<li class="finance-evidence-row">
+        <span class="dk-muted">${escapeHtml(EVIDENCE_KIND_LABELS[item.kind] || item.kind)}</span>
+        ${link}
+        ${item.on ? html`<span class="dk-mono dk-muted">${escapeHtml(ledgerDate(item.on))}</span>` : ""}
+        ${live
+          ? html`<button
+              class="dk-button dk-button--secondary dk-button--sm"
+              data-finance-evidence-remove="${index}"
+              aria-label="Remove evidence ${escapeHtml(item.label || item.ref)}"
+            >
+              Remove
+            </button>`
+          : ""}
+      </li>`;
+    };
+    const evidenceMarkup = html`<div class="finance-evidence" data-finance-evidence>
+      <header class="crm-company-section-header">
+        <h4>Evidence</h4>
+        ${live ? html`<button data-finance-evidence-add>Add evidence</button>` : ""}
+      </header>
+      ${evidence.length
+        ? html`<ul class="finance-evidence-list">${evidence.map(evidenceRow).join("")}</ul>`
+        : html`<p class="dk-muted">No mail thread, invoice PDF or ledger row linked yet.</p>`}
+    </div>`;
     return html`<section class="finance-panel" data-finance-panel>
       <span hidden
         >${escapeHtml(`${projection.invoiceState} ${projection.paymentState} ${projection.timingState} ${projection.reconciliationStatus}`)}</span
       >
+      ${nextStep} ${waitingBanner}
       <header>
         <div>
           <h3>${escapeHtml(humanizeOptionLabel(projection.paymentState))}</h3>
@@ -332,7 +449,7 @@ export function createSponsorFinance(context) {
           </p>
         </div>
         <span class="finance-status"
-          >${projection.reconciliationStatus === "coherent" ? "Evidence consistent" : "Review evidence"}</span
+          >${coherent ? "Evidence consistent" : "Review evidence"}</span
         >
       </header>
       <dl>
@@ -359,9 +476,12 @@ export function createSponsorFinance(context) {
           </dd>
         </div>
       </dl>
-      ${invoiceMarkup} ${reconciliationWarning}
-      <div class="finance-payments">${paymentMarkup}</div>
-      ${paymentLimitWarning} ${actions}
+      ${invoiceFacts} ${invoiceMarkup} ${reconciliationWarning}
+      <div class="finance-payments">
+        <header class="crm-company-section-header"><h4>Payments</h4></header>
+        ${paymentMarkup}
+      </div>
+      ${paymentLimitWarning} ${evidenceMarkup} ${actions}
     </section>`;
   }
   async function loadFinance(booking) {
@@ -512,6 +632,66 @@ export function createSponsorFinance(context) {
       ?.addEventListener("click", () =>
         openFinanceClassification(booking, projection),
       );
+    panel
+      .querySelector("[data-finance-issue]")
+      ?.addEventListener("click", () => openIssueInvoice(booking, projection));
+    panel
+      .querySelector("[data-finance-record-payment]")
+      ?.addEventListener("click", () => openRecordPayment(booking, projection));
+    panel
+      .querySelectorAll("[data-finance-waiting-edit]")
+      .forEach((button) =>
+        button.addEventListener("click", () => openWaitingOn(booking, projection)),
+      );
+    panel
+      .querySelector("[data-finance-waiting-clear]")
+      ?.addEventListener("click", () =>
+        safe(async () => {
+          await financeMutation(booking, "/follow-through", "PUT", {
+            expectedVersion: projection.finance.version,
+            waitingOn: null,
+          });
+          await reopenBookingDetail(booking);
+        }, "Could not clear who the money is waiting on"),
+      );
+    panel
+      .querySelector("[data-finance-evidence-add]")
+      ?.addEventListener("click", () => openAddEvidence(booking, projection));
+    panel.querySelectorAll("[data-finance-evidence-remove]").forEach((button) =>
+      button.addEventListener("click", () =>
+        safe(async () => {
+          const index = Number(button.dataset.financeEvidenceRemove);
+          await financeMutation(booking, "/follow-through", "PUT", {
+            expectedVersion: projection.finance.version,
+            evidence: (projection.finance.evidence || []).filter(
+              (_, position) => position !== index,
+            ),
+          });
+          await reopenBookingDetail(booking);
+        }, "Could not remove evidence"),
+      ),
+    );
+    panel.querySelectorAll("[data-finance-delete-payment]").forEach((button) =>
+      button.addEventListener("click", () =>
+        safe(async () => {
+          if (
+            !(await confirmSponsorAction(
+              "Remove recorded payment?",
+              "Use this once the ledger row has arrived and is linked, or when the payment was recorded by mistake.",
+              "Remove payment",
+            ))
+          )
+            return;
+          await financeMutation(
+            booking,
+            `/recorded-payments/${encodeURIComponent(button.dataset.financeDeletePayment)}`,
+            "DELETE",
+            { expectedVersion: projection.finance.version },
+          );
+          await reopenBookingDetail(booking);
+        }, "Could not remove recorded payment"),
+      ),
+    );
     panel
       .querySelector("[data-finance-request]")
       ?.addEventListener("click", () =>
