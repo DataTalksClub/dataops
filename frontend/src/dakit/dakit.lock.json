@@ -1,21 +1,22 @@
 {
   "version": "0.2.0",
-  "commit": "ebd763c",
+  "commit": "5bc3493",
   "files": {
-    "dakit.css": "dcaf35e5d164ea518feacd802bb765aa6070581eb1102c106ead0df995d46ba4",
-    "device-code.js": "1b022ce20582fa66229adfd6df8bfe565e6b8b2b5c5e7fa20272a8fd46eec144",
-    "dialogs.js": "0c75ca1dd785d32fbdf29444a9d1a21ae154ee9c4f0ccf399c9aaae1e14a528b",
-    "shell.js": "e0885e5de9e630de5a58f39a1d1e462672b56d2b625505497d1e0e1448fe6f14",
-    "tokens.css": "be1737ba3df627f65753577cda070a4a8f9869ddd989e8f70d65f9abd5b065d3",
-    "tokens.d.ts": "99296fecfb63568c6f3e5a1e4ab9b3200faadb66a2a15205eaab0ecb914eb0d8",
-    "tokens.global.js": "56ab5a62f28d7cbf6ed53cb910e19cda3954a33d582bf36918734dc7591bcdc3",
-    "tokens.js": "e2b1a1ea7959ca2a469a618063bff903fe52040ee235662cd072de3b5fd66f59",
+    "dakit.css": "b1d7aa32de0b50e1675aab6400f69f46dd9058dffee38b4ae9e0bf523ee92c6f",
+    "device-code.js": "81ea11238348c8d76021148cd02651fcedb4d0eb6097261d2a09414402396115",
+    "dialogs.js": "04f9fcb8a8188ff95fcb59034f15c61e292226c9cdbf88ac872277cc15af6a48",
+    "shell.js": "f46ebb8e55f9a6bcd6afd9f0494783c5730199063e29e0b20fe0e1c351a369d9",
+    "tokens.css": "16ffa5e8870c66c83213e1f7e215d283d287983fe70bc9f5bd10b5e921aef25d",
+    "tokens.d.ts": "a75a6c3e46f40f22c19469c4e19a7ed6e5e874a5d48e45fcfe6f1881ee59a09e",
+    "tokens.global.js": "8215965603846be13b35a01431bc3c7fad95a967d91a47b8a7c65ba700f557e6",
+    "tokens.js": "f2a0d26a499ab153237fcea2fe4afba897bc0224fcfbb3596b616715c5a0ea5d",
     "fonts/LICENSE.md": "b60aff866100b45a70650055da26a9fcde60d1a0dcafd1b49711a68a913670c5",
     "fonts/ibm-plex-mono-400.woff2": "08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7",
     "fonts/ibm-plex-mono-500.woff2": "01d285447409c8a588692162439a038b8cbd7871309ee20267b0d2d91c6e8e22",
     "fonts/inter-var.woff2": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62",
     "check-borders.mjs": "f2e16207433484d8cd8f6a8dc2b6c1ec58b477b0ff9bab21e47aa8dd0fbf3cc1",
     "check-colors.mjs": "9d519c9eda6688f22ff7b1f8fbe31779dbf2dd4a10736668214302d06c2792c8",
-    "sync.mjs": "050ba10ec2e825e588fdde2122ecc82f01e2d719a4be9745cff21a3d7892989d"
+    "check-scale.mjs": "8ca9d024051563898757e40d3801f21baae5714d8acafeb83adcb3f61fa978fb",
+    "sync.mjs": "2c855953891335a662af170cd59e3b4143ee4a11aee8b90ed0eee46fe5f86730"
   }
 }

@@ -78,6 +78,7 @@ function sync({ dest, files, fontsDir }) {
   for (const name of readdirSync(join(source, 'fonts'))) output.set(`${fontsDir}/${name}`, readFileSync(join(source, 'fonts', name)));
   output.set('check-borders.mjs', readFileSync(join(source, 'scripts/check-borders.mjs')));
   output.set('check-colors.mjs', readFileSync(join(source, 'scripts/check-colors.mjs')));
+  output.set('check-scale.mjs', readFileSync(join(source, 'scripts/check-scale.mjs')));
   output.set('sync.mjs', readFileSync(script));
   if (dest === source || dest === dist || relative(source, dest).startsWith(`fonts${sep}`) || dest === join(source, 'fonts')) throw new Error('Destination must not overwrite dakit sources or dist');
   mkdirSync(dest, { recursive: true });

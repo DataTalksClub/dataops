@@ -40,7 +40,7 @@ describe("dakit adoption contract", () => {
     );
   });
 
-  for (const checker of ["check-borders.mjs", "check-colors.mjs"]) {
+  for (const checker of ["check-borders.mjs", "check-colors.mjs", "check-scale.mjs"]) {
     test(`the vendored ${checker} is a byte-copy of dakit scripts/${checker}`, (t) => {
       const upstream = path.join(repoRoot, `../dakit/scripts/${checker}`);
       if (!existsSync(upstream)) return t.skip("no ../dakit checkout beside this repo");

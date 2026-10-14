@@ -15,8 +15,8 @@
     "export:data:backend": "npm run export:data --workspace dataops-backend --",
     "seed:backend": "npm run seed:users --workspace dataops-backend && npm run seed --workspace dataops-backend",
     "test:backend:transactions": "bash scripts/test-backend-transactions.sh",
-    "test:frontend:coverage": "npm run test:frontend:vendor && npm run test:frontend:borders && npm run test:frontend:colors && c8 node --test frontend/test/*.test.mjs",
-    "test:frontend:unit": "npm run test:frontend:vendor && npm run test:frontend:borders && npm run test:frontend:colors && node --test frontend/test/*.test.mjs",
+    "test:frontend:coverage": "npm run test:frontend:vendor && npm run test:frontend:borders && npm run test:frontend:colors && npm run test:frontend:scale && c8 node --test frontend/test/*.test.mjs",
+    "test:frontend:unit": "npm run test:frontend:vendor && npm run test:frontend:borders && npm run test:frontend:colors && npm run test:frontend:scale && node --test frontend/test/*.test.mjs",
     "test:e2e:backend": "npm run test:e2e --workspace dataops-backend",
     "test:backend": "npm test --workspace dataops-backend",
     "typecheck:backend": "npm run typecheck --workspace dataops-backend",
@@ -25,6 +25,7 @@
     "test:cli": "npm test --workspace dataops-cli",
     "test:frontend:borders": "node frontend/src/dakit/check-borders.mjs frontend",
     "test:frontend:colors": "node frontend/src/dakit/check-colors.mjs frontend",
+    "test:frontend:scale": "node frontend/src/dakit/check-scale.mjs --baseline frontend/scale-baseline.json frontend",
     "test:frontend:vendor": "node frontend/src/dakit/sync.mjs --check --dest frontend/src/dakit"
   },
   "overrides": {
