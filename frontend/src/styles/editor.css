@@ -1648,10 +1648,19 @@ blockquote p,
   padding: var(--dk-space-2) var(--dk-space-2) var(--dk-space-2) var(--dk-space-3);
 }
 
+/* Touch has no hover: a screenshot's tools and a TODO's remove button show
+   for the block being edited instead, and stay untappable while hidden. */
 @media (hover: none) {
   .block-screenshot-tools,
   .block-todo-delete {
+    pointer-events: none;
+  }
+
+  .block-step:focus-within .block-screenshot-tools,
+  .block-screenshot:focus-within .block-screenshot-tools,
+  .block-todo-item:focus-within .block-todo-delete {
     opacity: 1;
+    pointer-events: auto;
   }
 }
 
