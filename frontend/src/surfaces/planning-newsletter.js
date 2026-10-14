@@ -220,40 +220,41 @@ export function createNewsletterPlanner(context) {
   }
 
   /**
-   * The slot's Card as a chip: title, stage, open/total Tasks, and a warning
-   * when the Card's date drifted from the slot's (the slot wins on the next
-   * save). Unlinked slots offer Create card and Link card instead.
+   * The slot's Card as a chip in the actions row: title, stage, open/total
+   * Tasks, and a warning when the Card's date drifted from the slot's (the
+   * slot wins on the next save). Unlinked slots offer Create card and Link
+   * card instead; on phones those two live in the More menu.
    */
   function slotCardMarkup(item) {
     const slotId = escapeHtml(item.id);
     if (item.card) {
       const card = item.card;
       const mismatch = card.anchorDate && card.anchorDate !== item.publicationDate
-        ? `<span class="dk-badge dk-badge--warning" data-card-date-mismatch>Card dated ${escapeHtml(formatShortPlanningDate(card.anchorDate))}</span>`
+        ? `<span class="newsletter-card-chip__warning" data-card-date-mismatch><span class="newsletter-card-chip__warning-label">Card dated </span>${
+          escapeHtml(formatShortPlanningDate(card.anchorDate))}</span>`
         : "";
       return `
         <div class="newsletter-slot-card">
-          <a class="newsletter-card-chip" href="/cards?cardId=${encodeURIComponent(card.id)}"
+          <a class="newsletter-card-chip${mismatch ? " is-mismatch" : ""}" href="/cards?cardId=${encodeURIComponent(card.id)}"
             data-open-card="${escapeHtml(card.id)}">
             <span class="newsletter-card-chip__title">${escapeHtml(card.title || "Untitled card")}</span>
             <span class="newsletter-card-chip__meta">${escapeHtml(stageLabel(card.stage))} ·
               <span class="dk-mono">${escapeHtml(`${card.openTaskCount}/${card.taskCount}`)}</span> open</span>
+            ${mismatch}
           </a>
-          ${mismatch}
         </div>`;
     }
     if (item.cardId) {
       return `
         <div class="newsletter-slot-card">
           <span class="dk-badge dk-badge--danger">Linked card unavailable</span>
-          <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-card-link="${slotId}">Link card…</button>
         </div>`;
     }
     if (item.status === "cancelled") return "";
     return `
       <div class="newsletter-slot-card">
-        <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-card-create="${slotId}">Create card</button>
-        <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-card-link="${slotId}">Link card…</button>
+        <button type="button" class="newsletter-slot-card__action" data-card-create="${slotId}">Create card</button>
+        <button type="button" class="newsletter-slot-card__action" data-card-link="${slotId}">Link card…</button>
       </div>`;
   }
 
@@ -415,7 +416,14 @@ export function createNewsletterPlanner(context) {
         `
         : "";
       const slotId = escapeHtml(item.id);
+      const cardMenuItems = item.cardId
+        ? `<button type="button" class="newsletter-overflow-item" role="menuitem" data-card-link="${slotId}">Change card link…</button>`
+        : item.status === "cancelled"
+          ? ""
+          : `<button type="button" class="newsletter-overflow-item newsletter-overflow-item--compact" role="menuitem" data-card-create="${slotId}">Create card</button>
+             <button type="button" class="newsletter-overflow-item newsletter-overflow-item--compact" role="menuitem" data-card-link="${slotId}">Link card…</button>`;
       const actions = `
+            ${slotCardMarkup(item)}
             <button type="button" class="primary-button newsletter-slot-primary" data-compose="${slotId}">Compose</button>
             <div class="newsletter-overflow">
               <button
@@ -430,7 +438,7 @@ export function createNewsletterPlanner(context) {
                 <button type="button" class="newsletter-overflow-item" role="menuitem" data-preview="${slotId}">Preview</button>
                 <button type="button" class="newsletter-overflow-item" role="menuitem" data-schedule="${slotId}">Schedule</button>
                 <button type="button" class="newsletter-overflow-item" role="menuitem" data-edit="${slotId}">Edit details</button>
-                ${item.cardId ? `<button type="button" class="newsletter-overflow-item" role="menuitem" data-card-link="${slotId}">Change card link…</button>` : ""}
+                ${cardMenuItems}
               </div>
             </div>
           `;
@@ -453,7 +461,6 @@ export function createNewsletterPlanner(context) {
             </div>
             ${bookedMarkup}
             ${planningNote}
-            ${slotCardMarkup(item)}
           </div>
           <div class="newsletter-slot-actions">
             ${actions}
@@ -611,6 +618,7 @@ export function createNewsletterPlanner(context) {
       }
       const createCardBtn = target.closest("[data-card-create]");
       if (createCardBtn?.dataset.cardCreate) {
+        closeAllSlotOverflows(surface);
         const item = items.find((value) => value.id === createCardBtn.dataset.cardCreate);
         if (item) linking.createCard(createCardBtn, item);
         return;
@@ -733,7 +741,7 @@ export function createNewsletterPlanner(context) {
         await load();
       } catch (error) {
         setBusy(button, false);
-        button.closest(".newsletter-slot-card")?.insertAdjacentHTML(
+        (button.closest(".newsletter-slot-row")?.querySelector(".newsletter-slot-main") || button.parentElement)?.insertAdjacentHTML(
           "beforeend",
           `<span class="dk-field-error" role="alert">Could not create card: ${escapeHtml(error.message)}</span>`,
         );

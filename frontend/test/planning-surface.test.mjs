@@ -1113,7 +1113,7 @@ describe("Planning surface production behavior", () => {
     assert.match(html, /href="\/cards\?cardId=card-1"/);
     assert.match(html, /Newsletter #42/);
     assert.match(html, /Preparation ·\s+<span class="dk-mono">4\/6<\/span> open/);
-    assert.match(html, /data-card-date-mismatch>Card dated 20 Aug/);
+    assert.match(html, /data-card-date-mismatch><span class="newsletter-card-chip__warning-label">Card dated <\/span>\s*20 Aug/);
     assert.match(html, /data-card-create="slot-free"/);
     assert.match(html, /data-card-link="slot-free"/);
     assert.match(html, /Linked card unavailable/);

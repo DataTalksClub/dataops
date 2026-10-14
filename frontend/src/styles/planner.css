@@ -1428,16 +1428,14 @@ details.newsletter-filters .planner-filter-fields {
 /* Newsletter slot ↔ Card: the chip on each slot row and the link picker. */
 .newsletter-slot-card {
   display: flex;
-  flex-wrap: wrap;
+  min-width: 0;
   align-items: center;
   gap: var(--dk-space-2);
-  margin-top: var(--dk-space-2);
-  min-width: 0;
 }
 .newsletter-card-chip {
   display: inline-flex;
   min-width: 0;
-  max-width: 100%;
+  max-width: 32rem;
   align-items: baseline;
   gap: var(--dk-space-2);
   border: 1px solid var(--dk-border-default);
@@ -1461,6 +1459,32 @@ details.newsletter-filters .planner-filter-fields {
   flex: 0 0 auto;
   color: var(--dk-text-muted);
   white-space: nowrap;
+}
+.newsletter-card-chip__warning {
+  flex: 0 0 auto;
+  color: var(--dk-warning-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.newsletter-overflow-item--compact {
+  display: none;
+}
+@media (max-width: 820px) {
+  .newsletter-slot-card {
+    flex: 1 1 0;
+    order: 1;
+  }
+  .newsletter-slot-actions .newsletter-overflow {
+    order: 2;
+  }
+  .newsletter-slot-card__action,
+  .newsletter-card-chip__meta,
+  .newsletter-card-chip__warning-label {
+    display: none;
+  }
+  .newsletter-overflow-item--compact {
+    display: block;
+  }
 }
 .newsletter-card-options {
   display: grid;
