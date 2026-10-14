@@ -175,7 +175,7 @@ body[data-workspace-view="tasks"] .task-context-state p {
 body[data-workspace-view="tasks"] .ops-queue-head,
 body[data-workspace-view="tasks"] .ops-queue-row {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) minmax(0, 11rem) 5.5rem 34px;
+  grid-template-columns: 16px minmax(0, 1fr) minmax(0, 11rem) 5.5rem 34px;
   gap: 12px;
   align-items: center;
   min-width: 0;
@@ -211,14 +211,12 @@ body[data-workspace-view="tasks"] .ops-queue-row {
   background: var(--dk-bg-hover);
 }/* The tick: a real checkbox wearing the checklist box. The input itself is
    visually hidden but stays the focusable, keyboard-operable control; the box
-   beside it is the only thing painted. The label carries padding beyond the
-   box so the tick is a forgiving touch target without moving the grid. */
+   beside it is the only thing painted. The label is the hit area: the 16px
+   box on a fine pointer, its own 44px column on touch (below). */
 body[data-workspace-view="tasks"] .ops-queue-check {
   display: grid;
   position: relative;
   place-items: center;
-  margin: -6px;
-  padding: 6px;
   cursor: pointer;
 }body[data-workspace-view="tasks"] .ops-queue-check:has(input:disabled) {
   cursor: not-allowed;
@@ -232,8 +230,8 @@ body[data-workspace-view="tasks"] .ops-queue-check {
   white-space: nowrap;
 }body[data-workspace-view="tasks"] .ops-queue-box {
   display: block;
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   border: 1px solid var(--dk-border-strong);
   border-radius: var(--dk-radius-sm);
   background: transparent;
@@ -249,7 +247,7 @@ body[data-workspace-view="tasks"] .ops-queue-check {
   display: grid;
   place-items: center;
   height: 100%;
-  font-size: 11px;
+  font-size: var(--dk-text-xs);
   font-weight: 700;
   line-height: 1;
 }body[data-workspace-view="tasks"] .ops-queue-check-input:disabled + .ops-queue-box {
@@ -474,31 +472,53 @@ body[data-workspace-view="tasks"] .ops-queue-owner {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}/* Touch: the tick's label owns a 44px column and is the whole hit area. The
+   row starts at the column, so the centred 16px box keeps the row's 14px
+   inset and nothing reaches outside its own cell. */
+@media (max-width: 820px), (pointer: coarse) {body[data-workspace-view="tasks"] .ops-queue-head,
+body[data-workspace-view="tasks"] .ops-queue-row {
+    grid-template-columns: var(--dk-size-touch) minmax(0, 1fr) minmax(0, 11rem) 5.5rem 34px;
+    padding-left: 0;
+  }body[data-workspace-view="tasks"] .ops-queue-check {
+    min-width: var(--dk-size-touch);
+    min-height: var(--dk-size-touch);
+  }
 }/* Mobile: five columns cannot fit a phone, so the row folds to two lines —
-   the task on top, then where / due / who underneath. The heading row hides,
-   because the folded labels would repeat what the columns used to say. */
+   the task on top, then where and due directly under it. The title button
+   spans both lines (that is its 44px) and the meta line sits on its lower
+   edge, passing taps through to it, so no dead band opens between them. The
+   tick spans both lines too, and the avatar keeps a fixed trailing column
+   whatever the due text says. The heading row hides, because the folded
+   labels would repeat what the columns used to say. */
 @media (max-width: 820px) {body[data-workspace-view="tasks"] .ops-queue-head {
     display: none;
   }body[data-workspace-view="tasks"] .ops-queue-row {
-    grid-template-columns: 18px minmax(0, 1fr) auto;
-    grid-template-areas:
-      "mark main owner"
-      ". origin due";
-    gap: 2px 10px;
-    min-height: 44px;
-    padding: 9px 14px;
+    grid-template-columns: var(--dk-size-touch) minmax(0, 1fr) auto 28px;
+    grid-template-rows: auto auto;
+    column-gap: var(--dk-space-2);
+    row-gap: 0;
+    padding-block: var(--dk-space-1);
   }body[data-workspace-view="tasks"] .ops-queue-check {
-    grid-area: mark;
-    align-self: start;
-    margin-top: -4px;
+    grid-column: 1;
+    grid-row: 1 / 3;
   }body[data-workspace-view="tasks"] .ops-queue-main {
-    grid-area: main;
+    grid-column: 2 / 4;
+    grid-row: 1 / 3;
+    align-content: start;
+    padding-block: var(--dk-space-1) var(--dk-space-5);
   }body[data-workspace-view="tasks"] .ops-queue-owner {
-    grid-area: owner;
+    grid-column: 4;
+    grid-row: 1 / 3;
+  }body[data-workspace-view="tasks"] .ops-queue-origin,
+body[data-workspace-view="tasks"] .ops-queue-due {
+    grid-row: 2;
+    align-self: end;
+    padding-bottom: var(--dk-space-1);
+    pointer-events: none;
   }body[data-workspace-view="tasks"] .ops-queue-origin {
-    grid-area: origin;
+    grid-column: 2;
   }body[data-workspace-view="tasks"] .ops-queue-due {
-    grid-area: due;
+    grid-column: 3;
   }body[data-workspace-view="tasks"] .ops-queue-more {
     min-height: 44px;
   }body[data-workspace-view="tasks"] .ops-queue-history summary {

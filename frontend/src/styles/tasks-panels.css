@@ -1239,7 +1239,7 @@ body[data-workspace-view="tasks"] .workflow-references-section .task-history .ta
 }
 
 @media (max-width: 480px) {body[data-workspace-view="tasks"] .ops-queue-row {
-    padding-inline: 12px;
+    padding-right: 12px;
   }body[data-workspace-view="tasks"] .assistant-job-row {
     grid-template-columns: 1fr;
     gap: 7px;
