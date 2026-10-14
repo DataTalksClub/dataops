@@ -31,7 +31,7 @@ describe('sponsor CRM newsletters', () => {
   });
   after(stopLocal);
 
-  it('creates, lists with health, records receipts, and imports by slug', async () => {
+  it('creates, lists with health, and imports by slug', async () => {
     const created = await invoke('POST', '/api/sponsor-crm/newsletters', {
       name: 'Data Engineering Weekly',
       url: 'https://www.dataengineeringweekly.com/archive',
@@ -59,31 +59,6 @@ describe('sponsor CRM newsletters', () => {
     const listed = data(await invoke('GET', '/api/sponsor-crm/newsletters?today=2026-10-12&limit=50'));
     assert.equal(listed.items[0].id, newsletter.id);
     assert.equal(listed.items[0].health, 'missing');
-
-    const receipt = await invoke('POST', '/api/sponsor-crm/newsletters/receipts', {
-      sender: 'dataengineeringweekly@substack.com',
-      subject: 'Data Engineering Weekly #290',
-      receivedAt: '2026-10-11T12:00:00Z',
-      messageId: 'msg-290',
-    });
-    assert.equal(receipt.statusCode, 200, receipt.body);
-    assert.equal(data(receipt).health, 'current');
-    assert.equal(data(receipt).lastSubject, 'Data Engineering Weekly #290');
-
-    const replay = await invoke('POST', '/api/sponsor-crm/newsletters/receipts', {
-      sender: 'dataengineeringweekly@substack.com',
-      subject: 'replay',
-      receivedAt: '2026-10-12T12:00:00Z',
-      messageId: 'msg-290',
-    });
-    assert.equal(data(replay).lastSubject, 'Data Engineering Weekly #290');
-
-    const unknown = await invoke('POST', '/api/sponsor-crm/newsletters/receipts', {
-      sender: 'unknown@example.invalid',
-      subject: 'Hello',
-      receivedAt: '2026-10-12T12:00:00Z',
-    });
-    assert.equal(unknown.statusCode, 422);
 
     const imported = await invoke('POST', '/api/sponsor-crm/imports', IMPORT_FIXTURE);
     assert.equal(imported.statusCode, 200, imported.body);

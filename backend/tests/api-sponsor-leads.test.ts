@@ -212,7 +212,7 @@ describe('sponsor lead intake and review', () => {
     const unknownTop = intakeRequest('unknown-601', [sponsor()]);
     unknownTop.body = unknownTop.body.replace('"sponsors":[', '"rawEmail":"private","sponsors":[');
     assert.strictEqual((await handler(unknownTop, {})).statusCode, 400);
-    assert.strictEqual((await handler(intakeRequest('empty-601', []), {})).statusCode, 400);
+    assert.strictEqual((await handler(intakeRequest('not-array-601', 'none' as unknown as unknown[]), {})).statusCode, 400);
     assert.strictEqual((await handler(intakeRequest('too-many-601', Array.from({ length: 21 }, (_, index) => sponsor({ name: `Vendor ${index}` }))), {})).statusCode, 400);
     assert.strictEqual((await handler(intakeRequest('unknown-sponsor-601', [{ ...sponsor(), extra: true }]), {})).statusCode, 400);
     assert.strictEqual((await handler(intakeRequest('http-url-601', [sponsor({ url: 'http://unsafe.example.test' })]), {})).statusCode, 400);
@@ -404,5 +404,46 @@ describe('sponsor lead intake and review', () => {
     assert.notStrictEqual(createdBody.organizationId, org.id);
     const messages = JSON.parse((await review('GET', `/api/sponsor-crm/organizations/${createdBody.organizationId}/messages`)).body);
     assert.deepStrictEqual(messages.items, []);
+  });
+
+  it('records every inbox issue on its newsletter, including issues without sponsors', async () => {
+    const created = await review('POST', '/api/sponsor-crm/newsletters', {
+      name: 'Issue Tracker Weekly',
+      url: 'https://tracker.example.test',
+      senders: ['tracker@example.test'],
+      expectedIntervalDays: 7,
+      subscriptionStatus: 'subscribed',
+    });
+    assert.strictEqual(created.statusCode, 201, created.body);
+    const newsletterId = JSON.parse(created.body).id;
+    const tracker = (overrides: Record<string, unknown>) => newsletter({ name: 'Issue Tracker Weekly', sender: 'tracker@example.test', ...overrides });
+
+    const none = await handler(intakeRequest('<tracker-1@example.test>', [], tracker({ subject: 'Tracker #1', receivedAt: '2026-10-01T08:00:00Z' })), {});
+    assert.strictEqual(none.statusCode, 201, none.body);
+    assert.deepStrictEqual(JSON.parse(none.body).leads, []);
+    const replay = await handler(intakeRequest('<tracker-1@example.test>', [], tracker({ subject: 'Tracker #1', receivedAt: '2026-10-01T08:00:00Z' })), {});
+    assert.strictEqual(replay.statusCode, 200, replay.body);
+    assert.strictEqual(JSON.parse(replay.body).status, 'duplicate');
+
+    // Matched by name when the sender is new; the sender is learned.
+    const sponsored = await handler(intakeRequest('<tracker-2@example.test>', [sponsor({ name: 'Tracker Sponsor' })],
+      tracker({ sender: 'digest@tracker.example.test', subject: 'Tracker #2', receivedAt: '2026-10-08T08:00:00Z' })), {});
+    assert.strictEqual(sponsored.statusCode, 201, sponsored.body);
+    // An older issue arriving late does not become the latest receipt.
+    await handler(intakeRequest('<tracker-0@example.test>', [], tracker({ subject: 'Tracker #0', receivedAt: '2026-09-24T08:00:00Z' })), {});
+
+    const record = JSON.parse((await review('GET', `/api/sponsor-crm/newsletters/${newsletterId}`)).body);
+    assert.strictEqual(record.lastSubject, 'Tracker #2');
+    assert.strictEqual(record.lastMessageId, '<tracker-2@example.test>');
+    assert.deepStrictEqual(record.senders, ['tracker@example.test', 'digest@tracker.example.test']);
+    assert.strictEqual(record.issues.issueCount, 3);
+    assert.strictEqual(record.issues.issuesWithoutSponsors, 2);
+
+    const issues = JSON.parse((await review('GET', `/api/sponsor-crm/newsletters/${newsletterId}/issues`)).body).items;
+    assert.deepStrictEqual(issues.map((item: any) => [item.title, item.source, item.sponsors.map((entry: any) => entry.name)]), [
+      ['Tracker #2', 'inbox', ['Tracker Sponsor']],
+      ['Tracker #1', 'inbox', []],
+      ['Tracker #0', 'inbox', []],
+    ]);
   });
 });

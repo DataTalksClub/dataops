@@ -8,6 +8,7 @@ import {
   matchNewsletterBySender,
   newsletterIssueRecord,
   newsletterIssueStats,
+  receiptPatch,
   validateNewsletterIssue,
   newsletterGraceDays,
   newsletterHealth,
@@ -126,6 +127,21 @@ describe('newsletter issues', () => {
       issuesWithoutSponsors: 1,
       sponsorSightings: 2,
       sponsors: [{ name: 'Acme', count: 1 }, { name: 'Beta', count: 1 }],
+    });
+  });
+
+  it('moves the latest receipt forward only for newer issues and learns senders', () => {
+    const record = { senders: ['weekly@news.example.invalid'], lastReceivedAt: '2026-10-08T08:00:00Z', lastMessageId: 'm2' };
+    const receipt = { sender: 'Weekly@News.example.invalid', subject: 'Three', receivedAt: '2026-10-15T08:00:00Z', messageId: 'm3' };
+    assert.deepEqual(receiptPatch(record, receipt), {
+      lastReceivedAt: '2026-10-15T08:00:00Z',
+      lastSender: 'weekly@news.example.invalid',
+      lastSubject: 'Three',
+      lastMessageId: 'm3',
+    });
+    assert.equal(receiptPatch(record, { ...receipt, receivedAt: '2026-10-01T08:00:00Z' }), null);
+    assert.deepEqual(receiptPatch(record, { ...receipt, sender: 'new@news.example.invalid', receivedAt: '2026-10-01T08:00:00Z' }), {
+      senders: ['weekly@news.example.invalid', 'new@news.example.invalid'],
     });
   });
 });

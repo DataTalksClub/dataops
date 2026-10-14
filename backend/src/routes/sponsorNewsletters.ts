@@ -12,7 +12,6 @@ import {
   NEWSLETTER_HEALTH,
   issueBelongsTo,
   issueSponsors,
-  matchNewsletterBySender,
   newsletterIssueRecord,
   newsletterIssueStats,
   newsletterPatch,
@@ -27,7 +26,6 @@ import { leadValue, parseSponsors, storeLead } from './sponsorLeads';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const parse = (event: LambdaEvent) => { try { return event.body ? JSON.parse(String(event.body)) as Record<string, unknown> : null; } catch { return null; } };
 const todayOf = (event: LambdaEvent) => {
   const query = event.queryStringParameters || {};
@@ -64,42 +62,6 @@ async function decorated(client: DynamoDBDocumentClient, newsletters: CrmRecord[
   });
 }
 
-async function handleReceipt(client: DynamoDBDocumentClient, body: Record<string, unknown> | null, today: string) {
-  if (!body) return json(400, { error: 'Invalid JSON' });
-  const sender = typeof body.sender === 'string' ? body.sender.trim().toLowerCase() : '';
-  const receivedAt = typeof body.receivedAt === 'string' ? body.receivedAt : '';
-  const subject = typeof body.subject === 'string' ? body.subject.slice(0, 300) : '';
-  const messageId = typeof body.messageId === 'string' ? body.messageId.trim() : '';
-  if (!EMAIL.test(sender) || !receivedAt || Number.isNaN(Date.parse(receivedAt))) return json(400, { error: 'Invalid receipt' });
-  const newsletters = await listCrmRecords(client, 'newsletter');
-  let target: CrmRecord | null = null;
-  if (body.newsletterId) {
-    if (!ID.test(String(body.newsletterId))) return json(400, { error: 'Invalid newsletterId' });
-    target = await getCrmRecord(client, 'newsletter', String(body.newsletterId));
-    if (!target) return json(404, { error: 'Not found' });
-  } else {
-    target = matchNewsletterBySender(newsletters, sender) as CrmRecord | null;
-    if (!target) return json(422, { error: 'Unknown newsletter sender' });
-  }
-  if (messageId && target.lastMessageId === messageId) return json(200, publicNewsletter(target, today));
-  const previous = String(target.lastReceivedAt || '');
-  if (previous && Date.parse(receivedAt) < Date.parse(previous)) return json(200, publicNewsletter(target, today));
-  const senders = Array.isArray(target.senders) ? target.senders.map((value) => String(value)) : [];
-  if (!senders.includes(sender) && senders.length < 10) senders.push(sender);
-  try {
-    const updated = await updateCrmRecord(client, 'newsletter', target, {
-      lastReceivedAt: receivedAt,
-      lastSender: sender,
-      lastSubject: subject,
-      lastMessageId: messageId || undefined,
-      senders,
-    });
-    return json(200, publicNewsletter(updated, today));
-  } catch {
-    return json(409, { error: 'Conflicting update; reload and retry' });
-  }
-}
-
 async function handleIssues(client: DynamoDBDocumentClient, method: string, newsletter: CrmRecord, body: Record<string, unknown> | null) {
   if (method === 'GET') {
     const [newsletters, issues, leads] = await Promise.all([
@@ -129,7 +91,7 @@ async function handleIssues(client: DynamoDBDocumentClient, method: string, news
   let sponsors: ReturnType<typeof parseSponsors> = [];
   if (body.sponsors !== undefined) {
     if (!Array.isArray(body.sponsors)) return json(400, { error: 'Invalid sponsors' });
-    try { sponsors = body.sponsors.length ? parseSponsors(body.sponsors) : []; }
+    try { sponsors = parseSponsors(body.sponsors); }
     catch (failure) { return json(400, { error: (failure as Error).message }); }
   }
   const record = newsletterIssueRecord(newsletter, body);
@@ -161,7 +123,6 @@ export async function handleSponsorNewsletterRoutes(
 ): Promise<LambdaResponse> {
   const body = method === 'GET' ? null : parse(event);
   const today = todayOf(event);
-  if (path === '/api/sponsor-crm/newsletters/receipts' && method === 'POST') return handleReceipt(client, body, today);
 
   const issuesMatch = path.match(/^\/api\/sponsor-crm\/newsletters\/([^/]+)\/issues$/);
   if (issuesMatch) {

@@ -1,5 +1,6 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { createCrmRecord, deterministicCrmId, getCrmRecord, updateCrmRecord } from '../db/sponsorCrm';
+import { createCrmRecord, deterministicCrmId, getCrmRecord, listCrmRecords, updateCrmRecord, type CrmRecord } from '../db/sponsorCrm';
+import { issueNewsletter, newsletterIssueRecord, receiptPatch } from './newsletters';
 
 export const NEWSLETTER_ISSUE_KIND = 'newsletter-issue';
 
@@ -19,4 +20,36 @@ export async function upsertNewsletterIssue(client: DynamoDBDocumentClient, reco
   );
   if (!Object.keys(missing).length) return { item: existing, outcome: 'duplicate' as const };
   return { item: await updateCrmRecord(client, NEWSLETTER_ISSUE_KIND, existing, missing), outcome: 'updated' as const };
+}
+
+
+/**
+ * Record one issue that arrived in the newsletter inbox (Dapier lead intake),
+ * with or without sponsors, and mark it as the newsletter's latest receipt.
+ */
+export async function recordInboxIssue(
+  client: DynamoDBDocumentClient,
+  messageId: string,
+  newsletter: { name: string; sender: string; subject: string; receivedAt: string },
+) {
+  const newsletters = await listCrmRecords(client, 'newsletter');
+  const target = issueNewsletter(newsletters, newsletter.sender, newsletter.name) as CrmRecord | null;
+  const stored = await upsertNewsletterIssue(client, newsletterIssueRecord(target, {
+    issueKey: messageId.trim(),
+    title: newsletter.subject,
+    publishedAt: newsletter.receivedAt,
+    source: 'inbox',
+    sender: newsletter.sender,
+    newsletterName: newsletter.name,
+  }));
+  const patch = target ? receiptPatch(target, { ...newsletter, messageId: messageId.trim() }) : null;
+  if (target && patch) {
+    try {
+      await updateCrmRecord(client, 'newsletter', target, patch);
+    } catch (error) {
+      // A concurrent edit wins; the issue itself is recorded either way.
+      if ((error as Error).name !== 'ConditionalCheckFailedException') throw error;
+    }
+  }
+  return { id: stored.item.id, outcome: stored.outcome, newsletterId: target?.id || null };
 }

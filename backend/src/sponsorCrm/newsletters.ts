@@ -289,3 +289,28 @@ export function newsletterIssueStats(issues: Array<Record<string, unknown>>, lea
       .map(([name, count]) => ({ name, count })),
   };
 }
+
+/**
+ * What an arriving issue changes on its newsletter: the latest receipt and
+ * any sender not yet known. Older or replayed issues change nothing.
+ */
+export function receiptPatch(
+  newsletter: Record<string, unknown>,
+  receipt: { sender: string; subject: string; receivedAt: string; messageId: string },
+): Record<string, unknown> | null {
+  const sender = receipt.sender.trim().toLowerCase();
+  const senders = Array.isArray(newsletter.senders) ? newsletter.senders.map((value) => String(value)) : [];
+  const patch: Record<string, unknown> = {};
+  if (EMAIL.test(sender) && !senders.includes(sender) && senders.length < 10) patch.senders = [...senders, sender];
+  const previous = String(newsletter.lastReceivedAt || '');
+  const newer = !previous || Date.parse(receipt.receivedAt) > Date.parse(previous);
+  if (newer && newsletter.lastMessageId !== receipt.messageId) {
+    Object.assign(patch, {
+      lastReceivedAt: receipt.receivedAt,
+      lastSender: sender,
+      lastSubject: receipt.subject.slice(0, 300),
+      lastMessageId: receipt.messageId,
+    });
+  }
+  return Object.keys(patch).length ? patch : null;
+}

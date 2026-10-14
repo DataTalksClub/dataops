@@ -4,6 +4,7 @@ import { DynamoDBDocumentClient, PutCommand, UpdateCommand } from '@aws-sdk/lib-
 
 import { deterministicCrmId, getCrmRecord, listCrmRecords, updateCrmRecord, type CrmRecord } from '../db/sponsorCrm';
 import { convertLead } from '../sponsorCrm/convertLead';
+import { recordInboxIssue } from '../sponsorCrm/newsletterIssues';
 import { TABLE_AUDIT_EVENTS, TABLE_SPONSOR_CRM } from '../db/tableNames';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
@@ -193,8 +194,9 @@ function parseNewsletter(value: unknown): LeadNewsletter {
 }
 
 export function parseSponsors(value: unknown): LeadSponsor[] {
-  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_SPONSORS) {
-    throw new Error(`sponsors must be an array with 1 to ${MAX_SPONSORS} items`);
+  // An issue with no sponsors is still reported: it was checked and had none.
+  if (!Array.isArray(value) || value.length > MAX_SPONSORS) {
+    throw new Error(`sponsors must be an array with at most ${MAX_SPONSORS} items`);
   }
   const sponsors = value.map((item, index) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`sponsors[${index}] must be an object`);
@@ -390,7 +392,9 @@ export async function handleSponsorLeadIntake(event: LambdaEvent, client: Dynamo
   // intake privacy posture. Dapier reconciles by index.
   const leads: Array<{ index: number; id: string; outcome: 'created' | 'duplicate' }> = [];
   const failures: Array<{ index: number; code: string }> = [];
+  let issue: { id: string; outcome: string };
   try {
+    issue = await recordInboxIssue(client, messageId, newsletter);
     for (const [index, sponsor] of sponsors.entries()) {
       try {
         const stored = await storeLead(client, leadValue(messageId, newsletter, sponsor, 'leads-intake'));
@@ -418,11 +422,11 @@ export async function handleSponsorLeadIntake(event: LambdaEvent, client: Dynamo
   }
   if (failures.length) {
     audit('partial-failure', credential, correlation, sponsors.length, failures.length);
-    return response(207, { status: 'partial-failure', leads, failures });
+    return response(207, { status: 'partial-failure', issue: { id: issue.id }, leads, failures });
   }
-  const allDuplicate = leads.every((lead) => lead.outcome === 'duplicate');
+  const allDuplicate = issue.outcome !== 'created' && leads.every((lead) => lead.outcome === 'duplicate');
   audit(allDuplicate ? 'duplicate' : 'accepted', credential, correlation, sponsors.length);
-  return response(allDuplicate ? 200 : 201, { status: allDuplicate ? 'duplicate' : 'accepted', leads });
+  return response(allDuplicate ? 200 : 201, { status: allDuplicate ? 'duplicate' : 'accepted', issue: { id: issue.id }, leads });
 }
 
 const parseBody = (event: LambdaEvent) => {
