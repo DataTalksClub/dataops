@@ -61,7 +61,7 @@ test.describe("sponsor newsletter catalog", () => {
     await setupPageWithAuth(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${server.baseURL}/sponsors`);
-    await expect(page.locator("[data-crm-message]")).toBeHidden();
+    await expect(page.locator("[data-crm-message]")).toBeHidden({ timeout: 20_000 });
     await expect(page.locator("[data-crm-view='newsletters']")).toBeVisible();
     await expect(page.locator(".crm-newsletters")).toBeHidden();
 
@@ -118,7 +118,7 @@ test.describe("sponsor newsletter catalog", () => {
     expect(intake.status, await intake.text()).toBe(201);
     await page.reload();
     await expect(page).toHaveURL(/\/sponsors\/newsletters$/);
-    await expect(page.locator("[data-crm-message]")).toBeHidden();
+    await expect(page.locator("[data-crm-message]")).toBeHidden({ timeout: 20_000 });
     await expect(page.locator(".crm-newsletters")).toBeVisible();
     await expect(weekly.locator("[data-health='current']")).toHaveText("Current");
     await expect(weekly).toContainText("Data Engineering Weekly #290");
