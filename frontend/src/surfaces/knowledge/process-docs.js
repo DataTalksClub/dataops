@@ -1,3 +1,5 @@
+import { createCollectionCreateButton } from "../operations-overview.js";
+
 export function createProcessDocsSurface(context, services) {
   const {
     basename,
@@ -460,18 +462,16 @@ export function createProcessDocsSurface(context, services) {
     setRouteTitle("Process Docs");
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-docs";
-    const header = renderSurfaceHeader("Process Docs");
-    const createButton = document.createElement("button");
-    createButton.type = "button";
-    createButton.className = "dk-button dk-button--primary ops-docs-create";
-    createButton.textContent = "New process doc";
-    createButton.addEventListener("click", () => showCreate());
-    const actions = document.createElement("div");
-    actions.className = "dk-page-header__actions";
-    actions.append(createButton);
-    header.append(actions);
-    wrap.append(header);
+    wrap.append(renderSurfaceHeader("Process Docs"));
     if (knowledgeTools) {
+      // New process doc rides on the catalog toolbar, right after the
+      // Filters that scope the list; the page header holds no actions.
+      const createButton = createCollectionCreateButton({
+        label: "New process doc",
+        onClick: () => showCreate(),
+      });
+      createButton.classList.add("ops-docs-create");
+      knowledgeTools.querySelector("[data-docs-create-slot]").replaceChildren(createButton);
       const count = knowledgeTools.querySelector("#docs-catalog-count");
       if (count) count.replaceChildren(...catalogCount(visibleDocuments.length));
       wrap.append(knowledgeTools);

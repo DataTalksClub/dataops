@@ -152,6 +152,16 @@ function createKnowledgeHarness(options = {}) {
   elements.editorView.dataset.mode = "rendered";
   elements.filtersSection.open = false;
 
+  // The catalog toolbar from index.html: Filters, the create slot, the count.
+  const knowledgeTools = new FakeElement("div");
+  knowledgeTools.id = "knowledge-tools";
+  const createSlot = new FakeElement("div");
+  createSlot.dataset.docsCreateSlot = "";
+  const catalogCount = new FakeElement("span");
+  catalogCount.id = "docs-catalog-count";
+  knowledgeTools.append(createSlot, catalogCount);
+  elements.knowledgeTools = knowledgeTools;
+
   const body = new FakeElement("body");
   body.dataset.view = "library";
   const document = new KnowledgeDocument(
@@ -283,6 +293,7 @@ function createKnowledgeHarness(options = {}) {
       pushState: (state, _unused, url) => history.push({ state, url }),
     },
     knowledgeState,
+    knowledgeTools,
     labelizeWorkValue: (value) =>
       String(value || "")
         .split("-")
@@ -615,7 +626,7 @@ describe("Knowledge surface boundary", () => {
       ),
       false,
     );
-    const surface = outage.elements.documentList.children[0].children[1];
+    const surface = outage.elements.documentList.querySelector(".ops-processes-surface");
     assert.deepEqual(
       surface.children.map((child) => child.className),
       ["ops-honest-state ops-docs-state"],
@@ -829,7 +840,12 @@ describe("Knowledge surface boundary", () => {
     assert.equal(state.getAttribute("role"), "status");
     assert.match(state.textContent, /catalog contains 2 process documents/);
     assert.match(state.textContent, /Clear filters/);
-    assert.ok(findByText(harness.elements.documentList, "New process doc", "button"));
+    // New process doc sits on the catalog toolbar, not in the page header.
+    const create = findByText(harness.elements.documentList, "New process doc", "button");
+    assert.ok(create);
+    assert.ok(create.closest("[data-docs-create-slot]"));
+    assert.equal(create.closest(".dk-page-header, .ops-surface-header"), null);
+    assert.equal(create.getAttribute("aria-keyshortcuts"), "c");
   });
 
   test("separates filtered Process Docs empty-state guidance semantically", () => {

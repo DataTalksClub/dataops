@@ -280,10 +280,6 @@ body[data-view="library"] .library-view .document-list .dk-page-header {
   padding-top: 4px;
 }
 .dk-page-header__actions button { white-space: nowrap; }
-body[data-view="library"] .library-view .document-list .dk-page-header > .ops-docs-create {
-  grid-area: auto;
-  align-self: start;
-}
 @media (max-width: 820px) {
   body[data-view="library"] .library-view .document-list .dk-page-header {
     display: flex;

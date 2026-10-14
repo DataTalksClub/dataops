@@ -275,8 +275,6 @@ textarea.inline-editor {
   }.ops-surface-docs > .ops-surface-header {
     display: grid;
     gap: 12px;
-  }.ops-surface-docs > .ops-surface-header .ops-docs-create {
-    width: fit-content;
   }.ops-quality-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }.document-row {

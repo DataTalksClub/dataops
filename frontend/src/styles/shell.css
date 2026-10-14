@@ -5,6 +5,7 @@
 .dk-sidebar svg, .dk-topbar svg, .dk-account-menu svg, .dk-notif-panel svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .dk-nav-group__label { font-weight: var(--dk-weight-semibold); }
 .knowledge-tools { width: 100%; margin: 0; }
+.docs-create-slot { display: contents; }
 body:not([data-workspace-view="docs"]) .knowledge-tools { display: none; }
 /* Process Docs toolbar: Filters is a secondary button whose panel opens as
    a popover under it (process-docs.js closes it on outside click and Esc);

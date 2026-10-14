@@ -158,12 +158,12 @@ describe("shell ownership contract", () => {
 
   test("gives Process Docs ownership of its creation action", () => {
     const producers = frontendJavaScriptFiles().filter((file) =>
-      read(`frontend/${file}`).includes('className = "dk-button dk-button--primary ops-docs-create"'),
+      read(`frontend/${file}`).includes('classList.add("ops-docs-create")'),
     );
     assert.deepEqual(producers, ["src/surfaces/knowledge/process-docs.js"]);
     assert.match(
       read("frontend/src/surfaces/knowledge/process-docs.js"),
-      /createButton\.addEventListener\("click", \(\) => showCreate\(\)\);/,
+      /label: "New process doc",\s+onClick: \(\) => showCreate\(\),/,
     );
     const admin = read("frontend/src/surfaces/operations/admin.js");
     assert.doesNotMatch(admin, /\bshowCreate\b|New process doc/);

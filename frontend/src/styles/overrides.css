@@ -425,11 +425,10 @@ body[data-workspace-view] .task-modal-panel button,
     min-height: 44px;
   }
 }/* ── Slice 5 review round 2 (#229): one knowledge header, aligned counts ──── *//* Docs and Admin headers follow the family pattern exactly: left-aligned
-   eyebrow, H1, subtitle, no trailing rule. Docs keeps its one primary action
-   beside the text on desktop; the earlier flex-end alignment right-aligned
-   the whole stack. */.ops-surface-docs > .ops-surface-header {
+   eyebrow, H1, subtitle, no trailing rule. Docs' create action lives on the
+   catalog toolbar, not here. */.ops-surface-docs > .ops-surface-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   justify-items: start;
   gap: 4px 20px;
@@ -440,10 +439,6 @@ body[data-workspace-view] .task-modal-panel button,
 .ops-surface-docs > .ops-surface-header > h1:not([class*="dk-"]),
 .ops-surface-docs > .ops-surface-header > p:not([class*="dk-"]) {
   grid-column: 1;
-}.ops-surface-docs > .ops-surface-header > .ops-docs-create {
-  grid-column: 2;
-  grid-row: 1 / span 3;
-  align-self: center;
 }.ops-surface-admin .ops-surface-header {
   width: 100%;
   border-bottom: 0;
@@ -457,15 +452,6 @@ body[data-workspace-view] .task-modal-panel button,
   font-weight: 600;
 }
 
-@media (max-width: 820px) {/* On mobile the Docs action drops under the text. */.ops-surface-docs > .ops-surface-header {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }.ops-surface-docs > .ops-surface-header > .ops-docs-create {
-    grid-column: 1;
-    grid-row: auto;
-    margin-top: 8px;
-  }
-}
 /* Mobile: the row-hint affordance is itself a touch-sized element. */
 @media (max-width: 820px) {.ops-queue-row-open {
     display: inline-flex;

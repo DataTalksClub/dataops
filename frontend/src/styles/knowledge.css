@@ -34,9 +34,6 @@ body[data-view="library"] .library-view {
   color: var(--dk-text-muted);
   font-size: 14px;
   line-height: 1.5;
-}.ops-surface-docs > .ops-surface-header .ops-docs-create {
-  flex: 0 0 auto;
-  white-space: nowrap;
 }.ops-processes-surface {
   display: grid;
   min-width: 0;
