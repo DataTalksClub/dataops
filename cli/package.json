@@ -11,6 +11,7 @@
     "dataops": "./bin/dataops.mjs"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "test:e2e": "node --test --test-force-exit test-e2e/*.test.mjs"
   }
 }

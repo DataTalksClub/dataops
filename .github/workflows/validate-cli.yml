@@ -1,0 +1,49 @@
+name: Validate CLI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "cli/**"
+      - "backend/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/validate-cli.yml"
+  pull_request:
+    paths:
+      - "cli/**"
+      - "backend/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/validate-cli.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cli:
+    name: CLI unit and end-to-end tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: ".node-version"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Node workspace dependencies
+        run: npm ci
+
+      - name: Run CLI unit tests
+        run: make test-cli
+
+      - name: Run the CLI against a local backend
+        run: make test-cli-e2e
