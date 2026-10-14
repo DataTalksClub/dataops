@@ -1,4 +1,5 @@
 import { createCollectionLoader } from "../../core/collection-loader.js";
+import { renderArtifactGroups } from "./artifact-rows.js";
 
 export function createTaskEvidence(context) {
   const {
@@ -490,6 +491,19 @@ export function createTaskEvidence(context) {
     return out;
   }
 
+  // Uploaded files live in private storage: the download route hands back a
+  // short-lived URL, opened in a new tab.
+  async function openArtifactFile(artifact) {
+    try {
+      const payload = await request(
+        workApiUrl(`/api/artifacts/${encodeURIComponent(artifact.id)}/download`),
+      );
+      if (payload?.downloadUrl) window.open(payload.downloadUrl, "_blank", "noopener");
+    } catch {
+      // The row stays; a failed download is retried by clicking again.
+    }
+  }
+
   function renderArtifactList(options) {
     const section = document.createElement("div");
     section.className = "task-history";
@@ -498,47 +512,38 @@ export function createTaskEvidence(context) {
     label.textContent = options.required ? "Artifact proof" : "Artifacts";
     section.append(label);
 
-    const list = document.createElement("div");
-    list.className = "task-history-list";
     const artifacts = options.artifacts || [];
+    let list;
     if (artifacts.length === 0) {
+      list = document.createElement("div");
+      list.className = "task-history-list";
       const empty = document.createElement("div");
       empty.className = "task-history-event";
       empty.textContent = options.required
         ? "No approved artifact attached."
         : "No artifacts registered.";
       list.append(empty);
-    }
-    for (const artifact of artifacts) {
-      const item = document.createElement("div");
-      item.className = "task-history-event";
-      const link = document.createElement("a");
-      link.href = artifact.storageUri || "#";
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.textContent = artifact.title || artifact.storageUri || artifact.id;
-      item.append(link);
-      const status = document.createElement("span");
-      status.className = `task-status-badge ${artifact.status || "draft"}`;
-      status.textContent = artifact.status || "draft";
-      item.append(document.createTextNode(" "), status);
-      if (artifact.status !== "approved" && artifact.status !== "archived") {
-        const approve = createTaskActionButton("Approve", async () =>
-          updateArtifactStatus(
-            artifact.id,
-            "approved",
-            options.onRefresh,
-            options.ownerType,
-            options.ownerId,
-          ),
-        );
-        approve.disabled = detail.activeTaskMutationBusy ||
-          detail.activeCardMutationBusy ||
-          detail.activeCardTemplateBusy ||
-          ownerMutationPending(options.ownerType, options.ownerId);
-        item.append(document.createTextNode(" "), approve);
-      }
-      list.append(item);
+    } else {
+      list = renderArtifactGroups(artifacts, {
+        openFile: (artifact) => openArtifactFile(artifact),
+        renderActions: (artifact) => {
+          if (artifact.status === "approved" || artifact.status === "archived") return [];
+          const approve = createTaskActionButton("Approve", async () =>
+            updateArtifactStatus(
+              artifact.id,
+              "approved",
+              options.onRefresh,
+              options.ownerType,
+              options.ownerId,
+            ),
+          );
+          approve.disabled = detail.activeTaskMutationBusy ||
+            detail.activeCardMutationBusy ||
+            detail.activeCardTemplateBusy ||
+            ownerMutationPending(options.ownerType, options.ownerId);
+          return [approve];
+        },
+      });
     }
     section.append(list);
 

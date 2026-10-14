@@ -8,6 +8,8 @@ import { cardKind } from "../src/core/card-kind.js";
 import { hasIcon, TEMPLATE_ICON_NAMES } from "../src/core/icons.js";
 import { extractTextLinks, linkLabel, linkService, linkTarget } from "../src/core/links.js";
 import { taskMaterials, taskTitleParts } from "../src/core/task-display.js";
+import { renderArtifactGroups } from "../src/surfaces/work-detail/artifact-rows.js";
+import { FakeDocument, FakeElement, findAllByClass } from "./support/fake-dom.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -60,5 +62,36 @@ describe("work display helpers", () => {
       materials.map((material) => [material.label, material.detail]),
       [["Create an event", "Process doc"], ["Instructions", "Google Doc"]],
     );
+  });
+
+  test("renders artifacts as grouped rows with service labels, never raw URLs", () => {
+    const previous = globalThis.document;
+    globalThis.document = new FakeDocument(new FakeElement("main"));
+    try {
+      const groups = renderArtifactGroups([
+        { id: "a1", status: "approved", title: "https://luma.com/abc", storageUri: "https://luma.com/abc" },
+        { id: "a2", status: "needs-review", title: "Episode brief", storageUri: "https://docs.google.com/document/d/x/edit" },
+        { id: "a3", status: "approved", title: "https://www.linkedin.com/in/someone/", storageUri: "https://www.linkedin.com/in/someone/" },
+        { id: "a4", status: "approved", title: "invoice.pdf", storageProvider: "s3", contentType: "application/pdf" },
+      ]);
+      assert.deepEqual(
+        findAllByClass(groups, "artifact-group-label").map((label) => label.textContent),
+        ["Documents", "Event pages", "People", "Files"],
+      );
+      const rows = findAllByClass(groups, "artifact-row").map((row) => [
+        row.querySelector(".artifact-row-label").textContent,
+        row.querySelector(".artifact-row-detail").textContent,
+        row.querySelector(".task-status-badge").textContent,
+      ]);
+      assert.deepEqual(rows, [
+        ["Episode brief", "Google Doc", "Needs review"],
+        ["Luma · abc", "Luma", "Approved"],
+        ["LinkedIn · someone", "LinkedIn", "Approved"],
+        ["invoice.pdf", "PDF file", "Approved"],
+      ]);
+      assert.ok(!groups.textContent.includes("https://"));
+    } finally {
+      globalThis.document = previous;
+    }
   });
 });

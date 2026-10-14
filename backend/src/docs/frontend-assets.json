@@ -102,6 +102,7 @@
     "src/surfaces/tasks/quick-create.js",
     "src/surfaces/tasks/recurring.js",
     "src/surfaces/tasks/templates.js",
+    "src/surfaces/work-detail/artifact-rows.js",
     "src/surfaces/work-detail/card-actions.js",
     "src/surfaces/work-detail/card-display.js",
     "src/surfaces/work-detail/card-panel.js",
