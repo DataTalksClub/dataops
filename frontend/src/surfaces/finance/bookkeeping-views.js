@@ -4,17 +4,10 @@
 import { html } from "./shared.js";
 import { entryDirection, entryTypeLabel, formatAmount, ledgerDate } from "./bookkeeping-format.js";
 
-// The close-state header: the month, four counters, one CTA that follows
-// the month state. This is what answers "what is left for this month".
-export function closeStateMonthMarkup({
-  title,
-  transactions,
-  missingEvidence,
-  conversions,
-  packageReady,
-  cta,
-  e,
-}) {
+// The close-state header: the month and one CTA that follows the month
+// state. The open items themselves are the Needs attention list below; no
+// counter tiles restate it (dakit principle 4, no vanity metrics).
+export function closeStateMonthMarkup({ title, cta, e }) {
   // The page header's Add entry is the one solid primary; the close CTA is
   // secondary whatever the month state.
   const ctaButton =
@@ -38,34 +31,6 @@ export function closeStateMonthMarkup({
                 Add the first entry
               </button>`;
   return html`<h2>${e(title)} close</h2>
-    <div class="dk-stat-strip" aria-label="Month close summary">
-      <div class="dk-stat">
-        <span class="dk-stat__label">Transactions</span>
-        <span class="dk-stat__value">${transactions}</span>
-        <span class="dk-stat__meta">Selected month</span>
-      </div>
-      <div class="dk-stat">
-        <span class="dk-stat__label">Evidence missing</span>
-        <span class="dk-stat__value">${missingEvidence}</span>
-        <span class="dk-stat__meta">
-          <span class="dk-badge dk-badge--${missingEvidence ? "danger" : "success"}">${missingEvidence ? "Needs evidence" : "All attached"}</span>
-        </span>
-      </div>
-      <div class="dk-stat">
-        <span class="dk-stat__label">EUR conversions open</span>
-        <span class="dk-stat__value">${conversions}</span>
-        <span class="dk-stat__meta">
-          <span class="dk-badge dk-badge--${conversions ? "warning" : "success"}">${conversions ? "Needs conversion" : "Recorded"}</span>
-        </span>
-      </div>
-      <div class="dk-stat">
-        <span class="dk-stat__label">Package</span>
-        <span class="dk-stat__value">—</span>
-        <span class="dk-stat__meta">
-          <span class="dk-badge dk-badge--${packageReady ? "success" : "warning"}">${packageReady ? "Complete" : "Not prepared"}</span>
-        </span>
-      </div>
-    </div>
     <div class="bookkeeping-close-cta">${ctaButton}</div>`;
 }
 

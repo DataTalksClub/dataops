@@ -258,20 +258,14 @@ test('newsletter at 375x667: issue cards fit the compaction budget and the overf
   await expect(menu).toBeHidden();
 });
 
-test('bookkeeping at 375x667: period controls reflow, the shared stat strip keeps zeros, and the ledger scrolls into view', async ({ page }) => {
+test('bookkeeping at 375x667: no stat strip, period controls reflow, and the ledger scrolls into view', async ({ page }) => {
   test.setTimeout(60_000);
   const viewport = VIEWPORTS[0];
   const route = ROUTES.find((candidate) => candidate.path === '/bookkeeping');
   await openRouteAt(page, viewport, route);
-  await expect(page.locator('.bookkeeping-close-state .dk-stat-strip')).toHaveCount(1);
-  const values = page.locator('.dk-stat__value');
-  await expect(values).toHaveCount(4);
-  expect(await values.allTextContents()).toContain('0');
-  const monoFamily = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--dk-font-mono').split(',')[0].trim().replace(/['"]/g, ''));
-  for (const value of await values.all()) {
-    expect(await value.evaluate(node => getComputedStyle(node).fontFamily)).toContain(monoFamily);
-    expect(await value.evaluate(node => getComputedStyle(node).color)).toBe(await page.locator('h1').evaluate(node => getComputedStyle(node).color));
-  }
+  // No counter tiles restate the worklist (dakit principle 4).
+  await expect(page.locator('.bookkeeping-close-state h2')).toBeVisible();
+  await expect(page.locator('.bookkeeping-close-state .dk-stat-strip')).toHaveCount(0);
   // The period is one row on a phone: [prev] [year] [month] [next]. All
   // years in the year select stands in for the All months button.
   await expect(page.locator('[data-lens-toggle]')).toBeHidden();

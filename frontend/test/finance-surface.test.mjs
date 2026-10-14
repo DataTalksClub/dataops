@@ -1614,11 +1614,11 @@ describe("Finance surface boundary", () => {
       surface.querySelector("[data-close-state]").innerHTML,
       /September 2026 close/,
     );
-    // The four close counters answer "what is left for this month".
-    const counters = surface.querySelector("[data-close-state]").innerHTML;
-    assert.match(counters, /Transactions<\/span>\s*<span class="dk-stat__value">3<\/span>/);
-    assert.match(counters, /Evidence missing<\/span>\s*<span class="dk-stat__value">2<\/span>/);
-    assert.match(counters, /EUR conversions open<\/span>\s*<span class="dk-stat__value">1<\/span>/);
+    // No counter tiles restate the worklist (dakit principle 4).
+    assert.doesNotMatch(
+      surface.querySelector("[data-close-state]").innerHTML,
+      /dk-stat/,
+    );
     // Three missing-evidence/conversion/unclassified items drive the CTA.
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
@@ -1674,7 +1674,7 @@ describe("Finance surface boundary", () => {
     );
     assert.match(
       surface.querySelector("[data-close-state]").innerHTML,
-      /EUR conversions open<\/span>\s*<span class="dk-stat__value">0<\/span>/,
+      /Review <span class="dk-mono">3<\/span>&nbsp;open&nbsp;items/,
     );
 
     // Classifying happens inline from the worklist row.

@@ -165,10 +165,6 @@ export function createBookkeepingSurface(context) {
       const report = monthReport();
       closeState.innerHTML = closeStateMonthMarkup({
         title: monthLabel(lens),
-        transactions: monthEntries.length,
-        missingEvidence: open.missingEvidence.length,
-        conversions: open.conversions.length,
-        packageReady: Boolean(report),
         cta: !monthEntries.length
           ? { kind: "add" }
           : openCount
