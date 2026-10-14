@@ -55,9 +55,9 @@ let navigationShell;
 
 const surfaceBridge = createSurfaceBridge();
 const {
-  applyWorkspaceRoute, beginDocumentNavigation, canLeaveDocumentEditor, closeCustomSelects, clearDocumentFilters,
+  applyWorkspaceRoute, beginDocumentNavigation, canLeaveDocumentEditor, clearDocumentFilters,
   closeDiff, closeLightbox, closeQuickNav, createDocument, deleteCurrentDoc, discardAllDrafts, discardDraft, docPathFromLocation,
-  emptyNote, enhanceSelect, enterRenderedMode, escapeRegex, folderExists, folderPathFromLocation, getActiveWorkspaceRoute,
+  emptyNote, enterRenderedMode, escapeRegex, folderExists, folderPathFromLocation, getActiveWorkspaceRoute,
   getActiveWorkspaceRouteToken, getPendingLegacyRoute, getWorkspaceEntityState, handleClipboardPaste, humanizeOptionLabel,
   isWorkspaceRouteFresh, labelForPath, listDraftPaths, loadDocuments, localDocPathFromHref, navigateCanonicalWorkspace,
   onFilterChange, openHistory, openDocMenu, openDocument, openLintReport, openQuickNav, populateFilterOptions,
@@ -65,7 +65,7 @@ const {
   renderUnifiedSearchSurface, resolveDocReference, resolveMarkdownDocLink, restoreDocumentFilters, saveAllDrafts,
   saveCurrentDocument, setFolderUrl, setSaveState, setWorkspaceEntityState, showCreate, showLibrary,
   storeDraft, syncLibraryRouteTitle, syncTitleToMarkdown, updateQuickNavMatches, updateSaveState,
-  titleFromMarkdown, toggleViewMode, updateCustomSelect, updateFilterSummary,
+  titleFromMarkdown, toggleViewMode, updateFilterSummary,
   updateViewToggleAvailability, visibleDocUrl, closeHistory, resizeDocumentTitle,
 } = surfaceBridge;
 const API_BASE = resolveApiBase({ documentRef: document, windowRef: window });
@@ -591,7 +591,6 @@ const {
   workTaskTitle,
 });
 
-const customSelects = [];
 
 reviewSurface = createReviewSurface({
   apiUrl,
@@ -623,7 +622,6 @@ knowledgeSurface = createKnowledgeSurface({
   closeSidebar,
   closeWorkBellPanel,
   confirmDialog,
-  customSelects,
   diffBody,
   diffClose,
   diffModal,
@@ -856,7 +854,6 @@ bindApplicationEvents({
   callbacks: {
     closeCardPanel,
     closeHistory,
-    closeCustomSelects,
     closeDiff,
     closeLightbox,
     closeQuickNav,
@@ -904,14 +901,6 @@ bindApplicationEvents({
 
 
 initializeAppShell({
-  enhanceSelect,
-  filterSelects: [
-    domainFilter,
-    typeFilter,
-    systemFilter,
-    tagFilter,
-    newDocType,
-  ],
   loadDocuments,
   navigationShell,
   refreshChangesPanel,

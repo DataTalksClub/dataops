@@ -481,9 +481,6 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
      mobile (see the round-3 block below), so no reordering is needed here. *//* The ledger sub-description belongs under the entry value, not in the
      label column of the collapsed table. */.bookkeeping-table-wrap td > small {
     grid-column: 2;
-  }/* The sidebar's search-filter controls live in the mobile drawer on every
-     route, so they meet the same 44px floor as the surfaces. */.custom-select-button {
-    min-height: 44px;
   }/* Every panel control meets the floor: the tasks-view input rules and the
      quiet close buttons otherwise sit at 40px and 32px. The selector carries
      the view attribute so it out-specifies those per-row rules. */body[data-workspace-view] .task-modal-panel input:not([type="checkbox"]):not([type="radio"]),

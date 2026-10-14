@@ -1210,12 +1210,10 @@ test.describe('canonical frontend capability behavior', () => {
     // Document filters stay in the Docs surface on desktop and mobile.
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('#filters-section summary').click();
-    const documentFilters = page.locator('#filter-row .custom-select');
+    const documentFilters = page.locator('#filter-row select');
     await expect(documentFilters).toHaveCount(4);
     const chooseDocumentFilter = async (index, label) => {
-      const filter = documentFilters.nth(index);
-      await filter.getByRole('button').click();
-      await filter.getByRole('option', { name: label }).click();
+      await documentFilters.nth(index).selectOption({ label });
     };
     await chooseDocumentFilter(0, 'Synthetic');
     await chooseDocumentFilter(1, 'Sop');

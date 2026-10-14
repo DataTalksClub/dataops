@@ -122,9 +122,7 @@ async function openDocumentFilters(page) {
 }
 
 async function chooseDocumentFilter(page, index, label) {
-  const filter = page.locator('#filter-row .custom-select').nth(index);
-  await filter.getByRole('button').click();
-  await filter.getByRole('option', { name: label, exact: true }).click();
+  await page.locator('#filter-row select').nth(index).selectOption({ label });
 }
 
 test.describe('issue 204 slice 4 Knowledge feedback', () => {

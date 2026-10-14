@@ -553,8 +553,6 @@ describe("runtime and shell production behavior", () => {
     });
     const windowRef = {};
     const result = initializeAppShell({
-      enhanceSelect: (select) => calls.push(`enhance:${select}`),
-      filterSelects: ["domain", "type"],
       loadDocuments: () => {
         calls.push("load-documents");
         return documentsReady;
@@ -580,9 +578,9 @@ describe("runtime and shell production behavior", () => {
     });
     assert.equal(result.documentsReady, documentsReady);
     assert.deepEqual(calls.slice(0, 3), [
-      "enhance:domain",
-      "enhance:type",
       "library:false",
+      "changes",
+      "save-state",
     ]);
     assert.ok(calls.indexOf("load-documents") < calls.indexOf("routing"));
     assert.equal(await windowRef.__dataopsRefreshWork(), "refreshed");

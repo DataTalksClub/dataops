@@ -1,6 +1,5 @@
 export function createKnowledgeFilters(context, services) {
   const {
-    customSelects,
     domainFilter,
     escapeRegex,
     filterCount,
@@ -69,8 +68,6 @@ export function createKnowledgeFilters(context, services) {
   function updateFilterControls() {
     for (const [name, select] of DOCUMENT_FILTERS) {
       select.value = knowledgeState.documentFilters[name];
-      const entry = customSelects.find((item) => item.select === select);
-      if (entry) updateCustomSelect(entry.root);
     }
   }
 
@@ -112,123 +109,6 @@ export function createKnowledgeFilters(context, services) {
     filterCount.setAttribute("aria-label", `${count} active filters`);
   }
 
-  function enhanceSelect(select) {
-    const root = document.createElement("div");
-    root.className = "custom-select";
-
-    const button = document.createElement("button");
-    button.className = "custom-select-button";
-    button.type = "button";
-    button.setAttribute("aria-haspopup", "listbox");
-    button.setAttribute("aria-expanded", "false");
-
-    const label = document.createElement("span");
-    const arrow = document.createElement("span");
-    arrow.className = "custom-select-arrow";
-    arrow.setAttribute("aria-hidden", "true");
-    button.append(label, arrow);
-
-    const menu = document.createElement("div");
-    menu.className = "custom-select-menu";
-    menu.setAttribute("role", "listbox");
-
-    const commit = (value) => {
-      select.value = value;
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-      updateCustomSelect(root);
-      closeCustomSelects();
-      button.focus();
-    };
-
-    const renderOptions = () => {
-      menu.replaceChildren(
-        ...[...select.options].map((option) => {
-          const item = document.createElement("button");
-          item.className = "custom-select-option";
-          item.type = "button";
-          item.tabIndex = -1;
-          item.setAttribute("role", "option");
-          item.dataset.value = option.value;
-          item.textContent = option.textContent;
-          item.addEventListener("click", (event) => {
-            event.stopPropagation();
-            commit(option.value);
-          });
-          return item;
-        }),
-      );
-    };
-
-    renderOptions();
-
-    const openMenu = () => {
-      closeCustomSelects();
-      root.classList.add("is-open");
-      button.setAttribute("aria-expanded", "true");
-      const items = [...menu.querySelectorAll(".custom-select-option")];
-      const selectedIdx = items.findIndex(
-        (el) => el.dataset.value === select.value,
-      );
-      items[Math.max(0, selectedIdx)]?.focus();
-    };
-
-    const closeMenu = () => {
-      closeCustomSelects();
-      button.focus();
-    };
-
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      if (root.classList.contains("is-open")) closeMenu();
-      else openMenu();
-    });
-
-    button.addEventListener("keydown", (event) => {
-      if (
-        event.key === "ArrowDown" ||
-        event.key === "ArrowUp" ||
-        event.key === "Enter" ||
-        event.key === " "
-      ) {
-        event.preventDefault();
-        openMenu();
-      }
-    });
-
-    menu.addEventListener("keydown", (event) => {
-      const items = [...menu.querySelectorAll(".custom-select-option")];
-      const idx = items.indexOf(document.activeElement);
-
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        items[Math.min(items.length - 1, Math.max(0, idx) + 1)]?.focus();
-      } else if (event.key === "ArrowUp") {
-        event.preventDefault();
-        items[Math.max(0, (idx < 0 ? items.length : idx) - 1)]?.focus();
-      } else if (event.key === "Home") {
-        event.preventDefault();
-        items[0]?.focus();
-      } else if (event.key === "End") {
-        event.preventDefault();
-        items[items.length - 1]?.focus();
-      } else if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        if (idx >= 0) commit(items[idx].dataset.value);
-      } else if (event.key === "Escape") {
-        event.preventDefault();
-        closeMenu();
-      } else if (event.key === "Tab") {
-        closeCustomSelects();
-      }
-    });
-
-    root.append(button, menu);
-    select.classList.add("native-select");
-    select.after(root);
-    customSelects.push({ root, select, label, button, renderOptions });
-    updateCustomSelect(root);
-  }
-
   function setSelectOptions(select, values, allLabel = "All") {
     const previous = knowledgeState.documentFilters[
       DOCUMENT_FILTERS.find(([, element]) => element === select)?.[0]
@@ -239,12 +119,6 @@ export function createKnowledgeFilters(context, services) {
     ];
     select.replaceChildren(...items);
     select.value = values.includes(previous) ? previous : "";
-
-    const entry = customSelects.find((c) => c.select === select);
-    if (entry) {
-      entry.renderOptions();
-      updateCustomSelect(entry.root);
-    }
   }
 
   function humanizeOptionLabel(value) {
@@ -274,26 +148,6 @@ export function createKnowledgeFilters(context, services) {
     updateFilterSummary();
   }
 
-  function updateCustomSelect(root) {
-    const item = customSelects.find((entry) => entry.root === root);
-    if (!item) return;
-
-    const selected = item.select.selectedOptions[0];
-    item.label.textContent = selected?.textContent || "";
-    item.root.querySelectorAll(".custom-select-option").forEach((option) => {
-      const isSelected = option.dataset.value === item.select.value;
-      option.classList.toggle("is-selected", isSelected);
-      option.setAttribute("aria-selected", String(isSelected));
-    });
-  }
-
-  function closeCustomSelects() {
-    customSelects.forEach(({ root, button }) => {
-      root.classList.remove("is-open");
-      button.setAttribute("aria-expanded", "false");
-    });
-  }
-
   function setHighlightedText(el, text, query) {
     const safe = String(text)
       .replace(/&/g, "&amp;")
@@ -314,8 +168,6 @@ export function createKnowledgeFilters(context, services) {
 
   return {
     clearDocumentFilters,
-    closeCustomSelects,
-    enhanceSelect,
     filterDocuments,
     humanizeOptionLabel,
     onFilterChange,

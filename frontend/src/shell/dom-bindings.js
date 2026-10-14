@@ -171,7 +171,6 @@ export function bindAppDomEvents(context) {
   dom.clearFiltersButton.addEventListener("click", handlers.clearDocumentFilters);
   dom.newDocForm.addEventListener("submit", handlers.createDocument);
   dom.cancelCreateButton.addEventListener("click", handlers.showLibrary);
-  documentRef.addEventListener("click", handlers.closeCustomSelects);
   documentRef.addEventListener("paste", handlers.handleClipboardPaste);
   documentRef.addEventListener("keydown", handlers.globalKeydown);
   dom.diffBackdrop.addEventListener("click", handlers.closeDiff);

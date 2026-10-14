@@ -1,6 +1,4 @@
 export function initializeAppShell({
-  enhanceSelect,
-  filterSelects,
   loadDocuments,
   navigationShell,
   refreshChangesPanel,
@@ -10,8 +8,6 @@ export function initializeAppShell({
   updateSaveState,
   windowRef,
 }) {
-  for (const select of filterSelects) enhanceSelect(select);
-
   showLibrary({ updateUrl: false });
   refreshChangesPanel();
   updateSaveState();

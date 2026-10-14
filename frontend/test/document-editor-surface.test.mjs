@@ -320,7 +320,6 @@ function createEditorHarness(options = {}) {
     },
     showUndoToast() {},
     storage,
-    updateCustomSelect() {},
     updateFilterSummary() {},
     visibleDocUrl: (path) => `/${String(path).replace(/^content\//, "")}`,
     ...elements,

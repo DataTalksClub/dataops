@@ -265,7 +265,6 @@ function createKnowledgeHarness(options = {}) {
     },
     closeWorkBellPanel() {},
     confirmDialog: async () => true,
-    customSelects: [],
     documentIdMapUnused: new Map(),
     documentRowTemplate: {
       content: { firstElementChild: createDocumentRow() },
@@ -389,10 +388,8 @@ describe("Knowledge surface boundary", () => {
     assert.deepEqual(Object.keys(createKnowledgeHarness().api).sort(), [
       "clearDocumentFilters",
       "clearSelection",
-      "closeCustomSelects",
       "closeQuickNav",
       "docPathFromLocation",
-      "enhanceSelect",
       "fetchBacklinksForCurrentDoc",
       "filterDocuments",
       "folderExists",

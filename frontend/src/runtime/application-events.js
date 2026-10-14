@@ -94,7 +94,6 @@ export function bindApplicationEvents(context) {
         await callbacks.createDocument();
       },
       globalKeydown: (event) => {
-        if (event.key === "Escape") callbacks.closeCustomSelects();
         if (
           (event.metaKey || event.ctrlKey) &&
           event.key.toLowerCase() === "s"
