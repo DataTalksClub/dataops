@@ -249,3 +249,26 @@ describe("api passthrough", () => {
     assert.equal(await run(["api", "GET", "/api/x", "--data", "{}"], captureIo()), 2);
   });
 });
+
+describe("newsletter", () => {
+  test("create-card anchors a card on the slot date and links it with the slot version", async () => {
+    const slot = { id: "s-1", publicationDate: "2026-11-02", campaignLabel: "Main", status: "open", version: 6 };
+    const calls = fakePortal({
+      "GET /api/newsletter-slots/s-1": slot,
+      "GET /api/templates/tpl-1": { template: { id: "tpl-1", type: "newsletter-issue", name: "Issue" } },
+      "POST /api/cards": ({ body }) => ({ status: 201, body: { card: { id: "c-1", ...body }, tasks: [] } }),
+      "PUT /api/newsletter-slots/s-1": ({ body }) => ({ ...slot, ...body, version: 7 }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["newsletter", "create-card", "s-1", "--template", "tpl-1", "--json"], io), 0);
+    assert.deepEqual(calls.find((call) => call.method === "POST").body, { title: "Newsletter 2026-11-02 - Main", anchorDate: "2026-11-02", templateId: "tpl-1" });
+    assert.deepEqual(calls.at(-1).body, { cardId: "c-1", version: 6 });
+    assert.equal(io.json().slot.cardId, "c-1");
+  });
+
+  test("create-card refuses a slot that already has a card", async () => {
+    const calls = fakePortal({ "GET /api/newsletter-slots/s-2": { id: "s-2", cardId: "c-0", version: 1 } });
+    assert.equal(await run(["newsletter", "create-card", "s-2"], captureIo()), 2);
+    assert.equal(calls.length, 1);
+  });
+});

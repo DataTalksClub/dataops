@@ -4,10 +4,12 @@ import * as cards from "./commands/cards.mjs";
 import * as files from "./commands/files.mjs";
 import * as invoices from "./commands/invoices.mjs";
 import * as kb from "./commands/kb.mjs";
+import * as newsletter from "./commands/newsletter.mjs";
 import * as notifications from "./commands/notifications.mjs";
 import * as people from "./commands/people.mjs";
 import * as raw from "./commands/raw.mjs";
 import * as recurring from "./commands/recurring.mjs";
+import * as sponsors from "./commands/sponsors.mjs";
 import * as tasks from "./commands/tasks.mjs";
 import * as templates from "./commands/templates.mjs";
 import { EXIT, UsageError, errorPayload, exitCodeFor, hintFor } from "./errors.mjs";
@@ -51,6 +53,7 @@ export const FAMILIES = {
   files: { group: "Work", summary: files.filesSummary, help: files.filesHelp, commands: files.filesCommands },
   artifacts: { group: "Work", summary: files.artifactsSummary, help: files.artifactsHelp, commands: files.artifactsCommands },
   kb: { group: "Knowledge", summary: kb.summary, help: kb.help, commands: kb.commands },
+  newsletter: { group: "Planning", summary: newsletter.summary, help: newsletter.help, commands: newsletter.commands },
   calendar: {
     group: "Planning",
     summary: calendar.summary,
@@ -71,6 +74,7 @@ export const FAMILIES = {
       "sync-holidays": calendar.syncHolidays,
     },
   },
+  sponsors: { group: "Finance", summary: sponsors.summary, help: sponsors.help, commands: sponsors.commands },
   invoices: {
     group: "Finance",
     summary: invoices.summary,
