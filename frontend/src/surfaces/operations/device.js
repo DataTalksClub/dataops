@@ -90,7 +90,8 @@ export function createDevicePage({
     const heading = el("h1", "dk-auth-card__title", title);
     heading.tabIndex = -1;
     const description = el("p", "dk-auth-card__lede");
-    appendMessage(description, lede);
+    if (Array.isArray(lede)) description.append(...lede);
+    else appendMessage(description, lede);
     wrap.append(heading, description);
     card.append(wrap);
     return heading;
@@ -179,10 +180,10 @@ export function createDevicePage({
         const pre = el("pre");
         pre.append(command);
         block.append(pre, copy);
-        card.append(
-          block,
-          el("p", "dk-hint", "Run this on that machine to sign it out."),
-        );
+        // The caption belongs to the command: one group at the field-hint gap.
+        const commandGroup = el("div", "device-command");
+        commandGroup.append(block, el("p", "dk-hint", "Run this on that machine to sign it out."));
+        card.append(commandGroup);
         const foot = el("footer", "dk-auth-card__foot");
         const link = el("a", "", "Manage CLI sessions");
         link.href = "/device/sessions";
@@ -190,10 +191,13 @@ export function createDevicePage({
         card.append(foot);
       }
     } else if (phase === "review") {
-      heading = head(
-        "Authorize this device?",
-        `It will be able to act as ${actor?.email || "your signed-in account"} in DataOps for 90 days, until you sign it out.`,
-      );
+      // The address moves to its own line as a unit before it ever breaks
+      // inside (at a hyphen), and only breaks when it can't fit at all.
+      heading = head("Authorize this device?", [
+        documentRef.createTextNode("It will be able to act as "),
+        el("span", "device-address", actor?.email || "your signed-in account"),
+        documentRef.createTextNode(" in DataOps for 90 days, until you sign it out."),
+      ]);
       const facts = el("dl", "dk-dl");
       const started = new Date(grant.createdAt);
       const minutes = Math.max(
@@ -206,7 +210,7 @@ export function createDevicePage({
         ["Requested from", grant.requestIp],
         [
           "Started",
-          `${started.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${minutes} min ago`,
+          `${started.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${minutes} min ago`,
         ],
         ["Expires in", ""],
       ]) {

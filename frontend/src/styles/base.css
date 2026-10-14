@@ -126,8 +126,8 @@ textarea:not([class*="dk-"]):focus-visible {
   color: var(--dk-text-on-accent);
 }.primary-button:hover {
   background: var(--dk-accent-hover);
-}:root[data-theme="dark"] .primary-button:disabled,
-:root[data-theme="dark"] .primary-button[aria-disabled="true"] {
+}/* Disabled matches the kit's role-based treatment in both themes. */.primary-button:disabled,
+.primary-button[aria-disabled="true"] {
   border-color: var(--dk-border-default);
   background: var(--dk-bg-muted);
   color: var(--dk-text-muted);

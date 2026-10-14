@@ -3,3 +3,9 @@
 .dk-session-list { border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-md); width: min(var(--dk-size-measure), 100%); }
 .dk-session-list__row { display: flex; gap: var(--dk-space-4); justify-content: space-between; align-items: center; padding: var(--dk-space-4); }
 .dk-session-list__row + .dk-session-list__row { border-top: 1px solid var(--dk-border-default); }
+/* An address in running text is one unit: it wraps to the next line whole
+   and breaks inside only when it is wider than the line. */
+.device-address { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+/* The Copy caption sits under its command at the field-hint gap. */
+.device-command { display: grid; gap: var(--dk-space-2); }
+.device-command .dk-hint { margin: 0; }
