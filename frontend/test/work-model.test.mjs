@@ -265,7 +265,7 @@ describe("frontend work model", () => {
   test("groups Card checklist Tasks into active, waiting, and history", () => {
     const tasks = [
       canonicalTask({ id: "done", description: "Done task", status: "done", date: "2026-08-10" }),
-      canonicalTask({ id: "retired", description: "Retired task", status: "archived", date: "2026-08-09", artifactRefs: [{ artifactId: "retained-evidence" }] }),
+      canonicalTask({ id: "retired", description: "Retired task", status: "skipped", skipReason: "Not applicable", date: "2026-08-09", artifactRefs: [{ artifactId: "retained-evidence" }] }),
       canonicalTask({ id: "waiting", description: "Waiting task", status: "waiting", date: "2026-08-11" }),
       canonicalTask({ id: "active", description: "Active task", date: TODAY }),
     ];

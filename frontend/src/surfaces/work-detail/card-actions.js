@@ -1,3 +1,5 @@
+import { openDeleteCardDialog } from "./work-dialogs.js";
+
 export function createCardActions(context) {
   const {
     cardPanelBody,
@@ -437,6 +439,31 @@ export function createCardActions(context) {
     );
   }
 
+  // Admin only: the server deletes the Card, its Tasks, and the links other
+  // records hold to them in one transaction. The confirm loads the live Card
+  // first so it names the current title and Task count and deletes at the
+  // version the admin saw.
+  function deleteCardPanel(cardId, trigger) {
+    const cardUrl = workApiUrl(`/api/cards/${encodeURIComponent(cardId)}`);
+    return openDeleteCardDialog({
+      trigger,
+      loadCard: async (signal) => {
+        const payload = await request(cardUrl, signal ? { signal } : undefined);
+        return payload?.card || payload;
+      },
+      onDelete: async (card) => {
+        await request(cardUrl, {
+          method: "DELETE",
+          body: JSON.stringify({ expectedVersion: card.version }),
+        });
+        detail.activeCardPanelId = null;
+        detail.activeCardPanelData = null;
+        await refreshOperationsWorkSnapshot({ rerender: false });
+        await navigateCanonicalWorkspace("/cards", {}).ready;
+      },
+    });
+  }
+
   async function saveCardLink(cardId, currentLinks, linkName, linkValue) {
     const updatedLinks = (currentLinks || []).map((link) =>
       (link.name || link.label) === linkName
@@ -467,6 +494,7 @@ export function createCardActions(context) {
   return {
     addCardReference,
     applyCardTemplateUpdate,
+    deleteCardPanel,
     discardCardIntent,
     parkCardPanel,
     reloadCardIntent,

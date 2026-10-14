@@ -108,6 +108,7 @@
     "src/dakit/dakit.css",
     "src/dakit/tokens.css",
     "src/surfaces/work-detail/task-panel.js",
+    "src/surfaces/work-detail/work-dialogs.js",
     "src/dakit/dialogs.js",
     "src/dakit/shell.js",
     "src/dakit/tabs.js",

@@ -451,7 +451,7 @@ export function createTemplatesSurface(context) {
     const changed = Number(counts.cardFields || 0)
       + Number(counts.added || 0)
       + Number(counts.updated || 0)
-      + Number(counts.archived || 0)
+      + Number(counts.skipped || 0)
       + Number(counts.retainedCompleted || 0);
     if (preview?.state === "current") return "Current";
     return `${changed} changes · Template v${preview?.targetTemplateVersion || "?"}`;

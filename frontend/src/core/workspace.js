@@ -548,7 +548,7 @@ export function tasksFromWorkPayload(payload) {
   return [];
 }
 
-const CANONICAL_TASK_STATUSES = new Set(["todo", "waiting", "done", "archived"]);
+const CANONICAL_TASK_STATUSES = new Set(["todo", "waiting", "done", "skipped"]);
 
 export function isCanonicalWorkTask(task) {
   return Boolean(
@@ -656,6 +656,11 @@ export function taskDate(task) {
 
 export function isOpenWorkTask(task) {
   return isCanonicalWorkTask(task) && (task.status === "todo" || task.status === "waiting");
+}
+
+/** Done or skipped: the Task needs no more work, and its Card counts it resolved. */
+export function isResolvedWorkTask(task) {
+  return task?.status === "done" || task?.status === "skipped";
 }
 
 export function isTaskDueToday(task, today) {
@@ -880,9 +885,7 @@ export function missingCardLinks(card) {
 export function summarizeCardProgress(card, tasks, today) {
   const taskList = dedupeWorkTasks(tasks);
   const total = taskList.length;
-  const done = taskList.filter((task) => {
-    return task.status === "done" || task.status === "archived";
-  }).length;
+  const done = taskList.filter(isResolvedWorkTask).length;
   const open = taskList.filter(isOpenWorkTask).length;
   const overdue = taskList.filter((task) => isTaskOverdue(task, today)).length;
   const waiting = taskList.filter(isWaitingOrFollowUpTask).length;
@@ -948,8 +951,8 @@ export function nextDueOpenTask(tasks, today) {
 export function sortCardChecklistTasks(tasks, today) {
   const sorted = tasksFromWorkPayload(tasks);
   sorted.sort((left, right) => {
-    const leftDone = left.status === "done" || left.status === "archived";
-    const rightDone = right.status === "done" || right.status === "archived";
+    const leftDone = isResolvedWorkTask(left);
+    const rightDone = isResolvedWorkTask(right);
     if (leftDone !== rightDone) return leftDone ? 1 : -1;
     return compareIsoDate(taskDate(left) || today, taskDate(right) || today);
   });
@@ -974,9 +977,7 @@ export function workflowTaskGroups(tasks, today) {
     {
       title: "Done / history",
       empty: "No completed tasks yet.",
-      tasks: sorted.filter(
-        (task) => task.status === "done" || task.status === "archived",
-      ),
+      tasks: sorted.filter(isResolvedWorkTask),
     },
   ];
 }

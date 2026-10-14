@@ -240,8 +240,10 @@ export function createCardSummary(context) {
   const {
     card,
     cardAnchorTone,
+    deleteCardPanel,
     detail,
     formatCardAnchorLabel,
+    getCurrentOperator,
     isArchivedWorkCard,
     isParkedWorkCard,
     labelizeWorkValue,
@@ -364,6 +366,10 @@ export function createCardSummary(context) {
     park.addEventListener("click", () => parkCardPanel?.(card.id));
     summaryTop.append(park);
   }
+  const overflow = deleteCardPanel && getCurrentOperator
+    ? renderCardOverflowMenu(card, mutationBusy, deleteCardPanel, getCurrentOperator)
+    : null;
+  if (overflow) summaryTop.append(overflow);
   meta.append(summaryTop);
 
   const subtitle = typeof workCardSubtitle === "function" ? workCardSubtitle(card) : "";
@@ -427,4 +433,73 @@ export function createCardSummary(context) {
     meta.append(descSection);
   }
   return meta;
+}
+
+// The Card's overflow menu: actions an admin rarely needs and must not hit by
+// accident. Delete opens a confirm that names what goes with the Card.
+// A deep link can render the Card before the signed-in identity arrives, so
+// the menu stays hidden until the identity is known and shows only for an
+// admin; the server enforces the same rule.
+function renderCardOverflowMenu(card, busy, deleteCardPanel, getCurrentOperator) {
+  const known = getCurrentOperator();
+  if (known && known.role !== "admin") return null;
+  const wrap = document.createElement("div");
+  wrap.className = "card-overflow";
+  if (!known) {
+    wrap.hidden = true;
+    let checks = 0;
+    const timer = setInterval(() => {
+      checks += 1;
+      const operator = getCurrentOperator();
+      if (operator?.role === "admin") wrap.hidden = false;
+      else if (operator) wrap.remove();
+      if (operator || !wrap.isConnected || checks > 120) clearInterval(timer);
+    }, 250);
+  }
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "quiet-button card-overflow-trigger";
+  trigger.textContent = "⋯";
+  trigger.setAttribute("aria-label", "More card actions");
+  trigger.setAttribute("aria-haspopup", "menu");
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.disabled = busy;
+  const menu = document.createElement("div");
+  menu.className = "dk-menu card-overflow-menu";
+  menu.setAttribute("role", "menu");
+  menu.hidden = true;
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "dk-menu__item dk-menu__item--danger";
+  remove.setAttribute("role", "menuitem");
+  remove.textContent = "Delete card…";
+  menu.append(remove);
+
+  const onOutside = (event) => {
+    if (!wrap.contains(event.target)) close();
+  };
+  function close() {
+    menu.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", onOutside, true);
+  }
+  trigger.addEventListener("click", () => {
+    if (!menu.hidden) return close();
+    menu.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+    document.addEventListener("pointerdown", onOutside, true);
+    remove.focus();
+  });
+  menu.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.stopPropagation();
+    close();
+    trigger.focus();
+  });
+  remove.addEventListener("click", () => {
+    close();
+    deleteCardPanel(card.id, trigger);
+  });
+  wrap.append(trigger, menu);
+  return wrap;
 }

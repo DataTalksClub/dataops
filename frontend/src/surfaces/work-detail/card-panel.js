@@ -350,22 +350,14 @@ export function createCardPanel(context) {
     // Stage, flags, progress, next-up, and description (shared with
     // card-summary.js to keep this module under the size contract).
     const meta = createCardSummary({
+      ...context,
       card,
-      cardAnchorTone,
-      detail,
-      formatCardAnchorLabel,
-      isArchivedWorkCard,
-      isParkedWorkCard,
-      labelizeWorkValue,
+      deleteCardPanel,
       parkCardPanel,
       progress,
       resumeCardPanel,
-      state,
       today,
       updateCardStage,
-      workCardIssueNumber,
-      workCardSubtitle,
-      workTaskTitle,
     });
     // The board badge replaces the legacy `[Tag]` title prefix; the detail
     // panel carries the same Template link as a real button, above the
@@ -678,8 +670,8 @@ export function createCardPanel(context) {
     const row = document.createElement("div");
     row.className = "card-checklist-item";
     const status = task.status;
-    const isDone = status === "done" || status === "archived";
-    const isArchived = status === "archived";
+    const isDone = status === "done" || status === "skipped";
+    const isSkipped = status === "skipped";
     const isWaiting = status === "waiting";
     const cardArtifacts = detail.activeCardPanelData?.artifacts || [];
     const pendingStatus = detail.activeTaskMutationBusy &&
@@ -700,7 +692,7 @@ export function createCardPanel(context) {
     checkbox.type = "checkbox";
     checkbox.setAttribute(
       "aria-label",
-      `${isArchived ? "Retired" : isDone ? "Reopen" : "Complete"} ${workTaskTitle(task)}`,
+      `${isSkipped ? "Skipped" : isDone ? "Reopen" : "Complete"} ${workTaskTitle(task)}`,
     );
     // Preserve the native checkbox state while the change handler is awaiting
     // the server. The pending rerender must not make Playwright/keyboard users
@@ -710,14 +702,14 @@ export function createCardPanel(context) {
       detail.activeTaskMutationBusy ||
       detail.activeCardMutationBusy ||
       detail.activeCardTemplateBusy ||
-      isArchived || isWaiting || missingLink || missingFile || missingArtifact;
+      isSkipped || isWaiting || missingLink || missingFile || missingArtifact;
     if (checkbox.disabled && !isDone) {
       const reasons = [];
       if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
       if (missingFile) reasons.push("Upload required file");
       if (missingArtifact) reasons.push("Approve an attached artifact");
       if (isWaiting) reasons.push("Waiting task");
-      if (isArchived) reasons.push("Retired task");
+      if (isSkipped) reasons.push("Skipped task: unskip it from the task");
       checkbox.title = reasons.join("; ");
     }
     checkbox.addEventListener("change", () => {
@@ -726,7 +718,7 @@ export function createCardPanel(context) {
 
     const label = document.createElement("button");
     label.type = "button";
-    label.className = `card-checklist-label ${isDone ? "is-done" : ""}`;
+    label.className = `card-checklist-label ${isDone ? "is-done" : ""}${isSkipped ? " is-skipped" : ""}`;
     label.dataset.taskId = task.id;
     appendBreakableText(label, workTaskTitle(task));
     label.addEventListener("click", () =>
@@ -754,6 +746,12 @@ export function createCardPanel(context) {
         ? `waiting: ${task.waitingFor}`
         : "waiting";
       dateMeta.replaceChildren(waitingChip);
+    }
+    if (isSkipped) {
+      const skippedChip = document.createElement("span");
+      skippedChip.className = "workflow-card-flag card-checklist-skipped";
+      skippedChip.textContent = `skipped: ${task.skipReason || "not applicable"}`;
+      dateMeta.replaceChildren(skippedChip);
     }
 
     if (!isDone && (missingLink || missingFile || missingArtifact)) {
@@ -785,7 +783,7 @@ export function createCardPanel(context) {
     const parts = [
       [counts.added, "added"],
       [counts.updated, "updated"],
-      [counts.archived, "archived"],
+      [counts.skipped, "skipped"],
       [counts.retainedCompleted, "completed retained"],
       [counts.cardFields, "Card fields"],
     ].filter(([count]) => Number(count) > 0)
@@ -796,7 +794,7 @@ export function createCardPanel(context) {
   function taskUpdateLabel(change) {
     const label = change.targetLabel || change.currentLabel || change.taskRef;
     if (change.action === "add") return `Add ${label}`;
-    if (change.action === "archive-removed") return `Archive removed task: ${label}`;
+    if (change.action === "skip-removed") return `Skip removed task: ${label}`;
     if (change.action === "retain-completed") return `Retain completed task: ${label}`;
     if (change.action === "refresh-provenance") return `Refresh provenance: ${label}`;
     const fields = (change.changes || []).map(({ field }) => field).join(", ");
@@ -857,7 +855,7 @@ export function createCardPanel(context) {
     guidance.textContent = [
       "Applying this reviewed definition keeps task IDs, live status, notes,",
       "waiting state, links, files, artifacts, and history.",
-      "Removed incomplete tasks are archived; completed tasks are retained.",
+      "Removed incomplete tasks are skipped; completed tasks are retained.",
     ].join(" ");
     review.append(guidance);
     if (Number(preview.counts?.operatorOverrides) > 0) {
@@ -969,6 +967,7 @@ export function createCardPanel(context) {
   const {
     addCardReference,
     applyCardTemplateUpdate,
+    deleteCardPanel,
     discardCardIntent,
     parkCardPanel,
     reloadCardIntent,

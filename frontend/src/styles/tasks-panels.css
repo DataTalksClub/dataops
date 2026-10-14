@@ -146,7 +146,8 @@ body[data-workspace-view="tasks"] .task-status-badge.needs-review {
   border-color: var(--dk-border-default);
   background: var(--dk-warning-bg);
   color: var(--dk-warning-text);
-}body[data-workspace-view="tasks"] .task-status-badge.archived {
+}body[data-workspace-view="tasks"] .task-status-badge.archived,
+body[data-workspace-view="tasks"] .task-status-badge.skipped {
   border-color: var(--dk-border-default);
   background: var(--dk-bg-muted);
   color: var(--dk-text-faint);
@@ -1151,4 +1152,52 @@ body[data-workspace-view="tasks"] .quick-form-panel .quick-form > .task-action-b
   color: var(--dk-text-muted);
   font-size: var(--dk-text-sm);
   text-transform: capitalize;
+}
+/* A skipped Task is resolved without being done: muted, never struck through,
+   and its reason stays readable next to it. */
+body[data-workspace-view="tasks"] .card-checklist-label.is-skipped {
+  color: var(--dk-text-faint);
+  text-decoration: none;
+}
+body[data-workspace-view="tasks"] .card-checklist-skipped {
+  max-width: 100%;
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body[data-workspace-view="tasks"] .task-skip-note {
+  display: grid;
+  gap: var(--dk-space-1);
+  width: 100%;
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+  padding: var(--dk-space-2) var(--dk-space-3);
+}
+body[data-workspace-view="tasks"] .task-skip-note strong {
+  color: var(--dk-text-primary);
+}
+body[data-workspace-view="tasks"] .task-skip-note p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+/* The Card overflow menu drops under its trigger, aligned to its end. */
+body[data-workspace-view="tasks"] .card-overflow {
+  position: relative;
+}
+body[data-workspace-view="tasks"] .card-overflow-menu {
+  position: absolute;
+  top: calc(100% + var(--dk-space-1));
+  right: 0;
+  z-index: 20;
+}
+body[data-workspace-view="tasks"] .work-dialog-field {
+  display: grid;
+  gap: var(--dk-space-1);
+}
+body[data-workspace-view="tasks"] .work-dialog-lead {
+  margin: 0 0 var(--dk-space-3);
+  overflow-wrap: anywhere;
 }

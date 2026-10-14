@@ -161,7 +161,11 @@ export function createTaskActions(context) {
                   status: "waiting",
                   followUpAt: intent.payload.nextFollowUpAt,
                 }
-              : {};
+              : intent.kind === "skip"
+                ? { status: "skipped", skipReason: intent.payload.reason }
+                : intent.kind === "unskip"
+                  ? { status: "todo" }
+                  : {};
     return Object.entries(expected).every(
       ([field, value]) => task[field] === value,
     );
@@ -555,6 +559,53 @@ export function createTaskActions(context) {
     return submitTaskIntent(intent, expectedVersion);
   }
 
+  // Skip resolves the Task as not applicable with a reason; the dialog that
+  // collects the reason owns the error display, so a failure rejects.
+  async function skipTask(taskId, reason, explicitVersion) {
+    const intent = {
+      taskId,
+      kind: "skip",
+      label: "Skip task",
+      method: "POST",
+      path: `/api/tasks/${encodeURIComponent(taskId)}/actions/skip`,
+      payload: { reason },
+      pendingMessage: "Skipping the Task…",
+      successMessage: "Task is skipped in the refreshed Task.",
+      errorPrefix: "Could not skip task",
+    };
+    const expectedVersion = displayedVersion(taskId, explicitVersion);
+    const updated = await submitTaskIntent(intent, expectedVersion);
+    if (!updated) throw new Error(detailFailureMessage() || "the Task changed; review it and retry");
+    return updated;
+  }
+
+  async function unskipTask(taskId, explicitVersion) {
+    const intent = {
+      taskId,
+      kind: "unskip",
+      label: "Unskip task",
+      method: "POST",
+      path: `/api/tasks/${encodeURIComponent(taskId)}/actions/unskip`,
+      payload: {},
+      pendingMessage: "Returning the Task to todo…",
+      successMessage: "Task is back to todo in the refreshed Task.",
+      errorPrefix: "Could not unskip task",
+    };
+    let expectedVersion;
+    try {
+      expectedVersion = displayedVersion(taskId, explicitVersion);
+    } catch (err) {
+      showIntentFailure(taskIntentOwner(intent), intent, err, expectedVersion);
+      return null;
+    }
+    return submitTaskIntent(intent, expectedVersion);
+  }
+
+  function detailFailureMessage() {
+    const feedback = detail.activeTaskPanelFeedback || detail.activeCardPanelFeedback;
+    return feedback?.phase === "error" ? feedback.message : "";
+  }
+
   async function recordTaskFollowUpSent(taskId, nextDate) {
     if (!nextDate) {
       setTaskPanelFeedback({
@@ -698,6 +749,8 @@ export function createTaskActions(context) {
     saveTaskLink,
     setCardPanelFeedback,
     setTaskPanelFeedback,
+    skipTask,
+    unskipTask,
     updateTaskStatus,
   };
 }

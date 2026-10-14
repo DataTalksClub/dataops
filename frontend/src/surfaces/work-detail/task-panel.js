@@ -1,4 +1,5 @@
 import { isCanonicalWorkTask } from "../../core/workspace.js";
+import { openSkipTaskDialog } from "./work-dialogs.js";
 
 export function createTaskPanel(context) {
   const {
@@ -33,11 +34,13 @@ export function createTaskPanel(context) {
     request,
     resolveDocReference = () => null,
     saveTaskLink,
+    skipTask,
     state,
     taskPanelBody,
     taskPanelTitle,
     taskRequiresApprovedArtifact,
     todayIsoDate,
+    unskipTask,
     updateTaskStatus,
     retryTaskIntent,
     workApiUrl,
@@ -522,16 +525,43 @@ export function createTaskPanel(context) {
     const actions = document.createElement("div");
     actions.className = "task-action-group";
     let syncCompletionForFiles = () => {};
+    // Skip is offered on every open Task: it is the honest way to close work
+    // that does not apply, and it needs a reason instead of proof.
+    const skipButton = () => {
+      const skip = createTaskActionButton("Skip…", () =>
+        openSkipTaskDialog({
+          taskTitle: workTaskTitle(task),
+          trigger: skip,
+          onSkip: (reason) => skipTask(task.id, reason, task.version),
+        }),
+      );
+      skip.dataset.taskAction = "skip";
+      return skip;
+    };
     if (status === "done") {
       const reopen = createTaskActionButton("Reopen", () =>
         updateTaskStatus(task.id, "todo", task.version),
       );
       reopen.classList.add("is-primary");
       actions.append(reopen);
-    } else if (status === "archived") {
-      const retired = document.createElement("p");
-      retired.textContent = "Retired Tasks can only be restored by a reviewed Template update.";
-      actions.append(retired);
+    } else if (status === "skipped") {
+      const skipped = document.createElement("div");
+      skipped.className = "task-skip-note";
+      const heading = document.createElement("strong");
+      heading.textContent = "Skipped: not applicable";
+      const reason = document.createElement("p");
+      reason.textContent = task.skipReason || "No reason recorded";
+      skipped.append(heading, reason);
+      if (task.skippedAt) {
+        const when = document.createElement("small");
+        when.textContent = `Skipped ${String(task.skippedAt).slice(0, 10)}`;
+        skipped.append(when);
+      }
+      const unskip = createTaskActionButton("Unskip", () =>
+        unskipTask(task.id, task.version),
+      );
+      unskip.dataset.taskAction = "unskip";
+      actions.append(skipped, unskip);
     } else if (status === "waiting") {
       const response = createTaskActionButton("Response received", () =>
         recordTaskResponseReceived(task.id),
@@ -557,7 +587,7 @@ export function createTaskPanel(context) {
         recordTaskFollowUpSent(task.id, nextInput.value),
       );
       followRow.append(followUp);
-      actions.append(followRow);
+      actions.append(followRow, skipButton());
     } else if (status === "todo") {
       const completionProofState = () => {
         const missingLink = task.requiredLinkName && !task.link;
@@ -602,7 +632,7 @@ export function createTaskPanel(context) {
       const markWaiting = createTaskActionButton("Mark waiting", () =>
         markTaskWaiting(task.id),
       );
-      actions.append(markWaiting);
+      actions.append(markWaiting, skipButton());
     }
     for (const button of actions.querySelectorAll("button")) {
       if (panelMutationBusy) button.disabled = true;
@@ -638,6 +668,8 @@ export function createTaskPanel(context) {
         "wait-resolved": "Wait resolved",
         completed: "Task completed",
         reopened: "Task reopened",
+        skipped: "Task skipped",
+        unskipped: "Task unskipped",
         "template-retired": "Task retired by Template update",
         "template-restored": "Task restored by Template update",
       };

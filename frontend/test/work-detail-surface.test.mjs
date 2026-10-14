@@ -152,7 +152,7 @@ function createHarness(options = {}) {
     getActiveWorkspaceRouteToken: () => routeToken,
     getActiveWorkspaceView: () => "tasks",
     getAllDocuments: () => [],
-    getCurrentOperator: () => ({ id: "alexey", name: "Alexey" }),
+    getCurrentOperator: () => options.operator || ({ id: "alexey", name: "Alexey" }),
     hasApprovedArtifactEvidence,
     hasTaskFileEvidence,
     isArchivedWorkCard,
@@ -586,7 +586,7 @@ describe("Work Detail surface boundary", () => {
     });
   });
 
-  test("renders Template-retired archived Tasks as non-actionable history", async () => {
+  test("renders a skipped Task muted with its reason and an Unskip action", async () => {
     const archived = {
       id: "task-template-retired",
       version: 4,
@@ -600,7 +600,10 @@ describe("Work Detail surface boundary", () => {
         },
       ],
       description: "Retired Task",
-      status: "archived",
+      status: "skipped",
+      skipReason: "Removed from the Card Template",
+      skippedAt: "2026-08-12T10:00:00.000Z",
+      skippedBy: "operator",
       date: "2026-08-12",
       templateRetiredAt: "2026-08-12T10:00:00.000Z",
       templateRetiredReason: "removed",
@@ -618,13 +621,14 @@ describe("Work Detail surface boundary", () => {
       findByText(harness.taskPanelBody, "Reopen", "button"),
       undefined,
     );
-    assert.ok(
-      findByText(
-        harness.taskPanelBody,
-        "Retired Tasks can only be restored by a reviewed Template update.",
-        "p",
-      ),
-    );
+    assert.ok(findByText(harness.taskPanelBody, "Removed from the Card Template", "p"));
+    assert.equal(findByText(harness.taskPanelBody, "Skip…", "button"), undefined);
+    const unskip = findByText(harness.taskPanelBody, "Unskip", "button");
+    assert.ok(unskip);
+    await unskip.click();
+    await nextTicks();
+    const posted = harness.requests.find(({ url }) => url.endsWith("/actions/unskip"));
+    assert.deepEqual(jsonBody(posted), { expectedVersion: 4 });
     assert.match(
       harness.taskPanelBody.textContent,
       /Task retired by Template update/,
@@ -2648,7 +2652,7 @@ describe("Work Detail surface boundary", () => {
         cardFields: 1,
         added: 1,
         updated: 1,
-        archived: 1,
+        skipped: 1,
         retainedCompleted: 1,
         operatorOverrides: 1,
       },
@@ -2721,7 +2725,7 @@ describe("Work Detail surface boundary", () => {
     ).click();
     assert.match(
       harness.cardPanelBody.textContent,
-      /Removed incomplete tasks are archived/,
+      /Removed incomplete tasks are skipped/,
     );
     assert.match(
       harness.cardPanelBody.textContent,
@@ -3248,5 +3252,141 @@ describe("Work Detail surface boundary", () => {
       card: { id: "plain", title: "Untitled" },
     });
     assert.doesNotMatch(plain.textContent, /People|Sponsor/);
+  });
+
+  // Kit dialogs are mounted on document.body and opened with showModal; the
+  // fake DOM has neither, so these tests provide both and close via close().
+  function withDialogs(harness) {
+    harness.document.body = harness.body;
+    harness.document.addEventListener ??= () => {};
+    harness.document.removeEventListener ??= () => {};
+    const proto = Object.getPrototypeOf(harness.body);
+    const saved = { showModal: proto.showModal, close: proto.close };
+    proto.showModal = function showModal() { this.open = true; };
+    proto.close = function close() {
+      this.open = false;
+      return this.dispatch("close");
+    };
+    const dialog = (name) => harness.body.children.find(
+      (child) => child.dataset?.workDialog === name,
+    );
+    return {
+      dialog,
+      restore() {
+        proto.showModal = saved.showModal;
+        proto.close = saved.close;
+      },
+    };
+  }
+
+  test("skips an open Task through a reason dialog that refuses an empty reason", async () => {
+    const task = {
+      id: "task-skippable",
+      version: 3,
+      taskHistory: [],
+      description: "Upload the recording",
+      status: "todo",
+      requiredLinkName: "Recording",
+    };
+    const skipped = {
+      ...task,
+      version: 4,
+      status: "skipped",
+      skipReason: "Self-hosted, no recording",
+      skippedAt: "2026-08-12T10:00:00.000Z",
+      skippedBy: "alexey",
+    };
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url.endsWith("/actions/skip")) return skipped;
+        if (url === `/api/tasks/${task.id}`) return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return requestOptions.method ? {} : {};
+      },
+    });
+    const dialogs = withDialogs(harness);
+    try {
+      await hydrateTask(harness, task);
+      const skip = findByText(harness.taskPanelBody, "Skip…", "button");
+      assert.ok(skip, "an open Task offers Skip…");
+      await skip.click();
+      const dialog = dialogs.dialog("skip-task");
+      assert.ok(dialog?.open, "the reason dialog opens at once");
+      assert.match(dialog.textContent, /Upload the recording/);
+
+      const form = dialog.querySelector("form");
+      await form.dispatch("submit");
+      assert.match(dialog.textContent, /A reason is required/);
+      assert.equal(harness.requests.some(({ url }) => url.endsWith("/actions/skip")), false);
+
+      dialog.querySelector("textarea").value = "  Self-hosted, no recording ";
+      await form.dispatch("submit");
+      await nextTicks();
+      const posted = harness.requests.find(({ url }) => url.endsWith("/actions/skip"));
+      assert.equal(posted.options.method, "POST");
+      assert.deepEqual(jsonBody(posted), { reason: "Self-hosted, no recording", expectedVersion: 3 });
+      assert.equal(dialog.open, false);
+    } finally {
+      dialogs.restore();
+    }
+  });
+
+  test("offers Delete card only to an admin and confirms with the live title and task count", async () => {
+    const card = {
+      id: "card-dup",
+      version: 5,
+      title: "Synthetic duplicate issue",
+      stage: "preparation",
+      status: "active",
+      taskCount: 15,
+      openTaskCount: 15,
+      references: [],
+    };
+    const route = (url, requestOptions = {}) => {
+      if (url === "/api/cards/card-dup" && requestOptions.method === "DELETE") {
+        return { deleted: { cardId: card.id, title: card.title, deletedTaskIds: [] } };
+      }
+      if (url === "/api/cards/card-dup") return { card };
+      if (url === "/api/tasks?cardId=card-dup") return { tasks: [] };
+      if (url === "/api/artifacts?cardId=card-dup") return { artifacts: [] };
+      return {};
+    };
+
+    const operator = createHarness({ cards: [card], request: async (url, o) => route(url, o) });
+    operator.api.prepareCardPanel(card.id);
+    await operator.api.hydrateCardPanel(card.id, 1);
+    assert.equal(findByText(operator.cardPanelBody, "Delete card…", "button"), undefined);
+
+    const harness = createHarness({
+      cards: [card],
+      operator: { id: "riley", name: "Riley", role: "admin" },
+      request: async (url, o) => route(url, o),
+    });
+    const dialogs = withDialogs(harness);
+    try {
+      harness.api.prepareCardPanel(card.id);
+      await harness.api.hydrateCardPanel(card.id, 1);
+      const more = harness.cardPanelBody.querySelector(".card-overflow-trigger");
+      assert.equal(more.getAttribute("aria-haspopup"), "menu");
+      await more.click();
+      assert.equal(more.getAttribute("aria-expanded"), "true");
+      await findByText(harness.cardPanelBody, "Delete card…", "button").click();
+      await waitFor(() => dialogs.dialog("delete-card")?.open, "delete confirm opens after the card loads");
+      const dialog = dialogs.dialog("delete-card");
+      assert.match(dialog.textContent, /Synthetic duplicate issue/);
+      assert.match(dialog.textContent, /its 15 tasks/);
+      assert.equal(harness.requests.some(({ options }) => options.method === "DELETE"), false);
+
+      await findByText(dialog, "Delete card", "button").click();
+      await nextTicks();
+      const deleted = harness.requests.find(({ options }) => options.method === "DELETE");
+      assert.equal(deleted.url, "/api/cards/card-dup");
+      assert.deepEqual(jsonBody(deleted), { expectedVersion: 5 });
+      assert.equal(dialog.open, false);
+      assert.deepEqual(harness.navigations.at(-1), { path: "/cards", params: {}, options: {} });
+    } finally {
+      dialogs.restore();
+    }
   });
 });
