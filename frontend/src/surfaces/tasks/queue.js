@@ -133,6 +133,7 @@ export function createTaskQueue(context) {
 
     function populateBoard() {
       board.replaceChildren();
+      section.querySelector(".ops-queue-persona-nav")?.remove();
       if (!anySourceLoaded) {
         board.append(renderUnavailableState());
         return;
@@ -151,7 +152,7 @@ export function createTaskQueue(context) {
 
       if (allOpenTasks.length > 0 || doneTasks.length > 0) {
         const counts = countOpenByPersona(allOpenTasks);
-        board.append(renderPersonaFilterBar(counts, () => populateBoard()));
+        section.prepend(renderPersonaFilterBar(counts, () => populateBoard()));
 
         if (visibleOpen.length > 0) {
           board.append(renderQueueTotalLine(visibleOpen.length, allOpenTasks.length, personaLabel));
@@ -693,7 +694,7 @@ export function createTaskQueue(context) {
     }
     const name = resolveAssigneeLabel(task.assigneeId);
     const avatar = document.createElement("span");
-    avatar.className = "account-avatar ops-queue-avatar";
+    avatar.className = "dk-avatar dk-avatar--xs ops-queue-avatar";
     avatar.setAttribute("aria-hidden", "true");
     avatar.textContent = personInitials(name);
     cell.dataset.assignee = "named";

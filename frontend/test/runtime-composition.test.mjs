@@ -366,7 +366,8 @@ describe("runtime surface composition", () => {
     harness.composition.setView("editor");
     harness.composition.setRouteTitle("Process");
     assert.equal(harness.body.dataset.view, "editor");
-    assert.equal(harness.mobileTitle.textContent, "Process");
+    assert.equal(harness.mobileTitle.textContent, "DataOps");
+    assert.equal(harness.mobileTitle.title, "Process");
     assert.equal(harness.composition.setRouteTitle.length, 1);
     assert.equal(harness.composition.cleanPath("content/ops/start.md"), "ops/start.md");
     assert.equal(harness.composition.basename("content/ops/start-here.md"), "start here");

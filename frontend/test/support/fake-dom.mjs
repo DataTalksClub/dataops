@@ -157,6 +157,14 @@ export class FakeElement {
     return value;
   }
 
+  prepend(...values) {
+    const children = values.map((value) =>
+      value instanceof FakeElement ? value : new FakeTextNode(String(value)),
+    );
+    for (const child of children) child.parentElement = this;
+    this.children.unshift(...children);
+  }
+
   replaceChildren(...values) {
     this.children = [];
     this._textContent = "";

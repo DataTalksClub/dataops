@@ -43,30 +43,30 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }/* Disabled buttons keep the portal's quieter 0.65 fade; dakit's base layer
-   is brighter. */button:disabled {
+   is brighter. */button:not([class*="dk-"]):disabled {
   cursor: not-allowed;
   opacity: 0.65;
-}button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-[tabindex]:focus-visible {
+}button:not([class*="dk-"]):focus-visible,
+input:not([class*="dk-"], .dk-search input):focus-visible,
+select:not([class*="dk-"]):focus-visible,
+textarea:not([class*="dk-"]):focus-visible,
+[tabindex]:not([class*="dk-"]):not(.dk-sidebar *, .dk-menu *):focus-visible {
   outline: 3px solid var(--dk-focus-ring);
   outline-offset: 2px;
-}input,
-select,
-textarea {
+}input:not([class*="dk-"], .dk-search input),
+select:not([class*="dk-"]),
+textarea:not([class*="dk-"]) {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-page);
   color: var(--dk-text-primary);
   padding: 7px 10px;
-}input::placeholder,
-textarea::placeholder {
+}input:not([class*="dk-"], .dk-search input)::placeholder,
+textarea:not([class*="dk-"])::placeholder {
   color: var(--dk-text-faint);
-}input:focus,
-select:focus,
-textarea:focus {
+}input:not([class*="dk-"], .dk-search input):focus,
+select:not([class*="dk-"]):focus,
+textarea:not([class*="dk-"]):focus {
   outline: none;
   box-shadow: 0 0 0 3px var(--dk-focus-ring);
 }svg {

@@ -233,13 +233,15 @@ export function createDevicePage({
       foot.append(
         el("p", "", "Didn't start this? Deny it. Nothing is shared."),
       );
-      const switchLink = el("a", "", "Wrong account? Switch account");
+      const switchLink = el("a", "", "Switch account");
       switchLink.href = "/login";
       switchLink.addEventListener("click", (event) => {
         event.preventDefault();
         switchAccount();
       });
-      foot.append(switchLink);
+      const accountHint = el("p", "", "Wrong account? ");
+      accountHint.append(switchLink);
+      foot.append(accountHint);
       card.append(foot);
       const tick = () => {
         const seconds = Math.max(

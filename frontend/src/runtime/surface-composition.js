@@ -278,7 +278,8 @@ export function createSurfaceComposition(context) {
   }
 
   function setRouteTitle(title) {
-    mobileTitle.textContent = title;
+    mobileTitle.textContent = "DataOps";
+    mobileTitle.title = title;
   }
 
   const warnedOutsideContent = new Set();
