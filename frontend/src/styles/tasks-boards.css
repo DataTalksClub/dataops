@@ -497,6 +497,7 @@ body[data-workspace-view="tasks"] .ops-queue-row {
     grid-template-rows: auto auto;
     column-gap: var(--dk-space-2);
     row-gap: 0;
+    min-height: var(--dk-size-touch);
     padding-block: var(--dk-space-1);
   }body[data-workspace-view="tasks"] .ops-queue-check {
     grid-column: 1;
