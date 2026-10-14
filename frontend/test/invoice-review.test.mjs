@@ -46,7 +46,9 @@ test("ledger rows are dense sheet-shaped rows with pending drafts first and nega
   assert.ok(firstRow.includes("-12.00"), firstRow);
   assert.ok(markup.includes("-20.09"), "actual EUR renders negative for the confirmed row");
   assert.ok(markup.includes('<span class="dk-mono">1</span> pending review'));
-  assert.ok(markup.includes("is-pending") && markup.includes("is-confirmed") && markup.includes("is-rejected"));
+  assert.ok(markup.includes('<span class="dk-badge dk-badge--warning">pending</span>'));
+  assert.ok(markup.includes('<span class="dk-badge dk-badge--success">confirmed</span>'));
+  assert.ok(markup.includes('<span class="dk-badge">rejected</span>'));
   assert.ok(markup.includes("Price, $") && markup.includes("Price, EUR") && markup.includes("Statement") && markup.includes("Count"));
 });
 

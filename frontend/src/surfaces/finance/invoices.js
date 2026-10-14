@@ -47,6 +47,9 @@ function ledgerMoney(record) {
   };
 }
 
+// Status is a fill-only kit badge; a rejected draft stays neutral.
+const INVOICE_STATUS_TONE = { pending: " dk-badge--warning", confirmed: " dk-badge--success" };
+
 function ledgerRow(record, position, escapeHtml) {
   const e = (value) => escapeHtml(String(value ?? ""));
   const money = ledgerMoney(record);
@@ -62,7 +65,7 @@ function ledgerRow(record, position, escapeHtml) {
 <td class="num">${e(money.eur)}</td>
 <td class="invoice-statement">${e(String(record.fields?.statementRef || "").trim())}</td>
 <td class="num">${e(String(record.fields?.quantity || 1))}</td>
-<td><span class="invoice-state is-${e(record.status)}">${e(record.status)}</span></td>
+<td><span class="dk-badge${INVOICE_STATUS_TONE[record.status] || ""}">${e(record.status)}</span></td>
 </tr>`;
 }
 
