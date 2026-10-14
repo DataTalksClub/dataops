@@ -180,8 +180,10 @@ describe("Document review surface", () => {
     assert.ok(findByText(documentList, "Document review", "h1"));
     assert.equal(documentList.querySelector(".dk-page-header").className, "dk-page-header review-header");
     assert.equal(findByText(documentList, "Knowledge operations"), undefined);
-    const refresh = findByText(documentList, "Refresh review data", "button");
-    assert.equal(refresh.parentElement.className, "dk-page-header__actions");
+    assert.equal(documentList.querySelector(".dk-page-header__actions"), null);
+    const refresh = findByText(documentList, "Refresh", "button");
+    assert.equal(refresh.parentElement.className, "review-controls");
+    assert.equal(refresh.getAttribute("aria-label"), "Refresh review data");
     const requestsBeforeRefresh = calls.filter(([method]) => method === "GET").length;
     await refresh.click();
     await nextTicks(3);

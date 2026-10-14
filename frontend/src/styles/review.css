@@ -118,6 +118,10 @@
   margin-left: auto;
   color: var(--dk-text-muted);
   font-size: 12px;
+}.review-refresh {
+  align-self: end;
+}.review-surface > .review-refresh {
+  justify-self: start;
 }.review-section-heading {
   display: flex;
   align-items: baseline;

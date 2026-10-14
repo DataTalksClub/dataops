@@ -195,16 +195,22 @@ export function createReviewSurface(context) {
     });
   }
 
-  function renderHeader(root, summary) {
-    const refresh = createElement(documentRef, "button", "quiet-button");
+  // Refresh acts on the review queue, so it sits in the queue's toolbar (or
+  // in the unavailable state it recovers from), not in the page header.
+  function refreshButton(label) {
+    const refresh = createElement(documentRef, "button", "quiet-button review-refresh");
     refresh.type = "button";
-    refresh.textContent = "Refresh review data";
+    refresh.textContent = label;
+    refresh.setAttribute("aria-label", "Refresh review data");
     refresh.addEventListener("click", () => refreshReviewSnapshot({ rerender: true }));
+    return refresh;
+  }
+
+  function renderHeader(root, summary) {
     const header = createPageHeader({
       title: "Document review",
       subtitle: "Turn the audit backlog into review evidence, feedback, and a clear next action.",
       className: "review-header",
-      actions: [refresh],
       documentRef,
     });
 
@@ -264,7 +270,7 @@ export function createReviewSurface(context) {
 
     const count = createElement(documentRef, "span", "review-result-count");
     count.textContent = `${filteredItems(queue).length} shown`;
-    controls.append(filterLabel, searchLabel, count);
+    controls.append(filterLabel, searchLabel, count, refreshButton("Refresh"));
     root.append(controls);
   }
 
@@ -593,6 +599,7 @@ export function createReviewSurface(context) {
           reviewSnapshot.errors?.join(" ") || "Saved review decisions are loading before the queue is built.",
         ),
       );
+      if (reviewSnapshot.errors?.length) root.append(refreshButton("Try again"));
       documentList.replaceChildren(root);
       return;
     }
