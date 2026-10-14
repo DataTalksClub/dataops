@@ -57,12 +57,6 @@ function startServer(knowledgeRoot) {
         DTC_CACHE_ROOT: knowledgeRoot,
         FRONTEND_ROOT: "../frontend",
         E2E_TEMPLATE_ACTOR_ID: "00000000-0000-0000-0000-000000000001",
-        CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: "false",
-        CONVERSATIONAL_EXECUTION_ENABLED: "false",
-        CONVERSATIONAL_ENABLED_PLUGINS: "none",
-        CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: "false",
-        CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: "false",
-        CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: "false",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
