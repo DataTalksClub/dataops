@@ -519,6 +519,7 @@ const {
   renderOperationsRuntimeState,
   renderSurfaceHeader,
   resolveAssigneeLabel,
+  resolveDocReference,
   request,
   scheduleAnimationFrame: (callback) => requestAnimationFrame(callback),
   setRouteTitle,

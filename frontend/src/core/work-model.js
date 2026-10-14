@@ -512,6 +512,7 @@ export function createWorkModel(context) {
       cardsResult,
       usersResult,
       meResult,
+      templatesResult,
     ] = await Promise.allSettled([
       request(todayUrl),
       request(overdueUrl),
@@ -519,6 +520,7 @@ export function createWorkModel(context) {
       cardsPromise,
       request(usersUrl),
       meRequest,
+      request(workApiUrl("/api/templates")),
     ]);
 
     const snapshot = emptyOperationsWorkSnapshot();
@@ -570,6 +572,12 @@ export function createWorkModel(context) {
     snapshot.waitingTasks = tasksFromWorkPayload(settledPayload(waitingResult));
     snapshot.cards = cardPage.items || [];
     snapshot.users = usersFromWorkPayload(settledPayload(usersResult));
+    // Templates only name and decorate Cards (kind + icon); without them the
+    // queue still renders, so a failed listing is not a work error.
+    const templatesPayload = settledPayload(templatesResult);
+    snapshot.templates = Array.isArray(templatesPayload?.templates)
+      ? templatesPayload.templates
+      : Array.isArray(templatesPayload) ? templatesPayload : [];
     snapshot.currentOperatorId = currentOperatorIdFromPayload(
       settledPayload(meResult),
     );

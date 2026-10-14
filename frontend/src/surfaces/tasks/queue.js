@@ -1,6 +1,10 @@
+import { cardKind } from "../../core/card-kind.js";
+import { renderIcon } from "../../core/icons.js";
 import { personInitials } from "../../core/identity.js";
+import { taskMaterials, taskTitleParts } from "../../core/task-display.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { openSkipTaskDialog } from "../work-detail/work-dialogs.js";
+import { renderQueueMaterials } from "./queue-materials.js";
 
 // One queue, not one section per state. Every open task the snapshot knows
 // about lands in the same list, sorted by urgency. The list is a checklist
@@ -22,10 +26,12 @@ export function createTaskQueue(context) {
     isWaitingOrFollowUpTask,
     navigateCanonicalWorkspace,
     openCardPanel,
+    openDocument = () => {},
     openTaskPanel,
     refreshOperationsWorkSnapshot,
     request,
     resolveAssigneeLabel,
+    resolveDocReference = () => null,
     showUndoToast,
     state,
     taskDate,
@@ -303,7 +309,7 @@ export function createTaskQueue(context) {
     const header = document.createElement("div");
     header.className = "ops-queue-head";
     header.setAttribute("aria-hidden", "true");
-    for (const label of ["", "Task", "Where", "Due", "Who", ""]) {
+    for (const label of ["", "Task", "", "Where", "Due", "Who", ""]) {
       const cell = document.createElement("span");
       cell.textContent = label;
       header.append(cell);
@@ -669,72 +675,48 @@ export function createTaskQueue(context) {
     return label;
   }
 
-  // Leading "[Tag]" prefixes are migration debt from the Trello import,
-  // where the checklist name was baked into the description. The canonical
-  // home is `task.tags[0]`; this helper prefers the field and falls back to
-  // parsing so old rows render correctly before the backfill runs.
-  function taskTag(task) {
-    const fieldTag = Array.isArray(task.tags)
-      ? task.tags.find((tag) => typeof tag === "string" && tag.trim().length > 0)
-      : null;
-    if (fieldTag) return fieldTag.trim();
-    const match = String(workTaskTitle(task)).match(/^\[([^\[\]]{1,40})\]\s*/);
-    return match ? match[1].trim() : "";
+  // A task's display title: the checklist tag lifted out (unless it only
+  // repeats its card's type), and links pasted into the title moved to the
+  // row's materials control. The card kind comes from the work snapshot.
+  function taskKind(task) {
+    if (!task?.cardId) return null;
+    const card = state.workSnapshot.cardsById?.get(String(task.cardId));
+    return card ? cardKind(card, state.workSnapshot.templates) : null;
+  }
+
+  function titleParts(task) {
+    return taskTitleParts(workTaskTitle(task), task.tags, taskKind(task)?.type);
   }
 
   function cleanTaskTitle(task) {
-    const raw = String(workTaskTitle(task));
-    const tag = taskTag(task);
-    if (!tag) return raw;
-    const stripped = raw.replace(/^\[[^\[\]]{1,40}\]\s*/, "");
-    return stripped.length > 0 ? stripped : raw;
+    return titleParts(task).title;
   }
 
   // The one place a task names where it came from. Card membership wins
-  // (the card is what the operator can open); recurring schedules and
-  // explicit import sources follow; everything else is hand-made ad hoc
-  // work. The label is the bare origin — the column heading already says
-  // where, so a card cell carries the card's name, not "Card · name".
-  // The icon is the scannable part: card / recurring / ad hoc read before
-  // any text is parsed.
-  const TASK_ORIGIN_ICONS = Object.freeze({
-    card: "▣",
-    recurring: "↻",
-    adhoc: "✦",
-    other: "•",
-  });
-
+  // (the card is what the operator can open): its title, its kind (the
+  // template type — webinar, podcast…) and the template's icon. Recurring
+  // schedules and explicit import sources follow; everything else is
+  // hand-made ad hoc work. The column heading already says where, so a card
+  // cell carries the card's name, not "Card · name".
   function taskOrigin(task, cardsById) {
     if (task.cardId) {
       const card = cardsById.get(String(task.cardId));
+      const kind = card ? cardKind(card, state.workSnapshot.templates) : null;
+      const label = card ? workCardTitle(card) : "Card";
       return {
-        label: card ? workCardTitle(card) : "Card",
+        label,
         kind: "card",
-        icon: TASK_ORIGIN_ICONS.card,
-        title: card ? workCardTitle(card) : "Card task",
+        icon: kind?.icon || "card",
+        type: kind?.name || "",
+        title: kind ? `${label} · ${kind.name}` : card ? label : "Card task",
       };
     }
     const source = taskSourceLabel(task);
     if (source === "Recurring")
-      return {
-        label: "Recurring",
-        kind: "recurring",
-        icon: TASK_ORIGIN_ICONS.recurring,
-        title: "Recurring task",
-      };
+      return { label: "Recurring", kind: "recurring", icon: "recurring", type: "", title: "Recurring task" };
     if (["Ad hoc", "Manual"].includes(source))
-      return {
-        label: "Ad hoc",
-        kind: "adhoc",
-        icon: TASK_ORIGIN_ICONS.adhoc,
-        title: "Ad hoc task",
-      };
-    return {
-      label: source,
-      kind: "other",
-      icon: TASK_ORIGIN_ICONS.other,
-      title: source,
-    };
+      return { label: "Ad hoc", kind: "adhoc", icon: "adhoc", type: "", title: "Ad hoc task" };
+    return { label: source, kind: "other", icon: "card", type: "", title: source };
   }
 
   // Ownership reads as a face, not a sentence. The avatar carries the
@@ -791,8 +773,9 @@ export function createTaskQueue(context) {
   }
 
   // The second line a row earns, and only when the task is waiting on
-  // someone. Proof requirements stay in the task panel — the queue is one
-  // compact line per task so the list scans as a checklist.
+  // someone. Proof requirements stay in the task panel, and instructions
+  // live behind the row's materials icon — the queue is one compact line per
+  // task so the list scans as a checklist.
   // A date inside a note is data: mono. Words such as "Today" stay prose.
   function noteDate(text) {
     if (!/\d/.test(text)) return document.createTextNode(text);
@@ -819,16 +802,6 @@ export function createTaskQueue(context) {
       note.append("Follow up ", noteDate(queueShortDate(task.followUpAt)));
       return note;
     }
-    if (task.instructionDocId || task.instructionsUrl) {
-      const note = document.createElement("small");
-      note.className = "ops-queue-note is-guide";
-      const guideName = task.instructionDocId
-        ? task.instructionDocId.split(".").pop()?.replace(/-/g, " ") || "Playbook"
-        : "Instructions";
-      note.textContent = `📖 ${guideName}`;
-      note.title = task.instructionDocId || task.instructionsUrl || "";
-      return note;
-    }
     return null;
   }
 
@@ -853,9 +826,9 @@ export function createTaskQueue(context) {
     // ordering already happened above, so this never changes what renders.
     row.dataset.urgency = queueUrgency(task, today);
     row.tabIndex = -1;
-    row.setAttribute("aria-label", `Open task ${workTaskTitle(task)}`);
+    row.setAttribute("aria-label", `Open task ${cleanTaskTitle(task)}`);
     row.addEventListener("click", (event) => {
-      if (event.target?.closest?.("button, input, label, a")) return;
+      if (event.target?.closest?.("button, input, label, a, [role='menu']")) return;
       openTaskPanel(task.id);
     });
     row.addEventListener("keydown", (event) => {
@@ -874,39 +847,65 @@ export function createTaskQueue(context) {
     open.setAttribute("aria-label", `Open task ${cleanTaskTitle(task)}`);
     open.addEventListener("click", () => openTaskPanel(task.id));
 
+    const parts = titleParts(task);
     const titleRow = document.createElement("span");
     titleRow.className = "ops-queue-title-row";
-    const tag = taskTag(task);
-    if (tag) {
+    if (parts.tag) {
       const pill = document.createElement("span");
       pill.className = "ops-queue-tag";
-      pill.textContent = tag;
-      pill.title = tag;
+      pill.textContent = parts.tag;
+      pill.title = parts.tag;
       titleRow.append(pill);
     }
     const title = document.createElement("strong");
-    title.textContent = cleanTaskTitle(task);
+    title.textContent = parts.title;
     // Titles truncate to one line; the full name stays one hover away.
-    title.title = cleanTaskTitle(task);
+    title.title = parts.title;
     titleRow.append(title);
     open.append(titleRow);
     const note = taskBlockerNote(task, today);
     if (note) open.append(note);
+
+    // Instructions and other supporting material: one icon, never a line of
+    // small text. Empty cells keep the grid column so rows stay aligned.
+    const materialsCell = document.createElement("span");
+    materialsCell.className = "ops-queue-materials-cell";
+    const materials = renderQueueMaterials(
+      taskMaterials(task, { links: parts.links, resolveDoc: resolveDocReference }),
+      {
+        taskTitle: parts.title,
+        openDoc: (material) => {
+          const doc = material.docPath ? material : resolveDocReference(material.docId);
+          if (doc?.path || doc?.docPath) openDocument(doc.path || doc.docPath);
+          else openTaskPanel(task.id);
+        },
+      },
+    );
+    if (materials) materialsCell.append(materials);
 
     const originCell = document.createElement("span");
     originCell.className = "ops-queue-origin";
     originCell.dataset.source = origin.kind;
     const icon = document.createElement("span");
     icon.className = "ops-queue-origin-icon";
-    icon.setAttribute("aria-hidden", "true");
-    icon.textContent = origin.icon;
+    icon.dataset.icon = origin.icon;
+    icon.append(renderIcon(origin.icon, { size: 16 }));
+    const originText = document.createElement("span");
+    originText.className = "ops-queue-origin-text";
     const originLabel = document.createElement("span");
     originLabel.className = "ops-queue-origin-label";
     originLabel.textContent = origin.label;
-    originCell.append(icon, originLabel);
+    originText.append(originLabel);
+    if (origin.type) {
+      const originType = document.createElement("span");
+      originType.className = "ops-queue-origin-type";
+      originType.textContent = origin.type;
+      originText.append(originType);
+    }
+    originCell.append(icon, originText);
     originCell.title = origin.title;
 
-    row.append(toggle, open, originCell, taskDueCell(task, today), owner, renderQueueSkip(task));
+    row.append(toggle, open, materialsCell, originCell, taskDueCell(task, today), owner, renderQueueSkip(task));
     return row;
   }
 

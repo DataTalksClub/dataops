@@ -1,0 +1,133 @@
+// External links as people read them: which service, and a short human name.
+// Raw URLs never reach the screen — a link is drawn as its service icon plus
+// a label (the stored title when someone wrote one, otherwise the service and
+// a short identifier), with the full address one hover away.
+
+const MARKDOWN_ESCAPE = /\\([\\`*_{}[\]()#+\-.!~|])/g;
+
+const SERVICES = [
+  { id: "gdoc", name: "Google Doc", icon: "doc", group: "documents", test: (h, p) => h === "docs.google.com" && p.startsWith("/document/") },
+  { id: "gsheet", name: "Google Sheet", icon: "sheet", group: "documents", test: (h, p) => h === "docs.google.com" && p.startsWith("/spreadsheets/") },
+  { id: "gslides", name: "Google Slides", icon: "slides", group: "documents", test: (h, p) => h === "docs.google.com" && p.startsWith("/presentation/") },
+  { id: "gform", name: "Google Form", icon: "doc", group: "documents", test: (h, p) => h === "docs.google.com" && p.startsWith("/forms/") },
+  { id: "gdrive", name: "Google Drive", icon: "file", group: "documents", test: (h) => h === "drive.google.com" },
+  { id: "github", name: "GitHub", icon: "code", group: "documents", test: (h) => h === "github.com" },
+  { id: "luma", name: "Luma", icon: "calendar", group: "events", test: (h) => h === "luma.com" || h === "lu.ma" },
+  { id: "meetup", name: "Meetup", icon: "calendar", group: "events", test: (h) => h === "meetup.com" },
+  { id: "youtube", name: "YouTube", icon: "play", group: "media", test: (h) => h === "youtube.com" || h === "youtu.be" },
+  { id: "loom", name: "Loom", icon: "play", group: "media", test: (h) => h === "loom.com" },
+  { id: "linkedin", name: "LinkedIn", icon: "person", group: "people", test: (h) => h === "linkedin.com" },
+];
+
+const GENERIC = { id: "link", name: "Link", icon: "link", group: "other" };
+
+export const LINK_GROUPS = Object.freeze([
+  { id: "documents", label: "Documents" },
+  { id: "events", label: "Event pages" },
+  { id: "media", label: "Videos" },
+  { id: "people", label: "People" },
+  { id: "files", label: "Files" },
+  { id: "other", label: "Other links" },
+]);
+
+function parsed(url) {
+  try {
+    return new URL(String(url || ""));
+  } catch {
+    return null;
+  }
+}
+
+// The link target inside `[label](url)` or a broken `url](url` half, with
+// Markdown escapes and a dangling bracket removed. Rendering only; the
+// backend stores links already cleaned.
+export function linkTarget(raw) {
+  let text = String(raw || "").trim();
+  const full = /^\[[^\]]*\]\((.+)\)$/.exec(text);
+  if (full) text = full[1];
+  else if (text.includes("](")) text = text.slice(text.lastIndexOf("](") + 2);
+  text = text.replace(/\s+"[^"]*"$/, "").replace(MARKDOWN_ESCAPE, "$1").replace(/\]+$/, "");
+  const opens = text.split("(").length;
+  const closes = text.split(")").length;
+  if (text.endsWith(")") && closes > opens) text = text.slice(0, -1);
+  return text;
+}
+
+export function isHttpLink(value) {
+  return /^https?:\/\//i.test(String(value || "").trim());
+}
+
+export function linkService(url) {
+  const address = parsed(linkTarget(url));
+  if (!address) return GENERIC;
+  const host = address.hostname.toLowerCase().replace(/^www\./, "");
+  return SERVICES.find((service) => service.test(host, address.pathname)) || GENERIC;
+}
+
+function shortId(value) {
+  const text = String(value || "");
+  return text.length > 10 ? `${text.slice(0, 8)}…` : text;
+}
+
+// The short identifier that tells two links of one service apart.
+function linkIdentifier(address, service) {
+  const segments = address.pathname.split("/").filter(Boolean);
+  switch (service.id) {
+    case "gdoc":
+    case "gsheet":
+    case "gslides":
+    case "gform": {
+      const index = segments.indexOf("d");
+      return index >= 0 ? shortId(segments[index + 1]) : "";
+    }
+    case "meetup": {
+      const index = segments.indexOf("events");
+      return index >= 0 && segments[index + 1] ? `event ${segments[index + 1]}` : segments[0] || "";
+    }
+    case "youtube":
+      return address.searchParams.get("v") || segments.at(-1) || "";
+    case "linkedin":
+      return segments.at(-1) || "";
+    case "github":
+      return segments.slice(0, 2).join("/") + (segments.length > 2 ? ` · ${decodeURIComponent(segments.at(-1))}` : "");
+    default:
+      return segments.length ? shortId(segments.at(-1)) : address.hostname.replace(/^www\./, "");
+  }
+}
+
+// The name a link goes by: an operator's label wins; a URL-shaped or empty
+// title becomes "Service · identifier".
+export function linkLabel(url, title) {
+  const text = String(title || "").trim();
+  if (text && !isHttpLink(linkTarget(text)) && !text.includes("](")) return text;
+  const target = linkTarget(url || text);
+  const address = parsed(target);
+  if (!address) return text || target || "Link";
+  const service = linkService(target);
+  const id = linkIdentifier(address, service);
+  if (service === GENERIC) return id ? `${address.hostname.replace(/^www\./, "")} · ${id}` : address.hostname;
+  return id ? `${service.name} · ${id}` : service.name;
+}
+
+// Pull Markdown and bare links out of free text (an imported task title):
+// returns the text without them and the links as { label, url }.
+export function extractTextLinks(text) {
+  const links = [];
+  let rest = String(text || "").replace(/\[([^\]]+)\]\(([^)\s\]]+)\]?\)?/g, (_, label, url) => {
+    links.push({ label: label.trim(), url: linkTarget(url) });
+    return "";
+  });
+  rest = rest.replace(/https?:\/\/[^\s)]+/g, (url) => {
+    links.push({ label: "", url: linkTarget(url) });
+    return "";
+  });
+  if (links.length === 0) return { text: String(text || ""), links };
+  const clean = rest
+    .replace(/\(\s*[,;]?\s*\)/g, "")
+    .replace(/\(\s*,\s*/g, "(")
+    .replace(/\s+([,.;:])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .replace(/[\s\-–—,:(]+$/, "")
+    .trim();
+  return { text: clean || String(text || ""), links };
+}

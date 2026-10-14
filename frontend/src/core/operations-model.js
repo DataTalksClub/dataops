@@ -31,6 +31,7 @@ export function emptyOperationsWorkSnapshot() {
     waitingTasks: [],
     cards: [],
     users: [],
+    templates: [],
     cardTasks: {},
     errors: [],
     todayLoaded: false,
@@ -537,6 +538,7 @@ export function createOperationsModel({
           .filter((card) => card && card.id)
           .map((card) => [card.id, card]),
       ),
+      templates: Array.isArray(snapshot.templates) ? snapshot.templates : [],
       users,
       usersById: new Map(
         users

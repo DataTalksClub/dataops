@@ -176,6 +176,7 @@ describe("app shared operations domain characterization", () => {
       waitingTasks: [],
       cards: [],
       users: [],
+      templates: [],
       cardTasks: {},
       errors: [],
       todayLoaded: false,

@@ -329,7 +329,7 @@ function queueOrigins(root) {
   return findAllByClass(root, "ops-queue-origin").map((cell) => ({
     label: cell.querySelector(".ops-queue-origin-label")?.textContent ?? cell.textContent,
     kind: cell.dataset.source,
-    icon: cell.querySelector(".ops-queue-origin-icon")?.textContent ?? "",
+    icon: cell.querySelector(".ops-queue-origin-icon")?.dataset.icon ?? "",
   }));
 }
 
@@ -453,14 +453,14 @@ describe("Tasks surface boundary", () => {
     const head = board.querySelector(".ops-queue-head");
     assert.deepEqual(
       head.children.map((cell) => cell.textContent),
-      ["", "Task", "Where", "Due", "Who", ""],
+      ["", "Task", "", "Where", "Due", "Who", ""],
     );
     assert.equal(head.getAttribute("aria-hidden"), "true");
     // The Where column names the card, or says the task is not a card's.
     assert.deepEqual(queueOrigins(documentList)[0], {
       label: "Weekly newsletter",
       kind: "card",
-      icon: "▣",
+      icon: "card",
     });
     for (const origin of queueOrigins(documentList).slice(1)) {
       assert.equal(origin.kind, "other");
@@ -767,8 +767,8 @@ describe("Tasks surface boundary", () => {
 
     api.renderTasksSurface([], "queue");
     assert.deepEqual(queueOrigins(documentList), [
-      { label: "Ad hoc", kind: "adhoc", icon: "✦" },
-      { label: "Template", kind: "other", icon: "•" },
+      { label: "Ad hoc", kind: "adhoc", icon: "adhoc" },
+      { label: "Template", kind: "other", icon: "card" },
     ]);
   });
 
@@ -835,8 +835,115 @@ describe("Tasks surface boundary", () => {
 
     api.renderTasksSurface([], "queue");
     assert.deepEqual(queueOrigins(documentList), [
-      { label: "Recurring", kind: "recurring", icon: "↻" },
+      { label: "Recurring", kind: "recurring", icon: "recurring" },
     ]);
+  });
+
+  test("names the card, its kind and its template icon in Where", () => {
+    const tasks = [
+      canonicalTask({
+        id: "imported",
+        cardId: "card-1",
+        description: "[Emails] Send the reminder",
+        date: "2026-08-12",
+        tags: ["webinar"],
+      }),
+      canonicalTask({
+        id: "legacy",
+        cardId: "card-2",
+        description: "Check the slides",
+        date: "2026-08-12",
+      }),
+    ];
+    const { api, documentList } = createHarness({
+      workSnapshot: {
+        cardsById: new Map([
+          ["card-1", { id: "card-1", title: "LLM evals in practice", tags: ["webinar"] }],
+          ["card-2", { id: "card-2", title: "Prompting 101", templateId: "tpl-workshop" }],
+        ]),
+        templates: [
+          { id: "tpl-webinar", type: "webinar", name: "Webinar", icon: "video" },
+          { id: "tpl-workshop", type: "workshop", name: "Workshop", icon: "wrench" },
+        ],
+      },
+      taskRouteContext: {
+        date: "",
+        tasks,
+        cardId: "",
+        filterCard: null,
+        contextCardId: "",
+        contextCard: null,
+        failures: [],
+      },
+    });
+
+    api.renderTasksSurface([], "queue");
+    assert.deepEqual(queueOrigins(documentList), [
+      { label: "LLM evals in practice", kind: "card", icon: "video" },
+      { label: "Prompting 101", kind: "card", icon: "wrench" },
+    ]);
+    assert.deepEqual(
+      findAllByClass(documentList, "ops-queue-origin-type").map((cell) => cell.textContent),
+      ["Webinar", "Workshop"],
+    );
+    assert.equal(findAllByClass(documentList, "ops-queue-origin")[0].title, "LLM evals in practice · Webinar");
+    // A tag that only repeats the card's kind is not a pill; the checklist
+    // prefix is.
+    assert.deepEqual(queueTags(documentList), ["Emails", ""]);
+  });
+
+  test("puts instructions and links from the title behind one icon, not a note", () => {
+    const tasks = [
+      canonicalTask({
+        id: "one",
+        description: "Announce in Slack",
+        date: "2026-08-12",
+        instructionsUrl: "https://docs.google.com/document/d/abc123/edit",
+      }),
+      canonicalTask({
+        id: "many",
+        description: "Add the event to the webpage ( , [website](https://github.com/DataTalksClub/site))",
+        date: "2026-08-12",
+        instructionsUrl: "https://docs.google.com/document/d/sop1/edit",
+      }),
+      canonicalTask({ id: "none", description: "Plain work", date: "2026-08-12" }),
+    ];
+    const { api, documentList } = createHarness({
+      taskRouteContext: {
+        date: "",
+        tasks,
+        cardId: "",
+        filterCard: null,
+        contextCardId: "",
+        contextCard: null,
+        failures: [],
+      },
+    });
+
+    api.renderTasksSurface([], "queue");
+    assert.deepEqual(queueRowTitles(documentList), [
+      "Add the event to the webpage",
+      "Announce in Slack",
+      "Plain work",
+    ]);
+    assert.deepEqual(findAllByClass(documentList, "ops-queue-note"), []);
+    const cells = findAllByClass(documentList, "ops-queue-materials-cell");
+    assert.equal(cells.length, 3);
+    const menuTrigger = cells[0].querySelector("button");
+    assert.equal(menuTrigger.getAttribute("aria-haspopup"), "menu");
+    assert.match(menuTrigger.getAttribute("aria-label"), /^2 supporting materials/);
+    const items = findAllByClass(cells[0], "dk-menu__item");
+    assert.deepEqual(
+      items.map((item) => [item.href, item.querySelector(".ops-queue-material-label").textContent]),
+      [
+        ["https://docs.google.com/document/d/sop1/edit", "Instructions"],
+        ["https://github.com/DataTalksClub/site", "Website"],
+      ],
+    );
+    const single = cells[1].querySelector("a");
+    assert.equal(single.href, "https://docs.google.com/document/d/abc123/edit");
+    assert.equal(single.getAttribute("aria-label"), "Open Instructions · Google Doc");
+    assert.equal(cells[2].children.length, 0);
   });
 
   test("renders the active Cards board as exactly three columns and keeps Done in Archive", () => {
