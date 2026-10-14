@@ -32,9 +32,9 @@ label, the requesting IP, and the time so you can check.
 
 Tokens are stored in `~/.config/dataops/credentials.json` with mode `0600`, one
 entry per portal URL. `DATAOPS_TOKEN` and `DATAOPS_URL` override the stored
-profile, which is what agents and CI should use. Without either, the CLI talks
-to `https://ops.dtcdev.click`. A token expires after 90 days and can be revoked
-at any time with `dataops logout` or `dataops tokens revoke <id>`.
+profile. Without `DATAOPS_URL` the CLI talks to `https://ops.dtcdev.click`, which
+is the right default. A token expires after 90 days; `dataops tokens list` shows
+your tokens and `dataops logout` or `dataops tokens revoke <id>` revokes one.
 
 Tokens act as the user who approved them: every permission check behaves
 exactly as it does in the web UI, and task history records that user's name.
@@ -96,8 +96,13 @@ titles.
 
 ## Agents
 
+Agents use the same device flow; there is no separate agent account. On each
+host run `dataops login --label "<agent>@<host>"` and have a person approve the
+code in the browser. The token acts as that person, so label it per host to
+list and revoke it individually with `dataops tokens`.
+
 Run `dataops agent-guide`, or install [skill/SKILL.md](skill/SKILL.md) as an
-agent skill. It covers the non-interactive setup, the output contract, and the
+agent skill. It covers setup, the output contract, and the
 common workflows: find the docs for a task, close a Task with proof, start a
 Card from a Template.
 

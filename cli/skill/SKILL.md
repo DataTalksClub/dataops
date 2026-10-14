@@ -12,15 +12,23 @@ to, with the same permission checks and the same history attribution.
 Run `dataops agent-guide` to print this guide, `dataops --help` for every command
 family, and `dataops <family> --help` for flags and examples.
 
-## Setup (non-interactive)
+## Setup
+
+There is no separate agent account. The CLI signs in with the device flow, and a
+person approves it in the browser; the token then acts as that person.
 
 ```bash
-export DATAOPS_URL=https://ops.dtcdev.click   # the default; set it for another portal
-export DATAOPS_TOKEN=...                      # from your secret store, never on the command line
-dataops whoami                                # confirm identity and role before writing
+dataops login --label "<agent>@<host>"   # prints a code; a human approves it in the browser
+dataops whoami                           # confirm identity and role before writing
 ```
 
-Without `DATAOPS_TOKEN` the CLI uses the profile saved by `dataops login`.
+- Label each host's token (`<agent>@<host>`) so it is recognisable in
+  `dataops tokens list` and can be revoked alone with `dataops tokens revoke <id>`.
+- Tokens expire after 90 days; run `dataops login` again when one does (exit code 3).
+- The portal defaults to `https://ops.dtcdev.click`; set `DATAOPS_URL` (or pass
+  `--url`) only for another portal.
+- The token is stored in `~/.config/dataops/credentials.json` (mode 0600).
+  `DATAOPS_TOKEN` overrides it; never put a token on the command line.
 
 ## Contract
 

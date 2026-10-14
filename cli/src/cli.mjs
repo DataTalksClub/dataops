@@ -33,7 +33,7 @@ Usage
   dataops tokens list                        Your API tokens
   dataops tokens revoke <id>                 Revoke one (a unique prefix is enough)
 
-Non-interactive use: set DATAOPS_TOKEN (and DATAOPS_URL for a non-default portal).
+Agents use the same device login, labelled per host: dataops login --label "<agent>@<host>".
 `;
 
 /**
@@ -148,7 +148,7 @@ export function usage() {
     "  --help        Help for the command",
     "",
     "Environment",
-    "  DATAOPS_TOKEN, DATAOPS_URL   Credential and portal for non-interactive use (agents, CI)",
+    "  DATAOPS_TOKEN, DATAOPS_URL   Override the stored login token and the default portal",
     "",
     "Exit codes",
     "  0 ok   1 error   2 usage   3 auth/forbidden   4 not found   5 conflict (re-read, retry)",
