@@ -27,6 +27,7 @@
     { "id": "airtable", "name": "Airtable", "icon": "sheet", "access": "DataTalks.Club Airtable bases and forms" },
     { "id": "dropbox", "name": "Dropbox", "icon": "folder", "access": "Dropbox folders for recordings and podcast audio" },
     { "id": "canva", "name": "Canva", "icon": "image", "access": "Canva team for banners and covers" },
+    { "id": "banner-generator", "name": "Banner Generator", "icon": "image", "access": "Local Banner Generator installation and approved templates/assets" },
     { "id": "figma", "name": "Figma", "icon": "image", "access": "Figma files for banners and covers" },
     { "id": "spotify", "name": "Spotify for Creators", "icon": "mic", "access": "Podcast hosting account that publishes the RSS feed" },
     { "id": "apple-podcasts", "name": "Apple Podcasts", "icon": "mic", "access": "Apple Podcasts Connect" },
