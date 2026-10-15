@@ -134,9 +134,12 @@ export function scheduleGroups(episodes) {
   const past = [];
   for (const episode of Array.isArray(episodes) ? episodes : []) {
     if (episode?.status === "cancelled") continue;
-    const website = readinessOf(episode).website;
-    const released = website === "released" || website === "observed-live";
-    if (!released && (isUpcoming(episode) || hasFacts(episode))) upcoming.push(episode);
+    const readiness = readinessOf(episode);
+    const released = readiness.website === "released" || readiness.website === "observed-live";
+    // Verified public audio belongs in publication history even when no
+    // transcript or website observation has been recorded yet.
+    const publicAudio = readiness.spotify === "public" || Boolean(episode.publication?.spotify?.publicVerifiedAt);
+    if (!released && !publicAudio && (isUpcoming(episode) || hasFacts(episode))) upcoming.push(episode);
     else past.push(episode);
   }
   // One date per episode orders the list: the evidenced Spotify time when there

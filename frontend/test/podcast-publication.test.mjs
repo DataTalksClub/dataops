@@ -74,6 +74,17 @@ describe("schedule grouping", () => {
     assert.deepEqual(past.episodes.map((item) => item.id).sort(), ["historical", "observed", "released"]);
   });
 
+  test("verified public audio stays in Past while website evidence is unrecorded", () => {
+    const audioPublic = episode("audio-public", {
+      status: "published", releaseDate: "2020-01-01",
+      publication: { spotify: SPOTIFY },
+      readiness: { ...NONE, spotify: "public" },
+    });
+    const [upcoming, past] = scheduleGroups([audioPublic]);
+    assert.deepEqual(upcoming.episodes, []);
+    assert.deepEqual(past.episodes.map((item) => item.id), ["audio-public"]);
+  });
+
   test("a scheduled episode stays upcoming even when its status says published", () => {
     const premature = episode("premature", {
       status: "published",
@@ -202,8 +213,8 @@ describe("Podcast schedule view", () => {
     const { surface, documentList, calls } = harness(records);
     surface.renderPodcastSurface();
     await nextTicks(4);
-    assert.ok(findByText(documentList, "Upcoming (3)", "h3"));
-    assert.ok(findByText(documentList, "Past (2)", "h3"));
+    assert.ok(findByText(documentList, "Upcoming (2)", "h3"));
+    assert.ok(findByText(documentList, "Past (3)", "h3"));
     const rowOf = (id) => findAllByClass(documentList, "podcast-schedule__row").find((row) => row.dataset.episodeId === id);
     const chips = (row) => Object.fromEntries(findAllByClass(row, "podcast-readiness").map((chip) => [chip.dataset.track, chip.dataset.state]));
     assert.deepEqual(chips(rowOf("a-scheduled")), { spotify: "scheduled", transcript: "not-recorded", website: "not-recorded" });
