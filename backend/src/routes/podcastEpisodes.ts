@@ -19,7 +19,11 @@ import {
   type PodcastEpisode,
 } from "../db/podcastEpisodes";
 import { getCard } from "../db/cards";
-import { derivePublicationReadiness, normalizePublication } from "../podcast/publication";
+import {
+  derivePublicationReadiness,
+  normalizePublication,
+  statusGateError,
+} from "../podcast/publication";
 import { resolveInteractiveActor } from "../identity/actor";
 import {
   checkCardLink,
@@ -183,21 +187,12 @@ async function withCard(client: DynamoDBDocumentClient, episode: PodcastEpisode)
   return { ...presented(episode), card: card ? await summarizeCard(client, card) : null };
 }
 
-/**
- * Validate a written `publication` and keep `releaseDate` equal to the audio's
- * local date, so the date index and the schedule agree. Returns an error text.
- */
+/** Validate a written `publication` and normalise it in place. Returns an error text. */
 function applyPublication(body: Record<string, any>, written: boolean): string {
   if (!written || body.publication == null) return "";
   const result = normalizePublication(body.publication);
   if (!result.ok) return result.error;
   body.publication = result.value;
-  const local = derivePublicationReadiness(result.value).scheduledLocalDate;
-  if (local) {
-    if (body.releaseDate != null && body.releaseDate !== local)
-      return "releaseDate must match the local date of publication.audioScheduledAt";
-    body.releaseDate = local;
-  }
   return "";
 }
 
@@ -268,6 +263,8 @@ export async function handlePodcastEpisodeRoutes(
     const candidate = { guests: [], ...body } as Record<string, any>;
     const error = validate(candidate) || applyPublication(candidate, true);
     if (error) return json(400, { error });
+    const gate = statusGateError(candidate.status, candidate.publication);
+    if (gate) return json(422, { error: gate });
     const episodes = await listPodcastEpisodes(client);
     const duplicate = duplicateOf(candidate, episodes, null);
     if (duplicate) return json(409, { error: duplicate });
@@ -302,9 +299,11 @@ export async function handlePodcastEpisodeRoutes(
     const error =
       validate(merged) || applyPublication(merged, Object.hasOwn(changes, "publication"));
     if (error) return json(400, { error });
-    if (Object.hasOwn(changes, "publication")) {
-      changes.publication = merged.publication;
-      if (merged.releaseDate !== existing.releaseDate) changes.releaseDate = merged.releaseDate;
+    if (Object.hasOwn(changes, "publication")) changes.publication = merged.publication;
+    // Only entering a status is gated; an existing historical status stays.
+    if (merged.status !== existing.status) {
+      const gate = statusGateError(merged.status, merged.publication);
+      if (gate) return json(422, { error: gate });
     }
     const episodes = await listPodcastEpisodes(client);
     const duplicate = duplicateOf(merged, episodes, id);

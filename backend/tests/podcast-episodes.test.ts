@@ -44,6 +44,7 @@ describe("podcast episodes", () => {
       guests: [{ name: "Grace Sample" }],
       releaseDate: "2027-01-15",
       status: "published",
+      publication: { spotify: { publicVerifiedAt: "2026-01-15T09:00:00Z", episodeUrl: "https://open.spotify.com/episode/synthetic" } },
       websiteSlug: "synthetic-published-episode",
       links: { youtube: "https://www.youtube.com/watch?v=synthetic" },
     }));
