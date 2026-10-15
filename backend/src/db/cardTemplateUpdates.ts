@@ -51,6 +51,8 @@ export interface CardTemplateUpdateAuditEvent {
   targetRevision: string | null;
   previewToken: string;
   previewCounts: CardTemplateUpdatePreview['counts'];
+  selectedOptionalGroups: string[];
+  targetOptionalGroups: string[];
   result: 'applied';
   createdAt: string;
 }
@@ -159,6 +161,7 @@ function appliedCard(
     card.templateDefinitionSnapshot,
     plan.targetCardSnapshot,
   );
+  next.selectedOptionalGroups = [...plan.preview.targetOptionalGroups];
   next.templateVersion = template.version;
   next.templateSourceRevision = template.sourceRevision;
   next.templateDefinitionSnapshot = structuredClone(plan.targetCardSnapshot);
@@ -205,7 +208,7 @@ function appliedExistingTask(
       },
     ];
   } else {
-    if (update.action === 'update') {
+    if (update.action === 'update' || update.action === 'restore') {
       const assigneeId = next.assigneeId;
       clearDefinitionFields(next);
       Object.assign(next, structuredClone(update.target));
@@ -388,9 +391,10 @@ export async function applyCardTemplateUpdate(
   template: Template,
   previewToken: string,
   actorId: string,
+  requestedGroups?: unknown,
 ): Promise<AppliedCardTemplateUpdate> {
   const priorAudit = await existingAudit(client, card.id, previewToken);
-  const plan = buildCardTemplateUpdatePlan(card, tasks, template);
+  const plan = buildCardTemplateUpdatePlan(card, tasks, template, requestedGroups);
   if (priorAudit) {
     return {
       preview: plan.preview,
@@ -420,6 +424,8 @@ export async function applyCardTemplateUpdate(
     targetRevision: plan.preview.targetRevision,
     previewToken,
     previewCounts: structuredClone(plan.preview.counts),
+    selectedOptionalGroups: [...plan.preview.selectedOptionalGroups],
+    targetOptionalGroups: [...plan.preview.targetOptionalGroups],
     result: 'applied',
     createdAt: now,
   };

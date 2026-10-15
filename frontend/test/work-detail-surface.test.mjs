@@ -2800,6 +2800,52 @@ describe("Work Detail surface boundary", () => {
     });
   });
 
+  test("Sponsored option previews task activation before applying", async () => {
+    const card = { id: "card-options", version: 1, title: "Workshop", templateId: "tpl", templateVersion: 1, references: [] };
+    const current = { state: "current", sourceTemplateVersion: 1, targetTemplateVersion: 1,
+      previewToken: "a".repeat(64), availableOptionalGroups: ["sponsored"], selectedOptionalGroups: [], targetOptionalGroups: [],
+      counts: {}, cardChanges: [], taskChanges: [] };
+    let applied = false;
+    const harness = createHarness({ cards: [card], request: async (url, options = {}) => {
+      if (url === `/api/cards/${card.id}`) return { card };
+      if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [] };
+      if (url === `/api/artifacts?cardId=${card.id}`) return { artifacts: [] };
+      if (url === `/api/cards/${card.id}/template-update`) {
+        if (!options.method) return { preview: applied ? { ...current, selectedOptionalGroups: ["sponsored"], targetOptionalGroups: ["sponsored"] } : current };
+        const body = JSON.parse(options.body);
+        if (body.previewOnly) return { preview: { ...current, state: "update-available", previewToken: "b".repeat(64), targetOptionalGroups: body.optionalGroups,
+          counts: { added: 1 }, taskChanges: [{ action: "add", taskRef: "invoice", targetLabel: "Invoice sponsor", changes: [], operatorOverrideFields: [] }] } };
+        applied = true;
+        return { applied: true, card: { ...card, version: 2, selectedOptionalGroups: ["sponsored"] }, tasks: [] };
+      }
+      throw new Error(`Unexpected request ${url}`);
+    } });
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    assert.match(harness.cardPanelBody.textContent, /Sponsored/);
+    const checkbox = harness.cardPanelBody.querySelector('input[type="checkbox"]');
+    assert.equal(checkbox.checked, false);
+    checkbox.checked = true;
+    await findByText(harness.cardPanelBody, "Review option changes", "button").click();
+    await nextTicks();
+    assert.deepEqual(jsonBody(harness.requests.find((entry) => entry.options.method === "POST")), { previewOnly: true, optionalGroups: ["sponsored"] });
+    assert.equal(applied, false);
+    assert.match(harness.cardPanelBody.textContent, /Add Invoice sponsor/);
+    const changedOption = harness.cardPanelBody.querySelector('input[type="checkbox"]');
+    changedOption.checked = false;
+    await changedOption.dispatch("change");
+    assert.equal(findByText(harness.cardPanelBody, "Apply reviewed update", "button"), undefined, 'editing options invalidates the previous review');
+    changedOption.checked = true;
+    await findByText(harness.cardPanelBody, "Review option changes", "button").click();
+    await nextTicks();
+    await findByText(harness.cardPanelBody, "Apply reviewed update", "button").click();
+    await nextTicks();
+    const apply = harness.requests.find((entry) => entry.options.method === "POST" && !jsonBody(entry).previewOnly);
+    assert.deepEqual(jsonBody(apply), { previewToken: "b".repeat(64), optionalGroups: ["sponsored"] });
+    assert.equal(applied, true);
+    assert.equal(harness.cardPanelBody.querySelector('input[type="checkbox"]').checked, true);
+  });
+
   test("reviews, cancels, and applies a Card Template update without hiding retention rules", async () => {
     const card = {
       id: "card-template-update",

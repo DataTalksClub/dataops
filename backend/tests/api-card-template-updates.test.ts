@@ -106,6 +106,71 @@ describe('API — reviewed Card Template updates', () => {
     await stopLocal();
   });
 
+  it('reviews option activation, preserves resolutions and restores only system-skipped work', async () => {
+    const initial = await createSourceTemplate(client);
+    const source = (await updateTemplate(client, initial.id, {
+      taskDefinitions: [
+        { refId: 'host', description: 'Host workshop', offsetDays: 0 },
+        { refId: 'invoice', description: 'Invoice sponsor', offsetDays: 1, optionalGroup: 'sponsored' },
+        { refId: 'feedback', description: 'Sponsor feedback', offsetDays: 2, optionalGroup: 'sponsored' },
+        { refId: 'attendees', description: 'Share consented attendees', offsetDays: 2, optionalGroup: 'sponsored' },
+      ],
+    }))!;
+    const created = await createTemplateCard(source, 'conditional');
+    const cardId = created.card.id;
+    assert.deepEqual(created.tasks.map((task: any) => task.templateTaskRef), ['host']);
+    const path = `/api/cards/${cardId}/template-update`;
+    const current = parsed(await invoke('GET', path)).preview;
+    assert.deepEqual(current.availableOptionalGroups, ['sponsored']);
+    assert.deepEqual(current.targetOptionalGroups, []);
+    const enabled = parsed(await invoke('POST', path, { previewOnly: true, optionalGroups: ['sponsored'] })).preview;
+    assert.equal(enabled.counts.added, 3);
+    assert.equal((await listTasksByCard(client, cardId)).length, 1, 'preview performs no writes');
+    assert.notEqual(enabled.previewToken, current.previewToken, 'token binds target option selection');
+    const mismatched = await invoke('POST', path, { previewToken: enabled.previewToken, optionalGroups: [] });
+    assert.equal(mismatched.statusCode, 409);
+    const activated = await invoke('POST', path, { previewToken: enabled.previewToken, optionalGroups: ['sponsored'] });
+    assert.equal(activated.statusCode, 200, activated.body);
+    const active = parsed(activated);
+    assert.deepEqual(active.card.selectedOptionalGroups, ['sponsored']);
+    assert.equal(active.card.openTaskCount, 4);
+    const tasks = new Map<string, any>(active.tasks.map((task: any) => [task.templateTaskRef, task]));
+    const invoice = tasks.get('invoice');
+    const feedback = tasks.get('feedback');
+    const attendees = tasks.get('attendees');
+    await updateTask(client, invoice.id, { expectedVersion: invoice.version, patch: { status: 'done', completedAt: '2026-04-16T00:00:00.000Z', link: 'https://example.invalid/invoice' } });
+    await updateTask(client, feedback.id, { expectedVersion: feedback.version, patch: { status: 'skipped', skipReason: 'Owner decision', skippedAt: '2026-04-16T01:00:00.000Z' } });
+    await updateTask(client, attendees.id, { expectedVersion: attendees.version, patch: { status: 'waiting', waitingFor: 'Consent', comment: 'Preserve this note' } });
+    const disabled = parsed(await invoke('POST', path, { previewOnly: true, optionalGroups: [] })).preview;
+    assert.equal(disabled.counts.skipped, 1);
+    assert.equal(disabled.counts.retainedCompleted, 2);
+    const deactivated = await invoke('POST', path, { previewToken: disabled.previewToken, optionalGroups: [] });
+    assert.equal(deactivated.statusCode, 200, deactivated.body);
+    assert.equal(parsed(deactivated).card.openTaskCount, 1);
+    const inactive = (await getTask(client, attendees.id))!;
+    assert.equal(inactive.status, 'skipped');
+    assert.equal(inactive.comment, 'Preserve this note');
+    assert.equal(inactive.taskHistory.at(-1)?.action, 'template-retired');
+    const restore = parsed(await invoke('POST', path, { previewOnly: true, optionalGroups: ['sponsored'] })).preview;
+    assert.equal(restore.taskChanges.find((change: any) => change.taskRef === 'attendees').action, 'restore');
+    const restored = await invoke('POST', path, { previewToken: restore.previewToken, optionalGroups: ['sponsored'] });
+    assert.equal(restored.statusCode, 200, restored.body);
+    assert.equal(parsed(restored).card.openTaskCount, 2);
+    assert.equal((await getTask(client, invoice.id))!.status, 'done');
+    assert.equal((await getTask(client, invoice.id))!.link, 'https://example.invalid/invoice');
+    assert.equal((await getTask(client, feedback.id))!.status, 'skipped');
+    assert.equal((await getTask(client, feedback.id))!.skipReason, 'Owner decision');
+    assert.equal((await getTask(client, attendees.id))!.status, 'todo');
+    assert.equal((await getTask(client, attendees.id))!.taskHistory.at(-1)?.action, 'template-restored');
+    assert.equal((await listTasksByCard(client, cardId)).length, 4, 'toggle never duplicates tasks');
+    const unchanged = parsed(await invoke('GET', path)).preview;
+    assert.equal(unchanged.state, 'current');
+    const unknown = await invoke('POST', path, { previewOnly: true, optionalGroups: ['unknown'] });
+    assert.equal(unknown.statusCode, 422);
+    const invalid = await invoke('POST', path, { previewOnly: true, optionalGroups: 'sponsored' });
+    assert.equal(invalid.statusCode, 422);
+  });
+
   it('previews and atomically applies a definition while retaining live work and audit privacy', async () => {
     const source = await createSourceTemplate(client);
     const created = await createTemplateCard(source, 'single');

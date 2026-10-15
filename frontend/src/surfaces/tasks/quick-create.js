@@ -268,7 +268,7 @@ export function createQuickTaskActions(context) {
         box.type = "checkbox";
         box.value = group;
         box.dataset.optionalGroup = group;
-        label.append(box, document.createTextNode(`Include ${group} tasks`));
+        label.append(box, document.createTextNode(group === "sponsored" ? "Sponsored" : `Include ${group} tasks`));
         groupsWrap.append(label);
       }
     };

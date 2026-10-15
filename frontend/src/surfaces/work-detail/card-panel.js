@@ -778,6 +778,7 @@ export function createCardPanel(context) {
   function taskUpdateLabel(change) {
     const label = change.targetLabel || change.currentLabel || change.taskRef;
     if (change.action === "add") return `Add ${label}`;
+    if (change.action === "restore") return `Restore task: ${label}`;
     if (change.action === "skip-removed") return `Skip removed task: ${label}`;
     if (change.action === "retain-completed") return `Retain completed task: ${label}`;
     if (change.action === "refresh-provenance") return `Refresh provenance: ${label}`;
@@ -788,7 +789,7 @@ export function createCardPanel(context) {
   function renderCardTemplateUpdate(card, data) {
     if (!card.templateId) return null;
     const preview = data.templateUpdate;
-    if (preview?.state === "current") return null;
+    if (preview?.state === "current" && !preview.availableOptionalGroups?.length) return null;
     const section = document.createElement("section");
     section.className = "card-template-update workflow-detail-section";
     const heading = document.createElement("div");
@@ -811,9 +812,55 @@ export function createCardPanel(context) {
       return section;
     }
 
+    if (preview.availableOptionalGroups?.length) {
+      const options = document.createElement("fieldset");
+      options.className = "card-options";
+      const legend = document.createElement("legend");
+      legend.textContent = "Card options";
+      options.append(legend);
+      for (const group of preview.availableOptionalGroups) {
+        const label = document.createElement("label");
+        label.className = "quick-form-label quick-form-checkbox";
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.value = group;
+        box.checked = (preview.targetOptionalGroups || []).includes(group);
+        box.disabled = detail.activeCardTemplateBusy;
+        box.addEventListener("change", () => {
+          const oldReview = section.querySelector(".card-template-review");
+          oldReview?.remove();
+          section.querySelector(".card-template-review-button")?.remove();
+          section.querySelector(".card-template-update-summary")?.remove();
+          const oldStatus = section.querySelector(".card-template-update-status");
+          if (oldStatus) oldStatus.textContent = "Review option changes to see the affected tasks.";
+        });
+        label.append(box, document.createTextNode(group === "sponsored" ? "Sponsored" : humanLinkName(group)));
+        options.append(label);
+      }
+      const reviewOptions = document.createElement("button");
+      reviewOptions.type = "button";
+      reviewOptions.className = "task-action-btn";
+      reviewOptions.textContent = "Review option changes";
+      reviewOptions.disabled = detail.activeCardTemplateBusy;
+      reviewOptions.addEventListener("click", () => reloadCardTemplateUpdate(card.id,
+        [...options.querySelectorAll('input[type="checkbox"]')].filter((box) => box.checked).map((box) => box.value)));
+      options.append(reviewOptions);
+      section.append(options);
+    }
+    if (preview.state === "current") {
+      if (detail.activeCardTemplateMessage) {
+        const message = document.createElement("p");
+        message.setAttribute("role", "status");
+        message.textContent = detail.activeCardTemplateMessage;
+        section.append(message);
+      }
+      return section;
+    }
     const status = document.createElement("p");
     status.className = `card-template-update-status is-${preview.state}`;
-    status.textContent = `Update available: Template v${preview.sourceTemplateVersion} → v${preview.targetTemplateVersion}.`;
+    status.textContent = preview.sourceTemplateVersion === preview.targetTemplateVersion
+      ? "Card option changes ready for review."
+      : `Update available: Template v${preview.sourceTemplateVersion} → v${preview.targetTemplateVersion}.`;
     const summary = document.createElement("p");
     summary.className = "card-template-update-summary";
     summary.textContent = templateUpdateSummary(preview);
@@ -854,6 +901,11 @@ export function createCardPanel(context) {
     }
     const list = document.createElement("ul");
     list.className = "card-template-change-list";
+    if (JSON.stringify(preview.selectedOptionalGroups) !== JSON.stringify(preview.targetOptionalGroups)) {
+      const item = document.createElement("li");
+      item.textContent = `Card options: ${(preview.selectedOptionalGroups || []).join(", ") || "none"} → ${(preview.targetOptionalGroups || []).join(", ") || "none"}.`;
+      list.append(item);
+    }
     for (const change of preview.cardChanges || []) {
       const item = document.createElement("li");
       item.textContent = `Update Card field: ${change.field}${change.operatorOverride ? " (operator override)" : ""}`;
@@ -888,7 +940,7 @@ export function createCardPanel(context) {
     apply.textContent = detail.activeCardTemplateBusy ? "Applying…" : "Apply reviewed update";
     apply.disabled = detail.activeCardTemplateBusy ||
       detail.activeCardMutationBusy || detail.activeTaskMutationBusy;
-    apply.addEventListener("click", () => applyCardTemplateUpdate(card.id, preview.previewToken));
+    apply.addEventListener("click", () => applyCardTemplateUpdate(card.id, preview.previewToken, preview.targetOptionalGroups));
     const cancel = document.createElement("button");
     cancel.type = "button";
     cancel.className = "task-action-btn";
@@ -906,7 +958,7 @@ export function createCardPanel(context) {
       reload.type = "button";
       reload.className = "task-action-btn";
       reload.textContent = "Reload latest preview";
-      reload.addEventListener("click", () => reloadCardTemplateUpdate(card.id));
+      reload.addEventListener("click", () => reloadCardTemplateUpdate(card.id, preview.targetOptionalGroups));
       actions.append(reload);
     }
     review.append(actions);

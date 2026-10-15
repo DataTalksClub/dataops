@@ -48,6 +48,7 @@ export type CardTemplateUpdateState = 'current' | 'update-available';
 export type TemplateTaskUpdateAction =
   | 'add'
   | 'update'
+  | 'restore'
   | 'skip-removed'
   | 'retain-completed'
   | 'refresh-provenance';
@@ -79,6 +80,9 @@ export interface CardTemplateUpdatePreview {
   sourceRevision: string | null;
   targetRevision: string | null;
   previewToken: string;
+  availableOptionalGroups: string[];
+  selectedOptionalGroups: string[];
+  targetOptionalGroups: string[];
   cardChanges: TemplateFieldChange[];
   taskChanges: TemplateTaskUpdatePreview[];
   counts: {
@@ -195,9 +199,10 @@ function templateTasksForCard(tasks: Task[], templateId: string): Task[] {
   ));
 }
 
-function tokenFor(card: Card, tasks: Task[], template: Template): string {
+function tokenFor(card: Card, tasks: Task[], template: Template, selectedGroups: string[]): string {
   return digest({
     card: { id: card.id, version: card.version },
+    selectedGroups,
     template: {
       id: template.id,
       version: template.version,
@@ -219,6 +224,7 @@ export function buildCardTemplateUpdatePlan(
   card: Card,
   tasks: Task[],
   template: Template,
+  requestedGroups?: unknown,
 ): CardTemplateUpdatePlan {
   if (!card.templateId || card.templateId !== template.id) {
     throw new CardTemplateUpdateInvalidStateError('Card does not use this Template');
@@ -227,6 +233,24 @@ export function buildCardTemplateUpdatePlan(
     throw new CardTemplateUpdateInvalidStateError('Template Card has no anchor date');
   }
 
+  const availableGroups = [...new Set((template.taskDefinitions || [])
+    .flatMap((definition) => definition.optionalGroup ? [definition.optionalGroup] : []))].sort();
+  const currentGroups = [...new Set(card.selectedOptionalGroups || [])].sort();
+  const groups = requestedGroups === undefined ? currentGroups : requestedGroups;
+  if (!Array.isArray(groups) || groups.some((group) => typeof group !== 'string')) {
+    throw new CardTemplateUpdateInvalidStateError('optionalGroups must be an array of strings');
+  }
+  const selected = [...new Set(groups as string[])].sort();
+  if (requestedGroups !== undefined && selected.some((group) => !availableGroups.includes(group))) {
+    throw new CardTemplateUpdateInvalidStateError('optionalGroups contains an unknown Template option');
+  }
+  // Options removed from a newer Template no longer remain selected.
+  if (requestedGroups === undefined) {
+    for (let index = selected.length - 1; index >= 0; index -= 1) {
+      if (!availableGroups.includes(selected[index])) selected.splice(index, 1);
+    }
+  }
+  const selectionChanged = !isDeepStrictEqual(currentGroups, selected);
   const relevantTasks = templateTasksForCard(tasks, template.id);
   if (!card.templateDefinitionSnapshot || !Number.isInteger(card.templateVersion) || Number(card.templateVersion) < 1) {
     throw new CardTemplateUpdateInvalidStateError(
@@ -267,7 +291,6 @@ export function buildCardTemplateUpdatePlan(
 
   // A Card created without an optional group never receives that group's
   // tasks from later Template versions either.
-  const selected = card.selectedOptionalGroups || [];
   const definitions = (template.taskDefinitions || []).filter((definition) => (
     !definition.optionalGroup || selected.includes(definition.optionalGroup)
   ));
@@ -288,7 +311,7 @@ export function buildCardTemplateUpdatePlan(
       continue;
     }
 
-    if (alreadyRetainedForCurrentTemplate(card, template, current)) continue;
+    if (alreadyRetainedForCurrentTemplate(card, template, current) && !(selectionChanged && definition.optionalGroup)) continue;
     const source = current.templateDefinitionSnapshot || null;
     const changes = fieldChanges(
       TASK_FIELDS,
@@ -301,7 +324,10 @@ export function buildCardTemplateUpdatePlan(
       || source === null;
     if (changes.length === 0 && !provenanceBehind && !current.templateRetiredReason) continue;
 
-    const action: TemplateTaskUpdateAction = changes.length === 0
+    const restore = current.templateRetiredReason === 'removed'
+      && current.status === 'skipped'
+      && current.skippedAt === current.templateRetiredAt;
+    const action: TemplateTaskUpdateAction = restore ? 'restore' : changes.length === 0
       ? 'refresh-provenance'
       : current.status === 'done'
         ? 'retain-completed'
@@ -344,7 +370,7 @@ export function buildCardTemplateUpdatePlan(
 
   const templateBehind = card.templateVersion !== template.version
     || (card.templateSourceRevision || null) !== (template.sourceRevision || null);
-  const hasEffectiveChanges = cardChanges.length > 0 || taskUpdates.length > 0;
+  const hasEffectiveChanges = selectionChanged || cardChanges.length > 0 || taskUpdates.length > 0;
   const state: CardTemplateUpdateState = templateBehind || hasEffectiveChanges
       ? 'update-available'
       : 'current';
@@ -361,13 +387,16 @@ export function buildCardTemplateUpdatePlan(
       targetTemplateVersion: template.version,
       sourceRevision: card.templateSourceRevision || null,
       targetRevision: template.sourceRevision || null,
-      previewToken: tokenFor(card, tasks, template),
+      previewToken: tokenFor(card, tasks, template, selected),
+      availableOptionalGroups: availableGroups,
+      selectedOptionalGroups: currentGroups,
+      targetOptionalGroups: selected,
       cardChanges,
       taskChanges,
       counts: {
         cardFields: cardChanges.length,
         added: taskChanges.filter(({ action }) => action === 'add').length,
-        updated: taskChanges.filter(({ action }) => action === 'update').length,
+        updated: taskChanges.filter(({ action }) => action === 'update' || action === 'restore').length,
         skipped: taskChanges.filter(({ action }) => action === 'skip-removed').length,
         retainedCompleted: taskChanges.filter(({ action }) => action === 'retain-completed').length,
         reordered: taskChanges.filter(({ changes }) => changes.some(({ field }) => field === 'templateTaskOrder')).length,

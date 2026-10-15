@@ -22,10 +22,15 @@ Usage
   dataops cards link <card-id> <link-name> <url>  Fill a Card link (e.g. a template's required link)
   dataops cards park <card-id> | resume <card-id>
   dataops cards delete <card-id> --yes          Delete the Card and all its Tasks (admin)
-  dataops cards template-update <card-id> [--apply]  Preview, then apply, the Template's newer version
+  dataops cards template-update <card-id> [--optional-groups a,b|none] [--apply]
+                                                Review Template and Card option changes
 
 --date is the Card's anchor date: Template Tasks are scheduled relative to it.
 Writes read the Card's current version first (or pass --expected-version N).
+Optional groups default off. Existing Cards need an explicit option decision;
+--optional-groups sponsored activates sponsor work; none disables all optional work.
+Template updates may also include newer definition changes; review before --apply.
+Disabled open tasks are skipped with history; completed and operator-skipped tasks stay resolved.
 
 Examples
   dataops templates list
@@ -91,6 +96,7 @@ export async function show(args, io) {
     ["date", card.anchorDate],
     ["owner", card.owner?.name],
     ["template", card.templateId],
+    ["options", card.selectedOptionalGroups],
     ["description", card.description],
     ["tags", card.tags],
     ["source docs", card.sourceDocIds],
@@ -227,15 +233,19 @@ export async function remove(args, io) {
 export async function templateUpdate(args, io) {
   const id = positional(args, 0, "dataops cards template-update <card-id> [--apply]");
   const api = apiFor(args);
-  const { preview } = await api.get(`/api/cards/${enc(id)}/template-update`);
+  const optionalGroups = args.optionalGroups === undefined ? undefined
+    : args.optionalGroups === "none" ? [] : csv(args.optionalGroups);
+  const { preview } = optionalGroups === undefined
+    ? await api.get(`/api/cards/${enc(id)}/template-update`)
+    : await api.post(`/api/cards/${enc(id)}/template-update`, { previewOnly: true, optionalGroups });
   if (!args.apply) {
     if (args.json) return { preview };
     io.print(JSON.stringify(preview, null, 2));
     io.print("");
-    io.print(`Apply with: dataops cards template-update ${id} --apply`);
+    io.print(`Apply with: dataops cards template-update ${id}${optionalGroups === undefined ? "" : ` --optional-groups ${optionalGroups.join(",") || "none"}`} --apply`);
     return { preview };
   }
-  const result = await api.post(`/api/cards/${enc(id)}/template-update`, { previewToken: preview.previewToken });
+  const result = await api.post(`/api/cards/${enc(id)}/template-update`, { previewToken: preview.previewToken, ...(optionalGroups === undefined ? {} : { optionalGroups }) });
   if (args.json) return result;
   io.print(`Applied the Template update to ${id}.`);
   return result;

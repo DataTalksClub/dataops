@@ -269,6 +269,19 @@ describe("cards and templates", () => {
     assert.match(done.text(), /Deleted c-9 - Synthetic duplicate and 2 Tasks/);
   });
 
+  test("Card options preview without writes, then apply the same selection", async () => {
+    const calls = fakePortal({
+      "POST /api/cards/c-options/template-update": ({ body }) => body.previewOnly
+        ? { preview: { previewToken: "a".repeat(64), targetOptionalGroups: body.optionalGroups } }
+        : { applied: true, card: { id: "c-options" } },
+    });
+    assert.equal(await run(["cards", "template-update", "c-options", "--optional-groups", "sponsored"], captureIo()), 0);
+    assert.deepEqual(calls.map(({ body }) => body), [{ previewOnly: true, optionalGroups: ["sponsored"] }]);
+    assert.equal(await run(["cards", "template-update", "c-options", "--optional-groups", "none", "--apply"], captureIo()), 0);
+    assert.deepEqual(calls.at(-2).body, { previewOnly: true, optionalGroups: [] });
+    assert.deepEqual(calls.at(-1).body, { previewToken: "a".repeat(64), optionalGroups: [] });
+  });
+
   const template = { id: "tpl-1", type: "newsletter-issue", name: "Newsletter issue", taskDefinitions: [{ description: "Draft", offsetDays: -3 }] };
 
   test("create resolves a template by type and anchors the card on --date", async () => {

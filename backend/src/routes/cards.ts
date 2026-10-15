@@ -113,6 +113,9 @@ function updateError(error: unknown): LambdaResponse {
   if (error instanceof CardTemplateUpdateRequestError) {
     return json(error.statusCode, { error: error.message, code: error.code });
   }
+  if (error instanceof CardTemplateUpdateInvalidStateError) {
+    return json(422, { error: error.message, code: 'invalid-template-state' });
+  }
   if (error instanceof CardTemplateUpdateConflictError) {
     return json(409, {
       error: error.message,
@@ -144,6 +147,12 @@ async function handleSingleTemplateUpdate(
       return workAdminForbidden('Applying a Template update requires the Card owner or an admin');
     }
     const body = parseObject(rawBody);
+    if (body.previewOnly !== undefined && typeof body.previewOnly !== 'boolean') {
+      return json(400, { error: 'previewOnly must be a boolean' });
+    }
+    if (body.previewOnly === true) {
+      return json(200, { preview: buildCardTemplateUpdatePlan(loaded.card, loaded.tasks, loaded.template, body.optionalGroups).preview });
+    }
     const previewToken = typeof body.previewToken === 'string' ? body.previewToken : '';
     if (!/^[a-f0-9]{64}$/.test(previewToken)) {
       return json(400, { error: 'previewToken must be a SHA-256 digest', code: 'invalid-preview-token' });
@@ -157,6 +166,7 @@ async function handleSingleTemplateUpdate(
       loaded.template,
       previewToken,
       actorId,
+      body.optionalGroups,
     );
     return json(200, result);
   } catch (error) {

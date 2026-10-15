@@ -897,3 +897,16 @@
 }
 .card-add-details > summary::-webkit-details-marker { display: none; }
 .card-add-details[open] > summary { margin-bottom: 4px; }
+
+.card-options {
+  display: grid;
+  gap: var(--dk-space-2);
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.card-options legend {
+  padding: 0;
+  color: var(--dk-text-heading);
+  font-weight: 600;
+}
