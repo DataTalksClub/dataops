@@ -268,6 +268,9 @@ test.describe("pre-refactor frontend module characterization", () => {
     await page.getByRole("button", { name: "Add transaction" }).click();
     await expect(page.locator(".bookkeeping-entry-dialog")).toBeVisible();
     await page.goto(`${baseURL}/admin`);
+    // The background work snapshot re-renders the workspace when it lands;
+    // on a loaded CI backend that can replace the focused heading.
+    await page.waitForLoadState("networkidle");
     await page.getByRole("button", { name: /Diagnostics/ }).click();
     await expect(page.getByRole("heading", { name: "Read-only diagnostics" })).toBeFocused();
     expect(errors).toEqual([]);
