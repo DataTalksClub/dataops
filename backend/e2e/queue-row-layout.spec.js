@@ -35,7 +35,10 @@ test.beforeAll(async () => {
   server = await startOwnedTestServer({
     environment: { DTC_CACHE_ROOT: createDocsCacheRoot('queue-row-layout') },
   });
-  const { card } = await api('POST', '/api/cards', { title: CARD_TITLE, anchorDate: isoDate(10), stage: 'announced' });
+  const { template } = await api('POST', '/__e2e__/template-fixtures', {
+    name: 'Synthetic empty workflow', type: 'synthetic-empty', sourcePath: 'workflow-templates/synthetic-empty.yaml', taskDefinitions: [],
+  });
+  const { card } = await api('POST', '/api/cards', { title: CARD_TITLE, anchorDate: isoDate(10), stage: 'announced', templateId: template.id });
   await api('POST', '/api/tasks', { description: PLAIN, date: isoDate(-65), cardId: card.id });
   await api('POST', '/api/tasks', {
     description: WAITING,
