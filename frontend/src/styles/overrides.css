@@ -99,7 +99,6 @@ body[data-workspace-view="calendar"] .calendar-day:nth-last-child(-n + 7) {
    Tasks-view rules so equal-specificity mobile declarations cannot lose. */
 @media (max-width: 768px) {body[data-workspace-view="tasks"] .recurring-row-actions .task-action-btn,
 .ops-surface-users .primary-button,
-.ops-users-table .ops-user-actions .quiet-button,
 .ops-user-form input:not([type="checkbox"]),
 .ops-user-form select,
 .ops-user-form-actions button,

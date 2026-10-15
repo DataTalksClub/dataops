@@ -156,6 +156,7 @@ function createAdminHarness(options = {}) {
     usersFromWorkPayload: (payload) =>
       Array.isArray(payload) ? payload : payload?.users || [],
     workApiUrl: apiUrl,
+    openUserLifecycleDialog: options.openUserLifecycleDialog,
   });
   return {
     api,
@@ -167,6 +168,19 @@ function createAdminHarness(options = {}) {
       activeRouteToken = value;
     },
   };
+}
+
+// Stands in for the kit dialog: loads the handover like the real one, then
+// confirms with `answer`, and records what it was opened with.
+function lifecycleDialogStub(answer = {}) {
+  const opened = [];
+  const open = async (options) => {
+    const summary = await options.loadHandover();
+    opened.push({ ...options, summary });
+    await options.onConfirm(typeof answer === "function" ? answer(summary) : answer);
+    return { status: "open" };
+  };
+  return { open, opened };
 }
 
 function submitUserForm(root) {
@@ -327,15 +341,24 @@ describe("Operations surface boundary", () => {
         role: "operator",
       },
     ];
+    const dialog = lifecycleDialogStub({ reassignTo: "alexey" });
     const harness = createAdminHarness({
+      openUserLifecycleDialog: dialog.open,
       request: async (url, requestOptions = {}) => {
         if (url === "/api/users" && !requestOptions.method) {
           if (mode === "down") throw new Error("Synthetic route failure (503)");
           return { users };
         }
         if (url === "/api/me") return { id: "alexey" };
-        if (url === "/api/users/grace" && requestOptions.method === "PATCH") {
-          if (mode === "patch-fails") {
+        if (url === "/api/users/grace/handover") {
+          return { user: { id: "grace", name: "Grace" }, openWork: { tasks: 2, cards: 0, schedules: 0, sponsorRecords: 0 }, openTotal: 2 };
+        }
+        if (url === "/api/users/grace/disable" && requestOptions.method === "POST") {
+          users[1] = { ...users[1], disabled: true };
+          return { user: users[1], reassignedTo: "alexey", moved: { tasks: 2, cards: 0, schedules: 0, sponsorRecords: 0 } };
+        }
+        if (url === "/api/users/grace/enable" && requestOptions.method === "POST") {
+          if (mode === "enable-fails") {
             throw new Error("Synthetic route failure (503)");
           }
           return {};
@@ -373,13 +396,22 @@ describe("Operations surface boundary", () => {
     const graceRow = findAllByClass(harness.documentList, "ops-user-row").find(
       (row) => row.textContent.includes("Grace"),
     );
-    const disable = findByText(graceRow, "Disable", "button");
+    // Every action is in the row's one "⋯" menu; Delete is not offered to an
+    // active account.
+    assert.equal(findAllByClass(graceRow, "ops-user-menu-trigger").length, 1);
+    assert.equal(findByText(graceRow, "Delete…", "button"), undefined);
+    const disable = findByText(graceRow, "Disable…", "button");
     await disable.click();
-    await nextTicks();
+    await nextTicks(3);
+    assert.equal(dialog.opened[0].mode, "disable");
+    assert.deepEqual(dialog.opened[0].candidates.map((user) => user.id), ["alexey"]);
+    assert.equal(dialog.opened[0].summary.openTotal, 2);
+    const posted = harness.requests.find((entry) => entry.url === "/api/users/grace/disable");
+    assert.deepEqual(jsonBody(posted), { reassignTo: "alexey" });
     harness.api.renderUsersSurfaceView();
     const outcome = harness.documentList.querySelector(".ops-users-outcome");
     assert.equal(outcome.getAttribute("role"), "status");
-    assert.match(outcome.textContent, /Grace is now disabled\./);
+    assert.equal(outcome.textContent, "Grace is now disabled. 2 open tasks went to Alexey.");
     assert.equal(outcome.focused, true);
 
     harness.api.renderUsersSurfaceView();
@@ -389,17 +421,20 @@ describe("Operations surface boundary", () => {
       "the confirmation is shown once against the refreshed list",
     );
 
-    mode = "patch-fails";
+    mode = "enable-fails";
     const retryRow = findAllByClass(harness.documentList, "ops-user-row").find(
       (row) => row.textContent.includes("Grace"),
     );
-    await findByText(retryRow, "Disable", "button").click();
+    // A disabled account offers Enable and Delete instead of Disable.
+    assert.equal(findByText(retryRow, "Disable…", "button"), undefined);
+    assert.ok(findByText(retryRow, "Delete…", "button"));
+    await findByText(retryRow, "Enable", "button").click();
     await nextTicks(3);
     harness.api.renderUsersSurfaceView();
     const rowError = harness.documentList.querySelector(".ops-user-row-error");
     assert.equal(rowError.getAttribute("role"), "alert");
-    assert.match(rowError.textContent, /Could not disable this account/);
-    assert.match(rowError.textContent, /Select Disable to retry/);
+    assert.match(rowError.textContent, /Could not enable this account/);
+    assert.match(rowError.textContent, /Select Enable to retry/);
   });
 
   test("confirms a saved user against the refreshed list", async () => {
@@ -463,6 +498,7 @@ describe("Operations surface boundary", () => {
         name: "Grace",
         email: "grace@datatalks.club",
         role: "operator",
+        disabled: true,
       },
     ];
     let releasePatch;
@@ -471,10 +507,10 @@ describe("Operations surface boundary", () => {
         if (url === "/api/users" && !requestOptions.method)
           return { users };
         if (url === "/api/me") return { id: "alexey" };
-        if (url === "/api/users/grace" && requestOptions.method === "PATCH") {
+        if (url === "/api/users/grace/enable" && requestOptions.method === "POST") {
           return new Promise((resolve) => {
             releasePatch = () => {
-              users[1] = { ...users[1], disabled: true };
+              users[1] = { ...users[1], disabled: false };
               resolve({});
             };
           });
@@ -488,10 +524,11 @@ describe("Operations surface boundary", () => {
     const graceRow = findAllByClass(harness.documentList, "ops-user-row").find(
       (row) => row.textContent.includes("Grace"),
     );
-    const disable = findByText(graceRow, "Disable", "button");
+    const enable = findByText(graceRow, "Enable", "button");
+    const trigger = findAllByClass(graceRow, "ops-user-menu-trigger")[0];
 
-    const mutation = disable.click();
-    assert.equal(disable.disabled, true);
+    const mutation = enable.click();
+    assert.equal(trigger.getAttribute("aria-busy"), "true");
     harness.setActiveRouteToken(2);
     releasePatch();
     await mutation;
@@ -499,8 +536,8 @@ describe("Operations surface boundary", () => {
 
     const mutationIndex = harness.requests.findIndex(
       (entry) =>
-        entry.url === "/api/users/grace" &&
-        entry.options.method === "PATCH",
+        entry.url === "/api/users/grace/enable" &&
+        entry.options.method === "POST",
     );
     assert.equal(mutationIndex, 3);
     assert.deepEqual(
@@ -509,15 +546,14 @@ describe("Operations surface boundary", () => {
       "a stale success refreshes the authoritative Users snapshot",
     );
     assert.deepEqual(harness.documentRefreshes, []);
-    assert.equal(disable.isConnected, true);
-    assert.equal(disable.disabled, true);
+    assert.equal(enable.isConnected, true);
 
     harness.api.renderUsersSurfaceView();
     assert.equal(
       findAllByClass(harness.documentList, "ops-user-row")
         .find((row) => row.textContent.includes("Grace"))
         ?.textContent.includes("disabled"),
-      true,
+      false,
     );
     assert.equal(
       harness.documentList.querySelector(".ops-users-outcome"),
@@ -624,27 +660,25 @@ describe("Operations surface boundary", () => {
     await harness.api.refreshUsersSurface();
     harness.api.renderUsersSurfaceView();
 
-    const form = findAllByClass(harness.documentList, "ops-default-assignee-form")[0];
-    assert.ok(form, "admins get the default-assignee picker");
+    const section = findAllByClass(harness.documentList, "ops-default-assignee")[0];
+    assert.ok(section, "admins get the default-assignee picker");
+    assert.equal(findByText(section, "Save", "button"), undefined, "a change saves itself");
     const select = harness.document.created.find(
       (element) => element.tagName === "SELECT" && element.name === "defaultAssigneeId",
     );
+    assert.ok(select.classList.contains("dk-select"));
     assert.deepEqual(
       select.children.map((option) => option.value),
       ["", "alexey", "orin"],
       "a disabled account is not offered",
     );
     select.value = "orin";
-    await form.dispatch("submit");
+    await select.dispatch("change");
     await nextTicks(3);
 
     const put = harness.requests.find((entry) => entry.options.method === "PUT");
     assert.deepEqual(JSON.parse(put.options.body), { defaultAssigneeId: "orin", expectedVersion: 0 });
     harness.api.renderUsersSurfaceView();
-    assert.equal(
-      harness.documentList.querySelector(".ops-users-outcome")?.textContent,
-      "New tasks now go to Orin.",
-    );
     const orinRow = findAllByClass(harness.documentList, "ops-user-row").find((row) => row.textContent.includes("Orin"));
     assert.ok(orinRow.textContent.includes("default assignee"));
   });
@@ -664,10 +698,13 @@ describe("Operations surface boundary", () => {
         role: "operator",
       },
     ];
+    const dialog = lifecycleDialogStub();
     const harness = createAdminHarness({
+      openUserLifecycleDialog: dialog.open,
       request: async (url, requestOptions = {}) => {
         if (url === "/api/users" && !requestOptions.method) return { users };
         if (url === "/api/me") return { id: "alexey" };
+        if (url === "/api/users/grace/handover") return { openTotal: 0, openWork: {} };
         if (url === "/api/users" && requestOptions.method === "POST") return {};
         if (url === "/api/users/grace" && requestOptions.method === "PATCH")
           return {};
@@ -757,13 +794,15 @@ describe("Operations surface boundary", () => {
       harness.documentList,
       "ops-user-row",
     ).find((row) => row.textContent.includes("Grace"));
-    await findByText(refreshedGraceRow, "Disable", "button").click();
+    await findByText(refreshedGraceRow, "Disable…", "button").click();
+    await nextTicks(2);
     const disabled = harness.requests.find(
-      (entry) =>
-        entry.url === "/api/users/grace" &&
-        entry.options.method === "PATCH" &&
-        jsonBody(entry).disabled === true,
+      (entry) => entry.url === "/api/users/grace/disable" && entry.options.method === "POST",
     );
-    assert.deepEqual(jsonBody(disabled), { disabled: true });
+    assert.deepEqual(jsonBody(disabled), {}, "nothing open: a plain confirm");
+    const alexeyRow = findAllByClass(harness.documentList, "ops-user-row").find(
+      (row) => row.textContent.includes("Alexey"),
+    );
+    assert.equal(findByText(alexeyRow, "Disable…", "button"), undefined, "nobody disables themselves");
   });
 });

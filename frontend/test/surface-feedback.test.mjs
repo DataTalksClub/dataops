@@ -282,7 +282,6 @@ const SLICE1_MOBILE_CHECKBOX_SELECTOR =
 const SLICE1_MOBILE_ORDINARY_SELECTORS = [
   SLICE1_MOBILE_BLOCK_START,
   ".ops-surface-users .primary-button",
-  ".ops-users-table .ops-user-actions .quiet-button",
   '.ops-user-form input:not([type="checkbox"])',
   ".ops-user-form select",
   ".ops-user-form-actions button",

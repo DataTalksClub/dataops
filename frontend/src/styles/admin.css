@@ -156,8 +156,24 @@
   font-size: 11px;
   font-weight: 600;
   text-transform: capitalize;
-}.ops-user-actions {
+}.ops-users-table th:last-child,
+.ops-user-actions {
+  width: 1%;
   white-space: nowrap;
+  text-align: right;
+}.ops-users-table td.ops-user-actions {
+  padding-block: var(--dk-space-1);
+}.ops-user-menu-trigger[aria-expanded="true"] {
+  background: var(--dk-bg-hover);
+  color: var(--dk-text-primary);
+}/* Placed against the viewport under its trigger: the table clips overflow. */
+.ops-user-menu-list {
+  position: fixed;
+  z-index: 60;
+  text-align: left;
+}.ops-user-actions .ops-user-row-error {
+  white-space: normal;
+  text-align: left;
 }.ops-user-form-panel {
   display: grid;
   gap: 16px;
@@ -537,8 +553,6 @@ body[data-workspace-view="calendar"] .document-list {
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-  }.ops-users-table .ops-user-name {
-    grid-column: 1 / -1;
   }.ops-users-table .ops-user-name::before {
     content: "Name";
   }.ops-users-table .ops-user-email::before {
@@ -547,15 +561,17 @@ body[data-workspace-view="calendar"] .document-list {
     content: "Role";
   }.ops-users-table .ops-user-created::before {
     content: "Created";
-  }.ops-users-table .ops-user-actions {
+  }.ops-users-table .ops-user-name {
+    grid-column: 1;
+    grid-row: 1;
+  }/* The one "⋯" control sits at the card's top-right, beside the name. */
+.ops-users-table .ops-user-actions {
+    grid-column: 2;
+    grid-row: 1;
+    width: auto;
+    padding: 0;
+  }.ops-users-table .ops-user-actions .ops-user-row-error {
     grid-column: 1 / -1;
-    border-top: 1px solid var(--dk-border-default);
-    margin-top: 4px;
-    padding-top: 10px;
-  }.ops-users-table .ops-user-actions::before {
-    content: "Actions";
-  }.ops-users-table .ops-user-actions .quiet-button {
-    min-height: 40px;
   }.ops-future-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }.ops-quality-row,
@@ -622,26 +638,41 @@ body[data-workspace-view="calendar"] .document-list {
 }body[data-workspace-view="tasks"] .operations-home > * {
   min-width: 0;
   width: 100%;
+}
+
+/* Default assignee: one labelled control under the account list. */
 .ops-default-assignee {
-  display: grid;
-  gap: 8px;
-  margin-top: 24px;
-}
-.ops-default-assignee-hint {
-  margin: 0;
-  color: var(--dk-text-muted);
-  font-size: var(--dk-text-sm);
-}
-.ops-default-assignee-form {
   display: flex;
   flex-wrap: wrap;
-  align-items: end;
-  gap: 8px;
-}
-.ops-default-assignee-form .ops-field {
-  flex: 1 1 260px;
-  max-width: 360px;
-}
-.ops-default-assignee-form .ops-user-row-error {
+  align-items: center;
+  gap: var(--dk-space-1) var(--dk-space-3);
+  margin-top: var(--dk-space-2);
+}.ops-default-assignee .dk-label {
+  margin: 0;
+}.ops-default-assignee .dk-select {
+  width: auto;
+  min-width: 12rem;
+  max-width: 18rem;
+}.ops-default-assignee-value {
+  color: var(--dk-text-primary);
+  font-size: var(--dk-text-md);
+}.ops-default-assignee .dk-hint {
   flex-basis: 100%;
+  margin: 0;
+}.ops-default-assignee .dk-field-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* The person-leaving dialog lives on <body>, outside the Users surface. */
+.user-lifecycle-form {
+  display: grid;
+  gap: var(--dk-space-4);
+}.user-lifecycle-lead {
+  margin: 0;
+  color: var(--dk-text-primary);
+}.user-lifecycle-field .dk-select {
+  width: 100%;
+}.user-lifecycle-error:empty {
+  display: none;
 }

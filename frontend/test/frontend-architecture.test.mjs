@@ -398,4 +398,25 @@ describe("workspace nav layout contract", () => {
       /border-top:/,
     );
   });
+
+  // A stylesheet that ends inside an open rule still parses, so the gap goes
+  // unnoticed until a rule is appended after it and silently nests inside it
+  // (the Users page default-assignee picker rendered unstyled that way).
+  test("no stylesheet ends inside an open rule", () => {
+    const stylesDir = path.join(repoRoot, "frontend/src/styles");
+    const unbalanced = readdirSync(stylesDir)
+      .filter((file) => file.endsWith(".css"))
+      .filter((file) => {
+        const css = readFileSync(path.join(stylesDir, file), "utf8")
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, "");
+        let depth = 0;
+        for (const char of css) {
+          if (char === "{") depth += 1;
+          if (char === "}") depth = Math.max(0, depth - 1);
+        }
+        return depth > 0;
+      });
+    assert.deepEqual(unbalanced, []);
+  });
 });

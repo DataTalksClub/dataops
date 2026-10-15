@@ -1459,7 +1459,11 @@ test.describe('canonical frontend capability behavior', () => {
     await adminPage.reload();
     let createdRow = adminPage.locator('.ops-user-row', { hasText: 'Synthetic Capability User' });
     await expect(createdRow).toBeVisible();
-    await createdRow.getByRole('button', { name: 'Edit' }).click();
+    const userMenu = async (row, item) => {
+      await row.locator('.ops-user-menu-trigger').click();
+      await adminPage.getByRole('menuitem', { name: item }).click();
+    };
+    await userMenu(createdRow, 'Edit');
     // Sign-in is through SSO: no password field, and the email is read-only.
     await expect(adminPage.locator('.ops-user-form input[type="password"]')).toHaveCount(0);
     await expect(adminPage.locator('.ops-user-form input[type="email"]')).toHaveCount(0);
@@ -1468,10 +1472,19 @@ test.describe('canonical frontend capability behavior', () => {
     await adminPage.getByRole('button', { name: 'Save changes' }).click();
     createdRow = adminPage.locator('.ops-user-row', { hasText: 'Synthetic Capability User Updated' });
     await expect(createdRow).toBeVisible();
-    await createdRow.getByRole('button', { name: 'Disable' }).click();
+    // Nothing open and not the default assignee: Disable is a plain confirm.
+    await userMenu(createdRow, 'Disable…');
+    await adminPage.locator('dialog[data-user-dialog="disable"]').getByRole('button', { name: 'Disable Synthetic Capability User Updated' }).click();
     await expect(createdRow).toContainText('disabled');
-    await createdRow.getByRole('button', { name: 'Enable' }).click();
+    await userMenu(createdRow, 'Enable');
     await expect(createdRow).not.toContainText('disabled');
+    await userMenu(createdRow, 'Disable…');
+    await adminPage.locator('dialog[data-user-dialog="disable"]').getByRole('button', { name: 'Disable Synthetic Capability User Updated' }).click();
+    await expect(createdRow).toContainText('disabled');
+    await userMenu(createdRow, 'Delete…');
+    await adminPage.locator('dialog[data-user-dialog="delete"]').getByRole('button', { name: 'Delete Synthetic Capability User Updated' }).click();
+    await expect(adminPage.locator('.ops-users-outcome')).toContainText('was deleted');
+    await expect(createdRow).toHaveCount(0);
 
     await adminPage.getByRole('button', { name: 'Add user' }).click();
     await adminPage.getByRole('button', { name: 'Create user' }).click();
@@ -1504,7 +1517,7 @@ test.describe('canonical frontend capability behavior', () => {
     await operator.close();
     recordCapabilityEvidence(testInfo, [
       { route: '/users', roleId: 'operator', stateIds: ['users.operator-read-only', 'users.operator-403', 'users.spoof-denial'] },
-      { route: '/users', roleId: 'admin', stateIds: ['users.admin-create', 'users.admin-edit', 'users.admin-disable', 'users.validation', 'users.failure'] },
+      { route: '/users', roleId: 'admin', stateIds: ['users.admin-create', 'users.admin-edit', 'users.admin-disable', 'users.admin-delete', 'users.validation', 'users.failure'] },
     ]);
   });
 

@@ -581,14 +581,12 @@ body[data-workspace-view="sponsors"] .library-view {
 
   /* ---- Per-item action rows: one compact line, never a wrapped stack ---- */
   .row-actions,
-  .recurring-row-actions,
-  .ops-user-actions {
+  .recurring-row-actions {
     flex-wrap: nowrap;
     gap: 6px;
   }
   .row-actions button,
-  .recurring-row-actions button,
-  .ops-user-actions button {
+  .recurring-row-actions button {
     flex: 0 0 auto;
     min-height: var(--dk-size-touch);
     padding-top: 4px !important;

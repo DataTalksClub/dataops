@@ -830,7 +830,6 @@ body[data-workspace-view="tasks"] .recurring-form-footer button {
 /* Slice 1 controls must remain operable at phone widths without enlarging
    desktop density or unrelated surfaces. */
 @media (max-width: 768px) {.ops-surface-users .primary-button,
-.ops-users-table .ops-user-actions .quiet-button,
 .ops-user-form input:not([type="checkbox"]),
 .ops-user-form select,
 .ops-user-form-actions button,

@@ -97,7 +97,7 @@ const REQUIRED = {
   admin: { route: "/admin", states: ["loading", "empty", "ready-read-only", "failure"] },
   users: {
     route: "/users",
-    states: ["operator-read-only", "admin-create", "admin-edit", "admin-disable", "validation", "operator-403", "spoof-denial", "failure"],
+    states: ["operator-read-only", "admin-create", "admin-edit", "admin-disable", "admin-delete", "validation", "operator-403", "spoof-denial", "failure"],
   },
 };
 
@@ -143,6 +143,7 @@ const REQUIRED_STATE_ROLE_OVERRIDES = {
   "users.admin-create": ["admin"],
   "users.admin-edit": ["admin"],
   "users.admin-disable": ["admin"],
+  "users.admin-delete": ["admin"],
   "users.validation": ["admin"],
   "users.operator-403": ["operator"],
   "users.spoof-denial": ["operator"],

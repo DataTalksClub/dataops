@@ -335,7 +335,7 @@ test.describe("pre-refactor frontend module characterization", () => {
         await expect(userRow.locator(".ops-user-email")).toBeVisible();
         await expect(userRow.locator(".ops-user-role")).toBeVisible();
         await expect(userRow.locator(".ops-user-created")).toBeVisible();
-        await expect(userRow.locator(".ops-user-actions .quiet-button").first()).toBeVisible();
+        await expect(userRow.locator(".ops-user-actions .ops-user-menu-trigger")).toBeVisible();
         await page.screenshot({
           path: path.join(SCREENSHOT_DIR, "users-mobile-stacked.png"),
           fullPage: true,

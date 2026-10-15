@@ -1173,7 +1173,18 @@
           "roleIds": [
             "admin"
           ],
-          "description": "An admin disables a synthetic user and reloads it.",
+          "description": "An admin disables a synthetic user through the handover dialog and enables it again.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "users.admin-delete",
+          "kind": "ready",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "An admin deletes a disabled synthetic user; only its name remains for history.",
           "coverage": {
             "status": "runtime"
           }

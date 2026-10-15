@@ -7,6 +7,7 @@ import {
   setControlPending,
 } from "../operations-overview.js";
 import { mountIntakeRecovery } from "../finance/invoices.js";
+import { describeOpenWork, openUserLifecycleDialog } from "./user-lifecycle-dialog.js";
 
 export function createAdminSurface(context) {
   const {
@@ -26,6 +27,8 @@ export function createAdminSurface(context) {
     usersFromWorkPayload,
     workApiUrl,
   } = context;
+  // Tests drive the lifecycle without a real <dialog>; the app uses the kit one.
+  const openLifecycleDialog = context.openUserLifecycleDialog || openUserLifecycleDialog;
 
   const USER_ROLE_LABELS = { admin: "Admin", operator: "Operator" };
   let usersSnapshot = {
@@ -262,25 +265,7 @@ export function createAdminSurface(context) {
 
     const actionsCell = document.createElement("td");
     actionsCell.className = "ops-user-actions";
-    if (isCurrentUserAdmin()) {
-      const editButton = document.createElement("button");
-      editButton.type = "button";
-      editButton.className = "quiet-button";
-      editButton.textContent = "Edit";
-      editButton.addEventListener("click", () => openUserForm(user));
-      actionsCell.append(editButton);
-
-      if (user.id !== usersSnapshot.currentUserId) {
-        const toggleButton = document.createElement("button");
-        toggleButton.type = "button";
-        toggleButton.className = "quiet-button";
-        toggleButton.textContent = user.disabled ? "Enable" : "Disable";
-        toggleButton.addEventListener("click", () =>
-          toggleUserDisabled(user, toggleButton),
-        );
-        actionsCell.append(toggleButton);
-      }
-    }
+    if (isCurrentUserAdmin()) actionsCell.append(renderUserMenu(user));
     const rowError = userRowErrors.get(user.id);
     if (rowError) {
       const guidance = document.createElement("p");
@@ -294,44 +279,194 @@ export function createAdminSurface(context) {
     return row;
   }
 
-  // Who receives new work that no Template, schedule or imported title names.
-  // Admins change it here; everyone else sees who it is.
+  // Every action on an account sits in one "⋯" menu, so each row carries the
+  // same single control whatever state the account is in. Disabling and
+  // deleting open the handover dialog; Delete only exists once an account is
+  // disabled.
+  function renderUserMenu(user) {
+    const wrap = document.createElement("div");
+    wrap.className = "ops-user-menu";
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "dk-icon-button ops-user-menu-trigger";
+    trigger.innerHTML =
+      '<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">' +
+      '<circle cx="4.5" cy="10" r="1.5"/><circle cx="10" cy="10" r="1.5"/><circle cx="15.5" cy="10" r="1.5"/></svg>';
+    trigger.setAttribute("aria-label", `Actions for ${user.name || user.email || user.id}`);
+    trigger.setAttribute("aria-haspopup", "menu");
+    trigger.setAttribute("aria-expanded", "false");
+    const menu = document.createElement("div");
+    menu.className = "dk-menu ops-user-menu-list";
+    menu.setAttribute("role", "menu");
+    menu.hidden = true;
+
+    const isSelf = String(user.id) === String(usersSnapshot.currentUserId);
+    const items = [
+      ["Edit", () => openUserForm(user)],
+      ["Reassign open work…", () => openLifecycle(user, "reassign", trigger)],
+      ...(isSelf
+        ? []
+        : user.disabled
+          ? [
+              ["Enable", () => enableUser(user, trigger)],
+              ["Delete…", () => openLifecycle(user, "delete", trigger), "danger"],
+            ]
+          : [["Disable…", () => openLifecycle(user, "disable", trigger), "danger"]]),
+    ];
+    const buttons = items.map(([label, action, tone]) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = tone ? "dk-menu__item dk-menu__item--danger" : "dk-menu__item";
+      item.setAttribute("role", "menuitem");
+      item.textContent = label;
+      item.addEventListener("click", () => {
+        close();
+        action();
+      });
+      return item;
+    });
+    menu.append(...buttons);
+
+    const onOutside = (event) => {
+      if (!wrap.contains(event.target)) close();
+    };
+    function close() {
+      if (menu.hidden) return;
+      menu.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      document.removeEventListener("pointerdown", onOutside, true);
+      globalThis.removeEventListener?.("scroll", close, true);
+      globalThis.removeEventListener?.("resize", close);
+    }
+    trigger.addEventListener("click", () => {
+      if (!menu.hidden) {
+        close();
+        return;
+      }
+      menu.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      // The table clips overflow, so the menu is placed against the viewport
+      // under its trigger, end-aligned, and closes when the page moves.
+      const rect = trigger.getBoundingClientRect?.();
+      if (rect) {
+        menu.style.top = `${Math.round(rect.bottom + 4)}px`;
+        menu.style.right = `${Math.max(8, Math.round(globalThis.innerWidth - rect.right))}px`;
+      }
+      document.addEventListener("pointerdown", onOutside, true);
+      globalThis.addEventListener?.("scroll", close, true);
+      globalThis.addEventListener?.("resize", close);
+      buttons[0]?.focus();
+    });
+    menu.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        close();
+        trigger.focus();
+        return;
+      }
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      const index = buttons.indexOf(document.activeElement);
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      buttons[(index + step + buttons.length) % buttons.length]?.focus();
+    });
+    wrap.append(trigger, menu);
+    return wrap;
+  }
+
+  function personName(id) {
+    const person = usersSnapshot.users.find((user) => String(user.id) === String(id));
+    return person?.name || person?.email || id;
+  }
+
+  const LIFECYCLE_PATHS = {
+    disable: (id) => [`/api/users/${id}/disable`, "POST"],
+    reassign: (id) => [`/api/users/${id}/reassign`, "POST"],
+    delete: (id) => [`/api/users/${id}`, "DELETE"],
+  };
+
+  function lifecycleOutcome(user, mode, result) {
+    const name = user.name || user.email || user.id;
+    const moved = result?.moved ? describeOpenWork(result.moved) : "";
+    const handedOver = moved ? ` ${moved} went to ${personName(result.reassignedTo)}.` : "";
+    if (mode === "disable") return `${name} is now disabled.${handedOver}`;
+    if (mode === "delete") return `${name} was deleted; past work still shows the name.${handedOver}`;
+    const remaining = describeOpenWork(result?.remaining);
+    const done = moved
+      ? `Moved ${moved} from ${name} to ${personName(result.reassignedTo)}.`
+      : `${name} had no open work to move.`;
+    return remaining ? `${done} Still open: ${remaining}; reassign again.` : done;
+  }
+
+  // Disable, Delete and Reassign share one dialog: it loads the person's open
+  // work, asks who takes it over, and runs the action; a refusal stays in the
+  // dialog with the server's reason.
+  function openLifecycle(user, mode, trigger) {
+    const candidates = usersSnapshot.users
+      .filter((person) => !person.disabled && String(person.id) !== String(user.id))
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    return openLifecycleDialog({
+      mode,
+      user,
+      trigger,
+      candidates,
+      loadHandover: (signal) => request(workApiUrl(`/api/users/${encodeURIComponent(user.id)}/handover`), signal ? { signal } : {}),
+      onConfirm: async (payload) => {
+        const routeToken = getActiveWorkspaceRouteToken();
+        const [path, method] = LIFECYCLE_PATHS[mode](encodeURIComponent(user.id));
+        const result = await request(workApiUrl(path), { method, body: JSON.stringify(payload) });
+        if (!isWorkspaceRouteFresh(routeToken)) {
+          await refreshUsersSurface({ rerender: false });
+          return;
+        }
+        userRowErrors.delete(user.id);
+        usersOutcome = lifecycleOutcome(user, mode, result);
+        await refreshUsersSurface({ rerender: true });
+      },
+    });
+  }
+
+  // Default assignee: who receives new work that no Template, schedule or
+  // imported title names. One labelled control under the list; an admin's
+  // change saves at once and is confirmed by a toast.
   function renderDefaultAssignee() {
-    const section = document.createElement("section");
+    const section = document.createElement("div");
     section.className = "ops-default-assignee";
-    section.setAttribute("aria-label", "Default assignee");
-    section.append(globalThis.dakitCollection.header({ title: "Default assignee", level: "h3" }));
+    const label = document.createElement("label");
+    label.className = "dk-label ops-default-assignee-label";
+    label.textContent = "Default assignee";
     const hint = document.createElement("p");
-    hint.className = "ops-default-assignee-hint";
-    hint.textContent = "New tasks that no template, recurring schedule or imported title assigns go to this person.";
-    section.append(hint);
+    hint.className = "dk-hint ops-default-assignee-hint";
+    hint.id = "ops-default-assignee-hint";
+    hint.textContent = "New tasks that no template, schedule or imported title assigns go to this person.";
 
     if (!defaultAssignee.loaded) {
-      const unavailable = document.createElement("p");
-      unavailable.className = "ops-default-assignee-hint";
-      unavailable.textContent = "The default assignee could not be loaded.";
-      section.append(unavailable);
+      const unavailable = document.createElement("span");
+      unavailable.className = "ops-default-assignee-value";
+      unavailable.textContent = "Could not be loaded.";
+      section.append(label, unavailable, hint);
       return section;
     }
-
     const current = usersSnapshot.users.find(
       (user) => String(user.id) === String(defaultAssignee.defaultAssigneeId),
     );
     if (!isCurrentUserAdmin()) {
-      section.append(staticField(
-        "Person",
-        current ? current.name || current.email || current.id : "No default: new tasks stay unassigned",
-      ));
+      const value = document.createElement("span");
+      value.className = "ops-default-assignee-value";
+      value.textContent = current ? current.name || current.email || current.id : "Nobody: new tasks stay unassigned";
+      section.append(label, value, hint);
       return section;
     }
 
-    const form = document.createElement("form");
-    form.className = "ops-default-assignee-form";
     const select = document.createElement("select");
+    select.className = "dk-select";
     select.name = "defaultAssigneeId";
+    select.id = "ops-default-assignee-select";
+    select.setAttribute("aria-describedby", hint.id);
+    label.htmlFor = select.id;
     const none = document.createElement("option");
     none.value = "";
-    none.textContent = "No default (new tasks stay unassigned)";
+    none.textContent = "Nobody (new tasks stay unassigned)";
     select.append(none);
     const candidates = usersSnapshot.users
       .filter((user) => !user.disabled || String(user.id) === String(defaultAssignee.defaultAssigneeId))
@@ -345,32 +480,40 @@ export function createAdminSurface(context) {
       select.append(option);
     }
     select.value = defaultAssignee.defaultAssigneeId || "";
-    const label = document.createElement("label");
-    label.className = "ops-field";
-    label.append("Person", select);
-    const save = document.createElement("button");
-    save.type = "submit";
-    save.className = "primary-button";
-    save.textContent = "Save";
-    form.append(label, save);
+    select.addEventListener("change", () => {
+      void saveDefaultAssignee(select.value || null, select);
+    });
+    section.append(label, select, hint);
     if (defaultAssigneeError) {
       const error = document.createElement("p");
-      error.className = "ops-user-row-error";
+      error.className = "dk-field-error ops-default-assignee-error";
       error.setAttribute("role", "alert");
       error.textContent = defaultAssigneeError;
-      form.append(error);
+      section.append(error);
     }
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      void saveDefaultAssignee(select.value || null, save);
-    });
-    section.append(form);
     return section;
   }
 
-  async function saveDefaultAssignee(defaultAssigneeId, button) {
+  let toastTimer = 0;
+  function showToast(message) {
+    if (!document.body) return;
+    document.querySelector(".ops-users-toast")?.remove();
+    const toast = document.createElement("div");
+    toast.className = "dk-toast ops-users-toast";
+    toast.setAttribute("role", "status");
+    const text = document.createElement("span");
+    text.className = "dk-toast__message";
+    text.textContent = message;
+    toast.append(text);
+    document.body.append(toast);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.remove(), 4000);
+  }
+
+  async function saveDefaultAssignee(defaultAssigneeId, select) {
     const routeToken = getActiveWorkspaceRouteToken();
-    setControlPending(button, { pending: true, pendingLabel: "Saving…" });
+    select.disabled = true;
+    select.setAttribute("aria-busy", "true");
     try {
       await request(workApiUrl("/api/team-members/default-assignee"), {
         method: "PUT",
@@ -381,19 +524,18 @@ export function createAdminSurface(context) {
         return;
       }
       defaultAssigneeError = "";
-      const person = usersSnapshot.users.find((user) => String(user.id) === String(defaultAssigneeId));
-      usersOutcome = defaultAssigneeId
-        ? `New tasks now go to ${person?.name || person?.email || defaultAssigneeId}.`
-        : "No default assignee: new tasks stay unassigned.";
       await refreshUsersSurface({ rerender: true });
+      showToast(defaultAssigneeId
+        ? `New tasks now go to ${personName(defaultAssigneeId)}.`
+        : "No default assignee: new tasks stay unassigned.");
     } catch (err) {
       if (!isWorkspaceRouteFresh(routeToken)) return;
       defaultAssigneeError = err?.status === 409
-        ? "Someone changed the default assignee since this page loaded. It now shows their choice; pick again and save."
+        ? "Someone changed the default assignee since this page loaded. It now shows their choice; pick again."
         : `Could not save the default assignee: ${err?.message || "request failed"}`;
-      setControlPending(button, { pending: false, label: "Save" });
       await refreshUsersSurface({ rerender: true });
     }
+    if (isWorkspaceRouteFresh(routeToken)) documentList.querySelector?.("#ops-default-assignee-select")?.focus();
   }
 
   function formatUserCreated(value) {
@@ -548,40 +690,28 @@ export function createAdminSurface(context) {
     nameInput.input.focus();
   }
 
-  async function toggleUserDisabled(user, button) {
-    const next = !user.disabled;
-    const label = next ? "Disable" : "Enable";
+  async function enableUser(user, trigger) {
     const routeToken = getActiveWorkspaceRouteToken();
-    setControlPending(button, {
-      pending: true,
-      pendingLabel: next ? "Disabling…" : "Enabling…",
-    });
+    trigger.setAttribute("aria-busy", "true");
     try {
-      await request(workApiUrl(`/api/users/${user.id}`), {
-        method: "PATCH",
-        body: JSON.stringify({ disabled: next }),
-      });
+      await request(workApiUrl(`/api/users/${encodeURIComponent(user.id)}/enable`), { method: "POST", body: "{}" });
       if (!isWorkspaceRouteFresh(routeToken)) {
         await refreshUsersSurface({ rerender: false });
         return;
       }
       userRowErrors.delete(user.id);
-      usersOutcome = `${user.name || user.email || user.id} is now ${next ? "disabled" : "enabled"}.`;
+      usersOutcome = `${user.name || user.email || user.id} is now enabled.`;
       await refreshUsersSurface({ rerender: true });
     } catch (err) {
       if (!isWorkspaceRouteFresh(routeToken)) return;
       // The failure belongs to the row whose control was used, and the row is
       // re-rendered from the refreshed server state so nothing is guessed.
-      userRowErrors.set(
-        user.id,
-        err?.status === 409
-          ? `This account changed since the list was loaded: ${err.message || "version conflict"} Select Retry loading users, then ${label} again.`
-          : `Could not ${label.toLowerCase()} this account: ${err?.message || "request failed"} Select ${label} to retry.`,
-      );
-      setControlPending(button, { pending: false, label });
+      userRowErrors.set(user.id, `Could not enable this account: ${err?.message || "request failed"} Select Enable to retry.`);
       await refreshUsersSurface({ rerender: true });
       if (isWorkspaceRouteFresh(routeToken))
         documentList.querySelector(".ops-user-row-error")?.focus();
+    } finally {
+      trigger.removeAttribute("aria-busy");
     }
   }
 
