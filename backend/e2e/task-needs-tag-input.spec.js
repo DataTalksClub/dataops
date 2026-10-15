@@ -1,6 +1,7 @@
 // The task dialog's "Needs" editor: the kit tag input (dakit dk-tag-input)
 // over the GET /api/resources vocabulary, edited as a draft and saved once.
 const { test, expect } = require('@playwright/test');
+const { emptyTemplateId } = require('./helpers/card-template');
 
 async function json(response, status = 200) {
   expect(response.status()).toBe(status);
@@ -10,7 +11,7 @@ async function json(response, status = 200) {
 async function taskNeeding(request, requires) {
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const { card } = await json(await request.post('/api/cards', {
-    data: { title: `Synthetic needs card ${unique}`, anchorDate: '2026-08-20', stage: 'announced' },
+    data: { title: `Synthetic needs card ${unique}`, anchorDate: '2026-08-20', stage: 'announced', templateId: await emptyTemplateId(request) },
   }), 201);
   const created = await json(await request.post('/api/tasks', {
     data: { description: `Synthetic needs step ${unique}`, date: '2026-08-20', cardId: card.id },
