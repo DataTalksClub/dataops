@@ -327,6 +327,42 @@ describe('API — CRUD for tasks', () => {
   // ── GET /api/tasks (list with filters) ─────────────────────────────
 
   describe('GET /api/tasks', () => {
+    it('intersects date, range, card and status filters', async () => {
+      const client = await getClient(port);
+      const card = await createCard(client, { title: 'Combined filters', anchorDate: '2099-02-10' });
+      const other = await createCard(client, { title: 'Other combined filters', anchorDate: '2099-02-10' });
+      const target = await createTask(client, { description: 'Matching task', date: '2099-02-10', cardId: card.id });
+      await createTask(client, { description: 'Wrong card', date: '2099-02-10', cardId: other.id });
+      await createTask(client, { description: 'Wrong date', date: '2099-02-11', cardId: card.id });
+      await createTask(client, { description: 'Already done', date: '2099-02-10', cardId: card.id, status: 'done' });
+      for (const primary of [
+        { date: '2099-02-10' },
+        { startDate: '2099-02-10', endDate: '2099-02-10' },
+      ]) {
+        const response = await handler({
+          httpMethod: 'GET', path: '/api/tasks',
+          queryStringParameters: { ...primary, cardId: card.id, status: 'todo' },
+        }, {});
+        assert.strictEqual(response.statusCode, 200, response.body);
+        assert.deepStrictEqual(JSON.parse(response.body).tasks.map((task: { id: string }) => task.id), [target.id]);
+      }
+      const contradictory = await handler({
+        httpMethod: 'GET', path: '/api/tasks',
+        queryStringParameters: { date: '2099-02-10', startDate: '2099-02-11', endDate: '2099-02-12' },
+      }, {});
+      assert.deepStrictEqual(JSON.parse(contradictory.body).tasks, []);
+    });
+
+    it('validates secondary filters even when a date selects the query', async () => {
+      for (const secondary of [{ status: 'invalid' }, { startDate: '2099-02-10' }]) {
+        const response = await handler({
+          httpMethod: 'GET', path: '/api/tasks',
+          queryStringParameters: { date: '2099-02-10', ...secondary },
+        }, {});
+        assert.strictEqual(response.statusCode, 400, response.body);
+      }
+    });
+
     it('returns tasks filtered by date', async () => {
       const uniqueDate = '2090-07-15';
       await handler({

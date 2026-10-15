@@ -238,6 +238,13 @@ export async function handleTaskRoutes(
     const params = event.queryStringParameters || {};
     const { date, startDate, endDate, cardId, status } = params;
 
+    if (status && !isTaskStatus(status)) {
+      return jsonResponse(400, { error: INVALID_STATUS_ERROR });
+    }
+    if (Boolean(startDate) !== Boolean(endDate)) {
+      return jsonResponse(400, { error: 'Both startDate and endDate are required for range queries' });
+    }
+
     // `owner` composes with one existing filter instead of competing with
     // it, so the existing priority can never silently discard it.
     const ownerParse = parseOwnerFilter(params.owner, listActor.actor);
@@ -269,7 +276,12 @@ export async function handleTaskRoutes(
 
     async function ownerListResponse(tasks: Task[]): Promise<LambdaResponse> {
       const visible = tasks.filter((task) => (
-        (!ownerFilter || matchesOwnerFilter(task.assigneeId, ownerFilter, activeMemberIds))
+        (!date || task.date === date)
+        && (!startDate || task.date >= startDate)
+        && (!endDate || task.date <= endDate)
+        && (!cardId || task.cardId === cardId)
+        && (!status || task.status === status)
+        && (!ownerFilter || matchesOwnerFilter(task.assigneeId, ownerFilter, activeMemberIds))
         && matchesRequiresFilter(task.requires, requiresFilter)
       ));
       const responseBody: Record<string, unknown> = { tasks: await projectTasks(directory, visible) };
@@ -281,18 +293,13 @@ export async function handleTaskRoutes(
       return jsonResponse(200, responseBody);
     }
 
-    // Priority: date > startDate+endDate > cardId > status > owner
+    // Pick a query source, then intersect every supplied filter above.
     if (date) {
       return await ownerListResponse(await listTasksByDate(client, date));
     }
 
     if (startDate || endDate) {
-      if (!startDate || !endDate) {
-        return jsonResponse(400, {
-          error: 'Both startDate and endDate are required for range queries',
-        });
-      }
-      return await ownerListResponse(await listTasksByDateRange(client, startDate, endDate));
+      return await ownerListResponse(await listTasksByDateRange(client, startDate!, endDate!));
     }
 
     if (cardId) {
@@ -300,9 +307,6 @@ export async function handleTaskRoutes(
     }
 
     if (status) {
-      if (!isTaskStatus(status)) {
-        return jsonResponse(400, { error: INVALID_STATUS_ERROR });
-      }
       return await ownerListResponse(await listTasksByStatus(client, status));
     }
 
