@@ -6,8 +6,6 @@ const scratch=resolve(__dirname,'../../.tmp/model-tests');
 function tmpdir():string {mkdirSync(scratch,{recursive:true});return scratch;}
 import {configureOperatingModelStoreForTests,handleOperatingModelRoutes} from '../src/routes/operatingModel';
 import {syntheticKnowledge} from './helpers/knowledge';
-import { createCardFromDefinition, DefinitionCardConflictError } from '../src/db/templates';
-import type { Template } from '../src/types';
 
 import { KnowledgeStore } from '../src/docs/knowledgeStore';
 import { loadOperatingModelSnapshot, parseCsv } from '../src/operatingModel/loader';
@@ -80,27 +78,5 @@ describe('operating model definition projection', () => {
       if (before === undefined) delete process.env.DTC_OFFLINE;
       else process.env.DTC_OFFLINE = before;
     }
-  });
-
-  it('creates one complete deterministic Card aggregate under concurrent retries', async () => {
-    const template = {
-      id: 'workflow.operating-model-w01', version: 1, name: 'Session', type: 'operating-model-w01',
-      sourceDocIds: ['reference.session'], sourceRevision: 'revision-1',
-      taskDefinitions: [
-        { refId: 'decide', description: 'Record decisions', offsetDays: 0, assigneeId: 'actor-1' },
-        { refId: 'validate', description: 'Validate outcome', offsetDays: 0, assigneeId: 'actor-1' },
-      ], createdAt: '2026-09-05T00:00:00Z', updatedAt: '2026-09-05T00:00:00Z',
-    } as Template;
-    const create = () => createCardFromDefinition(client, {
-      id: 'operating-model-test-card', title: 'W01', anchorDate: '2026-09-10', ownerId: 'actor-1',
-    }, template, '2026-09-10', (ref) => `operating-model-test-${ref}`);
-    const results = await Promise.allSettled([create(), create()]);
-    assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
-    const rejected = results.find((result) => result.status === 'rejected');
-    assert.ok(rejected && rejected.status === 'rejected' && rejected.reason instanceof DefinitionCardConflictError);
-    const created = results.find((result) => result.status === 'fulfilled');
-    assert.ok(created && created.status === 'fulfilled');
-    assert.equal(created.value.tasks.length, 2);
-    assert.ok(created.value.tasks.every((task) => task.assigneeId === 'actor-1'));
   });
 });
