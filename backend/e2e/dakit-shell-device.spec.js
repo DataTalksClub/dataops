@@ -313,7 +313,7 @@ for (const theme of ['light', 'dark']) {
         ...(status === 'waiting' ? { waitingFor: 'Synthetic reply', followUpAt: '2020-01-01T09:00:00Z', comment: 'Synthetic waiting fixture' } : {}),
       } });
       expect(response.ok(), await response.text()).toBe(true);
-      const payload = await response.json(); created.push((payload.task || payload).id);
+      const payload = await response.json(); created.push(payload.task || payload);
     }
     await page.addInitScript(t => localStorage.setItem('dakit-theme', t), theme);
     await page.goto('/tasks');
@@ -332,7 +332,10 @@ for (const theme of ['light', 'dark']) {
     const fills = await boxes.evaluateAll(nodes => nodes.map(node => ({ fill: getComputedStyle(node).backgroundColor, opacity: getComputedStyle(node).opacity })));
     expect(fills[0]).toEqual(fills[1]);
     expect(fills[0].opacity).toBe('1');
-    for (const id of created) expect((await context.request.delete('/work/api/tasks/' + id)).ok()).toBe(true);
+    for (const task of created) {
+      const removed = await context.request.delete('/work/api/tasks/' + task.id, { data: { expectedVersion: task.version } });
+      expect(removed.ok(), await removed.text()).toBe(true);
+    }
     await context.close();
   });
 }
