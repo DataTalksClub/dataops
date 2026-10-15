@@ -103,7 +103,7 @@
   display: inline-flex;
   min-height: 24px;
   align-items: center;
-  border: 1px solid var(--dk-border-default);
+  border: 0;
   border-radius: var(--dk-radius-full);
   background: var(--dk-bg-surface);
   color: var(--dk-text-muted);
@@ -112,11 +112,9 @@
   font-weight: 650;
   white-space: nowrap;
 }.review-badge-attention {
-  border-color: var(--dk-border-default);
   background: var(--dk-warning-bg);
   color: var(--dk-warning-text);
 }.review-badge-complete {
-  border-color: var(--dk-border-default);
   background: var(--dk-success-bg);
   color: var(--dk-success-text);
 }.review-metadata,
