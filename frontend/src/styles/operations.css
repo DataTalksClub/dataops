@@ -1,8 +1,7 @@
 .ops-section,
 .ops-lane,
 .ops-card,
-.crm-card,
-.bookkeeping-card {
+.crm-card {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);

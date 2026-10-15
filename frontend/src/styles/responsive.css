@@ -85,26 +85,14 @@ body[data-workspace-view="sponsors"] .library-view {
   }.section-header,
 .finance-panel > header {
     display: grid;
-  }.bookkeeping-header h2:not([class*="dk-"]),
-.crm-header h1:not([class*="dk-"]),
+  }.crm-header h1:not([class*="dk-"]),
 .crm-header h2:not([class*="dk-"]) {
     font-size: 22px;
-  }.bookkeeping-header .primary-button,
-.crm-header button,
+  }.crm-header button,
 .section-header button,
 .bookkeeping-surface button,
 .sponsor-crm-surface button {
     min-height: 44px;
-  }.bookkeeping-filters {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }.bookkeeping-filters details {
-    grid-column: 1 / -1;
-  }.bookkeeping-filter-more {
-    position: static;
-    width: 100%;
-    grid-template-columns: 1fr;
-    margin-top: 8px;
-    box-shadow: none;
   }.bookkeeping-table-wrap {
     overflow: visible;
   }.bookkeeping-table-wrap table,
@@ -137,15 +125,8 @@ body[data-workspace-view="sponsors"] .library-view {
     margin-top: 4px;
   }.bookkeeping-table-wrap td:last-child .row-actions {
     justify-content: flex-start;
-  }.worklist-row {
-    display: grid;
-    gap: 8px;
-  }.worklist-row .row-actions {
-    justify-content: flex-start;
   }.bookkeeping-upload {
     grid-template-columns: 1fr;
-  }.bookkeeping-transaction-link {
-    grid-column: auto;
   }.bookkeeping-document-row,
 .crm-directory-row,
 .booking-detail-section .crm-card {
@@ -222,11 +203,8 @@ body[data-workspace-view="sponsors"] .library-view {
   }
 }
 
-@media (max-width: 420px) {.newsletter-filters .planner-filter-fields label:last-child { grid-column: 1 / -1; }.calendar-alert { display: grid; grid-template-columns: minmax(0, 1fr) auto; }.calendar-alert button { align-self: center; }.calendar-content-header { display: grid; gap: 4px; }.newsletter-slot-row { grid-template-columns: minmax(0, 1fr); }.newsletter-slot-actions { grid-column: 1; }.newsletter-slot-title { align-items: start; }.planner-form-grid { grid-template-columns: minmax(0, 1fr); }.planner-field-wide { grid-column: 1; }.bookkeeping-filters,
-.crm-filters {
+@media (max-width: 420px) {.newsletter-filters .planner-filter-fields label:last-child { grid-column: 1 / -1; }.calendar-alert { display: grid; grid-template-columns: minmax(0, 1fr) auto; }.calendar-alert button { align-self: center; }.calendar-content-header { display: grid; gap: 4px; }.newsletter-slot-row { grid-template-columns: minmax(0, 1fr); }.newsletter-slot-actions { grid-column: 1; }.newsletter-slot-title { align-items: start; }.planner-form-grid { grid-template-columns: minmax(0, 1fr); }.planner-field-wide { grid-column: 1; }.crm-filters {
     grid-template-columns: 1fr;
-  }.bookkeeping-filters details {
-    grid-column: auto;
   }.bookkeeping-table-wrap td {
     grid-template-columns: 96px minmax(0, 1fr);
   }.booking-section-nav button {
@@ -262,7 +240,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .ops-surface-header p:not([class*="dk-"]),
   .workflow-board-header p:not([class*="dk-"]),
   .workflow-board-scroll-hint,
-  .bookkeeping-header p:not([class*="dk-"]),
   .crm-header p:not([class*="dk-"]),
   .planner-header p:not([class*="dk-"]) {
     display: none !important;
@@ -277,7 +254,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .workflow-board-filter select,
   .crm-pipeline button,
   .planner-header > .primary-button,
-  .bookkeeping-header .primary-button,
   .period-nav__today,
   .period-nav__arrow,
   .calendar-display-controls select {
@@ -553,22 +529,6 @@ body[data-workspace-view="sponsors"] .library-view {
     color: var(--dk-text-body, inherit);
   }
 
-  /* ---- Bookkeeping: the close panel is one expandable summary line when
-         the month is clear ---- */
-  /* The collapsed close panel is one line: chevron, heading, state hint. */
-  .bookkeeping-worklist-summary {
-    display: flex;
-    align-items: center;
-    padding-left: var(--dk-space-4);
-    cursor: pointer;
-  }
-  .bookkeeping-worklist-summary .finance-section-head { padding-left: var(--dk-space-2); }
-  .bookkeeping-worklist-summary .finance-section-head__main { flex-basis: auto; }
-  .bookkeeping-worklist-summary .finance-section-head__hint { display: none; }
-  .bookkeeping-worklist-summary::-webkit-details-marker {
-    display: none;
-  }
-
   /* ---- Per-item action rows: one compact line, never a wrapped stack ---- */
   .row-actions,
   .recurring-row-actions {
@@ -585,23 +545,3 @@ body[data-workspace-view="sponsors"] .library-view {
   }
 }
 
-/* The close-worklist section is a details/summary so narrow screens can
-   collapse it to one line. Desktop hides the toggle affordance: the summary
-   renders as the plain section header and never collapses. */
-.bookkeeping-worklist-summary {
-  list-style: none;
-}
-.bookkeeping-worklist-summary::-webkit-details-marker {
-  display: none;
-}
-@media (min-width: 821px) {
-  .bookkeeping-worklist-summary {
-    pointer-events: none;
-  }
-  .bookkeeping-surface details > summary.bookkeeping-worklist-summary::before {
-    display: none;
-  }
-  .bookkeeping-worklist-hint {
-    display: none;
-  }
-}

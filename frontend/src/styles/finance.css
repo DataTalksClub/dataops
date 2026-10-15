@@ -91,9 +91,7 @@ body[data-workspace-view="sponsors"] .document-list {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-}.bookkeeping-header h1:not([class*="dk-"]),
-.bookkeeping-header h2:not([class*="dk-"]),
-.crm-header h1:not([class*="dk-"]),
+}.crm-header h1:not([class*="dk-"]),
 .crm-header h2:not([class*="dk-"]) {
   margin-bottom: 4px;
   color: var(--dk-text-heading);
@@ -101,8 +99,7 @@ body[data-workspace-view="sponsors"] .document-list {
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.2;
-}.bookkeeping-header > div > p:not([class*="dk-"]):last-child,
-.crm-header > div > p:not([class*="dk-"]):last-child,
+}.crm-header > div > p:not([class*="dk-"]):last-child,
 .section-header p:not([class*="dk-"]),
 .booking-detail-title p:not([class*="dk-"]),
 .booking-detail-section > header > p:not([class*="dk-"]):last-child {
@@ -123,8 +120,7 @@ body[data-workspace-view="sponsors"] .document-list {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}.bookkeeping-header > button,
-.section-header > button {
+}.section-header > button {
   justify-self: start;
 }.surface-status {
   margin: 0;
@@ -210,179 +206,6 @@ body[data-workspace-view="sponsors"] .document-list {
 }.status-label[data-health="current"] {
   background: var(--dk-success-bg);
   color: var(--dk-success-text);
-}/* Month lens: the close-state header that replaced the decorative job nav.
-   It answers "what is left for this month" above the fold (#242). */.bookkeeping-monthlens {
-  display: grid;
-  gap: var(--dk-space-4);
-}.bookkeeping-close-state {
-  display: grid;
-  gap: var(--dk-space-4);
-}.bookkeeping-close-state h2:not([class*="dk-"]) {
-  margin: 0;
-  color: var(--dk-text-heading);
-  font-size: var(--dk-text-xl);
-  font-weight: 700;
-  letter-spacing: -0.015em;
-}.bookkeeping-lens-note {
-  margin: 0;
-  color: var(--dk-text-muted);
-  font-size: var(--dk-text-body);
-  line-height: 1.5;
-}.bookkeeping-close-cta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--dk-space-3);
-  margin-top: 4px;
-}.bookkeeping-close-cta button {
-  min-height: 38px;
-  padding: 0 var(--dk-space-5);
-  font-size: var(--dk-text-md);
-  font-weight: 600;
-  border-radius: var(--dk-radius-md);
-  cursor: pointer;
-}/* Needs-attention worklist: the monthly reconcile output as actions. */.bookkeeping-worklist {
-  display: grid;
-}.worklist-row {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--dk-border-default);
-  padding: var(--dk-space-4) var(--dk-space-5);
-  background: var(--dk-bg-surface);
-  transition: background 120ms ease;
-  position: relative;
-}.worklist-row:last-child {
-  border-bottom: 0;
-}.worklist-row:hover {
-  background: var(--dk-bg-hover);
-}.worklist-row.is-evidence {
-  background: var(--dk-danger-bg);
-}
-.worklist-row.is-evidence .worklist-what::before {
-  content: "Missing evidence";
-  display: inline-block;
-  font-size: var(--dk-text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--dk-danger-text);
-  margin-bottom: var(--dk-space-1);
-}
-.worklist-row.is-evidence button {
-  border-color: var(--dk-border-default);
-  color: var(--dk-danger-text);
-  background: var(--dk-danger-bg);
-}
-.worklist-row.is-evidence button:hover {
-  border-color: var(--dk-border-control-hover);
-  background: var(--dk-danger-text);
-  color: var(--dk-text-on-accent);
-}
-.worklist-row.is-eur {
-  background: var(--dk-warning-bg);
-}
-.worklist-row.is-eur .worklist-what::before {
-  content: "EUR conversion needed";
-  display: inline-block;
-  font-size: var(--dk-text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--dk-warning-text);
-  margin-bottom: var(--dk-space-1);
-}
-.worklist-row.is-eur button {
-  border-color: var(--dk-border-default);
-  color: var(--dk-warning-text);
-  background: var(--dk-warning-bg);
-}
-.worklist-row.is-eur button:hover {
-  border-color: var(--dk-border-control-hover);
-}
-.worklist-row.is-classify {
-  background: var(--dk-accent-soft);
-}
-.worklist-row.is-classify .worklist-what::before {
-  content: "Classification needed";
-  display: inline-block;
-  font-size: var(--dk-text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--dk-accent-default);
-  margin-bottom: var(--dk-space-1);
-}
-.worklist-what {
-  display: grid;
-  min-width: 0;
-  gap: var(--dk-space-1);
-}
-.worklist-what strong {
-  color: var(--dk-text-heading);
-  font-size: var(--dk-text-body);
-  font-weight: 600;
-}
-.worklist-what small {
-  overflow: hidden;
-  color: var(--dk-text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--dk-text-sm);
-}
-.worklist-row .row-actions button {
-  min-height: 32px;
-  padding: 0 var(--dk-space-4);
-  font-size: var(--dk-text-sm);
-  font-weight: 600;
-  border-radius: var(--dk-radius-md);
-  border: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-primary);
-  transition: all 120ms ease;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.worklist-row .row-actions button:hover {
-  background: var(--dk-bg-hover);
-  border-color: var(--dk-border-control-hover);
-}
-.worklist-classify {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--dk-text-heading);
-  font-size: var(--dk-text-sm);
-  font-weight: 600;
-  margin: 0;
-}
-.worklist-classify select {
-  min-height: 32px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background-color: var(--dk-bg-surface);
-  color: var(--dk-text-primary);
-  padding: 0 var(--dk-space-3);
-  font-size: var(--dk-text-sm);
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 120ms ease;
-}
-.worklist-classify select:focus-visible {
-  box-shadow: 0 0 0 2px var(--dk-focus-ring);
-  outline: none;
-}.bookkeeping-worklist-done {
-  margin: 0;
-  border-bottom: 0;
-  color: var(--dk-success-text);
-  background: var(--dk-success-bg);
-  padding: 16px 20px;
-  font-size: var(--dk-text-body);
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }/* Evidence upload collapsed behind its summary; attach actions open it. */.bookkeeping-upload-panel {
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-surface);
@@ -463,27 +286,9 @@ body[data-workspace-view="sponsors"] .document-list {
 }.bookkeeping-package-ready small {
   color: var(--dk-text-muted);
   font-size: var(--dk-text-sm);
-}/* Converted non-EUR amounts show their defensible EUR value inline. */.ledger-eur {
-  display: block;
-  color: var(--dk-text-muted);
-  font-weight: 400;
-  font-size: var(--dk-text-xs);
-  margin-top: var(--dk-space-1);
 }/* hidden labels inside grids keep their grid display unless restated. */.bookkeeping-upload label[hidden],
 .dialog-fields label[hidden] {
   display: none;
-}/* Optional details live behind a disclosure inside the entry dialog. */.bookkeeping-entry-optional {
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  padding: var(--dk-space-3) var(--dk-space-4);
-  background: var(--dk-bg-muted);
-}.bookkeeping-entry-optional > summary {
-  color: var(--dk-text-heading);
-  font-size: var(--dk-text-md);
-  font-weight: 600;
-  cursor: pointer;
-}.bookkeeping-entry-optional .dialog-fields {
-  margin-top: 12px;
 }.bookkeeping-section,
 .crm-directory,
 .crm-alerts {
@@ -492,16 +297,7 @@ body[data-workspace-view="sponsors"] .document-list {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
-}.bookkeeping-filters {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) 140px;
-  align-items: end;
-  gap: 12px;
-  border-bottom: 1px solid var(--dk-border-default);
-  padding: var(--dk-space-4) var(--dk-space-5);
-  background: var(--dk-bg-surface);
-}.bookkeeping-filters label,
-.bookkeeping-upload label,
+}.bookkeeping-upload label,
 .bookkeeping-package label,
 .crm-filters label,
 .crm-directory .section-header label,
@@ -512,9 +308,7 @@ body[data-workspace-view="sponsors"] .document-list {
   color: var(--dk-text-heading);
   font-size: var(--dk-text-sm);
   font-weight: 600;
-}.bookkeeping-filters input,
-.bookkeeping-filters select,
-.bookkeeping-upload input,
+}.bookkeeping-upload input,
 .bookkeeping-upload select,
 .bookkeeping-package input,
 .crm-filters input,
@@ -534,8 +328,7 @@ body[data-workspace-view="sponsors"] .document-list {
   font-size: var(--dk-text-md);
   padding: 0 var(--dk-space-3);
   box-sizing: border-box;
-}.bookkeeping-filters input[data-filter="search"]:focus-visible,
-.bookkeeping-upload input:focus-visible,
+}.bookkeeping-upload input:focus-visible,
 .bookkeeping-upload select:focus-visible,
 .bookkeeping-package input:focus-visible,
 .dialog-fields input:focus-visible,
@@ -543,28 +336,6 @@ body[data-workspace-view="sponsors"] .document-list {
 .dialog-fields textarea:focus-visible {
   box-shadow: 0 0 0 2px var(--dk-focus-ring);
   outline: none;
-}.bookkeeping-filters details {
-  position: relative;
-}.bookkeeping-filters summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 36px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  padding: 0 var(--dk-space-4);
-  cursor: pointer;
-  font-size: var(--dk-text-sm);
-  font-weight: 600;
-  color: var(--dk-text-primary);
-  user-select: none;
-  list-style-position: inside;
-  transition: all 120ms ease;
-}.bookkeeping-filters summary:hover {
-  background: var(--dk-bg-hover);
-  border-color: var(--dk-border-control-hover);
 }/* Disclosures use the family chevron, never the UA triangle or text glyphs:
    one stroke language for every disclosure in the app. */.bookkeeping-surface summary,
 .ops-quality-filters-disclosure > summary {
@@ -573,7 +344,6 @@ body[data-workspace-view="sponsors"] .document-list {
 .ops-quality-filters-disclosure > summary::-webkit-details-marker {
   display: none;
 }.bookkeeping-surface details > summary::before,
-.bookkeeping-filters summary::after,
 .ops-quality-filters-disclosure > summary::after {
   content: "";
   flex: none;
@@ -588,69 +358,11 @@ body[data-workspace-view="sponsors"] .document-list {
   display: inline-block;
   vertical-align: -3px;
   margin-right: 8px;
-}.bookkeeping-surface .bookkeeping-filters summary::before {
-  display: none;
-}.bookkeeping-filters summary::after,
-.ops-quality-filters-disclosure > summary::after {
+}.ops-quality-filters-disclosure > summary::after {
   margin-left: auto;
 }.bookkeeping-surface details[open] > summary::before,
-.bookkeeping-filters details[open] summary::after,
 .ops-quality-filters-disclosure[open] > summary::after {
   transform: rotate(90deg);
-}/* Extra filters open in flow and push the ledger down instead of
-   overlaying table rows. */.bookkeeping-filters details[open] {
-  grid-column: 1 / -1;
-}.bookkeeping-filter-more {
-  display: grid;
-  width: auto;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
-  padding: var(--dk-space-4);
-  margin-top: var(--dk-space-3);
-}.bookkeeping-export-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.bookkeeping-export-btn {
-  min-height: 30px;
-  padding: 0 12px;
-  font-size: var(--dk-text-sm);
-  font-weight: 600;
-  border-radius: var(--dk-radius-md);
-  border: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-primary);
-  display: inline-flex;
-  align-items: center;
-  cursor: pointer;
-  transition: all 120ms ease;
-  white-space: nowrap;
-}
-.bookkeeping-export-btn:hover {
-  background: var(--dk-bg-hover);
-  border-color: var(--dk-border-control-hover);
-  color: var(--dk-text-heading);
-}
-.bookkeeping-totals {
-  flex: 0 1 auto;
-  min-width: 0;
-  margin: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--dk-space-1);
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-full);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-heading) !important;
-  padding: var(--dk-space-1) var(--dk-space-4);
-  font-size: var(--dk-text-sm);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }.bookkeeping-table-wrap {
   width: 100%;
   min-width: 0;
@@ -719,8 +431,6 @@ body[data-workspace-view="sponsors"] .document-list {
   border-bottom: 1px solid var(--dk-border-default);
   padding: 20px;
   background: var(--dk-bg-surface);
-}.bookkeeping-transaction-link {
-  grid-column: span 2;
 }.bookkeeping-document-row,
 .crm-directory-row,
 .crm-alerts .crm-card {
@@ -1316,32 +1026,27 @@ body[data-workspace-view="sponsors"] .document-list {
   grid-column: 1 / -1;
 }/* Bookkeeping dialog styles: entry, EUR conversion, and delete confirm */
 .bookkeeping-entry-dialog,
-.bookkeeping-eur-dialog,
 .bookkeeping-delete-dialog {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-lg);
   box-shadow: var(--dk-shadow-overlay);
 }
 .bookkeeping-entry-dialog form > header,
-.bookkeeping-eur-dialog form > header,
 .bookkeeping-delete-dialog form > header {
   padding: var(--dk-space-5) var(--dk-space-6);
   background: var(--dk-bg-muted);
 }
 .bookkeeping-entry-dialog form > header h3:not([class*="dk-"]),
-.bookkeeping-eur-dialog form > header h3:not([class*="dk-"]),
 .bookkeeping-delete-dialog form > header h3:not([class*="dk-"]) {
   font-size: var(--dk-text-lg);
   font-weight: 700;
   margin: 0 0 4px;
 }
-.bookkeeping-entry-dialog .dialog-fields,
-.bookkeeping-eur-dialog .dialog-fields {
+.bookkeeping-entry-dialog .dialog-fields {
   padding: var(--dk-space-5) var(--dk-space-6);
   gap: var(--dk-space-4);
 }
-.bookkeeping-entry-dialog [role="alert"]:not(:empty),
-.bookkeeping-eur-dialog [role="alert"]:not(:empty) {
+.bookkeeping-entry-dialog [role="alert"]:not(:empty) {
   padding: var(--dk-space-3) var(--dk-space-4);
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
@@ -1352,7 +1057,6 @@ body[data-workspace-view="sponsors"] .document-list {
   line-height: 1.45;
 }
 .bookkeeping-entry-dialog form > footer,
-.bookkeeping-eur-dialog form > footer,
 .bookkeeping-delete-dialog form > footer {
   padding: var(--dk-space-4) var(--dk-space-6);
   background: var(--dk-bg-muted);
@@ -1516,12 +1220,6 @@ body[data-workspace-view="sponsors"] .document-list {
     flex-wrap: wrap;
     justify-content: flex-start;
   }
-}
-
-@media (max-width: 820px) {
-  .bookkeeping-export-actions { width: 100%; }
-  .bookkeeping-export-actions { gap: var(--dk-space-1); }
-  .bookkeeping-export-actions > .bookkeeping-export-btn { flex: 1 1 auto; justify-content: center; padding: 0 var(--dk-space-2); }
 }
 
 /* Sponsor deal finance: next step, blocker, payments and evidence. */

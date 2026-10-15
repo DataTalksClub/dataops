@@ -70,13 +70,11 @@ body:not([data-workspace-view="docs"]) .knowledge-tools { display: none; }
 
 .ops-queue-total .dk-mono, .ops-queue-due,
 .bookkeeping-surface .dk-mono { font-variant-numeric: tabular-nums; }
-.bookkeeping-surface .bookkeeping-close-state { display: grid; gap: var(--dk-space-4); }
 /* Finance sections share one header: title, a one-line hint, actions on the
    right, on the section's surface with a hairline under it. */
 .finance-section-head { align-items: center; padding: var(--dk-space-4); border-bottom: 1px solid var(--dk-border-default); background: var(--dk-bg-surface); }
 .finance-section-head__main { flex: 1 1 320px; min-width: 0; display: grid; gap: var(--dk-space-1); }
 .finance-section-head__main > * { margin: 0; }
-.finance-section-head__main > .bookkeeping-totals { justify-self: start; margin-top: var(--dk-space-1); }
 .finance-section-head__hint { color: var(--dk-text-muted); font-size: var(--dk-text-md); }
 .finance-section-head__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-gap-control); }
 .finance-subhead { margin: 0 0 var(--dk-space-2); color: var(--dk-text-heading); font-size: var(--dk-text-md); font-weight: var(--dk-weight-semibold); }
@@ -92,12 +90,6 @@ body:not([data-workspace-view="docs"]) .knowledge-tools { display: none; }
 .bookkeeping-private-statements { display: grid; padding: var(--dk-space-4); }
 .bookkeeping-private-statements [data-private-statements] { display: grid; gap: var(--dk-space-2); color: var(--dk-text-muted); font-size: var(--dk-text-md); }
 .bookkeeping-vat-summary { padding: 0; }
-/* Missing evidence is a status badge with its own Attach action. */
-.evidence-missing { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-2); }
-/* Worklist summary is the section header; the chevron leads it on mobile. */
-.bookkeeping-worklist-summary > .finance-section-head { flex: 1 1 auto; border-bottom: 0; }
-.bookkeeping-worklist-section[open] > .bookkeeping-worklist-summary { border-bottom: 1px solid var(--dk-border-default); }
-.bookkeeping-worklist-hint { margin: 0; color: var(--dk-text-muted); font-size: var(--dk-text-sm); white-space: nowrap; }
 @media (max-width: 820px) {
   .finance-section-head { padding: var(--dk-space-3) var(--dk-space-4); }
   .finance-section-head__main { flex-basis: 100%; }

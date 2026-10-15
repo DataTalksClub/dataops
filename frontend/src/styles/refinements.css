@@ -15,16 +15,13 @@ body[data-workspace-view="sponsors"] .document-list {
 }.bookkeeping-surface,
 .sponsor-crm-surface {
   gap: 20px;
-}.bookkeeping-header h2:not([class*="dk-"]),
-.crm-header h2:not([class*="dk-"]),
+}.crm-header h2:not([class*="dk-"]),
 .planner-heading h1:not([class*="dk-"]) {
   color: var(--dk-text-heading);
   font-weight: 650;
   letter-spacing: -0.025em;
-}.bookkeeping-header > div,
-.crm-header > div,
+}.crm-header > div,
 .planner-heading { min-width: 0; }
-.bookkeeping-header > div > p:not([class*="dk-"]):last-child,
 .crm-header > div > p:not([class*="dk-"]):last-child,
 .planner-heading > p:not([class*="dk-"]):last-child,
 .ops-surface-admin .ops-surface-header p:not([class*="dk-"]),
@@ -32,11 +29,9 @@ body[data-workspace-view="sponsors"] .document-list {
   max-width: 720px;
   color: var(--dk-text-muted);
   line-height: 1.55;
-}.bookkeeping-header > button,
-.planner-header > .primary-button {
+}.planner-header > .primary-button {
   flex: 0 0 auto;
-}.bookkeeping-header > button,
-.planner-header > .primary-button {
+}.planner-header > .primary-button {
   white-space: nowrap;
 }.bookkeeping-surface .surface-status,
 .sponsor-crm-surface > .surface-status {
@@ -51,13 +46,8 @@ body[data-workspace-view="sponsors"] .document-list {
   color: var(--dk-info-text);
 }/* An empty status renders nothing; messages fill it when there is news. */.bookkeeping-surface .surface-status[role="status"]:empty {
   display: none;
-}.bookkeeping-monthlens {
+}.bookkeeping-package-ready {
   border-radius: var(--dk-radius-md);
-}.bookkeeping-counter,
-.bookkeeping-package-ready {
-  border-radius: var(--dk-radius-md);
-}.worklist-classify select {
-  background-color: var(--dk-bg-surface);
 }.bookkeeping-section,
 .crm-directory,
 .crm-alerts {
@@ -81,19 +71,14 @@ body[data-workspace-view="sponsors"] .document-list {
   border: 1px solid transparent;
   background: var(--dk-info-bg);
   color: var(--dk-info-text);
-}.bookkeeping-filters,
-.crm-filters,
+}.crm-filters,
 .bookkeeping-upload {
   background: var(--dk-bg-muted);
-}.bookkeeping-filters input,
-.bookkeeping-filters select,
-.bookkeeping-upload input,
+}.bookkeeping-upload input,
 .bookkeeping-upload select,
 .crm-filters input,
 .crm-filters select {
   background-color: var(--dk-bg-surface);
-}.bookkeeping-filters input[type="search"] {
-  min-width: 0;
 }.bookkeeping-table-wrap tbody tr {
   transition: background-color 120ms ease;
 }.bookkeeping-table-wrap tbody tr:hover td {

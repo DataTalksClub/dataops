@@ -446,22 +446,17 @@ body[data-workspace-view="sponsors"] .document-list,
 body[data-workspace-view="newsletter"] .document-list,
 body[data-workspace-view="calendar"] .document-list {
     max-width: none;
-  }.bookkeeping-header h2:not([class*="dk-"]),
-.crm-header h1:not([class*="dk-"]),
+  }.crm-header h1:not([class*="dk-"]),
 .crm-header h2:not([class*="dk-"]),
 .planner-heading h1:not([class*="dk-"]) {
     font-size: 24px;
-  }.bookkeeping-header > button,
-.planner-header > .primary-button {
+  }.planner-header > .primary-button {
     justify-self: start;
   }.section-header {
     padding: 14px;
-  }.bookkeeping-filters,
-.crm-filters {
+  }.crm-filters {
     grid-template-columns: 1fr;
     padding: 12px 14px;
-  }.bookkeeping-filter-more {
-    width: 100%;
   }.bookkeeping-upload {
     grid-template-columns: 1fr;
     padding: 14px;

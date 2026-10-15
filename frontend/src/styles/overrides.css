@@ -243,8 +243,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
     order: 9;
   }
 }/* Page titles are the document H1 on every surface (SCOPE: one clear H1
-   per page); the eyebrow carries the section, the H1 the page name. */.bookkeeping-header h1:not([class*="dk-"]),
-.crm-header h1:not([class*="dk-"]) {
+   per page); the eyebrow carries the section, the H1 the page name. */.crm-header h1:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 16px;
@@ -453,9 +452,7 @@ body[data-workspace-view] .task-modal-panel button,
   }/* A 44px row hint must not stretch the non-interactive chips beside it. */.ops-queue-meta {
     align-items: center;
   }/* Finance filter selects share the 44px floor with every other control;
-     the knowledge family's selects already do. */.bookkeeping-filters select,
-.bookkeeping-upload select,
-.bookkeeping-worklist select,
+     the knowledge family's selects already do. */.bookkeeping-upload select,
 .crm-filters select,
 .crm-directory .section-header select {
     min-height: 44px;
@@ -479,8 +476,7 @@ body[data-workspace-view] .task-modal-panel button,
    filters section would be an empty husk there. Mobile keeps it in the
    drawer. */
 /* Ledger amounts and totals are data: the markup sets them in mono
-   (.dk-mono); this only sizes them. */.ledger-amount,
-.bookkeeping-totals {
+   (.dk-mono); this only sizes them. */.ledger-amount {
   font-variant-numeric: tabular-nums;
   font-size: 12px;
   font-weight: 500;
