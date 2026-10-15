@@ -17,6 +17,7 @@
 
 import { requiresError } from '../resources/vocabulary';
 import { isTemplateIcon, TEMPLATE_ICONS } from './templateIcons';
+import { templateDependencyIssues } from './taskDependencyGraph';
 
 const TEMPLATE_FIELDS = [
   ['authoredId', 'id'],
@@ -50,6 +51,7 @@ const TASK_FIELDS = [
   ['instructionStepId', 'instruction_step_id'],
   ['phase', 'phase_id'],
   ['requires', 'requires'],
+  ['dependsOn', 'depends_on'],
   ['validation', 'validation'],
   ['requiredLinkName', 'required_link'],
   ['requiresFile', 'requires_file'],
@@ -239,7 +241,7 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
 
   for (const task of tasks) {
     strings(task, ['task_kind', 'owner_role', 'instruction_exempt_reason', 'runtime_instruction_source', 'optional_group']);
-    stringLists(task, ['tools', 'tags']);
+    stringLists(task, ['tools', 'tags', 'depends_on']);
     if (task.closure !== undefined) {
       const closure = task.closure as Dict;
       if (!closure || typeof closure !== 'object' || Array.isArray(closure)) fail('closure must be an object');
@@ -291,6 +293,18 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
     if (typeof link === 'string' && linkNames.size > 0 && !linkNames.has(link)) {
       fail(`task '${id}' requires card link '${link}' which the template does not define`);
     }
+  }
+
+  const dependencyShapeValid = Array.isArray(tasks) && tasks.every((task) => (
+    task && typeof task === 'object' && (task.depends_on === undefined
+    || (Array.isArray(task.depends_on) && task.depends_on.every((ref) => typeof ref === 'string')))
+  ));
+  if (dependencyShapeValid) {
+    for (const message of templateDependencyIssues(tasks.map((task) => ({
+      refId: String(task.id || ''),
+      dependsOn: task.depends_on as string[] | undefined,
+      optionalGroup: typeof task.optional_group === 'string' ? task.optional_group : undefined,
+    })))) fail(message);
   }
 
   return issues;

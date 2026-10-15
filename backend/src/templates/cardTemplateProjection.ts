@@ -85,12 +85,30 @@ export function templateTaskDefinitionSnapshot(
     instructionStepId: definition.instructionStepId,
     phase: definition.phase,
     requires: definition.requires ? copy(definition.requires) : undefined,
+    dependsOnRefs: definition.dependsOn?.length ? [...definition.dependsOn] : undefined,
     validation: definition.validation ? copy(definition.validation) : undefined,
     requiredLinkName: definition.requiredLinkName,
     requiresFile: definition.requiresFile,
     proofRequirement: definition.proofRequirement ? copy(definition.proofRequirement) : undefined,
     tags: combinedTags.length ? combinedTags : undefined,
     sourceDocIds: template.sourceDocIds?.length ? copy(template.sourceDocIds) : undefined,
+  });
+}
+
+/**
+ * Template dependencies name `refId`s; a Task stores the ids of the Tasks that
+ * carry those refs on its own Card. A ref with no Task is a definition the
+ * Card did not instantiate, which Template validation rules out.
+ */
+export function resolveDependencyIds(
+  taskRef: string,
+  dependsOnRefs: readonly string[] | undefined,
+  taskIdsByRef: ReadonlyMap<string, string>,
+): string[] {
+  return (dependsOnRefs || []).map((ref) => {
+    const id = taskIdsByRef.get(ref);
+    if (!id) throw new Error(`Template Task ${taskRef} depends on ${ref}, which this Card has no Task for`);
+    return id;
   });
 }
 
@@ -101,14 +119,18 @@ export function templateTaskProjection(
   anchorDate: string,
   cardId: string,
   defaultAssigneeId: string | null,
+  taskIdsByRef: ReadonlyMap<string, string>,
 ): Dict {
   const snapshot = templateTaskDefinitionSnapshot(template, definition, order, anchorDate);
+  const { dependsOnRefs, ...definitionFields } = snapshot;
+  const dependsOn = resolveDependencyIds(definition.refId, dependsOnRefs, taskIdsByRef);
   // The snapshot keeps only a person the Template itself names for this Task;
   // anything else goes to the workspace default assignee of the day.
   const assigneeId = snapshot.assigneeId || defaultAssigneeId || undefined;
   return {
-    ...copy(snapshot),
+    ...copy(definitionFields),
     ...(assigneeId ? { assigneeId } : {}),
+    ...(dependsOn.length > 0 ? { dependsOn } : {}),
     cardId,
     templateId: template.id,
     source: 'template',

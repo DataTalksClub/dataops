@@ -44,6 +44,9 @@ const TASK_FIELDS = [
   'sourceDocIds',
 ] as const;
 
+/** Compared with the definition, but stored on the Task as resolved ids in `dependsOn`. */
+const DEPENDENCY_FIELD = 'dependsOnRefs';
+
 export type CardTemplateUpdateState = 'current' | 'update-available';
 export type TemplateTaskUpdateAction =
   | 'add'
@@ -191,6 +194,16 @@ function currentCardDefinition(card: Card): Dict {
   return Object.fromEntries(CARD_FIELDS.map((field) => [field, cardDefinitionValue(card, field)]));
 }
 
+/**
+ * A Task's edges expressed as Template refs, so they compare with the
+ * definition. An edge to a Task the Template does not own is the operator's
+ * and appears as `task:<id>`.
+ */
+function dependencyRefsOf(task: Task, refByTaskId: Map<string, string | undefined>): Dict {
+  const refs = (task.dependsOn || []).map((id) => refByTaskId.get(id) || `task:${id}`);
+  return refs.length > 0 ? { [DEPENDENCY_FIELD]: refs } : {};
+}
+
 function templateTasksForCard(tasks: Task[], templateId: string): Task[] {
   return tasks.filter((task) => (
     typeof task.templateTaskRef === 'string'
@@ -288,6 +301,7 @@ export function buildCardTemplateUpdatePlan(
   const taskUpdates: PlannedTaskUpdate[] = [];
   const taskChanges: TemplateTaskUpdatePreview[] = [];
   const targetRefs = new Set<string>();
+  const refByTaskId = new Map(tasks.map((task) => [task.id, task.templateTaskRef]));
 
   // A Card created without an optional group never receives that group's
   // tasks from later Template versions either.
@@ -314,8 +328,8 @@ export function buildCardTemplateUpdatePlan(
     if (alreadyRetainedForCurrentTemplate(card, template, current) && !(selectionChanged && definition.optionalGroup)) continue;
     const source = current.templateDefinitionSnapshot || null;
     const changes = fieldChanges(
-      TASK_FIELDS,
-      current as unknown as Dict,
+      [...TASK_FIELDS, DEPENDENCY_FIELD],
+      { ...current, ...dependencyRefsOf(current, refByTaskId) } as unknown as Dict,
       source as unknown as Dict | null,
       target as unknown as Dict,
     );
@@ -368,6 +382,8 @@ export function buildCardTemplateUpdatePlan(
     });
   }
 
+  assertAcyclicAfterUpdate(tasks, taskUpdates);
+
   const templateBehind = card.templateVersion !== template.version
     || (card.templateSourceRevision || null) !== (template.sourceRevision || null);
   const hasEffectiveChanges = selectionChanged || cardChanges.length > 0 || taskUpdates.length > 0;
@@ -406,6 +422,40 @@ export function buildCardTemplateUpdatePlan(
     targetCardSnapshot,
     taskUpdates,
   };
+}
+
+/**
+ * Edges the Template adds can meet edges an operator added; the combined graph
+ * must still be acyclic or the Card would hold Tasks that can never complete.
+ */
+function assertAcyclicAfterUpdate(tasks: Task[], updates: PlannedTaskUpdate[]): void {
+  const idByRef = new Map<string, string>();
+  for (const task of tasks) if (task.templateTaskRef) idByRef.set(task.templateTaskRef, task.id);
+  for (const update of updates) {
+    if (update.action === 'add') idByRef.set(update.taskRef, `added:${update.taskRef}`);
+  }
+  const edges = new Map<string, string[]>(tasks.map((task) => [task.id, task.dependsOn || []]));
+  for (const update of updates) {
+    if (update.action === 'add' || update.changedFields.includes(DEPENDENCY_FIELD)) {
+      const id = update.before?.id || idByRef.get(update.taskRef)!;
+      edges.set(id, (update.target?.dependsOnRefs || []).flatMap((ref) => idByRef.get(ref) || []));
+    }
+  }
+  const state = new Map<string, boolean>();
+  const visit = (id: string): boolean => {
+    if (state.has(id)) return state.get(id)!;
+    state.set(id, true);
+    for (const next of edges.get(id) || []) if (visit(next)) return true;
+    state.set(id, false);
+    return false;
+  };
+  for (const id of edges.keys()) {
+    if (visit(id)) {
+      throw new CardTemplateUpdateInvalidStateError(
+        'Template dependencies combined with this Card\'s own dependencies would form a cycle',
+      );
+    }
+  }
 }
 
 function sameLinkName(link: CardLink, name: string): boolean {

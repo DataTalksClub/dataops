@@ -21,7 +21,7 @@ import {
   isOpenStatus,
   type CardLifecycleAuditEvent,
 } from './taskCardLifecycle';
-import { templateTaskProjection } from '../templates/cardTemplateProjection';
+import { resolveDependencyIds, templateTaskProjection } from '../templates/cardTemplateProjection';
 import { resolveDefaultAssigneeId } from './workspaceSettings';
 
 import {
@@ -181,6 +181,7 @@ function appliedExistingTask(
   card: Card,
   actorId: string,
   now: string,
+  idsByRef: ReadonlyMap<string, string>,
 ): Task {
   const before = update.before as Task;
   const next = structuredClone(before) as Task & Dict;
@@ -211,7 +212,15 @@ function appliedExistingTask(
     if (update.action === 'update' || update.action === 'restore') {
       const assigneeId = next.assigneeId;
       clearDefinitionFields(next);
-      Object.assign(next, structuredClone(update.target));
+      const { dependsOnRefs, ...definition } = structuredClone(update.target!);
+      Object.assign(next, definition);
+      // Edges are rewritten only when the Template changed them, so an update
+      // to other fields keeps the dependencies an operator added.
+      if (update.changedFields.includes('dependsOnRefs')) {
+        const dependsOn = resolveDependencyIds(update.taskRef, dependsOnRefs, idsByRef);
+        if (dependsOn.length > 0) next.dependsOn = dependsOn;
+        else delete next.dependsOn;
+      }
       // A Template that names no one keeps the Task's current assignee.
       if (!update.target?.assigneeId && assigneeId) next.assigneeId = assigneeId;
     }
@@ -256,6 +265,7 @@ function addedTask(
   card: Card,
   now: string,
   defaultAssigneeId: string | null,
+  idsByRef: ReadonlyMap<string, string>,
 ): Task {
   const definitions = template.taskDefinitions || [];
   const definition = definitions.find(({ refId }) => refId === update.taskRef);
@@ -270,7 +280,7 @@ function addedTask(
     taskHistory: [],
     createdAt: now,
     updatedAt: now,
-    ...templateTaskProjection(template, definition, order, card.anchorDate, card.id, defaultAssigneeId),
+    ...templateTaskProjection(template, definition, order, card.anchorDate, card.id, defaultAssigneeId, idsByRef),
   }) as Task;
 }
 
@@ -429,17 +439,24 @@ export async function applyCardTemplateUpdate(
     result: 'applied',
     createdAt: now,
   };
+  // Every Task the Card will hold after the update, by Template ref, so edges
+  // can name Tasks the same update adds.
+  const idsByRef = new Map<string, string>();
+  for (const task of tasks) if (task.templateTaskRef) idsByRef.set(task.templateTaskRef, task.id);
+  for (const update of plan.taskUpdates) {
+    if (update.action === 'add') idsByRef.set(update.taskRef, deterministicTaskId(card.id, template.id, update.taskRef));
+  }
   const replacements = new Map<string, Task>();
   const defaultAssigneeId = plan.taskUpdates.some(({ action }) => action === 'add')
     ? await resolveDefaultAssigneeId(client)
     : null;
   for (const update of plan.taskUpdates) {
     if (update.action === 'add') {
-      const task = addedTask(update, template, card, now, defaultAssigneeId);
+      const task = addedTask(update, template, card, now, defaultAssigneeId, idsByRef);
       replacements.set(task.id, task);
       continue;
     }
-    const task = appliedExistingTask(update, template, card, actorId, now);
+    const task = appliedExistingTask(update, template, card, actorId, now, idsByRef);
     replacements.set(task.id, task);
   }
 

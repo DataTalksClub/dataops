@@ -14,6 +14,7 @@ import { usesLocalTransactionEmulation } from './client';
 import { createTask, listTasksByCard } from './tasks';
 import type { Card, Template, Task } from '../types';
 import { templateTaskProjection } from '../templates/cardTemplateProjection';
+import { prerequisitesFirst, templateDependencyIssues } from '../templates/taskDependencyGraph';
 import { resolveDefaultAssigneeId } from './workspaceSettings';
 
 export class TemplateVersionConflictError extends Error {
@@ -292,6 +293,20 @@ function selectTaskDefinitions(
 }
 
 /**
+ * Task ids for a Card's definitions, known before any Task is written so a
+ * dependent can name its prerequisites' ids. Invalid dependencies stop the
+ * Card here instead of producing Tasks that could never complete.
+ */
+function taskIdsByRef(
+  definitions: NonNullable<Template['taskDefinitions']>,
+  idFor: (refId: string) => string,
+): Map<string, string> {
+  const issues = templateDependencyIssues(definitions);
+  if (issues.length > 0) throw new Error(`Template task dependencies are invalid: ${issues.join('; ')}`);
+  return new Map(definitions.map((definition) => [definition.refId, idFor(definition.refId)]));
+}
+
+/**
  * Instantiate a template: fetch the template, and for each selected
  * taskDefinition create a task with a calculated date (anchorDate +
  * offsetDays). Without an explicit selection the Card's stored selection
@@ -321,15 +336,26 @@ async function instantiateTemplate(
       .filter((task) => task.templateId === templateId && task.templateTaskRef)
       .map((task) => task.templateTaskRef as string)
   );
+  const existingIds = new Map(
+    existingTasks
+      .filter((task) => task.templateId === templateId && task.templateTaskRef)
+      .map((task) => [task.templateTaskRef as string, task.id]),
+  );
+  const idsByRef = taskIdsByRef(taskDefinitions, (ref) => existingIds.get(ref) || crypto.randomUUID());
   const createdTasks: Task[] = [];
   const defaultAssigneeId = await resolveDefaultAssigneeId(client);
 
-  for (const [order, def] of taskDefinitions.entries()) {
+  // Prerequisites are written first so each dependent finds them present.
+  for (const def of prerequisitesFirst(taskDefinitions)) {
     if (existingRefs.has(def.refId)) {
       continue;
     }
 
-    const taskData = templateTaskProjection(template, def, order, anchorDate, cardId, defaultAssigneeId);
+    const order = taskDefinitions.indexOf(def);
+    const taskData = {
+      id: idsByRef.get(def.refId),
+      ...templateTaskProjection(template, def, order, anchorDate, cardId, defaultAssigneeId, idsByRef),
+    };
 
     const task = await createTask(client, taskData);
 
@@ -356,17 +382,15 @@ async function createCardFromTemplate(
   });
   const now = card.createdAt;
   const defaultAssigneeId = await resolveDefaultAssigneeId(client);
-  const tasks = definitions.map((definition, order) => {
-    const id = crypto.randomUUID();
-    return compact({
-      id,
-      version: 1,
-      taskHistory: [],
-      createdAt: now,
-      updatedAt: now,
-      ...templateTaskProjection(template, definition, order, anchorDate, card.id, defaultAssigneeId),
-    }) as Task;
-  });
+  const idsByRef = taskIdsByRef(definitions, () => crypto.randomUUID());
+  const tasks = definitions.map((definition, order) => compact({
+    id: idsByRef.get(definition.refId),
+    version: 1,
+    taskHistory: [],
+    createdAt: now,
+    updatedAt: now,
+    ...templateTaskProjection(template, definition, order, anchorDate, card.id, defaultAssigneeId, idsByRef),
+  }) as Task);
 
   // Card Put + Template condition + one Put per Task.
   const itemCount = 2 + tasks.length;
@@ -432,9 +456,10 @@ async function createCardFromDefinition(
   const definitions = template.taskDefinitions || [];
   const card = buildCard(cardData, { taskCount: definitions.length, openTaskCount: definitions.length });
   const defaultAssigneeId = await resolveDefaultAssigneeId(client);
+  const idsByRef = taskIdsByRef(definitions, taskId);
   const tasks = definitions.map((definition, order) => ({
     id: taskId(definition.refId), version: 1, taskHistory: [], createdAt: card.createdAt, updatedAt: card.createdAt,
-    ...templateTaskProjection(template, definition, order, anchorDate, card.id, defaultAssigneeId),
+    ...templateTaskProjection(template, definition, order, anchorDate, card.id, defaultAssigneeId, idsByRef),
   }) as unknown as Task);
   const writes = [
     { table: TABLE_CARDS, key: cardKey(card.id), item: { ...cardKey(card.id), ...card } },
