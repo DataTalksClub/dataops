@@ -15,10 +15,10 @@ Usage
   dataops tasks show <task-id>
   dataops tasks create --description D [--date YYYY-MM-DD] [--card ID] [--assignee ID|me]
       [--comment C] [--link URL] [--tags a,b] [--required-link-name NAME] [--instruction-doc DOC-ID]
-      [--requires youtube,luma]
+      [--requires youtube,luma] [--depends-on ID,ID]
   dataops tasks update <task-id> [--description D] [--date D] [--comment C] [--link URL]
       [--external-status S] [--tags a,b] [--card ID|none] [--instruction-doc DOC-ID]
-      [--requires a,b|none]
+      [--requires a,b|none] [--depends-on ID,ID|none]
   dataops tasks done <task-id> [--link URL] [--comment C] [--external-status S] [--file PATH]
   dataops tasks reopen <task-id>
   dataops tasks skip <task-id> --reason R        Resolve as not applicable (no proof needed)
@@ -36,6 +36,14 @@ List views (default: --queue)
   --card ID    Every Task of a Card
   --owner me|team|unassigned|<user-id>, or --mine for --owner me
   --as-of YYYY-MM-DD   Treat this date as today (default: the local date)
+
+Dependencies
+  --depends-on ID,ID       Prerequisite Tasks on the same Card; the Task cannot be completed
+                           until every one is done (a skipped prerequisite does not count).
+                           \`none\` clears them. show lists each prerequisite's name and status;
+                           list marks blocked Tasks. The API rejects self, missing,
+                           cross-Card and cyclic prerequisites, completing a blocked Task,
+                           and reopening or deleting a prerequisite of a completed Task.
 
 Required resources (ids from \`dataops resources list\`)
   --requires a,b           Only Tasks that need at least one of these
@@ -174,6 +182,7 @@ export async function list(args, io) {
       ...(view === "filter" ? [] : [["WHEN", (task) => task.queueSegment]]),
       ["ASSIGNEE", (task) => task.assignee?.name || ""],
       ["REQUIRES", (task) => (task.requires || []).join(",")],
+      ["BLOCKED", (task) => (task.blocked ? "yes" : "")],
       ["DESCRIPTION", (task) => task.description],
     ],
     "No Tasks match.",
@@ -183,6 +192,12 @@ export async function list(args, io) {
 
 async function getTask(api, id) {
   return api.get(`/api/tasks/${enc(id)}`);
+}
+
+/** One line per prerequisite: its name and current status. */
+function prerequisiteLines(task) {
+  const prerequisites = task.prerequisites || [];
+  return prerequisites.length ? prerequisites.map((entry) => `${entry.description} [${entry.status}] (${entry.id})`).join("; ") : "";
 }
 
 export async function show(args, io) {
@@ -198,6 +213,8 @@ export async function show(args, io) {
     ["assignee", task.assignee ? `${task.assignee.name} (${task.assignee.id})` : task.assigneeId],
     ["link", task.link],
     ["requires", task.requires?.length ? task.requires.join(", ") : ""],
+    ["depends on", prerequisiteLines(task)],
+    ["blocked", task.blocked ? "yes - complete the prerequisites first" : ""],
     ["required link", task.requiredLinkName],
     ["requires file", task.requiresFile ? "yes" : ""],
     ["proof", task.proofRequirement ? `${task.proofRequirement.type}${task.proofRequirement.label ? ` (${task.proofRequirement.label})` : ""}` : ""],
@@ -249,6 +266,10 @@ function writableFields(args) {
   if (args.requires !== undefined) {
     const requires = required(args, "requires", "requires");
     body.requires = requires === "none" ? [] : csv(requires);
+  }
+  if (args.dependsOn !== undefined) {
+    const dependsOn = required(args, "dependsOn", "depends-on");
+    body.dependsOn = dependsOn === "none" ? [] : csv(dependsOn);
   }
   return body;
 }

@@ -80,6 +80,7 @@ export async function show(args, io) {
       ["OFFSET", (task) => `${task.offsetDays >= 0 ? "+" : ""}${task.offsetDays ?? 0}d`],
       ["REF", (task) => task.refId || ""],
       ["GROUP", (task) => task.optionalGroup || task.group || ""],
+      ["AFTER", (task) => (task.dependsOn || []).join(",")],
       ["DESCRIPTION", (task) => task.description],
     ],
     "No Task definitions.",

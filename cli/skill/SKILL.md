@@ -68,6 +68,11 @@ dataops tasks list --can-do all               # ignore DATAOPS_CAPABILITIES
 dataops tasks list --status todo --requires mailchimp   # who needs Mailchimp access
 ```
 
+A Task can depend on other Tasks of its Card (`dependsOn`; `dataops tasks show`
+prints each prerequisite's name and status, `list` marks blocked Tasks). A blocked
+Task cannot be completed until every prerequisite is done; skipping a prerequisite
+does not unblock it. Finish the prerequisites first instead of retrying.
+
 If a Task requires something you do not have, leave it for another agent or a
 person who has it. Do not attempt it, do not work around the missing access,
 and do not mark it waiting or done. A Task with no `requires` needs nothing

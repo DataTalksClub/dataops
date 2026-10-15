@@ -167,6 +167,56 @@ describe("tasks", () => {
     assert.deepEqual(calls.at(-1).body, { expectedVersion: 4 });
   });
 
+  test("--depends-on sets prerequisites and none clears them", async () => {
+    const calls = fakePortal({
+      "GET /api/tasks/t-7": task({ id: "t-7", version: 2 }),
+      "PUT /api/tasks/t-7": ({ body }) => task({ id: "t-7", ...body }),
+      "POST /api/tasks": ({ body }) => task({ id: "t-8", date: body.date, ...body }),
+    });
+    assert.equal(await run(["tasks", "update", "t-7", "--depends-on", "a, b"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { dependsOn: ["a", "b"], expectedVersion: 2 });
+    assert.equal(await run(["tasks", "update", "t-7", "--depends-on", "none"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { dependsOn: [], expectedVersion: 2 });
+    assert.equal(await run(["tasks", "create", "--description", "D", "--card", "c-1", "--depends-on", "a"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body.dependsOn, ["a"]);
+    assert.equal(await run(["tasks", "update", "t-7", "--depends-on"], captureIo()), 2);
+  });
+
+  test("show names each prerequisite and its status, and list marks blocked Tasks", async () => {
+    fakePortal({
+      "GET /api/tasks/t-9": task({
+        id: "t-9",
+        blocked: true,
+        prerequisites: [
+          { id: "p-1", description: "Verify Spotify episode", status: "todo" },
+          { id: "p-2", description: "Review transcript", status: "skipped" },
+        ],
+      }),
+      "GET /api/tasks": { tasks: [task({ id: "t-9", blocked: true, date: "2026-10-14" })] },
+    });
+    let io = captureIo();
+    assert.equal(await run(["tasks", "show", "t-9"], io), 0);
+    const shown = io.text();
+    assert.match(shown, /Verify Spotify episode \[todo\] \(p-1\); Review transcript \[skipped\] \(p-2\)/);
+    assert.match(shown, /blocked:\s+yes/);
+    io = captureIo();
+    assert.equal(await run(["tasks", "list", "--status", "todo"], io), 0);
+    assert.match(io.text(), /BLOCKED[\s\S]*yes/);
+  });
+
+  test("a blocked completion surfaces the API's reason with the conflict exit code", async () => {
+    fakePortal({
+      "GET /api/tasks/t-10": task({ id: "t-10" }),
+      "PUT /api/tasks/t-10": {
+        status: 409,
+        body: { error: 'Cannot mark task as done: complete "Review transcript" first', code: "prerequisites-incomplete" },
+      },
+    });
+    const io = captureIo();
+    assert.equal(await run(["tasks", "done", "t-10"], io), 5);
+    assert.match(io.errors.join("\n"), /complete "Review transcript" first/);
+  });
+
   test("assign me resolves the signed-in user", async () => {
     const calls = fakePortal({
       "GET /api/me": { user: { id: "u-me" } },
