@@ -235,6 +235,43 @@ async function listFormerUsers(client: DynamoDBDocumentClient): Promise<FormerUs
   return items.map((item) => cleanFormerUser(item) as FormerUser);
 }
 
+/**
+ * Profile photo URLs come from the signed ID token, and only Google's photo
+ * host is accepted: the URL ends up as an <img src> for every teammate.
+ */
+function profilePictureUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > 2048) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname.endsWith('.googleusercontent.com') ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Refresh the user's profile photo on every SSO sign-in, so it follows the
+ * Google account. A sign-in without a usable picture clears the old one.
+ */
+async function recordSignInPicture(client: DynamoDBDocumentClient, id: string, picture: unknown): Promise<User | null> {
+  const url = profilePictureUrl(picture);
+  try {
+    const result = await client.send(new UpdateCommand({
+      TableName: TABLE_USERS,
+      Key: { PK: `USER#${id}`, SK: `USER#${id}` },
+      UpdateExpression: url ? 'SET #picture = :picture' : 'REMOVE #picture',
+      ExpressionAttributeNames: { '#picture': 'picture' },
+      ...(url ? { ExpressionAttributeValues: { ':picture': url } } : {}),
+      ConditionExpression: 'attribute_exists(PK)',
+      ReturnValues: 'ALL_NEW',
+    }));
+    return cleanItem(result.Attributes as Record<string, unknown>);
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && (err as { name?: string }).name === 'ConditionalCheckFailedException') return null;
+    throw err;
+  }
+}
+
 export {
   formerUserKey,
   getFormerUser,
@@ -245,5 +282,6 @@ export {
   listUsers,
   getUsersByNormalizedEmail,
   provisionBrowserOperator,
+  recordSignInPicture,
   updateUser,
 };

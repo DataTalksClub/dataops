@@ -3,7 +3,7 @@ import { DeleteCommand, PutCommand, type DynamoDBDocumentClient } from '@aws-sdk
 
 import { TABLE_SESSIONS } from '../db/tableNames';
 import { createBrowserSession, deleteSession, getSession } from '../db/sessions';
-import { getUser, getUsersByNormalizedEmail, provisionBrowserOperator } from '../db/users';
+import { getUser, getUsersByNormalizedEmail, provisionBrowserOperator, recordSignInPicture } from '../db/users';
 import type { LambdaEvent, LambdaResponse, User } from '../types';
 
 const SESSION_COOKIE = 'dataops_session';
@@ -41,6 +41,8 @@ interface JwtClaims {
   nonce?: string;
   email?: string;
   name?: string;
+  /** Google profile photo URL, mapped through by the shared Cognito pool. */
+  picture?: string;
   email_verified?: boolean | string;
   token_use?: string;
 }
@@ -339,6 +341,7 @@ export async function handleCallback(event: LambdaEvent, client: DynamoDBDocumen
       user = await provisionBrowserOperator(client, email, claims.name?.trim() || email.split('@')[0]);
     }
     if (user.disabled) return callbackFailure();
+    await recordSignInPicture(client, user.id, claims.picture);
     const session = await createBrowserSession(client, user.id, { now, lifetimeSeconds: authConfig().sessionLifetimeSeconds });
     return {
       statusCode: 302,

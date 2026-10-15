@@ -8,7 +8,7 @@ import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createBrowserSession, createSession, getSession } from '../src/db/sessions';
-import { createUserWithId, getUsersByNormalizedEmail, provisionBrowserOperator } from '../src/db/users';
+import { createUserWithId, getUser, getUsersByNormalizedEmail, provisionBrowserOperator } from '../src/db/users';
 import { route } from '../src/router';
 import type { LambdaEvent, LambdaResponse } from '../src/types';
 
@@ -193,6 +193,43 @@ describe('shared Cognito browser authentication', () => {
     assert.strictEqual(session?.userId, 'enabled-admin');
     assert.strictEqual(session?.sessionType, 'browser');
     assert.ok(session?.expiresAt);
+  });
+
+  it('stores the Google profile picture on every sign-in and serves it from /api/me', async () => {
+    const first = 'https://lh3.googleusercontent.com/a/stub-first=s96-c';
+    tokenClaims.picture = first;
+    const response = await complete('admin@datatalks.club');
+    assert.strictEqual(response.statusCode, 302);
+    assert.strictEqual((await getUser(client, 'enabled-admin'))?.picture, first);
+    const me = await route(event('GET', '/api/me', {}, cookiePair(response, 'dataops_session')), client);
+    assert.strictEqual(JSON.parse(me.body).user.picture, first);
+
+    // A changed photo replaces the old one at the next sign-in.
+    const second = 'https://lh3.googleusercontent.com/a/stub-second=s96-c';
+    tokenClaims.picture = second;
+    await complete('admin@datatalks.club');
+    assert.strictEqual((await getUser(client, 'enabled-admin'))?.picture, second);
+
+    // Only Google's https photo host is kept; anything else, or no claim, clears it.
+    for (const picture of ['http://lh3.googleusercontent.com/a/x', 'https://tracker.example/pixel.gif', 'https://googleusercontent.com.evil.test/a', undefined]) {
+      tokenClaims.picture = picture;
+      assert.strictEqual((await complete('admin@datatalks.club')).statusCode, 302);
+      assert.strictEqual((await getUser(client, 'enabled-admin'))?.picture, undefined, String(picture));
+    }
+  });
+
+  it('stores the picture of a first-time sign-in', async () => {
+    tokenClaims.name = 'Picture Newcomer';
+    tokenClaims.picture = 'https://lh3.googleusercontent.com/a/stub-newcomer=s96-c';
+    assert.strictEqual((await complete('picture.newcomer@datatalks.club')).statusCode, 302);
+    const [user] = await getUsersByNormalizedEmail(client, 'picture.newcomer@datatalks.club');
+    assert.strictEqual(user.picture, 'https://lh3.googleusercontent.com/a/stub-newcomer=s96-c');
+  });
+
+  it('does not touch the picture of a disabled account', async () => {
+    tokenClaims.picture = 'https://lh3.googleusercontent.com/a/stub-disabled=s96-c';
+    await complete('disabled@datatalks.club');
+    assert.strictEqual((await getUser(client, 'disabled-user'))?.picture, undefined);
   });
 
   it('rejects mismatched state binding and callback replay before exchanging a code', async () => {

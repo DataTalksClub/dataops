@@ -550,6 +550,11 @@ export interface User {
   role?: UserRole;
   /** When true the account is disabled and cannot log in. */
   disabled?: boolean;
+  /**
+   * Google profile photo URL from the last SSO sign-in (absent until the person
+   * signs in). The URL is unguessable but public; the bytes are never stored.
+   */
+  picture?: string;
 }
 
 export type UserRole = 'admin' | 'operator';
