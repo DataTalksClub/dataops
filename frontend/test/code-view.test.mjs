@@ -134,6 +134,38 @@ describe("code view surface", () => {
     assert.equal(note.children[1].textContent, "Dry-run first.");
   });
 
+  test("file navigation scrolls to its file without fragment navigation reopening the SOP", async () => {
+    const { root, surface } = setup();
+    surface.renderCodeView(root, structuredClone(PAYLOAD));
+    const target = root.children[4];
+    const scrolled = [];
+    target.scrollIntoView = (options) => scrolled.push(options);
+    let prevented = false;
+    let stopped = false;
+    await root.children[0].children[2].dispatch("click", {
+      button: 0,
+      preventDefault() { prevented = true; },
+      stopPropagation() { stopped = true; },
+    });
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.deepEqual(scrolled, [{ block: "start" }]);
+    assert.ok(root.classList.contains("code-view"));
+    assert.equal(root.children[4], target);
+  });
+
+  test("modified file-link clicks preserve the browser's native link behavior", async () => {
+    const { root, surface } = setup();
+    surface.renderCodeView(root, structuredClone(PAYLOAD));
+    root.children[2].scrollIntoView = () => assert.fail("modified click must not scroll");
+    for (const modifier of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+      await root.children[0].children[1].dispatch("click", {
+        ...modifier,
+        preventDefault() { assert.fail("modified click must not be prevented"); },
+      });
+    }
+  });
+
   test("uses the provided markdown renderer for prose blocks", () => {
     const { root, surface } = setup();
     const rendered = [];

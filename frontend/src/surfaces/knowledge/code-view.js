@@ -17,6 +17,7 @@ export function createCodeViewSurface(context) {
 
     container.classList.add("code-view");
     container.replaceChildren();
+    const fileSections = new Map();
 
     const nav = doc.createElement("nav");
     nav.className = "code-view-nav";
@@ -29,6 +30,14 @@ export function createCodeViewSurface(context) {
       chip.className = "code-view-nav-chip";
       chip.setAttribute("href", `#${file.anchor}`);
       chip.textContent = file.name;
+      chip.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button > 0) return;
+        // Fragment navigation fires popstate and reopens the canonical SOP,
+        // losing its selected Code view. This is navigation within this view.
+        event.preventDefault();
+        event.stopPropagation();
+        fileSections.get(file.anchor)?.scrollIntoView({ block: "start" });
+      });
       nav.append(chip);
     }
     container.append(nav);
@@ -37,7 +46,9 @@ export function createCodeViewSurface(context) {
       if (block.kind === "markdown") {
         container.append(renderMarkdownBlock(doc, block, renderMarkdown));
       } else {
-        container.append(renderFileBlock(doc, block, copy));
+        const section = renderFileBlock(doc, block, copy);
+        fileSections.set(block.anchor, section);
+        container.append(section);
       }
     }
     return container;
