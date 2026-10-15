@@ -1,4 +1,4 @@
-/* dakit 0.2.0 e58478f */
+/* dakit 0.2.0 0e283cd */
 /* dakit collection header (docs/guidelines.md "Action placement"): a create
    action belongs to the collection it creates into, right after that
    collection's title, never in the page header's far corner.

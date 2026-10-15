@@ -1,4 +1,4 @@
-/* dakit 0.2.0 e58478f */
+/* dakit 0.2.0 0e283cd */
 /* dakit tag input (docs/tag-input.md): a multi-select combobox. The chosen
    values sit in the field as removable chips; typing filters a listbox of
    the rest, and Enter or a click adds the active option.

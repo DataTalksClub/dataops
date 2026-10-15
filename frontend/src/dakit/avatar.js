@@ -1,4 +1,4 @@
-/* dakit 0.2.0 e58478f */
+/* dakit 0.2.0 0e283cd */
 // Dakit avatar: a person's initials, with their photo on top when there is one.
 //
 // ES module, no globals:
@@ -40,18 +40,31 @@ function photoUrl(src) {
 }
 
 // The document defaults to the element's own; pass it for detached or test
-// documents. Re-pointing to the same photo keeps the loaded <img>.
+// documents. An unchanged avatar keeps its nodes: shell menus decide
+// "inside or outside" from the click target, so a re-render must not swap
+// the node under the pointer.
 export function updateAvatar(element, { name = "", initials, src = "" } = {}, doc = element.ownerDocument) {
   const href = photoUrl(src);
-  const label = doc.createElement("span");
-  label.className = "dk-avatar__initials";
-  label.textContent = initials || avatarInitials(name);
+  const letters = initials || avatarInitials(name);
+  let label = element.querySelector(".dk-avatar__initials");
+  if (!label) {
+    label = doc.createElement("span");
+    label.className = "dk-avatar__initials";
+  }
+  if (label.textContent !== letters) label.textContent = letters;
+  // A photo that already failed here is not fetched again on every render.
+  const failed = Boolean(href) && element.dataset.avatarFailedSrc === href;
   const current = element.querySelector("img");
-  const img = href && current?.getAttribute("src") === href ? current : href ? photo(doc, element, href) : null;
-  element.replaceChildren(...(img ? [label, img] : [label]));
+  const img = !href || failed ? null : current?.getAttribute("src") === href ? current : photo(doc, element, href);
+  const wanted = img ? [label, img] : [label];
+  const present = [...(element.childNodes || element.children)];
+  if (present.length !== wanted.length || wanted.some((node, index) => present[index] !== node)) {
+    element.replaceChildren(...wanted);
+  }
   element.setAttribute("aria-hidden", "true");
   element.classList.toggle("dk-avatar--photo", Boolean(img));
   if (img) element.dataset.avatarPhoto = "shown";
+  else if (failed) element.dataset.avatarPhoto = "failed";
   else delete element.dataset.avatarPhoto;
   return element;
 }
@@ -65,6 +78,7 @@ function photo(doc, element, href) {
     img.remove();
     element.classList.remove("dk-avatar--photo");
     element.dataset.avatarPhoto = "failed";
+    element.dataset.avatarFailedSrc = href;
   }, { once: true });
   img.setAttribute("src", href);
   return img;

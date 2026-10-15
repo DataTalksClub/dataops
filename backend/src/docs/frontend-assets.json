@@ -157,6 +157,7 @@
     "src/dakit/collection.js",
     "src/surfaces/split-back-icon.js",
     "src/dakit/device-code.js",
+    "src/dakit/avatar.js",
     "src/dakit/fonts/inter-var.woff2",
     "src/dakit/fonts/ibm-plex-mono-400.woff2",
     "src/dakit/fonts/ibm-plex-mono-500.woff2",
