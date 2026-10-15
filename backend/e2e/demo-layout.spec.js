@@ -7,7 +7,7 @@ const { seedOperationsData } = require('./helpers/seed-operations-data');
 const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
 let server;
 const routes = [
-  ['/bookkeeping', '.bookkeeping-close-state h2'],
+  ['/bookkeeping', '.bk-split'],
   ['/sponsors', '.crm-master .crm-booking-row, .crm-master .honest-state'],
   ['/tasks', '.ops-queue-list'], ['/cards', '.workflow-board-card'],
   ['/cards/archive', '.cards-archive-grid, .ops-honest-state'],
@@ -82,7 +82,12 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       }
       // Moved create actions sit on their collection, right after its title,
       // never in the page header's corner.
-      const collectionAction = { '/users': 'Add user', '/bookkeeping': 'Add entry' }[route];
+      if (route === '/bookkeeping') {
+        // Add transaction follows the filters it creates into, like the queue.
+        await expect(header.getByRole('button', { name: 'Add transaction', exact: true })).toHaveCount(0);
+        await expect(page.locator('.bk-filters').getByRole('button', { name: 'Add transaction', exact: true })).toBeVisible();
+      }
+      const collectionAction = { '/users': 'Add user' }[route];
       if (collectionAction) {
         await expect(header.getByRole('button', { name: collectionAction, exact: true })).toHaveCount(0);
         const lead = page.locator('#document-list .dk-collection-header__lead')

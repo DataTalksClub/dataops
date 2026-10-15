@@ -33,7 +33,7 @@ const ROUTES = [
   { path: '/cards/archive', ready: '.ops-workflows-board', content: '.workflow-archive-tabs, .cards-archive-grid, .ops-honest-state' },
   { path: '/templates', ready: '.runtime-template-inspector .dk-split', content: '.runtime-template-inspector .dk-split' },
   { path: '/recurring', ready: '.ops-recurring-surface', content: '.ops-recurring-section' },
-  { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bookkeeping-worklist, .bookkeeping-monthlens' },
+  { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bk-split' },
   { path: '/sponsors', ready: '.sponsor-crm-surface', content: '.crm-layout, .crm-upcoming-list, .crm-directory-row, .crm-booking-row', contentReady: '.crm-master .crm-booking-row, .crm-master .honest-state' },
   { path: '/newsletter', ready: '.newsletter-surface', content: '.newsletter-slot-row, .newsletter-slot-list, .newsletter-schedule' },
   { path: '/calendar', ready: '.calendar-surface', content: '.calendar-grid', contentReady: '.calendar-grid', mockCalendar: true },
@@ -259,14 +259,14 @@ test('newsletter at 375x667: issue cards fit the compaction budget and the overf
   await expect(menu).toBeHidden();
 });
 
-test('bookkeeping at 375x667: no stat strip, period controls reflow, and the ledger scrolls into view', async ({ page }) => {
+test('bookkeeping at 375x667: no stat strip, period controls reflow, and the transactions fill the screen', async ({ page }) => {
   test.setTimeout(60_000);
   const viewport = VIEWPORTS[0];
   const route = ROUTES.find((candidate) => candidate.path === '/bookkeeping');
   await openRouteAt(page, viewport, route);
-  // No counter tiles restate the worklist (dakit principle 4).
-  await expect(page.locator('.bookkeeping-close-state h2')).toBeVisible();
-  await expect(page.locator('.bookkeeping-close-state .dk-stat-strip')).toHaveCount(0);
+  // No counter tiles and no close-state panel: the page is the list.
+  await expect(page.locator('.bookkeeping-surface .dk-stat-strip')).toHaveCount(0);
+  await expect(page.locator('[data-worklist-section]')).toHaveCount(0);
   // The period is one row on a phone, shared with Calendar:
   // [This month] [prev] [next] [Month YYYY ▾]; the picker holds the rest.
   const periodControls = await page.locator('[data-period-toolbar] :is([data-today], [data-prev], [data-next], [data-picker-toggle]):visible').all();
@@ -274,25 +274,9 @@ test('bookkeeping at 375x667: no stat strip, period controls reflow, and the led
   const periodBoxes = await Promise.all(periodControls.map((control) => control.boundingBox()));
   for (const box of periodBoxes) expect(box.height).toBeGreaterThanOrEqual(44);
   expect(new Set(periodBoxes.map((box) => Math.round(box.y + box.height / 2))).size).toBe(1);
-  await page.locator('#bookkeeping-ledger-heading').scrollIntoViewIfNeeded();
-  await expect(page.locator('#bookkeeping-ledger-heading')).toBeInViewport();
-  // Main is the scroller: the page overflows it, not the document.
-  expect(await page.locator('#main-content').evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
+  // The transaction list starts on the first screen and scrolls inside
+  // itself; the document never scrolls sideways or down.
+  await expect(page.locator('.bk-split')).toBeInViewport();
   expect(await page.evaluate(() => document.scrollingElement.scrollHeight <= innerHeight)).toBe(true);
-
-  // The seeded month has no open items, so the close panel is collapsed to
-  // its one-line summary; expanding it reveals the reconcile list.
-  const worklistSection = page.locator('[data-worklist-section]');
-  expect(
-    await worklistSection.getAttribute('open'),
-    'the close panel must collapse on mobile when nothing needs attention',
-  ).toBeNull();
-  await expect(page.locator('[data-worklist-hint]')).toHaveText('All clear');
-  await expect(page.locator('.bookkeeping-worklist')).toBeHidden();
-
-  await page.locator('.bookkeeping-worklist-summary').click();
-  await expect(page.locator('.bookkeeping-worklist')).toBeVisible();
-  await expect(page.locator('.bookkeeping-worklist')).toContainText('Nothing needs attention');
-  await page.locator('.bookkeeping-worklist-summary').click();
-  await expect(page.locator('.bookkeeping-worklist')).toBeHidden();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

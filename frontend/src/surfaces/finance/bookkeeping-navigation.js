@@ -8,7 +8,7 @@ import {
 import { mountPeriodNav } from "../period-nav.js";
 
 export function mountBookkeepingNavigation({
-  surface, closeState, status, setLens, lensEntries, todayIsoDate,
+  surface, status, setLens, lensEntries, todayIsoDate,
   getEntries, getLens,
 }) {
   let lens = getLens();
@@ -72,13 +72,10 @@ export function mountBookkeepingNavigation({
       status.textContent = `✓ Copied report table for ${period} (${count} transactions) to clipboard. Paste directly into email or spreadsheet.`;
     } else {
       status.textContent =
-        "Could not access clipboard. Please use 'Export report CSV'.";
+        "Could not access clipboard. Use Export accountant CSV instead.";
     }
   };
   surface.querySelector("[data-export-report-csv]").addEventListener("click", exportReport);
-  closeState.addEventListener("click", (event) => {
-    if (event.target.closest("[data-export-report-csv]")) exportReport();
-  });
   surface
     .querySelector("[data-export-full-csv]")
     ?.addEventListener("click", exportFull);

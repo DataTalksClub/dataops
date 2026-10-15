@@ -216,17 +216,18 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await stopOwnedTestServer(server);
   });
 
-  test("Bookkeeping reflows jobs and ledger in exact light and dark palettes", async ({ browser }) => {
+  test("Bookkeeping reflows the transaction list in exact light and dark palettes", async ({ browser }) => {
     const context = await browser.newContext({ baseURL: server.baseURL, viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     await routeBookkeeping(page);
     const root = await page.goto("/bookkeeping");
     assertOwnedServerResponse(server, root, "bookkeeping design root");
     await expect(page.getByRole("heading", { name: "Bookkeeping" })).toBeVisible();
-    // The decorative job nav gave way to the month lens close state (#242).
-    await expect(page.locator("[data-close-state]")).toContainText("July 2026 close");
-    await expect(page.locator("[data-worklist]")).toContainText("Attach evidence");
-    await expect(page.getByRole("row").filter({ hasText: "Example Studio" })).toContainText("Missing");
+    // The page is the transaction list for the latest month with activity.
+    await expect(page.locator("[data-period-heading]")).toHaveText("July 2026");
+    const studioRow = page.locator(".bk-row").filter({ hasText: "Example Studio" });
+    await expect(studioRow.locator(".bk-flag")).toHaveAttribute("aria-label", "No receipt");
+    await expect(studioRow.locator(".bk-col-eur")).toHaveText("−€320.00");
     await expectPalette(page, false);
     await expectNoPageOverflow(page, 1440);
     await page.screenshot({ path: path.join(SCREENSHOTS, "bookkeeping-desktop-light.png") });
@@ -239,7 +240,7 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     for (const width of [820, 420]) {
       await page.setViewportSize({ width, height: 844 });
       await expectNoPageOverflow(page, width);
-      await expect(page.getByRole("row").filter({ hasText: "Example Studio" })).toHaveCSS("display", "block");
+      await expect(studioRow).toBeVisible();
     }
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -249,11 +250,13 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await expectPalette(page, false);
     await page.screenshot({ path: path.join(SCREENSHOTS, "bookkeeping-mobile-light.png") });
 
-    await page.getByRole("button", { name: "Delete" }).first().click();
+    await studioRow.locator(".bk-col-date").click();
+    const deleteButton = page.getByRole("button", { name: "Delete transaction" });
+    await deleteButton.click();
     const deleteDialog = page.locator(".bookkeeping-delete-dialog");
-    await expect(deleteDialog).toContainText("Linked evidence is not deleted");
-    await deleteDialog.getByRole("button", { name: "Keep entry" }).click();
-    await expect(page.getByRole("button", { name: "Delete" }).first()).toBeFocused();
+    await expect(deleteDialog).toContainText("Attached files are kept");
+    await deleteDialog.getByRole("button", { name: "Keep it" }).click();
+    await expect(deleteButton).toBeFocused();
 
     const accessibility = await new AxeBuilder({ page }).include(".bookkeeping-surface").analyze();
     expect(accessibility.violations.filter((item) => ["critical", "serious"].includes(item.impact))).toEqual([]);

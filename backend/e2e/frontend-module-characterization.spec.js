@@ -260,11 +260,12 @@ test.describe("pre-refactor frontend module characterization", () => {
     await page.goto(`${baseURL}/calendar`);
     await page.getByRole("button", { name: "Add activity" }).click();
     await expect(page.locator(".calendar-surface dialog[data-activity-dialog]")).toBeVisible();
-    await page.goto(`${baseURL}/bookkeeping`);
+    await page.goto(`${baseURL}/bookkeeping?view=files`);
     await expect(page.locator(".bookkeeping-documents")).toContainText(
       /No private documents uploaded|Download/,
     );
-    await page.getByRole("button", { name: "Add entry" }).click();
+    await page.goto(`${baseURL}/bookkeeping`);
+    await page.getByRole("button", { name: "Add transaction" }).click();
     await expect(page.locator(".bookkeeping-entry-dialog")).toBeVisible();
     await page.goto(`${baseURL}/admin`);
     await page.getByRole("button", { name: /Diagnostics/ }).click();

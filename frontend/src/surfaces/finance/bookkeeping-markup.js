@@ -1,321 +1,213 @@
 import "../../dakit/collection.js";
-// Static shell for the bookkeeping surface: the month lens header, the
-// ledger, evidence and package sections, and the entry/EUR/delete dialogs.
-// All dynamic state renders into [data-close-state], [data-worklist],
-// .bookkeeping-ledger, .bookkeeping-documents and [data-package-review].
+// Static shell for the bookkeeping surface. The page is the transaction
+// list: header with the month navigator and actions, one filter row, the
+// table with its detail pane. Files, the accountant package/VAT and
+// forwarded invoices are secondary views (?view=…) reached from the ⋯ menu.
 import { financeSectionHead, html } from "./shared.js";
-import { renderPageHeaderMarkup } from "../operations-overview.js";
 import { periodNavMarkup } from "../period-nav.js";
 
+const backLink = html`<button type="button" class="dk-button dk-button--secondary dk-button--sm bk-back" data-view-link="">
+    ← Transactions
+  </button>`;
+
 export function bookkeepingSurfaceMarkup() {
-  return html`${renderPageHeaderMarkup({
-    title: "Bookkeeping",
-    className: "bookkeeping-header",
-  })}
-      <section
-        class="bookkeeping-monthlens"
-        aria-label="Month close state"
-        data-monthlens
-      >
-        <div class="period-toolbar bookkeeping-period" data-period-toolbar>
-          ${periodNavMarkup({
-            headingId: "bookkeeping-period-heading",
-            todayLabel: "This month",
-            groupLabel: "Change bookkeeping period",
-            shortcuts: [
-              { action: "current", label: "This month" },
-              { action: "year", label: "Whole year" },
-              { action: "all", label: "All records" },
-            ],
-          })}
-        </div>
-        <div class="bookkeeping-close-state" data-close-state></div>
-      </section>
-      <p data-bookkeeping-status class="surface-status" role="status"></p>
-      <details
-        class="bookkeeping-section bookkeeping-worklist-section"
-        data-worklist-section
-        open
-      >
-        <summary class="bookkeeping-worklist-summary">
-          ${financeSectionHead({
-            id: "bookkeeping-worklist-heading",
-            title: "Needs attention",
-            actions: html`<p class="bookkeeping-worklist-hint" data-worklist-hint></p>`,
-          })}
-        </summary>
-        <div class="bookkeeping-worklist" data-worklist aria-live="polite"></div>
-      </details>
-      <section
-        id="bookkeeping-ledger"
-        class="bookkeeping-section bookkeeping-ledger-section"
-        aria-labelledby="bookkeeping-ledger-heading"
-      >
-        ${financeSectionHead({
-          id: "bookkeeping-ledger-heading",
-          title: "Ledger",
-          create: globalThis.dakitCollection.createButtonMarkup({ label: "Add entry", attributes: "data-bookkeeping-add" }),
-          meta: html`<p class="bookkeeping-totals" aria-live="polite"></p>`,
-          actions: html`<div class="bookkeeping-export-actions">
-              <button
-                class="dk-button dk-button--secondary dk-button--sm bookkeeping-export-btn"
-                type="button"
-                data-export-report-csv
-                title="Export accountant report CSV (with signed EUR prices and report columns)"
-              >
-                Export report CSV
-              </button>
-              <button
-                class="dk-button dk-button--secondary dk-button--sm bookkeeping-export-btn"
-                type="button"
-                data-copy-report
-                title="Copy formatted report table to clipboard for email or spreadsheet"
-              >
-                Copy for report
-              </button>
-              <button
-                class="dk-button dk-button--secondary dk-button--sm bookkeeping-export-btn"
-                type="button"
-                data-export-full-csv
-                title="Export full raw ledger CSV"
-              >
-                Full CSV
-              </button>
-            </div>`,
+  return html`<header class="dk-page-header bk-header">
+      <div class="dk-page-header__main"><h1 class="dk-page-header__title">Bookkeeping</h1></div>
+      <div class="period-toolbar bookkeeping-period" data-period-toolbar>
+        ${periodNavMarkup({
+          headingId: "bookkeeping-period-heading",
+          todayLabel: "This month",
+          groupLabel: "Change bookkeeping period",
+          shortcuts: [
+            { action: "current", label: "This month" },
+            { action: "year", label: "Whole year" },
+            { action: "all", label: "All records" },
+          ],
         })}
-        <div class="dk-toolbar bookkeeping-filters">
-          <label
-            >Search
-            <input
-              data-filter="search"
-              type="search"
-              placeholder="Provider, description, or category" /></label
-          >
-          <details>
-            <summary>More filters</summary>
-            <div class="bookkeeping-filter-more">
-              <label>Type <input data-filter="entryType" /></label
-              ><label>Category <input data-filter="category" /></label
-              ><label
-                >Provider / payee <input data-filter="counterparty" /></label
-              ><label
-                >Currency <input data-filter="currency" maxlength="3"
-              /></label>
-            </div>
-          </details>
+      </div>
+    </header>
+    <p data-bookkeeping-status class="dk-toast bk-status" role="status"></p>
+    <div class="bk-main dk-fill" data-bk-main>
+      <div class="bk-filters" role="search" aria-label="Filter transactions" data-filters>
+        <input class="dk-input bk-filters__search" type="search" data-filter="q" placeholder="Search counterparty, what, amount…" aria-label="Search transactions" />
+        <button type="button" class="dk-button dk-button--secondary bk-filters__toggle" data-filters-toggle aria-expanded="false" aria-controls="bk-filters-more">
+          Filters <span class="dk-mono" data-active-filters></span>
+        </button>
+        <div class="bk-filters__more" id="bk-filters-more">
+          <select class="dk-select" data-filter="account" aria-label="Account"><option value="">All accounts</option></select>
+          <select class="dk-select" data-filter="dir" aria-label="Money in or out">
+            <option value="">In &amp; out</option>
+            <option value="expense">Expenses</option>
+            <option value="income">Income</option>
+          </select>
+          <select class="dk-select" data-filter="category" aria-label="Category"><option value="">All categories</option></select>
+          <button type="button" class="bk-toggle" data-needs="category" aria-pressed="false">Needs category <span class="dk-mono" data-needs-count="category"></span></button>
+          <button type="button" class="bk-toggle" data-needs="receipt" aria-pressed="false">No receipt <span class="dk-mono" data-needs-count="receipt"></span></button>
+          <span class="bk-filters__count" data-shown-count aria-live="polite"></span>
         </div>
-        <div class="bookkeeping-ledger" aria-live="polite">Loading ledger…</div>
-      </section>
-      <section
-        id="bookkeeping-evidence"
-        class="bookkeeping-section bookkeeping-evidence"
-        aria-labelledby="bookkeeping-evidence-heading"
-      >
-        ${financeSectionHead({
-          id: "bookkeeping-evidence-heading",
-          title: "Evidence",
-          hint: "Private PDFs, grouped by month.",
-          actions: html`<button class="dk-button dk-button--secondary dk-button--sm" type="button" data-setup-accounts disabled>
-            Set up business accounts
-          </button>`,
-        })}
-        <details class="bookkeeping-upload-panel">
-          <summary>Upload evidence PDF</summary>
-          <div class="bookkeeping-upload">
-            <label class="bookkeeping-file"
-              >PDF evidence
-              <input type="file" accept="application/pdf,.pdf" data-pdf /></label
-            ><label
-              >Document type
-              <select data-document-type>
-                <option value="invoice">Invoice</option>
-                <option value="receipt">Receipt</option>
-                <option value="bank-statement">Bank statement</option>
-                <option value="private-account-statement">
-                  Private account statement
-                </option>
-              </select></label
-            ><label class="bookkeeping-statement-only" hidden
-              >Account
-              <select data-account>
-                <option value="">No account</option>
-              </select></label
-            ><label class="bookkeeping-statement-only" hidden
-              >Statement month <input type="month" data-statement-month /></label
-            ><label class="bookkeeping-transaction-link"
-              >Link to transaction
-              <select data-transaction>
-                <option value="">No transaction</option>
-              </select></label
-            ><button class="dk-button dk-button--secondary" data-upload>Upload PDF</button>
+        ${globalThis.dakitCollection.createButtonMarkup({ label: "Add transaction", attributes: "data-bookkeeping-add" })}
+        <details class="bk-more" data-more>
+          <summary class="dk-icon-button" aria-label="More bookkeeping actions" title="More actions">
+            <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
+              <circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="13" cy="8" r="1.4"/>
+            </svg>
+          </summary>
+          <div class="dk-menu bk-more__menu" role="menu">
+            <button type="button" class="dk-menu__item" role="menuitem" data-export-report-csv>Export accountant CSV</button>
+            <button type="button" class="dk-menu__item" role="menuitem" data-copy-report>Copy accountant table</button>
+            <button type="button" class="dk-menu__item" role="menuitem" data-export-full-csv>Export all fields (CSV)</button>
+            <hr class="bk-more__rule" />
+            <button type="button" class="dk-menu__item" role="menuitem" data-view-link="files">Files &amp; statements <span class="bk-more__meta" data-files-meta></span></button>
+            <button type="button" class="dk-menu__item" role="menuitem" data-view-link="package">Accountant package &amp; VAT</button>
+            <button type="button" class="dk-menu__item" role="menuitem" data-view-link="invoices">Forwarded invoices <span class="bk-more__meta" data-invoices-meta></span></button>
           </div>
         </details>
-        <div class="bookkeeping-documents" aria-live="polite">
-          Loading documents…
+      </div>
+      <div class="dk-split bk-split" data-bk-split data-view="list" data-pane="closed">
+        <div class="dk-split__list bk-split__list">
+          <div class="dk-split__scroll bk-scroll bookkeeping-ledger" aria-live="polite">Loading transactions…</div>
         </div>
-      </section>
-      <section
-        id="bookkeeping-package"
-        class="bookkeeping-section bookkeeping-package-section"
-        aria-labelledby="bookkeeping-package-heading"
-      >
-        ${financeSectionHead({
-          id: "bookkeeping-package-heading",
-          title: "Monthly package",
-        })}
-        <div class="bookkeeping-package-review" data-package-review></div>
-        <div
-          class="bookkeeping-private-statements"
-          role="group"
-          aria-labelledby="bookkeeping-private-statements-heading"
-        >
-          <h3 id="bookkeeping-private-statements-heading" class="finance-subhead">
-            Optional private-account statements
-          </h3>
-          <div data-private-statements>No eligible private statements.</div>
+        <aside class="dk-split__detail bk-detail" data-detail aria-labelledby="bk-detail-title" hidden></aside>
+      </div>
+    </div>
+    <section id="bookkeeping-evidence" class="bookkeeping-section bookkeeping-evidence bk-secondary" data-secondary="files" aria-labelledby="bookkeeping-evidence-heading" hidden>
+      ${backLink}
+      ${financeSectionHead({
+        id: "bookkeeping-evidence-heading",
+        title: "Files & statements",
+        hint: "Private PDFs, grouped by month. Attach a receipt to one transaction from its details.",
+        actions: html`<button class="dk-button dk-button--secondary dk-button--sm" type="button" data-setup-accounts disabled>
+          Set up business accounts
+        </button>`,
+      })}
+      <details class="bookkeeping-upload-panel">
+        <summary>Upload a PDF</summary>
+        <div class="bookkeeping-upload">
+          <label class="bookkeeping-file"
+            >PDF
+            <input type="file" accept="application/pdf,.pdf" data-pdf /></label
+          ><label
+            >Document type
+            <select data-document-type>
+              <option value="invoice">Invoice</option>
+              <option value="receipt">Receipt</option>
+              <option value="bank-statement">Bank statement</option>
+              <option value="private-account-statement">
+                Private account statement
+              </option>
+            </select></label
+          ><label class="bookkeeping-statement-only" hidden
+            >Account
+            <select data-account>
+              <option value="">No account</option>
+            </select></label
+          ><label class="bookkeeping-statement-only" hidden
+            >Statement month <input type="month" data-statement-month /></label
+          ><button class="dk-button dk-button--secondary" data-upload>Upload PDF</button>
         </div>
-        <div class="bookkeeping-package">
-          <label>Report month <input type="month" data-report-month /></label
-          ><button class="dk-button dk-button--secondary" data-report>
-            Create monthly package
-          </button>
+      </details>
+      <div class="bookkeeping-documents" aria-live="polite">Loading documents…</div>
+    </section>
+    <section id="bookkeeping-package" class="bookkeeping-section bookkeeping-package-section bk-secondary"
+      data-secondary="package" aria-labelledby="bookkeeping-package-heading" hidden>
+      ${backLink}
+      ${financeSectionHead({
+        id: "bookkeeping-package-heading",
+        title: "Accountant package",
+        hint: "Pick the month with the navigator above.",
+      })}
+      <div class="bookkeeping-package-review" data-package-review></div>
+      <div class="bookkeeping-private-statements" role="group" aria-labelledby="bookkeeping-private-statements-heading">
+        <h3 id="bookkeeping-private-statements-heading" class="finance-subhead">
+          Optional private-account statements
+        </h3>
+        <div data-private-statements>No eligible private statements.</div>
+      </div>
+      <div class="bookkeeping-package">
+        <label>Report month <input type="month" data-report-month /></label
+        ><button class="dk-button dk-button--secondary" data-report>
+          Create monthly package
+        </button>
+      </div>
+      ${financeSectionHead({
+        id: "bookkeeping-vat-heading",
+        title: "VAT summary",
+        hint: "Tax and health-insurance payments are excluded from the package.",
+        actions: html`<label class="finance-inline-field"
+            >VAT year
+            <select class="dk-select" data-vat-year><option value="">All years</option></select></label
+          >`,
+      })}
+      <div class="bookkeeping-vat-summary" data-vat-summary aria-live="polite">
+        Loading VAT summary…
+      </div>
+    </section>
+    <section class="bookkeeping-section invoice-review-section bk-secondary" data-secondary="invoices" hidden>
+      ${backLink}
+      <div aria-labelledby="invoice-review-heading" data-invoice-review></div>
+    </section>
+    <dialog class="surface-dialog bookkeeping-entry-dialog">
+      <form method="dialog" novalidate>
+        <header>
+          <h3>Add transaction</h3>
+          <p>Fields marked * are required; everything else can be filled in later from the transaction's details.</p>
+        </header>
+        <div class="dialog-fields bookkeeping-entry-fields">
+          <label
+            ><span class="label-text">Date
+            <span class="required-mark" aria-hidden="true">*</span></span>
+            <input name="transactionDate" type="date" /></label
+          ><label
+            >Direction
+            <select name="entryType">
+              <option value="expense">Expense (money out)</option>
+              <option value="income">Income (money in)</option>
+            </select></label
+          ><label class="span-all"
+            ><span class="label-text">Counterparty
+            <span class="required-mark" aria-hidden="true">*</span></span>
+            <input name="counterparty" /></label
+          ><label class="span-all"
+            ><span class="label-text">What
+            <span class="required-mark" aria-hidden="true">*</span></span>
+            <input name="description" /></label
+          ><label
+            ><span class="label-text">Amount
+            <span class="required-mark" aria-hidden="true">*</span></span>
+            <input name="amount" inputmode="decimal" /></label
+          ><label
+            ><span class="label-text">Currency
+            <span class="required-mark" aria-hidden="true">*</span></span>
+            <input name="currency" maxlength="3" value="EUR" /></label
+          ><label class="bookkeeping-eur-only" hidden
+            ><span class="label-text">EUR value</span>
+            <input name="amountEur" inputmode="decimal" /></label
+          ><label
+            >Account / statement <input name="statementRef" /></label
+          >
+          <small class="field-hint span-all">Enter amounts as positive numbers; Direction sets the sign.</small>
+          <p class="span-all" role="alert" data-form-error></p>
         </div>
-      </section>
-      <section
-        id="bookkeeping-vat"
-        class="bookkeeping-section bookkeeping-vat"
-        aria-labelledby="bookkeeping-vat-heading"
-      >
-        ${financeSectionHead({
-          id: "bookkeeping-vat-heading",
-          title: "VAT summary",
-          hint: "Tax and health-insurance payments are excluded from the package.",
-          actions: html`<label class="finance-inline-field"
-              >VAT year
-              <select class="dk-select" data-vat-year><option value="">All years</option></select></label
-            >`,
-        })}
-        <div class="bookkeeping-vat-summary" data-vat-summary aria-live="polite">
-          Loading VAT summary…
-        </div>
-      </section>
-      <section class="bookkeeping-section invoice-review-section" aria-labelledby="invoice-review-heading" data-invoice-review></section>
-      <dialog class="surface-dialog bookkeeping-entry-dialog">
-        <form method="dialog" novalidate>
-          <header>
-            <p class="surface-eyebrow">Ledger record</p>
-            <h3>Bookkeeping entry</h3>
-            <p>
-              What happened, how much, and whether money moved in or out —
-              that is the record. Fields marked * are required; everything
-              else can wait.
-            </p>
-          </header>
-          <div class="dialog-fields bookkeeping-entry-fields">
-            <input type="hidden" name="id" /><label
-              ><span class="label-text">Transaction date
-              <span class="required-mark" aria-hidden="true">*</span></span>
-              <input name="transactionDate" type="date" /></label
-            ><label class="span-all"
-              ><span class="label-text">Provider / payee
-              <span class="required-mark" aria-hidden="true">*</span></span>
-              <input name="counterparty" /></label
-            ><label class="span-all"
-              ><span class="label-text">Description
-              <span class="required-mark" aria-hidden="true">*</span></span>
-              <input name="description" /></label
-            ><label
-              ><span class="label-text">Amount
-              <span class="required-mark" aria-hidden="true">*</span></span>
-              <input name="amount" inputmode="decimal" /></label
-            ><label
-              ><span class="label-text">Currency
-              <span class="required-mark" aria-hidden="true">*</span></span>
-              <input name="currency" maxlength="3" value="EUR" /></label
-            ><label class="bookkeeping-eur-only" hidden
-              ><span class="label-text">Actual EUR value</span>
-              <input name="amountEur" inputmode="decimal" /></label
-            ><label
-              >Type
-              <select name="entryType" data-entry-type>
-                <option value="">Unclassified</option>
-                <option value="expense">Expense — money out</option>
-                <option value="income">Income — money in</option>
-              </select></label
-            >
-            <small class="field-hint span-all"
-              >Enter amounts as positive numbers; Type sets the direction. For
-              non-EUR entries, the actual EUR value keeps the conversion
-              defensible.</small
-            >
-            <details class="bookkeeping-entry-optional span-all">
-              <summary>Optional details</summary>
-              <div class="dialog-fields">
-                <label>Paid date <input name="paidDate" type="date" /></label
-                ><label
-                  >VAT amount <input name="vatAmount" inputmode="decimal" /></label
-                ><label
-                  >VAT currency <input name="vatCurrency" maxlength="3" /></label
-                ><label
-                  >Category
-                  <input name="category" list="bookkeeping-category-options" /></label
-                ><label
-                  >Statement / reference <input name="statementRef"
-                /></label>
-              </div>
-            </details>
-            <datalist
-              id="bookkeeping-category-options"
-              data-category-options
-            ></datalist>
-            <p class="span-all" role="alert" data-form-error></p>
-          </div>
-          <footer class="bookkeeping-actions">
-            <button class="primary-button" data-save>Save</button
-            ><button value="cancel">Cancel</button>
-          </footer>
-        </form>
-      </dialog>
-      <dialog class="surface-dialog bookkeeping-eur-dialog">
-        <form method="dialog" novalidate>
-          <header>
-            <p class="surface-eyebrow">EUR conversion</p>
-            <h3>Record the EUR value</h3>
-            <p data-eur-context></p>
-          </header>
-          <div class="dialog-fields">
-            <label
-              ><span class="label-text">Actual EUR value
-              <span class="required-mark" aria-hidden="true">*</span></span>
-              <input name="amountEur" inputmode="decimal" /></label>
-            <small class="field-hint span-all"
-              >Use the settled bank value — a Revolut settlement or a dated
-              historical rate keeps it defensible.</small
-            >
-            <p class="span-all" role="alert" data-eur-error></p>
-          </div>
-          <footer class="bookkeeping-actions">
-            <button class="primary-button" data-eur-save>
-              Save EUR value</button
-            ><button value="cancel">Cancel</button>
-          </footer>
-        </form>
-      </dialog>
-      <dialog class="surface-dialog bookkeeping-delete-dialog">
-        <form method="dialog">
-          <header>
-            <p class="surface-eyebrow">Destructive change</p>
-            <h3>Delete bookkeeping entry?</h3>
-            <p>
-              <strong data-delete-entry-name>This ledger entry</strong> will be
-              permanently removed. Linked evidence is not deleted.
-            </p>
-          </header>
-          <footer>
-            <button type="button" class="danger-button" data-delete-confirm>
-              Delete entry</button
-            ><button value="cancel" data-delete-cancel>Keep entry</button>
-          </footer>
-        </form>
-      </dialog>`;
+        <footer class="bookkeeping-actions">
+          <button class="primary-button" data-save>Add transaction</button
+          ><button value="cancel">Cancel</button>
+        </footer>
+      </form>
+    </dialog>
+    <dialog class="surface-dialog bookkeeping-delete-dialog">
+      <form method="dialog">
+        <header>
+          <h3>Delete this transaction?</h3>
+          <p>
+            <strong data-delete-entry-name>This transaction</strong> will be
+            permanently removed. Attached files are kept.
+          </p>
+        </header>
+        <footer>
+          <button type="button" class="danger-button" data-delete-confirm>
+            Delete transaction</button
+          ><button value="cancel" data-delete-cancel>Keep it</button>
+        </footer>
+      </form>
+    </dialog>`;
 }

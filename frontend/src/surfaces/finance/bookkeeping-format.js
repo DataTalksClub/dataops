@@ -6,16 +6,20 @@
 export const MONEY_PATTERN = /^(0|[1-9]\d{0,11})(\.\d{1,4})?$/;
 
 export const FIELD_LABELS = {
-  transactionDate: "Transaction date",
+  transactionDate: "Date",
   paidDate: "Paid date",
-  counterparty: "Provider / payee",
-  description: "Description",
+  counterparty: "Counterparty",
+  description: "What",
+  amountEur: "EUR value",
+  statementRef: "Account / statement",
+  subtype: "Type",
+  period: "Period",
   amount: "Amount",
   currency: "Currency",
   vatAmount: "VAT amount",
   vatCurrency: "VAT currency",
   category: "Category",
-  entryType: "Type",
+  entryType: "Direction",
   quantity: "Count",
   comment: "Comment",
 };

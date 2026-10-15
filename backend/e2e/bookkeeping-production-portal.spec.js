@@ -37,74 +37,46 @@ test.describe("production portal bookkeeping", () => {
 
     await gotoOwnedBookkeepingPage(page);
     await expect(page.getByRole("heading", { name: "Bookkeeping" })).toBeVisible();
-    await expect(page.getByText("No bookkeeping entries")).toBeVisible();
-    await expect(page.locator(".bookkeeping-documents")).toContainText(
-      "No private documents uploaded",
-    );
+    await expect(page.getByText("No transactions recorded for")).toBeVisible();
 
-    await page.getByRole("button", { name: "Add entry" }).click();
+    await page.locator("[data-bookkeeping-add]").click();
     const entryForm = page.locator(".bookkeeping-entry-dialog");
-    await entryForm.getByRole("button", { name: "Save" }).click();
-    // Quick capture presets the transaction date to the lens month, so the
-    // first missing field is the provider.
-    await expect(entryForm.getByRole("alert")).toHaveText(
-      "Provider / payee is required.",
-    );
-    await expect(entryForm.getByLabel("Provider / payee")).toBeFocused();
-    await expect(entryForm.getByLabel("Provider / payee")).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
-    await entryForm.getByLabel("Transaction date").fill("2026-10-03");
-    await entryForm
-      .getByLabel("Provider / payee")
-      .fill("Synthetic Portal Vendor");
-    await entryForm
-      .getByLabel("Description")
-      .fill("Synthetic browser evidence");
-    // The first failed save leaves per-field notes that change accessible
-    // names; address the control directly.
+    const addButton = entryForm.getByRole("button", { name: "Add transaction" });
+    await addButton.click();
+    // The date presets to the lens month, so the first missing field is the
+    // counterparty.
+    await expect(entryForm.getByRole("alert")).toHaveText("Counterparty is required.");
+    await expect(entryForm.getByLabel("Counterparty")).toBeFocused();
+    await expect(entryForm.getByLabel("Counterparty")).toHaveAttribute("aria-invalid", "true");
+    await entryForm.locator("[name=transactionDate]").fill("2026-10-03");
+    await entryForm.locator("[name=counterparty]").fill("Synthetic Portal Vendor");
+    await entryForm.locator("[name=description]").fill("Synthetic browser evidence");
     await entryForm.locator("[name=amount]").fill("20.00");
-    // Category lives behind the "Optional details" disclosure now.
-    await entryForm.getByText("Optional details").click();
-    await entryForm.getByLabel("Category").fill("synthetic-testing");
-    await entryForm.getByRole("button", { name: "Save" }).click();
-    const createdRow = page.getByRole("row").filter({
-      hasText: "Synthetic Portal Vendor",
-    });
-    await expect(createdRow).toContainText("-€20.00");
+    await addButton.click();
+    const createdRow = page.locator(".bk-row").filter({ hasText: "Synthetic Portal Vendor" });
+    await expect(createdRow).toContainText("−€20.00");
+    // A new transaction opens in the details pane, ready to finish.
+    const detail = page.locator(".bk-detail");
+    await expect(detail.locator("[name=counterparty]")).toHaveValue("Synthetic Portal Vendor");
+    await detail.locator("[name=category]").fill("synthetic-testing");
+    await detail.locator("[name=category]").press("Tab");
+    await expect(page.getByRole("status")).toContainText("Saved Category");
     await page.reload();
     await expect(createdRow).toContainText("Synthetic browser evidence");
+    await expect(createdRow.locator('[data-inline-field="category"]')).toHaveValue("synthetic-testing");
 
-    await page.getByRole("button", { name: "Set up business accounts" }).click();
-    await expect(page.getByRole("status")).toContainText(
-      "2 business accounts ready",
-    );
-    // The upload form lives collapsed behind its summary; open it.
-    await page.locator(".bookkeeping-upload-panel > summary").click();
-    await page.getByRole("button", { name: "Upload PDF" }).click();
-    await expect(page.getByRole("status")).toContainText("Choose a PDF first");
-    const transactionId = await page
-      .getByLabel("Link to transaction")
-      .locator("option")
-      .nth(1)
-      .getAttribute("value");
-    expect(transactionId).toBeTruthy();
-    await page.getByLabel("Document type").selectOption("receipt");
-    await page.getByLabel("Link to transaction").selectOption(transactionId);
-    await page.getByLabel("PDF evidence").setInputFiles({
+    // The receipt is attached from the transaction itself.
+    await createdRow.locator(".bk-col-date").click();
+    await expect(detail).toContainText("No receipt attached.");
+    await detail.locator("[data-attach-type]").selectOption("receipt");
+    await detail.locator("[data-attach-file]").setInputFiles({
       name: "synthetic-upload.pdf",
       mimeType: "application/pdf",
       buffer: Buffer.from("%PDF-1.4\nsynthetic real evidence\n%%EOF"),
     });
-    await page.getByRole("button", { name: "Upload PDF" }).click();
-    await expect(page.getByRole("status")).toContainText(
-      "PDF uploaded and verified",
-    );
-    await expect(page.locator(".bookkeeping-documents")).toContainText(
-      "Private PDF",
-    );
-    await expect(page.getByRole("button", { name: /Unlink/ })).toBeVisible();
+    await expect(page.getByRole("status")).toContainText("PDF attached.");
+    await expect(detail.locator(".bk-receipts")).toContainText("Receipt PDF");
+    const transactionId = await createdRow.getAttribute("data-tx");
     const linksResponse = await context.request.get(
       `${server.baseURL}/api/bookkeeping/links`,
     );
@@ -113,6 +85,19 @@ test.describe("production portal bookkeeping", () => {
     const links = await linksResponse.json();
     expect(links.items).toHaveLength(1);
     expect(links.items[0].transactionId).toBe(transactionId);
+
+    // Statements and unmatched files live in a secondary view.
+    await page.locator(".bk-more > summary").click();
+    await page.getByRole("menuitem", { name: /Files & statements/ }).click();
+    await expect(page).toHaveURL(/view=files/);
+    await expect(page.locator(".bookkeeping-documents")).toContainText("Private PDF");
+    await page.getByRole("button", { name: "Set up business accounts" }).click();
+    await expect(page.getByRole("status")).toContainText("2 business accounts ready");
+    await page.locator(".bookkeeping-upload-panel > summary").click();
+    await page.getByRole("button", { name: "Upload PDF" }).click();
+    await expect(page.getByRole("status")).toContainText("Choose a PDF first");
+    await page.locator("#bookkeeping-evidence").getByRole("button", { name: "← Transactions" }).click();
+    await expect(createdRow).toBeVisible();
 
     const faultResponse = await context.request.post(
       `${server.baseURL}/__e2e__/route-faults`,
@@ -216,11 +201,16 @@ test.describe("production portal bookkeeping", () => {
     await expect(ledger).toContainText("January Export Vendor");
     await expect(ledger).toContainText('December, "Export" Vendor');
     await expect(ledger).not.toContainText("Next Year Export Vendor");
-    await expect(page.locator("[data-package-review]")).toContainText("Choose a month to review");
+    const more = page.locator(".bk-more > summary");
+    await more.click();
+    await page.getByRole("menuitem", { name: "Accountant package & VAT" }).click();
+    await expect(page.locator("[data-package-review]")).toContainText("Choose a month");
     await expect(page.locator("[data-report]")).toBeDisabled();
+    await page.locator("#bookkeeping-package").getByRole("button", { name: "← Transactions" }).click();
 
     const reportDownload = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export report CSV", exact: true }).click();
+    await more.click();
+    await page.getByRole("menuitem", { name: "Export accountant CSV", exact: true }).click();
     const report = await reportDownload;
     expect(report.suggestedFilename()).toBe("datatalksclub-2024.csv");
     const reportText = await fs.readFile(await report.path(), "utf8");
@@ -230,13 +220,15 @@ test.describe("production portal bookkeeping", () => {
     expect(reportText).not.toContain("Next Year Export Vendor");
 
     const fullDownload = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Full CSV", exact: true }).click();
+    await more.click();
+    await page.getByRole("menuitem", { name: "Export all fields (CSV)", exact: true }).click();
     const full = await fullDownload;
     expect(full.suggestedFilename()).toBe("datatalksclub-2024-full.csv");
     expect(await fs.readFile(await full.path(), "utf8")).toContain("Excluded Export Tax");
 
     await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text) => { window.__copiedReport = text; } } }));
-    await page.getByRole("button", { name: "Copy for report", exact: true }).click();
+    await more.click();
+    await page.getByRole("menuitem", { name: "Copy accountant table", exact: true }).click();
     await expect(page.getByRole("status")).toContainText("Copied report table for 2024 (2 transactions)");
     const copied = await page.evaluate(() => window.__copiedReport);
     expect(copied).toContain("VAT\tVAT Currency");
@@ -249,7 +241,6 @@ test.describe("production portal bookkeeping", () => {
     await period.locator('[data-picker-month="11"]').click();
     await expect(heading).toHaveText("December 2024");
     await expect(ledger).not.toContainText("January Export Vendor");
-    await expect(page.locator("[data-report]")).toBeEnabled();
     await period.getByRole("button", { name: "Next month", exact: true }).click();
     await expect(heading).toHaveText("January 2025");
     await expect(ledger).toContainText("Next Year Export Vendor");
@@ -261,7 +252,7 @@ test.describe("production portal bookkeeping", () => {
     await expect(period.locator("[data-prev]")).toHaveAttribute("aria-label", "Previous year");
     await period.locator("[data-prev]").click();
     await expect(heading).toHaveText("2023 (whole year)");
-    await expect(ledger).toContainText("No bookkeeping entries in 2023");
+    await expect(ledger).toContainText("No transactions recorded for 2023");
     await period.locator("[data-picker-toggle]").click();
     await period.getByRole("button", { name: "All records", exact: true }).click();
     await expect(heading).toHaveText("All records");

@@ -25,10 +25,10 @@ for (const theme of ['light', 'dark']) for (const viewport of [{ width: 1440, he
   test(`section jumps keep the document pinned in ${theme} at ${viewport.width}`, async ({ browser }) => {
     const { context, page } = await signedIn(browser, viewport);
     await page.evaluate(t => { document.documentElement.dataset.theme = t; }, theme);
-    await page.goto('/bookkeeping');
+    await page.goto('/bookkeeping?view=package');
     await expect(page.locator('#bookkeeping-package')).toBeVisible();
     await page.locator('#dk-live').evaluate(node => { node.textContent = '2 new notifications'; });
-    await page.locator('#bookkeeping-package').evaluate(node => node.scrollIntoView({ block: 'start' }));
+    await page.locator('#bookkeeping-vat-heading').evaluate(node => node.scrollIntoView({ block: 'start' }));
     expect(await page.evaluate(() => ({ height: document.scrollingElement.scrollHeight, viewport: innerHeight, top: scrollY })))
       .toEqual({ height: viewport.height, viewport: viewport.height, top: 0 });
     await expect(page.locator('.dk-shell')).toHaveJSProperty('offsetTop', 0);
@@ -208,7 +208,7 @@ for (const theme of ['light', 'dark']) {
     // Pilot routes, plus the Docs Filters popover open: every interactive
     // element in main is measured, the Queue completion tick included.
     for (const [route, ready, open] of [
-      ['/bookkeeping', '.bookkeeping-ledger tbody tr'],
+      ['/bookkeeping', '.bk-row'],
       ['/processes', '.ops-docs-tree-row'],
       ['/processes', '.ops-docs-tree-row', '#filters-section > summary'],
       ['/tasks', '.ops-queue-row .ops-queue-check'],

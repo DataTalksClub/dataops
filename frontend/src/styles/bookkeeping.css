@@ -1,0 +1,273 @@
+/* Bookkeeping: the page is the transaction list. A dense, spreadsheet-like
+   table (one ~36px line per transaction) beside a details pane, using the
+   same dakit roles as the calendar. Loaded after the legacy finance sheets,
+   so the few overrides below win on order at equal specificity. */
+
+.bookkeeping-surface.bookkeeping-surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dk-space-3);
+  max-width: none;
+  min-height: 0;
+}
+.bookkeeping-surface [hidden] { display: none; }
+
+/* ---- header: title, month navigator, actions ---------------------------- */
+.bk-header.dk-page-header { align-items: center; gap: var(--dk-space-2) var(--dk-space-4); }
+.bk-header .dk-page-header__main { flex: 0 0 auto; }
+.bk-header .dk-page-header__title { margin: 0; }
+.bk-header .bookkeeping-period { flex: 1 1 auto; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
+/* Save confirmations and errors float as a toast instead of pushing the
+   table down; the surface clears them after a few seconds. */
+.bookkeeping-surface .bk-status { margin: 0; padding-right: var(--dk-space-4); font-size: var(--dk-text-sm); }
+.bookkeeping-surface .bk-status:empty { display: none; }
+
+/* ⋯ menu */
+.bk-more { position: relative; }
+.bookkeeping-surface .bk-more > summary { display: inline-flex; min-height: 0; list-style: none; cursor: pointer; }
+.bookkeeping-surface .bk-more > summary::before,
+.bookkeeping-surface .bk-more > summary::-webkit-details-marker { display: none; }
+.bk-more > summary svg { width: 16px; height: 16px; }
+.bk-more__menu { position: absolute; top: calc(100% + var(--dk-space-1)); right: 0; z-index: 20; min-width: 248px; }
+.bookkeeping-surface .bk-more__menu .dk-menu__item {
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  font-weight: var(--dk-weight-medium);
+}
+.bookkeeping-surface .bk-more__menu .dk-menu__item:hover { background: var(--dk-bg-hover); }
+.bk-more__meta { margin-left: auto; color: var(--dk-text-muted); font-size: var(--dk-text-sm); font-weight: var(--dk-weight-regular); }
+.bk-more__rule { margin: var(--dk-space-1) 0; border: 0; border-top: 1px solid var(--dk-border-default); }
+
+/* ---- one filter row ---------------------------------------------------- */
+.bk-main { display: flex; flex-direction: column; gap: var(--dk-space-2); flex: 1 1 auto; min-height: 0; min-width: 0; }
+.bk-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-2); min-width: 0; }
+/* On wide screens the filters sit inline; a phone folds them behind "Filters". */
+.bk-filters__more { display: contents; }
+.bookkeeping-surface .bk-filters__toggle { display: none; }
+.bookkeeping-surface .bk-filters .dk-input,
+.bookkeeping-surface .bk-filters .dk-select { min-height: var(--dk-size-control-sm); height: var(--dk-size-control-sm); font-size: var(--dk-text-sm); }
+.bk-filters__search { flex: 1 1 160px; min-width: 120px; max-width: 320px; }
+.bk-filters .dk-select { flex: 0 1 auto; width: auto; min-width: 0; max-width: 160px; }
+@media (min-width: 821px) { .bk-filters { flex-wrap: nowrap; } .bk-filters > *, .bk-filters__more > * { flex-shrink: 0; } .bk-filters .bk-filters__search { flex-shrink: 1; } }
+.bookkeeping-surface .bk-filters .bk-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--dk-space-1);
+  min-height: var(--dk-size-control-sm);
+  padding: 0 var(--dk-space-3);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-full);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-body);
+  font-size: var(--dk-text-sm);
+  font-weight: var(--dk-weight-medium);
+}
+.bookkeeping-surface .bk-filters .bk-toggle[aria-pressed="true"] {
+  background: var(--dk-accent-soft);
+  color: var(--dk-accent-default);
+}
+.bk-toggle .dk-mono:empty { display: none; }
+.bk-filters__count { margin-left: auto; color: var(--dk-text-muted); font-family: var(--dk-font-mono); font-size: var(--dk-text-sm); font-variant-numeric: tabular-nums; }
+
+/* ---- list + details ------------------------------------------------------ */
+.bk-split.dk-split { min-height: 360px; }
+.bk-split[data-pane="closed"] { grid-template-columns: minmax(0, 1fr); }
+.bk-split[data-pane="closed"] > .dk-split__list { border-right: 0; }
+.bk-split[data-pane="open"] { grid-template-columns: minmax(0, 1fr) clamp(320px, 34%, 440px); }
+.bk-scroll { overflow: auto; }
+/* With details open the pane repeats original amount, account and period,
+   so the table drops them and keeps the counterparty readable. */
+.bk-split[data-pane="open"] :is(.bk-col-original, .bk-col-account, .bk-col-period) { display: none; }
+
+/* ---- the table -------------------------------------------------------- */
+.bk-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--dk-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.bk-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 32px;
+  padding: 0 var(--dk-space-2);
+  border-bottom: 1px solid var(--dk-border-strong);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs);
+  font-weight: var(--dk-weight-semibold);
+  letter-spacing: 0.02em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.bk-table td {
+  height: 36px;
+  padding: 0 var(--dk-space-2);
+  border-bottom: 1px solid var(--dk-border-default);
+  color: var(--dk-text-body);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.bk-row { cursor: pointer; }
+.bk-row:hover td { background: var(--dk-bg-hover); }
+.bk-row[aria-selected="true"] td { background: var(--dk-accent-soft); }
+/* Uncategorised rows carry a warning tint; the colour is never the only
+   signal, the blank Type/Category cells say the same. */
+.bk-row.is-uncategorised td { background: var(--dk-warning-bg); }
+.bk-row.is-uncategorised:hover td { background: var(--dk-bg-hover); }
+
+.bk-month__head th {
+  position: sticky;
+  top: 32px;
+  z-index: 1;
+  height: 30px;
+  padding: 0 var(--dk-space-2);
+  border-bottom: 1px solid var(--dk-border-default);
+  background: var(--dk-bg-surface);
+  text-align: left;
+  white-space: nowrap;
+}
+.bk-month__title { color: var(--dk-text-heading); font-size: var(--dk-text-sm); font-weight: var(--dk-weight-semibold); }
+.bk-month__count { margin-left: var(--dk-space-2); color: var(--dk-text-muted); font-size: var(--dk-text-xs); font-weight: var(--dk-weight-regular); }
+.bk-month__totals { display: inline-flex; gap: var(--dk-space-3); margin-left: var(--dk-space-4); color: var(--dk-text-muted); font-size: var(--dk-text-xs); font-weight: var(--dk-weight-regular); }
+.bk-total.is-missing { color: var(--dk-warning-text); }
+
+.bk-col-date { width: 6.5em; color: var(--dk-text-muted); }
+.bk-col-date time { color: var(--dk-text-body); }
+.bk-date__paid { display: block; color: var(--dk-text-faint); font-size: var(--dk-text-xs); line-height: 1; }
+/* The counterparty column takes what is left and truncates. */
+.bk-col-who { width: 100%; max-width: 0; overflow: hidden; }
+.bk-who { display: flex; align-items: baseline; gap: var(--dk-space-2); min-width: 0; color: inherit; text-decoration: none; }
+.bk-who:focus-visible { outline: 2px solid var(--dk-focus-ring); outline-offset: 2px; border-radius: var(--dk-radius-sm); }
+.bk-who__name { flex: none; max-width: 60%; overflow: hidden; color: var(--dk-text-heading); font-weight: var(--dk-weight-medium); text-overflow: ellipsis; }
+.bk-who__what { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--dk-text-muted); text-overflow: ellipsis; }
+.bk-col-money { width: 7.5em; overflow: hidden; font-family: var(--dk-font-mono); text-align: right; }
+.bk-table th.bk-col-money { text-align: right; }
+.bk-col-original { color: var(--dk-text-muted); }
+.bk-col-eur { color: var(--dk-text-heading); }
+.is-income .bk-col-eur { color: var(--dk-success-text); }
+.bk-missing { color: var(--dk-warning-text); font-family: var(--dk-font-sans); font-size: var(--dk-text-xs); font-weight: var(--dk-weight-semibold); }
+.bk-col-account { max-width: 7em; overflow: hidden; color: var(--dk-text-muted); text-overflow: ellipsis; }
+.bk-col-class { padding-left: var(--dk-space-1); padding-right: var(--dk-space-1); }
+.bookkeeping-surface .bk-col-subtype .bk-inline-select { width: 8.5em; }
+.bookkeeping-surface .bk-col-category .bk-inline-select { width: 10.5em; }
+.bookkeeping-surface .bk-col-period .bk-inline-select { width: 6.5em; }
+.bk-col-flag { width: 32px; padding-right: var(--dk-space-3); text-align: center; }
+.bk-flag { display: inline-flex; color: var(--dk-text-faint); }
+.bk-flag svg { width: 14px; height: 14px; }
+
+/* Classification cells read as plain text until hovered or focused. */
+.bookkeeping-surface .bk-inline-select {
+  min-height: 0;
+  height: 26px;
+  padding: 0 var(--dk-space-1);
+  border: 1px solid transparent;
+  border-radius: var(--dk-radius-sm);
+  background: transparent;
+  color: var(--dk-text-body);
+  font: inherit;
+  font-size: var(--dk-text-sm);
+  text-overflow: ellipsis;
+  appearance: none;
+  cursor: pointer;
+}
+.bookkeeping-surface .bk-inline-select:hover,
+.bookkeeping-surface .bk-inline-select:focus-visible { border-color: var(--dk-border-control-hover); background: var(--dk-bg-surface); }
+.bookkeeping-surface .bk-inline-select:focus-visible { outline: 2px solid var(--dk-focus-ring); outline-offset: 0; }
+.bookkeeping-surface .bk-inline-select:disabled { opacity: 0.6; }
+
+/* ---- details pane --------------------------------------------------------- */
+.bk-detail__head { gap: var(--dk-space-2); }
+.bk-detail__close { margin-left: auto; }
+.bookkeeping-surface .bk-detail .dk-split__back,
+.bookkeeping-surface .bk-detail .dk-icon-button { min-height: 0; border: 0; background: transparent; padding: 0; }
+.bk-detail__scroll { display: flex; flex-direction: column; gap: var(--dk-space-4); }
+.bk-detail__summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--dk-space-1) var(--dk-space-3); margin: 0; }
+.bk-detail__amount { color: var(--dk-text-heading); font-size: var(--dk-text-lg); font-weight: var(--dk-weight-semibold); }
+.bk-detail__amount.is-income { color: var(--dk-success-text); }
+.bk-detail__original,
+.bk-detail__date { color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
+.bk-detail__subhead { margin: 0 0 var(--dk-space-2); color: var(--dk-text-heading); font-size: var(--dk-text-sm); font-weight: var(--dk-weight-semibold); }
+.bk-detail__hint { margin: 0 0 var(--dk-space-3); color: var(--dk-text-muted); font-size: var(--dk-text-xs); }
+.bk-receipts { display: grid; gap: var(--dk-space-1); margin: 0 0 var(--dk-space-2); padding: 0; list-style: none; }
+.bk-receipt { display: flex; align-items: center; justify-content: space-between; gap: var(--dk-space-2); padding: var(--dk-space-1) var(--dk-space-2); border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-md); }
+.bk-receipt__name { min-width: 0; overflow: hidden; color: var(--dk-text-body); font-size: var(--dk-text-sm); text-overflow: ellipsis; white-space: nowrap; }
+.bk-receipts__none { margin: 0 0 var(--dk-space-2); color: var(--dk-warning-text); font-size: var(--dk-text-sm); }
+.bk-attach .dk-label { color: var(--dk-text-muted); font-size: var(--dk-text-xs); }
+.bk-attach__row { display: flex; gap: var(--dk-space-2); min-width: 0; }
+.bk-attach__row .dk-select { flex: none; width: auto; }
+.bk-attach__row .dk-input { flex: 1 1 auto; min-width: 0; }
+.bk-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--dk-space-2) var(--dk-space-3); }
+.bk-field { display: grid; gap: var(--dk-space-1); min-width: 0; }
+.bk-field--wide { grid-column: 1 / -1; }
+.bk-field .dk-label { margin: 0; color: var(--dk-text-muted); font-size: var(--dk-text-xs); }
+.bookkeeping-surface .bk-field .dk-input,
+.bookkeeping-surface .bk-field .dk-select { min-height: var(--dk-size-control-sm); height: var(--dk-size-control-sm); font-size: var(--dk-text-sm); }
+.bookkeeping-surface .bk-field .dk-textarea { font-size: var(--dk-text-sm); }
+.bk-field__error { color: var(--dk-danger-text); font-size: var(--dk-text-xs); }
+.bk-field__error:empty { display: none; }
+.bk-field.is-saved .dk-label::after { content: " · saved"; color: var(--dk-success-text); }
+.bk-detail__danger { padding-top: var(--dk-space-3); border-top: 1px solid var(--dk-border-default); }
+
+/* ---- secondary views (Files, Accountant package, Forwarded invoices) ---- */
+.bk-secondary { display: grid; gap: var(--dk-space-3); }
+.bk-back { justify-self: start; }
+
+/* ---- phone: compact rows, details full screen --------------------------- */
+@media (max-width: 820px) {
+  /* One header row: the period navigator names the page on a phone (the
+     topbar already says Bookkeeping), the title stays for assistive tech. */
+  .bk-header.dk-page-header { flex-wrap: nowrap; gap: var(--dk-space-2); }
+  .bk-header .dk-page-header__main {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .bk-header .bookkeeping-period { flex: 1 1 auto; }
+  .bk-filters { flex-wrap: wrap; }
+  .bk-filters__search { flex: 1 1 0; min-width: 0; max-width: none; }
+  .bookkeeping-surface .bk-filters__toggle { display: inline-flex; gap: var(--dk-space-1); }
+  .bk-filters__toggle .dk-mono:empty { display: none; }
+  .bk-filters__more { display: none; }
+  .bk-filters[data-open] .bk-filters__more { display: flex; flex-wrap: wrap; gap: var(--dk-space-2); order: 3; flex-basis: 100%; }
+  .bk-filters__more .dk-select { flex: 1 1 28%; min-width: 0; max-width: none; }
+  .bk-filters__count { margin-left: 0; }
+  /* Add transaction keeps its name for assistive tech but shows only "+". */
+  .bk-filters [data-bookkeeping-add],
+  .bk-filters .bk-more { flex: none; }
+  .bk-filters [data-bookkeeping-add] > span:last-child {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .bk-split.dk-split { border-radius: var(--dk-radius-md); }
+  .bk-split[data-pane="open"] { grid-template-columns: minmax(0, 1fr); }
+  .bk-table thead { display: none; }
+  .bk-month__head th { top: 0; }
+  .bk-month__totals { display: none; }
+  .bk-col-original,
+  .bk-col-account,
+  .bk-col-class,
+  .bk-col-flag { display: none; }
+  .bk-table td { height: 44px; }
+  .bk-col-date { width: 4.5em; font-size: var(--dk-text-xs); }
+  .bk-date__paid { display: none; }
+  .bk-who { flex-direction: column; gap: 0; }
+  .bk-who__name { max-width: 100%; }
+  .bk-who__what { font-size: var(--dk-text-xs); }
+  .bk-col-money { width: auto; }
+  .bk-fields { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Touch: every control in the page meets the 44px target. */
+@media (max-width: 820px), (pointer: coarse) {
+  .bookkeeping-surface .bk-filters .dk-input,
+  .bookkeeping-surface .bk-filters .dk-select,
+  .bookkeeping-surface .bk-filters .bk-toggle,
+  .bookkeeping-surface .bk-field .dk-input,
+  .bookkeeping-surface .bk-field .dk-select { min-height: var(--dk-size-touch); height: var(--dk-size-touch); }
+  .bk-who { min-height: var(--dk-size-touch); justify-content: center; }
+  .bookkeeping-surface .bk-inline-select { height: var(--dk-size-touch); }
+  .bookkeeping-surface .bk-detail .dk-split__back,
+  .bookkeeping-surface .bk-detail .dk-icon-button { min-height: var(--dk-size-touch); min-width: var(--dk-size-touch); }
+}

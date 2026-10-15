@@ -724,15 +724,16 @@ test.describe('canonical frontend capability behavior', () => {
     test.setTimeout(90_000);
     const { context, page } = await portalPage(browser);
     await page.goto('/bookkeeping');
-    await expect(page.getByText('No bookkeeping entries')).toBeVisible();
+    await expect(page.getByText('No transactions recorded for')).toBeVisible();
+    await page.goto('/bookkeeping?view=files');
     await expect(page.locator('.bookkeeping-documents')).toContainText('No private documents uploaded');
     await setFaults(context.request, [{ method: 'GET', path: '/api/bookkeeping/transactions', status: 503, remaining: 10 }]);
-    await page.reload();
+    await page.goto('/bookkeeping');
     await expect(page.locator('.bookkeeping-ledger')).toContainText('Could not load bookkeeping: Synthetic route failure (503)');
     await expect(page.getByRole('status')).toContainText('Retry by reopening Bookkeeping');
     await clearFaults(context.request);
     await page.reload();
-    await expect(page.getByText('No bookkeeping entries')).toBeVisible();
+    await expect(page.getByText('No transactions recorded for')).toBeVisible();
     const setup = await context.request.post('/api/bookkeeping/accounts/setup');
     expect(setup.status()).toBe(200);
     const accounts = (await json(setup)).accounts;
@@ -744,26 +745,28 @@ test.describe('canonical frontend capability behavior', () => {
     } });
     expect(created.status()).toBe(201);
     const transaction = await json(created);
-    await page.goto('/bookkeeping');
-    await expect(page.getByRole('cell', { name: counterparty })).toBeVisible();
-    await expect(page.locator('.bookkeeping-totals')).toContainText('Expenses €18.50');
+    await page.goto('/bookkeeping?month=2026-08');
+    const row = page.locator('.bk-row').filter({ hasText: counterparty });
+    await expect(row).toBeVisible();
+    await expect(page.locator('.bk-month__head')).toContainText('out −€18.50');
 
-    // The upload form lives collapsed behind its summary; open it.
-    await page.locator('.bookkeeping-upload-panel > summary').click();
-    await page.getByRole('button', { name: 'Upload PDF' }).click();
-    await expect(page.getByRole('status')).toContainText('Choose a PDF first');
-    await page.getByLabel('Link to transaction').selectOption(transaction.id);
-    await page.getByLabel('PDF evidence').setInputFiles({
+    // Evidence attaches from the transaction's details.
+    await row.locator('.bk-col-date').click();
+    await expect(page).toHaveURL(new RegExp(`tx=${transaction.id}`));
+    await page.locator('.bk-detail [data-attach-file]').setInputFiles({
       name: 'synthetic-evidence.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\nsynthetic evidence\n%%EOF'),
     });
-    await page.getByRole('button', { name: 'Upload PDF' }).click();
-    await expect(page.getByRole('status')).toContainText('PDF uploaded and verified');
-    await expect(page.locator('.bookkeeping-documents article')).toHaveCount(1);
-    await expect(page.locator('.bookkeeping-documents')).toContainText('Private PDF');
-    await expect(page.getByRole('button', { name: /Unlink/ })).toBeVisible();
+    await expect(page.getByRole('status')).toContainText('PDF attached.');
+    await expect(page.locator('.bk-detail .bk-receipts')).toContainText('Invoice PDF');
     const links = await json(await context.request.get('/api/bookkeeping/links'));
     expect(links.items.some((link) => link.transactionId === transaction.id)).toBe(true);
 
+    // Statements upload from the Files view.
+    await page.goto('/bookkeeping?view=files&month=2026-08');
+    await expect(page.locator('.bookkeeping-documents article')).toHaveCount(1);
+    await page.locator('.bookkeeping-upload-panel > summary').click();
+    await page.getByRole('button', { name: 'Upload PDF' }).click();
+    await expect(page.getByRole('status')).toContainText('Choose a PDF first');
     for (const [index] of accounts.entries()) {
       await page.getByLabel('Document type').selectOption('bank-statement');
       const accountSelect = page.locator('[data-account]');
@@ -771,8 +774,7 @@ test.describe('canonical frontend capability behavior', () => {
       expect(renderedAccountId).toBeTruthy();
       await accountSelect.selectOption(renderedAccountId);
       await page.getByLabel('Statement month').fill('2026-08');
-      await page.getByLabel('Link to transaction').selectOption('');
-      await page.getByLabel('PDF evidence').setInputFiles({
+      await page.locator('[data-pdf]').setInputFiles({
         name: `synthetic-statement-${index + 1}.pdf`, mimeType: 'application/pdf',
         buffer: Buffer.from(`%PDF-1.4\nsynthetic statement ${index + 1}\n%%EOF`),
       });
@@ -784,6 +786,7 @@ test.describe('canonical frontend capability behavior', () => {
       filename: 'synthetic-evidence.pdf', contentType: 'application/pdf', byteSize: 34, documentType: 'receipt',
     } });
     expect(retired.status()).toBe(404);
+    await page.goto('/bookkeeping?view=package&month=2026-08');
     await page.getByLabel('Report month').fill('2026-08');
     await page.getByRole('button', { name: 'Create monthly package' }).click();
     await expect(page.getByRole('status')).toContainText('Package created');
@@ -791,12 +794,11 @@ test.describe('canonical frontend capability behavior', () => {
     // what files the ZIP as a private document.
     await page.getByRole('button', { name: 'Download package' }).click();
     await page.waitForTimeout(1000);
-    // The archive is generated by the explicit download action; that is also
-    // what files the ZIP as a private document.
     await page.getByRole('button', { name: 'Download package' }).click();
     await page.waitForTimeout(1000);
-    await page.reload();
-    await expect(page.getByRole('cell', { name: counterparty })).toBeVisible();
+    await page.goto('/bookkeeping?month=2026-08');
+    await expect(row).toBeVisible();
+    await page.goto('/bookkeeping?view=files&month=2026-08');
     await expect(page.locator('.bookkeeping-documents article')).toHaveCount(4);
     await expect(page.locator('.bookkeeping-documents')).toContainText('datatalksclub-2026-08.zip');
     await context.close();
