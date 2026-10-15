@@ -484,7 +484,7 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /calendar-week is-current-week/);
     assert.match(dom.grid.innerHTML, /calendar-week-number is-current-week/);
     assert.match(dom.grid.innerHTML, /calendar-day[^"]*is-current-week/);
-    expectCalendarRange(harness.requests[0], "2026-08-03", "2026-09-06");
+    expectCalendarRange(harness.requests[0], "2026-08-01", "2026-09-06");
   });
 
   test("renders owned Calendar planning data while an external overlay is pending", async () => {
@@ -729,6 +729,41 @@ describe("Planning surface production behavior", () => {
     await nextTicks();
     expectWeekdaysOnly();
     assert.equal((dom.grid.innerHTML.match(/<section/g) || []).length, 5);
+  });
+
+  // Aug 1 2026 is a Saturday. The grid starts on Monday Aug 3, so there is no
+  // Friday in it to carry that weekend; the note goes on the first Monday.
+  test("shows a month's leading weekend as a note on its first Monday", async () => {
+    const dom = createCalendarDom();
+    const harness = createPlanningHarness({
+      calendar: dom,
+      request: async (url) => {
+        const value = new URL(url);
+        if (value.pathname.endsWith("/overlays")) return { items: [] };
+        return {
+          alerts: [],
+          holidays: [],
+          items: [
+            { id: "sat", activityType: "webinar", status: "confirmed", title: "Saturday stream", startKey: "2026-08-01", endKey: "2026-08-01" },
+            { id: "sun", activityType: "webinar", status: "confirmed", title: "Sunday demo", startKey: "2026-08-02", endKey: "2026-08-02" },
+            { id: "mid", activityType: "webinar", status: "confirmed", title: "Mid-month weekend", startKey: "2026-08-08", endKey: "2026-08-08" },
+          ],
+        };
+      },
+    });
+    await harness.surface.renderCalendarSurface();
+    await nextTicks();
+    expectCalendarRange(harness.requests.find((entry) => new URL(entry.url).pathname === "/api/calendar-items"), "2026-08-01", "2026-09-06");
+    const html = dom.grid.innerHTML;
+    assert.doesNotMatch(html, /data-day="2026-08-0[12]"/);
+    const monday = html.split('data-day="2026-08-03"')[1].split("<section")[0];
+    assert.match(monday, /calendar-weekend-note" data-open-day="2026-08-01"[\s\S]*?\+ weekend · 2/);
+    assert.match(monday, /Sat, Aug 1: Saturday stream; Sun, Aug 2: Sunday demo/);
+    // Later weekends stay on their Friday; later Mondays carry no note.
+    const friday = html.split('data-day="2026-08-07"')[1].split("<section")[0];
+    assert.match(friday, /data-open-day="2026-08-08"[\s\S]*?\+ weekend · 1/);
+    const nextMonday = html.split('data-day="2026-08-10"')[1].split("<section")[0];
+    assert.doesNotMatch(nextMonday, /calendar-weekend-note/);
   });
 
   test("creates, edits, and dismisses Calendar data through canonical mutation contracts", async () => {

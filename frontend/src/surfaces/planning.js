@@ -363,11 +363,11 @@ export function createPlanningSurface(context) {
       const first = new Date(Date.UTC(year, month, 1));
       // The grid is Monday-Friday only, so a month that opens on a weekend
       // starts at its first workday instead of a week of previous-month days.
+      // The range still begins on the 1st so that leading weekend is loaded
+      // and shown as a "+ weekend" note on the first Monday.
       const day = first.getUTCDay();
-      if (day === 0) first.setUTCDate(2);
-      else if (day === 6) first.setUTCDate(3);
       const last = new Date(Date.UTC(year, month + 1, 0));
-      return [iso(monday(first)), iso(sunday(last))];
+      return [day === 0 || day === 6 ? iso(first) : iso(monday(first)), iso(sunday(last))];
     }
 
     function render() {
@@ -407,12 +407,22 @@ export function createPlanningSurface(context) {
           if (overlay.provider === "alexey-calendar") return false;
           return showOverlay;
         }),
-        weekendNote = (fridayValue) => {
-          const entries = [1, 2].flatMap((offset) => {
-            const value = new Date(fridayValue);
+        leadingMonday = (() => {
+          const value = new Date(`${from}T00:00:00Z`), day = value.getUTCDay();
+          if (day !== 0 && day !== 6) return "";
+          value.setUTCDate(value.getUTCDate() + (day === 6 ? 2 : 1));
+          return iso(value);
+        })(),
+        // Weekend entries fold into a note on the Friday before them, or, for
+        // a month that opens on a weekend, on its first Monday.
+        weekendNote = (dayValue) => {
+          const offsets = dayValue.getUTCDay() === 5 ? [1, 2] : [-2, -1];
+          const entries = offsets.flatMap((offset) => {
+            const value = new Date(dayValue);
             value.setUTCDate(value.getUTCDate() + offset);
-            const date = iso(value),
-              label = value.toLocaleDateString("en", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+            const date = iso(value);
+            if (date < from || date > to) return [];
+            const label = value.toLocaleDateString("en", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
             return [
               ...itemsOn(date).map((item) => ({ date, text: `${label}: ${item.title}` })),
               ...overlaysOn(date).filter((overlay) => !isAvailableOverlay(overlay))
@@ -539,7 +549,7 @@ export function createPlanningSurface(context) {
               ${holidayMarkup}
               ${activityMarkup}
               ${overlayMarkup}
-              ${dayOfWeek === 5 ? weekendNote(dateValue) : ""}
+              ${dayOfWeek === 5 || date === leadingMonday ? weekendNote(dateValue) : ""}
             </div>
           </section>
         `;
