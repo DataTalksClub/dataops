@@ -39,7 +39,8 @@ import { createCard, getCard } from '../src/db/cards';
 import { createTask, getTask } from '../src/db/tasks';
 import { listUsers } from '../src/db/users';
 import { resolveDefaultAssigneeId } from '../src/db/workspaceSettings';
-import type { User } from '../src/types';
+import { extractTitleLinks } from '../src/taskMaterials';
+import type { TaskMaterial, User } from '../src/types';
 import { createArtifact, getArtifact } from '../src/db/artifacts';
 import { createDueFollowUpNotifications } from '../src/db/notifications';
 import { createRecurringConfig, listRecurringConfigs } from '../src/db/recurring';
@@ -481,6 +482,35 @@ function extractInstructionsUrl(text: string): { description: string; instructio
   return { description: cleaned, instructionsUrl: url };
 }
 
+function isLoomUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === 'loom.com' || host.endsWith('.loom.com');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Take the links out of a checklist item's name. The first Markdown link is
+ * the Task's instructions; the rest become Task materials, as the Task API
+ * stores them. A Loom walkthrough is neither: it belongs in the Task's process
+ * doc, so it is returned in `looms` for the import report instead.
+ */
+function extractItemLinks(text: string): {
+  description: string;
+  instructionsUrl: string | null;
+  materials: TaskMaterial[];
+  looms: string[];
+} {
+  const { title, materials: links } = extractTitleLinks(text);
+  const looms = links.filter((link) => isLoomUrl(link.url)).map((link) => link.url);
+  const materials = links.filter((link) => !isLoomUrl(link.url));
+  // Markdown links carry a label; bare URLs, extracted after them, do not.
+  const instructions = materials[0]?.label !== undefined ? materials.shift() : undefined;
+  return { description: title, instructionsUrl: instructions?.url ?? null, materials, looms };
+}
+
 function extractCardLinks(card: TrelloCard): { name: string; url: string }[] {
   const attachments = card.attachments || [];
   const candidates = [
@@ -742,7 +772,7 @@ function trelloChecklistItemsToTasks(card: TrelloCard, boardChecklists: TrelloCh
   for (const cl of cardChecklists) {
     const items = (cl.checkItems || []).sort((a, b) => a.pos - b.pos);
     for (const item of items) {
-      const { description: cleanedName, instructionsUrl } = extractInstructionsUrl(item.name);
+      const { description: cleanedName, instructionsUrl, materials } = extractItemLinks(item.name);
       const { description: finalName, assigneeId } = extractAssigneeHint(cleanedName);
 
       const refId = slugify(`${cl.name}-${finalName}`.substring(0, 60));
@@ -756,6 +786,7 @@ function trelloChecklistItemsToTasks(card: TrelloCard, boardChecklists: TrelloCh
         tags: [cl.name],
       };
       if (instructionsUrl) taskData.instructionsUrl = instructionsUrl;
+      if (materials.length > 0) taskData.materials = materials;
       if (assigneeId || importDefaultAssigneeId) taskData.assigneeId = assigneeId || importDefaultAssigneeId;
       if (cardId) taskData.cardId = cardId;
       tasks.push(taskData);
@@ -815,6 +846,7 @@ interface TrelloActiveCardStats {
   unsafeArtifactUrls: number;
   unsupportedProofInferences: number;
   duplicateSourceIds: number;
+  loomWalkthroughs: number;
   followUpNotificationsCreated: number;
 }
 
@@ -829,6 +861,7 @@ interface TrelloActiveCardReport {
   unsafeArtifactUrls: string[];
   unsupportedProofInferences: string[];
   duplicateSourceIds: string[];
+  loomWalkthroughs: string[];
   plans: TrelloActiveCardPlan[];
 }
 
@@ -854,6 +887,7 @@ const DEFAULT_TRELLO_ACTIVE_STATS: TrelloActiveCardStats = {
   unsafeArtifactUrls: 0,
   unsupportedProofInferences: 0,
   duplicateSourceIds: 0,
+  loomWalkthroughs: 0,
   followUpNotificationsCreated: 0,
 };
 
@@ -869,6 +903,7 @@ function emptyTrelloActiveCardReport(): TrelloActiveCardReport {
     unsafeArtifactUrls: [],
     unsupportedProofInferences: [],
     duplicateSourceIds: [],
+    loomWalkthroughs: [],
     plans: [],
   };
 }
@@ -948,6 +983,10 @@ function addReportWarning(report: TrelloActiveCardReport, warning: string, conte
   } else if (warning.startsWith('duplicate source ID:')) {
     report.stats.duplicateSourceIds++;
     report.duplicateSourceIds.push(`${context} ${warning.replace('duplicate source ID: ', '')}`);
+  } else if (warning.startsWith('loom walkthrough:')) {
+    // Not imported as a Task material: add it to the process doc's training_assets.
+    report.stats.loomWalkthroughs++;
+    report.loomWalkthroughs.push(`${context} ${warning.replace('loom walkthrough: ', '')}`);
   }
 }
 
@@ -1062,12 +1101,13 @@ function planTrelloActiveCard(
       const date = parseDate(rawDate) || anchorDate;
       if (!parseDate(rawDate)) warnings.push(`invalid date: ${rawDate}`);
 
-      const { description: cleanedName, instructionsUrl } = extractInstructionsUrl(item.name);
+      const { description: cleanedName, instructionsUrl, materials, looms } = extractItemLinks(item.name);
       const { description: finalName, assigneeId, unknownName } = extractAssigneeHint(cleanedName);
       if (unknownName) warnings.push(`unknown assignee: ${unknownName} in ${cleanedName}`);
+      for (const loom of looms) warnings.push(`loom walkthrough: ${loom} in ${finalName}`);
 
       const contextText = `${finalName}\n${trelloCard.name}\n${trelloCard.desc || ''}`;
-      const proofText = `${finalName}\n${instructionsUrl || ''}`;
+      const proofText = [finalName, ...materials.map((material) => material.url), instructionsUrl || ''].join('\n');
       const { safeUrls } = extractSafeUrls(proofText);
       const proof = inferTrelloProofRequirement(proofText, safeUrls);
       const waiting = inferWaiting(contextText, date);
@@ -1107,6 +1147,7 @@ function planTrelloActiveCard(
       const requires = inferRequires(finalName, docResolution.instructionDocId);
       if (requires.length > 0) task.requires = requires;
       if (instructionsUrl) task.instructionsUrl = instructionsUrl;
+      if (materials.length > 0) task.materials = materials;
       if (docResolution.instructionDocId) task.instructionDocId = docResolution.instructionDocId;
       if (assigneeId || importDefaultAssigneeId) task.assigneeId = assigneeId || importDefaultAssigneeId;
       if (safeUrls[0]) task.link = safeUrls[0];
@@ -1248,6 +1289,7 @@ function printTrelloActiveCardReport(report: TrelloActiveCardReport): void {
     unsafeArtifactUrls: report.unsafeArtifactUrls,
     unsupportedProofInferences: report.unsupportedProofInferences,
     duplicateSourceIds: report.duplicateSourceIds,
+    loomWalkthroughs: report.loomWalkthroughs,
   }, null, 2));
 }
 
