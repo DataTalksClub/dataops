@@ -1,6 +1,7 @@
+import "../../dakit/collection.js";
 import { cardKind } from "../../core/card-kind.js";
 import { renderIcon } from "../../core/icons.js";
-import { createCollectionCreateButton, createPageHeader } from "../operations-overview.js";
+import { createPageHeader } from "../operations-overview.js";
 
 export function createCardsSurface(context) {
   const {
@@ -254,7 +255,7 @@ export function createCardsSurface(context) {
     if (templateIds.size > 0) toolbar.append(renderTemplateFilter(templateIds));
     // A filtered board creates into the Template it shows.
     toolbar.append(
-      createCollectionCreateButton({
+      globalThis.dakitCollection.createButton({
         label: "Create card",
         onClick: () => openQuickWorkflowForm(
           templateFilter

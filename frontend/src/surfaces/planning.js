@@ -1,4 +1,5 @@
-import { createCollectionCreateButton, createPageHeader } from "./operations-overview.js";
+import "../dakit/collection.js";
+import { createPageHeader } from "./operations-overview.js";
 import { parseIsoDateValue } from "../core/workspace.js";
 import { createNewsletterPlanner } from "./planning-newsletter.js";
 import { setupDayScheduleDialog, setupCalendarSettingsDialog } from "./planning-calendar-dialogs.js";
@@ -331,7 +332,7 @@ export function createPlanningSurface(context) {
       </dialog>`;
     // Add activity rides on the calendar's own toolbar, right after the
     // period it adds into; the page header keeps only title and description.
-    const addActivity = createCollectionCreateButton({
+    const addActivity = globalThis.dakitCollection.createButton({
       label: "Add activity",
       onClick: () => openActivityDialog(),
     });

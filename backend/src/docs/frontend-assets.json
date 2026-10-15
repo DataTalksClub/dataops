@@ -136,6 +136,7 @@
     "src/dakit/shell.js",
     "src/dakit/tabs.js",
     "src/dakit/split.js",
+    "src/dakit/collection.js",
     "src/surfaces/split-back-icon.js",
     "src/dakit/device-code.js",
     "src/dakit/fonts/inter-var.woff2",

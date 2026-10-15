@@ -1,8 +1,5 @@
-import {
-  createCollectionCreateButton,
-  createPageHeader,
-  renderDataSummary,
-} from "../operations-overview.js";
+import "../../dakit/collection.js";
+import { createPageHeader, renderDataSummary } from "../operations-overview.js";
 import { createCardsSurface } from "./cards.js";
 import { createQuickTaskActions } from "./quick-create.js";
 import { createTaskQueue } from "./queue.js";
@@ -88,11 +85,11 @@ export function createTasksSurface(context) {
   });
   // New task is the queue's one primary create; Create card is secondary.
   const queueCreateActions = () => [
-    createCollectionCreateButton({
+    globalThis.dakitCollection.createButton({
       label: "New task",
       onClick: () => openQuickTaskForm(),
     }),
-    createCollectionCreateButton({
+    globalThis.dakitCollection.createButton({
       label: "Create card",
       variant: "secondary",
       shortcut: false,

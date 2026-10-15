@@ -1,7 +1,8 @@
+import "../../dakit/collection.js";
 import { SPONSORS_TABS, sponsorsPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
 import { leadsSectionMarkup } from "./sponsor-leads.js";
-import { collectionCreateButtonMarkup, renderPageHeaderMarkup } from "../operations-overview.js";
+import { renderPageHeaderMarkup } from "../operations-overview.js";
 
 const DEAL_STATUSES = ["open", "agreed", "lost"];
 const PRODUCT_KINDS = ["one-off", "package", "course"];
@@ -51,11 +52,11 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
     <div class="dk-split crm-layout" data-crm-split data-view="list">
       <section class="dk-split__list crm-master" aria-labelledby="crm-queue-heading">
         <header class="dk-split__head crm-list-head">
-          <div class="collection-header__lead">
+          <div class="dk-collection-header__lead">
             <h2 class="dk-split__title" id="crm-queue-heading" data-crm-list-heading>Queue</h2>
-            ${collectionCreateButtonMarkup({ label: "Add deal", attributes: "data-add-deal" })}
+            ${globalThis.dakitCollection.createButtonMarkup({ label: "Add deal", attributes: "data-add-deal" })}
           </div>
-          <div class="collection-header__trail">
+          <div class="dk-collection-header__trail">
             <span data-booking-count class="dk-split__count"></span>
             <button type="button" class="dk-icon-button dk-icon-button--sm" data-evaluate-communications
               aria-label="Refresh suggestions" title="Refresh suggestions"><svg viewBox="0 0 24 24" aria-hidden="true"
@@ -98,9 +99,9 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
     </div>
     <section class="crm-directory" data-crm-companies-section hidden aria-labelledby="crm-sponsors-heading">
       <header class="section-header">
-        <div class="collection-header__lead">
+        <div class="dk-collection-header__lead">
           <h3 id="crm-sponsors-heading">Companies</h3>
-          ${collectionCreateButtonMarkup({ label: "Add sponsor", attributes: "data-add-org" })}
+          ${globalThis.dakitCollection.createButtonMarkup({ label: "Add sponsor", attributes: "data-add-org" })}
         </div>
         <label
           >Show

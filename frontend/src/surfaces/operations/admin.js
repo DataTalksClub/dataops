@@ -1,6 +1,5 @@
+import "../../dakit/collection.js";
 import {
-  createCollectionCreateButton,
-  createCollectionHeader,
   createFormFeedback,
   createPageHeader,
   renderDataSummary,
@@ -158,10 +157,10 @@ export function createAdminSurface(context) {
     // it here would be a second voice for the same fact.
     if (!usersSnapshot.loaded) return section;
     // Add user rides on the account list it adds to; only admins see it.
-    section.append(createCollectionHeader({
+    section.append(globalThis.dakitCollection.header({
       title: "Accounts",
       create: isCurrentUserAdmin()
-        ? createCollectionCreateButton({ label: "Add user", onClick: () => openUserForm(null) })
+        ? globalThis.dakitCollection.createButton({ label: "Add user", onClick: () => openUserForm(null) })
         : null,
     }));
 

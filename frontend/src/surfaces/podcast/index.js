@@ -2,9 +2,8 @@
 // docs/list-detail.md). The list holds what's in flight first, then each
 // season; the detail is the selected episode, addressed by /podcast/<id> so
 // it can be linked, reloaded and reached with Back on a phone.
-import {
-  createCollectionCreateButton, createCollectionHeader, createPageHeader,
-} from "../operations-overview.js";
+import "../../dakit/collection.js";
+import { createPageHeader } from "../operations-overview.js";
 import { openCreateEpisodeDialog } from "./create-dialog.js";
 import { renderEpisodeDetail } from "./detail.js";
 import { element, emptyState, formatDate, select, statusChip } from "./dom.js";
@@ -163,9 +162,9 @@ export function createPodcastSurface(context) {
   }
 
   function createButton(label = "New episode", options = {}) {
-    const control = createCollectionCreateButton({
+    const control = globalThis.dakitCollection.createButton({
       label,
-      documentRef,
+      document: documentRef,
       ...options,
       onClick: (event) => openCreate(event?.currentTarget || control),
     });
@@ -265,12 +264,12 @@ export function createPodcastSurface(context) {
   function renderList(selectedId) {
     const pane = element(documentRef, "section", "dk-split__list podcast-list");
     pane.setAttribute("aria-labelledby", "podcast-episodes-title");
-    const header = createCollectionHeader({
+    const header = globalThis.dakitCollection.header({
       title: "Episodes",
       titleId: "podcast-episodes-title",
       className: "dk-split__head podcast-list-head",
       create: createButton(),
-      documentRef,
+      document: documentRef,
     });
     header.querySelector("h2")?.classList.add("dk-split__title");
     pane.append(header);
@@ -329,11 +328,11 @@ export function createPodcastSurface(context) {
   function renderEmptyRegister(root) {
     const panel = element(documentRef, "section", "podcast-empty-register");
     panel.setAttribute("aria-labelledby", "podcast-episodes-title");
-    panel.append(createCollectionHeader({
+    panel.append(globalThis.dakitCollection.header({
       title: "Episodes",
       titleId: "podcast-episodes-title",
       create: createButton(),
-      documentRef,
+      document: documentRef,
     }));
     panel.append(emptyState(
       documentRef,

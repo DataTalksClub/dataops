@@ -1,9 +1,10 @@
+import "../../dakit/collection.js";
 // Static shell for the bookkeeping surface: the month lens header, the
 // ledger, evidence and package sections, and the entry/EUR/delete dialogs.
 // All dynamic state renders into [data-close-state], [data-worklist],
 // .bookkeeping-ledger, .bookkeeping-documents and [data-package-review].
 import { financeSectionHead, html } from "./shared.js";
-import { collectionCreateButtonMarkup, renderPageHeaderMarkup } from "../operations-overview.js";
+import { renderPageHeaderMarkup } from "../operations-overview.js";
 import { periodNavMarkup } from "../period-nav.js";
 
 export function bookkeepingSurfaceMarkup() {
@@ -55,7 +56,7 @@ export function bookkeepingSurfaceMarkup() {
         ${financeSectionHead({
           id: "bookkeeping-ledger-heading",
           title: "Ledger",
-          create: collectionCreateButtonMarkup({ label: "Add entry", attributes: "data-bookkeeping-add" }),
+          create: globalThis.dakitCollection.createButtonMarkup({ label: "Add entry", attributes: "data-bookkeeping-add" }),
           hint: "Transactions for the selected period. Open an entry only when it needs work.",
           meta: html`<p class="bookkeeping-totals" aria-live="polite"></p>`,
           actions: html`<div class="bookkeeping-export-actions">

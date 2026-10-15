@@ -168,9 +168,9 @@ describe("Podcast surface", () => {
     await nextTicks(4);
     assert.ok(findByText(documentList, "Podcast", "h1"));
     assert.ok(calls.some(([kind, title]) => kind === "title" && title === "Podcast"));
-    const head = documentList.querySelector(".dk-split__head.collection-header");
+    const head = documentList.querySelector(".dk-split__head.dk-collection-header");
     assert.ok(findByText(head, "Episodes", "h2"));
-    assert.ok(head.querySelector("[data-collection-create]"), "New episode carries the c shortcut");
+    assert.ok(head.querySelector("[data-dk-create]"), "New episode carries the c shortcut");
     assert.equal(documentList.querySelector(".dk-split").dataset.view, "list");
     assert.deepEqual(rows(documentList), ["booked-soon", "scheduled", "booked-late"]);
     assert.ok(findByText(documentList, "Upcoming", "h3"));
@@ -311,7 +311,7 @@ describe("Podcast surface", () => {
     });
     surface.renderPodcastSurface();
     await nextTicks(4);
-    const trigger = documentList.querySelector("[data-collection-create]");
+    const trigger = documentList.querySelector("[data-dk-create]");
     const before = calls.filter(([method, path]) => method === "GET" && path === "/api/podcast-episodes").length;
     await trigger.click();
     await nextTicks(2);
@@ -343,7 +343,7 @@ describe("Podcast surface", () => {
     assert.ok(findByText(empty.documentList, "No episodes yet"));
     const first = findByText(empty.documentList, "Create the first episode", "button");
     assert.ok(first);
-    assert.equal(first.dataset.collectionCreate, undefined, "only New episode carries the shortcut");
+    assert.equal(first.dataset.dkCreate, undefined, "only New episode carries the shortcut");
 
     const stale = harness({ routeId: "gone" });
     stale.surface.renderPodcastSurface();

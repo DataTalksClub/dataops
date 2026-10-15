@@ -33,7 +33,7 @@
 }.workflow-board-filter select {
   min-width: 220px;
   min-height: 36px;
-}.workflow-board-filters > .collection-create,
+}.workflow-board-filters > .dk-collection-create,
 .workflow-board-filters > .workflow-board-toolbar-trail {
   align-self: flex-end;
 }.workflow-board-filters > .quiet-button {

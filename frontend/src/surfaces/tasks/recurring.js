@@ -1,8 +1,5 @@
-import {
-  createCollectionCreateButton,
-  createCollectionHeader,
-  setControlPending,
-} from "../operations-overview.js";
+import "../../dakit/collection.js";
+import { setControlPending } from "../operations-overview.js";
 
 const RECURRING_ICONS = Object.freeze({
   add: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
@@ -89,14 +86,14 @@ export function createRecurringTasks(context) {
     const configs = options.limit ? all.slice(0, options.limit) : all;
 
     // The create action rides on the list it creates into.
-    section.append(createCollectionHeader({
+    section.append(globalThis.dakitCollection.header({
       title: "Schedules",
       level: "h3",
       className: "recurring-section-header",
       meta: recurring?.loaded
         ? countLabel(configs.length, "schedule")
         : "Not loaded",
-      create: createCollectionCreateButton({
+      create: globalThis.dakitCollection.createButton({
         label: "New schedule",
         onClick: () => openRecurringForm(),
       }),
@@ -114,7 +111,7 @@ export function createRecurringTasks(context) {
       empty.append(emptyText);
       section.append(empty);
       if (recurring?.loaded && !recurring?.errors?.length) {
-        const cta = createCollectionCreateButton({
+        const cta = globalThis.dakitCollection.createButton({
           label: "Create the first schedule",
           variant: "secondary",
           shortcut: false,

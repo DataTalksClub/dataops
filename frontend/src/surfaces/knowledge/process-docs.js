@@ -1,5 +1,4 @@
-import { createCollectionCreateButton } from "../operations-overview.js";
-
+import "../../dakit/collection.js";
 export function createProcessDocsSurface(context, services) {
   const {
     basename,
@@ -466,7 +465,7 @@ export function createProcessDocsSurface(context, services) {
     if (knowledgeTools) {
       // New process doc rides on the catalog toolbar, right after the
       // Filters that scope the list; the page header holds no actions.
-      const createButton = createCollectionCreateButton({
+      const createButton = globalThis.dakitCollection.createButton({
         label: "New process doc",
         onClick: () => showCreate(),
       });

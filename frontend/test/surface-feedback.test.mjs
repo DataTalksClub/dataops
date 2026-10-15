@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, test } from "node:test";
 
+import "../src/dakit/collection.js";
 import {
-  installCollectionCreateShortcut,
   createFormFeedback,
   renderPageHeaderMarkup,
   renderDataSummary,
@@ -443,8 +443,9 @@ test("the c shortcut presses the page's visible create button unless the operato
       ? [hiddenPanel, ...(dialogOpen ? [shownDialog] : [])]
       : [button]),
   };
-  installCollectionCreateShortcut(documentRef);
-  installCollectionCreateShortcut(documentRef);
+  // dakit's collection shortcut, as the shell's hidden panels meet it.
+  globalThis.dakitCollection.installShortcut(documentRef);
+  globalThis.dakitCollection.installShortcut(documentRef);
   const press = (overrides = {}) => {
     let prevented = false;
     onKeydown({

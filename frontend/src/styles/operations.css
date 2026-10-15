@@ -309,19 +309,6 @@ body[data-view="library"] .library-view .document-list .dk-page-header {
   body[data-view="library"] .ops-surface-users { gap: 12px; }
 }
 
-/* Collection header: the create action sits right after the collection's
-   title; meta and secondary actions trail. See createCollectionHeader. */
-.collection-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--dk-space-2) var(--dk-gap-control); min-width: 0; }
-.collection-header__lead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-3); min-width: 0; }
-.collection-header__title { margin: 0; color: var(--dk-text-heading); font-size: var(--dk-text-lg); font-weight: var(--dk-weight-semibold); }
-.collection-header__lead > :is(h2, h3) { margin: 0; }
-.collection-header__trail { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-2); margin-left: auto; }
-.collection-header__meta { color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
-.collection-create { display: inline-flex; align-items: center; gap: var(--dk-space-1); white-space: nowrap; }
-.collection-create__icon { display: inline-flex; }
-.collection-create__icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+/* An empty collection repeats its create action (dakit "Action placement");
+   inside the app's honest-state panels it sits under the text. */
 .collection-empty-action { justify-self: start; width: auto; margin-top: var(--dk-space-3); }
-
-@media (max-width: 820px) {
-  .collection-create { min-height: var(--dk-size-touch); }
-}

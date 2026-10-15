@@ -21,9 +21,6 @@ body[data-workspace-view="podcast"] .document-list {
   color: var(--dk-text-muted);
 }
 
-/* The list head is the collection header: "Episodes" with New episode. */
-.podcast-list-head .collection-header__lead { gap: var(--dk-space-3); }
-
 .podcast-tools { display: grid; gap: var(--dk-space-2); }
 .podcast-tools-row { display: flex; gap: var(--dk-space-2); min-width: 0; }
 .podcast-tools-row .podcast-season-filter { flex: none; width: auto; }

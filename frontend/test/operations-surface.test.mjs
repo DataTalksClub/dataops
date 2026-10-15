@@ -413,7 +413,7 @@ describe("Operations surface boundary", () => {
     await harness.api.refreshUsersSurface();
     harness.api.renderUsersSurfaceView();
     const addUser = findByText(harness.documentList, "Add user", "button");
-    assert.equal(addUser.parentElement.className, "collection-header__lead");
+    assert.equal(addUser.parentElement.className, "dk-collection-header__lead");
     assert.equal(harness.documentList.querySelector(".dk-page-header__actions"), null);
     await addUser.click();
     const inputs = harness.documentList.querySelectorAll("input");

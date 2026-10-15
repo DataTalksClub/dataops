@@ -1152,11 +1152,11 @@ describe("Planning surface production behavior", () => {
     assert.match(emptyDom.slots.innerHTML, /No newsletter slots/);
     // The empty schedule repeats the create action as a secondary button.
     assert.match(emptyDom.slots.innerHTML, /dk-button--secondary[^"]*collection-empty-action"[^>]*data-newsletter-add-first[^>]*>[\s\S]*Create the first slot/);
-    assert.doesNotMatch(emptyDom.slots.innerHTML, /data-collection-create/);
+    assert.doesNotMatch(emptyDom.slots.innerHTML, /data-dk-create/);
     // Add slot follows the view tabs, not the page header's corner.
     const [headerHtml, bodyHtml] = emptyDom.surface.innerHTML.split('<div class="newsletter-toolbar">');
     assert.doesNotMatch(headerHtml, /Add slot/);
-    assert.match(bodyHtml, /^[\s\S]*?newsletter-views[\s\S]*?<\/div>\s*<button[^>]*data-collection-create[^>]*data-newsletter-add[\s\S]*?Add slot/);
+    assert.match(bodyHtml, /^[\s\S]*?newsletter-views[\s\S]*?<\/div>\s*<button[^>]*data-dk-create[^>]*data-newsletter-add[\s\S]*?Add slot/);
     emptyDom.slots.onclick({ target: { closest: (selector) => (selector === "[data-newsletter-add-first]" ? {} : null), classList: {} } });
     assert.equal(emptyDom.dialog.open, true);
 

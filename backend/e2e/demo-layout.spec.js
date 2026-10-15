@@ -85,7 +85,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       const collectionAction = { '/users': 'Add user', '/bookkeeping': 'Add entry' }[route];
       if (collectionAction) {
         await expect(header.getByRole('button', { name: collectionAction, exact: true })).toHaveCount(0);
-        const lead = page.locator('#document-list .collection-header__lead')
+        const lead = page.locator('#document-list .dk-collection-header__lead')
           .filter({ has: page.getByRole('button', { name: collectionAction, exact: true }) });
         await expect(lead).toHaveCount(1);
         const title = await lead.locator('h2, h3').first().boundingBox();
@@ -103,7 +103,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       if (route === '/sponsors') {
         // Add deal follows the list title it creates into.
         await expect(header.getByRole('button')).toHaveCount(0);
-        const lead = page.locator('.crm-list-head .collection-header__lead');
+        const lead = page.locator('.crm-list-head .dk-collection-header__lead');
         const title = await lead.locator('h2').boundingBox();
         const action = await lead.getByRole('button', { name: 'Add deal', exact: true }).boundingBox();
         expect(action.x - (title.x + title.width), `${route}: action follows its collection title`).toBeLessThan(24);
