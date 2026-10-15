@@ -7,6 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { readAllPages } from './readAllPages';
 import { TABLE_TASKS } from './tableNames';
 import { createTask } from './tasks';
 import { cronMatchesDate, nextMatchingDate } from '../cron/cronMatch';
@@ -139,17 +140,16 @@ async function deleteRecurringConfig(client: DynamoDBDocumentClient, id: string)
 }
 
 async function listRecurringRuns(client: DynamoDBDocumentClient, configId: string): Promise<RecurringRun[]> {
-  const result = await client.send(
-    new ScanCommand({
-      TableName: TABLE_TASKS,
-      FilterExpression: 'begins_with(PK, :runPrefix)',
-      ExpressionAttributeValues: {
-        ':runPrefix': `RECURRINGRUN#${configId}#`,
-      },
-    })
-  );
+  const items = await readAllPages(client, (exclusiveStartKey) => new ScanCommand({
+    TableName: TABLE_TASKS,
+    FilterExpression: 'begins_with(PK, :runPrefix)',
+    ExpressionAttributeValues: {
+      ':runPrefix': `RECURRINGRUN#${configId}#`,
+    },
+    ExclusiveStartKey: exclusiveStartKey,
+  }));
 
-  return (result.Items || []).map((item) => {
+  return items.map((item) => {
     const { PK, SK, ...rest } = item as Record<string, unknown>;
     return rest as unknown as RecurringRun;
   });
@@ -191,33 +191,31 @@ async function recordRecurringRun(
  * List all recurring configs by scanning for items where PK begins with "RECURRING#".
  */
 async function listRecurringConfigs(client: DynamoDBDocumentClient): Promise<RecurringConfig[]> {
-  const result = await client.send(
-    new ScanCommand({
-      TableName: TABLE_TASKS,
-      FilterExpression: 'begins_with(PK, :prefix)',
-      ExpressionAttributeValues: { ':prefix': 'RECURRING#' },
-    })
-  );
+  const items = await readAllPages(client, (exclusiveStartKey) => new ScanCommand({
+    TableName: TABLE_TASKS,
+    FilterExpression: 'begins_with(PK, :prefix)',
+    ExpressionAttributeValues: { ':prefix': 'RECURRING#' },
+    ExclusiveStartKey: exclusiveStartKey,
+  }));
 
-  return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as RecurringConfig);
+  return items.map((item) => cleanItem(item as Record<string, unknown>) as RecurringConfig);
 }
 
 /**
  * List only enabled recurring configs.
  */
 async function listEnabledRecurringConfigs(client: DynamoDBDocumentClient): Promise<RecurringConfig[]> {
-  const result = await client.send(
-    new ScanCommand({
-      TableName: TABLE_TASKS,
-      FilterExpression: 'begins_with(PK, :prefix) AND enabled = :enabled',
-      ExpressionAttributeValues: {
-        ':prefix': 'RECURRING#',
-        ':enabled': true,
-      },
-    })
-  );
+  const items = await readAllPages(client, (exclusiveStartKey) => new ScanCommand({
+    TableName: TABLE_TASKS,
+    FilterExpression: 'begins_with(PK, :prefix) AND enabled = :enabled',
+    ExpressionAttributeValues: {
+      ':prefix': 'RECURRING#',
+      ':enabled': true,
+    },
+    ExclusiveStartKey: exclusiveStartKey,
+  }));
 
-  return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as RecurringConfig);
+  return items.map((item) => cleanItem(item as Record<string, unknown>) as RecurringConfig);
 }
 
 /**
@@ -225,25 +223,24 @@ async function listEnabledRecurringConfigs(client: DynamoDBDocumentClient): Prom
  * Returns true if a matching task exists.
  */
 async function recurringTaskExists(client: DynamoDBDocumentClient, recurringConfigId: string, date: string): Promise<boolean> {
-  const result = await client.send(
-    new ScanCommand({
-      TableName: TABLE_TASKS,
-      FilterExpression:
-        'begins_with(PK, :taskPrefix) AND #src = :source AND recurringConfigId = :configId AND #d = :date',
-      ExpressionAttributeNames: {
-        '#src': 'source',
-        '#d': 'date',
-      },
-      ExpressionAttributeValues: {
-        ':taskPrefix': 'TASK#',
-        ':source': 'recurring',
-        ':configId': recurringConfigId,
-        ':date': date,
-      },
-    })
-  );
+  const items = await readAllPages(client, (exclusiveStartKey) => new ScanCommand({
+    TableName: TABLE_TASKS,
+    FilterExpression:
+      'begins_with(PK, :taskPrefix) AND #src = :source AND recurringConfigId = :configId AND #d = :date',
+    ExpressionAttributeNames: {
+      '#src': 'source',
+      '#d': 'date',
+    },
+    ExpressionAttributeValues: {
+      ':taskPrefix': 'TASK#',
+      ':source': 'recurring',
+      ':configId': recurringConfigId,
+      ':date': date,
+    },
+    ExclusiveStartKey: exclusiveStartKey,
+  }));
 
-  return (result.Items || []).length > 0;
+  return items.length > 0;
 }
 
 function recurringTaskDefaults(config: RecurringConfig): Record<string, unknown> {
