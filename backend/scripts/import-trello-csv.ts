@@ -38,6 +38,7 @@ import { createTemplate, listTemplates } from '../src/db/templates';
 import { createCard, getCard } from '../src/db/cards';
 import { createTask, getTask } from '../src/db/tasks';
 import { listUsers } from '../src/db/users';
+import { resolveDefaultAssigneeId } from '../src/db/workspaceSettings';
 import type { User } from '../src/types';
 import { createArtifact, getArtifact } from '../src/db/artifacts';
 import { createDueFollowUpNotifications } from '../src/db/notifications';
@@ -256,6 +257,14 @@ let assigneeDirectory: AssigneeDirectory = new Map();
 
 function setAssigneeDirectory(directory: AssigneeDirectory): void {
   assigneeDirectory = directory;
+}
+
+// The workspace default assignee, loaded in main(): a Task whose title names
+// no one goes to them, as new work created in the app does.
+let importDefaultAssigneeId: string | null = null;
+
+function setImportDefaultAssignee(assigneeId: string | null): void {
+  importDefaultAssigneeId = assigneeId;
 }
 
 const NAME_SPACE = '[\\s\\u00a0]';
@@ -747,7 +756,7 @@ function trelloChecklistItemsToTasks(card: TrelloCard, boardChecklists: TrelloCh
         tags: [cl.name],
       };
       if (instructionsUrl) taskData.instructionsUrl = instructionsUrl;
-      if (assigneeId) taskData.assigneeId = assigneeId;
+      if (assigneeId || importDefaultAssigneeId) taskData.assigneeId = assigneeId || importDefaultAssigneeId;
       if (cardId) taskData.cardId = cardId;
       tasks.push(taskData);
       itemIndex++;
@@ -1099,7 +1108,7 @@ function planTrelloActiveCard(
       if (requires.length > 0) task.requires = requires;
       if (instructionsUrl) task.instructionsUrl = instructionsUrl;
       if (docResolution.instructionDocId) task.instructionDocId = docResolution.instructionDocId;
-      if (assigneeId) task.assigneeId = assigneeId;
+      if (assigneeId || importDefaultAssigneeId) task.assigneeId = assigneeId || importDefaultAssigneeId;
       if (safeUrls[0]) task.link = safeUrls[0];
       if (proof) Object.assign(task, proof);
       if (waiting && status === 'waiting') {
@@ -1610,7 +1619,7 @@ function planCsvRow(row: string[], context: CsvRowContext): CsvMigrationPlan {
     comment: buildProvenanceComment(context, row, sourceKey, notes, waiting ? [...warnings, waiting.note] : warnings),
     tags: ['spreadsheet-import'],
   };
-  if (assigneeId) task.assigneeId = assigneeId;
+  if (assigneeId || importDefaultAssigneeId) task.assigneeId = assigneeId || importDefaultAssigneeId;
   if (safeUrls[0]) task.link = safeUrls[0];
   if (doc.instructionsUrl) task.instructionsUrl = doc.instructionsUrl;
   if (doc.instructionDocId) task.instructionDocId = doc.instructionDocId;
@@ -1842,7 +1851,9 @@ async function main() {
   // Names in task titles resolve against the real accounts. A dry run reads
   // them too (read-only) so its report shows the same assignments.
   try {
-    setAssigneeDirectory(assigneeDirectoryFromUsers(await listUsers(client || await getClient())));
+    const usersClient = client || await getClient();
+    setAssigneeDirectory(assigneeDirectoryFromUsers(await listUsers(usersClient)));
+    setImportDefaultAssignee(await resolveDefaultAssigneeId(usersClient));
   } catch (error) {
     if (!DRY_RUN) throw error;
     console.log(`  Users unavailable (${(error as Error).message}); names in titles are reported as unknown.`);
@@ -2004,6 +2015,7 @@ export {
   extractAssigneeHint,
   assigneeDirectoryFromUsers,
   setAssigneeDirectory,
+  setImportDefaultAssignee,
   cardFromTrello,
   trelloChecklistItemsToTasks,
   selectActiveTrelloCards,

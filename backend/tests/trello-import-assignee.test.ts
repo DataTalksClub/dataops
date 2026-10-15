@@ -4,6 +4,10 @@ import { describe, it } from 'node:test';
 import {
   assigneeDirectoryFromUsers,
   extractAssigneeHint,
+  setAssigneeDirectory,
+  setImportDefaultAssignee,
+  trelloChecklistItemsToTasks,
+  type TrelloCard,
 } from '../scripts/import-trello-csv';
 
 const VALERIIA = 'user-valeriia';
@@ -67,5 +71,33 @@ describe('Trello import extracts the assignee named in a task title', () => {
     const ambiguous = assigneeDirectoryFromUsers([{ id: 'a', name: 'Anna One' }, { id: 'b', name: 'Anna Two' }]);
     assert.strictEqual(extractAssigneeHint('Write it - Anna', ambiguous).assigneeId, null);
     assert.strictEqual(extractAssigneeHint('Write it - Anna Two', ambiguous).assigneeId, 'b');
+  });
+});
+
+describe('Trello import assigns imported Tasks', () => {
+  it('a named person wins; a nameless Task goes to the workspace default', () => {
+    setAssigneeDirectory(directory);
+    setImportDefaultAssignee(ORIN);
+    try {
+      const card = {
+        id: 'card-1', name: 'Weekly email 2031-03-04', idChecklists: ['cl-1'], due: '2031-03-04T00:00:00.000Z',
+      } as unknown as TrelloCard;
+      const tasks = trelloChecklistItemsToTasks(card, [{
+        id: 'cl-1', name: 'Other tasks', pos: 1, checkItems: [
+          { id: 'i-1', name: 'Add the podcast webpage to the newsletter **– Valeriia**', pos: 1, state: 'incomplete' },
+          { id: 'i-2', name: 'Schedule the posts', pos: 2, state: 'incomplete' },
+        ],
+      }], 'card-1');
+      assert.deepStrictEqual(
+        tasks.map((task) => [task.description, task.assigneeId]),
+        [
+          ['Add the podcast webpage to the newsletter', VALERIIA],
+          ['Schedule the posts', ORIN],
+        ],
+      );
+    } finally {
+      setAssigneeDirectory(new Map());
+      setImportDefaultAssignee(null);
+    }
   });
 });
