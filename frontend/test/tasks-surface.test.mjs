@@ -254,6 +254,7 @@ function createHarness(options = {}) {
       requests.push({ url, options: requestOptions });
       return options.request ? options.request(url, requestOptions) : {};
     },
+    localDocPathFromHref: (href) => (/^content\/.+\.md$/.test(href) ? href : ""),
     resolveAssigneeLabel: (id) => options.userNames?.[id] || id,
     scheduleAnimationFrame: (callback) => callback(),
     setRouteTitle() {},
@@ -951,10 +952,115 @@ describe("Tasks surface boundary", () => {
       findAllByClass(documentList, "ops-queue-origin-type").map((cell) => cell.textContent),
       ["Webinar", "Workshop"],
     );
-    assert.equal(findAllByClass(documentList, "ops-queue-origin")[0].title, "LLM evals in practice · Webinar");
+    // Where is a link to the Card itself, named in full for assistive tech.
+    const originLink = findAllByClass(documentList, "ops-queue-origin-link")[0];
+    assert.equal(originLink.tagName, "A");
+    assert.equal(originLink.href, "/cards?cardId=card-1");
+    assert.equal(originLink.getAttribute("aria-label"), "Open card LLM evals in practice · Webinar");
     // A tag that only repeats the card's kind is not a pill; the checklist
     // prefix is.
     assert.deepEqual(queueTags(documentList), ["Emails", ""]);
+  });
+
+  test("opens the Card from Where and summarises it with its podcast episode", async () => {
+    const card = {
+      id: "card-pod",
+      version: 1,
+      title: "Engineering AI-Powered Data Products",
+      templateId: "tpl-podcast",
+      stage: "preparation",
+      status: "active",
+      anchorDate: "2026-08-10",
+      taskCount: 12,
+      openTaskCount: 3,
+      ownerId: "grace",
+      cardLinks: [{ name: "Guest brief", url: "https://docs.google.com/document/d/brief/edit" }],
+      references: [{ name: "Podcast process", url: "content/process/podcast.md" }],
+    };
+    const tasks = [
+      canonicalTask({ id: "later", cardId: card.id, description: "Publish the episode", date: "2026-08-20" }),
+      canonicalTask({ id: "sooner", cardId: card.id, description: "Send the guest brief", date: "2026-08-11" }),
+    ];
+    const requests = [];
+    const { api, documentList, openedCards, openedTasks } = createHarness({
+      userNames: { grace: "Grace Meyer" },
+      workSnapshot: {
+        cardsById: new Map([[card.id, card]]),
+        templates: [{ id: "tpl-podcast", type: "podcast", name: "Podcast", icon: "mic" }],
+      },
+      request: async (url) => {
+        requests.push(url);
+        if (url === `/api/podcast-episodes?cardId=${card.id}`) {
+          return {
+            items: [{
+              id: "ep-1",
+              season: 21,
+              episode: 5,
+              title: "AI data products",
+              guests: [{ name: "Ada Lovelace" }],
+              status: "recorded",
+              recordingDate: "2026-08-03",
+              releaseDate: "2026-09-01",
+              links: { youtube: "https://www.youtube.com/watch?v=abc", website: "https://datatalks.club/podcast/ai.html" },
+            }],
+          };
+        }
+        return {};
+      },
+      taskRouteContext: { date: "", tasks, cardId: "", filterCard: null, contextCardId: "", contextCard: null, failures: [] },
+    });
+
+    api.renderTasksSurface([], "queue");
+    const origin = findAllByClass(documentList, "ops-queue-origin")[0];
+    const link = origin.querySelector(".ops-queue-origin-link");
+    const info = origin.querySelector(".ops-queue-origin-info");
+    assert.equal(link.href, "/cards?cardId=card-pod");
+    assert.equal(info.getAttribute("aria-haspopup"), "dialog");
+    assert.equal(info.getAttribute("aria-expanded"), "false");
+
+    // A plain click opens the Card in place; a modified click is left to the
+    // browser, which opens the link in a new tab. Neither opens the task.
+    await link.dispatch("click", { metaKey: true });
+    assert.deepEqual(openedCards, []);
+    await link.click();
+    assert.deepEqual(openedCards, ["card-pod"]);
+    assert.deepEqual(openedTasks, []);
+
+    await info.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(info.getAttribute("aria-expanded"), "true");
+    const summary = origin.querySelector(".card-hovercard");
+    assert.equal(summary.getAttribute("role"), "dialog");
+    assert.equal(summary.getAttribute("aria-label"), "Card summary: Engineering AI-Powered Data Products");
+    const text = summary.textContent;
+    assert.match(text, /Podcast card · Preparation/);
+    assert.match(text, /9 of 12 tasks done/);
+    assert.match(text, /Send the guest brief · due 11 Aug 2026/);
+    assert.match(text, /10 Aug 2026 · 2 days late/);
+    assert.match(text, /Grace Meyer/);
+    assert.match(text, /S21E5 · AI data products/);
+    assert.match(text, /Ada Lovelace/);
+    assert.match(text, /Recorded/);
+    assert.match(text, /1 Sept? 2026/);
+    const hrefs = summary.querySelectorAll(".card-hovercard__link").map((anchor) => [anchor.href, anchor.target]);
+    assert.deepEqual(hrefs, [
+      ["https://docs.google.com/document/d/brief/edit", "_blank"],
+      ["/process/podcast.md", "_blank"],
+      ["https://www.youtube.com/watch?v=abc", "_blank"],
+      ["https://datatalks.club/podcast/ai.html", "_blank"],
+    ]);
+    const open = summary.querySelector(".card-hovercard__open");
+    assert.equal(open.href, "/cards?cardId=card-pod");
+    await open.click();
+    assert.deepEqual(openedCards, ["card-pod", "card-pod"]);
+
+    // The episode loads once per Card; reopening reuses it.
+    await info.click();
+    assert.equal(origin.querySelector(".card-hovercard"), null);
+    await info.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.match(origin.querySelector(".card-hovercard").textContent, /Ada Lovelace/);
+    assert.equal(requests.filter((url) => url.startsWith("/api/podcast-episodes")).length, 1);
   });
 
   test("puts instructions and the task's material links behind one icon, not a note", () => {

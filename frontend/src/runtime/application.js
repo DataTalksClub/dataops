@@ -501,6 +501,7 @@ const {
   groupCardItemsByStage,
   isArchivedWorkCard,
   isParkedWorkCard,
+  localDocPathFromHref,
   isFollowUpDueTask,
   isOpenWorkTask,
   isOperationsWorkspaceVisible,

@@ -1,9 +1,9 @@
 import { cardKind } from "../../core/card-kind.js";
-import { renderIcon } from "../../core/icons.js";
 import { personInitials } from "../../core/identity.js";
 import { taskMaterials, taskTitleParts } from "../../core/task-display.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { openSkipTaskDialog } from "../work-detail/work-dialogs.js";
+import { createCardHovercards } from "./card-hovercard.js";
 import { renderQueueMaterials } from "./queue-materials.js";
 import { renderResourceMarks, resourceLabel } from "../../core/resources.js";
 
@@ -53,6 +53,10 @@ export function createTaskQueue(context) {
       id: String(member.id), label: member.name || member.email, name: member.name || member.email,
     }))];
   }
+
+  const cardHovercards = createCardHovercards(context);
+  // The open tasks the queue last rendered: a card summary names the next one.
+  let renderedOpenTasks = [];
 
   let activePersonaFilter = "all";
   // "all", "none" (needs nothing outside DataOps), or one resource id.
@@ -182,6 +186,7 @@ export function createTaskQueue(context) {
     );
 
     const allOpenTasks = orderOpenTasks(tasks, today);
+    renderedOpenTasks = allOpenTasks.map((entry) => entry.task);
     const doneTasks = tasks
       .filter((task) => isCanonicalWorkTask(task) && task.status === "done")
       .sort((left, right) =>
@@ -785,6 +790,7 @@ export function createTaskQueue(context) {
         icon: kind?.icon || "card",
         type: kind?.name || "",
         title: kind ? `${label} · ${kind.name}` : card ? label : "Card task",
+        card,
       };
     }
     const source = taskSourceLabel(task);
@@ -963,27 +969,7 @@ export function createTaskQueue(context) {
     );
     if (materials) materialsCell.append(materials);
 
-    const originCell = document.createElement("span");
-    originCell.className = "ops-queue-origin";
-    originCell.dataset.source = origin.kind;
-    const icon = document.createElement("span");
-    icon.className = "ops-queue-origin-icon";
-    icon.dataset.icon = origin.icon;
-    icon.append(renderIcon(origin.icon, { size: 16 }));
-    const originText = document.createElement("span");
-    originText.className = "ops-queue-origin-text";
-    const originLabel = document.createElement("span");
-    originLabel.className = "ops-queue-origin-label";
-    originLabel.textContent = origin.label;
-    originText.append(originLabel);
-    if (origin.type) {
-      const originType = document.createElement("span");
-      originType.className = "ops-queue-origin-type";
-      originType.textContent = origin.type;
-      originText.append(originType);
-    }
-    originCell.append(icon, originText);
-    originCell.title = origin.title;
+    const originCell = cardHovercards.renderOriginCell(origin, () => ({ openTasks: renderedOpenTasks, today }));
 
     row.append(toggle, open, materialsCell, originCell, taskDueCell(task, today), owner, renderQueueSkip(task));
     return row;

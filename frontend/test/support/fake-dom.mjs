@@ -168,6 +168,29 @@ export class FakeElement {
     this.children.unshift(...children);
   }
 
+  after(...values) {
+    const parent = this.parentElement;
+    if (!parent) return;
+    const nodes = values.map((value) =>
+      value instanceof FakeElement ? value : new FakeTextNode(String(value)),
+    );
+    for (const node of nodes) {
+      if (node.parentElement) node.remove();
+      node.parentElement = parent;
+      node.isConnected = true;
+      node.removed = false;
+    }
+    const index = parent.children.indexOf(this);
+    parent.children.splice(index + 1, 0, ...nodes);
+  }
+
+  contains(node) {
+    for (let current = node; current; current = current.parentElement) {
+      if (current === this) return true;
+    }
+    return false;
+  }
+
   replaceChildren(...values) {
     this.children = [];
     this._textContent = "";
@@ -296,7 +319,21 @@ export class FakeDocument {
     this.roots = roots;
     this.created = [];
     this.activeElement = null;
+    this.listeners = new Map();
     for (const root of roots) adoptDocument(root, this);
+  }
+
+  addEventListener(type, listener) {
+    this.listeners.set(type, [...(this.listeners.get(type) || []), listener]);
+  }
+
+  removeEventListener(type, listener) {
+    this.listeners.set(type, (this.listeners.get(type) || []).filter((item) => item !== listener));
+  }
+
+  async dispatch(type, values = {}) {
+    const event = { preventDefault() {}, stopPropagation() {}, target: this, ...values };
+    for (const listener of [...(this.listeners.get(type) || [])]) await listener(event);
   }
 
   addRoot(root) {

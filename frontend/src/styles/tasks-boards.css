@@ -361,6 +361,114 @@ body[data-workspace-view="tasks"] .ops-queue-material-count {
   line-height: 14px;
   text-align: center;
 }
+/* Hover card (core/hovercard.js): a fixed overlay beside its trigger, so it
+   never shifts the row it describes or gets clipped by the board. */
+.dk-hovercard {
+  position: fixed;
+  z-index: 60;
+  width: min(22rem, calc(100vw - 16px));
+  padding: var(--dk-space-3);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-lg);
+  background: var(--dk-bg-surface);
+  box-shadow: var(--dk-shadow-overlay);
+  color: var(--dk-text-primary);
+  font-size: var(--dk-text-md);
+  font-style: normal;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+  pointer-events: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.dk-hovercard__loading {
+  margin: 0;
+  color: var(--dk-text-muted);
+}
+.card-hovercard__body {
+  display: grid;
+  gap: var(--dk-space-3);
+}
+.card-hovercard__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dk-space-2);
+}
+.card-hovercard__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-accent-soft);
+  color: var(--dk-accent-default);
+}
+.card-hovercard__titles {
+  display: grid;
+  min-width: 0;
+}
+.card-hovercard__title {
+  margin: 0;
+  font-weight: var(--dk-weight-semibold);
+  overflow-wrap: anywhere;
+}
+.card-hovercard__kind,
+.card-hovercard__section-title {
+  margin: 0;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  font-weight: var(--dk-weight-regular);
+}
+.card-hovercard__section {
+  display: grid;
+  gap: var(--dk-space-2);
+  padding-top: var(--dk-space-3);
+  border-top: 1px solid var(--dk-border-default);
+}
+.card-hovercard__facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--dk-space-1) var(--dk-space-3);
+  margin: 0;
+}
+.card-hovercard__fact {
+  display: contents;
+}
+.card-hovercard__fact dt {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+.card-hovercard__fact dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.card-hovercard__due[data-late] {
+  color: var(--dk-danger-text);
+}
+.card-hovercard__links {
+  display: grid;
+  gap: var(--dk-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.card-hovercard__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--dk-space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.card-hovercard__link > svg {
+  flex: none;
+  color: var(--dk-text-muted);
+}
+.card-hovercard__footer {
+  display: flex;
+  justify-content: flex-end;
+}
 .ops-queue-materials-menu {
   position: fixed;
   z-index: 60;
@@ -428,6 +536,29 @@ body[data-workspace-view="tasks"] .ops-queue-origin-type {
   font-size: var(--dk-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* A card task's Where is a link to its Card; the info button beside it
+   opens the Card summary where nothing hovers. */
+body[data-workspace-view="tasks"] .ops-queue-origin-link {
+  display: flex;
+  align-items: center;
+  gap: var(--dk-space-2);
+  min-width: 0;
+  border-radius: var(--dk-radius-md);
+  color: inherit;
+  text-decoration: none;
+}
+body[data-workspace-view="tasks"] .ops-queue-origin-link:hover .ops-queue-origin-label {
+  text-decoration: underline;
+}
+body[data-workspace-view="tasks"] .ops-queue-origin-info {
+  display: none;
+  flex: none;
+}
+@media (hover: none) {
+  body[data-workspace-view="tasks"] .ops-queue-origin-info {
+    display: inline-grid;
+  }
 }
 body[data-workspace-view="tasks"] .ops-queue-origin[data-source="adhoc"] .ops-queue-origin-label,
 body[data-workspace-view="tasks"] .ops-queue-origin[data-source="recurring"] .ops-queue-origin-label {
@@ -617,6 +748,22 @@ body[data-workspace-view="tasks"] .ops-queue-due {
     align-self: end;
     padding-bottom: var(--dk-space-1);
     pointer-events: none;
+  }/* The card name and its info button take their own taps: the name opens
+     the Card, the button its summary. The rest of the line still passes
+     taps through to the task. */
+  body[data-workspace-view="tasks"] .ops-queue-origin-link,
+  body[data-workspace-view="tasks"] .ops-queue-origin-info {
+    pointer-events: auto;
+  }/* One text line tall, like the materials icon: the shell's 44px touch
+     minimum would push the line up over the title (24px still clears the
+     minimum target size). */
+  body[data-workspace-view="tasks"] #main-content .ops-queue-origin .ops-queue-origin-link,
+  body[data-workspace-view="tasks"] #main-content .ops-queue-origin .ops-queue-origin-info {
+    min-width: 0;
+    min-height: 0;
+  }body[data-workspace-view="tasks"] #main-content .ops-queue-origin .ops-queue-origin-info {
+    width: var(--dk-space-6);
+    height: var(--dk-space-6);
   }body[data-workspace-view="tasks"] .ops-queue-origin {
     grid-column: 2;
   }body[data-workspace-view="tasks"] .ops-queue-due {
