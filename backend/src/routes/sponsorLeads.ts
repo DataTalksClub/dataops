@@ -219,6 +219,22 @@ export function parseSponsors(value: unknown): LeadSponsor[] {
   return sponsors;
 }
 
+// Reserved test domains (RFC 2606 / RFC 6761) never name a real newsletter
+// or sponsor. A deployed portal refuses them so an end-to-end probe cannot
+// leave fictional leads in production; only local and test servers, which
+// throw their data away, accept fixture identities.
+const RESERVED_TEST_HOST = /(^|\.)(test|example|invalid|localhost)$|(^|\.)example\.(com|net|org)$/i;
+
+function fixtureDataAllowed(): boolean {
+  return process.env.NODE_ENV === 'test' || process.env.IS_LOCAL === 'true';
+}
+
+export function usesReservedTestDomain(newsletter: LeadNewsletter, sponsors: LeadSponsor[]): boolean {
+  const senderHost = newsletter.sender.split('@').pop() || '';
+  const hosts = [senderHost, ...sponsors.map((sponsor) => (sponsor.url ? new URL(sponsor.url).hostname : ''))];
+  return hosts.some((host) => host && RESERVED_TEST_HOST.test(host.replace(/\.$/, '')));
+}
+
 function audit(outcome: string, credential: Credential | null, correlation: string, sponsorCount: number, failureCount = 0): void {
   console.info(JSON.stringify({ event: 'sponsor-lead-intake', outcome, credentialId: credential?.id || 'unknown', contractVersion: CONTRACT_VERSION, correlation, sponsorCount, failureCount }));
 }
@@ -387,6 +403,10 @@ export async function handleSponsorLeadIntake(event: LambdaEvent, client: Dynamo
   }
 
   const correlation = digest(messageId.trim()).slice(0, 16);
+  if (!fixtureDataAllowed() && usesReservedTestDomain(newsletter, sponsors)) {
+    audit('reserved-test-domain', credential, correlation, sponsors.length, sponsors.length);
+    return safeError(422, 'validation-error', 'reserved-test-domain', 'Reserved test domains are refused here; run probes against a local or test server');
+  }
   // Responses carry only the request index and the stored id: intake content
   // (names, urls, blurbs) is never echoed back, matching the email-document
   // intake privacy posture. Dapier reconciles by index.

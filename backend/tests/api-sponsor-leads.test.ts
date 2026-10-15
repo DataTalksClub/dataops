@@ -13,6 +13,7 @@ import {
   normalizeLeadName,
   normalizeLeadUrl,
   resetSponsorLeadIntakeStateForTests,
+  usesReservedTestDomain,
 } from '../src/routes/sponsorLeads';
 
 const SECRET = 'sponsor-leads-test-secret';
@@ -226,6 +227,30 @@ describe('sponsor lead intake and review', () => {
 
     const afterCount = await count();
     assert.strictEqual(afterCount, initial + 1);
+  });
+
+  it('refuses reserved test domains on a deployed portal so probes cannot write fictional leads', async () => {
+    const real = { name: 'Real Weekly', sender: 'news@realweekly.co', subject: 'Issue 1', receivedAt: '2026-07-12T10:00:00Z' };
+    assert.strictEqual(usesReservedTestDomain(real, [{ name: 'Vendor', url: 'https://vendor.io/x', category: '', blurb: '', context: '' }]), false);
+    assert.strictEqual(usesReservedTestDomain({ ...real, sender: 'e2e@example.test' }, []), true);
+    assert.strictEqual(usesReservedTestDomain(real, [{ name: 'Probe', url: 'https://www.example.com/p', category: '', blurb: '', context: '' }]), true);
+    assert.strictEqual(usesReservedTestDomain(real, [{ name: 'Probe', url: 'https://probe.invalid/', category: '', blurb: '', context: '' }]), true);
+
+    const saved = { NODE_ENV: process.env.NODE_ENV, IS_LOCAL: process.env.IS_LOCAL };
+    process.env.NODE_ENV = 'production';
+    delete process.env.IS_LOCAL;
+    let result;
+    try {
+      result = await handler(intakeRequest('e2e-probe-701', [sponsor({ name: 'ZZZ Fictional Probe Co', url: 'https://example.test/e2e-probe' })],
+        newsletter({ sender: 'e2e@example.test' })), {});
+    } finally {
+      process.env.NODE_ENV = saved.NODE_ENV;
+      if (saved.IS_LOCAL === undefined) delete process.env.IS_LOCAL; else process.env.IS_LOCAL = saved.IS_LOCAL;
+    }
+    assert.strictEqual(result.statusCode, 422, result.body);
+    assert.strictEqual(JSON.parse(result.body).error.code, 'reserved-test-domain');
+    const listed = JSON.parse((await review('GET', '/api/sponsor-crm/leads', undefined, { status: '', search: 'zzz fictional' })).body);
+    assert.strictEqual(listed.items.length, 0, 'the refused probe stored nothing');
   });
 
   it('returns configuration errors without attempting persistence', async () => {
