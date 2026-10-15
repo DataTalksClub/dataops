@@ -42,6 +42,7 @@ import {
 } from '../db/cardDeletion';
 import { resolveInteractiveActor, type VerifiedActor } from '../identity/actor';
 import { summarizeCard, type CardSummary } from '../cards/recordCardLink';
+import { handleNewsletterSlotMigration } from './newsletterSlotMigration';
 import {
   completedTasksLeavingCard,
   createIssueCard,
@@ -577,6 +578,11 @@ export async function handleNewsletterIssueRoutes(
     } catch {
       return json(404, { error: 'Alert not found' });
     }
+  }
+  // ONE-OFF: remove with newsletterSlotMigration.ts once it has run.
+  if (path === '/api/newsletter-issues/migrations/from-slots') {
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    return handleNewsletterSlotMigration(event, client);
   }
   const match = path.match(/^\/api\/newsletter-issues(?:\/([^/]+))?$/);
   if (!match) return json(404, { error: 'Not found' });
