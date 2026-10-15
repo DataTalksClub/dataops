@@ -291,3 +291,48 @@ test('coarse-pointer desktop keeps the 56px rail with 44px controls', async ({ b
   await touchControls(page, '#sidebar');
   await context.close();
 });
+
+for (const theme of ['light', 'dark']) {
+  test(`Queue uses workspace people by id and one urgency tint in ${theme}`, async ({ browser }) => {
+    const { context, page } = await signedIn(browser, { width: 1440, height: 900 });
+    const actorId = '00000000-0000-0000-0000-000000000001';
+    const otherId = '00000000-0000-0000-0000-000000000002';
+    const people = [
+      { id: actorId, name: 'Alexey', email: 'actor@example.test' },
+      { id: otherId, name: 'Alexeyette', email: 'other@example.test' },
+    ];
+    await page.route('**/api/users', route => route.fulfill({ json: { users: people } }));
+    const created = [];
+    for (const [description, assigneeId, status] of [
+      ['Exact owner overdue task', actorId, 'todo'],
+      ['Similar name overdue task', otherId, 'todo'],
+      ['Blocked overdue task', actorId, 'waiting'],
+    ]) {
+      const response = await context.request.post('/work/api/tasks', { data: {
+        description, assigneeId, status, date: '2020-01-01',
+        ...(status === 'waiting' ? { waitingFor: 'Synthetic reply', followUpAt: '2020-01-01T09:00:00Z', comment: 'Synthetic waiting fixture' } : {}),
+      } });
+      expect(response.ok(), await response.text()).toBe(true);
+      const payload = await response.json(); created.push((payload.task || payload).id);
+    }
+    await page.addInitScript(t => localStorage.setItem('dakit-theme', t), theme);
+    await page.goto('/tasks');
+    const filter = page.getByRole('radiogroup', { name: 'Filter queue by assignee' });
+    await expect(filter.getByRole('radio')).toHaveCount(3);
+    await expect(filter.getByRole('radio', { name: 'Filter to Alexeyette, 1 open', exact: true })).toBeVisible();
+    await page.locator('#settings-button').click();
+    const scope = page.getByRole('radiogroup', { name: 'Viewing work for', exact: true });
+    await expect(scope.getByRole('radio')).toHaveCount(2);
+    await expect(scope.getByRole('radio', { name: /work for Alexeyette$/ })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await filter.getByRole('radio', { name: 'Filter to Alexey, 2 open', exact: true }).click();
+    await expect(page.locator('.ops-queue-row').filter({ hasText: 'Similar name overdue task' })).toHaveCount(0);
+    const boxes = page.locator('.ops-queue-row[data-urgency="overdue"] .ops-queue-box');
+    await expect(boxes).toHaveCount(2);
+    const fills = await boxes.evaluateAll(nodes => nodes.map(node => ({ fill: getComputedStyle(node).backgroundColor, opacity: getComputedStyle(node).opacity })));
+    expect(fills[0]).toEqual(fills[1]);
+    expect(fills[0].opacity).toBe('1');
+    for (const id of created) expect((await context.request.delete('/work/api/tasks/' + id)).ok()).toBe(true);
+    await context.close();
+  });
+}
