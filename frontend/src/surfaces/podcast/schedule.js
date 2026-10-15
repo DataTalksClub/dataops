@@ -15,7 +15,7 @@ function whenCell(documentRef, episode) {
   const cell = element(documentRef, "td", "podcast-schedule__when");
   const time = formatPublicationTime(episode.publication);
   if (time) {
-    cell.append(element(documentRef, "span", "dk-mono", time));
+    cell.append(element(documentRef, "span", "", time));
     return cell;
   }
   const fallback = formatDate(episode.releaseDate);
@@ -65,18 +65,19 @@ function renderRow(documentRef, episode, actions) {
   link.append(element(documentRef, "span", "", episodeSummary(episode)));
   name.append(link, statusChip(documentRef, episode.status));
   const website = element(documentRef, "td");
-  website.append(readinessChip(documentRef, "website", readiness.website));
-  if (readiness.websiteBlockers.length) {
-    website.append(element(documentRef, "span", "dk-hint podcast-schedule__blockers", readiness.websiteBlockers.join("; ")));
-  }
+  const websiteChip = readinessChip(documentRef, "website", readiness.website);
+  if (readiness.websiteBlockers.length) websiteChip.title = readiness.websiteBlockers.join("; ");
+  website.append(websiteChip);
   const spotify = element(documentRef, "td");
   spotify.append(readinessChip(documentRef, "spotify", readiness.spotify));
   const transcript = element(documentRef, "td");
   transcript.append(readinessChip(documentRef, "transcript", readiness.transcript));
-  const proofs = element(documentRef, "td", "podcast-schedule__proofs");
+  const proofs = element(documentRef, "td");
+  const proofList = element(documentRef, "div", "podcast-schedule__proofs");
   const links = proofLinks(episode);
-  if (links.length) for (const proof of links) proofs.append(proofAnchor(documentRef, proof));
-  else proofs.append(element(documentRef, "span", "dk-hint", "None recorded"));
+  if (links.length) for (const proof of links) proofList.append(proofAnchor(documentRef, proof));
+  else proofList.append(element(documentRef, "span", "dk-hint", "None recorded"));
+  proofs.append(proofList);
   row.append(name, whenCell(documentRef, episode), spotify, transcript, website, cardCell(documentRef, episode, actions), proofs);
   return row;
 }

@@ -45,6 +45,7 @@ describe("publication time", () => {
     const text = formatPublicationTime({ timezone: "Asia/Tokyo", audioScheduledAt: "2026-11-19T21:00:00.000Z" });
     assert.match(text, /20 Nov 2026/);
     assert.match(text, /06:00/);
+    assert.match(text, /\(Asia\/Tokyo\)$/);
     assert.equal(formatPublicationTime({ audioScheduledAt: "2026-11-19T21:00:00.000Z" }), "");
   });
 });
@@ -181,7 +182,10 @@ describe("Podcast schedule view", () => {
     assert.deepEqual(chips(rowOf("b-ready")), { spotify: "public", transcript: "reviewed", website: "ready" });
     assert.deepEqual(chips(rowOf("c-out")), { spotify: "public", transcript: "reviewed", website: "released" });
     assert.ok(findByText(rowOf("a-scheduled"), "Audio scheduled"));
-    assert.ok(findByText(rowOf("a-scheduled"), "Transcript not reviewed; Spotify episode not verified public"));
+    assert.equal(
+      findAllByClass(rowOf("a-scheduled"), "podcast-readiness").find((chip) => chip.dataset.track === "website").title,
+      "Transcript not reviewed; Spotify episode not verified public",
+    );
     const when = findAllByClass(rowOf("a-scheduled"), "podcast-schedule__when")[0].textContent;
     assert.match(when, /1 Jan 2099/);
     assert.match(when, /06:00/);

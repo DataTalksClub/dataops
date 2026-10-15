@@ -93,12 +93,12 @@ export function utcToZonedLocal(instant, timezone) {
   return `${p.year}-${two(p.month)}-${two(p.day)}T${two(p.hour)}:${two(p.minute)}`;
 }
 
-/** "Fri, 20 Nov 2026, 06:00 CET" in the publication's own timezone. */
+/** "Fri, 20 Nov 2026, 06:00 CET (Europe/Berlin)" in the publication's own timezone. */
 export function formatPublicationTime(publication) {
   const instant = publication?.audioScheduledAt;
   const timezone = publication?.timezone;
   if (!instant || !isValidTimezone(timezone)) return "";
-  return new Intl.DateTimeFormat("en-GB", {
+  const formatted = new Intl.DateTimeFormat("en-GB", {
     timeZone: timezone,
     weekday: "short",
     day: "numeric",
@@ -109,6 +109,8 @@ export function formatPublicationTime(publication) {
     hourCycle: "h23",
     timeZoneName: "short",
   }).format(new Date(instant));
+  // Short zone names are ambiguous ("GMT+9"); the IANA name settles it.
+  return `${formatted} (${timezone})`;
 }
 
 function scheduledMs(episode) {
