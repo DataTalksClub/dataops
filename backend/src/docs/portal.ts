@@ -305,8 +305,8 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
   const authorized = !authEnabled || Boolean(user);
   if (!authorized) {
     if (path === '/device') {
-      const code = event.queryStringParameters?.userCode || '';
-      const returnTo = code ? `/device?userCode=${encodeURIComponent(code)}` : '/device';
+      const code = event.queryStringParameters?.code || '';
+      const returnTo = code ? `/device?code=${encodeURIComponent(code)}` : '/device';
       return { response: redirectToLogin(returnTo), authorized: false };
     }
     // Existing non-browser bearer clients continue through the router's own

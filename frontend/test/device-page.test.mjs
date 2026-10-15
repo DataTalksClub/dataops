@@ -21,7 +21,7 @@ function harness(options = {}) {
   globalThis.document = doc;
   globalThis.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init.detail; } };
   const calls = [], urls = [], ticks = [], history = [];
-  const locationRef = { href: options.href || 'https://ops.example.test/device?userCode=bcdfghjk', hostname: 'ops.example.test', assign: url => urls.push(url), replace: url => urls.push(url) };
+  const locationRef = { href: options.href || 'https://ops.example.test/device?code=bcdfghjk', hostname: 'ops.example.test', assign: url => urls.push(url), replace: url => urls.push(url) };
   let clock = Date.parse('2026-10-14T10:00:00Z');
   const controller = createDevicePage({
     documentRef: doc, locationRef, historyRef: { replaceState: (...args) => history.push(args) }, now: () => clock,
@@ -121,7 +121,7 @@ test('identity failures block consent until the identity is known', async () => 
   h.controller.destroy();
 });
 
-test('userCode survives sign-in and switch-account round trips before history is cleaned', async () => {
+test('code survives sign-in and switch-account round trips before history is cleaned', async () => {
   for (const signedIn of [false, true]) {
     const h = harness({ meRequest: async () => {
       if (!signedIn) throw Object.assign(new Error('Sign in'), { status: 401 });
@@ -135,7 +135,7 @@ test('userCode survives sign-in and switch-account round trips before history is
       await h.identity.querySelector('a').dispatch('click');
     } else await findByText(h.card, 'Sign in', 'button').click();
     const login = new URL(h.urls[0], 'https://ops.example.test');
-    assert.equal(login.searchParams.get('return_to'), '/device?userCode=BCDF-GHJK');
+    assert.equal(login.searchParams.get('return_to'), '/device?code=BCDF-GHJK');
     h.controller.destroy();
     const returned = harness({ href: 'https://ops.example.test' + login.searchParams.get('return_to') });
     await returned.controller.start();
@@ -145,8 +145,8 @@ test('userCode survives sign-in and switch-account round trips before history is
     returned.controller.destroy();
   }
 });
-test('device entry follows the userCode protocol without a code alias', async () => {
-  const h = harness({ href: 'https://ops.example.test/device?code=bcdfghjk' });
+test('device entry reads only the code parameter, without a userCode alias', async () => {
+  const h = harness({ href: 'https://ops.example.test/device?userCode=bcdfghjk' });
   await h.controller.start();
   assert.equal(h.input().value, '');
   assert.deepEqual(h.calls.map(([url]) => url), ['/api/me']);

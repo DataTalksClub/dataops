@@ -101,7 +101,7 @@ async function handleCliAuthRoutes(
         deviceCode,
         userCode,
         verificationUri: `${base}/device`,
-        verificationUriComplete: `${base}/device?userCode=${encodeURIComponent(userCode)}`,
+        verificationUriComplete: `${base}/device?code=${encodeURIComponent(userCode)}`,
         expiresAt: grant.expiresAt,
         expiresIn: Math.max(0, Math.round((Date.parse(grant.expiresAt) - Date.now()) / 1000)),
         interval: DEVICE_POLL_INTERVAL_SECONDS,

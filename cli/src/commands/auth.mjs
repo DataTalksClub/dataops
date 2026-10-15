@@ -46,7 +46,7 @@ async function sharedDeviceLogin() {
 /**
  * When the server returns a verification URI hosted on a raw internal hostname
  * (such as a direct Lambda function URL), rewrite it to the origin of the target
- * portal URL passed by the operator, keeping the path, query, hash and userCode intact.
+ * portal URL passed by the operator, keeping the path, query, hash and code intact.
  */
 export function rewriteVerificationUri(rawUri, targetBaseUrl) {
   if (!rawUri || !targetBaseUrl) return rawUri;

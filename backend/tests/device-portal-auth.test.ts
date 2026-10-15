@@ -74,7 +74,7 @@ describe('device authentication through the configured portal and router', () =>
       assert.equal(response.statusCode, 200);
       const grant = json(response);
       assert.equal(grant.verificationUri, 'https://ops.example.test/device');
-      assert.equal(grant.verificationUriComplete, `https://ops.example.test/device?userCode=${grant.userCode}`);
+      assert.equal(grant.verificationUriComplete, `https://ops.example.test/device?code=${grant.userCode}`);
     } finally {
       if (savedPortalUrl === undefined) delete process.env.DATAOPS_PORTAL_URL;
       else process.env.DATAOPS_PORTAL_URL = savedPortalUrl;

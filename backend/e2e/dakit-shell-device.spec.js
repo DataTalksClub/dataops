@@ -106,7 +106,7 @@ test('standalone device consent requires Continue, preserves overflow input, and
     return route.fulfill({ json: { label: '<untrusted machine>', requestIp: '203.0.113.7', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600000).toISOString(), same_network: false } });
   });
   await page.route('**/work/api/auth/device/approve', route => { decisions++; return route.fulfill({ json: { status: 'approved' } }); });
-  await page.goto('/device?userCode=bcdfghjk');
+  await page.goto('/device?code=bcdfghjk');
   await expect(page.locator('.dk-auth-page__bar .dk-brand')).toHaveCSS('text-decoration-line', 'none');
   await expect(page.getByRole('heading', { name: 'Authorize a device', exact: true })).toBeFocused();
   await expect(page.locator('.dk-shell')).toHaveCount(0);
@@ -225,7 +225,7 @@ for (const theme of ['light', 'dark']) {
       label: 'synthetic-machine', requestIp: '203.0.113.7', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600000).toISOString(),
     } }));
     await page.route('**/work/api/auth/device/approve', route => route.fulfill({ json: { status: 'approved' } }));
-    await page.goto('/device?userCode=bcdfghjk');
+    await page.goto('/device?code=bcdfghjk');
     await expect(page.getByLabel('Device code', { exact: true })).toHaveValue('BCDF-GHJK');
     await expect(page).toHaveURL(/\/device$/);
     await touchControls(page, '.dk-auth-page');
@@ -257,7 +257,7 @@ test('long identity and machine labels wrap on touch without clipping Switch acc
     label: 'build-runner-with-a-very-long-unbroken-hostname-0123456789abcdef.internal', requestIp: '203.0.113.7',
     createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600000).toISOString(),
   } }));
-  await page.goto('/device?userCode=bcdfghjk');
+  await page.goto('/device?code=bcdfghjk');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Authorize this device?' })).toBeFocused();
   await expect(page.locator('.dk-auth-page__identity')).toContainText(email);

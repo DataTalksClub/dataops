@@ -355,11 +355,11 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
   });
 
   it('preserves the device code through browser sign-in without authorizing it', async () => {
-    const res = await route(ev('GET', '/device', { query: { userCode: 'BCDF-GHJK' } }), client);
+    const res = await route(ev('GET', '/device', { query: { code: 'BCDF-GHJK' } }), client);
     assert.strictEqual(res.statusCode, 302);
     const login = new URL(res.headers?.location || '', 'https://ops.example.test');
     assert.strictEqual(login.pathname, '/login');
-    assert.strictEqual(login.searchParams.get('return_to'), '/device?userCode=BCDF-GHJK');
+    assert.strictEqual(login.searchParams.get('return_to'), '/device?code=BCDF-GHJK');
   });
 
   it('serves device authorization without the SPA shell and disables caching', async () => {

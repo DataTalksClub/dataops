@@ -67,13 +67,13 @@ export function createDevicePage({
     return icon;
   }
   function switchAccount() {
-    const next = `/device${code ? `?userCode=${encodeURIComponent(formatUserCode(code))}` : ""}`;
+    const next = `/device${code ? `?code=${encodeURIComponent(formatUserCode(code))}` : ""}`;
     locationRef.assign(`/login?return_to=${encodeURIComponent(next)}`);
   }
   function updateIdentity() {
     identity.replaceChildren(el("span", "", actor?.email || "Not signed in"));
     const link = el("a", "", actor ? "Switch account" : "Sign in");
-    link.href = `/login?return_to=${encodeURIComponent(`/device${code ? `?userCode=${formatUserCode(code)}` : ""}`)}`;
+    link.href = `/login?return_to=${encodeURIComponent(`/device${code ? `?code=${formatUserCode(code)}` : ""}`)}`;
     link.addEventListener("click", (event) => {
       event.preventDefault();
       switchAccount();
@@ -490,7 +490,7 @@ export function createDevicePage({
   }
   async function start() {
     const url = new URL(locationRef.href);
-    code = formatUserCode(url.searchParams.get("userCode") || "");
+    code = formatUserCode(url.searchParams.get("code") || "");
     prefilled = Boolean(code);
     if (
       locationRef.hostname.includes(".lambda-url.") ||
