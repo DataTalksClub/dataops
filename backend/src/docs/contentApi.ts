@@ -35,6 +35,7 @@ import {
   KnowledgeError,
   normalizeRepoPath,
   isManagedKnowledgePath,
+  MANAGED_KNOWLEDGE_ROOTS,
   RevisionConflict,
   KnowledgeVersionNotFound,
 } from './knowledgeStore';
@@ -246,7 +247,11 @@ function jsonBody(event: LambdaEvent): Record<string, unknown> {
  * Dispatch a docs-domain request. Returns `null` when the path is not a docs
  * route so the caller can fall through to other handlers.
  */
-export async function handleDocsRoutes(event: LambdaEvent, actor = process.env.DTC_OFFLINE === '1' ? 'local-operator' : ''): Promise<LambdaResponse | null> {
+/**
+ * `publishMessage` is set only for a service principal whose publication
+ * message is derived from verified credential claims rather than the body.
+ */
+export async function handleDocsRoutes(event: LambdaEvent, actor = process.env.DTC_OFFLINE === '1' ? 'local-operator' : '', publishMessage?: string): Promise<LambdaResponse | null> {
   const path = event.path || '/';
   if (!isDocsRoute(path)) return null;
 
@@ -255,7 +260,7 @@ export async function handleDocsRoutes(event: LambdaEvent, actor = process.env.D
   }
 
   try {
-    return await dispatch(event, path, actor);
+    return await dispatch(event, path, actor, publishMessage);
   } catch (err) {
     if (err instanceof HttpError) return jsonResponse(err.status, { error: err.message });
     if (err instanceof ContentRootUnavailableError) {
@@ -270,7 +275,16 @@ export async function handleDocsRoutes(event: LambdaEvent, actor = process.env.D
   }
 }
 
-async function dispatch(event: LambdaEvent, path: string, actor: string): Promise<LambdaResponse> {
+/** A caller-supplied publication message: one short line, or the generic default. */
+function publicationMessage(raw: unknown): string {
+  if (raw === undefined || raw === null || raw === '') return 'Publish knowledge files';
+  if (typeof raw !== 'string' || raw.length > 200 || /[\x00-\x1f\x7f]/.test(raw) || !raw.trim()) {
+    throw new BadRequest('message must be one line of at most 200 characters');
+  }
+  return raw.trim();
+}
+
+async function dispatch(event: LambdaEvent, path: string, actor: string, publishMessage?: string): Promise<LambdaResponse> {
   const m = method(event);
   const rt = runtime || new DocsRuntime(createKnowledgeStore(knowledgeStoreConfigFromEnv()));
 
@@ -286,8 +300,14 @@ async function dispatch(event: LambdaEvent, path: string, actor: string): Promis
       if(typeof item.path!=='string') throw new BadRequest('Mutation path is required');
       return {path:editableKnowledgePath(item.path),...(typeof item.content==='string'?{bytes:item.content}:{}),...(typeof item.base64==='string'?{bytes:Buffer.from(item.base64,'base64')}:{}),...(typeof item.sourcePath==='string'?{sourcePath:editableKnowledgePath(item.sourcePath)}:{}),absent:item.absent===true};
     });
-    const publication=await rt.store.publish(mutations,String(body.expectedRevision||''),actor,'Publish knowledge files');
+    const publication=await rt.store.publish(mutations,String(body.expectedRevision||''),actor,publishMessage ?? publicationMessage(body.message));
     return jsonResponse(200,{revision:publication.revision});
+  }
+  if (path === '/knowledge/manifest' && m === 'GET') {
+    const publication=await rt.store.pin();
+    const entries=Object.fromEntries(Object.values(publication.entries).filter(entry=>isManagedKnowledgePath(entry.path))
+      .sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0).map(entry=>[entry.path,{sha256:entry.sha,size:entry.size}]));
+    return jsonResponse(200,{revision:publication.revision,roots:MANAGED_KNOWLEDGE_ROOTS,entries});
   }
   if (path === '/knowledge/history' && m === 'GET') return jsonResponse(200, await rt.store.history(requiredPath(event), queryParam(event, 'cursor') || undefined));
   if (path === '/knowledge/download' && m === 'GET') {

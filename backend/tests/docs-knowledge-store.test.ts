@@ -76,6 +76,24 @@ describe('daily Git mirror publication',()=>{
  });
 });
 
+describe('mirror after a Git-driven publication',()=>{
+ it('sees no difference once the Git head bytes are published, including binaries and deletions',async()=>{
+  const {createHash}=await import('node:crypto');
+  const gitSha=(bytes:Buffer)=>createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+  const {store,publication}=syntheticKnowledge({'content/a.md':'old','content/gone.md':'bye','content/i.png':new Uint8Array([1])});
+  const head={'content/a.md':Buffer.from('new\r\n'),'content/i.png':Buffer.from([0,255,10]),'content/added.md':Buffer.from('added')};
+  await store.publish([{path:'content/a.md',bytes:head['content/a.md']},{path:'content/i.png',bytes:head['content/i.png']},{path:'content/gone.md'},{path:'content/added.md',bytes:head['content/added.md'],absent:true}],publication.revision,'git:dataops-knowledge@abc','Publish dataops-knowledge abc');
+  const writes:string[]=[];const job=new KnowledgeJobs(store,'protected');
+  job.github=async(method,path)=>{
+   if(method!=='GET')writes.push(path);
+   if(path.startsWith('/git/ref/'))return{object:{sha:'head'}};
+   if(path==='/git/commits/head')return{tree:{sha:'tree'}};
+   return{tree:[...Object.entries(head).map(([p,b])=>({type:'blob',path:p,sha:gitSha(b)})),{type:'blob',path:'scripts/tool.py',sha:'tooling'}]};
+  };
+  assert.equal((await job.mirror()).unchanged,true);assert.deepEqual(writes,[]);
+ });
+});
+
 describe('bounded daily mirror backfill and recovery',()=>{
  it('resumes 1700 new binary uploads over daily runs without partial refs or repeated completed uploads',async()=>{
   const files=Object.fromEntries(Array.from({length:1700},(_,index)=>[`content/images/${index}.png`,new Uint8Array([0,255,index&255,index>>8])]));

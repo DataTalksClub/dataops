@@ -42,9 +42,13 @@ export function normalizeRepoPath(path: string): string {
   return clean;
 }
 
+/** Top-level knowledge directories the store owns; repository tooling outside them is not published or mirrored. */
+export const MANAGED_KNOWLEDGE_ROOTS=['content','_docs','workflow-templates','document-templates'] as const;
+
 /** Operational files mirrored daily; repository tooling remains independently maintained. */
 export function isManagedKnowledgePath(path:string):boolean {
-  return /^(content|_docs|workflow-templates|document-templates)\//.test(normalizeRepoPath(path));
+  const clean=normalizeRepoPath(path);const slash=clean.indexOf('/');
+  return slash>0 && (MANAGED_KNOWLEDGE_ROOTS as readonly string[]).includes(clean.slice(0,slash));
 }
 
 /** Percent-encode a path while keeping `/` separators (Python `quote_path`). */

@@ -91,6 +91,29 @@ describe('S3 authenticated knowledge content routes',()=>{
   assert.equal((await call(ev('GET','/knowledge/version',{query:{path:'content/newsletter/reference.md',revision:'unpublished'}}))).status,404);
   assert.equal((await call(ev('GET','/knowledge/history',{query:{path:'content/newsletter/reference.md',cursor:'unpublished'}}))).status,400);
  });
+ it('lists the managed manifest by sha256 and records a one-line publication message',async()=>{
+  const fixture=syntheticKnowledge({'content/a.md':'alpha','_docs/model.csv':'a,b\n','scripts/tool.py':'print()'},dir);
+  configureDocsRuntime(fixture.store);
+  const {createHash}=await import('node:crypto');
+  const manifest=await call(ev('GET','/knowledge/manifest'));assert.equal(manifest.status,200);
+  assert.equal(manifest.body.revision,fixture.publication.revision);
+  assert.deepEqual(manifest.body.roots,['content','_docs','workflow-templates','document-templates']);
+  assert.deepEqual(manifest.body.entries,{
+   '_docs/model.csv':{sha256:createHash('sha256').update('a,b\n').digest('hex'),size:4},
+   'content/a.md':{sha256:createHash('sha256').update('alpha').digest('hex'),size:5},
+  });
+  const published=await call(ev('POST','/knowledge/publish',{body:{expectedRevision:fixture.publication.revision,message:'Publish dataops-knowledge abc123',mutations:[{path:'content/a.md',base64:Buffer.from('beta').toString('base64')}]}}));
+  assert.equal(published.status,200);
+  const history=await call(ev('GET','/knowledge/history',{query:{path:'content/a.md'}}));
+  assert.equal(history.body.versions[0].message,'Publish dataops-knowledge abc123');
+  const forced=await handleDocsRoutes(ev('POST','/knowledge/publish',{body:{expectedRevision:published.body.revision,message:'client says',mutations:[{path:'content/a.md',content:'gamma'}]}}),'service','Publish dataops-knowledge def456');
+  assert.equal(forced?.statusCode,200);
+  assert.equal((await call(ev('GET','/knowledge/history',{query:{path:'content/a.md'}}))).body.versions[0].message,'Publish dataops-knowledge def456');
+  for(const message of ['two\nlines','x'.repeat(201),'   ',42]) {
+   const rejected=await call(ev('POST','/knowledge/publish',{body:{expectedRevision:JSON.parse(forced!.body).revision,message,mutations:[{path:'content/a.md',content:'delta'}]}}));
+   assert.equal(rejected.status,400);
+  }
+ });
  it('renames atomically and rejects unsafe paths/stateless invalid parse',async()=>{
   const rename=await call(ev('POST','/docs/rename',{body:{old_path:'content/newsletter/reference.md',new_path:'content/newsletter/renamed.md',expectedRevision:revision}}));assert.equal(rename.status,200);
   assert.equal((await call(ev('GET','/docs',{query:{path:'content/newsletter/reference.md'}}))).status,404);
