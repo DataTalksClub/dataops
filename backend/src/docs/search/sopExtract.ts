@@ -12,8 +12,8 @@
  * `iterContentDocs` (see `search/extract.ts`).
  */
 
-import { parse, ParseError } from '../sop';
-import type { ParsedSop, ProcedureSection, Section, Step } from '../sop';
+import { parse, parseCodeView, parseFrontmatter, splitFrontmatter, ParseError, CodeViewParseError } from '../sop';
+import type { ParsedCodeView, ParsedSop, ProcedureSection, Section, Step } from '../sop';
 
 /**
  * Structured search text for a `schema_version: 1` SOP, or `null` when the
@@ -71,4 +71,42 @@ function extractStepText(step: Step): string[] {
 
 function rawBody(section: Section): string {
   return 'body_md' in section && typeof section.body_md === 'string' ? section.body_md : '';
+}
+
+/**
+ * Per-doc-type structured search text: SOP extraction for structured SOPs,
+ * code-view extraction (filenames, prose, and code — the default cleaner would
+ * drop fenced code, which for a recipe is the content) for `code-view` docs,
+ * and `null` for everything else so the caller falls back to the raw body.
+ */
+export function docsStructuredText(rawText: string): string | null {
+  const [rawFm] = splitFrontmatter(rawText);
+  const fm = rawFm ? parseFrontmatter(rawFm) : {};
+  if (fm.doc_type === 'code-view') return codeViewStructuredText(rawText);
+  return sopStructuredText(rawText);
+}
+
+function codeViewStructuredText(rawText: string): string | null {
+  let parsed: ParsedCodeView;
+  try {
+    parsed = parseCodeView(rawText);
+  } catch (err) {
+    if (err instanceof CodeViewParseError) return null;
+    throw err;
+  }
+  const chunks: string[] = [];
+  for (const key of ['title', 'summary'] as const) {
+    const value = parsed.frontmatter[key];
+    if (typeof value === 'string' && value) chunks.push(value);
+  }
+  for (const block of parsed.blocks) {
+    if (block.kind === 'file') {
+      chunks.push(block.name);
+      if (block.language) chunks.push(block.language);
+      chunks.push(block.code);
+    } else {
+      chunks.push(block.body_md);
+    }
+  }
+  return chunks.join('\n');
 }

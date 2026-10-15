@@ -14,6 +14,13 @@ export {
   splitFrontmatter,
   splitlines,
 } from './parse';
+export {
+  CodeViewParseError,
+  lintCodeView,
+  lintDocument,
+  parseCodeView,
+} from './codeView';
+export type { CodeViewBlock, CodeViewFile, ParsedCodeView } from './codeView';
 export { ALLOWED_ACTIONS, lintText } from './lint';
 export type {
   Frontmatter,

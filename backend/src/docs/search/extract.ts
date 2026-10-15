@@ -33,7 +33,7 @@ const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
 const HTML_TAG_RE = /<[^>]+>/g;
 const MARKDOWN_MARKERS_RE = /[*_>#~]/g;
 
-const ID_STRIP_DIRS = new Set(['sops', 'templates', 'reference', 'playbooks']);
+const ID_STRIP_DIRS = new Set(['sops', 'templates', 'reference', 'playbooks', 'code-views']);
 
 /** Mirror of Python `str.title()` over alphabetic runs. */
 function pyTitle(text: string): string {
@@ -91,6 +91,7 @@ export function inferDomain(repoPath: string): string {
 export function inferDocType(repoPath: string): string {
   const parts = new Set(repoPath.split('/'));
   if (parts.has('sops')) return 'sop';
+  if (parts.has('code-views')) return 'code-view';
   if (parts.has('templates')) return 'template';
   if (parts.has('reference')) return 'reference';
   if (parts.has('playbooks')) return 'playbook';

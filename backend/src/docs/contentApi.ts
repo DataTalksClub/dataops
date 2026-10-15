@@ -50,8 +50,8 @@ import {
 } from './docRegistry';
 import { createSearchIndex, type SearchIndex } from './searchIndex';
 import { iterContentDocs } from './search/extract';
-import { sopStructuredText } from './search/sopExtract';
-import { parse, ParseError, lintText, splitFrontmatter } from './sop';
+import { docsStructuredText } from './search/sopExtract';
+import { parse, ParseError, splitFrontmatter, lintDocument, parseCodeView, CodeViewParseError } from './sop';
 import { newDocContent } from './docScaffolds';
 import { DEFAULT_HEADERS, jsonResponse, method, queryParam } from './http';
 import { search } from './contentSearch';
@@ -173,7 +173,7 @@ export class DocsRuntime {
 
   /** Rebuild the in-process search index from the content cache. */
   rebuildSearch(): void {
-    const docs = iterContentDocs(this.contentRoot, { structuredText: sopStructuredText });
+    const docs = iterContentDocs(this.contentRoot, { structuredText: docsStructuredText });
     const index = createSearchIndex();
     index.fit(docs);
     this.index = index;
@@ -417,7 +417,67 @@ async function getDoc(rt: DocsRuntime, rawPath: string): Promise<LambdaResponse>
       throw err;
     }
   }
+  await applyDocTypeAndCodeView(body, rt, repoPath, content);
   return jsonResponse(200, body);
+}
+
+/**
+ * Attach the doc_type and the alternate code-view linkage to a doc payload.
+ *
+ * Every document reports `code_view: {path, title} | null` — the code-only
+ * alternate view linked to it (SOP side), so agents and the UI can switch
+ * without a second listing call. A `code-view` document instead carries its
+ * parsed body (`parsed_code_view`) and the canonical `sop_doc` back-link.
+ * Registry problems never fail a document read: linkage degrades to null and
+ * the registry/lint endpoints are where violations surface.
+ */
+async function applyDocTypeAndCodeView(
+  body: Record<string, unknown>,
+  rt: DocsRuntime,
+  repoPath: string,
+  content: string,
+): Promise<void> {
+  const docType = frontmatterValue(content, 'doc_type');
+  body.doc_type = docType;
+  let view: DocumentRecord | null = null;
+  let sopDoc: DocumentRecord | null = null;
+  try {
+    // Linkage is corpus knowledge: the registry needs the whole synced tree,
+    // not just the one document this request read.
+    await rt.ensureSynced();
+    const registry = buildRegistry(rt.contentRoot);
+    const record = registry.byPath.get(repoPath);
+    if (record) {
+      body.doc_type = record.doc_type;
+      if (record.doc_type === 'code-view') {
+        try {
+          sopDoc = resolveReference(registry, record.sop);
+        } catch {
+          // Unresolvable `sop` — reported as a registry violation.
+        }
+      } else {
+        view = registry.codeViewBySop.get(record.id) || null;
+      }
+    }
+  } catch {
+    // Registry violations must not break reading a document.
+  }
+  if (body.doc_type === 'code-view') {
+    try {
+      body.parsed_code_view = parseCodeView(content);
+    } catch (err) {
+      if (err instanceof CodeViewParseError) {
+        body.parsed_code_view = null;
+        body.parse_code_error = err.message;
+      } else {
+        throw err;
+      }
+    }
+    body.sop_doc = sopDoc ? { path: sopDoc.path, title: sopDoc.title } : null;
+    body.code_view = null;
+  } else {
+    body.code_view = view ? { path: view.path, title: view.title } : null;
+  }
 }
 
 // ── Docs mutation endpoints (commit-on-save + search refresh) ─────────────────
@@ -443,7 +503,7 @@ async function saveDoc(
 
   let warnings: string[] = [];
   try {
-    warnings = lintText(content);
+    warnings = lintDocument(content);
   } catch {
     warnings = [];
   }
@@ -639,7 +699,7 @@ async function runCorpusLint(rt: DocsRuntime): Promise<LambdaResponse> {
     if (!text.includes('schema_version: 1')) continue;
     let violations: string[];
     try {
-      violations = lintText(text);
+      violations = lintDocument(text);
     } catch (err) {
       violations = [`lint failed: ${(err as Error).message}`];
     }
@@ -664,7 +724,7 @@ async function processQuality(rt: DocsRuntime): Promise<LambdaResponse> {
     const path = repoRelative(rt.repoRoot, file);
     let violations: string[];
     try {
-      violations = lintText(text);
+      violations = lintDocument(text);
     } catch (error) {
       violations = [`lint failed: ${(error as Error).message}`];
     }
@@ -694,6 +754,16 @@ async function processQuality(rt: DocsRuntime): Promise<LambdaResponse> {
 function parseContent(body: Record<string, unknown>): LambdaResponse {
   const text = body.content;
   if (typeof text !== 'string') throw new BadRequest('Request body must include string field: content');
+  if (body.kind === 'code-view') {
+    try {
+      return jsonResponse(200, { parsed_code_view: parseCodeView(text) });
+    } catch (err) {
+      if (err instanceof CodeViewParseError) {
+        return jsonResponse(200, { parsed_code_view: null, error: err.message });
+      }
+      throw err;
+    }
+  }
   try {
     return jsonResponse(200, { parsed: parse(text) });
   } catch (err) {
@@ -952,6 +1022,7 @@ function frontmatterValue(markdown: string, key: string): string {
 function inferDocType(repoPath: string): string {
   const parts = new Set(repoPath.split('/'));
   if (parts.has('sops')) return 'sop';
+  if (parts.has('code-views')) return 'code-view';
   if (parts.has('templates')) return 'template';
   if (parts.has('reference')) return 'reference';
   if (parts.has('playbooks')) return 'playbook';

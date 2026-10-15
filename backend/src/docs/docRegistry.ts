@@ -16,7 +16,7 @@ import type { Frontmatter } from './sop';
 
 const DOCUMENT_ID_RE = /^[a-z0-9][a-z0-9._-]*$/;
 const WIKI_REF_RE = /^\[\[([^\]|]+)(?:\|[^\]]+)?\]\]$/;
-const ID_STRIP_DIRS = new Set(['sops', 'templates', 'reference', 'playbooks']);
+const ID_STRIP_DIRS = new Set(['sops', 'templates', 'reference', 'playbooks', 'code-views']);
 
 export const VALID_DOC_TYPES = new Set([
   'sop',
@@ -29,6 +29,7 @@ export const VALID_DOC_TYPES = new Set([
   'system-overview',
   'process',
   'archive',
+  'code-view',
   'doc',
 ]);
 
@@ -67,6 +68,8 @@ export interface DocumentRecord {
   id_source: 'frontmatter' | 'generated';
   parent?: string;
   parent_id?: string;
+  /** For `code-view` docs: the canonical SOP this view codes (`sop:` ref). */
+  sop: string;
 }
 
 export interface DocumentRecordDict extends Omit<DocumentRecord, never> {
@@ -80,6 +83,8 @@ export interface DocumentRegistry {
   byId: Map<string, DocumentRecord>;
   byAlias: Map<string, DocumentRecord>;
   byPath: Map<string, DocumentRecord>;
+  /** code-view records keyed by the resolved target SOP's id (one per SOP). */
+  codeViewBySop: Map<string, DocumentRecord>;
 }
 
 export function recordToDict(record: DocumentRecord): DocumentRecordDict {
@@ -109,6 +114,7 @@ export function recordToDict(record: DocumentRecord): DocumentRecordDict {
     id_source: record.id_source,
     parent: record.parent || '',
     parent_id: record.parent_id || '',
+    sop: record.sop,
   };
 }
 
@@ -169,6 +175,7 @@ export function buildRegistry(contentRoot: string, validate = true): DocumentReg
   const byId = new Map<string, DocumentRecord>();
   const byAlias = new Map<string, DocumentRecord>();
   const byPath = new Map<string, DocumentRecord>();
+  const codeViewBySop = new Map<string, DocumentRecord>();
 
   for (const record of records) {
     addUnique(byId, record.id, record, 'id', violations);
@@ -180,7 +187,36 @@ export function buildRegistry(contentRoot: string, validate = true): DocumentReg
     }
   }
 
-  const registry: DocumentRegistry = { documents: records, byId, byAlias, byPath };
+  const registry: DocumentRegistry = { documents: records, byId, byAlias, byPath, codeViewBySop };
+
+  // Resolve code-view → SOP links: the reference must exist and each SOP gets
+  // at most one code view, so the alternate view can never fork into copies.
+  for (const record of records) {
+    if (record.doc_type !== 'code-view') continue;
+    if (!record.sop) {
+      violations.push(`${record.path}: code view is missing frontmatter \`sop\``);
+      continue;
+    }
+    let target: DocumentRecord;
+    try {
+      target = resolveReference(registry, record.sop);
+    } catch {
+      violations.push(`${record.path}: sop reference not found: '${record.sop}'`);
+      continue;
+    }
+    if (target.path === record.path) {
+      violations.push(`${record.path}: code view cannot target itself`);
+      continue;
+    }
+    const existing = codeViewBySop.get(target.id);
+    if (existing) {
+      violations.push(
+        `${record.path}: second code view for '${record.sop}' (already at ${existing.path})`,
+      );
+      continue;
+    }
+    codeViewBySop.set(target.id, record);
+  }
 
   for (const record of records) {
     if (record.parent) {
@@ -354,6 +390,7 @@ function recordFromMetadata(
     domain: inferDomain(repoPath),
     id_source: explicitId ? 'frontmatter' : 'generated',
     parent: explicitParent || undefined,
+    sop: stripQuotes(asString(metadata.sop)),
   };
 }
 
@@ -473,6 +510,7 @@ function inferDomain(path: string): string {
 function inferDocType(path: string): string {
   const parts = new Set(path.split('/'));
   if (parts.has('sops')) return 'sop';
+  if (parts.has('code-views')) return 'code-view';
   if (parts.has('templates')) return 'template';
   if (parts.has('reference')) return 'reference';
   if (parts.has('playbooks')) return 'playbook';

@@ -15,6 +15,9 @@ export function newDocContent(
       ? minimalSopTemplate(title, docType, summary, parent)
       : fullSopTemplate(title, docType, summary, parent);
   }
+  if (docType === 'code-view') {
+    return codeViewTemplate(title, summary, parent);
+  }
   const parentLine = parent ? `parent: "${parent}"\n` : '';
   return `---
 title: "${title}"
@@ -137,5 +140,33 @@ related_docs: []
 <!-- sop-section-start: references -->
 ## References
 <!-- sop-section-end -->
+`;
+}
+
+function codeViewTemplate(title: string, summary: string, parent?: string): string {
+  const parentLine = parent ? `parent: "${parent}\n"` : '';
+  return `---
+title: "${title}"
+summary: "${summary}"
+doc_type: code-view
+schema_version: 1
+sop: ""
+${parentLine}tags: []
+systems: []
+related_docs: []
+---
+
+# ${title}
+
+Code-only alternate view. Set \`sop:\` to the canonical SOP this codes, then
+name every file block and keep them in running order. Files must be runnable
+in sequence, start read-only/dry-run, and stop before browser-only or
+human-only steps instead of claiming them.
+
+\`\`\`bash file=run.sh
+# Dry-run first: nothing below writes until DRY_RUN=0.
+DRY_RUN="\${DRY_RUN:-1}"
+echo "dry-run=\${DRY_RUN}"
+\`\`\`
 `;
 }
