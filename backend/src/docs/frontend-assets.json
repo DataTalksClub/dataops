@@ -125,6 +125,7 @@
     "src/surfaces/work-detail/card-display.js",
     "src/surfaces/work-detail/card-panel.js",
     "src/surfaces/work-detail/card-summary.js",
+    "src/surfaces/work-detail/card-template-review.js",
     "src/surfaces/work-detail/index.js",
     "src/surfaces/work-detail/route-state.js",
     "src/surfaces/work-detail/task-actions.js",
