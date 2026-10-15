@@ -17,7 +17,6 @@ import {
 import type { RecurringConfig, Task } from './types';
 
 const SLACK_INVITE_DOC_ID = 'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form';
-const TRELLO_EVENT_DOC_ID = 'sop.internal-admin.trello.how-to-create-an-event-through-trello';
 
 type BaselineRecurringConfig = Pick<
   RecurringConfig,
@@ -39,13 +38,6 @@ export const BASELINE_RECURRING_CONFIGS: readonly BaselineRecurringConfig[] = [
     instructionDocId: SLACK_INVITE_DOC_ID,
     requires: ['airtable', 'slack'],
     tags: ['community', 'book-of-the-week', 'airtable', 'slack'],
-  },
-  {
-    description: 'Create new Trello cards and review existing ones',
-    cronExpression: '0 9 * * *',
-    instructionDocId: TRELLO_EVENT_DOC_ID,
-    requires: ['trello'],
-    tags: ['internal-admin', 'trello', 'podcast'],
   },
   { description: 'Ensure newsletter for next week is prepared', cronExpression: '0 9 * * 2' },
   { description: 'Prepare newsletter for the week after next', cronExpression: '0 9 * * 3' },

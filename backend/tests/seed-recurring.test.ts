@@ -7,6 +7,7 @@ import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { listUndismissedNotifications } from '../src/db/notifications';
 import {
+  createRecurringConfig,
   listRecurringConfigs,
   updateRecurringConfig,
 } from '../src/db/recurring';
@@ -77,15 +78,7 @@ describe('Seed recurring script', () => {
     );
     assert.deepStrictEqual(slackConfig.requires, ['airtable', 'slack']);
 
-    const trelloConfig = configsAfterFirstRun.find(
-      (config) => config.description === 'Create new Trello cards and review existing ones'
-    );
-    assert.ok(trelloConfig);
-    assert.strictEqual(
-      trelloConfig.instructionDocId,
-      'sop.internal-admin.trello.how-to-create-an-event-through-trello'
-    );
-    assert.deepStrictEqual(trelloConfig.requires, ['trello']);
+    assert.ok(!configsAfterFirstRun.some((config) => /Trello/.test(config.description)));
 
     const second = await seedRecurring();
     assert.deepStrictEqual(second, {
@@ -128,17 +121,16 @@ describe('Seed recurring script', () => {
     const friday = new Date('2029-01-05T09:00:00Z');
     const firstCron = await runCron(client, friday);
     assert.strictEqual(firstCron.failures, 0);
-    assert.strictEqual(firstCron.recurring.generated.length, 2);
+    assert.strictEqual(firstCron.recurring.generated.length, 1);
     assert.strictEqual(firstCron.recurring.skipped, 0);
 
     const tasks = (await listTasksByDate(client, '2029-01-05')).filter(
       (task) => task.source === 'recurring'
     );
-    assert.strictEqual(tasks.length, 2);
+    assert.strictEqual(tasks.length, 1);
     assert.deepStrictEqual(
       tasks.map((task) => task.description).sort(),
       [
-        'Create new Trello cards and review existing ones',
         'Invite people to Slack from Airtable',
       ]
     );
@@ -163,20 +155,10 @@ describe('Seed recurring script', () => {
     );
     assert.deepStrictEqual(slackTask.requires, ['airtable', 'slack']);
 
-    const trelloTask = tasks.find(
-      (task) => task.description === 'Create new Trello cards and review existing ones'
-    );
-    assert.ok(trelloTask);
-    assert.strictEqual(
-      trelloTask.instructionDocId,
-      'sop.internal-admin.trello.how-to-create-an-event-through-trello'
-    );
-    assert.deepStrictEqual(trelloTask.requires, ['trello']);
-
     const notificationsAfterFirstCron = (await listUndismissedNotifications(client)).filter(
       (notification) => notification.type === 'recurring-due'
     );
-    assert.strictEqual(notificationsAfterFirstCron.length, 2);
+    assert.strictEqual(notificationsAfterFirstCron.length, 1);
     assert.deepStrictEqual(
       notificationsAfterFirstCron.map((notification) => notification.taskId).sort(),
       tasks.map((task) => task.id).sort()
@@ -184,28 +166,21 @@ describe('Seed recurring script', () => {
 
     const secondCron = await runCron(client, friday);
     assert.strictEqual(secondCron.recurring.generated.length, 0);
-    assert.strictEqual(secondCron.recurring.skipped, 2);
+    assert.strictEqual(secondCron.recurring.skipped, 1);
 
     const tasksAfterSecondCron = (await listTasksByDate(client, '2029-01-05')).filter(
       (task) => task.source === 'recurring'
     );
-    assert.strictEqual(tasksAfterSecondCron.length, 2);
+    assert.strictEqual(tasksAfterSecondCron.length, 1);
 
     const notificationsAfterSecondCron = (await listUndismissedNotifications(client)).filter(
       (notification) => notification.type === 'recurring-due'
     );
-    assert.strictEqual(notificationsAfterSecondCron.length, 2);
+    assert.strictEqual(notificationsAfterSecondCron.length, 1);
 
     await updateTask(client, slackTask.id, {
       expectedVersion: slackTask.version,
       patch: { instructionDocId: '', requires: [] },
-    });
-    await updateTask(client, trelloTask.id, {
-      expectedVersion: trelloTask.version,
-      patch: {
-        instructionDocId: 'sop.operator.override',
-        requires: ['github'],
-      },
     });
     const manualTask = await createTask(client, {
       description: 'Invite people to Slack from Airtable',
@@ -226,7 +201,7 @@ describe('Seed recurring script', () => {
     const tasksAfterRepair = (await listTasksByDate(client, '2029-01-05')).filter(
       (task) => task.source === 'recurring'
     );
-    assert.strictEqual(tasksAfterRepair.length, 2);
+    assert.strictEqual(tasksAfterRepair.length, 1);
     const repairedSlackTask = tasksAfterRepair.find(
       (task) => task.description === 'Invite people to Slack from Airtable'
     );
@@ -237,19 +212,18 @@ describe('Seed recurring script', () => {
     );
     assert.deepStrictEqual(repairedSlackTask.requires, ['airtable', 'slack']);
 
-    const preservedTrelloTask = tasksAfterRepair.find(
-      (task) => task.description === 'Create new Trello cards and review existing ones'
-    );
-    assert.ok(preservedTrelloTask);
-    assert.strictEqual(preservedTrelloTask.instructionDocId, 'sop.operator.override');
-    assert.deepStrictEqual(preservedTrelloTask.requires, ['github']);
-
     const manualTaskAfterRepair = (await listTasksByDate(client, '2029-01-05')).find(
       (task) => task.id === manualTask.id
     );
     assert.ok(manualTaskAfterRepair);
     assert.strictEqual(manualTaskAfterRepair.instructionDocId, undefined);
     assert.strictEqual(manualTaskAfterRepair.requires, undefined);
+
+    const retiredSchedule = await createRecurringConfig(client, {
+      description: 'Create new Trello cards and review existing ones',
+      cronExpression: '0 9 * * *',
+      enabled: false,
+    });
 
     const idempotentRepair = await seedRecurring();
     assert.deepStrictEqual(idempotentRepair, {
@@ -259,5 +233,7 @@ describe('Seed recurring script', () => {
       repairedTasks: 0,
       total: BASELINE_RECURRING_CONFIGS.length,
     });
+    const retiredAfterSeed = (await listRecurringConfigs(client)).find((config) => config.id === retiredSchedule.id);
+    assert.strictEqual(retiredAfterSeed?.enabled, false, 'deployment must not reactivate the retired Trello routine');
   });
 });
