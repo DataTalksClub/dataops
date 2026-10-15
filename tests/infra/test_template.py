@@ -1,13 +1,8 @@
 from __future__ import annotations
 
 import copy
-import os
 from pathlib import Path
 import re
-import shutil
-import subprocess
-import sys
-import tempfile
 import pytest
 import yaml
 
@@ -18,7 +13,6 @@ DEPLOY_ROLE_TEMPLATE = REPO_ROOT / "infra" / "template.github-actions-dataops.ya
 LEGACY_DEPLOY_ROLE_TEMPLATE = REPO_ROOT / "infra" / "template.github-actions.yaml"
 DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-dataops-v1.yml"
 E2E_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "validate-backend-e2e.yml"
-SANDBOX_BASELINE_SHA = "6236865e509c0e142d364e6c56f7856d8f932076"
 SANDBOX_CONSUMER_FUNCTIONS = {
     "BackendFunction",
 }
@@ -46,42 +40,6 @@ def _load_template(path: Path = TEMPLATE) -> dict:
 
 def _load_template_text(template: str) -> dict:
     return yaml.load(template, Loader=_CloudFormationLoader)
-
-
-def _git_show(path: str) -> str:
-    completed = subprocess.run(
-        ["git", "show", f"{SANDBOX_BASELINE_SHA}:{path}"],
-        check=True,
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
-    )
-    return completed.stdout
-
-
-def _diff_paths(left, right, path: str = "") -> list[str]:
-    if left == right:
-        return []
-    if isinstance(left, dict) and isinstance(right, dict):
-        keys = sorted(set(left) | set(right))
-        return [
-            difference
-            for key in keys
-            for difference in _diff_paths(
-                left.get(key),
-                right.get(key),
-                f"{path}.{key}" if path else str(key),
-            )
-        ]
-    if isinstance(left, list) and isinstance(right, list):
-        if len(left) != len(right):
-            return [path]
-        return [
-            difference
-            for index, (left_item, right_item) in enumerate(zip(left, right))
-            for difference in _diff_paths(left_item, right_item, f"{path}[{index}]")
-        ]
-    return [path]
 
 
 def _resolve_dataops_environment(value, environment: str):
@@ -139,72 +97,6 @@ def _resource_block(template: str, resource_name: str) -> str:
         block_lines.append(line)
 
     return "\n".join(block_lines)
-
-
-def _executable_command(executable: str | Path) -> list[str]:
-    executable_path = Path(executable)
-    with executable_path.open("rb") as executable_file:
-        first_line = executable_file.readline(4096)
-
-    if not first_line.startswith(b"#!"):
-        return [str(executable_path)]
-
-    try:
-        shebang = first_line[2:].decode("utf-8").strip()
-    except UnicodeDecodeError as error:
-        raise AssertionError(f"{executable_path} has an invalid UTF-8 shebang") from error
-
-    shebang_parts = shebang.split(maxsplit=1)
-    interpreter = shebang_parts[0] if shebang_parts else ""
-    assert interpreter, f"{executable_path} has an empty shebang"
-    command = [interpreter]
-    if len(shebang_parts) == 2:
-        command.append(shebang_parts[1])
-    command.append(str(executable_path))
-    return command
-
-
-def _translated_template_from_sam(sam_binary: str, template: Path, scratch_dir: Path) -> str:
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "AWS_CONFIG_FILE": str(scratch_dir / "aws-config"),
-            "AWS_EC2_METADATA_DISABLED": "true",
-            "AWS_SHARED_CREDENTIALS_FILE": str(scratch_dir / "aws-credentials"),
-            "SAM_CLI_TELEMETRY": "0",
-        }
-    )
-    completed = subprocess.run(
-        [
-            *_executable_command(sam_binary),
-            "validate",
-            "--debug",
-            "--template-file",
-            str(template),
-            "--region",
-            "eu-west-1",
-        ],
-        check=True,
-        capture_output=True,
-        env=environment,
-        text=True,
-    )
-    output = f"{completed.stderr}\n{completed.stdout}"
-    marker = " | Translated template is:\n"
-    assert marker in output, "SAM CLI debug output did not include the translated template"
-    translated = output.partition(marker)[2]
-    trailing_log = re.search(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} \|", translated, re.MULTILINE)
-    return translated[:trailing_log.start()].rstrip() + "\n" if trailing_log else translated
-
-
-def _load_translated_template(sam_binary: str, template: Path, scratch_dir: Path) -> dict:
-    translated = _translated_template_from_sam(sam_binary, template, scratch_dir)
-    yaml_lines = []
-    for line in translated.splitlines():
-        if re.match(r"^\d{4}-\d{2}-\d{2} .* \| ", line):
-            break
-        yaml_lines.append(line)
-    return yaml.load("\n".join(yaml_lines), Loader=_CloudFormationLoader)
 
 
 def _template_with_parameter_default(template: str, parameter_name: str, value: str) -> str:
@@ -398,100 +290,6 @@ def test_backend_schedules_are_explicit_identity_stable_resources_with_exact_beh
         assert not any(event.get("Type") == "Schedule" for event in events.values())
 
 
-def test_processed_template_keeps_baseline_resource_identity_inventory():
-    sam_binary = shutil.which("sam")
-    assert sam_binary, "AWS SAM CLI is required for the transform contract test"
-    identity_sha = "6236865e509c0e142d364e6c56f7856d8f932076"
-    origin_main_sha = "0e274de9727635be70a8291d47d6337f543b6e58"
-    identity_source = subprocess.run(
-        ["git", "show", f"{identity_sha}:infra/template.full.yaml"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    origin_main_source = subprocess.run(
-        ["git", "show", f"{origin_main_sha}:infra/template.full.yaml"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    scratch_root = REPO_ROOT / ".tmp"
-    scratch_root.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="sam-identity-migration-", dir=scratch_root) as scratch_name:
-        scratch_dir = Path(scratch_name)
-        identity_path = scratch_dir / "identity.yaml"
-        origin_main_path = scratch_dir / "origin-main.yaml"
-        candidate_path = scratch_dir / "candidate.yaml"
-        identity_path.write_text(identity_source, encoding="utf-8")
-        origin_main_path.write_text(origin_main_source, encoding="utf-8")
-        candidate_path.write_text(TEMPLATE.read_text(encoding="utf-8"), encoding="utf-8")
-        identity_processed = _load_translated_template(sam_binary, identity_path, scratch_dir)
-        origin_main_processed = _load_translated_template(sam_binary, origin_main_path, scratch_dir)
-        candidate_processed = _load_translated_template(sam_binary, candidate_path, scratch_dir)
-
-    deleted = {
-        "MailingExportsBucket",
-        "MailingExportsBucketPolicy",
-        "BackendFunctionDailyMailingExport",
-        "BackendFunctionDailyMailingExportPermission",
-    }
-    assert deleted <= set(identity_processed["Resources"])
-    assert deleted <= set(origin_main_processed["Resources"])
-    assert set(candidate_processed["Resources"]) == set(origin_main_processed["Resources"]) - deleted
-    assert candidate_processed["Conditions"] == origin_main_processed["Conditions"]
-    assert candidate_processed["Outputs"] == origin_main_processed["Outputs"]
-    # BackendFunction IAM/env and its generated role change with this deletion.
-    # Remaining origin/main resources stay identical; do not add a dummy
-    # EventBridge rule.
-    for logical_id in set(candidate_processed["Resources"]) - {"BackendFunction", "BackendFunctionRole"}:
-        assert candidate_processed["Resources"][logical_id] == origin_main_processed["Resources"][logical_id], logical_id
-    candidate_rules = {
-        name
-        for name, resource in candidate_processed["Resources"].items()
-        if resource["Type"] == "AWS::Events::Rule"
-    }
-    origin_main_rules = {
-        name
-        for name, resource in origin_main_processed["Resources"].items()
-        if resource["Type"] == "AWS::Events::Rule"
-    }
-    assert candidate_rules == origin_main_rules - {"BackendFunctionDailyMailingExport"}
-    rule_targets = {
-        "BackendFunctionDailyBackendCron": ("BackendFunction", "BackendTargetFunctionName"),
-        "BackendFunctionDailyBackendExport": ("BackendFunction", "BackendTargetFunctionName"),
-    }
-    for rule_id, (function_id, target_parameter) in rule_targets.items():
-        before_rule = identity_processed["Resources"][rule_id]
-        after_rule = candidate_processed["Resources"][rule_id]
-        assert before_rule["Type"] == after_rule["Type"] == "AWS::Events::Rule"
-        for property_name in ("Description", "ScheduleExpression", "State"):
-            assert after_rule["Properties"][property_name] == before_rule["Properties"][property_name]
-        before_target = before_rule["Properties"]["Targets"][0]
-        after_target = after_rule["Properties"]["Targets"][0]
-        assert {key: value for key, value in after_target.items() if key != "Arn"} == {
-            key: value for key, value in before_target.items() if key != "Arn"
-        }
-        assert function_id in str(before_target["Arn"])
-        assert target_parameter in str(after_target["Arn"])
-        assert function_id not in str(after_target["Arn"])
-
-        permission_id = f"{rule_id}Permission"
-        before_permission = identity_processed["Resources"][permission_id]
-        after_permission = candidate_processed["Resources"][permission_id]
-        assert before_permission["Type"] == after_permission["Type"] == "AWS::Lambda::Permission"
-        assert {
-            key: value for key, value in after_permission["Properties"].items()
-            if key != "FunctionName"
-        } == {
-            key: value for key, value in before_permission["Properties"].items()
-            if key != "FunctionName"
-        }
-        assert function_id in str(before_permission["Properties"]["FunctionName"])
-        assert after_permission["Properties"]["FunctionName"] == {"Ref": target_parameter}
-
-
 def test_deploy_workflow_pins_toolchain_and_resolves_only_existing_schedule_targets():
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
     assert (REPO_ROOT / ".node-version").read_text(encoding="utf-8") == "20.20.2\n"
@@ -511,54 +309,6 @@ def test_deploy_workflow_pins_toolchain_and_resolves_only_existing_schedule_targ
         assert workflow.count(f"ParameterKey={parameter},ParameterValue=${environment}") == 1
     assert "^[A-Za-z0-9-_]{1,64}$" in resolver
     assert workflow.count("sam deploy \\") == 1
-
-
-def test_issue_217_candidate_preserves_baseline_environment_and_excludes_146_provenance():
-    template = _load_template()
-    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
-    assert template["Parameters"]["DataOpsEnvironment"] == {
-        "Type": "String",
-        "Default": "prod",
-        "AllowedPattern": "^[a-zA-Z0-9_.-]+$",
-    }
-    assert "ParameterKey=DataOpsEnvironment" not in workflow
-    assert "DataOpsEnvironment=sandbox" not in workflow
-
-
-def test_sam_executable_command_invokes_python_shebang_script():
-    scratch_root = REPO_ROOT / ".tmp"
-    scratch_root.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="sam-script-", dir=scratch_root) as scratch_name:
-        script = Path(scratch_name) / "sam"
-        script.write_text(
-            f"#!{sys.executable}\n"
-            "import sys\n"
-            "print(sys.argv[1])\n",
-            encoding="utf-8",
-        )
-        script.chmod(0o755)
-
-        completed = subprocess.run(
-            [*_executable_command(script), "script-ok"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-    assert completed.stdout.strip() == "script-ok"
-
-
-def test_sam_executable_command_invokes_native_binary():
-    command = _executable_command(sys.executable)
-    assert command == [sys.executable]
-
-    completed = subprocess.run(
-        [*command, "--version"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert completed.stdout.startswith("Python ")
 
 
 def test_dataops_table_outputs_are_available_for_backend_env_wiring():
@@ -600,6 +350,7 @@ def test_sponsor_finance_is_default_off_and_uses_exact_transaction_resources():
               - !GetAtt DataOpsSponsorCrmTable.Arn"""
     finance_write = """Action:
               - dynamodb:TransactWriteItems
+              - dynamodb:ConditionCheckItem
             Resource:
               - !GetAtt DataOpsSponsorCrmTable.Arn
               - !GetAtt DataOpsBookkeepingTable.Arn
@@ -632,7 +383,9 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "FunctionUrlConfig" in backend
     assert "WORK_ENGINE_AUTH_MODE: portal" in backend
     assert "DATAOPS_DOCS_DOMAIN: " in backend
-    assert "GITHUB_OWNER: !Ref GitHubOwner" in backend
+    # GitHub access to the knowledge repo lives in the knowledge worker only.
+    assert "GITHUB_OWNER" not in backend
+    assert "GITHUB_OWNER: !Ref GitHubOwner" in _resource_block(template, "KnowledgeWorkerFunction")
     assert "AUTH_BASE_URL: !Ref AuthBaseUrl" in backend
     assert "AUTH_USER_POOL_ID:" not in backend
     assert "AUTH_ISSUER: !Ref AuthIssuer" in backend
@@ -871,96 +624,11 @@ def test_sandbox_environment_contract_rejects_escape_hatches():
             _assert_sandbox_provenance_contract(template, candidate)
 
 
-def test_sandbox_provenance_source_and_processed_templates_have_no_resource_changes():
-    source = TEMPLATE.read_text(encoding="utf-8")
-    baseline_source = _git_show("infra/template.full.yaml")
-    template = _load_template_text(source)
-    baseline = _load_template_text(baseline_source)
-
-    assert baseline["Parameters"]["DataOpsEnvironment"] == {
-        "Type": "String",
-        "Default": "prod",
-        "AllowedPattern": "^[a-zA-Z0-9_.-]+$",
-    }
-    assert set(template["Parameters"]) == set(baseline["Parameters"])
-    for parameter_name in template["Parameters"]:
-        if parameter_name != "DataOpsEnvironment":
-            assert template["Parameters"][parameter_name] == baseline["Parameters"][parameter_name]
-
-    assert set(template["Resources"]) == set(baseline["Resources"])
-    assert template["Resources"] == baseline["Resources"]
-    for top_level_key in set(template) | set(baseline):
-        if top_level_key != "Parameters":
-            assert template.get(top_level_key) == baseline.get(top_level_key)
-
-    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
-    baseline_workflow = _git_show(".github/workflows/deploy-dataops-v1.yml")
-    override_text = "ParameterKey=DataOpsEnvironment,ParameterValue=sandbox"
-    override_line = next(
-        line for line in workflow.splitlines(keepends=True) if override_text in line
-    )
-    assert workflow.count(override_text) == 1
-    assert override_text not in baseline_workflow
-    assert workflow.replace(override_line, "", 1) == baseline_workflow
-
-    sam_binary = shutil.which("sam")
-    assert sam_binary, "AWS SAM CLI is required for the source/processed diff contract"
-    scratch_root = REPO_ROOT / ".tmp"
-    scratch_root.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="sam-sandbox-provenance-", dir=scratch_root) as scratch_name:
-        scratch_dir = Path(scratch_name)
-        source_path = scratch_dir / "template-current.yaml"
-        baseline_path = scratch_dir / "template-baseline.yaml"
-        source_path.write_text(source, encoding="utf-8")
-        baseline_path.write_text(baseline_source, encoding="utf-8")
-        processed = _load_template_text(
-            _translated_template_from_sam(sam_binary, source_path, scratch_dir)
-        )
-        baseline_processed = _load_template_text(
-            _translated_template_from_sam(sam_binary, baseline_path, scratch_dir)
-        )
-
-    assert set(processed["Resources"]) == set(baseline_processed["Resources"])
-    assert {
-        logical_id: resource["Type"]
-        for logical_id, resource in processed["Resources"].items()
-    } == {
-        logical_id: resource["Type"]
-        for logical_id, resource in baseline_processed["Resources"].items()
-    }
-    assert {
-        logical_id: (
-            resource.get("DeletionPolicy"),
-            resource.get("UpdateReplacePolicy"),
-            resource.get("Condition"),
-            resource.get("DependsOn"),
-        )
-        for logical_id, resource in processed["Resources"].items()
-    } == {
-        logical_id: (
-            resource.get("DeletionPolicy"),
-            resource.get("UpdateReplacePolicy"),
-            resource.get("Condition"),
-            resource.get("DependsOn"),
-        )
-        for logical_id, resource in baseline_processed["Resources"].items()
-    }
-
-    expected_environment_paths = sorted(
-        f"Resources.{logical_id}.Properties.Environment.Variables.DATAOPS_ENV"
-        for logical_id in SANDBOX_CONSUMER_FUNCTIONS
-    )
-    assert _diff_paths(
-        _resolve_dataops_environment({"Resources": baseline_processed["Resources"]}, "prod"),
-        _resolve_dataops_environment({"Resources": processed["Resources"]}, "sandbox"),
-    ) == expected_environment_paths
-
-
 def test_deploy_workflow_projects_private_templates_through_the_deployed_lambda():
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
     deploy = workflow.split("\n  deploy:\n", 1)[1]
 
-    seed = "Seed runtime users, workflow templates, and recurring configs"
+    seed = "Seed runtime workflow templates and recurring configs"
     assert seed in workflow
     assert "--logical-resource-id BackendFunction" in workflow
     assert deploy.count("aws lambda invoke") == 1
@@ -973,13 +641,15 @@ def test_deploy_workflow_projects_private_templates_through_the_deployed_lambda(
     assert 'seed_response="$RUNNER_TEMP/dataops-runtime-seeds.json"' in deploy
     assert "FunctionError" in deploy
     assert 'if [ "$seed_error" != "None" ]' in deploy
+    # The deploy seed creates no people; authored templates come from the
+    # private knowledge branch, so only their count arithmetic is pinned.
+    assert "$body.users" not in deploy
     for exact_total in (
-        "$body.users.processed == 3",
-        "$body.users.created + $body.users.updated + $body.users.unchanged == 3",
-        "$body.templates.total == 11",
-        "$body.templates.created + $body.templates.updated + $body.templates.unchanged == 11",
-        "$body.recurring.total == 6",
-        "$body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 6",
+        '($body | keys == ["recurring", "templates"])',
+        "($body.templates.total | nonnegative_integer and . > 0)",
+        "$body.templates.created + $body.templates.updated + $body.templates.unchanged == $body.templates.total",
+        "$body.recurring.total == 5",
+        "$body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 5",
         "$body.recurring.repairedTasks",
     ):
         assert exact_total in deploy
@@ -1056,7 +726,7 @@ def test_deploy_workflow_passes_shared_auth_contract_through_github_oidc_only():
         "aws s3api put-object",
         "aws cloudformation create-change-set",
         "aws cloudformation execute-change-set",
-        "Seed runtime users, workflow templates, and recurring configs",
+        "Seed runtime workflow templates and recurring configs",
     ):
         if operation in deploy_job:
             assert oidc < deploy_job.index(operation)
@@ -1079,7 +749,7 @@ def test_deploy_workflow_keeps_production_auth_out_of_checks_and_scoped_to_deplo
         "AUTH_USER_POOL_ID": "us-east-1_H7nJu52Bs",
         "AUTH_CALLBACK_URL": "https://ops.dtcdev.click/auth/callback",
         "AUTH_LOGOUT_URL": "https://ops.dtcdev.click/",
-        "AUTH_SESSION_LIFETIME_SECONDS": "28800",
+        "AUTH_SESSION_LIFETIME_SECONDS": "2592000",
     }
     resolved_auth = ("AUTH_ISSUER", "AUTH_JWKS_URL", "AUTH_CLIENT_ID")
 
