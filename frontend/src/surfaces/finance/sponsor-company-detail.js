@@ -68,6 +68,8 @@ export function createSponsorCompanyDetail({
       orgDeals.find((item) => item.status !== "lost") ||
       orgDeals[0];
     if (deal) sponsorCommunications.selectedBookingId = deal.id;
+    const listScroller = surface.querySelector("[data-crm-list-scroll]");
+    const listScrollTop = listScroller?.scrollTop || 0;
     surface.classList.add("has-booking-detail");
     // The queue marks this company as the selected row; on a phone the split
     // shows the detail pane.
@@ -75,6 +77,7 @@ export function createSponsorCompanyDetail({
     const split = surface.querySelector("[data-crm-split]");
     split.dataset.view = "detail";
     draw();
+    if (listScroller) listScroller.scrollTop = listScrollTop;
     const history = deal ? await api(`/deals/${deal.id}/history`) : { items: [] };
     const mail = await api(`/organizations/${organization.id}/messages`);
     const historyMarkup = (history.items || []).length
@@ -266,7 +269,13 @@ export function createSponsorCompanyDetail({
       </div>
     </article>`;
     surface.querySelector("[data-close-booking]").addEventListener("click", () => {
-      navigateCanonicalWorkspace(listPath(), {}, { restoreFocus: { kind: "split-list" } });
+      // Keep the list DOM, its selected row and its reading position while
+      // removing the record from the URL. Rebuilding the whole Sponsors
+      // surface would restore focus before its asynchronous list exists.
+      navigateCanonicalWorkspace(listPath(), {}, { render: false });
+      surface.classList.remove("has-booking-detail");
+      if (listScroller) listScroller.scrollTop = listScrollTop;
+      globalThis.dakitSplit?.show(split, "list");
     });
     globalThis.dakitSplit?.show(split, "detail");
     surface

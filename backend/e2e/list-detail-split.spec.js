@@ -131,6 +131,7 @@ for (const view of VIEWS) {
     await view.open(page);
     await expect(detail).toBeVisible();
     await expect(list).toBeHidden();
+    const originText = await page.locator('.dk-split__item[aria-current="true"]').innerText();
     const back = page.locator('.dk-split__back');
     await expect(back).toBeVisible();
     expect((await back.boundingBox()).height).toBeGreaterThanOrEqual(44);
@@ -138,7 +139,7 @@ for (const view of VIEWS) {
     await back.click();
     await expect(list).toBeVisible();
     await expect(detail).toBeHidden();
-    await expect(page.locator('.dk-split__item').first()).toBeVisible();
+    await expect(page.locator('.dk-split__item').filter({ hasText: originText.replace(/\s+/g, ' ').trim() })).toBeFocused();
   });
 }
 
