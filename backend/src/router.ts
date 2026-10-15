@@ -48,7 +48,6 @@ let secretsClient: SecretsManagerClient | null = null;
 const AUTH_EXEMPT_PATHS = new Set([
   '/',
   '/api/health',
-  '/api/auth/login',
 ]);
 
 function isAuthExempt(method: string, path: string): boolean {
@@ -185,7 +184,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (!event.headers) event.headers = {};
       event.headers['x-user-id'] = verifiedInteractiveUserId;
     }
-    // Portal mode disables password auth, but the device flow is how non-browser
+    // Portal mode serves no /api/auth routes except the device flow, which is how non-browser
     // clients obtain a credential from that same portal session.
     if (portalMode && reqPath.startsWith('/api/auth') && !reqPath.startsWith('/api/auth/device')) {
       return jsonResponse(404, { error: 'Not found' });

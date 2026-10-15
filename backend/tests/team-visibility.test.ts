@@ -26,7 +26,6 @@ import { createUserWithId, updateUser } from '../src/db/users';
 import { createCard, getCardConsistent } from '../src/db/cards';
 import { createTask, getTaskConsistent } from '../src/db/tasks';
 import { route } from '../src/router';
-import { hashPassword } from '../src/routes/auth';
 import type { Card, LambdaEvent, LambdaResponse, ProjectedCard, Task } from '../src/types';
 
 const AVERY = 'avery-operator';
@@ -157,8 +156,8 @@ describe('signed-in identity, teammate projections, and the work authorization b
     await createTables(client);
 
     await createUserWithId(client, AVERY, { name: 'Avery Operator', email: 'avery@example.test', role: 'operator' });
-    await createUserWithId(client, MORGAN, { name: 'Morgan Teammate', email: 'morgan@example.test', role: 'operator', passwordHash: await hashPassword('morgan-correct-password') });
-    await createUserWithId(client, CASEY, { name: 'Casey Disabled', email: 'casey@example.test', role: 'operator', disabled: true, passwordHash: await hashPassword('casey-correct-password') });
+    await createUserWithId(client, MORGAN, { name: 'Morgan Teammate', email: 'morgan@example.test', role: 'operator' });
+    await createUserWithId(client, CASEY, { name: 'Casey Disabled', email: 'casey@example.test', role: 'operator', disabled: true });
     await createUserWithId(client, RILEY, { name: 'Riley Admin', email: 'riley@example.test', role: 'admin' });
     await createUserWithId(client, ROWAN, { name: 'Rowan Unsupported', email: 'rowan@example.test', role: 'auditor' });
 
@@ -193,7 +192,6 @@ describe('signed-in identity, teammate projections, and the work authorization b
     assert.strictEqual(canonical.user.email, 'avery@example.test');
     assert.strictEqual(canonical.user.role, 'operator');
     assert.strictEqual(canonical.user.disabled, false);
-    assert.strictEqual(canonical.user.passwordHash, undefined);
     assert.strictEqual(canonical.token, undefined);
   });
 
@@ -228,73 +226,24 @@ describe('signed-in identity, teammate projections, and the work authorization b
     assert.deepStrictEqual(body(responses[5]), { error: 'Unauthorized' });
   });
 
-  it('rejects disabled-password login without revealing account state', async () => {
-    const login = async (password: string): Promise<LambdaResponse> => invoke({
+  it('has no password login in either auth mode, at either prefix', async () => {
+    const attempts = async () => Promise.all(['/api/auth/login', '/work/api/auth/login'].map((path) => invoke({
       method: 'POST',
-      path: '/api/auth/login',
-      body: { email: 'casey@example.test', password },
-    });
-
-    const expected = {
-      statusCode: 401,
-      headers: { 'Content-Type': 'application/json' },
-      body: '{"error":"Invalid email or password"}',
-    } satisfies Partial<LambdaResponse>;
-    assert.deepStrictEqual(await login('casey-correct-password'), expected);
-    assert.deepStrictEqual(await login('casey-wrong-password'), expected);
-  });
-
-  it('aligns rewritten password-login availability with the configured auth mode', async () => {
+      path,
+      body: { email: 'morgan@example.test', password: 'anything' },
+    })));
     process.env.DATAOPS_DOCS_DOMAIN = '1';
     delete process.env.WORK_ENGINE_AUTH_MODE;
     for (const key of ['AUTH_BASE_URL', 'AUTH_ISSUER', 'AUTH_JWKS_URL', 'AUTH_CLIENT_ID', 'AUTH_CALLBACK_URL', 'AUTH_LOGOUT_URL']) {
       delete process.env[key];
     }
-
-    const canonical = await invoke({
-      method: 'POST',
-      path: '/api/auth/login',
-      body: { email: 'morgan@example.test', password: 'morgan-correct-password' },
-    });
-    const proxied = await invoke({
-      method: 'POST',
-      path: '/work/api/auth/login',
-      body: { email: 'morgan@example.test', password: 'morgan-correct-password' },
-    });
-    assert.strictEqual(canonical.statusCode, 200);
-    assert.strictEqual(proxied.statusCode, 200);
-    assert.deepStrictEqual(body(canonical).user, body(proxied).user);
-    assert.strictEqual(body(proxied).user.id, MORGAN);
-    assert.strictEqual(body(proxied).user.passwordHash, undefined);
-
-    const disabled = await invoke({
-      method: 'POST',
-      path: '/work/api/auth/login',
-      body: { email: 'casey@example.test', password: 'casey-correct-password' },
-    });
-    assert.deepStrictEqual(disabled, {
-      statusCode: 401,
-      headers: { 'Content-Type': 'application/json' },
-      body: '{"error":"Invalid email or password"}',
-    } satisfies Partial<LambdaResponse>);
-
+    const apiOnly = await attempts();
     usePortalCookieMode();
-    const portalCanonical = await invoke({
-      method: 'POST',
-      path: '/api/auth/login',
-      body: { email: 'morgan@example.test', password: 'morgan-correct-password' },
-    });
-    const portalProxied = await invoke({
-      method: 'POST',
-      path: '/work/api/auth/login',
-      body: { email: 'morgan@example.test', password: 'morgan-correct-password' },
-    });
-    assert.deepStrictEqual(portalCanonical, {
-      statusCode: 404,
-      headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
-      body: '{"error":"Not found"}',
-    } satisfies Partial<LambdaResponse>);
-    assert.deepStrictEqual(portalProxied, portalCanonical);
+    const portal = await attempts();
+    for (const response of [...apiOnly, ...portal]) {
+      assert.ok([401, 404].includes(response.statusCode), `${response.statusCode} ${response.body}`);
+      assert.strictEqual(body(response).token, undefined);
+    }
   });
 
   it('answers a missing, unknown, disabled, or deleted identity with JSON 401 at both prefixes', async () => {

@@ -26,9 +26,6 @@ function assertLoopbackListener(): void {
   if (REPRESENTATIVE_MODE && SEED_MODE !== 'none') {
     throw new Error('Representative mode requires DATAOPS_DEV_SEED_MODE=none');
   }
-  if (ACTOR_EMAIL && !REPRESENTATIVE_MODE) {
-    throw new Error('DATAOPS_DEV_ACTOR_EMAIL requires representative mode');
-  }
 }
 
 interface PortalBroker {
@@ -44,8 +41,10 @@ interface PortalBroker {
  * router already verifies (`x-portal-auth` + `x-portal-secret` + `x-user-id`).
  */
 async function resolvePortalBroker(): Promise<PortalBroker | null> {
-  if (!REPRESENTATIVE_MODE) return null;
-  if (!ACTOR_EMAIL) {
+  // Seeded data has no SSO either, and no account has a password: act as the
+  // configured operator, or the seeded admin Alexey when none is configured.
+  const actorEmail = ACTOR_EMAIL || (REPRESENTATIVE_MODE ? '' : (await import('./seed-users')).USERS[2].email);
+  if (!actorEmail) {
     console.log('DATAOPS_DEV_ACTOR_EMAIL is unset; API requests stay anonymous and return 401.');
     return null;
   }
@@ -53,16 +52,16 @@ async function resolvePortalBroker(): Promise<PortalBroker | null> {
     import('../src/db/client'),
     import('../src/db/users'),
   ]);
-  const matches = (await getUsersByNormalizedEmail(await getClient(), ACTOR_EMAIL))
+  const matches = (await getUsersByNormalizedEmail(await getClient(), actorEmail))
     .filter((user) => !user.disabled);
   if (matches.length !== 1) {
     throw new Error(
-      `DATAOPS_DEV_ACTOR_EMAIL ${ACTOR_EMAIL} must match exactly one active user in the replica (found ${matches.length})`,
+      `DATAOPS_DEV_ACTOR_EMAIL ${actorEmail} must match exactly one active user (found ${matches.length})`,
     );
   }
   const secret = randomBytes(32).toString('base64url');
   process.env.WORK_ENGINE_PORTAL_SECRET = secret;
-  console.log(`Acting as ${ACTOR_EMAIL} (${matches[0].id}) through the local portal broker.`);
+  console.log(`Acting as ${actorEmail} (${matches[0].id}) through the local portal broker.`);
   return { userId: matches[0].id, secret };
 }
 
@@ -200,6 +199,11 @@ async function main(): Promise<void> {
         headers['x-portal-secret'] = broker.secret;
         headers['x-user-id'] = broker.userId;
       }
+    } else if (broker) {
+      // Seeded mode runs the API with SKIP_AUTH, which takes the actor from
+      // x-user-id; the broker supplies it, as the portal does in production.
+      delete headers.authorization;
+      headers['x-user-id'] = broker.userId;
     }
     const event: LambdaEvent = {
       httpMethod: request.method || 'GET',

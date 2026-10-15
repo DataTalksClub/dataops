@@ -1,22 +1,10 @@
 import { getClient } from '../db/client';
-import { getUserByEmail, getUser } from '../db/users';
-import { createSession, getSession, deleteSession } from '../db/sessions';
+import { getUser } from '../db/users';
+import { getSession, deleteSession } from '../db/sessions';
 import { identityProjection } from '../identity/projections';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
-
-/**
- * Simple hash function using SHA-256 via Web Crypto API.
- * Returns hex string.
- */
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 /**
  * Extract Bearer token from Authorization header.
@@ -31,7 +19,8 @@ export function extractToken(event: LambdaEvent): string | null {
 }
 
 /**
- * Handle all /api/auth/* and /api/me routes.
+ * Handle /api/auth/logout and /api/me for bearer sessions. Sign-in is SSO
+ * (browser) or the device flow (CLI and agents); there is no password login.
  */
 async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | null> {
   const method = event.httpMethod || 'GET';
@@ -44,78 +33,6 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
   const client = await getClient();
 
   try {
-    // POST /api/auth/login
-    if (method === 'POST' && path === '/api/auth/login') {
-      let body: Record<string, unknown>;
-      try {
-        body = JSON.parse(event.body || '{}');
-      } catch {
-        return {
-          statusCode: 400,
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ error: 'Invalid JSON body' }),
-        };
-      }
-
-      const email = (body.email as string) || '';
-      const password = (body.password as string) || '';
-
-      if (!email || !password) {
-        return {
-          statusCode: 400,
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ error: 'email and password are required' }),
-        };
-      }
-
-      // Find user by email
-      const rawUser = await getUserByEmail(client, email);
-      if (!rawUser) {
-        return {
-          statusCode: 401,
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ error: 'Invalid email or password' }),
-        };
-      }
-
-      // Check password
-      if (!rawUser.passwordHash) {
-        // No password set - deny access
-        return {
-          statusCode: 401,
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ error: 'Invalid email or password' }),
-        };
-      }
-
-      const inputHash = await hashPassword(password);
-      if (inputHash !== rawUser.passwordHash) {
-        return {
-          statusCode: 401,
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ error: 'Invalid email or password' }),
-        };
-      }
-
-      // A disabled account fails closed on every seam, including this one.
-      if (rawUser.disabled) {
-        return {
-          statusCode: 401,
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ error: 'Invalid email or password' }),
-        };
-      }
-
-      // Create session
-      const session = await createSession(client, rawUser.id);
-
-      return {
-        statusCode: 200,
-        headers: JSON_HEADERS,
-        body: JSON.stringify({ user: identityProjection(rawUser), token: session.token }),
-      };
-    }
-
     // POST /api/auth/logout
     if (method === 'POST' && path === '/api/auth/logout') {
       const token = extractToken(event);
@@ -178,4 +95,4 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
   }
 }
 
-export { handleAuthRoutes, hashPassword };
+export { handleAuthRoutes };

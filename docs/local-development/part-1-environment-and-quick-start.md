@@ -95,6 +95,11 @@ This starts the work-engine on `http://127.0.0.1:3000` with an in-memory
 DynamoDB (dynalite) and seeded sample data. It serves the work-engine's own
 dashboard UI and all `/api/*` endpoints.
 
+There is no password login anywhere. Seeded accounts have no password: the
+development server signs every request in as the seeded admin through the
+local portal broker, the way the production portal does after SSO. Set
+`DATAOPS_DEV_ACTOR_EMAIL` to act as a different seeded account.
+
 ### 2. Start the portal local server
 
 ```bash

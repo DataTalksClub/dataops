@@ -181,9 +181,6 @@ export function readDevConfig(env = process.env, cwd = process.cwd()) {
 
   const representative = Boolean(dynamoEndpoint);
   const actorEmail = String(env.DATAOPS_DEV_ACTOR_EMAIL || '').trim();
-  if (actorEmail && !representative) {
-    throw new DevPortalConfigError('DATAOPS_DEV_ACTOR_EMAIL requires a local representative replica');
-  }
   if (actorEmail && (!actorEmail.includes('@') || /[\r\n]/.test(actorEmail))) {
     throw new DevPortalConfigError('DATAOPS_DEV_ACTOR_EMAIL must be a single email address');
   }

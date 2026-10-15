@@ -397,31 +397,29 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     await expect(page).toHaveURL(canonicalRoute);
     expect(listenerPid(ports.backendPort)).toBe(backendPidBeforeFrontendEdits);
 
-    const login = await browserJson(page, '/api/auth/login', {
+    // No password login: seeded local data signs in through the development
+    // portal broker, which acts as the seeded admin for every proxied call.
+    const loginAttempt = await browserJson(page, '/api/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email: 'alexey@datatalks.club', password: '111' }),
     });
-    expect(login.status).toBe(200);
-    expect(login.contentType).toContain('application/json');
-    expect(login.body.user.name).toBe('Alexey');
-    expect(login.body.token).toBeTruthy();
-    const authorization = { Authorization: `Bearer ${login.body.token}` };
+    expect(loginAttempt.status).not.toBe(200);
 
-    const me = await browserJson(page, '/api/me', { headers: authorization });
+    const me = await browserJson(page, '/api/me');
     expect(me.status).toBe(200);
     expect(me.body.user.name).toBe('Alexey');
 
     const created = await browserJson(page, '/api/tasks', {
       method: 'POST',
-      headers: { ...authorization, 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ description: 'Synthetic proxy task', date: '2026-08-12' }),
     });
     expect(created.status).toBe(201);
-    const tasks = await browserJson(page, '/api/tasks?date=2026-08-12', { headers: authorization });
+    const tasks = await browserJson(page, '/api/tasks?date=2026-08-12');
     expect(tasks.status).toBe(200);
     expect(tasks.body.tasks.some((task) => task.id === created.body.id)).toBe(true);
-    const workflows = await browserJson(page, '/api/cards', { headers: authorization });
+    const workflows = await browserJson(page, '/api/cards');
     expect(workflows.status).toBe(200);
     expect(Array.isArray(workflows.body.cards.items)).toBe(true);
 
@@ -437,39 +435,38 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     expect(content.contentType).toContain('text/markdown');
     expect(content.body).toContain('Public-safe content');
 
-    const unauthorized = await browserJson(page, '/api/me');
-    expect(unauthorized.status).toBe(401);
-    expect(unauthorized.contentType).toContain('application/json');
-    const missingApi = await browserJson(page, '/api/not-a-real-route', { headers: authorization });
+    // The broker owns identity: a client-supplied credential cannot change it.
+    const forged = await browserJson(page, '/api/me', { headers: { Authorization: 'Bearer forged-token' } });
+    expect(forged.status).toBe(200);
+    expect(forged.contentType).toContain('application/json');
+    expect(forged.body.user.name).toBe('Alexey');
+    const missingApi = await browserJson(page, '/api/not-a-real-route');
     expect(missingApi.status).toBe(404);
     expect(missingApi.contentType).toContain('application/json');
     expect(JSON.stringify(missingApi.body)).not.toContain('<!doctype html>');
 
     const fileBytes = [0, 1, 2, 127, 128, 254, 255];
-    const upload = await page.evaluate(async ({ taskId, token, bytes }) => {
+    const upload = await page.evaluate(async ({ taskId, bytes }) => {
       const form = new FormData();
       form.append('taskId', taskId);
       form.append('category', 'document');
       form.append('file', new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' }), 'synthetic.bin');
       const response = await fetch('/api/files', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
         body: form,
       });
       return { status: response.status, body: await response.json() };
-    }, { taskId: created.body.id, token: login.body.token, bytes: fileBytes });
+    }, { taskId: created.body.id, bytes: fileBytes });
     expect(upload.status).toBe(201);
-    const download = await page.evaluate(async ({ fileId, token }) => {
-      const response = await fetch(`/api/files/${fileId}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+    const download = await page.evaluate(async ({ fileId }) => {
+      const response = await fetch(`/api/files/${fileId}/download`);
       return {
         status: response.status,
         contentType: response.headers.get('content-type'),
         disposition: response.headers.get('content-disposition'),
         bytes: Array.from(new Uint8Array(await response.arrayBuffer())),
       };
-    }, { fileId: upload.body.file.id, token: login.body.token });
+    }, { fileId: upload.body.file.id });
     expect(download.status).toBe(200);
     expect(download.contentType).toContain('application/octet-stream');
     expect(download.disposition).toContain('synthetic.bin');

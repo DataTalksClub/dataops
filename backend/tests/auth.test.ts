@@ -7,7 +7,6 @@ import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createSession, getSession, deleteSession } from '../src/db/sessions';
 import { createUserWithId } from '../src/db/users';
-import { hashPassword } from '../src/routes/auth';
 
 describe('Sessions DB layer', () => {
   let client: DynamoDBDocumentClient;
@@ -70,27 +69,10 @@ describe('Sessions DB layer', () => {
   });
 });
 
-describe('hashPassword utility', () => {
-  it('hashes a password deterministically', async () => {
-    const hash1 = await hashPassword('111');
-    const hash2 = await hashPassword('111');
-
-    assert.strictEqual(hash1, hash2, 'same password should produce same hash');
-    assert.ok(hash1.length === 64, 'SHA-256 hex should be 64 chars');
-  });
-
-  it('different passwords produce different hashes', async () => {
-    const hash1 = await hashPassword('111');
-    const hash2 = await hashPassword('222');
-
-    assert.notStrictEqual(hash1, hash2, 'different passwords should have different hashes');
-  });
-});
-
 describe('API — Auth', () => {
   let handler: typeof import('../src/handler').handler;
   let client: DynamoDBDocumentClient;
-  let graceId: string;
+  const graceId = '00000000-0000-0000-0000-000000000001';
 
   before(async () => {
     const port = await startLocal();
@@ -103,13 +85,9 @@ describe('API — Auth', () => {
     // Warm up
     await handler({ httpMethod: 'GET', path: '/api/health' }, {});
 
-    // Create a user with password hash for testing
-    graceId = '00000000-0000-0000-0000-000000000001';
-    const passwordHash = await hashPassword('111');
     await createUserWithId(client, graceId, {
       name: 'Grace',
       email: 'grace@datatalks.club',
-      passwordHash,
     });
   });
 
@@ -131,48 +109,16 @@ describe('API — Auth', () => {
     return handler(event, {});
   }
 
-  describe('POST /api/auth/login', () => {
-    it('returns 200 with user and token for valid credentials', async () => {
-      const res = await invoke('POST', '/api/auth/login', {
-        email: 'grace@datatalks.club',
-        password: '111',
-      });
+  // Sign-in is SSO in the browser and the device flow for the CLI; a bearer
+  // session comes from one of those, never from a password.
+  async function signedInToken(): Promise<string> {
+    return (await createSession(client, graceId)).token;
+  }
 
-      assert.strictEqual(res.statusCode, 200);
-      const body = JSON.parse(res.body);
-      assert.ok(body.user, 'should have user');
-      assert.ok(body.token, 'should have token');
-      assert.strictEqual(body.user.id, graceId);
-      assert.strictEqual(body.user.email, 'grace@datatalks.club');
-      assert.strictEqual(body.user.passwordHash, undefined, 'should not expose passwordHash');
-    });
-
-    it('returns 401 for wrong password', async () => {
-      const res = await invoke('POST', '/api/auth/login', {
-        email: 'grace@datatalks.club',
-        password: 'wrongpassword',
-      });
-
-      assert.strictEqual(res.statusCode, 401);
-      const body = JSON.parse(res.body);
-      assert.strictEqual(body.error, 'Invalid email or password');
-    });
-
-    it('returns 401 for unknown email', async () => {
-      const res = await invoke('POST', '/api/auth/login', {
-        email: 'unknown@example.com',
-        password: '111',
-      });
-
-      assert.strictEqual(res.statusCode, 401);
-      const body = JSON.parse(res.body);
-      assert.strictEqual(body.error, 'Invalid email or password');
-    });
-
-    it('returns 400 when email or password missing', async () => {
-      const res = await invoke('POST', '/api/auth/login', { email: 'x@y.com' });
-      assert.strictEqual(res.statusCode, 400);
-    });
+  it('has no password login', async () => {
+    const res = await invoke('POST', '/api/auth/login', { email: 'grace@datatalks.club', password: '111' });
+    assert.notStrictEqual(res.statusCode, 200);
+    assert.strictEqual(JSON.parse(res.body || '{}').token, undefined);
   });
 
   describe('GET /api/me', () => {
@@ -182,19 +128,11 @@ describe('API — Auth', () => {
     });
 
     it('returns 200 with user for valid token', async () => {
-      // Login first
-      const loginRes = await invoke('POST', '/api/auth/login', {
-        email: 'grace@datatalks.club',
-        password: '111',
-      });
-      const { token } = JSON.parse(loginRes.body);
-
-      const meRes = await invoke('GET', '/api/me', undefined, token);
+      const meRes = await invoke('GET', '/api/me', undefined, await signedInToken());
       assert.strictEqual(meRes.statusCode, 200);
       const body = JSON.parse(meRes.body);
       assert.ok(body.user);
       assert.strictEqual(body.user.id, graceId);
-      assert.strictEqual(body.user.passwordHash, undefined, 'should not expose passwordHash');
     });
 
     it('returns 401 for invalid token', async () => {
@@ -205,22 +143,13 @@ describe('API — Auth', () => {
 
   describe('POST /api/auth/logout', () => {
     it('invalidates the session (subsequent /api/me returns 401)', async () => {
-      // Login
-      const loginRes = await invoke('POST', '/api/auth/login', {
-        email: 'grace@datatalks.club',
-        password: '111',
-      });
-      const { token } = JSON.parse(loginRes.body);
-
-      // Verify token works
+      const token = await signedInToken();
       const meBeforeRes = await invoke('GET', '/api/me', undefined, token);
       assert.strictEqual(meBeforeRes.statusCode, 200);
 
-      // Logout
       const logoutRes = await invoke('POST', '/api/auth/logout', undefined, token);
       assert.strictEqual(logoutRes.statusCode, 204);
 
-      // Verify token no longer works
       const meAfterRes = await invoke('GET', '/api/me', undefined, token);
       assert.strictEqual(meAfterRes.statusCode, 401);
     });
@@ -232,25 +161,6 @@ describe('API — Auth', () => {
   });
 
   describe('Auth middleware', () => {
-    let validToken: string;
-
-    before(async () => {
-      const loginRes = await invoke('POST', '/api/auth/login', {
-        email: 'grace@datatalks.club',
-        password: '111',
-      });
-      validToken = JSON.parse(loginRes.body).token;
-    });
-
-    it('GET /api/tasks without token returns 401', async () => {
-      const res = await invoke('GET', '/api/tasks', undefined, undefined);
-      // Without SKIP_AUTH, should be 401. With SKIP_AUTH, the test won't matter.
-      // In this test suite, SKIP_AUTH is true (NODE_ENV=test SKIP_AUTH=true),
-      // so we test through auth routes directly instead.
-      // This test verifies the middleware logic at a conceptual level.
-      assert.ok([200, 400, 401].includes(res.statusCode), 'should return valid status');
-    });
-
     it('GET /api/health is exempt from auth (no token needed)', async () => {
       const res = await invoke('GET', '/api/health');
       assert.strictEqual(res.statusCode, 200);
@@ -260,24 +170,6 @@ describe('API — Auth', () => {
       const res = await invoke('GET', '/');
       assert.strictEqual(res.statusCode, 200);
       assert.ok(res.headers?.['Content-Type']?.includes('text/html'));
-    });
-  });
-
-  describe('User passwords never returned', () => {
-    it('GET /api/users does not expose passwordHash', async () => {
-      const loginRes = await invoke('POST', '/api/auth/login', {
-        email: 'grace@datatalks.club',
-        password: '111',
-      });
-      const { token } = JSON.parse(loginRes.body);
-
-      const res = await invoke('GET', '/api/users', undefined, token);
-      // With SKIP_AUTH in test mode, this works without token too
-      assert.strictEqual(res.statusCode, 200);
-      const body = JSON.parse(res.body);
-      for (const user of body.users) {
-        assert.strictEqual(user.passwordHash, undefined, 'passwordHash must not be returned');
-      }
     });
   });
 });

@@ -19,13 +19,10 @@ const GRACE_ID = '00000000-0000-0000-0000-000000000001';
  * The token used is 'e2e-test-token' which is recognized by the dev server
  * only when SKIP_AUTH=true is set (which it is in playwright.config.js).
  *
- * Since SKIP_AUTH=true, /api/me will still return 401 for the fake token,
- * so we need a different approach: inject a real session via login.
+ * Since SKIP_AUTH=true, /api/me will still return 401 for the fake token;
+ * use loginAndSetupPage for a real session.
  */
-async function setupPageWithAuth(page, credentials) {
-  const email = (credentials && credentials.email) || 'grace@datatalks.club';
-  const password = (credentials && credentials.password) || '111';
-
+async function setupPageWithAuth(page) {
   // Use addInitScript to set localStorage before page load
   await page.addInitScript((args) => {
     // Store a fake user so the app doesn't try to validate with /api/me
@@ -47,21 +44,15 @@ async function setupPageWithAuth(page, credentials) {
 }
 
 /**
- * Login via the API and inject the real session token into localStorage.
- * Use this for tests that need a real, validated session.
+ * Inject the test server's real session for the seeded operator. There is no
+ * password login: people sign in with SSO, and the test server mints this one.
  */
-async function loginAndSetupPage(page, request, credentials) {
-  const email = (credentials && credentials.email) || 'grace@datatalks.club';
-  const password = (credentials && credentials.password) || '111';
-
-  // Get a real token via API
-  const loginRes = await request.post('/api/auth/login', {
-    data: { email, password },
-  });
+async function loginAndSetupPage(page, request) {
+  const loginRes = await request.get('/__e2e__/bearer-session');
 
   if (loginRes.status() !== 200) {
-    // If login fails (e.g., no seed data), use a bypass approach
-    await setupPageWithAuth(page, credentials);
+    // No seeded session: fall back to the bypass token.
+    await setupPageWithAuth(page);
     return null;
   }
 

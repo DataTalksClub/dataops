@@ -1,7 +1,7 @@
 /**
  * Playwright fixtures for E2E tests.
  *
- * Provides an `authedPage` fixture that automatically logs in before navigating.
+ * Provides a signed-in `page`.
  * Also patches the base `page` fixture to inject a session token so browser tests
  * that use `page.goto(...)` don't see the sign-in form.
  */
@@ -10,34 +10,30 @@ const { test: base, expect } = require('@playwright/test');
 
 const TOKEN_KEY = 'dataops_token';
 const USER_KEY = 'dataops_user';
-const GRACE_EMAIL = 'grace@datatalks.club';
-const GRACE_PASSWORD = '111';
-const GRACE_ID = '00000000-0000-0000-0000-000000000001';
 
 /**
  * Extended test that patches `page` to automatically have a session injected.
- * The session token is obtained by logging in via the API.
+ * The session token comes from the test server's seeded-operator session.
  *
  * This ensures browser tests don't see the sign-in form.
  */
 const test = base.extend({
   // Override the default page fixture to inject auth session
   page: async ({ page, request }, use) => {
-    // Try to get a real token by logging in
     let token = null;
     let user = null;
 
     try {
-      const loginRes = await request.post('/api/auth/login', {
-        data: { email: GRACE_EMAIL, password: GRACE_PASSWORD },
-      });
-      if (loginRes.status() === 200) {
-        const data = await loginRes.json();
+      // There is no password login: the test server mints a session for the
+      // seeded operator.
+      const sessionRes = await request.get('/__e2e__/bearer-session');
+      if (sessionRes.status() === 200) {
+        const data = await sessionRes.json();
         token = data.token;
         user = data.user;
       }
     } catch (e) {
-      // Login failed - will use null token
+      // No seeded session - will use null token
     }
 
     if (token && user) {

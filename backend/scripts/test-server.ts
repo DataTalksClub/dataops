@@ -11,8 +11,9 @@ import { dirname, resolve } from 'path';
 import { randomBytes } from 'crypto';
 import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
-import { createBrowserSession } from '../src/db/sessions';
-import { createUserWithId } from '../src/db/users';
+import { createBrowserSession, createSession } from '../src/db/sessions';
+import { createUserWithId, getUser } from '../src/db/users';
+import { identityProjection } from '../src/identity/projections';
 import { createTemplate, deleteTemplate, updateTemplate } from '../src/db/templates';
 import {
   setBookkeepingArchiveUploaderForTests,
@@ -23,7 +24,7 @@ import {configureOperatingModelStoreForTests} from '../src/routes/operatingModel
 import {MemoryS3} from '../tests/helpers/knowledge';
 import { configureDocsRuntime } from '../src/docs/contentApi';
 import { configurePortalStore } from '../src/docs/portal';
-import { seed as seedUsers } from './seed-users';
+import { seed as seedUsers, USERS } from './seed-users';
 import { setupLocalDynamo, stopLocal } from './local-dynamodb';
 import type { LambdaEvent } from '../src/types';
 
@@ -31,6 +32,9 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 const OWNER_TOKEN = process.env.DATAOPS_E2E_SERVER_TOKEN || randomBytes(24).toString('hex');
 const OWNER_CHECKOUT = resolve(__dirname, '..', '..');
 let e2eBrowserSessionToken = '';
+// A bearer session for the seeded operator: there is no password login, so
+// browser specs get their signed-in identity from this test-only server.
+let e2eBearerSession: { token: string; user: unknown } | null = null;
 let localDatabaseReady = false;
 const e2eBookkeepingObjects = new Map<string, Buffer>();
 type E2eRouteFault = {
@@ -159,6 +163,12 @@ const server = http.createServer(async (req, res) => {
 
   // Explicit opt-in seam for production-cookie browser E2E. This server is a
   // test-only executable and the opaque token is never exposed to the test.
+  if (parsed.pathname === '/__e2e__/bearer-session') {
+    res.writeHead(e2eBearerSession ? 200 : 404, { 'content-type': 'application/json' });
+    res.end(e2eBearerSession ? JSON.stringify(e2eBearerSession) : '{}');
+    return;
+  }
+
   if (parsed.pathname === '/__e2e__/browser-session') {
     if (!e2eBrowserSessionToken) {
       res.writeHead(404);
@@ -334,6 +344,11 @@ async function runSeeds() {
       localDatabaseReady = true;
     }
     await seedUsers();
+    const operator = await getUser(await getClient(), USERS[0].id);
+    if (operator) {
+      const session = await createSession(await getClient(), operator.id);
+      e2eBearerSession = { token: session.token, user: identityProjection(operator) };
+    }
     await createTemplate(await getClient(), {
       name: 'Synthetic Git-authored workflow',
       type: 'synthetic-git-workflow',

@@ -92,7 +92,6 @@ const AUTHENTICATED_ROUTES: RouteCase[] = [
  */
 const EXEMPT_ROUTES: RouteCase[] = [
   { method: 'GET', path: '/api/health' },
-  { method: 'POST', path: '/api/auth/login', body: { email: 'nobody@example.test', password: 'wrong' } },
   { method: 'POST', path: '/api/auth/device', body: {} },
   { method: 'POST', path: '/api/auth/device/token', body: {} },
   { method: 'POST', path: '/api/v1/intake/email-documents', body: {} },
@@ -193,8 +192,8 @@ describe('/api/* authorization with authentication enabled', () => {
     it(`keeps ${route.method} ${route.path} on the documented exemption list`, async () => {
       const response = await invoke(route);
       // These routes reach their own handler, which may still refuse the call
-      // on its own credential (`POST /api/auth/login` answers "Invalid email or
-      // password"). What must not happen is the generic session-middleware
+      // on its own credential (the device flow checks its device code). What
+      // must not happen is the generic session-middleware
       // refusal, which is exactly 401 `{ error: 'Unauthorized' }`.
       assert.ok(
         !isSessionMiddlewareRefusal(response),

@@ -333,10 +333,8 @@ test('representative child environment is visibly labeled and fail-closed', () =
   assert.equal(child.AWS_EC2_METADATA_DISABLED, 'true');
   assert.equal(child.GITHUB_TOKEN, undefined);
   assert.equal(child.AUTH_BASE_URL, undefined);
-  assert.throws(
-    () => readDevConfig({ DATAOPS_DEV_ACTOR_EMAIL: 'operator@example.invalid' }, ROOT),
-    /requires a local representative replica/,
-  );
+  // Seeded data signs in through the same broker, so it may name its actor.
+  assert.equal(readDevConfig({ DATAOPS_DEV_ACTOR_EMAIL: 'operator@example.invalid' }, ROOT).actorEmail, 'operator@example.invalid');
   assert.throws(
     () => readDevConfig({ ...parentEnv, DATAOPS_DEV_ACTOR_EMAIL: 'not-an-email' }, ROOT),
     /must be a single email address/,
