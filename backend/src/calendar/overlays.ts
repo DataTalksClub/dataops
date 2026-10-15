@@ -12,6 +12,14 @@ export type CalendarOverlayItem = {
   slot?: 'midday' | 'evening' | 'all-day' | 'outside';
   isSlotEvent?: boolean;
   isAvailableSlot?: boolean;
+  /** A newsletter issue's kind, number and slot state (newsletter overlay only). */
+  newsletter?: {
+    kind: string;
+    issueNumber: number | null;
+    slots: { position: string; ticked: boolean; sponsor: string | null }[];
+    ticked: number;
+    booked: number;
+  };
 };
 
 /**

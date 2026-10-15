@@ -3,7 +3,7 @@
  *
  * A Template may author `card_title`, a pattern such as
  * `{date} · #{issue} · {sponsor} · {variant}`. When a Card is created from a
- * newsletter slot or podcast episode, and whenever that record's facts change,
+ * newsletter issue or podcast episode, and whenever that record's facts change,
  * the Card's stored title is re-rendered from the pattern, so every surface
  * (Queue, Cards, calendar, hover card, CLI) shows the same distinguishing name.
  *
@@ -14,7 +14,7 @@
  */
 import vocabulary from './cardTitleTokens.json';
 
-export type TitleRecordType = 'newsletter-slot' | 'podcast-episode';
+export type TitleRecordType = 'newsletter-issue' | 'podcast-episode';
 export type CardTitleValues = Record<string, string | null | undefined>;
 
 const SEPARATOR = vocabulary.separator;
@@ -71,20 +71,23 @@ export function shortDate(isoDate: string | null | undefined): string {
   return `${Number(match[3])} ${MONTHS[Number(match[2]) - 1]}`;
 }
 
-/**
- * A newsletter slot's title values. The schedule sheet names a secondary slot
- * `Weekly #306 secondary slot` without a campaign number, so the issue falls
- * back to the number in the label.
- */
-export function newsletterSlotTitleValues(slot: Record<string, unknown>): CardTitleValues {
-  const label = String(slot.campaignLabel || '');
-  const labelNumber = label.match(/#\s*(\d+)/)?.[1];
-  const variant = /secondary/i.test(label) ? 'secondary' : /stand-?\s*alone/i.test(label) ? 'stand-alone' : '';
+/** A newsletter issue's title values. */
+export function newsletterIssueTitleValues(issue: {
+  kind: string;
+  publicationDate: string;
+  issueNumber?: number | null;
+  slots: Partial<Record<'primary' | 'secondary', { ticked: boolean; sponsor?: string } | undefined>>;
+}): CardTitleValues {
+  const booked = (['primary', 'secondary'] as const)
+    .map((position) => issue.slots[position])
+    .filter((slot) => slot?.ticked && slot.sponsor)
+    .map((slot) => String(slot!.sponsor));
   return {
-    date: shortDate(String(slot.publicationDate || '')),
-    issue: slot.campaignNumber == null ? labelNumber : String(slot.campaignNumber),
-    sponsor: String(slot.bookedByDisplayName || ''),
-    variant,
+    date: shortDate(issue.publicationDate),
+    issue: issue.issueNumber == null ? '' : String(issue.issueNumber),
+    sponsor: issue.slots.primary?.ticked ? issue.slots.primary.sponsor || '' : '',
+    sponsors: booked.join(' + '),
+    variant: issue.kind === 'standalone' ? 'stand-alone' : '',
   };
 }
 

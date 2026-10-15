@@ -17,7 +17,7 @@ import {
   readHolidayGeneration,
   setHolidaySyncFailureForTests,
 } from "../src/db/calendarHolidays";
-import { createNewsletterSlot } from "../src/db/newsletterSlots";
+import { buildNewsletterIssue, putCardlessNewsletterIssue } from "../src/db/newsletterIssues";
 const invoke = (
   method: string,
   pathName: string,
@@ -231,12 +231,13 @@ describe("operations calendar", () => {
     );
   });
   it("projects newsletter records read-only and reopens changed dismissed alerts", async () => {
-    await createNewsletterSlot(client, {
+    await putCardlessNewsletterIssue(client, buildNewsletterIssue({
+      kind: "weekly",
       publicationDate: "2027-04-05",
-      campaignLabel: "Synthetic overlay",
-      status: "open",
-      sourceKey: "calendar-overlay-test",
-    });
+      issueNumber: 401,
+      status: "cancelled",
+      slots: { primary: { ticked: false }, secondary: { ticked: false } },
+    }, "calendar-overlay-test"));
     let response = await invoke(
       "GET",
       "/api/calendar-items/overlays",
@@ -247,11 +248,11 @@ describe("operations calendar", () => {
     assert.ok(
       parse(response).items.some(
         (i: any) =>
-          i.label === "Synthetic overlay" &&
-          i.provider === "newsletter-slots-readonly",
+          i.label === "Weekly #401" &&
+          i.provider === "newsletter-issues-readonly",
       ),
     );
-    assert.deepEqual(parse(response).sources["newsletter-slots-readonly"], { state: "connected" });
+    assert.deepEqual(parse(response).sources["newsletter-issues-readonly"], { state: "connected" });
     assert.ok(parse(response).sources["alexey-calendar"].state);
     response = await invoke("POST", "/api/calendar-items", {
       activityType: "webinar",

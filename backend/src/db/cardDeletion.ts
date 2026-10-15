@@ -17,7 +17,8 @@ import {
   cardKey,
   getCardConsistent,
 } from './cards';
-import { listNewsletterSlotsByCardId } from './newsletterSlots';
+import { listNewsletterIssuesByCardId } from './newsletterIssues';
+import type { PlannedWrite } from './plannedWrite';
 import {
   TABLE_ARTIFACTS,
   TABLE_AUDIT_EVENTS,
@@ -25,7 +26,6 @@ import {
   TABLE_CARDS,
   TABLE_FILES,
   TABLE_INTAKE,
-  TABLE_NEWSLETTER_SLOTS,
   TABLE_NOTIFICATIONS,
   TABLE_SPONSOR_CRM,
   TABLE_TASKS,
@@ -41,25 +41,16 @@ import { listTasksByCard } from './tasks';
  * sponsor deliverables) are not silently rewritten: while any of them points
  * at the Card or its Tasks the deletion is refused and names them, so the
  * operator unlinks them deliberately first.
+ *
+ * A newsletter issue owns its Card: the Card exists only to execute that
+ * issue, so it is deleted only together with the issue's own write (the issue
+ * deleted or cancelled), passed as `ownerWrite`. Deleting it on its own is
+ * refused.
  */
 
 type Dict = Record<string, unknown>;
-type TransactionItem = NonNullable<
-  ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']
->[number];
-
-interface PlannedWrite {
-  tableName: string;
-  key: Dict;
-  item: TransactionItem;
-  /** Mirrors the ConditionExpression for the local transaction emulator. */
-  holds: (current: Dict | undefined) => boolean;
-  /** The row after the write, or null when the write deletes it. */
-  after: (current: Dict) => Dict | null;
-}
 
 interface CardDeletionUnlinked {
-  newsletterSlots: string[];
   artifacts: string[];
   intakeItems: string[];
   notifications: string[];
@@ -90,11 +81,20 @@ interface CardBlockingReferences {
   files: string[];
   calendarItems: string[];
   sponsorDeliverables: string[];
+  newsletterIssues: string[];
+}
+
+/** The owning record's write that rides in the Card deletion transaction. */
+interface CardOwnerWrite {
+  newsletterIssueId: string;
+  write: PlannedWrite;
 }
 
 class CardDeletionBlockedError extends Error {
   constructor(readonly cardId: string, readonly references: CardBlockingReferences) {
-    super('Card is still referenced by files, calendar items, or sponsor deliverables; unlink them first');
+    super(references.newsletterIssues.length
+      ? 'Card belongs to a newsletter issue; delete or cancel the issue instead'
+      : 'Card is still referenced by files, calendar items, or sponsor deliverables; unlink them first');
     this.name = 'CardDeletionBlockedError';
   }
 }
@@ -187,20 +187,21 @@ async function loadDeletionPlan(
   client: DynamoDBDocumentClient,
   card: Card,
   actorId: string,
+  owner?: CardOwnerWrite,
 ) {
   const tasks: Task[] = await listTasksByCard(client, card.id);
   const taskIds = new Set(tasks.map(({ id }) => id));
   const pointsHere = (row: Dict) => row.cardId === card.id
     || (typeof row.taskId === 'string' && taskIds.has(row.taskId));
 
-  const [files, calendar, sponsorCrm, artifacts, intake, notifications, slots] = await Promise.all([
+  const [files, calendar, sponsorCrm, artifacts, intake, notifications, issues] = await Promise.all([
     scanAll(client, TABLE_FILES, 'FILE#'),
     scanAll(client, TABLE_CALENDAR, 'ITEM#'),
     scanAll(client, TABLE_SPONSOR_CRM, 'DELIVERABLE#'),
     scanAll(client, TABLE_ARTIFACTS, 'ARTIFACT#'),
     scanAll(client, TABLE_INTAKE, 'INTAKE#'),
     scanAll(client, TABLE_NOTIFICATIONS, 'NOTIFICATION#'),
-    listNewsletterSlotsByCardId(client, card.id),
+    listNewsletterIssuesByCardId(client, card.id),
   ]);
 
   const blocking: CardBlockingReferences = {
@@ -209,15 +210,15 @@ async function loadDeletionPlan(
       .filter((row) => row.SK === 'META' && row.cardId === card.id)
       .map((row) => String(row.id)),
     sponsorDeliverables: sponsorCrm.filter((row) => row.cardId === card.id).map((row) => String(row.id)),
+    newsletterIssues: issues.map((issue) => issue.id).filter((id) => id !== owner?.newsletterIssueId),
   };
-  if (blocking.files.length || blocking.calendarItems.length || blocking.sponsorDeliverables.length) {
+  if (Object.values(blocking).some((ids) => ids.length > 0)) {
     throw new CardDeletionBlockedError(card.id, blocking);
   }
 
   const now = new Date().toISOString();
   const writes: PlannedWrite[] = [];
   const unlinked: CardDeletionUnlinked = {
-    newsletterSlots: [],
     artifacts: [],
     intakeItems: [],
     notifications: [],
@@ -258,35 +259,7 @@ async function loadDeletionPlan(
     });
   }
 
-  for (const slot of slots) {
-    const key = { PK: `SLOT#${slot.id}`, SK: `SLOT#${slot.id}` };
-    unlinked.newsletterSlots.push(slot.id);
-    writes.push({
-      tableName: TABLE_NEWSLETTER_SLOTS,
-      key,
-      item: {
-        Update: {
-          TableName: TABLE_NEWSLETTER_SLOTS,
-          Key: key,
-          UpdateExpression: 'SET #version = :nextVersion, updatedAt = :now REMOVE cardId',
-          ConditionExpression: '#version = :version AND cardId = :cardId',
-          ExpressionAttributeNames: { '#version': 'version' },
-          ExpressionAttributeValues: {
-            ':version': slot.version,
-            ':nextVersion': slot.version + 1,
-            ':now': now,
-            ':cardId': card.id,
-          },
-        },
-      },
-      holds: (current) => Boolean(current) && current!.version === slot.version && current!.cardId === card.id,
-      after: (current) => {
-        const next: Dict = { ...current, version: slot.version + 1, updatedAt: now };
-        delete next.cardId;
-        return next;
-      },
-    });
-  }
+  if (owner) writes.push(owner.write);
 
   for (const row of artifacts.filter(pointsHere)) {
     unlinked.artifacts.push(String(row.id));
@@ -432,6 +405,7 @@ async function deleteCardCascade(
   cardId: string,
   expectedVersion: number,
   actorId: string,
+  owner?: CardOwnerWrite,
 ): Promise<CardDeletionResult> {
   if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
     throw new TypeError('expectedVersion must be an integer greater than or equal to 1');
@@ -440,7 +414,7 @@ async function deleteCardCascade(
   if (!card) throw new CardNotFoundError(cardId);
   if (card.version !== expectedVersion) throw new CardVersionConflictError(cardId, expectedVersion);
 
-  const { writes, auditEvent, unlinked } = await loadDeletionPlan(client, card, actorId);
+  const { writes, auditEvent, unlinked } = await loadDeletionPlan(client, card, actorId, owner);
   if (writes.length > 100) throw new CardDeletionTooLargeError(cardId, writes.length);
 
   try {
@@ -472,4 +446,10 @@ export {
   CardDeletionTooLargeError,
   deleteCardCascade,
 };
-export type { CardBlockingReferences, CardDeletionAuditEvent, CardDeletionResult, CardDeletionUnlinked };
+export type {
+  CardBlockingReferences,
+  CardDeletionAuditEvent,
+  CardDeletionResult,
+  CardDeletionUnlinked,
+  CardOwnerWrite,
+};

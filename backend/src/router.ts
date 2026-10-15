@@ -19,7 +19,7 @@ import { handleSponsorLeadIntake, handleSponsorLeadRoutes } from './routes/spons
 import { handleSponsorNewsletterRoutes } from './routes/sponsorNewsletters';
 import { handleSponsorFinanceRoutes } from './routes/sponsorFinance';
 import { handleSponsorCommunicationRoutes } from './routes/sponsorCommunications';
-import { handleNewsletterSlotRoutes } from './routes/newsletterSlots';
+import { handleNewsletterIssueRoutes } from './routes/newsletterIssues';
 import { handlePodcastEpisodeRoutes } from './routes/podcastEpisodes';
 import { handleCalendarRoutes } from './routes/calendar';
 import { handleOperatingModelRoutes } from './routes/operatingModel';
@@ -289,7 +289,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       // A read-only request scans the CRM table once, not once per kind.
       return await (method === 'GET' ? withCrmReadSnapshot(sponsorRoute) : sponsorRoute());
     }
-    if (reqPath.startsWith('/api/newsletter-slots')) return await handleNewsletterSlotRoutes(reqPath,method,event,client);
+    if (reqPath.startsWith('/api/newsletter-issues')) return await handleNewsletterIssueRoutes(reqPath,method,event,client);
     if (reqPath === '/api/podcast-episodes' || reqPath.startsWith('/api/podcast-episodes/')) return await handlePodcastEpisodeRoutes(reqPath, method, event, client);
     if (reqPath.startsWith('/api/calendar-items')) return await handleCalendarRoutes(reqPath,method,event,client);
 

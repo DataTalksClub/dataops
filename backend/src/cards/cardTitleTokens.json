@@ -2,18 +2,24 @@
   "separator": " · ",
   "records": [
     {
-      "id": "newsletter-slot",
-      "templateTypes": ["newsletter", "newsletter-standalone"],
+      "id": "newsletter-issue",
+      "templateTypes": [
+        "newsletter",
+        "newsletter-standalone"
+      ],
       "tokens": {
         "date": "Publication date, e.g. 19 Oct",
         "issue": "Issue number, e.g. 299; empty for a stand-alone send",
-        "sponsor": "Who booked the slot, e.g. Snowplow",
-        "variant": "secondary or stand-alone; empty for the regular weekly issue"
+        "sponsor": "The primary slot's sponsor (a stand-alone send's sponsor), e.g. Snowplow",
+        "sponsors": "Every booked slot's sponsor, primary first, joined by +",
+        "variant": "stand-alone for a stand-alone send; empty for a weekly issue"
       }
     },
     {
       "id": "podcast-episode",
-      "templateTypes": ["podcast"],
+      "templateTypes": [
+        "podcast"
+      ],
       "tokens": {
         "date": "Recording date, e.g. 19 Oct",
         "code": "Season and episode, e.g. S24E3",

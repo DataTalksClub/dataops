@@ -11,6 +11,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_CARDS, TABLE_TASKS, TABLE_TEMPLATES } from './tableNames';
 import { buildCard, cardKey, getCard } from './cards';
 import { usesLocalTransactionEmulation } from './client';
+import type { PlannedWrite } from './plannedWrite';
 import { createTask, listTasksByCard } from './tasks';
 import type { Card, Template, Task } from '../types';
 import { templateLinkage, templateTaskProjection } from '../templates/cardTemplateProjection';
@@ -75,6 +76,7 @@ async function emulateTemplateCardCreation(
   template: Template,
   card: Card,
   tasks: Task[],
+  companions: PlannedWrite[],
 ): Promise<void> {
   await withTemplateCreationLock(async () => {
     if (process.env.TEMPLATE_CARD_CREATE_TEST_TEMPLATE_RACE === 'true') {
@@ -106,8 +108,23 @@ async function emulateTemplateCardCreation(
       }));
       if (current.Item) throw new Error(`Template Card entity already exists: ${String(write.key.PK)}`);
     }
+    const companionRows: Array<Record<string, unknown> | undefined> = [];
+    for (const write of companions) {
+      const current = (await client.send(new GetCommand({
+        TableName: write.tableName,
+        Key: write.key,
+        ConsistentRead: true,
+      }))).Item as Record<string, unknown> | undefined;
+      if (!write.holds(current)) {
+        const error = new Error('Emulated transaction condition failed');
+        error.name = 'TransactionCanceledException';
+        throw error;
+      }
+      companionRows.push(current);
+    }
 
     const applied: typeof writes = [];
+    const appliedCompanions: number[] = [];
     try {
       for (const write of writes) {
         await client.send(new PutCommand({
@@ -119,7 +136,19 @@ async function emulateTemplateCardCreation(
           throw new Error('Injected Template Card creation transaction failure');
         }
       }
+      for (const [index, write] of companions.entries()) {
+        const next = write.after(companionRows[index] || {});
+        if (next) await client.send(new PutCommand({ TableName: write.tableName, Item: next }));
+        else await client.send(new DeleteCommand({ TableName: write.tableName, Key: write.key }));
+        appliedCompanions.push(index);
+      }
     } catch (error) {
+      for (const index of appliedCompanions.reverse()) {
+        const write = companions[index];
+        const previous = companionRows[index];
+        if (previous) await client.send(new PutCommand({ TableName: write.tableName, Item: previous }));
+        else await client.send(new DeleteCommand({ TableName: write.tableName, Key: write.key }));
+      }
       for (const write of applied.reverse()) {
         await client.send(new DeleteCommand({ TableName: write.table, Key: write.key }));
       }
@@ -359,13 +388,19 @@ async function instantiateTemplate(
   return createdTasks;
 }
 
-/** Create a Template-backed Card and projected Tasks as one aggregate. */
+/**
+ * Create a Template-backed Card and projected Tasks as one aggregate.
+ * `companions` are writes of the record that owns the Card (a newsletter
+ * issue), committed in the same transaction so neither exists without the
+ * other.
+ */
 async function createCardFromTemplate(
   client: DynamoDBDocumentClient,
   cardData: Record<string, unknown>,
   template: Template,
   anchorDate: string,
   selectedGroups?: string[],
+  companions: (card: Card) => PlannedWrite[] = () => [],
 ): Promise<{ card: Card; tasks: Task[] }> {
   const definitions = selectTaskDefinitions(template.taskDefinitions, selectedGroups);
   Object.assign(cardData, templateLinkage(template, selectedGroups || []));
@@ -385,14 +420,15 @@ async function createCardFromTemplate(
     ...templateTaskProjection(template, definition, order, anchorDate, card.id, assignment, idsByRef),
   }) as Task);
 
-  // Card Put + Template condition + one Put per Task.
-  const itemCount = 2 + tasks.length;
+  const companionWrites = companions(card);
+  // Card Put + Template condition + one Put per Task + the owner's writes.
+  const itemCount = 2 + tasks.length + companionWrites.length;
   if (itemCount > 100) {
     throw new RangeError(`Template Card creation requires ${itemCount} transaction items; maximum is 100`);
   }
 
   if (usesLocalTransactionEmulation()) {
-    await emulateTemplateCardCreation(client, template, card, tasks);
+    await emulateTemplateCardCreation(client, template, card, tasks, companionWrites);
     return { card, tasks };
   }
 
@@ -422,6 +458,7 @@ async function createCardFromTemplate(
             ConditionExpression: 'attribute_not_exists(PK)',
           },
         })),
+        ...companionWrites.map((write) => write.item),
       ],
     }));
   } catch (error) {

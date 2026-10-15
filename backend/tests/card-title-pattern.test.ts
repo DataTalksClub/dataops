@@ -3,27 +3,36 @@ import assert from 'node:assert';
 
 import {
   cardTitlePatternIssues,
-  newsletterSlotTitleValues,
+  newsletterIssueTitleValues,
   podcastEpisodeTitleValues,
   renderCardTitle,
   shortDate,
 } from '../src/cards/cardTitlePattern';
 
-const NEWSLETTER = '{date} · #{issue} · {sponsor} · {variant}';
+const NEWSLETTER = '{date} · #{issue} · {sponsors} · {variant}';
 
 describe('card title patterns', () => {
   it('renders a weekly issue and drops empty parts with their separators', () => {
-    const weekly = { publicationDate: '2026-10-19', campaignNumber: 299, campaignLabel: 'Weekly #299', bookedByDisplayName: 'Synthetic Sponsor' };
-    assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterSlotTitleValues(weekly)), '19 Oct · #299 · Synthetic Sponsor');
-    const unbooked = { ...weekly, bookedByDisplayName: undefined };
-    assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterSlotTitleValues(unbooked)), '19 Oct · #299');
+    const weekly = {
+      kind: 'weekly', publicationDate: '2026-10-19', issueNumber: 299,
+      slots: { primary: { ticked: true, sponsor: 'Synthetic Sponsor' }, secondary: { ticked: false } },
+    };
+    assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterIssueTitleValues(weekly)), '19 Oct · #299 · Synthetic Sponsor');
+    const unbooked = { ...weekly, slots: { primary: { ticked: true } } };
+    assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterIssueTitleValues(unbooked)), '19 Oct · #299');
   });
 
-  it('names secondary and stand-alone sends, taking the issue from the label', () => {
-    const secondary = { publicationDate: '2026-12-07', campaignLabel: 'Weekly #306 secondary slot', bookedByDisplayName: 'Synthetic Sponsor' };
-    assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterSlotTitleValues(secondary)), '7 Dec · #306 · Synthetic Sponsor · secondary');
-    const standalone = { publicationDate: '2026-10-21', campaignLabel: 'Stand-Alone Newsletter', bookedByDisplayName: 'Synthetic Sponsor' };
-    assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterSlotTitleValues(standalone)), '21 Oct · Synthetic Sponsor · stand-alone');
+  it('names both slot sponsors of one issue, and stand-alone sends', () => {
+    const both = {
+      kind: 'weekly', publicationDate: '2026-10-05', issueNumber: 297,
+      slots: { primary: { ticked: true, sponsor: 'Sponsor A' }, secondary: { ticked: true, sponsor: 'Sponsor B' } },
+    };
+    assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterIssueTitleValues(both)), '5 Oct · #297 · Sponsor A + Sponsor B');
+    assert.strictEqual(newsletterIssueTitleValues(both).sponsor, 'Sponsor A');
+    const secondaryOnly = { ...both, slots: { primary: { ticked: true }, secondary: { ticked: true, sponsor: 'Sponsor B' } } };
+    assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterIssueTitleValues(secondaryOnly)), '5 Oct · #297 · Sponsor B');
+    const standalone = { kind: 'standalone', publicationDate: '2026-10-21', slots: { primary: { ticked: true, sponsor: 'Synthetic Sponsor' } } };
+    assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterIssueTitleValues(standalone)), '21 Oct · Synthetic Sponsor · stand-alone');
   });
 
   it('renders podcast episode values', () => {

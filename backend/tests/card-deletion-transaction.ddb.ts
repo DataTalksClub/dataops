@@ -26,7 +26,7 @@ import {
 import { CardDeletionConflictError, deleteCardCascade } from '../src/db/cardDeletion';
 import { createCard, getCardConsistent } from '../src/db/cards';
 import { templateLink } from './helpers/cardTemplate';
-import { createNewsletterSlot } from '../src/db/newsletterSlots';
+import { buildNewsletterIssue, createIssueWrite, deleteIssueWrite } from '../src/db/newsletterIssues';
 import {
   TABLE_ARTIFACTS,
   TABLE_AUDIT_EVENTS,
@@ -170,9 +170,12 @@ test('admin Card deletion is one transaction on official DynamoDB Local', { time
   const second = await createTask(client, { description: 'Second', date: '2031-01-05', cardId: card.id });
   const keeper = await createCard(client, { ...templateLink(), title: 'Synthetic kept newsletter', anchorDate: '2031-01-05' });
   const kept = await createTask(client, { description: 'Kept', date: '2031-01-05', cardId: keeper.id });
-  const { item: slot } = await createNewsletterSlot(client, {
-    publicationDate: '2031-01-05', status: 'reserved', cardId: card.id,
-  });
+  // The newsletter issue that owns the Card is deleted in the same transaction.
+  const issue = buildNewsletterIssue({
+    kind: 'weekly', publicationDate: '2031-01-05', status: 'planned', slots: { primary: { ticked: true } }, cardId: card.id,
+  }, 'synthetic-issue');
+  await client.send(new PutCommand(createIssueWrite(issue).item.Put as any));
+  const owner = { newsletterIssueId: issue.id, write: deleteIssueWrite(issue) };
   await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: {
     PK: 'ARTIFACT#art-1', SK: 'ARTIFACT#art-1', id: 'art-1', cardId: card.id, taskId: first.id, title: 'Synthetic draft',
   } }));
@@ -204,21 +207,20 @@ test('admin Card deletion is one transaction on official DynamoDB Local', { time
     return (stalePlanClient as (...args: unknown[]) => Promise<unknown>)(command, ...rest);
   }) as typeof client.send;
   await assert.rejects(
-    deleteCardCascade(client, card.id, current.version, 'synthetic-admin'),
+    deleteCardCascade(client, card.id, current.version, 'synthetic-admin', owner),
     CardDeletionConflictError,
   );
   client.send = stalePlanClient;
   assert.ok(await row(client, TABLE_CARDS, `CARD#${card.id}`), 'a cancelled deletion keeps the Card');
   assert.ok(await row(client, TABLE_TASKS, `TASK#${second.id}`), 'a cancelled deletion keeps every Task');
-  assert.equal((await row(client, TABLE_NEWSLETTER_SLOTS, `SLOT#${slot.id}`))?.cardId, card.id);
+  assert.equal((await row(client, TABLE_NEWSLETTER_SLOTS, `ISSUE#${issue.id}`))?.cardId, card.id);
   assert.equal((await row(client, TABLE_ARTIFACTS, 'ARTIFACT#art-1'))?.cardId, card.id);
   assert.ok(await row(client, TABLE_NOTIFICATIONS, 'NOTIFICATION#n-1'));
 
-  const result = await deleteCardCascade(client, card.id, current.version, 'synthetic-admin');
+  const result = await deleteCardCascade(client, card.id, current.version, 'synthetic-admin', owner);
   assert.ok(transactWrites >= 2, 'both attempts used TransactWriteCommand');
   assert.deepEqual(new Set(result.deletedTaskIds), new Set([first.id, second.id]));
   assert.deepEqual(result.unlinked, {
-    newsletterSlots: [slot.id],
     artifacts: ['art-1'],
     intakeItems: ['in-1'],
     notifications: ['n-1'],
@@ -228,9 +230,7 @@ test('admin Card deletion is one transaction on official DynamoDB Local', { time
   assert.equal(await row(client, TABLE_TASKS, `TASK#${first.id}`), undefined);
   assert.equal(await row(client, TABLE_TASKS, `TASK#${second.id}`), undefined);
   assert.ok(await row(client, TABLE_TASKS, `TASK#${kept.id}`));
-  const unlinkedSlot = (await row(client, TABLE_NEWSLETTER_SLOTS, `SLOT#${slot.id}`))!;
-  assert.equal(unlinkedSlot.cardId, undefined);
-  assert.equal(unlinkedSlot.version, slot.version + 1);
+  assert.equal(await row(client, TABLE_NEWSLETTER_SLOTS, `ISSUE#${issue.id}`), undefined, 'the owning issue goes with its Card');
   const artifact = (await row(client, TABLE_ARTIFACTS, 'ARTIFACT#art-1'))!;
   assert.equal(artifact.cardId, undefined);
   assert.equal(artifact.taskId, undefined);

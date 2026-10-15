@@ -84,6 +84,8 @@ export type PushedCardFields = {
   anchorDate?: string;
   issueNumber?: string | null;
   people?: string[];
+  sponsor?: string | null;
+  secondarySponsors?: string[];
 };
 
 /**
@@ -109,6 +111,13 @@ export async function pushFieldsToCard(
     if (fields.issueNumber && current.issueNumber !== fields.issueNumber) patch.issueNumber = fields.issueNumber;
     if (fields.people && JSON.stringify(view.people || []) !== JSON.stringify(fields.people)) {
       patch.people = fields.people;
+    }
+    if (fields.sponsor !== undefined && (current.sponsor || null) !== fields.sponsor) patch.sponsor = fields.sponsor;
+    if (
+      fields.secondarySponsors
+      && JSON.stringify(current.secondarySponsors || []) !== JSON.stringify(fields.secondarySponsors)
+    ) {
+      patch.secondarySponsors = fields.secondarySponsors;
     }
     if (title && title !== current.title) patch.title = title;
     return patch;

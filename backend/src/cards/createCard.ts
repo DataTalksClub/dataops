@@ -19,6 +19,7 @@ import { parseCardTitle } from './cardTitleStructure';
 import { templateCardProjection } from '../templates/cardTemplateProjection';
 import { workAdminForbidden, type VerifiedActor } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
+import type { PlannedWrite } from '../db/plannedWrite';
 import type { Card, LambdaResponse, Task, Template } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -147,6 +148,7 @@ export async function createCardFromInput(
   client: DynamoDBDocumentClient,
   actor: VerifiedActor,
   body: Record<string, unknown>,
+  options: { companions?: (card: Card) => PlannedWrite[] } = {},
 ): Promise<CardCreation> {
   const fail = (statusCode: number, payload: unknown): CardCreation => ({ ok: false, response: json(statusCode, payload) });
 
@@ -293,6 +295,7 @@ export async function createCardFromInput(
       template,
       body.anchorDate as string,
       selectedGroups,
+      options.companions,
     );
     return { ok: true, card, tasks, template };
   } catch (error) {
