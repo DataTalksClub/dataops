@@ -294,6 +294,23 @@ describe("Operations surface boundary", () => {
     assert.equal(retry.disabled, true);
   });
 
+  test("keeps a User draft through background refresh and discards it after navigation", async () => {
+    const harness = createAdminHarness({ request: async url => url === "/api/me"
+      ? { id: "admin" } : { users: [{ id: "admin", name: "Admin", role: "admin" }] } });
+    await harness.api.refreshUsersSurface();
+    harness.api.renderUsersSurfaceView();
+    await findByText(harness.documentList, "Add user", "button").dispatch("click");
+    const form = harness.documentList.querySelector(".ops-user-form");
+    form.querySelectorAll("input")[0].value = "Unsaved name";
+    await harness.api.refreshUsersSurface();
+    harness.api.renderUsersSurfaceView();
+    assert.equal(harness.documentList.querySelector(".ops-user-form"), form);
+    assert.equal(form.querySelectorAll("input")[0].value, "Unsaved name");
+    harness.setActiveRouteToken(2);
+    harness.api.renderUsersSurfaceView();
+    assert.equal(harness.documentList.querySelector(".ops-user-form"), null);
+  });
+
   test("reports Users load state, durable success, and row failure in the Users surface", async () => {
     let mode = "ok";
     const users = [

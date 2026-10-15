@@ -39,6 +39,7 @@ export function createAdminSurface(context) {
   // refreshed server state and then forgotten, and per-row recovery text for a
   // mutation that failed where it was started.
   let usersOutcome = "";
+  let activeUserForm = null;
   const userRowErrors = new Map();
 
   function renderAdminSurfaceView() {
@@ -93,6 +94,13 @@ export function createAdminSurface(context) {
   }
 
   function renderUsersSurfaceView() {
+    // A background snapshot must not replace an editor opened on this route.
+    // Navigation changes the route token and discards the previous draft.
+    if (activeUserForm && isWorkspaceRouteFresh(activeUserForm.routeToken)) {
+      if (activeUserForm.wrap.parentNode !== documentList) documentList.replaceChildren(activeUserForm.wrap);
+      return;
+    }
+    activeUserForm = null;
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
     setRouteTitle("Users");
@@ -325,6 +333,7 @@ export function createAdminSurface(context) {
     cancel.textContent = "Cancel";
     let reloadUserOnCancel = false;
     cancel.addEventListener("click", async () => {
+      activeUserForm = null;
       if (!reloadUserOnCancel) {
         renderUsersSurfaceView();
         return;
@@ -386,6 +395,7 @@ export function createAdminSurface(context) {
           await refreshUsersSurface({ rerender: false });
           return;
         }
+        activeUserForm = null;
         usersOutcome = `${payload.name} ${isEdit ? "saved" : "added"}.`;
         await refreshUsersSurface({ rerender: true });
       } catch (err) {
@@ -410,6 +420,7 @@ export function createAdminSurface(context) {
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-users";
     wrap.append(panel);
+    activeUserForm = { wrap, routeToken: getActiveWorkspaceRouteToken() };
     documentList.replaceChildren(wrap);
     nameInput.input.focus();
   }
