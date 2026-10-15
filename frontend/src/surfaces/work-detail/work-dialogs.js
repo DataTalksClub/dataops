@@ -56,7 +56,7 @@ export function openSkipTaskDialog({ taskTitle, trigger, onSkip }) {
     ),
   );
   const label = element("label", "work-dialog-field");
-  const labelText = element("span", "dk-label", "Reason");
+  const labelText = element("span", "dk-label", "Why are you skipping this?");
   const reason = element("textarea", "dk-textarea");
   reason.name = "reason";
   reason.rows = 3;
@@ -76,6 +76,16 @@ export function openSkipTaskDialog({ taskTitle, trigger, onSkip }) {
   const submit = element("button", "dk-button dk-button--primary", "Skip task");
   submit.type = "submit";
   submit.setAttribute("form", form.id);
+  // The reason is the evidence a skip leaves behind, so there is nothing to
+  // confirm until there is one.
+  submit.disabled = true;
+  reason.addEventListener("input", () => {
+    submit.disabled = !reason.value.trim();
+    if (!error.hidden && reason.value.trim()) {
+      error.hidden = true;
+      reason.removeAttribute("aria-invalid");
+    }
+  });
   foot.append(cancel, submit);
 
   function showError(message) {

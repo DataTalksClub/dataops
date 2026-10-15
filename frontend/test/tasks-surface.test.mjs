@@ -467,7 +467,7 @@ describe("Tasks surface boundary", () => {
     const head = board.querySelector(".ops-queue-head");
     assert.deepEqual(
       head.children.map((cell) => cell.textContent),
-      ["", "Task", "", "Where", "Due", "Who", ""],
+      ["", "Task", "", "Where", "Due", "Who"],
     );
     assert.equal(head.getAttribute("aria-hidden"), "true");
     // The Where column names the card, or says the task is not a card's.
@@ -634,63 +634,22 @@ describe("Tasks surface boundary", () => {
     assert.deepEqual(refreshed, [{ rerender: true }, { rerender: true }]);
   });
 
-  test("a queue row skips its task through the reason dialog and undo unskips it", async () => {
-    const task = canonicalTask({
-      id: "skippable",
-      description: "Not for this event",
-      date: "2026-08-12",
-      requiredLinkName: "Recording",
-    });
-    const refreshed = [];
-    const { api, document, documentList, requests, shellBody, undoToasts } = createHarness({
+  test("a queue row has no skip control: skipping lives in the task dialog", () => {
+    const task = canonicalTask({ id: "skippable", description: "Not for this event", date: "2026-08-12" });
+    const { api, documentList } = createHarness({
       taskRouteContext: {
-        date: "",
-        tasks: [task],
-        cardId: "",
-        filterCard: null,
-        contextCardId: "",
-        contextCard: null,
-        failures: [],
+        date: "", tasks: [task], cardId: "", filterCard: null, contextCardId: "", contextCard: null, failures: [],
       },
-      request: async (url) => {
-        if (url.endsWith("/actions/skip")) {
-          return { ...task, status: "skipped", skipReason: "Self-hosted", version: 2 };
-        }
-        if (url.endsWith("/actions/unskip")) return { ...task, version: 3 };
-        return {};
-      },
-      refreshWork: async (refreshOptions) => refreshed.push(refreshOptions),
     });
-    document.body = shellBody;
-    const proto = Object.getPrototypeOf(shellBody);
-    const saved = { showModal: proto.showModal, close: proto.close };
-    proto.showModal = function showModal() { this.open = true; };
-    proto.close = function close() {
-      this.open = false;
-      return this.dispatch("close");
-    };
-    try {
-      api.renderTasksSurface([], "queue");
-      const skip = findAllByClass(documentList, "ops-queue-skip")[0];
-      assert.equal(skip.getAttribute("aria-label"), "Skip Not for this event…");
-      await skip.dispatch("click");
-      const dialog = shellBody.children.find((child) => child.dataset?.workDialog === "skip-task");
-      assert.ok(dialog?.open);
-      dialog.querySelector("textarea").value = "Self-hosted";
-      await dialog.querySelector("form").dispatch("submit");
-      assert.equal(requests[0].url, "/api/tasks/skippable/actions/skip");
-      assert.deepEqual(JSON.parse(requests[0].options.body), { reason: "Self-hosted", expectedVersion: 1 });
-      assert.deepEqual(refreshed, [{ rerender: true }]);
-      assert.equal(undoToasts[0].message, "Task skipped.");
-      assert.equal(dialog.open, false);
-
-      await undoToasts[0].action();
-      assert.equal(requests[1].url, "/api/tasks/skippable/actions/unskip");
-      assert.deepEqual(JSON.parse(requests[1].options.body), { expectedVersion: 2 });
-    } finally {
-      proto.showModal = saved.showModal;
-      proto.close = saved.close;
-    }
+    api.renderTasksSurface([], "queue");
+    const [row] = findAllByClass(documentList, "ops-queue-row");
+    assert.ok(row);
+    assert.equal(row.querySelectorAll("button").some((button) => /skip/i.test(button.textContent || "")), false);
+    assert.equal(findAllByClass(documentList, "ops-queue-skip").length, 0);
+    assert.deepEqual(
+      findAllByClass(documentList, "ops-queue-head")[0].children.map((cell) => cell.textContent),
+      ["", "Task", "", "Where", "Due", "Who"],
+    );
   });
 
   test("a failed queue tick restores the checkbox and names the failure", async () => {

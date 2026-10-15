@@ -109,3 +109,16 @@ test('desktop: a second line never moves the first, and reads muted', async ({ p
   await expect(main).toHaveAttribute('aria-describedby', noteId);
   await expect(main).toHaveAccessibleDescription(new RegExp(`Waiting for ${WAITING_FOR}`));
 });
+
+test('a queue row offers no Skip: skipping happens in the task, with a reason', async ({ page }) => {
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 667 }]) {
+    await page.setViewportSize(viewport);
+    await setupPageWithAuth(page);
+    await page.goto(`${server.baseURL}/tasks`);
+    const row = page.locator('.ops-queue-row', { hasText: PLAIN });
+    await expect(row).toBeVisible({ timeout: 20000 });
+    await row.hover();
+    await expect(row.getByRole('button', { name: /skip/i })).toHaveCount(0);
+    await expect(page.locator('.ops-queue-head')).not.toContainText(/skip/i);
+  }
+});

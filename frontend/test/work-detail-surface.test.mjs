@@ -3919,12 +3919,22 @@ describe("Work Detail surface boundary", () => {
       assert.ok(dialog?.open, "the reason dialog opens at once");
       assert.match(dialog.textContent, /Upload the recording/);
 
+      assert.match(dialog.textContent, /Why are you skipping this\?/);
       const form = dialog.querySelector("form");
+      const textarea = dialog.querySelector("textarea");
+      const confirm = findByText(dialog, "Skip task", "button");
+      // No reason, no confirm: the button waits for one, whitespace included.
+      assert.equal(confirm.disabled, true);
+      textarea.value = "   ";
+      await textarea.dispatch("input");
+      assert.equal(confirm.disabled, true);
       await form.dispatch("submit");
       assert.match(dialog.textContent, /A reason is required/);
       assert.equal(harness.requests.some(({ url }) => url.endsWith("/actions/skip")), false);
 
-      dialog.querySelector("textarea").value = "  Self-hosted, no recording ";
+      textarea.value = "  Self-hosted, no recording ";
+      await textarea.dispatch("input");
+      assert.equal(confirm.disabled, false);
       await form.dispatch("submit");
       await nextTicks();
       const posted = harness.requests.find(({ url }) => url.endsWith("/actions/skip"));

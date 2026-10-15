@@ -42,9 +42,11 @@ test.describe('skip a Task and delete a Card', () => {
 
     const dialog = page.locator('dialog[data-work-dialog="skip-task"]');
     await expect(dialog).toBeVisible();
-    await dialog.getByRole('button', { name: 'Skip task' }).click();
-    await expect(dialog).toContainText('A reason is required');
-    await dialog.getByLabel('Reason').fill('Self-hosted event, no recording');
+    // Nothing to confirm until there is a reason.
+    await expect(dialog.getByRole('button', { name: 'Skip task' })).toBeDisabled();
+    await dialog.getByLabel('Why are you skipping this?').fill('   ');
+    await expect(dialog.getByRole('button', { name: 'Skip task' })).toBeDisabled();
+    await dialog.getByLabel('Why are you skipping this?').fill('Self-hosted event, no recording');
     await dialog.getByRole('button', { name: 'Skip task' }).click();
     await expect(dialog).toHaveCount(0);
 

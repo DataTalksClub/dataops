@@ -3,7 +3,6 @@ import { personInitials } from "../../core/identity.js";
 import { blockedReason, blockedSummary } from "../../core/task-dependencies.js";
 import { taskMaterials, taskTitleParts } from "../../core/task-display.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
-import { openSkipTaskDialog } from "../work-detail/work-dialogs.js";
 import { createQueueAssigneeFilter } from "./queue-assignee.js";
 import { createCardHovercards } from "./card-hovercard.js";
 import { renderQueueMaterials } from "./queue-materials.js";
@@ -331,7 +330,7 @@ export function createTaskQueue(context) {
     const header = document.createElement("div");
     header.className = "ops-queue-head";
     header.setAttribute("aria-hidden", "true");
-    for (const label of ["", "Task", "", "Where", "Due", "Who", ""]) {
+    for (const label of ["", "Task", "", "Where", "Due", "Who"]) {
       const cell = document.createElement("span");
       cell.textContent = label;
       header.append(cell);
@@ -585,46 +584,6 @@ export function createTaskQueue(context) {
         input.title = `Could not update task: ${err?.message || "request failed"}`;
       }
     }
-  }
-
-  // Skip resolves a Task that does not apply, with the reason the dialog
-  // collected. It leaves the queue on the refreshed snapshot; undo unskips.
-  async function skipQueueTask(task, reason) {
-    const skipped = await request(
-      workApiUrl(`/api/tasks/${encodeURIComponent(task.id)}/actions/skip`),
-      { method: "POST", body: JSON.stringify({ reason, expectedVersion: task.version }) },
-    );
-    if (!isCanonicalWorkTask(skipped)) {
-      throw new Error("Task payload is not in the canonical versioned shape");
-    }
-    await refreshOperationsWorkSnapshot({ rerender: true });
-    showUndoToast("Task skipped.", async () => {
-      try {
-        await request(
-          workApiUrl(`/api/tasks/${encodeURIComponent(task.id)}/actions/unskip`),
-          { method: "POST", body: JSON.stringify({ expectedVersion: skipped.version }) },
-        );
-      } finally {
-        await refreshOperationsWorkSnapshot({ rerender: true });
-      }
-    });
-  }
-
-  function renderQueueSkip(task) {
-    const skip = document.createElement("button");
-    skip.type = "button";
-    skip.className = "ops-queue-skip";
-    skip.textContent = "Skip";
-    skip.title = "Skip as not applicable…";
-    skip.setAttribute("aria-label", `Skip ${cleanTaskTitle(task)}…`);
-    skip.addEventListener("click", () =>
-      openSkipTaskDialog({
-        taskTitle: cleanTaskTitle(task),
-        trigger: skip,
-        onSkip: (reason) => skipQueueTask(task, reason),
-      }),
-    );
-    return skip;
   }
 
   async function reopenQueueTask(taskId) {
@@ -928,7 +887,7 @@ export function createTaskQueue(context) {
 
     const originCell = cardHovercards.renderOriginCell(origin, () => ({ today }));
 
-    row.append(toggle, open, materialsCell, originCell, taskDueCell(task, today), owner, renderQueueSkip(task));
+    row.append(toggle, open, materialsCell, originCell, taskDueCell(task, today), owner);
     return row;
   }
 
