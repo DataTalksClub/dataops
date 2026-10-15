@@ -137,6 +137,9 @@
   border-bottom: 0;
 }.ops-users-table tbody tr:hover td {
   background: var(--dk-bg-hover);
+}.ops-user-avatar {
+  margin-right: var(--dk-space-2);
+  vertical-align: middle;
 }.ops-user-name strong {
   color: var(--dk-text-heading);
   font-size: 14px;

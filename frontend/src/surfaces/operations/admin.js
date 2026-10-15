@@ -8,6 +8,7 @@ import {
 } from "../operations-overview.js";
 import { mountIntakeRecovery } from "../finance/invoices.js";
 import { describeOpenWork, openUserLifecycleDialog } from "./user-lifecycle-dialog.js";
+import { personAvatar } from "../../core/identity.js";
 
 export function createAdminSurface(context) {
   const {
@@ -234,7 +235,7 @@ export function createAdminSurface(context) {
     nameCell.className = "ops-user-name";
     const name = document.createElement("strong");
     name.textContent = user.name || user.id || "Unnamed";
-    nameCell.append(name);
+    nameCell.append(personAvatar(user, { size: "sm", className: "ops-user-avatar" }), name);
     if (user.disabled) {
       const badge = document.createElement("span");
       badge.className = "ops-user-badge";

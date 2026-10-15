@@ -1,8 +1,4 @@
-import { personInitials } from "../core/identity.js";
-
-export function accountInitials(name) {
-  return personInitials(name);
-}
+import { personAvatar, updatePersonAvatar } from "../core/identity.js";
 
 export function currentOperatorFromPayload(payload) {
   if (!payload || typeof payload !== "object") return null;
@@ -91,8 +87,10 @@ export function createAccountShell({
     const actorName = actor?.name || "Account";
     const workOwner = activeWorkOwner();
     const menuName = workOwner?.name || actorName;
-    const menuInitials = accountInitials(workOwner?.name || actor?.name);
-    for (const node of accountMenuAvatarNodes) node.textContent = menuInitials;
+    const menuPerson = workOwner || actor;
+    for (const node of accountMenuAvatarNodes) {
+      updatePersonAvatar(node, menuPerson, documentRef);
+    }
     for (const node of accountMenuNameNodes) node.textContent = menuName;
     if (accountActorNameNode) accountActorNameNode.textContent = actorName;
     for (const button of settingsButtons) {
@@ -158,10 +156,7 @@ export function createAccountShell({
           member.name || "workspace member"
         }`,
       );
-      const avatar = documentRef.createElement("span");
-      avatar.className = "dk-avatar dk-avatar--xs";
-      avatar.setAttribute("aria-hidden", "true");
-      avatar.textContent = accountInitials(member.name);
+      const avatar = personAvatar(member, { document: documentRef, size: "xs" });
       const copy = documentRef.createElement("span");
       copy.className = "account-scope-name";
       const name = documentRef.createElement("strong");

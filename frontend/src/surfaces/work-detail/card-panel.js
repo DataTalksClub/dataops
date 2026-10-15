@@ -6,7 +6,7 @@ import { renderCardTemplateUpdate } from "./card-template-review.js";
 import {
   humanLinkName,
   ownerAvatar,
-  resolveChecklistOwnerName,
+  resolveChecklistOwner,
 } from "./card-display.js";
 import {
   appendBreakableText,
@@ -791,8 +791,8 @@ export function createCardPanel(context) {
     // Every row keeps an owner slot so avatars line up in one column.
     const owner = document.createElement("span");
     owner.className = "card-checklist-owner";
-    const ownerName = resolveChecklistOwnerName(task, state.workSnapshot.usersById);
-    if (ownerName) owner.append(ownerAvatar(ownerName));
+    const person = resolveChecklistOwner(task, state.workSnapshot.usersById);
+    if (person) owner.append(ownerAvatar(person));
 
     row.classList.toggle("is-skipped", isSkipped);
     row.classList.toggle("is-done", isDone && !isSkipped);

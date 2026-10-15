@@ -1,5 +1,5 @@
 import { cardKind } from "../../core/card-kind.js";
-import { personInitials } from "../../core/identity.js";
+import { personAvatar } from "../../core/identity.js";
 import { blockedReason, blockedSummary } from "../../core/task-dependencies.js";
 import { taskMaterials, taskTitleParts } from "../../core/task-display.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
@@ -702,7 +702,7 @@ export function createTaskQueue(context) {
   }
 
   // Ownership reads as a face, not a sentence. The avatar carries the
-  // teammate's initials; the full name stays available as the accessible
+  // teammate's photo, or their initials; the full name stays available as the accessible
   // label so the queue never hides who owns the work behind two letters.
   function taskOwnerCell(task) {
     const cell = document.createElement("span");
@@ -716,10 +716,8 @@ export function createTaskQueue(context) {
       return cell;
     }
     const name = resolveAssigneeLabel(task.assigneeId);
-    const avatar = document.createElement("span");
-    avatar.className = "dk-avatar dk-avatar--xs ops-queue-avatar";
-    avatar.setAttribute("aria-hidden", "true");
-    avatar.textContent = personInitials(name);
+    const person = state.workSnapshot.usersById?.get(task.assigneeId);
+    const avatar = personAvatar({ name, picture: person?.picture }, { size: "xs", className: "ops-queue-avatar" });
     cell.dataset.assignee = "named";
     cell.append(avatar);
     cell.title = name;

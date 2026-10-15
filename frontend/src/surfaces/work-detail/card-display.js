@@ -1,7 +1,7 @@
 // Pure display helpers for the Card detail modal: human link names and
 // checklist owner resolution. Kept separate so the panel module stays
 // under the frontend size contract.
-import { personInitials } from "../../core/identity.js";
+import { personAvatar } from "../../core/identity.js";
 
 export function humanLinkName(name) {
   if (!name || !/^https?:\/\//i.test(name)) return name;
@@ -28,23 +28,19 @@ export function humanLinkName(name) {
   }
 }
 
-// The Task's assignee by name. No guessing from the title or a default
-// person: an unassigned Task shows no avatar.
-export function resolveChecklistOwnerName(task, usersById) {
+// The Task's assignee. No guessing from the title or a default person: an
+// unassigned Task shows no avatar.
+export function resolveChecklistOwner(task, usersById) {
   const assigned = task.assigneeId && usersById?.get(task.assigneeId);
-  return assigned?.name || "";
+  return assigned?.name ? assigned : null;
 }
 
-export function ownerAvatar(ownerName) {
+export function ownerAvatar(person) {
   const owner = document.createElement("span");
   owner.className = "card-task-owner";
-  owner.title = ownerName;
+  owner.title = person.name;
   owner.setAttribute("role", "img");
-  owner.setAttribute("aria-label", `Assigned to ${ownerName}`);
-  const avatar = document.createElement("span");
-  avatar.className = "account-avatar card-task-owner-avatar";
-  avatar.setAttribute("aria-hidden", "true");
-  avatar.textContent = personInitials(ownerName);
-  owner.append(avatar);
+  owner.setAttribute("aria-label", `Assigned to ${person.name}`);
+  owner.append(personAvatar(person, { className: "card-task-owner-avatar" }));
   return owner;
 }
