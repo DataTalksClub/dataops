@@ -418,37 +418,51 @@ describe("api passthrough", () => {
 });
 
 describe("newsletter", () => {
-  test("create-card asks the server to create and link the issue Card at the slot's version", async () => {
-    const slot = { id: "s-1", publicationDate: "2026-11-02", status: "open", version: 6 };
+  test("create makes a weekly issue with its primary slot ticked; naming a sponsor ticks its slot", async () => {
     const calls = fakePortal({
-      "GET /api/newsletter-slots/s-1": slot,
-      "POST /api/newsletter-slots/s-1/card": ({ body }) => ({
-        status: 201,
-        body: { slot: { ...slot, cardId: "c-1", version: body.version + 1 }, card: { id: "c-1", title: "Newsletter #12" } },
-      }),
+      "POST /api/newsletter-issues": ({ body }) => ({ status: 201, body: { id: "i-1", label: "Weekly #302", cardId: "c-1", ...body } }),
     });
     const io = captureIo();
-    assert.equal(await run(["newsletter", "create-card", "s-1", "--json"], io), 0);
-    assert.deepEqual(calls.at(-1).body, { version: 6 });
-    assert.equal(io.json().slot.cardId, "c-1");
+    assert.equal(await run(["newsletter", "create", "--date", "2026-11-09", "--number", "302", "--secondary-sponsor", "Example"], io), 0);
+    assert.deepEqual(calls.at(-1).body, {
+      publicationDate: "2026-11-09",
+      issueNumber: 302,
+      kind: "weekly",
+      status: "planned",
+      slots: { primary: { ticked: true }, secondary: { ticked: true, sponsor: "Example" } },
+    });
+    assert.match(io.text(), /Created Weekly #302 on 2026-11-09 \[planned\], Card c-1/);
   });
 
-  test("list --card is the reverse lookup; link-card none unlinks", async () => {
+  test("update merges slot flags over the current slots at the current version", async () => {
+    const current = {
+      id: "i-3", version: 4, label: "Weekly #306",
+      slots: { primary: { ticked: true, sponsor: "A", sheetId: "NL-306" }, secondary: { ticked: true, sponsor: "B", documentUrl: "https://d/b" } },
+    };
     const calls = fakePortal({
-      "GET /api/newsletter-slots": { items: [] },
-      "GET /api/newsletter-slots/s-3": { id: "s-3", cardId: "c-1", version: 2 },
-      "PUT /api/newsletter-slots/s-3": ({ body }) => ({ id: "s-3", publicationDate: "2026-11-02", status: "open", ...body }),
+      "GET /api/newsletter-issues/i-3": current,
+      "PUT /api/newsletter-issues/i-3": ({ body }) => ({ ...current, ...body, version: 5 }),
     });
+    assert.equal(await run(["newsletter", "update", "i-3", "--secondary", "off", "--primary-sponsor", "C", "--confirm"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, {
+      slots: {
+        primary: { ticked: true, sponsor: "C", sheetId: "NL-306" },
+        secondary: { ticked: false, documentUrl: "https://d/b" },
+      },
+      confirmCardDeletion: true,
+      confirmSlotRemoval: true,
+      version: 4,
+    });
+    assert.equal(await run(["newsletter", "update", "i-3", "--secondary", "maybe"], captureIo()), 2);
+    assert.equal(await run(["newsletter", "update", "i-3"], captureIo()), 2);
+  });
+
+  test("list --card is the reverse lookup; there is no card linking command", async () => {
+    const calls = fakePortal({ "GET /api/newsletter-issues": { items: [] } });
     assert.equal(await run(["newsletter", "list", "--card", "c-1"], captureIo()), 0);
     assert.deepEqual(calls[0].query, { cardId: "c-1" });
-    assert.equal(await run(["newsletter", "link-card", "s-3", "none"], captureIo()), 0);
-    assert.deepEqual(calls.at(-1).body, { cardId: null, version: 2 });
-  });
-
-  test("create-card refuses a slot that already has a card", async () => {
-    const calls = fakePortal({ "GET /api/newsletter-slots/s-2": { id: "s-2", cardId: "c-0", version: 1 } });
-    assert.equal(await run(["newsletter", "create-card", "s-2"], captureIo()), 2);
-    assert.equal(calls.length, 1);
+    assert.equal(await run(["newsletter", "link-card", "i-1", "c-1"], captureIo()), 2);
+    assert.equal(await run(["newsletter", "create-card", "i-1"], captureIo()), 2);
   });
 });
 

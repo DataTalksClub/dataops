@@ -1,6 +1,6 @@
 ---
 name: dataops
-description: Work in the DataTalks.Club DataOps portal from the command line - find the process docs (SOPs, references) for a task, search and read the knowledge base, list and complete Tasks with proof, create Cards from Templates, plan newsletter slots, and plan podcast episodes. Use when given an operations task, a DataOps Task or Card id, or a question about how an operations process works.
+description: Work in the DataTalks.Club DataOps portal from the command line - find the process docs (SOPs, references) for a task, search and read the knowledge base, list and complete Tasks with proof, create Cards from Templates, plan newsletter issues, and plan podcast episodes. Use when given an operations task, a DataOps Task or Card id, or a question about how an operations process works.
 ---
 
 # DataOps CLI for agents
@@ -124,10 +124,11 @@ dataops cards show <card-id>                  # the generated Tasks
 
 For a one-off Task: `dataops tasks create --description "..." --date 2026-11-02 [--card <card-id>]`.
 
-For a newsletter issue: `dataops newsletter list`, then
-`dataops newsletter create-card <slot-id>` creates the issue Card from the newsletter
-Template on the slot's date and links it. `dataops newsletter list --card <card-id>`
-finds the slot a Card belongs to.
+For a newsletter issue: `dataops newsletter list`. Every issue already has its Card
+(created with the issue from the newsletter Template of its kind); book a sponsor with
+`dataops newsletter update <issue-id> --primary-sponsor NAME` (or `--secondary-sponsor`,
+which ticks the secondary slot and adds its Tasks to the Card).
+`dataops newsletter list --card <card-id>` finds the issue a Card belongs to.
 
 For a podcast episode: `dataops podcast list --status booked` (or `--season N`),
 `dataops podcast create --guests "Name[:slug]" --title "..." --recording-date YYYY-MM-DD`,
