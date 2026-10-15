@@ -748,6 +748,40 @@ describe("Tasks surface boundary", () => {
     assert.equal(requests.length, 0);
   });
 
+  test("a queue row names the unfinished prerequisite and disables its checkbox", async () => {
+    const dependent = canonicalTask({
+      id: "dependent",
+      description: "Publish podcast page",
+      date: "2026-08-12",
+      dependsOn: ["spotify", "transcript"],
+      prerequisites: [
+        { id: "spotify", description: "Verify Spotify episode", status: "done" },
+        { id: "transcript", description: "Review transcript", status: "skipped" },
+      ],
+    });
+    const { api, documentList, requests } = createHarness({
+      taskRouteContext: {
+        date: "",
+        tasks: [dependent],
+        cardId: "",
+        filterCard: null,
+        contextCardId: "",
+        contextCard: null,
+        failures: [],
+      },
+    });
+
+    api.renderTasksSurface([], "queue");
+    const [input] = findAllByClass(documentList, "ops-queue-check-input");
+    const [label] = findAllByClass(documentList, "ops-queue-check");
+    assert.equal(input.disabled, true);
+    assert.equal(label.title, 'Complete "Review transcript" first');
+    const [note] = findAllByClass(documentList, "ops-queue-note");
+    assert.equal(note.textContent, "Blocked by Review transcript");
+    assert.ok(note.className.includes("is-blocked"));
+    assert.equal(requests.length, 0);
+  });
+
   test("marks ad hoc and card sources distinctly from imported sources", () => {
     const tasks = [
       canonicalTask({

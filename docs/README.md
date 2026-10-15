@@ -44,6 +44,8 @@ Files that live here:
   workspace and its Lambda, DynamoDB, and work-engine boundaries.
 - `v1-workflow-data-model.md` - shared workflow contract for definitions,
   runtime cards, tasks, reminders, proof, references, and migration-safe IDs.
+- `task-dependencies.md` - Task prerequisites: model, Template refs, enforcement
+  rules, transaction guards, and limitations.
 - `v1-execution-state-schema.md` - production-facing DynamoDB schema definition
   for V1 mutable execution state.
 - `v1-execution-data-safety.md` - backup, restore, and portable export format
