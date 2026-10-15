@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { before, after, describe, it } from 'node:test';
 import assert from 'node:assert';
-import { PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { handler } from '../src/handler';
 import { createTables } from '../scripts/local-dynamodb';
@@ -342,6 +342,36 @@ describe('sponsor CRM', () => {
     assert.equal(replayed.statusCode, 200, replayed.body);
     const replay = data(replayed);
     assert.equal(replay.activity, 0);
+  });
+
+  it('replays an imported deal with a next action after DynamoDB reorders its keys', async () => {
+    const snapshot = {
+      companies: [{ domain: 'replay.example.invalid', displayName: 'Replay Corp', sourceKey: 'replay-org' }],
+      deals: [{
+        organizationDomain: 'replay.example.invalid',
+        status: 'open',
+        amountEur: 1200,
+        nextAction: { type: 'follow_up', due: '2026-08-01', owner: GRACE_USER_ID, note: 'ping' },
+        sourceKey: 'replay-deal',
+        deliverables: [{ channel: 'main', plannedPublicationDate: '2026-09-01' }],
+      }],
+    };
+    const first = await invoke('POST', '/api/sponsor-crm/imports', snapshot);
+    assert.equal(first.statusCode, 200, first.body);
+    assert.equal(data(first).deals, 1);
+    // Real DynamoDB returns map attributes in arbitrary key order.
+    const id = deterministicCrmId('deal', 'replay-deal'), dealKey = `DEAL#${id}`;
+    const stored = (await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: dealKey, SK: dealKey } }))).Item!;
+    const reordered = Object.fromEntries(Object.entries(stored.nextAction).reverse());
+    assert.notEqual(JSON.stringify(reordered), JSON.stringify(stored.nextAction));
+    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { ...stored, nextAction: reordered } }));
+    const second = await invoke('POST', '/api/sponsor-crm/imports', snapshot);
+    assert.equal(second.statusCode, 200, second.body);
+    assert.equal(data(second).deals, 0);
+    assert.equal(data(second).deliverables, 0);
+    assert.ok(data(second).duplicates >= 3);
+    const changed = await invoke('POST', '/api/sponsor-crm/imports', { deals: [{ ...snapshot.deals[0], amountEur: 9999, deliverables: [] }] });
+    assert.equal(changed.statusCode, 409, changed.body);
   });
 
   it('imports name-only companies and attaches people by company name', async () => {
