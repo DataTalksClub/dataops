@@ -122,3 +122,74 @@ test('a queue row offers no Skip: skipping happens in the task, with a reason', 
     await expect(page.locator('.ops-queue-head')).not.toContainText(/skip/i);
   }
 });
+
+function rect(locator) {
+  return locator.evaluate((node) => {
+    const { left, right, top, bottom } = node.getBoundingClientRect();
+    return { left, right, top, bottom };
+  });
+}
+
+test('Where comes first: card, then task, then due and owner, in view and in Tab order', async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await setupPageWithAuth(page);
+  await page.goto(`${server.baseURL}/tasks`);
+  const row = page.locator('.ops-queue-row', { hasText: PLAIN });
+  await expect(row).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('.ops-queue-head span')).toHaveText(['', 'Where', 'Task', '', 'Due', 'Who']);
+
+  const where = await rect(row.locator('.ops-queue-origin'));
+  const task = await rect(row.locator('.ops-queue-main'));
+  const due = await rect(row.locator('.ops-queue-due'));
+  const dueText = await row.locator('.ops-queue-due').evaluate((node) => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const { left, right } = range.getBoundingClientRect();
+    return { left, right };
+  });
+  expect(where.right).toBeLessThanOrEqual(task.left);
+  expect(task.right).toBeLessThanOrEqual(due.left);
+  // The overdue count is never clipped: its text fits inside its own cell.
+  await expect(row.locator('.ops-queue-due')).toHaveText(/^\d+d late$/);
+  expect(dueText.left).toBeGreaterThanOrEqual(due.left - 1);
+  expect(dueText.right).toBeLessThanOrEqual(due.right + 1);
+  // A long card name truncates inside Where, and the title keeps most of the row.
+  const label = row.locator('.ops-queue-origin-label');
+  expect(await label.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+  expect(task.right - task.left).toBeGreaterThan(where.right - where.left);
+
+  // Tab follows the columns: the tick, then the card link, then the task.
+  await row.locator('.ops-queue-check-input').focus();
+  await page.keyboard.press('Tab');
+  await expect(row.locator('.ops-queue-origin-link')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(row.locator('.ops-queue-main')).toBeFocused();
+});
+
+test('375px: the card line sits above the task title and the tick sits on the title line', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  await setupPageWithAuth(page);
+  await page.goto(`${server.baseURL}/tasks`);
+  for (const title of [PLAIN, 'Synthetic layout task waiting on a reply']) {
+    const row = page.locator('.ops-queue-row', { hasText: title });
+    await expect(row).toBeVisible({ timeout: 20000 });
+    const where = await rect(row.locator('.ops-queue-origin'));
+    const due = await rect(row.locator('.ops-queue-due'));
+    // The first rendered line of the title row (a pill, or the title's
+    // first line when it wraps).
+    const firstLine = await row.locator('.ops-queue-title-row > :first-child').evaluate((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const { top, bottom } = range.getClientRects()[0];
+      return { top, bottom };
+    });
+    const box = await rect(row.locator('.ops-queue-box'));
+    expect(where.bottom).toBeLessThanOrEqual(firstLine.top);
+    expect(due.bottom).toBeLessThanOrEqual(firstLine.top);
+    expect(due.left).toBeGreaterThanOrEqual(where.right - 1);
+    const boxCenter = (box.top + box.bottom) / 2;
+    expect(Math.abs(boxCenter - (firstLine.top + firstLine.bottom) / 2)).toBeLessThanOrEqual(4);
+    const rowBox = await rect(row);
+    expect(rowBox.right).toBeLessThanOrEqual(375 - 16 + 1);
+  }
+});

@@ -330,7 +330,7 @@ export function createTaskQueue(context) {
     const header = document.createElement("div");
     header.className = "ops-queue-head";
     header.setAttribute("aria-hidden", "true");
-    for (const label of ["", "Task", "", "Where", "Due", "Who"]) {
+    for (const label of ["", "Where", "Task", "", "Due", "Who"]) {
       const cell = document.createElement("span");
       cell.textContent = label;
       header.append(cell);
@@ -887,7 +887,9 @@ export function createTaskQueue(context) {
 
     const originCell = cardHovercards.renderOriginCell(origin, () => ({ today }));
 
-    row.append(toggle, open, materialsCell, originCell, taskDueCell(task, today), owner);
+    // Where comes first: which card the work belongs to, then what to do.
+    // The DOM follows the visual order so Tab does too.
+    row.append(toggle, originCell, open, materialsCell, taskDueCell(task, today), owner);
     return row;
   }
 

@@ -172,7 +172,7 @@ body[data-workspace-view="tasks"] .ops-queue-head,
 body[data-workspace-view="tasks"] .ops-queue-row {
   --ops-queue-line: 2rem;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) 28px minmax(0, 17rem) 5.5rem 4.5rem;
+  grid-template-columns: 16px minmax(9rem, 15rem) minmax(0, 1fr) 28px 5.5rem 4.5rem;
   gap: 12px;
   align-items: center;
   min-width: 0;
@@ -460,6 +460,10 @@ body[data-workspace-view="tasks"] .ops-queue-origin {
   align-items: center;
   gap: var(--dk-space-2);
   min-width: 0;
+  /* The card name truncates inside its column and never paints over the
+     task beside it; the summary hover card is fixed, so it is not clipped. */
+  overflow: clip;
+  overflow-clip-margin: var(--dk-space-1);
   color: var(--dk-text-muted);
   font-size: var(--dk-text-sm);
 }
@@ -641,39 +645,45 @@ body[data-workspace-view="tasks"] .ops-queue-owner {
    inset and nothing reaches outside its own cell. */
 @media (max-width: 820px), (pointer: coarse) {body[data-workspace-view="tasks"] .ops-queue-head,
 body[data-workspace-view="tasks"] .ops-queue-row {
-    grid-template-columns: var(--dk-size-touch) minmax(0, 1fr) 28px minmax(0, 17rem) 5.5rem 4.5rem;
+    grid-template-columns: var(--dk-size-touch) minmax(9rem, 15rem) minmax(0, 1fr) 28px 5.5rem 4.5rem;
     padding-left: 0;
   }body[data-workspace-view="tasks"] .ops-queue-check {
     min-width: var(--dk-size-touch);
     min-height: var(--dk-size-touch);
   }
-}/* Mobile: five columns cannot fit a phone, so the row folds to two lines —
-   the task on top, then where and due directly under it. The title button
-   spans both lines (that is its 44px) and the meta line sits on its lower
-   edge, passing taps through to it, so no dead band opens between them. The
-   tick spans both lines too, and the avatar keeps a fixed trailing column
-   whatever the due text says. The heading row hides, because the folded
-   labels would repeat what the columns used to say. */
+}/* Mobile: the columns cannot fit a phone, so the row folds to two lines in
+   the same order as the desktop columns read: where the work comes from
+   (the card, with the due date at the end of that line), then the task
+   itself with its materials and owner. The tick spans both lines and sits
+   on the title line. The heading row hides, because the folded labels
+   would repeat what the columns used to say. */
 @media (max-width: 820px) {body[data-workspace-view="tasks"] .ops-queue-head {
     display: none;
   }body[data-workspace-view="tasks"] .ops-queue-row > :not(.ops-queue-check),
 body[data-workspace-view="tasks"] .ops-queue-title-row {
     min-height: 0;
   }body[data-workspace-view="tasks"] .ops-queue-row {
-    grid-template-columns: var(--dk-size-touch) minmax(0, 1fr) auto auto 28px;
-    grid-template-rows: auto auto;
+    --ops-queue-card-line: var(--dk-space-6);
+    grid-template-columns: var(--dk-size-touch) minmax(0, 1fr) auto 28px;
+    grid-template-rows: var(--ops-queue-card-line) auto;
     column-gap: var(--dk-space-2);
     row-gap: 0;
     min-height: var(--dk-size-touch);
     padding-block: var(--dk-space-1);
-  }body[data-workspace-view="tasks"] .ops-queue-check {
+  }/* The 44px tick column spans both lines; its box sits on the title line
+     (the second), half a box below that line's top. */
+  body[data-workspace-view="tasks"] .ops-queue-check {
     grid-column: 1;
     grid-row: 1 / 3;
+    align-self: stretch;
+    align-items: start;
+    padding-top: calc(var(--ops-queue-card-line) + var(--dk-space-1));
   }body[data-workspace-view="tasks"] .ops-queue-main {
-    grid-column: 2 / 5;
-    grid-row: 1 / 3;
+    grid-column: 2;
+    grid-row: 2;
     align-content: start;
-    padding-block: var(--dk-space-1) var(--dk-space-5);
+    min-height: var(--dk-space-6);
+    padding-block: var(--dk-space-1);
   }body[data-workspace-view="tasks"] .ops-queue-title-row {
     flex-wrap: wrap;
     row-gap: var(--dk-space-1);
@@ -681,10 +691,10 @@ body[data-workspace-view="tasks"] .ops-queue-title-row {
     position: relative;
     grid-column: 3;
     grid-row: 2;
-    align-self: end;
-  }/* The folded line is one text line tall: the icon keeps the 44px touch
-     width but not its height, so it never covers the title above it (24px
-     still clears the minimum target size). */
+    align-self: start;
+  }/* One text line tall: the icon keeps the 44px touch width but not its
+     height, so the title line stays a line (24px still clears the minimum
+     target size). */
   body[data-workspace-view="tasks"] .ops-queue-material {
     height: var(--dk-space-6);
   }body[data-workspace-view="tasks"] .ops-queue-material-count {
@@ -703,8 +713,10 @@ body[data-workspace-view="tasks"] .ops-queue-title-row {
   body[data-workspace-view="tasks"] .ops-queue-origin-type {
     display: none;
   }body[data-workspace-view="tasks"] .ops-queue-owner {
-    grid-column: 5;
-    grid-row: 1 / 3;
+    grid-column: 4;
+    grid-row: 2;
+    align-self: start;
+    min-height: var(--dk-space-6);
   }/* The phone's owner column fits one avatar: the word folds to a dash,
      and the accessible label still says Unassigned. */
   body[data-workspace-view="tasks"] .ops-queue-owner[data-assignee="none"] {
@@ -712,21 +724,18 @@ body[data-workspace-view="tasks"] .ops-queue-title-row {
   }body[data-workspace-view="tasks"] .ops-queue-owner[data-assignee="none"]::after {
     content: "—";
     font-size: var(--dk-text-sm);
-  }body[data-workspace-view="tasks"] .ops-queue-origin,
-body[data-workspace-view="tasks"] .ops-queue-due {
-    grid-row: 2;
-    align-self: end;
-    padding-bottom: var(--dk-space-1);
-    pointer-events: none;
-  }/* The card name and its info button take their own taps: the name opens
-     the Card, the button its summary. The rest of the line still passes
-     taps through to the task. */
-  body[data-workspace-view="tasks"] .ops-queue-origin-link,
-  body[data-workspace-view="tasks"] .ops-queue-origin-info {
-    pointer-events: auto;
-  }/* One text line tall, like the materials icon: the shell's 44px touch
-     minimum would push the line up over the title (24px still clears the
-     minimum target size). */
+  }/* The card line: the card's name (its own tap target, opening the Card)
+     and its info button, then the due date at the end of the line. */
+  body[data-workspace-view="tasks"] .ops-queue-origin {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+  }body[data-workspace-view="tasks"] .ops-queue-due {
+    grid-column: 3 / 5;
+    grid-row: 1;
+    align-self: center;
+  }/* One text line tall: the shell's 44px touch minimum would make the card
+     line taller than the title (24px still clears the minimum target size). */
   body[data-workspace-view="tasks"] #main-content .ops-queue-origin .ops-queue-origin-link,
   body[data-workspace-view="tasks"] #main-content .ops-queue-origin .ops-queue-origin-info {
     min-width: 0;
@@ -734,10 +743,6 @@ body[data-workspace-view="tasks"] .ops-queue-due {
   }body[data-workspace-view="tasks"] #main-content .ops-queue-origin .ops-queue-origin-info {
     width: var(--dk-space-6);
     height: var(--dk-space-6);
-  }body[data-workspace-view="tasks"] .ops-queue-origin {
-    grid-column: 2;
-  }body[data-workspace-view="tasks"] .ops-queue-due {
-    grid-column: 4;
   }body[data-workspace-view="tasks"] .ops-queue-more {
     min-height: 44px;
   }body[data-workspace-view="tasks"] .ops-queue-history summary {

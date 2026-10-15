@@ -467,7 +467,7 @@ describe("Tasks surface boundary", () => {
     const head = board.querySelector(".ops-queue-head");
     assert.deepEqual(
       head.children.map((cell) => cell.textContent),
-      ["", "Task", "", "Where", "Due", "Who"],
+      ["", "Where", "Task", "", "Due", "Who"],
     );
     assert.equal(head.getAttribute("aria-hidden"), "true");
     // The Where column names the card, or says the task is not a card's.
@@ -634,7 +634,7 @@ describe("Tasks surface boundary", () => {
     assert.deepEqual(refreshed, [{ rerender: true }, { rerender: true }]);
   });
 
-  test("a queue row has no skip control: skipping lives in the task dialog", () => {
+  test("a queue row reads Where, Task, Due, Who and has no skip control", () => {
     const task = canonicalTask({ id: "skippable", description: "Not for this event", date: "2026-08-12" });
     const { api, documentList } = createHarness({
       taskRouteContext: {
@@ -646,9 +646,14 @@ describe("Tasks surface boundary", () => {
     assert.ok(row);
     assert.equal(row.querySelectorAll("button").some((button) => /skip/i.test(button.textContent || "")), false);
     assert.equal(findAllByClass(documentList, "ops-queue-skip").length, 0);
+    // Where comes first, and the DOM (so Tab) follows the columns.
+    assert.deepEqual(
+      row.children.map((cell) => cell.className.split(" ")[0]),
+      ["ops-queue-check", "ops-queue-origin", "ops-queue-main", "ops-queue-materials-cell", "ops-queue-due", "ops-queue-owner"],
+    );
     assert.deepEqual(
       findAllByClass(documentList, "ops-queue-head")[0].children.map((cell) => cell.textContent),
-      ["", "Task", "", "Where", "Due", "Who"],
+      ["", "Where", "Task", "", "Due", "Who"],
     );
   });
 
