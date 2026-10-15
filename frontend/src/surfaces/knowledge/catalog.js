@@ -12,13 +12,11 @@ export function createKnowledgeCatalog(context, services) {
     refreshOperationsQualitySnapshot,
     refreshOperationsRecurringSnapshot,
     refreshOperationsWorkSnapshot,
+    renderInBackground,
     request,
     setDocsAvailability,
   } = context;
-  const {
-    populateFilterOptions,
-    refreshDocuments,
-  } = services;
+  const { populateFilterOptions } = services;
   let catalogRequestId = 0;
 
   async function loadDocuments() {
@@ -28,9 +26,11 @@ export function createKnowledgeCatalog(context, services) {
     // Work APIs are independent of the knowledge docs API. Start their
     // bootstrap requests before awaiting docs so tasks and
     // recurring work remain operational during a docs outage.
-    refreshOperationsWorkSnapshot({ rerender: true });
-    refreshOperationsRecurringSnapshot({ rerender: true });
-    refreshOperationsQualitySnapshot({ rerender: true });
+    // They land whenever they land, so they repaint through the background
+    // gate rather than under an operator who already started working.
+    refreshOperationsWorkSnapshot({ background: true });
+    refreshOperationsRecurringSnapshot({ background: true });
+    refreshOperationsQualitySnapshot({ background: true });
 
     try {
       const payload = await request(apiUrl("/docs"));
@@ -41,7 +41,7 @@ export function createKnowledgeCatalog(context, services) {
       setDocsAvailability(loadedOperationsDocsSnapshot(knowledgeState.allDocuments));
       rebuildDocumentIdMap();
       populateFilterOptions();
-      refreshDocuments();
+      renderInBackground();
     } catch (error) {
       if (requestId !== catalogRequestId) return;
       // The bootstrap catalog request is the single source of docs
@@ -50,7 +50,7 @@ export function createKnowledgeCatalog(context, services) {
       // reading like an empty corpus.
       knowledgeState.allDocuments = [];
       setDocsAvailability(unavailableOperationsDocsSnapshot(error));
-      refreshDocuments();
+      renderInBackground();
     }
   }
 

@@ -20,6 +20,7 @@
     "src/core/work-model.js",
     "src/runtime/application-events.js",
     "src/runtime/application.js",
+    "src/runtime/background-render.js",
     "src/runtime/operation-kernel.js",
     "src/runtime/shell-composition.js",
     "src/runtime/surface-composition.js",

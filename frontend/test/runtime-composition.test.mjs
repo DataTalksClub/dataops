@@ -103,6 +103,8 @@ function createSurfaceHarness(options = {}) {
     },
     recurringConfigsFromPayload: (payload) => payload.items,
     refreshDocuments: () => calls.push(["refresh-documents"]),
+    renderInBackground: (change) => calls.push(["render-in-background", change]),
+    settleBackgroundRender: () => calls.push(["settle-background-render"]),
     request: async (url) => {
       calls.push(["request", String(url)]);
       if (options.requestError) throw new Error("recurring unavailable");

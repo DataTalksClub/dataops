@@ -246,7 +246,7 @@ export function createNavigationShell(context) {
       jobs.push(refreshPodcastEpisodes({ rerender: true }));
     }
     if (route.path === "/users") {
-      jobs.push(refreshUsersSurface({ rerender: true }));
+      jobs.push(refreshUsersSurface({ background: true }));
     }
     const cardId = ["/cards", "/cards/archive"].includes(route.path)
       ? route.params.get("cardId")

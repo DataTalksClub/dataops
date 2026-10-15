@@ -143,6 +143,8 @@ export function createSurfaceComposition(context) {
   } = context;
 
   function renderOperationsWorkspace(documents) {
+    // Whatever asked for this render, the surface now shows the latest data.
+    context.settleBackgroundRender();
     syncWorkspaceNav();
     const view = workspaceState.activeWorkspaceView;
     if (view === "operating-model") return getRenderOperatingModel()();
@@ -204,9 +206,18 @@ export function createSurfaceComposition(context) {
         error?.message || "Recurring API request failed",
       ];
     }
+    const previous = workspaceState.recurringSnapshot;
     workspaceState.recurringSnapshot =
       context.getNormalizeOperationsRecurringSnapshot()(snapshot);
-    if (options.rerender && isOperationsWorkspaceVisible()) refreshDocuments();
+    if (options.background) {
+      context.renderInBackground({
+        previous,
+        next: workspaceState.recurringSnapshot,
+        when: isOperationsWorkspaceVisible,
+      });
+    } else if (options.rerender && isOperationsWorkspaceVisible()) {
+      refreshDocuments();
+    }
   }
 
   async function canLeaveCurrentDocument() {

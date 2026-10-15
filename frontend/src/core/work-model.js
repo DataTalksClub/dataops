@@ -42,6 +42,7 @@ export function createWorkModel(context) {
     refreshAccountIdentity,
     refreshDocuments,
     refreshWorkBell,
+    renderInBackground,
     request,
     resolveDocReference,
     settledPayload,
@@ -57,6 +58,17 @@ export function createWorkModel(context) {
 
   let cardsLoader;
   let lastGoodCardsPage;
+
+  // `rerender` repaints now (the operator just acted); `background` goes
+  // through the runtime's background gate, which skips unchanged data and
+  // waits for the operator to finish what they are doing.
+  function repaintAfterRefresh(options, previous, next) {
+    if (options.background) {
+      renderInBackground({ previous, next, when: isOperationsWorkspaceVisible });
+    } else if (options.rerender && isOperationsWorkspaceVisible()) {
+      refreshDocuments();
+    }
+  }
 
   function findingMatchesDoc(finding, doc) {
     if (!finding || !doc) return false;
@@ -468,8 +480,9 @@ export function createWorkModel(context) {
         err?.message || "Process quality report could not be loaded",
       ];
     }
+    const previous = state.qualitySnapshot;
     state.qualitySnapshot = normalizeOperationsQualitySnapshot(snapshot);
-    if (options.rerender && isOperationsWorkspaceVisible()) refreshDocuments();
+    repaintAfterRefresh(options, previous, state.qualitySnapshot);
   }
 
   async function refreshOperationsWorkSnapshot(options = {}) {
@@ -630,13 +643,14 @@ export function createWorkModel(context) {
       cardPage.complete &&
       cardTaskResults.every((result) => result.status === "fulfilled");
 
+    const previous = state.workSnapshot;
     state.workSnapshot = normalizeOperationsWorkSnapshot(snapshot, { today });
     await refreshAccountIdentity(
       settledPayload(meResult),
       state.workSnapshot.users,
       localContext,
     );
-    if (options.rerender && isOperationsWorkspaceVisible()) refreshDocuments();
+    repaintAfterRefresh(options, previous, state.workSnapshot);
     refreshWorkBell();
   }
 

@@ -555,8 +555,12 @@ describe("runtime and shell production behavior", () => {
       refreshChangesPanel: () => calls.push("changes"),
       refreshKnowledgeStatus: () => calls.push("git"),
       refreshOperationsWorkSnapshot: async (options) => {
-        calls.push(`work:${options.rerender}`);
+        calls.push(`work:${options.background}`);
         return "refreshed";
+      },
+      refreshUsersSurface: async (options) => {
+        calls.push(`users:${options.background}`);
+        return "users-refreshed";
       },
       restoreDarkMode: () => calls.push("theme"),
       restoreSidebarCollapsed: () => calls.push("collapsed"),
@@ -574,6 +578,8 @@ describe("runtime and shell production behavior", () => {
     assert.ok(calls.indexOf("load-documents") < calls.indexOf("routing"));
     assert.equal(await windowRef.__dataopsRefreshWork(), "refreshed");
     assert.equal(calls.at(-1), "work:true");
+    assert.equal(await windowRef.__dataopsRefreshUsers(), "users-refreshed");
+    assert.equal(calls.at(-1), "users:true");
     resolveDocuments();
   });
 

@@ -44,6 +44,7 @@ import { queryAppDom } from "../shell/dom-bindings.js";
 import { bindApplicationEvents } from "./application-events.js";
 import { createOperationKernel } from "./operation-kernel.js";
 import { createApplicationShells } from "./shell-composition.js";
+import { createBackgroundRender } from "./background-render.js";
 import { createWorkspaceState } from "../runtime/workspace-state.js";
 import { createSurfaceBridge, createSurfaceComposition } from "./surface-composition.js";
 let knowledgeSurface;
@@ -117,6 +118,13 @@ const {
   cardModalBackdrop, diffModal, diffTitle, diffBody, diffClose, lightbox,
   lightboxImg, lightboxCaption, quickNav, quickNavInput, quickNavResults,
 } = dom;
+// Every repaint caused by data the operator did not ask for goes through here.
+const backgroundRender = createBackgroundRender({
+  documentRef: document,
+  root: documentList,
+  render: () => refreshDocuments(),
+});
+const renderInBackground = (change) => backgroundRender.request(change);
 const {
   allWorkTasks,
   basename,
@@ -135,6 +143,8 @@ const {
   workApiUrl,
 } = createSurfaceComposition({
   apiUrl,
+  renderInBackground,
+  settleBackgroundRender: () => backgroundRender.settled(),
   body,
   clearTimeoutImpl: clearTimeout,
   dedupeWorkTasks,
@@ -317,6 +327,7 @@ const {
   refreshOperationsQualitySnapshot,
   refreshOperationsWorkSnapshot,
 } = createWorkModel({
+  renderInBackground,
   activeWorkOwner,
   activeWorkOwnerId,
   allWorkTasks,
@@ -369,6 +380,7 @@ const {
   isWorkspaceRouteFresh,
   refreshDocuments,
   renderHonestState,
+  renderInBackground,
   renderSurfaceHeader,
   request,
   setRouteTitle,
@@ -557,6 +569,7 @@ podcastSurface = createPodcastSurface({
 
 knowledgeSurface = createKnowledgeSurface({
   knowledgeTools: document.querySelector("#knowledge-tools"),
+  renderInBackground,
   apiUrl,
   basename,
   beginDocumentNavigation,
@@ -850,6 +863,7 @@ initializeAppShell({
   refreshChangesPanel,
   refreshKnowledgeStatus,
   refreshOperationsWorkSnapshot,
+  refreshUsersSurface,
   showLibrary,
   updateSaveState,
   windowRef: window,

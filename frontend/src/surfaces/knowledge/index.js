@@ -30,7 +30,6 @@ export function createKnowledgeSurface(context) {
     api,
     createKnowledgeCatalog(context, {
       populateFilterOptions: invoke("populateFilterOptions"),
-      refreshDocuments: invoke("refreshDocuments"),
     }),
   );
   Object.assign(

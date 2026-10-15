@@ -326,6 +326,8 @@ function createKnowledgeHarness(options = {}) {
       node.textContent = reference.title;
       return node;
     },
+    // The runtime gate repaints at once when nobody is mid-interaction.
+    renderInBackground: () => api.refreshDocuments(),
     renderOperationsWorkspace(documents) {
       renderedWorkspace += 1;
       renderedWorkspaceDocuments = documents;
@@ -525,7 +527,7 @@ describe("Knowledge surface boundary", () => {
       ["work", "recurring", "quality"],
     );
     assert.ok(
-      harness.refreshes.every((entry) => entry.options.rerender === true),
+      harness.refreshes.every((entry) => entry.options.background === true),
     );
     assert.equal(harness.docsAvailability().state, "loading");
 

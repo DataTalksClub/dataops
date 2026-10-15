@@ -20,6 +20,7 @@ export function createAdminSurface(context) {
     isWorkspaceRouteFresh,
     refreshDocuments,
     renderHonestState,
+    renderInBackground,
     renderSurfaceHeader,
     request,
     setRouteTitle,
@@ -82,6 +83,7 @@ export function createAdminSurface(context) {
       request(meUrl),
       request(workApiUrl("/api/team-members/default-assignee")),
     ]);
+    const previous = { usersSnapshot, defaultAssignee };
     const defaultPayload = settledPayload(defaultResult);
     defaultAssignee = defaultPayload && typeof defaultPayload === "object"
       ? {
@@ -105,8 +107,16 @@ export function createAdminSurface(context) {
           ? [usersResult.reason?.message || "Failed to load users"]
           : [],
     };
-    if (options.rerender && getActiveWorkspaceView() === "users")
+    const usersVisible = () => getActiveWorkspaceView() === "users";
+    if (options.background) {
+      renderInBackground({
+        previous,
+        next: { usersSnapshot, defaultAssignee },
+        when: usersVisible,
+      });
+    } else if (options.rerender && usersVisible()) {
       refreshDocuments();
+    }
   }
 
   function renderUsersSurfaceView() {
