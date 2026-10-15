@@ -1,17 +1,20 @@
 /**
- * Publish a Git range of the knowledge repository to the DataOps knowledge
- * store without overwriting edits Git has not seen.
+ * Reconcile the DataOps knowledge store with a knowledge-repository commit
+ * without overwriting edits Git has not seen.
  *
- * For every managed file changed between `base` and `head`:
- *  - prod already equals head: nothing to do;
- *  - prod equals a version Git recorded in the range (the base copy, or a copy
- *    some commit in base..head wrote, including "absent"): publish head;
- *  - otherwise someone changed it in the web editor or the CLI since Git last
- *    saw it: refuse the whole publication and name the files.
- *
- * Accepting any version recorded in the range, not only the base copy, lets a
- * wider base (the last successful publish, when a later run was skipped) still
- * accept files the daily mirror brought into Git in between.
+ * Every managed path whose prod copy (sha256 from /knowledge/manifest)
+ * differs from the commit is classified three-way, with Git's history of the
+ * path as the record of what Git has seen:
+ *  - publish:   prod's copy is a version Git recorded for the path (or prod
+ *               never had the path), so Git's copy replaces it;
+ *  - ahead:     prod changed after a Git-recorded version that is still the
+ *               commit's copy, i.e. a web or CLI edit the daily mirror has
+ *               not brought into Git yet; it is left alone;
+ *  - conflict:  prod changed after a Git-recorded version and Git changed
+ *               the path too (or prod's lineage reaches no Git version);
+ *               it is left alone and reported.
+ * "Absent" is a Git-recorded state only where Git deleted the path, or before
+ * prod's first version of it.
  */
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -21,6 +24,8 @@ const ZERO = /^0+$/;
 const REGULAR_MODES = new Set(["100644", "100755"]);
 /** Request bodies stay well under the API's 6 MB payload limit. */
 export const MAX_BATCH_BYTES = 4_000_000;
+/** History pages read per diverged path before its lineage counts as unknown. */
+export const MAX_HISTORY_PAGES = 20;
 
 export function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -32,29 +37,68 @@ export function isManagedPath(file, roots) {
   return slash > 0 && roots.includes(file.slice(0, slash)) && !file.split("/").some((part) => !part || part === "." || part === "..");
 }
 
+/** Prod's state before its first version of a path: absent, a state both sides share. */
+export const ORIGIN = Symbol("origin");
+
 /**
- * Decide what to publish. `changes` are `{ path, head, known }` where `head`
- * is the head bytes (null when deleted) and `known` is the set of sha256
- * values Git recorded for the path in the range (null meaning absent).
- * `prod` maps a path to its published sha256.
+ * Classify one diverged path. `states` is prod's lineage newest first: the
+ * current state, then older published states (sha256, or null when deleted),
+ * ending with ORIGIN when the walk reached prod's first version. `known`
+ * holds the states Git recorded for the path.
  */
-export function planPublication(changes, prod) {
-  const mutations = [];
-  const current = [];
-  const conflicts = [];
-  for (const change of [...changes].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {
-    const prodSha = prod[change.path]?.sha256 ?? null;
-    const headSha = change.head ? sha256(change.head) : null;
+export function classify(states, known, headSha) {
+  const index = states.findIndex((state) => state === ORIGIN || known.has(state));
+  if (index === 0) return "publish";
+  if (index === -1) return "conflict";
+  return (states[index] === ORIGIN ? null : states[index]) === headSha ? "ahead" : "conflict";
+}
+
+/**
+ * Plan a reconcile. `files` maps every managed path in the commit to
+ * `{ bytes, sha }`; `prod` is the manifest's entries; `known(path)` returns
+ * the Git-recorded states of a path; `lineage(path)` resolves prod's states
+ * (current first) for a path whose current state Git does not know.
+ */
+export async function planReconcile({ files, prod, known, lineage }) {
+  const paths = [...new Set([...files.keys(), ...Object.keys(prod)])].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const plan = { mutations: [], ahead: [], conflicts: [], unchanged: 0 };
+  for (const file of paths) {
+    const head = files.get(file) || null;
+    const headSha = head ? head.sha : null;
+    const prodSha = prod[file]?.sha256 ?? null;
     if (prodSha === headSha) {
-      current.push(change.path);
-    } else if (change.known.has(prodSha)) {
-      if (!change.head) mutations.push({ path: change.path, operation: "delete" });
-      else mutations.push({ path: change.path, operation: prodSha ? "edit" : "create", base64: change.head.toString("base64") });
+      plan.unchanged += 1;
+      continue;
+    }
+    const recorded = known(file);
+    const verdict = recorded.has(prodSha) ? "publish" : classify(await lineage(file), recorded, headSha);
+    if (verdict === "publish") {
+      if (!head) plan.mutations.push({ path: file, operation: "delete" });
+      else plan.mutations.push({ path: file, operation: prodSha ? "edit" : "create", base64: head.bytes.toString("base64") });
+    } else if (verdict === "ahead") {
+      plan.ahead.push(file);
     } else {
-      conflicts.push({ path: change.path, prod: prodSha ? "differs" : "absent" });
+      plan.conflicts.push({ path: file, prod: prodSha ? "differs" : "absent" });
     }
   }
-  return { mutations, current, conflicts };
+  return plan;
+}
+
+/**
+ * Prod's states for a path, newest first, from /knowledge/history pages:
+ * each version's sha256 (null once deleted), the first being the current
+ * state, then ORIGIN when the history is exhausted.
+ */
+export async function prodLineage(api, file, maxPages = MAX_HISTORY_PAGES) {
+  const states = [];
+  let cursor;
+  for (let page = 0; page < maxPages; page++) {
+    const result = await api.get("/knowledge/history", { query: { path: file, cursor } });
+    for (const version of result.versions || []) states.push(version.deleted ? null : version.sha256);
+    cursor = result.cursor;
+    if (!cursor) return [...states, ORIGIN];
+  }
+  return states;
 }
 
 /** The API body form of a planned mutation. */
@@ -110,7 +154,7 @@ function readBlobs(repo, shas) {
   const wanted = [...new Set(shas)];
   const blobs = new Map();
   if (!wanted.length) return blobs;
-  const result = spawnSync("git", ["-C", repo, "cat-file", "--batch"], { input: `${wanted.join("\n")}\n`, maxBuffer: 1 << 30 });
+  const result = spawnSync("git", ["-C", repo, "cat-file", "--batch"], { input: `${wanted.join("\n")}\n`, maxBuffer: 2 ** 31 });
   if (result.status !== 0) throw new Error(`git cat-file failed: ${result.stderr}`);
   const out = result.stdout;
   let offset = 0;
@@ -125,31 +169,47 @@ function readBlobs(repo, shas) {
   return blobs;
 }
 
-/**
- * The managed files changed between `base` and `head`, with head bytes and
- * every version (as sha256, null for absent) Git recorded for each in range.
- */
-export function gitChanges(repo, base, head, roots) {
-  const diff = parseRaw(git(repo, ["diff", "--raw", "--no-renames", "--no-abbrev", "-z", base, head, "--", ...roots], { encoding: "utf8" }))
-    .filter((record) => isManagedPath(record.path, roots));
-  const unsupported = diff.filter((record) => !ZERO.test(record.newMode) && !REGULAR_MODES.has(record.newMode));
+/** Every managed regular file in the commit: path -> { bytes, sha }. */
+export function commitFiles(repo, head, roots) {
+  const entries = git(repo, ["ls-tree", "-r", "-z", "--full-tree", head, "--", ...roots], { encoding: "utf8" })
+    .split("\0").filter(Boolean).map((line) => {
+      const tab = line.indexOf("\t");
+      const [mode, type, blob] = line.slice(0, tab).split(" ");
+      return { path: line.slice(tab + 1), mode, type, blob };
+    }).filter((entry) => isManagedPath(entry.path, roots));
+  const unsupported = entries.filter((entry) => entry.type !== "blob" || !REGULAR_MODES.has(entry.mode));
   if (unsupported.length) {
-    throw new Error(`Only regular files can be published; not: ${unsupported.map((record) => `${record.path} (mode ${record.newMode})`).join(", ")}`);
+    throw new Error(`Only regular files can be published; not: ${unsupported.map((entry) => `${entry.path} (mode ${entry.mode})`).join(", ")}`);
   }
-  const changed = new Map(diff.map((record) => [record.path, { head: ZERO.test(record.newBlob) ? null : record.newBlob, versions: new Set([ZERO.test(record.oldBlob) ? null : record.oldBlob]) }]));
-  if (changed.size) {
-    const history = parseRaw(git(repo, ["log", "--raw", "--no-renames", "--no-abbrev", "-z", "--format=", `${base}..${head}`, "--", ...roots], { encoding: "utf8" }));
+  const blobs = readBlobs(repo, entries.map((entry) => entry.blob));
+  return new Map(entries.map((entry) => {
+    const bytes = blobs.get(entry.blob);
+    return [entry.path, { bytes, sha: sha256(bytes) }];
+  }));
+}
+
+/**
+ * The states Git recorded for each of `paths` in the commit's history: the
+ * sha256 of every blob it held, and null where a commit deleted it.
+ */
+export function recordedStates(repo, head, roots, paths) {
+  const wanted = new Set(paths);
+  const versions = new Map([...wanted].map((file) => [file, { blobs: new Set(), deleted: false }]));
+  if (wanted.size) {
+    const history = parseRaw(git(repo, ["log", "--raw", "--no-renames", "--no-abbrev", "-z", "--format=", head, "--", ...roots], { encoding: "utf8" }));
     for (const record of history) {
-      const entry = changed.get(record.path);
+      const entry = versions.get(record.path);
       if (!entry) continue;
-      for (const blob of [record.oldBlob, record.newBlob]) entry.versions.add(ZERO.test(blob) ? null : blob);
+      if (!ZERO.test(record.oldBlob)) entry.blobs.add(record.oldBlob);
+      if (ZERO.test(record.newBlob)) entry.deleted = true;
+      else entry.blobs.add(record.newBlob);
     }
   }
-  const blobs = readBlobs(repo, [...changed.values()].flatMap((entry) => [entry.head, ...entry.versions]).filter(Boolean));
-  return [...changed.entries()].map(([file, entry]) => ({
-    path: file,
-    head: entry.head ? blobs.get(entry.head) : null,
-    known: new Set([...entry.versions].map((blob) => (blob ? sha256(blobs.get(blob)) : null))),
+  const blobs = readBlobs(repo, [...versions.values()].flatMap((entry) => [...entry.blobs]));
+  return new Map([...versions.entries()].map(([file, entry]) => {
+    const states = new Set([...entry.blobs].map((blob) => sha256(blobs.get(blob))));
+    if (entry.deleted) states.add(null);
+    return [file, states];
   }));
 }
 

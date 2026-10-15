@@ -100,17 +100,24 @@ The CLI never downloads the corpus.
 and its Template link explicitly, then the best search matches for their
 titles.
 
-## Publishing a knowledge-repo Git range
+## Publishing a knowledge-repo commit
 
-`dataops kb publish --base REV [--head REV] [--repo DIR]` publishes the
-managed files (`content/`, `_docs/`, `workflow-templates/`,
-`document-templates/`) that changed between two commits of a knowledge
-checkout, in one request (split only when the bytes exceed the API's request
-size), with `expectedRevision` set to the revision it checked. Before
-publishing it compares every changed file's prod copy (`GET
-/knowledge/manifest`) with the copies Git recorded in the range; if prod holds
-anything else, someone edited it in the web editor or the CLI since Git saw it,
-and the command publishes nothing, names the files, and exits 5. The knowledge
+`dataops kb publish [--head REV] [--repo DIR] [--dry-run]` makes the DataOps
+knowledge store match a commit of a knowledge checkout for every managed file
+(`content/`, `_docs/`, `workflow-templates/`, `document-templates/`). It
+compares each file's prod sha256 (`GET /knowledge/manifest`) with the commit
+and, where they differ, with every version Git ever recorded for that path:
+
+- prod holds a version Git recorded (or never had the file): Git's copy is
+  published, including restores of older versions and deletions;
+- prod was edited after a version that is still Git's copy: the edit is left
+  for the daily mirror to bring into Git (reported as "prod ahead");
+- prod was edited and Git changed the file too: it is left untouched,
+  reported, and the command exits 5 after publishing everything else.
+
+Prod's side of that comparison comes from `GET /knowledge/history`. Changes
+go out in one request (split only above the API's request size), chained by
+`expectedRevision` from the revision that was checked. The knowledge
 repository's GitHub Action runs this command after its checks pass,
 authenticated by the workflow's GitHub OIDC token.
 

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { ApiError } from "../api.mjs";
 import { ConflictError, UsageError } from "../errors.mjs";
-import { apiMutation, batches, gitChanges, planPublication, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
+import { apiMutation, batches, commitFiles, planReconcile, prodLineage, recordedStates, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
 import { enc, fields, integer, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 
@@ -24,10 +24,10 @@ Usage
   dataops kb history <doc-id|path>             Published versions of it
   dataops kb write <path> --file F [--create] [--title T] [--type T]
                                                Publish new content (as the web editor does)
-  dataops kb publish --base REV [--head REV] [--repo DIR] [--dry-run]
-                                               Publish the managed files a knowledge-repo
-                                               Git range changed; refuses (exit 5) when prod
-                                               differs from every copy Git recorded
+  dataops kb publish [--head REV] [--repo DIR] [--dry-run]
+                                               Make prod match a knowledge-repo commit; files
+                                               edited in prod that Git has not seen are left
+                                               alone, and real conflicts exit 5
 
 Folders and paths may omit the leading "content/". Search runs on the server
 against an index of the current knowledge publication; nothing is downloaded.
@@ -273,34 +273,24 @@ export async function write(args, io) {
 }
 
 export async function publish(args, io) {
-  const usage = "dataops kb publish --base REV [--head REV] [--repo DIR] [--dry-run]";
-  const baseRev = optionalString(args, "base");
-  if (!baseRev) throw new UsageError(`--base is required. ${usage}`);
+  const usage = "dataops kb publish [--head REV] [--repo DIR] [--dry-run]";
+  if (args.base !== undefined) throw new UsageError(`--base is gone: publish reconciles prod with the whole commit. ${usage}`);
   const repo = optionalString(args, "repo") || ".";
-  let base;
   let head;
   try {
-    base = resolveCommit(repo, baseRev);
     head = resolveCommit(repo, optionalString(args, "head") || "HEAD");
   } catch (error) {
-    throw new UsageError(`Cannot resolve the Git range in ${repo}: ${String(error.stderr || error.message).trim()}`);
+    throw new UsageError(`Cannot resolve the commit in ${repo}: ${String(error.stderr || error.message).trim()}`);
   }
   const api = apiFor(args);
   const manifest = await api.get("/knowledge/manifest");
-  const plan = planPublication(gitChanges(repo, base, head, manifest.roots), manifest.entries);
-  const summary = (revision) => ({
-    base, head, checkedRevision: manifest.revision, revision,
-    published: plan.mutations.map(({ path, operation }) => ({ path, operation })),
-    current: plan.current,
+  const files = commitFiles(repo, head, manifest.roots);
+  const diverged = [...new Set([...files.keys(), ...Object.keys(manifest.entries)])]
+    .filter((file) => (manifest.entries[file]?.sha256 ?? null) !== (files.get(file)?.sha ?? null));
+  const recorded = recordedStates(repo, head, manifest.roots, diverged);
+  const plan = await planReconcile({
+    files, prod: manifest.entries, known: (file) => recorded.get(file), lineage: (file) => prodLineage(api, file),
   });
-  if (plan.conflicts.length) {
-    const lines = plan.conflicts.map((item) => `  ${item.path} (prod ${item.prod === "absent" ? "has no copy" : "has a copy Git never recorded"})`);
-    throw new ConflictError(
-      `Prod changed ${plan.conflicts.length} file(s) since Git last saw them; nothing was published:\n${lines.join("\n")}\n`
-        + "Bring the prod edits into Git (wait for the daily mirror, or copy them in), then push again.",
-      { ...summary(manifest.revision), conflicts: plan.conflicts },
-    );
-  }
   let revision = manifest.revision;
   if (!args.dryRun && plan.mutations.length) {
     const message = `Publish ${repositoryName(repo)} ${head}`;
@@ -308,12 +298,27 @@ export async function publish(args, io) {
       revision = (await api.post("/knowledge/publish", { expectedRevision: revision, message, mutations: batch.map(apiMutation) })).revision;
     }
   }
-  const result = { ...summary(revision), dryRun: Boolean(args.dryRun) };
-  if (args.json) return result;
-  for (const item of result.published) io.print(`${args.dryRun ? "would " : ""}${item.operation} ${item.path}`);
-  if (!result.published.length) io.print(`Nothing to publish: ${result.current.length} changed file(s) already match prod.`);
-  else if (args.dryRun) io.print(`Dry run: ${result.published.length} file(s) would be published onto revision ${manifest.revision}.`);
-  else io.print(`Published ${result.published.length} file(s) from ${head.slice(0, 12)} as revision ${revision}.`);
+  const result = {
+    head, checkedRevision: manifest.revision, revision, dryRun: Boolean(args.dryRun),
+    published: plan.mutations.map(({ path, operation }) => ({ path, operation })),
+    ahead: plan.ahead, conflicts: plan.conflicts, unchanged: plan.unchanged,
+  };
+  if (!args.json) {
+    const verb = args.dryRun ? "would " : "";
+    for (const item of result.published) io.print(`${verb}${item.operation} ${item.path}`);
+    for (const file of result.ahead) io.print(`prod ahead (left for the daily mirror) ${file}`);
+    if (args.dryRun) io.print(`Dry run: ${result.published.length} file(s) would be published onto revision ${manifest.revision}; ${result.unchanged} already match.`);
+    else if (result.published.length) io.print(`Published ${result.published.length} file(s) from ${head.slice(0, 12)} as revision ${revision}; ${result.unchanged} already matched.`);
+    else io.print(`Nothing to publish: ${result.unchanged} file(s) already match prod.`);
+  }
+  if (plan.conflicts.length) {
+    const lines = plan.conflicts.map((item) => `  ${item.path} (prod ${item.prod === "absent" ? "deleted it" : "edited it"} in a way Git has not seen, and Git's copy differs from where that edit started)`);
+    throw new ConflictError(
+      `${plan.conflicts.length} file(s) changed both in prod and in Git; they were left untouched${args.dryRun ? "" : ", everything else was published"}:\n${lines.join("\n")}\n`
+        + "Merge the prod edit into Git (copy it from the web editor or wait for the daily mirror), then push again.",
+      result,
+    );
+  }
   return result;
 }
 

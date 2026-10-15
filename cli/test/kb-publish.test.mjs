@@ -10,11 +10,12 @@ import { captureIo, fakePortal, isolateConfig } from "./helpers.mjs";
 isolateConfig();
 const realFetch = globalThis.fetch;
 const { run } = await import("../src/cli.mjs");
-const { batches, isManagedPath, planPublication, sha256 } = await import("../src/knowledgePublish.mjs");
+const { ORIGIN, batches, classify, isManagedPath, planReconcile, sha256 } = await import("../src/knowledgePublish.mjs");
 
 const ROOTS = ["content", "_docs", "workflow-templates", "document-templates"];
-const known = (...values) => new Set(values.map((value) => (value === null ? null : sha256(Buffer.from(value)))));
-const prodOf = (files) => Object.fromEntries(Object.entries(files).map(([file, body]) => [file, { sha256: sha256(Buffer.from(body)), size: body.length }]));
+const h = (value) => (value === null ? null : sha256(Buffer.from(value)));
+const states = (...values) => new Set(values.map(h));
+const prodOf = (files) => Object.fromEntries(Object.entries(files).map(([file, body]) => [file, { sha256: h(body), size: body.length }]));
 
 describe("managed path filter", () => {
   test("accepts files under the managed roots and nothing else", () => {
@@ -27,39 +28,67 @@ describe("managed path filter", () => {
   });
 });
 
-describe("publication plan", () => {
-  test("publishes what prod still has from Git, skips what already matches, refuses the rest", () => {
-    const plan = planPublication([
-      { path: "content/edit.md", head: Buffer.from("new"), known: known("old") },
-      { path: "content/create.md", head: Buffer.from("born"), known: known(null) },
-      { path: "content/delete.md", head: null, known: known("doomed") },
-      { path: "content/current.md", head: Buffer.from("same"), known: known("before") },
-      { path: "content/gone-both.md", head: null, known: known("x") },
-      { path: "content/web-edit.md", head: Buffer.from("git"), known: known("base") },
-      { path: "content/web-delete.md", head: Buffer.from("git"), known: known("base") },
-      { path: "content/web-create.md", head: Buffer.from("git"), known: known(null) },
-      { path: "content/mirrored.md", head: Buffer.from("git v3"), known: known("v1", "mirrored v2") },
-    ], prodOf({
-      "content/edit.md": "old",
-      "content/delete.md": "doomed",
-      "content/current.md": "same",
-      "content/web-edit.md": "edited on the web",
-      "content/web-create.md": "created on the web",
-      "content/mirrored.md": "mirrored v2",
-    }));
+describe("three-way classification", () => {
+  test("publishes over a Git-recorded prod state, leaves prod-ahead edits, flags both-sides changes", () => {
+    const known = states("v1", "v2");
+    assert.equal(classify([h("v1"), ORIGIN], known, h("v2")), "publish");
+    assert.equal(classify([null, ORIGIN], known, h("v2")), "conflict");
+    assert.equal(classify([ORIGIN], known, h("v2")), "publish");
+    assert.equal(classify([h("web"), h("v2"), ORIGIN], known, h("v2")), "ahead");
+    assert.equal(classify([null, h("v2"), ORIGIN], known, h("v2")), "ahead");
+    assert.equal(classify([h("web2"), h("web1"), h("v1"), ORIGIN], known, h("v2")), "conflict");
+    assert.equal(classify([h("web"), ORIGIN], states(), null), "ahead");
+    assert.equal(classify([h("web"), h("older web")], known, h("v2")), "conflict");
+  });
+
+  test("plans a reconcile over every managed path, not a diff", async () => {
+    const files = new Map(Object.entries({
+      "content/same.md": "same",
+      "content/restored.md": "good",
+      "content/new-in-git.md": "born",
+      "content/web-ahead.md": "git base",
+      "content/both.md": "git v2",
+      "content/web-deleted.md": "git copy",
+    }).map(([file, body]) => [file, { bytes: Buffer.from(body), sha: h(body) }]));
+    const prod = prodOf({
+      "content/same.md": "same",
+      "content/restored.md": "damaged",
+      "content/web-ahead.md": "web edit",
+      "content/both.md": "web edit",
+      "content/deleted-in-git.md": "old",
+      "content/web-created.md": "web only",
+    });
+    const recorded = {
+      "content/restored.md": states("good", "damaged"),
+      "content/new-in-git.md": states("born"),
+      "content/web-ahead.md": states("git base"),
+      "content/both.md": states("git v1", "git v2"),
+      "content/deleted-in-git.md": states("old", null),
+      "content/web-created.md": states(),
+      "content/web-deleted.md": states("git copy"),
+    };
+    const lineages = {
+      "content/new-in-git.md": [ORIGIN],
+      "content/web-ahead.md": [h("web edit"), h("git base"), ORIGIN],
+      "content/both.md": [h("web edit"), h("git v1"), ORIGIN],
+      "content/web-created.md": [h("web only"), ORIGIN],
+      "content/web-deleted.md": [null, h("git copy"), ORIGIN],
+    };
+    const asked = [];
+    const plan = await planReconcile({
+      files, prod, known: (file) => recorded[file],
+      lineage: async (file) => { asked.push(file); return lineages[file]; },
+    });
     assert.deepEqual(plan.mutations.map(({ path: file, operation }) => [file, operation]), [
-      ["content/create.md", "create"],
-      ["content/delete.md", "delete"],
-      ["content/edit.md", "edit"],
-      ["content/mirrored.md", "edit"],
+      ["content/deleted-in-git.md", "delete"],
+      ["content/new-in-git.md", "create"],
+      ["content/restored.md", "edit"],
     ]);
-    assert.equal(Buffer.from(plan.mutations[0].base64, "base64").toString(), "born");
-    assert.deepEqual(plan.current, ["content/current.md", "content/gone-both.md"]);
-    assert.deepEqual(plan.conflicts, [
-      { path: "content/web-create.md", prod: "differs" },
-      { path: "content/web-delete.md", prod: "absent" },
-      { path: "content/web-edit.md", prod: "differs" },
-    ]);
+    assert.equal(Buffer.from(plan.mutations[2].base64, "base64").toString(), "good");
+    assert.deepEqual(plan.ahead, ["content/web-ahead.md", "content/web-created.md", "content/web-deleted.md"]);
+    assert.deepEqual(plan.conflicts, [{ path: "content/both.md", prod: "differs" }]);
+    assert.equal(plan.unchanged, 1);
+    assert.ok(!asked.includes("content/restored.md"));
   });
 
   test("splits large publications into request-sized batches and refuses an oversized file", () => {
@@ -94,96 +123,103 @@ describe("kb publish from a Git checkout", () => {
     rmSync(repo, { recursive: true, force: true });
   });
 
-  function portal(prodFiles, revision = "rev-1") {
-    let current = revision;
-    const calls = fakePortal({
+  /** prod files plus per-path history (newest first, null = deleted). */
+  function portal(prodFiles, history = {}) {
+    let current = "rev-1";
+    return fakePortal({
       "GET /knowledge/manifest": () => ({ revision: current, roots: ROOTS, entries: prodOf(prodFiles) }),
+      "GET /knowledge/history": ({ query }) => ({
+        versions: (history[query.path] || []).map((body) => ({ sha256: h(body), deleted: body === null })),
+        cursor: null,
+      }),
       "POST /knowledge/publish": ({ body }) => {
         if (body.expectedRevision !== current) return { status: 409, body: { error: "Knowledge changed" } };
         current = `${current}+`;
         return { revision: current };
       },
     });
-    return calls;
   }
 
-  test("publishes only managed changes in the range, with exact bytes and the commit in the message", async () => {
-    write("content/a.md", "a1");
+  test("repairs files Git restored to an older version, with exact bytes and the commit in the message", async () => {
+    write("content/sop.md", "good");
     write("content/gone.md", "bye");
     write("scripts/tool.py", "v1");
-    const base = commit("base");
-    write("content/a.md", "a2\r\n");
+    commit("base");
+    write("content/sop.md", "damaged");
+    commit("Daily knowledge snapshot");
+    write("content/sop.md", "good");
     write("content/images/x.png", Buffer.from([0, 255, 10]));
     unlinkSync(path.join(repo, "content/gone.md"));
     write("scripts/tool.py", "v2");
     write("README.md", "docs");
-    const head = commit("change");
-    const calls = portal({ "content/a.md": "a1", "content/gone.md": "bye" });
+    const head = commit("restore");
+    const calls = portal({ "content/sop.md": "damaged", "content/gone.md": "bye" }, { "content/images/x.png": [] });
     const io = captureIo();
-    assert.equal(await run(["kb", "publish", "--base", base, "--repo", repo, "--json"], io), 0);
+    assert.equal(await run(["kb", "publish", "--head", head, "--repo", repo, "--json"], io), 0);
     const publishes = calls.filter((call) => call.method === "POST");
     assert.equal(publishes.length, 1);
     assert.equal(publishes[0].body.expectedRevision, "rev-1");
     assert.equal(publishes[0].body.message, `Publish knowledge ${head}`);
     assert.deepEqual(publishes[0].body.mutations.map((item) => [item.path, item.base64 && Buffer.from(item.base64, "base64").toString("hex"), item.absent]), [
-      ["content/a.md", Buffer.from("a2\r\n").toString("hex"), false],
       ["content/gone.md", undefined, undefined],
       ["content/images/x.png", "00ff0a", true],
+      ["content/sop.md", Buffer.from("good").toString("hex"), false],
     ]);
     assert.equal(io.json().revision, "rev-1+");
   });
 
-  test("refuses the whole publication and names files prod changed since Git saw them", async () => {
+  test("leaves a prod-ahead web edit alone and publishes the rest", async () => {
+    write("content/slack.md", "git");
+    write("content/a.md", "a1");
+    commit("base");
+    write("content/a.md", "a2");
+    commit("change");
+    const calls = portal({ "content/slack.md": "web edit", "content/a.md": "a1" }, { "content/slack.md": ["web edit", "git"] });
+    const io = captureIo();
+    assert.equal(await run(["kb", "publish", "--repo", repo], io), 0);
+    const [published] = calls.filter((call) => call.method === "POST");
+    assert.deepEqual(published.body.mutations.map((item) => item.path), ["content/a.md"]);
+    assert.match(io.text(), /prod ahead \(left for the daily mirror\) content\/slack\.md/);
+  });
+
+  test("publishes everything else, then fails naming files changed on both sides", async () => {
     write("content/a.md", "a1");
     write("content/b.md", "b1");
-    const base = commit("base");
+    commit("base");
     write("content/a.md", "a2");
     write("content/b.md", "b2");
     commit("change");
-    const calls = portal({ "content/a.md": "a1", "content/b.md": "edited on the web" });
+    const calls = portal({ "content/a.md": "a1", "content/b.md": "edited on the web" }, { "content/b.md": ["edited on the web", "b1"] });
     const io = captureIo();
-    assert.equal(await run(["kb", "publish", "--base", base, "--repo", repo], io), 5);
-    assert.equal(calls.filter((call) => call.method === "POST").length, 0);
+    assert.equal(await run(["kb", "publish", "--repo", repo], io), 5);
+    const [published] = calls.filter((call) => call.method === "POST");
+    assert.deepEqual(published.body.mutations.map((item) => item.path), ["content/a.md"]);
     assert.match(io.errors.join("\n"), /content\/b\.md/);
     assert.doesNotMatch(io.errors.join("\n"), /content\/a\.md/);
   });
 
-  test("a wider base still accepts versions the mirror committed inside the range", async () => {
-    write("content/a.md", "git v1");
-    const lastPublished = commit("published");
-    write("content/a.md", "web v2");
-    commit("Daily knowledge snapshot");
-    write("content/a.md", "git v3");
-    write("content/b.md", "skipped push");
-    commit("change");
-    const calls = portal({ "content/a.md": "web v2" });
-    assert.equal(await run(["kb", "publish", "--base", lastPublished, "--repo", repo], captureIo()), 0);
-    const [published] = calls.filter((call) => call.method === "POST");
-    assert.deepEqual(published.body.mutations.map((item) => item.path), ["content/a.md", "content/b.md"]);
-  });
-
-  test("dry run and an already-published range send nothing", async () => {
+  test("dry run and an already-matching prod send nothing", async () => {
     write("content/a.md", "a1");
-    const base = commit("base");
+    commit("base");
     write("content/a.md", "a2");
     commit("change");
     let calls = portal({ "content/a.md": "a1" });
     let io = captureIo();
-    assert.equal(await run(["kb", "publish", "--base", base, "--repo", repo, "--dry-run"], io), 0);
+    assert.equal(await run(["kb", "publish", "--repo", repo, "--dry-run"], io), 0);
     assert.match(io.text(), /would edit content\/a\.md/);
     assert.equal(calls.filter((call) => call.method === "POST").length, 0);
     calls = portal({ "content/a.md": "a2" });
     io = captureIo();
-    assert.equal(await run(["kb", "publish", "--base", base, "--repo", repo], io), 0);
+    assert.equal(await run(["kb", "publish", "--repo", repo], io), 0);
     assert.match(io.text(), /Nothing to publish/);
     assert.equal(calls.filter((call) => call.method === "POST").length, 0);
   });
 
-  test("requires a resolvable base", async () => {
+  test("rejects an unresolvable commit and the retired --base", async () => {
     write("content/a.md", "a1");
     commit("base");
     portal({});
-    assert.equal(await run(["kb", "publish", "--repo", repo], captureIo()), 2);
-    assert.equal(await run(["kb", "publish", "--base", "nope", "--repo", repo], captureIo()), 2);
+    assert.equal(await run(["kb", "publish", "--head", "nope", "--repo", repo], captureIo()), 2);
+    assert.equal(await run(["kb", "publish", "--base", "HEAD", "--repo", repo], captureIo()), 2);
   });
 });
