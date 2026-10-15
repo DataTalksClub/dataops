@@ -190,7 +190,7 @@ function createCalendarDom() {
   view.value = "month";
   const type = surface.setQuery("[data-type]", new TestElement("select"));
   type.value = "";
-  const layers = ["activities", "public", "school", "overlay", "alexey", "available"].map((name) => {
+  const layers = ["activities", "public", "school", "overlay", "available"].map((name) => {
     const layer = new TestElement("input");
     layer.dataset.layer = name;
     layer.checked = true;
@@ -473,8 +473,9 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /class="calendar-day[^"]*has-public-holiday"[^>]*aria-label="Thursday, August 13, 2026, public holiday"/);
     assert.equal((dom.grid.innerHTML.match(/has-public-holiday/g) || []).length, 1);
     assert.match(dom.grid.innerHTML, /Newsletter 42/);
-    assert.match(dom.grid.innerHTML, /Tejas at DataTalks\.Club Podcast/);
-    assert.match(dom.grid.innerHTML, /is-alexey/);
+    // Alexey's personal events only feed slot availability; they are never items.
+    assert.doesNotMatch(dom.grid.innerHTML, /Tejas at DataTalks\.Club Podcast/);
+    assert.doesNotMatch(dom.grid.innerHTML, /is-alexey/);
     assert.match(dom.alerts.innerHTML, /Activity overlaps a public holiday/);
     assert.match(dom.grid.innerHTML, /calendar-week-heading/);
     assert.match(dom.grid.innerHTML, /calendar-week-number/);
@@ -483,19 +484,6 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /calendar-week-number is-current-week/);
     assert.match(dom.grid.innerHTML, /calendar-day[^"]*is-current-week/);
     expectCalendarRange(harness.requests[0], "2026-08-03", "2026-09-06");
-
-    // Toggle off Alexey's calendar layer
-    dom.surface.querySelector('[data-layer="alexey"]').checked = false;
-    dom.surface.querySelector('[data-layer="alexey"]').onchange();
-    await nextTicks();
-    assert.match(dom.grid.innerHTML, /Newsletter 42/);
-    assert.doesNotMatch(dom.grid.innerHTML, /Tejas at DataTalks\.Club Podcast/);
-
-    // Toggle back on
-    dom.surface.querySelector('[data-layer="alexey"]').checked = true;
-    dom.surface.querySelector('[data-layer="alexey"]').onchange();
-    await nextTicks();
-    assert.match(dom.grid.innerHTML, /Tejas at DataTalks\.Club Podcast/);
   });
 
   test("renders owned Calendar planning data while an external overlay is pending", async () => {
@@ -553,16 +541,37 @@ describe("Planning surface production behavior", () => {
     dom.surface.querySelector('[data-layer="available"]').onchange();
     assert.doesNotMatch(dom.grid.innerHTML, /12:30 Available|Issue 99/);
     assert.match(dom.grid.innerHTML, /Booked issue/);
-    // Alexey's calendar chip no longer controls the open slots.
-    dom.surface.querySelector('[data-layer="available"]').checked = true;
-    dom.surface.querySelector('[data-layer="alexey"]').checked = false;
-    dom.surface.querySelector('[data-layer="alexey"]').onchange();
-    assert.match(dom.grid.innerHTML, /12:30 Available/);
   });
 
-  test("marks Alexey's calendar as not connected instead of showing an empty layer", async () => {
+  test("never renders personal calendar events, even vacations and flights", async () => {
     const dom = createCalendarDom();
-    const chip = dom.surface.setQuery('[data-layer-chip="alexey"]', new TestElement("label"));
+    const harness = createPlanningHarness({
+      calendar: dom,
+      request: async (url) => String(url).includes("/overlays")
+        ? {
+          items: [
+            { provider: "alexey-calendar", id: "alexey-calendar:vacation", startDate: "2026-08-10", endDate: "2026-08-11",
+              label: "Vacation", category: "Alexey", slot: "all-day", isAvailableSlot: false },
+            { provider: "alexey-calendar", id: "alexey-calendar:flight", startDate: "2026-08-13", endDate: "2026-08-13",
+              label: "Flight to Lisbon", category: "Alexey", slot: "all-day", isAvailableSlot: false },
+            { provider: "alexey-calendar", id: "alexey-slot:2026-08-12:midday", startDate: "2026-08-12", endDate: "2026-08-12",
+              label: "12:30 Available", category: "Available slot", isAvailableSlot: true },
+          ],
+          sources: { "alexey-calendar": { state: "connected" } },
+        }
+        : { items: [], holidays: [], alerts: [] },
+    });
+    await harness.surface.renderCalendarSurface();
+    await nextTicks();
+    const html = dom.grid.innerHTML;
+    assert.doesNotMatch(html, /Vacation|Flight to Lisbon/);
+    assert.match(html, /data-day="2026-08-12"[\s\S]*?12:30 Available/);
+    assert.equal((html.match(/class="calendar-overlay /g) || []).length, 1);
+  });
+
+  test("marks the open-slot source as not connected instead of showing an empty layer", async () => {
+    const dom = createCalendarDom();
+    const chip = dom.surface.setQuery('[data-layer-chip="available"]', new TestElement("label"));
     const chipStatus = chip.setQuery("[data-layer-chip-status]", new TestElement("span"));
     const reason = "No calendar broker credential is available in this environment.";
     const harness = createPlanningHarness({
@@ -574,13 +583,13 @@ describe("Planning surface production behavior", () => {
     await harness.surface.renderCalendarSurface();
     await nextTicks();
     assert.equal(chip.classList.contains("is-disconnected"), true);
-    assert.equal(chip.title, `Alexey's calendar is not connected: ${reason}`);
+    assert.equal(chip.title, `Alexey's calendar is not connected, so open event slots are unknown: ${reason}`);
     assert.equal(chipStatus.textContent, ` (not connected: ${reason})`);
     assert.equal(dom.status.textContent, `Alexey's calendar is not connected: ${reason}`);
 
     // Hiding the layer drops the notice; the chip keeps its disconnected state.
-    dom.surface.querySelector('[data-layer="alexey"]').checked = false;
-    dom.surface.querySelector('[data-layer="alexey"]').onchange();
+    dom.surface.querySelector('[data-layer="available"]').checked = false;
+    dom.surface.querySelector('[data-layer="available"]').onchange();
     assert.equal(dom.status.textContent, "");
     assert.equal(chip.classList.contains("is-disconnected"), true);
   });
@@ -864,7 +873,6 @@ describe("Planning surface production behavior", () => {
           return {
             settings: {
               connectionId: "google-calendar",
-              showAvailableSlots: true,
               filterNonSlotHours: true,
               filterDtcPlaceholders: true,
               filterTransparent: true,
@@ -901,7 +909,6 @@ describe("Planning surface production behavior", () => {
 
     assert.equal(dom.settingsDialog.open, true);
     assert.equal(dom.settingsForm.elements.connectionId.value, "google-calendar");
-    assert.equal(dom.settingsForm.elements.showAvailableSlots.checked, true);
     assert.equal(dom.settingsForm.elements.filterNonSlotHours.checked, true);
     assert.equal(dom.settingsForm.elements.filterDtcPlaceholders.checked, true);
     assert.equal(dom.settingsForm.elements.filterTransparent.checked, true);
@@ -911,7 +918,6 @@ describe("Planning surface production behavior", () => {
 
     // Modify settings and submit
     dom.settingsForm.elements.connectionId.value = "work-calendar";
-    dom.settingsForm.elements.showAvailableSlots.checked = false;
     dom.settingsForm.elements.filterNonSlotHours.checked = false;
     dom.settingsForm.elements.filterDtcPlaceholders.checked = false;
     dom.settingsForm.elements.filterTransparent.checked = false;
@@ -927,7 +933,7 @@ describe("Planning surface production behavior", () => {
     assert.ok(putCall);
     const sent = JSON.parse(putCall.body);
     assert.equal(sent.connectionId, "work-calendar");
-    assert.equal(sent.showAvailableSlots, false);
+    assert.equal("showAvailableSlots" in sent, false);
     assert.equal(sent.filterNonSlotHours, false);
     assert.equal(sent.filterDtcPlaceholders, false);
     assert.equal(sent.filterTransparent, false);

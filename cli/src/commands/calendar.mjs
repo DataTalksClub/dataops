@@ -14,7 +14,7 @@ Usage
   dataops calendar delete <id> [--version N]
   dataops calendar day <date>              Operational slot availability and the full day schedule
   dataops calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all]
-  dataops calendar settings [--connection ID] [--show-available-slots true|false] [--filter-busy true|false] ...
+  dataops calendar settings [--connection ID] [--filter-busy true|false] ...
   dataops calendar dismiss-alert <fingerprint>
   dataops calendar sync-holidays
 `;
@@ -487,7 +487,6 @@ export async function settings(args, io) {
   const updateFields = [
     "connection",
     "connectionId",
-    "showAvailableSlots",
     "filterNonSlotHours",
     "filterDtcPlaceholders",
     "filterTransparent",
@@ -507,9 +506,6 @@ export async function settings(args, io) {
 
     if (args.connection !== undefined || args.connectionId !== undefined) {
       payload.connectionId = String(args.connection || args.connectionId);
-    }
-    if (args.showAvailableSlots !== undefined) {
-      payload.showAvailableSlots = toBoolean(args.showAvailableSlots);
     }
     if (args.filterNonSlotHours !== undefined) {
       payload.filterNonSlotHours = toBoolean(args.filterNonSlotHours);
@@ -558,7 +554,6 @@ export async function settings(args, io) {
 
   io.print("Calendar Overlay Settings:");
   io.print(`  Connection ID:               ${s.connectionId || "default"}`);
-  io.print(`  Show Available Slots:        ${Boolean(s.showAvailableSlots)}`);
   io.print(`  Filter Non-Slot Hours:       ${s.filterNonSlotHours !== false}`);
   io.print(`  Filter DTC Placeholders:     ${s.filterDtcPlaceholders !== false}`);
   io.print(`  Filter Transparent Events:   ${s.filterTransparent !== false}`);

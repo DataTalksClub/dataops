@@ -414,9 +414,9 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
         });
       }
 
-      // If includeAll (day schedule detail view) or showAvailableSlots is explicitly disabled,
-      // return the individual calendar events.
-      if (includeAll || effectiveSettings.showAvailableSlots === false) {
+      // The day schedule (includeAll) lists the individual events so a planner
+      // can see why a slot is taken. The calendar grid never shows them.
+      if (includeAll) {
         for (const item of validEvents) {
           let label: string;
           if (item.isAllDay) {
@@ -446,31 +446,14 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
         return connected(result);
       }
 
-      // Available slots mode (month calendar view):
-      // 1. Project all-day blockers (vacations, conferences, flights, etc.)
+      // Calendar grid: Alexey's personal events (vacations, flights, meetings)
+      // are never projected as items. They only decide which slots are open.
+      // All-day blockers (vacations, conferences, flights, etc.) close the whole day.
       const allDayBlockers = validEvents.filter(
         (e) => e.isAllDay || e.slot === 'all-day' || (/vacation|holiday|flight|conference|trip/i.test(e.summary) && e.isSlotEvent),
       );
 
-      for (const item of allDayBlockers) {
-        result.push({
-          provider: 'alexey-calendar',
-          id: `alexey-calendar:${item.event.id}`,
-          startDate: item.startDate,
-          endDate: item.endDate,
-          label: item.summary,
-          category: 'Alexey',
-          href: item.event.htmlLink || undefined,
-          status: item.event.status || 'confirmed',
-          startsAt: item.event.start?.dateTime || undefined,
-          endsAt: item.event.end?.dateTime || undefined,
-          slot: 'all-day',
-          isSlotEvent: true,
-          isAvailableSlot: false,
-        });
-      }
-
-      // 2. Project available slots across all weekdays in the range
+      // Project available slots across all weekdays in the range
       const timedEvents = validEvents.filter((e) => !allDayBlockers.includes(e));
       const dates = eachDayOfInterval(from, to);
 

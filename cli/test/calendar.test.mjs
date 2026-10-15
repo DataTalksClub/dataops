@@ -437,7 +437,6 @@ describe("Calendar CLI commands", () => {
         JSON.stringify({
           settings: {
             connectionId: "google-calendar",
-            showAvailableSlots: true,
             filterNonSlotHours: true,
             filterDtcPlaceholders: true,
             filterTransparent: true,

@@ -149,20 +149,15 @@ export function createPlanningSurface(context) {
               <span class="chip-dot"></span>
               <span>Newsletter dates</span>
             </label>
-            <label class="calendar-layer-chip is-alexey" data-layer-chip="alexey">
-              <input data-layer="alexey" type="checkbox" checked>
+            <label class="calendar-layer-chip is-available" data-layer-chip="available" title="Open event slots and free newsletter slots">
+              <input data-layer="available" type="checkbox" checked>
               <span class="chip-dot"></span>
-              <span>Alexey's calendar</span>
+              <span>Available slots</span>
               <svg class="chip-disconnected-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M9 17H7A5 5 0 0 1 7 7h1M15 7h2a5 5 0 0 1 4 8M8 12h4M3 3l18 18"></path>
               </svg>
               <span class="dk-visually-hidden" data-layer-chip-status></span>
-            </label>
-            <label class="calendar-layer-chip is-available" title="Open event slots and free newsletter slots">
-              <input data-layer="available" type="checkbox" checked>
-              <span class="chip-dot"></span>
-              <span>Available slots</span>
             </label>
             <button type="button" class="calendar-layer-settings-btn" data-calendar-settings title="Configure overlay filters & connection">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -241,10 +236,6 @@ export function createPlanningSurface(context) {
               <strong>Operational event slot focus</strong>
               <span class="calendar-settings-hint">Focus strictly on operational availability slots and all-day blockers per SOP:</span>
               <div class="calendar-settings-checkboxes">
-                <label class="calendar-settings-checkbox">
-                  <input type="checkbox" name="showAvailableSlots">
-                  <span>Show available slots <small>(Project free 12:30 lunch & 17:00 evening slots instead of busy meetings)</small></span>
-                </label>
                 <label class="calendar-settings-checkbox">
                   <input type="checkbox" name="filterNonSlotHours">
                   <span>Focus on operational event slots <small>(Lunch 11:30–14:00 & Evening 16:30–18:30 + all-day blockers)</small></span>
@@ -401,7 +392,6 @@ export function createPlanningSurface(context) {
         showPublic = surface.querySelector('[data-layer="public"]').checked,
         showSchool = surface.querySelector('[data-layer="school"]').checked,
         showOverlay = surface.querySelector('[data-layer="overlay"]')?.checked ?? true,
-        showAlexey = surface.querySelector('[data-layer="alexey"]')?.checked ?? true,
         showAvailable = surface.querySelector('[data-layer="available"]')?.checked ?? true,
         type = surface.querySelector("[data-type]").value,
         visibleItems = showActivities ? items.filter((item) => !type || item.activityType === type) : [],
@@ -427,7 +417,9 @@ export function createPlanningSurface(context) {
         overlaysOn = (date) => overlays.filter((overlay) => {
           if (overlay.startDate > date || overlay.endDate < date) return false;
           if (isAvailableOverlay(overlay)) return showAvailable;
-          if (overlay.provider === "alexey-calendar") return showAlexey;
+          // Alexey's own events (vacations, flights, meetings) are never items on
+          // the calendar: they only decide which event slots are open.
+          if (overlay.provider === "alexey-calendar") return false;
           return showOverlay;
         }),
         weekendNote = (fridayValue) => {
@@ -507,7 +499,7 @@ export function createPlanningSurface(context) {
             const isAvailable = isAvailableOverlay(overlay);
             const category = isAvailable
               ? (isAlexey ? "Open event slot" : "Free newsletter slot")
-              : overlay.category || (isAlexey ? "Alexey" : "Newsletter");
+              : overlay.category || "Newsletter";
             const hrefAttr = overlay.href ? `href="${escapeHtml(overlay.href)}"` : "";
             const tag = overlay.href ? "a" : (isAvailable ? "button type=\"button\"" : "span");
             const conflict = isAvailable && blockingHoliday;
@@ -584,8 +576,8 @@ export function createPlanningSurface(context) {
     }
 
     let planningStatus = "";
-    // An empty overlay layer only means "nothing scheduled" when its source is
-    // connected; otherwise say why it is blank on the chip and in the status.
+    // Open event slots come from Alexey's calendar. No slots only means "fully
+    // booked" when that source is connected; otherwise say why on the chip.
     function alexeyConnectionProblem() {
       if (overlaysFailed) return "Calendar overlays failed to load.";
       const connection = overlaySources["alexey-calendar"];
@@ -595,17 +587,19 @@ export function createPlanningSurface(context) {
 
     function renderOverlayStatus() {
       const problem = alexeyConnectionProblem(),
-        chip = surface.querySelector('[data-layer-chip="alexey"]'),
-        showAlexey = surface.querySelector('[data-layer="alexey"]')?.checked ?? true;
+        chip = surface.querySelector('[data-layer-chip="available"]'),
+        showAvailable = surface.querySelector('[data-layer="available"]')?.checked ?? true;
       if (chip) {
         chip.classList.toggle("is-disconnected", Boolean(problem));
-        chip.title = problem ? `Alexey's calendar is not connected: ${problem}` : "Alexey's calendar";
+        chip.title = problem
+          ? `Alexey's calendar is not connected, so open event slots are unknown: ${problem}`
+          : "Open event slots and free newsletter slots";
         const chipStatus = chip.querySelector("[data-layer-chip-status]");
         if (chipStatus) chipStatus.textContent = problem ? ` (not connected: ${problem})` : "";
       }
       const overlayMessage = overlaysFailed
         ? "Calendar overlays are temporarily unavailable. "
-        : problem && showAlexey
+        : problem && showAvailable
           ? `Alexey's calendar is not connected: ${problem} `
           : "";
       status.textContent = `${planningStatus}${overlayMessage}`.trimEnd();

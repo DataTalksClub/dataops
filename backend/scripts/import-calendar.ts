@@ -12,6 +12,17 @@ type ImportItem = {
   sourceKey: string;
 };
 const ALLOWED_SHEETS = ["Time table", "Extra podcast slots"] as const;
+/**
+ * The schedule sheet sometimes carries holiday reminders ("School Autumn
+ * holidays (October 19 – Oct31)") in an activity column. They are not
+ * activities: holidays come from the official holiday layers, so the importer
+ * must not turn such a note into a webinar or podcast.
+ */
+export function isHolidayNotice(title: string) {
+  return /ferien|feiertag/i.test(title)
+    || (/\b(holidays?|vacation|break)\b/i.test(title)
+      && /\b(school|public|bank|autumn|fall|winter|spring|summer|easter|christmas)\b/i.test(title));
+}
 const TRUSTED_DATE_ADAPTER =
   "schedule-v2:1900-dates:Time table:K,N,Q,U,V:weekly-shared-formulas";
 const iso = (value: any) => {
@@ -234,6 +245,7 @@ export async function inspectCalendarImport(
       return reject("not-current-or-future", coordinate);
     if (!title || title.length > 200)
       return reject("missing-or-invalid-title", coordinate);
+    if (isHolidayNotice(title)) return reject("holiday-notice", coordinate);
     if (!end) end = start;
     if (end < start) return reject("invalid-range", coordinate);
     const sourceKey = createHash("sha256")

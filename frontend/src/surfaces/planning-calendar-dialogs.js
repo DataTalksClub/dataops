@@ -315,9 +315,6 @@ export function setupCalendarSettingsDialog(options) {
         if (settingsForm.elements.connectionId) {
           settingsForm.elements.connectionId.value = s.connectionId || "google-calendar";
         }
-        if (settingsForm.elements.showAvailableSlots) {
-          settingsForm.elements.showAvailableSlots.checked = s.showAvailableSlots !== false;
-        }
         if (settingsForm.elements.filterNonSlotHours) {
           settingsForm.elements.filterNonSlotHours.checked = s.filterNonSlotHours !== false;
         }
@@ -373,7 +370,6 @@ export function setupCalendarSettingsDialog(options) {
         .filter(Boolean);
       const body = {
         connectionId: settingsForm.elements.connectionId?.value?.trim() || "google-calendar",
-        showAvailableSlots: Boolean(settingsForm.elements.showAvailableSlots?.checked),
         filterNonSlotHours: Boolean(settingsForm.elements.filterNonSlotHours?.checked),
         filterDtcPlaceholders: Boolean(settingsForm.elements.filterDtcPlaceholders?.checked),
         filterTransparent: Boolean(settingsForm.elements.filterTransparent?.checked),

@@ -4,9 +4,13 @@ The authenticated operations calendar stores non-newsletter activities in the de
 
 Holiday source facts are shipped with the application and refreshed through authenticated `POST /api/calendar-items/holidays/sync`; requests never scrape upstream services. A complete generation is written under an immutable generation key before the current pointer is published, so malformed or interrupted refreshes retain the prior last-known-good generation. The sources are the [Berlin Public Holiday Act](https://gesetze.berlin.de/bsbe/document/jlr-FeiertGBErahmen) and the [official Berlin school-holiday order](https://www.berlin.de/sen/bjf/service/kalender/ferien/termine/). Range responses expose generation, freshness, stale, and out-of-horizon metadata.
 
-The calendar grid shows Monday to Friday only, in both the month and week views and on mobile. Weekends are excluded on purpose, not by accident. Weekend activities and overlay events are not dropped: they collapse into a small "+ weekend" note on the preceding Friday, which opens that weekend day's schedule. A month that starts on a Saturday or Sunday begins at its first workday.
+The calendar grid shows Monday to Friday only, in both the month and week views and on mobile. Weekends are excluded on purpose, not by accident. Weekend activities and newsletter dates are not dropped: they collapse into a small "+ weekend" note on the preceding Friday, which opens that weekend day's schedule. A month that starts on a Saturday or Sunday begins at its first workday.
 
 The read-only `CalendarOverlayProvider` in `backend/src/calendar/overlays.ts` lets another feature project display-only records. Providers do not gain calendar CRUD access and their records are never persisted in the calendar table.
+
+Alexey's Google Calendar overlay (`backend/src/calendar/alexeyCalendarOverlay.ts`) is a free/busy source, not a layer of events. On the calendar grid it projects only open event slots ("12:30 Available", "17:00 Available") on weekdays. Personal events such as vacations, flights and meetings never appear as calendar items: a timed event that overlaps a slot window closes that slot, and an all-day event (vacation, conference, flight) closes every slot on its days, so the day simply shows no open slot. Only the day schedule dialog (`includeAll`, or a single-day range) lists the individual events, so a planner can see why a slot is taken. When the source is not connected, the Available slots chip says so instead of implying the days are fully booked.
+
+The workbook importer skips holiday reminders typed into activity columns (for example "School Autumn holidays (…)") with the reason `holiday-notice`. Holidays come from the holiday layers, never from activities.
 
 ## Private workbook import
 

@@ -336,9 +336,9 @@ describe('Alexey calendar overlay and filtering', () => {
       setAlexeyCalendarProviderClientsForTests({ fetch: mockFetch });
       const provider = alexeyCalendarOverlay({
         brokerCredential: 'test-token',
+        includeAll: true,
         settings: {
           connectionId: 'work-calendar',
-          showAvailableSlots: false,
           filterLunch: false, // Lunch should now be kept!
           filterRoutines: true,
           filterFitness: true,
@@ -398,7 +398,7 @@ describe('Alexey calendar overlay and filtering', () => {
       assert.deepEqual(connection, { state: 'unavailable', reason: 'The calendar broker refused the token request (HTTP 401).' });
     });
 
-    it('fetches Google access token via Dapier and projects filtered raw events when showAvailableSlots is false', async () => {
+    it('fetches Google access token via Dapier and lists filtered raw events for the day schedule', async () => {
       const calls: { url: string; headers: any }[] = [];
       const mockFetch: typeof fetch = async (input, init = {}) => {
         const url = String(input);
@@ -477,8 +477,8 @@ describe('Alexey calendar overlay and filtering', () => {
         brokerCredential: 'dap_synthetic_token',
         agent: 'personal-scheduler',
         connectionId: 'google-calendar',
+        includeAll: true,
         settings: {
-          showAvailableSlots: false,
           connectionId: 'google-calendar',
           filterLunch: true,
           filterRoutines: true,
@@ -520,7 +520,7 @@ describe('Alexey calendar overlay and filtering', () => {
       assert.equal(items[2].isSlotEvent, true);
     });
 
-    it('projects available event slots and preserves all-day blockers by default', async () => {
+    it('projects only available event slots; personal events and blockers are never items', async () => {
       const mockFetch: typeof fetch = async (input) => {
         const url = String(input);
         if (url.endsWith('/api/agent/token')) {
@@ -558,6 +558,14 @@ describe('Alexey calendar overlay and filtering', () => {
                   end: { dateTime: '2026-10-13T18:00:00+02:00' },
                 },
                 // Oct 14 (Wednesday): completely free
+                // Oct 14 (Wednesday): a flight overlapping the evening window
+                {
+                  id: 'evt-flight',
+                  summary: 'Flight to Berlin',
+                  status: 'confirmed',
+                  start: { dateTime: '2026-10-14T19:00:00+02:00' },
+                  end: { dateTime: '2026-10-14T21:00:00+02:00' },
+                },
                 // Oct 15–16 (Thu–Fri): all-day vacation blocker
                 {
                   id: 'evt-vacation',
@@ -585,13 +593,11 @@ describe('Alexey calendar overlay and filtering', () => {
       const { items, connection } = await provider.project('2026-10-12', '2026-10-18');
       assert.deepEqual(connection, { state: 'connected' });
 
-      // 1. All-day blocker is projected:
-      const vacation = items.find((i) => i.id === 'alexey-calendar:evt-vacation');
-      assert.ok(vacation, 'Vacation blocker should be projected');
-      assert.equal(vacation.startDate, '2026-10-15');
-      assert.equal(vacation.endDate, '2026-10-16');
-      assert.equal(vacation.label, 'Autumn Vacation');
-      assert.equal(vacation.slot, 'all-day');
+      // 1. Personal events (vacation, flight, meetings) are never projected as
+      //    calendar items: every item is an open slot.
+      assert.ok(items.length > 0);
+      assert.ok(items.every((i) => i.isAvailableSlot === true && i.id.startsWith('alexey-slot:')), JSON.stringify(items));
+      assert.equal(items.some((i) => /Vacation|Flight|Partner sync|webinar recording/.test(i.label)), false);
 
       // 2. Monday Oct 12: midday has partner sync (busy) -> evening is free -> 17:00 Available projected
       const monMidday = items.find((i) => i.id === 'alexey-slot:2026-10-12:midday');
@@ -667,12 +673,12 @@ describe('Alexey calendar overlay and filtering', () => {
 
       setAlexeyCalendarProviderClientsForTests({ fetch: mockFetch });
 
-      // Without includeAll and showAvailableSlots: false: morning meeting is filtered out
+      // Without includeAll (the calendar grid): only open slots, never the events.
+      // The 12:30 podcast takes the midday slot; the Tuesday evening slot stays open.
       const defaultProvider = alexeyCalendarOverlay({
         brokerCredential: 'token',
         includeAll: false,
         settings: {
-          showAvailableSlots: false,
           connectionId: 'google-calendar',
           filterLunch: true,
           filterRoutines: true,
@@ -685,10 +691,7 @@ describe('Alexey calendar overlay and filtering', () => {
         },
       });
       const { items: defaultItems } = await defaultProvider.project('2026-10-13', '2026-10-13');
-      assert.equal(defaultItems.length, 1);
-      assert.equal(defaultItems[0].id, 'alexey-calendar:evt-midday');
-      assert.equal(defaultItems[0].slot, 'midday');
-      assert.equal(defaultItems[0].isSlotEvent, true);
+      assert.deepEqual(defaultItems.map((item) => item.id), ['alexey-slot:2026-10-13:evening']);
 
       // With includeAll: morning meeting is kept and tagged with slot: outside
       const allProvider = alexeyCalendarOverlay({

@@ -327,8 +327,9 @@ test("calendar grid is ready before the external overlay response", async ({ pag
   await page.route("**/api/calendar-items**", async (route) => {
     if (new URL(route.request().url()).pathname.endsWith("/overlays")) {
       await overlayReady;
-      return route.fulfill({ json: { items: [{ id: "late-overlay", provider: "alexey-calendar",
-        startDate: "2026-06-30", endDate: "2026-06-30", category: "Alexey", label: "12:00 Late external event" }] } });
+      return route.fulfill({ json: { items: [{ id: "alexey-slot:2026-06-30:midday", provider: "alexey-calendar",
+        startDate: "2026-06-30", endDate: "2026-06-30", category: "Available slot", label: "12:30 Available",
+        isAvailableSlot: true }] } });
     }
     return route.fulfill({ json: payload });
   });
@@ -344,7 +345,7 @@ test("calendar grid is ready before the external overlay response", async ({ pag
   } finally {
     releaseOverlay();
   }
-  await expect(surface.locator(".calendar-overlay").first()).toContainText("12:00 Late external event");
+  await expect(surface.locator(".calendar-overlay").first()).toContainText("12:30 Available");
   await expect(surface.locator("[role='status']")).toHaveText("");
 });
 

@@ -47,7 +47,6 @@ export async function isCalendarAlertDismissed(client:DynamoDBDocumentClient,fin
 
 export interface CalendarOverlaySettings {
   connectionId: string;
-  showAvailableSlots?: boolean;
   filterLunch: boolean;
   filterRoutines: boolean;
   filterFitness: boolean;
@@ -63,7 +62,6 @@ export interface CalendarOverlaySettings {
 
 export const DEFAULT_CALENDAR_OVERLAY_SETTINGS: CalendarOverlaySettings = {
   connectionId: 'google-calendar',
-  showAvailableSlots: true,
   filterLunch: true,
   filterRoutines: true,
   filterFitness: true,
@@ -88,7 +86,6 @@ export async function getCalendarOverlaySettings(client: DynamoDBDocumentClient)
   const { PK, SK, ...data } = result.Item;
   return {
     connectionId: typeof data.connectionId === 'string' && data.connectionId ? data.connectionId : DEFAULT_CALENDAR_OVERLAY_SETTINGS.connectionId,
-    showAvailableSlots: typeof data.showAvailableSlots === 'boolean' ? data.showAvailableSlots : DEFAULT_CALENDAR_OVERLAY_SETTINGS.showAvailableSlots,
     filterLunch: typeof data.filterLunch === 'boolean' ? data.filterLunch : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterLunch,
     filterRoutines: typeof data.filterRoutines === 'boolean' ? data.filterRoutines : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterRoutines,
     filterFitness: typeof data.filterFitness === 'boolean' ? data.filterFitness : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterFitness,
@@ -111,7 +108,6 @@ export async function saveCalendarOverlaySettings(
   const current = await getCalendarOverlaySettings(client);
   const updated: CalendarOverlaySettings = {
     connectionId: typeof input.connectionId === 'string' && input.connectionId.trim() ? input.connectionId.trim().slice(0, 128) : current.connectionId,
-    showAvailableSlots: typeof input.showAvailableSlots === 'boolean' ? input.showAvailableSlots : current.showAvailableSlots !== false,
     filterLunch: typeof input.filterLunch === 'boolean' ? input.filterLunch : current.filterLunch,
     filterRoutines: typeof input.filterRoutines === 'boolean' ? input.filterRoutines : current.filterRoutines,
     filterFitness: typeof input.filterFitness === 'boolean' ? input.filterFitness : current.filterFitness,
