@@ -741,7 +741,7 @@ describe("Finance surface boundary", () => {
 
     await finance.renderSponsorCrmSurface();
     const companyDetail = document.surface.querySelector("[data-crm-detail]").innerHTML;
-    assert.match(companyDetail, /class="booking-kind">Agreed<\/p>/);
+    assert.doesNotMatch(companyDetail, /class="booking-kind"/);
     assert.match(companyDetail, /data-status="agreed">\s*Agreed/);
     assert.match(companyDetail, /Incoming/);
     assert.match(companyDetail, /Outgoing/);

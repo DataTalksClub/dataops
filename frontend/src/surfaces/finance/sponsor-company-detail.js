@@ -152,9 +152,6 @@ export function createSponsorCompanyDetail({
           <strong>No filed mail yet</strong>
           <p>Threads linked to this company will appear here.</p>
         </li>`;
-    const kindLabel = humanizeOptionLabel(
-      deal ? deal.status : organization.relationship || "company",
-    );
     const domainChip = organization.domain
       ? html`<span class="status-label" data-status="domain">${escapeHtml(organization.domain)}</span>`
       : "";
@@ -170,7 +167,6 @@ export function createSponsorCompanyDetail({
           ${SPLIT_BACK_ICON}Sponsors
         </button>
         <div class="booking-detail-title">
-          <p class="booking-kind">${escapeHtml(kindLabel)}</p>
           <h2 class="dk-split__title" tabindex="-1">${escapeHtml(organization.displayName || "Unknown sponsor")}</h2>
           <p>${domainChip}${dealChip}</p>
         </div>

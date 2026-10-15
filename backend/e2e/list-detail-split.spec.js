@@ -102,6 +102,10 @@ for (const view of VIEWS) {
     }
     expect(report.mainAfter).toBe(0);
 
+    // Choosing another record resets the detail even after the reader scrolled.
+    await page.locator('.dk-split__list .dk-split__item').nth(1).click();
+    await expect.poll(() => page.locator('.dk-split__detail .dk-split__scroll').evaluate(node => node.scrollTop)).toBe(0);
+
     // The selected row keeps the accent-soft fill and a neutral divider.
     const selected = await page.locator('.dk-split__item[aria-current="true"]').evaluate((row) => {
       const probe = document.createElement('i');
@@ -158,3 +162,29 @@ test('/templates: list and preview share the split and the page stays put', asyn
   await expect(page.locator('.dk-split__list')).toBeVisible();
   await expect(page.locator('.runtime-template-row').first()).toBeFocused();
 });
+
+for (const theme of ['light', 'dark']) for (const viewport of [DESKTOP, MOBILE]) {
+  test(`Sponsors section jumps clear the sticky nav in ${theme} at ${viewport.width}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await setupPageWithAuth(page);
+    await page.addInitScript(t => localStorage.setItem('dakit-theme', t), theme);
+    await page.goto(`${server.baseURL}/sponsors`);
+    await page.locator('.crm-master .dk-split__item').first().click();
+    const nav = page.locator('.booking-section-nav');
+    await expect(nav).toBeVisible();
+    const appearance = await nav.locator('[aria-pressed="true"]').evaluate(node => {
+      const style = getComputedStyle(node);
+      const probe = document.createElement('i'); probe.style.color = 'var(--dk-border-default)';
+      document.body.append(probe); const neutral = getComputedStyle(probe).color; probe.remove();
+      return { border: style.borderTopColor, neutral, outline: style.outlineStyle, focusVisible: node.matches(':focus-visible') };
+    });
+    expect(appearance.border).toBe(appearance.neutral);
+    expect(appearance.focusVisible).toBe(false);
+    expect(appearance.outline).toBe('none');
+    for (const section of ['history', 'overview']) {
+      await nav.locator(`[data-booking-section-link="${section}"]`).click();
+      await expect.poll(() => page.locator(`#booking-${section}`).evaluate(node =>
+        Math.round(node.getBoundingClientRect().top - document.querySelector('.booking-section-nav').getBoundingClientRect().bottom))).toBeGreaterThanOrEqual(0);
+    }
+  });
+}

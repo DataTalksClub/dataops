@@ -84,9 +84,7 @@ body[data-workspace-view="sponsors"] .document-list {
   clip: rect(0 0 0 0);
   clip-path: inset(50%);
   white-space: nowrap;
-}.bookkeeping-header,
-.crm-header,
-.section-header,
+}.section-header,
 .finance-panel > header {
   display: flex;
   min-width: 0;
@@ -1123,7 +1121,6 @@ body[data-workspace-view="sponsors"] .document-list {
   font-weight: 600;
 }.booking-detail-section {
   min-width: 0;
-  scroll-margin-top: 50px;
   border-bottom: 1px solid var(--dk-border-default);
   padding: var(--dk-space-5) var(--dk-space-6);
 }.booking-detail-section:last-child {
