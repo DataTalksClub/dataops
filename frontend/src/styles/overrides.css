@@ -125,14 +125,12 @@ body[data-workspace-view="tasks"] .task-conflict-controls button,
 body[data-workspace-view="tasks"] .task-mutation-feedback-controls button,
 body[data-workspace-view="tasks"] .card-mutation-feedback-controls button,
 body[data-workspace-view="tasks"] .card-stage-select,
-body[data-workspace-view="tasks"] .card-link-input,
 body[data-workspace-view="tasks"] .workflow-references-section input {
     min-width: 44px;
     min-height: 44px;
   }.task-mutation-feedback-controls .task-action-btn,
 .card-mutation-feedback-controls .task-action-btn,
 .card-stage-select,
-.card-link-input,
 .workflow-references-section input {
     min-width: 44px;
     min-height: 44px;

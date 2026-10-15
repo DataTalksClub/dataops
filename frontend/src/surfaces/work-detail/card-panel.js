@@ -14,6 +14,7 @@ import {
   renderCardNewsletterSlot,
   renderCardTemplateLink,
 } from "./card-summary.js";
+import { renderLinkRow, renderLinkList } from "./link-rows.js";
 
 export function createCardPanel(context) {
   const {
@@ -59,6 +60,8 @@ export function createCardPanel(context) {
     cardPanelBody,
     cardPanelTitle,
   } = context;
+  // Link rows whose editor is open, so an unsaved edit survives a rerender.
+  const openLinkEditors = new Set();
 
   function openCardPanel(cardId) {
     const card = state.workSnapshot.cardsById?.get(cardId);
@@ -382,81 +385,8 @@ export function createCardPanel(context) {
     });
     if (templateUpdate) main.append(templateUpdate);
 
-    // Card links
     if (Array.isArray(card.cardLinks) && card.cardLinks.length > 0) {
-      const linksSection = document.createElement("div");
-      linksSection.className =
-        "task-history workflow-detail-section workflow-links-section";
-      const linksLabel = document.createElement("div");
-      linksLabel.className = "task-history-label";
-      linksLabel.textContent = "Links";
-      linksSection.append(linksLabel);
-      const seenUrls = new Set();
-      for (const link of card.cardLinks) {
-        const linkName = link.name || link.label || "Link";
-        const rawUrl = link.url || "";
-        const linkUrl = String(rawUrl)
-          .replace(/[\s"'\u200c\u200b]+$/, "")
-          .replace(/^["']/, "")
-          .trim();
-        // If a named link already displayed this exact URL, skip the duplicate raw-url item
-        if (
-          linkUrl &&
-          seenUrls.has(linkUrl) &&
-          (linkName === rawUrl || linkName === linkUrl || /^https?:\/\//i.test(linkName))
-        ) {
-          continue;
-        }
-        if (linkUrl) seenUrls.add(linkUrl);
-        const wrap = document.createElement("div");
-        wrap.className = "task-required-link card-link-row";
-        const label = document.createElement("label");
-        label.className = "card-link-label";
-        const name = document.createElement("span");
-        name.className = "card-link-name";
-        appendBreakableText(name, humanLinkName(linkName));
-        const input = document.createElement("input");
-        input.type = "url";
-        input.className = "card-link-input";
-        input.dataset.cardDraftKey = `template-link:${linkName}`;
-        const draftLinks = detail.activeCardPanelDraft?.kind === "card-link"
-          ? detail.activeCardPanelDraft.payload.cardLinks
-          : null;
-        input.value = draftLinks?.find(
-          (value) => (value.name || value.label) === linkName,
-        )?.url ?? linkUrl;
-        input.placeholder = "https://...";
-        input.disabled =
-          detail.activeCardMutationBusy ||
-          detail.activeTaskMutationBusy ||
-          detail.activeCardTemplateBusy;
-        input.addEventListener("change", () =>
-          saveCardLink(
-            card.id,
-            card.cardLinks,
-            linkName,
-            input.value.trim(),
-          ),
-        );
-        label.append(name, input);
-        wrap.append(label);
-        if (/^https?:\/\//i.test(linkUrl)) {
-          const open = document.createElement("a");
-          open.className = "card-link-open";
-          open.href = linkUrl;
-          open.textContent = "Open";
-          open.setAttribute("aria-label", `Open ${linkName}`);
-          opensInNewTab(open);
-          wrap.append(open);
-        } else {
-          const missing = document.createElement("span");
-          missing.className = "workflow-card-flag is-warning card-link-state";
-          missing.textContent = "missing";
-          wrap.append(missing);
-        }
-        linksSection.append(wrap);
-      }
-      main.append(linksSection);
+      main.append(renderCardLinksSection(card));
     }
 
     {
@@ -652,6 +582,78 @@ export function createCardPanel(context) {
         focusTarget.focus();
       }
     }
+  }
+
+  // Card links as a dense list: the filled links first (they are what an
+  // operator opens), then the missing ones, each one "Add" away. Missing links
+  // stay visible rather than folded away: they are the gaps the Card's
+  // "missing proof" count is about.
+  function renderCardLinksSection(card) {
+    const section = document.createElement("div");
+    section.className =
+      "task-history workflow-detail-section workflow-links-section";
+    const header = document.createElement("div");
+    header.className = "workflow-links-header";
+    const heading = document.createElement("div");
+    heading.className = "task-history-label";
+    heading.textContent = "Links";
+    header.append(heading);
+    section.append(header);
+    const busy =
+      detail.activeCardMutationBusy ||
+      detail.activeTaskMutationBusy ||
+      detail.activeCardTemplateBusy;
+    const draftLinks = detail.activeCardPanelDraft?.kind === "card-link"
+      ? detail.activeCardPanelDraft.payload.cardLinks
+      : null;
+    const filled = [];
+    const missing = [];
+    const seenUrls = new Set();
+    for (const link of card.cardLinks) {
+      const linkName = link.name || link.label || "Link";
+      const rawUrl = link.url || "";
+      const linkUrl = String(rawUrl)
+        .replace(/[\s"'\u200c\u200b]+$/, "")
+        .replace(/^["']/, "")
+        .trim();
+      // If a named link already displayed this exact URL, skip the duplicate raw-url item
+      if (
+        linkUrl &&
+        seenUrls.has(linkUrl) &&
+        (linkName === rawUrl || linkName === linkUrl || /^https?:\/\//i.test(linkName))
+      ) {
+        continue;
+      }
+      if (linkUrl) seenUrls.add(linkUrl);
+      const editorKey = `${card.id}\u0000${linkName}`;
+      const draftValue = draftLinks?.find(
+        (value) => (value.name || value.label) === linkName,
+      )?.url;
+      const hasDraft = draftValue !== undefined && draftValue !== linkUrl;
+      const row = renderLinkRow({
+        label: humanLinkName(linkName),
+        value: linkUrl,
+        disabled: busy,
+        editing: openLinkEditors.has(editorKey) || hasDraft,
+        draftKey: `template-link:${linkName}`,
+        draftValue: hasDraft ? draftValue : undefined,
+        onEditingChange: (open) => {
+          if (open) openLinkEditors.add(editorKey);
+          else openLinkEditors.delete(editorKey);
+        },
+        onSave: (value) =>
+          saveCardLink(card.id, card.cardLinks, linkName, value),
+      });
+      (linkUrl ? filled : missing).push(row);
+    }
+    if (missing.length) {
+      const count = document.createElement("span");
+      count.className = "workflow-links-missing";
+      count.textContent = `${missing.length} missing`;
+      header.append(count);
+    }
+    section.append(renderLinkList([...filled, ...missing], "Card links"));
+    return section;
   }
 
   function renderCardChecklistItem(task, cardId, today) {

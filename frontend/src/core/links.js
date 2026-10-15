@@ -20,6 +20,7 @@ const SERVICES = [
 ];
 
 const GENERIC = { id: "link", name: "Link", icon: "link", group: "other" };
+const MAIL = { id: "email", name: "Email", icon: "mail", group: "people" };
 
 export const LINK_GROUPS = Object.freeze([
   { id: "documents", label: "Documents" },
@@ -57,9 +58,46 @@ export function isHttpLink(value) {
   return /^https?:\/\//i.test(String(value || "").trim());
 }
 
+// A `mailto:` value is an email address, not a page: present, but opened by
+// the mail client rather than a new tab.
+export function isMailLink(value) {
+  return /^mailto:[^\s@]+@[^\s@]+/i.test(String(value || "").trim());
+}
+
+export function mailAddress(value) {
+  const text = String(value || "").trim().replace(/^mailto:/i, "").split("?")[0];
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
+// The address as people read it: the host without `www.`, then the path cut
+// to its last segment ("docs.google.com/…/edit", "luma.com/ar4ggwep"), and a
+// short query kept when it is the identifier ("youtube.com/watch?v=…"). The
+// full URL belongs in the link's title.
+export function linkAddress(url) {
+  const target = linkTarget(url);
+  const address = parsed(target);
+  if (!address || !/^https?:$/.test(address.protocol)) return target;
+  const host = address.hostname.replace(/^www\./, "");
+  const segments = address.pathname.split("/").filter(Boolean);
+  let path = "";
+  if (segments.length === 1) path = `/${segments[0]}`;
+  else if (segments.length > 1) path = `/…/${segments.at(-1)}`;
+  const query = address.search.length > 1 && address.search.length <= 24 ? address.search : "";
+  try {
+    return decodeURIComponent(`${host}${path}${query}`);
+  } catch {
+    return `${host}${path}${query}`;
+  }
+}
+
 export function linkService(url) {
   const address = parsed(linkTarget(url));
   if (!address) return GENERIC;
+  if (address.protocol === "mailto:") return MAIL;
   const host = address.hostname.toLowerCase().replace(/^www\./, "");
   return SERVICES.find((service) => service.test(host, address.pathname)) || GENERIC;
 }

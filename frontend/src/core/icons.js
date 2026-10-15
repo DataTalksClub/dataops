@@ -36,6 +36,8 @@ const ICON_PATHS = Object.freeze({
   link: "M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1 M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1",
   file: "M6 3h9l4 4v14H6Z M14 3v5h5",
   external: "M14 4h6v6 M20 4l-9 9 M18 14v6H4V6h6",
+  pencil: "M4 20h4L19 9l-4-4L4 16Z M13.5 6.5l4 4",
+  copy: "M9 9h11v11H9Z M5 15H4V4h11v1",
   // Required-resource glyphs (backend/src/resources/requiredResources.json).
   film: "M4 4h16v16H4Z M8 4v16 M16 4v16 M4 9h4 M4 15h4 M16 9h4 M16 15h4",
   ticket: "M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4Z M14 7v10",

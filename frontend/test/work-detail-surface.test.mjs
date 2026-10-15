@@ -2859,12 +2859,15 @@ describe("Work Detail surface boundary", () => {
       card.description,
     );
     assert.equal(
-      harness.cardPanelBody.querySelector(".card-link-name").textContent,
+      harness.cardPanelBody.querySelector(".link-row__label").textContent,
       card.cardLinks[0].name,
     );
+    const savedLink = harness.cardPanelBody.querySelector(".link-row__link");
+    assert.equal(savedLink.href, card.cardLinks[0].url);
+    assert.equal(savedLink.title, card.cardLinks[0].url);
     assert.equal(
-      harness.cardPanelBody.querySelector(".card-link-input").value,
-      card.cardLinks[0].url,
+      savedLink.querySelector(".link-row__address").textContent,
+      "example.test/…/path",
     );
     assert.equal(
       harness.cardPanelBody.querySelector(".card-checklist-label").textContent,
@@ -2876,6 +2879,94 @@ describe("Work Detail surface boundary", () => {
       `${card.references[0].name} (opens in new tab)`,
     );
     assert.ok(harness.cardPanelBody.querySelector("wbr"));
+  });
+
+  test("lists Card links compactly: filled first, mailto counts as present, edits open on demand", async () => {
+    let card = {
+      id: "card-links-compact",
+      version: 1,
+      title: "Podcast links",
+      stage: "preparation",
+      cardLinks: [
+        { name: "Meetup", url: "" },
+        { name: "Guest email", url: "mailto:guest@example.com" },
+        { name: "Podcast document", url: "https://docs.google.com/document/d/abc123/edit" },
+        { name: "Luma", url: "https://luma.com/ar4ggwep" },
+      ],
+      references: [],
+    };
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && requestOptions.method === "PUT") {
+          const body = JSON.parse(requestOptions.body);
+          card = { ...card, version: card.version + 1, cardLinks: body.cardLinks };
+          return { card };
+        }
+        if (url === `/api/cards/${card.id}`) return { card };
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [] };
+        if (url === `/api/artifacts?cardId=${card.id}`) return { artifacts: [] };
+        return {};
+      },
+    });
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+
+    const labels = () => [...harness.cardPanelBody.querySelectorAll(".link-row__label")]
+      .map((label) => label.textContent);
+    assert.deepEqual(labels(), ["Guest email", "Podcast document", "Luma", "Meetup"]);
+    assert.equal(harness.cardPanelBody.querySelector(".workflow-links-missing").textContent, "1 missing");
+    // No text input until someone edits.
+    assert.equal(harness.cardPanelBody.querySelector(".link-row__input"), null);
+
+    // A mailto: value is present: it opens the mail client (no new tab) and
+    // offers a copy, never the "missing" state.
+    const [emailRow, docRow, , meetupRow] = harness.cardPanelBody.querySelectorAll(".link-row");
+    assert.equal(emailRow.classList.contains("is-missing"), false);
+    const email = emailRow.querySelector(".link-row__link");
+    assert.equal(email.href, "mailto:guest@example.com");
+    assert.equal(email.target, undefined);
+    assert.equal(email.querySelector(".link-row__address").textContent, "guest@example.com");
+    assert.equal(
+      emailRow.querySelector(".link-row__copy").getAttribute("aria-label"),
+      "Copy Guest email address",
+    );
+
+    const doc = docRow.querySelector(".link-row__link");
+    assert.equal(doc.target, "_blank");
+    assert.equal(doc.title, "https://docs.google.com/document/d/abc123/edit");
+    assert.equal(doc.querySelector(".link-row__address").textContent, "docs.google.com/…/edit");
+    assert.equal(meetupRow.classList.contains("is-missing"), true);
+
+    // Escape closes the editor without saving and hands focus back.
+    const add = meetupRow.querySelector(".link-row__add");
+    assert.equal(add.getAttribute("aria-label"), "Add Meetup");
+    await add.click();
+    let input = meetupRow.querySelector(".link-row__input");
+    assert.equal(input.getAttribute("aria-label"), "Meetup link");
+    assert.equal(input.focused, true);
+    input.value = "https://www.meetup.com/x/events/1";
+    await input.dispatch("keydown", { key: "Escape" });
+    assert.equal(meetupRow.querySelector(".link-row__input"), null);
+    assert.equal(meetupRow.querySelector(".link-row__add").focused, true);
+    assert.equal(harness.requests.filter((entry) => entry.options.method === "PUT").length, 0);
+
+    // Enter saves through the Card intent and the row comes back as a link.
+    await meetupRow.querySelector(".link-row__add").click();
+    input = meetupRow.querySelector(".link-row__input");
+    input.value = " https://www.meetup.com/x/events/1 ";
+    await input.dispatch("keydown", { key: "Enter" });
+    await nextTicks(4);
+    const put = harness.requests.find((entry) => entry.options.method === "PUT");
+    assert.deepEqual(
+      jsonBody(put).cardLinks.find((link) => link.name === "Meetup"),
+      { name: "Meetup", url: "https://www.meetup.com/x/events/1" },
+    );
+    const saved = [...harness.cardPanelBody.querySelectorAll(".link-row")]
+      .find((row) => row.dataset.linkName === "Meetup");
+    assert.equal(saved.querySelector(".link-row__address").textContent, "meetup.com/…/1");
+    assert.equal(harness.cardPanelBody.querySelector(".workflow-links-missing"), null);
+    assert.deepEqual(harness.errors, []);
   });
 
   test("retains Card drafts through review, repeated conflict, retry, and discard", async () => {
@@ -3229,7 +3320,8 @@ describe("Work Detail surface boundary", () => {
       "Review template update",
       "button",
     ).click();
-    harness.cardPanelBody.querySelector(".card-link-input").value =
+    await findByText(harness.cardPanelBody, "Add", "button").click();
+    harness.cardPanelBody.querySelector(".link-row__input").value =
       "https://example.test/draft";
     harness.cardPanelBody.querySelector(".card-ref-name").value =
       "Typed reference";
@@ -3243,7 +3335,7 @@ describe("Work Detail surface boundary", () => {
     assert.match(harness.cardPanelBody.textContent, /Your review is retained/);
     assert.ok(findByText(harness.cardPanelBody, "Add New task", "li"));
     assert.equal(
-      harness.cardPanelBody.querySelector(".card-link-input").value,
+      harness.cardPanelBody.querySelector(".link-row__input").value,
       "https://example.test/draft",
     );
     assert.equal(
@@ -3259,7 +3351,7 @@ describe("Work Detail surface boundary", () => {
     await nextTicks();
     assert.equal(previewLoads, 2);
     assert.equal(
-      harness.cardPanelBody.querySelector(".card-link-input").value,
+      harness.cardPanelBody.querySelector(".link-row__input").value,
       "https://example.test/draft",
     );
     assert.equal(

@@ -671,65 +671,6 @@
 }.runtime-template-batch-results .is-failed,
 .runtime-template-batch-message {
   color: var(--dk-warning-text);
-}.card-link-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  border: none;
-  border-radius: var(--dk-radius-md);
-  background: transparent;
-  padding: 4px 8px;
-  transition: background 0.12s ease;
-}
-.card-link-row:hover {
-  background: var(--dk-bg-hover);
-}.card-link-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  color: var(--dk-text-primary);
-}.card-link-name {
-  flex: 0 0 auto;
-  max-width: 40%;
-  overflow: hidden;
-  color: var(--dk-text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}.workflow-links-section .card-link-input {
-  flex: 1;
-  width: auto;
-  min-width: 0;
-  min-height: 30px;
-  border-color: transparent;
-  background: transparent;
-  padding: 0;
-  font-size: 13px;
-}.workflow-links-section .card-link-input:hover:not(:focus) {
-  border-color: var(--dk-border-default);
-  background: var(--dk-bg-muted);
-  padding: 0 6px;
-}.workflow-links-section .card-link-input:focus {
-  border-color: var(--dk-border-default);
-  background: var(--dk-bg-page);
-  padding: 0 6px;
-}.card-link-open {
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-sm);
-  color: var(--dk-text-link);
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-}.card-link-open:hover {
-  border-color: var(--dk-border-strong);
-  background: var(--dk-bg-hover);
-}.card-link-state {
-  align-self: center;
 }.workflow-checklist-section .task-history-list {
   display: grid;
   gap: 6px;
@@ -909,4 +850,189 @@
   padding: 0;
   color: var(--dk-text-heading);
   font-weight: 600;
+}
+
+/* Named links (Card links): one dense row per link. The label sits in a
+   fixed column, the value reads as a link (host plus a shortened path), and
+   the input appears only while a row is being edited. */
+.workflow-links-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--dk-space-2);
+}
+.workflow-links-missing {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+.link-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.link-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 176px) minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--dk-space-3);
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 var(--dk-space-2);
+  border-top: 1px solid var(--dk-border-default);
+}
+.link-row:first-child {
+  border-top: 0;
+}
+.link-row:hover {
+  background: var(--dk-bg-hover);
+}
+.link-row__label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.link-row__value {
+  display: flex;
+  min-width: 0;
+}
+.link-row__link,
+.link-row__text {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--dk-space-2);
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--dk-text-md);
+}
+.link-row__link {
+  color: var(--dk-text-link);
+  text-decoration: none;
+}
+.link-row__link:hover {
+  color: var(--dk-text-link-hover);
+}
+.link-row__link:hover .link-row__address {
+  text-decoration: underline;
+}
+.link-row__icon {
+  flex: none;
+  color: var(--dk-text-muted);
+}
+.link-row__address,
+.link-row__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.link-row__text {
+  display: block;
+  color: var(--dk-text-primary);
+}
+.link-row__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--dk-space-1);
+}
+.link-row__button {
+  display: inline-grid;
+  place-items: center;
+  width: var(--dk-size-control-sm);
+  height: var(--dk-size-control-sm);
+  border: 1px solid transparent;
+  border-radius: var(--dk-radius-sm);
+  background: transparent;
+  color: var(--dk-text-muted);
+  padding: 0;
+  cursor: pointer;
+}
+.link-row__button:hover:not(:disabled) {
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-heading);
+}
+.link-row__copy[data-copied] {
+  color: var(--dk-success-text);
+}
+.link-row__add {
+  min-height: var(--dk-size-control-sm);
+  border: 0;
+  background: transparent;
+  color: var(--dk-text-muted);
+  padding: 0;
+  font-size: var(--dk-text-sm);
+  cursor: pointer;
+}
+.link-row__add::before {
+  content: "+ ";
+}
+.link-row__add:hover:not(:disabled) {
+  color: var(--dk-text-link);
+  text-decoration: underline;
+}
+.link-row.is-missing .link-row__label {
+  color: var(--dk-text-faint);
+}
+.link-row__editor {
+  display: flex;
+  grid-column: 2 / -1;
+  align-items: center;
+  gap: var(--dk-space-2);
+  min-width: 0;
+  padding: var(--dk-space-1) 0;
+}
+.link-row__input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--dk-size-control-sm);
+}
+.link-row.is-editing:hover {
+  background: transparent;
+}
+
+/* Phones: the label above its value, the actions at the side, and every
+   control at least 40px tall. */
+@media (max-width: 640px) {
+  .link-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "label actions" "value actions";
+    padding: var(--dk-space-1) var(--dk-space-2);
+  }
+  .link-row__label {
+    grid-area: label;
+  }
+  .link-row__value {
+    grid-area: value;
+  }
+  .link-row__actions {
+    grid-area: actions;
+  }
+  /* A missing link is one line: its label and "Add". */
+  .link-row.is-missing .link-row__value {
+    grid-area: actions;
+  }
+  .link-row.is-missing .link-row__actions {
+    display: none;
+  }
+  .link-row__link,
+  .link-row__add {
+    min-height: 40px;
+  }
+  .link-row__button {
+    width: 40px;
+    height: 40px;
+  }
+  .link-row__editor {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+  }
+  .link-row__input {
+    flex-basis: 100%;
+    min-height: 40px;
+  }
+  .link-row__editor .dk-button {
+    min-height: 40px;
+  }
 }

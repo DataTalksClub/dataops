@@ -6,7 +6,7 @@ import { describe, test } from "node:test";
 
 import { cardKind } from "../src/core/card-kind.js";
 import { hasIcon, TEMPLATE_ICON_NAMES } from "../src/core/icons.js";
-import { documentHref, linkLabel, linkService, linkTarget, opensInNewTab } from "../src/core/links.js";
+import { documentHref, isMailLink, linkAddress, linkLabel, linkService, linkTarget, mailAddress, opensInNewTab } from "../src/core/links.js";
 import { taskMaterials, taskTitleParts } from "../src/core/task-display.js";
 import { renderArtifactGroups } from "../src/surfaces/work-detail/artifact-rows.js";
 import { FakeDocument, FakeElement, findAllByClass } from "./support/fake-dom.mjs";
@@ -43,6 +43,18 @@ describe("work display helpers", () => {
     assert.equal(linkLabel("https://docs.google.com/document/d/x/edit", "Episode brief"), "Episode brief");
     assert.equal(linkService("https://www.youtube.com/watch?v=abc").icon, "play");
     assert.equal(linkService("https://example.com/a").id, "link");
+  });
+
+  test("shows a link as host plus a shortened path, and treats mailto as an email", () => {
+    assert.equal(linkAddress("https://docs.google.com/document/d/1SVWxBsBzvG5URX2/edit"), "docs.google.com/…/edit");
+    assert.equal(linkAddress("https://luma.com/ar4ggwep"), "luma.com/ar4ggwep");
+    assert.equal(linkAddress("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), "youtube.com/watch?v=dQw4w9WgXcQ");
+    assert.equal(linkAddress("https://example.com/"), "example.com");
+    assert.equal(isMailLink("mailto:dewang@example.com"), true);
+    assert.equal(isMailLink("mailto:"), false);
+    assert.equal(isMailLink("https://example.com"), false);
+    assert.equal(mailAddress("mailto:dewang@example.com?subject=Hi"), "dewang@example.com");
+    assert.equal(linkService("mailto:dewang@example.com").icon, "mail");
   });
 
   test("lists a task's materials after its process doc and instructions", () => {
