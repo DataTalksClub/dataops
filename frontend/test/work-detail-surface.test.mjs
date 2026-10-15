@@ -1099,59 +1099,139 @@ describe("Work Detail surface boundary", () => {
     );
   });
 
-  test("names what a Task needs and saves an edited list with the Task version", async () => {
-    const resources = [
-      { id: "youtube", name: "YouTube", icon: "video", access: "Channel" },
-      { id: "luma", name: "Luma", icon: "ticket", access: "Calendar" },
-      { id: "gmail", name: "Gmail", icon: "mail", access: "Mailbox" },
-    ];
-    const task = {
-      id: "task-requires",
+  function requiresHarness(task, resources, { snapshotResources = true } = {}) {
+    return createHarness({
+      workSnapshot: snapshotResources
+        ? {
+          resources,
+          resourcesById: new Map(resources.map((resource) => [resource.id, resource])),
+        }
+        : {},
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+        if (url === "/api/resources") return { resources };
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
+          const body = JSON.parse(requestOptions.body);
+          return { ...task, requires: body.requires, version: task.version + 1 };
+        }
+        return {};
+      },
+    });
+  }
+
+  const requiresResources = [
+    { id: "youtube", name: "YouTube", icon: "video", access: "Channel" },
+    { id: "luma", name: "Luma", icon: "ticket", access: "Calendar" },
+    { id: "gmail", name: "Gmail", icon: "mail", access: "Mailbox" },
+  ];
+
+  function requiresTask(id) {
+    return {
+      id,
       version: 4,
       taskHistory: [],
       description: "Create events on Luma",
       status: "todo",
       requires: ["luma", "youtube"],
     };
-    const harness = createHarness({
-      workSnapshot: {
-        resources,
-        resourcesById: new Map(resources.map((resource) => [resource.id, resource])),
-      },
-      request: async (url, requestOptions = {}) => {
-        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
-        if (url.startsWith("/api/files")) return { files: { items: [] } };
-        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
-        if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
-          const body = JSON.parse(requestOptions.body);
-          return { ...task, requires: body.requires, version: 5 };
-        }
-        return {};
-      },
-    });
+  }
+
+  async function typeAndAdd(field, text) {
+    field.value = text;
+    await field.dispatch("input");
+    await field.dispatch("keydown", { key: "Enter" });
+  }
+
+  test("names what a Task needs and saves a tag-input edit once, with the Task version", async () => {
+    const task = requiresTask("task-requires");
+    const harness = requiresHarness(task, requiresResources);
 
     await hydrateTask(harness, task);
-    const section = findAllByClass(harness.taskPanelBody, "task-requires")[0];
+    let section = findAllByClass(harness.taskPanelBody, "task-requires")[0];
     assert.deepEqual(
       findAllByClass(section, "ops-resource-name").map((name) => name.textContent),
       ["Luma", "YouTube"],
     );
-    const boxes = section.querySelectorAll("input");
-    assert.deepEqual(boxes.map((box) => [box.value, box.checked]), [
-      ["youtube", true],
-      ["luma", true],
-      ["gmail", false],
-    ]);
-    boxes[0].checked = false;
-    boxes[2].checked = true;
+    assert.equal(section.querySelector("input"), null, "read-only until edited");
+    await section.querySelector("[data-requires-edit]").click();
+
+    section = findAllByClass(harness.taskPanelBody, "task-requires")[0];
+    const field = section.querySelector('[data-panel-field="requires"]');
+    assert.equal(field.getAttribute("role"), "combobox");
+    assert.equal(harness.document.activeElement, field, "the editor takes focus");
+    assert.deepEqual(
+      findAllByClass(section, "dk-tag-input__chip").map((chip) => chip.dataset.value),
+      ["luma", "youtube"],
+    );
+    await typeAndAdd(field, "GM");
+    await findAllByClass(section, "dk-tag-input__remove")
+      .find((button) => button.getAttribute("aria-label") === "Remove YouTube")
+      .click();
+    assert.deepEqual(
+      findAllByClass(section, "dk-tag-input__chip").map((chip) => chip.dataset.value),
+      ["luma", "gmail"],
+    );
+    assert.equal(
+      harness.requests.filter((entry) => entry.options.method === "PUT").length,
+      0,
+      "nothing is written before Save",
+    );
+
     await findByText(section, "Save", "button").click();
     await waitFor(
       () => harness.requests.find((entry) => entry.options.method === "PUT"),
       "requires write",
     );
-    const write = harness.requests.find((entry) => entry.options.method === "PUT");
-    assert.deepEqual(jsonBody(write), { requires: ["luma", "gmail"], expectedVersion: 4 });
+    const writes = harness.requests.filter((entry) => entry.options.method === "PUT");
+    assert.equal(writes.length, 1);
+    assert.deepEqual(jsonBody(writes[0]), { requires: ["luma", "gmail"], expectedVersion: 4 });
     assert.deepEqual(harness.errors, []);
+  });
+
+  test("cancelling a Needs edit writes nothing and restores the read-only chips", async () => {
+    const task = requiresTask("task-requires-cancel");
+    const harness = requiresHarness(task, requiresResources);
+
+    await hydrateTask(harness, task);
+    await harness.taskPanelBody.querySelector("[data-requires-edit]").click();
+    const field = harness.taskPanelBody.querySelector('[data-panel-field="requires"]');
+    await typeAndAdd(field, "gmail");
+    await findByText(harness.taskPanelBody, "Cancel", "button").click();
+
+    const section = findAllByClass(harness.taskPanelBody, "task-requires")[0];
+    assert.equal(section.querySelector('[data-panel-field="requires"]'), null);
+    assert.deepEqual(
+      findAllByClass(section, "ops-resource-name").map((name) => name.textContent),
+      ["Luma", "YouTube"],
+    );
+    assert.equal(harness.document.activeElement, section.querySelector("[data-requires-edit]"));
+    assert.equal(harness.requests.filter((entry) => entry.options.method === "PUT").length, 0);
+  });
+
+  test("a Task opened before the work snapshot loads fetches the vocabulary to edit Needs", async () => {
+    const task = requiresTask("task-requires-deep-link");
+    const harness = requiresHarness(task, requiresResources, { snapshotResources: false });
+
+    await hydrateTask(harness, task);
+    await harness.taskPanelBody.querySelector("[data-requires-edit]").click();
+    await waitFor(
+      () => harness.requests.find((entry) => entry.url === "/api/resources"),
+      "vocabulary read",
+    );
+    const field = await waitFor(() => {
+      const input = harness.taskPanelBody.querySelector('[data-panel-field="requires"]');
+      return input && !input.disabled ? input : null;
+    }, "enabled tag input");
+    await typeAndAdd(field, "you");
+    const chips = findAllByClass(harness.taskPanelBody, "dk-tag-input__chip");
+    assert.deepEqual(chips.map((chip) => chip.dataset.value), ["luma", "youtube"], "YouTube is already chosen, so nothing is added");
+    await typeAndAdd(field, "gm");
+    assert.deepEqual(
+      findAllByClass(harness.taskPanelBody, "dk-tag-input__chip").map((chip) => chip.textContent),
+      ["Luma", "YouTube", "Gmail"],
+    );
   });
 
   test("keeps generic Task failures in the owning panel and retries the retained link intent", async () => {

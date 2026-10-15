@@ -144,6 +144,7 @@
     "src/surfaces/work-detail/task-overview.js",
     "src/surfaces/work-detail/task-panel.js",
     "src/surfaces/work-detail/task-prerequisites.js",
+    "src/surfaces/work-detail/task-requires.js",
     "src/surfaces/work-detail/work-dialogs.js",
     "src/dakit/dialogs.js",
     "src/dakit/shell.js",
