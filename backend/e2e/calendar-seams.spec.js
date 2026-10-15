@@ -338,15 +338,53 @@ test("calendar grid is ready before the external overlay response", async ({ pag
   await page.goto(frontendBase);
   await page.getByRole("link", { name: "Calendar", exact: true }).click();
   const surface = page.locator(".calendar-surface");
+  const grid = surface.locator(".calendar-grid");
+  const indicator = surface.locator("[data-calendar-indicator]");
+  let loadingTop;
   try {
     await expect(surface.locator(".calendar-activity").first()).toContainText("Synthetic Webinar");
-    await expect(surface.locator(".calendar-grid")).toBeVisible();
-    await expect(surface.locator("[role='status']")).toHaveText("Loading calendar overlays…");
+    await expect(grid).toBeVisible();
+    // Loading is a spinner in a reserved toolbar slot plus aria-busy, never a
+    // visible line between the toolbar and the grid.
+    await expect(indicator).toHaveAttribute("data-state", "loading");
+    await expect(indicator.locator(".dk-spinner")).toBeVisible();
+    await expect(surface.locator("[data-calendar]")).toHaveAttribute("aria-busy", "true");
+    await expect(surface.getByText("Loading calendar overlays…")).toHaveCount(0);
+    loadingTop = (await grid.boundingBox()).y;
   } finally {
     releaseOverlay();
   }
   await expect(surface.locator(".calendar-overlay").first()).toContainText("12:30 Available");
+  await expect(indicator).toHaveAttribute("data-state", "idle");
+  await expect(surface.locator("[data-calendar]")).toHaveAttribute("aria-busy", "false");
   await expect(surface.locator("[role='status']")).toHaveText("");
+  expect((await grid.boundingBox()).y).toBe(loadingTop);
+});
+
+test("a disconnected calendar source is a toolbar warning that does not move the grid", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-07-01T12:00:00Z"));
+  await page.route("**/api/calendar-items**", (route) => route.fulfill({ json:
+    new URL(route.request().url()).pathname.endsWith("/overlays")
+      ? { items: [], sources: { "alexey-calendar": { state: "not-configured", reason: "No broker credential." } } }
+      : payload }));
+  await page.route("**/api/**", (route) => new URL(route.request().url()).pathname.includes("/calendar-items")
+    ? route.fallback() : route.fulfill({ json: { items: [] } }));
+  await page.goto(`${frontendBase}/calendar`);
+  const surface = page.locator(".calendar-surface");
+  const indicator = surface.locator("[data-calendar-indicator]");
+  await expect(indicator).toHaveAttribute("data-state", "warning");
+  await expect(indicator).toHaveAttribute("title", /not connected: No broker credential/);
+  await expect(indicator.locator(".calendar-sync-warning")).toBeVisible();
+  await expect(surface.locator("[role='status']")).toHaveText(/not connected/);
+  // The status is a visually hidden live region for screen readers only.
+  expect((await surface.locator("[role='status']").boundingBox()).height).toBeLessThanOrEqual(1);
+  const grid = surface.locator(".calendar-grid");
+  const warningTop = (await grid.boundingBox()).y;
+  // Hiding open slots drops the warning; the grid stays where it was.
+  await surface.locator('[data-layer="available"]').uncheck();
+  await expect(indicator).toHaveAttribute("data-state", "idle");
+  await expect(surface.locator("[role='status']")).toHaveText("");
+  expect((await grid.boundingBox()).y).toBe(warningTop);
 });
 
 

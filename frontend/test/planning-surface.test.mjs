@@ -198,6 +198,7 @@ function createCalendarDom() {
     return layer;
   });
   surface.setQueryAll("[data-layer]", layers);
+  surface.setQuery("[data-calendar-indicator]", new TestElement("span"));
   for (const selector of ["[data-prev]", "[data-today]", "[data-next]", "[data-cancel]", "[data-controls-toggle]"]) {
     surface.setQuery(selector, new TestElement("button"));
   }
@@ -488,6 +489,7 @@ describe("Planning surface production behavior", () => {
 
   test("renders owned Calendar planning data while an external overlay is pending", async () => {
     const dom = createCalendarDom();
+    const indicator = dom.surface.setQuery("[data-calendar-indicator]", new TestElement("span"));
     let finishOverlay;
     const overlay = new Promise((resolve) => { finishOverlay = resolve; });
     const harness = createPlanningHarness({
@@ -501,10 +503,16 @@ describe("Planning surface production behavior", () => {
     const loading = harness.surface.renderCalendarSurface();
     await nextTicks();
     assert.match(dom.grid.innerHTML, /Ready planning activity/);
-    assert.match(dom.status.textContent, /Loading calendar overlays/);
+    // Loading shows in the fixed toolbar slot and aria-busy, not as a status line.
+    assert.equal(dom.status.textContent, "");
+    assert.equal(indicator.dataset.state, "loading");
+    assert.equal(indicator.title, "Loading open event slots…");
+    assert.equal(dom.grid.getAttribute("aria-busy"), "true");
     finishOverlay({ items: [] });
     await loading;
     assert.equal(dom.status.textContent, "");
+    assert.equal(indicator.dataset.state, "idle");
+    assert.equal(dom.grid.getAttribute("aria-busy"), "false");
   });
 
   test("shows open slots on their own layer and flags those on holidays", async () => {
@@ -572,6 +580,7 @@ describe("Planning surface production behavior", () => {
   test("marks the open-slot source as not connected instead of showing an empty layer", async () => {
     const dom = createCalendarDom();
     const chip = dom.surface.setQuery('[data-layer-chip="available"]', new TestElement("label"));
+    const indicator = dom.surface.setQuery("[data-calendar-indicator]", new TestElement("span"));
     const chipStatus = chip.setQuery("[data-layer-chip-status]", new TestElement("span"));
     const reason = "No calendar broker credential is available in this environment.";
     const harness = createPlanningHarness({
@@ -585,6 +594,8 @@ describe("Planning surface production behavior", () => {
     assert.equal(chip.classList.contains("is-disconnected"), true);
     assert.equal(chip.title, `Alexey's calendar is not connected, so open event slots are unknown: ${reason}`);
     assert.equal(chipStatus.textContent, ` (not connected: ${reason})`);
+    assert.equal(indicator.dataset.state, "warning");
+    assert.equal(indicator.title, `Alexey's calendar is not connected: ${reason}`);
     assert.equal(dom.status.textContent, `Alexey's calendar is not connected: ${reason}`);
 
     // Hiding the layer drops the notice; the chip keeps its disconnected state.
@@ -758,9 +769,9 @@ describe("Planning surface production behavior", () => {
     await harness.surface.renderCalendarSurface();
     await nextTicks();
 
-    // Add activity sits in the calendar toolbar, ahead of the layers toggle,
-    // as the page's one create action.
-    const [addActivity] = dom.surface.querySelector("[data-controls-toggle]").insertedBefore;
+    // Add activity sits in the calendar toolbar, ahead of the loading
+    // indicator and the layers toggle, as the page's one create action.
+    const [addActivity] = dom.surface.querySelector("[data-calendar-indicator]").insertedBefore;
     assert.equal(addActivity.title, "Add activity (C)");
     assert.equal(addActivity.getAttribute("aria-keyshortcuts"), "c");
     addActivity.click();

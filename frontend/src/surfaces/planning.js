@@ -108,6 +108,13 @@ export function createPlanningSurface(context) {
             shortcuts: [{ action: "current", label: "Current month" }],
           })}
 
+          <span class="calendar-sync-indicator" data-calendar-indicator data-state="loading" title="Loading calendar…">
+            <span class="dk-spinner" aria-hidden="true"></span>
+            <svg class="calendar-sync-warning" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3 2 21h20L12 3z"></path><path d="M12 10v5M12 18h.01"></path>
+            </svg>
+          </span>
           <button type="button" class="icon-button calendar-controls-toggle" data-controls-toggle
             aria-label="Calendar layers and view" aria-controls="calendar-display-controls" aria-expanded="false" title="Calendar layers and view">
             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -178,7 +185,7 @@ export function createPlanningSurface(context) {
         </div>
       </div>
       </header>
-      <p class="planner-load-state" role="status">Loading calendar…</p>
+      <p class="dk-visually-hidden" role="status" aria-live="polite">Loading calendar…</p>
       <div class="planner-alerts" data-alerts></div>
       <div data-calendar></div>
       <dialog class="dk-dialog" data-activity-dialog style="--dk-dialog-width: 620px">
@@ -329,7 +336,7 @@ export function createPlanningSurface(context) {
     });
     addActivity.classList.add("calendar-add-button");
     const controlsToggle = surface.querySelector("[data-controls-toggle]");
-    controlsToggle.before(addActivity);
+    surface.querySelector("[data-calendar-indicator]").before(addActivity);
     surface.prepend(createPageHeader({
       title: "Calendar",
       titleId: "calendar-surface-title",
@@ -602,7 +609,21 @@ export function createPlanningSurface(context) {
         : problem && showAvailable
           ? `Alexey's calendar is not connected: ${problem} `
           : "";
-      status.textContent = `${planningStatus}${overlayMessage}`.trimEnd();
+      const message = `${planningStatus}${overlayMessage}`.trimEnd();
+      status.textContent = message;
+      setIndicator(message ? "warning" : "idle", message);
+    }
+
+    // Loading and source problems show in one fixed-size toolbar slot (spinner
+    // or warning icon with a tooltip), never as a line that pushes the grid.
+    // Screen readers get the same message from the visually hidden status.
+    function setIndicator(state, message = "") {
+      const indicator = surface.querySelector("[data-calendar-indicator]");
+      if (indicator) {
+        indicator.dataset.state = state;
+        indicator.title = message;
+      }
+      grid.setAttribute("aria-busy", String(state === "loading"));
     }
 
     let loadRevision = 0;
@@ -610,6 +631,7 @@ export function createPlanningSurface(context) {
       const revision = ++loadRevision;
       const [from, to] = bounds();
       status.textContent = "Loading calendar…";
+      setIndicator("loading", "Loading calendar…");
       try {
         // External overlays can wait on the calendar broker. Show owned planning
         // data immediately and add overlays when ready instead of blocking the grid.
@@ -658,7 +680,8 @@ export function createPlanningSurface(context) {
           ? "This range is outside the verified holiday window. "
           : "";
         const planningWarnings = `${holidayStaleMessage}${holidayHorizonMessage}`;
-        status.textContent = `${planningWarnings}Loading calendar overlays…`.trimEnd();
+        status.textContent = planningWarnings.trimEnd();
+        setIndicator("loading", "Loading open event slots…");
         const overlayResult = await overlayPromise;
         if (revision !== loadRevision) return;
         overlays = overlayResult.status === "fulfilled" ? overlayResult.value.items || [] : [];
@@ -674,6 +697,7 @@ export function createPlanningSurface(context) {
         overlays = [];
         alertsBox.replaceChildren();
         status.textContent = `Could not load calendar: ${error.message}`;
+        setIndicator("warning", status.textContent);
         grid.innerHTML = `
           <div class="honest-state planner-failure">
             <strong>Calendar unavailable</strong>
