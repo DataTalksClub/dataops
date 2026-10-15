@@ -7,14 +7,14 @@ export const summary = "List, inspect, create (from a Template), and move Cards"
 
 export const STAGES = ["preparation", "announced", "after-event"];
 
-export const help = `dataops cards - a Card is one unit of work, usually created from a Template
+export const help = `dataops cards - a Card is one unit of work, created from a Template
 
 Usage
   dataops cards list [--owner me|team|unassigned|<user-id>] [--mine] [--stage S]
       [--status active|parked|archived] [--all] [--limit N]
                                                 Default: active and parked; --all adds archived
   dataops cards show <card-id>                  The Card, its links, and its Tasks
-  dataops cards create --title T --date YYYY-MM-DD [--template ID|TYPE|NAME]
+  dataops cards create --title T --date YYYY-MM-DD --template ID|TYPE|NAME
       [--optional-groups a,b] [--stage S] [--description D] [--owner ID] [--tags a,b]
   dataops cards update <card-id> [--title T] [--description D] [--date D] [--owner ID|none]
       [--tags a,b]
@@ -128,10 +128,8 @@ export async function create(args, io) {
     title: required(args, "title", "title"),
     anchorDate: isoDate(required(args, "date", "date"), "date"),
   };
-  if (args.template !== undefined) {
-    const template = await findTemplate(api, String(args.template));
-    body.templateId = template.id;
-  }
+  // Every Card is instantiated from a Template.
+  body.templateId = (await findTemplate(api, required(args, "template", "template"))).id;
   if (args.optionalGroups !== undefined) body.optionalGroups = csv(args.optionalGroups);
   const stage = optionalString(args, "stage");
   if (stage !== undefined) body.stage = stage;

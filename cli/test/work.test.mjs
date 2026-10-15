@@ -355,6 +355,12 @@ describe("cards and templates", () => {
     assert.ok(!calls.some((call) => call.method === "POST"));
   });
 
+  test("a Card without --template is a usage error before anything is sent", async () => {
+    const calls = fakePortal({});
+    assert.equal(await run(["cards", "create", "--title", "X", "--date", "2026-11-02"], captureIo()), 2);
+    assert.equal(calls.length, 0);
+  });
+
   test("link fills one named card link and keeps the others", async () => {
     const card = { id: "c-2", title: "Card", stage: "preparation", version: 4, cardLinks: [{ name: "Published", url: "" }, { name: "Other", url: "https://example.test/o" }] };
     const calls = fakePortal({
