@@ -13,8 +13,8 @@ export const SNAPSHOT_STORAGE_LIMITS: StoragePaginationLimits = {
 };
 
 export class StoragePaginationError extends Error {
-  constructor(readonly reason: string) {
-    super(reason);
+  constructor(readonly reason: string, options?: { cause?: unknown }) {
+    super(reason, options);
     this.name = "StoragePaginationError";
   }
 }
@@ -99,10 +99,13 @@ export async function collectBoundedPages<T>(input: {
       ]);
     } catch (error) {
       if (error instanceof StoragePaginationError) throw error;
+      // Keep the storage error (e.g. throttling) as the cause so the
+      // runtime log names what actually failed.
       throw new StoragePaginationError(
         controller.signal.aborted
           ? "storage-pagination-timeout"
           : "storage-pagination-failed",
+        { cause: error },
       );
     } finally {
       if (timeout) clearTimeout(timeout);

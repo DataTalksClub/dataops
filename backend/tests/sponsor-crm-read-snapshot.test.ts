@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { listCrmRecords, scanCrmPrefix, withCrmReadSnapshot } from '../src/db/sponsorCrm';
+import { collectBoundedPages, StoragePaginationError } from '../src/db/boundedPagination';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { route } from '../src/router';
 
@@ -100,4 +101,18 @@ describe('sponsor CRM read snapshot', () => {
       }
     });
   }
+});
+
+describe('bounded pagination failures', () => {
+  it('keeps the storage error as the cause', async () => {
+    const throttled = Object.assign(new Error('Throughput exceeds the current capacity'), {
+      name: 'ProvisionedThroughputExceededException',
+    });
+    await assert.rejects(
+      collectBoundedPages({ loadPage: async () => { throw throttled; } }),
+      (error: unknown) => error instanceof StoragePaginationError
+        && error.reason === 'storage-pagination-failed'
+        && error.cause === throttled,
+    );
+  });
 });

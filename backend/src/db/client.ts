@@ -1,6 +1,8 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+const PRODUCTION_MAX_ATTEMPTS = 6;
+
 let localTransactionEmulationEnabled = false;
 
 /**
@@ -46,8 +48,11 @@ async function getClient(localPort?: number): Promise<DynamoDBDocumentClient> {
     return failLoudlyOnMissingTable(DynamoDBDocumentClient.from(raw));
   }
 
-  // Otherwise, use default AWS SDK config
-  const raw = new DynamoDBClient({});
+  // Otherwise, use default AWS SDK config, with more attempts than the SDK's
+  // default 3: a burst of parallel reads can briefly exceed a partition's
+  // throughput, and the SDK's backoff between attempts lets it recover
+  // instead of surfacing the throttle as a 500.
+  const raw = new DynamoDBClient({ maxAttempts: PRODUCTION_MAX_ATTEMPTS });
   return failLoudlyOnMissingTable(DynamoDBDocumentClient.from(raw));
 }
 
