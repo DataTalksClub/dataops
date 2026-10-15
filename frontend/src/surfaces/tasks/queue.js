@@ -4,6 +4,7 @@ import { blockedReason, blockedSummary } from "../../core/task-dependencies.js";
 import { taskMaterials, taskTitleParts } from "../../core/task-display.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { openSkipTaskDialog } from "../work-detail/work-dialogs.js";
+import { createQueueAssigneeFilter } from "./queue-assignee.js";
 import { createCardHovercards } from "./card-hovercard.js";
 import { renderQueueMaterials } from "./queue-materials.js";
 import { renderResourceMarks, resourceLabel } from "../../core/resources.js";
@@ -45,19 +46,17 @@ export function createTaskQueue(context) {
     workTaskTitle,
   } = context;
 
-  function personaFilters() {
-    // The account menu receives this same workspace member snapshot.
-    const members = (state.workSnapshot.users || [])
-      .filter(member => member?.id && member.disabled !== true)
-      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
-    return [{ id: "all", label: "All", name: "All teammates" }, ...members.map(member => ({
-      id: String(member.id), label: member.name || member.email, name: member.name || member.email,
-    }))];
-  }
-
   const cardHovercards = createCardHovercards(context);
+  const {
+    activeAssigneeFilter,
+    assigneeScope,
+    assigneeTarget,
+    renderAssigneeFilter,
+    taskMatchesAssignee,
+  } = createQueueAssigneeFilter(context);
+  // The filtered open tasks in queue order: "Show all" continues this list.
+  let visibleOpenTasks = [];
 
-  let activePersonaFilter = "all";
   // "all", "none" (needs nothing outside DataOps), or one resource id.
   let activeResourceFilter = "all";
 
@@ -117,59 +116,6 @@ export function createTaskQueue(context) {
     return label;
   }
 
-  function taskMatchesPersona(task, filterId) {
-    if (!filterId || filterId === "all") return true;
-    const assigneeId = String(task.assigneeId || "");
-    if (filterId === "unassigned") return !assigneeId;
-    return assigneeId === filterId;
-  }
-
-  function countOpenByPersona(openTasks) {
-    const counts = { all: openTasks.length };
-    for (const p of personaFilters()) {
-      if (p.id !== "all") {
-        counts[p.id] = openTasks.filter((entry) => taskMatchesPersona(entry.task, p.id)).length;
-      }
-    }
-    return counts;
-  }
-
-  function renderPersonaFilterBar(counts, onSelect) {
-    const nav = document.createElement("div");
-    // One queue narrowed by assignee: a single-choice filter, so the dakit
-    // segmented control as a radiogroup (docs/segmented.md).
-    nav.className = "dk-tabs ops-queue-persona-nav";
-    nav.setAttribute("role", "radiogroup");
-    nav.setAttribute("aria-label", "Filter queue by assignee");
-
-    for (const p of personaFilters()) {
-      const isSelected = activePersonaFilter === p.id;
-      const count = counts[p.id] ?? 0;
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "dk-tab ops-queue-persona-filter";
-      btn.dataset.persona = p.label.toLowerCase();
-      btn.setAttribute("role", "radio");
-      btn.setAttribute("aria-checked", String(isSelected));
-      btn.tabIndex = isSelected ? 0 : -1;
-      btn.setAttribute("aria-label", `Filter to ${p.name}, ${count} open`);
-      btn.append(document.createTextNode(p.label));
-      if (count) {
-        const quantity = document.createElement("span");
-        quantity.className = "dk-count";
-        quantity.textContent = String(count);
-        btn.append(quantity);
-      }
-      btn.addEventListener("click", () => {
-        if (activePersonaFilter === p.id) return;
-        activePersonaFilter = p.id;
-        onSelect();
-      });
-      nav.append(btn);
-    }
-    return nav;
-  }
-
   function renderWorkQueueSurface() {
     const taskRouteContext = getTaskRouteContext();
     const today = taskRouteContext.date || todayIsoDate();
@@ -223,41 +169,40 @@ export function createTaskQueue(context) {
         return;
       }
 
-      if (!personaFilters().some(person => person.id === activePersonaFilter)) activePersonaFilter = "all";
-      const personaOpen = activePersonaFilter === "all"
-        ? allOpenTasks
-        : allOpenTasks.filter((entry) => taskMatchesPersona(entry.task, activePersonaFilter));
-      const resourceFilter = renderResourceFilter(personaOpen, () => populateBoard());
-      const visibleOpen = personaOpen.filter((entry) => taskMatchesResource(entry.task, activeResourceFilter));
+      const assigneeFilter = activeAssigneeFilter();
+      const target = assigneeTarget(assigneeFilter);
+      const scope = assigneeScope(assigneeFilter);
+      const assigneeOpen = allOpenTasks.filter((entry) => taskMatchesAssignee(entry.task, target));
+      const resourceFilter = renderResourceFilter(assigneeOpen, () => populateBoard());
+      const visibleOpen = assigneeOpen.filter((entry) => taskMatchesResource(entry.task, activeResourceFilter));
+      visibleOpenTasks = visibleOpen;
 
       const visibleDone = doneTasks.filter((task) =>
-        taskMatchesPersona(task, activePersonaFilter) && taskMatchesResource(task, activeResourceFilter));
-
-      const activePersona = personaFilters().find((p) => p.id === activePersonaFilter);
-      const personaLabel = activePersona?.label || "All";
+        taskMatchesAssignee(task, target) && taskMatchesResource(task, activeResourceFilter));
 
       if (allOpenTasks.length > 0 || doneTasks.length > 0) {
-        const counts = countOpenByPersona(allOpenTasks);
         // Who and what: the assignee filter and the required-resource filter
         // share one toolbar row with the create actions.
-        filters.prepend(renderPersonaFilterBar(counts, () => populateBoard()), ...[resourceFilter].filter(Boolean));
+        filters.prepend(renderAssigneeFilter(allOpenTasks), ...[resourceFilter].filter(Boolean));
 
         if (visibleOpen.length > 0) {
-          board.append(renderQueueTotalLine(visibleOpen.length, allOpenTasks.length, personaLabel));
+          board.append(renderQueueTotalLine(visibleOpen.length, scope));
           board.append(renderQueueRows(visibleOpen, today, cardsById));
           const expander = renderQueueExpander(visibleOpen.length);
           if (expander) board.append(expander);
-        } else if (activeResourceFilter !== "all" && personaOpen.length > 0) {
+        } else if (activeResourceFilter !== "all" && assigneeOpen.length > 0) {
           const emptyMsg = document.createElement("p");
           emptyMsg.className = "ops-empty ops-queue-resource-empty";
           emptyMsg.textContent = activeResourceFilter === "none"
             ? "Every open task here needs an external system."
             : `No open tasks here need ${resourceLabel(activeResourceFilter, state.workSnapshot.resourcesById)}.`;
           board.append(emptyMsg);
-        } else if (activePersonaFilter !== "all" && allOpenTasks.length > 0) {
+        } else if (scope) {
           const emptyMsg = document.createElement("p");
-          emptyMsg.className = "ops-empty ops-queue-persona-empty";
-          emptyMsg.textContent = `No open tasks assigned to ${personaLabel} right now.`;
+          emptyMsg.className = "ops-empty ops-queue-assignee-empty";
+          emptyMsg.textContent = target
+            ? `No open tasks ${scope.phrase} right now.`
+            : "Your signed-in identity is not known, so Mine cannot be shown. Choose a person or All.";
           board.append(emptyMsg);
         }
 
@@ -348,18 +293,16 @@ export function createTaskQueue(context) {
     return empty;
   }
 
-  function renderQueueTotalLine(visibleCount, totalOpen, personaLabel) {
+  // How much of the scoped work is on screen. The scope rides in the same
+  // sentence as the count, so "25 of 40" always says whose 40.
+  function renderQueueTotalLine(count, scope) {
     const total = document.createElement("p");
     total.className = "ops-queue-total";
-    if (personaLabel && personaLabel !== "All" && totalOpen !== undefined) {
-      total.textContent = `Showing ${personaLabel}’s work: ${visibleCount} open task${visibleCount === 1 ? "" : "s"} (${totalOpen} total across all teammates)`;
-    } else {
-      const count = visibleCount ?? totalOpen;
-      total.textContent =
-        count > QUEUE_VISIBLE_LIMIT
-          ? `Showing ${QUEUE_VISIBLE_LIMIT} of ${count} open, most urgent first`
-          : `${count} open, most urgent first`;
-    }
+    const whose = scope ? ` ${scope.phrase}` : "";
+    total.textContent =
+      count > QUEUE_VISIBLE_LIMIT
+        ? `Showing ${QUEUE_VISIBLE_LIMIT} of ${count} open${whose}, most urgent first`
+        : `${count} open${whose}, most urgent first`;
     const copy = total.textContent;
     total.textContent = "";
     for (const part of copy.split(/(\d+)/)) {
@@ -413,11 +356,7 @@ export function createTaskQueue(context) {
       const today = todayIsoDate();
       const cardsById = state.workSnapshot.cardsById || new Map();
       const rendered = list.querySelectorAll(".ops-queue-row").length;
-      const ordered = orderOpenTasks(
-        routeTasks(getTaskRouteContext()),
-        today,
-      );
-      for (const entry of ordered.slice(rendered))
+      for (const entry of visibleOpenTasks.slice(rendered))
         list.append(renderWorkQueueRow(entry.task, today, cardsById));
       expander.remove();
     });
@@ -547,7 +486,9 @@ export function createTaskQueue(context) {
     const clear = document.createElement("button");
     clear.type = "button";
     clear.textContent = "Clear queue context";
-    clear.addEventListener("click", () => navigateCanonicalWorkspace("/tasks"));
+    // Clearing the card or day keeps whose work the queue shows.
+    clear.addEventListener("click", () =>
+      navigateCanonicalWorkspace("/tasks", { assignee: activeAssigneeFilter() }));
     routeState.append(heading, detail, retry, clear);
     return routeState;
   }

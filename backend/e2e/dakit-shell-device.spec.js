@@ -316,16 +316,19 @@ for (const theme of ['light', 'dark']) {
       const payload = await response.json(); created.push(payload.task || payload);
     }
     await page.addInitScript(t => localStorage.setItem('dakit-theme', t), theme);
+    // The signed-in operator here is neither fixture person, so Mine is
+    // empty; the teammates are listed and filtered by id, never by name.
     await page.goto('/tasks');
-    const filter = page.getByRole('radiogroup', { name: 'Filter queue by assignee' });
-    await expect(filter.getByRole('radio')).toHaveCount(3);
-    await expect(filter.getByRole('radio', { name: 'Filter to Alexeyette, 1 open', exact: true })).toBeVisible();
+    const filter = page.getByRole('combobox', { name: 'Filter queue by assignee' });
+    await expect(filter).toHaveValue('me');
+    await expect(filter.locator('optgroup option')).toHaveText(['Alexey (2)', 'Alexeyette (1)']);
+    await filter.selectOption(actorId);
+    await expect(page).toHaveURL(new RegExp(`/tasks\\?assignee=${actorId}$`));
     await page.locator('#settings-button').click();
     const scope = page.getByRole('radiogroup', { name: 'Viewing work for', exact: true });
     await expect(scope.getByRole('radio')).toHaveCount(2);
     await expect(scope.getByRole('radio', { name: /work for Alexeyette$/ })).toBeVisible();
     await page.keyboard.press('Escape');
-    await filter.getByRole('radio', { name: 'Filter to Alexey, 2 open', exact: true }).click();
     await expect(page.locator('.ops-queue-row').filter({ hasText: 'Similar name overdue task' })).toHaveCount(0);
     const boxes = page.locator('.ops-queue-row[data-urgency="overdue"] .ops-queue-box');
     await expect(boxes).toHaveCount(2);

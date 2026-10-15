@@ -494,6 +494,7 @@ const {
   getActiveWorkspaceRoute,
   getActiveWorkspaceRouteToken,
   getAllDocuments: () => knowledgeState.allDocuments,
+  getCurrentOperator: () => getAccountIdentityState().user,
   getPendingLegacyRoute,
   getTaskRouteContext,
   getWorkspaceEntityState,

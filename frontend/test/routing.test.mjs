@@ -130,6 +130,28 @@ describe("canonical workspace routing", () => {
     );
   });
 
+  test("keeps the queue's assignee scope in the URL with Mine as the bare default", () => {
+    assert.equal(canonicalWorkspaceUrl("/tasks", { assignee: "me" }), "/tasks");
+    assert.equal(canonicalWorkspaceUrl("/tasks", { assignee: "all" }), "/tasks?assignee=all");
+    assert.equal(
+      canonicalWorkspaceUrl("/tasks", { assignee: "user-1", taskId: "task-1" }),
+      "/tasks?taskId=task-1&assignee=user-1",
+    );
+    const mine = parseWorkspaceLocation("/tasks?assignee=me", browserLocation("/tasks?assignee=me"));
+    assert.equal(mine.canonicalUrl, "/tasks");
+    assert.equal(mine.normalized, true);
+    const unassigned = parseWorkspaceLocation(
+      "/tasks?assignee=unassigned",
+      browserLocation("/tasks?assignee=unassigned"),
+    );
+    assert.equal(unassigned.params.get("assignee"), "unassigned");
+    assert.equal(unassigned.normalized, false);
+    assert.equal(
+      parseWorkspaceLocation("/tasks?assignee=", browserLocation("/tasks?assignee=")).invalid,
+      true,
+    );
+  });
+
   test("parses active, archive, card, and nested task URLs without normalization", () => {
     for (const hash of [
       "/cards",

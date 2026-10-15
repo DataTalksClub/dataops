@@ -126,6 +126,7 @@
     "src/surfaces/tasks/card-hovercard.js",
     "src/surfaces/tasks/cards.js",
     "src/surfaces/tasks/index.js",
+    "src/surfaces/tasks/queue-assignee.js",
     "src/surfaces/tasks/queue-materials.js",
     "src/surfaces/tasks/queue.js",
     "src/surfaces/tasks/quick-create.js",

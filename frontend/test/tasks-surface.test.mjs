@@ -135,9 +135,11 @@ function createHarness(options = {}) {
   const undoToasts = [];
   const entityStates = [];
   const documentRefreshes = [];
+  // Most queue tests are about rows, not whose they are: they read the whole
+  // queue. The assignee tests pass their own route and signed-in operator.
   let route = options.route || {
     path: "/tasks",
-    params: new URLSearchParams(),
+    params: new URLSearchParams("assignee=all"),
   };
   let taskRouteContext = options.taskRouteContext || {
     date: "",
@@ -188,6 +190,7 @@ function createHarness(options = {}) {
     getActiveWorkspaceRoute: () => route,
     getActiveWorkspaceRouteToken: () => activeRouteToken,
     getAllDocuments: () => [],
+    getCurrentOperator: () => options.currentOperator ?? null,
     getPendingLegacyRoute: () => null,
     getTaskRouteContext: () => taskRouteContext,
     getWorkspaceEntityState: () => entityStates.at(-1) || null,
@@ -515,6 +518,7 @@ describe("Tasks surface boundary", () => {
     assert.equal(navigations[0].path, "/tasks");
     assert.equal(navigations[0].options.history, "none");
     assert.equal(navigations[1].path, "/tasks");
+    assert.deepEqual(navigations[1].params, { assignee: "all" });
   });
 
   test("caps the visible queue and expands on demand without losing order", () => {
@@ -909,6 +913,109 @@ describe("Tasks surface boundary", () => {
     await again.dispatch("change");
     assert.deepEqual(queueRowTitles(documentList), ["Plan the quarter"]);
     assert.equal(findAllByClass(documentList, "ops-queue-resource-filter").length, 1);
+  });
+
+  test("opens on the signed-in operator's tasks and moves the assignee scope through the URL", async () => {
+    const mine = Array.from({ length: 27 }, (_, index) =>
+      canonicalTask({
+        id: `mine-${String(index).padStart(2, "0")}`,
+        description: `Mine ${String(index).padStart(2, "0")}`,
+        date: "2026-08-12",
+        assigneeId: "user-grace",
+      }));
+    const tasks = [
+      ...mine,
+      canonicalTask({ id: "sam", description: "Sam's task", date: "2026-08-12", assigneeId: "user-sam" }),
+      canonicalTask({ id: "nobody", description: "Nobody's task", date: "2026-08-12", assigneeId: null }),
+      canonicalTask({ id: "gone", description: "Former member's task", date: "2026-08-12", assigneeId: "user-gone" }),
+    ];
+    const harness = createHarness({
+      route: { path: "/tasks", params: new URLSearchParams() },
+      currentOperator: { id: "user-grace", name: "Grace" },
+      userNames: { "user-sam": "Sam", "user-grace": "Grace" },
+      workSnapshot: {
+        users: [
+          { id: "user-sam", name: "Sam" },
+          { id: "user-grace", name: "Grace" },
+          { id: "user-off", name: "Off", disabled: true },
+        ],
+      },
+      taskRouteContext: {
+        date: "", tasks, cardId: "", filterCard: null, contextCardId: "", contextCard: null, failures: [],
+      },
+    });
+    const { api, documentList, navigations } = harness;
+    const assigneeSelect = () =>
+      findAllByClass(documentList, "ops-queue-assignee-filter")[0].querySelector("select");
+    const total = () => findAllByClass(documentList, "ops-queue-total")[0]?.textContent;
+
+    api.renderTasksSurface([], "queue");
+    assert.equal(assigneeSelect().value, "me");
+    assert.equal(assigneeSelect().getAttribute("aria-label"), "Filter queue by assignee");
+    assert.deepEqual(
+      assigneeSelect().querySelectorAll("option").map((option) => [option.value, option.textContent]),
+      [["me", "Mine (27)"], ["unassigned", "Unassigned (1)"], ["all", "All (30)"], ["user-sam", "Sam (1)"]],
+    );
+    assert.equal(queueRowTitles(documentList).length, 25);
+    assert.ok(queueRowTitles(documentList).every((title) => title.startsWith("Mine")));
+    assert.equal(total(), "Showing 25 of 27 open assigned to you, most urgent first");
+    await findByText(documentList, "Show all 27", "button").dispatch("click");
+    assert.equal(queueRowTitles(documentList).length, 27);
+    assert.ok(queueRowTitles(documentList).every((title) => title.startsWith("Mine")));
+
+    // Choosing is navigation: the scope lands in the URL and history.
+    assigneeSelect().value = "user-sam";
+    await assigneeSelect().dispatch("change");
+    assert.equal(navigations.at(-1).path, "/tasks");
+    assert.equal(navigations.at(-1).params.get("assignee"), "user-sam");
+    assert.equal(navigations.at(-1).options.history, undefined);
+
+    harness.setRoute({ path: "/tasks", params: new URLSearchParams("assignee=user-sam") });
+    api.renderTasksSurface([], "queue");
+    assert.equal(assigneeSelect().value, "user-sam");
+    assert.deepEqual(queueRowTitles(documentList), ["Sam's task"]);
+    assert.equal(total(), "1 open assigned to Sam, most urgent first");
+
+    harness.setRoute({ path: "/tasks", params: new URLSearchParams("assignee=unassigned") });
+    api.renderTasksSurface([], "queue");
+    assert.deepEqual(queueRowTitles(documentList), ["Nobody's task"]);
+    assert.equal(total(), "1 open unassigned, most urgent first");
+
+    harness.setRoute({ path: "/tasks", params: new URLSearchParams("assignee=all&taskId=sam") });
+    api.renderTasksSurface([], "queue");
+    assert.equal(total(), "Showing 25 of 30 open, most urgent first");
+    // Back to Mine drops the parameter (a bare /tasks is Mine) and the open task.
+    assigneeSelect().value = "me";
+    await assigneeSelect().dispatch("change");
+    assert.equal(navigations.at(-1).params.has("assignee"), false);
+    assert.equal(navigations.at(-1).params.has("taskId"), false);
+
+    // A deep link to someone no longer active still filters to them, named.
+    harness.setRoute({ path: "/tasks", params: new URLSearchParams("assignee=user-gone") });
+    api.renderTasksSurface([], "queue");
+    assert.equal(assigneeSelect().value, "user-gone");
+    assert.ok(
+      assigneeSelect().querySelectorAll("option").some((option) =>
+        option.value === "user-gone" && option.textContent === "user-gone, not active (1)"),
+    );
+    assert.deepEqual(queueRowTitles(documentList), ["Former member's task"]);
+  });
+
+  test("says Mine cannot be shown while the signed-in identity is unknown", () => {
+    const harness = createHarness({
+      route: { path: "/tasks", params: new URLSearchParams() },
+      taskRouteContext: {
+        date: "",
+        tasks: [canonicalTask({ id: "t", description: "Someone's task", date: "2026-08-12", assigneeId: "user-sam" })],
+        cardId: "", filterCard: null, contextCardId: "", contextCard: null, failures: [],
+      },
+    });
+    harness.api.renderTasksSurface([], "queue");
+    assert.deepEqual(queueRowTitles(harness.documentList), []);
+    assert.match(
+      findAllByClass(harness.documentList, "ops-queue-assignee-empty")[0].textContent,
+      /signed-in identity is not known/,
+    );
   });
 
   test("names recurring origin with its own icon", () => {

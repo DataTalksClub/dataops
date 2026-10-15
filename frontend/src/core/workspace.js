@@ -20,7 +20,10 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/tasks": {
     view: "tasks",
     tasksSection: "queue",
-    params: ["taskId", "date", "cardId", "contextCardId"],
+    params: ["taskId", "date", "cardId", "contextCardId", "assignee"],
+    // A bare /tasks is the signed-in operator's queue: the default scope has
+    // one URL, so `assignee=me` normalizes away.
+    paramDefaults: { assignee: "me" },
   },
   "/cards": {
     view: "tasks",
@@ -134,7 +137,7 @@ export function canonicalWorkspaceUrl(path, params = new URLSearchParams()) {
   for (const name of definition.params) {
     const value =
       params instanceof URLSearchParams ? params.get(name) : params?.[name];
-    if (value) ordered.set(name, value);
+    if (value && value !== definition.paramDefaults?.[name]) ordered.set(name, value);
   }
   const query = ordered.toString();
   return `${path}${query ? `?${query}` : ""}`;
