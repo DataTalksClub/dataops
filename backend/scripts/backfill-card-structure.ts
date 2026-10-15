@@ -6,7 +6,6 @@
  * segment on event Cards (`- Tony Zeljkovic`), a trailing sponsor segment on
  * newsletter Cards (`- Astronomer`), and a sometimes-stale `anchorDate`.
  * For each Card this script:
- * - assigns `templateId` from the `[Tag]` when the Card has none,
  * - corrects `anchorDate` from the date embedded in the title,
  * - moves the person segment to `people` and sponsor segments to `sponsor` /
  *   `secondarySponsors`,
@@ -25,7 +24,6 @@
  */
 import { getClient } from '../src/db/client';
 import { listCards, updateCard } from '../src/db/cards';
-import { listTemplates } from '../src/db/templates';
 import { planCardStructureUpdate } from '../src/cards/cardTitleStructure';
 
 const args = new Set(process.argv.slice(2));
@@ -35,7 +33,6 @@ interface PlannedChange {
   id: string;
   title?: { from: string; to: string };
   anchorDate?: { from: string; to: string };
-  templateId?: { from: string | null; to: string };
   people?: { from: string[]; to: string[] };
   sponsor?: { from: string | null; to: string };
   secondarySponsors?: { from: string[]; to: string[] };
@@ -44,20 +41,13 @@ interface PlannedChange {
 
 async function main(): Promise<void> {
   const client = await getClient();
-  const [cards, templates] = await Promise.all([listCards(client), listTemplates(client)]);
-
-  const templateIdByType = new Map<string, string>();
-  for (const template of templates) {
-    const type = String(template.type || '').trim();
-    if (type && !templateIdByType.has(type)) templateIdByType.set(type, template.id);
-  }
+  const cards = await listCards(client);
 
   const planned: PlannedChange[] = [];
   for (const card of cards) {
-    const patch = planCardStructureUpdate(card, templateIdByType);
+    const patch = planCardStructureUpdate(card);
     if (!patch) continue;
     const change: PlannedChange = { id: card.id };
-    if (patch.templateId) change.templateId = { from: card.templateId ?? null, to: patch.templateId };
     if (patch.anchorDate) change.anchorDate = { from: String(card.anchorDate || ''), to: patch.anchorDate };
     if (patch.title) change.title = { from: String(card.title || ''), to: patch.title };
     if (patch.people) change.people = { from: card.people || [], to: patch.people };
@@ -74,7 +64,6 @@ async function main(): Promise<void> {
     planned: planned.length,
     titles: planned.filter((change) => change.title).length,
     anchorDates: planned.filter((change) => change.anchorDate).length,
-    templateIds: planned.filter((change) => change.templateId).length,
     people: planned.filter((change) => change.people).length,
     sponsors: planned.filter((change) => change.sponsor).length,
     secondarySponsors: planned.filter((change) => change.secondarySponsors).length,
@@ -92,7 +81,6 @@ async function main(): Promise<void> {
     const card = cards.find((candidate) => candidate.id === change.id);
     if (!card) continue;
     const patch: Record<string, unknown> = {};
-    if (change.templateId) patch.templateId = change.templateId.to;
     if (change.anchorDate) patch.anchorDate = change.anchorDate.to;
     if (change.title) patch.title = change.title.to;
     if (change.people) patch.people = change.people.to;

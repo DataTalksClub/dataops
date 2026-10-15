@@ -232,20 +232,11 @@ describe('card title structure', () => {
 });
 
 describe('planCardStructureUpdate', () => {
-  const templates = new Map([
-    ['newsletter', 'template-newsletter'],
-    ['podcast', 'template-podcast'],
-    ['webinar', 'template-webinar'],
-  ]);
-
-  it('plans template, anchor, title, issueNumber, and sponsor updates for a legacy card', () => {
+  it('plans anchor, title, issueNumber, and sponsor updates for a legacy card', () => {
     assert.deepStrictEqual(
       planCardStructureUpdate(
-        { title: '[Newsletter] Weekly email #299(19OCT 2026) -Snowplow', anchorDate: '2026-08-11' },
-        templates,
-      ),
+        { title: '[Newsletter] Weekly email #299(19OCT 2026) -Snowplow', anchorDate: '2026-08-11' }),
       {
-        templateId: 'template-newsletter',
         anchorDate: '2026-10-19',
         title: 'Weekly email',
         issueNumber: '299',
@@ -257,28 +248,22 @@ describe('planCardStructureUpdate', () => {
   it('plans people updates for event cards', () => {
     assert.deepStrictEqual(
       planCardStructureUpdate(
-        { title: '[Podcast] 2026-AUG-17 - Playbook - Tony Zeljkovic & Juan Manuel Perafan', anchorDate: '2026-08-17' },
-        templates,
-      ),
+        { title: '[Podcast] 2026-AUG-17 - Playbook - Tony Zeljkovic & Juan Manuel Perafan', anchorDate: '2026-08-17' }),
       {
-        templateId: 'template-podcast',
         title: 'Playbook',
         people: ['Tony Zeljkovic', 'Juan Manuel Perafan'],
       },
     );
   });
 
-  it('keeps templateId lineage but corrects stale sponsor and issue values from the title', () => {
+  it('corrects stale sponsor and issue values from the title', () => {
     assert.deepStrictEqual(
       planCardStructureUpdate(
         {
           title: '[Newsletter] Weekly email #299(19OCT 2026) -Snowplow',
           anchorDate: '2026-08-11',
-          templateId: 'template-other',
           sponsor: 'Acme',
-        },
-        templates,
-      ),
+        }),
       {
         anchorDate: '2026-10-19',
         title: 'Weekly email',
@@ -294,12 +279,9 @@ describe('planCardStructureUpdate', () => {
         {
           title: 'Weekly email',
           anchorDate: '2026-10-19',
-          templateId: 'template-newsletter',
           issueNumber: '299',
           sponsor: 'Snowplow',
-        },
-        templates,
-      ),
+        }),
       null,
     );
   });
@@ -316,6 +298,7 @@ describe('hydrateStructuredCardFields', () => {
       id: 'card-1',
       title: '[Newsletter] Weekly email #298(12OCT 2026) -Astronomer',
       anchorDate: '2026-08-10',
+      templateId: 'tpl-newsletter',
     };
     hydrateStructuredCardFields(card, templates);
     assert.strictEqual(card.templateId, 'tpl-newsletter');
@@ -338,6 +321,16 @@ describe('hydrateStructuredCardFields', () => {
     assert.strictEqual(card.sponsor, 'CustomSponsor');
     assert.strictEqual(card.issueNumber, '999');
     assert.strictEqual(card.title, 'Weekly email');
+  });
+
+  it('never infers a Template from the title tag', () => {
+    const card: any = {
+      id: 'card-4',
+      title: '[Webinar] 2026-SEP-15 - Talk - Speaker',
+      anchorDate: '2026-09-15',
+    };
+    hydrateStructuredCardFields(card, templates);
+    assert.strictEqual(card.templateId, undefined);
   });
 
   it('leaves cards with no tag and no structure untouched', () => {

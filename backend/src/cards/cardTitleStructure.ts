@@ -199,7 +199,6 @@ function splitSponsors(tail: string): { sponsor: string | null; secondarySponsor
 }
 
 export interface CardStructurePatch {
-  templateId?: string;
   anchorDate?: string;
   title?: string;
   issueNumber?: string;
@@ -209,7 +208,6 @@ export interface CardStructurePatch {
 }
 
 export interface StructuredCardShape {
-  templateId?: string | null;
   anchorDate?: string;
   title?: string | null;
   issueNumber?: string | null;
@@ -224,26 +222,15 @@ function sameList(left: string[] | undefined, right: string[] | undefined): bool
 
 /**
  * Decide the backfill patch for one Card. Returns null when nothing should
- * change. Existing `templateId`, `people`, `sponsor`, and `issueNumber` values
+ * change. Existing `people`, `sponsor`, and `issueNumber` values
  * are never overwritten unless stale, and titles are only rewritten when the tag
  * names a known Template (so unknown tags keep their full title instead of losing parts).
  */
-export function planCardStructureUpdate(
-  card: StructuredCardShape,
-  templateIdByType: Map<string, string> | Record<string, string>,
-): CardStructurePatch | null {
+export function planCardStructureUpdate(card: StructuredCardShape): CardStructurePatch | null {
   const parsed = parseCardTitle(card.title || '');
   if (!parsed.tag && !parsed.date) return null;
-  const lookup =
-    templateIdByType instanceof Map
-      ? (type: string) => templateIdByType.get(type)
-      : (type: string) => (templateIdByType as Record<string, string>)[type];
 
   const patch: CardStructurePatch = {};
-  if (!card.templateId && parsed.templateType) {
-    const templateId = lookup(parsed.templateType);
-    if (templateId) patch.templateId = templateId;
-  }
   if (parsed.date && parsed.date !== String(card.anchorDate || '').slice(0, 10)) {
     patch.anchorDate = parsed.date;
   }
@@ -397,13 +384,6 @@ export function hydrateStructuredCardFields(
   // titles are authored or rendered from a Template's `card_title` pattern and
   // are shown as stored.
   if (parsed.tag || parsed.date) {
-    if (!card.templateId && parsed.templateType && templateIdByType) {
-      const lookup =
-        templateIdByType instanceof Map
-          ? templateIdByType.get(parsed.templateType)
-          : (templateIdByType as Record<string, string>)[parsed.templateType];
-      if (lookup) card.templateId = lookup;
-    }
     if (parsed.date) {
       card.anchorDate = parsed.date;
     }
