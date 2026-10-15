@@ -282,7 +282,6 @@ export function createNewsletterPlanner(context) {
       ${renderPageHeaderMarkup({
         title: "Newsletter planner",
         titleId: "newsletter-surface-title",
-        subtitle: "Europe/Berlin.",
         className: "planner-header",
       })}
       <div class="newsletter-toolbar">
