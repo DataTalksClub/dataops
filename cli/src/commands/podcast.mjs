@@ -12,6 +12,9 @@ export const help = `dataops podcast - the podcast episode register (the web Ope
 Usage
   dataops podcast list [--season N] [--status S] [--card <card-id>] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   dataops podcast show <episode-id>
+  dataops podcast schedule [--season N] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+                                  Publication schedule: audio time and timezone, Spotify
+                                  public check, transcript review, website readiness
   dataops podcast create [--title T] [--guests "Name[:slug],Name"] [--season N] [--episode N]
       [--recording-date YYYY-MM-DD] [--release-date YYYY-MM-DD] [--status S]
       [--youtube URL] [--spotify URL] [--apple URL] [--anchor URL] [--website URL]
@@ -24,6 +27,9 @@ Usage
                                   (the episode needs a recording date)
 
 Statuses: ${STATUSES.join(", ")}.
+Publication facts (timezone, audio time, Spotify verification, transcript review,
+website release) are recorded in the web Podcast page or via PUT publication;
+a scheduled time never counts as public.
 --from/--to filter on the episode's release date, else its recording date.
 Writes send the episode's current version; a changed episode exits 5.
 An episode links at most one podcast Card; its recording date and guests are
@@ -122,6 +128,33 @@ export async function list(args, io) {
   return result;
 }
 
+/** "2026-11-20T05:00:00.000Z Europe/Berlin" or "". */
+function scheduledAt(episode) {
+  const publication = episode.publication;
+  return publication?.audioScheduledAt ? `${publication.audioScheduledAt} ${publication.timezone || ""}`.trim() : "";
+}
+
+export async function schedule(args, io) {
+  const query = {
+    season: args.season === undefined ? undefined : integer(args.season, "season"),
+    from: isoDate(args.from, "from"),
+    to: isoDate(args.to, "to"),
+  };
+  const result = await apiFor(args).get("/api/podcast-episodes", { query });
+  const items = (result.items || []).filter((episode) => episode.status !== "cancelled");
+  if (args.json) return { items };
+  table(io, items, [
+    ["ID", (episode) => episode.id],
+    ["EPISODE", (episode) => episodeCode(episode)],
+    ["AUDIO", (episode) => scheduledAt(episode) || episode.releaseDate || ""],
+    ["SPOTIFY", (episode) => episode.readiness?.spotify || ""],
+    ["TRANSCRIPT", (episode) => episode.readiness?.transcript || ""],
+    ["WEBSITE", (episode) => episode.readiness?.website || ""],
+    ["CARD", (episode) => episode.cardId || ""],
+  ], "No podcast episodes match.");
+  return { items };
+}
+
 export async function show(args, io) {
   const id = positional(args, 0, "dataops podcast show <episode-id>");
   const episode = await apiFor(args).get(`/api/podcast-episodes/${enc(id)}`);
@@ -136,6 +169,11 @@ export async function show(args, io) {
     ["releaseDate", episode.releaseDate],
     ...Object.entries(episode.links || {}),
     ["websiteSlug", episode.websiteSlug],
+    ["audio", scheduledAt(episode)],
+    ["spotify", episode.readiness?.spotify],
+    ["transcript", episode.readiness?.transcript],
+    ["website", episode.readiness?.website],
+    ["blockers", episode.readiness?.websiteBlockers],
     ["cardId", episode.cardId],
     ["notes", episode.notes],
     ["version", episode.version],
@@ -195,6 +233,7 @@ export async function createCard(args, io) {
 export const commands = {
   list,
   show,
+  schedule,
   create,
   update,
   "create-card": createCard,

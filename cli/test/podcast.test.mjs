@@ -126,3 +126,27 @@ describe("podcast", () => {
     assert.equal(calls.filter((call) => call.method === "POST").length, 1);
   });
 });
+
+describe("podcast schedule", () => {
+  test("lists readiness from the API without inferring public from a time", async () => {
+    const calls = fakePortal({
+      "GET /api/podcast-episodes": {
+        items: [
+          episode({
+            id: "ep-1",
+            publication: { timezone: "Europe/Berlin", audioScheduledAt: "2026-11-20T05:00:00.000Z" },
+            readiness: { spotify: "awaiting-public-check", transcript: "pending", website: "blocked", websiteBlockers: ["Transcript not reviewed"] },
+          }),
+          episode({ id: "ep-2", status: "cancelled" }),
+        ],
+      },
+    });
+    const io = captureIo();
+    assert.equal(await run(["podcast", "schedule"], io), 0);
+    assert.ok(calls.length === 1);
+    const out = io.text();
+    assert.match(out, /awaiting-public-check/);
+    assert.match(out, /blocked/);
+    assert.doesNotMatch(out, /ep-2/);
+  });
+});
