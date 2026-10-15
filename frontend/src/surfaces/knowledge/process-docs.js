@@ -478,10 +478,15 @@ export function createProcessDocsSurface(context, services) {
     setRouteTitle("Process Docs");
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-docs";
-    wrap.append(renderSurfaceHeader("Process Docs"));
     const view = activeProcessDocsView();
     wrap.dataset.processDocsView = view;
-    wrap.append(renderViewTabs(view));
+    // The view tabs ride on the header row, so they cost no vertical space.
+    const header = renderSurfaceHeader("Process Docs");
+    const headerTabs = document.createElement("div");
+    headerTabs.className = "dk-page-header__actions";
+    headerTabs.append(renderViewTabs(view));
+    header.append(headerTabs);
+    wrap.append(header);
     // The catalog toolbar (Filters, New process doc) and storage status
     // belong to the catalog; the recent view hides them.
     if (knowledgeTools) knowledgeTools.hidden = view === "recent";
@@ -524,7 +529,19 @@ export function createProcessDocsSurface(context, services) {
     for (const [view, label] of PROCESS_DOCS_VIEWS) {
       const tab = document.createElement("a");
       tab.className = "dk-tab";
-      tab.textContent = label;
+      // Phones show the short form ("Recent") so the tabs fit beside the title.
+      const [short, rest] = view === "recent" ? ["Recent", "ly changed"] : [label, ""];
+      // One flex item, so the tab's gap never splits the word.
+      const text = document.createElement("span");
+      text.append(short);
+      if (rest) {
+        const tail = document.createElement("span");
+        tail.className = "ops-docs-views__long";
+        tail.textContent = rest;
+        text.append(tail);
+        tab.setAttribute("aria-label", label);
+      }
+      tab.append(text);
       tab.href = view === "recent" ? "/processes?view=recent" : "/processes";
       tab.dataset.processDocsView = view;
       if (view === active) tab.setAttribute("aria-current", "page");
