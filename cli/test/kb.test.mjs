@@ -173,8 +173,22 @@ describe("kb code", () => {
       },
     });
     const io = captureIo();
-    assert.equal(await run(["kb", "code", "news.schedule"], io), 0);
-    assert.match(io.text(), /duplicate file block/);
+    assert.equal(await run(["kb", "code", "news.schedule"], io), 6);
+    assert.match(io.errors.join("\n"), /duplicate file block/);
+  });
+
+  test("reports invalid discovery as an error rather than an absent alternative", async () => {
+    fakePortal({
+      ...docsRoutes,
+      "GET /docs": ({ query }) => ({
+        path: query.path, code_view: null,
+        code_view_error: "Multiple code views target this SOP",
+      }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["kb", "code", "news.schedule"], io), 6);
+    assert.match(io.errors.join("\n"), /Multiple code views/);
+    assert.doesNotMatch(io.text(), /no code view is linked/);
   });
 });
 

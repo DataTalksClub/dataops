@@ -145,6 +145,7 @@ export async function code(args, io) {
   const api = apiFor(args);
   const document = await resolveDocument(api, ref);
   let doc = await api.get("/docs", { query: { path: document.path } });
+  if (doc.code_view_error) throw new ApiError(422, { error: doc.code_view_error }, "");
   const viewPath = doc.doc_type === "code-view" ? doc.path : doc.code_view?.path;
   if (!viewPath) {
     const result = { document: document.id, path: doc.path, code_view: null };
@@ -156,9 +157,7 @@ export async function code(args, io) {
   const parsed = doc.parsed_code_view;
   if (!parsed) {
     const error = doc.parse_code_error || "code view exists but could not be parsed";
-    if (args.json) return { path: doc.path, code_view: doc.code_view ?? null, error };
-    io.print(`${doc.path}: ${error}`);
-    return { path: doc.path, code_view: doc.code_view ?? null, error };
+    throw new ApiError(422, { error: `${doc.path}: ${error}` }, "");
   }
   const result = {
     path: doc.path,
