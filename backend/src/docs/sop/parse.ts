@@ -111,14 +111,9 @@ function stripChar(s: string, ch: string): string {
 // ---------- frontmatter ----------
 
 export function splitFrontmatter(text: string): [string, string] {
-  if (!text.startsWith('---\n')) {
-    return ['', text];
-  }
-  const end = text.indexOf('\n---\n', 4);
-  if (end === -1) {
-    return ['', text];
-  }
-  return [text.slice(4, end), text.slice(end + 5)];
+  const block = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(text);
+  if (!block) return ['', text];
+  return [block[1], text.slice(block[0].length)];
 }
 
 /** Minimal YAML subset: scalars, inline lists, and `key:` + `  - item` lists. */

@@ -67,6 +67,17 @@ describe('S3 authenticated knowledge content routes',()=>{
   const history=await call(ev('GET','/knowledge/history',{query:{path}}));assert.equal(history.body.versions[0].actor,'authenticated-test-user');
   const search=await call(ev('GET','/search',{query:{q:'New token'}}));assert.ok(search.body.results.length);
  });
+ it('keeps stable document references and original bytes after saving Windows line endings',async()=>{
+  const path='content/newsletter/reference.md';
+  const content=REF.replace(/\n/g,'\r\n');
+  const save=await call(ev('PUT','/docs',{query:{path},body:{content,expectedRevision:revision}}));
+  assert.equal(save.status,200);
+  assert.ok(!(save.body.warnings || []).includes('missing frontmatter'));
+  const resolved=await call(ev('GET','/docs/resolve',{query:{ref:'ref.newsletter'}}));
+  assert.equal(resolved.status,200);
+  const readback=await call(ev('GET','/docs',{query:{path}}));
+  assert.equal(readback.body.content,content);
+ });
  it('creates with absent precondition and restores a deleted document as a new revision',async()=>{
   const path='content/test/new.md';
   assert.equal((await call(ev('POST','/docs',{body:{path,expectedRevision:revision}}))).status,400);

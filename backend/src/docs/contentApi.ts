@@ -51,7 +51,7 @@ import {
 import { createSearchIndex, type SearchIndex } from './searchIndex';
 import { iterContentDocs } from './search/extract';
 import { sopStructuredText } from './search/sopExtract';
-import { parse, ParseError, lintText } from './sop';
+import { parse, ParseError, lintText, splitFrontmatter } from './sop';
 import { newDocContent } from './docScaffolds';
 import { DEFAULT_HEADERS, jsonResponse, method, queryParam } from './http';
 import { search } from './contentSearch';
@@ -939,11 +939,9 @@ function relativePath(fromDir: string, toFile: string): string {
 }
 
 function frontmatterValue(markdown: string, key: string): string {
-  if (!markdown.startsWith('---\n')) return '';
-  const end = markdown.indexOf('\n---', 4);
-  if (end === -1) return '';
+  const [raw] = splitFrontmatter(markdown);
   const prefix = `${key}:`;
-  for (const line of markdown.slice(4, end).split('\n')) {
+  for (const line of raw.split(/\r?\n/)) {
     if (line.startsWith(prefix)) {
       return line.slice(line.indexOf(':') + 1).trim().replace(/^"|"$/g, '');
     }
