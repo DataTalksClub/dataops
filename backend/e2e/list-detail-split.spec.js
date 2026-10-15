@@ -73,9 +73,9 @@ async function scrollReport(page) {
 const VIEWS = [
   { route: '/review', open: async (page) => {
     await page.locator('.review-controls select').selectOption('all');
-    await page.locator('.review-surface .dk-split__item').nth(3).click();
+    await page.locator('.review-surface .dk-split__item').nth(10).click();
   } },
-  { route: '/sponsors', open: (page) => page.locator('.crm-master .dk-split__item').nth(2).click() },
+  { route: '/sponsors', open: (page) => page.locator('.crm-master .dk-split__item').nth(10).click() },
 ];
 
 for (const view of VIEWS) {
@@ -84,6 +84,7 @@ for (const view of VIEWS) {
     await setupPageWithAuth(page);
     await page.goto(`${server.baseURL}${view.route}`);
     await expect(page.locator('.dk-split')).toBeVisible();
+    if (view.route === '/review') await expect(page).toHaveURL(/documentId=/);
     await view.open(page);
     await expect(page.locator('.dk-split')).toHaveAttribute('data-view', 'detail');
     await expect(page.locator('.dk-split__item[aria-current="true"]')).toHaveCount(1);
@@ -140,6 +141,7 @@ for (const view of VIEWS) {
     await expect(list).toBeVisible();
     await expect(detail).toBeHidden();
     await expect(page.locator('.dk-split__item').filter({ hasText: originText.replace(/\s+/g, ' ').trim() })).toBeFocused();
+    await expect(page.locator('.dk-split__item').filter({ hasText: originText.replace(/\s+/g, ' ').trim() })).toBeInViewport();
   });
 }
 

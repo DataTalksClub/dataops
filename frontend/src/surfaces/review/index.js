@@ -135,6 +135,7 @@ export function createReviewSurface(context) {
   let filter = "needs-review";
   let query = "";
   let selectedId = "";
+  let listScrollTop = 0;
   let previewRequestId = 0;
   let historyRequestId = 0;
   let lastDocuments = [];
@@ -170,6 +171,7 @@ export function createReviewSurface(context) {
   }
 
   function selectDocument(item) {
+    listScrollTop = documentList.querySelector(".dk-split__list .dk-split__scroll")?.scrollTop || 0;
     selectedId = item.id;
     navigateCanonicalWorkspace("/review", { documentId: item.id });
   }
@@ -541,19 +543,26 @@ export function createReviewSurface(context) {
   }
 
   function renderReviewSurface(documents) {
+    const previousList = documentList.querySelector('.dk-split[data-view="list"] .dk-split__list .dk-split__scroll');
+    if (previousList) listScrollTop = previousList.scrollTop || 0;
     lastDocuments = Array.isArray(documents) ? documents : [];
     const reviewSnapshot = snapshot();
     const queue = reviewSnapshot.loaded
       ? buildReviewQueue(lastDocuments, reviewSnapshot.reviews)
       : [];
     const items = filteredItems(queue);
-    const routeId = activeRouteDocumentId();
+    let routeId = activeRouteDocumentId();
     const selectedItem = queue.find((item) => item.id === routeId) ||
       queue.find((item) => item.id === selectedId) ||
       items[0] ||
       queue[0] ||
       null;
     if (selectedItem) selectedId = selectedItem.id;
+    if (!routeId && selectedItem && globalThis.matchMedia?.("(min-width: 821px)").matches) {
+      // Desktop's automatic detail choice is a real, reloadable selection.
+      navigateCanonicalWorkspace("/review", { documentId: selectedItem.id }, { history: "replace", render: false });
+      routeId = selectedItem.id;
+    }
 
     documentList.classList.remove("is-operations-home");
     documentList.classList.remove("is-unified-search");
@@ -604,6 +613,10 @@ export function createReviewSurface(context) {
       root.append(state);
     }
     documentList.replaceChildren(root);
+    if (layout.dataset.view === "list") {
+      layout.querySelector(".dk-split__list .dk-split__scroll").scrollTop = listScrollTop;
+      globalThis.dakitSplit?.reveal(layout);
+    }
   }
 
   return { refreshReviewSnapshot, renderReviewSurface };
