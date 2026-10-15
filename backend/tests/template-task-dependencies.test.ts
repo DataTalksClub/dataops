@@ -257,3 +257,12 @@ describe('Card Template sync of dependencies', () => {
     );
   });
 });
+
+describe('portable export of dependencies', () => {
+  it('exports prerequisite ids', async () => {
+    const { mapTask } = await import('../src/export/portableMappers');
+    const mapped = mapTask({ id: 't2', version: 1, description: 'D', status: 'todo', dependsOn: ['t1'], taskHistory: [] });
+    assert.deepEqual(mapped.depends_on, ['t1']);
+    assert.equal(mapTask({ id: 't1', version: 1, description: 'P', status: 'todo', taskHistory: [] }).depends_on, undefined);
+  });
+});

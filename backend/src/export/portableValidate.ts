@@ -216,6 +216,14 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     optionalStringField(task, 'instruction_step_id', errors, context);
     optionalStringField(task, 'phase', errors, context);
     optionalStringArrayField(task, 'requires', errors, context);
+    optionalStringArrayField(task, 'depends_on', errors, context);
+    if (Array.isArray(task.depends_on)) {
+      task.depends_on.forEach((taskId, dependencyIndex) => {
+        if (typeof taskId === 'string' && !taskIds.has(taskId)) {
+          errors.push(`${context}.depends_on[${dependencyIndex}] references missing task_id: ${taskId}`);
+        }
+      });
+    }
     optionalStringArrayField(task, 'source_doc_ids', errors, context);
     optionalIntegerField(task, 'template_offset_days', errors, context);
     optionalBooleanField(task, 'is_milestone', errors, context);

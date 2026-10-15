@@ -74,6 +74,7 @@ export function mapTask(item: Record<string, unknown>): JsonRecord {
     instruction_step_id: optionalString(item.instructionStepId),
     phase: optionalString(item.phase),
     requires: stringArray(item.requires),
+    depends_on: stringArray(item.dependsOn),
     validation: optionalJsonStringOrObject(item.validation),
     link: optionalString(item.link),
     materials: jsonArray(item.materials),
