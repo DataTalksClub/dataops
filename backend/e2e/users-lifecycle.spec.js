@@ -30,10 +30,6 @@ async function createPerson(request, baseName) {
 async function openUsers(page) {
   await page.goto('/users');
   await expect(page.locator('.ops-users-table')).toBeVisible();
-  // The app's background work snapshot (one request per Card) re-renders the
-  // whole workspace when it lands. With a large shared table in CI it can land
-  // mid-interaction and replace the controls under test, so let it settle.
-  await page.waitForLoadState('networkidle');
 }
 
 function row(page, name) {
