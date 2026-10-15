@@ -543,11 +543,16 @@ export function createOperationsModel({
       ),
       templates: Array.isArray(snapshot.templates) ? snapshot.templates : [],
       users,
-      usersById: new Map(
-        users
+      // Names resolve for former (deleted) people too; `users` stays the
+      // current accounts, which is what pickers offer.
+      usersById: new Map([
+        ...(Array.isArray(snapshot.formerUsers) ? snapshot.formerUsers : [])
+          .filter((user) => user && user.id)
+          .map((user) => [user.id, { ...user, deleted: true }]),
+        ...users
           .filter((user) => user && user.id)
           .map((user) => [user.id, user]),
-      ),
+      ]),
       cardTasks,
       resources,
       resourcesById: new Map(resources.map((resource) => [resource.id, resource])),

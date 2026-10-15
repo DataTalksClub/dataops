@@ -576,6 +576,9 @@ export function createWorkModel(context) {
     snapshot.waitingTasks = tasksFromWorkPayload(settledPayload(waitingResult));
     snapshot.cards = cardPage.items || [];
     snapshot.users = usersFromWorkPayload(settledPayload(usersResult));
+    // Deleted accounts leave only a name, so done work still says who did it.
+    const formerUsers = settledPayload(usersResult)?.formerUsers;
+    snapshot.formerUsers = Array.isArray(formerUsers) ? formerUsers : [];
     // Templates only name and decorate Cards (kind + icon); without them the
     // queue still renders, so a failed listing is not a work error.
     const templatesPayload = settledPayload(templatesResult);
