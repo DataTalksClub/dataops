@@ -11,13 +11,14 @@ const {
 const ROOT = path.resolve(__dirname, "..", "..");
 const SCREENSHOT_DIR = path.join(ROOT, ".tmp", "screenshots", "issue-198");
 const FIXTURE_DOC_PATH = "content/overview/reference/schedule.md";
+const FIXTURE_DOC_ID = "ref.synthetic.characterization-schedule";
 const FIXTURE_DOC_TITLE = "Synthetic Characterization Schedule";
 const FIXTURE_DOC_SUMMARY = "Synthetic reference used only by browser characterization tests.";
 // `buildOperationsReferenceLinks` indexes this exact path, so the docs surface
 // only lists this document when `GET /docs` really returned the spec's corpus.
 const FIXTURE_DOC = [
   "---",
-  "id: ref.synthetic.characterization-schedule",
+  `id: ${FIXTURE_DOC_ID}`,
   `title: ${FIXTURE_DOC_TITLE}`,
   `summary: ${FIXTURE_DOC_SUMMARY}`,
   "doc_type: reference",
@@ -228,7 +229,7 @@ test.describe("pre-refactor frontend module characterization", () => {
       ["/bookkeeping", "Bookkeeping", ".bookkeeping-surface"],
       // Bare /sponsors opens its default tab at /sponsors/queue.
       ["/sponsors", "Sponsors", ".sponsor-crm-surface", "/sponsors/queue"],
-      ["/review", "Document review", ".review-surface"],
+      ["/review", "Document review", ".review-surface", `/review?documentId=${FIXTURE_DOC_ID}`],
       ["/processes", "Process Docs", ".ops-surface-docs"],
       ["/admin", "Admin", ".ops-surface-admin"],
       ["/users", "Users", ".ops-surface-users"],
