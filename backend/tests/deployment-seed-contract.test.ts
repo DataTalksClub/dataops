@@ -9,7 +9,6 @@ assert.ok(filter, 'deployment must validate the Lambda seed response');
 
 function response(templateTotal: number) {
   return { statusCode: 200, body: JSON.stringify({
-    users: { processed: 3, created: 0, updated: 0, unchanged: 3 },
     templates: { total: templateTotal, created: 0, updated: 0, unchanged: templateTotal },
     recurring: { total: 6, created: 0, updated: 0, skipped: 6, repairedTasks: 0 },
   }) };
@@ -27,7 +26,7 @@ test('deploy seed gate accepts valid independently authored template counts', ()
 test('deploy seed gate rejects malformed counts and incomplete reconciliation', () => {
   for (const total of [0, -1, 2.5]) assert.equal(accepted(response(total)), false);
   const invalid = [
-    { users: { processed: 4, created: 0, updated: 0, unchanged: 4 } },
+    { users: { processed: 3, created: 0, updated: 0, unchanged: 3 } },
     { templates: { total: 24, created: 0, updated: 0, unchanged: 23 } },
     { templates: { total: 24, created: -1, updated: 0, unchanged: 25 } },
     { templates: { total: '24', created: 0, updated: 0, unchanged: 24 } },

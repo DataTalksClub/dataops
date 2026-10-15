@@ -34,7 +34,7 @@ describe('dry-run import', () => {
   });
 
   it('reports would-write counts for a valid export without writing', async () => {
-    const user = await createUser(client, { name: 'Ops', email: 'ops@test', passwordHash: 'x' });
+    const user = await createUser(client, { name: 'Ops', email: 'ops@test' });
     const template = await createTemplate(client, { name: 'Podcast', type: 'podcast' });
     const card = await createCard(client, { title: 'Episode 1', anchorDate: '2026-06-27', templateId: template.id, status: 'active' });
     const task = await createTask(client, {

@@ -9,7 +9,6 @@ import {
 } from './db/recurring';
 import { TABLE_TASKS } from './db/tableNames';
 import { updateTask } from './db/tasks';
-import { createUserWithId, getUserByEmail } from './db/users';
 import {
   type AuthoredTemplateDefinition,
   loadAuthoredTemplatesFromKnowledge,
@@ -17,18 +16,8 @@ import {
 } from './templates/authoredTemplates';
 import type { RecurringConfig, Task } from './types';
 
-const GRACE_USER_ID = '00000000-0000-0000-0000-000000000001';
-export const VALERIIA_USER_ID = '00000000-0000-0000-0000-000000000002';
-export const ALEXEY_USER_ID = '00000000-0000-0000-0000-000000000003';
 const SLACK_INVITE_DOC_ID = 'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form';
 const TRELLO_EVENT_DOC_ID = 'sop.internal-admin.trello.how-to-create-an-event-through-trello';
-const DEFAULT_PASSWORD = '111';
-
-export const USERS = [
-  { id: GRACE_USER_ID, name: 'Grace', email: 'grace@datatalks.club', role: 'admin' as const },
-  { id: VALERIIA_USER_ID, name: 'Valeriia', email: 'valeriia@datatalks.club', role: 'admin' as const },
-  { id: ALEXEY_USER_ID, name: 'Alexey', email: 'alexey@datatalks.club', role: 'admin' as const },
-] as const;
 
 type BaselineRecurringConfig = Pick<
   RecurringConfig,
@@ -64,13 +53,6 @@ export const BASELINE_RECURRING_CONFIGS: readonly BaselineRecurringConfig[] = [
   { description: 'Check bookkeeping, invoices, and receipts', cronExpression: '0 9 * * 1' },
 ] as const;
 
-export interface UserSeedReport {
-  processed: number;
-  created: number;
-  updated: number;
-  unchanged: number;
-}
-
 export interface RecurringSeedReport {
   created: number;
   updated: number;
@@ -80,7 +62,6 @@ export interface RecurringSeedReport {
 }
 
 export interface DeploymentSeedReport {
-  users: UserSeedReport;
   templates: {
     total: number;
     created: number;
@@ -105,38 +86,6 @@ export function assertCanonicalDeploymentTemplateLoader(): void {
   if (deploymentTemplateLoader !== canonicalDeploymentTemplateLoader) {
     throw new Error('Deployment template loader injection must not be active outside tests');
   }
-}
-
-async function hashPassword(password: string): Promise<string> {
-  const data = new TextEncoder().encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-export async function seedRuntimeUsers(client: DynamoDBDocumentClient): Promise<UserSeedReport> {
-  const passwordHash = await hashPassword(DEFAULT_PASSWORD);
-  const report: UserSeedReport = { processed: USERS.length, created: 0, updated: 0, unchanged: 0 };
-
-  for (const userData of USERS) {
-    const { id, ...data } = userData;
-    const existing = await getUserByEmail(client, data.email);
-    if (!existing) {
-      await createUserWithId(client, id, { ...data, passwordHash });
-      report.created++;
-    } else if (!existing.passwordHash) {
-      await createUserWithId(client, id, { ...data, passwordHash });
-      report.updated++;
-    } else {
-      report.unchanged++;
-    }
-  }
-
-  console.log(
-    `User seed complete. processed=${report.processed} created=${report.created} updated=${report.updated} unchanged=${report.unchanged}`
-  );
-  return report;
 }
 
 function recurringKey(config: Pick<RecurringConfig, 'description' | 'cronExpression'>): string {
@@ -255,8 +204,7 @@ export async function seedDeploymentRuntime(
   client: DynamoDBDocumentClient,
   loadTemplates: AuthoredTemplateLoader = deploymentTemplateLoader
 ): Promise<DeploymentSeedReport> {
-  const users = await seedRuntimeUsers(client);
   const templates = await reconcileAuthoredTemplates(client, await loadTemplates());
   const recurring = await seedRecurringConfigs(client);
-  return { users, templates, recurring };
+  return { templates, recurring };
 }

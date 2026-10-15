@@ -5,7 +5,9 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
-import { listUsers, getUserByEmail } from '../src/db/users';
+import { ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { listUsers } from '../src/db/users';
+import { TABLE_USERS } from '../src/db/tableNames';
 import { seed, USERS } from '../scripts/seed-users';
 
 describe('Seed users script', () => {
@@ -58,19 +60,9 @@ describe('Seed users script', () => {
     assert.strictEqual(afterSecondRun.length, countBefore, 'User count should not change after second seed');
   });
 
-  it('seeded users have passwordHash set (not returned via cleanItem)', async () => {
-    // getUserByEmail returns raw user including passwordHash
-    const grace = await getUserByEmail(client, 'grace@datatalks.club');
-    assert.ok(grace, 'Grace should exist');
-    assert.ok(grace!.passwordHash, 'Grace should have passwordHash');
-    assert.ok(grace!.passwordHash!.length === 64, 'SHA-256 hex should be 64 chars');
-  });
-
-  it('cleanItem strips passwordHash from user objects returned via listUsers', async () => {
-    const users = await listUsers(client);
-    for (const user of users) {
-      assert.strictEqual((user as any).passwordHash, undefined, 'passwordHash must not appear in cleanItem results');
-    }
+  it('seeded users carry no password: local sign-in is the portal broker', async () => {
+    const raw = await client.send(new ScanCommand({ TableName: TABLE_USERS }));
+    for (const item of raw.Items || []) assert.strictEqual(item.passwordHash, undefined);
   });
 
   it('USERS constant has the expected stable UUIDs', () => {

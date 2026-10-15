@@ -18,7 +18,7 @@ import {
   seed as seedRecurring,
 } from '../scripts/seed-recurring';
 import { setDefaultAssignee } from '../src/db/workspaceSettings';
-import { ALEXEY_USER_ID } from '../src/deploymentSeeds';
+import { ALEXEY_USER_ID } from '../scripts/seed-users';
 
 const ADMIN_PICKED_ASSIGNEE = '00000000-0000-0000-0000-000000000099';
 

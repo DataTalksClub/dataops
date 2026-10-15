@@ -105,9 +105,8 @@ export async function projectCards(
 
 /**
  * The signed-in identity. `disabled` is always explicit so the shell never has
- * to infer availability, and no password or session material is included.
+ * to infer availability, and no session material is included.
  */
 export function identityProjection(user: User): IdentityProjection {
-  const { passwordHash: _passwordHash, ...rest } = user as User & { passwordHash?: string };
-  return { ...rest, disabled: user.disabled === true };
+  return { ...user, disabled: user.disabled === true };
 }

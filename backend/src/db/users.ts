@@ -11,22 +11,12 @@ import { TABLE_USERS } from './tableNames';
 import type { User } from '../types';
 
 /**
- * Strip DynamoDB key attributes (PK, SK) and passwordHash from an item.
- * Passwords must never be exposed via API.
+ * Strip DynamoDB key attributes (PK, SK) from an item.
  */
 function cleanItem(item: Record<string, unknown> | undefined): User | null {
   if (!item) return null;
-  const { PK, SK, passwordHash, ...rest } = item;
-  return rest as unknown as User;
-}
-
-/**
- * Get raw user item including passwordHash. Used only for authentication.
- */
-function rawItem(item: Record<string, unknown> | undefined): (User & { passwordHash?: string }) | null {
-  if (!item) return null;
   const { PK, SK, ...rest } = item;
-  return rest as unknown as User & { passwordHash?: string };
+  return rest as unknown as User;
 }
 
 /**
@@ -184,24 +174,6 @@ async function listUsers(client: DynamoDBDocumentClient): Promise<User[]> {
   return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as User);
 }
 
-/**
- * Get a user by email (for authentication). Returns raw item including passwordHash.
- */
-async function getUserByEmail(client: DynamoDBDocumentClient, email: string): Promise<(User & { passwordHash?: string }) | null> {
-  const result = await client.send(
-    new ScanCommand({
-      TableName: TABLE_USERS,
-      FilterExpression: 'begins_with(PK, :prefix) AND email = :email',
-      ExpressionAttributeValues: { ':prefix': 'USER#', ':email': email },
-    })
-  );
-
-  const items = result.Items || [];
-  if (items.length === 0) return null;
-
-  return rawItem(items[0] as Record<string, unknown>);
-}
-
 /** Return all users whose normalized email exactly matches the supplied identity. */
 async function getUsersByNormalizedEmail(client: DynamoDBDocumentClient, email: string): Promise<User[]> {
   const normalized = email.trim().toLowerCase();
@@ -228,7 +200,6 @@ export {
   createUserWithId,
   getUser,
   listUsers,
-  getUserByEmail,
   getUsersByNormalizedEmail,
   provisionBrowserOperator,
   updateUser,

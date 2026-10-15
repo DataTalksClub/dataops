@@ -11,7 +11,6 @@ import { handler } from '../src/handler';
 import {
   BASELINE_RECURRING_CONFIGS,
   setDeploymentTemplateLoaderForTest,
-  USERS,
 } from '../src/deploymentSeeds';
 import { loadAuthoredTemplatesFromKnowledge } from '../src/templates/authoredTemplates';
 import { templateToYaml } from '../src/templates/yamlTemplates';
@@ -61,7 +60,7 @@ describe('handler - IAM-only deployment seeds', () => {
     assert.strictEqual((await listTemplates(client)).length, 0);
   });
 
-  it('runs users, authored templates, and recurring configs in order with sanitized idempotent counts', async () => {
+  it('runs authored templates, then recurring configs, creating no people, with idempotent counts', async () => {
     const event = {
       source: 'dataops.deploy',
       'detail-type': 'Runtime Seed',
@@ -70,7 +69,6 @@ describe('handler - IAM-only deployment seeds', () => {
     const files = syntheticAuthoredFiles(11);
     const { store, requests } = syntheticKnowledgeStore(files);
     const loadTemplates = async () => {
-      assert.strictEqual((await listUsers(client)).length, USERS.length, 'users must exist before template loading');
       assert.strictEqual((await listRecurringConfigs(client)).length, 0, 'recurring configs must wait for templates');
       return loadAuthoredTemplatesFromKnowledge(store);
     };
@@ -81,7 +79,6 @@ describe('handler - IAM-only deployment seeds', () => {
     assert.strictEqual(firstResponse.statusCode, 200);
     const first = JSON.parse(firstResponse.body);
     assert.deepStrictEqual(first, {
-      users: { processed: USERS.length, created: USERS.length, updated: 0, unchanged: 0 },
       templates: { total: 11, created: 11, updated: 0, unchanged: 0 },
       recurring: {
         created: BASELINE_RECURRING_CONFIGS.length,
@@ -107,7 +104,6 @@ describe('handler - IAM-only deployment seeds', () => {
     assert.strictEqual(secondResponse.statusCode, 200);
     const second = JSON.parse(secondResponse.body);
     assert.deepStrictEqual(second, {
-      users: { processed: USERS.length, created: 0, updated: 0, unchanged: USERS.length },
       templates: { total: 11, created: 0, updated: 0, unchanged: 11 },
       recurring: {
         created: 0,
@@ -125,12 +121,9 @@ describe('handler - IAM-only deployment seeds', () => {
     assert.strictEqual(requests.filter((request) => request === 'active.json').length, 1);
     assert.strictEqual(requests.filter((request) => request.startsWith('objects/')).length, 22);
 
-    const body = JSON.stringify(second);
-    for (const user of USERS) {
-      assert.ok(!body.includes(user.name));
-      assert.ok(!body.includes(user.email));
-      assert.ok(!body.includes(user.id));
-    }
+    // Accounts are added on the Users page and sign in with SSO; a deploy
+    // never creates a person or a password.
+    assert.deepStrictEqual(await listUsers(client), []);
 
     // The shipped handler owns the exact action. Its success path uses the
     // same function above with the GitHub loader; near-miss dispatch is covered

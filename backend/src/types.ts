@@ -532,7 +532,6 @@ export interface User {
   role?: UserRole;
   /** When true the account is disabled and cannot log in. */
   disabled?: boolean;
-  passwordHash?: string;
 }
 
 export type UserRole = 'admin' | 'operator';
