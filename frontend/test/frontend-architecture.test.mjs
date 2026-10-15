@@ -399,24 +399,35 @@ describe("workspace nav layout contract", () => {
     );
   });
 
-  // A stylesheet that ends inside an open rule still parses, so the gap goes
-  // unnoticed until a rule is appended after it and silently nests inside it
-  // (the Users page default-assignee picker rendered unstyled that way).
-  test("no stylesheet ends inside an open rule", () => {
-    const stylesDir = path.join(repoRoot, "frontend/src/styles");
-    const unbalanced = readdirSync(stylesDir)
+  // Unbalanced braces never fail to parse; they silently change what applies.
+  // A stylesheet that ends inside an open rule nests whatever is appended
+  // after it (the Users page default-assignee picker rendered unstyled that
+  // way), and a stray `}` swallows the next rule's selector, so that rule is
+  // dropped (the newsletter months and the card tile titles lost their styles
+  // that way).
+  test("every stylesheet has balanced braces", () => {
+    const srcDir = path.join(repoRoot, "frontend/src");
+    const blank = (match) => match.replace(/[^\n]/g, " ");
+    const problems = readdirSync(srcDir, { recursive: true })
       .filter((file) => file.endsWith(".css"))
-      .filter((file) => {
-        const css = readFileSync(path.join(stylesDir, file), "utf8")
-          .replace(/\/\*[\s\S]*?\*\//g, "")
-          .replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, "");
+      .flatMap((file) => {
+        const css = readFileSync(path.join(srcDir, file), "utf8")
+          .replace(/\/\*[\s\S]*?\*\//g, blank)
+          .replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, blank);
+        const found = [];
         let depth = 0;
+        let line = 1;
         for (const char of css) {
+          if (char === "\n") line += 1;
           if (char === "{") depth += 1;
-          if (char === "}") depth = Math.max(0, depth - 1);
+          if (char === "}") {
+            if (depth === 0) found.push(`${file}:${line}: stray }`);
+            else depth -= 1;
+          }
         }
-        return depth > 0;
+        if (depth > 0) found.push(`${file}: ends inside ${depth} open rule(s)`);
+        return found;
       });
-    assert.deepEqual(unbalanced, []);
+    assert.deepEqual(problems, []);
   });
 });

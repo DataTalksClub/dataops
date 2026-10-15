@@ -206,7 +206,7 @@
   min-width: 0;
 }.workflow-card-header > .workflow-card-count {
   flex: none;
-}}.ops-workflow-card.workflow-board-card > .workflow-card-title {
+}.ops-workflow-card.workflow-board-card > .workflow-card-title {
   display: -webkit-box;
   overflow: hidden;
   color: var(--dk-text-heading);
