@@ -56,8 +56,6 @@ export function createTaskQueue(context) {
   }
 
   const cardHovercards = createCardHovercards(context);
-  // The open tasks the queue last rendered: a card summary names the next one.
-  let renderedOpenTasks = [];
 
   let activePersonaFilter = "all";
   // "all", "none" (needs nothing outside DataOps), or one resource id.
@@ -187,7 +185,6 @@ export function createTaskQueue(context) {
     );
 
     const allOpenTasks = orderOpenTasks(tasks, today);
-    renderedOpenTasks = allOpenTasks.map((entry) => entry.task);
     const doneTasks = tasks
       .filter((task) => isCanonicalWorkTask(task) && task.status === "done")
       .sort((left, right) =>
@@ -980,7 +977,7 @@ export function createTaskQueue(context) {
     );
     if (materials) materialsCell.append(materials);
 
-    const originCell = cardHovercards.renderOriginCell(origin, () => ({ openTasks: renderedOpenTasks, today }));
+    const originCell = cardHovercards.renderOriginCell(origin, () => ({ today }));
 
     row.append(toggle, open, materialsCell, originCell, taskDueCell(task, today), owner, renderQueueSkip(task));
     return row;

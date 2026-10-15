@@ -1066,27 +1066,22 @@ describe("Tasks surface boundary", () => {
     const summary = origin.querySelector(".card-hovercard");
     assert.equal(summary.getAttribute("role"), "dialog");
     assert.equal(summary.getAttribute("aria-label"), "Card summary: Engineering AI-Powered Data Products");
+    // A few short facts, the episode's first; nothing that repeats the row
+    // (title, kind), the next task, the owner, links or an Open button.
+    assert.deepEqual(
+      summary.querySelectorAll("dt").map((term) => term.textContent),
+      ["Episode", "Guests", "Status", "Recording", "Release", "Progress", "Due"],
+    );
     const text = summary.textContent;
-    assert.match(text, /Podcast card · Preparation/);
-    assert.match(text, /9 of 12 tasks done/);
-    assert.match(text, /Send the guest brief · due 11 Aug 2026/);
-    assert.match(text, /10 Aug 2026 · 2 days late/);
-    assert.match(text, /Grace Meyer/);
     assert.match(text, /S21E5 · AI data products/);
     assert.match(text, /Ada Lovelace/);
     assert.match(text, /Recorded/);
     assert.match(text, /1 Sept? 2026/);
-    const hrefs = summary.querySelectorAll(".card-hovercard__link").map((anchor) => [anchor.href, anchor.target]);
-    assert.deepEqual(hrefs, [
-      ["https://docs.google.com/document/d/brief/edit", "_blank"],
-      ["/process/podcast.md", "_blank"],
-      ["https://www.youtube.com/watch?v=abc", "_blank"],
-      ["https://datatalks.club/podcast/ai.html", "_blank"],
-    ]);
-    const open = summary.querySelector(".card-hovercard__open");
-    assert.equal(open.href, "/cards?cardId=card-pod");
-    await open.click();
-    assert.deepEqual(openedCards, ["card-pod", "card-pod"]);
+    assert.match(text, /9 of 12 tasks done/);
+    assert.match(text, /10 Aug 2026 · 2 days late/);
+    assert.doesNotMatch(text, /Podcast card|Send the guest brief|Grace Meyer|Unassigned/);
+    assert.equal(summary.querySelectorAll("a").length, 0);
+    assert.equal(summary.querySelectorAll("button").length, 0);
 
     // The episode loads once per Card; reopening reuses it.
     await info.click();
@@ -1095,6 +1090,51 @@ describe("Tasks surface boundary", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.match(origin.querySelector(".card-hovercard").textContent, /Ada Lovelace/);
     assert.equal(requests.filter((url) => url.startsWith("/api/podcast-episodes")).length, 1);
+  });
+
+  test("summarises a newsletter Card with its slot first and the issue named once", async () => {
+    const card = {
+      id: "card-news",
+      version: 1,
+      title: "Weekly email",
+      templateId: "tpl-news",
+      stage: "preparation",
+      status: "active",
+      anchorDate: "2026-08-14",
+      taskCount: 15,
+      openTaskCount: 7,
+      cardLinks: [{ name: "Mailchimp newsletter", url: "https://mailchimp.com/x" }],
+    };
+    const { api, documentList } = createHarness({
+      workSnapshot: {
+        cardsById: new Map([[card.id, card]]),
+        templates: [{ id: "tpl-news", type: "newsletter", name: "Newsletter", icon: "newspaper" }],
+      },
+      request: async (url) => (url === `/api/newsletter-slots?cardId=${card.id}`
+        ? { items: [{ id: "slot-1", campaignLabel: "Weekly #299", campaignNumber: 299, publicationDate: "2026-08-14", bookedByDisplayName: "Acme", status: "booked" }] }
+        : {}),
+      taskRouteContext: {
+        date: "",
+        tasks: [canonicalTask({ id: "n1", cardId: card.id, description: "Write the intro", date: "2026-08-12" })],
+        cardId: "", filterCard: null, contextCardId: "", contextCard: null, failures: [],
+      },
+    });
+    api.renderTasksSurface([], "queue");
+    const origin = findAllByClass(documentList, "ops-queue-origin")[0];
+    await origin.querySelector(".ops-queue-origin-info").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const summary = origin.querySelector(".card-hovercard");
+    const rows = summary.querySelectorAll(".card-hovercard__fact")
+      .map((row) => [row.querySelector("dt").textContent, row.querySelector("dd").textContent]);
+    assert.deepEqual(rows.slice(0, 4), [
+      ["Issue", "Weekly #299"],
+      ["Date", "14 Aug 2026"],
+      ["Sponsor", "Acme"],
+      ["Status", "booked"],
+    ]);
+    assert.deepEqual(rows.slice(4).map(([label]) => label), ["Progress", "Due"]);
+    assert.equal(rows[4][1], "8 of 15 tasks done");
+    assert.equal(summary.querySelectorAll("a").length, 0);
   });
 
   test("puts instructions and the task's material links behind one icon, not a note", () => {

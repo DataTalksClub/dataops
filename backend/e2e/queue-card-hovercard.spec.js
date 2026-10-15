@@ -71,14 +71,16 @@ test('desktop: hovering Where shows the Card summary and a click opens the Card'
   await where.hover();
   const summary = page.getByRole('dialog', { name: 'Card summary: Synthetic hover card episode' });
   await expect(summary).toBeVisible();
-  await expect(summary).toContainText(/podcast card · Preparation/i);
   if (process.env.HOVERCARD_SHOT) await page.screenshot({ path: `${process.env.HOVERCARD_SHOT}/desktop.png` });
-  await expect(summary).toContainText('tasks done');
-  await expect(summary).toContainText('Podcast episode');
+  // A few short facts, the episode first: no header repeating the row, no
+  // links, and no scrollbar.
+  await expect(summary.locator('dt')).toHaveText(['Episode', 'Guests', 'Status', 'Recording', 'Release', 'Progress', 'Due']);
   await expect(summary).toContainText('S26E7 · Synthetic hover card episode');
   await expect(summary).toContainText('Hova Example');
   await expect(summary).toContainText('Recorded');
-  await expect(summary.getByRole('link', { name: /YouTube/ })).toHaveAttribute('target', '_blank');
+  await expect(summary).toContainText('tasks done');
+  await expect(summary.getByRole('link')).toHaveCount(0);
+  expect(await summary.evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true);
   // An overlay: the row does not move or grow under it.
   expect(await row.boundingBox()).toEqual(box);
 
@@ -105,8 +107,6 @@ test('desktop: keyboard focus on Where shows the summary', async ({ page }) => {
   await page.keyboard.press('Tab');
   const summary = page.getByRole('dialog', { name: /Card summary/ });
   await expect(summary).toBeVisible();
-  await page.keyboard.press('Tab');
-  await expect(summary.getByRole('link').first()).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(summary).toBeHidden();
   await expect(where).toBeFocused();
@@ -132,7 +132,7 @@ test.describe('phone', () => {
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(width).toBeLessThanOrEqual(390);
     // Tapping inside the summary keeps it open and does not open the task.
-    await summary.locator('.card-hovercard__title').tap();
+    await summary.locator('.card-hovercard__fact').first().tap();
     await expect(summary).toBeVisible();
     await expect(page).toHaveURL(/\/tasks/);
     await info.tap();

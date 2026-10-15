@@ -1,23 +1,16 @@
 import { cardKind } from "../../core/card-kind.js";
 import { attachHovercard } from "../../core/hovercard.js";
 import { renderIcon } from "../../core/icons.js";
-import { documentHref, isHttpLink, linkLabel, linkService, opensInNewTab } from "../../core/links.js";
-import { LINK_KINDS, STATUS_LABELS, episodeCode, guestNames } from "../podcast/model.js";
+import { STATUS_LABELS, episodeCode, guestNames } from "../podcast/model.js";
 
-// The Card behind a queue row, summarised on hover: what it is, how far it
-// got, what is next, when it is due and whose it is, plus its links. A
-// podcast Card adds its episode and a newsletter Card its slot, loaded on
-// first open and cached for the session. Everything else comes from the
-// snapshot already in memory, so the card opens without waiting.
+// The Card behind a queue row, summarised on hover as a few short facts: a
+// podcast Card's episode or a newsletter Card's slot first (loaded on first
+// open and cached for the session), then how far the Card got and when it is
+// due. The row already names the Card, and clicking it opens the Card, so
+// the summary repeats neither.
 
 const PODCAST_TYPES = new Set(["podcast"]);
 const NEWSLETTER_TYPES = new Set(["newsletter", "newsletter-standalone"]);
-const STAGE_LABELS = Object.freeze({
-  preparation: "Preparation",
-  announced: "Announced",
-  "after-event": "After the event",
-  done: "Done",
-});
 
 function formatDay(iso) {
   const value = String(iso || "").slice(0, 10);
@@ -71,80 +64,42 @@ function fact(list, label, value) {
   list.append(row);
 }
 
-function linkRow(href, label, icon) {
-  const item = el("li");
-  const link = el("a", "card-hovercard__link");
-  link.href = href;
-  link.title = href;
-  link.append(renderIcon(icon, { size: 16 }), el("span", "", label));
-  opensInNewTab(link);
-  item.append(link);
-  return item;
+// "Weekly #299", never "Weekly #299 · #299".
+export function slotIssueText(slot) {
+  const label = String(slot?.campaignLabel || "").trim();
+  const number = String(slot?.campaignNumber || "").trim();
+  if (!number) return label;
+  if (!label) return `#${number}`;
+  return label.includes(number) ? label : `${label} #${number}`;
 }
 
-function cardLinksList(card, localDocPathFromHref) {
-  const list = el("ul", "card-hovercard__links");
-  for (const link of Array.isArray(card.cardLinks) ? card.cardLinks : []) {
-    if (!isHttpLink(link?.url)) continue;
-    list.append(linkRow(link.url, link.name || linkLabel(link.url), linkService(link.url).icon));
-  }
-  for (const ref of Array.isArray(card.references) ? card.references : []) {
-    const url = typeof ref === "string" ? ref : ref?.url || ref?.link || "";
-    if (!url) continue;
-    const name = typeof ref === "string" ? "" : ref.name || ref.title || "";
-    const docPath = localDocPathFromHref(url);
-    if (docPath) list.append(linkRow(documentHref(docPath), name || "Process doc", "instructions"));
-    else if (isHttpLink(url)) list.append(linkRow(url, name || linkLabel(url), linkService(url).icon));
-  }
-  return list.children.length ? list : null;
+function episodeFacts(episode) {
+  return [
+    ["Episode", [episodeCode(episode), episode.title].filter(Boolean).join(" · ")],
+    ["Guests", guestNames(episode)],
+    ["Status", STATUS_LABELS[episode.status] || episode.status],
+    ["Recording", formatDay(episode.recordingDate)],
+    ["Release", formatDay(episode.releaseDate)],
+  ];
 }
 
-function section(title, ...children) {
-  const wrap = el("section", "card-hovercard__section");
-  wrap.append(el("h3", "card-hovercard__section-title", title), ...children.filter(Boolean));
-  return wrap;
-}
-
-function episodeSection(episode) {
-  const facts = el("dl", "card-hovercard__facts");
-  const code = episodeCode(episode);
-  fact(facts, "Episode", [code, episode.title].filter(Boolean).join(" · "));
-  fact(facts, "Guests", guestNames(episode));
-  fact(facts, "Status", STATUS_LABELS[episode.status] || episode.status);
-  fact(facts, "Recording", formatDay(episode.recordingDate));
-  fact(facts, "Release", formatDay(episode.releaseDate));
-  const links = el("ul", "card-hovercard__links");
-  for (const kind of LINK_KINDS) {
-    const url = episode.links?.[kind.id];
-    if (isHttpLink(url)) links.append(linkRow(url, kind.label, kind.icon));
-  }
-  return section("Podcast episode", facts, links.children.length ? links : null);
-}
-
-function slotSection(slot) {
-  const facts = el("dl", "card-hovercard__facts");
-  fact(facts, "Issue", [slot.campaignLabel, slot.campaignNumber ? `#${slot.campaignNumber}` : ""].filter(Boolean).join(" · "));
-  fact(facts, "Date", formatDay(slot.publicationDate));
-  fact(facts, "Sponsor", slot.bookedByDisplayName || "");
-  fact(facts, "Status", String(slot.status || "").replaceAll("-", " "));
-  const links = el("ul", "card-hovercard__links");
-  if (isHttpLink(slot.publicUrl)) links.append(linkRow(slot.publicUrl, "Published issue", "newspaper"));
-  return section("Newsletter slot", facts, links.children.length ? links : null);
+function slotFacts(slot) {
+  return [
+    ["Issue", slotIssueText(slot)],
+    ["Date", formatDay(slot.publicationDate)],
+    ["Sponsor", slot.bookedByDisplayName || ""],
+    ["Status", String(slot.status || "").replaceAll("-", " ")],
+  ];
 }
 
 export function createCardHovercards(context) {
   const {
     isArchivedWorkCard,
     isParkedWorkCard,
-    localDocPathFromHref = () => "",
     openCardPanel,
     request,
-    resolveAssigneeLabel,
     state,
-    taskDate,
     workApiUrl,
-    workCardTitle,
-    workTaskTitle,
   } = context;
   const extras = new Map();
 
@@ -167,7 +122,7 @@ export function createCardHovercards(context) {
         .then((payload) => {
           const item = Array.isArray(payload?.items) ? payload.items[0] : null;
           if (!item) return null;
-          return PODCAST_TYPES.has(type) ? episodeSection(item) : slotSection(item);
+          return PODCAST_TYPES.has(type) ? episodeFacts(item) : slotFacts(item);
         })
         .catch((error) => {
           extras.delete(card.id);
@@ -178,60 +133,21 @@ export function createCardHovercards(context) {
     return extras.get(card.id).catch(() => null);
   }
 
-  // `openTasks` is the queue's open list in its urgency order, so the
-  // Card's first task in it is the next one to do.
-  async function renderCardSummary(cardId, { openTasks = [], today }) {
+  async function renderCardSummary(cardId, { today }) {
     const card = state.workSnapshot.cardsById?.get(String(cardId));
     if (!card) return null;
     const kind = cardKind(card, state.workSnapshot.templates);
-    const extra = loadExtra(card, kind);
-    const body = el("div", "card-hovercard__body");
-
-    const head = el("div", "card-hovercard__head");
-    const icon = el("span", "card-hovercard__icon");
-    icon.append(renderIcon(kind?.icon || "card", { size: 16 }));
-    const titles = el("div", "card-hovercard__titles");
-    titles.append(el("p", "card-hovercard__title", workCardTitle(card)));
-    const stage = STAGE_LABELS[card.stage] || "";
-    const status = card.status && card.status !== "active" ? card.status : "";
-    titles.append(el("p", "card-hovercard__kind", [kind ? `${kind.name} card` : "Card", stage, status].filter(Boolean).join(" · ")));
-    head.append(icon, titles);
-    body.append(head);
-
+    const extra = await loadExtra(card, kind);
     const facts = el("dl", "card-hovercard__facts");
+    for (const [label, value] of extra || []) fact(facts, label, value);
     fact(facts, "Progress", cardProgressText(card));
-    const next = openTasks.find((task) => String(task.cardId) === String(card.id));
-    if (next) {
-      const date = formatDay(taskDate(next));
-      const due = date ? ` · due ${date}` : "";
-      fact(facts, "Next", `${workTaskTitle(next)}${due}`);
-    }
     const dueText = cardDueText(card, today);
     if (dueText) {
       const due = el("span", "card-hovercard__due", dueText);
       if (/late$/.test(dueText)) due.dataset.late = "";
       fact(facts, "Due", due);
     }
-    fact(facts, "Owner", card.ownerId ? resolveAssigneeLabel(card.ownerId) : "Unassigned");
-    body.append(facts);
-
-    const links = cardLinksList(card, localDocPathFromHref);
-    if (links) body.append(section("Links", links));
-
-    const extraSection = await extra;
-    if (extraSection) body.append(extraSection);
-
-    const footer = el("div", "card-hovercard__footer");
-    const openLink = el("a", "dk-button dk-button--secondary dk-button--sm card-hovercard__open", "Open card");
-    openLink.href = cardHref(card);
-    openLink.addEventListener("click", (event) => {
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button) return;
-      event.preventDefault();
-      openCardPanel(card.id);
-    });
-    footer.append(openLink);
-    body.append(footer);
-    return body;
+    return facts;
   }
 
   // The Where cell of a queue row. A card task's Where is a link to that
