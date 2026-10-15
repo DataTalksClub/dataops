@@ -1,14 +1,19 @@
 import { it } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeQueue, defaultOwner, ALEXEY_USER_ID, VALERIIA_USER_ID } from '../src/sponsorCrm/model';
+import { computeQueue } from '../src/sponsorCrm/model';
 
-it('uses workspace ownership for ordinary chores and retains dedicated decision/copy routing', () => {
-  for (const why of ['follow_up', 'send_invoice', 'chase_payment', 'send_stats', 'chase_materials']) {
-    assert.equal(defaultOwner('synthetic-operator', why, 'main'), 'synthetic-operator');
-  }
-  assert.equal(defaultOwner('synthetic-operator', 'price'), ALEXEY_USER_ID);
-  assert.equal(defaultOwner('synthetic-operator', 'chase_materials', 'workshop'), VALERIIA_USER_ID);
-  assert.equal(defaultOwner(null, 'send_invoice'), '');
+it('routes every unowned chore, workshop and course materials included, to the workspace default assignee', () => {
+  const items = computeQueue({
+    organizations: [{ id: 'org', displayName: 'Synthetic', lastOutboundAt: '2026-06-01' }],
+    deals: [{ id: 'deal', organizationId: 'org', status: 'agreed', agreementDate: '2026-06-01' }],
+    deliverables: ['workshop', 'course', 'main'].map((channel) => ({
+      id: `d-${channel}`, dealId: 'deal', channel, plannedPublicationDate: '2026-07-05',
+    })),
+    finance: new Map(), today: '2026-07-01', actorId: 'synthetic-operator', defaultAssigneeId: 'synthetic-operator',
+  });
+  assert.equal(items.filter((item) => item.why === 'chase_materials').length, 3);
+  assert.ok(items.length > 3);
+  assert.ok(items.every((item) => item.owner === 'synthetic-operator'));
 });
 
 it('leaves unset workspace chores unassigned rather than selecting a historical person', () => {

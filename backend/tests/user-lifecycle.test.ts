@@ -24,7 +24,6 @@ import { createTask, getTask } from '../src/db/tasks';
 import { createUserWithId, getUser, updateUser } from '../src/db/users';
 import { getWorkspaceSettings, setDefaultAssignee } from '../src/db/workspaceSettings';
 import { TeamDirectory } from '../src/identity/directory';
-import { ALEXEY_USER_ID } from '../src/sponsorCrm/model';
 import type { LambdaResponse } from '../src/types';
 
 const ADMIN = 'ada-admin';
@@ -229,13 +228,6 @@ describe('user lifecycle: handover, disable, delete', () => {
 
     const again = await invoke('DELETE', `/api/users/${LEAVER}`, ADMIN, {});
     assert.strictEqual(again.statusCode, 404);
-  });
-
-  it('refuses to delete someone the sponsor CRM still routes work to', async () => {
-    await createUserWithId(client, ALEXEY_USER_ID, { name: 'Routed', email: 'routed@example.test', role: 'operator', disabled: true });
-    const response = await invoke('DELETE', `/api/users/${ALEXEY_USER_ID}`, ADMIN, {});
-    assert.strictEqual(response.statusCode, 409);
-    assert.strictEqual(parsed(response).code, 'crm_routing');
   });
 
   it('re-enables a disabled account', async () => {

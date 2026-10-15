@@ -29,7 +29,6 @@ import {
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 
-import { ALEXEY_USER_ID, VALERIIA_USER_ID } from '../sponsorCrm/model';
 import type { Card, RecurringConfig, Task, User } from '../types';
 import { CardVersionConflictError, getCardConsistent, updateCard } from './cards';
 import { usesLocalTransactionEmulation } from './client';
@@ -80,10 +79,6 @@ export class UserLifecycleError extends Error {
 
 const OPEN_TASK_STATUSES = new Set(['todo', 'waiting']);
 const LIVE_DEAL_STATUSES = new Set(['open', 'agreed']);
-// The sponsor CRM still routes some chores to these two people by id
-// (sponsorCrm/model.ts defaultOwner). Deleting either would leave that routing
-// pointing at nobody, so it is refused until the routing names someone else.
-const ROUTED_CRM_OWNERS = new Set([ALEXEY_USER_ID, VALERIIA_USER_ID]);
 
 function displayName(user: Pick<User, 'id' | 'name' | 'email'>): string {
   return user.name || user.email || user.id;
@@ -477,9 +472,6 @@ export async function deleteUser(client: DynamoDBDocumentClient, userId: string,
   }
   if (!user.disabled) {
     throw new UserLifecycleError(409, 'disable_first', `Disable ${displayName(user)} first; only a disabled account can be deleted`);
-  }
-  if (ROUTED_CRM_OWNERS.has(user.id)) {
-    throw new UserLifecycleError(409, 'crm_routing', `The sponsor CRM still routes work to ${displayName(user)}; change that routing before deleting the account`);
   }
   if (input.reassignTo !== undefined && input.reassignTo !== null && input.reassignTo !== '') {
     await requireRecipient(client, user.id, input.reassignTo, 'reassignTo');
