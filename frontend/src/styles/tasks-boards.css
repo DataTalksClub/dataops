@@ -8,13 +8,6 @@ body[data-workspace-view="tasks"] .operations-home.ops-surface-artifacts {
   border-radius: 0;
   background: transparent;
   padding: 0;
-}body[data-workspace-view="tasks"] .operations-home .ops-surface-header {
-  display: grid;
-  gap: var(--dk-space-1);
-  border: 0;
-  background: transparent;
-  padding: 0 var(--dk-space-1);
-  text-align: left;
 }body[data-workspace-view="tasks"] .operations-home .ops-surface-header p:not([class*="dk-"]) {
   max-width: 680px;
   margin: 0;

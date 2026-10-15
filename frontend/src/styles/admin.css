@@ -8,12 +8,6 @@
 }.ops-surface-admin > *,
 .ops-surface-users > *{
   width: 100%;
-}.ops-surface-admin .ops-surface-header,
-.ops-surface-users .ops-surface-header{
-  display: grid;
-  gap: 5px;
-  background: transparent;
-  text-align: left;
 }.ops-surface-admin .ops-surface-header p:not([class*="dk-"]),
 .ops-surface-users .ops-surface-header p:not([class*="dk-"]){
   margin: 0;

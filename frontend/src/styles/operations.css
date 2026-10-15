@@ -38,13 +38,6 @@
   gap: var(--dk-space-4);
 }.ops-surface-recurring > * {
   width: min(var(--content-width), 100%);
-}.ops-surface-recurring .ops-surface-header {
-  display: grid;
-  gap: 4px;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  text-align: left;
 }.ops-surface-recurring .ops-surface-header p:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-muted);

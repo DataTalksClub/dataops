@@ -15,14 +15,6 @@ body[data-workspace-view="sponsors"] .document-list {
 }.bookkeeping-surface,
 .sponsor-crm-surface {
   gap: 20px;
-}.bookkeeping-header,
-.crm-header,
-.planner-header,
-.ops-surface-admin .ops-surface-header,
-.ops-surface-users .ops-surface-header{
-  min-width: 0;
-  border-bottom: 1px solid var(--dk-border-default);
-  padding: 4px 0 20px;
 }.bookkeeping-header h2:not([class*="dk-"]),
 .crm-header h2:not([class*="dk-"]),
 .planner-heading h1:not([class*="dk-"]) {

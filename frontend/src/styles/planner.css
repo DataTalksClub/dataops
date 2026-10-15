@@ -54,14 +54,7 @@
 .calendar-mobile-hint {
   order: 50;
 }
-.planner-header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 24px;
-  border-bottom: 1px solid var(--dk-border-default);
-  padding-bottom: 20px;
-}.planner-heading { min-width: 0; }.planner-eyebrow,
+.planner-heading { min-width: 0; }.planner-eyebrow,
 .planner-heading h1:not([class*="dk-"]),
 .planner-heading p:not([class*="dk-"]),
 .calendar-content-header h3:not([class*="dk-"]),

@@ -89,9 +89,7 @@ body[data-workspace-view="sponsors"] .library-view {
   }.bookkeeping-surface,
 .sponsor-crm-surface {
     gap: 16px;
-  }.bookkeeping-header,
-.crm-header,
-.section-header,
+  }.section-header,
 .finance-panel > header {
     display: grid;
   }.bookkeeping-header h2:not([class*="dk-"]),
@@ -356,9 +354,7 @@ body[data-workspace-view="sponsors"] .library-view {
     display: flex !important;
     flex-direction: column;
   }
-  .bookkeeping-header {
-    padding: 0 0 6px !important;
-  }
+
   .bookkeeping-section {
     padding: 0 !important;
     margin: 0 0 10px !important;
@@ -366,9 +362,7 @@ body[data-workspace-view="sponsors"] .library-view {
   .bookkeeping-surface {
     gap: 8px !important;
   }
-  .bookkeeping-header {
-    padding: 0 0 2px !important;
-  }
+
   .bookkeeping-section h3:not([class*="dk-"]) {
     font-size: 13px !important;
     margin: 0 0 4px !important;
@@ -393,14 +387,7 @@ body[data-workspace-view="sponsors"] .library-view {
   .sponsor-crm-surface > .crm-layout {
     order: 3;
   }
-  .crm-header {
-    flex-basis: 100%;
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    padding: 0 !important;
-    margin: 0 !important;
-  }
+
   .crm-views {
     order: 1;
     max-width: 100%;
