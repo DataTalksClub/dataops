@@ -14,6 +14,7 @@ import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createCard, getCard } from '../src/db/cards';
+import { templateLink } from './helpers/cardTemplate';
 import { createApiToken, getApiToken } from '../src/db/cliAuth';
 import { createRecurringConfig, generateRecurringTasks, getRecurringConfig } from '../src/db/recurring';
 import { createSession, getSession } from '../src/db/sessions';
@@ -64,7 +65,7 @@ describe('user lifecycle: handover, disable, delete', () => {
     ids.done = (await createTask(client, {
       description: 'Done', date: '2026-10-01', assigneeId: LEAVER, status: 'done', completedBy: LEAVER,
     })).id;
-    ids.card = (await createCard(client, { title: 'Owned card', ownerId: LEAVER })).id;
+    ids.card = (await createCard(client, { ...templateLink(), title: 'Owned card', ownerId: LEAVER })).id;
     ids.schedule = (await createRecurringConfig(client, {
       description: 'Weekly check', cronExpression: '0 9 * * 1', assigneeId: LEAVER,
     })).id;
