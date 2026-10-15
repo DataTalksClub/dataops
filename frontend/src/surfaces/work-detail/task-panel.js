@@ -4,6 +4,8 @@ import { displayCardDescription } from "./card-summary.js";
 import { renderTaskContext, renderTaskInstructions, taskDisplayParts } from "./task-overview.js";
 import { openSkipTaskDialog } from "./work-dialogs.js";
 import { renderResourceMarks } from "../../core/resources.js";
+import { blockedReason } from "../../core/task-dependencies.js";
+import { renderTaskPrerequisites } from "./task-prerequisites.js";
 
 export function createTaskPanel(context) {
   const {
@@ -441,6 +443,10 @@ export function createTaskPanel(context) {
     const view = taskDisplayParts(task, overviewDeps);
     taskPanelBody.append(renderTaskContext(task, view, overviewDeps));
     taskPanelBody.append(renderTaskRequires(task, panelMutationBusy));
+    const prerequisites = renderTaskPrerequisites(task, {
+      openTask: (taskId) => openTaskPanel(taskId),
+    });
+    if (prerequisites) taskPanelBody.append(prerequisites);
     const proofSlot = document.createElement("div");
     proofSlot.className = "task-proof";
     // Required link field
@@ -586,7 +592,9 @@ export function createTaskPanel(context) {
           missingLink,
           missingFile,
           missingArtifact,
-          canComplete: !missingLink && !missingFile && !missingArtifact,
+          blockedBy: blockedReason(task),
+          canComplete:
+            !blockedReason(task) && !missingLink && !missingFile && !missingArtifact,
         };
       };
       const complete = createTaskActionButton("Mark done", () =>
@@ -599,6 +607,7 @@ export function createTaskPanel(context) {
           missingLink,
           missingFile,
           missingArtifact,
+          blockedBy,
           canComplete,
         } = completionProofState();
         complete.disabled = panelMutationBusy || !canComplete;
@@ -607,6 +616,7 @@ export function createTaskPanel(context) {
           return;
         }
         const reasons = [];
+        if (blockedBy) reasons.push(blockedBy);
         if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
         if (missingFile) reasons.push("Upload required file");
         if (missingArtifact) reasons.push("Approve an attached artifact");

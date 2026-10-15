@@ -1462,3 +1462,34 @@ body[data-workspace-view="tasks"] .work-dialog-lead {
   align-items: center;
   gap: var(--dk-space-2);
 }
+/* Prerequisites: each task this one waits on, by name, with its status. */
+body[data-workspace-view="tasks"] .task-prerequisite-rows {
+  display: grid;
+  gap: var(--dk-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+body[data-workspace-view="tasks"] .task-prerequisite-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dk-space-2);
+}
+body[data-workspace-view="tasks"] .task-prerequisite-name {
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--dk-text-primary);
+  padding: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+body[data-workspace-view="tasks"] button.task-prerequisite-name {
+  cursor: pointer;
+  text-decoration: underline;
+}
+body[data-workspace-view="tasks"] .task-prerequisite-note {
+  margin: var(--dk-space-2) 0 0;
+  color: var(--dk-warning-text);
+}

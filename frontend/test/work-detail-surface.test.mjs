@@ -2187,6 +2187,116 @@ describe("Work Detail surface boundary", () => {
     );
   });
 
+  test("names each prerequisite with its status and disables completion until all are done", async () => {
+    const task = {
+      id: "dependent-task",
+      version: 2,
+      taskHistory: [],
+      description: "Publish podcast page",
+      date: "2026-08-12",
+      status: "todo",
+      dependsOn: ["spotify", "transcript"],
+      blocked: true,
+      prerequisites: [
+        { id: "spotify", description: "Verify Spotify episode", status: "done" },
+        { id: "transcript", description: "Review transcript", status: "skipped" },
+      ],
+    };
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/tasks/dependent-task") return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const section = harness.taskPanelBody.querySelector(".task-prerequisites");
+    assert.ok(section, "prerequisites section renders");
+    assert.match(section.textContent, /Verify Spotify episode/);
+    assert.match(section.textContent, /Review transcript/);
+    const rows = section.querySelectorAll(".task-prerequisite-row");
+    assert.deepEqual(rows.map((row) => row.dataset.status), ["done", "skipped"]);
+    assert.match(rows[1].textContent, /does not unblock/);
+    assert.ok(section.querySelector('[data-blocked="true"]'));
+
+    const complete = findByText(harness.taskPanelBody, "Mark done", "button");
+    assert.equal(complete.disabled, true);
+    assert.equal(complete.title, 'Complete "Review transcript" first');
+  });
+
+  test("completes normally when every prerequisite is done", async () => {
+    const task = {
+      id: "ready-task",
+      version: 2,
+      taskHistory: [],
+      description: "Publish podcast page",
+      date: "2026-08-12",
+      status: "todo",
+      dependsOn: ["spotify"],
+      blocked: false,
+      prerequisites: [{ id: "spotify", description: "Verify Spotify episode", status: "done" }],
+    };
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/tasks/ready-task") return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return {};
+      },
+    });
+    await hydrateTask(harness, task);
+    assert.equal(harness.taskPanelBody.querySelector('[data-blocked="true"]'), null);
+    assert.equal(findByText(harness.taskPanelBody, "Mark done", "button").disabled, false);
+  });
+
+  test("marks a blocked checklist row and disables its checkbox with the reason", async () => {
+    const card = {
+      id: "card-blocked-row",
+      version: 1,
+      title: "Episode",
+      status: "active",
+      stage: "preparation",
+      taskCount: 2,
+      openTaskCount: 2,
+      references: [],
+    };
+    const first = { id: "row-first", cardId: card.id, version: 1, taskHistory: [], description: "Verify Spotify episode", status: "todo" };
+    const second = {
+      id: "row-second",
+      cardId: card.id,
+      version: 1,
+      taskHistory: [],
+      description: "Publish page",
+      status: "todo",
+      dependsOn: [first.id],
+      blocked: true,
+      prerequisites: [{ id: first.id, description: first.description, status: "todo" }],
+    };
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method) return card;
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [first, second] };
+        if (url === `/api/artifacts?cardId=${card.id}`) return { artifacts: [] };
+        return {};
+      },
+    });
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    const rows = harness.cardPanelBody.querySelectorAll(".card-checklist-item");
+    assert.equal(rows.length, 2);
+    const [open, blocked] = rows;
+    assert.equal(open.querySelector('input[type="checkbox"]').disabled, false);
+    assert.equal(open.querySelector(".card-checklist-blocked"), null);
+    const box = blocked.querySelector('input[type="checkbox"]');
+    assert.equal(box.disabled, true);
+    assert.equal(box.title, 'Complete "Verify Spotify episode" first');
+    assert.match(blocked.querySelector(".card-checklist-blocked").textContent, /Blocked by Verify Spotify episode/);
+    assert.deepEqual(harness.errors, []);
+  });
+
   test("loads every required-file page before enabling completion", async () => {
     const task = {
       id: "task-paged-files",

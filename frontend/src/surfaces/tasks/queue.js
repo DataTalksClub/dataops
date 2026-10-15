@@ -1,5 +1,6 @@
 import { cardKind } from "../../core/card-kind.js";
 import { personInitials } from "../../core/identity.js";
+import { blockedReason, blockedSummary } from "../../core/task-dependencies.js";
 import { taskMaterials, taskTitleParts } from "../../core/task-display.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { openSkipTaskDialog } from "../work-detail/work-dialogs.js";
@@ -709,6 +710,8 @@ export function createTaskQueue(context) {
       );
       return reasons;
     }
+    const blockedBy = blockedReason(task);
+    if (blockedBy) reasons.push(blockedBy);
     const proof = taskProofState(task);
     if (proof.ok) return reasons;
     for (const missing of proof.missing) {
@@ -869,6 +872,14 @@ export function createTaskQueue(context) {
 
   function taskBlockerNote(task, today) {
     if (task.status === "done") return null;
+    const blockedBy = blockedSummary(task);
+    if (blockedBy) {
+      const note = document.createElement("small");
+      note.className = "ops-queue-note is-blocked";
+      note.textContent = blockedBy;
+      note.title = blockedReason(task);
+      return note;
+    }
     if (task.waitingFor) {
       const note = document.createElement("small");
       note.className = "ops-queue-note is-waiting";

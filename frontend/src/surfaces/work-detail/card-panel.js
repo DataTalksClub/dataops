@@ -1,4 +1,5 @@
 import { documentHref, opensInNewTab } from "../../core/links.js";
+import { blockedReason, blockedSummary } from "../../core/task-dependencies.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { createCardActions } from "./card-actions.js";
 import { renderCardTemplateUpdate } from "./card-template-review.js";
@@ -678,6 +679,9 @@ export function createCardPanel(context) {
       taskRequiresApprovedArtifact(task) &&
       !hasApprovedArtifactEvidence(task, cardArtifacts);
 
+    const siblingTasks = detail.activeCardPanelData?.tasks || [];
+    const blockedBy = blockedReason(task, siblingTasks);
+
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.setAttribute(
@@ -692,9 +696,11 @@ export function createCardPanel(context) {
       detail.activeTaskMutationBusy ||
       detail.activeCardMutationBusy ||
       detail.activeCardTemplateBusy ||
-      isSkipped || isWaiting || missingLink || missingFile || missingArtifact;
+      isSkipped || isWaiting || Boolean(blockedBy) ||
+      missingLink || missingFile || missingArtifact;
     if (checkbox.disabled && !isDone) {
       const reasons = [];
+      if (blockedBy) reasons.push(blockedBy);
       if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
       if (missingFile) reasons.push("Upload required file");
       if (missingArtifact) reasons.push("Approve an attached artifact");
@@ -742,6 +748,14 @@ export function createCardPanel(context) {
       skippedChip.className = "workflow-card-flag card-checklist-skipped";
       skippedChip.textContent = `skipped: ${task.skipReason || "not applicable"}`;
       dateMeta.replaceChildren(skippedChip);
+    }
+
+    if (blockedBy && !isWaiting) {
+      const blockedChip = document.createElement("span");
+      blockedChip.className = "card-checklist-blocked workflow-card-flag is-warning";
+      blockedChip.textContent = blockedSummary(task, siblingTasks);
+      blockedChip.title = blockedBy;
+      dateMeta.append(blockedChip);
     }
 
     if (!isDone && (missingLink || missingFile || missingArtifact)) {
