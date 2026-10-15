@@ -100,6 +100,15 @@ async function call(event: LambdaEvent): Promise<{ status: number; body: any }> 
 }
 
 describe('code view parser', () => {
+  it('reports source document line numbers including frontmatter and title', () => {
+    const source = CODE_VIEW.replace('file=verify_reset.py', 'file=../invalid.py').replace(/\n/g, '\r\n');
+    const expectedLine = source.split('\r\n').findIndex((line) => line.includes('file=../invalid.py')) + 1;
+    assert.throws(() => parseCodeView(source), (error: unknown) => {
+      assert.ok(error instanceof CodeViewParseError);
+      assert.equal(error.line, expectedLine);
+      return true;
+    });
+  });
   it('keeps author order, code bytes, languages and interleaved markdown', () => {
     const parsed = parseCodeView(CODE_VIEW);
     assert.deepEqual(

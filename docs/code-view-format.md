@@ -23,7 +23,7 @@ sop: content/podcast/sops/local-podcast-production.md
 ---
 ```
 
-`sop:` is required and must resolve through the document registry. An SOP may
+`sop:` is required and must resolve to a document of type `sop` through the registry. An SOP may
 have at most one code view; a code view cannot target itself. Violations are
 reported as registry validation errors.
 
@@ -82,6 +82,9 @@ schema, parseability) instead of the SOP lint. The API's `/lint`,
   `code_view: {path, title} | null` (the view linked to it). A code-view
   document carries `parsed_code_view` (or `parse_code_error`) and the
   `sop_doc: {path, title}` back-link.
+  Registry validation faults are reported in `code_view_error`; an absent
+  alternate has a null error. Storage failures fail the request rather than
+  pretending no alternate exists.
 - `POST /parse` — `{content, kind: "sop" | "code-view"}` (default `"sop"`).
 - Search indexes a code view's filenames, languages, prose, and code.
 - CLI: `dataops kb code <ref>` prints the linked or own code view.

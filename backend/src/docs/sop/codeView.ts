@@ -105,10 +105,11 @@ export function parseCodeView(text: string): ParsedCodeView {
     'schema_version' in frontmatter ? frontmatter.schema_version : null;
 
   const lines = splitlines(body);
+  let lineOffset = (text.slice(0, text.length - body.length).match(/\r\n|\r|\n/g) || []).length;
   // A leading `# Title` is the document heading (already in frontmatter), not
   // a prose section — the Gist view gets its title from the frontmatter.
-  while (lines.length && !lines[0].trim()) lines.shift();
-  if (lines.length && /^#\s+\S/.test(lines[0])) lines.shift();
+  while (lines.length && !lines[0].trim()) { lines.shift(); lineOffset += 1; }
+  if (lines.length && /^#\s+\S/.test(lines[0])) { lines.shift(); lineOffset += 1; }
   const blocks: CodeViewBlock[] = [];
   const files: CodeViewFile[] = [];
   const fileNames = new Set<string>();
@@ -164,7 +165,7 @@ export function parseCodeView(text: string): ParsedCodeView {
         j += 1;
       }
       if (j >= lines.length) {
-        throw new CodeViewParseError('unclosed fenced block', i + 1);
+        throw new CodeViewParseError('unclosed fenced block', lineOffset + i + 1);
       }
       markdownLines.push(lines[j]);
       i = j;
@@ -175,11 +176,11 @@ export function parseCodeView(text: string): ParsedCodeView {
     if (!FILE_NAME_RE.test(name)) {
       throw new CodeViewParseError(
         `file name '${name}' must be a bare filename (no paths, no traversal)`,
-        i + 1,
+        lineOffset + i + 1,
       );
     }
     if (fileNames.has(name)) {
-      throw new CodeViewParseError(`duplicate file block '${name}'`, i + 1);
+      throw new CodeViewParseError(`duplicate file block '${name}'`, lineOffset + i + 1);
     }
     const codeLines: string[] = [];
     let j = i + 1;
@@ -188,7 +189,7 @@ export function parseCodeView(text: string): ParsedCodeView {
       j += 1;
     }
     if (j >= lines.length) {
-      throw new CodeViewParseError(`file block '${name}' is never closed`, i + 1);
+      throw new CodeViewParseError(`file block '${name}' is never closed`, lineOffset + i + 1);
     }
     flushMarkdown();
     const language = parseInfoLanguage(info);
@@ -203,7 +204,7 @@ export function parseCodeView(text: string): ParsedCodeView {
   if (files.length === 0) {
     throw new CodeViewParseError(
       'a code view needs at least one ```lang file=name block',
-      lines.length,
+      Math.max(1, lineOffset + lines.length),
     );
   }
 
