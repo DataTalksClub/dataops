@@ -254,7 +254,7 @@ body[data-workspace-view="tasks"] .ops-queue-check {
   font-weight: 700;
   line-height: 1;
 }body[data-workspace-view="tasks"] .ops-queue-check-input:disabled + .ops-queue-box {
-  opacity: 0.55;
+  opacity: 1;
 }body[data-workspace-view="tasks"] .ops-queue-row:hover .ops-queue-check-input:disabled + .ops-queue-box {
   border-color: var(--dk-border-strong);
 }body[data-workspace-view="tasks"] .ops-queue-check-input:focus-visible + .ops-queue-box {
