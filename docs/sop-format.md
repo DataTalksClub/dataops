@@ -284,7 +284,7 @@ the section as raw:
 ## Procedure
 
 ### LinkedIn
-Figma pdf + text
+Carousel PDF + text
 ...freeform content the parser does not analyze...
 <!-- sop-section-end -->
 ```

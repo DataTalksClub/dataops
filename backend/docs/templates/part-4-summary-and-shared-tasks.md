@@ -54,7 +54,7 @@ Many tasks are repeated (with minor variations) across multiple templates. These
 - Publish social media announcement
 
 ### Banner creation (Podcast, Webinar, Workshop)
-- Create a banner in Figma (same instructions doc, different event type)
+- Create a banner in Banner Generator (same instructions doc, different event type)
 
 ### Guest reminders (Podcast, Webinar, Workshop)
 - Remind the guest about the event [milestone: -7d] (same/similar instructions)
@@ -89,7 +89,7 @@ Several tasks produce deliverables that must be captured as card links:
 
 ### Required deliverables (files)
 Some tasks involve creating files/images:
-- Create a banner in Figma/Canva -> produces an image (banner)
+- Create a banner in Banner Generator/Canva -> produces an image (banner)
 - Prepare a zip archive of the report -> produces a document (tax report archive)
 - Create Bank Statements -> produces documents (bank statements)
 - Create an Invoice -> produces a document (invoice)

@@ -54,7 +54,7 @@ product should not be built around one hard-coded person. The role is:
   internal reviewers.
 - Works across Trello-like workflow cards, a spreadsheet-like task list,
   Google Docs, Google Sheets, Google Calendar, Slack, Mailchimp, Luma, Meetup,
-  YouTube, Spotify, Airtable, Dropbox, Figma, LinkedIn, X, Finom, Revolut, Wise,
+  YouTube, Spotify, Airtable, Dropbox, Banner Generator, LinkedIn, X, Finom, Revolut, Wise,
   email, Telegram, and private GitHub-backed process docs surfaced inside
   DataOps.
 - Handles both planned workflows and ad-hoc incoming requests.

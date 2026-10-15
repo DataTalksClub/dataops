@@ -55,7 +55,7 @@ Tasks (40):
   - instructions: https://docs.google.com/document/d/1mijZcQ6qRXCscG0DVx6UA9KGgUT_QVTDUSWpQl4aqhE/edit
 - Fill in the "people" form in Airtable
   - instructions: https://docs.google.com/document/d/1PaX3fYo7grHvQ2d7Mw1LBXZidJmFXqJ6ttk-DUeLNXM/edit
-- Create a banner for a podcast event in Figma
+- Create a banner for a podcast event in Banner Generator
   - instructions: https://docs.google.com/document/d/1z4Uj2GTF9Aq4Dp_Qz_F0UoCFAIYaiFo0h8JEvboz2PI/edit
 - Create an event in Luma
   - instructions: https://docs.google.com/document/d/1GbDNYXnA5m-ZQkaRkvQw_NwqDg7m7sSad_vCFUM0Ln8/edit
@@ -154,7 +154,7 @@ Tasks (28):
   - instructions: https://docs.google.com/document/d/1mTTgEphnqkUNd9Ilf6lIGgT9q61Sbt4BCJOEWVSio9Q/edit
 - Fill in the "people" form in Airtable
   - instructions: https://docs.google.com/document/d/1PaX3fYo7grHvQ2d7Mw1LBXZidJmFXqJ6ttk-DUeLNXM/edit
-- Create a banner for a webinar event in Figma
+- Create a banner for a webinar event in Banner Generator
   - instructions: https://docs.google.com/document/d/1z4Uj2GTF9Aq4Dp_Qz_F0UoCFAIYaiFo0h8JEvboz2PI/edit
 - Create events on Luma
   - instructions: https://docs.google.com/document/d/1GbDNYXnA5m-ZQkaRkvQw_NwqDg7m7sSad_vCFUM0Ln8/edit
@@ -242,7 +242,7 @@ Tasks (30):
   - instructions: https://docs.google.com/document/d/1mTTgEphnqkUNd9Ilf6lIGgT9q61Sbt4BCJOEWVSio9Q/edit
 - Fill in the "people" form in Airtable
   - instructions: https://docs.google.com/document/d/1PaX3fYo7grHvQ2d7Mw1LBXZidJmFXqJ6ttk-DUeLNXM/edit
-- Create a banner for a workshop event in Figma
+- Create a banner for a workshop event in Banner Generator
   - instructions: https://docs.google.com/document/d/1z4Uj2GTF9Aq4Dp_Qz_F0UoCFAIYaiFo0h8JEvboz2PI/edit
 - Create events on Luma
   - instructions: https://docs.google.com/document/d/1GbDNYXnA5m-ZQkaRkvQw_NwqDg7m7sSad_vCFUM0Ln8/edit
