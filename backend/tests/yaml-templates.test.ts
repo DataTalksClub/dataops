@@ -127,6 +127,17 @@ describe('authored YAML template mapping', () => {
     assert.ok(issues.some((message) => message.startsWith('icon must be one of')));
   });
 
+  it('round-trips a card title pattern and rejects unknown tokens', () => {
+    const authored = templateToYaml({ ...RUNTIME_TEMPLATE, type: 'newsletter', cardTitle: '{date} · #{issue} · {sponsor}' });
+    assert.strictEqual(authored.card_title, '{date} · #{issue} · {sponsor}');
+    assert.deepStrictEqual(validateAuthoredTemplate(authored), []);
+    assert.strictEqual(templateFromYaml(authored).cardTitle, '{date} · #{issue} · {sponsor}');
+    const unknown = validateAuthoredTemplate({ ...authored, card_title: '{date} · {guests}' }).map((issue) => issue.message);
+    assert.ok(unknown.some((message) => message.startsWith('card_title token {guests} is unknown')));
+    const unlinked = validateAuthoredTemplate({ ...authored, type: 'webinar' }).map((issue) => issue.message);
+    assert.ok(unlinked.some((message) => message.startsWith('card_title is only supported')));
+  });
+
   it('round-trips optional task groups and rejects malformed group slugs', () => {
     const authored = templateToYaml({
       ...RUNTIME_TEMPLATE,

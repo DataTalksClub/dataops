@@ -475,6 +475,8 @@ export interface Template {
   type?: string;
   /** Curated icon name (`templates/templateIcons.ts`) shown wherever the template's cards appear. */
   icon?: string;
+  /** Pattern for the title of a Card a planning record links (`cards/cardTitlePattern.ts`). */
+  cardTitle?: string;
   tags?: string[];
   phases?: WorkflowPhase[];
   sourceDocIds?: string[];

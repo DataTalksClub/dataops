@@ -17,7 +17,10 @@ import { getCrmRecord } from "../db/sponsorCrm";
 import { getCard } from "../db/cards";
 import type { Card } from "../types";
 import { resolveInteractiveActor } from "../identity/actor";
-import { newsletterCardTitle } from "../cards/cardTitleStructure";
+import {
+  newsletterSlotTitleValues,
+  recordTemplateTypes,
+} from "../cards/cardTitlePattern";
 import {
   checkCardLink,
   createLinkedCard,
@@ -202,7 +205,14 @@ function alerts(items: NewsletterSlot[], today: string) {
         });
   return out;
 }
-const NEWSLETTER_CARD_TYPES = ["newsletter", "newsletter-standalone"];
+const NEWSLETTER_CARD_TYPES = recordTemplateTypes("newsletter-slot");
+/** Slot fields the linked Card's date, issue number or title is built from. */
+const TITLE_FACTS = [
+  "publicationDate",
+  "campaignNumber",
+  "campaignLabel",
+  "bookedByDisplayName",
+] as const;
 const checkSlotCardLink = (
   client: DynamoDBDocumentClient,
   cardId: string,
@@ -211,17 +221,25 @@ const checkSlotCardLink = (
   checkCardLink(client, cardId, NEWSLETTER_CARD_TYPES, slotId, async (id) =>
     (await listNewsletterSlotsByCardId(client, id)).map((slot) => slot.id),
   );
-/** The slot wins: its date and issue number are pushed onto the linked Card. */
+/**
+ * The slot wins: its date and issue number are pushed onto the linked Card,
+ * and its date, issue, sponsor and variant re-render the Card's title.
+ */
 async function pushSlotToCard(
   client: DynamoDBDocumentClient,
   slot: Record<string, unknown>,
 ) {
   try {
-    await pushFieldsToCard(client, String(slot.cardId), {
-      anchorDate: String(slot.publicationDate),
-      issueNumber:
-        slot.campaignNumber == null ? null : String(slot.campaignNumber),
-    });
+    await pushFieldsToCard(
+      client,
+      String(slot.cardId),
+      {
+        anchorDate: String(slot.publicationDate),
+        issueNumber:
+          slot.campaignNumber == null ? null : String(slot.campaignNumber),
+      },
+      newsletterSlotTitleValues(slot),
+    );
     return "synced";
   } catch (error) {
     console.error("Newsletter slot card sync failed:", error);
@@ -505,8 +523,7 @@ export async function handleNewsletterSlotRoutes(
     if (
       next.cardId &&
       (linking ||
-        next.publicationDate !== existing.publicationDate ||
-        next.campaignNumber !== existing.campaignNumber)
+        TITLE_FACTS.some((field) => next[field] !== existing[field]))
     )
       return json(200, { ...next, cardSync: await pushSlotToCard(client, next) });
     return json(200, next);
@@ -557,12 +574,13 @@ async function createSlotCard(
       resolved.actor,
       "newsletter",
       {
-        title: newsletterCardTitle(slot.publicationDate, campaignNumber),
+        title: String(slot.campaignLabel || "Newsletter"),
         anchorDate: slot.publicationDate,
         ...(campaignNumber === null
           ? {}
           : { issueNumber: String(campaignNumber) }),
       },
+      newsletterSlotTitleValues(slot),
       async (card) => {
         linked = await updateNewsletterSlot(client, slot, { cardId: card.id });
       },

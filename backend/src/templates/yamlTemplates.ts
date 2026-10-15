@@ -15,6 +15,7 @@
  * throughout the content corpus and the workflow-template JSON Schema.
  */
 
+import { cardTitlePatternIssues } from '../cards/cardTitlePattern';
 import { requiresError } from '../resources/vocabulary';
 import { isTemplateIcon, TEMPLATE_ICONS } from './templateIcons';
 import { templateDependencyIssues } from './taskDependencyGraph';
@@ -33,6 +34,7 @@ const TEMPLATE_FIELDS = [
   ['lastReviewedAt', 'last_reviewed_at'],
   ['nextReviewAt', 'next_review_at'],
   ['icon', 'icon'],
+  ['cardTitle', 'card_title'],
   ['tags', 'tags'],
   ['sourceDocIds', 'source_document_ids'],
 ] as const;
@@ -224,6 +226,10 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
   if (!doc.name) fail('name is required');
   if (doc.icon !== undefined && !isTemplateIcon(doc.icon)) {
     fail(`icon must be one of: ${TEMPLATE_ICONS.join(', ')}`);
+  }
+
+  if (doc.card_title !== undefined) {
+    for (const message of cardTitlePatternIssues(String(doc.type), doc.card_title)) fail(message);
   }
 
   const trigger = (doc.trigger as Dict | undefined) || {};

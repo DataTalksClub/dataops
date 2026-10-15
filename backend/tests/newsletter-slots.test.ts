@@ -432,8 +432,20 @@ describe("newsletter slots", () => {
           ...extra,
         }),
       );
+    let newsletterTemplateId = "";
+    before(async () => {
+      newsletterTemplateId = (await createTemplate(client, {
+        name: "Newsletter",
+        type: "newsletter",
+        cardTitle: "{date} · #{issue} · {sponsor} · {variant}",
+        taskDefinitions: [
+          { refId: "draft", description: "Draft issue", offsetDays: -3 },
+          { refId: "send", description: "Send issue", offsetDays: 0 },
+        ],
+      })).id;
+    });
     const newsletterCard = (title: string) =>
-      createCard(client, { title, anchorDate: "2026-01-01", stage: "preparation" });
+      createCard(client, { title, templateId: newsletterTemplateId, anchorDate: "2026-01-01", stage: "preparation" });
     it("validates the linked Card, keeps links unique, and unlinks with null", async () => {
       const first = await slot("link-a", { publicationDate: "2026-12-07", campaignNumber: 310 });
       const second = await slot("link-b", { publicationDate: "2026-12-14", campaignNumber: 311 });
@@ -443,14 +455,14 @@ describe("newsletter slots", () => {
       const wrongType = await invoke("PUT", `/api/newsletter-slots/${first.id}`, { version: first.version, cardId: podcast.id });
       assert.equal(wrongType.statusCode, 422, wrongType.body);
 
-      const card = await newsletterCard("[Newsletter] Weekly email #300(01DEC 2026) -Example Sponsor");
+      const card = await newsletterCard("Weekly email");
       const linked = await invoke("PUT", `/api/newsletter-slots/${first.id}`, { version: first.version, cardId: card.id });
       assert.equal(linked.statusCode, 200, linked.body);
       assert.equal(data(linked).cardSync, "synced");
       const pushed = (await getCard(client, card.id))!;
       assert.equal(pushed.anchorDate, "2026-12-07");
       assert.equal(pushed.issueNumber, "310");
-      assert.equal(pushed.title, "[Newsletter] Weekly email #310(7DEC 2026) -Example Sponsor");
+      assert.equal(pushed.title, "7 Dec · #310");
 
       const taken = await invoke("PUT", `/api/newsletter-slots/${second.id}`, { version: second.version, cardId: card.id });
       assert.equal(taken.statusCode, 409, taken.body);
@@ -469,15 +481,20 @@ describe("newsletter slots", () => {
       assert.equal(relinked.statusCode, 200, relinked.body);
     });
     it("pushes slot date and issue changes to the Card and flags drift", async () => {
-      const card = await newsletterCard("[Newsletter] Weekly email #320(05JAN 2027) -Example Sponsor");
-      const created = await slot("push-a", { publicationDate: "2027-01-04", campaignNumber: 320, cardId: card.id });
+      const card = await newsletterCard("Weekly email");
+      const created = await slot("push-a", { publicationDate: "2027-01-04", campaignNumber: 320, bookedByDisplayName: "Example Sponsor", cardId: card.id });
       assert.equal(created.cardSync, "synced");
+      assert.equal((await getCard(client, card.id))!.title, "4 Jan · #320 · Example Sponsor");
       const moved = await invoke("PUT", `/api/newsletter-slots/${created.id}`, { version: created.version, publicationDate: "2027-01-11", campaignNumber: 321 });
       assert.equal(moved.statusCode, 200, moved.body);
       let current = (await getCard(client, card.id))!;
       assert.equal(current.anchorDate, "2027-01-11");
       assert.equal(current.issueNumber, "321");
-      assert.match(String(current.title), /#321\(11JAN 2027\)/);
+      assert.equal(current.title, "11 Jan · #321 · Example Sponsor");
+      const rebooked = await invoke("PUT", `/api/newsletter-slots/${created.id}`, { version: data(moved).version, bookedByDisplayName: "Other Sponsor", campaignLabel: "Weekly #321 secondary slot" });
+      assert.equal(data(rebooked).cardSync, "synced");
+      current = (await getCard(client, card.id))!;
+      assert.equal(current.title, "11 Jan · #321 · Other Sponsor · secondary");
 
       const range = { from: "2027-01-01", to: "2027-01-31", today: "2027-01-01" };
       let listed = data(await invoke("GET", "/api/newsletter-slots", undefined, {}, range));
@@ -487,27 +504,19 @@ describe("newsletter slots", () => {
 
       current = await updateCard(client, card.id, {
         expectedVersion: current.version,
-        patch: { anchorDate: "2027-01-12", title: "[Newsletter] Weekly email #321 -Example Sponsor" },
+        patch: { anchorDate: "2027-01-12" },
       });
       listed = data(await invoke("GET", "/api/newsletter-slots", undefined, {}, range));
       assert.ok(listed.alerts.some((alert: any) => alert.slotId === created.id && alert.reasonCode === "card-date-mismatch"));
     });
     it("creates a Card from the newsletter Template and rolls it back when linking fails", async () => {
-      await createTemplate(client, {
-        name: "Newsletter",
-        type: "newsletter",
-        taskDefinitions: [
-          { refId: "draft", description: "Draft issue", offsetDays: -3 },
-          { refId: "send", description: "Send issue", offsetDays: 0 },
-        ],
-      });
-      const target = await slot("create-a", { publicationDate: "2027-02-08", campaignNumber: 330 });
+      const target = await slot("create-a", { publicationDate: "2027-02-08", campaignNumber: 330, bookedByDisplayName: "Example Sponsor" });
       const created = await invoke("POST", `/api/newsletter-slots/${target.id}/card`, { version: target.version });
       assert.equal(created.statusCode, 201, created.body);
       const result = data(created);
       assert.equal(result.slot.cardId, result.card.id);
       const card = (await getCard(client, result.card.id))!;
-      assert.equal(card.title, "Newsletter #330 (8FEB 2027)");
+      assert.equal(card.title, "8 Feb · #330 · Example Sponsor");
       assert.equal(card.anchorDate, "2027-02-08");
       assert.equal(card.issueNumber, "330");
       assert.equal((await listTasksByCard(client, card.id)).length, 2);
@@ -533,7 +542,7 @@ describe("newsletter slots", () => {
         (client as any).send = originalSend;
       }
       assert.equal(failed.statusCode, 409, failed.body);
-      const leftovers = await client.send(new ScanCommand({ TableName: TABLE_CARDS, FilterExpression: "title = :title", ExpressionAttributeValues: { ":title": "Newsletter #331 (15FEB 2027)" } }));
+      const leftovers = await client.send(new ScanCommand({ TableName: TABLE_CARDS, FilterExpression: "title = :title", ExpressionAttributeValues: { ":title": "15 Feb · #331" } }));
       assert.equal(leftovers.Items?.length, 0);
       const reread = data(await invoke("GET", `/api/newsletter-slots/${doomed.id}`));
       assert.equal(reread.cardId, undefined);

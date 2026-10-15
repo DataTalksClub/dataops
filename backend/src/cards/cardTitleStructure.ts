@@ -393,7 +393,10 @@ export function hydrateStructuredCardFields(
     : null;
   const parsed = parseCardTitle(card.title, { templateType: knownTemplateType });
 
-  if (parsed.tag || parsed.date || (knownTemplateType && (parsed.people.length > 0 || parsed.sponsor || parsed.issueNumber))) {
+  // Only legacy shapes (a `[Tag]` or a dated title) carry structure. Untagged
+  // titles are authored or rendered from a Template's `card_title` pattern and
+  // are shown as stored.
+  if (parsed.tag || parsed.date) {
     if (!card.templateId && parsed.templateType && templateIdByType) {
       const lookup =
         templateIdByType instanceof Map
@@ -422,20 +425,6 @@ export function hydrateStructuredCardFields(
   }
 }
 
-const MONTH_ABBREVIATIONS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-
-/** `2026-10-26` -> `26OCT 2026`, the newsletter issue-date token. */
-export function formatIssueDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split('-');
-  return `${Number(day)}${MONTH_ABBREVIATIONS[Number(month) - 1]} ${year}`;
-}
-
-/** The canonical title of a Card created for a newsletter issue. */
-export function newsletterCardTitle(publicationDate: string, campaignNumber?: number | null): string {
-  const issue = campaignNumber === undefined || campaignNumber === null ? '' : ` #${campaignNumber}`;
-  return `Newsletter${issue} (${formatIssueDate(publicationDate)})`;
-}
-
 /** The Template type a Card belongs to: its Template, else its title tag. */
 export function cardTemplateType(
   card: Pick<Card, 'title' | 'templateId'>,
@@ -443,23 +432,4 @@ export function cardTemplateType(
 ): string | null {
   const known = card.templateId ? findTemplateTypeById(card.templateId, templateIdByType) : null;
   return parseCardTitle(String(card.title || ''), { templateType: known }).templateType;
-}
-
-/**
- * Re-stamp the date and issue tokens that a title already carries, so the
- * title-derived projection agrees with newly pushed structured fields. A title
- * without such a token is returned unchanged; tokens are never added.
- */
-export function restampCardTitle(title: string, values: { date?: string; issueNumber?: string | null }): string {
-  let next = title;
-  if (values.date) {
-    if (PAREN_DATE_PATTERN.test(next)) {
-      next = next.replace(PAREN_DATE_PATTERN, `(${formatIssueDate(values.date)})`);
-    } else if (PREFIX_DATE_PATTERN.test(next)) {
-      const [year, month, day] = values.date.split('-');
-      next = next.replace(PREFIX_DATE_PATTERN, `${year}-${MONTH_ABBREVIATIONS[Number(month) - 1]}-${day}`);
-    }
-  }
-  if (values.issueNumber) next = next.replace(/#\s*\d+\b/, `#${values.issueNumber}`);
-  return next;
 }

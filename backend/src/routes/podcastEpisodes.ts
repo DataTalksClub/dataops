@@ -25,6 +25,7 @@ import {
   statusGateError,
 } from "../podcast/publication";
 import { resolveInteractiveActor } from "../identity/actor";
+import { podcastEpisodeTitleValues, recordTemplateTypes } from "../cards/cardTitlePattern";
 import {
   checkCardLink,
   createLinkedCard,
@@ -56,7 +57,7 @@ const WRITABLE = new Set([
   "publication",
   "version",
 ]);
-const PODCAST_CARD_TYPES = ["podcast"];
+const PODCAST_CARD_TYPES = recordTemplateTypes("podcast-episode");
 
 const realDate = (value: unknown) => {
   if (typeof value !== "string" || !DATE.test(value)) return false;
@@ -165,10 +166,15 @@ const checkEpisodeCardLink = (
 /** The episode wins: its recording date and guests are pushed onto the Card. */
 async function pushEpisodeToCard(client: DynamoDBDocumentClient, episode: PodcastEpisode) {
   try {
-    await pushFieldsToCard(client, String(episode.cardId), {
-      ...(episode.recordingDate ? { anchorDate: episode.recordingDate } : {}),
-      ...(episode.guests.length ? { people: episode.guests.map((guest) => guest.name) } : {}),
-    });
+    await pushFieldsToCard(
+      client,
+      String(episode.cardId),
+      {
+        ...(episode.recordingDate ? { anchorDate: episode.recordingDate } : {}),
+        ...(episode.guests.length ? { people: episode.guests.map((guest) => guest.name) } : {}),
+      },
+      podcastEpisodeTitleValues(episode),
+    );
     return "synced";
   } catch (error) {
     console.error("Podcast episode card sync failed:", error);
@@ -323,6 +329,9 @@ export async function handlePodcastEpisodeRoutes(
       next.cardId &&
       (linking ||
         next.recordingDate !== existing.recordingDate ||
+        next.title !== existing.title ||
+        next.season !== existing.season ||
+        next.episode !== existing.episode ||
         JSON.stringify(next.guests) !== JSON.stringify(existing.guests))
     )
       return json(200, { ...presented(next), cardSync: await pushEpisodeToCard(client, next) });
@@ -373,6 +382,7 @@ async function createEpisodeCard(
         anchorDate: episode.recordingDate,
         ...(guests.length ? { people: guests } : {}),
       },
+      podcastEpisodeTitleValues(episode),
       async (card) => {
         linked = await updatePodcastEpisode(client, episode, { cardId: card.id });
       },

@@ -4,7 +4,9 @@
  *
  * The record's `cardId` is the single canonical link: nothing on the Card
  * points back. The record owns the shared facts (date, issue number, guests)
- * and pushes them one way onto the Card; the Card never writes back.
+ * and pushes them one way onto the Card; the Card never writes back. When the
+ * Card's Template authors a `card_title` pattern, the title is one of those
+ * facts: it is rendered from the record at creation and on every push.
  */
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
@@ -12,11 +14,8 @@ import { getCard, updateCardAdditive, type CardPatch } from '../db/cards';
 import { discardCreatedTemplateCard, getTemplate, listTemplates } from '../db/templates';
 import type { VerifiedActor } from '../identity/actor';
 import type { Card, LambdaResponse, Task } from '../types';
-import {
-  cardTemplateType,
-  hydrateStructuredCardFields,
-  restampCardTitle,
-} from './cardTitleStructure';
+import { renderCardTitle, type CardTitleValues } from './cardTitlePattern';
+import { cardTemplateType, hydrateStructuredCardFields } from './cardTitleStructure';
 import { createCardFromInput, getTemplateIdByType } from './createCard';
 
 export type CardSummary = {
@@ -89,17 +88,20 @@ export type PushedCardFields = {
 
 /**
  * Push the record's facts onto the linked Card. Fields already equal on the
- * Card's projected view are not written; a title that carries a date or issue
- * token is re-stamped so the title-derived projection agrees.
+ * Card's projected view are not written; when the Card's Template authors a
+ * `card_title`, the title is re-rendered from `titleValues`.
  */
 export async function pushFieldsToCard(
   client: DynamoDBDocumentClient,
   cardId: string,
   fields: PushedCardFields,
+  titleValues: CardTitleValues,
 ): Promise<Card | null> {
   const card = await getCard(client, cardId);
   if (!card) return null;
   const templateIdByType = await getTemplateIdByType(client);
+  const pattern = card.templateId ? (await getTemplate(client, card.templateId))?.cardTitle : undefined;
+  const title = pattern ? renderCardTitle(pattern, titleValues) : '';
   const buildPatch = (current: Card): CardPatch => {
     const view = projected(current, templateIdByType);
     const patch: CardPatch = {};
@@ -108,11 +110,7 @@ export async function pushFieldsToCard(
     if (fields.people && JSON.stringify(view.people || []) !== JSON.stringify(fields.people)) {
       patch.people = fields.people;
     }
-    const title = restampCardTitle(String(current.title || ''), {
-      date: fields.anchorDate,
-      issueNumber: fields.issueNumber,
-    });
-    if (title !== current.title) patch.title = title;
+    if (title && title !== current.title) patch.title = title;
     return patch;
   };
   if (Object.keys(buildPatch(card)).length === 0) return card;
@@ -125,18 +123,21 @@ export type LinkedCardCreation =
 
 /**
  * Create a Card from the Template of `templateType` and link it through
- * `link`. When linking fails the new Card and its Tasks are discarded and the
- * link error is rethrown, so no orphan Card is left behind.
+ * `link`. The Template's `card_title` pattern, when authored, names the Card
+ * from `titleValues`; otherwise `input.title` does. When linking fails the new
+ * Card and its Tasks are discarded and the link error is rethrown, so no
+ * orphan Card is left behind.
  */
 export async function createLinkedCard(
   client: DynamoDBDocumentClient,
   actor: VerifiedActor,
   templateType: string,
   input: Record<string, unknown>,
+  titleValues: CardTitleValues,
   link: (card: Card) => Promise<void>,
 ): Promise<LinkedCardCreation> {
-  const templateId = (await listTemplates(client)).find((template) => template.type === templateType)?.id;
-  if (!templateId) {
+  const template = (await listTemplates(client)).find((candidate) => candidate.type === templateType);
+  if (!template) {
     return {
       ok: false,
       response: {
@@ -146,7 +147,12 @@ export async function createLinkedCard(
       },
     };
   }
-  const created = await createCardFromInput(client, actor, { ...input, templateId });
+  const title = template.cardTitle ? renderCardTitle(template.cardTitle, titleValues) : '';
+  const created = await createCardFromInput(client, actor, {
+    ...input,
+    ...(title ? { title } : {}),
+    templateId: template.id,
+  });
   if (!created.ok) return created;
   const tasks = created.tasks || [];
   try {

@@ -1,0 +1,25 @@
+{
+  "separator": " · ",
+  "records": [
+    {
+      "id": "newsletter-slot",
+      "templateTypes": ["newsletter", "newsletter-standalone"],
+      "tokens": {
+        "date": "Publication date, e.g. 19 Oct",
+        "issue": "Issue number, e.g. 299; empty for a stand-alone send",
+        "sponsor": "Who booked the slot, e.g. Snowplow",
+        "variant": "secondary or stand-alone; empty for the regular weekly issue"
+      }
+    },
+    {
+      "id": "podcast-episode",
+      "templateTypes": ["podcast"],
+      "tokens": {
+        "date": "Recording date, e.g. 19 Oct",
+        "code": "Season and episode, e.g. S24E3",
+        "guests": "Guest names joined by &",
+        "title": "Episode title"
+      }
+    }
+  ]
+}

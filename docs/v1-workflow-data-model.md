@@ -95,6 +95,11 @@ Fields:
 - `trigger_type`
 - `trigger_schedule`
 - `trigger_lead_days`
+- `card_title`: optional pattern naming Cards that a planning record links,
+  e.g. `{date} · #{issue} · {sponsor} · {variant}` for newsletter slots. Parts
+  are separated by ` · `; a part whose tokens are all empty drops out. Tokens
+  per record type live in `backend/src/cards/cardTitleTokens.json`, and the
+  title is re-rendered whenever the record's facts change.
 - `created_at`
 - `updated_at`
 

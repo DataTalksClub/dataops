@@ -50,6 +50,7 @@ const AUTHORITATIVE_FIELDS = [
   'name',
   'type',
   'icon',
+  'cardTitle',
   'tags',
   'phases',
   'sourceDocIds',

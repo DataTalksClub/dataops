@@ -1,0 +1,104 @@
+/**
+ * Card titles composed from the planning record a Card executes.
+ *
+ * A Template may author `card_title`, a pattern such as
+ * `{date} · #{issue} · {sponsor} · {variant}`. When a Card is created from a
+ * newsletter slot or podcast episode, and whenever that record's facts change,
+ * the Card's stored title is re-rendered from the pattern, so every surface
+ * (Queue, Cards, calendar, hover card, CLI) shows the same distinguishing name.
+ *
+ * Parts are separated by `separator`; a part whose tokens all render empty is
+ * dropped together with its separator, so `#{issue}` disappears for a
+ * stand-alone send. The token vocabulary lives in `cardTitleTokens.json` so the
+ * private knowledge repository's template validator reads the same names.
+ */
+import vocabulary from './cardTitleTokens.json';
+
+export type TitleRecordType = 'newsletter-slot' | 'podcast-episode';
+export type CardTitleValues = Record<string, string | null | undefined>;
+
+const SEPARATOR = vocabulary.separator;
+const TOKEN = /\{([^{}]*)\}/g;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function record(type: TitleRecordType) {
+  const found = vocabulary.records.find((entry) => entry.id === type);
+  if (!found) throw new Error(`Unknown card title record type ${type}`);
+  return found;
+}
+
+/** Template types whose Cards a record of `type` links. */
+export function recordTemplateTypes(type: TitleRecordType): string[] {
+  return [...record(type).templateTypes];
+}
+
+/**
+ * Problems with a Template's `card_title`, naming each unknown token. A
+ * pattern is only meaningful on a Template whose Cards a record links.
+ */
+export function cardTitlePatternIssues(templateType: string, pattern: unknown): string[] {
+  if (typeof pattern !== 'string' || !pattern.trim()) return ['card_title must be a non-empty string'];
+  const owner = vocabulary.records.find((entry) => entry.templateTypes.includes(templateType));
+  if (!owner) {
+    const linked = vocabulary.records.flatMap((entry) => entry.templateTypes).join(', ');
+    return [`card_title is only supported on templates linked from a planning record (${linked})`];
+  }
+  const issues: string[] = [];
+  const known = Object.keys(owner.tokens);
+  for (const [, name] of pattern.matchAll(TOKEN)) {
+    if (!known.includes(name)) issues.push(`card_title token {${name}} is unknown; use ${known.map((token) => `{${token}}`).join(', ')}`);
+  }
+  if (/[{}]/.test(pattern.replace(TOKEN, ''))) issues.push('card_title has an unbalanced brace');
+  return issues;
+}
+
+/** Render a pattern; parts whose tokens are all empty drop out with their separator. */
+export function renderCardTitle(pattern: string, values: CardTitleValues): string {
+  const parts: string[] = [];
+  for (const part of pattern.split(SEPARATOR)) {
+    const tokens = [...part.matchAll(TOKEN)].map(([, name]) => String(values[name] ?? '').trim());
+    if (tokens.length > 0 && tokens.every((value) => !value)) continue;
+    const rendered = part.replace(TOKEN, (_, name: string) => String(values[name] ?? '').trim()).trim();
+    if (rendered) parts.push(rendered);
+  }
+  return parts.join(SEPARATOR);
+}
+
+/** `2026-10-19` -> `19 Oct`. The year is left out: the Card's date carries it. */
+export function shortDate(isoDate: string | null | undefined): string {
+  const match = String(isoDate || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return '';
+  return `${Number(match[3])} ${MONTHS[Number(match[2]) - 1]}`;
+}
+
+/**
+ * A newsletter slot's title values. The schedule sheet names a secondary slot
+ * `Weekly #306 secondary slot` without a campaign number, so the issue falls
+ * back to the number in the label.
+ */
+export function newsletterSlotTitleValues(slot: Record<string, unknown>): CardTitleValues {
+  const label = String(slot.campaignLabel || '');
+  const labelNumber = label.match(/#\s*(\d+)/)?.[1];
+  const variant = /secondary/i.test(label) ? 'secondary' : /stand-?\s*alone/i.test(label) ? 'stand-alone' : '';
+  return {
+    date: shortDate(String(slot.publicationDate || '')),
+    issue: slot.campaignNumber == null ? labelNumber : String(slot.campaignNumber),
+    sponsor: String(slot.bookedByDisplayName || ''),
+    variant,
+  };
+}
+
+export function podcastEpisodeTitleValues(episode: {
+  season?: number | null;
+  episode?: number | null;
+  title?: string | null;
+  guests: { name: string }[];
+  recordingDate?: string | null;
+}): CardTitleValues {
+  return {
+    date: shortDate(episode.recordingDate),
+    code: episode.season != null && episode.episode != null ? `S${episode.season}E${episode.episode}` : '',
+    guests: episode.guests.map((guest) => guest.name).join(' & '),
+    title: episode.title || '',
+  };
+}

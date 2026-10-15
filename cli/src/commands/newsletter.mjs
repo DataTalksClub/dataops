@@ -23,7 +23,9 @@ Usage
 Statuses: open, reserved, draft, drafting, review, scheduled, sent, cancelled.
 --from defaults to today on the server. Writes send the slot's current version.
 A slot links at most one newsletter Card, and a Card at most one slot; a linked
-slot keeps the Card's date and issue number in step with its own.
+slot keeps the Card's date and issue number in step with its own, and its
+date, issue, sponsor and variant re-render the Card title when the newsletter
+Template authors a card_title pattern.
 
 Examples
   dataops newsletter list --from 2026-11-01 --to 2026-11-30

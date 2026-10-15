@@ -121,7 +121,7 @@ describe("podcast episodes", () => {
   });
 
   it("links podcast Cards uniquely, pushes guests and dates, and creates Cards with rollback", async () => {
-    await createTemplate(client, {
+    const podcastTemplate = await createTemplate(client, {
       name: "Podcast",
       type: "podcast",
       taskDefinitions: [
@@ -130,7 +130,7 @@ describe("podcast episodes", () => {
       ],
     });
     const newsletterCard = await createCard(client, { title: "[Newsletter] Weekly email #400(01MAR 2027) -Sponsor", anchorDate: "2027-03-01", stage: "preparation" });
-    const podcastCard = await createCard(client, { title: "[Podcast] 2027-JUN-07 - Topic - Somebody Else", anchorDate: "2027-06-07", stage: "preparation" });
+    const podcastCard = await createCard(client, { title: "Synthetic topic", templateId: podcastTemplate.id, anchorDate: "2027-06-07", stage: "preparation" });
     const a = data(await invoke("POST", "/api/podcast-episodes", { ...booked, recordingDate: "2027-06-14" }));
     const b = data(await invoke("POST", "/api/podcast-episodes", { ...booked, recordingDate: "2027-06-21" }));
     assert.equal((await invoke("PUT", `/api/podcast-episodes/${a.id}`, { version: a.version, cardId: newsletterCard.id })).statusCode, 422);
@@ -140,7 +140,8 @@ describe("podcast episodes", () => {
     let card = (await getCard(client, podcastCard.id))!;
     assert.equal(card.anchorDate, "2027-06-14");
     assert.deepEqual(card.people, ["Ada Example"]);
-    assert.equal(card.title, "[Podcast] 2027-JUN-14 - Topic - Somebody Else");
+    // The Podcast Template authors no card_title, so the Card keeps its title.
+    assert.equal(card.title, "Synthetic topic");
     assert.equal((await invoke("PUT", `/api/podcast-episodes/${b.id}`, { version: b.version, cardId: podcastCard.id })).statusCode, 409);
     const byCard = data(await invoke("GET", "/api/podcast-episodes", undefined, { cardId: podcastCard.id }));
     assert.deepEqual(byCard.items.map((item: any) => item.id), [a.id]);
