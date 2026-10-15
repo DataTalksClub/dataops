@@ -13,7 +13,7 @@ import { buildCard, cardKey, getCard } from './cards';
 import { usesLocalTransactionEmulation } from './client';
 import { createTask, listTasksByCard } from './tasks';
 import type { Card, Template, Task } from '../types';
-import { templateTaskProjection } from '../templates/cardTemplateProjection';
+import { templateLinkage, templateTaskProjection } from '../templates/cardTemplateProjection';
 import { prerequisitesFirst, templateDependencyIssues } from '../templates/taskDependencyGraph';
 import { resolveDefaultAssigneeId } from './workspaceSettings';
 
@@ -375,7 +375,7 @@ async function createCardFromTemplate(
   selectedGroups?: string[],
 ): Promise<{ card: Card; tasks: Task[] }> {
   const definitions = selectTaskDefinitions(template.taskDefinitions, selectedGroups);
-  cardData.selectedOptionalGroups = [...(selectedGroups || [])];
+  Object.assign(cardData, templateLinkage(template, selectedGroups || []));
   const card = buildCard(cardData, {
     taskCount: definitions.length,
     openTaskCount: definitions.length,

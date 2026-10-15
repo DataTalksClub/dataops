@@ -289,15 +289,6 @@ export function buildCardTemplateUpdatePlan(
     byRef.set(ref, task);
   }
 
-  const targetCardSnapshot = templateCardDefinitionSnapshot(template);
-  const sourceCardSnapshot = card.templateDefinitionSnapshot || null;
-  const cardChanges = fieldChanges(
-    CARD_FIELDS,
-    currentCardDefinition(card),
-    sourceCardSnapshot as unknown as Dict | null,
-    targetCardSnapshot as unknown as Dict,
-  );
-
   const taskUpdates: PlannedTaskUpdate[] = [];
   const taskChanges: TemplateTaskUpdatePreview[] = [];
   const targetRefs = new Set<string>();
@@ -308,6 +299,15 @@ export function buildCardTemplateUpdatePlan(
   const definitions = (template.taskDefinitions || []).filter((definition) => (
     !definition.optionalGroup || selected.includes(definition.optionalGroup)
   ));
+  const targetCardSnapshot = templateCardDefinitionSnapshot(template, definitions.map(({ refId }) => refId));
+  const sourceCardSnapshot = card.templateDefinitionSnapshot || null;
+  const cardChanges = fieldChanges(
+    CARD_FIELDS,
+    currentCardDefinition(card),
+    sourceCardSnapshot as unknown as Dict | null,
+    targetCardSnapshot as unknown as Dict,
+  );
+
   for (const [order, definition] of definitions.entries()) {
     const ref = definition.refId;
     targetRefs.add(ref);

@@ -426,6 +426,12 @@ export interface TemplateCardDefinitionSnapshot {
   sourceDocIds: string[];
   references: Reference[];
   cardLinkDefinitions: CardLinkDefinition[];
+  /**
+   * Template task refs the Card has accounted for at its `templateVersion`:
+   * instantiated as Tasks, or deliberately left out. A Template update adds
+   * a Task only for a ref outside this set.
+   */
+  taskRefs: string[];
 }
 
 /**

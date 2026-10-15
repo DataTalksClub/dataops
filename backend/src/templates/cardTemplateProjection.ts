@@ -24,26 +24,56 @@ export function dateFromTemplateOffset(anchorDate: string, offsetDays: number): 
   return anchor.toISOString().split('T')[0];
 }
 
-export function templateCardDefinitionSnapshot(template: Template): TemplateCardDefinitionSnapshot {
+/** The Template's task definitions a Card with these optional groups holds. */
+export function selectedTaskDefinitions(template: Template, selectedGroups?: readonly string[]): TaskDefinition[] {
+  const selected = new Set(selectedGroups || []);
+  return (template.taskDefinitions || [])
+    .filter((definition) => !definition.optionalGroup || selected.has(definition.optionalGroup));
+}
+
+export function templateCardDefinitionSnapshot(
+  template: Template,
+  taskRefs: readonly string[],
+): TemplateCardDefinitionSnapshot {
   return withoutUndefined({
     tags: copy(template.tags || []),
     sourceDocIds: copy(template.sourceDocIds || []),
     references: copy(template.references || []),
     cardLinkDefinitions: copy(template.cardLinkDefinitions || []),
+    taskRefs: [...new Set(taskRefs)].sort(),
   });
 }
 
-export function templateCardProjection(template: Template): Dict {
-  const snapshot = templateCardDefinitionSnapshot(template);
+/**
+ * The fields that tie a Card to the Template it was instantiated from: the
+ * Template version and definition it was created at, and the optional groups
+ * and task refs it accounts for. Every Card carries them.
+ */
+export function templateLinkage(
+  template: Template,
+  selectedGroups: readonly string[] = [],
+  taskRefs: readonly string[] = selectedTaskDefinitions(template, selectedGroups).map(({ refId }) => refId),
+): Dict {
+  return withoutUndefined({
+    templateId: template.id,
+    templateVersion: template.version,
+    templateSourceRevision: template.sourceRevision,
+    templateDefinitionSnapshot: templateCardDefinitionSnapshot(template, taskRefs),
+    selectedOptionalGroups: [...new Set(selectedGroups)],
+  });
+}
+
+/** Card fields a Card instantiated from `template` with these optional groups starts with. */
+export function templateCardProjection(template: Template, selectedGroups: readonly string[] = []): Dict {
+  const linkage = templateLinkage(template, selectedGroups);
+  const snapshot = linkage.templateDefinitionSnapshot as TemplateCardDefinitionSnapshot;
   const cardLinks: CardLink[] = snapshot.cardLinkDefinitions.map(({ name }) => ({ name, url: '' }));
   return withoutUndefined({
     tags: copy(snapshot.tags),
     sourceDocIds: copy(snapshot.sourceDocIds),
     references: copy(snapshot.references),
     cardLinks,
-    templateVersion: template.version,
-    templateSourceRevision: template.sourceRevision,
-    templateDefinitionSnapshot: snapshot,
+    ...linkage,
   });
 }
 
