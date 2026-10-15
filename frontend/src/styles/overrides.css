@@ -147,14 +147,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
   }
 }/* Surface headers read as page hierarchy: left-aligned, 16px title.
    The operations grid center-aligns children, so the header takes the
-   content width to read as a document column. */.ops-surface .ops-surface-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: min(var(--content-width), 100%);
-  text-align: left;
-  padding: 0;
-}.ops-surface .ops-surface-intro {
+   content width to read as a document column. */.ops-surface .ops-surface-intro {
   justify-self: start;
   width: min(var(--content-width), 100%);
   text-align: left;
@@ -309,8 +302,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
     min-height: 44px;
   }
 }/* ── Slice 5 review round 1 (#229): knowledge family, panels, finance r2 ── *//* Docs and Admin share the knowledge-family header: eyebrow, H1, subtitle on
-   the normal content column, left-aligned like Review. */.operations-home .ops-surface-header,
-.operations-home .ops-processes-surface {
+   the normal content column, left-aligned like Review. */.operations-home .ops-processes-surface {
   width: min(var(--content-width), 100%);
 }.operations-home .ops-surface-header .section-kicker {
   margin: 0 0 2px;
@@ -426,23 +418,10 @@ body[data-workspace-view] .task-modal-panel button,
   }
 }/* ── Slice 5 review round 2 (#229): one knowledge header, aligned counts ──── *//* Docs and Admin headers follow the family pattern exactly: left-aligned
    eyebrow, H1, subtitle, no trailing rule. Docs' create action lives on the
-   catalog toolbar, not here. */.ops-surface-docs > .ops-surface-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: center;
-  justify-items: start;
-  gap: 4px 20px;
-  border-bottom: 0;
-  padding: 0;
-  text-align: left;
-}.ops-surface-docs > .ops-surface-header > .section-kicker,
+   catalog toolbar, not here. */.ops-surface-docs > .ops-surface-header > .section-kicker,
 .ops-surface-docs > .ops-surface-header > h1:not([class*="dk-"]),
 .ops-surface-docs > .ops-surface-header > p:not([class*="dk-"]) {
   grid-column: 1;
-}.ops-surface-admin .ops-surface-header {
-  width: 100%;
-  border-bottom: 0;
-  padding: 0;
 }/* Admin cards hug their content instead of stretching to the tallest panel. */.ops-admin-grid {
   align-items: start;
 }/* Inline counts use aligned figures in the UI font. */.ops-count {
