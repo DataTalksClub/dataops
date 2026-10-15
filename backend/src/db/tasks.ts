@@ -8,6 +8,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { readAllPages } from './readAllPages';
 import { TABLE_TASKS } from './tableNames';
 import type { Task, TaskHistoryEvent } from '../types';
 import {
@@ -375,87 +376,66 @@ async function deleteTask(
   }
 }
 
+async function readAllTaskPages(
+  client: DynamoDBDocumentClient,
+  command: (exclusiveStartKey: Record<string, unknown> | undefined) => QueryCommand | ScanCommand,
+): Promise<Task[]> {
+  return (await readAllPages(client, command)).map((item) => cleanItem(item) as Task);
+}
+
+function scanTasks(
+  client: DynamoDBDocumentClient,
+  filterParts: string[],
+  values: Record<string, unknown>,
+  names?: Record<string, string>,
+): Promise<Task[]> {
+  return readAllTaskPages(client, (exclusiveStartKey) => new ScanCommand({
+    TableName: TABLE_TASKS,
+    FilterExpression: filterParts.join(' AND '),
+    ExpressionAttributeNames: names,
+    ExpressionAttributeValues: values,
+    ExclusiveStartKey: exclusiveStartKey,
+  }));
+}
+
 /**
  * List tasks for a specific date using GSI-Date.
  */
-async function listTasksByDate(client: DynamoDBDocumentClient, date: string): Promise<Task[]> {
-  const result = await client.send(
-    new QueryCommand({
-      TableName: TABLE_TASKS,
-      IndexName: 'GSI-Date',
-      KeyConditionExpression: '#d = :date',
-      ExpressionAttributeNames: { '#d': 'date' },
-      ExpressionAttributeValues: { ':date': date },
-    })
-  );
-
-  return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as Task);
+function listTasksByDate(client: DynamoDBDocumentClient, date: string): Promise<Task[]> {
+  return readAllTaskPages(client, (exclusiveStartKey) => new QueryCommand({
+    TableName: TABLE_TASKS,
+    IndexName: 'GSI-Date',
+    KeyConditionExpression: '#d = :date',
+    ExpressionAttributeNames: { '#d': 'date' },
+    ExpressionAttributeValues: { ':date': date },
+    ExclusiveStartKey: exclusiveStartKey,
+  }));
 }
 
 /**
  * List tasks within a date range. Uses a Scan with a FilterExpression since
  * date is the partition key on GSI-Date and range queries require sort key.
  */
-async function listTasksByDateRange(client: DynamoDBDocumentClient, startDate: string, endDate: string): Promise<Task[]> {
-  const result = await client.send(
-    new ScanCommand({
-      TableName: TABLE_TASKS,
-      FilterExpression:
-        '#d BETWEEN :start AND :end AND begins_with(PK, :prefix)',
-      ExpressionAttributeNames: { '#d': 'date' },
-      ExpressionAttributeValues: {
-        ':start': startDate,
-        ':end': endDate,
-        ':prefix': 'TASK#',
-      },
-    })
+function listTasksByDateRange(client: DynamoDBDocumentClient, startDate: string, endDate: string): Promise<Task[]> {
+  return scanTasks(
+    client,
+    ['#d BETWEEN :start AND :end', 'begins_with(PK, :prefix)'],
+    { ':start': startDate, ':end': endDate, ':prefix': 'TASK#' },
+    { '#d': 'date' },
   );
-
-  return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as Task);
 }
 
 /**
  * List tasks for a specific card using GSI-Card.
  */
-async function listTasksByCard(client: DynamoDBDocumentClient, cardId: string): Promise<Task[]> {
-  const result = await client.send(
-    new QueryCommand({
-      TableName: TABLE_TASKS,
-      IndexName: 'GSI-Card',
-      KeyConditionExpression: 'cardId = :bid',
-      ExpressionAttributeValues: { ':bid': cardId },
-    })
-  );
-
-  return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as Task);
-}
-
-const MAX_TASK_SCAN_PAGES = 200;
-
-async function scanTasks(
-  client: DynamoDBDocumentClient,
-  filterParts: string[],
-  values: Record<string, unknown>,
-): Promise<Task[]> {
-  const items: Record<string, unknown>[] = [];
-  let exclusiveStartKey: Record<string, unknown> | undefined;
-  let pages = 0;
-  do {
-    const result = await client.send(new ScanCommand({
-      TableName: TABLE_TASKS,
-      FilterExpression: filterParts.join(' AND '),
-      ExpressionAttributeValues: values,
-      ExclusiveStartKey: exclusiveStartKey,
-    }));
-    items.push(...((result.Items || []) as Record<string, unknown>[]));
-    exclusiveStartKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-    pages += 1;
-    if (pages >= MAX_TASK_SCAN_PAGES && exclusiveStartKey) {
-      throw new Error('Task listing exceeded its bounded page limit');
-    }
-  } while (exclusiveStartKey);
-
-  return items.map((item) => cleanItem(item) as Task);
+function listTasksByCard(client: DynamoDBDocumentClient, cardId: string): Promise<Task[]> {
+  return readAllTaskPages(client, (exclusiveStartKey) => new QueryCommand({
+    TableName: TABLE_TASKS,
+    IndexName: 'GSI-Card',
+    KeyConditionExpression: 'cardId = :bid',
+    ExpressionAttributeValues: { ':bid': cardId },
+    ExclusiveStartKey: exclusiveStartKey,
+  }));
 }
 
 /**
@@ -495,18 +475,15 @@ async function listTasksByOwner(
 /**
  * List tasks by status using GSI-Status.
  */
-async function listTasksByStatus(client: DynamoDBDocumentClient, status: string): Promise<Task[]> {
-  const result = await client.send(
-    new QueryCommand({
-      TableName: TABLE_TASKS,
-      IndexName: 'GSI-Status',
-      KeyConditionExpression: '#s = :status',
-      ExpressionAttributeNames: { '#s': 'status' },
-      ExpressionAttributeValues: { ':status': status },
-    })
-  );
-
-  return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as Task);
+function listTasksByStatus(client: DynamoDBDocumentClient, status: string): Promise<Task[]> {
+  return readAllTaskPages(client, (exclusiveStartKey) => new QueryCommand({
+    TableName: TABLE_TASKS,
+    IndexName: 'GSI-Status',
+    KeyConditionExpression: '#s = :status',
+    ExpressionAttributeNames: { '#s': 'status' },
+    ExpressionAttributeValues: { ':status': status },
+    ExclusiveStartKey: exclusiveStartKey,
+  }));
 }
 
 export {
