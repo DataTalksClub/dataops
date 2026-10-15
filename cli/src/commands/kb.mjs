@@ -24,6 +24,8 @@ Usage
   dataops kb resolve <doc-id|alias|path>       The document's registry record
   dataops kb backlinks <doc-id|path>           Documents that link to it
   dataops kb history <doc-id|path>             Published versions of it
+  dataops kb recent [--limit N]                Recently changed docs, newest first: one row
+                                               per doc with who changed it and how often
   dataops kb write <path> --file F [--create] [--title T] [--type T]
                                                Publish new content (as the web editor does)
   dataops kb publish [--head REV] [--repo DIR] [--dry-run]
@@ -291,6 +293,20 @@ export async function history(args, io) {
   return result;
 }
 
+export async function recent(args, io) {
+  const api = apiFor(args);
+  const limit = integer(args.limit, "limit");
+  const result = await api.get("/knowledge/recent", { query: limit ? { limit } : {} });
+  if (args.json) return result;
+  table(io, result.changes || [], [
+    ["TIME", (item) => item.time],
+    ["BY", (item) => item.actorName || item.actor],
+    ["CHANGE", (item) => `${item.operation}${item.changes > 1 ? ` x${item.changes}` : ""}`],
+    ["PATH", (item) => `${relative(item.path)}${item.deleted ? " (deleted)" : ""}`],
+  ], "No recent changes.");
+  return result;
+}
+
 export async function write(args, io) {
   const usage = "dataops kb write <path> --file F [--create] [--title T] [--type T]";
   const raw = positional(args, 0, usage);
@@ -506,4 +522,4 @@ export async function related(args, io) {
   return result;
 }
 
-export const commands = { search, related, show, code, tree, ls, resolve, backlinks, history, write, publish };
+export const commands = { search, related, show, code, tree, ls, resolve, backlinks, history, recent, write, publish };

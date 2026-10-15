@@ -50,6 +50,29 @@ describe("kb search", () => {
   });
 });
 
+describe("kb recent", () => {
+  test("lists recently changed docs with the limit and a readable table", async () => {
+    const calls = fakePortal({
+      "GET /knowledge/recent": {
+        revision: "rev-2",
+        complete: false,
+        scanned: 3,
+        changes: [
+          { path: "content/newsletter/sops/schedule.md", operation: "edit", actor: "git:DataTalksClub/dataops-knowledge@0123456789ab", actorName: "Git 0123456", time: "2026-10-15T10:00:00.000Z", changes: 2, deleted: false },
+          { path: "content/old.md", operation: "delete", actor: "u1", actorName: "Orin Vale", time: "2026-10-14T09:00:00.000Z", changes: 1, deleted: true },
+        ],
+      },
+    });
+    const io = captureIo();
+    assert.equal(await run(["kb", "recent", "--limit", "2"], io), 0);
+    assert.equal(calls[0].rawPath, "/knowledge/recent");
+    assert.deepEqual(calls[0].query, { limit: "2" });
+    assert.match(io.text(), /Git 0123456\s+edit x2\s+newsletter\/sops\/schedule\.md/);
+    assert.match(io.text(), /Orin Vale\s+delete\s+old\.md \(deleted\)/);
+    assert.equal(await run(["kb", "recent", "--limit", "0"], captureIo()), 2);
+  });
+});
+
 describe("kb browse", () => {
   test("show resolves an id and prints the markdown", async () => {
     fakePortal(docsRoutes);
