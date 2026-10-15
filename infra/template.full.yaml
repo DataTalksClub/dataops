@@ -1356,6 +1356,8 @@ Resources:
           WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}/work-engine/portal-secret
           INVOICE_PUBLICATION_SECRET_NAME: !If [HasInvoicePublicationConfig, !Ref InvoicePublicationSecret, ""]
           INVOICE_READER_TOKEN_SHA256: !Ref InvoiceReaderTokenSha256
+          KNOWLEDGE_PUBLISHER_REPOSITORY: !Sub ${GitHubOwner}/${GitHubRepo}
+          KNOWLEDGE_PUBLISHER_BRANCH: !Ref GitHubBranch
           EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn
           EMAIL_DOCUMENTS_BUCKET: !Ref EmailDocumentsBucket
           EMAIL_DOCUMENTS_KMS_KEY: !Ref EmailDocumentsKey

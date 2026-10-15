@@ -36,6 +36,7 @@ import { getTaskConsistent, TaskVersionConflictError, CardLifecycleConflictError
 import { CardNotFoundError, getCardConsistent } from './db/cards';
 import { getApiToken, touchApiToken } from './db/cliAuth';
 import { handleInvoiceReader } from './auth/invoiceReader';
+import { handleKnowledgePublisher } from './auth/knowledgePublisher';
 import { handleCliAuthRoutes, isAnonymousDeviceRequest } from './routes/cliAuth';
 import type { LambdaEvent, LambdaResponse } from './types';
 
@@ -136,6 +137,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
 
     decodeBase64Body(event);
+
+    // The knowledge repository's publish workflow presents its own GitHub
+    // OIDC token; it is a scoped service principal, never a portal session.
+    if (isDocsDomainEnabled()) {
+      const publisherResponse = await handleKnowledgePublisher(event);
+      if (publisherResponse) return publisherResponse;
+    }
 
     // ── Single-origin portal layer (docs domain, flag-gated) ─────
     // When the docs domain is enabled, the portal serves the frontend, the docs
