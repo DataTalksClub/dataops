@@ -1480,7 +1480,7 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(harness.errors, []);
   });
 
-  test("shows the Task owner on every checklist row, defaulting to Grace", async () => {
+  test("shows only a real assignee, in one owner column on every checklist row", async () => {
     const card = {
       id: "card-owners",
       version: 1,
@@ -1537,20 +1537,61 @@ describe("Work Detail surface boundary", () => {
 
     harness.api.prepareCardPanel(card.id);
     await harness.api.hydrateCardPanel(card.id, 1);
+    // Every row has the owner slot so avatars line up; only the assigned
+    // Task fills it. A name in the title or a default person is not an
+    // assignment.
+    const slots = harness.cardPanelBody.querySelectorAll(".card-checklist-owner");
+    assert.equal(slots.length, 3);
     const owners = harness.cardPanelBody.querySelectorAll(".card-task-owner");
-    assert.equal(owners.length, 3);
+    assert.equal(owners.length, 1);
     assert.equal(owners[0].getAttribute("aria-label"), "Assigned to Valeriia");
     assert.equal(
       owners[0].querySelector(".card-task-owner-avatar").textContent,
       "V",
     );
-    assert.equal(owners[1].getAttribute("aria-label"), "Assigned to Valeriia");
-    assert.equal(owners[2].getAttribute("aria-label"), "Assigned to Grace");
-    assert.equal(
-      owners[2].querySelector(".card-task-owner-avatar").textContent,
-      "G",
-    );
     assert.deepEqual(harness.errors, []);
+  });
+
+  test("marks a skipped Task apart from done ones and keeps its reason on one muted line", async () => {
+    const card = { id: "card-skipped-row", version: 1, title: "Skips", stage: "preparation", references: [] };
+    const reason = "No longer applicable on 2026-10-15: Building an AI Platform: the guest already sent the invite";
+    const tasks = [
+      { id: "t-open", cardId: card.id, version: 1, taskHistory: [], description: "Publish the episode", status: "todo" },
+      { id: "t-done", cardId: card.id, version: 1, taskHistory: [], description: "Prepare the doc", status: "done" },
+      { id: "t-skip", cardId: card.id, version: 1, taskHistory: [], description: "Create a calendar invite", status: "skipped", skipReason: reason },
+    ];
+    const harness = createHarness({
+      cards: [card],
+      request: async (url) => {
+        if (url === `/api/cards/${card.id}`) return card;
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks };
+        if (url === `/api/artifacts?cardId=${card.id}`) return { artifacts: [] };
+        return {};
+      },
+    });
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+
+    const rows = [...harness.cardPanelBody.querySelectorAll(".card-checklist-item")];
+    assert.deepEqual(
+      rows.map((row) => row.querySelector(".card-checklist-label").textContent),
+      ["Publish the episode", "Prepare the doc", "Create a calendar invite"],
+    );
+    const skipped = rows[2];
+    assert.equal(skipped.querySelector('input[type="checkbox"]'), null);
+    assert.equal(skipped.querySelector(".card-checklist-skip").getAttribute("aria-label"), "Skipped");
+    const label = skipped.querySelector(".card-checklist-label");
+    assert.equal(label.classList.contains("is-skipped"), true);
+    assert.equal(label.classList.contains("is-done"), false);
+    const note = skipped.querySelector(".card-checklist-note");
+    assert.equal(note.textContent, `Skipped · ${reason}`);
+    assert.equal(note.title, `Skipped: ${reason}`);
+    assert.ok(skipped.querySelector(".card-checklist-owner"));
+    // Done stays a checked, struck-through checkbox row.
+    assert.equal(rows[1].querySelector('input[type="checkbox"]').checked, true);
+    assert.equal(rows[1].querySelector(".card-checklist-label").classList.contains("is-done"), true);
+    // Skipped counts as resolved in the progress, as Card completion does.
+    assert.equal(harness.cardPanelBody.querySelector(".card-checklist-percent").textContent, "67%");
   });
 
   test("renders description link dumps as subheadings with real anchors", async () => {

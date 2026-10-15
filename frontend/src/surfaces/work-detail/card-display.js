@@ -28,26 +28,11 @@ export function humanLinkName(name) {
   }
 }
 
-// Who owns a checklist row: the recorded assignee first, then a teammate
-// named in the title, otherwise the operator default (Grace).
-export function resolveChecklistOwnerName(task, usersById, workTaskTitle) {
+// The Task's assignee by name. No guessing from the title or a default
+// person: an unassigned Task shows no avatar.
+export function resolveChecklistOwnerName(task, usersById) {
   const assigned = task.assigneeId && usersById?.get(task.assigneeId);
-  if (assigned?.name) return assigned.name;
-  const title = workTaskTitle(task).toLowerCase();
-  if (usersById) {
-    for (const user of usersById.values()) {
-      const firstName = String(user?.name || "").split(/\s+/)[0];
-      if (firstName && title.includes(firstName.toLowerCase())) {
-        return user.name;
-      }
-    }
-    for (const user of usersById.values()) {
-      if (String(user?.name || "").toLowerCase() === "grace") {
-        return user.name;
-      }
-    }
-  }
-  return "";
+  return assigned?.name || "";
 }
 
 export function ownerAvatar(ownerName) {

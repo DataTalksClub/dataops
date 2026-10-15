@@ -434,6 +434,7 @@ export function createCardPanel(context) {
         const percent = document.createElement("span");
         percent.className = "card-checklist-percent";
         percent.textContent = `${progress.percent}%`;
+        percent.title = "Done and skipped Tasks count as resolved";
         checklistHeader.append(percent);
       }
       checklistSection.append(checklistHeader);
@@ -684,39 +685,53 @@ export function createCardPanel(context) {
     const siblingTasks = detail.activeCardPanelData?.tasks || [];
     const blockedBy = blockedReason(task, siblingTasks);
 
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.setAttribute(
-      "aria-label",
-      `${isSkipped ? "Skipped" : isDone ? "Reopen" : "Complete"} ${workTaskTitle(task)}`,
-    );
-    // Preserve the native checkbox state while the change handler is awaiting
-    // the server. The pending rerender must not make Playwright/keyboard users
-    // observe an unchecked replacement after they just checked it.
-    checkbox.checked = pendingStatus ? pendingStatus === "done" : isDone;
-    checkbox.disabled =
-      detail.activeTaskMutationBusy ||
-      detail.activeCardMutationBusy ||
-      detail.activeCardTemplateBusy ||
-      isSkipped || isWaiting || Boolean(blockedBy) ||
-      missingLink || missingFile || missingArtifact;
-    if (checkbox.disabled && !isDone) {
-      const reasons = [];
-      if (blockedBy) reasons.push(blockedBy);
-      if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
-      if (missingFile) reasons.push("Upload required file");
-      if (missingArtifact) reasons.push("Approve an attached artifact");
-      if (isWaiting) reasons.push("Waiting task");
-      if (isSkipped) reasons.push("Skipped task: unskip it from the task");
-      checkbox.title = reasons.join("; ");
+    // A skipped Task is resolved without being done: a dash mark instead of
+    // a checked box, a muted title that is not struck through, and its reason
+    // on a muted line underneath.
+    let control;
+    if (isSkipped) {
+      control = document.createElement("span");
+      control.className = "card-checklist-skip";
+      control.setAttribute("role", "img");
+      control.setAttribute("aria-label", "Skipped");
+      control.title = "Skipped: unskip it from the task";
+    } else {
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.setAttribute(
+        "aria-label",
+        `${isDone ? "Reopen" : "Complete"} ${workTaskTitle(task)}`,
+      );
+      // Preserve the native checkbox state while the change handler is awaiting
+      // the server. The pending rerender must not make Playwright/keyboard users
+      // observe an unchecked replacement after they just checked it.
+      checkbox.checked = pendingStatus ? pendingStatus === "done" : isDone;
+      checkbox.disabled =
+        detail.activeTaskMutationBusy ||
+        detail.activeCardMutationBusy ||
+        detail.activeCardTemplateBusy ||
+        isWaiting || Boolean(blockedBy) ||
+        missingLink || missingFile || missingArtifact;
+      if (checkbox.disabled && !isDone) {
+        const reasons = [];
+        if (blockedBy) reasons.push(blockedBy);
+        if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
+        if (missingFile) reasons.push("Upload required file");
+        if (missingArtifact) reasons.push("Approve an attached artifact");
+        if (isWaiting) reasons.push("Waiting task");
+        checkbox.title = reasons.join("; ");
+      }
+      checkbox.addEventListener("change", () => {
+        updateTaskStatus(task.id, isDone ? "todo" : "done", task.version);
+      });
+      control = checkbox;
     }
-    checkbox.addEventListener("change", () => {
-      updateTaskStatus(task.id, isDone ? "todo" : "done", task.version);
-    });
 
+    const body = document.createElement("div");
+    body.className = "card-checklist-body";
     const label = document.createElement("button");
     label.type = "button";
-    label.className = `card-checklist-label ${isDone ? "is-done" : ""}${isSkipped ? " is-skipped" : ""}`;
+    label.className = `card-checklist-label${isSkipped ? " is-skipped" : isDone ? " is-done" : ""}`;
     label.dataset.taskId = task.id;
     appendBreakableText(label, workTaskTitle(task));
     label.addEventListener("click", () =>
@@ -725,6 +740,45 @@ export function createCardPanel(context) {
         expectedCardId: cardId,
       }),
     );
+    body.append(label);
+
+    // One muted line under the title: why it is skipped or what it waits
+    // for. It never widens the row; the full text is in its title.
+    const noteText = isSkipped
+      ? task.skipReason || "Not applicable"
+      : isWaiting && task.waitingFor ? task.waitingFor : "";
+    if (isSkipped || isWaiting) {
+      const note = document.createElement("small");
+      note.className = `card-checklist-note${isSkipped ? " card-checklist-skipped" : ""}`;
+      const kind = document.createElement("span");
+      kind.className = "card-checklist-note-kind";
+      kind.textContent = isSkipped ? "Skipped" : "Waiting";
+      note.append(kind);
+      if (noteText) note.append(document.createTextNode(` · ${noteText}`));
+      note.title = `${kind.textContent}${noteText ? `: ${noteText}` : ""}`;
+      body.append(note);
+    }
+
+    const flags = document.createElement("div");
+    flags.className = "card-checklist-flags";
+    if (blockedBy && !isWaiting) {
+      const blockedChip = document.createElement("span");
+      blockedChip.className = "card-checklist-blocked workflow-card-flag is-warning";
+      blockedChip.textContent = blockedSummary(task, siblingTasks);
+      blockedChip.title = blockedBy;
+      flags.append(blockedChip);
+    }
+    if (!isDone && (missingLink || missingFile || missingArtifact)) {
+      const missing = [];
+      if (missingLink) missing.push(`${task.requiredLinkName} missing`);
+      if (missingFile) missing.push("file missing");
+      if (missingArtifact) missing.push("artifact review missing");
+      const badge = document.createElement("span");
+      badge.className = "card-checklist-evidence workflow-card-flag is-danger";
+      badge.textContent = missing.join("; ");
+      flags.append(badge);
+    }
+    if (flags.children.length) body.append(flags);
 
     const dateMeta = document.createElement("small");
     dateMeta.className = "card-checklist-date";
@@ -737,50 +791,16 @@ export function createCardPanel(context) {
       if (isOverdue) dateChip.title = `Overdue since ${taskDateValue}`;
       dateMeta.append(dateChip);
     }
-    if (isWaiting) {
-      const waitingChip = document.createElement("span");
-      waitingChip.className = "workflow-card-flag is-info";
-      waitingChip.textContent = task.waitingFor
-        ? `waiting: ${task.waitingFor}`
-        : "waiting";
-      dateMeta.replaceChildren(waitingChip);
-    }
-    if (isSkipped) {
-      const skippedChip = document.createElement("span");
-      skippedChip.className = "workflow-card-flag card-checklist-skipped";
-      skippedChip.textContent = `skipped: ${task.skipReason || "not applicable"}`;
-      dateMeta.replaceChildren(skippedChip);
-    }
 
-    if (blockedBy && !isWaiting) {
-      const blockedChip = document.createElement("span");
-      blockedChip.className = "card-checklist-blocked workflow-card-flag is-warning";
-      blockedChip.textContent = blockedSummary(task, siblingTasks);
-      blockedChip.title = blockedBy;
-      dateMeta.append(blockedChip);
-    }
+    // Every row keeps an owner slot so avatars line up in one column.
+    const owner = document.createElement("span");
+    owner.className = "card-checklist-owner";
+    const ownerName = resolveChecklistOwnerName(task, state.workSnapshot.usersById);
+    if (ownerName) owner.append(ownerAvatar(ownerName));
 
-    if (!isDone && (missingLink || missingFile || missingArtifact)) {
-      const badge = document.createElement("span");
-      badge.className = "card-checklist-evidence workflow-card-flag is-danger";
-      if (missingLink) badge.textContent += `${task.requiredLinkName} missing`;
-      if (missingLink && missingFile) badge.textContent += "; ";
-      if (missingFile) badge.textContent += "file missing";
-      if ((missingLink || missingFile) && missingArtifact)
-        badge.textContent += "; ";
-      if (missingArtifact) badge.textContent += "artifact review missing";
-      dateMeta.append(badge);
-    }
-    row.append(checkbox, label);
-    const ownerName = resolveChecklistOwnerName(
-      task,
-      state.workSnapshot.usersById,
-      workTaskTitle,
-    );
-    if (ownerName) {
-      row.append(ownerAvatar(ownerName));
-    }
-    row.append(dateMeta);
+    row.classList.toggle("is-skipped", isSkipped);
+    row.classList.toggle("is-done", isDone && !isSkipped);
+    row.append(control, body, dateMeta, owner);
     return row;
   }
 
