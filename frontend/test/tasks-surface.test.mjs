@@ -1602,6 +1602,23 @@ describe("Tasks surface boundary", () => {
     assert.equal(badge.querySelector("svg").dataset.icon, "newspaper");
     assert.equal(badge.title, "View Newsletter template");
     assert.equal(badge.dataset.templateType, "newsletter");
+    // Where the card comes from opens its first row, ahead of the date and
+    // issue number; the task count closes the row. No separate badge line above it.
+    const [row] = findAllByClass(news, "workflow-card-header");
+    assert.equal(news.children[0], row);
+    assert.deepEqual(
+      row.children.map((child) => child.className),
+      ["workflow-card-lead", "workflow-card-count"],
+    );
+    assert.deepEqual(
+      row.children[0].children.map((child) => child.className.split(" ")[0]),
+      ["workflow-card-template", "workflow-card-anchor", "workflow-card-issue"],
+    );
+    assert.equal(
+      findAllByClass(badge, "workflow-card-template-label")[0].textContent,
+      "Newsletter",
+    );
+    assert.equal(findAllByClass(news, "workflow-card-meta-top").length, 0);
     assert.equal(
       findAllByClass(plain, "workflow-card-template").length,
       0,

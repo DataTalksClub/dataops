@@ -177,14 +177,36 @@
 }.ops-workflow-card.workflow-board-card:hover {
   border-color: var(--dk-border-strong);
   background: var(--dk-bg-surface);
-}.workflow-card-header {
+}/* Template, date and task count share one line. The lead (Template badge,
+   date) takes whatever the count leaves, and the Template name truncates to
+   make room. The lead's basis is zero and its floor is the badge icon plus
+   the date, so the count drops to its own line only when even that floor
+   and the count cannot share the column. As an inline-size container the
+   lead keeps a long Template name out of the tile's min-content width, so it
+   truncates instead of widening the tile; with no room left for a readable
+   name, the badge falls back to its icon. */
+.workflow-card-header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: var(--dk-space-1) var(--dk-space-2);
   line-height: 1.3;
-}.ops-workflow-card.workflow-board-card > .workflow-card-title {
+}.workflow-card-lead {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: var(--dk-space-1);
+  min-width: 6.5rem;
+  max-width: 100%;
+  container: card-tile-lead / inline-size;
+}.workflow-card-lead > * {
+  flex: none;
+}.workflow-card-lead > .workflow-card-template {
+  flex: 0 1 auto;
+  min-width: 0;
+}.workflow-card-header > .workflow-card-count {
+  flex: none;
+}}.ops-workflow-card.workflow-board-card > .workflow-card-title {
   display: -webkit-box;
   overflow: hidden;
   color: var(--dk-text-heading);
@@ -218,11 +240,6 @@
   gap: 6px;
 }.quick-form-groups[hidden] {
   display: none;
-}.workflow-card-meta-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
 }.workflow-card-issue {
   display: inline-flex;
   align-items: center;
@@ -274,6 +291,14 @@
 .card-template-link > svg {
   flex: none;
   color: var(--dk-accent-default);
+}.workflow-card-template-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}@container card-tile-lead (max-width: 8rem) {
+  .workflow-card-template-label {
+    display: none;
+  }
 }.workflow-card-template:hover {
   background: var(--dk-bg-hover);
   color: var(--dk-text-heading);

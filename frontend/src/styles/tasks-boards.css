@@ -806,6 +806,17 @@ body[data-workspace-view="tasks"] .ops-queue-row:focus-visible {
 }body[data-workspace-view="tasks"] .workflow-card-anchor {
   border-color: var(--dk-border-strong);
   padding-inline: 8px;
+}/* The Template chip sits beside the date pill at the same height and shape:
+   filled where the date is outlined, so the two read as separate facts.
+   Stretching to the row takes the date pill's height exactly. */
+body[data-workspace-view="tasks"] .workflow-card-lead > .workflow-card-template {
+  align-self: stretch;
+  border-radius: var(--dk-radius-full);
+  padding: 0 var(--dk-space-2);
+  font-size: var(--dk-text-sm);
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.4;
 }body[data-workspace-view="tasks"] .workflow-card-count {
   font-weight: 600;
 }body[data-workspace-view="tasks"] .workflow-board-card .ops-progress {

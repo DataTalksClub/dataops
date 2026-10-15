@@ -428,41 +428,33 @@ export function createCardsSurface(context) {
     if (item.meta) card.title = item.meta;
     card.addEventListener("click", () => openCardPanel(item.cardId));
 
-    // The Template badge replaces the legacy `[Tag]` title prefix: the card
-    // shows which Template it was created from, and opens it on click.
-    const metaTop = document.createElement("div");
-    metaTop.className = "workflow-card-meta-top";
+    // One row opens the tile: where the card comes from (its Template badge),
+    // when it is anchored, then progress at the far end. The badge replaces
+    // the legacy `[Tag]` title prefix and opens its Template on click; its
+    // name is what truncates when the column is narrow; only in a column too
+    // narrow for the badge icon and the date does the count drop a line.
+    const header = document.createElement("span");
+    header.className = "workflow-card-header";
+    const lead = document.createElement("span");
+    lead.className = "workflow-card-lead";
     if (templateId) {
       const badge = document.createElement("span");
       badge.className = "workflow-card-template";
       if (template?.type) badge.dataset.templateType = template.type;
+      const badgeLabel = document.createElement("span");
+      badgeLabel.className = "workflow-card-template-label";
+      badgeLabel.textContent = templateName;
       badge.append(
         renderIcon(template?.icon || kind?.icon || "card", { size: 14 }),
-        document.createTextNode(templateName),
+        badgeLabel,
       );
       badge.title = `View ${templateName} template`;
       badge.addEventListener("click", (event) => {
         event.stopPropagation();
         navigateCanonicalWorkspace("/templates", { templateId });
       });
-      metaTop.append(badge);
+      lead.append(badge);
     }
-    if (item.issueNumber) {
-      const issue = document.createElement("span");
-      issue.className = "workflow-card-issue";
-      issue.textContent = `#${String(item.issueNumber).replace(/^/, "")}`;
-      issue.title = `Issue #${String(item.issueNumber).replace(/^/, "")}`;
-      metaTop.append(issue);
-    }
-    if (metaTop.children.length > 0) {
-      card.append(metaTop);
-    }
-
-    // Date and task count share one wrapping header row beneath the badge.
-    const header = document.createElement("span");
-    header.className = "workflow-card-header";
-    let headerFilled = false;
-
     if (item.anchorLabel) {
       const anchor = document.createElement("span");
       anchor.className = `workflow-card-anchor is-${item.anchorTone || "upcoming"}`;
@@ -472,18 +464,24 @@ export function createCardsSurface(context) {
         `Card date ${item.anchorDate || item.anchorLabel}`,
       );
       anchor.textContent = item.anchorLabel;
-      header.append(anchor);
-      headerFilled = true;
+      lead.append(anchor);
     }
+    if (item.issueNumber) {
+      const issue = document.createElement("span");
+      issue.className = "workflow-card-issue";
+      issue.textContent = `#${String(item.issueNumber).replace(/^/, "")}`;
+      issue.title = `Issue #${String(item.issueNumber).replace(/^/, "")}`;
+      lead.append(issue);
+    }
+    if (lead.children.length > 0) header.append(lead);
     const countLabelText = cardTaskCountLabel(item.progress);
     if (countLabelText) {
       const count = document.createElement("span");
       count.className = "workflow-card-count";
       count.textContent = countLabelText;
       header.append(count);
-      headerFilled = true;
     }
-    if (headerFilled) card.append(header);
+    if (header.children.length > 0) card.append(header);
 
     const title = document.createElement("strong");
     title.className = "workflow-card-title";
