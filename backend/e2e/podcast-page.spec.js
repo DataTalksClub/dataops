@@ -53,6 +53,7 @@ test.beforeAll(async () => {
     ['published', {
       season: 25, episode: 2, title: 'From notebook to service', guests: [{ name: 'Eve Fixture' }], status: 'published',
       recordingDate: isoDate(-60), releaseDate: isoDate(-30),
+      publication: { spotify: { publicVerifiedAt: new Date(Date.now() - 29 * 86400000).toISOString(), episodeUrl: 'https://open.spotify.com/episode/synthetic1' } },
       links: {
         youtube: 'https://www.youtube.com/watch?v=synthetic1',
         spotify: 'https://open.spotify.com/episode/synthetic1',
@@ -60,7 +61,7 @@ test.beforeAll(async () => {
         website: 'https://datatalks.example/podcast/s25e2',
       },
     }],
-    ['older', { season: 24, episode: 9, title: 'Hiring your first data engineer', guests: [{ name: 'Fay Dummy' }], status: 'published', releaseDate: isoDate(-200) }],
+    ['older', { season: 24, episode: 9, title: 'Hiring your first data engineer', guests: [{ name: 'Fay Dummy' }], status: 'published', releaseDate: isoDate(-200), publication: { spotify: { publicVerifiedAt: new Date(Date.now() - 199 * 86400000).toISOString(), episodeUrl: 'https://open.spotify.com/episode/synthetic0' } } }],
   ];
   for (const [key, body] of fixtures) episodes[key] = await api('POST', '/api/podcast-episodes', body);
 });
@@ -188,50 +189,71 @@ test('a phone shows the list, then the deep-linked episode with Back', async ({ 
   await expect(detail).toBeHidden();
 });
 
-test('schedule keeps scheduled audio apart from public Spotify and gates the website', async ({ page }) => {
+test('schedule shows not-recorded without evidence, keeps plan apart from evidence, and gates release and status', async ({ page }) => {
   await page.setViewportSize(DESKTOP);
   const gated = await api('POST', '/api/podcast-episodes', {
     season: 26, episode: 1, title: 'Synthetic gated episode', guests: [{ name: 'Gil Gate' }],
-    status: 'edited', recordingDate: isoDate(-20),
-  });
-  await api('PUT', `/api/podcast-episodes/${gated.id}`, {
-    version: gated.version,
-    publication: { timezone: 'Asia/Tokyo', audioScheduledAt: new Date(Date.now() + 5 * 86400000).toISOString() },
+    status: 'edited', recordingDate: isoDate(-20), releaseDate: isoDate(5),
   });
   await setupPageWithAuth(page);
   await page.goto(`${server.baseURL}/podcast`);
   await page.getByRole('link', { name: 'Schedule' }).click();
   await expect(page).toHaveURL(/\/podcast\/schedule$/);
   const row = page.locator(`.podcast-schedule__row[data-episode-id="${gated.id}"]`);
-  await expect(row.locator('[data-track="spotify"]')).toHaveText('Audio scheduled');
-  await expect(row.locator('[data-track="transcript"]')).toHaveText('Review pending');
-  await expect(row.locator('[data-track="website"]')).toHaveText('Blocked');
-  await expect(row).toContainText('(Asia/Tokyo)');
-  await expect(row.locator('[data-track="website"]')).toHaveAttribute('title', 'Transcript not reviewed; Spotify episode not verified public');
+  // A plan alone claims nothing external.
+  await expect(row.locator('[data-track="spotify"]')).toHaveText('Not recorded');
+  await expect(row.locator('[data-track="transcript"]')).toHaveText('Not recorded');
+  await expect(row.locator('[data-track="website"]')).toHaveText('Not recorded');
+  await expect(row.locator('.podcast-schedule__evidence')).toHaveCount(0);
+  const verified = page.locator(`.podcast-schedule__row[data-episode-id="${episodes.older.id}"]`);
+  await expect(verified.locator('[data-track="spotify"]')).toHaveText('Public on Spotify');
+  await expect(verified.locator('[data-track="website"]')).toHaveText('Not recorded');
   await shoot(page, 'schedule');
-  await page.reload();
-  await expect(row).toBeVisible();
 
   await row.locator('.podcast-schedule__episode').click();
   const detail = page.getByRole('region', { name: 'Selected episode' });
   await expect(detail.locator('.podcast-blockers')).toContainText('Scheduled audio does not count');
+  await expect(detail.getByRole('button', { name: 'Mark scheduled' })).toBeDisabled();
+
+  // Record Spotify scheduling evidence: the intended date stays untouched.
+  await detail.getByRole('button', { name: 'Edit' }).click();
+  await detail.getByLabel('Timezone').fill('Asia/Tokyo');
+  const future = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 11) + '09:30';
+  await detail.getByLabel('Spotify scheduled for').fill(future);
+  await detail.getByRole('button', { name: 'Save episode' }).click();
+  await expect(detail.locator('[data-track="spotify"]')).toHaveText('Scheduled in Spotify');
+  await expect(detail.getByRole('button', { name: 'Mark scheduled' })).toBeEnabled();
+  expect((await api('GET', `/api/podcast-episodes/${gated.id}`)).releaseDate).toBe(isoDate(5));
+
+  // Transcript review needs proof.
   await detail.getByRole('button', { name: 'Edit' }).click();
   await detail.getByLabel('Transcript reviewed').check();
   await detail.getByRole('button', { name: 'Save episode' }).click();
+  await expect(detail.locator('[role="alert"]')).toContainText('proof');
+  await detail.getByLabel('Transcript review proof link').fill('https://example.com/synthetic-review');
+  await detail.getByLabel('Website release link').fill('https://datatalks.example/podcast/synthetic-gated');
+  await detail.getByRole('button', { name: 'Save episode' }).click();
+  await expect(detail.locator('[role="alert"]')).toContainText('Verified public Spotify');
+
+  await detail.getByLabel('Website release link').fill('');
+  await detail.getByLabel('Website already live (historical)').fill('https://datatalks.example/podcast/synthetic-gated');
+  await detail.getByRole('button', { name: 'Save episode' }).click();
+  await expect(detail.locator('[data-track="website"]')).toHaveText('Seen live (historical)');
+  await expect(detail.locator('.podcast-historical')).toContainText('does not authorise');
   await expect(detail.locator('[data-track="transcript"]')).toHaveText('Reviewed');
-  await expect(detail.locator('[data-track="website"]')).toHaveText('Blocked');
 
   await detail.getByRole('button', { name: 'Edit' }).click();
-  await detail.getByLabel('Website page link (once released)').fill('https://datatalks.example/podcast/synthetic-gated');
-  await detail.getByRole('button', { name: 'Save episode' }).click();
-  await expect(detail.locator('[role="alert"]')).toContainText('earlyReason');
-
   await detail.getByLabel('I played the public Spotify episode and it works').check();
   await detail.getByLabel('Public Spotify episode link').fill('https://open.spotify.com/episode/syntheticgated');
   await detail.getByRole('button', { name: 'Save episode' }).click();
   await expect(detail.locator('[data-track="spotify"]')).toHaveText('Public on Spotify');
+  await expect(detail.locator('[data-track="website"]')).toHaveText('Seen live (historical)');
+
+  await detail.getByRole('button', { name: 'Edit' }).click();
+  await detail.getByLabel('Website release link').fill('https://datatalks.example/podcast/synthetic-gated');
+  await detail.getByRole('button', { name: 'Save episode' }).click();
   await expect(detail.locator('[data-track="website"]')).toHaveText('Released');
   const saved = await api('GET', `/api/podcast-episodes/${gated.id}`);
   expect(saved.readiness.website).toBe('released');
-  expect(saved.publication.spotify.episodeUrl).toBe('https://open.spotify.com/episode/syntheticgated');
+  expect(saved.publication.websiteObserved.proofUrl).toContain('synthetic-gated');
 });

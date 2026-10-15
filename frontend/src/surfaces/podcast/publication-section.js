@@ -1,23 +1,21 @@
 // The publication block of an episode: what is scheduled, what is verified
 // public, and whether the website may go out. Read view for the detail pane
 // and the controls the edit form adds. Readiness comes from the API.
-import { element, field, input } from "./dom.js";
+import { element, field, formatDate, input } from "./dom.js";
 import {
   formatPublicationTime, proofLinks, publicationFormValues, readinessOf,
   SPOTIFY_LABELS, TRANSCRIPT_LABELS, WEBSITE_LABELS,
 } from "./publication-model.js";
 
 const TONES = Object.freeze({
-  "not-scheduled": "dk-chip",
+  "not-recorded": "dk-chip",
   scheduled: "dk-badge dk-badge--info",
   "awaiting-public-check": "dk-badge dk-badge--warning",
   public: "dk-badge dk-badge--success",
-  pending: "dk-chip",
   reviewed: "dk-badge dk-badge--success",
-  blocked: "dk-chip",
   ready: "dk-badge dk-badge--info",
   released: "dk-badge dk-badge--success",
-  "released-early": "dk-badge dk-badge--warning",
+  "observed-live": "dk-badge dk-badge--warning",
 });
 
 const LABELS = Object.freeze({
@@ -56,32 +54,44 @@ export function publicationSection(documentRef, episode) {
     value.append(...nodes);
     list.append(element(documentRef, "dt", "", label), value);
   };
+  const hint = (text) => element(documentRef, "span", "dk-hint", text);
+  const proof = (id) => proofLinks(episode).filter((entry) => entry.id === id).map((entry) => proofAnchor(documentRef, entry));
+  // The plan and the evidence are separate rows: an intended date claims
+  // nothing about what Spotify actually has scheduled.
+  const intended = formatDate(episode.releaseDate);
+  row("Intended release", intended ? element(documentRef, "span", "dk-mono", intended) : hint("Not set"));
   const time = formatPublicationTime(publication);
   row(
-    "Audio",
-    time
-      ? element(documentRef, "span", "dk-mono", time)
-      : element(documentRef, "span", "dk-hint", "No publication time recorded"),
+    "Spotify schedule",
+    time ? element(documentRef, "span", "dk-mono", time) : hint("No Spotify scheduling recorded"),
+    ...proof("schedule"),
   );
-  const proof = (id) => proofLinks(episode).filter((entry) => entry.id === id).map((entry) => proofAnchor(documentRef, entry));
   row("Spotify", readinessChip(documentRef, "spotify", readiness.spotify), ...proof("spotify"));
   row("Transcript", readinessChip(documentRef, "transcript", readiness.transcript), ...proof("transcript"));
-  row("Website", readinessChip(documentRef, "website", readiness.website), ...proof("website"));
+  row("Website", readinessChip(documentRef, "website", readiness.website), ...proof("website"), ...proof("observed"));
   section.append(list);
-  if (publication.website?.earlyReason) {
-    section.append(element(documentRef, "p", "dk-hint podcast-early-reason", `Released before ready: ${publication.website.earlyReason}`));
+  const gate = readiness.websiteGate;
+  const released = readiness.website === "released";
+  if (readiness.website === "observed-live" && !gate.met) {
+    section.append(element(
+      documentRef,
+      "p",
+      "dk-hint podcast-historical",
+      "Seen live before the release gate was met. This records history; it does not authorise a release.",
+    ));
   }
-  if (readiness.websiteBlockers.length) {
+  if (!released && !gate.met) {
     const callout = element(documentRef, "div", "dk-callout dk-callout--warning podcast-blockers");
     const body = element(documentRef, "div", "dk-callout__body");
+    const needs = gate.missing.length ? `${gate.missing.join("; ")}. ` : "";
     body.append(
-      element(documentRef, "p", "dk-callout__title", "Website release is blocked"),
+      element(documentRef, "p", "dk-callout__title", "Website release needs evidence"),
       element(
         documentRef,
         "p",
         "",
-        `${readiness.websiteBlockers.join("; ")}. Scheduled audio does not count: the website needs `
-          + "a reviewed transcript and a verified playable public Spotify episode.",
+        `${needs}Scheduled audio does not count: the website needs a reviewed transcript with proof `
+          + "and a verified playable public Spotify episode.",
       ),
     );
     callout.append(body);
@@ -106,26 +116,31 @@ export function publicationFormFields(documentRef, episode) {
   const controls = {
     timezone: input(documentRef, "timezone", initial.timezone),
     audioScheduledLocal: input(documentRef, "audioScheduledLocal", initial.audioScheduledLocal, "datetime-local"),
+    scheduleProofUrl: input(documentRef, "scheduleProofUrl", initial.scheduleProofUrl, "url"),
     spotifyUrl: input(documentRef, "spotifyUrl", initial.spotifyUrl, "url"),
     transcriptUrl: input(documentRef, "transcriptUrl", initial.transcriptUrl, "url"),
     websiteUrl: input(documentRef, "websiteUrl", initial.websiteUrl, "url"),
-    websiteEarlyReason: input(documentRef, "websiteEarlyReason", initial.websiteEarlyReason),
+    websiteObservedUrl: input(documentRef, "websiteObservedUrl", initial.websiteObservedUrl, "url"),
   };
   controls.timezone.placeholder = "Europe/Berlin";
   controls.timezone.setAttribute("list", "podcast-timezones");
-  for (const name of ["spotifyUrl", "transcriptUrl", "websiteUrl"]) controls[name].placeholder = "https://";
-  controls.websiteEarlyReason.maxLength = 500;
+  for (const name of ["scheduleProofUrl", "spotifyUrl", "transcriptUrl", "websiteUrl", "websiteObservedUrl"]) {
+    controls[name].placeholder = "https://";
+  }
   const spotify = checkbox(documentRef, "spotifyVerified", "I played the public Spotify episode and it works", initial.spotifyVerified);
   const transcript = checkbox(documentRef, "transcriptReviewed", "Transcript reviewed", initial.transcriptReviewed);
   controls.spotifyVerified = spotify.control;
   controls.transcriptReviewed = transcript.control;
 
   const fieldset = element(documentRef, "fieldset", "podcast-form-publication");
-  fieldset.append(element(documentRef, "legend", "dk-label", "Publication"));
+  fieldset.append(
+    element(documentRef, "legend", "dk-label", "Publication evidence"),
+    element(documentRef, "p", "dk-hint", "Record only what you saw. The intended release date above is a plan; nothing here is inferred from it."),
+  );
   const when = element(documentRef, "div", "podcast-form-pair");
   when.append(
-    field(documentRef, "Timezone", controls.timezone, "IANA name; the audio time below is read in it."),
-    field(documentRef, "Audio scheduled for", controls.audioScheduledLocal, "Scheduled is not public: verify it below once it plays."),
+    field(documentRef, "Spotify scheduled for", controls.audioScheduledLocal, "As shown in Spotify. Scheduled is not public."),
+    field(documentRef, "Timezone", controls.timezone, "IANA name; the time is read in it."),
   );
   const zones = element(documentRef, "datalist");
   zones.id = "podcast-timezones";
@@ -137,13 +152,13 @@ export function publicationFormFields(documentRef, episode) {
   fieldset.append(
     when,
     zones,
+    field(documentRef, "Spotify schedule proof link (optional)", controls.scheduleProofUrl),
     spotify.label,
     field(documentRef, "Public Spotify episode link", controls.spotifyUrl, "https://open.spotify.com/episode/…"),
     transcript.label,
-    field(documentRef, "Transcript proof link (optional)", controls.transcriptUrl),
-    field(documentRef, "Website page link (once released)", controls.websiteUrl, "Needs a reviewed transcript and a verified public Spotify episode."),
-    field(documentRef, "Reason for releasing early", controls.websiteEarlyReason, "Only if the page went out before both were done."),
+    field(documentRef, "Transcript review proof link", controls.transcriptUrl, "Required to record the review."),
+    field(documentRef, "Website release link", controls.websiteUrl, "Needs a reviewed transcript with proof and a verified public Spotify episode."),
+    field(documentRef, "Website already live (historical)", controls.websiteObservedUrl, "Records a page you saw live. It does not authorise a release."),
   );
   return { fieldset, controls };
 }
-

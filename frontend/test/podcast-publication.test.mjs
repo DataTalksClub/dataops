@@ -3,7 +3,7 @@ import { afterEach, describe, test } from "node:test";
 
 import {
   buildPublication, formatPublicationTime, proofLinks, publicationFormValues, samePublication,
-  scheduleGroups, utcToZonedLocal, zonedLocalToUtc,
+  scheduleGroups, statusGateHint, utcToZonedLocal, zonedLocalToUtc,
 } from "../src/surfaces/podcast/publication-model.js";
 import { formChanges } from "../src/surfaces/podcast/detail.js";
 import { createPodcastSurface } from "../src/surfaces/podcast/index.js";
@@ -17,14 +17,15 @@ afterEach(() => {
 
 const NOW = "2026-11-01T10:00:00.000Z";
 const SPOTIFY = { publicVerifiedAt: "2026-10-01T09:00:00.000Z", episodeUrl: "https://open.spotify.com/episode/synthetic1" };
-const READY = { spotify: "public", transcript: "reviewed", website: "ready", websiteBlockers: [], scheduledLocalDate: null };
-const BLOCKED = (spotify, transcript, blockers) => ({ spotify, transcript, website: "blocked", websiteBlockers: blockers, scheduledLocalDate: null });
+const READY = { spotify: "public", transcript: "reviewed", website: "ready", websiteGate: { met: true, missing: [] }, scheduledLocalDate: null };
+const NONE = { spotify: "not-recorded", transcript: "not-recorded", website: "not-recorded", websiteGate: { met: false, missing: ["Reviewed transcript with proof", "Verified public Spotify episode"] }, scheduledLocalDate: null };
+const SCHEDULE_AT = (at, timezone = "UTC") => ({ audioSchedule: { scheduledAt: at, timezone, observedAt: NOW } });
 
 function episode(id, fields = {}) {
   return {
     id, season: 26, episode: 1, title: `Synthetic ${id}`, guests: [{ name: `Guest ${id}` }],
     status: "edited", recordingDate: "2026-10-01", links: {}, cardId: null, card: null, version: 1,
-    readiness: BLOCKED("not-scheduled", "pending", ["Transcript not reviewed", "Spotify episode not verified public"]),
+    readiness: NONE,
     ...fields,
   };
 }
@@ -41,91 +42,116 @@ describe("publication time", () => {
     assert.equal(zonedLocalToUtc("tomorrow", "UTC"), "");
   });
 
-  test("formats the schedule in its own timezone, not the viewer's", () => {
-    const text = formatPublicationTime({ timezone: "Asia/Tokyo", audioScheduledAt: "2026-11-19T21:00:00.000Z" });
+  test("formats the evidenced schedule in its own timezone, not the viewer's", () => {
+    const text = formatPublicationTime(SCHEDULE_AT("2026-11-19T21:00:00.000Z", "Asia/Tokyo"));
     assert.match(text, /20 Nov 2026/);
     assert.match(text, /06:00/);
     assert.match(text, /\(Asia\/Tokyo\)$/);
-    assert.equal(formatPublicationTime({ audioScheduledAt: "2026-11-19T21:00:00.000Z" }), "");
+    assert.equal(formatPublicationTime({}), "");
+    assert.equal(formatPublicationTime(null), "");
   });
 });
 
 describe("schedule grouping", () => {
-  test("separates upcoming from released, orders by scheduled instant, drops cancelled", () => {
-    const later = episode("later", { publication: { timezone: "UTC", audioScheduledAt: "2026-12-05T06:00:00.000Z" } });
-    const sooner = episode("sooner", { publication: { timezone: "UTC", audioScheduledAt: "2026-11-05T06:00:00.000Z" } });
-    const unscheduled = episode("unscheduled");
+  test("separates upcoming from pages that are out, drops cancelled, keeps history in Past", () => {
+    const later = episode("later", { publication: SCHEDULE_AT("2026-12-05T06:00:00.000Z") });
+    const sooner = episode("sooner", { publication: SCHEDULE_AT("2026-11-05T06:00:00.000Z") });
+    const planned = episode("planned", { releaseDate: "2026-12-31" });
     const released = episode("released", {
       status: "published",
       publication: { website: { releasedAt: NOW, proofUrl: "https://example.com/p" } },
       readiness: { ...READY, website: "released" },
     });
-    const legacy = episode("legacy", { status: "published", releaseDate: "2020-01-01" });
+    const observed = episode("observed", {
+      status: "published",
+      publication: { websiteObserved: { observedAt: NOW, proofUrl: "https://example.com/p" } },
+      readiness: { ...NONE, website: "observed-live" },
+    });
+    const historical = episode("historical", { status: "published", releaseDate: "2020-01-01" });
     const cancelled = episode("cancelled", { status: "cancelled" });
-    const [upcoming, past] = scheduleGroups([later, unscheduled, released, legacy, cancelled, sooner]);
-    assert.deepEqual(upcoming.episodes.map((item) => item.id), ["sooner", "later", "unscheduled"]);
-    assert.deepEqual(past.episodes.map((item) => item.id).sort(), ["legacy", "released"]);
+    const [upcoming, past] = scheduleGroups([later, planned, released, observed, historical, cancelled, sooner]);
+    assert.deepEqual(upcoming.episodes.map((item) => item.id), ["sooner", "later", "planned"]);
+    assert.deepEqual(past.episodes.map((item) => item.id).sort(), ["historical", "observed", "released"]);
   });
 
   test("a scheduled episode stays upcoming even when its status says published", () => {
     const premature = episode("premature", {
       status: "published",
-      publication: { timezone: "UTC", audioScheduledAt: "2026-10-01T06:00:00.000Z" },
-      readiness: BLOCKED("awaiting-public-check", "pending", ["Transcript not reviewed", "Spotify episode not verified public"]),
+      publication: SCHEDULE_AT("2026-10-01T06:00:00.000Z"),
+      readiness: { ...NONE, spotify: "awaiting-public-check" },
     });
     assert.deepEqual(scheduleGroups([premature])[0].episodes.map((item) => item.id), ["premature"]);
   });
 
   test("proof links come only from recorded facts", () => {
     assert.deepEqual(proofLinks(episode("x")), []);
-    const links = proofLinks(episode("x", { publication: { spotify: SPOTIFY, website: { releasedAt: NOW, proofUrl: "https://example.com/p" } } }));
-    assert.deepEqual(links.map((link) => link.id), ["spotify", "website"]);
+    const links = proofLinks(episode("x", { publication: { spotify: SPOTIFY, websiteObserved: { observedAt: NOW, proofUrl: "https://example.com/p" } } }));
+    assert.deepEqual(links.map((link) => link.id), ["spotify", "observed"]);
+  });
+});
+
+describe("status gate hint", () => {
+  test("published needs a verified public episode; scheduled needs scheduling evidence", () => {
+    assert.match(statusGateHint("published", null), /verified public Spotify/);
+    assert.match(statusGateHint("published", SCHEDULE_AT(NOW)), /verified public Spotify/);
+    assert.equal(statusGateHint("published", { spotify: SPOTIFY }), "");
+    assert.match(statusGateHint("scheduled", { spotify: SPOTIFY }), /scheduling evidence/);
+    assert.equal(statusGateHint("scheduled", SCHEDULE_AT(NOW)), "");
+    assert.equal(statusGateHint("edited", null), "");
   });
 });
 
 describe("publication form", () => {
   const values = (extra = {}) => ({
-    timezone: "", audioScheduledLocal: "", spotifyVerified: false, spotifyUrl: "", transcriptReviewed: false,
-    transcriptUrl: "", websiteUrl: "", websiteEarlyReason: "", ...extra,
+    timezone: "", audioScheduledLocal: "", scheduleProofUrl: "", spotifyVerified: false, spotifyUrl: "",
+    transcriptReviewed: false, transcriptUrl: "", websiteUrl: "", websiteObservedUrl: "", ...extra,
   });
+  const PROOF = "https://example.com/transcript-review";
 
-  test("builds the publication body and keeps timestamps already recorded", () => {
+  test("builds the publication body and keeps observation times already recorded", () => {
     assert.deepEqual(buildPublication(null, values(), NOW), { value: null });
-    const built = buildPublication(null, values({
+    const full = values({
       timezone: "Europe/Berlin", audioScheduledLocal: "2026-11-20T06:00",
-      spotifyVerified: true, spotifyUrl: SPOTIFY.episodeUrl, transcriptReviewed: true,
-    }), NOW);
-    assert.deepEqual(built.value, {
-      timezone: "Europe/Berlin",
-      audioScheduledAt: "2026-11-20T05:00:00.000Z",
-      spotify: { publicVerifiedAt: NOW, episodeUrl: SPOTIFY.episodeUrl },
-      transcript: { reviewedAt: NOW },
+      spotifyVerified: true, spotifyUrl: SPOTIFY.episodeUrl, transcriptReviewed: true, transcriptUrl: PROOF,
+      websiteObservedUrl: "https://example.com/live",
     });
-    const later = buildPublication(built.value, values({
-      timezone: "Europe/Berlin", audioScheduledLocal: "2026-11-20T06:00",
-      spotifyVerified: true, spotifyUrl: SPOTIFY.episodeUrl, transcriptReviewed: true,
-    }), "2027-01-01T00:00:00.000Z");
+    const built = buildPublication(null, full, NOW);
+    assert.deepEqual(built.value, {
+      audioSchedule: { scheduledAt: "2026-11-20T05:00:00.000Z", timezone: "Europe/Berlin", observedAt: NOW },
+      spotify: { publicVerifiedAt: NOW, episodeUrl: SPOTIFY.episodeUrl },
+      transcript: { reviewedAt: NOW, proofUrl: PROOF },
+      websiteObserved: { observedAt: NOW, proofUrl: "https://example.com/live" },
+    });
+    const later = buildPublication(built.value, full, "2027-01-01T00:00:00.000Z");
     assert.ok(samePublication(later.value, built.value), "re-saving the same facts changes nothing");
   });
 
-  test("refuses what the form can catch: no timezone, missing proof, bad zone", () => {
+  test("refuses what the form can catch: half a schedule, missing proofs, bad zone", () => {
     assert.match(buildPublication(null, values({ audioScheduledLocal: "2026-11-20T06:00" }), NOW).error, /timezone/i);
+    assert.match(buildPublication(null, values({ timezone: "UTC" }), NOW).error, /scheduled time/i);
     assert.match(buildPublication(null, values({ spotifyVerified: true }), NOW).error, /Spotify/);
-    assert.match(buildPublication(null, values({ timezone: "Nowhere" }), NOW).error, /IANA/);
+    assert.match(buildPublication(null, values({ transcriptReviewed: true }), NOW).error, /proof/);
+    assert.match(buildPublication(null, values({ timezone: "Nowhere", audioScheduledLocal: "2026-11-20T06:00" }), NOW).error, /IANA/);
+    assert.match(buildPublication(null, values({ scheduleProofUrl: "https://example.com/s" }), NOW).error, /scheduled time/i);
   });
 
-  test("formChanges sends publication only when it changed and leaves releaseDate to the API", () => {
+  test("formChanges sends publication only when it changed and never touches the intended date", () => {
     const base = episode("form", { releaseDate: "2026-10-01" });
     const form = (extra) => ({ title: base.title, guests: "Guest form", season: "26", episode: "1", recordingDate: "2026-10-01", releaseDate: "2026-10-01", websiteSlug: "", notes: "", ...values(extra) });
     assert.deepEqual(formChanges(base, form({}), NOW), {});
-    const changes = formChanges(base, form({ timezone: "UTC", audioScheduledLocal: "2026-12-01T08:00", releaseDate: "2026-12-01" }), NOW);
-    assert.deepEqual(changes.publication, { timezone: "UTC", audioScheduledAt: "2026-12-01T08:00:00.000Z" });
+    const changes = formChanges(base, form({ timezone: "UTC", audioScheduledLocal: "2026-12-01T08:00" }), NOW);
+    assert.deepEqual(changes.publication, { audioSchedule: { scheduledAt: "2026-12-01T08:00:00.000Z", timezone: "UTC", observedAt: NOW } });
     assert.equal(changes.releaseDate, undefined);
     assert.throws(() => formChanges(base, form({ audioScheduledLocal: "2026-12-01T08:00" }), NOW), /timezone/i);
     const stored = episode("form2", { publication: changes.publication });
-    assert.deepEqual(publicationFormValues(stored).audioScheduledLocal, "2026-12-01T08:00");
-    const cleared = formChanges(stored, form({}), NOW);
-    assert.equal(cleared.publication, null);
+    assert.equal(publicationFormValues(stored).audioScheduledLocal, "2026-12-01T08:00");
+    assert.equal(formChanges(stored, form({}), NOW).publication, null);
+  });
+
+  test("a Spotify link in links is not pre-filled as verification", () => {
+    const linked = episode("linked", { links: { spotify: SPOTIFY.episodeUrl } });
+    assert.equal(publicationFormValues(linked).spotifyVerified, false);
+    assert.equal(publicationFormValues(linked).spotifyUrl, "");
   });
 });
 
@@ -155,44 +181,51 @@ describe("Podcast schedule view", () => {
   const card = { id: "card-1", title: "Synthetic card", stage: "preparation", taskCount: 8, openTaskCount: 5 };
   const records = [
     episode("a-scheduled", {
-      cardId: "card-1", card,
-      publication: { timezone: "Europe/Berlin", audioScheduledAt: "2099-01-01T05:00:00.000Z" },
-      readiness: BLOCKED("scheduled", "pending", ["Transcript not reviewed", "Spotify episode not verified public"]),
+      cardId: "card-1", card, releaseDate: "2099-01-05",
+      publication: SCHEDULE_AT("2099-01-01T05:00:00.000Z", "Europe/Berlin"),
+      readiness: { ...NONE, spotify: "scheduled", websiteGate: { met: false, missing: ["Reviewed transcript with proof", "Verified public Spotify episode"] } },
     }),
     episode("b-ready", {
-      publication: { timezone: "UTC", audioScheduledAt: "2026-10-01T05:00:00.000Z", spotify: SPOTIFY, transcript: { reviewedAt: NOW, proofUrl: "https://example.com/transcript" } },
+      publication: { ...SCHEDULE_AT("2026-10-01T05:00:00.000Z"), spotify: SPOTIFY, transcript: { reviewedAt: NOW, proofUrl: "https://example.com/transcript" } },
       readiness: READY,
     }),
-    episode("c-out", {
+    episode("c-planned", { releaseDate: "2026-12-24" }),
+    episode("d-out", {
       status: "published",
-      publication: { spotify: SPOTIFY, transcript: { reviewedAt: NOW }, website: { releasedAt: NOW, proofUrl: "https://example.com/page" } },
+      publication: { spotify: SPOTIFY, transcript: { reviewedAt: NOW, proofUrl: "https://example.com/t" }, website: { releasedAt: NOW, proofUrl: "https://example.com/page" } },
       readiness: { ...READY, website: "released" },
     }),
+    episode("e-history", { status: "published", releaseDate: "2024-03-01" }),
   ];
 
-  test("shows audio scheduled apart from public Spotify, with blockers, card tasks and proofs", async () => {
+  test("shows the plan apart from Spotify evidence, says not recorded without it, and links card and proofs", async () => {
     const { surface, documentList, calls } = harness(records);
     surface.renderPodcastSurface();
     await nextTicks(4);
-    assert.ok(findByText(documentList, "Upcoming (2)", "h3"));
-    assert.ok(findByText(documentList, "Past (1)", "h3"));
+    assert.ok(findByText(documentList, "Upcoming (3)", "h3"));
+    assert.ok(findByText(documentList, "Past (2)", "h3"));
     const rowOf = (id) => findAllByClass(documentList, "podcast-schedule__row").find((row) => row.dataset.episodeId === id);
     const chips = (row) => Object.fromEntries(findAllByClass(row, "podcast-readiness").map((chip) => [chip.dataset.track, chip.dataset.state]));
-    assert.deepEqual(chips(rowOf("a-scheduled")), { spotify: "scheduled", transcript: "pending", website: "blocked" });
+    assert.deepEqual(chips(rowOf("a-scheduled")), { spotify: "scheduled", transcript: "not-recorded", website: "not-recorded" });
     assert.deepEqual(chips(rowOf("b-ready")), { spotify: "public", transcript: "reviewed", website: "ready" });
-    assert.deepEqual(chips(rowOf("c-out")), { spotify: "public", transcript: "reviewed", website: "released" });
-    assert.ok(findByText(rowOf("a-scheduled"), "Audio scheduled"));
+    assert.deepEqual(chips(rowOf("e-history")), { spotify: "not-recorded", transcript: "not-recorded", website: "not-recorded" });
+    assert.ok(findByText(rowOf("e-history"), "Not recorded"));
+    assert.ok(!findAllByClass(rowOf("e-history"), "podcast-readiness").some((chip) => /not scheduled|blocked/i.test(chip.textContent)));
+    // The intended date and the evidenced Spotify time are two separate things.
+    const planned = findAllByClass(rowOf("a-scheduled"), "podcast-schedule__when")[0].textContent;
+    assert.match(planned, /5 Jan 2099/);
+    const evidence = findAllByClass(rowOf("a-scheduled"), "podcast-schedule__evidence")[0].textContent;
+    assert.match(evidence, /1 Jan 2099/);
+    assert.match(evidence, /06:00/);
+    assert.equal(findAllByClass(rowOf("c-planned"), "podcast-schedule__evidence").length, 0, "a plan alone shows no Spotify claim");
+    assert.deepEqual(chips(rowOf("c-planned")).spotify, "not-recorded");
     assert.equal(
       findAllByClass(rowOf("a-scheduled"), "podcast-readiness").find((chip) => chip.dataset.track === "website").title,
-      "Transcript not reviewed; Spotify episode not verified public",
+      "Release needs: Reviewed transcript with proof; Verified public Spotify episode",
     );
-    const when = findAllByClass(rowOf("a-scheduled"), "podcast-schedule__when")[0].textContent;
-    assert.match(when, /1 Jan 2099/);
-    assert.match(when, /06:00/);
     assert.ok(findByText(rowOf("a-scheduled"), "5/8 open"));
     assert.equal(findAllByClass(rowOf("b-ready"), "podcast-proof").length, 2);
     assert.ok(findByText(rowOf("a-scheduled"), "None recorded"));
-    assert.equal(findByText(rowOf("b-ready"), "None recorded"), undefined);
     const cardLink = findAllByClass(rowOf("a-scheduled"), "podcast-schedule__card")[0];
     assert.equal(cardLink.href, "/cards?cardId=card-1");
     await cardLink.click();

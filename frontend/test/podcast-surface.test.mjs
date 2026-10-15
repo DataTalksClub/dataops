@@ -220,7 +220,7 @@ describe("Podcast surface", () => {
 
   test("detail shows the card chip and service links; status moves at the record's version", async () => {
     const linked = episode("linked", {
-      status: "edited",
+      status: "recorded",
       cardId: "card-1",
       card: { id: "card-1", title: "Podcast with Guest linked", stage: "preparation", taskCount: 9, openTaskCount: 7 },
       links: { youtube: "https://youtube.example/watch?v=1", website: "https://site.example/ep" },
@@ -239,13 +239,51 @@ describe("Podcast surface", () => {
     assert.ok(findByText(documentList, "Bring the slides."));
     await documentList.querySelector('[data-podcast-action="advance"]').click();
     await nextTicks(2);
-    assert.deepEqual(calls.find(([method]) => method === "PUT"), ["PUT", "/api/podcast-episodes/linked", { status: "scheduled", version: 3 }]);
-    assert.ok(findByText(documentList, "Marked scheduled."));
-    assert.ok(findByText(documentList, "Scheduled", ".podcast-status"));
+    assert.deepEqual(calls.find(([method]) => method === "PUT"), ["PUT", "/api/podcast-episodes/linked", { status: "edited", version: 3 }]);
+    assert.ok(findByText(documentList, "Marked edited."));
+    assert.ok(findByText(documentList, "Edited", ".podcast-status"));
     assert.ok(documentList.querySelector(".podcast-card-chip"), "the card summary survives a save");
 
     await documentList.querySelector(".podcast-card-chip").dispatch("click");
     assert.deepEqual(calls.filter(([kind]) => kind === "navigate").at(-1), ["navigate", "/cards", { cardId: "card-1" }, {}]);
+  });
+
+  test("Mark scheduled and Mark published wait for real Spotify evidence", async () => {
+    const bare = episode("bare", { status: "edited", version: 2, releaseDate: "2026-12-01" });
+    const first = harness({ episodes: [bare], routeId: "bare" });
+    first.surface.renderPodcastSurface();
+    await nextTicks(4);
+    const advance = first.documentList.querySelector('[data-podcast-action="advance"]');
+    assert.equal(advance.disabled, true, "an intended release date is not scheduling evidence");
+    assert.match(advance.title, /scheduling evidence/);
+    await advance.click();
+    assert.equal(first.calls.some(([method]) => method === "PUT"), false);
+    const choose = first.documentList.querySelector(".podcast-status-select");
+    choose.value = "published";
+    await choose.dispatch("change");
+    assert.equal(first.calls.some(([method]) => method === "PUT"), false);
+    assert.equal(choose.value, "edited");
+    assert.match(first.documentList.querySelector(".podcast-message").textContent, /verified public Spotify/);
+
+    const scheduled = episode("sched", {
+      status: "scheduled", version: 2,
+      publication: { audioSchedule: { scheduledAt: "2099-01-01T05:00:00.000Z", timezone: "UTC", observedAt: "2026-10-01T00:00:00.000Z" } },
+    });
+    const second = harness({ episodes: [scheduled], routeId: "sched" });
+    second.surface.renderPodcastSurface();
+    await nextTicks(4);
+    const publish = second.documentList.querySelector('[data-podcast-action="advance"]');
+    assert.equal(publish.disabled, true, "scheduled audio is not public");
+    assert.match(publish.title, /verified public Spotify/);
+
+    const verified = episode("pub", {
+      status: "scheduled", version: 2,
+      publication: { spotify: { publicVerifiedAt: "2026-10-01T00:00:00.000Z", episodeUrl: "https://open.spotify.com/episode/x" } },
+    });
+    const third = harness({ episodes: [verified], routeId: "pub" });
+    third.surface.renderPodcastSurface();
+    await nextTicks(4);
+    assert.notEqual(third.documentList.querySelector('[data-podcast-action="advance"]').disabled, true);
   });
 
   test("a version conflict keeps the form, names the conflict and reloads on request", async () => {

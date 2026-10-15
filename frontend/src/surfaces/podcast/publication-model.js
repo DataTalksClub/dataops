@@ -5,30 +5,32 @@
 // is derived by the API from recorded facts; nothing here infers "public".
 import { isUpcoming } from "./model.js";
 
+// Where no evidence is recorded the word is "Not recorded": the page never
+// claims a definite "not scheduled" or "blocked" it cannot back.
 export const SPOTIFY_LABELS = Object.freeze({
-  "not-scheduled": "Not scheduled",
-  scheduled: "Audio scheduled",
-  "awaiting-public-check": "Not verified public",
+  "not-recorded": "Not recorded",
+  scheduled: "Scheduled in Spotify",
+  "awaiting-public-check": "Scheduled time passed, not verified",
   public: "Public on Spotify",
 });
 
 export const TRANSCRIPT_LABELS = Object.freeze({
-  pending: "Review pending",
+  "not-recorded": "Not recorded",
   reviewed: "Reviewed",
 });
 
 export const WEBSITE_LABELS = Object.freeze({
-  blocked: "Blocked",
+  "not-recorded": "Not recorded",
   ready: "Ready to release",
   released: "Released",
-  "released-early": "Released before ready",
+  "observed-live": "Seen live (historical)",
 });
 
 const NO_READINESS = Object.freeze({
-  spotify: "not-scheduled",
-  transcript: "pending",
-  website: "blocked",
-  websiteBlockers: [],
+  spotify: "not-recorded",
+  transcript: "not-recorded",
+  website: "not-recorded",
+  websiteGate: Object.freeze({ met: false, missing: Object.freeze([]) }),
   scheduledLocalDate: null,
 });
 
@@ -93,10 +95,10 @@ export function utcToZonedLocal(instant, timezone) {
   return `${p.year}-${two(p.month)}-${two(p.day)}T${two(p.hour)}:${two(p.minute)}`;
 }
 
-/** "Fri, 20 Nov 2026, 06:00 CET (Europe/Berlin)" in the publication's own timezone. */
+/** "Fri, 20 Nov 2026, 06:00 CET (Europe/Berlin)" in the evidenced schedule's own timezone. */
 export function formatPublicationTime(publication) {
-  const instant = publication?.audioScheduledAt;
-  const timezone = publication?.timezone;
+  const instant = publication?.audioSchedule?.scheduledAt;
+  const timezone = publication?.audioSchedule?.timezone;
   if (!instant || !isValidTimezone(timezone)) return "";
   const formatted = new Intl.DateTimeFormat("en-GB", {
     timeZone: timezone,
@@ -114,7 +116,7 @@ export function formatPublicationTime(publication) {
 }
 
 function scheduledMs(episode) {
-  const value = Date.parse(episode?.publication?.audioScheduledAt || "");
+  const value = Date.parse(episode?.publication?.audioSchedule?.scheduledAt || "");
   return Number.isNaN(value) ? null : value;
 }
 
@@ -123,9 +125,9 @@ const hasFacts = (episode) =>
 
 /**
  * The schedule: Upcoming is everything still on its way to being public and on
- * the website (soonest first, unscheduled last); Past is everything already
- * released to the website plus legacy episodes with no recorded publication
- * facts (newest first). Cancelled episodes are not scheduled.
+ * the website (soonest evidenced Spotify time first, then by intended release
+ * date); Past is everything whose page is out plus historical episodes with no
+ * recorded publication evidence (newest first). Cancelled episodes are left out.
  */
 export function scheduleGroups(episodes) {
   const upcoming = [];
@@ -133,14 +135,18 @@ export function scheduleGroups(episodes) {
   for (const episode of Array.isArray(episodes) ? episodes : []) {
     if (episode?.status === "cancelled") continue;
     const website = readinessOf(episode).website;
-    const released = website === "released" || website === "released-early";
+    const released = website === "released" || website === "observed-live";
     if (!released && (isUpcoming(episode) || hasFacts(episode))) upcoming.push(episode);
     else past.push(episode);
   }
-  const key = (episode) => scheduledMs(episode) ?? Number.POSITIVE_INFINITY;
-  const dateKey = (episode) => episode.releaseDate || episode.recordingDate || "";
-  upcoming.sort((a, b) => key(a) - key(b) || dateKey(a).localeCompare(dateKey(b)) || String(a.id).localeCompare(String(b.id)));
-  past.sort((a, b) => (scheduledMs(b) ?? -1) - (scheduledMs(a) ?? -1) || dateKey(b).localeCompare(dateKey(a)) || String(a.id).localeCompare(String(b.id)));
+  // One date per episode orders the list: the evidenced Spotify time when there
+  // is one, else the intended release, else the recording.
+  const when = (episode) => {
+    const ms = scheduledMs(episode);
+    return ms === null ? `${episode.releaseDate || episode.recordingDate || "9999"}` : new Date(ms).toISOString();
+  };
+  upcoming.sort((a, b) => when(a).localeCompare(when(b)) || String(a.id).localeCompare(String(b.id)));
+  past.sort((a, b) => when(b).localeCompare(when(a)) || String(a.id).localeCompare(String(b.id)));
   return [
     { id: "upcoming", label: "Upcoming", episodes: upcoming },
     { id: "past", label: "Past", episodes: past },
@@ -151,9 +157,11 @@ export function scheduleGroups(episodes) {
 export function proofLinks(episode) {
   const publication = episode?.publication || {};
   return [
+    ["schedule", "Spotify schedule", publication.audioSchedule?.proofUrl],
     ["spotify", "Spotify episode", publication.spotify?.episodeUrl],
     ["transcript", "Transcript review", publication.transcript?.proofUrl],
     ["website", "Website page", publication.website?.proofUrl],
+    ["observed", "Website (seen live)", publication.websiteObserved?.proofUrl],
   ]
     .filter(([, , url]) => url)
     .map(([id, label, url]) => ({ id, label, url }));
@@ -172,25 +180,26 @@ export const samePublication = (a, b) =>
 
 /**
  * Form values -> the `publication` PUT body (or null when nothing is recorded).
- * Timestamps already on the record are kept; a newly confirmed fact is stamped
- * `nowIso`. Returns { value } or { error } for what the form can catch itself.
+ * Observation times already on the record are kept; a newly recorded fact is
+ * stamped `nowIso`. Returns { value } or { error } for what the form can catch.
  */
 export function buildPublication(previous, values, nowIso) {
   const text = (name) => String(values[name] ?? "").trim();
   const prior = previous || {};
   const out = {};
   const timezone = text("timezone");
-  if (timezone) {
-    if (!isValidTimezone(timezone)) return { error: "Timezone must be an IANA name such as Europe/Berlin." };
-    out.timezone = timezone;
-  }
   const local = text("audioScheduledLocal");
-  if (local) {
-    if (!timezone) return { error: "Set a timezone to schedule the audio." };
-    const unchanged = prior.audioScheduledAt && utcToZonedLocal(prior.audioScheduledAt, timezone) === local;
-    const at = unchanged ? prior.audioScheduledAt : zonedLocalToUtc(local, timezone);
-    if (!at) return { error: "That scheduled time does not exist in the chosen timezone." };
-    out.audioScheduledAt = at;
+  if (local || timezone) {
+    if (!local || !timezone) return { error: "Spotify scheduling needs both the scheduled time and its timezone." };
+    if (!isValidTimezone(timezone)) return { error: "Timezone must be an IANA name such as Europe/Berlin." };
+    const before = prior.audioSchedule;
+    const unchanged = before && before.timezone === timezone && utcToZonedLocal(before.scheduledAt, timezone) === local;
+    const scheduledAt = unchanged ? before.scheduledAt : zonedLocalToUtc(local, timezone);
+    if (!scheduledAt) return { error: "That scheduled time does not exist in the chosen timezone." };
+    out.audioSchedule = { scheduledAt, timezone, observedAt: unchanged ? before.observedAt : nowIso };
+    if (text("scheduleProofUrl")) out.audioSchedule.proofUrl = text("scheduleProofUrl");
+  } else if (text("scheduleProofUrl")) {
+    return { error: "Add the scheduled time and timezone that the Spotify schedule proof shows." };
   }
   if (values.spotifyVerified) {
     const url = text("spotifyUrl");
@@ -201,15 +210,26 @@ export function buildPublication(previous, values, nowIso) {
     };
   }
   if (values.transcriptReviewed) {
-    out.transcript = { reviewedAt: prior.transcript?.reviewedAt || nowIso };
     const proof = text("transcriptUrl");
-    if (proof) out.transcript.proofUrl = proof;
+    if (!proof) return { error: "Add a proof link for the transcript review." };
+    out.transcript = {
+      reviewedAt: prior.transcript?.proofUrl === proof ? prior.transcript.reviewedAt : nowIso,
+      proofUrl: proof,
+    };
   }
-  const websiteUrl = text("websiteUrl");
-  if (websiteUrl) {
-    out.website = { releasedAt: prior.website?.releasedAt || nowIso, proofUrl: websiteUrl };
-    const reason = text("websiteEarlyReason");
-    if (reason) out.website.earlyReason = reason;
+  const releaseUrl = text("websiteUrl");
+  if (releaseUrl) {
+    out.website = {
+      releasedAt: prior.website?.proofUrl === releaseUrl ? prior.website.releasedAt : nowIso,
+      proofUrl: releaseUrl,
+    };
+  }
+  const liveUrl = text("websiteObservedUrl");
+  if (liveUrl) {
+    out.websiteObserved = {
+      observedAt: prior.websiteObserved?.proofUrl === liveUrl ? prior.websiteObserved.observedAt : nowIso,
+      proofUrl: liveUrl,
+    };
   }
   return { value: Object.keys(out).length ? out : null };
 }
@@ -217,14 +237,31 @@ export function buildPublication(previous, values, nowIso) {
 /** Form field defaults for an episode's recorded publication. */
 export function publicationFormValues(episode) {
   const publication = episode?.publication || {};
+  const schedule = publication.audioSchedule;
   return {
-    timezone: publication.timezone || "",
-    audioScheduledLocal: utcToZonedLocal(publication.audioScheduledAt, publication.timezone),
+    timezone: schedule?.timezone || "",
+    audioScheduledLocal: schedule ? utcToZonedLocal(schedule.scheduledAt, schedule.timezone) : "",
+    scheduleProofUrl: schedule?.proofUrl || "",
     spotifyVerified: Boolean(publication.spotify),
-    spotifyUrl: publication.spotify?.episodeUrl || episode?.links?.spotify || "",
+    spotifyUrl: publication.spotify?.episodeUrl || "",
     transcriptReviewed: Boolean(publication.transcript),
     transcriptUrl: publication.transcript?.proofUrl || "",
     websiteUrl: publication.website?.proofUrl || "",
-    websiteEarlyReason: publication.website?.earlyReason || "",
+    websiteObservedUrl: publication.websiteObserved?.proofUrl || "",
   };
+}
+
+/**
+ * Why a status cannot be entered yet, or "". Mirrors the API's gate: published
+ * needs the verified public Spotify episode, scheduled needs Spotify
+ * scheduling evidence. Scheduled audio and an intended date never count.
+ */
+export function statusGateHint(status, publication) {
+  if (status === "published" && !publication?.spotify?.publicVerifiedAt) {
+    return "Record a verified public Spotify episode first.";
+  }
+  if (status === "scheduled" && !publication?.audioSchedule) {
+    return "Record the Spotify scheduling evidence first.";
+  }
+  return "";
 }

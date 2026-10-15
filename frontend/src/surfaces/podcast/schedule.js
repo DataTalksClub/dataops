@@ -9,19 +9,22 @@ import { proofAnchor, readinessChip } from "./publication-section.js";
 
 const enc = encodeURIComponent;
 
-const COLUMNS = ["Episode", "Audio", "Spotify", "Transcript", "Website", "Card", "Proof"];
+const COLUMNS = ["Episode", "Intended release", "Spotify", "Transcript", "Website", "Card", "Proof"];
 
-function whenCell(documentRef, episode) {
+function intendedCell(documentRef, episode) {
   const cell = element(documentRef, "td", "podcast-schedule__when");
+  const date = formatDate(episode.releaseDate);
+  cell.append(date ? element(documentRef, "span", "dk-mono", date) : element(documentRef, "span", "dk-hint", "Not set"));
+  return cell;
+}
+
+// The chip says what Spotify evidence exists; the line under it is the
+// evidenced schedule, in its own timezone, when one is recorded.
+function spotifyCell(documentRef, episode, state) {
+  const cell = element(documentRef, "td", "podcast-schedule__spotify");
+  cell.append(readinessChip(documentRef, "spotify", state));
   const time = formatPublicationTime(episode.publication);
-  if (time) {
-    cell.append(element(documentRef, "span", "", time));
-    return cell;
-  }
-  const fallback = formatDate(episode.releaseDate);
-  cell.append(
-    element(documentRef, "span", "dk-hint", fallback ? `Release ${fallback}, time not set` : "Not scheduled"),
-  );
+  if (time) cell.append(element(documentRef, "span", "podcast-schedule__evidence", time));
   return cell;
 }
 
@@ -66,10 +69,8 @@ function renderRow(documentRef, episode, actions) {
   name.append(link, statusChip(documentRef, episode.status));
   const website = element(documentRef, "td");
   const websiteChip = readinessChip(documentRef, "website", readiness.website);
-  if (readiness.websiteBlockers.length) websiteChip.title = readiness.websiteBlockers.join("; ");
+  if (readiness.websiteGate.missing.length) websiteChip.title = `Release needs: ${readiness.websiteGate.missing.join("; ")}`;
   website.append(websiteChip);
-  const spotify = element(documentRef, "td");
-  spotify.append(readinessChip(documentRef, "spotify", readiness.spotify));
   const transcript = element(documentRef, "td");
   transcript.append(readinessChip(documentRef, "transcript", readiness.transcript));
   const proofs = element(documentRef, "td");
@@ -78,7 +79,7 @@ function renderRow(documentRef, episode, actions) {
   if (links.length) for (const proof of links) proofList.append(proofAnchor(documentRef, proof));
   else proofList.append(element(documentRef, "span", "dk-hint", "None recorded"));
   proofs.append(proofList);
-  row.append(name, whenCell(documentRef, episode), spotify, transcript, website, cardCell(documentRef, episode, actions), proofs);
+  row.append(name, intendedCell(documentRef, episode), spotifyCell(documentRef, episode, readiness.spotify), transcript, website, cardCell(documentRef, episode, actions), proofs);
   return row;
 }
 
@@ -93,8 +94,8 @@ function renderGroup(documentRef, group, actions) {
       documentRef,
       group.id === "upcoming" ? "Nothing upcoming" : "Nothing published yet",
       group.id === "upcoming"
-        ? "Record an audio schedule on an episode to see it here."
-        : "Episodes appear here once their website page is released.",
+        ? "Episodes that are booked, or have recorded publication evidence, appear here."
+        : "Episodes appear here once their website page is out, and historical episodes without recorded evidence.",
     );
     empty.classList.add("dk-empty--compact");
     section.append(empty);
@@ -127,7 +128,8 @@ export function renderSchedule(root, { documentRef, episodes, actions }) {
       documentRef,
       "p",
       "dk-hint podcast-schedule__note",
-      "Scheduled audio is not public. Spotify turns public only when someone verifies the playable episode; the website needs that and a reviewed transcript.",
+      "The intended release is a plan. Spotify scheduling, the public episode, the transcript review "
+        + "and the website show only what has been recorded with evidence; “Not recorded” means no evidence, not a no.",
     ),
   );
   for (const group of scheduleGroups(episodes)) panel.append(renderGroup(documentRef, group, actions));

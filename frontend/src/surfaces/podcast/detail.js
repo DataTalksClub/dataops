@@ -6,7 +6,7 @@ import { SPLIT_BACK_ICON } from "../split-back-icon.js";
 import {
   button, element, emptyState, field, formatDate, icon, input, messageArea, select, statusChip,
 } from "./dom.js";
-import { buildPublication, samePublication } from "./publication-model.js";
+import { buildPublication, samePublication, statusGateHint } from "./publication-model.js";
 import { publicationFormFields, publicationSection } from "./publication-section.js";
 import {
   cardStageLabel, EPISODE_STATUSES, episodeCode, episodeTitle, guestNames, LINK_KINDS,
@@ -62,17 +62,26 @@ function statusSection(documentRef, episode, actions, messages) {
     } catch (error) {
       trigger.removeAttribute("aria-busy");
       trigger.removeAttribute("aria-disabled");
+      if (trigger.tagName === "SELECT") trigger.value = episode.status;
       showFailure(documentRef, messages, error, "change the status", actions, episode);
     }
   }
   if (next) {
     const advance = button(documentRef, `Mark ${statusLabel(next).toLowerCase()}`, "primary");
     advance.dataset.podcastAction = "advance";
-    advance.addEventListener("click", () => {
-      if (advance.getAttribute("aria-busy") === "true") return;
-      move(next, advance);
-    });
-    controls.append(advance);
+    const gate = statusGateHint(next, episode.publication);
+    if (gate) {
+      advance.disabled = true;
+      advance.setAttribute("aria-disabled", "true");
+      advance.title = gate;
+      controls.append(advance, element(documentRef, "span", "dk-hint podcast-inline-hint", gate));
+    } else {
+      advance.addEventListener("click", () => {
+        if (advance.getAttribute("aria-busy") === "true") return;
+        move(next, advance);
+      });
+      controls.append(advance);
+    }
   }
   const choose = select(
     documentRef,
@@ -83,7 +92,15 @@ function statusSection(documentRef, episode, actions, messages) {
   choose.classList.add("podcast-status-select");
   choose.setAttribute("aria-label", "Set status");
   choose.addEventListener("change", () => {
-    if (choose.value !== episode.status) move(choose.value, choose);
+    if (choose.value === episode.status) return;
+    const target = choose.value;
+    const gate = statusGateHint(target, episode.publication);
+    if (gate) {
+      choose.value = episode.status;
+      messages.show("error", `Cannot mark ${statusLabel(target).toLowerCase()}: ${gate}`);
+      return;
+    }
+    move(target, choose);
   });
   controls.append(choose);
   row.append(controls);
@@ -165,7 +182,6 @@ function factsSection(documentRef, episode) {
     ["Guests", guestNames(episode) || "None yet"],
     ["Episode", episode.season ? `Season ${episode.season}${episode.episode ? `, episode ${episode.episode}` : ""}` : "Not numbered"],
     ["Recording", formatDate(episode.recordingDate) || "Not set", Boolean(episode.recordingDate)],
-    ["Release", formatDate(episode.releaseDate) || "Not set", Boolean(episode.releaseDate)],
   ];
   if (episode.websiteSlug) facts.push(["Website slug", episode.websiteSlug, true]);
   for (const [label, value, mono] of facts) {
@@ -236,8 +252,6 @@ export function formChanges(episode, values, nowIso = new Date().toISOString()) 
     const built = buildPublication(episode.publication, values, nowIso);
     if (built.error) throw new Error(built.error);
     if (!samePublication(built.value, episode.publication)) changes.publication = built.value;
-    // The API keeps releaseDate equal to the scheduled audio's local date.
-    if (built.value?.audioScheduledAt) delete changes.releaseDate;
   }
   const links = {};
   for (const kind of LINK_KINDS) {
@@ -277,7 +291,7 @@ function editForm(documentRef, episode, actions, messages) {
   const numbers = element(documentRef, "div", "podcast-form-pair");
   numbers.append(field(documentRef, "Season", controls.season), field(documentRef, "Episode", controls.episode));
   const dates = element(documentRef, "div", "podcast-form-pair");
-  dates.append(field(documentRef, "Recording date", controls.recordingDate), field(documentRef, "Release date", controls.releaseDate));
+  dates.append(field(documentRef, "Recording date", controls.recordingDate), field(documentRef, "Intended release date", controls.releaseDate));
   const links = element(documentRef, "fieldset", "podcast-form-links");
   links.append(element(documentRef, "legend", "dk-label", "Links"));
   for (const kind of LINK_KINDS) {
