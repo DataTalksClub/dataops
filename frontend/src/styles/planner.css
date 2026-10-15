@@ -90,7 +90,7 @@
 }.calendar-period-actions { display: inline-flex; align-items: center; gap: 6px; }.calendar-period-actions button,
 .newsletter-slot-actions button,
 .planner-alert button,
-.dk-dialog__foot > button:not(.primary-button) {
+.dk-dialog__foot > button:not(.primary-button):not(.dk-button) {
   min-height: 34px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
@@ -101,7 +101,7 @@
 }.calendar-period-actions button:hover,
 .newsletter-slot-actions button:hover,
 .planner-alert button:hover,
-.dk-dialog__foot > button:not(.primary-button):hover {
+.dk-dialog__foot > button:not(.primary-button):not(.dk-button):hover {
   border-color: var(--dk-border-control-hover);
   background: var(--dk-bg-hover);
 }.planner-filter-fields {
