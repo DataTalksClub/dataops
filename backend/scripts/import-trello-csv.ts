@@ -37,6 +37,8 @@ import { TABLE_AUDIT_EVENTS, TABLE_TASKS } from '../src/db/tableNames';
 import { createTemplate, listTemplates } from '../src/db/templates';
 import { createCard, getCard } from '../src/db/cards';
 import { createTask, getTask } from '../src/db/tasks';
+import { listUsers } from '../src/db/users';
+import type { User } from '../src/types';
 import { createArtifact, getArtifact } from '../src/db/artifacts';
 import { createDueFollowUpNotifications } from '../src/db/notifications';
 import { createRecurringConfig, listRecurringConfigs } from '../src/db/recurring';
@@ -227,38 +229,71 @@ interface TrelloList {
 }
 
 // ---------------------------------------------------------------------------
-// Assignee hint mapping
+// Assignee hints
 // ---------------------------------------------------------------------------
 
-const ASSIGNEE_HINTS: Record<string, string> = {
-  'valeriia': 'valeriia',
-  'grace': 'grace',
-  'alexey': 'alexey',
-};
+/** Lower-cased full name, and first name when unambiguous, to a user id. */
+type AssigneeDirectory = ReadonlyMap<string, string>;
+
+function assigneeDirectoryFromUsers(users: ReadonlyArray<Pick<User, 'id' | 'name' | 'disabled'>>): AssigneeDirectory {
+  const directory = new Map<string, string>();
+  const firstNames = new Map<string, string[]>();
+  for (const user of users) {
+    if (user.disabled || typeof user.name !== 'string' || !user.name.trim()) continue;
+    const fullName = user.name.trim().replace(/\s+/g, ' ').toLowerCase();
+    directory.set(fullName, user.id);
+    const first = fullName.split(' ')[0];
+    firstNames.set(first, [...(firstNames.get(first) || []), user.id]);
+  }
+  for (const [first, ids] of firstNames) {
+    if (ids.length === 1 && !directory.has(first)) directory.set(first, ids[0]);
+  }
+  return directory;
+}
+
+// Loaded from the Users table in main(); empty until then, so every name is unknown.
+let assigneeDirectory: AssigneeDirectory = new Map();
+
+function setAssigneeDirectory(directory: AssigneeDirectory): void {
+  assigneeDirectory = directory;
+}
+
+const NAME_SPACE = '[\\s\\u00a0]';
+// "(assignee: Name)" anywhere in the text.
+const EXPLICIT_ASSIGNEE = /\s*\(assignee:\s*([^)]+)\)\s*/i;
+// A trailing "<dash> Name" with optional Markdown bold around the dash, the
+// name, or both: "** – Valeriia**", "**–\u00a0Alexey**", "– **Name**", "-- Name".
+const TRAILING_ASSIGNEE = new RegExp(
+  `${NAME_SPACE}*(\\*\\*)?${NAME_SPACE}*(?:--|[-\u2013\u2014])${NAME_SPACE}*(\\*\\*)?`
+  + `${NAME_SPACE}*([A-Za-z\u00c0-\u024f]+(?: [A-Za-z\u00c0-\u024f]+){0,2})${NAME_SPACE}*(\\*\\*)?${NAME_SPACE}*$`,
+);
 
 /**
- * Extract assignee hint from task description text.
- * Patterns: "(assignee: Name)" or "-- Name" at end of text.
+ * Extract an assignee named in a task title. A trailing "- Name" is only an
+ * assignment when Name is a known user, so "- one week before" stays text.
+ * A bold "**- Name**" or an explicit "(assignee: Name)" with an unknown name
+ * is reported in `unknownName` and left in the title for a person to fix.
  */
-function extractAssigneeHint(text: string): { description: string; assigneeId: string | null } {
-  // Pattern: (assignee: Name)
-  const assigneeMatch = text.match(/\s*\(assignee:\s*([^)]+)\)\s*/i);
-  if (assigneeMatch) {
-    const name = assigneeMatch[1].trim().toLowerCase();
-    const assigneeId = ASSIGNEE_HINTS[name] || null;
-    const cleaned = text.replace(assigneeMatch[0], ' ').replace(/\s+/g, ' ').trim();
+function extractAssigneeHint(
+  text: string,
+  directory: AssigneeDirectory = assigneeDirectory,
+): { description: string; assigneeId: string | null; unknownName?: string } {
+  const explicit = text.match(EXPLICIT_ASSIGNEE);
+  if (explicit) {
+    const name = explicit[1].trim();
+    const assigneeId = directory.get(name.replace(/\s+/g, ' ').toLowerCase()) || null;
+    if (!assigneeId) return { description: text, assigneeId: null, unknownName: name };
+    const cleaned = text.replace(explicit[0], ' ').replace(/\s+/g, ' ').trim();
     return { description: cleaned, assigneeId };
   }
 
-  // Pattern: -- Name at end
-  const dashMatch = text.match(/\s*--\s+([A-Za-z]+)\s*$/);
-  if (dashMatch) {
-    const name = dashMatch[1].trim().toLowerCase();
-    const assigneeId = ASSIGNEE_HINTS[name] || null;
-    if (assigneeId) {
-      const cleaned = text.replace(dashMatch[0], '').trim();
-      return { description: cleaned, assigneeId };
-    }
+  const trailing = text.match(TRAILING_ASSIGNEE);
+  if (trailing && trailing.index !== undefined && trailing.index > 0) {
+    const name = trailing[3];
+    const bold = Boolean(trailing[1] || trailing[2] || trailing[4]);
+    const assigneeId = directory.get(name.toLowerCase()) || null;
+    if (assigneeId) return { description: text.slice(0, trailing.index).trim(), assigneeId };
+    if (bold && !name.includes(' ')) return { description: text, assigneeId: null, unknownName: name };
   }
 
   return { description: text, assigneeId: null };
@@ -1019,10 +1054,8 @@ function planTrelloActiveCard(
       if (!parseDate(rawDate)) warnings.push(`invalid date: ${rawDate}`);
 
       const { description: cleanedName, instructionsUrl } = extractInstructionsUrl(item.name);
-      const { description: finalName, assigneeId } = extractAssigneeHint(cleanedName);
-      if (/\(assignee:\s*[^)]+\)/i.test(cleanedName) && !assigneeId) {
-        warnings.push(`unknown assignee: ${cleanedName}`);
-      }
+      const { description: finalName, assigneeId, unknownName } = extractAssigneeHint(cleanedName);
+      if (unknownName) warnings.push(`unknown assignee: ${unknownName} in ${cleanedName}`);
 
       const contextText = `${finalName}\n${trelloCard.name}\n${trelloCard.desc || ''}`;
       const proofText = `${finalName}\n${instructionsUrl || ''}`;
@@ -1560,7 +1593,8 @@ function planCsvRow(row: string[], context: CsvRowContext): CsvMigrationPlan {
     return { kind: 'skip', reason: 'missing-proof', sourceKey, warnings: [...warnings, 'completed row requires proof but no safe proof was found'] };
   }
 
-  const { description: noAssigneeDescription, assigneeId } = extractAssigneeHint(description);
+  const { description: noAssigneeDescription, assigneeId, unknownName } = extractAssigneeHint(description);
+  if (unknownName) warnings.push(`unknown assignee: ${unknownName} in ${description}`);
   const doc = resolveInstructionDoc(combined);
   if (doc.unresolvedUrl) warnings.push(`unresolved process doc: ${doc.unresolvedUrl}`);
   const workflowCandidate = inferWorkflowCandidate(description);
@@ -1805,6 +1839,15 @@ async function main() {
     console.log('  DB ready.');
   }
 
+  // Names in task titles resolve against the real accounts. A dry run reads
+  // them too (read-only) so its report shows the same assignments.
+  try {
+    setAssigneeDirectory(assigneeDirectoryFromUsers(await listUsers(client || await getClient())));
+  } catch (error) {
+    if (!DRY_RUN) throw error;
+    console.log(`  Users unavailable (${(error as Error).message}); names in titles are reported as unknown.`);
+  }
+
   const stats = {
     templates: 0,
     cards: 0,
@@ -1959,6 +2002,8 @@ export {
   extractCardLinks,
   extractInstructionsUrl,
   extractAssigneeHint,
+  assigneeDirectoryFromUsers,
+  setAssigneeDirectory,
   cardFromTrello,
   trelloChecklistItemsToTasks,
   selectActiveTrelloCards,
