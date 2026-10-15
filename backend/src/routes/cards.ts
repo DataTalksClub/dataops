@@ -26,7 +26,7 @@ import {
   validateCardPeople,
   validateCardRefs,
 } from '../cards/createCard';
-import { listAllTasks, listTasksByCard } from '../db/tasks';
+import { listAllTasks, listTasksByCard, listTasksByCardConsistent } from '../db/tasks';
 import {
   applyCardTemplateUpdate,
   CardTemplateUpdateConflictError,
@@ -92,14 +92,17 @@ function mayAdministerCard(actor: VerifiedActor, card: Card | null): boolean {
 }
 
 async function loadTemplateUpdate(cardId: string, client: DynamoDBDocumentClient) {
-  const card = await getCard(client, cardId);
+  // Card first, then its Tasks from the base table: every graph-affecting
+  // write bumps the Card, so a Task list read after the Card cannot be older
+  // than the version the update will be conditioned on.
+  const card = await getCardConsistent(client, cardId);
   if (!card) throw new CardTemplateUpdateRequestError(404, 'card-not-found', 'Card not found');
   if (!card.templateId) {
     throw new CardTemplateUpdateRequestError(422, 'card-has-no-template', 'Card was not created from a Template');
   }
   const template = await getTemplate(client, card.templateId);
   if (!template) throw new CardTemplateUpdateRequestError(409, 'template-not-found', 'Card Template projection no longer exists');
-  const tasks = await listTasksByCard(client, card.id);
+  const tasks = await listTasksByCardConsistent(client, card.id);
   try {
     return { card, template, tasks, plan: buildCardTemplateUpdatePlan(card, tasks, template) };
   } catch (error) {

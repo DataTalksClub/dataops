@@ -11,12 +11,12 @@ import {
   ListTablesCommand,
   type CreateTableCommandInput,
 } from '@aws-sdk/client-dynamodb';
-import { PutCommand, TransactWriteCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { PutCommand, ScanCommand, TransactWriteCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { disableLocalTransactionEmulation, getClient, usesLocalTransactionEmulation } from '../src/db/client';
 import { TABLE_AUDIT_EVENTS, TABLE_CARDS, TABLE_TASKS } from '../src/db/tableNames';
 import { TaskDependencyError } from '../src/db/taskDependencies';
-import { getTaskConsistent, updateTask } from '../src/db/tasks';
+import { CardLifecycleConflictError, deleteTask, getTaskConsistent, updateTask } from '../src/db/tasks';
 import type { Card, Task } from '../src/types';
 
 const ENDPOINT = process.env.DYNAMODB_ENDPOINT;
@@ -244,5 +244,28 @@ test('task dependency guards hold on official DynamoDB Local', { timeout: 60_000
       (error: unknown) => error instanceof TaskDependencyError && error.code === 'prerequisite-of-completed-task',
     );
     assert.equal((await read(prerequisite.id)).status, 'done');
+  });
+
+  await t.test('a dependent inserted after the dependents were read cancels the delete', async () => {
+    const card = await seedCard(2);
+    const prerequisite = await seedTask(card, 'Prerequisite');
+    const later = await seedTask(card, 'Later dependent');
+    const send = db.send.bind(db) as (command: unknown) => Promise<unknown>;
+    let fired = false;
+    (db as unknown as { send: typeof send }).send = async (command: unknown) => {
+      const result = await send(command);
+      if (!fired && command instanceof ScanCommand) {
+        fired = true;
+        await updateTask(db, later.id, { expectedVersion: 1, patch: { dependsOn: [prerequisite.id] } });
+      }
+      return result;
+    };
+    try {
+      await assert.rejects(deleteTask(db, prerequisite.id, 1), CardLifecycleConflictError);
+    } finally {
+      (db as unknown as { send: typeof send }).send = send;
+    }
+    assert.ok(await getTaskConsistent(db, prerequisite.id));
+    assert.deepEqual((await read(later.id)).dependsOn, [prerequisite.id]);
   });
 });

@@ -124,13 +124,14 @@ async function createTask(
   }
 
   const task = cleanItem(item) as Task;
-  const guards = await planTaskDependencyChecks(client, null, task);
+  const dependency = await planTaskDependencyChecks(client, null, task);
   if (typeof task.cardId === 'string' && task.cardId.length > 0) {
     try {
       await executeTaskCardTransaction(client, {
         kind: 'create',
         afterTask: task,
-        guards,
+        guards: dependency.guards,
+        dependency,
         actorId: options.actorId || (typeof task.createdBy === 'string' ? task.createdBy : undefined),
         triggerKind: options.triggerKind || 'task-created',
       });
@@ -234,8 +235,8 @@ async function updateTask(
       || (beforeCardId !== null && isOpenStatus(beforeTask.status) !== isOpenStatus(afterTask.status));
     // Dependency rules run on every Task write, whichever route got here;
     // their guards ride in the same transaction as the write.
-    const guards = await planTaskDependencyChecks(client, beforeTask, afterTask);
-    if (aggregateChanged || guards.length > 0) {
+    const dependency = await planTaskDependencyChecks(client, beforeTask, afterTask);
+    if (aggregateChanged || dependency.guards.length > 0 || dependency.touchCardId) {
       try {
         const result = await executeTaskCardTransaction(client, {
           kind: 'update',
@@ -244,7 +245,8 @@ async function updateTask(
           expectedVersion: mutation.expectedVersion,
           patch: mutation.patch as Record<string, unknown>,
           historyEvents,
-          guards,
+          guards: dependency.guards,
+          dependency,
           actorId: mutation.actorId,
           triggerKind: mutation.triggerKind || 'task-updated',
         });
@@ -354,13 +356,14 @@ async function deleteTask(
     throw new TaskVersionConflictError(id, expectedVersion);
   }
   if (typeof beforeTask.cardId === 'string' && beforeTask.cardId.length > 0) {
-    const guards = await planTaskDependencyChecks(client, beforeTask, null);
+    const dependency = await planTaskDependencyChecks(client, beforeTask, null);
     try {
       await executeTaskCardTransaction(client, {
         kind: 'delete',
         beforeTask,
         expectedVersion,
-        guards,
+        guards: dependency.guards,
+        dependency,
         actorId,
         triggerKind: 'task-deleted',
       });
@@ -452,6 +455,23 @@ function listTasksByCard(client: DynamoDBDocumentClient, cardId: string): Promis
 }
 
 /**
+ * List a Card's Tasks from the base table with strongly consistent reads.
+ * GSI-Card is eventually consistent, so a Task inserted or re-pointed a moment
+ * ago can be missing from it. Dependency rules that must see every dependent
+ * (reopen, delete, Template sync) read through this Scan instead; callers reach
+ * it only for those rare operations.
+ */
+function listTasksByCardConsistent(client: DynamoDBDocumentClient, cardId: string): Promise<Task[]> {
+  return readAllTaskPages(client, (exclusiveStartKey) => new ScanCommand({
+    TableName: TABLE_TASKS,
+    FilterExpression: 'begins_with(PK, :prefix) AND cardId = :cardId',
+    ExpressionAttributeValues: { ':prefix': 'TASK#', ':cardId': cardId },
+    ConsistentRead: true,
+    ExclusiveStartKey: exclusiveStartKey,
+  }));
+}
+
+/**
  * List every canonical Task with bounded pagination. Collection projections
  * use this one read instead of issuing a Task query for each Card.
  */
@@ -509,6 +529,7 @@ export {
   listTasksByDate,
   listTasksByDateRange,
   listTasksByCard,
+  listTasksByCardConsistent,
   listAllTasks,
   listTasksByStatus,
   listTasksByOwner,

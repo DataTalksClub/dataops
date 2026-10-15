@@ -17,7 +17,7 @@ import {
   isActiveCardStage,
 } from './cards';
 import { TABLE_AUDIT_EVENTS, TABLE_CARDS, TABLE_TASKS } from './tableNames';
-import type { TaskGuard } from './taskDependencies';
+import type { TaskDependencyPlan, TaskGuard } from './taskDependencies';
 
 type Dict = Record<string, unknown>;
 type TransactionItems = NonNullable<ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']>;
@@ -27,6 +27,7 @@ type TaskCardMutation =
       kind: 'create';
       afterTask: Task;
       guards?: TaskGuard[];
+      dependency?: Pick<TaskDependencyPlan, 'cardPins' | 'touchCardId'>;
       actorId?: string;
       triggerKind?: string;
     }
@@ -38,6 +39,7 @@ type TaskCardMutation =
       patch: Dict;
       historyEvents: Task['taskHistory'];
       guards?: TaskGuard[];
+      dependency?: Pick<TaskDependencyPlan, 'cardPins' | 'touchCardId'>;
       actorId?: string;
       triggerKind?: string;
     }
@@ -46,6 +48,7 @@ type TaskCardMutation =
       beforeTask: Task;
       expectedVersion: number;
       guards?: TaskGuard[];
+      dependency?: Pick<TaskDependencyPlan, 'cardPins' | 'touchCardId'>;
       actorId?: string;
       triggerKind?: string;
     };
@@ -191,6 +194,10 @@ function cardDeltas(mutation: TaskCardMutation): Map<string, { taskCount: number
   for (const [cardId, delta] of deltas) {
     if (delta.taskCount === 0 && delta.openTaskCount === 0) deltas.delete(cardId);
   }
+  // An edge edit changes no count but still revises the dependency graph, so
+  // it bumps the Card like every other graph-affecting write.
+  const touched = mutation.dependency?.touchCardId;
+  if (touched && !deltas.has(touched)) deltas.set(touched, { taskCount: 0, openTaskCount: 0 });
   return deltas;
 }
 
@@ -540,6 +547,16 @@ async function executeTaskCardTransaction(
   for (const [cardId, delta] of deltas) {
     const current = await getCardConsistent(client, cardId);
     if (!current) throw new CardNotFoundError(cardId);
+    // The dependency checks read the graph at a pinned Card version; a Card
+    // that moved on since invalidates everything they concluded.
+    const pin = mutation.dependency?.cardPins[cardId];
+    if (pin !== undefined && current.version !== pin) {
+      throw new TaskCardTransactionConflictError(
+        'card',
+        (mutation.kind === 'delete' ? mutation.beforeTask : mutation.afterTask).id,
+        [...deltas.keys()],
+      );
+    }
     cardsBefore.set(cardId, current);
     const triggerTask = mutation.kind === 'delete' ? mutation.beforeTask : mutation.afterTask;
     const next = applyCardAggregateDelta(current, delta, {

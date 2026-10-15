@@ -2,7 +2,8 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import type { ProjectedTask } from '../identity/projections';
 import type { Task, TaskStatus } from '../types';
-import { getTaskConsistent, listTasksByCard } from './tasks';
+import { getCardConsistent } from './cards';
+import { getTaskConsistent, listTasksByCardConsistent } from './tasks';
 
 /**
  * Task dependencies: `Task.dependsOn` lists prerequisite Task ids on the same
@@ -24,6 +25,25 @@ interface TaskGuard {
   version?: number;
   /** The Task must have exactly this status. */
   status?: TaskStatus;
+}
+
+/**
+ * What a Task write must carry besides its own change.
+ *
+ * Every mutation that can alter a Card's dependency graph or the statuses the
+ * rules read (membership, open/done transitions, edge edits) writes the Card,
+ * so the Card version is the graph's revision. The checks below read the Card
+ * *first* and the graph after it from the base table with consistent reads;
+ * the write then commits only if the Card is still at the pinned version, so
+ * nothing the checks depended on can have changed in between, including a
+ * dependent inserted after an earlier read.
+ */
+interface TaskDependencyPlan {
+  guards: TaskGuard[];
+  /** Card versions read before the graph; the write requires them unchanged. */
+  cardPins: Record<string, number>;
+  /** Card to bump for an edge edit that changes no open/done count. */
+  touchCardId: string | null;
 }
 
 type TaskDependencyErrorCode =
@@ -142,13 +162,17 @@ async function planTaskDependencyChecks(
   client: DynamoDBDocumentClient,
   before: Task | null,
   after: Task | null,
-): Promise<TaskGuard[]> {
-  const subject = after || before;
-  if (!subject) return [];
+): Promise<TaskDependencyPlan> {
   const guards: TaskGuard[] = [];
   const cardId = cardIdOf(after);
   const dependsOn = after?.dependsOn || [];
   const edgesChanged = after !== null && !sameIds(before?.dependsOn, dependsOn);
+  const enteringDone = after !== null && after.status === 'done' && before?.status !== 'done';
+  const leavingDone = before !== null && before.status === 'done'
+    && after !== null && after.status !== 'done';
+  const deleting = before !== null && after === null;
+  const movingCard = before !== null && after !== null && cardIdOf(before) !== cardIdOf(after);
+  const priorCardId = cardIdOf(before);
 
   if (after && dependsOn.length > 0) {
     if (!cardId) {
@@ -174,10 +198,21 @@ async function planTaskDependencyChecks(
     );
   }
 
+  // Pin the graph revision before reading any of the graph.
+  const cardPins: Record<string, number> = {};
+  const graphRelevant = edgesChanged || (enteringDone && dependsOn.length > 0)
+    || leavingDone || deleting || movingCard;
+  if (graphRelevant) {
+    for (const id of new Set([cardId, priorCardId])) {
+      if (!id) continue;
+      const card = await getCardConsistent(client, id);
+      if (card) cardPins[id] = card.version;
+    }
+  }
+
   // Edges are read strongly consistent: a prerequisite that is not there, or
   // lives on another Card, is rejected rather than trusted.
   const seed = new Map<string, Task | null>();
-  const enteringDone = after !== null && after.status === 'done' && before?.status !== 'done';
   if (after && cardId && dependsOn.length > 0 && (edgesChanged || enteringDone)) {
     const direct = await Promise.all(dependsOn.map((id) => getTaskConsistent(client, id)));
     const missing = dependsOn.filter((_, index) => direct[index] === null);
@@ -240,13 +275,8 @@ async function planTaskDependencyChecks(
 
   // A prerequisite leaves its dependents behind when it is reopened, deleted,
   // or moved to another Card.
-  const leavingDone = before !== null && before.status === 'done'
-    && after !== null && after.status !== 'done';
-  const deleting = before !== null && after === null;
-  const movingCard = before !== null && after !== null && cardIdOf(before) !== cardIdOf(after);
-  const priorCardId = cardIdOf(before);
   if (priorCardId && (leavingDone || deleting || movingCard)) {
-    const siblings = await listTasksByCard(client, priorCardId);
+    const siblings = await listTasksByCardConsistent(client, priorCardId);
     const dependents = siblings.filter((task) => task.id !== before!.id && task.dependsOn?.includes(before!.id));
     const completed = dependents.filter((task) => task.status === 'done');
     if (completed.length > 0 && (leavingDone || deleting)) {
@@ -285,7 +315,7 @@ async function planTaskDependencyChecks(
     );
   }
 
-  return mergeGuards(guards);
+  return { guards: mergeGuards(guards), cardPins, touchCardId: edgesChanged ? cardId : null };
 }
 
 /** A transaction may touch an item once, so conditions on one Task are combined. */
@@ -331,4 +361,4 @@ export {
   normalizeDependsOn,
   planTaskDependencyChecks,
 };
-export type { TaskDependencyErrorCode, TaskGuard, TaskReference };
+export type { TaskDependencyErrorCode, TaskDependencyPlan, TaskGuard, TaskReference };

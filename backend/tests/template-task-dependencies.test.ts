@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { GetCommand, TransactWriteCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient, disableLocalTransactionEmulation } from '../src/db/client';
-import { getTask, listTasksByCard } from '../src/db/tasks';
-import { createCardFromTemplate, createTemplate, instantiateTemplate } from '../src/db/templates';
-import { createCard } from '../src/db/cards';
-import { applyCardTemplateUpdate } from '../src/db/cardTemplateUpdates';
+import { getTask, listTasksByCard, listTasksByCardConsistent, updateTask } from '../src/db/tasks';
+import { createCardFromTemplate, createTemplate, getTemplate, instantiateTemplate, updateTemplate } from '../src/db/templates';
+import { createCard, getCardConsistent } from '../src/db/cards';
+import { applyCardTemplateUpdate, CardTemplateUpdateConflictError } from '../src/db/cardTemplateUpdates';
 import {
+  templateCardProjection,
   templateCardDefinitionSnapshot,
   templateTaskDefinitionSnapshot,
 } from '../src/templates/cardTemplateProjection';
@@ -264,5 +265,98 @@ describe('portable export of dependencies', () => {
     const mapped = mapTask({ id: 't2', version: 1, description: 'D', status: 'todo', dependsOn: ['t1'], taskHistory: [] });
     assert.deepEqual(mapped.depends_on, ['t1']);
     assert.equal(mapTask({ id: 't1', version: 1, description: 'P', status: 'todo', taskHistory: [] }).depends_on, undefined);
+  });
+});
+
+describe('Card Template sync guards the whole affected graph', () => {
+  let client: DynamoDBDocumentClient;
+  before(async () => {
+    const port = await startLocal();
+    client = await getClient(port);
+    await createTables(client);
+  });
+  after(stopLocal);
+
+  /** A Card whose Template later gains a Task depending on two existing Tasks. */
+  async function stagedUpdate() {
+    const template = await createTemplate(client, {
+      name: 'Podcast',
+      taskDefinitions: [
+        { refId: 'spotify', description: 'Verify Spotify episode', offsetDays: 1 },
+        { refId: 'transcript', description: 'Review transcript', offsetDays: 1 },
+        { refId: 'extra', description: 'Unrelated', offsetDays: 1 },
+      ],
+    });
+    const { card } = await createCardFromTemplate(
+      client,
+      {
+        id: `sync-card-${Math.random().toString(36).slice(2)}`,
+        title: 'Episode',
+        anchorDate: '2026-10-01',
+        templateId: template.id,
+        ...templateCardProjection(template),
+      },
+      template,
+      '2026-10-01',
+    );
+    const next = await updateTemplate(client, template.id, {
+      taskDefinitions: [
+        ...template.taskDefinitions!,
+        { refId: 'page', description: 'Publish page', offsetDays: 2, dependsOn: ['spotify', 'transcript'] },
+      ],
+    });
+    assert.ok(next);
+    const target = (await getTemplate(client, template.id))!;
+    const liveCard = (await getCardConsistent(client, card.id))!;
+    const tasks = await listTasksByCardConsistent(client, card.id);
+    const plan = buildCardTemplateUpdatePlan(liveCard, tasks, target);
+    return { card: liveCard, tasks, target, plan };
+  }
+
+  it('applies when nothing moved, wiring the added Task to existing Tasks by id', async () => {
+    const { card, tasks, target, plan } = await stagedUpdate();
+    const applied = await applyCardTemplateUpdate(client, card, tasks, target, plan.preview.previewToken, 'operator');
+    assert.equal(applied.applied, true);
+    const page = (await listTasksByCardConsistent(client, card.id)).find(({ templateTaskRef }) => templateTaskRef === 'page')!;
+    const ids = new Map(tasks.map((task) => [task.templateTaskRef, task.id]));
+    assert.deepEqual(page.dependsOn, [ids.get('spotify'), ids.get('transcript')]);
+  });
+
+  it('conflicts when a Task on an edge, not rewritten by the update, changed after the read', async () => {
+    const { card, tasks, target, plan } = await stagedUpdate();
+    const spotify = tasks.find(({ templateTaskRef }) => templateTaskRef === 'spotify')!;
+    // A plain edit: it neither bumps the Card nor is rewritten by the update.
+    await updateTask(client, spotify.id, { expectedVersion: spotify.version, patch: { comment: 'moved on' } });
+    await assert.rejects(
+      applyCardTemplateUpdate(client, card, tasks, target, plan.preview.previewToken, 'operator'),
+      CardTemplateUpdateConflictError,
+    );
+    assert.equal((await listTasksByCardConsistent(client, card.id)).some(({ templateTaskRef }) => templateTaskRef === 'page'), false);
+  });
+
+  it('conflicts when an edge is added to an unrelated Task after the read', async () => {
+    const { card, tasks, target, plan } = await stagedUpdate();
+    const [first, , unrelated] = tasks;
+    await updateTask(client, unrelated.id, { expectedVersion: unrelated.version, patch: { dependsOn: [first.id] } });
+    await assert.rejects(
+      applyCardTemplateUpdate(client, card, tasks, target, plan.preview.previewToken, 'operator'),
+      CardTemplateUpdateConflictError,
+    );
+  });
+
+  it('plans from every Task even when GSI-Card cannot see them', async () => {
+    const { card, tasks } = await stagedUpdate();
+    const target = client as unknown as { send: (command: unknown) => Promise<unknown> };
+    const original = target.send.bind(client);
+    const { QueryCommand } = await import('@aws-sdk/lib-dynamodb');
+    target.send = async (command: unknown) => (
+      command instanceof QueryCommand ? { Items: [] } : original(command)
+    );
+    try {
+      assert.equal((await listTasksByCardConsistent(client, card.id)).length, tasks.length);
+      assert.equal((await listTasksByCard(client, card.id)).length, 0, 'the index view is empty here');
+    } finally {
+      target.send = original;
+    }
   });
 });

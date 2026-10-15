@@ -304,6 +304,22 @@ function resultTasks(tasks: Task[], replacements: Map<string, Task>): Task[] {
   ];
 }
 
+function taskVersion(task: Task): number {
+  return task.version;
+}
+
+/** Tasks outside the rewrite that take part in a dependency edge after it. */
+function unrewrittenGraphTasks(tasks: Task[], replacements: Map<string, Task>): Task[] {
+  const after = resultTasks(tasks, replacements);
+  const inGraph = new Set<string>();
+  for (const task of after) {
+    if (!task.dependsOn?.length) continue;
+    inGraph.add(task.id);
+    for (const id of task.dependsOn) inGraph.add(id);
+  }
+  return tasks.filter((task) => inGraph.has(task.id) && !replacements.has(task.id));
+}
+
 function replacementAggregateDelta(
   tasks: Task[],
   replacements: Map<string, Task>,
@@ -502,6 +518,19 @@ export async function applyCardTemplateUpdate(
     const task = replacements.get(taskId);
     if (!task) throw new CardTemplateUpdateConflictError();
     transaction.push(taskPut(task, update.action === 'add' ? undefined : update.before!.version));
+  }
+
+  // The Card version guards every graph-affecting write; the version of each
+  // Task on an edge that this update does not rewrite is checked as well, so
+  // the whole affected graph is conditioned, not only the rewritten Tasks.
+  for (const task of unrewrittenGraphTasks(tasks, replacements)) {
+    transaction.push({
+      ConditionCheck: {
+        TableName: TABLE_TASKS,
+        Key: { PK: `TASK#${task.id}`, SK: `TASK#${task.id}` },
+        ...taskVersionCondition(taskVersion(task)),
+      },
+    });
   }
 
   transaction.push({

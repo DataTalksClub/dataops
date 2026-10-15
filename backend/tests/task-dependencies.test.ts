@@ -1,10 +1,11 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, QueryCommand, ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import { createCard } from '../src/db/cards';
-import { createTask, deleteTask, getTask, updateTask } from '../src/db/tasks';
+import { CardLifecycleConflictError, createTask, deleteTask, getTask, updateTask } from '../src/db/tasks';
+import { TABLE_TASKS } from '../src/db/tableNames';
 import { TaskDependencyError } from '../src/db/taskDependencies';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 
@@ -341,5 +342,157 @@ describe('Task dependencies', () => {
       assert.equal(unblocked.body.blocked, false);
       assert.equal(unblocked.body.prerequisites[0].status, 'done');
     });
+  });
+});
+
+describe('Task dependency races', () => {
+  let client: DynamoDBDocumentClient;
+
+  before(async () => {
+    const port = await startLocal();
+    client = await getClient(port);
+    await createTables(client);
+  });
+
+  after(stopLocal);
+
+  type Send = (command: unknown) => Promise<unknown>;
+
+  /** Run `interleave` once, right after the first read that matches `trigger` returns. */
+  function interleaveAfter(trigger: (command: unknown) => boolean, interleave: () => Promise<void>): () => void {
+    const target = client as unknown as { send: Send };
+    const original = target.send.bind(client);
+    let fired = false;
+    target.send = async (command: unknown) => {
+      const result = await original(command);
+      if (!fired && trigger(command)) {
+        fired = true;
+        target.send = original;
+        await interleave();
+      }
+      return result;
+    };
+    return () => { target.send = original; };
+  }
+
+  const cardWith = async (title: string) => (await createCard(client, { title, anchorDate: '2026-10-01' })).id;
+  const task = (cardId: string, description: string, extra: Json = {}) => (
+    createTask(client, { description, date: '2026-10-01', cardId, ...extra })
+  );
+  const status = async (id: string) => (await getTask(client, id))!.status;
+  const isGet = (id: string) => (command: unknown) => (
+    command instanceof GetCommand && command.input.Key?.PK === `TASK#${id}`
+  );
+  const isTaskScan = (command: unknown) => command instanceof ScanCommand && command.input.TableName === TABLE_TASKS;
+
+  it('refuses to reopen a prerequisite whose completed dependent is missing from GSI-Card', async () => {
+    const cardId = await cardWith('Stale index');
+    const prerequisite = await task(cardId, 'Prerequisite');
+    const dependent = await task(cardId, 'Dependent', { dependsOn: [prerequisite.id] });
+    const done = await updateTask(client, prerequisite.id, { expectedVersion: 1, patch: { status: 'done' } });
+    await updateTask(client, dependent.id, { expectedVersion: 1, patch: { status: 'done' } });
+
+    // The index knows nothing about the dependent, as when it was written milliseconds ago.
+    const target = client as unknown as { send: Send };
+    const original = target.send.bind(client);
+    target.send = async (command: unknown) => {
+      if (command instanceof QueryCommand && command.input.IndexName === 'GSI-Card') {
+        return { Items: [] };
+      }
+      return original(command);
+    };
+    try {
+      await assert.rejects(
+        updateTask(client, prerequisite.id, {
+          expectedVersion: done.version, patch: { status: 'todo', completedAt: null, completedBy: null },
+        }),
+        (error: unknown) => error instanceof TaskDependencyError && error.code === 'prerequisite-of-completed-task',
+      );
+      await assert.rejects(
+        deleteTask(client, prerequisite.id, done.version),
+        (error: unknown) => error instanceof TaskDependencyError,
+      );
+    } finally {
+      target.send = original;
+    }
+    assert.equal(await status(prerequisite.id), 'done');
+  });
+
+  it('cancels a reopen when the dependent completes after the dependents were read', async () => {
+    const cardId = await cardWith('Reopen vs complete');
+    const prerequisite = await task(cardId, 'Prerequisite');
+    const dependent = await task(cardId, 'Dependent', { dependsOn: [prerequisite.id] });
+    const done = await updateTask(client, prerequisite.id, { expectedVersion: 1, patch: { status: 'done' } });
+    interleaveAfter(isTaskScan, async () => {
+      await updateTask(client, dependent.id, { expectedVersion: 1, patch: { status: 'done' } });
+    });
+    await assert.rejects(updateTask(client, prerequisite.id, {
+      expectedVersion: done.version, patch: { status: 'todo', completedAt: null, completedBy: null },
+    }), CardLifecycleConflictError);
+    assert.deepEqual([await status(prerequisite.id), await status(dependent.id)], ['done', 'done']);
+  });
+
+  it('cancels a completion when its prerequisite is reopened after it was read as done', async () => {
+    const cardId = await cardWith('Complete vs reopen');
+    const prerequisite = await task(cardId, 'Prerequisite');
+    const dependent = await task(cardId, 'Dependent', { dependsOn: [prerequisite.id] });
+    const done = await updateTask(client, prerequisite.id, { expectedVersion: 1, patch: { status: 'done' } });
+    interleaveAfter(isGet(prerequisite.id), async () => {
+      await updateTask(client, prerequisite.id, {
+        expectedVersion: done.version, patch: { status: 'todo', completedAt: null, completedBy: null },
+      });
+    });
+    await assert.rejects(
+      updateTask(client, dependent.id, { expectedVersion: 1, patch: { status: 'done' } }),
+      CardLifecycleConflictError,
+    );
+    assert.deepEqual([await status(prerequisite.id), await status(dependent.id)], ['todo', 'todo']);
+  });
+
+  it('cancels an edge edit when a competing edge closes a cycle after the closure was read', async () => {
+    const cardId = await cardWith('Cycle interleave');
+    const a = await task(cardId, 'A');
+    const b = await task(cardId, 'B');
+    interleaveAfter(isGet(b.id), async () => {
+      await updateTask(client, b.id, { expectedVersion: 1, patch: { dependsOn: [a.id] } });
+    });
+    await assert.rejects(
+      updateTask(client, a.id, { expectedVersion: 1, patch: { dependsOn: [b.id] } }),
+      CardLifecycleConflictError,
+    );
+    assert.equal((await getTask(client, a.id))!.dependsOn, undefined);
+  });
+
+  it('cancels a delete when a dependent edge is inserted after the dependents were read', async () => {
+    const cardId = await cardWith('Delete vs new dependent');
+    const prerequisite = await task(cardId, 'Prerequisite');
+    const other = await task(cardId, 'Later dependent');
+    interleaveAfter(isTaskScan, async () => {
+      await updateTask(client, other.id, { expectedVersion: 1, patch: { dependsOn: [prerequisite.id] } });
+    });
+    await assert.rejects(
+      deleteTask(client, prerequisite.id, prerequisite.version),
+      CardLifecycleConflictError,
+    );
+    assert.ok(await getTask(client, prerequisite.id));
+  });
+
+  it('keeps many concurrent completions and reopens consistent with the graph', async () => {
+    const cardId = await cardWith('Churn');
+    const first = await task(cardId, 'First');
+    const middle = await task(cardId, 'Middle', { dependsOn: [first.id] });
+    const last = await task(cardId, 'Last', { dependsOn: [middle.id] });
+    await updateTask(client, first.id, { expectedVersion: 1, patch: { status: 'done' } });
+    for (let round = 0; round < 6; round += 1) {
+      const [f, m, l] = await Promise.all([first, middle, last].map((t) => getTask(client, t.id).then((x) => x!)));
+      await Promise.allSettled([
+        updateTask(client, l.id, { expectedVersion: l.version, patch: { status: l.status === 'done' ? 'todo' : 'done' } }),
+        updateTask(client, m.id, { expectedVersion: m.version, patch: { status: m.status === 'done' ? 'todo' : 'done' } }),
+        updateTask(client, f.id, { expectedVersion: f.version, patch: { status: f.status === 'done' ? 'todo' : 'done' } }),
+      ]);
+      const [nf, nm, nl] = await Promise.all([first, middle, last].map((t) => status(t.id)));
+      assert.ok(nl !== 'done' || nm === 'done', `round ${round}: last done behind ${nm}`);
+      assert.ok(nm !== 'done' || nf === 'done', `round ${round}: middle done behind ${nf}`);
+    }
   });
 });
