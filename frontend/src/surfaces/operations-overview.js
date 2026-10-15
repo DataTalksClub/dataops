@@ -288,19 +288,7 @@ export function createOperationsOverview(context) {
 
   function surfaceDescription(view) {
     const descriptions = {
-      queue:
-        "One queue, most urgent first. Each task names where it came from — a Card, recurring, or ad hoc.",
-      workflows:
-        "Every active card by stage. Open a card to see its tasks.",
-      templates: "Create cards from reusable templates.",
-      recurring:
-        "Create, edit, pause, and delete the schedules that generate recurring tasks.",
-      processes:
-        "SOPs, templates, and references are contextual support for work.",
-      search:
-        "Find Cards, Tasks, Artifacts, Templates, and Process Docs from one operator search.",
-      admin:
-        "Maintainer tools for process docs, content publishing, diagnostics, and configuration.",
+      search: "Search across Cards, Tasks, Artifacts, Templates, and Process Docs.",
     };
     return descriptions[view] || "";
   }

@@ -208,7 +208,6 @@ export function createReviewSurface(context) {
   function renderHeader(root) {
     const header = createPageHeader({
       title: "Document review",
-      subtitle: "Turn the audit backlog into review evidence, feedback, and a clear next action.",
       className: "review-header",
       documentRef,
     });

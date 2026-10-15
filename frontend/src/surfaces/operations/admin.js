@@ -102,7 +102,6 @@ export function createAdminSurface(context) {
     wrap.append(
       createPageHeader({
         title: "Users",
-        subtitle: "People who can access this workspace. Admins can add, edit, and disable accounts.",
         className: "ops-surface-header",
       }),
     );

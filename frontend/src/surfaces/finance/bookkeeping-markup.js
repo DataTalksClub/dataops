@@ -10,7 +10,6 @@ import { periodNavMarkup } from "../period-nav.js";
 export function bookkeepingSurfaceMarkup() {
   return html`${renderPageHeaderMarkup({
     title: "Bookkeeping",
-    subtitle: "One month at a time: record the transactions, attach the evidence, and close the month with a reviewable package.",
     className: "bookkeeping-header",
   })}
       <section
@@ -42,7 +41,6 @@ export function bookkeepingSurfaceMarkup() {
           ${financeSectionHead({
             id: "bookkeeping-worklist-heading",
             title: "Needs attention",
-            hint: "Every open item for this month, each with its fix.",
             actions: html`<p class="bookkeeping-worklist-hint" data-worklist-hint></p>`,
           })}
         </summary>
@@ -57,7 +55,6 @@ export function bookkeepingSurfaceMarkup() {
           id: "bookkeeping-ledger-heading",
           title: "Ledger",
           create: globalThis.dakitCollection.createButtonMarkup({ label: "Add entry", attributes: "data-bookkeeping-add" }),
-          hint: "Transactions for the selected period. Open an entry only when it needs work.",
           meta: html`<p class="bookkeeping-totals" aria-live="polite"></p>`,
           actions: html`<div class="bookkeeping-export-actions">
               <button
@@ -117,7 +114,7 @@ export function bookkeepingSurfaceMarkup() {
         ${financeSectionHead({
           id: "bookkeeping-evidence-heading",
           title: "Evidence",
-          hint: "Private PDFs grouped by month, each linked to the ledger entry it supports.",
+          hint: "Private PDFs, grouped by month.",
           actions: html`<button class="dk-button dk-button--secondary dk-button--sm" type="button" data-setup-accounts disabled>
             Set up business accounts
           </button>`,
@@ -165,7 +162,6 @@ export function bookkeepingSurfaceMarkup() {
         ${financeSectionHead({
           id: "bookkeeping-package-heading",
           title: "Monthly package",
-          hint: "What the archive will contain, before you create it.",
         })}
         <div class="bookkeeping-package-review" data-package-review></div>
         <div
@@ -193,7 +189,7 @@ export function bookkeepingSurfaceMarkup() {
         ${financeSectionHead({
           id: "bookkeeping-vat-heading",
           title: "VAT summary",
-          hint: "VAT on income and expenses, including tax and health-insurance payments kept out of the package.",
+          hint: "Tax and health-insurance payments are excluded from the package.",
           actions: html`<label class="finance-inline-field"
               >VAT year
               <select class="dk-select" data-vat-year><option value="">All years</option></select></label

@@ -243,7 +243,7 @@ export async function mountInvoiceReview(host, context) {
   host.innerHTML = `${financeSectionHead({
     id: "invoice-review-heading",
     title: "Forwarded invoices",
-    hint: "Extracted from forwarded PDFs. Open a row to confirm; verified rows publish automatically.",
+    hint: "Verified rows publish automatically.",
     actions: `<button class="dk-button dk-button--secondary dk-button--sm" type="button" data-invoice-refresh>Refresh invoices</button>`,
   })}
     <p aria-live="polite" data-invoice-status>
