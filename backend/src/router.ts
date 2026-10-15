@@ -37,6 +37,7 @@ import { getTaskConsistent, TaskVersionConflictError, CardLifecycleConflictError
 import { TaskDependencyError } from './db/taskDependencies';
 import { CardNotFoundError, getCardConsistent } from './db/cards';
 import { getApiToken, touchApiToken } from './db/cliAuth';
+import { withCrmReadSnapshot } from './db/sponsorCrm';
 import { handleInvoiceReader } from './auth/invoiceReader';
 import { handleKnowledgePublisher } from './auth/knowledgePublisher';
 import { handleCliAuthRoutes, isAnonymousDeviceRequest } from './routes/cliAuth';
@@ -284,19 +285,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       return await handleBookkeepingRoutes(reqPath, method, event, client, skipAuth || !!portalUserId || portalAuthorized || !!headerValue(event.headers, 'x-user-id'));
     }
 
-    if (reqPath === '/api/sponsor-crm/leads' || reqPath.startsWith('/api/sponsor-crm/leads/')) {
-      return await handleSponsorLeadRoutes(reqPath, method, event, client);
-    }
-    if (reqPath === '/api/sponsor-crm/newsletters' || reqPath.startsWith('/api/sponsor-crm/newsletters/')) {
-      return await handleSponsorNewsletterRoutes(reqPath, method, event, client);
-    }
     if (reqPath.startsWith('/api/sponsor-crm')) {
-      if (isSponsorCommunicationRoute(reqPath)) {
-        return await handleSponsorCommunicationRoutes(reqPath, method, event, client);
-      }
-      const finance = await handleSponsorFinanceRoutes(reqPath, method, event, client);
-      if (finance) return finance;
-      return await handleSponsorCrmRoutes(reqPath, method, event, client);
+      const sponsorRoute = () => handleSponsorRoute(reqPath, method, event, client);
+      // A read-only request scans the CRM table once, not once per kind.
+      return await (method === 'GET' ? withCrmReadSnapshot(sponsorRoute) : sponsorRoute());
     }
     if (reqPath.startsWith('/api/newsletter-slots')) return await handleNewsletterSlotRoutes(reqPath,method,event,client);
     if (reqPath === '/api/podcast-episodes' || reqPath.startsWith('/api/podcast-episodes/')) return await handlePodcastEpisodeRoutes(reqPath, method, event, client);
@@ -451,6 +443,26 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     console.error('Unexpected error:', err);
     return jsonResponse(500, { error: 'Internal server error' });
   }
+}
+
+async function handleSponsorRoute(
+  reqPath: string,
+  method: string,
+  event: LambdaEvent,
+  client: DynamoDBDocumentClient,
+): Promise<LambdaResponse> {
+  if (reqPath === '/api/sponsor-crm/leads' || reqPath.startsWith('/api/sponsor-crm/leads/')) {
+    return await handleSponsorLeadRoutes(reqPath, method, event, client);
+  }
+  if (reqPath === '/api/sponsor-crm/newsletters' || reqPath.startsWith('/api/sponsor-crm/newsletters/')) {
+    return await handleSponsorNewsletterRoutes(reqPath, method, event, client);
+  }
+  if (isSponsorCommunicationRoute(reqPath)) {
+    return await handleSponsorCommunicationRoutes(reqPath, method, event, client);
+  }
+  const finance = await handleSponsorFinanceRoutes(reqPath, method, event, client);
+  if (finance) return finance;
+  return await handleSponsorCrmRoutes(reqPath, method, event, client);
 }
 
 export function isSponsorCommunicationRoute(pathname: string): boolean {

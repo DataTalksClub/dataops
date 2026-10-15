@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'crypto';
 import { DeleteCommand, GetCommand, PutCommand, ScanCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -44,24 +45,66 @@ export async function getCrmRecord(client: DynamoDBDocumentClient, kind: string,
   return clean((await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: k, SK: k } }))).Item as Record<string, unknown>);
 }
 
-export async function listCrmRecords(
-  client: DynamoDBDocumentClient,
-  kind: string,
-  limits?: StoragePaginationLimits,
-) {
-  const items = await collectBoundedPages<Record<string, unknown>>({
+// Every list read of this table is a full Scan (the key is KIND#id, so a kind
+// has no partition of its own). One page load fans out into several list
+// routes, and each used to scan once per kind it needed, so a burst of
+// parallel loads multiplied into dozens of consistent full-table scans on one
+// partition and DynamoDB throttled them. A read-only request now scans the
+// table once and serves each kind from that snapshot.
+const SNAPSHOT_PREFIXES = [
+  'ORGANIZATION#', 'CONTACT#', 'DEAL#', 'DELIVERABLE#', 'LEAD#', 'NEWSLETTER#',
+  'NEWSLETTER-ISSUE#', 'SPONSOR_FINANCE',
+] as const;
+
+type CrmReadSnapshot = { items?: Promise<Record<string, unknown>[]> };
+const readSnapshot = new AsyncLocalStorage<CrmReadSnapshot>();
+
+/**
+ * Serve sponsor CRM list reads inside `operation` from one table scan. Only
+ * for requests that do not write: a write inside the scope would not be seen
+ * by later list reads in the same request.
+ */
+export function withCrmReadSnapshot<T>(operation: () => Promise<T>): Promise<T> {
+  return readSnapshot.run({}, operation);
+}
+
+function scanCrmTable(client: DynamoDBDocumentClient, prefixes: readonly string[], limits?: StoragePaginationLimits) {
+  const values = Object.fromEntries(prefixes.map((prefix, index) => [`:p${index}`, prefix]));
+  return collectBoundedPages<Record<string, unknown>>({
     limits,
     loadPage: async (ExclusiveStartKey, abortSignal) => client.send(
       new ScanCommand({
         TableName: TABLE_SPONSOR_CRM,
         ConsistentRead: true,
-        FilterExpression: 'begins_with(PK, :prefix)',
-        ExpressionAttributeValues: { ':prefix': `${kind.toUpperCase()}#` },
+        FilterExpression: Object.keys(values).map((name) => `begins_with(PK, ${name})`).join(' OR '),
+        ExpressionAttributeValues: values,
         ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
       }),
       { abortSignal },
     ),
   });
+}
+
+/** Raw items whose PK starts with `prefix`. */
+export async function scanCrmPrefix(
+  client: DynamoDBDocumentClient,
+  prefix: string,
+  limits?: StoragePaginationLimits,
+): Promise<Record<string, unknown>[]> {
+  const snapshot = readSnapshot.getStore();
+  if (!snapshot || limits || !SNAPSHOT_PREFIXES.some((covered) => prefix.startsWith(covered))) {
+    return scanCrmTable(client, [prefix], limits);
+  }
+  snapshot.items ??= scanCrmTable(client, SNAPSHOT_PREFIXES);
+  return (await snapshot.items).filter((item) => String(item.PK).startsWith(prefix));
+}
+
+export async function listCrmRecords(
+  client: DynamoDBDocumentClient,
+  kind: string,
+  limits?: StoragePaginationLimits,
+) {
+  const items = await scanCrmPrefix(client, `${kind.toUpperCase()}#`, limits);
   return items.map(item => clean(item)!).sort((a, b) =>
     String(b.updatedAt).localeCompare(String(a.updatedAt)) ||
     a.id.localeCompare(b.id));

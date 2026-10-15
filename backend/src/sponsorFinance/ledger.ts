@@ -1,6 +1,6 @@
-import { BatchGetCommand, ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { listCrmRecords } from '../db/sponsorCrm';
-import { TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM } from '../db/tableNames';
+import { BatchGetCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { listCrmRecords, scanCrmPrefix } from '../db/sponsorCrm';
+import { TABLE_BOOKKEEPING } from '../db/tableNames';
 import { berlinDate, displayMoney, scaledMoney, sourceKey } from './core';
 import { deliveredOn } from './context';
 import { daysBetween, deriveFollowUp, deriveStates, followUpUrgency } from './followUp';
@@ -44,23 +44,6 @@ export type FinanceLedger = {
 
 const CHASE_CODES = new Set<FollowUp['code']>(['reconcile', 'unblock', 'chase-payment', 'send-invoice', 'classify']);
 
-async function scanPrefix(client: DynamoDBDocumentClient, table: string, prefix: string) {
-  const items: Record<string, unknown>[] = [];
-  let cursor: Record<string, unknown> | undefined;
-  do {
-    const page = await client.send(new ScanCommand({
-      TableName: table,
-      ConsistentRead: true,
-      FilterExpression: 'begins_with(PK, :prefix)',
-      ExpressionAttributeValues: { ':prefix': prefix },
-      ExclusiveStartKey: cursor,
-    }));
-    items.push(...((page.Items || []) as Record<string, unknown>[]));
-    cursor = page.LastEvaluatedKey;
-  } while (cursor);
-  return items;
-}
-
 async function ledgerSources(client: DynamoDBDocumentClient, ids: string[]) {
   const found = new Map<string, Record<string, unknown>>();
   for (let index = 0; index < ids.length; index += 100) {
@@ -96,7 +79,7 @@ export async function financeLedger(
     preload?.organizations ?? listCrmRecords(client, 'organization'),
     preload?.deals ?? listCrmRecords(client, 'deal'),
     preload?.deliverables ?? listCrmRecords(client, 'deliverable'),
-    scanPrefix(client, TABLE_SPONSOR_CRM, 'SPONSOR_FINANCE'),
+    scanCrmPrefix(client, 'SPONSOR_FINANCE'),
   ]);
   const states = new Map<string, FinanceState>();
   const recorded = new Map<string, RecordedPayment>();
