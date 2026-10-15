@@ -482,7 +482,7 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /calendar-week is-current-week/);
     assert.match(dom.grid.innerHTML, /calendar-week-number is-current-week/);
     assert.match(dom.grid.innerHTML, /calendar-day[^"]*is-current-week/);
-    expectCalendarRange(harness.requests[0], "2026-07-27", "2026-09-06");
+    expectCalendarRange(harness.requests[0], "2026-08-03", "2026-09-06");
 
     // Toggle off Alexey's calendar layer
     dom.surface.querySelector('[data-layer="alexey"]').checked = false;
@@ -650,15 +650,65 @@ describe("Planning surface production behavior", () => {
     assert.equal(dom.surface.querySelector("[data-period-heading]").textContent, "December 2026");
     assert.match(dom.grid.innerHTML, /December 1, 2026/);
 
-    // A month starting on Sunday includes the full week containing its first day.
+    // Nov 1 2026 is a Sunday: the month opens on its first workday, so the
+    // previous-month week (Mon Oct 26 - Fri Oct 30) is not shown.
     dom.pickerToggle.onclick({ stopPropagation() {} });
     dom.pickerMonthBtns[10].onclick({ stopPropagation() {} });
     await nextTicks();
     assert.equal(dom.surface.querySelector("[data-period-heading]").textContent, "November 2026");
-    assert.match(dom.grid.innerHTML, /Monday, October 26, 2026/);
-    assert.match(dom.grid.innerHTML, /Sunday, November 1, 2026/);
-    assert.match(dom.grid.innerHTML, /Saturday, November 7, 2026/);
+    assert.doesNotMatch(dom.grid.innerHTML, /Monday, October 26, 2026/);
+    assert.doesNotMatch(dom.grid.innerHTML, /Sunday, November 1, 2026/);
+    assert.doesNotMatch(dom.grid.innerHTML, /Saturday, November 7, 2026/);
     assert.match(dom.grid.innerHTML, /Monday, November 2, 2026/);
+  });
+
+  // Regression guard: weekends were removed from the calendar on purpose and
+  // came back once by accident (e7642faf). Both views must stay Monday-Friday.
+  test("shows exactly five weekday columns and folds weekend entries into a Friday note", async () => {
+    const dom = createCalendarDom();
+    const harness = createPlanningHarness({
+      calendar: dom,
+      request: async (url) => {
+        const value = new URL(url);
+        if (value.pathname.endsWith("/overlays")) return { items: [] };
+        return {
+          alerts: [],
+          holidays: [{ kind: "school-holiday", name: "Weekend school holiday", startDate: "2026-08-15", endDate: "2026-08-16" }],
+          items: [
+            { id: "sat", activityType: "webinar", status: "confirmed", title: "Cohort kickoff", startKey: "2026-08-15", endKey: "2026-08-15" },
+            { id: "sun", activityType: "webinar", status: "confirmed", title: "Hackathon demo", startKey: "2026-08-16", endKey: "2026-08-16" },
+          ],
+        };
+      },
+    });
+    await harness.surface.renderCalendarSurface();
+    await nextTicks();
+    const expectWeekdaysOnly = () => {
+      const html = dom.grid.innerHTML;
+      const headings = [...html.matchAll(/<strong>([^<]+)<\/strong>/g)].map((match) => match[1]);
+      assert.deepEqual(headings, ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]);
+      assert.doesNotMatch(html, /Saturday|Sunday/);
+      const weeks = html.split(/<div class="calendar-week(?: is-current-week)?">/).slice(1);
+      assert.ok(weeks.length > 0);
+      for (const week of weeks) {
+        assert.equal((week.match(/<section/g) || []).length, 5);
+      }
+      for (const [, date] of html.matchAll(/data-day="(\d{4}-\d{2}-\d{2})"/g)) {
+        const day = new Date(`${date}T00:00:00Z`).getUTCDay();
+        assert.ok(day >= 1 && day <= 5, `${date} is a weekend day`);
+      }
+      // Weekend entries are not dropped: they collapse into a note on Friday.
+      assert.match(html, /data-day="2026-08-14"[\s\S]*?calendar-weekend-note" data-open-day="2026-08-15"[\s\S]*?\+ weekend · 2/);
+      assert.match(html, /Sat, Aug 15: Cohort kickoff/);
+      assert.match(html, /Sun, Aug 16: Hackathon demo/);
+      assert.doesNotMatch(html, /Weekend school holiday/);
+    };
+    expectWeekdaysOnly();
+    dom.view.value = "week";
+    await dom.view.onchange();
+    await nextTicks();
+    expectWeekdaysOnly();
+    assert.equal((dom.grid.innerHTML.match(/<section/g) || []).length, 5);
   });
 
   test("creates, edits, and dismisses Calendar data through canonical mutation contracts", async () => {

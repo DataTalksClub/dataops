@@ -385,6 +385,11 @@ export function createPlanningSurface(context) {
       if (surface.querySelector("[data-view]").value === "week") return [iso(monday(cursor)), iso(sunday(cursor))];
       const year = cursor.getUTCFullYear(), month = cursor.getUTCMonth();
       const first = new Date(Date.UTC(year, month, 1));
+      // The grid is Monday-Friday only, so a month that opens on a weekend
+      // starts at its first workday instead of a week of previous-month days.
+      const day = first.getUTCDay();
+      if (day === 0) first.setUTCDate(2);
+      else if (day === 6) first.setUTCDate(3);
       const last = new Date(Date.UTC(year, month + 1, 0));
       return [iso(monday(first)), iso(sunday(last))];
     }
@@ -404,7 +409,9 @@ export function createPlanningSurface(context) {
           ? `Week of ${new Date(`${from}T00:00:00Z`).toLocaleDateString("en", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}`
           : cursor.toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });
       periodNav.setTitle(periodLabel);
-      const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+      // Weekends are excluded on purpose: the calendar plans workdays. Weekend
+      // entries are folded into a "+ weekend" note on the preceding Friday.
+      const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
       const weekdayHeadings = [
         '<strong class="calendar-week-heading" aria-label="Week number">Week</strong>',
         ...days.map((day) => `<strong>${day}</strong>`),
@@ -413,15 +420,46 @@ export function createPlanningSurface(context) {
         currentMondayIso = iso(monday(parseIsoDateValue(todayIso)));
       let weekMarkup = "",
         weekIsCurrent = false;
+      const itemsOn = (date) => visibleItems.filter((item) => (
+          (item.startKey || item.startDate || "").slice(0, 10) <= date
+          && (item.endKey || item.endDate || "").slice(0, 10) >= date
+        )),
+        overlaysOn = (date) => overlays.filter((overlay) => {
+          if (overlay.startDate > date || overlay.endDate < date) return false;
+          if (isAvailableOverlay(overlay)) return showAvailable;
+          if (overlay.provider === "alexey-calendar") return showAlexey;
+          return showOverlay;
+        }),
+        weekendNote = (fridayValue) => {
+          const entries = [1, 2].flatMap((offset) => {
+            const value = new Date(fridayValue);
+            value.setUTCDate(value.getUTCDate() + offset);
+            const date = iso(value),
+              label = value.toLocaleDateString("en", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+            return [
+              ...itemsOn(date).map((item) => ({ date, text: `${label}: ${item.title}` })),
+              ...overlaysOn(date).filter((overlay) => !isAvailableOverlay(overlay))
+                .map((overlay) => ({ date, text: `${label}: ${overlay.label}` })),
+            ];
+          });
+          if (!entries.length) return "";
+          const texts = entries.map((entry) => entry.text),
+            noun = entries.length === 1 ? "entry" : "entries";
+          return `
+            <button type="button" class="calendar-weekend-note" data-open-day="${entries[0].date}"
+              title="${escapeHtml(texts.join("\n"))}"
+              aria-label="${entries.length} weekend ${noun}: ${escapeHtml(texts.join("; "))}">
+              + weekend · ${entries.length}
+            </button>
+          `;
+        };
       for (let dateValue = new Date(`${from}T00:00:00Z`); dateValue <= new Date(`${to}T00:00:00Z`); dateValue.setUTCDate(dateValue.getUTCDate() + 1)) {
         const dayOfWeek = dateValue.getUTCDay();
+        if (dayOfWeek === 0 || dayOfWeek === 6) continue;
         const date = iso(dateValue),
           isOutside = !isWeek && dateValue.getUTCMonth() !== cursor.getUTCMonth(),
           isToday = date === todayIso,
-          dayItems = visibleItems.filter((item) => (
-            (item.startKey || item.startDate || "").slice(0, 10) <= date
-            && (item.endKey || item.endDate || "").slice(0, 10) >= date
-          )),
+          dayItems = itemsOn(date),
           dayHolidays = holidays.filter((holiday) => (
             holiday.startDate <= date
             && holiday.endDate >= date
@@ -430,12 +468,7 @@ export function createPlanningSurface(context) {
               || (holiday.kind !== "berlin-public-holiday" && showSchool)
             )
           )),
-          dayOverlays = overlays.filter((overlay) => {
-            if (overlay.startDate > date || overlay.endDate < date) return false;
-            if (isAvailableOverlay(overlay)) return showAvailable;
-            if (overlay.provider === "alexey-calendar") return showAlexey;
-            return showOverlay;
-          }),
+          dayOverlays = overlaysOn(date),
           // A holiday blocks the day whether or not its layer is shown, so an
           // open slot on it is flagged as a conflict rather than offered as free.
           blockingHoliday = holidays.find((holiday) => holiday.startDate <= date && holiday.endDate >= date),
@@ -529,10 +562,11 @@ export function createPlanningSurface(context) {
               ${holidayMarkup}
               ${activityMarkup}
               ${overlayMarkup}
+              ${dayOfWeek === 5 ? weekendNote(dateValue) : ""}
             </div>
           </section>
         `;
-        if (dayOfWeek === 0) weekMarkup += `</div>`;
+        if (dayOfWeek === 5) weekMarkup += `</div>`;
       }
       if (weekMarkup && !weekMarkup.trimEnd().endsWith("</div>")) {
         weekMarkup += `</div>`;

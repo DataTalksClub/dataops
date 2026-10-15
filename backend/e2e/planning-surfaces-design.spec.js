@@ -159,8 +159,8 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   await expect(planningAlerts.getByRole("button", { name: "Dismiss" }).first()).toBeVisible();
   await planningAlerts.locator("summary").click();
   await expect(surface.getByText("school-holiday-overlap")).toHaveCount(0);
-  await expect(surface.locator(".calendar-weeks > .calendar-week")).toHaveCount(6);
-  await expect(surface.locator(".calendar-weeks > .calendar-week > section.calendar-day")).toHaveCount(42);
+  await expect(surface.locator(".calendar-weeks > .calendar-week")).toHaveCount(5);
+  await expect(surface.locator(".calendar-weeks > .calendar-week > section.calendar-day")).toHaveCount(25);
   await expectNoPageOverflow(page, 1440);
   await expect(surface).toHaveCSS("gap", "12px");
   await expectExactPalette(page, false);
@@ -188,7 +188,7 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   await surface.getByRole("button", { name: "Calendar layers and view" }).click();
   await surface.locator("select[data-view]").selectOption("week");
   await expect(surface.locator(".calendar-weeks > .calendar-week")).toHaveCount(1);
-  await expect(surface.locator(".calendar-weeks > .calendar-week > section.calendar-day")).toHaveCount(7);
+  await expect(surface.locator(".calendar-weeks > .calendar-week > section.calendar-day")).toHaveCount(5);
   await page.evaluate(() => window.scrollTo(0, 0));
   await useTheme(page, false);
   await expectNoPageOverflow(page, 390);

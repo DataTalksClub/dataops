@@ -272,7 +272,7 @@
 .planner-failure p { margin: 2px 0 0; color: var(--dk-text-muted); }.planner-failure { background: var(--dk-danger-bg); }.planner-failure strong { color: var(--dk-danger-text); }.calendar-grid {
   display: grid;
   min-width: 0;
-  grid-template-columns: 44px repeat(7, minmax(0, 1fr));
+  grid-template-columns: 44px repeat(5, minmax(0, 1fr));
   overflow-x: auto;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
@@ -289,7 +289,7 @@
 }.calendar-weekdays strong.calendar-week-heading {
   text-align: center;
 }.calendar-weekdays strong:last-child,
-.calendar-day:nth-of-type(7n),
+.calendar-day:nth-of-type(5n),
 .calendar-day:last-child { border-right: 0; }.calendar-week-number {
   display: flex;
   align-items: flex-start;
@@ -315,7 +315,7 @@
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-surface);
   padding: 7px;
-}.calendar-day:nth-last-child(-n + 7) { border-bottom: 0; }.calendar-day.is-outside { background: var(--dk-bg-muted); }.calendar-day.is-outside .calendar-day-heading,
+}.calendar-day:nth-last-child(-n + 5) { border-bottom: 0; }.calendar-day.is-outside { background: var(--dk-bg-muted); }.calendar-day.is-outside .calendar-day-heading,
 .calendar-day.is-outside .calendar-day-items { color: var(--dk-text-muted); }.calendar-day.is-today {
   background: var(--dk-accent-soft);
 }
@@ -448,6 +448,20 @@
 .calendar-holiday small,
 .calendar-activity small,
 .calendar-overlay small { background: var(--dk-bg-inset); color: inherit; }
+/* Weekends are not columns; their entries collapse into one quiet note on Friday. */
+.calendar-weekend-note {
+  justify-self: start;
+  border: 1px dashed var(--dk-border-default);
+  border-radius: var(--dk-radius-full);
+  background: transparent;
+  color: var(--dk-text-muted);
+  padding: 0 var(--dk-space-2);
+  font: inherit;
+  font-size: var(--dk-text-xs);
+  line-height: 20px;
+  cursor: pointer;
+}
+.calendar-weekend-note:hover { border-style: solid; color: var(--dk-text-heading); }
 .calendar-overlay.is-available-slot {
   cursor: pointer;
   border-style: dashed;

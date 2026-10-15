@@ -4,6 +4,8 @@ The authenticated operations calendar stores non-newsletter activities in the de
 
 Holiday source facts are shipped with the application and refreshed through authenticated `POST /api/calendar-items/holidays/sync`; requests never scrape upstream services. A complete generation is written under an immutable generation key before the current pointer is published, so malformed or interrupted refreshes retain the prior last-known-good generation. The sources are the [Berlin Public Holiday Act](https://gesetze.berlin.de/bsbe/document/jlr-FeiertGBErahmen) and the [official Berlin school-holiday order](https://www.berlin.de/sen/bjf/service/kalender/ferien/termine/). Range responses expose generation, freshness, stale, and out-of-horizon metadata.
 
+The calendar grid shows Monday to Friday only, in both the month and week views and on mobile. Weekends are excluded on purpose, not by accident. Weekend activities and overlay events are not dropped: they collapse into a small "+ weekend" note on the preceding Friday, which opens that weekend day's schedule. A month that starts on a Saturday or Sunday begins at its first workday.
+
 The read-only `CalendarOverlayProvider` in `backend/src/calendar/overlays.ts` lets another feature project display-only records. Providers do not gain calendar CRUD access and their records are never persisted in the calendar table.
 
 ## Private workbook import

@@ -54,7 +54,7 @@
     padding: 8px;
   }body[data-workspace-view="calendar"] .calendar-week {
     display: grid;
-    grid-template-columns: 48px repeat(7, minmax(112px, 1fr));
+    grid-template-columns: 48px repeat(5, minmax(112px, 1fr));
     width: 100%;
     min-width: 0;
     overflow-x: auto;
@@ -71,8 +71,8 @@
     background: var(--dk-bg-muted);
     padding: 9px 4px;
   }body[data-workspace-view="calendar"] .calendar-day,
-body[data-workspace-view="calendar"] .calendar-day:nth-of-type(7n),
-body[data-workspace-view="calendar"] .calendar-day:nth-last-child(-n + 7) {
+body[data-workspace-view="calendar"] .calendar-day:nth-of-type(5n),
+body[data-workspace-view="calendar"] .calendar-day:nth-last-child(-n + 5) {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     width: 112px;
