@@ -29,11 +29,7 @@
    aliases above resolve to dakit semantic roles, so no hand dark values are
    needed here. Backdrop dim is --dk-bg-backdrop from the vendored tokens. */
 
-html,
 body {
-  min-height: 100%;
-  margin: 0;
-}body {
   overflow: hidden;
   background: var(--dk-bg-page);
   color: var(--dk-text-primary);
