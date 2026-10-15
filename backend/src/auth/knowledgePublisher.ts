@@ -5,7 +5,7 @@
  * keys and the configured repository, branch and workflow file.
  *
  * The principal is not an interactive user. It may read the knowledge
- * manifest and publish knowledge files, nothing else, and its publication
+ * manifest and file history and publish knowledge files, nothing else, and its publication
  * actor and message name the verified commit rather than anything the
  * request body claims.
  */
@@ -116,8 +116,9 @@ export async function handleKnowledgePublisher(event: LambdaEvent): Promise<Lamb
   }
   const method = (event.httpMethod || 'GET').toUpperCase();
   const path = event.path || '/';
-  const allowed = (method === 'GET' && path === '/knowledge/manifest') || (method === 'POST' && path === '/knowledge/publish');
-  if (!allowed) return response(403, { error: 'Knowledge publisher may only read the manifest and publish knowledge files' });
+  const allowed = (method === 'GET' && (path === '/knowledge/manifest' || path === '/knowledge/history'))
+    || (method === 'POST' && path === '/knowledge/publish');
+  if (!allowed) return response(403, { error: 'Knowledge publisher may only read the manifest and file history, and publish knowledge files' });
   const repo = claims.repository.split('/')[1];
   const result = await handleDocsRoutes(event, `git:${repo}@${claims.sha.slice(0, 12)}`, `Publish ${repo} ${claims.sha}`);
   return result || response(404, { error: 'Not found' });

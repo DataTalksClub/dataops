@@ -250,7 +250,7 @@ export class KnowledgeStore {
     while(publication && scanned++<100) {
       if(seen.has(publication.revision)) throw new KnowledgeError('Invalid history chain');seen.add(publication.revision);
       const change=publication.changes.find(c=>c.path===path||c.previousPath===path);
-      if(change) versions.push({revision:publication.revision,actor:publication.actor,time:publication.createdAt,message:publication.message,operation:change.operation,deleted:!publication.entries[path],binary:! /\.(md|csv|json|ya?ml|txt)$/.test(path)});
+      if(change) versions.push({revision:publication.revision,actor:publication.actor,time:publication.createdAt,message:publication.message,operation:change.operation,deleted:!publication.entries[path],sha256:publication.entries[path]?.sha??null,binary:! /\.(md|csv|json|ya?ml|txt)$/.test(path)});
       const parent=publication.parent;
       if(!parent) return {versions,cursor:null};
       if(versions.length>=limit || scanned>=100) return {versions,cursor:parent};

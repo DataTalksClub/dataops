@@ -1,6 +1,6 @@
 import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateKeyPairSync, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { handler } from '../src/handler';
@@ -83,6 +83,12 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
     const version = JSON.parse(history!.body).versions[0];
     assert.equal(version.actor, `git:knowledge@${SHA.slice(0, 12)}`);
     assert.equal(version.message, `Publish knowledge ${SHA}`);
+    const viaPublisher = await handler({ httpMethod: 'GET', path: '/knowledge/history', queryStringParameters: { path: 'content/a.md' },
+      headers: { Authorization: `Bearer ${token()}` }, body: null }, {});
+    assert.equal(viaPublisher.statusCode, 200);
+    assert.deepEqual(JSON.parse(viaPublisher.body).versions.map((item: { sha256: string | null }) => item.sha256), [
+      createHash('sha256').update('new').digest('hex'), createHash('sha256').update('old').digest('hex'),
+    ]);
     const stale = await request('POST', '/knowledge/publish', token(), {
       expectedRevision: revision, mutations: [{ path: 'content/a.md', content: 'stale' }],
     });
@@ -90,7 +96,7 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
   });
 
   it('may not reach any other route', async () => {
-    for (const [method, path] of [['GET', '/knowledge/history'], ['GET', '/docs'], ['PUT', '/docs'], ['POST', '/knowledge/restore'],
+    for (const [method, path] of [['GET', '/knowledge/version'], ['GET', '/docs'], ['PUT', '/docs'], ['POST', '/knowledge/restore'],
       ['GET', '/api/me'], ['GET', '/api/tasks'], ['POST', '/api/tasks'], ['GET', '/knowledge/publication'], ['GET', '/content/a.md']]) {
       assert.equal((await request(method, path, token())).statusCode, 403, `${method} ${path}`);
     }
