@@ -54,3 +54,42 @@ test("Sponsors creates ride on their collections, never the page header", async 
   // Add sponsor follows the Companies title.
   assert.match(markup, /Companies<\/h3>\s*<button[^>]*data-dk-create[^>]*data-add-org/);
 });
+
+test("sponsor owner options use the directory, preserve selected owners and escape labels", async () => {
+  const { sponsorOwnerOptions } = await import("../src/surfaces/finance/sponsor-deal-form.js");
+  const escapeOwner = (value) => escapeHtml(value).replaceAll(">", "&gt;");
+  const members = [
+    { id: "synthetic-operator", name: "New <Operator>", active: true },
+    { id: "inactive", name: "Former Operator", active: false },
+  ];
+  const options = sponsorOwnerOptions(members, "synthetic-operator", escapeOwner);
+  assert.match(options, /value="synthetic-operator" selected/);
+  assert.match(options, /New &lt;Operator&gt;/);
+  assert.doesNotMatch(options, /Former Operator|Grace/);
+  assert.match(sponsorOwnerOptions(members, "inactive", escapeOwner), /value="inactive" selected disabled/);
+  assert.match(sponsorOwnerOptions(members, "deleted", escapeOwner), /value="deleted" selected disabled>Unavailable assignee/);
+  assert.equal(members.length, 2, "rendering leaves the directory unchanged");
+});
+
+test("sponsor forms obtain their default and explicit assignee from the safe team directory", async () => {
+  const { createSponsorOwnerDirectory } = await import("../src/surfaces/finance/sponsor-deal-form.js");
+  const urls = [];
+  const directory = createSponsorOwnerDirectory({
+    request: async (url) => {
+      urls.push(url);
+      return { defaultAssigneeId: "replacement", teamMembers: [
+        { id: "replacement", name: "Replacement", active: true },
+        { id: "explicit", name: "Explicit", active: true },
+      ] };
+    },
+    workApiUrl: (path) => path,
+    escapeHtml,
+  });
+  await directory.load();
+  const select = { innerHTML: "" };
+  directory.fill(select);
+  assert.match(select.innerHTML, /value="replacement" selected/);
+  directory.fill(select, "explicit");
+  assert.match(select.innerHTML, /value="explicit" selected/);
+  assert.deepEqual(urls, ["/api/team-members"]);
+});

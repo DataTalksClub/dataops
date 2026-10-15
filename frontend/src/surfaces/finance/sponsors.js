@@ -1,3 +1,4 @@
+import { createSponsorOwnerDirectory, populateSponsorDealForm } from "./sponsor-deal-form.js";
 import { createSponsorCommunications } from "./sponsor-communications.js";
 import { createSponsorFinance } from "./sponsor-finance.js";
 import { createSponsorLeads } from "./sponsor-leads.js";
@@ -85,6 +86,7 @@ export function createSponsorCrmSurface(context) {
           ...options,
         }),
       message = surface.querySelector("[data-crm-message]");
+    const ownerDirectory = createSponsorOwnerDirectory({ request, workApiUrl, escapeHtml });
     let organizations = [],
       contacts = [],
       deals = [],
@@ -440,6 +442,7 @@ export function createSponsorCrmSurface(context) {
           api("/deals?limit=100"),
           api("/queue?limit=100"),
           pendingAlertPage,
+          ownerDirectory.load(),
         ]);
       organizations = organizationsResult.items || [];
       contacts = contactsResult.items || [];
@@ -461,28 +464,7 @@ export function createSponsorCrmSurface(context) {
     function openDeal(item) {
       const dialog = surface.querySelector("[data-deal-dialog]"),
         form = dialog.querySelector("form");
-      form.reset();
-      form.elements.dealId.value = item?.id || "";
-      if (item?.version) form.elements.version.value = item.version;
-      if (item?.organizationId) form.elements.organizationId.value = item.organizationId;
-      if (item?.status) form.elements.status.value = item.status;
-      if (item?.productKind) form.elements.productKind.value = item.productKind;
-      if (item?.amountEur != null) form.elements.amountEur.value = item.amountEur;
-      if (item?.lostReason) form.elements.lostReason.value = item.lostReason;
-      if (item?.nextAction) {
-        form.elements.nextActionType.value = item.nextAction.type || "follow_up";
-        form.elements.nextActionDue.value = item.nextAction.due || "";
-        form.elements.nextActionOwner.value = item.nextAction.owner || "";
-        form.elements.nextActionNote.value = item.nextAction.note || "";
-      }
-      const slot = item?.deliverables?.[0];
-      if (slot) {
-        if (slot.channel) form.elements.channel.value = slot.channel;
-        if (slot.plannedPublicationDate) form.elements.plannedPublicationDate.value = slot.plannedPublicationDate;
-        if (slot.materialDeadline) form.elements.materialDeadline.value = slot.materialDeadline;
-      }
-      const orgId = item?.organizationId || form.elements.organizationId.value;
-      fillContacts(form, orgId, item?.primaryContactId);
+      populateSponsorDealForm(form, item, ownerDirectory, fillContacts);
       openDialog(dialog);
     }
     surface.querySelectorAll("[data-crm-search],[data-crm-active],[data-crm-status]").forEach((input) =>

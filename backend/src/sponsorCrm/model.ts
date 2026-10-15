@@ -1,4 +1,3 @@
-export const GRACE_USER_ID = '00000000-0000-0000-0000-000000000001';
 export const VALERIIA_USER_ID = '00000000-0000-0000-0000-000000000002';
 export const ALEXEY_USER_ID = '00000000-0000-0000-0000-000000000003';
 
@@ -136,10 +135,10 @@ function financeOwns(facts: DealMoneyFacts | undefined, actionType: string): boo
   return Boolean(facts && FINANCE_CHORES[actionType] && facts.followUp.code === FINANCE_CHORES[actionType]);
 }
 
-export function defaultOwner(why: string, channel = ''): string {
+export function defaultOwner(defaultAssigneeId: string | null, why: string, channel = ''): string {
   if (why === 'yes' || why === 'price' || why === 'lost') return ALEXEY_USER_ID;
   if ((why === 'chase_materials' || why === 'copy') && (channel === 'workshop' || channel === 'course')) return VALERIIA_USER_ID;
-  return GRACE_USER_ID;
+  return defaultAssigneeId || '';
 }
 
 function push(
@@ -157,8 +156,9 @@ export function computeQueue(input: {
   finance: Map<string, DealMoneyFacts>;
   today: string;
   actorId: string;
+  defaultAssigneeId: string | null;
 }): QueueItem[] {
-  const { organizations, deals, deliverables, finance, today, actorId } = input;
+  const { organizations, deals, deliverables, finance, today, actorId, defaultAssigneeId } = input;
   const items: QueueItem[] = [];
   const dealsByOrg = new Map<string, Array<Record<string, unknown>>>();
   for (const deal of deals) {
@@ -196,7 +196,7 @@ export function computeQueue(input: {
         companyId: organizationId,
         companyName: name,
         due: today,
-        owner: String(organization.owner || GRACE_USER_ID),
+        owner: String(organization.owner || defaultAssigneeId || ''),
       });
     }
 
@@ -217,7 +217,7 @@ export function computeQueue(input: {
           companyName: name,
           dealId,
           due: today,
-          owner: String(deal.owner || defaultOwner('follow_up')),
+          owner: String(deal.owner || defaultOwner(defaultAssigneeId, 'follow_up')),
         });
       } else if (action && action.due <= today && !financeOwns(facts, action.type)) {
         push(items, {
@@ -249,7 +249,7 @@ export function computeQueue(input: {
           companyName: name,
           dealId,
           due: followUp.since && realDate(followUp.since) && followUp.since < today ? followUp.since : today,
-          owner: defaultOwner(why === 'chase_payment' ? 'chase_payment' : 'send_invoice'),
+          owner: defaultOwner(defaultAssigneeId, why === 'chase_payment' ? 'chase_payment' : 'send_invoice'),
         });
       }
       for (const deliverable of dealDeliverables) {
@@ -268,7 +268,7 @@ export function computeQueue(input: {
               dealId,
               deliverableId: String(deliverable.id),
               due: publication,
-              owner: defaultOwner('chase_materials', channel),
+              owner: defaultOwner(defaultAssigneeId, 'chase_materials', channel),
             });
           }
         }
@@ -283,7 +283,7 @@ export function computeQueue(input: {
             dealId,
             deliverableId: String(deliverable.id),
             due: today,
-            owner: defaultOwner('send_stats'),
+            owner: defaultOwner(defaultAssigneeId, 'send_stats'),
           });
         }
       }

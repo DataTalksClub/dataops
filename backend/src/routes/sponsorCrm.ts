@@ -16,13 +16,13 @@ import {
   updateOrganizationAtomic,
   type CrmRecord,
 } from '../db/sponsorCrm';
+import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { importCrmSnapshot } from '../sponsorCrm/importSnapshot';
 import { financeEnabled } from '../sponsorFinance/repository';
 import { financeLedger, type CrmPreload } from '../sponsorFinance/ledger';
 import {
   CHANNELS,
   DEAL_STATUSES,
-  GRACE_USER_ID,
   LOST_REASONS,
   PRODUCT_KINDS,
   computeQueue,
@@ -40,7 +40,7 @@ const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCod
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const parse = (event: LambdaEvent) => { try { return event.body ? JSON.parse(String(event.body)) as Record<string, unknown> : null; } catch { return null; } };
-const actor = (event: LambdaEvent) => Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === 'x-user-id')?.[1] || GRACE_USER_ID;
+const actor = (event: LambdaEvent) => Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === 'x-user-id')?.[1] || '';
 const text = (value: unknown, max = 500) => typeof value === 'string' && value.trim() && value.length <= max;
 const page = (items: unknown[], event: LambdaEvent) => {
   const query = event.queryStringParameters || {}, limit = Number(query.limit || 50), cursor = Number(query.cursor || 0);
@@ -173,14 +173,15 @@ async function organizationMoney(client: DynamoDBDocumentClient, today: string) 
 }
 
 export async function handleSponsorCrmRoutes(path: string, method: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
-  const body = parse(event), user = actor(event), today = todayOf(event);
+  const defaultAssigneeId = await resolveDefaultAssigneeId(client);
+  const body = parse(event), user = actor(event) || defaultAssigneeId || '', today = todayOf(event);
 
   if (path === '/api/sponsor-crm/queue' && method === 'GET') {
     const organizations = await listCrmRecords(client, 'organization');
     const deals = await listCrmRecords(client, 'deal');
     const deliverables = await listCrmRecords(client, 'deliverable');
     const finance = await moneyFacts(client, today, { organizations, deals, deliverables });
-    const items = computeQueue({ organizations, deals, deliverables, finance, today, actorId: user });
+    const items = computeQueue({ organizations, deals, deliverables, finance, today, actorId: user, defaultAssigneeId });
     return json(200, page(items, event));
   }
 

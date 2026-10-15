@@ -287,6 +287,12 @@ function createHarness({ request, route = null, setupSurface } = {}) {
     navigateCanonicalWorkspace() {},
     request: async (url, options = {}) => {
       requests.push({ url, options });
+      if (requestPath(url) === "/api/team-members") {
+        return {
+          teamMembers: [{ id: "operator-1", name: "Synthetic Operator", active: true }],
+          defaultAssigneeId: "operator-1",
+        };
+      }
       if (request) return request(url, options);
       return {};
     },

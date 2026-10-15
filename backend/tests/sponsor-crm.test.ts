@@ -1,3 +1,5 @@
+import { createUserWithId } from '../src/db/users';
+import { setDefaultAssignee, getWorkspaceSettings } from '../src/db/workspaceSettings';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +15,7 @@ import { createSession } from '../src/db/sessions';
 import { evaluateSponsorBookingAlerts } from '../src/sponsorCrm/alerts';
 import { listAllNotifications } from '../src/db/notifications';
 import { createOrganizationAtomic, deterministicCrmId, listBookingHistory } from '../src/db/sponsorCrm';
-import { GRACE_USER_ID } from '../src/sponsorCrm/model';
+const GRACE_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 const IMPORT_FIXTURE = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/sponsor-crm-import.json'), 'utf8'));
 
@@ -33,7 +35,7 @@ const grace = { 'x-user-id': GRACE_USER_ID };
 
 describe('sponsor CRM', () => {
   let client: DynamoDBDocumentClient;
-  before(async () => { const port = await startLocal(); client = await getClient(port); await createTables(client); });
+  before(async () => { const port = await startLocal(); client = await getClient(port); await createTables(client); await createUserWithId(client, GRACE_USER_ID, { name: 'Queue Fixture', email: 'queue@example.test', role: 'admin' }); await setDefaultAssignee(client, { defaultAssigneeId: GRACE_USER_ID, expectedVersion: 0 }); });
   after(stopLocal);
 
   it('rolls back organization create, update and archive when audit transaction fails', async () => {
@@ -293,7 +295,7 @@ describe('sponsor CRM', () => {
     assert.ok(listed.items.every((item: any) => item.kind === 'relationship' || item.kind === 'operational'));
   });
 
-  it('defaults the queue actor to Grace when x-user-id is absent', async () => {
+  it('uses the configured workspace assignee for requests without a local actor', async () => {
     const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', {
       displayName: 'Skip Auth Co',
       domain: 'skip-auth.example.invalid',
@@ -316,6 +318,31 @@ describe('sponsor CRM', () => {
     }, {}));
     assert.ok(listed.items.some((item: any) => item.companyId === organization.id), JSON.stringify(listed.items));
     assert.ok(listed.items.every((item: any) => !item.owner || item.owner === GRACE_USER_ID));
+  });
+
+  it('routes generated chores to the configured workspace owner while preserving explicit owners', async () => {
+    const replacement = 'sponsor-queue-replacement';
+    await createUserWithId(client, replacement, { name: 'Replacement Operator', email: 'replacement@example.test', role: 'admin' });
+    let settings = await getWorkspaceSettings(client);
+    await setDefaultAssignee(client, { defaultAssigneeId: replacement, expectedVersion: settings.version });
+    try {
+      const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', {
+        displayName: 'Configured Queue Co', lastOutboundAt: '2026-06-01', sourceKey: 'queue-configured-owner',
+      }));
+      await invoke('POST', '/api/sponsor-crm/deals', {
+        organizationId: organization.id, status: 'agreed', agreementDate: '2026-01-01',
+        nextAction: { type: 'follow_up', due: '2026-07-01', owner: GRACE_USER_ID, note: 'explicit owner stays' },
+        sourceKey: 'queue-configured-owner-deal',
+      });
+      const replacementQueue = data(await invoke('GET', '/api/sponsor-crm/queue?today=2026-07-01&limit=100', undefined, { 'x-user-id': replacement }));
+      assert.ok(replacementQueue.items.some((item: any) => item.companyId === organization.id && item.why === 'quiet' && item.owner === replacement));
+      const explicitQueue = data(await invoke('GET', '/api/sponsor-crm/queue?today=2026-07-01&limit=100', undefined, grace));
+      assert.ok(explicitQueue.items.some((item: any) => item.companyId === organization.id && item.owner === GRACE_USER_ID));
+      assert.ok(!explicitQueue.items.some((item: any) => item.companyId === organization.id && item.why === 'quiet'));
+    } finally {
+      settings = await getWorkspaceSettings(client);
+      await setDefaultAssignee(client, { defaultAssigneeId: GRACE_USER_ID, expectedVersion: settings.version });
+    }
   });
 
   it('imports a sanitized snapshot of companies, deals, deliverables and mail activity', async () => {

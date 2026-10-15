@@ -9,11 +9,7 @@ const PRODUCT_KINDS = ["one-off", "package", "course"];
 const CHANNELS = ["main", "secondary", "standalone", "social", "workshop", "course", "other"];
 const NEXT_ACTION_TYPES = ["follow_up", "send_invoice", "chase_payment", "chase_materials", "send_stats", "other"];
 const LOST_REASONS = ["no_budget", "no_reply", "wrong_fit", "timing", "other"];
-const OWNERS = [
-  ["00000000-0000-0000-0000-000000000001", "Grace"],
-  ["00000000-0000-0000-0000-000000000003", "Alexey"],
-  ["00000000-0000-0000-0000-000000000002", "Valeriia"],
-];
+
 
 function options(values, humanize) {
   return values
@@ -27,9 +23,6 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
   const channelOptions = options(CHANNELS, humanizeOptionLabel);
   const actionOptions = options(NEXT_ACTION_TYPES, humanizeOptionLabel);
   const lostOptions = options(LOST_REASONS, humanizeOptionLabel);
-  const ownerOptions = OWNERS.map(
-    ([id, name]) => html`<option value="${id}">${name}</option>`,
-  ).join("");
   // Each create rides on the collection it creates into: Add deal on the
   // Queue/Pipeline list head, Add sponsor on the Companies header. Refresh
   // suggestions trails the list head. The page header holds no actions.
@@ -328,7 +321,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
           ><label
             >Owner
             <select name="nextActionOwner">
-              ${ownerOptions}
+              <option value="">Select an owner</option>
             </select></label
           ><label class="span-all">Action note <input name="nextActionNote" /></label
           ><label

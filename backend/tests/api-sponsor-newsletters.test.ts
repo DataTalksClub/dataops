@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { handler } from '../src/handler';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
-import { GRACE_USER_ID } from '../src/sponsorCrm/model';
+const GRACE_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 const IMPORT_FIXTURE = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/sponsor-crm-import.json'), 'utf8'));
 const grace = { 'x-user-id': GRACE_USER_ID };
