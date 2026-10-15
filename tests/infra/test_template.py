@@ -687,7 +687,10 @@ def test_browser_e2e_is_visible_but_cannot_block_or_queue_deployment():
     assert "frontend/**" in e2e_workflow
     assert "workflow_dispatch:" in e2e_workflow
     assert "group: dataops-backend-e2e-${{ github.ref }}" in e2e_workflow
-    assert "cancel-in-progress: true" in e2e_workflow
+    # main must never cancel an in-progress run; only pull requests do.
+    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in e2e_workflow
+    assert "cancel-in-progress: true" not in e2e_workflow
+    assert "Tested commit:" in e2e_workflow
     assert "timeout-minutes: 45" in e2e_workflow
     assert "playwright install --with-deps chromium" in e2e_workflow
     assert "npm --prefix backend run test:e2e" in e2e_workflow

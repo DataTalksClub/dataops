@@ -1,4 +1,5 @@
 name: Validate Backend Browser E2E
+run-name: Browser E2E @ ${{ github.event.pull_request.head.sha || github.sha }}
 
 on:
   push:
@@ -22,9 +23,14 @@ on:
 permissions:
   contents: read
 
+# main must always get a completed run. Many sessions push to main, so a
+# cancelling group never finished there. Without cancel-in-progress the
+# running main build finishes, and GitHub keeps only the newest pending run
+# behind it: at most one running and one waiting, which batches the pushes
+# in between. Pull request branches still cancel superseded runs.
 concurrency:
   group: dataops-backend-e2e-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   browser-e2e:
@@ -60,6 +66,18 @@ jobs:
 
       - name: Run backend Playwright E2E
         run: npm --prefix backend run test:e2e
+
+      - name: Record tested commit
+        if: always()
+        env:
+          TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          {
+            echo "### Browser E2E: ${JOB_STATUS}"
+            echo
+            echo "Tested commit: \`${TESTED_SHA}\` (${GITHUB_REF_NAME}, ${GITHUB_EVENT_NAME})"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload backend Playwright artifacts
         if: failure()
