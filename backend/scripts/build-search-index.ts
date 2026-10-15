@@ -21,7 +21,7 @@ import { dirname, resolve } from 'node:path';
 
 import { createSearchIndex } from '../src/docs/searchIndex';
 import { iterContentDocs } from '../src/docs/search/extract';
-import { sopStructuredText } from '../src/docs/search/sopExtract';
+import { docsStructuredText } from '../src/docs/search/sopExtract';
 
 const repoRoot = resolve(__dirname, '..', '..');
 const DEFAULT_CONTENT_DIR = resolve(repoRoot, 'content');
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
   // Route schema_version: 1 SOPs through the SOP parser (#86) so step bodies,
   // prose, and captions are indexed without marker noise — matching the
   // in-process refresh performed by the content API after a save (#87).
-  const docs = iterContentDocs(contentDir, { structuredText: sopStructuredText });
+  const docs = iterContentDocs(contentDir, { structuredText: docsStructuredText });
 
   mkdirSync(dirname(output), { recursive: true });
   const index = createSearchIndex();

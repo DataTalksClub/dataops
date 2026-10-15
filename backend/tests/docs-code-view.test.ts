@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
@@ -18,6 +19,7 @@ import {
   resetDocsRuntime,
 } from '../src/docs/contentApi';
 import { syntheticKnowledge } from './helpers/knowledge';
+import { createSearchIndex } from '../src/docs/searchIndex';
 import type { LambdaEvent } from '../src/types';
 
 const SOP = [
@@ -317,6 +319,19 @@ describe('docs content API code view surface', () => {
     resetDocsRuntime();
     configureDocsRuntime(syntheticKnowledge(files, join(dir, 'api-case')).store);
   }
+
+  it('keeps executable code searchable in the portable build artifact', async () => {
+    const contentRoot = join(dir, 'builder-content');
+    mkdirSync(contentRoot, { recursive: true });
+    writeFileSync(join(contentRoot, 'recipe.md'), CODE_VIEW.replace('echo "dry-run"', 'echo "portableindexuniquetoken"'));
+    const output = join(dir, 'portable.index');
+    execFileSync(process.execPath, [
+      '--import', 'tsx', resolve(__dirname, '../scripts/build-search-index.ts'),
+      '--content-dir', contentRoot, '--output', output,
+    ], { cwd: resolve(__dirname, '../..'), encoding: 'utf8' });
+    const index = await createSearchIndex().load(output);
+    assert.equal(index.search('portableindexuniquetoken').length, 1);
+  });
 
   it('links the alternate view from the SOP and back from the view', async () => {
     const sop = await call(ev('GET', '/docs', { query: { path: 'content/accounts/sops/reset-password.md' } }));
