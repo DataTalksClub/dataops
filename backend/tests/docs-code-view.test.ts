@@ -264,6 +264,8 @@ describe('code view registry linkage', () => {
     writeDoc(root, 'x/sops/dup.md', SOP.replace('Reset a password', 'Dup target'));
     writeDoc(root, 'x/code-views/dup-1.md', body('content/x/sops/dup.md'));
     writeDoc(root, 'x/code-views/dup-2.md', body('content/x/sops/dup.md'));
+    writeDoc(root, 'x/reference/facts.md', '---\ntitle: Facts\ndoc_type: reference\n---\nFacts\n');
+    writeDoc(root, 'x/code-views/not-a-sop.md', body('content/x/reference/facts.md'));
     try {
       assert.throws(
         () => buildRegistry(join(root, 'content')),
@@ -273,6 +275,7 @@ describe('code view registry linkage', () => {
           assert.match(all, /code-views\/a\.md: sop reference not found/);
           assert.match(all, /code-views\/b\.md: code view is missing frontmatter `sop`/);
           assert.match(all, /code-views\/self\.md: code view cannot target itself/);
+          assert.match(all, /sop reference must target a SOP, got 'reference'/);
           assert.match(all, /code-views\/dup-2\.md: second code view for 'content\/x\/sops\/dup\.md'/);
           return true;
         },
@@ -303,7 +306,7 @@ describe('docs content API code view surface', () => {
 
   function fixtureWith(files: Record<string, string>): void {
     resetDocsRuntime();
-    configureDocsRuntime(syntheticKnowledge(files, scratch('api-case')).store);
+    configureDocsRuntime(syntheticKnowledge(files, join(dir, 'api-case')).store);
   }
 
   it('links the alternate view from the SOP and back from the view', async () => {
@@ -337,6 +340,36 @@ describe('docs content API code view surface', () => {
     const sop = await call(ev('GET', '/docs', { query: { path: 'content/accounts/sops/other.md' } }));
     assert.equal(sop.status, 200);
     assert.equal(sop.body.code_view, null);
+    assert.equal(sop.body.code_view_error, null);
+  });
+
+  it('distinguishes invalid linkage from an absent code alternative', async () => {
+    fixtureWith({
+      'content/accounts/sops/reset-password.md': SOP,
+      'content/accounts/code-views/broken-link.md': CODE_VIEW.replace(
+        'sop: content/accounts/sops/reset-password.md',
+        'sop: content/accounts/sops/missing.md',
+      ),
+    });
+    const doc = await call(ev('GET', '/docs', { query: { path: 'content/accounts/sops/reset-password.md' } }));
+    assert.equal(doc.status, 200);
+    assert.equal(doc.body.content, SOP);
+    assert.equal(doc.body.code_view, null);
+    assert.match(doc.body.code_view_error, /sop reference not found/);
+  });
+
+  it('does not turn a corpus storage failure into a missing alternate view', async () => {
+    resetDocsRuntime();
+    const viewPath = 'content/accounts/code-views/reset-password-code.md';
+    const fixture = syntheticKnowledge({
+      'content/accounts/sops/reset-password.md': SOP,
+      [viewPath]: CODE_VIEW,
+    }, join(dir, 'unavailable-corpus'));
+    fixture.s3.failKey = `objects/${fixture.publication.entries[viewPath].sha}`;
+    configureDocsRuntime(fixture.store);
+    const doc = await call(ev('GET', '/docs', { query: { path: 'content/accounts/sops/reset-password.md' } }));
+    assert.equal(doc.status, 500);
+    assert.equal(doc.body.error, 'Internal server error');
   });
 
   it('surfaces a broken code view body as parse_code_error without losing content', async () => {

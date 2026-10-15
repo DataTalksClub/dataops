@@ -428,8 +428,8 @@ async function getDoc(rt: DocsRuntime, rawPath: string): Promise<LambdaResponse>
  * alternate view linked to it (SOP side), so agents and the UI can switch
  * without a second listing call. A `code-view` document instead carries its
  * parsed body (`parsed_code_view`) and the canonical `sop_doc` back-link.
- * Registry problems never fail a document read: linkage degrades to null and
- * the registry/lint endpoints are where violations surface.
+ * Registry validation problems remain visible as code_view_error while the
+ * document stays readable. Storage/sync failures propagate normally.
  */
 async function applyDocTypeAndCodeView(
   body: Record<string, unknown>,
@@ -439,12 +439,14 @@ async function applyDocTypeAndCodeView(
 ): Promise<void> {
   const docType = frontmatterValue(content, 'doc_type');
   body.doc_type = docType;
+  body.code_view_error = null;
   let view: DocumentRecord | null = null;
   let sopDoc: DocumentRecord | null = null;
+  // A storage failure is not evidence that this document has no alternate view.
+  await rt.ensureSynced();
   try {
     // Linkage is corpus knowledge: the registry needs the whole synced tree,
     // not just the one document this request read.
-    await rt.ensureSynced();
     const registry = buildRegistry(rt.contentRoot);
     const record = registry.byPath.get(repoPath);
     if (record) {
@@ -459,8 +461,9 @@ async function applyDocTypeAndCodeView(
         view = registry.codeViewBySop.get(record.id) || null;
       }
     }
-  } catch {
-    // Registry violations must not break reading a document.
+  } catch (error) {
+    if (!(error instanceof DocumentRegistryError)) throw error;
+    body.code_view_error = error.message;
   }
   if (body.doc_type === 'code-view') {
     try {

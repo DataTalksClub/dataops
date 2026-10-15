@@ -208,6 +208,10 @@ export function buildRegistry(contentRoot: string, validate = true): DocumentReg
       violations.push(`${record.path}: code view cannot target itself`);
       continue;
     }
+    if (target.doc_type !== 'sop') {
+      violations.push(`${record.path}: sop reference must target a SOP, got '${target.doc_type}'`);
+      continue;
+    }
     const existing = codeViewBySop.get(target.id);
     if (existing) {
       violations.push(
