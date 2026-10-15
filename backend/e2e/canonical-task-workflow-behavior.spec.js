@@ -130,6 +130,7 @@ function isExpectedReloadAbort(entry, cardId) {
   if (url.pathname === '/api/tasks') return true;
   if (url.pathname === '/api/cards' && url.search === '?limit=100') return true;
   if (url.pathname === '/api/users') return true;
+  if (url.pathname === '/api/resources') return true;
   return false;
 }
 

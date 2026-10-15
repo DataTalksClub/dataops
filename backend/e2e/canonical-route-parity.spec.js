@@ -502,7 +502,8 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.goto(`/tasks?cardId=${fixture.card.id}`);
     const taskRow = page.locator(`.ops-queue-row[data-task-id="${fixture.task.id}"]`).first();
     await expect(taskRow).toBeVisible();
-    await taskRow.click();
+    // The title opens the task; the row's Where cell is a link to the Card.
+    await taskRow.locator('.ops-queue-main').click();
     await expect(page).toHaveURL(new RegExp(`/tasks\\?taskId=${fixture.task.id}&cardId=${fixture.card.id}$`));
     await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
     await expect(page.locator('#task-panel-close')).toBeFocused();
