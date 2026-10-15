@@ -23,7 +23,7 @@
  */
 
 import { lintText } from './lint';
-import { parseFrontmatter, splitFrontmatter, splitlines } from './parse';
+import { ParseError, parseFrontmatter, splitFrontmatter, splitlines } from './parse';
 import type { Frontmatter } from './types';
 
 export interface CodeViewFile {
@@ -100,7 +100,13 @@ function slugify(text: string): string {
  */
 export function parseCodeView(text: string): ParsedCodeView {
   const [rawFm, body] = splitFrontmatter(text);
-  const frontmatter: Frontmatter = rawFm ? parseFrontmatter(rawFm) : {};
+  let frontmatter: Frontmatter = {};
+  try {
+    if (rawFm) frontmatter = parseFrontmatter(rawFm);
+  } catch (error) {
+    if (error instanceof ParseError) throw new CodeViewParseError(error.message, error.line);
+    throw error;
+  }
   const schemaVersion =
     'schema_version' in frontmatter ? frontmatter.schema_version : null;
 
@@ -224,7 +230,13 @@ export function lintCodeView(text: string): string[] {
     violations.push('missing frontmatter');
     return violations;
   }
-  const fm = parseFrontmatter(rawFm);
+  let fm: Frontmatter;
+  try {
+    fm = parseFrontmatter(rawFm);
+  } catch (error) {
+    if (error instanceof ParseError) return [error.toString()];
+    throw error;
+  }
   const docType = 'doc_type' in fm ? fm.doc_type : null;
   if (docType !== 'code-view') {
     violations.push(`doc_type must be 'code-view' (got ${repr(docType)})`);
@@ -266,7 +278,13 @@ function repr(value: Frontmatter[string] | null | undefined): string {
  */
 export function lintDocument(text: string): string[] {
   const [rawFm] = splitFrontmatter(text);
-  const fm = rawFm ? parseFrontmatter(rawFm) : {};
+  let fm: Frontmatter = {};
+  try {
+    if (rawFm) fm = parseFrontmatter(rawFm);
+  } catch (error) {
+    if (error instanceof ParseError) return [error.toString()];
+    throw error;
+  }
   if (fm.doc_type === 'code-view') return lintCodeView(text);
   if (fm.doc_type === 'sop' || fm.doc_type === 'checklist') return lintText(text);
   return [];

@@ -14,8 +14,8 @@
 // ── Parse result shape (mirrors sop_parse.parse) ──────────────────────────────
 
 /**
- * Minimal frontmatter map. Values are scalars or string lists, matching the
- * YAML subset parsed by the SOP frontmatter reader.
+ * Frontmatter map. Values are string scalars or string lists, as produced by
+ * the SOP frontmatter reader (js-yaml, failsafe schema).
  */
 export type SopFrontmatter = Record<string, string | string[] | undefined>;
 

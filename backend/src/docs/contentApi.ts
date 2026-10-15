@@ -44,7 +44,6 @@ import {
   recordToDict,
   registryToDict,
   resolveReference,
-  DocumentRegistryError,
   LookupError,
   type DocumentRecord,
 } from './docRegistry';
@@ -266,7 +265,6 @@ export async function handleDocsRoutes(event: LambdaEvent, actor = process.env.D
     if (err instanceof ContentRootUnavailableError) {
       return jsonResponse(503, { error: contentRootUnavailableMessage(err.contentRoot) });
     }
-    if (err instanceof DocumentRegistryError) return jsonResponse(400, { error: err.message });
     if (err instanceof KnowledgeVersionNotFound) return jsonResponse(404,{error:err.message});
     if (err instanceof RevisionConflict) return jsonResponse(409, { error: err.message });
     if (err instanceof KnowledgeError) return jsonResponse(400, { error: err.message });
@@ -428,8 +426,9 @@ async function getDoc(rt: DocsRuntime, rawPath: string): Promise<LambdaResponse>
  * alternate view linked to it (SOP side), so agents and the UI can switch
  * without a second listing call. A `code-view` document instead carries its
  * parsed body (`parsed_code_view`) and the canonical `sop_doc` back-link.
- * Registry validation problems remain visible as code_view_error while the
- * document stays readable. Storage/sync failures propagate normally.
+ * Code-view linkage violations, and registry violations that name this
+ * document, are reported as code_view_error while the document stays
+ * readable; unrelated problems elsewhere in the corpus do not mark it. Storage/sync failures propagate normally.
  */
 async function applyDocTypeAndCodeView(
   body: Record<string, unknown>,
@@ -444,26 +443,26 @@ async function applyDocTypeAndCodeView(
   let sopDoc: DocumentRecord | null = null;
   // A storage failure is not evidence that this document has no alternate view.
   await rt.ensureSynced();
-  try {
-    // Linkage is corpus knowledge: the registry needs the whole synced tree,
-    // not just the one document this request read.
-    const registry = buildRegistry(rt.contentRoot);
-    const record = registry.byPath.get(repoPath);
-    if (record) {
-      body.doc_type = record.doc_type;
-      if (record.doc_type === 'code-view') {
-        try {
-          sopDoc = resolveReference(registry, record.sop);
-        } catch {
-          // Unresolvable `sop` — reported as a registry violation.
-        }
-      } else {
-        view = registry.codeViewBySop.get(record.id) || null;
+  // Linkage is corpus knowledge: the registry needs the whole synced tree,
+  // not just the one document this request read.
+  const registry = buildRegistry(rt.contentRoot);
+  const problems = new Set([
+    ...registry.codeViewViolations,
+    ...registry.violations.filter((violation) => violation.includes(repoPath)),
+  ]);
+  if (problems.size) body.code_view_error = [...problems].join('\n');
+  const record = registry.byPath.get(repoPath);
+  if (record) {
+    body.doc_type = record.doc_type;
+    if (record.doc_type === 'code-view') {
+      try {
+        sopDoc = resolveReference(registry, record.sop);
+      } catch {
+        // Unresolvable `sop` — reported as a registry violation.
       }
+    } else {
+      view = registry.codeViewBySop.get(record.id) || null;
     }
-  } catch (error) {
-    if (!(error instanceof DocumentRegistryError)) throw error;
-    body.code_view_error = error.message;
   }
   if (body.doc_type === 'code-view') {
     try {
@@ -715,12 +714,9 @@ async function runCorpusLint(rt: DocsRuntime): Promise<LambdaResponse> {
 async function processQuality(rt: DocsRuntime): Promise<LambdaResponse> {
   await rt.ensureSynced();
   const findings: Record<string, unknown>[] = [];
-  const validationErrors: string[] = [];
-  try {
-    buildRegistry(rt.contentRoot);
-  } catch (error) {
-    validationErrors.push((error as Error).message);
-  }
+  // Registry violations (colliding aliases, unresolved references) are
+  // reported here, one per entry; the docs endpoints keep serving.
+  const validationErrors = buildRegistry(rt.contentRoot).violations;
   for (const file of collectMarkdown(rt.contentRoot).sort()) {
     const text = readFileSync(file, 'utf-8');
     if (!text.includes('schema_version: 1')) continue;

@@ -2,8 +2,8 @@
 //
 // Only the keys the editor owns are touched, and each edit replaces exactly
 // that key's lines, so every other field, comment and formatting choice in
-// the frontmatter survives. Values are read from the markdown itself: the
-// server's minimal parser does not see folded scalars or unindented lists.
+// the frontmatter survives. Values are read from the markdown being edited,
+// so they reflect unsaved changes rather than the last server parse.
 
 function escapeRegex(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

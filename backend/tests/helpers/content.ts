@@ -28,7 +28,7 @@ export function findContentRoot(): string | null {
 /** Build a registry over the corpus, or null when no corpus is available. */
 export function findDocumentRegistry(): DocumentRegistry | null {
   const root = findContentRoot();
-  return root ? buildRegistry(root, false) : null;
+  return root ? buildRegistry(root) : null;
 }
 
 /** Known document IDs, or null when no corpus is available. */

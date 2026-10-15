@@ -231,7 +231,7 @@ it. The validation pipeline:
   steps" because the copy templates use a numbered list. The `raw`
   escape hatch is the right answer but the normalizer doesn't yet
   auto-detect these.
-- The frontmatter parser is a minimal YAML subset that handles the
-  patterns in current files. If we ever want richer frontmatter, swap
-  for PyYAML.
+- Frontmatter is read with js-yaml (failsafe schema: scalars stay
+  strings), so block lists may be indented or not and folded scalars
+  keep their continuation lines.
 - Lint is not yet wired into CI — for now it's a manual gate.

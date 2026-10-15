@@ -3,10 +3,12 @@
  *
  * Faithful TypeScript port of
  * `lambda-functions/src/lambda_functions/sop_parse.py`. The marker convention
- * is defined in `docs/sop-format.md`. Pure stdlib — no third-party deps.
+ * is defined in `docs/sop-format.md`. Frontmatter is read with js-yaml.
  *
  * Parity with the Python implementation is enforced by `tests/sop.test.ts`.
  */
+
+import yaml from 'js-yaml';
 
 import type {
   Frontmatter,
@@ -94,20 +96,6 @@ function strip(s: string): string {
   return s.replace(/^\s+/, '').replace(/\s+$/, '');
 }
 
-/** Mirror Python's `str.lstrip()` — trims leading whitespace. */
-function lstrip(s: string): string {
-  return s.replace(/^\s+/, '');
-}
-
-/** Mirror Python's `str.strip(char)` for a single character. */
-function stripChar(s: string, ch: string): string {
-  let a = 0;
-  let b = s.length;
-  while (a < b && s[a] === ch) a += 1;
-  while (b > a && s[b - 1] === ch) b -= 1;
-  return s.slice(a, b);
-}
-
 // ---------- frontmatter ----------
 
 export function splitFrontmatter(text: string): [string, string] {
@@ -116,51 +104,36 @@ export function splitFrontmatter(text: string): [string, string] {
   return [block[1], text.slice(block[0].length)];
 }
 
-/** Minimal YAML subset: scalars, inline lists, and `key:` + `  - item` lists. */
+/**
+ * Parse YAML frontmatter with a real YAML parser.
+ *
+ * The failsafe schema keeps every scalar a string (`90`, `true`, `null` and
+ * dates stay as written), which is the shape `Frontmatter` promises. Block
+ * lists are read whether or not their items are indented, and folded scalars
+ * keep their continuation lines. Lists keep their string items; nested
+ * mappings are not part of the frontmatter contract and are dropped.
+ * Malformed YAML raises a `ParseError` at the offending document line.
+ */
 export function parseFrontmatter(raw: string): Frontmatter {
+  let loaded: unknown;
+  try {
+    loaded = yaml.load(raw, { schema: yaml.FAILSAFE_SCHEMA });
+  } catch (err) {
+    if (err instanceof yaml.YAMLException) {
+      // +2: the opening `---` line, and marks are zero-based.
+      throw new ParseError(`invalid frontmatter YAML: ${err.reason}`, err.mark.line + 2);
+    }
+    throw err;
+  }
+  if (loaded === null || loaded === undefined) return {};
+  if (typeof loaded !== 'object' || Array.isArray(loaded)) {
+    throw new ParseError('frontmatter must be a YAML mapping', 2);
+  }
   const data: Frontmatter = {};
-  const lines = splitlines(raw);
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (!strip(line) || lstrip(line).startsWith('#')) {
-      i += 1;
-      continue;
-    }
-    if (line.startsWith(' ')) {
-      // continuation handled when we collect lists below
-      i += 1;
-      continue;
-    }
-    if (!line.includes(':')) {
-      i += 1;
-      continue;
-    }
-    const idx = line.indexOf(':');
-    const key = strip(line.slice(0, idx));
-    const value = strip(line.slice(idx + 1));
-    if (value === '') {
-      // Look ahead for `  - item` list
-      const items: string[] = [];
-      let j = i + 1;
-      while (j < lines.length && lines[j].startsWith('  -')) {
-        items.push(stripChar(strip(lstrip(lines[j]).slice(1)), '"'));
-        j += 1;
-      }
-      data[key] = items;
-      i = j;
-    } else if (value.startsWith('[') && value.endsWith(']')) {
-      const inner = strip(value.slice(1, -1));
-      if (!inner) {
-        data[key] = [];
-      } else {
-        data[key] = inner.split(',').map((v) => stripChar(strip(v), '"'));
-      }
-      i += 1;
-    } else {
-      data[key] = stripChar(value, '"');
-      i += 1;
-    }
+  for (const [key, value] of Object.entries(loaded as Record<string, unknown>)) {
+    if (value === null || value === undefined) data[key] = '';
+    else if (typeof value === 'string') data[key] = value;
+    else if (Array.isArray(value)) data[key] = value.filter((item): item is string => typeof item === 'string');
   }
   return data;
 }

@@ -13,7 +13,7 @@
  */
 
 import { parse, parseCodeView, parseFrontmatter, splitFrontmatter, ParseError, CodeViewParseError } from '../sop';
-import type { ParsedCodeView, ParsedSop, ProcedureSection, Section, Step } from '../sop';
+import type { Frontmatter, ParsedCodeView, ParsedSop, ProcedureSection, Section, Step } from '../sop';
 
 /**
  * Structured search text for a `schema_version: 1` SOP, or `null` when the
@@ -81,7 +81,13 @@ function rawBody(section: Section): string {
  */
 export function docsStructuredText(rawText: string): string | null {
   const [rawFm] = splitFrontmatter(rawText);
-  const fm = rawFm ? parseFrontmatter(rawFm) : {};
+  let fm: Frontmatter = {};
+  try {
+    if (rawFm) fm = parseFrontmatter(rawFm);
+  } catch (error) {
+    if (error instanceof ParseError) return null;
+    throw error;
+  }
   if (fm.doc_type === 'code-view') return codeViewStructuredText(rawText);
   return sopStructuredText(rawText);
 }

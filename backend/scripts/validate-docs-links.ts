@@ -16,14 +16,13 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, dirname } from 'node:path';
 
 import {
-  DocumentRegistryError,
   LookupError,
   buildRegistry,
   normalizeReference,
   resolveReference,
   type DocumentRegistry,
 } from '../src/docs/docRegistry';
-import { parseFrontmatter, splitFrontmatter } from '../src/docs/sop';
+import { ParseError, parseFrontmatter, splitFrontmatter, type Frontmatter } from '../src/docs/sop';
 
 const PROCESS_MARKDOWN_DIRS = ['_docs', 'docs', 'templates'];
 const PROCESS_MARKDOWN_FILES = ['.goal-v1.md', 'PROJECT_PLAN.md', 'PORTAL_ANALYSIS.md', 'README.md'];
@@ -45,14 +44,8 @@ export function validate(repoRoot: string, contentRoot = 'content'): string[] {
   const content = resolve(isAbsolute(contentRoot) ? contentRoot : join(root, contentRoot));
 
   const violations: string[] = [];
-  let registry: DocumentRegistry;
-  try {
-    registry = buildRegistry(content);
-  } catch (error) {
-    if (!(error instanceof DocumentRegistryError)) throw error;
-    violations.push(...error.violations.map((violation) => `content registry: ${violation}`));
-    registry = buildRegistry(content, false);
-  }
+  const registry = buildRegistry(content);
+  violations.push(...registry.violations.map((violation) => `content registry: ${violation}`));
 
   const markdownFiles = docsMarkdownFiles(root, content);
   violations.push(...validateRelatedDocs(root, markdownFiles, registry));
@@ -88,7 +81,14 @@ function validateRelatedDocs(repoRoot: string, markdownFiles: string[], registry
   const violations: string[] = [];
   for (const path of markdownFiles) {
     const [raw] = splitFrontmatter(readFileSync(path, 'utf8'));
-    const metadata = raw ? parseFrontmatter(raw) : {};
+    let metadata: Frontmatter = {};
+    try {
+      if (raw) metadata = parseFrontmatter(raw);
+    } catch (error) {
+      if (!(error instanceof ParseError)) throw error;
+      violations.push(`${repoPath(repoRoot, path)}: ${error.toString()}`);
+      continue;
+    }
     for (const related of asStrings((metadata as Record<string, unknown>).related_docs)) {
       if (isExternalOrAnchor(related)) continue;
       if (registryResolves(registry, related)) continue;

@@ -11,7 +11,7 @@ import {
   lintDocument,
   lintText,
 } from '../src/docs/sop/index';
-import { buildRegistry, DocumentRegistryError } from '../src/docs/docRegistry';
+import { buildRegistry } from '../src/docs/docRegistry';
 import { newDocContent } from '../src/docs/docScaffolds';
 import {
   handleDocsRoutes,
@@ -278,19 +278,12 @@ describe('code view registry linkage', () => {
     writeDoc(root, 'x/reference/facts.md', '---\ntitle: Facts\ndoc_type: reference\n---\nFacts\n');
     writeDoc(root, 'x/code-views/not-a-sop.md', body('content/x/reference/facts.md'));
     try {
-      assert.throws(
-        () => buildRegistry(join(root, 'content')),
-        (err: unknown) => {
-          assert.ok(err instanceof DocumentRegistryError);
-          const all = err.violations.join('\n');
-          assert.match(all, /code-views\/a\.md: sop reference not found/);
-          assert.match(all, /code-views\/b\.md: code view is missing frontmatter `sop`/);
-          assert.match(all, /code-views\/self\.md: code view cannot target itself/);
-          assert.match(all, /sop reference must target a SOP, got 'reference'/);
-          assert.match(all, /code-views\/dup-2\.md: second code view for 'content\/x\/sops\/dup\.md'/);
-          return true;
-        },
-      );
+      const all = buildRegistry(join(root, 'content')).violations.join('\n');
+      assert.match(all, /code-views\/a\.md: sop reference not found/);
+      assert.match(all, /code-views\/b\.md: code view is missing frontmatter `sop`/);
+      assert.match(all, /code-views\/self\.md: code view cannot target itself/);
+      assert.match(all, /sop reference must target a SOP, got 'reference'/);
+      assert.match(all, /code-views\/dup-2\.md: second code view for 'content\/x\/sops\/dup\.md'/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

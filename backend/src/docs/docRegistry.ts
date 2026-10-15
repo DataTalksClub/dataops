@@ -4,14 +4,20 @@
  * Ports `lambda-functions/src/lambda_functions/doc_registry.py` to TypeScript:
  * builds a registry of `content/` markdown documents with stable IDs, aliases,
  * and path lookups, and resolves `doc:` / wiki / path references. Frontmatter is
- * parsed with the SOP frontmatter reader (the same YAML subset the Python
- * registry used via `sop_parse.parse_frontmatter`).
+ * parsed with the SOP frontmatter reader (js-yaml).
+ *
+ * Content problems (bad ids, colliding aliases, unresolved references) never
+ * stop the build: one bad document must not take down every docs endpoint.
+ * They are collected in `registry.violations`, and a conflicting alias is
+ * dropped so ids and paths always resolve to their own document. Validators
+ * (`validate-docs-links`) fail on violations; the API reports them through
+ * `/docs/process-quality`.
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, posix, sep } from 'node:path';
 
-import { parseFrontmatter, splitFrontmatter } from './sop';
+import { ParseError, parseFrontmatter, splitFrontmatter } from './sop';
 import type { Frontmatter } from './sop';
 
 const DOCUMENT_ID_RE = /^[a-z0-9][a-z0-9._-]*$/;
@@ -32,16 +38,6 @@ export const VALID_DOC_TYPES = new Set([
   'code-view',
   'doc',
 ]);
-
-/** Thrown when registry validation finds violations. */
-export class DocumentRegistryError extends Error {
-  readonly violations: string[];
-  constructor(violations: string[]) {
-    super(violations.join('\n'));
-    this.name = 'DocumentRegistryError';
-    this.violations = violations;
-  }
-}
 
 export interface DocumentRecord {
   id: string;
@@ -85,6 +81,10 @@ export interface DocumentRegistry {
   byPath: Map<string, DocumentRecord>;
   /** code-view records keyed by the resolved target SOP's id (one per SOP). */
   codeViewBySop: Map<string, DocumentRecord>;
+  /** Content problems found while building; empty for a clean corpus. */
+  violations: string[];
+  /** The subset of `violations` about code-view ↔ SOP linkage. */
+  codeViewViolations: string[];
 }
 
 export function recordToDict(record: DocumentRecord): DocumentRecordDict {
@@ -140,7 +140,7 @@ function collectMarkdown(dir: string): string[] {
  * paths are computed against its parent (the repo/cache root), matching Python
  * `build_registry`.
  */
-export function buildRegistry(contentRoot: string, validate = true): DocumentRegistry {
+export function buildRegistry(contentRoot: string): DocumentRegistry {
   const repoRoot = posixParent(contentRoot);
   const records: DocumentRecord[] = [];
   const violations: string[] = [];
@@ -149,8 +149,14 @@ export function buildRegistry(contentRoot: string, validate = true): DocumentReg
   for (const file of files) {
     const text = readFileSync(file, 'utf-8');
     const [rawFm, body] = splitFrontmatter(text);
-    const metadata: Frontmatter = rawFm ? parseFrontmatter(rawFm) : {};
     const repoPath = toPosixRel(file, repoRoot);
+    let metadata: Frontmatter = {};
+    try {
+      if (rawFm) metadata = parseFrontmatter(rawFm);
+    } catch (error) {
+      if (!(error instanceof ParseError)) throw error;
+      violations.push(`${repoPath}: line ${error.line}: ${error.message}`);
+    }
     const mtime = Math.floor(statSync(file).mtimeMs / 1000);
     const record = recordFromMetadata(repoPath, body, metadata, mtime);
     records.push(record);
@@ -183,44 +189,59 @@ export function buildRegistry(contentRoot: string, validate = true): DocumentReg
     byPath.set(removePrefix(record.path, 'content/'), record);
     byPath.set('/' + removePrefix(record.path, 'content/'), record);
     for (const alias of record.aliases) {
-      addUnique(byAlias, normalizeAlias(alias), record, 'alias', violations);
+      let key: string;
+      try {
+        key = normalizeAlias(alias);
+      } catch {
+        continue; // already reported as an invalid path alias
+      }
+      addUnique(byAlias, key, record, 'alias', violations);
     }
   }
 
-  const registry: DocumentRegistry = { documents: records, byId, byAlias, byPath, codeViewBySop };
+  // An alias that names another document's id or path would make that
+  // reference ambiguous; ids and paths win and the alias is dropped.
+  violations.push(...dropAliasConflicts(byAlias, byId, 'id'));
+  violations.push(...dropAliasConflicts(byAlias, byPath, 'path'));
+
+  const codeViewViolations: string[] = [];
+  const registry: DocumentRegistry = {
+    documents: records, byId, byAlias, byPath, codeViewBySop, violations, codeViewViolations,
+  };
 
   // Resolve code-view → SOP links: the reference must exist and each SOP gets
   // at most one code view, so the alternate view can never fork into copies.
   for (const record of records) {
     if (record.doc_type !== 'code-view') continue;
     if (!record.sop) {
-      violations.push(`${record.path}: code view is missing frontmatter \`sop\``);
+      codeViewViolations.push(`${record.path}: code view is missing frontmatter \`sop\``);
       continue;
     }
     let target: DocumentRecord;
     try {
       target = resolveReference(registry, record.sop);
     } catch {
-      violations.push(`${record.path}: sop reference not found: '${record.sop}'`);
+      codeViewViolations.push(`${record.path}: sop reference not found: '${record.sop}'`);
       continue;
     }
     if (target.path === record.path) {
-      violations.push(`${record.path}: code view cannot target itself`);
+      codeViewViolations.push(`${record.path}: code view cannot target itself`);
       continue;
     }
     if (target.doc_type !== 'sop') {
-      violations.push(`${record.path}: sop reference must target a SOP, got '${target.doc_type}'`);
+      codeViewViolations.push(`${record.path}: sop reference must target a SOP, got '${target.doc_type}'`);
       continue;
     }
     const existing = codeViewBySop.get(target.id);
     if (existing) {
-      violations.push(
+      codeViewViolations.push(
         `${record.path}: second code view for '${record.sop}' (already at ${existing.path})`,
       );
       continue;
     }
     codeViewBySop.set(target.id, record);
   }
+  violations.push(...codeViewViolations);
 
   for (const record of records) {
     if (record.parent) {
@@ -245,14 +266,8 @@ export function buildRegistry(contentRoot: string, validate = true): DocumentReg
     }
   }
 
-  if (validate) {
-    violations.push(...validateAliasConflicts(byAlias, byId));
-    violations.push(...validateAliasPathConflicts(byAlias, byPath));
-    violations.push(...validateRelatedDocs(records, registry));
-    violations.push(...validateParentCycles(records, registry));
-    if (violations.length) throw new DocumentRegistryError(violations);
-  }
-
+  violations.push(...validateRelatedDocs(records, registry));
+  violations.push(...validateParentCycles(records, registry));
   return registry;
 }
 
@@ -310,29 +325,17 @@ function validateRelatedDocs(records: DocumentRecord[], registry: DocumentRegist
   return violations;
 }
 
-function validateAliasConflicts(
+function dropAliasConflicts(
   byAlias: Map<string, DocumentRecord>,
-  byId: Map<string, DocumentRecord>,
+  index: Map<string, DocumentRecord>,
+  label: 'id' | 'path',
 ): string[] {
   const violations: string[] = [];
-  for (const [alias, record] of byAlias) {
-    const idRecord = byId.get(alias);
-    if (idRecord && idRecord.path !== record.path) {
-      violations.push(`alias '${alias}' from ${record.path} conflicts with id from ${idRecord.path}`);
-    }
-  }
-  return violations;
-}
-
-function validateAliasPathConflicts(
-  byAlias: Map<string, DocumentRecord>,
-  byPath: Map<string, DocumentRecord>,
-): string[] {
-  const violations: string[] = [];
-  for (const [alias, record] of byAlias) {
-    const pathRecord = byPath.get(alias);
-    if (pathRecord && pathRecord.path !== record.path) {
-      violations.push(`alias '${alias}' from ${record.path} conflicts with path from ${pathRecord.path}`);
+  for (const [alias, record] of [...byAlias]) {
+    const other = index.get(alias);
+    if (other && other.path !== record.path) {
+      violations.push(`alias '${alias}' from ${record.path} conflicts with ${label} from ${other.path}`);
+      byAlias.delete(alias);
     }
   }
   return violations;

@@ -9,7 +9,6 @@ import {
   resolveReference,
   normalizeReference,
   recordToDict,
-  DocumentRegistryError,
   LookupError,
 } from '../src/docs/docRegistry';
 import { generatedId } from '../src/docs/search/extract';
@@ -93,22 +92,21 @@ describe('docRegistry - build + resolve (port of doc_registry.py)', () => {
     assert.throws(() => resolveReference(registry, 'does.not.exist'), LookupError);
   });
 
-  it('validates related_docs and raises on a dangling reference', () => {
+  it('reports a dangling related_docs reference and still builds', () => {
     writeDoc(
       contentRoot,
       'a.md',
       '---\nid: doc.a\ntitle: A\nrelated_docs: [doc.missing]\n---\n\nbody\n',
     );
-    assert.throws(() => buildRegistry(contentRoot), DocumentRegistryError);
-    // validate=false collects records without throwing
-    const registry = buildRegistry(contentRoot, false);
+    const registry = buildRegistry(contentRoot);
     assert.strictEqual(registry.documents.length, 1);
+    assert.deepStrictEqual(registry.violations, ["content/a.md: related_docs reference not found: 'doc.missing'"]);
   });
 
   it('detects duplicate ids', () => {
     writeDoc(contentRoot, 'a.md', '---\nid: dup.id\ntitle: A\n---\n\nbody\n');
     writeDoc(contentRoot, 'b.md', '---\nid: dup.id\ntitle: B\n---\n\nbody\n');
-    assert.throws(() => buildRegistry(contentRoot), /duplicate id 'dup.id'/);
+    assert.match(buildRegistry(contentRoot).violations.join('\n'), /duplicate id 'dup.id'/);
   });
 
   it('normalizeReference strips doc: and wiki wrappers', () => {
@@ -201,7 +199,7 @@ describe('docRegistry - build + resolve (port of doc_registry.py)', () => {
     assert.strictEqual(standaloneDict.parent_id, '');
   });
 
-  it('detects cycles in parent hierarchy and raises DocumentRegistryError', () => {
+  it('detects cycles in parent hierarchy', () => {
     writeDoc(
       contentRoot,
       'a.md',
@@ -213,41 +211,26 @@ describe('docRegistry - build + resolve (port of doc_registry.py)', () => {
       '---\nid: doc.b\ntitle: B\nparent: doc.a\n---\n\n# B\n',
     );
 
-    assert.throws(
-      () => buildRegistry(contentRoot),
-      (err: unknown) => {
-        assert.ok(err instanceof DocumentRegistryError);
-        assert.ok(
-          err.violations.some(
-            (v) =>
-              v.includes("cycle detected in parent hierarchy involving 'doc.a'") ||
-              v.includes("cycle detected in parent hierarchy involving 'doc.b'"),
-          ),
-        );
-        return true;
-      },
+    assert.ok(
+      buildRegistry(contentRoot).violations.some(
+        (v) =>
+          v.includes("cycle detected in parent hierarchy involving 'doc.a'") ||
+          v.includes("cycle detected in parent hierarchy involving 'doc.b'"),
+      ),
     );
   });
 
-  it('reports error on dangling parent reference and skips on validate=false', () => {
+  it('reports a dangling parent reference and leaves the parent unset', () => {
     writeDoc(
       contentRoot,
       'leaf.md',
       '---\nid: doc.leaf\ntitle: Leaf\nparent: doc.missing-parent\n---\n\n# Leaf\n',
     );
 
-    assert.throws(
-      () => buildRegistry(contentRoot),
-      (err: unknown) => {
-        assert.ok(err instanceof DocumentRegistryError);
-        assert.ok(
-          err.violations.some((v) => v.includes("parent reference not found: 'doc.missing-parent'")),
-        );
-        return true;
-      },
+    const registry = buildRegistry(contentRoot);
+    assert.ok(
+      registry.violations.some((v) => v.includes("parent reference not found: 'doc.missing-parent'")),
     );
-
-    const registry = buildRegistry(contentRoot, false);
     assert.strictEqual(registry.documents.length, 1);
     const leaf = registry.byId.get('doc.leaf');
     assert.ok(leaf);

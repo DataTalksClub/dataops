@@ -93,7 +93,13 @@ export function lintText(text: string): string[] {
     violations.push('missing frontmatter');
     return violations;
   }
-  const fm = parseFrontmatter(rawFm);
+  let fm: Frontmatter;
+  try {
+    fm = parseFrontmatter(rawFm);
+  } catch (error) {
+    if (error instanceof ParseError) return [error.toString()];
+    throw error;
+  }
   const docType = getDocType(fm);
   if (!(typeof docType === 'string' && (docType === 'sop' || docType === 'checklist'))) {
     violations.push(
