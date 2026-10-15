@@ -399,14 +399,14 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('#settings-menu')).toContainText('Sign out');
     await expect(page.locator('[data-workspace-view="admin"]')).toBeVisible();
     await expect(page.locator('[data-workspace-view="users"]')).toBeVisible();
-    await page.locator('#history-close').click();
+    await page.keyboard.press('Escape');
     await expect(page.locator('#settings-menu')).toBeHidden();
     await expect(page.locator('#settings-button')).toBeFocused();
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('#settings-button').click();
     await expect(page.locator('#settings-menu')).toBeFocused();
-    await page.locator('#history-close').click();
+    await page.keyboard.press('Escape');
     await expect(page.locator('#settings-button')).toBeFocused();
     await page.locator('#settings-button').click();
     const logoutResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/logout');
@@ -946,7 +946,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.getByRole('button', { name: 'Add slot' }).click();
     await page.getByRole('button', { name: 'Save issue' }).click();
     await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Invalid publicationDate');
-    await page.locator('#history-close').click();
+    await page.keyboard.press('Escape');
     await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
     const editableSlot = page.locator('[data-slots] article', { hasText: `Synthetic newsletter ${id}` });
     await editableSlot.getByRole('button', { name: `More actions for Synthetic newsletter ${id}` }).click();
@@ -958,7 +958,7 @@ test.describe('canonical frontend capability behavior', () => {
     expect(concurrentSlot.status()).toBe(200);
     await page.getByRole('button', { name: 'Save issue' }).click();
     await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Slot changed; reload and retry');
-    await page.locator('#history-close').click();
+    await page.keyboard.press('Escape');
     await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
     await page.reload();
     await setNewsletterDateRange(page, '2026-09-01', '2026-09-30');
