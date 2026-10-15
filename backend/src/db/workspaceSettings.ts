@@ -10,7 +10,7 @@ import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { TABLE_USERS } from './tableNames';
-import { getUser } from './users';
+import { getFormerUser, getUser } from './users';
 
 const SETTINGS_KEY = { PK: 'SETTINGS#workspace', SK: 'SETTINGS#workspace' } as const;
 
@@ -87,4 +87,31 @@ export async function resolveDefaultAssigneeId(client: DynamoDBDocumentClient): 
   if (!defaultAssigneeId) return null;
   const user = await getUser(client, defaultAssigneeId);
   return user && !user.disabled ? user.id : null;
+}
+
+/**
+ * Who new work goes to. A person a Template Task or recurring schedule names
+ * keeps it, unless they have left: a disabled or deleted person never sees
+ * new work, so it goes to the default assignee instead.
+ */
+export interface AssignmentPolicy {
+  defaultAssigneeId: string | null;
+  assigneeFor(namedId?: string | null): string | null;
+}
+
+/** `namedIds`: the people the work about to be created names. */
+export async function loadAssignmentPolicy(
+  client: DynamoDBDocumentClient,
+  namedIds: Iterable<string | null | undefined>,
+): Promise<AssignmentPolicy> {
+  const defaultAssigneeId = await resolveDefaultAssigneeId(client);
+  const gone = new Set<string>();
+  for (const id of new Set([...namedIds].filter((value): value is string => Boolean(value)))) {
+    const user = await getUser(client, id);
+    if (user ? user.disabled === true : Boolean(await getFormerUser(client, id))) gone.add(id);
+  }
+  return {
+    defaultAssigneeId,
+    assigneeFor: (namedId) => (namedId && !gone.has(namedId) ? namedId : defaultAssigneeId),
+  };
 }

@@ -9,7 +9,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { readAllPages } from './readAllPages';
 import { TABLE_TASKS } from './tableNames';
-import { resolveDefaultAssigneeId } from './workspaceSettings';
+import { loadAssignmentPolicy } from './workspaceSettings';
 import { createTask } from './tasks';
 import { cronMatchesDate, nextMatchingDate } from '../cron/cronMatch';
 import { berlinDate } from '../sponsorFinance/core';
@@ -286,8 +286,9 @@ async function generateRecurringTasks(
   endDate: string,
 ): Promise<{ generated: Task[]; skipped: number; failures: number }> {
   const configs = await listEnabledRecurringConfigs(client);
-  // A schedule without its own assignee goes to the workspace default.
-  const defaultAssigneeId = await resolveDefaultAssigneeId(client);
+  // A schedule without an assignee, or naming one who has left, goes to the
+  // workspace default.
+  const assignment = await loadAssignmentPolicy(client, configs.map(({ assigneeId }) => assigneeId));
 
   const generated: Task[] = [];
   let skipped = 0;
@@ -333,7 +334,9 @@ async function generateRecurringTasks(
           source: 'recurring',
           recurringConfigId: config.id,
         };
-        if (!taskData.assigneeId && defaultAssigneeId) taskData.assigneeId = defaultAssigneeId;
+        const assigneeId = assignment.assigneeFor(taskData.assigneeId as string | undefined);
+        if (assigneeId) taskData.assigneeId = assigneeId;
+        else delete taskData.assigneeId;
 
         const task = await createTask(client, taskData);
         generatedTaskIds.push(task.id);

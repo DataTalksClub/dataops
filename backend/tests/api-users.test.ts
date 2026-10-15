@@ -262,19 +262,21 @@ describe('API — Users', () => {
       assert.strictEqual(body.user.role, 'admin');
     });
 
+    it('PATCH does not flip disabled: disabling has its own route', async () => {
+      const res = await invoke('PATCH', `/api/users/${targetId}`, { disabled: true }, adminHeaders);
+      assert.strictEqual(res.statusCode, 400, res.body);
+      assert.strictEqual((await getUser(client, targetId))?.disabled, undefined);
+    });
+
     it('admin can disable a user', async () => {
-      const res = await invoke('PATCH', `/api/users/${targetId}`, {
-        disabled: true,
-      }, adminHeaders);
+      const res = await invoke('POST', `/api/users/${targetId}/disable`, {}, adminHeaders);
       assert.strictEqual(res.statusCode, 200, res.body);
       const body = JSON.parse(res.body);
       assert.strictEqual(body.user.disabled, true);
     });
 
     it('admin can re-enable a disabled user', async () => {
-      const res = await invoke('PATCH', `/api/users/${targetId}`, {
-        disabled: false,
-      }, adminHeaders);
+      const res = await invoke('POST', `/api/users/${targetId}/enable`, {}, adminHeaders);
       assert.strictEqual(res.statusCode, 200, res.body);
       const body = JSON.parse(res.body);
       assert.strictEqual(body.user.disabled, false);
@@ -319,13 +321,6 @@ describe('API — Users', () => {
       assert.strictEqual(res.statusCode, 400);
     });
 
-    it('rejects edit with 400 when disabled is not a boolean', async () => {
-      const res = await invoke('PATCH', `/api/users/${targetId}`, {
-        disabled: 'yes',
-      }, adminHeaders);
-      assert.strictEqual(res.statusCode, 400);
-    });
-
     it('rejects edit with 400 when no valid fields are provided', async () => {
       const res = await invoke('PATCH', `/api/users/${targetId}`, {
         id: 'cannot-change',
@@ -350,11 +345,9 @@ describe('API — Users', () => {
       assert.strictEqual(body.error, 'Method not allowed');
     });
 
-    it('returns 405 for DELETE /api/users/:id', async () => {
+    it('DELETE /api/users/:id is admin only', async () => {
       const res = await invoke('DELETE', '/api/users/00000000-0000-0000-0000-000000000001', undefined, {});
-      assert.strictEqual(res.statusCode, 405);
-      const body = JSON.parse(res.body);
-      assert.strictEqual(body.error, 'Method not allowed');
+      assert.strictEqual(res.statusCode, 403);
     });
   });
 

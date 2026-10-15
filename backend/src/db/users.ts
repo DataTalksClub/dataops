@@ -8,7 +8,7 @@ import {
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { TABLE_USERS } from './tableNames';
-import type { User } from '../types';
+import type { FormerUser, User } from '../types';
 
 /**
  * Strip DynamoDB key attributes (PK, SK) from an item.
@@ -195,7 +195,50 @@ async function getUsersByNormalizedEmail(client: DynamoDBDocumentClient, email: 
     .filter((user) => user.email.trim().toLowerCase() === normalized);
 }
 
+/**
+ * The display record a deleted account leaves behind: its id and name, so
+ * history that names the person (who completed a Task, who published a
+ * revision) still reads as a name. It lives under its own `FORMER#` key, so
+ * no account lookup, sign-in or USER# scan can ever find it.
+ */
+function formerUserKey(id: string) {
+  return { PK: `FORMER#${id}`, SK: `FORMER#${id}` };
+}
+
+function cleanFormerUser(item: Record<string, unknown> | undefined): FormerUser | null {
+  if (!item) return null;
+  return {
+    id: String(item.id),
+    name: String(item.name || ''),
+    deletedAt: String(item.deletedAt || ''),
+  };
+}
+
+async function getFormerUser(client: DynamoDBDocumentClient, id: string): Promise<FormerUser | null> {
+  const result = await client.send(new GetCommand({ TableName: TABLE_USERS, Key: formerUserKey(id) }));
+  return cleanFormerUser(result.Item as Record<string, unknown> | undefined);
+}
+
+async function listFormerUsers(client: DynamoDBDocumentClient): Promise<FormerUser[]> {
+  const items: Record<string, unknown>[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(new ScanCommand({
+      TableName: TABLE_USERS,
+      FilterExpression: 'begins_with(PK, :prefix)',
+      ExpressionAttributeValues: { ':prefix': 'FORMER#' },
+      ExclusiveStartKey: exclusiveStartKey,
+    }));
+    items.push(...(result.Items || []) as Record<string, unknown>[]);
+    exclusiveStartKey = result.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+  return items.map((item) => cleanFormerUser(item) as FormerUser);
+}
+
 export {
+  formerUserKey,
+  getFormerUser,
+  listFormerUsers,
   createUser,
   createUserWithId,
   getUser,

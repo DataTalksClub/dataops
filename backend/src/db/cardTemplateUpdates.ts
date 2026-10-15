@@ -22,7 +22,7 @@ import {
   type CardLifecycleAuditEvent,
 } from './taskCardLifecycle';
 import { resolveDependencyIds, templateTaskProjection } from '../templates/cardTemplateProjection';
-import { resolveDefaultAssigneeId } from './workspaceSettings';
+import { loadAssignmentPolicy, type AssignmentPolicy } from './workspaceSettings';
 
 import {
   buildCardTemplateUpdatePlan,
@@ -264,7 +264,7 @@ function addedTask(
   template: Template,
   card: Card,
   now: string,
-  defaultAssigneeId: string | null,
+  assignment: AssignmentPolicy,
   idsByRef: ReadonlyMap<string, string>,
 ): Task {
   const definitions = template.taskDefinitions || [];
@@ -280,7 +280,7 @@ function addedTask(
     taskHistory: [],
     createdAt: now,
     updatedAt: now,
-    ...templateTaskProjection(template, definition, order, card.anchorDate, card.id, defaultAssigneeId, idsByRef),
+    ...templateTaskProjection(template, definition, order, card.anchorDate, card.id, assignment, idsByRef),
   }) as Task;
 }
 
@@ -463,12 +463,12 @@ export async function applyCardTemplateUpdate(
     if (update.action === 'add') idsByRef.set(update.taskRef, deterministicTaskId(card.id, template.id, update.taskRef));
   }
   const replacements = new Map<string, Task>();
-  const defaultAssigneeId = plan.taskUpdates.some(({ action }) => action === 'add')
-    ? await resolveDefaultAssigneeId(client)
+  const assignment = plan.taskUpdates.some(({ action }) => action === 'add')
+    ? await loadAssignmentPolicy(client, (template.taskDefinitions || []).map(({ assigneeId }) => assigneeId))
     : null;
   for (const update of plan.taskUpdates) {
     if (update.action === 'add') {
-      const task = addedTask(update, template, card, now, defaultAssigneeId, idsByRef);
+      const task = addedTask(update, template, card, now, assignment!, idsByRef);
       replacements.set(task.id, task);
       continue;
     }

@@ -553,6 +553,13 @@ export interface User {
 
 export type UserRole = 'admin' | 'operator';
 
+/** What a deleted account leaves behind: a name for the history that cites it. */
+export interface FormerUser {
+  id: string;
+  name: string;
+  deletedAt: string;
+}
+
 // --- Session ---
 
 export interface Session {

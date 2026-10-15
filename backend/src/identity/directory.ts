@@ -13,14 +13,18 @@
 
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { getUser, listUsers } from '../db/users';
-import type { User, UserRole } from '../types';
+import { getFormerUser, getUser, listFormerUsers, listUsers } from '../db/users';
+import type { FormerUser, User, UserRole } from '../types';
 import { SUPPORTED_ROLES } from './actor';
 
 export interface SafeUserProjection {
   /** Stable user id. Routine UI resolves a label from this projection. */
   id: string;
-  /** Display name, or null when the referenced user no longer resolves. */
+  /**
+   * Display name, or null when the reference resolves to nothing. A deleted
+   * account still has its name here (it left a former-user record), so
+   * history that cites it reads as a person.
+   */
   name: string | null;
   /** Supported role, or null for a missing or unsupported-role reference. */
   role: UserRole | null;
@@ -28,7 +32,7 @@ export interface SafeUserProjection {
   active: boolean;
   /** True when the user exists but is disabled. */
   disabled: boolean;
-  /** False when the reference does not resolve to a user at all. */
+  /** False when the reference has no account: never existed, or deleted. */
   available: boolean;
 }
 
@@ -37,9 +41,9 @@ function supportedRole(user: User): UserRole | null {
 }
 
 /** Project one resolved (or unresolved) user reference. */
-export function safeUserProjection(id: string, user: User | null): SafeUserProjection {
+export function safeUserProjection(id: string, user: User | null, former: FormerUser | null = null): SafeUserProjection {
   if (!user) {
-    return { id, name: null, role: null, active: false, disabled: false, available: false };
+    return { id, name: former?.name || null, role: null, active: false, disabled: false, available: false };
   }
   const role = supportedRole(user);
   return {
@@ -59,6 +63,7 @@ export function safeUserProjection(id: string, user: User | null): SafeUserProje
  */
 export class TeamDirectory {
   private readonly cache = new Map<string, User | null>();
+  private readonly formerCache = new Map<string, FormerUser | null>();
   private loadedAll = false;
 
   constructor(private readonly client: DynamoDBDocumentClient) {}
@@ -69,7 +74,18 @@ export class TeamDirectory {
     for (const user of await listUsers(this.client)) {
       this.cache.set(user.id, user);
     }
+    for (const former of await listFormerUsers(this.client)) {
+      this.formerCache.set(former.id, former);
+    }
     this.loadedAll = true;
+  }
+
+  /** The name a deleted account left behind, for a reference with no account. */
+  private async resolveFormer(id: string): Promise<FormerUser | null> {
+    if (this.formerCache.has(id)) return this.formerCache.get(id) as FormerUser | null;
+    const former = this.loadedAll ? null : await getFormerUser(this.client, id);
+    this.formerCache.set(id, former);
+    return former;
   }
 
   async resolve(id: string): Promise<User | null> {
@@ -82,7 +98,8 @@ export class TeamDirectory {
 
   /** Resolve and project one reference. */
   async project(id: string): Promise<SafeUserProjection> {
-    return safeUserProjection(id, await this.resolve(id));
+    const user = await this.resolve(id);
+    return safeUserProjection(id, user, user || !id ? null : await this.resolveFormer(id));
   }
 
   /** Resolve and project several references, preserving first-seen order. */

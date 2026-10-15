@@ -1,5 +1,13 @@
 import { getClient } from '../db/client';
-import { getUser, listUsers, createUser, updateUser } from '../db/users';
+import { getUser, listFormerUsers, listUsers, createUser, updateUser } from '../db/users';
+import {
+  deleteUser,
+  disableUser,
+  enableUser,
+  reassignOpenWork,
+  summarizeHandover,
+  UserLifecycleError,
+} from '../db/userLifecycle';
 import type { LambdaEvent, LambdaResponse, UserRole } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -23,6 +31,12 @@ async function handleUserRoutes(path: string, method: string, rawBody: string | 
     // Route: /api/users (collection)
     if (suffix === '' || suffix === '/') {
       return await handleCollection(method, event, rawBody, client);
+    }
+
+    // Route: /api/users/:id/(handover|reassign|disable|enable)
+    const actionMatch = suffix.match(/^\/([^/]+)\/(handover|reassign|disable|enable)\/?$/);
+    if (actionMatch) {
+      return await handleLifecycle(method, decodeURIComponent(actionMatch[1]), actionMatch[2], event, rawBody, client);
     }
 
     // Route: /api/users/:id
@@ -83,9 +97,9 @@ async function resolveActor(event: LambdaEvent) {
  * Only `admin` users may create or mutate user records. `operator` users get
  * 403. This is the permission gate for every write endpoint in this route.
  */
-async function requireAdmin(event: LambdaEvent): Promise<{ ok: true } | { ok: false; response: LambdaResponse }> {
+async function requireAdmin(event: LambdaEvent): Promise<{ ok: true; actorId: string } | { ok: false; response: LambdaResponse }> {
   const actor = await resolveActor(event);
-  if (!actor || actor.role !== 'admin') {
+  if (!actor || actor.role !== 'admin' || actor.disabled) {
     return {
       ok: false,
       response: {
@@ -95,7 +109,54 @@ async function requireAdmin(event: LambdaEvent): Promise<{ ok: true } | { ok: fa
       },
     };
   }
-  return { ok: true };
+  return { ok: true, actorId: actor.id };
+}
+
+function lifecycleFailure(error: unknown): LambdaResponse | null {
+  if (!(error instanceof UserLifecycleError)) return null;
+  return {
+    statusCode: error.statusCode,
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ error: error.message, code: error.code, ...error.details }),
+  };
+}
+
+/**
+ * A person leaving: see what they hold, hand it over, disable, enable.
+ * Admin only. See db/userLifecycle.ts for the rules.
+ */
+async function handleLifecycle(
+  method: string,
+  id: string,
+  action: string,
+  event: LambdaEvent,
+  rawBody: string | null,
+  client: import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient
+): Promise<LambdaResponse> {
+  const expected = action === 'handover' ? 'GET' : 'POST';
+  if (method !== expected) {
+    return { statusCode: 405, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Method not allowed' }) };
+  }
+  const gate = await requireAdmin(event);
+  if (!gate.ok) return gate.response;
+  const body = parseBody(rawBody) || {};
+  try {
+    let result: unknown;
+    if (action === 'handover') result = await summarizeHandover(client, id);
+    else if (action === 'reassign') result = await reassignOpenWork(client, id, body.reassignTo, gate.actorId);
+    else if (action === 'disable') {
+      result = await disableUser(client, id, {
+        actorId: gate.actorId,
+        reassignTo: body.reassignTo,
+        newDefaultAssigneeId: body.newDefaultAssigneeId,
+      });
+    } else result = await enableUser(client, id);
+    return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify(result) };
+  } catch (error) {
+    const failure = lifecycleFailure(error);
+    if (failure) return failure;
+    throw error;
+  }
 }
 
 /**
@@ -108,11 +169,13 @@ async function handleCollection(
   client: import('@aws-sdk/lib-dynamodb').DynamoDBDocumentClient
 ): Promise<LambdaResponse> {
   if (method === 'GET') {
-    const users = await listUsers(client);
+    // Former users are deleted accounts: only their id and name remain, so
+    // the work history that cites them still shows who it was.
+    const [users, formerUsers] = await Promise.all([listUsers(client), listFormerUsers(client)]);
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
-      body: JSON.stringify({ users }),
+      body: JSON.stringify({ users, formerUsers }),
     };
   }
 
@@ -165,7 +228,7 @@ async function handleCollection(
 }
 
 /**
- * Handle /api/users/:id single resource routes: GET, PATCH (edit/disable).
+ * Handle /api/users/:id single resource routes: GET, PATCH (name/role), DELETE.
  */
 async function handleSingle(
   method: string,
@@ -220,11 +283,19 @@ async function handleSingle(
       }
       updates.role = body.role;
     }
+    // Disabling hands over open work and revokes credentials, so it has its
+    // own route rather than being a field flip.
     if (body.disabled !== undefined) {
-      if (typeof body.disabled !== 'boolean') {
-        return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'disabled must be a boolean' }) };
+      return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'Use POST /api/users/:id/disable or /enable to change whether an account is active' }) };
+    }
+    if (updates.role === 'operator') {
+      const current = await getUser(client, id);
+      if (current && current.role === 'admin' && !current.disabled) {
+        const otherAdmins = (await listUsers(client)).filter((user) => user.id !== id && user.role === 'admin' && !user.disabled);
+        if (otherAdmins.length === 0) {
+          return { statusCode: 409, headers: JSON_HEADERS, body: JSON.stringify({ error: 'This is the last active admin; make someone else an admin first', code: 'last_admin' }) };
+        }
       }
-      updates.disabled = body.disabled;
     }
 
     if (Object.keys(updates).length === 0) {
@@ -236,6 +307,24 @@ async function handleSingle(
       return { statusCode: 404, headers: JSON_HEADERS, body: JSON.stringify({ error: 'User not found' }) };
     }
     return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify({ user: updated }) };
+  }
+
+  if (method === 'DELETE') {
+    const gate = await requireAdmin(event);
+    if (!gate.ok) return gate.response;
+    const body = parseBody(rawBody) || {};
+    try {
+      const result = await deleteUser(client, id, {
+        actorId: gate.actorId,
+        reassignTo: body.reassignTo,
+        newDefaultAssigneeId: body.newDefaultAssigneeId,
+      });
+      return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify(result) };
+    } catch (error) {
+      const failure = lifecycleFailure(error);
+      if (failure) return failure;
+      throw error;
+    }
   }
 
   // Method not allowed

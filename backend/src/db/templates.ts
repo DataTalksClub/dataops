@@ -15,7 +15,7 @@ import { createTask, listTasksByCard } from './tasks';
 import type { Card, Template, Task } from '../types';
 import { templateLinkage, templateTaskProjection } from '../templates/cardTemplateProjection';
 import { prerequisitesFirst, templateDependencyIssues } from '../templates/taskDependencyGraph';
-import { resolveDefaultAssigneeId } from './workspaceSettings';
+import { loadAssignmentPolicy } from './workspaceSettings';
 
 export class TemplateVersionConflictError extends Error {
   constructor() {
@@ -343,7 +343,7 @@ async function instantiateTemplate(
   );
   const idsByRef = taskIdsByRef(taskDefinitions, (ref) => existingIds.get(ref) || crypto.randomUUID());
   const createdTasks: Task[] = [];
-  const defaultAssigneeId = await resolveDefaultAssigneeId(client);
+  const assignment = await loadAssignmentPolicy(client, taskDefinitions.map(({ assigneeId }) => assigneeId));
 
   // Prerequisites are written first so each dependent finds them present.
   for (const def of prerequisitesFirst(taskDefinitions)) {
@@ -354,7 +354,7 @@ async function instantiateTemplate(
     const order = taskDefinitions.indexOf(def);
     const taskData = {
       id: idsByRef.get(def.refId),
-      ...templateTaskProjection(template, def, order, anchorDate, cardId, defaultAssigneeId, idsByRef),
+      ...templateTaskProjection(template, def, order, anchorDate, cardId, assignment, idsByRef),
     };
 
     const task = await createTask(client, taskData);
@@ -381,7 +381,7 @@ async function createCardFromTemplate(
     openTaskCount: definitions.length,
   });
   const now = card.createdAt;
-  const defaultAssigneeId = await resolveDefaultAssigneeId(client);
+  const assignment = await loadAssignmentPolicy(client, definitions.map(({ assigneeId }) => assigneeId));
   const idsByRef = taskIdsByRef(definitions, () => crypto.randomUUID());
   const tasks = definitions.map((definition, order) => compact({
     id: idsByRef.get(definition.refId),
@@ -389,7 +389,7 @@ async function createCardFromTemplate(
     taskHistory: [],
     createdAt: now,
     updatedAt: now,
-    ...templateTaskProjection(template, definition, order, anchorDate, card.id, defaultAssigneeId, idsByRef),
+    ...templateTaskProjection(template, definition, order, anchorDate, card.id, assignment, idsByRef),
   }) as Task);
 
   // Card Put + Template condition + one Put per Task.
@@ -455,11 +455,11 @@ async function createCardFromDefinition(
 ): Promise<{ card: Card; tasks: Task[] }> {
   const definitions = template.taskDefinitions || [];
   const card = buildCard(cardData, { taskCount: definitions.length, openTaskCount: definitions.length });
-  const defaultAssigneeId = await resolveDefaultAssigneeId(client);
+  const assignment = await loadAssignmentPolicy(client, definitions.map(({ assigneeId }) => assigneeId));
   const idsByRef = taskIdsByRef(definitions, taskId);
   const tasks = definitions.map((definition, order) => ({
     id: taskId(definition.refId), version: 1, taskHistory: [], createdAt: card.createdAt, updatedAt: card.createdAt,
-    ...templateTaskProjection(template, definition, order, anchorDate, card.id, defaultAssigneeId, idsByRef),
+    ...templateTaskProjection(template, definition, order, anchorDate, card.id, assignment, idsByRef),
   }) as unknown as Task);
   const writes = [
     { table: TABLE_CARDS, key: cardKey(card.id), item: { ...cardKey(card.id), ...card } },

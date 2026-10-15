@@ -5,6 +5,7 @@ import type {
   TemplateCardDefinitionSnapshot,
   TemplateTaskDefinitionSnapshot,
 } from '../types';
+import type { AssignmentPolicy } from '../db/workspaceSettings';
 
 type Dict = Record<string, unknown>;
 
@@ -148,15 +149,16 @@ export function templateTaskProjection(
   order: number,
   anchorDate: string,
   cardId: string,
-  defaultAssigneeId: string | null,
+  assignment: AssignmentPolicy,
   taskIdsByRef: ReadonlyMap<string, string>,
 ): Dict {
   const snapshot = templateTaskDefinitionSnapshot(template, definition, order, anchorDate);
   const { dependsOnRefs, ...definitionFields } = snapshot;
   const dependsOn = resolveDependencyIds(definition.refId, dependsOnRefs, taskIdsByRef);
   // The snapshot keeps only a person the Template itself names for this Task;
-  // anything else goes to the workspace default assignee of the day.
-  const assigneeId = snapshot.assigneeId || defaultAssigneeId || undefined;
+  // anything else, or a named person who has since left, goes to the
+  // workspace default assignee of the day.
+  const assigneeId = assignment.assigneeFor(snapshot.assigneeId) || undefined;
   return {
     ...copy(definitionFields),
     ...(assigneeId ? { assigneeId } : {}),
