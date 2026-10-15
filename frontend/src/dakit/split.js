@@ -1,4 +1,4 @@
-/* dakit 0.2.0 b4aafde */
+/* dakit 0.2.0 4dbea95 */
 /* dakit list–detail split (docs/list-detail.md): keyboard movement in the
    list, focus that follows the visible pane, and the optional resize grip.
    Classic script with an idempotent global guard, like shell.js. Listeners
@@ -173,9 +173,34 @@
     handle.addEventListener("pointercancel", up);
   });
 
+  // Measure sticky bands instead of assuming a height: labels and touch
+  // targets can wrap. Anchors then land below the complete band.
+  var stickyBands = new Set();
+  function measureSticky(band) {
+    var scroller = band.closest(".dk-split__scroll");
+    if (scroller) scroller.style.setProperty("--dk-split-sticky-height", band.getBoundingClientRect().height + "px");
+  }
+  var stickyObserver = typeof ResizeObserver === "function" ? new ResizeObserver(function (entries) {
+    entries.forEach(function (entry) { measureSticky(entry.target); });
+  }) : null;
+  function initSticky(scope) {
+    stickyBands.forEach(function (band) {
+      if (document.contains(band)) return;
+      if (stickyObserver) stickyObserver.unobserve(band);
+      stickyBands.delete(band);
+    });
+    Array.prototype.forEach.call(scope.querySelectorAll(".dk-split__sticky"), function (band) {
+      measureSticky(band);
+      if (stickyBands.has(band)) return;
+      stickyBands.add(band);
+      if (stickyObserver) stickyObserver.observe(band);
+    });
+  }
+
   // --- init: stored widths and grip semantics, also for splits rendered later ------
   function initSplit(root) {
     var scope = root || document;
+    initSticky(scope);
     var splits = scope.matches && scope.matches(".dk-split") ? [scope] : scope.querySelectorAll(".dk-split");
     Array.prototype.forEach.call(splits, function (split) {
       var handle = split.querySelector(".dk-split__handle");
