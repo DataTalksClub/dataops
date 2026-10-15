@@ -135,3 +135,9 @@ export class TeamDirectory {
     return new Set((await this.members()).filter((member) => member.active).map((member) => member.id));
   }
 }
+
+/** Display names for publication actors (user ids, deleted accounts included); unnamed ids are left out. */
+export async function userDisplayNames(client: DynamoDBDocumentClient, ids: string[]): Promise<Record<string, string>> {
+  const projections = await new TeamDirectory(client).projectMany(ids);
+  return Object.fromEntries(projections.filter((user) => user.name).map((user) => [user.id, user.name as string]));
+}

@@ -18,7 +18,7 @@ import { resolve, sep } from 'node:path';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import {resolveInteractiveActor} from '../identity/actor';
-import { userDisplayNames } from '../db/users';
+import { userDisplayNames } from '../identity/directory';
 import { authErrorPage, browserAuthConfigured, browserUser, handleCallback, logout, startLogin, unauthenticatedApi } from '../auth/browserAuth';
 import { RUNTIME_ROOT } from '../runtimePaths';
 import type { LambdaEvent, LambdaResponse } from '../types';
