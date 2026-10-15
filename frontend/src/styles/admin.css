@@ -622,3 +622,26 @@ body[data-workspace-view="calendar"] .document-list {
 }body[data-workspace-view="tasks"] .operations-home > * {
   min-width: 0;
   width: 100%;
+.ops-default-assignee {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.ops-default-assignee-hint {
+  margin: 0;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+.ops-default-assignee-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+.ops-default-assignee-form .ops-field {
+  flex: 1 1 260px;
+  max-width: 360px;
+}
+.ops-default-assignee-form .ops-user-row-error {
+  flex-basis: 100%;
+}

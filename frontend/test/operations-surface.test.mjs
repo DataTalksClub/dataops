@@ -502,10 +502,10 @@ describe("Operations surface boundary", () => {
         entry.url === "/api/users/grace" &&
         entry.options.method === "PATCH",
     );
-    assert.equal(mutationIndex, 2);
+    assert.equal(mutationIndex, 3);
     assert.deepEqual(
       harness.requests.slice(mutationIndex + 1).map((entry) => entry.url),
-      ["/api/users", "/api/me"],
+      ["/api/users", "/api/me", "/api/team-members/default-assignee"],
       "a stale success refreshes the authoritative Users snapshot",
     );
     assert.deepEqual(harness.documentRefreshes, []);
@@ -594,11 +594,59 @@ describe("Operations surface boundary", () => {
     await nextTicks(3);
     assert.deepEqual(
       harness.requests.slice(mutationIndex + 1).map(({ url }) => url),
-      ["/api/users", "/api/me"],
+      ["/api/users", "/api/me", "/api/team-members/default-assignee"],
       "Cancel reads the account again instead of trusting stale form state",
     );
     assert.equal(findByText(harness.documentList, "Save changes", "button"), undefined);
     assert.equal(findAllByClass(harness.documentList, "surface-summary").length, 0);
+  });
+
+  test("an admin picks the workspace default assignee on the Users page", async () => {
+    const users = [
+      { id: "alexey", name: "Alexey", email: "alexey@example.test", role: "admin" },
+      { id: "orin", name: "Orin", email: "orin@example.test", role: "admin" },
+      { id: "gone", name: "Gone", email: "gone@example.test", role: "operator", disabled: true },
+    ];
+    let settings = { defaultAssigneeId: null, version: 0 };
+    const harness = createAdminHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === "/api/users") return { users };
+        if (url === "/api/me") return { id: "alexey" };
+        if (url === "/api/team-members/default-assignee" && !requestOptions.method) return settings;
+        if (url === "/api/team-members/default-assignee" && requestOptions.method === "PUT") {
+          const body = JSON.parse(requestOptions.body);
+          settings = { defaultAssigneeId: body.defaultAssigneeId, version: body.expectedVersion + 1 };
+          return settings;
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.refreshUsersSurface();
+    harness.api.renderUsersSurfaceView();
+
+    const form = findAllByClass(harness.documentList, "ops-default-assignee-form")[0];
+    assert.ok(form, "admins get the default-assignee picker");
+    const select = harness.document.created.find(
+      (element) => element.tagName === "SELECT" && element.name === "defaultAssigneeId",
+    );
+    assert.deepEqual(
+      select.children.map((option) => option.value),
+      ["", "alexey", "orin"],
+      "a disabled account is not offered",
+    );
+    select.value = "orin";
+    await form.dispatch("submit");
+    await nextTicks(3);
+
+    const put = harness.requests.find((entry) => entry.options.method === "PUT");
+    assert.deepEqual(JSON.parse(put.options.body), { defaultAssigneeId: "orin", expectedVersion: 0 });
+    harness.api.renderUsersSurfaceView();
+    assert.equal(
+      harness.documentList.querySelector(".ops-users-outcome")?.textContent,
+      "New tasks now go to Orin.",
+    );
+    const orinRow = findAllByClass(harness.documentList, "ops-user-row").find((row) => row.textContent.includes("Orin"));
+    assert.ok(orinRow.textContent.includes("default assignee"));
   });
 
   test("enforces Users admin denial, then validates create/edit/disable role controls", async () => {

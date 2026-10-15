@@ -41,6 +41,9 @@ export function createAdminSurface(context) {
   let usersOutcome = "";
   let activeUserForm = null;
   const userRowErrors = new Map();
+  // The workspace default assignee: who gets new work nothing else assigns.
+  let defaultAssignee = { loaded: false, defaultAssigneeId: null, version: 0 };
+  let defaultAssigneeError = "";
 
   function renderAdminSurfaceView() {
     documentList.classList.add("is-operations-home");
@@ -70,10 +73,19 @@ export function createAdminSurface(context) {
   async function refreshUsersSurface(options = {}) {
     const usersUrl = workApiUrl("/api/users");
     const meUrl = workApiUrl("/api/me");
-    const [usersResult, meResult] = await Promise.allSettled([
+    const [usersResult, meResult, defaultResult] = await Promise.allSettled([
       request(usersUrl),
       request(meUrl),
+      request(workApiUrl("/api/team-members/default-assignee")),
     ]);
+    const defaultPayload = settledPayload(defaultResult);
+    defaultAssignee = defaultPayload && typeof defaultPayload === "object"
+      ? {
+          loaded: true,
+          defaultAssigneeId: defaultPayload.defaultAssigneeId || null,
+          version: Number(defaultPayload.version) || 0,
+        }
+      : { loaded: false, defaultAssigneeId: null, version: 0 };
     const users = usersFromWorkPayload(settledPayload(usersResult));
     const currentUserId = currentOperatorIdFromPayload(
       settledPayload(meResult),
@@ -163,6 +175,7 @@ export function createAdminSurface(context) {
     // The summary above already names the outage and owns the retry; repeating
     // it here would be a second voice for the same fact.
     if (!usersSnapshot.loaded) return section;
+    section.append(renderDefaultAssignee());
     // Add user rides on the account list it adds to; only admins see it.
     section.append(globalThis.dakitCollection.header({
       title: "Accounts",
@@ -223,6 +236,12 @@ export function createAdminSurface(context) {
       badge.textContent = "disabled";
       nameCell.append(badge);
     }
+    if (defaultAssignee.loaded && String(user.id) === String(defaultAssignee.defaultAssigneeId)) {
+      const badge = document.createElement("span");
+      badge.className = "ops-user-badge";
+      badge.textContent = "default assignee";
+      nameCell.append(badge);
+    }
 
     const emailCell = document.createElement("td");
     emailCell.textContent = user.email || "";
@@ -271,6 +290,108 @@ export function createAdminSurface(context) {
     }
     row.append(actionsCell);
     return row;
+  }
+
+  // Who receives new work that no Template, schedule or imported title names.
+  // Admins change it here; everyone else sees who it is.
+  function renderDefaultAssignee() {
+    const section = document.createElement("section");
+    section.className = "ops-default-assignee";
+    section.setAttribute("aria-label", "Default assignee");
+    section.append(globalThis.dakitCollection.header({ title: "Default assignee", level: "h3" }));
+    const hint = document.createElement("p");
+    hint.className = "ops-default-assignee-hint";
+    hint.textContent = "New tasks that no template, recurring schedule or imported title assigns go to this person.";
+    section.append(hint);
+
+    if (!defaultAssignee.loaded) {
+      const unavailable = document.createElement("p");
+      unavailable.className = "ops-default-assignee-hint";
+      unavailable.textContent = "The default assignee could not be loaded.";
+      section.append(unavailable);
+      return section;
+    }
+
+    const current = usersSnapshot.users.find(
+      (user) => String(user.id) === String(defaultAssignee.defaultAssigneeId),
+    );
+    if (!isCurrentUserAdmin()) {
+      section.append(staticField(
+        "Person",
+        current ? current.name || current.email || current.id : "No default: new tasks stay unassigned",
+      ));
+      return section;
+    }
+
+    const form = document.createElement("form");
+    form.className = "ops-default-assignee-form";
+    const select = document.createElement("select");
+    select.name = "defaultAssigneeId";
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "No default (new tasks stay unassigned)";
+    select.append(none);
+    const candidates = usersSnapshot.users
+      .filter((user) => !user.disabled || String(user.id) === String(defaultAssignee.defaultAssigneeId))
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    for (const user of candidates) {
+      const option = document.createElement("option");
+      option.value = user.id;
+      option.textContent = user.disabled
+        ? `${user.name || user.email || user.id} (disabled)`
+        : user.name || user.email || user.id;
+      select.append(option);
+    }
+    select.value = defaultAssignee.defaultAssigneeId || "";
+    const label = document.createElement("label");
+    label.className = "ops-field";
+    label.append("Person", select);
+    const save = document.createElement("button");
+    save.type = "submit";
+    save.className = "primary-button";
+    save.textContent = "Save";
+    form.append(label, save);
+    if (defaultAssigneeError) {
+      const error = document.createElement("p");
+      error.className = "ops-user-row-error";
+      error.setAttribute("role", "alert");
+      error.textContent = defaultAssigneeError;
+      form.append(error);
+    }
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void saveDefaultAssignee(select.value || null, save);
+    });
+    section.append(form);
+    return section;
+  }
+
+  async function saveDefaultAssignee(defaultAssigneeId, button) {
+    const routeToken = getActiveWorkspaceRouteToken();
+    setControlPending(button, { pending: true, pendingLabel: "Saving…" });
+    try {
+      await request(workApiUrl("/api/team-members/default-assignee"), {
+        method: "PUT",
+        body: JSON.stringify({ defaultAssigneeId, expectedVersion: defaultAssignee.version }),
+      });
+      if (!isWorkspaceRouteFresh(routeToken)) {
+        await refreshUsersSurface({ rerender: false });
+        return;
+      }
+      defaultAssigneeError = "";
+      const person = usersSnapshot.users.find((user) => String(user.id) === String(defaultAssigneeId));
+      usersOutcome = defaultAssigneeId
+        ? `New tasks now go to ${person?.name || person?.email || defaultAssigneeId}.`
+        : "No default assignee: new tasks stay unassigned.";
+      await refreshUsersSurface({ rerender: true });
+    } catch (err) {
+      if (!isWorkspaceRouteFresh(routeToken)) return;
+      defaultAssigneeError = err?.status === 409
+        ? "Someone changed the default assignee since this page loaded. It now shows their choice; pick again and save."
+        : `Could not save the default assignee: ${err?.message || "request failed"}`;
+      setControlPending(button, { pending: false, label: "Save" });
+      await refreshUsersSurface({ rerender: true });
+    }
   }
 
   function formatUserCreated(value) {
