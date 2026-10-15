@@ -7,6 +7,7 @@ import { createPageHeader } from "../operations-overview.js";
 import { openCreateEpisodeDialog } from "./create-dialog.js";
 import { renderEpisodeDetail } from "./detail.js";
 import { element, emptyState, formatDate, select, statusChip } from "./dom.js";
+import { renderSchedule } from "./schedule.js";
 import {
   episodeCode, episodeKeyDate, episodeSummary, filterEpisodes, groupEpisodes,
   matchesStatusFilter, seasonsOf, STATUS_FILTERS,
@@ -43,6 +44,10 @@ export function createPodcastSurface(context) {
 
   function routeEpisodeId() {
     return getActiveWorkspaceRoute()?.params?.get("episodeId") || "";
+  }
+
+  function isScheduleRoute() {
+    return getActiveWorkspaceRoute()?.path === "/podcast/schedule";
   }
 
   function isActive() {
@@ -134,6 +139,9 @@ export function createPodcastSurface(context) {
         else state.episodes = state.episodes.filter((episode) => episode.id !== id);
       }
       renderPodcastSurface({ focusDetail: true });
+    },
+    openEpisode(id) {
+      navigateCanonicalWorkspace(`/podcast/${enc(id)}`);
     },
     openCard(cardId) {
       navigateCanonicalWorkspace("/cards", { cardId });
@@ -304,6 +312,25 @@ export function createPodcastSurface(context) {
     return { pane, scroll };
   }
 
+  function renderViewTabs(schedule) {
+    const nav = element(documentRef, "nav", "dk-tabs dk-tabs--sm podcast-views");
+    nav.setAttribute("aria-label", "Podcast views");
+    for (const [path, label] of [["/podcast", "Episodes"], ["/podcast/schedule", "Schedule"]]) {
+      const tab = element(documentRef, "a", "dk-tab", label);
+      tab.href = path;
+      tab.dataset.podcastView = path === "/podcast" ? "episodes" : "schedule";
+      if ((path === "/podcast/schedule") === schedule) tab.setAttribute("aria-current", "page");
+      tab.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button > 0) return;
+        event.preventDefault();
+        state.editingId = "";
+        navigateCanonicalWorkspace(path);
+      });
+      nav.append(tab);
+    }
+    return nav;
+  }
+
   function renderUnavailable(root) {
     const retry = element(documentRef, "button", "dk-button dk-button--secondary dk-button--sm", "Retry");
     retry.type = "button";
@@ -351,7 +378,9 @@ export function createPodcastSurface(context) {
     if (!state.loaded && !state.error && !inFlight) refreshPodcastEpisodes();
 
     const root = element(documentRef, "div", "podcast-surface dk-fill");
+    const schedule = isScheduleRoute();
     root.append(createPageHeader({ title: "Podcast", className: "podcast-header", documentRef }));
+    root.append(renderViewTabs(schedule));
     if (state.error && !state.loaded) {
       renderUnavailable(root);
       documentList.replaceChildren(root);
@@ -362,6 +391,12 @@ export function createPodcastSurface(context) {
       loading.setAttribute("role", "status");
       loading.append(element(documentRef, "span", "dk-spinner"), element(documentRef, "span", "", "Loading episodes…"));
       root.append(loading);
+      documentList.replaceChildren(root);
+      return;
+    }
+    if (schedule) {
+      if (state.error) renderUnavailable(root);
+      renderSchedule(root, { documentRef, episodes: state.episodes, actions });
       documentList.replaceChildren(root);
       return;
     }

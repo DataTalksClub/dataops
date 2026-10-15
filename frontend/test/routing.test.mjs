@@ -65,6 +65,7 @@ describe("canonical workspace routing", () => {
       "/newsletter",
       "/calendar",
       "/podcast",
+      "/podcast/schedule",
       "/podcast/:episodeId",
       "/processes",
       "/review",
@@ -258,5 +259,15 @@ describe("canonical workspace routing", () => {
     assert.equal(isRealIsoDate("2025-02-29"), false);
     assert.equal(isRealIsoDate("2026-13-01"), false);
     assert.equal(isRealIsoDate("12-08-2026"), false);
+  });
+});
+
+describe("podcast schedule route", () => {
+  test("/podcast/schedule is its own path, not an episode id", () => {
+    const route = parseWorkspaceLocation("/podcast/schedule");
+    assert.equal(route.view, "podcast");
+    assert.equal(route.path, "/podcast/schedule");
+    assert.equal(route.params.get("episodeId"), null);
+    assert.equal(parseWorkspaceLocation("/podcast/abc-123").params.get("episodeId"), "abc-123");
   });
 });

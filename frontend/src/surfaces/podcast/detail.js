@@ -6,6 +6,8 @@ import { SPLIT_BACK_ICON } from "../split-back-icon.js";
 import {
   button, element, emptyState, field, formatDate, icon, input, messageArea, select, statusChip,
 } from "./dom.js";
+import { buildPublication, samePublication } from "./publication-model.js";
+import { publicationFormFields, publicationSection } from "./publication-section.js";
 import {
   cardStageLabel, EPISODE_STATUSES, episodeCode, episodeTitle, guestNames, LINK_KINDS,
   nextStatus, parseGuestNames, statusLabel,
@@ -209,8 +211,11 @@ function notesSection(documentRef, episode) {
   return section;
 }
 
-/** The changed fields between the record and the form, as a PUT body. */
-export function formChanges(episode, values) {
+/**
+ * The changed fields between the record and the form, as a PUT body. Throws an
+ * Error carrying a message when the publication fields cannot be built.
+ */
+export function formChanges(episode, values, nowIso = new Date().toISOString()) {
   const changes = {};
   const text = (value) => String(value ?? "").trim();
   const nullable = (value) => (text(value) ? text(value) : null);
@@ -226,6 +231,13 @@ export function formChanges(episode, values) {
   for (const name of ["recordingDate", "releaseDate", "websiteSlug", "notes"]) {
     const next = nullable(values[name]);
     if (next !== (episode[name] || null)) changes[name] = next;
+  }
+  if (Object.hasOwn(values, "audioScheduledLocal")) {
+    const built = buildPublication(episode.publication, values, nowIso);
+    if (built.error) throw new Error(built.error);
+    if (!samePublication(built.value, episode.publication)) changes.publication = built.value;
+    // The API keeps releaseDate equal to the scheduled audio's local date.
+    if (built.value?.audioScheduledAt) delete changes.releaseDate;
   }
   const links = {};
   for (const kind of LINK_KINDS) {
@@ -252,6 +264,8 @@ function editForm(documentRef, episode, actions, messages) {
     websiteSlug: input(documentRef, "websiteSlug", episode.websiteSlug),
     notes: element(documentRef, "textarea", "dk-textarea"),
   };
+  const publication = publicationFormFields(documentRef, episode);
+  Object.assign(controls, publication.controls);
   controls.title.maxLength = 300;
   controls.season.min = "1";
   controls.episode.min = "1";
@@ -278,6 +292,7 @@ function editForm(documentRef, episode, actions, messages) {
     numbers,
     dates,
     links,
+    publication.fieldset,
     field(documentRef, "Website slug", controls.websiteSlug),
     field(documentRef, "Notes", controls.notes),
   );
@@ -292,8 +307,16 @@ function editForm(documentRef, episode, actions, messages) {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (save.getAttribute("aria-busy") === "true") return;
-    const values = Object.fromEntries(Object.entries(controls).map(([name, control]) => [name, control.value]));
-    const changes = formChanges(episode, values);
+    const values = Object.fromEntries(
+      Object.entries(controls).map(([name, control]) => [name, control.type === "checkbox" ? control.checked : control.value]),
+    );
+    let changes;
+    try {
+      changes = formChanges(episode, values);
+    } catch (error) {
+      messages.show("error", error.message);
+      return;
+    }
     if (!Object.keys(changes).length) {
       actions.cancelEdit();
       return;
@@ -350,6 +373,7 @@ export function renderEpisodeDetail(pane, { documentRef, episode, editing, notic
       statusSection(documentRef, episode, actions, messages),
       messages.node,
       cardSection(documentRef, episode, actions, messages),
+      publicationSection(documentRef, episode),
       factsSection(documentRef, episode),
       linksSection(documentRef, episode),
       notesSection(documentRef, episode),

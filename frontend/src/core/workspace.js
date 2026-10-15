@@ -54,6 +54,7 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/newsletter": { view: "newsletter", tasksSection: "queue", params: [] },
   "/calendar": { view: "calendar", tasksSection: "queue", params: [] },
   "/podcast": { view: "podcast", tasksSection: "queue", params: [] },
+  "/podcast/schedule": { view: "podcast", tasksSection: "queue", params: [] },
   "/podcast/:episodeId": { view: "podcast", tasksSection: "queue", params: [] },
   "/processes": {
     view: "docs",

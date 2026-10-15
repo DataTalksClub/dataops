@@ -105,6 +105,30 @@ body[data-workspace-view="podcast"] .document-list {
   background: var(--dk-bg-surface);
 }
 
+/* Publication: readiness chips, proofs and the schedule table */
+.podcast-views { justify-self: start; }
+.podcast-publication__value { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-2); }
+.podcast-readiness { white-space: nowrap; }
+.podcast-proof { color: var(--dk-text-link); font-size: var(--dk-text-sm); overflow-wrap: anywhere; }
+.podcast-blockers { margin-top: var(--dk-space-3); }
+.podcast-early-reason { margin: var(--dk-space-2) 0 0; }
+.podcast-form-publication { display: grid; gap: var(--dk-space-3); min-width: 0; margin: 0; padding: 0; border: 0; }
+.podcast-check { justify-self: start; }
+
+.podcast-schedule-view { display: grid; gap: var(--dk-gap-block); min-width: 0; }
+.podcast-schedule__note { margin: 0; }
+.podcast-schedule__group { display: grid; gap: var(--dk-space-2); min-width: 0; }
+.podcast-schedule__scroll { overflow-x: auto; border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-md); background: var(--dk-bg-surface); }
+.podcast-schedule { min-width: 56rem; }
+.podcast-schedule__name { display: grid; gap: var(--dk-space-1); justify-items: start; }
+.podcast-schedule__episode { display: inline-flex; gap: var(--dk-space-2); color: var(--dk-text-primary); font-weight: var(--dk-weight-medium); text-decoration: none; }
+.podcast-schedule__episode:hover { text-decoration: underline; }
+.podcast-schedule__when { white-space: nowrap; }
+.podcast-schedule__blockers { display: block; margin-top: var(--dk-space-1); max-width: 16rem; }
+.podcast-schedule__proofs { display: grid; gap: var(--dk-space-1); }
+.podcast-schedule__card { display: inline-flex; gap: var(--dk-space-2); color: var(--dk-text-link); text-decoration: none; }
+.podcast-schedule__card:hover { text-decoration: underline; }
+
 @media (max-width: 820px) {
   .podcast-form-pair { grid-template-columns: minmax(0, 1fr); }
   .podcast-status-controls { margin-left: 0; }
