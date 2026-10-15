@@ -15,9 +15,12 @@ import { runCron } from '../src/cron/runner';
 import { seed as seedUsers } from '../scripts/seed-users';
 import {
   BASELINE_RECURRING_CONFIGS,
-  OPERATOR_USER_ID,
   seed as seedRecurring,
 } from '../scripts/seed-recurring';
+import { setDefaultAssignee } from '../src/db/workspaceSettings';
+import { ALEXEY_USER_ID } from '../src/deploymentSeeds';
+
+const ADMIN_PICKED_ASSIGNEE = '00000000-0000-0000-0000-000000000099';
 
 describe('Seed recurring script', () => {
   let client: DynamoDBDocumentClient;
@@ -55,7 +58,7 @@ describe('Seed recurring script', () => {
       );
       assert.strictEqual(matches.length, 1, `${expected.description} should be seeded once`);
       assert.strictEqual(matches[0].enabled, true);
-      assert.strictEqual(matches[0].assigneeId, OPERATOR_USER_ID);
+      assert.strictEqual(matches[0].assigneeId, undefined, 'no person is seeded onto a schedule');
       if (expected.instructionDocId) {
         assert.strictEqual(matches[0].instructionDocId, expected.instructionDocId);
       }
@@ -99,7 +102,7 @@ describe('Seed recurring script', () => {
     assert.ok(drifted);
     await updateRecurringConfig(client, drifted.id, {
       enabled: false,
-      assigneeId: '00000000-0000-0000-0000-000000000099',
+      assigneeId: ADMIN_PICKED_ASSIGNEE,
     });
 
     const repaired = await seedRecurring();
@@ -118,7 +121,9 @@ describe('Seed recurring script', () => {
     );
     assert.ok(repairedConfig);
     assert.strictEqual(repairedConfig.enabled, true);
-    assert.strictEqual(repairedConfig.assigneeId, OPERATOR_USER_ID);
+    // The seed restores the baseline but keeps the person an admin chose.
+    assert.strictEqual(repairedConfig.assigneeId, ADMIN_PICKED_ASSIGNEE);
+    await setDefaultAssignee(client, { defaultAssigneeId: ALEXEY_USER_ID, expectedVersion: 0 });
 
     const friday = new Date('2029-01-05T09:00:00Z');
     const firstCron = await runCron(client, friday);
@@ -141,7 +146,11 @@ describe('Seed recurring script', () => {
       assert.strictEqual(task.status, 'todo');
       assert.strictEqual(task.date, '2029-01-05');
       assert.ok(task.recurringConfigId);
-      assert.strictEqual(task.assigneeId, OPERATOR_USER_ID);
+      assert.strictEqual(
+        task.assigneeId,
+        task.recurringConfigId === repairedConfig.id ? ADMIN_PICKED_ASSIGNEE : ALEXEY_USER_ID,
+        'a schedule without its own assignee uses the workspace default',
+      );
       assert.ok(task.instructionDocId, `${task.description} should include instructionDocId`);
       assert.ok(Array.isArray(task.requires), `${task.description} should include requires`);
     }

@@ -12,7 +12,7 @@ export function syntheticAuthoredTemplate(type = 'synthetic-workflow') {
     owner_role: 'synthetic-owner', status: 'draft', criticality: 'supporting',
     outcome: 'A synthetic result is checked', tools: ['synthetic-editor', 'synthetic-checker'],
     review_cycle_days: 30, last_reviewed_at: null, next_review_at: '2030-06-15',
-    icon: 'mic', tags: [], default_assignee_id: 'synthetic-user', source_document_ids: [],
+    icon: 'mic', tags: [], source_document_ids: [],
     external_source_documents: [{
       id: 'synthetic.source', location: 'https://example.invalid/synthetic-source',
       kind: 'external-process', status: 'provenance-only', note: 'Synthetic reference only',

@@ -88,7 +88,6 @@ Fields:
 - `type`
 - `phases`: ordered `{ id, name, stage }` records
 - `tags`
-- `default_assignee_id`
 - `source_doc_ids`
 - `references`
 - `card_link_definitions`

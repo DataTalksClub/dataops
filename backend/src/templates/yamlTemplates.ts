@@ -33,7 +33,6 @@ const TEMPLATE_FIELDS = [
   ['nextReviewAt', 'next_review_at'],
   ['icon', 'icon'],
   ['tags', 'tags'],
-  ['defaultAssigneeId', 'default_assignee_id'],
   ['sourceDocIds', 'source_document_ids'],
 ] as const;
 

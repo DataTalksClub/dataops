@@ -14,6 +14,7 @@ import { usesLocalTransactionEmulation } from './client';
 import { createTask, listTasksByCard } from './tasks';
 import type { Card, Template, Task } from '../types';
 import { templateTaskProjection } from '../templates/cardTemplateProjection';
+import { resolveDefaultAssigneeId } from './workspaceSettings';
 
 export class TemplateVersionConflictError extends Error {
   constructor() {
@@ -321,13 +322,14 @@ async function instantiateTemplate(
       .map((task) => task.templateTaskRef as string)
   );
   const createdTasks: Task[] = [];
+  const defaultAssigneeId = await resolveDefaultAssigneeId(client);
 
   for (const [order, def] of taskDefinitions.entries()) {
     if (existingRefs.has(def.refId)) {
       continue;
     }
 
-    const taskData = templateTaskProjection(template, def, order, anchorDate, cardId);
+    const taskData = templateTaskProjection(template, def, order, anchorDate, cardId, defaultAssigneeId);
 
     const task = await createTask(client, taskData);
 
@@ -353,6 +355,7 @@ async function createCardFromTemplate(
     openTaskCount: definitions.length,
   });
   const now = card.createdAt;
+  const defaultAssigneeId = await resolveDefaultAssigneeId(client);
   const tasks = definitions.map((definition, order) => {
     const id = crypto.randomUUID();
     return compact({
@@ -361,7 +364,7 @@ async function createCardFromTemplate(
       taskHistory: [],
       createdAt: now,
       updatedAt: now,
-      ...templateTaskProjection(template, definition, order, anchorDate, card.id),
+      ...templateTaskProjection(template, definition, order, anchorDate, card.id, defaultAssigneeId),
     }) as Task;
   });
 
@@ -428,9 +431,10 @@ async function createCardFromDefinition(
 ): Promise<{ card: Card; tasks: Task[] }> {
   const definitions = template.taskDefinitions || [];
   const card = buildCard(cardData, { taskCount: definitions.length, openTaskCount: definitions.length });
+  const defaultAssigneeId = await resolveDefaultAssigneeId(client);
   const tasks = definitions.map((definition, order) => ({
     id: taskId(definition.refId), version: 1, taskHistory: [], createdAt: card.createdAt, updatedAt: card.createdAt,
-    ...templateTaskProjection(template, definition, order, anchorDate, card.id),
+    ...templateTaskProjection(template, definition, order, anchorDate, card.id, defaultAssigneeId),
   }) as unknown as Task);
   const writes = [
     { table: TABLE_CARDS, key: cardKey(card.id), item: { ...cardKey(card.id), ...card } },

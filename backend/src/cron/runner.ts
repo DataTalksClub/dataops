@@ -12,6 +12,7 @@ import { evaluateSponsorFinanceAlerts } from '../sponsorFinance/alerts';
 import { berlinDate } from '../sponsorFinance/core';
 import { evaluateCommunicationSuggestions } from '../sponsorCommunications/suggestions';
 import { templateCardProjection } from '../templates/cardTemplateProjection';
+import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 
 export interface CronRunnerResult {
   created: string[];
@@ -207,7 +208,7 @@ async function runCron(
 
       const { card } = await createCardFromTemplate(client, cardData, template, anchorDate);
 
-      // 8. Create notification (targeted to template's defaultAssigneeId if set)
+      // 8. Create notification (targeted to the workspace default assignee if set)
       const notificationData: Record<string, unknown> = {
         type: 'stage-change',
         message: `${template.name} card auto-created for ${formatAnchorDate(anchorDate)}`,
@@ -215,8 +216,9 @@ async function runCron(
         templateId: template.id,
         dueAt: anchorDate,
       };
-      if (template.defaultAssigneeId) {
-        notificationData.userId = template.defaultAssigneeId;
+      const defaultAssigneeId = await resolveDefaultAssigneeId(client);
+      if (defaultAssigneeId) {
+        notificationData.userId = defaultAssigneeId;
       }
       await createNotification(client, notificationData);
 

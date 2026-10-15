@@ -9,6 +9,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { readAllPages } from './readAllPages';
 import { TABLE_TASKS } from './tableNames';
+import { resolveDefaultAssigneeId } from './workspaceSettings';
 import { createTask } from './tasks';
 import { cronMatchesDate, nextMatchingDate } from '../cron/cronMatch';
 import { berlinDate } from '../sponsorFinance/core';
@@ -103,21 +104,27 @@ async function updateRecurringConfig(client: DynamoDBDocumentClient, id: string,
   const expressionAttrNames: Record<string, string> = {};
   const expressionAttrValues: Record<string, unknown> = {};
 
+  const removeParts: string[] = [];
   let i = 0;
   for (const [key, value] of Object.entries(fields)) {
     const nameToken = `#f${i}`;
+    expressionAttrNames[nameToken] = key;
+    i++;
+    // null clears the field (e.g. an assignee, so the schedule uses the default).
+    if (value === null) {
+      removeParts.push(nameToken);
+      continue;
+    }
     const valueToken = `:v${i}`;
     expressionParts.push(`${nameToken} = ${valueToken}`);
-    expressionAttrNames[nameToken] = key;
     expressionAttrValues[valueToken] = value;
-    i++;
   }
 
   const result = await client.send(
     new UpdateCommand({
       TableName: TABLE_TASKS,
       Key: { PK: `RECURRING#${id}`, SK: `RECURRING#${id}` },
-      UpdateExpression: `SET ${expressionParts.join(', ')}`,
+      UpdateExpression: `SET ${expressionParts.join(', ')}${removeParts.length ? ` REMOVE ${removeParts.join(', ')}` : ''}`,
       ExpressionAttributeNames: expressionAttrNames,
       ExpressionAttributeValues: expressionAttrValues,
       ReturnValues: 'ALL_NEW',
@@ -279,6 +286,8 @@ async function generateRecurringTasks(
   endDate: string,
 ): Promise<{ generated: Task[]; skipped: number; failures: number }> {
   const configs = await listEnabledRecurringConfigs(client);
+  // A schedule without its own assignee goes to the workspace default.
+  const defaultAssigneeId = await resolveDefaultAssigneeId(client);
 
   const generated: Task[] = [];
   let skipped = 0;
@@ -324,6 +333,7 @@ async function generateRecurringTasks(
           source: 'recurring',
           recurringConfigId: config.id,
         };
+        if (!taskData.assigneeId && defaultAssigneeId) taskData.assigneeId = defaultAssigneeId;
 
         const task = await createTask(client, taskData);
         generatedTaskIds.push(task.id);

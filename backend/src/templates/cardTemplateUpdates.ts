@@ -164,6 +164,9 @@ function fieldChanges(
     const currentValue = normalized(current[field]);
     const sourceValue = normalized(source?.[field]);
     const targetValue = normalized(target[field]);
+    // A Template that names no one for a Task leaves its assignee alone: the
+    // person came from the workspace default or an admin, not the definition.
+    if (field === 'assigneeId' && targetValue === null) continue;
     const definitionChanged = source === null
       ? !isDeepStrictEqual(currentValue, targetValue)
       : !isDeepStrictEqual(sourceValue, targetValue);

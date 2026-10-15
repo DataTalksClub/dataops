@@ -51,7 +51,6 @@ const AUTHORITATIVE_FIELDS = [
   'type',
   'icon',
   'tags',
-  'defaultAssigneeId',
   'phases',
   'sourceDocIds',
   'references',

@@ -14,6 +14,8 @@ import {
   instantiateTemplate,
 } from '../src/db/templates';
 import { getTask } from '../src/db/tasks';
+import { createUserWithId } from '../src/db/users';
+import { getWorkspaceSettings, setDefaultAssignee } from '../src/db/workspaceSettings';
 import { createCard } from '../src/db/cards';
 import { TABLE_TEMPLATES } from '../src/db/tableNames';
 
@@ -192,7 +194,6 @@ describe('Templates data layer', () => {
       name: 'Newsletter',
       type: 'newsletter',
       tags: ['newsletter', 'weekly'],
-      defaultAssigneeId: 'user-grace',
       sourceDocIds: ['task-template.tasks.newsletter'],
       references: [{ name: 'Style guide', url: 'https://docs.google.com/style' }],
       cardLinkDefinitions: [{ name: 'Luma' }, { name: 'YouTube' }],
@@ -206,7 +207,6 @@ describe('Templates data layer', () => {
 
     assert.ok(template.id);
     assert.deepStrictEqual(template.tags, ['newsletter', 'weekly']);
-    assert.strictEqual(template.defaultAssigneeId, 'user-grace');
     assert.deepStrictEqual(template.sourceDocIds, ['task-template.tasks.newsletter']);
     assert.deepStrictEqual(template.references, [{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
     assert.deepStrictEqual(template.cardLinkDefinitions, [{ name: 'Luma' }, { name: 'YouTube' }]);
@@ -218,7 +218,6 @@ describe('Templates data layer', () => {
     const fetched = await getTemplate(client, template.id);
     assert.ok(fetched);
     assert.deepStrictEqual(fetched.tags, ['newsletter', 'weekly']);
-    assert.strictEqual(fetched.defaultAssigneeId, 'user-grace');
     assert.deepStrictEqual(fetched.sourceDocIds, ['task-template.tasks.newsletter']);
     assert.strictEqual(fetched.triggerType, 'automatic');
     assert.strictEqual(fetched.triggerSchedule, '0 9 * * 1');
@@ -322,7 +321,6 @@ describe('Templates data layer', () => {
     assert.strictEqual(fetched.type, 'test');
     // New optional fields should be absent
     assert.strictEqual(fetched.tags, undefined);
-    assert.strictEqual(fetched.defaultAssigneeId, undefined);
     assert.strictEqual(fetched.sourceDocIds, undefined);
     assert.strictEqual(fetched.references, undefined);
     assert.strictEqual(fetched.cardLinkDefinitions, undefined);
@@ -397,11 +395,13 @@ describe('Templates data layer', () => {
     assert.deepStrictEqual(fetched.requires, ['google-drive', 'github']);
   });
 
-  it('instantiateTemplate sets assigneeId from task def, falls back to defaultAssigneeId', async () => {
+  it('instantiateTemplate sets assigneeId from task def, falls back to the workspace default', async () => {
+    await createUserWithId(client, 'user-default', { name: 'Default Person', email: 'default@example.test', role: 'operator' });
+    const settings = await getWorkspaceSettings(client);
+    await setDefaultAssignee(client, { defaultAssigneeId: 'user-default', expectedVersion: settings.version });
     const template = await createTemplate(client, {
       name: 'Assignee test',
       type: 'test',
-      defaultAssigneeId: 'user-grace',
       taskDefinitions: [
         { refId: 'with-assignee', description: 'Has specific assignee', offsetDays: 0, assigneeId: 'user-valeriia' },
         { refId: 'no-assignee', description: 'Uses default assignee', offsetDays: 1 },
@@ -419,7 +419,10 @@ describe('Templates data layer', () => {
     assert.strictEqual(withAssignee.assigneeId, 'user-valeriia');
 
     assert.ok(noAssignee);
-    assert.strictEqual(noAssignee.assigneeId, 'user-grace');
+    assert.strictEqual(noAssignee.assigneeId, 'user-default');
+    // The snapshot keeps only who the Template names, not the default of the day.
+    assert.strictEqual(noAssignee.templateDefinitionSnapshot?.assigneeId, undefined);
+    await setDefaultAssignee(client, { defaultAssigneeId: null, expectedVersion: settings.version + 1 });
   });
 
   it('instantiateTemplate sets requiredLinkName from task definition', async () => {
@@ -489,7 +492,6 @@ describe('Templates data layer', () => {
       name: 'Representative workflow',
       type: 'workflow',
       tags: ['ops', 'v1'],
-      defaultAssigneeId: 'user-ops',
       phases: [
         { id: 'prep', name: 'Preparation', stage: 'preparation' },
         { id: 'review', name: 'Review', stage: 'announced' },
@@ -553,7 +555,7 @@ describe('Templates data layer', () => {
     const publishSummary = tasks.find((task) => task.templateTaskRef === 'publish-summary');
     assert.ok(publishSummary);
     assert.strictEqual(publishSummary.date, '2026-07-10');
-    assert.strictEqual(publishSummary.assigneeId, 'user-ops');
+    assert.strictEqual(publishSummary.assigneeId, undefined, 'no Template person and no workspace default');
     assert.strictEqual(publishSummary.stageOnComplete, 'after-event');
     assert.deepStrictEqual(publishSummary.proofRequirement, { type: 'comment', label: 'Published note' });
   });

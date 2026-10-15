@@ -97,7 +97,6 @@ Application fields:
 - `name`
 - `type`
 - `tags`
-- `default_assignee_id`
 - `references`
 - `card_link_definitions`
 - `task_definitions`

@@ -34,7 +34,6 @@ function template(version = 1): Template {
     sourceDocIds: ['process.event'],
     references: [{ name: 'Process', url: '/content/process.event' }],
     cardLinkDefinitions: [{ name: 'Registration' }, { name: 'Recording' }],
-    defaultAssigneeId: 'operator-default',
     taskDefinitions: [
       { refId: 'announce', description: 'Announce', offsetDays: -7, instructionDocId: 'process.event' },
       { refId: 'host', description: 'Host', offsetDays: 0, proofRequirement: { type: 'text' } },
@@ -95,6 +94,41 @@ function tasksFrom(source: Template): Task[] {
 }
 
 describe('Card Template update planning', () => {
+  it('a Template that stops naming a person leaves Task assignees alone', async () => {
+    // Stored snapshots from when the Template named a person for every Task.
+    const source = template(1);
+    source.taskDefinitions = source.taskDefinitions!.map((definition) => ({ ...definition, assigneeId: 'former-default' }));
+    const target = template(2);
+    target.taskDefinitions = target.taskDefinitions!.map((definition) => (
+      definition.refId === 'host' ? { ...definition, description: 'Host live session' } : definition
+    ));
+    const card = cardFrom(source);
+    const tasks = tasksFrom(source);
+
+    const plan = buildCardTemplateUpdatePlan(card, tasks, target);
+    for (const change of plan.preview.taskChanges) {
+      assert.ok(!change.changes.some(({ field }) => field === 'assigneeId'), change.taskRef);
+    }
+
+    const writes: Task[] = [];
+    const fake = {
+      send: async (command: unknown) => {
+        if (command instanceof GetCommand) return {};
+        if (command instanceof TransactWriteCommand) {
+          for (const item of command.input.TransactItems || []) {
+            if (item.Put?.TableName === 'Tasks') writes.push(item.Put.Item as unknown as Task);
+          }
+          return {};
+        }
+        throw new Error('Unexpected command');
+      },
+    } as any;
+    disableLocalTransactionEmulation();
+    await applyCardTemplateUpdate(fake, card, tasks, target, plan.preview.previewToken, 'operator');
+    assert.ok(writes.length > 0, 'the update rewrote Tasks');
+    for (const task of writes) assert.equal(task.assigneeId, 'former-default', task.id);
+  });
+
   it('categorizes additions, removals, reordering, changes and completed retention', () => {
     const source = template(1);
     const target = {
@@ -361,10 +395,13 @@ describe('Card Template update planning', () => {
       disableLocalTransactionEmulation();
     }
 
-    assert.equal(commands.length, 2);
+    // Reads: the prior audit, then the workspace default assignee for the added Task.
+    assert.equal(commands.length, 3);
     assert.ok(commands[0] instanceof GetCommand);
-    assert.ok(commands[1] instanceof TransactWriteCommand);
-    const items = (commands[1] as TransactWriteCommand).input.TransactItems || [];
+    assert.ok(commands[1] instanceof GetCommand);
+    assert.equal((commands[1] as GetCommand).input.TableName, 'Users');
+    assert.ok(commands[2] instanceof TransactWriteCommand);
+    const items = (commands[2] as TransactWriteCommand).input.TransactItems || [];
     assert.ok(items.some((item) => item.ConditionCheck?.TableName === 'Templates'));
     assert.ok(items.some((item) => item.Put?.TableName === 'Projects'));
     assert.ok(items.some((item) => item.Put?.TableName === 'Tasks'));

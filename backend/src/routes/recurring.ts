@@ -87,9 +87,10 @@ function validateRecurringData(body: Record<string, unknown>, isUpdate: boolean)
     }
   }
 
-  // Validate assigneeId type if provided
-  if (body.assigneeId !== undefined && typeof body.assigneeId !== 'string') {
-    return 'assigneeId must be a string';
+  // Validate assigneeId type if provided; null (no assignee: use the
+  // workspace default) is how an update clears it.
+  if (body.assigneeId !== undefined && body.assigneeId !== null && typeof body.assigneeId !== 'string') {
+    return 'assigneeId must be a string, or null for the workspace default assignee';
   }
 
   // Validate enabled type if provided
@@ -197,7 +198,7 @@ async function handleCollection(
     const allowedFields = ['description', 'cronExpression', 'assigneeId', 'enabled', 'requires'];
     const data: Record<string, unknown> = {};
     for (const field of allowedFields) {
-      if (body[field] !== undefined) {
+      if (body[field] !== undefined && body[field] !== null) {
         data[field] = body[field];
       }
     }

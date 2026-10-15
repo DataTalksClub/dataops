@@ -70,7 +70,6 @@ Fields:
 - type: string, required (e.g., "newsletter", "podcast", "webinar")
 - icon: string, optional (curated DataOps icon name, e.g., "mic")
 - tags: array of strings, optional
-- defaultAssigneeId: string, optional (default user for tasks)
 - references: array of { name: string, url: string }, optional (fixed links same for every card - process docs, server links)
 - cardLinkDefinitions: array of { name: string }, optional (card link slots to be filled during execution)
 - taskDefinitions: array, required, each element:
@@ -153,9 +152,9 @@ When creating or updating a card, each array replaces the entire existing array.
 ### Templates API
 
 - `GET /api/templates` - list all templates
-- `POST /api/templates` - create a template (body: { name, type, icon?, tags?, defaultAssigneeId?, references?, cardLinkDefinitions?, triggerType?, triggerSchedule?, triggerLeadDays?, taskDefinitions })
+- `POST /api/templates` - create a template (body: { name, type, icon?, tags?, references?, cardLinkDefinitions?, triggerType?, triggerSchedule?, triggerLeadDays?, taskDefinitions })
 - `GET /api/templates/:id` - get a single template
-- `PUT /api/templates/:id` - update a template (body: subset of { name, type, icon, tags, defaultAssigneeId, references, cardLinkDefinitions, triggerType, triggerSchedule, triggerLeadDays, taskDefinitions })
+- `PUT /api/templates/:id` - update a template (body: subset of { name, type, icon, tags, references, cardLinkDefinitions, triggerType, triggerSchedule, triggerLeadDays, taskDefinitions })
 - `DELETE /api/templates/:id` - delete a template
 
 Each task definition: { refId, description, offsetDays, isMilestone?, assigneeId?, instructionsUrl?, requiredLinkName?, requiresFile? }.

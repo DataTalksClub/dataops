@@ -467,7 +467,6 @@ export interface Template {
   /** Curated icon name (`templates/templateIcons.ts`) shown wherever the template's cards appear. */
   icon?: string;
   tags?: string[];
-  defaultAssigneeId?: string;
   phases?: WorkflowPhase[];
   sourceDocIds?: string[];
   references?: Reference[];

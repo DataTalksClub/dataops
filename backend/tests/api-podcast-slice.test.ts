@@ -34,7 +34,6 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
       name: 'Synthetic operator workflow',
       type: 'synthetic-operator-workflow',
       tags: ['Synthetic'],
-      defaultAssigneeId: '00000000-0000-0000-0000-000000000001',
       phases: [
         { id: 'preparation', name: 'Preparation', stage: 'preparation' },
         { id: 'event', name: 'Synthetic event', stage: 'announced' },

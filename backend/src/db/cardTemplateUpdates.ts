@@ -22,6 +22,7 @@ import {
   type CardLifecycleAuditEvent,
 } from './taskCardLifecycle';
 import { templateTaskProjection } from '../templates/cardTemplateProjection';
+import { resolveDefaultAssigneeId } from './workspaceSettings';
 
 import {
   buildCardTemplateUpdatePlan,
@@ -205,8 +206,11 @@ function appliedExistingTask(
     ];
   } else {
     if (update.action === 'update') {
+      const assigneeId = next.assigneeId;
       clearDefinitionFields(next);
       Object.assign(next, structuredClone(update.target));
+      // A Template that names no one keeps the Task's current assignee.
+      if (!update.target?.assigneeId && assigneeId) next.assigneeId = assigneeId;
     }
     // Only the skip the Template update itself made is undone; an operator's
     // own skip stays.
@@ -248,6 +252,7 @@ function addedTask(
   template: Template,
   card: Card,
   now: string,
+  defaultAssigneeId: string | null,
 ): Task {
   const definitions = template.taskDefinitions || [];
   const definition = definitions.find(({ refId }) => refId === update.taskRef);
@@ -262,7 +267,7 @@ function addedTask(
     taskHistory: [],
     createdAt: now,
     updatedAt: now,
-    ...templateTaskProjection(template, definition, order, card.anchorDate, card.id),
+    ...templateTaskProjection(template, definition, order, card.anchorDate, card.id, defaultAssigneeId),
   }) as Task;
 }
 
@@ -419,9 +424,12 @@ export async function applyCardTemplateUpdate(
     createdAt: now,
   };
   const replacements = new Map<string, Task>();
+  const defaultAssigneeId = plan.taskUpdates.some(({ action }) => action === 'add')
+    ? await resolveDefaultAssigneeId(client)
+    : null;
   for (const update of plan.taskUpdates) {
     if (update.action === 'add') {
-      const task = addedTask(update, template, card, now);
+      const task = addedTask(update, template, card, now, defaultAssigneeId);
       replacements.set(task.id, task);
       continue;
     }

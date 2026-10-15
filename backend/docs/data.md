@@ -142,7 +142,6 @@ Columns: `Date, Task, Notes, Status, Date finished, Process document title, Proc
   type: string,            // e.g. "newsletter", "podcast", "webinar"
   icon: string | null,     // curated DataOps icon name, e.g. "mic"
   tags: string[],          // e.g. ["Newsletter"]
-  defaultAssigneeId: string | null,
   references: [{ name: string, url: string }],       // fixed links for every card
   cardLinkDefinitions: [{ name: string }],          // link slots to fill per card
   triggerType: "automatic" | "manual",

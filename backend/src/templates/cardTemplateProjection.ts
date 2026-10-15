@@ -79,7 +79,7 @@ export function templateTaskDefinitionSnapshot(
     templateTaskOrder: order,
     isMilestone: definition.isMilestone,
     stageOnComplete: definition.stageOnComplete,
-    assigneeId: definition.assigneeId || template.defaultAssigneeId,
+    assigneeId: definition.assigneeId,
     instructionsUrl: definition.instructionsUrl,
     instructionDocId: definition.instructionDocId,
     instructionStepId: definition.instructionStepId,
@@ -100,10 +100,15 @@ export function templateTaskProjection(
   order: number,
   anchorDate: string,
   cardId: string,
+  defaultAssigneeId: string | null,
 ): Dict {
   const snapshot = templateTaskDefinitionSnapshot(template, definition, order, anchorDate);
+  // The snapshot keeps only a person the Template itself names for this Task;
+  // anything else goes to the workspace default assignee of the day.
+  const assigneeId = snapshot.assigneeId || defaultAssigneeId || undefined;
   return {
     ...copy(snapshot),
+    ...(assigneeId ? { assigneeId } : {}),
     cardId,
     templateId: template.id,
     source: 'template',

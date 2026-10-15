@@ -35,7 +35,6 @@ async function createSourceTemplate(client: DynamoDBDocumentClient): Promise<Tem
     sourceDocIds: ['process.synthetic-event'],
     references: [{ name: 'Process', url: '/content/process.synthetic-event' }],
     cardLinkDefinitions: [{ name: 'Registration' }, { name: 'Recording' }],
-    defaultAssigneeId: 'operator-default',
     taskDefinitions: [
       {
         refId: 'announce',

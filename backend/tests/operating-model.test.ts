@@ -85,7 +85,7 @@ describe('operating model definition projection', () => {
   it('creates one complete deterministic Card aggregate under concurrent retries', async () => {
     const template = {
       id: 'workflow.operating-model-w01', version: 1, name: 'Session', type: 'operating-model-w01',
-      defaultAssigneeId: 'actor-1', sourceDocIds: ['reference.session'], sourceRevision: 'revision-1',
+      sourceDocIds: ['reference.session'], sourceRevision: 'revision-1',
       taskDefinitions: [
         { refId: 'decide', description: 'Record decisions', offsetDays: 0, assigneeId: 'actor-1' },
         { refId: 'validate', description: 'Validate outcome', offsetDays: 0, assigneeId: 'actor-1' },

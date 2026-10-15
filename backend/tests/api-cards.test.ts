@@ -9,6 +9,8 @@ import { createTables, deleteTables } from '../scripts/local-dynamodb';
 import { createCard, listCards } from '../src/db/cards';
 import { createTemplate } from '../src/db/templates';
 import { createTask } from '../src/db/tasks';
+import { createUserWithId } from '../src/db/users';
+import { getWorkspaceSettings, setDefaultAssignee } from '../src/db/workspaceSettings';
 import type { LambdaResponse } from '../src/types';
 
 function invoke(method: string, path: string, body?: unknown): Promise<LambdaResponse> {
@@ -731,11 +733,13 @@ describe('API — Cards', () => {
       assert.strictEqual(body.tasks[0].comment, undefined);
     });
 
-    it('tasks inherit assigneeId with fallback to defaultAssigneeId', async () => {
+    it('tasks inherit assigneeId with fallback to the workspace default assignee', async () => {
+      await createUserWithId(client, 'user-default', { name: 'Default Person', email: 'default@example.test', role: 'operator' });
+      const settings = await getWorkspaceSettings(client);
+      await setDefaultAssignee(client, { defaultAssigneeId: 'user-default', expectedVersion: settings.version });
       const template = await createTemplate(client, {
         name: 'Assignee Template',
         type: 'test',
-        defaultAssigneeId: 'user-grace',
         taskDefinitions: [
           { refId: 'specific', description: 'Specific assignee', offsetDays: 0, assigneeId: 'user-valeriia' },
           { refId: 'default', description: 'Default assignee', offsetDays: 1 },
@@ -747,6 +751,7 @@ describe('API — Cards', () => {
         anchorDate: '2026-06-15',
         templateId: template.id,
       });
+      await setDefaultAssignee(client, { defaultAssigneeId: null, expectedVersion: settings.version + 1 });
 
       assert.strictEqual(res.statusCode, 201);
       const body = JSON.parse(res.body);
@@ -755,7 +760,7 @@ describe('API — Cards', () => {
       const defaultTask = body.tasks.find((t: any) => t.templateTaskRef === 'default');
 
       assert.strictEqual(specific.assigneeId, 'user-valeriia');
-      assert.strictEqual(defaultTask.assigneeId, 'user-grace');
+      assert.strictEqual(defaultTask.assigneeId, 'user-default');
     });
 
     it('tasks inherit requiredLinkName from task definition', async () => {
@@ -807,7 +812,6 @@ describe('API — Cards', () => {
         name: 'Representative Workflow Template',
         type: 'workflow',
         tags: ['ops', 'model'],
-        defaultAssigneeId: 'user-ops',
         phases: [
           { id: 'intake', name: 'Intake', stage: 'preparation' },
           { id: 'delivery', name: 'Delivery', stage: 'announced' },

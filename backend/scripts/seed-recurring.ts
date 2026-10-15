@@ -1,7 +1,6 @@
 import { getClient } from '../src/db/client';
 import {
   BASELINE_RECURRING_CONFIGS,
-  OPERATOR_USER_ID,
   seedRecurringConfigs,
 } from '../src/deploymentSeeds';
 
@@ -18,4 +17,4 @@ if (require.main === module) {
     });
 }
 
-export { seed, BASELINE_RECURRING_CONFIGS, OPERATOR_USER_ID };
+export { seed, BASELINE_RECURRING_CONFIGS };

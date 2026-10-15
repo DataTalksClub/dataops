@@ -9,7 +9,7 @@ import {
 } from './db/recurring';
 import { TABLE_TASKS } from './db/tableNames';
 import { updateTask } from './db/tasks';
-import { createUserWithId, getUser, getUserByEmail } from './db/users';
+import { createUserWithId, getUserByEmail } from './db/users';
 import {
   type AuthoredTemplateDefinition,
   loadAuthoredTemplatesFromKnowledge,
@@ -17,7 +17,7 @@ import {
 } from './templates/authoredTemplates';
 import type { RecurringConfig, Task } from './types';
 
-export const OPERATOR_USER_ID = '00000000-0000-0000-0000-000000000001';
+const GRACE_USER_ID = '00000000-0000-0000-0000-000000000001';
 export const VALERIIA_USER_ID = '00000000-0000-0000-0000-000000000002';
 export const ALEXEY_USER_ID = '00000000-0000-0000-0000-000000000003';
 const SLACK_INVITE_DOC_ID = 'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form';
@@ -25,7 +25,7 @@ const TRELLO_EVENT_DOC_ID = 'sop.internal-admin.trello.how-to-create-an-event-th
 const DEFAULT_PASSWORD = '111';
 
 export const USERS = [
-  { id: OPERATOR_USER_ID, name: 'Grace', email: 'grace@datatalks.club', role: 'admin' as const },
+  { id: GRACE_USER_ID, name: 'Grace', email: 'grace@datatalks.club', role: 'admin' as const },
   { id: VALERIIA_USER_ID, name: 'Valeriia', email: 'valeriia@datatalks.club', role: 'admin' as const },
   { id: ALEXEY_USER_ID, name: 'Alexey', email: 'alexey@datatalks.club', role: 'admin' as const },
 ] as const;
@@ -41,9 +41,7 @@ type BaselineRecurringConfig = Pick<
   | 'requiredLinkName'
   | 'requiresFile'
   | 'tags'
-> & {
-  readonly assigneeId?: string;
-};
+>;
 
 export const BASELINE_RECURRING_CONFIGS: readonly BaselineRecurringConfig[] = [
   {
@@ -150,7 +148,9 @@ function valuesEqual(left: unknown, right: unknown): boolean {
 }
 
 function desiredRecurringConfig(baseline: BaselineRecurringConfig): Record<string, unknown> {
-  return { ...baseline, enabled: true, assigneeId: baseline.assigneeId || OPERATOR_USER_ID };
+  // No person is seeded onto a schedule: its Tasks go to the workspace default
+  // assignee unless an admin names someone for that schedule.
+  return { ...baseline, enabled: true };
 }
 
 function configUpdate(existing: RecurringConfig, desired: Record<string, unknown>): Record<string, unknown> {
@@ -211,10 +211,6 @@ async function repairExistingGeneratedTasks(
 }
 
 export async function seedRecurringConfigs(client: DynamoDBDocumentClient): Promise<RecurringSeedReport> {
-  if (!(await getUser(client, OPERATOR_USER_ID))) {
-    throw new Error(`Recurring seed requires seeded operator user ${OPERATOR_USER_ID}`);
-  }
-
   const existingByKey = new Map<string, RecurringConfig[]>();
   for (const config of await listRecurringConfigs(client)) {
     const key = recurringKey(config);
