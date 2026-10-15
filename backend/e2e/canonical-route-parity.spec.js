@@ -140,7 +140,13 @@ test.describe('issue 156 canonical route and operator parity', () => {
     for (const [route, title] of routes) {
       await page.goto(route);
       await expectVisibleRouteHeading(page, title);
-      expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe(route);
+      let expectedRoute = route;
+      if (route === '/review') {
+        await expect(page.locator('.review-surface .dk-split')).toBeVisible();
+        const selected = page.locator('.review-surface .dk-split__item[aria-current="true"]');
+        if (await selected.count()) expectedRoute += '?documentId=' + encodeURIComponent(await selected.getAttribute('data-document-id'));
+      }
+      expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe(expectedRoute);
       expect(new URL(page.url()).hash).toBe("");
     }
 

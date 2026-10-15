@@ -120,7 +120,7 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     expect(new URL((await financeRequest).url()).pathname).toMatch(/^\/api\/sponsor-crm\/deals\//);
     const detail = page.locator('[data-crm-detail]');
     await expect(detail.locator('.crm-booking-detail')).toBeVisible();
-    await expect(detail.locator('.booking-kind')).toHaveText('Agreed');
+    await expect(detail.locator('.booking-kind')).toHaveCount(0);
     await expect(detail.locator('.dk-split__head .status-label[data-status="agreed"]')).toHaveText('Agreed');
     await expect(page.locator(".crm-master")).toBeHidden();
     await expect(detail.locator('.crm-company-section-header').filter({ hasText: 'People' }).getByRole('button', { name: 'Add contact' })).toBeVisible();
