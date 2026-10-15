@@ -1478,9 +1478,6 @@ details.newsletter-filters .planner-filter-fields {
   font-weight: 600;
   white-space: nowrap;
 }
-.newsletter-overflow-item--compact {
-  display: none;
-}
 @media (max-width: 820px) {
   .newsletter-slot-card {
     flex: 1 1 0;
@@ -1489,39 +1486,40 @@ details.newsletter-filters .planner-filter-fields {
   .newsletter-slot-actions .newsletter-overflow {
     order: 2;
   }
-  .newsletter-slot-card__action,
   .newsletter-card-chip__meta,
   .newsletter-card-chip__warning-label {
     display: none;
   }
-  .newsletter-overflow-item--compact {
-    display: block;
-  }
 }
-.newsletter-card-options {
-  display: grid;
-  gap: var(--dk-space-1);
-  margin: 0;
-  border: 0;
-  padding: 0;
-  max-height: 50vh;
-  overflow-y: auto;
-}
-.newsletter-card-option {
+/* Newsletter issue slots: one compact tick per sponsor slot. Ticked means the
+   issue carries the slot; the sponsor may still be TBD; unticked is open. */
+.newsletter-slot-ticks {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--dk-space-1) var(--dk-space-3);
+  margin: var(--dk-space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.newsletter-slot-tick label {
+  display: inline-flex;
   align-items: center;
-  gap: var(--dk-space-3);
-  min-height: 44px;
-  border-radius: var(--dk-radius-md);
-  padding: var(--dk-space-1) var(--dk-space-2);
-}
-.newsletter-card-option:hover {
-  background: var(--dk-bg-muted);
-}
-.newsletter-card-option > span {
-  display: grid;
-  min-width: 0;
-}
-.newsletter-card-option .newsletter-card-chip__meta {
+  gap: var(--dk-space-2);
+  min-height: var(--dk-space-6);
+  color: var(--dk-text-muted);
   font-size: var(--dk-text-sm);
 }
+.newsletter-slot-tick.is-ticked label { color: var(--dk-text-body, var(--dk-text-heading)); }
+.newsletter-slot-tick.is-tbd label span { color: var(--dk-warning-text); }
+.newsletter-slot-tick strong { font-weight: 600; }
+.newsletter-slot-tick input { margin: 0; }
+.newsletter-slot-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--dk-space-2) var(--dk-space-3);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-sm, 6px);
+  padding: var(--dk-space-2) var(--dk-space-3) var(--dk-space-3);
+}
+.newsletter-slot-fields[hidden] { display: none; }
+.newsletter-slot-fields__tick { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--dk-space-2); }

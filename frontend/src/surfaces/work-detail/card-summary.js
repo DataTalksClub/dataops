@@ -48,14 +48,17 @@ export function renderCardTemplateLink(
   return row;
 }
 
-// A newsletter Card is executed for exactly one slot; the slot owns the link
-// (slot.cardId) and its date. The section appears only when a slot links this
-// Card. Re-renders within a short window reuse the last answer instead of
+// A newsletter Card executes exactly one issue; the issue owns the link
+// (issue.cardId), its date and its sponsor slots. The section appears only
+// when an issue owns this Card. Ticking a slot here adds its sponsor Tasks to
+// this Card (unticking skips the open ones), the same as in the planner.
+// Re-renders within a short window reuse the last answer instead of
 // refetching on every stage or task mutation.
-const newsletterSlotCache = new Map();
-const newsletterSlotFreshMs = 30_000;
+const newsletterIssueCache = new Map();
+const newsletterIssueFreshMs = 30_000;
+const SLOT_POSITIONS = { weekly: ["primary", "secondary"], standalone: ["primary"] };
 
-function formatSlotDate(iso) {
+function formatIssueDate(iso) {
   const parsed = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
   return Number.isNaN(parsed.getTime())
     ? String(iso || "")
@@ -68,51 +71,107 @@ function formatSlotDate(iso) {
       }).format(parsed);
 }
 
-export function renderCardNewsletterSlot(
-  { request, workApiUrl },
+export function renderCardNewsletterIssue(
+  { request, workApiUrl, reload },
   card,
 ) {
   const section = document.createElement("div");
   section.className = "workflow-detail-section card-newsletter-slot";
-  section.dataset.cardNewsletterSlot = "";
-  const fill = (slots) => {
+  section.dataset.cardNewsletterIssue = "";
+
+  async function toggle(issue, position, input) {
+    const slot = { ...(issue.slots?.[position] || {}), ticked: input.checked };
+    if (!input.checked) {
+      delete slot.sponsor;
+      delete slot.bookedByUserId;
+      delete slot.sponsorBookingId;
+    }
+    const url = workApiUrl(`/api/newsletter-issues/${encodeURIComponent(issue.id)}`);
+    const body = { version: issue.version, slots: { [position]: slot } };
+    input.disabled = true;
+    try {
+      try {
+        await request(url, { method: "PUT", body: JSON.stringify(body) });
+      } catch (error) {
+        if (error?.code !== "slot-has-completed-tasks" || !globalThis.confirm?.(error.message)) throw error;
+        await request(url, { method: "PUT", body: JSON.stringify({ ...body, confirmSlotRemoval: true }) });
+      }
+      newsletterIssueCache.delete(card.id);
+      await reload?.();
+    } catch {
+      input.checked = !input.checked;
+      input.disabled = false;
+    }
+  }
+
+  const fill = (issues) => {
     section.replaceChildren();
-    section.hidden = slots.length === 0;
-    if (!slots.length) return;
+    section.hidden = issues.length === 0;
+    if (!issues.length) return;
     const label = document.createElement("div");
     label.className = "task-history-label";
-    label.textContent = "Newsletter slot";
+    label.textContent = "Newsletter issue";
     section.append(label);
-    for (const slot of slots) {
+    for (const issue of issues) {
       const row = document.createElement("p");
       row.className = "card-newsletter-slot__row";
       const link = document.createElement("a");
-      link.href = `/newsletter?slotId=${encodeURIComponent(slot.id)}`;
-      link.textContent = `${slot.campaignLabel || "Newsletter slot"} · ${formatSlotDate(slot.publicationDate)}`;
+      link.href = `/newsletter?issueId=${encodeURIComponent(issue.id)}`;
+      link.textContent = `${issue.label || "Newsletter issue"} · ${formatIssueDate(issue.publicationDate)}`;
       opensInNewTab(link);
       const status = document.createElement("span");
       status.className = "card-newsletter-slot__status";
-      status.textContent = String(slot.status || "").replaceAll("-", " ");
+      status.textContent = String(issue.status || "").replaceAll("-", " ");
       row.append(link, status);
       const anchor = String(card.anchorDate || "").slice(0, 10);
-      if (anchor && slot.publicationDate && anchor !== slot.publicationDate) {
+      if (anchor && issue.publicationDate && anchor !== issue.publicationDate) {
         const warning = document.createElement("span");
         warning.className = "dk-badge dk-badge--warning";
         warning.dataset.cardDateMismatch = "";
-        warning.textContent = "Card date differs from the slot; the slot's date wins";
+        warning.textContent = "Card date differs from the issue; the issue's date wins";
         row.append(warning);
       }
       section.append(row);
+      const slots = document.createElement("ul");
+      slots.className = "newsletter-slot-ticks";
+      slots.setAttribute("aria-label", "Sponsor slots");
+      const locked = ["sent", "cancelled"].includes(issue.status);
+      for (const position of SLOT_POSITIONS[issue.kind] || []) {
+        const slot = issue.slots?.[position] || { ticked: false };
+        const name = issue.kind === "standalone" ? "Sponsor" : position === "primary" ? "Primary" : "Secondary";
+        const item = document.createElement("li");
+        item.className = `newsletter-slot-tick${slot.ticked ? " is-ticked" : ""}${slot.ticked && !slot.sponsor ? " is-tbd" : ""}`;
+        item.dataset.slotPosition = position;
+        const text = document.createElement("span");
+        const strong = document.createElement("strong");
+        strong.textContent = `${name}:`;
+        text.append(strong, ` ${slot.ticked ? slot.sponsor || "sponsor TBD" : "open"}`);
+        const labelEl = document.createElement("label");
+        if (issue.kind === "weekly") {
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.checked = Boolean(slot.ticked);
+          input.disabled = locked;
+          input.dataset.slotToggle = position;
+          input.setAttribute("aria-label", `${name} slot in ${issue.label || "this issue"}`);
+          input.onchange = () => toggle(issue, position, input);
+          labelEl.append(input);
+        }
+        labelEl.append(text);
+        item.append(labelEl);
+        slots.append(item);
+      }
+      section.append(slots);
     }
   };
-  const cached = newsletterSlotCache.get(card.id);
-  fill(cached?.slots || []);
-  if (cached && Date.now() - cached.at < newsletterSlotFreshMs) return section;
-  request(workApiUrl(`/api/newsletter-slots?cardId=${encodeURIComponent(card.id)}`)).then(
+  const cached = newsletterIssueCache.get(card.id);
+  fill(cached?.issues || []);
+  if (cached && Date.now() - cached.at < newsletterIssueFreshMs) return section;
+  request(workApiUrl(`/api/newsletter-issues?cardId=${encodeURIComponent(card.id)}`)).then(
     (payload) => {
-      const slots = Array.isArray(payload?.items) ? payload.items : [];
-      newsletterSlotCache.set(card.id, { slots, at: Date.now() });
-      fill(slots);
+      const issues = Array.isArray(payload?.items) ? payload.items : [];
+      newsletterIssueCache.set(card.id, { issues, at: Date.now() });
+      fill(issues);
     },
     () => {},
   );

@@ -1,3 +1,4 @@
+import { createIssueSlotForm, issueSlotFieldsetsMarkup, issueSlotFormMarkup, SLOT_FORM_FIELD } from "./planning-newsletter-slots.js";
 import { createBlockEditor } from "./document-editor/block-editor.js";
 import { parseMarkdownBlocks, serializeBlocksToMarkdown } from "./document-editor/block-model.js";
 
@@ -166,19 +167,11 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
 
           <div class="issue-pane" data-pane="details" role="tabpanel" id="newsletter-pane-details" aria-labelledby="newsletter-tab-details">
             <div class="planner-form-grid">
-              <label>Publication date <input name="publicationDate" type="date" required></label>
-              <label>Publication time <input name="publicationTime" type="time" placeholder="14:00" title="Time in Europe/Berlin"></label>
-              <label>Campaign number <input name="campaignNumber" type="number" min="1"></label>
-              <label class="planner-field-wide">
-                Campaign label <input name="campaignLabel" required maxlength="200">
-              </label>
+              ${issueSlotFormMarkup()}
               <label>Status
                 <select name="status">${newsletterStatusOptions}</select>
               </label>
-              <label>Booked by <input name="bookedByDisplayName" autocomplete="off"></label>
-              <label class="planner-field-wide">
-                Sponsor booking reference <input name="sponsorBookingId" autocomplete="off">
-              </label>
+              ${issueSlotFieldsetsMarkup()}
               <label class="planner-field-wide">Public campaign URL <input name="publicUrl" type="url"></label>
               <label class="planner-field-wide">Planning note <textarea name="planningNote" rows="4"></textarea></label>
             </div>
@@ -281,7 +274,7 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
           <div class="issue-pane" data-pane="schedule" role="tabpanel" id="newsletter-pane-schedule" aria-labelledby="newsletter-tab-schedule" hidden>
             <div class="newsletter-status-banner" data-status-banner>
               <span class="status-banner-badge" data-status-banner-badge hidden></span>
-              <span class="status-banner-text" data-status-banner-text>Editorial campaign slot planned.</span>
+              <span class="status-banner-text" data-status-banner-text>Issue planned; no sponsor booked yet.</span>
             </div>
             <div class="newsletter-stepper">
               <div class="stepper-step is-active" data-step="1"><span class="stepper-num">1</span><span>Slot Planned</span></div>
@@ -301,7 +294,7 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
             </div>
 
             <div class="newsletter-action-bar" data-action-bar>
-              <button type="button" class="newsletter-template-btn" data-action="start-draft" data-set-status="draft">Start Drafting</button>
+              <button type="button" class="newsletter-template-btn" data-action="start-draft" data-set-status="drafting">Start Drafting</button>
               <button type="button" class="newsletter-template-btn" data-action="submit-review" data-set-status="review">Submit for Review</button>
               <button type="button" class="primary-button" data-action="prompt-schedule" data-set-status="scheduled">Schedule Issue</button>
               <button type="button" class="newsletter-template-btn" data-action="prompt-send" data-set-status="sent">Mark as Sent</button>
@@ -432,14 +425,13 @@ export function setupNewsletterDialog(options) {
   function updatePreviewPane() {
     const subjectInput = form?.elements?.issueSubject || dialog.querySelector('[name="issueSubject"]');
     const preheaderInput = form?.elements?.issuePreheader || dialog.querySelector('[name="issuePreheader"]');
-    const labelInput = form?.elements?.campaignLabel || dialog.querySelector('[name="campaignLabel"]');
+    const labelText = currentEditingItem?.label || "";
     const dateInput = form?.elements?.publicationDate || dialog.querySelector('[name="publicationDate"]');
     const timeInput = form?.elements?.publicationTime || dialog.querySelector('[name="publicationTime"]');
-    const numInput = form?.elements?.campaignNumber || dialog.querySelector('[name="campaignNumber"]');
-    const bookerInput = form?.elements?.bookedByDisplayName ||
-      dialog.querySelector('[name="bookedByDisplayName"]');
+    const numInput = form?.elements?.issueNumber || dialog.querySelector('[name="issueNumber"]');
+    const bookerInput = { value: bookedSponsors().join(" + ") };
 
-    const subject = (subjectInput?.value || labelInput?.value || "DataTalks.Club Weekly").trim();
+    const subject = (subjectInput?.value || labelText || "DataTalks.Club Weekly").trim();
     const preheader = (preheaderInput?.value || "").trim();
     const dateVal = dateInput?.value || context.todayIsoDate();
     const timeVal = (timeInput?.value || "").trim();
@@ -480,17 +472,19 @@ export function setupNewsletterDialog(options) {
 
   let pendingConfirmation = null;
 
+  const slotForm = createIssueSlotForm({ dialog, form, currentItem: () => currentEditingItem });
+  const bookedSponsors = () => slotForm.bookedSponsors();
+
   function updateSchedulePane() {
     const dateInput = form?.elements?.publicationDate || dialog.querySelector('[name="publicationDate"]');
     const timeInput = form?.elements?.publicationTime || dialog.querySelector('[name="publicationTime"]');
     const schedDateInput = form?.elements?.schedulePublicationDate || dialog.querySelector('[name="schedulePublicationDate"]');
     const schedTimeInput = form?.elements?.schedulePublicationTime || dialog.querySelector('[name="schedulePublicationTime"]');
-    const labelInput = form?.elements?.campaignLabel || dialog.querySelector('[name="campaignLabel"]');
+    const labelText = currentEditingItem?.label || "";
     const subjectInput = form?.elements?.issueSubject || dialog.querySelector('[name="issueSubject"]');
     const statusSelect = form?.elements?.status || dialog.querySelector('[name="status"]');
     const linkedCard = currentEditingItem?.card || null;
-    const bookerInput = form?.elements?.bookedByDisplayName ||
-      dialog.querySelector('[name="bookedByDisplayName"]');
+    const bookerInput = { value: bookedSponsors().join(" + ") };
 
     // Keep schedule timing inputs synced with form values
     if (schedDateInput && dateInput) {
@@ -508,12 +502,12 @@ export function setupNewsletterDialog(options) {
     const hasDate = Boolean(dateInput?.value || schedDateInput?.value);
     const timeVal = (timeInput?.value || schedTimeInput?.value || "14:00").trim();
     const hasTime = Boolean(timeVal);
-    const subjectText = (subjectInput?.value || labelInput?.value || "").trim();
+    const subjectText = (subjectInput?.value || labelText || "").trim();
     const hasSubject = Boolean(subjectText);
     const hasContent = (currentBlocks || []).some((b) => b.raw && b.raw.trim().length > 0);
-    const statusVal = statusSelect?.value || "open";
+    const statusVal = statusSelect?.value || "planned";
     const hasCard = Boolean(linkedCard);
-    const isReserved = statusVal === "reserved" || Boolean(bookerInput?.value);
+    const isReserved = Boolean(bookerInput?.value);
     const hasBooker = Boolean(bookerInput?.value);
 
     const checkDate = dialog.querySelector("[data-check-date]");
@@ -543,10 +537,10 @@ export function setupNewsletterDialog(options) {
       isReserved ? `Sponsor confirmed: ${bookerInput?.value || ""}` : "Open editorial / sponsor slot",
       "Confirm sponsor booking context",
     );
-    setCheck(checkCard, hasCard, `Card linked: ${linkedCard?.title || ""}`, "Create or link a card from the slot row (optional)");
+    setCheck(checkCard, hasCard, `Card: ${linkedCard?.title || ""}`, "The card is created when the issue is saved");
 
     const stepIdx = {
-      open: 1, reserved: 1, draft: 2, drafting: 2, review: 3, scheduled: 4, sent: 5, cancelled: 0,
+      planned: 1, drafting: 2, review: 3, scheduled: 4, sent: 5, cancelled: 0,
     }[statusVal] || 1;
 
     dialog.querySelectorAll(".stepper-step").forEach((stepEl) => {
@@ -561,7 +555,7 @@ export function setupNewsletterDialog(options) {
     const bannerText = dialog.querySelector("[data-status-banner-text]");
     if (bannerEl && bannerBadge && bannerText) {
       bannerEl.className = "newsletter-status-banner";
-      if (statusVal === "drafting" || statusVal === "draft") {
+      if (statusVal === "drafting") {
         bannerEl.classList.add("is-draft");
         bannerBadge.hidden = false;
         bannerBadge.style.display = "";
@@ -592,11 +586,11 @@ export function setupNewsletterDialog(options) {
           bannerBadge.hidden = false;
           bannerBadge.style.display = "";
           bannerBadge.textContent = "Reserved";
-          bannerText.textContent = "Slot reserved for sponsor booking.";
+          bannerText.textContent = `Sponsored by ${bookerInput.value}.`;
         } else {
           bannerBadge.hidden = true;
           bannerBadge.style.display = "none";
-          bannerText.textContent = "Editorial campaign slot planned.";
+          bannerText.textContent = "Issue planned; no sponsor booked yet.";
         }
       }
     }
@@ -639,16 +633,14 @@ export function setupNewsletterDialog(options) {
     };
 
     const actionMap = {
-      open: [true, false, false, false, false],
-      reserved: [true, false, false, false, false],
-      draft: [false, true, true, false, false],
+      planned: [true, false, false, false, false],
       drafting: [false, true, true, false, false],
       review: [false, false, true, true, true],
       scheduled: [false, false, false, true, true],
       sent: [false, false, false, false, false],
     };
     const [canDraft, canReview, canSchedule, canSend, canReturn] =
-      actionMap[statusVal] || actionMap.open;
+      actionMap[statusVal] || actionMap.planned;
 
     setVisible(startDraftBtn, canDraft);
     setVisible(submitReviewBtn, canReview);
@@ -693,8 +685,8 @@ export function setupNewsletterDialog(options) {
       if (subEl) subEl.textContent = "Verify publication readiness and set send time in Europe/Berlin.";
       updateSchedulePane();
     } else {
-      if (titleEl) titleEl.textContent = "Newsletter slot";
-      if (subEl) subEl.textContent = "Keep the publication plan and booking context together.";
+      if (titleEl) titleEl.textContent = currentEditingItem?.label || "Newsletter issue";
+      if (subEl) subEl.textContent = "One email: its date, sponsor slots and card.";
     }
   }
 
@@ -706,9 +698,10 @@ export function setupNewsletterDialog(options) {
 
     if (item) {
       for (const key of Object.keys(item)) {
-        if (form.elements[key]) form.elements[key].value = item[key] || "";
+        if (form.elements[key] && typeof item[key] !== "object") form.elements[key].value = item[key] ?? "";
       }
     }
+    slotForm.fill(item);
 
     if (form.elements.publicationTime) {
       form.elements.publicationTime.value = item?.publicationTime || "14:00";
@@ -724,7 +717,7 @@ export function setupNewsletterDialog(options) {
       : null;
     let rawDraft = storedDraft || item?.planningNote || "";
 
-    let subject = item?.campaignLabel || "";
+    let subject = item?.label || "";
     let preheader = "";
     if (rawDraft.startsWith("# Subject: ")) {
       const lines = rawDraft.split("\n");
@@ -743,7 +736,7 @@ export function setupNewsletterDialog(options) {
     if (preheaderInput) preheaderInput.value = preheader;
 
     currentBlocks = parseMarkdownBlocks(rawDraft);
-    if (currentBlocks.length === 0 && item?.campaignLabel) {
+    if (currentBlocks.length === 0 && item?.label) {
       currentBlocks = [
         {
           id: `blk-0-${Date.now()}`,
@@ -769,8 +762,7 @@ export function setupNewsletterDialog(options) {
       let tplText = NEWSLETTER_TEMPLATES[tplKey];
       if (!tplText) return;
       if (tplKey === "sponsor") {
-        const bookerInput = form?.elements?.bookedByDisplayName || dialog.querySelector('[name="bookedByDisplayName"]');
-        const booker = (bookerInput?.value || currentEditingItem?.bookedByDisplayName || "").trim();
+        const booker = bookedSponsors().join(" & ");
         const sponsorName = booker || "Featured Partner";
         tplText = tplText.replace(/Sponsor Name/g, sponsorName);
       }
@@ -821,8 +813,8 @@ export function setupNewsletterDialog(options) {
       const dateInput = form.elements.publicationDate;
       const timeInput = form.elements.publicationTime || dialog.querySelector('[name="publicationTime"]');
       const subjectInput = form.elements.issueSubject || dialog.querySelector('[name="issueSubject"]');
-      const labelInput = form.elements.campaignLabel || dialog.querySelector('[name="campaignLabel"]');
-      const subjectText = (subjectInput?.value || labelInput?.value || "").trim();
+      const labelText = currentEditingItem?.label || "";
+      const subjectText = (subjectInput?.value || labelText || "").trim();
       const hasDate = Boolean(dateInput?.value || schedDateInput?.value);
       const hasSubject = Boolean(subjectText);
       const hasContent = (currentBlocks || []).some((b) => b.raw && b.raw.trim().length > 0);
@@ -830,13 +822,13 @@ export function setupNewsletterDialog(options) {
       const alertEl = form.querySelector('[role="alert"]');
 
       if (action === "start-draft") {
-        if (statusSelect) statusSelect.value = "draft";
+        if (statusSelect) statusSelect.value = "drafting";
         updateSchedulePane();
       } else if (action === "submit-review") {
         if (statusSelect) statusSelect.value = "review";
         updateSchedulePane();
       } else if (action === "return-draft") {
-        if (statusSelect) statusSelect.value = "draft";
+        if (statusSelect) statusSelect.value = "drafting";
         updateSchedulePane();
       } else if (action === "prompt-schedule") {
         if (!hasDate || !hasSubject || !hasContent) {
@@ -939,6 +931,7 @@ export function setupNewsletterDialog(options) {
         [...new FormData(form)].filter(
           ([k, v]) =>
             v !== "" &&
+            !SLOT_FORM_FIELD.test(k) &&
             k !== "issueSubject" &&
             k !== "issuePreheader" &&
             k !== "schedulePublicationDate" &&
@@ -948,14 +941,15 @@ export function setupNewsletterDialog(options) {
       const id = value.id;
       delete value.id;
       if (value.version) value.version = Number(value.version);
-      if (value.campaignNumber) {
-        value.campaignNumber = Number(value.campaignNumber);
-      }
+      if (value.issueNumber) value.issueNumber = Number(value.issueNumber);
+      if (value.kind === "standalone") delete value.issueNumber;
+      if (id) delete value.kind;
+      value.slots = slotForm.values(value.kind || currentEditingItem?.kind || "weekly");
 
       const subjectInput = dialog.querySelector('[name="issueSubject"]');
       const preheaderInput = dialog.querySelector('[name="issuePreheader"]');
       const fullMarkdown = serializeBlocksToMarkdown(currentBlocks || []);
-      const draftWithHeaders = `# Subject: ${subjectInput?.value || value.campaignLabel || ""}\n` +
+      const draftWithHeaders = `# Subject: ${subjectInput?.value || currentEditingItem?.label || ""}\n` +
         `> Preheader: ${preheaderInput?.value || ""}\n\n${fullMarkdown}`;
 
       if (id && typeof localStorage !== "undefined") {
@@ -968,16 +962,25 @@ export function setupNewsletterDialog(options) {
         value.planningNote = `${value.planningNote.slice(0, 890)}…`;
       }
 
+      const send = (body) => api(id ? `/${id}` : "", {
+        method: id ? "PUT" : "POST",
+        body: JSON.stringify(body),
+      });
       try {
-        await api(id ? `/${id}` : "", {
-          method: id ? "PUT" : "POST",
-          body: JSON.stringify(value),
-        });
+        try {
+          await send(value);
+        } catch (error) {
+          // Cancelling deletes the issue's card; unticking a slot skips its
+          // open tasks. Both ask first when completed work is involved.
+          if (!["card-has-completed-tasks", "slot-has-completed-tasks"].includes(error?.code)) throw error;
+          if (!globalThis.confirm?.(error.message)) return;
+          await send({ ...value, confirmCardDeletion: true, confirmSlotRemoval: true });
+        }
         dialog.close();
         await load();
       } catch (error) {
         form.querySelector('[role="alert"]').textContent =
-          `Could not save slot: ${error.message}`;
+          `Could not save the issue: ${error.message}`;
       }
     };
   }

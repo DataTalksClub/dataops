@@ -11,7 +11,7 @@ import {
 import {
   appendBreakableText,
   createCardSummary,
-  renderCardNewsletterSlot,
+  renderCardNewsletterIssue,
   renderCardTemplateLink,
 } from "./card-summary.js";
 import { renderLinkRow, renderLinkList } from "./link-rows.js";
@@ -372,7 +372,7 @@ export function createCardPanel(context) {
       ),
     );
     main.append(meta);
-    main.append(renderCardNewsletterSlot({ request, workApiUrl }, card));
+    main.append(renderCardNewsletterIssue({ request, workApiUrl, reload: reloadCardIntent }, card));
     const templateUpdate = renderCardTemplateUpdate(card, data, {
       detail,
       reloadCardTemplateUpdate,

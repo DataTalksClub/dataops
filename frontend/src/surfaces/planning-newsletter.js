@@ -4,6 +4,7 @@ import {
   setupNewsletterDialog,
 } from "./planning-newsletter-dialog.js";
 import { renderPageHeaderMarkup } from "./operations-overview.js";
+import { issueSlotsMarkup, SLOT_NAMES } from "./planning-newsletter-slots.js";
 
 export function createNewsletterPlanner(context) {
   const {
@@ -134,8 +135,8 @@ export function createNewsletterPlanner(context) {
   function plannerStatusClass(value) {
     if (["sent", "published", "confirmed"].includes(value)) return "is-success";
     if (["cancelled"].includes(value)) return "is-danger";
-    if (["reserved", "drafting", "draft", "scheduled", "announced"].includes(value)) return "is-info";
-    if (["review", "tentative", "open"].includes(value)) return "is-warning";
+    if (["drafting", "scheduled", "announced"].includes(value)) return "is-info";
+    if (["review", "tentative"].includes(value)) return "is-warning";
     return "";
   }
 
@@ -165,30 +166,30 @@ export function createNewsletterPlanner(context) {
 
   function newsletterAlertCopy(reasonCode) {
     return {
-      "near-term-open-unbooked": "An open slot needs booking soon",
-      "duplicate-campaign-number": "Campaign numbers need review",
-      "publication-date-overlap": "Multiple campaigns share a publication date",
-      "publication-missing-workflow": "Publication is missing its workflow card",
-      "reserved-missing-booker": "A reserved slot has no booker",
-      "card-date-mismatch": "A linked card's date differs from its slot",
+      "near-term-open-slot": "A slot needs a sponsor soon",
+      "duplicate-active-issue": "Two issues share a date and number",
+      "card-unavailable": "An issue's card is missing",
+      "card-date-mismatch": "A card's date differs from its issue",
+      "card-slot-tasks-mismatch": "A card's sponsor tasks differ from its slots",
+      "sent-issue-card-incomplete": "A sent issue's card is unfinished",
     }[reasonCode] || "Newsletter planning needs review";
   }
 
   function newsletterAlertAdvice(reasonCode) {
     return {
-      "near-term-open-unbooked":
-        "Confirm whether a sponsor is booking or convert the slot to an editorial campaign.",
-      "duplicate-campaign-number":
-        "Two newsletter slots share the same campaign number.",
-      "publication-date-overlap":
-        "Multiple campaigns share a publication date.",
-      "publication-missing-workflow":
-        "Create or link a workflow card so drafting and publication have a clear owner.",
-      "reserved-missing-booker":
-        "Add the sponsor contact or team member who reserved this slot.",
+      "near-term-open-slot":
+        "Book a sponsor for the ticked slot, or untick it to run the issue without one.",
+      "duplicate-active-issue":
+        "Check the schedule sheet: one of them probably has the wrong date or number.",
+      "card-unavailable":
+        "Every issue keeps one card. Reload; if it stays missing, cancel and reinstate the issue.",
       "card-date-mismatch":
-        "The slot's date wins: save the slot to move the card, or link the right card.",
-    }[reasonCode] || "Check the publication date and campaign setup.";
+        "The issue's date wins: save the issue to move its card.",
+      "card-slot-tasks-mismatch":
+        "Save the issue's slots again to add or skip the slot tasks on its card.",
+      "sent-issue-card-incomplete":
+        "Add the Mailchimp link to the card and resolve its remaining tasks.",
+    }[reasonCode] || "Check the publication date and slots.";
   }
 
 
@@ -221,13 +222,12 @@ export function createNewsletterPlanner(context) {
   }
 
   /**
-   * The slot's Card as a chip in the actions row: title, stage, open/total
-   * Tasks, and a warning when the Card's date drifted from the slot's (the
-   * slot wins on the next save). Unlinked slots offer Create card and Link
-   * card instead; on phones those two live in the More menu.
+   * The issue's Card as a chip in the actions row: title, stage, open/total
+   * Tasks, and a warning when the Card's date drifted from the issue's (the
+   * issue wins on the next save). Every issue that is not cancelled has its
+   * Card, created with the issue, so there is nothing to create or link here.
    */
-  function slotCardMarkup(item) {
-    const slotId = escapeHtml(item.id);
+  function issueCardMarkup(item) {
     if (item.card) {
       const card = item.card;
       const mismatch = card.anchorDate && card.anchorDate !== item.publicationDate
@@ -245,25 +245,17 @@ export function createNewsletterPlanner(context) {
           </a>
         </div>`;
     }
-    if (item.cardId) {
-      return `
-        <div class="newsletter-slot-card">
-          <span class="dk-badge dk-badge--danger">Linked card unavailable</span>
-        </div>`;
-    }
     if (item.status === "cancelled") return "";
     return `
       <div class="newsletter-slot-card">
-        <button type="button" class="newsletter-slot-card__action" data-card-create="${slotId}">Create card</button>
-        <button type="button" class="newsletter-slot-card__action" data-card-link="${slotId}">Link card…</button>
+        <span class="dk-badge dk-badge--danger">Card unavailable</span>
       </div>`;
   }
 
   async function renderNewsletterSurface() {
     documentList.replaceChildren();
     const newsletterStatuses = [
-      "open",
-      "reserved",
+      "planned",
       "drafting",
       "review",
       "scheduled",
@@ -296,7 +288,7 @@ export function createNewsletterPlanner(context) {
           role="radio"
           aria-checked="false" tabindex="-1">Sent &amp; archive <span class="dk-count" data-view-count hidden></span></button>
       </div>
-      ${globalThis.dakitCollection.createButtonMarkup({ label: "Add slot", attributes: "data-newsletter-add" })}
+      ${globalThis.dakitCollection.createButtonMarkup({ label: "Add issue", attributes: "data-newsletter-add" })}
       </div>
       <details class="newsletter-filters" aria-label="Newsletter filters">
         <summary class="newsletter-filters-summary">
@@ -320,30 +312,23 @@ export function createNewsletterPlanner(context) {
           <label>Booking
             <select data-booked>
               <option value="">Any booking</option>
-              <option value="true">Booked</option>
-              <option value="false">Unbooked</option>
+              <option value="true">Sponsor booked</option>
+              <option value="false">Slot needs a sponsor</option>
             </select>
           </label>
         </div>
       </details>
-      <p class="planner-load-state" role="status">Loading newsletter slots…</p>
+      <p class="planner-load-state" role="status">Loading newsletter issues…</p>
       <div class="planner-alerts" data-alerts></div>
-      <div class="newsletter-schedule" data-slots>Loading slots…</div>
+      <div class="newsletter-schedule" data-slots>Loading issues…</div>
       ${renderNewsletterDialogMarkup(newsletterStatusOptions)}`;
-    // The card-link picker sits beside the surface, so the issue dialog stays
-    // the surface's only dialog.
-    const cardLinkDialog = document.createElement("dialog");
-    cardLinkDialog.className = "dk-dialog";
-    cardLinkDialog.dataset.cardLinkDialog = "";
-    cardLinkDialog.setAttribute("aria-labelledby", "newsletter-card-link-title");
-    cardLinkDialog.innerHTML = cardLinkDialogMarkup();
-    documentList.append(surface, cardLinkDialog);
+    documentList.append(surface);
     setRouteTitle("Newsletter");
     const status = surface.querySelector('[role="status"]'),
       dialog = surface.querySelector("dialog"),
       form = dialog.querySelector("form"),
       api = (path, options = {}) =>
-        request(workApiUrl(`/api/newsletter-slots${path}`), {
+        request(workApiUrl(`/api/newsletter-issues${path}`), {
           headers: { "content-type": "application/json" },
           ...options,
         });
@@ -366,9 +351,9 @@ export function createNewsletterPlanner(context) {
         : isoWeekKey(item.publicationDate);
 
     function newsletterAlertMarkup(alert) {
-      const slot = (items || []).find((candidate) => candidate.id === alert.slotId);
-      const naming = slot
-        ? `${slot.campaignLabel || "Slot"}${slot.publicationDate ? ` — ${formatShortPlanningDate(slot.publicationDate)}` : ""}`
+      const issue = (items || []).find((candidate) => candidate.id === alert.issueId);
+      const naming = issue
+        ? `${issue.label || "Issue"}${issue.publicationDate ? ` — ${formatShortPlanningDate(issue.publicationDate)}` : ""}`
         : "";
       return `
         <article class="planner-alert is-${escapeHtml(alert.severity || "warning")}">
@@ -380,16 +365,7 @@ export function createNewsletterPlanner(context) {
       `;
     }
 
-    function newsletterSlotMarkup(item) {
-      const bookedBy = item.bookedByDisplayName
-        || (item.sponsorBookingId
-          ? "Sponsor booking linked"
-          : item.bookedByUserId
-            ? "Team member"
-            : "");
-      const bookedMarkup = bookedBy
-        ? `<p>Booked by: ${escapeHtml(bookedBy)}</p>`
-        : `<p>No sponsor</p>`;
+    function newsletterIssueMarkup(item) {
       const publicationLabel = new Date(`${item.publicationDate}T00:00:00Z`)
         .toLocaleDateString("en", {
           weekday: "short",
@@ -401,9 +377,9 @@ export function createNewsletterPlanner(context) {
       const relMarkup = relBadge
         ? `<span class="newsletter-relative-badge">${escapeHtml(relBadge)}</span>`
         : "";
-      const campaignNumber = item.campaignNumber
-        ? `<small class="newsletter-campaign-badge">Campaign ${escapeHtml(item.campaignNumber)}</small>`
-        : `<small>Slot</small>`;
+      const kindBadge = item.kind === "standalone"
+        ? `<small>Stand-alone</small>`
+        : `<small class="newsletter-campaign-badge">Weekly</small>`;
       const timeMarkup = item.publicationTime
         ? `<span class="newsletter-time-badge">${escapeHtml(item.publicationTime)} Berlin</span>`
         : "";
@@ -417,51 +393,44 @@ export function createNewsletterPlanner(context) {
           </a>
         `
         : "";
-      const slotId = escapeHtml(item.id);
-      const cardMenuItems = item.cardId
-        ? `<button type="button" class="newsletter-overflow-item" role="menuitem" data-card-link="${slotId}">Change card link…</button>`
-        : item.status === "cancelled"
-          ? ""
-          : `<button type="button" class="newsletter-overflow-item newsletter-overflow-item--compact" role="menuitem" data-card-create="${slotId}">Create card</button>
-             <button type="button" class="newsletter-overflow-item newsletter-overflow-item--compact" role="menuitem" data-card-link="${slotId}">Link card…</button>`;
+      const issueId = escapeHtml(item.id);
       const actions = `
-            ${slotCardMarkup(item)}
-            <button type="button" class="primary-button newsletter-slot-primary" data-compose="${slotId}">Compose</button>
+            ${issueCardMarkup(item)}
+            <button type="button" class="primary-button newsletter-slot-primary" data-compose="${issueId}">Compose</button>
             <div class="newsletter-overflow">
               <button
                 type="button"
                 class="newsletter-overflow-trigger"
                 aria-haspopup="true"
                 aria-expanded="false"
-                aria-label="More actions for ${escapeHtml(item.campaignLabel)}"
+                aria-label="More actions for ${escapeHtml(item.label)}"
               >More</button>
               <div class="newsletter-overflow-menu" role="menu" hidden>
                 ${campaignLink ? campaignLink.replace('<a ', '<a class="newsletter-overflow-item" role="menuitem" ') : ""}
-                <button type="button" class="newsletter-overflow-item" role="menuitem" data-preview="${slotId}">Preview</button>
-                <button type="button" class="newsletter-overflow-item" role="menuitem" data-schedule="${slotId}">Schedule</button>
-                <button type="button" class="newsletter-overflow-item" role="menuitem" data-edit="${slotId}">Edit details</button>
-                ${cardMenuItems}
+                <button type="button" class="newsletter-overflow-item" role="menuitem" data-preview="${issueId}">Preview</button>
+                <button type="button" class="newsletter-overflow-item" role="menuitem" data-schedule="${issueId}">Schedule</button>
+                <button type="button" class="newsletter-overflow-item" role="menuitem" data-edit="${issueId}">Edit details</button>
               </div>
             </div>
           `;
       return `
-        <article class="newsletter-slot-row" data-slot-id="${slotId}">
+        <article class="newsletter-slot-row" data-issue-id="${issueId}">
           <div class="newsletter-slot-date">
             <time datetime="${escapeHtml(item.publicationDate)}">${publicationLabel}</time>
             <div class="newsletter-date-meta">
-              ${campaignNumber}
+              ${kindBadge}
               ${relMarkup}
               ${timeMarkup}
             </div>
           </div>
           <div class="newsletter-slot-main">
             <div class="newsletter-slot-title">
-              <h4>${escapeHtml(item.campaignLabel)}</h4>
+              <h4>${escapeHtml(item.label)}</h4>
               <span class="planner-status ${plannerStatusClass(item.status)}">
                 ${escapeHtml(plannerLabel(item.status))}
               </span>
             </div>
-            ${bookedMarkup}
+            ${issueSlotsMarkup(item, escapeHtml)}
             ${planningNote}
           </div>
           <div class="newsletter-slot-actions">
@@ -471,7 +440,7 @@ export function createNewsletterPlanner(context) {
       `;
     }
 
-    function newsletterPeriodMarkup(period, slots) {
+    function newsletterPeriodMarkup(period, issues) {
       const periodLabel = surface.querySelector("[data-view]").value === "month"
         ? new Date(`${period}-01T00:00:00Z`).toLocaleDateString("en", {
           month: "long",
@@ -483,17 +452,17 @@ export function createNewsletterPlanner(context) {
         <section class="newsletter-period">
           <header>
             <h3>${escapeHtml(periodLabel)}</h3>
-            <span class="planner-count">${slots.length} ${slots.length === 1 ? "slot" : "slots"}</span>
+            <span class="planner-count">${issues.length} ${issues.length === 1 ? "issue" : "issues"}</span>
           </header>
           <div class="newsletter-slot-list">
-            ${slots.map(newsletterSlotMarkup).join("")}
+            ${issues.map(newsletterIssueMarkup).join("")}
           </div>
         </section>
       `;
     }
 
     async function load() {
-      status.textContent = "Loading newsletter slots…";
+      status.textContent = "Loading newsletter issues…";
       try {
         const query = new URLSearchParams({
             from: surface.querySelector("[data-from]").value,
@@ -507,7 +476,7 @@ export function createNewsletterPlanner(context) {
         // Update stats summary bar
         const totalCount = items.length;
         const upcomingCount = items.filter((i) =>
-          ["open", "reserved", "drafting", "draft", "review", "scheduled"].includes(i.status)
+          ["planned", "drafting", "review", "scheduled"].includes(i.status)
         ).length;
         // Each filter segment carries its count. There is no stats strip
         // restating them (dakit principle 4, no vanity metrics).
@@ -540,7 +509,7 @@ export function createNewsletterPlanner(context) {
         if (!explicitStatus) {
           if (currentView === "upcoming") {
             displayedItems = items.filter((i) =>
-              ["open", "reserved", "drafting", "draft", "review", "scheduled"].includes(i.status)
+              ["planned", "drafting", "review", "scheduled"].includes(i.status)
             );
           } else if (currentView === "sent") {
             displayedItems = items.filter((i) =>
@@ -556,14 +525,14 @@ export function createNewsletterPlanner(context) {
         }
         surface.querySelector("[data-slots]").innerHTML = displayedItems.length
           ? Object.entries(groups)
-              .map(([period, slots]) => newsletterPeriodMarkup(period, slots))
+              .map(([period, issues]) => newsletterPeriodMarkup(period, issues))
               .join("")
           : `
             <div class="honest-state planner-empty">
-              <strong>No newsletter slots</strong>
-              <p>Create the first slot or adjust the date, status, and booking filters.</p>
+              <strong>No newsletter issues</strong>
+              <p>Add the first issue or adjust the date, status, and booking filters.</p>
               ${globalThis.dakitCollection.createButtonMarkup({
-                label: "Create the first slot",
+                label: "Add the first issue",
                 attributes: "data-newsletter-add-first",
                 className: "collection-empty-action",
                 variant: "secondary",
@@ -578,7 +547,7 @@ export function createNewsletterPlanner(context) {
         surface.querySelector("[data-slots]").innerHTML = `
           <div class="honest-state planner-failure">
             <strong>Newsletter schedule unavailable</strong>
-            <p>Reopen Newsletter to retry. No slots have been changed.</p>
+            <p>Reopen Newsletter to retry. No issues have been changed.</p>
           </div>
         `;
       }
@@ -613,7 +582,50 @@ export function createNewsletterPlanner(context) {
       openIssueDialog(null, "details");
     };
 
-    const linking = setupCardLinkDialog(cardLinkDialog, api, load);
+    /**
+     * Tick or untick a slot from the row. Unticking a slot whose Tasks are
+     * partly done asks first: done Tasks stay, open ones are skipped.
+     */
+    async function toggleSlot(input) {
+      const item = items.find((value) => value.id === input.dataset.issueId);
+      const position = input.dataset.slotToggle;
+      if (!item || !position) return;
+      const current = item.slots?.[position] || { ticked: false };
+      const slot = { ...current, ticked: input.checked };
+      if (!input.checked) {
+        delete slot.sponsor;
+        delete slot.bookedByUserId;
+        delete slot.sponsorBookingId;
+      }
+      const body = { version: item.version, slots: { [position]: slot } };
+      input.disabled = true;
+      try {
+        try {
+          await api(`/${encodeURIComponent(item.id)}`, { method: "PUT", body: JSON.stringify(body) });
+        } catch (error) {
+          if (error?.code !== "slot-has-completed-tasks") throw error;
+          if (!globalThis.confirm?.(`${error.message}`)) {
+            input.checked = !input.checked;
+            return;
+          }
+          await api(`/${encodeURIComponent(item.id)}`, {
+            method: "PUT",
+            body: JSON.stringify({ ...body, confirmSlotRemoval: true }),
+          });
+        }
+        await load();
+      } catch (error) {
+        input.checked = !input.checked;
+        status.textContent = `Could not change the ${SLOT_NAMES[position].toLowerCase()} slot: ${error.message}`;
+      } finally {
+        input.disabled = false;
+      }
+    }
+
+    surface.querySelector("[data-slots]").addEventListener("change", (event) => {
+      const input = event.target.closest?.("[data-slot-toggle]");
+      if (input) toggleSlot(input);
+    });
 
     surface.querySelector("[data-slots]").onclick = (event) => {
       const target = event.target;
@@ -625,30 +637,16 @@ export function createNewsletterPlanner(context) {
         context.navigateCanonicalWorkspace("/cards", { cardId: cardChip.dataset.openCard });
         return;
       }
-      const createCardBtn = target.closest("[data-card-create]");
-      if (createCardBtn?.dataset.cardCreate) {
-        closeAllSlotOverflows(surface);
-        const item = items.find((value) => value.id === createCardBtn.dataset.cardCreate);
-        if (item) linking.createCard(createCardBtn, item);
-        return;
-      }
-      const linkCardBtn = target.closest("[data-card-link]");
-      if (linkCardBtn?.dataset.cardLink) {
-        closeAllSlotOverflows(surface);
-        const item = items.find((value) => value.id === linkCardBtn.dataset.cardLink);
-        if (item) linking.open(linkCardBtn, item, items);
-        return;
-      }
       const editBtn = target.closest("[data-edit]");
       const composeBtn = target.closest("[data-compose]");
       const previewBtn = target.closest("[data-preview]");
       const scheduleBtn = target.closest("[data-schedule]");
-      const slotId = (editBtn || composeBtn || previewBtn || scheduleBtn)?.dataset.edit
+      const issueId = (editBtn || composeBtn || previewBtn || scheduleBtn)?.dataset.edit
         || composeBtn?.dataset.compose
         || previewBtn?.dataset.preview
         || scheduleBtn?.dataset.schedule;
-      if (!slotId) {
-        // The empty schedule repeats Add slot.
+      if (!issueId) {
+        // The empty schedule repeats Add issue.
         if (target.closest("[data-newsletter-add-first]")) {
           openIssueDialog(null, "details");
           return;
@@ -662,7 +660,7 @@ export function createNewsletterPlanner(context) {
       if (target.classList?.contains?.("newsletter-overflow-item")) {
         closeAllSlotOverflows(surface);
       }
-      const item = items.find((value) => value.id === slotId);
+      const item = items.find((value) => value.id === issueId);
       if (!item) return;
 
       if (composeBtn) openIssueDialog(item, "compose");
@@ -684,157 +682,6 @@ export function createNewsletterPlanner(context) {
       closeAllSlotOverflows(surface);
     });
     await load();
-  }
-
-  function cardLinkDialogMarkup() {
-    return `
-        <form method="dialog">
-          <div class="dk-dialog__head">
-            <h2 id="newsletter-card-link-title">Link a card</h2>
-          </div>
-          <div class="dk-dialog__body">
-            <p class="dk-hint" data-card-link-slot></p>
-            <fieldset class="newsletter-card-options" data-card-options>
-              <legend class="dk-visually-hidden">Newsletter cards without a slot</legend>
-            </fieldset>
-            <p role="alert" class="dk-field-error"></p>
-          </div>
-          <div class="dk-dialog__foot">
-            <button type="button" class="dk-button dk-button--danger" data-card-unlink hidden>Unlink card</button>
-            <button value="cancel" class="dk-button dk-button--secondary">Cancel</button>
-            <button class="dk-button dk-button--primary" data-card-link-save>Link card</button>
-          </div>
-        </form>`;
-  }
-
-  async function newsletterCardCandidates(signal) {
-    const templatesPayload = await request(workApiUrl("/api/templates"), { signal });
-    const templates = Array.isArray(templatesPayload)
-      ? templatesPayload
-      : templatesPayload?.templates || [];
-    const newsletterTemplateIds = new Set(
-      templates
-        .filter((template) => ["newsletter", "newsletter-standalone"].includes(template.type))
-        .map((template) => template.id),
-    );
-    const cards = [];
-    let cursor = "";
-    for (let page = 0; page < 10; page += 1) {
-      const query = new URLSearchParams({ limit: "200", ...(cursor ? { cursor } : {}) });
-      const payload = await request(workApiUrl(`/api/cards?${query}`), { signal });
-      cards.push(...(payload?.cards?.items || []));
-      cursor = payload?.cards?.nextCursor || "";
-      if (!cursor) break;
-    }
-    return cards.filter(
-      (card) => newsletterTemplateIds.has(card.templateId) && card.status !== "archived",
-    );
-  }
-
-  function setupCardLinkDialog(dialog, api, load) {
-    const form = dialog.querySelector("form");
-    const alert = form.querySelector('[role="alert"]');
-    const setBusy = (button, busy) => {
-      if (busy) {
-        button.setAttribute("aria-busy", "true");
-        button.setAttribute("aria-disabled", "true");
-      } else {
-        button.removeAttribute("aria-busy");
-        button.removeAttribute("aria-disabled");
-      }
-    };
-
-    async function createCard(button, item) {
-      if (button.getAttribute("aria-busy") === "true") return;
-      setBusy(button, true);
-      try {
-        await api(`/${encodeURIComponent(item.id)}/card`, {
-          method: "POST",
-          body: JSON.stringify({ version: item.version }),
-        });
-        await load();
-      } catch (error) {
-        setBusy(button, false);
-        (button.closest(".newsletter-slot-row")?.querySelector(".newsletter-slot-main") || button.parentElement)?.insertAdjacentHTML(
-          "beforeend",
-          `<span class="dk-field-error" role="alert">Could not create card: ${escapeHtml(error.message)}</span>`,
-        );
-      }
-    }
-
-    function render(item, items, cards) {
-      const linkedElsewhere = new Set(
-        items.filter((slot) => slot.cardId && slot.id !== item.id).map((slot) => slot.cardId),
-      );
-      const options = cards
-        .filter((card) => !linkedElsewhere.has(card.id))
-        .sort((a, b) => String(b.anchorDate || "").localeCompare(String(a.anchorDate || "")));
-      dialog.querySelector("[data-card-link-slot]").textContent =
-        `${item.campaignLabel || "Slot"} · ${formatShortPlanningDate(item.publicationDate)}. Linking moves the card to the slot's date.`;
-      const fieldset = dialog.querySelector("[data-card-options]");
-      fieldset.querySelectorAll(":scope > :not(legend)").forEach((node) => node.remove());
-      fieldset.insertAdjacentHTML(
-        "beforeend",
-        options.length
-          ? options
-              .map((card) => `
-                <label class="newsletter-card-option">
-                  <input type="radio" name="cardId" value="${escapeHtml(card.id)}" ${card.id === item.cardId ? "checked" : ""}>
-                  <span>
-                    <span class="newsletter-card-chip__title">${escapeHtml(card.title || "Untitled card")}</span>
-                    <span class="newsletter-card-chip__meta">${escapeHtml(stageLabel(card.stage))}${
-                      card.anchorDate ? ` · ${escapeHtml(formatShortPlanningDate(card.anchorDate))}` : ""
-                    }</span>
-                  </span>
-                </label>`)
-              .join("")
-          : `<p class="dk-muted">No newsletter card is free to link. Use Create card on the slot instead.</p>`,
-      );
-      alert.textContent = "";
-      const unlink = dialog.querySelector("[data-card-unlink]");
-      unlink.hidden = !item.cardId;
-      const save = async (cardId) => {
-        alert.textContent = "";
-        try {
-          await api(`/${encodeURIComponent(item.id)}`, {
-            method: "PUT",
-            body: JSON.stringify({ version: item.version, cardId }),
-          });
-          dialog.close();
-          await load();
-        } catch (error) {
-          alert.textContent = `Could not ${cardId ? "link" : "unlink"} card: ${error.message}`;
-        }
-      };
-      unlink.onclick = () => save(null);
-      dialog.querySelector("[data-card-link-save]").disabled = options.length === 0;
-      form.onsubmit = (event) => {
-        if (event.submitter?.value === "cancel") return;
-        event.preventDefault();
-        const cardId = new FormData(form).get("cardId");
-        if (!cardId) {
-          alert.textContent = "Choose a card to link.";
-          return;
-        }
-        if (cardId === item.cardId) {
-          dialog.close();
-          return;
-        }
-        save(String(cardId));
-      };
-      return dialog;
-    }
-
-    function open(trigger, item, items) {
-      globalThis.dakitDialogs.openWhenReady(
-        trigger,
-        (signal) => newsletterCardCandidates(signal),
-        (cards) => render(item, items, cards),
-        { label: "Loading cards…" },
-      );
-    }
-
-    return { createCard, open };
   }
 
   return {

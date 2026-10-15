@@ -1175,7 +1175,7 @@ describe("Tasks surface boundary", () => {
     assert.equal(requests.filter((url) => url.startsWith("/api/podcast-episodes")).length, 1);
   });
 
-  test("summarises a newsletter Card with its slot first and the issue named once", async () => {
+  test("summarises a newsletter Card with its issue and slots first", async () => {
     const card = {
       id: "card-news",
       version: 1,
@@ -1193,8 +1193,11 @@ describe("Tasks surface boundary", () => {
         cardsById: new Map([[card.id, card]]),
         templates: [{ id: "tpl-news", type: "newsletter", name: "Newsletter", icon: "newspaper" }],
       },
-      request: async (url) => (url === `/api/newsletter-slots?cardId=${card.id}`
-        ? { items: [{ id: "slot-1", campaignLabel: "Weekly #299", campaignNumber: 299, publicationDate: "2026-08-14", bookedByDisplayName: "Acme", status: "booked" }] }
+      request: async (url) => (url === `/api/newsletter-issues?cardId=${card.id}`
+        ? { items: [{
+          id: "issue-1", kind: "weekly", label: "Weekly #299", issueNumber: 299, publicationDate: "2026-08-14", status: "planned",
+          slots: { primary: { ticked: true, sponsor: "Acme" }, secondary: { ticked: true } },
+        }] }
         : {}),
       taskRouteContext: {
         date: "",
@@ -1212,8 +1215,8 @@ describe("Tasks surface boundary", () => {
     assert.deepEqual(rows.slice(0, 4), [
       ["Issue", "Weekly #299"],
       ["Date", "14 Aug 2026"],
-      ["Sponsor", "Acme"],
-      ["Status", "booked"],
+      ["Slots", "Primary: Acme · Secondary: TBD"],
+      ["Status", "planned"],
     ]);
     assert.deepEqual(rows.slice(4).map(([label]) => label), ["Progress", "Due"]);
     assert.equal(rows[4][1], "8 of 15 tasks done");

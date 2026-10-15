@@ -4,7 +4,7 @@ import { renderIcon } from "../../core/icons.js";
 import { STATUS_LABELS, episodeCode, guestNames } from "../podcast/model.js";
 
 // The Card behind a queue row, summarised on hover as a few short facts: a
-// podcast Card's episode or a newsletter Card's slot first (loaded on first
+// podcast Card's episode or a newsletter Card's issue first (loaded on first
 // open and cached for the session), then how far the Card got and when it is
 // due. The row already names the Card, and clicking it opens the Card, so
 // the summary repeats neither.
@@ -64,13 +64,16 @@ function fact(list, label, value) {
   list.append(row);
 }
 
-// "Weekly #299", never "Weekly #299 · #299".
-export function slotIssueText(slot) {
-  const label = String(slot?.campaignLabel || "").trim();
-  const number = String(slot?.campaignNumber || "").trim();
-  if (!number) return label;
-  if (!label) return `#${number}`;
-  return label.includes(number) ? label : `${label} #${number}`;
+/** "Primary: Sponsor A · Secondary: open" for an issue's slots. */
+export function issueSlotText(issue) {
+  const positions = issue?.kind === "standalone" ? ["primary"] : ["primary", "secondary"];
+  return positions
+    .map((position) => {
+      const slot = issue?.slots?.[position] || { ticked: false };
+      const name = issue?.kind === "standalone" ? "Sponsor" : position === "primary" ? "Primary" : "Secondary";
+      return `${name}: ${slot.ticked ? slot.sponsor || "TBD" : "open"}`;
+    })
+    .join(" · ");
 }
 
 function episodeFacts(episode) {
@@ -83,12 +86,12 @@ function episodeFacts(episode) {
   ];
 }
 
-function slotFacts(slot) {
+function issueFacts(issue) {
   return [
-    ["Issue", slotIssueText(slot)],
-    ["Date", formatDay(slot.publicationDate)],
-    ["Sponsor", slot.bookedByDisplayName || ""],
-    ["Status", String(slot.status || "").replaceAll("-", " ")],
+    ["Issue", issue.label || ""],
+    ["Date", formatDay(issue.publicationDate)],
+    ["Slots", issueSlotText(issue)],
+    ["Status", String(issue.status || "").replaceAll("-", " ")],
   ];
 }
 
@@ -109,20 +112,20 @@ export function createCardHovercards(context) {
     return `${path}?cardId=${encodeURIComponent(card.id)}`;
   }
 
-  // The linked episode or slot, one request per Card per session. A failed
+  // The linked episode or issue, one request per Card per session. A failed
   // read is not cached, so the next hover tries again.
   function loadExtra(card, kind) {
     const type = kind?.type || "";
     let path = "";
     if (PODCAST_TYPES.has(type)) path = "/api/podcast-episodes";
-    else if (NEWSLETTER_TYPES.has(type)) path = "/api/newsletter-slots";
+    else if (NEWSLETTER_TYPES.has(type)) path = "/api/newsletter-issues";
     if (!path) return Promise.resolve(null);
     if (!extras.has(card.id)) {
       const loading = Promise.resolve(request(workApiUrl(`${path}?cardId=${encodeURIComponent(card.id)}`)))
         .then((payload) => {
           const item = Array.isArray(payload?.items) ? payload.items[0] : null;
           if (!item) return null;
-          return PODCAST_TYPES.has(type) ? episodeFacts(item) : slotFacts(item);
+          return PODCAST_TYPES.has(type) ? episodeFacts(item) : issueFacts(item);
         })
         .catch((error) => {
           extras.delete(card.id);

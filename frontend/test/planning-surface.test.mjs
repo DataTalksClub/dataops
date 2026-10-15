@@ -416,7 +416,7 @@ describe("Planning surface production behavior", () => {
                 endDate: "2026-08-13",
                 href: "/newsletter",
                 label: "Newsletter 42",
-                provider: "newsletter-slots-readonly",
+                provider: "newsletter-issues-readonly",
                 startDate: "2026-08-13",
               },
               {
@@ -524,10 +524,10 @@ describe("Planning surface production behavior", () => {
           items: [
             { provider: "alexey-calendar", id: "alexey-slot:2026-08-12:midday", startDate: "2026-08-12", endDate: "2026-08-12",
               label: "12:30 Available", category: "Available slot", isAvailableSlot: true },
-            { provider: "newsletter-slots-readonly", id: "slot-open", startDate: "2026-08-13", endDate: "2026-08-13",
-              label: "Issue 99", status: "open", href: "/newsletter?slotId=slot-open" },
-            { provider: "newsletter-slots-readonly", id: "slot-booked", startDate: "2026-08-14", endDate: "2026-08-14",
-              label: "Booked issue", status: "scheduled", href: "/newsletter?slotId=slot-booked" },
+            { provider: "newsletter-issues-readonly", id: "slot-open", startDate: "2026-08-13", endDate: "2026-08-13",
+              label: "Issue 99", status: "planned", isAvailableSlot: true, href: "/newsletter?slotId=slot-open" },
+            { provider: "newsletter-issues-readonly", id: "slot-booked", startDate: "2026-08-14", endDate: "2026-08-14",
+              label: "Booked issue", status: "scheduled", isAvailableSlot: false, href: "/newsletter?slotId=slot-booked" },
           ],
           sources: {},
         }
@@ -1145,34 +1145,48 @@ describe("Planning surface production behavior", () => {
     assert.ok(body.indexOf("Night sync") < body.indexOf("DST test item"));
   });
 
-  test("renders grouped Newsletter slots, safe booking labels, links, and alerts", async () => {
+  const weeklyIssue = (overrides = {}) => ({
+    kind: "weekly",
+    label: "Weekly #42",
+    issueNumber: 42,
+    slots: { primary: { ticked: true, sponsor: "Example Sponsor" }, secondary: { ticked: false } },
+    ...overrides,
+  });
+
+  test("renders one row per Newsletter issue with its slot ticks, card, links, and alerts", async () => {
     const dom = createNewsletterDom();
     const harness = createPlanningHarness({
       newsletter: dom,
       request: async () => ({
-        alerts: [
-          {
-            reasonCode: "near-term-open-unbooked",
-            severity: "warning",
-          },
-        ],
+        alerts: [{ reasonCode: "near-term-open-slot", severity: "warning", issueId: "issue-2" }],
         items: [
-          {
-            bookedByDisplayName: "Example Sponsor",
-            campaignLabel: "Community Newsletter",
-            campaignNumber: 42,
-            id: "slot-1",
+          weeklyIssue({
+            id: "issue-1",
             planningNote: "Materials confirmed",
             publicUrl: "https://example.invalid/campaign/42",
             publicationDate: "2026-08-21",
             status: "scheduled",
-          },
-          {
-            bookedByUserId: "user-example",
-            campaignLabel: "Follow-up Newsletter",
-            id: "slot-2",
+            slots: { primary: { ticked: true, sponsor: "Example Sponsor" }, secondary: { ticked: true, sponsor: "Second <Sponsor>" } },
+            cardId: "card-1",
+            card: { id: "card-1", title: "21 Aug · #42", stage: "preparation", status: "active", anchorDate: "2026-08-20", taskCount: 6, openTaskCount: 4 },
+          }),
+          weeklyIssue({
+            id: "issue-2",
+            label: "Weekly #43",
+            issueNumber: 43,
             publicationDate: "2026-08-28",
-            status: "drafting",
+            status: "planned",
+            slots: { primary: { ticked: true }, secondary: { ticked: false } },
+            card: null,
+          }),
+          {
+            id: "issue-3",
+            kind: "standalone",
+            label: "Stand-alone newsletter",
+            publicationDate: "2026-08-26",
+            status: "planned",
+            slots: { primary: { ticked: true, sponsor: "Solo Sponsor" } },
+            card: null,
           },
         ],
       }),
@@ -1180,29 +1194,91 @@ describe("Planning surface production behavior", () => {
     await harness.surface.renderNewsletterSurface();
     assert.deepEqual(harness.routeTitles, ["Newsletter"]);
     assert.equal(dom.status.textContent, "");
-    assert.match(dom.alerts.innerHTML, /An open slot needs booking soon/);
-    assert.match(dom.slots.innerHTML, /Community Newsletter/);
-    assert.match(dom.slots.innerHTML, /Example Sponsor/);
-    assert.match(dom.slots.innerHTML, /Campaign 42/);
-    assert.match(dom.slots.innerHTML, /Open campaign/);
-    assert.match(dom.slots.innerHTML, /Team member/);
+    assert.match(dom.alerts.innerHTML, /A slot needs a sponsor soon/);
+    assert.match(dom.alerts.innerHTML, /Weekly #43 — 28 Aug/);
+    const html = dom.slots.innerHTML;
+    assert.match(html, /<h4>Weekly #42<\/h4>/);
+    assert.match(html, /<strong>Primary:<\/strong> Example Sponsor/);
+    assert.match(html, /<strong>Secondary:<\/strong> Second &lt;Sponsor&gt;/);
+    assert.match(html, /<strong>Primary:<\/strong> sponsor TBD/);
+    assert.match(html, /<strong>Secondary:<\/strong> open/);
+    assert.match(html, /data-slot-toggle="secondary" data-issue-id="issue-2"\s+(?!checked)/);
+    assert.match(html, /<strong>Sponsor:<\/strong> Solo Sponsor/);
+    assert.doesNotMatch(html, /data-slot-toggle="primary" data-issue-id="issue-3"/);
+    assert.match(html, /href="\/cards\?cardId=card-1"/);
+    assert.match(html, /Preparation ·\s+<span class="dk-mono">4\/6<\/span> open/);
+    assert.match(html, /data-card-date-mismatch><span class="newsletter-card-chip__warning-label">Card dated <\/span>\s*20 Aug/);
+    assert.match(html, /Card unavailable/);
+    assert.match(html, /Open campaign/);
+    assert.doesNotMatch(html, /data-card-create|data-card-link|Create card|Link card/);
     const range = new URL(harness.requests[0].url).searchParams;
+    assert.match(harness.requests[0].url, /\/api\/newsletter-issues\?/);
     assert.equal(range.get("from"), "2026-08-01");
     assert.equal(range.get("to"), "2027-12-31");
   });
 
-  test("supports Newsletter week grouping, filtering, create/edit, and numeric mutation fields", async () => {
+  test("ticks and unticks a slot from the row, confirming when done tasks would stay", async () => {
+    const dom = createNewsletterDom();
+    let issue = weeklyIssue({ id: "issue-1", version: 3, publicationDate: "2026-08-21", status: "planned" });
+    const puts = [];
+    let confirmations = 0;
+    const originalConfirm = globalThis.confirm;
+    globalThis.confirm = () => {
+      confirmations += 1;
+      return true;
+    };
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      request: async (_url, options) => {
+        if (options.method === "PUT") {
+          const body = JSON.parse(options.body);
+          puts.push(body);
+          if (body.slots.primary?.ticked === false && !body.confirmSlotRemoval) {
+            throw Object.assign(new Error("Unticking keeps 1 completed Task"), { code: "slot-has-completed-tasks" });
+          }
+          issue = { ...issue, slots: { ...issue.slots, ...body.slots }, version: issue.version + 1 };
+          return issue;
+        }
+        return { alerts: [], items: [issue] };
+      },
+    });
+    try {
+      await harness.surface.renderNewsletterSurface();
+      const [change] = dom.slots.listeners.get("change");
+      const toggle = (position, checked) => ({
+        checked,
+        disabled: false,
+        dataset: { slotToggle: position, issueId: "issue-1" },
+        closest() { return this; },
+      });
+      const secondary = toggle("secondary", true);
+      change({ target: secondary });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.deepEqual(puts[0], { version: 3, slots: { secondary: { ticked: true } } });
+
+      const primary = toggle("primary", false);
+      change({ target: primary });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.equal(confirmations, 1);
+      assert.deepEqual(puts.at(-1), { version: 4, slots: { primary: { ticked: false } }, confirmSlotRemoval: true });
+    } finally {
+      globalThis.confirm = originalConfirm;
+    }
+  });
+
+  test("supports Newsletter week grouping, filtering, create/edit, and slot fields", async () => {
     const dom = createNewsletterDom();
     const items = [
-      {
+      weeklyIssue({
+        id: "issue-1",
+        label: "Weekly #7",
+        issueNumber: 7,
         cardId: "card-1",
-        campaignLabel: "Weekly update",
-        campaignNumber: 7,
-        id: "slot-1",
         publicationDate: "2026-08-21",
-        status: "reserved",
+        status: "planned",
         version: 3,
-      },
+        slots: { primary: { ticked: true, sponsor: "Sponsor A", sheetId: "NL-7" }, secondary: { ticked: false } },
+      }),
     ];
     const harness = createPlanningHarness({
       newsletter: dom,
@@ -1213,84 +1289,47 @@ describe("Planning surface production behavior", () => {
     dom.view.value = "week";
     await dom.view.onchange();
     assert.match(dom.slots.innerHTML, /week/);
-    dom.filterStatus.value = "reserved";
+    dom.filterStatus.value = "drafting";
     await dom.filterStatus.onchange();
-    assert.equal(
-      harness.requests.at(-1).url.includes("status=reserved"),
-      true,
-    );
+    assert.equal(harness.requests.at(-1).url.includes("status=drafting"), true);
 
     dom.surface.querySelector("[data-newsletter-add]").onclick();
     assert.equal(dom.dialog.open, true);
-    dom.slots.onclick({
-      target: {
-        closest: () => ({ dataset: { edit: "slot-1" } }),
-      },
-    });
-    assert.equal(dom.form.elements.campaignLabel.value, "Weekly update");
-    assert.equal(dom.form.elements.version.value, 3);
+    assert.equal(dom.form.elements.kind.value, "weekly");
+    assert.equal(dom.form.elements.primaryTicked.checked, true);
+    assert.equal(dom.form.elements.secondaryTicked.checked, false);
 
+    dom.slots.onclick({ target: { closest: () => ({ dataset: { edit: "issue-1" } }) } });
+    assert.equal(dom.form.elements.issueNumber.value, 7);
+    assert.equal(dom.form.elements.version.value, 3);
+    assert.equal(dom.form.elements.primarySponsor.value, "Sponsor A");
+    assert.equal(dom.form.elements.kind.disabled, true);
+
+    dom.form.elements.secondarySponsor.value = "Sponsor B";
     dom.form.formEntries = [
-      ["id", "slot-1"],
+      ["id", "issue-1"],
       ["version", "3"],
-      ["campaignNumber", "8"],
-      ["campaignLabel", "Updated weekly update"],
+      ["kind", "weekly"],
+      ["issueNumber", "8"],
       ["publicationDate", "2026-08-22"],
       ["status", "scheduled"],
+      ["primaryTicked", "on"],
+      ["primarySponsor", "Sponsor A"],
     ];
     await dom.surface.querySelector("[data-save]").onclick({ preventDefault() {} });
-    const update = harness.requests.find(
-      (entry) => entry.options.method === "PUT",
-    );
-    assert.match(update.url, /newsletter-slots\/slot-1$/);
+    const update = harness.requests.find((entry) => entry.options.method === "PUT");
+    assert.match(update.url, /newsletter-issues\/issue-1$/);
     assert.deepEqual(JSON.parse(update.options.body), {
-      campaignLabel: "Updated weekly update",
-      campaignNumber: 8,
+      issueNumber: 8,
       publicationDate: "2026-08-22",
       status: "scheduled",
       version: 3,
+      slots: {
+        primary: { ticked: true, sponsor: "Sponsor A", sheetId: "NL-7" },
+        secondary: { ticked: true, sponsor: "Sponsor B" },
+      },
     });
     assert.equal(dom.dialog.open, false);
-  });
-
-  test("shows each slot's Card chip and offers Create card or Link card on unlinked slots", async () => {
-    const dom = createNewsletterDom();
-    const items = [
-      {
-        id: "slot-linked",
-        version: 2,
-        campaignLabel: "Linked issue",
-        publicationDate: "2026-08-21",
-        status: "drafting",
-        cardId: "card-1",
-        card: { id: "card-1", title: "Newsletter #42", stage: "preparation", status: "active", anchorDate: "2026-08-20", taskCount: 6, openTaskCount: 4 },
-      },
-      { id: "slot-free", version: 5, campaignLabel: "Free issue", publicationDate: "2026-08-28", status: "open", card: null },
-      { id: "slot-gone", version: 1, campaignLabel: "Gone issue", publicationDate: "2026-09-04", status: "open", cardId: "card-gone", card: null },
-    ];
-    const harness = createPlanningHarness({
-      newsletter: dom,
-      request: async (_url, options) => (options.method ? {} : { alerts: [], items }),
-    });
-    await harness.surface.renderNewsletterSurface();
-    const html = dom.slots.innerHTML;
-    assert.match(html, /href="\/cards\?cardId=card-1"/);
-    assert.match(html, /Newsletter #42/);
-    assert.match(html, /Preparation ·\s+<span class="dk-mono">4\/6<\/span> open/);
-    assert.match(html, /data-card-date-mismatch><span class="newsletter-card-chip__warning-label">Card dated <\/span>\s*20 Aug/);
-    assert.match(html, /data-card-create="slot-free"/);
-    assert.match(html, /data-card-link="slot-free"/);
-    assert.match(html, /Linked card unavailable/);
-    assert.doesNotMatch(html, /data-card-create="slot-linked"/);
-
-    const createButton = { dataset: { cardCreate: "slot-free" }, getAttribute: () => null, setAttribute() {}, removeAttribute() {} };
-    dom.slots.onclick({
-      target: { closest: (selector) => (selector === "[data-card-create]" ? createButton : null) },
-    });
-    await new Promise((resolve) => setImmediate(resolve));
-    const create = harness.requests.find((entry) => entry.options.method === "POST");
-    assert.match(create.url, /newsletter-slots\/slot-free\/card$/);
-    assert.deepEqual(JSON.parse(create.options.body), { version: 5 });
   });
 
   test("renders honest Newsletter empty/failure states and retains failed form edits", async () => {
@@ -1300,14 +1339,14 @@ describe("Planning surface production behavior", () => {
       request: async () => ({ alerts: [], items: [] }),
     });
     await emptyHarness.surface.renderNewsletterSurface();
-    assert.match(emptyDom.slots.innerHTML, /No newsletter slots/);
+    assert.match(emptyDom.slots.innerHTML, /No newsletter issues/);
     // The empty schedule repeats the create action as a secondary button.
-    assert.match(emptyDom.slots.innerHTML, /dk-button--secondary[^"]*collection-empty-action"[^>]*data-newsletter-add-first[^>]*>[\s\S]*Create the first slot/);
+    assert.match(emptyDom.slots.innerHTML, /dk-button--secondary[^"]*collection-empty-action"[^>]*data-newsletter-add-first[^>]*>[\s\S]*Add the first issue/);
     assert.doesNotMatch(emptyDom.slots.innerHTML, /data-dk-create/);
-    // Add slot follows the view tabs, not the page header's corner.
+    // Add issue follows the view tabs, not the page header's corner.
     const [headerHtml, bodyHtml] = emptyDom.surface.innerHTML.split('<div class="newsletter-toolbar">');
-    assert.doesNotMatch(headerHtml, /Add slot/);
-    assert.match(bodyHtml, /^[\s\S]*?newsletter-views[\s\S]*?<\/div>\s*<button[^>]*data-dk-create[^>]*data-newsletter-add[\s\S]*?Add slot/);
+    assert.doesNotMatch(headerHtml, /Add issue/);
+    assert.match(bodyHtml, /^[\s\S]*?newsletter-views[\s\S]*?<\/div>\s*<button[^>]*data-dk-create[^>]*data-newsletter-add[\s\S]*?Add issue/);
     emptyDom.slots.onclick({ target: { closest: (selector) => (selector === "[data-newsletter-add-first]" ? {} : null), classList: {} } });
     assert.equal(emptyDom.dialog.open, true);
 
@@ -1316,7 +1355,7 @@ describe("Planning surface production behavior", () => {
     const failureHarness = createPlanningHarness({
       newsletter: failureDom,
       request: async (_url, options) => {
-        if (options.method) throw new Error("Slot conflict");
+        if (options.method) throw new Error("Issue conflict");
         if (loadSucceeded) return { alerts: [], items: [] };
         throw new Error("Newsletter offline");
       },
@@ -1329,7 +1368,7 @@ describe("Planning surface production behavior", () => {
     await failureDom.filterStatus.onchange();
     failureDom.dialog.showModal();
     failureDom.form.formEntries = [
-      ["campaignLabel", "Retained slot"],
+      ["kind", "weekly"],
       ["publicationDate", "2026-08-30"],
     ];
     await failureDom.surface.querySelector("[data-save]").onclick({
@@ -1337,51 +1376,18 @@ describe("Planning surface production behavior", () => {
     });
     assert.equal(
       failureDom.form.querySelector('[role="alert"]').textContent,
-      "Could not save slot: Slot conflict",
+      "Could not save the issue: Issue conflict",
     );
   });
 
   test("filters by view tabs (All, Upcoming, Sent)", async () => {
     const dom = createNewsletterDom();
     const items = [
-      {
-        id: "slot-1",
-        publicationDate: "2026-08-15",
-        campaignNumber: 10,
-        campaignLabel: "Issue 10 Upcoming Open",
-        status: "open",
-      },
-      {
-        id: "slot-2",
-        publicationDate: "2026-08-20",
-        campaignNumber: 11,
-        campaignLabel: "Issue 11 Drafting",
-        status: "drafting",
-        bookedByDisplayName: "Alice",
-      },
-      {
-        id: "slot-3",
-        publicationDate: "2026-08-25",
-        campaignNumber: 12,
-        campaignLabel: "Issue 12 Scheduled",
-        status: "scheduled",
-        bookedByUserId: "bob",
-      },
-      {
-        id: "slot-4",
-        publicationDate: "2026-08-01",
-        campaignNumber: 9,
-        campaignLabel: "Issue 9 Sent",
-        status: "sent",
-        publicUrl: "https://example.invalid/9",
-      },
-      {
-        id: "slot-5",
-        publicationDate: "2026-08-28",
-        campaignNumber: 13,
-        campaignLabel: "Issue 13 In Review",
-        status: "review",
-      },
+      weeklyIssue({ id: "issue-1", publicationDate: "2026-08-15", label: "Issue 10 Upcoming Planned", status: "planned" }),
+      weeklyIssue({ id: "issue-2", publicationDate: "2026-08-20", label: "Issue 11 Drafting", status: "drafting" }),
+      weeklyIssue({ id: "issue-3", publicationDate: "2026-08-25", label: "Issue 12 Scheduled", status: "scheduled" }),
+      weeklyIssue({ id: "issue-4", publicationDate: "2026-08-01", label: "Issue 9 Sent", status: "sent", publicUrl: "https://example.invalid/9" }),
+      weeklyIssue({ id: "issue-5", publicationDate: "2026-08-28", label: "Issue 13 In Review", status: "review" }),
     ];
     const harness = createPlanningHarness({
       newsletter: dom,
@@ -1389,33 +1395,26 @@ describe("Planning surface production behavior", () => {
     });
     await harness.surface.renderNewsletterSurface();
 
-    // Default "All" view shows all 5 slots
-    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
-    assert.match(dom.slots.innerHTML, /Issue 11 Drafting/);
-    assert.match(dom.slots.innerHTML, /Issue 12 Scheduled/);
-    assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
-    assert.match(dom.slots.innerHTML, /Issue 13 In Review/);
-    assert.match(dom.slots.innerHTML, /In Review/);
+    for (const label of ["Issue 10 Upcoming Planned", "Issue 11 Drafting", "Issue 12 Scheduled", "Issue 9 Sent", "Issue 13 In Review"]) {
+      assert.match(dom.slots.innerHTML, new RegExp(label));
+    }
+    // A sent issue's slots can no longer be changed.
+    assert.match(dom.slots.innerHTML, /data-issue-id="issue-4"\s+checked\s+disabled/);
 
-    // Switch to "Upcoming" view: only open, reserved, drafting, review, scheduled
     dom.viewUpcoming.onclick();
     await new Promise((r) => setTimeout(r, 0));
-    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
-    assert.match(dom.slots.innerHTML, /Issue 11 Drafting/);
-    assert.match(dom.slots.innerHTML, /Issue 12 Scheduled/);
+    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Planned/);
     assert.match(dom.slots.innerHTML, /Issue 13 In Review/);
     assert.doesNotMatch(dom.slots.innerHTML, /Issue 9 Sent/);
 
-    // Switch to "Sent & Archive" view: only sent / cancelled
     dom.viewSent.onclick();
     await new Promise((r) => setTimeout(r, 0));
-    assert.doesNotMatch(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
+    assert.doesNotMatch(dom.slots.innerHTML, /Issue 10 Upcoming Planned/);
     assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
 
-    // Switch back to "All" view: all items visible
     dom.viewAll.onclick();
     await new Promise((r) => setTimeout(r, 0));
-    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Open/);
+    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Planned/);
     assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
   });
 
@@ -1424,11 +1423,12 @@ describe("Planning surface production behavior", () => {
     const items = [
       {
         id: "slot-draft",
+        kind: "weekly",
         publicationDate: "2026-08-25",
-        campaignNumber: 15,
-        campaignLabel: "Issue 15 Deep Learning",
+        issueNumber: 15,
+        label: "Weekly #15",
         status: "drafting",
-        bookedByDisplayName: "Weights & Biases",
+        slots: { primary: { ticked: true, sponsor: "Weights & Biases" }, secondary: { ticked: false } },
         planningNote: "# Subject: Deep Learning Trends\n> Preheader: Insights for engineers\n\nWelcome to Issue 15!",
       },
     ];
@@ -1468,10 +1468,11 @@ describe("Planning surface production behavior", () => {
       id: "slot-sched",
       publicationDate: "2026-08-25",
       publicationTime: "14:00",
-      campaignNumber: 16,
-      campaignLabel: "Issue 16 Scheduling Test",
-      status: "draft",
-      bookedByDisplayName: "Alexey",
+      kind: "weekly",
+      issueNumber: 16,
+      label: "Weekly #16",
+      status: "drafting",
+      slots: { primary: { ticked: true, sponsor: "Example" }, secondary: { ticked: false } },
       planningNote: "# Subject: Scheduled Issue\n> Preheader: Delivery test\n\nIssue 16 content ready for dispatch.",
     };
     let lastPutPayload = null;
@@ -1544,7 +1545,7 @@ describe("Planning surface production behavior", () => {
 
     // Save slot back to draft
     await dom.surface.querySelector("[data-save]").onclick({ preventDefault() {} });
-    assert.equal(lastPutPayload.status, "draft");
+    assert.equal(lastPutPayload.status, "drafting");
 
     // Reopen, move to review, schedule, and mark as sent
     dom.slots.onclick({
