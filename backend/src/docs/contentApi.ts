@@ -38,6 +38,7 @@ import {
   MANAGED_KNOWLEDGE_ROOTS,
   RevisionConflict,
   KnowledgeVersionNotFound,
+  type RecentDocChanges,
 } from './knowledgeStore';
 import {
   buildRegistry,
@@ -200,6 +201,15 @@ export class DocsRuntime {
  */
 let sharedSearch: { key: string; index: SearchIndex } | null = null;
 
+/** Recently changed documents for the active publication, like the search index. */
+let sharedRecent: { key: string; value: RecentDocChanges } | null = null;
+
+/** Display names for publication actors (user ids); unknown ids are omitted. */
+export type ActorNameResolver = (ids: string[]) => Promise<Record<string, string>>;
+
+const RECENT_DEFAULT_LIMIT = 30;
+const RECENT_MAX_LIMIT = 100;
+
 let runtime: DocsRuntime | null = null;
 
 /** Inject a runtime (tests / explicit wiring). */
@@ -212,6 +222,7 @@ export function configureDocsRuntime(store: KnowledgeStore): DocsRuntime {
 export function resetDocsRuntime(): void {
   runtime = null;
   sharedSearch = null;
+  sharedRecent = null;
 }
 
 // ── Response helpers ──────────────────────────────────────────────────────────
@@ -250,7 +261,7 @@ function jsonBody(event: LambdaEvent): Record<string, unknown> {
  * `publishMessage` is set only for a service principal whose publication
  * message is derived from verified credential claims rather than the body.
  */
-export async function handleDocsRoutes(event: LambdaEvent, actor = process.env.DTC_OFFLINE === '1' ? 'local-operator' : '', publishMessage?: string): Promise<LambdaResponse | null> {
+export async function handleDocsRoutes(event: LambdaEvent, actor = process.env.DTC_OFFLINE === '1' ? 'local-operator' : '', publishMessage?: string, actorNames?: ActorNameResolver): Promise<LambdaResponse | null> {
   const path = event.path || '/';
   if (!isDocsRoute(path)) return null;
 
@@ -259,7 +270,7 @@ export async function handleDocsRoutes(event: LambdaEvent, actor = process.env.D
   }
 
   try {
-    return await dispatch(event, path, actor, publishMessage);
+    return await dispatch(event, path, actor, publishMessage, actorNames);
   } catch (err) {
     if (err instanceof HttpError) return jsonResponse(err.status, { error: err.message });
     if (err instanceof ContentRootUnavailableError) {
@@ -273,6 +284,36 @@ export async function handleDocsRoutes(event: LambdaEvent, actor = process.env.D
   }
 }
 
+/**
+ * Git publications carry `git:<repo>@<sha>`; they read as "Git <sha7>". Other
+ * actors are user ids, named by the resolver when it knows them.
+ */
+export function publicationActorName(actor: string, names: Record<string, string> = {}): string {
+  const git = /^git:[^@]+@([0-9a-f]{7,40})$/i.exec(actor);
+  if (git) return `Git ${git[1].slice(0, 7)}`;
+  return names[actor] || actor;
+}
+
+async function recentDocChanges(rt: DocsRuntime, event: LambdaEvent, actorNames?: ActorNameResolver): Promise<LambdaResponse> {
+  const raw = queryParam(event, 'limit');
+  const limit = raw === null ? RECENT_DEFAULT_LIMIT : Number(raw);
+  if (!Number.isInteger(limit) || limit < 1 || limit > RECENT_MAX_LIMIT) {
+    throw new BadRequest(`limit must be an integer from 1 to ${RECENT_MAX_LIMIT}`);
+  }
+  // The offline cache is a working directory with no publication history.
+  if (rt.store.offline) return jsonResponse(200, { revision: rt.store.revision, complete: true, scanned: 0, changes: [] });
+  const head = await rt.store.pin();
+  const key = `${head.revision}:${limit}`;
+  if (sharedRecent?.key !== key) sharedRecent = { key, value: await rt.store.recentDocChanges(limit) };
+  const recent = sharedRecent.value;
+  const userIds = [...new Set(recent.changes.map((change) => change.actor).filter((id) => !id.startsWith('git:')))];
+  const names = actorNames && userIds.length ? await actorNames(userIds) : {};
+  return jsonResponse(200, {
+    ...recent,
+    changes: recent.changes.map((change) => ({ ...change, actorName: publicationActorName(change.actor, names) })),
+  });
+}
+
 /** A caller-supplied publication message: one short line, or the generic default. */
 function publicationMessage(raw: unknown): string {
   if (raw === undefined || raw === null || raw === '') return 'Publish knowledge files';
@@ -282,7 +323,7 @@ function publicationMessage(raw: unknown): string {
   return raw.trim();
 }
 
-async function dispatch(event: LambdaEvent, path: string, actor: string, publishMessage?: string): Promise<LambdaResponse> {
+async function dispatch(event: LambdaEvent, path: string, actor: string, publishMessage?: string, actorNames?: ActorNameResolver): Promise<LambdaResponse> {
   const m = method(event);
   const rt = runtime || new DocsRuntime(createKnowledgeStore(knowledgeStoreConfigFromEnv()));
 
@@ -307,6 +348,7 @@ async function dispatch(event: LambdaEvent, path: string, actor: string, publish
       .sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0).map(entry=>[entry.path,{sha256:entry.sha,size:entry.size}]));
     return jsonResponse(200,{revision:publication.revision,roots:MANAGED_KNOWLEDGE_ROOTS,entries});
   }
+  if (path === '/knowledge/recent' && m === 'GET') return recentDocChanges(rt, event, actorNames);
   if (path === '/knowledge/history' && m === 'GET') return jsonResponse(200, await rt.store.history(requiredPath(event), queryParam(event, 'cursor') || undefined));
   if (path === '/knowledge/download' && m === 'GET') {
     const location=await rt.store.versionDownload(requiredPath(event),queryParam(event,'revision')||'');

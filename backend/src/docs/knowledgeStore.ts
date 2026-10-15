@@ -121,6 +121,27 @@ export async function bounded<T>(items: T[], fn: (item:T)=>Promise<void>, limit=
   if(failed)throw firstError;
 }
 export function checksum(bytes:Uint8Array|string): string { return createHash('sha256').update(bytes).digest('hex'); }
+/** One process document's latest change in the recent window. */
+export interface RecentDocChange {
+  path:string; operation:KnowledgeChange['operation']; revision:string; actor:string; time:string; message:string;
+  /** Changes to this document inside the scanned window, the latest included. */
+  changes:number;
+  /** True when the document is absent from the active publication. */
+  deleted:boolean;
+}
+export interface RecentDocChanges { revision:string; complete:boolean; scanned:number; changes:RecentDocChange[]; }
+interface PublicationSummary { revision:string; parent:string|null; actor:string; createdAt:string; message:string; changes:KnowledgeChange[]; }
+
+/** Process documents are the Markdown files under `content/`; images and tooling are not. */
+export function isRecentDocPath(path:string):boolean {
+  return path.startsWith('content/') && path.endsWith('.md') && !path.startsWith('content/images/');
+}
+function summarize(p:Publication):PublicationSummary {
+  return {revision:p.revision,parent:p.parent??null,actor:p.actor,createdAt:p.createdAt,message:p.message,changes:p.changes||[]};
+}
+/** Immutable publication summaries (no manifest), shared across requests in this process. */
+const publicationSummaries=new Map<string,PublicationSummary>();
+
 export class KnowledgeStore {
   readonly bucket: string;
   readonly client: Pick<S3Client,'send'>;
@@ -257,6 +278,46 @@ export class KnowledgeStore {
       publication=(await this.json<Publication>(`publications/${parent}.json`)).value;
     }
     return {versions,cursor:null};
+  }
+  /**
+   * The most recently changed process documents, newest first, read from the
+   * publication chain. One row per document: its latest change, plus how many
+   * changes it had inside the scanned window (repeated edits collapse). A rename carries the document's
+   * older edits under its new path. Publications are immutable, so their
+   * summaries are cached by revision and a new head costs one extra read.
+   */
+  async recentDocChanges(limit=30,maxPublications=200):Promise<RecentDocChanges> {
+    const head=await this.pin();
+    const rows=new Map<string,RecentDocChange>();
+    const aliases=new Map<string,string>();
+    let revision:string|null=head.revision;
+    let scanned=0;
+    const seen=new Set<string>();
+    // Stops once `limit` documents are found: each older publication is a full
+    // manifest read on a cold process, so the window is only as deep as needed.
+    while(revision && scanned<maxPublications && rows.size<limit) {
+      if(seen.has(revision)) throw new KnowledgeError('Invalid history chain');seen.add(revision);
+      const summary:PublicationSummary=revision===head.revision?summarize(head):await this.publicationSummary(revision);
+      scanned++;
+      for(const change of summary.changes) {
+        if(!isRecentDocPath(change.path)) continue;
+        const path=aliases.get(change.path)||change.path;
+        const row=rows.get(path);
+        if(row) row.changes++;
+        else if(rows.size<limit) rows.set(path,{path,operation:change.operation,revision:summary.revision,actor:summary.actor,time:summary.createdAt,message:summary.message,changes:1,deleted:!head.entries[path]});
+        if(change.previousPath && isRecentDocPath(change.previousPath)) aliases.set(change.previousPath,path);
+      }
+      revision=summary.parent;
+    }
+    return {revision:head.revision,complete:!revision,scanned,changes:[...rows.values()]};
+  }
+  private async publicationSummary(revision:string):Promise<PublicationSummary> {
+    const cached=publicationSummaries.get(revision);
+    if(cached) return cached;
+    const summary=summarize((await this.json<Publication>(`publications/${revision}.json`)).value);
+    if(summary.revision!==revision) throw new KnowledgeError('Invalid knowledge publication');
+    publicationSummaries.set(revision,summary);
+    return summary;
   }
   async versionEntry(path:string,revision:string):Promise<KnowledgeEntry> {
     normalizeRepoPath(path);

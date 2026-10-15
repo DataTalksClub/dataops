@@ -18,6 +18,7 @@ import { resolve, sep } from 'node:path';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import {resolveInteractiveActor} from '../identity/actor';
+import { userDisplayNames } from '../db/users';
 import { authErrorPage, browserAuthConfigured, browserUser, handleCallback, logout, startLogin, unauthenticatedApi } from '../auth/browserAuth';
 import { RUNTIME_ROOT } from '../runtimePaths';
 import type { LambdaEvent, LambdaResponse } from '../types';
@@ -335,7 +336,7 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
   }
   // Docs content API.
   if (isDocsRoute(path)) {
-    const result = await handleDocsRoutes(event, knowledgeActor);
+    const result = await handleDocsRoutes(event, knowledgeActor, undefined, (ids) => userDisplayNames(client, ids));
     if (result) return { response: result, authorized: true, userId: user?.id };
   }
 

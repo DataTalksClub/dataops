@@ -235,6 +235,19 @@ async function listFormerUsers(client: DynamoDBDocumentClient): Promise<FormerUs
   return items.map((item) => cleanFormerUser(item) as FormerUser);
 }
 
+/**
+ * Display names for user ids, including deleted accounts' former names;
+ * ids with no name on record are left out.
+ */
+async function userDisplayNames(client: DynamoDBDocumentClient, ids: string[]): Promise<Record<string, string>> {
+  const names = await Promise.all([...new Set(ids)].map(async (id) => {
+    const user = await getUser(client, id);
+    const name = user?.name || (await getFormerUser(client, id))?.name || '';
+    return [id, name] as const;
+  }));
+  return Object.fromEntries(names.filter(([, name]) => name));
+}
+
 export {
   formerUserKey,
   getFormerUser,
@@ -246,4 +259,5 @@ export {
   getUsersByNormalizedEmail,
   provisionBrowserOperator,
   updateUser,
+  userDisplayNames,
 };

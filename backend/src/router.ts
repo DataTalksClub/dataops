@@ -31,7 +31,7 @@ import { handleTaskRoutes } from './routes/tasks';
 import { resolveInteractiveActor } from './identity/actor';
 import { identityProjection } from './identity/projections';
 import { getSession } from './db/sessions';
-import { getUser } from './db/users';
+import { getUser, userDisplayNames } from './db/users';
 import { getTaskConsistent, TaskVersionConflictError, CardLifecycleConflictError } from './db/tasks';
 import { TaskDependencyError } from './db/taskDependencies';
 import { CardNotFoundError, getCardConsistent } from './db/cards';
@@ -383,7 +383,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (isDocsRoute(reqPath)) {
         const resolved=await resolveInteractiveActor(client,event,method==='GET'?'work-read':'work-write');
         if(!resolved.ok)return resolved.response;
-        const result=await handleDocsRoutes(event,resolved.actor.id || (resolved.actor.testBypass?'local-test-operator':''));
+        const result=await handleDocsRoutes(event,resolved.actor.id || (resolved.actor.testBypass?'local-test-operator':''),undefined,(ids)=>userDisplayNames(client,ids));
         if(result)return result;
       }
     }
