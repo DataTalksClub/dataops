@@ -459,7 +459,7 @@ describe("app shared operations domain characterization", () => {
     });
     assert.equal(functions.operationsViewTitle("tasks", "queue"), "Work Queue");
     assert.equal(functions.operationsViewTitle("tasks", "templates"), "Templates");
-    assert.match(functions.surfaceDescription("queue"), /One queue, most urgent first/);
+    assert.equal(functions.surfaceDescription("queue"), "");
     assert.equal(functions.referenceCountLabel("calendar", 1), "1 calendar item");
     assert.equal(functions.referenceCountLabel("cards", 2), "2 cards");
   });

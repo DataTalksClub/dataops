@@ -817,7 +817,7 @@ export function cardsHeaderViewModel({
     eyebrow: "Task board",
     summary: archiveVisible
       ? archiveSummary
-      : `${countLabel(activeCount, "active card")} · open a card to see its tasks`,
+      : countLabel(activeCount, "active card"),
     archiveAction: archiveVisible
       ? "Back to board"
       : `Archive (${archivedCount + parked})`,

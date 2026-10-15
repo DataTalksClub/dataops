@@ -17,7 +17,7 @@ describe("Cards renderer view models", () => {
     }), {
       title: "Cards",
       eyebrow: "Task board",
-      summary: "3 active cards · open a card to see its tasks",
+      summary: "3 active cards",
       archiveAction: "Archive (2)",
       archiveRoute: "/cards/archive",
       createVisible: true,

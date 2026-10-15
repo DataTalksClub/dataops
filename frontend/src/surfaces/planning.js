@@ -341,7 +341,6 @@ export function createPlanningSurface(context) {
     controlsToggle.before(addActivity);
     surface.prepend(createPageHeader({
       title: "Calendar",
-      subtitle: "Plan activities alongside holidays and scheduled events.",
       titleId: "calendar-surface-title",
       className: "calendar-page-header",
     }));
