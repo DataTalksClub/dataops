@@ -98,13 +98,13 @@ describe("podcast model", () => {
   });
 });
 
-function harness({ episodes = REGISTER, routeId = "", handlers = {} } = {}) {
+function harness({ episodes = REGISTER, routeId = "", view = "", handlers = {}, today = "2026-10-15" } = {}) {
   const documentList = new FakeElement("main");
   const body = new FakeElement("body");
   const document = new FakeDocument(documentList, body);
   document.body = body;
   globalThis.document = document;
-  let route = { params: new URLSearchParams(routeId ? { episodeId: routeId } : {}) };
+  let route = { params: new URLSearchParams({ ...(view ? { view } : {}), ...(routeId ? { episodeId: routeId } : {}) }) };
   const calls = [];
   const shown = [];
   let records = episodes.map((item) => ({ ...item }));
@@ -117,7 +117,7 @@ function harness({ episodes = REGISTER, routeId = "", handlers = {} } = {}) {
     navigateCanonicalWorkspace: (path, params = {}, options = {}) => {
       calls.push(["navigate", path, params, options]);
       const match = /^\/podcast\/(.+)$/.exec(path);
-      route = { params: new URLSearchParams(match ? { episodeId: decodeURIComponent(match[1]) } : params) };
+      route = { params: new URLSearchParams({ ...params, ...(match ? { episodeId: decodeURIComponent(match[1]) } : {}) }) };
       if (path.startsWith("/podcast") && options.render !== false) surface.renderPodcastSurface();
     },
     request: async (url, options = {}) => {
@@ -147,7 +147,8 @@ function harness({ episodes = REGISTER, routeId = "", handlers = {} } = {}) {
     },
     setRouteTitle: (title) => calls.push(["title", title]),
     getDialogs: () => undefined,
-    getSplit: () => ({ show: (split, view) => shown.push(view) }),
+    getSplit: () => ({ show: (split, pane) => shown.push(pane) }),
+    today: () => today,
   });
   return {
     surface, documentList, document, calls, shown,
@@ -162,7 +163,7 @@ function rows(root) {
 
 describe("Podcast surface", () => {
   test("loads, lists upcoming episodes grouped, and filters with the segmented control", async () => {
-    const { surface, documentList, calls } = harness();
+    const { surface, documentList, calls } = harness({ view: "list" });
     surface.renderPodcastSurface();
     assert.ok(findByText(documentList, "Loading episodes…"));
     await nextTicks(4);
@@ -196,17 +197,17 @@ describe("Podcast surface", () => {
   });
 
   test("rows read code, guest — title, status and date, and open in place", async () => {
-    const { surface, documentList, calls, shown } = harness();
+    const { surface, documentList, calls, shown } = harness({ view: "list" });
     surface.renderPodcastSurface();
     await nextTicks(4);
     const row = documentList.querySelector('[data-episode-id="booked-soon"]');
-    assert.equal(row.href, "/podcast/booked-soon");
+    assert.equal(row.href, "/podcast/booked-soon?view=list");
     assert.ok(findByText(row, "S25E4", ".podcast-row__code"));
     assert.ok(findByText(row, "Guest booked-soon — Synthetic booked-soon"));
     assert.ok(findByText(row, "Booked", ".podcast-status"));
     assert.ok(findByText(row, "2 Nov 2026"));
     await row.dispatch("click", { button: 0 });
-    assert.deepEqual(calls.find(([kind]) => kind === "navigate"), ["navigate", "/podcast/booked-soon", {}, { render: false }]);
+    assert.deepEqual(calls.find(([kind]) => kind === "navigate"), ["navigate", "/podcast/booked-soon", { view: "list" }, { render: false }]);
     assert.deepEqual(shown, ["detail"]);
     assert.equal(documentList.querySelector(".dk-split").dataset.view, "detail");
     assert.equal(documentList.querySelector('[data-episode-id="booked-soon"]').getAttribute("aria-current"), "true");
@@ -214,7 +215,7 @@ describe("Podcast surface", () => {
 
     await documentList.querySelector(".dk-split__back").click();
     assert.deepEqual(calls.filter(([kind]) => kind === "navigate").at(-1), [
-      "navigate", "/podcast", {}, { restoreFocus: { kind: "split-list" } },
+      "navigate", "/podcast", { view: "list" }, { restoreFocus: { kind: "split-list" } },
     ]);
   });
 
@@ -393,6 +394,7 @@ describe("Podcast surface", () => {
 
     let fail = true;
     const outage = harness({
+      view: "list",
       handlers: {
         "GET /api/podcast-episodes": (payload, records) => {
           if (fail) throw new Error("Synthetic outage");

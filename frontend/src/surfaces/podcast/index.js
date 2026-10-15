@@ -1,13 +1,16 @@
 // Podcast: the episode register as a list–detail split (dakit
-// docs/list-detail.md). The list holds what's in flight first, then each
-// season; the detail is the selected episode, addressed by /podcast/<id> so
-// it can be linked, reloaded and reached with Back on a phone.
+// docs/list-detail.md). The list pane is the seasons overview (the default,
+// /podcast) or the plain episode list (/podcast?view=list); the detail is the
+// selected episode, addressed by /podcast/<id> so it can be linked, reloaded
+// and reached with Back on a phone.
 import "../../dakit/collection.js";
 import { createPageHeader } from "../operations-overview.js";
 import { openCreateEpisodeDialog } from "./create-dialog.js";
 import { renderEpisodeDetail } from "./detail.js";
 import { element, emptyState, formatDate, select, statusChip } from "./dom.js";
 import { renderSchedule } from "./schedule.js";
+import { renderAttention, renderSeasonsOverview } from "./seasons.js";
+import { buildSeasonGrid } from "./seasons-model.js";
 import {
   episodeCode, episodeKeyDate, episodeSummary, filterEpisodes, groupEpisodes,
   matchesStatusFilter, seasonsOf, STATUS_FILTERS,
@@ -27,6 +30,7 @@ export function createPodcastSurface(context) {
     setRouteTitle,
     getDialogs = () => globalThis.dakitDialogs,
     getSplit = () => globalThis.dakitSplit,
+    today = () => new Date().toISOString().slice(0, 10),
   } = context;
 
   const state = {
@@ -44,6 +48,15 @@ export function createPodcastSurface(context) {
 
   function routeEpisodeId() {
     return getActiveWorkspaceRoute()?.params?.get("episodeId") || "";
+  }
+
+  /** "seasons" (the default) or "list", from ?view= on /podcast and /podcast/<id>. */
+  function currentView() {
+    return getActiveWorkspaceRoute()?.params?.get("view") === "list" ? "list" : "seasons";
+  }
+
+  function viewParams(view = currentView()) {
+    return view === "list" ? { view: "list" } : {};
   }
 
   function isScheduleRoute() {
@@ -93,7 +106,7 @@ export function createPodcastSurface(context) {
   const actions = {
     back() {
       state.editingId = "";
-      navigateCanonicalWorkspace("/podcast", {}, { restoreFocus: { kind: "split-list" } });
+      navigateCanonicalWorkspace("/podcast", viewParams(), { restoreFocus: { kind: "split-list" } });
     },
     edit(episode) {
       state.editingId = episode.id;
@@ -141,7 +154,7 @@ export function createPodcastSurface(context) {
       renderPodcastSurface({ focusDetail: true });
     },
     openEpisode(id) {
-      navigateCanonicalWorkspace(`/podcast/${enc(id)}`);
+      navigateCanonicalWorkspace(`/podcast/${enc(id)}`, viewParams());
     },
     openCard(cardId) {
       navigateCanonicalWorkspace("/cards", { cardId });
@@ -164,7 +177,7 @@ export function createPodcastSurface(context) {
         state.season = "";
         state.query = "";
         state.notice = "Episode created.";
-        navigateCanonicalWorkspace(`/podcast/${enc(created.id)}`);
+        navigateCanonicalWorkspace(`/podcast/${enc(created.id)}`, viewParams());
       },
     });
   }
@@ -182,8 +195,23 @@ export function createPodcastSurface(context) {
   function selectEpisode(id) {
     state.editingId = "";
     state.notice = null;
-    navigateCanonicalWorkspace(`/podcast/${enc(id)}`, {}, { render: false });
+    navigateCanonicalWorkspace(`/podcast/${enc(id)}`, viewParams(), { render: false });
     renderPodcastSurface({ opened: true });
+  }
+
+  function searchInput() {
+    const search = element(documentRef, "input", "dk-input podcast-search");
+    search.type = "search";
+    search.name = "podcast-search";
+    search.placeholder = "Search guest or title";
+    search.setAttribute("aria-label", "Search episodes by guest or title");
+    search.value = state.query;
+    search.addEventListener("input", () => {
+      state.query = search.value;
+      listScrollTop = 0;
+      renderPodcastSurface({ focusSearch: true });
+    });
+    return search;
   }
 
   function renderFilters(tools) {
@@ -221,26 +249,15 @@ export function createPodcastSurface(context) {
       listScrollTop = 0;
       renderPodcastSurface();
     });
-    const search = element(documentRef, "input", "dk-input podcast-search");
-    search.type = "search";
-    search.name = "podcast-search";
-    search.placeholder = "Search guest or title";
-    search.setAttribute("aria-label", "Search episodes by guest or title");
-    search.value = state.query;
-    search.addEventListener("input", () => {
-      state.query = search.value;
-      listScrollTop = 0;
-      renderPodcastSurface({ focusSearch: true });
-    });
     const row = element(documentRef, "div", "podcast-tools-row");
-    row.append(season, search);
+    row.append(season, searchInput());
     tools.append(tabs, row);
   }
 
-  function renderRow(episode, selectedId) {
+  function renderRow(episode, selectedId, flag = null) {
     const item = element(documentRef, "li");
     const row = element(documentRef, "a", "dk-split__item podcast-row");
-    row.href = `/podcast/${enc(episode.id)}`;
+    row.href = `/podcast/${enc(episode.id)}${currentView() === "list" ? "?view=list" : ""}`;
     row.dataset.episodeId = episode.id;
     if (episode.id === selectedId) row.setAttribute("aria-current", "true");
     const name = element(documentRef, "span", "dk-split__name");
@@ -249,6 +266,11 @@ export function createPodcastSurface(context) {
     name.append(element(documentRef, "span", "podcast-row__summary", episodeSummary(episode)));
     const meta = element(documentRef, "span", "dk-split__meta");
     meta.append(statusChip(documentRef, episode.status));
+    if (flag) {
+      const late = element(documentRef, "span", "dk-badge dk-badge--warning podcast-row__flag", flag.kind === "stale" ? "Stuck" : "Late");
+      late.title = flag.text;
+      meta.append(late);
+    }
     const date = episodeKeyDate(episode);
     if (date.value) {
       const when = element(documentRef, "span", "podcast-row__date");
@@ -269,7 +291,7 @@ export function createPodcastSurface(context) {
     return item;
   }
 
-  function renderList(selectedId) {
+  function renderList(selectedId, view, grid) {
     const pane = element(documentRef, "section", "dk-split__list podcast-list");
     pane.setAttribute("aria-labelledby", "podcast-episodes-title");
     const header = globalThis.dakitCollection.header({
@@ -282,9 +304,21 @@ export function createPodcastSurface(context) {
     header.querySelector("h2")?.classList.add("dk-split__title");
     pane.append(header);
     const tools = element(documentRef, "div", "dk-split__tools podcast-tools");
-    renderFilters(tools);
+    if (view === "seasons") tools.append(searchInput());
+    else renderFilters(tools);
     pane.append(tools);
     const scroll = element(documentRef, "div", "dk-split__scroll podcast-list-scroll");
+    scroll.addEventListener("scroll", () => {
+      listScrollTop = scroll.scrollTop;
+    });
+    if (view === "seasons") {
+      scroll.classList.add("podcast-seasons-scroll");
+      renderSeasonsOverview(scroll, {
+        documentRef, grid, query: state.query, selectedId, onSelect: selectEpisode, renderRow,
+      });
+      pane.append(scroll, element(documentRef, "div", "dk-split__handle"));
+      return { pane, scroll };
+    }
     const shown = filterEpisodes(state.episodes, { status: state.filter, season: state.season, query: state.query });
     if (!shown.length) {
       const filtered = state.query || state.season || state.filter === "published";
@@ -305,26 +339,31 @@ export function createPodcastSurface(context) {
       section.append(label, list);
       scroll.append(section);
     }
-    scroll.addEventListener("scroll", () => {
-      listScrollTop = scroll.scrollTop;
-    });
     pane.append(scroll, element(documentRef, "div", "dk-split__handle"));
     return { pane, scroll };
   }
 
+  // Seasons and List keep the open episode; Schedule is its own page.
   function renderViewTabs(schedule) {
     const nav = element(documentRef, "nav", "dk-tabs dk-tabs--sm podcast-views");
     nav.setAttribute("aria-label", "Podcast views");
-    for (const [path, label] of [["/podcast", "Episodes"], ["/podcast/schedule", "Schedule"]]) {
+    const openId = schedule ? "" : routeEpisodeId();
+    const base = openId ? `/podcast/${enc(openId)}` : "/podcast";
+    const current = schedule ? "schedule" : currentView();
+    for (const [view, label] of [["seasons", "Seasons"], ["list", "List"], ["schedule", "Schedule"]]) {
+      const path = view === "schedule" ? "/podcast/schedule" : base;
+      const params = view === "list" ? { view: "list" } : {};
       const tab = element(documentRef, "a", "dk-tab", label);
-      tab.href = path;
-      tab.dataset.podcastView = path === "/podcast" ? "episodes" : "schedule";
-      if ((path === "/podcast/schedule") === schedule) tab.setAttribute("aria-current", "page");
+      tab.href = view === "list" ? `${path}?view=list` : path;
+      tab.dataset.podcastView = view;
+      if (view === current) tab.setAttribute("aria-current", "page");
       tab.addEventListener("click", (event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.button > 0) return;
         event.preventDefault();
+        if (view === current) return;
         state.editingId = "";
-        navigateCanonicalWorkspace(path);
+        listScrollTop = 0;
+        navigateCanonicalWorkspace(path, params);
       });
       nav.append(tab);
     }
@@ -410,20 +449,28 @@ export function createPodcastSurface(context) {
     const routeId = routeEpisodeId();
     const selected = routeId ? state.episodes.find((episode) => episode.id === routeId) || null : null;
     if (state.editingId && state.editingId !== selected?.id) state.editingId = "";
+    const view = currentView();
+    const grid = view === "seasons" ? buildSeasonGrid(state.episodes, today()) : null;
     const split = element(documentRef, "div", "dk-split podcast-split");
-    split.dataset.dkSplit = "podcast";
+    split.classList.add(`podcast-split--${view}`);
+    // Each view keeps its own list width: the overview wants room for cells.
+    split.dataset.dkSplit = view === "seasons" ? "podcast-seasons" : "podcast";
     split.dataset.view = routeId ? "detail" : "list";
-    const { pane: list, scroll } = renderList(selected?.id || "");
+    const { pane: list, scroll } = renderList(selected?.id || "", view, grid);
     const detail = element(documentRef, "section", "dk-split__detail podcast-detail-pane");
     detail.setAttribute("aria-label", "Selected episode");
-    renderEpisodeDetail(detail, {
-      documentRef,
-      episode: selected,
-      editing: Boolean(selected && state.editingId === selected.id),
-      notice: selected ? state.notice : null,
-      missingId: routeId && !selected ? routeId : "",
-      actions,
-    });
+    if (view === "seasons" && !routeId) {
+      renderAttention(detail, { documentRef, grid, onSelect: selectEpisode });
+    } else {
+      renderEpisodeDetail(detail, {
+        documentRef,
+        episode: selected,
+        editing: Boolean(selected && state.editingId === selected.id),
+        notice: selected ? state.notice : null,
+        missingId: routeId && !selected ? routeId : "",
+        actions,
+      });
+    }
     state.notice = null;
     split.append(list, detail);
     root.append(split);

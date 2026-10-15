@@ -251,6 +251,6 @@ describe("Podcast schedule view", () => {
     await cardLink.click();
     assert.deepEqual(calls.at(-1), ["navigate", "/cards", { cardId: "card-1" }]);
     const tabs = findAllByClass(documentList, "dk-tab");
-    assert.deepEqual(tabs.map((tab) => tab.getAttribute("aria-current")), [null, "page"]);
+    assert.deepEqual(tabs.map((tab) => tab.getAttribute("aria-current")), [null, null, "page"]);
   });
 });

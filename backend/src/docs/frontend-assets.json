@@ -119,6 +119,8 @@
     "src/surfaces/podcast/publication-model.js",
     "src/surfaces/podcast/publication-section.js",
     "src/surfaces/podcast/schedule.js",
+    "src/surfaces/podcast/seasons-model.js",
+    "src/surfaces/podcast/seasons.js",
     "src/surfaces/review/index.js",
     "src/surfaces/review/model.js",
     "src/surfaces/tasks/card-hovercard.js",

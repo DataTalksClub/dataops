@@ -1,6 +1,7 @@
-// Podcast: the episode register as a dakit list–detail split. The list opens
-// on what's in flight, a row opens /podcast/<id> in place, the detail link
-// survives a reload, and Create card makes the episode's Card from the
+// Podcast: the episode register as a dakit list–detail split. /podcast opens
+// on the seasons overview; /podcast?view=list is the plain list, which opens
+// on what's in flight. A row or cell opens /podcast/<id> in place, the detail
+// link survives a reload, and Create card makes the episode's Card from the
 // podcast Template and links it. A phone shows one pane with Back.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -11,6 +12,7 @@ const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolate
 
 const DESKTOP = { width: 1280, height: 800 };
 const MOBILE = { width: 390, height: 844 };
+const NARROW = { width: 375, height: 812 };
 // Set PODCAST_SCREENSHOTS=<dir> to also capture the page in both themes.
 const SHOTS = process.env.PODCAST_SCREENSHOTS || '';
 let server;
@@ -81,7 +83,7 @@ async function shoot(page, name) {
 test('podcast list opens an episode in place, deep-links it, and creates its card', async ({ page }) => {
   await page.setViewportSize(DESKTOP);
   await setupPageWithAuth(page);
-  await page.goto(`${server.baseURL}/podcast`);
+  await page.goto(`${server.baseURL}/podcast?view=list`);
   await expect(page.getByRole('heading', { level: 1, name: 'Podcast' })).toBeVisible();
   await expect(page.locator('#podcast-nav-button')).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('.dk-stat-strip')).toHaveCount(0);
@@ -100,14 +102,14 @@ test('podcast list opens an episode in place, deep-links it, and creates its car
   await shoot(page, 'list');
 
   await page.locator(`[data-episode-id="${episodes.published.id}"]`).click();
-  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.published.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.published.id}\\?view=list$`));
   const detail = page.getByRole('region', { name: 'Selected episode' });
   await expect(detail.locator('.dk-split__title')).toHaveText('From notebook to service');
   await expect(detail.locator('.podcast-link')).toHaveText(['YouTube', 'Spotify', 'Apple Podcasts', 'Website']);
   await shoot(page, 'detail-links');
 
   await page.locator(`[data-episode-id="${episodes.next.id}"]`).click();
-  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.next.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.next.id}\\?view=list$`));
   await page.reload();
   await expect(detail.locator('.dk-split__title')).toHaveText('Shipping models on a budget');
   await expect(page.locator(`[data-episode-id="${episodes.next.id}"]`)).toHaveAttribute('aria-current', 'true');
@@ -151,7 +153,7 @@ test('New episode loads before it opens and lands on the created episode', async
   await page.setViewportSize(DESKTOP);
   await setupPageWithAuth(page);
   await page.goto(`${server.baseURL}/podcast`);
-  await expect(page.locator('.podcast-list .dk-split__item').first()).toBeVisible();
+  await expect(page.locator('.podcast-season').first()).toBeVisible();
   await page.keyboard.press('c');
   const dialog = page.getByRole('dialog', { name: 'New episode' });
   await expect(dialog).toBeVisible();
@@ -256,4 +258,71 @@ test('schedule shows not-recorded without evidence, keeps plan apart from eviden
   const saved = await api('GET', `/api/podcast-episodes/${gated.id}`);
   expect(saved.readiness.website).toBe('released');
   expect(saved.publication.websiteObserved.proofUrl).toContain('synthetic-gated');
+});
+
+// The API refuses a second episode with the same number, so duplicates are
+// covered by the unit tests; here the overview shows gaps.
+test('seasons overview shows each season as status cells, the unnumbered lane and gaps', async ({ page }) => {
+  const stuck = await api('POST', '/api/podcast-episodes', {
+    title: 'Synthetic stuck interview', guests: [{ name: 'Hal Stuck' }], status: 'recorded', recordingDate: isoDate(-120),
+  });
+  await page.setViewportSize(DESKTOP);
+  await setupPageWithAuth(page);
+  await page.goto(`${server.baseURL}/podcast`);
+  await expect(page.locator('.podcast-views [data-podcast-view="seasons"]')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('.podcast-season')).toHaveCount(3);
+  await expect(page.locator('.podcast-season__title')).toHaveText(['Season 26', 'Season 25', 'Season 24']);
+  const s25 = page.locator('.podcast-season[data-season="25"]');
+  await expect(s25.locator('.podcast-cell')).toHaveText(['E1', 'E2', 'E3', 'E4', 'E5', 'E6']);
+  await expect(s25.locator('.podcast-cell--gap')).toHaveText(['E1']);
+  await expect(s25.locator(`[data-episode-id="${episodes.edited.id}"]`)).toHaveAttribute('data-status', 'edited');
+  const s24 = page.locator('.podcast-season[data-season="24"]');
+  await expect(s24.locator('.podcast-season__issues')).toHaveText('no E1, E2, E3, E4, E5, E6, E7, E8');
+  await expect(s24.locator('.podcast-cell--gap')).toHaveCount(8);
+  const lane = page.locator('.podcast-pipeline');
+  await expect(lane.locator('.dk-split__item')).toHaveCount(1);
+  await expect(lane.locator(`[data-episode-id="${stuck.id}"]`)).toContainText('Stuck');
+  const attention = page.getByRole('region', { name: 'Selected episode' });
+  await expect(attention.locator('.dk-split__title')).toHaveText('Needs a look');
+  await expect(attention).toContainText('Recorded 4 months after recording');
+  await expect(attention).toContainText('Season 25: no E1');
+  await expect(page.locator('.dk-stat-strip')).toHaveCount(0);
+
+  // Hover shows the summary; a click opens the episode in the detail pane.
+  const cell = s25.locator(`[data-episode-id="${episodes.published.id}"]`);
+  await cell.hover();
+  const peek = page.locator('.podcast-peek-card');
+  await expect(peek).toBeVisible();
+  await expect(peek).toContainText('Eve Fixture — From notebook to service');
+  await expect(peek.locator('.podcast-peek__link')).toHaveText(['YouTube', 'Spotify', 'Apple Podcasts', 'Website']);
+  await shoot(page, 'seasons-hover');
+  await page.mouse.move(0, 0);
+  await cell.click();
+  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.published.id}$`));
+  await expect(attention.locator('.dk-split__title')).toHaveText('From notebook to service');
+  await expect(cell).toHaveAttribute('aria-current', 'true');
+  await shoot(page, 'seasons-detail');
+
+  // Keyboard focus opens the same summary.
+  await s24.locator(`[data-episode-id="${episodes.older.id}"]`).focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expect(page.locator('.podcast-peek-card')).toContainText('Fay Dummy — Hiring your first data engineer');
+
+  // The list is one URL away and keeps the open episode.
+  await page.locator('.podcast-views [data-podcast-view="list"]').click();
+  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.published.id}\\?view=list$`));
+  await expect(page.locator('.podcast-status-filter')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('.podcast-views [data-podcast-view="list"]')).toHaveAttribute('aria-current', 'page');
+
+  await page.setViewportSize(NARROW);
+  await page.goto(`${server.baseURL}/podcast`);
+  await expect(page.locator('.podcast-season').first()).toBeVisible();
+  await expect(page.locator('.dk-split__detail')).toBeHidden();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await shoot(page, 'seasons-mobile');
+  await s25.locator(`[data-episode-id="${episodes.edited.id}"]`).click();
+  await expect(page.locator('.dk-split__detail .dk-split__title')).toHaveText('Data contracts in practice');
+  await expect(page.locator('.podcast-season').first()).toBeHidden();
 });

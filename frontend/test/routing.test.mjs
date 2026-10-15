@@ -270,4 +270,12 @@ describe("podcast schedule route", () => {
     assert.equal(route.params.get("episodeId"), null);
     assert.equal(parseWorkspaceLocation("/podcast/abc-123").params.get("episodeId"), "abc-123");
   });
+
+  test("?view= rides on the register and an episode, not on the schedule", () => {
+    assert.equal(parseWorkspaceLocation("/podcast?view=list").canonicalUrl, "/podcast?view=list");
+    const open = parseWorkspaceLocation("/podcast/abc-123?view=list");
+    assert.equal(open.params.get("view"), "list");
+    assert.equal(open.params.get("episodeId"), "abc-123");
+    assert.equal(parseWorkspaceLocation("/podcast/schedule?view=list").canonicalUrl, "/podcast/schedule");
+  });
 });
