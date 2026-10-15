@@ -38,6 +38,7 @@ import {
 } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
 import { projectCard, projectCards, projectTasks } from '../identity/projections';
+import { attachPrerequisites } from '../db/taskDependencies';
 import { normalizeCardLinks } from '../artifactLinks';
 import {
   matchesOwnerFilter,
@@ -757,7 +758,7 @@ async function handleCardTasks(
   await directory.loadAll();
   const projected = await projectCard(directory, card, tasks);
   return json(200, {
-    tasks: await projectTasks(directory, tasks),
+    tasks: await projectTasks(directory, await attachPrerequisites(client, tasks)),
     owner: projected.owner,
     taskAssignees: projected.taskAssignees,
   });

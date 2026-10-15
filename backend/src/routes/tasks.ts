@@ -3,6 +3,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { resolveInteractiveActor, workAdminForbidden } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
 import { projectTask, projectTasks } from '../identity/projections';
+import { attachPrerequisites, normalizeDependsOn } from '../db/taskDependencies';
 import {
   matchesOwnerFilter,
   ownerFilterUserId,
@@ -88,6 +89,12 @@ function parseBody(event: LambdaEvent): Record<string, unknown> | null {
     return null;
   }
 }
+/** Project a Task with its resolved prerequisites and blocked state. */
+async function projectWithPrerequisites(client: DynamoDBDocumentClient, task: Task) {
+  const [withPrerequisites] = await attachPrerequisites(client, [task]);
+  return projectTask(new TeamDirectory(client), withPrerequisites);
+}
+
 function extractTaskId(reqPath: string): string | null {
   const prefix = '/api/tasks/';
   if (reqPath.startsWith(prefix) && reqPath.length > prefix.length) {
@@ -139,6 +146,7 @@ export async function handleTaskRoutes(
     if (body.instructionStepId !== undefined) taskData.instructionStepId = body.instructionStepId;
     if (body.phase !== undefined) taskData.phase = body.phase;
     if (body.requires !== undefined) taskData.requires = body.requires;
+    if (body.dependsOn !== undefined) taskData.dependsOn = body.dependsOn;
     if (body.validation !== undefined) taskData.validation = body.validation;
     if (body.link !== undefined) taskData.link = body.link;
     if (body.materials !== undefined) taskData.materials = body.materials;
@@ -212,6 +220,11 @@ export async function handleTaskRoutes(
     if (refsError) {
       return jsonResponse(400, { error: refsError });
     }
+    if (taskData.dependsOn !== undefined) {
+      const dependsOn = normalizeDependsOn(taskData.dependsOn);
+      if (dependsOn === null) delete taskData.dependsOn;
+      else taskData.dependsOn = dependsOn;
+    }
     if (taskData.templateId !== undefined) {
       if (!isNonEmptyString(taskData.templateId) || !await getTemplate(client, taskData.templateId)) {
         return jsonResponse(404, { error: 'Template not found' });
@@ -229,7 +242,7 @@ export async function handleTaskRoutes(
     }
 
     const task = await createTask(client, taskData);
-    return jsonResponse(201, await projectTask(new TeamDirectory(client), task));
+    return jsonResponse(201, await projectWithPrerequisites(client, task));
   }
 
   // GET /api/tasks — List tasks with filters
@@ -286,7 +299,7 @@ export async function handleTaskRoutes(
         && (!ownerFilter || matchesOwnerFilter(task.assigneeId, ownerFilter, activeMemberIds))
         && matchesRequiresFilter(task.requires, requiresFilter)
       ));
-      const responseBody: Record<string, unknown> = { tasks: await projectTasks(directory, visible) };
+      const responseBody: Record<string, unknown> = { tasks: await projectTasks(directory, await attachPrerequisites(client, visible)) };
       const ownerReference = ownerFilterUserId(ownerFilter);
       // A concrete reference always answers with its honest availability,
       // including for a disabled or missing teammate, so a deep link never
@@ -391,7 +404,7 @@ export async function handleTaskRoutes(
         actorId,
         triggerKind: 'task-skipped',
       });
-      return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
+      return jsonResponse(200, await projectWithPrerequisites(client, updated));
     }
 
     if (taskAction.action === 'unskip') {
@@ -416,7 +429,7 @@ export async function handleTaskRoutes(
         actorId,
         triggerKind: 'task-unskipped',
       });
-      return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
+      return jsonResponse(200, await projectWithPrerequisites(client, updated));
     }
 
     if (existing.status === 'skipped') {
@@ -461,7 +474,7 @@ export async function handleTaskRoutes(
         actorId,
         triggerKind: 'task-marked-waiting',
       });
-      return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
+      return jsonResponse(200, await projectWithPrerequisites(client, updated));
     }
 
     if (taskAction.action === 'follow-up-sent') {
@@ -499,7 +512,7 @@ export async function handleTaskRoutes(
         actorId,
         triggerKind: 'task-follow-up-sent',
       });
-      return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
+      return jsonResponse(200, await projectWithPrerequisites(client, updated));
     }
 
     if (taskAction.action === 'response-received' || taskAction.action === 'unblocked') {
@@ -532,7 +545,7 @@ export async function handleTaskRoutes(
         actorId,
         triggerKind: `task-${action}`,
       });
-      return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
+      return jsonResponse(200, await projectWithPrerequisites(client, updated));
     }
 
     if (taskAction.action === 'resolve-done') {
@@ -601,7 +614,7 @@ export async function handleTaskRoutes(
         actorId,
         triggerKind: 'task-wait-resolved-done',
       });
-      return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
+      return jsonResponse(200, await projectWithPrerequisites(client, updated));
     }
 
     return jsonResponse(404, { error: 'Not found' });
@@ -619,7 +632,7 @@ export async function handleTaskRoutes(
     if (!task) {
       return jsonResponse(404, { error: 'Task not found' });
     }
-    return jsonResponse(200, await projectTask(new TeamDirectory(client), task));
+    return jsonResponse(200, await projectWithPrerequisites(client, task));
   }
 
   // PUT /api/tasks/:id — Update a task
@@ -682,6 +695,7 @@ export async function handleTaskRoutes(
     if (refsError) {
       return jsonResponse(400, { error: refsError });
     }
+    if (updates.dependsOn !== undefined) updates.dependsOn = normalizeDependsOn(updates.dependsOn);
     if (updates.templateId !== undefined) {
       if (!isNonEmptyString(updates.templateId) || !await getTemplate(client, updates.templateId)) {
         return jsonResponse(404, { error: 'Template not found' });
@@ -828,7 +842,7 @@ export async function handleTaskRoutes(
           : 'task-updated',
     });
 
-    return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
+    return jsonResponse(200, await projectWithPrerequisites(client, updated));
   }
 
   // DELETE /api/tasks/:id — Delete a task

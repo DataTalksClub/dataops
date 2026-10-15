@@ -32,6 +32,7 @@ export const ALLOWED_UPDATE_FIELDS = [
   'instructionStepId',
   'phase',
   'requires',
+  'dependsOn',
   'validation',
   'link',
   'materials',

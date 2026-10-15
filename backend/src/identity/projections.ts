@@ -16,6 +16,10 @@ export interface ProjectedTask extends Task {
   assignee?: SafeUserProjection;
   /** Safe projections of every actor referenced by this Task's history. */
   historyActors?: SafeUserProjection[];
+  /** Resolved `dependsOn`: each prerequisite's name and current status. */
+  prerequisites?: Array<{ id: string; description: string; status: Task['status'] | 'missing' }>;
+  /** True while an open Task still has a prerequisite that is not `done`. */
+  blocked?: boolean;
 }
 
 export interface ProjectedCard extends Card {

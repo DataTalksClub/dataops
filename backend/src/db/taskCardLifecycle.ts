@@ -17,6 +17,7 @@ import {
   isActiveCardStage,
 } from './cards';
 import { TABLE_AUDIT_EVENTS, TABLE_CARDS, TABLE_TASKS } from './tableNames';
+import type { TaskGuard } from './taskDependencies';
 
 type Dict = Record<string, unknown>;
 type TransactionItems = NonNullable<ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']>;
@@ -25,6 +26,7 @@ type TaskCardMutation =
   | {
       kind: 'create';
       afterTask: Task;
+      guards?: TaskGuard[];
       actorId?: string;
       triggerKind?: string;
     }
@@ -35,6 +37,7 @@ type TaskCardMutation =
       expectedVersion: number;
       patch: Dict;
       historyEvents: Task['taskHistory'];
+      guards?: TaskGuard[];
       actorId?: string;
       triggerKind?: string;
     }
@@ -42,6 +45,7 @@ type TaskCardMutation =
       kind: 'delete';
       beforeTask: Task;
       expectedVersion: number;
+      guards?: TaskGuard[];
       actorId?: string;
       triggerKind?: string;
     };
@@ -116,7 +120,7 @@ function isOpenStatus(status: TaskStatus): boolean {
 
 /** Optional Task attributes a `null` patch value removes instead of storing. */
 const REMOVABLE_TASK_FIELDS = new Set([
-  'cardId', 'completedAt', 'completedBy', 'skipReason', 'skippedAt', 'skippedBy',
+  'cardId', 'completedAt', 'completedBy', 'skipReason', 'skippedAt', 'skippedBy', 'dependsOn',
 ]);
 
 function taskKey(id: string) {
@@ -143,6 +147,13 @@ function taskCardId(task: Task | undefined): string | null {
   return task && typeof task.cardId === 'string' && task.cardId.length > 0
     ? task.cardId
     : null;
+}
+
+/** Cards a conflict response should reload; a guard-only write still names its own Card. */
+function conflictCardIds(touched: Iterable<string>, task: Task): string[] {
+  const ids = [...touched];
+  const own = taskCardId(task);
+  return ids.length === 0 && own ? [own] : ids;
 }
 
 function appendAuditRef(refs: AuditEventRef[] | undefined, event: CardLifecycleAuditEvent): AuditEventRef[] {
@@ -359,6 +370,43 @@ function taskTransactionItem(mutation: TaskCardMutation): TransactionItems[numbe
   };
 }
 
+/** ConditionCheck for a dependency guard on another Task. */
+function guardTransactionItem(guard: TaskGuard): TransactionItems[number] {
+  const conditions = ['attribute_exists(PK)'];
+  const names: Record<string, string> = {};
+  const values: Dict = {};
+  if (guard.version !== undefined) {
+    conditions.push('#version = :guardVersion');
+    names['#version'] = 'version';
+    values[':guardVersion'] = guard.version;
+  }
+  if (guard.status !== undefined) {
+    conditions.push('#status = :guardStatus');
+    names['#status'] = 'status';
+    values[':guardStatus'] = guard.status;
+  }
+  return {
+    ConditionCheck: {
+      TableName: TABLE_TASKS,
+      Key: taskKey(guard.taskId),
+      ConditionExpression: conditions.join(' AND '),
+      ...(Object.keys(names).length > 0
+        ? { ExpressionAttributeNames: names, ExpressionAttributeValues: values }
+        : {}),
+    },
+  };
+}
+
+async function guardsHold(client: DynamoDBDocumentClient, guards: TaskGuard[]): Promise<boolean> {
+  for (const guard of guards) {
+    const current = await rawItem(client, TABLE_TASKS, taskKey(guard.taskId));
+    if (!current) return false;
+    if (guard.version !== undefined && current.version !== guard.version) return false;
+    if (guard.status !== undefined && current.status !== guard.status) return false;
+  }
+  return true;
+}
+
 async function rawItem(
   client: DynamoDBDocumentClient,
   tableName: string,
@@ -410,6 +458,9 @@ async function executeTestTransaction(
     if (current.version !== before.version) {
       throw new TaskCardTransactionConflictError('card', task.id, [...cardsBefore.keys()]);
     }
+  }
+  if (!await guardsHold(client, mutation.guards || [])) {
+    throw new TaskCardTransactionConflictError('card', task.id, conflictCardIds(cardsBefore.keys(), task));
   }
   for (const event of auditEvents) {
     if (await rawItem(client, TABLE_AUDIT_EVENTS, auditKey(event.id))) {
@@ -475,7 +526,7 @@ async function executeTaskCardTransaction(
   mutation: TaskCardMutation,
 ): Promise<{ task: Task | null; cards: Card[]; auditEvents: CardLifecycleAuditEvent[] }> {
   const deltas = cardDeltas(mutation);
-  if (deltas.size === 0) {
+  if (deltas.size === 0 && !mutation.guards?.length) {
     throw new TypeError('Task/Card transaction requires a membership or lifecycle delta');
   }
   const now = mutation.kind === 'update'
@@ -523,6 +574,7 @@ async function executeTaskCardTransaction(
       },
     });
   }
+  for (const guard of mutation.guards || []) transaction.push(guardTransactionItem(guard));
   if (transaction.length > 100) {
     throw new Error(`Task/Card lifecycle mutation requires ${transaction.length} transaction items; maximum is 100`);
   }
@@ -557,7 +609,7 @@ async function executeTaskCardTransaction(
         throw new TaskCardTransactionConflictError('card', task.id, [...deltas.keys()]);
       }
     }
-    throw new CardLifecycleConflictError(task.id, [...deltas.keys()]);
+    throw new CardLifecycleConflictError(task.id, conflictCardIds(deltas.keys(), task));
   }
 
   return {

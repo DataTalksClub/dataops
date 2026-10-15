@@ -237,6 +237,11 @@ export interface Task {
   phase?: string;
   /** Required resource ids (see resources/vocabulary.ts) needed to do this Task. */
   requires?: string[];
+  /**
+   * Ids of prerequisite Tasks on the same Card. This Task cannot be completed
+   * until every one of them is `done`; a skipped prerequisite does not count.
+   */
+  dependsOn?: string[];
   validation?: string | Record<string, unknown>;
   link?: string;
   /** Supporting links (a message template, a how-to video); never pasted into `description`. */
@@ -402,6 +407,8 @@ export interface TaskDefinition {
   instructionStepId?: string;
   phase?: string;
   requires?: string[];
+  /** `refId`s of the definitions that must be done before this one. */
+  dependsOn?: string[];
   validation?: string | Record<string, unknown>;
   requiredLinkName?: string;
   requiresFile?: boolean;
@@ -438,6 +445,8 @@ export interface TemplateTaskDefinitionSnapshot {
   instructionStepId?: string;
   phase?: string;
   requires?: string[];
+  /** Template refIds this Task depended on; the Task itself stores resolved ids in `dependsOn`. */
+  dependsOnRefs?: string[];
   validation?: string | Record<string, unknown>;
   requiredLinkName?: string;
   requiresFile?: boolean;

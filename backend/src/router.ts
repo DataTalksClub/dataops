@@ -33,6 +33,7 @@ import { identityProjection } from './identity/projections';
 import { getSession } from './db/sessions';
 import { getUser } from './db/users';
 import { getTaskConsistent, TaskVersionConflictError, CardLifecycleConflictError } from './db/tasks';
+import { TaskDependencyError } from './db/taskDependencies';
 import { CardNotFoundError, getCardConsistent } from './db/cards';
 import { getApiToken, touchApiToken } from './db/cliAuth';
 import { handleInvoiceReader } from './auth/invoiceReader';
@@ -409,6 +410,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         expectedVersion: err.expectedVersion,
         currentVersion: currentTask.version,
         currentTask,
+      });
+    }
+    if (err instanceof TaskDependencyError) {
+      return jsonResponse(err.statusCode, {
+        error: err.message,
+        code: err.code,
+        ...(err.tasks.length > 0 ? { tasks: err.tasks } : {}),
       });
     }
     if (err instanceof CardNotFoundError) {

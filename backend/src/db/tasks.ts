@@ -18,6 +18,7 @@ import {
   executeTaskCardTransaction,
   isOpenStatus,
 } from './taskCardLifecycle';
+import { planTaskDependencyChecks } from './taskDependencies';
 
 type TaskMutableField = Exclude<
   keyof Task,
@@ -123,11 +124,13 @@ async function createTask(
   }
 
   const task = cleanItem(item) as Task;
+  const guards = await planTaskDependencyChecks(client, null, task);
   if (typeof task.cardId === 'string' && task.cardId.length > 0) {
     try {
       await executeTaskCardTransaction(client, {
         kind: 'create',
         afterTask: task,
+        guards,
         actorId: options.actorId || (typeof task.createdBy === 'string' ? task.createdBy : undefined),
         triggerKind: options.triggerKind || 'task-created',
       });
@@ -199,7 +202,11 @@ async function updateTask(
   const suppliedForbiddenField = forbiddenFields.find((field) => Object.hasOwn(mutation.patch, field));
   if (suppliedForbiddenField) throw new TypeError(`${suppliedForbiddenField} is not an allowed Task patch field`);
 
-  if (mutation.patch.status !== undefined || Object.hasOwn(mutation.patch, 'cardId')) {
+  if (
+    mutation.patch.status !== undefined
+    || Object.hasOwn(mutation.patch, 'cardId')
+    || Object.hasOwn(mutation.patch, 'dependsOn')
+  ) {
     const beforeTask = mutation.currentTask || await getTaskConsistent(client, id);
     if (!beforeTask || beforeTask.version !== mutation.expectedVersion) {
       throw new TaskVersionConflictError(id, mutation.expectedVersion);
@@ -225,7 +232,10 @@ async function updateTask(
       : null;
     const aggregateChanged = beforeCardId !== afterCardId
       || (beforeCardId !== null && isOpenStatus(beforeTask.status) !== isOpenStatus(afterTask.status));
-    if (aggregateChanged) {
+    // Dependency rules run on every Task write, whichever route got here;
+    // their guards ride in the same transaction as the write.
+    const guards = await planTaskDependencyChecks(client, beforeTask, afterTask);
+    if (aggregateChanged || guards.length > 0) {
       try {
         const result = await executeTaskCardTransaction(client, {
           kind: 'update',
@@ -234,6 +244,7 @@ async function updateTask(
           expectedVersion: mutation.expectedVersion,
           patch: mutation.patch as Record<string, unknown>,
           historyEvents,
+          guards,
           actorId: mutation.actorId,
           triggerKind: mutation.triggerKind || 'task-updated',
         });
@@ -343,11 +354,13 @@ async function deleteTask(
     throw new TaskVersionConflictError(id, expectedVersion);
   }
   if (typeof beforeTask.cardId === 'string' && beforeTask.cardId.length > 0) {
+    const guards = await planTaskDependencyChecks(client, beforeTask, null);
     try {
       await executeTaskCardTransaction(client, {
         kind: 'delete',
         beforeTask,
         expectedVersion,
+        guards,
         actorId,
         triggerKind: 'task-deleted',
       });
