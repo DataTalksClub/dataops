@@ -809,7 +809,7 @@ export function createTaskQueue(context) {
     cell.className = "ops-queue-owner";
     if (!task.assigneeId) {
       cell.dataset.assignee = "none";
-      cell.textContent = "—";
+      cell.textContent = "Unassigned";
       cell.title = "Unassigned";
       cell.setAttribute("role", "img");
       cell.setAttribute("aria-label", "Unassigned");
