@@ -4,7 +4,7 @@ import { apiFor } from "../session.mjs";
 
 export const summary = "Sponsor CRM: queue, organizations, contacts, deals, deliverables, leads, finance";
 
-const KINDS = ["organizations", "contacts", "deals", "deliverables", "invoices", "leads", "newsletters"];
+const KINDS = ["organizations", "contacts", "deals", "deliverables", "leads", "newsletters"];
 
 export const help = `dataops sponsors - the sponsor CRM (the web Finance > Sponsors views)
 
@@ -18,6 +18,9 @@ Usage
   dataops sponsors messages <organization-id>          Communications with an organization
   dataops sponsors history <deal-id>                   A deal's change history
   dataops sponsors finance <deal-id> [history|candidates/invoices|candidates/payments]
+
+Invoice drafts: use dataops invoices. To find invoice evidence for a sponsor deal,
+use dataops sponsors finance <deal-id> candidates/invoices.
 
 --data takes a JSON object, @file.json, or - for stdin. The API validates every field
 exactly as it does for the web; a 400/422 names what is wrong. Use --json to see the
@@ -34,13 +37,14 @@ clears the previous reason.
 
 function kindOf(args, index = 0) {
   const kind = positional(args, index, `dataops sponsors <list|show> <${KINDS.join("|")}>`);
+  if (kind === "invoices") throw new UsageError("Invoice drafts use `dataops invoices`. For sponsor invoice evidence, use `dataops sponsors finance <deal-id> candidates/invoices`.");
   if (!KINDS.includes(kind)) throw new UsageError(`Unknown kind "${kind}". One of: ${KINDS.join(", ")}.`);
   return kind;
 }
 
 function itemsOf(payload) {
   if (Array.isArray(payload)) return payload;
-  for (const key of ["items", "organizations", "contacts", "deals", "deliverables", "invoices", "leads", "newsletters"]) {
+  for (const key of ["items", "organizations", "contacts", "deals", "deliverables", "leads", "newsletters"]) {
     if (Array.isArray(payload?.[key])) return payload[key];
   }
   return [];

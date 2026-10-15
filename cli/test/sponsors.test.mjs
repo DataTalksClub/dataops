@@ -2,6 +2,27 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { run } from "../src/cli.mjs";
 
+test("unsupported sponsor invoice operations explain the working commands without a request", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls += 1; throw new Error("Unexpected request"); };
+  const errors = [];
+  const io = { log() {}, error: (value) => errors.push(String(value)) };
+  try {
+    for (const action of ["list", "show", "create", "update"]) {
+      assert.equal(await run(["sponsors", action, "invoices", "example", "--json"], io), 2);
+    }
+    assert.equal(calls, 0);
+    assert.equal(errors.length, 4);
+    for (const error of errors) {
+      assert.match(error, /dataops invoices/);
+      assert.match(error, /candidates\/invoices/);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("sponsors update leads sends --reason as the lead's statusReason", async () => {
   const originalFetch = globalThis.fetch;
   const oldToken = process.env.DATAOPS_TOKEN;
