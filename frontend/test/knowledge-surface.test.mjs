@@ -1656,6 +1656,16 @@ describe("Knowledge surface boundary", () => {
     assert.equal(unavailableHost.hidden, true);
   });
 
+  test("lists a document's training_assets as its Loom recordings", () => {
+    const harness = createKnowledgeHarness();
+    const block = harness.api.renderLoomBlock({
+      training_assets: ["https://www.loom.com/share/fd4b9b66aa0d434bbd80225d19065dd8"],
+    });
+    assert.ok(findByText(block, "Loom recordings (1)", "h3"));
+    assert.ok(findByText(block, "loom.com · fd4b9b66…", "a"));
+    assert.equal(harness.api.renderLoomBlock({ loom: ["https://www.loom.com/share/abc123456789"] }), null);
+  });
+
   test("renders nested document tree hierarchy with expand/collapse toggles and action buttons", () => {
     const harness = createKnowledgeHarness();
     const documents = [

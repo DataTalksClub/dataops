@@ -126,8 +126,9 @@ export function createKnowledgeReferences(context, services) {
   }
 
   function renderLoomBlock(frontmatter) {
-    const looms = Array.isArray(frontmatter.loom)
-      ? frontmatter.loom.filter(Boolean)
+    // A document's walkthrough videos are its `training_assets`.
+    const looms = Array.isArray(frontmatter.training_assets)
+      ? frontmatter.training_assets.filter(Boolean)
       : [];
     if (looms.length === 0) return null;
     const wrap = document.createElement("aside");
