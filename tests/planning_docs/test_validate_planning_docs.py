@@ -209,3 +209,15 @@ def test_task_template_paths_are_stable_across_corpus_layouts(tmp_path, monkeypa
         results[layout] = tuple(violations)
 
     assert len(set(results.values())) == 1
+
+
+def test_fenced_example_links_are_not_document_links(tmp_path):
+    markdown = tmp_path / "doc.md"
+    markdown.write_text(
+        "```markdown\n[Template](01-<slug>/homework.md)\n````\n"
+        "~~~text\n[Example](../cohorts/<year>/<module>/)\n~~~\n"
+        "[Real broken link](missing.md)\n", encoding="utf-8"
+    )
+    assert validate_planning_docs.validate_markdown_links_for_files(tmp_path, [markdown]) == [
+        "doc.md: link target not found: missing.md"
+    ]

@@ -184,13 +184,32 @@ def validate_markdown_links(repo_root: Path) -> list[str]:
     return validate_markdown_links_for_files(repo_root, protected_markdown_files(repo_root))
 
 
+def _without_fenced_examples(text: str) -> str:
+    """Fenced examples describe links to author, not links in this document."""
+    lines = []
+    fence = None
+    for line in text.splitlines(keepends=True):
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence is None:
+            if match:
+                fence = match.group(1)
+                lines.append("\n")
+            else:
+                lines.append(line)
+        else:
+            if match and match.group(1)[0] == fence[0] and len(match.group(1)) >= len(fence) and not match.group(2).strip():
+                fence = None
+            lines.append("\n")
+    return "".join(lines)
+
+
 def validate_markdown_links_for_files(repo_root: Path, markdown_files: list[Path]) -> list[str]:
     repo_root = repo_root.resolve()
     violations: list[str] = []
     for markdown_path in markdown_files:
         markdown_path = markdown_path.resolve()
         text = markdown_path.read_text(encoding="utf-8", errors="replace")
-        for match in MARKDOWN_LINK_RE.finditer(text):
+        for match in MARKDOWN_LINK_RE.finditer(_without_fenced_examples(text)):
             raw_target = _strip_markdown_title(match.group("target"))
             if _is_external_or_anchor(raw_target):
                 continue
