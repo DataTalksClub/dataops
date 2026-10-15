@@ -484,3 +484,60 @@ describe("team default assignee", () => {
     assert.deepEqual(calls.filter((call) => call.method === "PUT").at(-1).body, { defaultAssigneeId: null, expectedVersion: 1 });
   });
 });
+
+describe("team: a person leaving", () => {
+  const work = (tasks, cards = 0, schedules = 0, sponsorRecords = 0) => ({ tasks, cards, schedules, sponsorRecords });
+
+  test("handover shows the open work, reassign hands it over", async () => {
+    const calls = fakePortal({
+      "GET /api/users/u-grace/handover": {
+        user: { id: "u-grace", name: "Grace", disabled: true },
+        openWork: work(3, 1),
+        openTotal: 4,
+        isDefaultAssignee: false,
+      },
+      "POST /api/users/u-grace/reassign": { reassignedTo: "u-orin", moved: work(3, 1), remaining: work(0) },
+    });
+    let io = captureIo();
+    assert.equal(await run(["team", "handover", "u-grace"], io), 0);
+    assert.match(io.text(), /Grace \(disabled\): 3 open tasks, 1 card\./);
+
+    io = captureIo();
+    assert.equal(await run(["team", "reassign", "u-grace", "--to", "u-orin"], io), 0);
+    assert.deepEqual(calls.at(-1).body, { reassignTo: "u-orin" });
+    assert.match(io.text(), /Moved 3 open tasks, 1 card to u-orin\./);
+
+    io = captureIo();
+    assert.equal(await run(["team", "reassign", "u-grace"], io), 2);
+    assert.match(io.errors.join("\n"), /--to is required/);
+  });
+
+  test("disable-user and delete-user pass the recipient and the new default", async () => {
+    const calls = fakePortal({
+      "POST /api/users/u-lee/disable": {
+        user: { id: "u-lee", name: "Lee", disabled: true },
+        reassignedTo: "u-orin", moved: work(2), newDefaultAssigneeId: "u-orin", revokedCredentials: 2,
+      },
+      "DELETE /api/users/u-lee": { deleted: { id: "u-lee", name: "Lee" }, reassignedTo: null, moved: null, revokedCredentials: 0 },
+    });
+    let io = captureIo();
+    assert.equal(await run(["team", "disable-user", "u-lee", "--reassign-to", "u-orin", "--new-default", "u-orin"], io), 0);
+    assert.deepEqual(calls.at(-1).body, { reassignTo: "u-orin", newDefaultAssigneeId: "u-orin" });
+    assert.match(io.text(), /Disabled Lee\.\nMoved 2 open tasks to u-orin\./);
+
+    io = captureIo();
+    assert.equal(await run(["team", "delete-user", "u-lee", "--reassign-to", "u-orin"], io), 0);
+    assert.equal(calls.at(-1).method, "DELETE");
+    assert.deepEqual(calls.at(-1).body, { reassignTo: "u-orin" });
+    assert.match(io.text(), /Deleted Lee; history still shows the name\./);
+  });
+
+  test("delete-user of an active account is refused by the portal", async () => {
+    fakePortal({
+      "DELETE /api/users/u-active": { status: 409, body: { error: "Disable Ann first; only a disabled account can be deleted", code: "disable_first" } },
+    });
+    const io = captureIo();
+    assert.equal(await run(["team", "delete-user", "u-active", "--json"], io), 5);
+    assert.equal(JSON.parse(io.errors[0]).error.code, "disable_first");
+  });
+});

@@ -63,7 +63,7 @@ subcommands, flags, and examples.
 | `files`, `artifacts` | Task files and artifacts |
 | `sponsors` | CRM queue, records, messages, deal history and finance |
 | `invoices` | bookkeeping invoice drafts |
-| `team`, `users` | the team directory (ids for `--assignee`/`--owner`) and the workspace default assignee; accounts (admin) |
+| `team`, `users` | the team directory (ids for `--assignee`/`--owner`) and the workspace default assignee; a person leaving: `handover`, `reassign`, `disable-user`, `enable-user`, `delete-user` (admin); accounts (admin) |
 | `api` | any other route: `dataops api GET /api/<route>` |
 | `login`, `logout`, `whoami`, `tokens` | credentials |
 | `agent-guide` | the workflow guide for agents ([skill/SKILL.md](skill/SKILL.md)) |
