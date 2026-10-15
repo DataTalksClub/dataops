@@ -130,6 +130,10 @@ export class FakeElement {
     );
   }
 
+  get childNodes() {
+    return this.children;
+  }
+
   set textContent(value) {
     this._textContent = String(value ?? "");
     this.children = [];

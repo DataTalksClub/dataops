@@ -75,6 +75,7 @@ export function createDocumentRenderer(context, services) {
   ];
 
   const codeViewSurface = createCodeViewSurface({});
+  let codeViewRequest = 0;
 
   async function fetchCodeViewPayload(codeViewPath) {
     const url = apiUrl("/docs");
@@ -82,13 +83,15 @@ export function createDocumentRenderer(context, services) {
     return request(url);
   }
 
-  function toggleViewMode() {
+  async function toggleViewMode() {
     if (!documentState.currentDoc) return;
-    if (editorView.dataset.mode === "code") {
-      enterRenderedMode();
-      return;
+    if (documentState.currentDoc.docType === "code-view" && documentState.currentDoc.sopDoc?.path) {
+      return context.openDocument(documentState.currentDoc.sopDoc.path);
     }
-    enterCodeViewMode();
+    if (editorView.dataset.mode === "code") {
+      return enterRenderedMode();
+    }
+    return enterCodeViewMode();
   }
 
   /** Show the linked SOP's alternate code view (or the open code-view doc). */
@@ -96,37 +99,37 @@ export function createDocumentRenderer(context, services) {
     const doc = documentState.currentDoc;
     if (!doc) return;
     const openedPath = doc.path;
+    const requestId = ++codeViewRequest;
     const isFresh = editorMutationGuard(context);
     editorView.dataset.mode = "code";
+    let problem = doc.codeViewError || doc.parseCodeError || "";
     let payload =
       doc.docType === "code-view" ? documentState.currentParsedCodeView : null;
     if (!payload && doc.codeView?.path) {
-      const cached = documentState.codeViewCache?.[doc.codeView.path] || null;
-      if (cached) payload = cached;
-      else {
-        try {
-          const fetched = await fetchCodeViewPayload(doc.codeView.path);
-          if (!isFresh() || documentState.currentDoc?.path !== openedPath) return;
-          payload = fetched.parsed_code_view || null;
-          if (documentState.codeViewCache) {
-            documentState.codeViewCache[doc.codeView.path] = payload;
-          }
-        } catch {
-          if (!isFresh() || documentState.currentDoc?.path !== openedPath) return;
-          payload = null;
-        }
+      try {
+        const fetched = await fetchCodeViewPayload(doc.codeView.path);
+        if (!isFresh() || documentState.currentDoc?.path !== openedPath ||
+            requestId !== codeViewRequest || editorView.dataset.mode !== "code") return;
+        problem = fetched.code_view_error || fetched.parse_code_error || "";
+        payload = fetched.parsed_code_view || null;
+      } catch (error) {
+        if (!isFresh() || documentState.currentDoc?.path !== openedPath ||
+            requestId !== codeViewRequest || editorView.dataset.mode !== "code") return;
+        problem = error.message || "The linked code view could not be loaded.";
       }
     }
     renderedView.replaceChildren();
+    renderedView.classList.remove("code-view");
     renderedView.dataset.editorRoot = "";
-    if (payload) {
+    if (payload && !problem) {
       codeViewSurface.renderCodeView(renderedView, payload, { renderMarkdown });
     } else {
       const note = document.createElement("div");
       note.className = "code-view-unavailable";
-      note.textContent = doc.codeView
+      note.setAttribute("role", problem ? "alert" : "status");
+      note.textContent = problem || (doc.codeView
         ? "The linked code view could not be loaded."
-        : "No code view is linked to this document.";
+        : "No code view is linked to this document.");
       renderedView.append(note);
     }
     resizeDocumentTitle();
@@ -134,6 +137,7 @@ export function createDocumentRenderer(context, services) {
   }
 
   async function enterRenderedMode() {
+    codeViewRequest += 1;
     const path = documentState.currentDoc?.path;
     const isFresh = editorMutationGuard(context);
     editorView.dataset.mode = "rendered";
@@ -153,10 +157,16 @@ export function createDocumentRenderer(context, services) {
     try {
       const payload = await request(apiUrl("/parse"), {
         method: "POST",
-        body: JSON.stringify({ content: editor.value }),
+        body: JSON.stringify({
+          content: editor.value,
+          kind: documentState.currentDoc?.docType === "code-view" ? "code-view" : "sop",
+        }),
       });
       if (!isFresh() || documentState.currentDoc?.path !== path) return;
-      if (payload.parsed) documentState.currentParsed = payload.parsed;
+      if (documentState.currentDoc?.docType === "code-view") {
+        documentState.currentParsedCodeView = payload.parsed_code_view || null;
+        documentState.currentDoc.parseCodeError = payload.error || null;
+      } else if (payload.parsed) documentState.currentParsed = payload.parsed;
     } catch {
       if (!isFresh() || documentState.currentDoc?.path !== path) return;
     }
@@ -175,10 +185,11 @@ export function createDocumentRenderer(context, services) {
     // (GET /docs → code_view); otherwise there is nothing to switch to.
     const doc = documentState.currentDoc;
     const available =
-      !!doc && (!!doc.codeView || doc.docType === "code-view");
+      !!doc && (!!doc.codeView || doc.docType === "code-view" || !!doc.codeViewError);
     viewToggleButton.hidden = !available;
     viewToggleButton.textContent =
-      editorView.dataset.mode === "code" ? "Document view" : "Code view";
+      doc?.docType === "code-view" && doc.sopDoc ? "SOP view" :
+        editorView.dataset.mode === "code" ? "Document view" : "Code view";
     if (doc && editorView.dataset.mode !== "rendered" && editorView.dataset.mode !== "code") {
       enterRenderedMode();
     }
@@ -198,6 +209,9 @@ export function createDocumentRenderer(context, services) {
       if (documentState.currentDoc) {
         documentState.currentDoc.docType = payload.doc_type || documentState.currentDoc.docType;
         documentState.currentDoc.codeView = payload.code_view || null;
+        documentState.currentDoc.sopDoc = payload.sop_doc || null;
+        documentState.currentDoc.codeViewError = payload.code_view_error || null;
+        documentState.currentDoc.parseCodeError = payload.parse_code_error || null;
       }
       updateViewToggleAvailability();
     } catch {
@@ -207,6 +221,7 @@ export function createDocumentRenderer(context, services) {
   }
 
   function renderParsedDocument(options = {}) {
+    renderedView.classList.remove("code-view");
     // A code-view document renders as its Gist-style body — files in author
     // order, read-only — instead of the SOP block view.
     if (

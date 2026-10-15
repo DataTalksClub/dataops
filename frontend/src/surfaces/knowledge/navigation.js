@@ -185,7 +185,6 @@ export function createKnowledgeNavigation(context, services) {
     documentState.currentDoc = null;
     documentState.currentParsed = null;
     documentState.currentParsedCodeView = null;
-    documentState.codeViewCache = {};
     documentState.currentWarnings = [];
     documentState.lastSavedContent = "";
     documentState.hasDraft = false;
@@ -217,6 +216,9 @@ export function createKnowledgeNavigation(context, services) {
         revision: payload.revision,
         docType: payload.doc_type || "",
         codeView: payload.code_view || null,
+        sopDoc: payload.sop_doc || null,
+        codeViewError: payload.code_view_error || null,
+        parseCodeError: payload.parse_code_error || null,
       };
       if (options.updateUrl !== false) setDocumentUrl(payload.path);
       documentState.currentParsed = payload.parsed || null;

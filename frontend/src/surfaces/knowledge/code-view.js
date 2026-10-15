@@ -47,7 +47,7 @@ export function createCodeViewSurface(context) {
     const note = doc.createElement("div");
     note.className = "code-note";
     note.setAttribute("id", block.anchor);
-    if (block.heading) {
+    if (block.heading && !/^#{1,6}\s/m.test(block.body_md || "")) {
       const heading = doc.createElement("h3");
       heading.className = "code-note-heading";
       heading.textContent = block.heading;
@@ -93,7 +93,7 @@ export function createCodeViewSurface(context) {
     const code = doc.createElement("code");
     code.className = `language-${language}`;
     const highlighted = highlightCode(block.code, language, doc);
-    code.append(...highlighted.children);
+    code.append(...highlighted.childNodes);
     pre.append(code);
 
     section.append(header, pre);
