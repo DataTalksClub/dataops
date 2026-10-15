@@ -1061,6 +1061,55 @@ describe("Planning surface production behavior", () => {
     assert.equal(dom.dayDialog.open, false);
   });
 
+  // Timed activities are UTC instants; the day schedule shows Berlin time.
+  // Berlin clocks jump from 02:00 to 03:00 on 29 March 2026.
+  test("shows day schedule activity times in Berlin time across the DST change", async () => {
+    const dom = createCalendarDom();
+    const harness = createPlanningHarness({
+      calendar: dom,
+      today: "2026-03-27",
+      request: async (url) => {
+        const value = new URL(url);
+        if (value.pathname.endsWith("/overlays")) return { items: [] };
+        return {
+          alerts: [],
+          holidays: [],
+          items: [
+            {
+              id: "before-change", title: "Night sync", activityType: "webinar", status: "confirmed",
+              allDay: false, startsAt: "2026-03-29T00:30:00.000Z", endsAt: "2026-03-29T00:45:00.000Z",
+              startKey: "2026-03-29", endKey: "2026-03-29", timeZone: "Europe/Berlin",
+            },
+            {
+              id: "after-change", title: "DST test item", activityType: "webinar", status: "confirmed",
+              allDay: false, startsAt: "2026-03-29T01:30:00.000Z", endsAt: "2026-03-29T02:30:00.000Z",
+              startKey: "2026-03-29", endKey: "2026-03-29", timeZone: "Europe/Berlin",
+            },
+            {
+              id: "weekday", title: "Monday webinar", activityType: "webinar", status: "confirmed",
+              allDay: false, startsAt: "2026-03-30T15:00:00.000Z", endsAt: "2026-03-30T16:00:00.000Z",
+              startKey: "2026-03-30", endKey: "2026-03-30", timeZone: "Europe/Berlin",
+            },
+          ],
+        };
+      },
+    });
+    await harness.surface.renderCalendarSurface();
+    await nextTicks();
+    // Grid chip: 15:00 UTC is 17:00 in Berlin summer time.
+    assert.match(dom.grid.innerHTML, /calendar-chip-time">17:00<\/b> Monday webinar/);
+
+    await dom.grid.onclick({
+      target: { closest: (sel) => (sel === "[data-open-day]" ? { dataset: { openDay: "2026-03-29" } } : null) },
+    });
+    await nextTicks();
+    const body = dom.dayBody.innerHTML;
+    assert.match(body, /01:30–01:45<\/span>\s*<span class="calendar-day-timeline-title">Night sync/);
+    assert.match(body, /03:30–04:30<\/span>\s*<span class="calendar-day-timeline-title">DST test item/);
+    assert.doesNotMatch(body, /00:30|02:30/);
+    assert.ok(body.indexOf("Night sync") < body.indexOf("DST test item"));
+  });
+
   test("renders grouped Newsletter slots, safe booking labels, links, and alerts", async () => {
     const dom = createNewsletterDom();
     const harness = createPlanningHarness({

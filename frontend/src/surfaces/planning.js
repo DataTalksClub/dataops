@@ -4,6 +4,7 @@ import { parseIsoDateValue } from "../core/workspace.js";
 import { createNewsletterPlanner } from "./planning-newsletter.js";
 import { setupDayScheduleDialog, setupCalendarSettingsDialog } from "./planning-calendar-dialogs.js";
 import { mountPeriodNav, periodNavMarkup } from "./period-nav.js";
+import { berlinDateTime, berlinTime, berlinTimestamp } from "./calendar-time.js";
 
 // Open time is either a free slot projected from Alexey's calendar or a
 // newsletter issue nobody has booked yet.
@@ -46,29 +47,6 @@ export function createPlanningSurface(context) {
           month: "short",
           timeZone: "UTC",
         }).format(parsed);
-  }
-
-  function berlinDateTime(timestamp) {
-    const parts = new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-    }).formatToParts(new Date(timestamp));
-    const part = (type) => parts.find((entry) => entry.type === type).value;
-    return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
-  }
-
-  function berlinTimestamp(date, time) {
-    const local = `${date}T${time}`;
-    const target = Date.parse(`${local}:00Z`);
-    let instant = target;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const represented = Date.parse(`${berlinDateTime(instant)}:00Z`);
-      instant += target - represented;
-    }
-    if (berlinDateTime(instant) !== local) {
-      throw new Error("This time does not exist in Europe/Berlin because the clocks change. Choose another time.");
-    }
-    return new Date(instant).toISOString();
   }
 
   function calendarAlertCopy(reasonCode) {
@@ -498,7 +476,7 @@ export function createPlanningSurface(context) {
             >
               <small>${escapeHtml(plannerLabel(item.activityType))}</small>
               <span>${item.allDay === false && item.startsAt
-                ? `<b class="calendar-chip-time">${escapeHtml(berlinDateTime(item.startsAt).slice(11))}</b> ` : ""}${escapeHtml(item.title)}</span>
+                ? `<b class="calendar-chip-time">${escapeHtml(berlinTime(item.startsAt))}</b> ` : ""}${escapeHtml(item.title)}</span>
             </button>
           `).join(""),
           overlayMarkup = dayOverlays.map((overlay) => {

@@ -1,3 +1,5 @@
+import { berlinTime } from "./calendar-time.js";
+
 export function setupDayScheduleDialog(options) {
   const {
     surface,
@@ -121,11 +123,11 @@ export function setupDayScheduleDialog(options) {
     for (const a of dayActivities) {
       const timeLabel = a.allDay
         ? "All day"
-        : (a.startsAt ? `${a.startsAt.slice(11, 16)}–${a.endsAt ? a.endsAt.slice(11, 16) : ""}` : "All day");
+        : (a.startsAt ? `${berlinTime(a.startsAt)}–${a.endsAt ? berlinTime(a.endsAt) : ""}` : "All day");
       timelineEntries.push({
         time: timeLabel,
         title: a.title,
-        sortTime: a.allDay ? "00:00" : (a.startsAt ? a.startsAt.slice(11, 16) : "00:00"),
+        sortTime: a.allDay ? "00:00" : (a.startsAt ? berlinTime(a.startsAt) : "00:00"),
         tagClass: "is-activity",
         tagLabel: plannerLabel(a.activityType || "activity"),
         id: a.id,
