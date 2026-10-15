@@ -1010,6 +1010,9 @@
     grid-area: actions;
   }
   /* A missing link is one line: its label and "Add". */
+  .link-row.is-missing {
+    grid-template-areas: "label actions";
+  }
   .link-row.is-missing .link-row__value {
     grid-area: actions;
   }
