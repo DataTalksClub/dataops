@@ -293,7 +293,16 @@ export async function acquireLock(lockPath, options = {}) {
       if (error?.code !== 'EEXIST') throw error;
     }
 
-    const inspected = lockIdentity(lockPath);
+    // The holder may release between our failed mkdir and this inspection;
+    // a vanished lock is free, so retry instead of failing the build.
+    if (options.beforeContendedInspect) options.beforeContendedInspect();
+    let inspected;
+    try {
+      inspected = lockIdentity(lockPath);
+    } catch (error) {
+      if (error?.code === 'ENOENT') continue;
+      throw error;
+    }
     const owner = inspected.owner;
     try {
       const age = owner ? now() - owner.createdAt : now() - statSync(lockPath).mtimeMs;

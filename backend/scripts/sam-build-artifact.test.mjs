@@ -247,6 +247,30 @@ test('dead and malformed stale locks recover while live locks time out with owne
   }
 });
 
+test('a lock released between a contended mkdir and its inspection is acquired, not an error', async () => {
+  mkdirSync(testRoot, { recursive: true });
+  const root = mkdtempSync(join(testRoot, 'lock-released-'));
+  const lock = join(root, 'artifact.lock');
+  try {
+    const holder = await acquireLock(lock);
+    let released = false;
+    const acquired = await acquireLock(lock, {
+      pollMs: 1,
+      timeoutMs: 1000,
+      beforeContendedInspect: () => {
+        if (released) return;
+        released = true;
+        assert.equal(releaseLock(lock, holder), true);
+      },
+    });
+    assert.equal(released, true);
+    assert.notEqual(acquired.token, holder.token);
+    assert.equal(releaseLock(lock, acquired), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('lock release cannot remove ownership that was replaced after acquisition', async () => {
   mkdirSync(testRoot, { recursive: true });
   const root = mkdtempSync(join(testRoot, 'lock-replaced-'));
