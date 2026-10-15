@@ -944,7 +944,8 @@
         "/search",
         "/content/*",
         "/docs/registry",
-        "/docs/backlinks"
+        "/docs/backlinks",
+        "/knowledge/recent"
       ],
       "roleIds": [
         "operator",
@@ -1035,6 +1036,14 @@
           "id": "process-docs.unavailable",
           "kind": "error",
           "description": "An unreachable docs content root reads as an outage carrying the server message, not as an empty corpus.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "process-docs.recent",
+          "kind": "ready",
+          "description": "Recently changed lists edited docs newest first from publication history, one row per doc with actor and edit count, behind a URL-backed tab, with each doc's version history one click away.",
           "coverage": {
             "status": "runtime"
           }

@@ -62,7 +62,7 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/processes": {
     view: "docs",
     tasksSection: "queue",
-    params: ["domain", "type", "system", "tag"],
+    params: ["view", "domain", "type", "system", "tag"],
   },
   "/admin": { view: "admin", tasksSection: "queue", params: [] },
   "/users": { view: "users", tasksSection: "queue", params: [] },
@@ -200,6 +200,9 @@ export function parseWorkspaceLocation(
   }
   if (params.has("date") && !isRealIsoDate(params.get("date"))) {
     return { invalid: true, reason: "invalid date" };
+  }
+  if (path === "/processes" && params.has("view") && params.get("view") !== "recent") {
+    return { invalid: true, reason: "invalid view" };
   }
   if (
     ["/cards", "/cards/archive"].includes(path) &&

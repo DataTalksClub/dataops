@@ -97,6 +97,7 @@
     "src/surfaces/knowledge/menus.js",
     "src/surfaces/knowledge/navigation.js",
     "src/surfaces/knowledge/process-docs.js",
+    "src/surfaces/knowledge/recent.js",
     "src/surfaces/knowledge/references.js",
     "src/surfaces/knowledge/search.js",
     "src/surfaces/operating-model.js",

@@ -37,10 +37,12 @@ export function createEditorHistory(context, services) {
       knowledgeStatusText.textContent = "Daily GitHub export status unavailable. File saves and history are independent of GitHub.";
     }
   }
-  async function openHistory() {
+  // `path` names the file to show (Process Docs › Recently changed); a click
+  // on the editor's History button passes its event and uses the open doc.
+  async function openHistory(path) {
     returnFocus = documentRef.activeElement;
     historyModal.hidden = false;
-    historyPath.value = documentState.currentDoc?.path || historyPath.value || "";
+    historyPath.value = (typeof path === "string" && path) || documentState.currentDoc?.path || historyPath.value || "";
     historyPath.focus();
     if (historyPath.value) await loadHistory();
     else { status("Enter a file path to view its history, including deleted files."); historyVersions.replaceChildren(); }

@@ -181,6 +181,8 @@ describe("canonical workspace routing", () => {
       ["/cards/archive?taskId=task-1", "taskId requires cardId"],
       ["/processes?type=", "invalid type"],
       ["/processes?domain=one&domain=two", "invalid domain"],
+      ["/processes?view=catalog", "invalid view"],
+      ["/review", "unknown path"],
       ["/tasks?date=2026-02-30", "invalid date"],
       ["/tasks?taskId=%E0%A4%A", "malformed encoding"],
       ["/unknown", "unknown path"],
@@ -189,6 +191,13 @@ describe("canonical workspace routing", () => {
     for (const [hash, reason] of cases) {
       assert.deepEqual(parseWorkspaceLocation(hash, browserLocation(hash)), { invalid: true, reason }, hash);
     }
+  });
+
+  test("keeps Process Docs › Recently changed in the URL", () => {
+    const route = parseWorkspaceLocation("/processes?view=recent", browserLocation("/processes?view=recent"));
+    assert.equal(route.view, "docs");
+    assert.equal(route.params.get("view"), "recent");
+    assert.equal(route.canonicalUrl, "/processes?view=recent");
   });
 
   test("keeps explicit null invalid instead of falling back to the browser location", () => {

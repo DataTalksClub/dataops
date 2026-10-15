@@ -308,6 +308,7 @@ function createKnowledgeHarness(options = {}) {
     openCardPanel: (id) => openedCards.push(id),
     openQuickWorkflowForm() {},
     openTaskPanel: (id) => openedTasks.push(id),
+    openHistory: (path) => options.openHistory?.(path),
     operationsViewTitle: (view) => view,
     promptUser: () => "",
     qualityFiltersState,
@@ -391,6 +392,64 @@ function createKnowledgeHarness(options = {}) {
     views,
   };
 }
+
+describe("Process Docs › Recently changed", () => {
+  test("renders day-grouped recent changes behind a URL-backed tab", async () => {
+    const histories = [];
+    const now = new Date();
+    const harness = createKnowledgeHarness({
+      activeRoute: { path: "/processes", params: new URLSearchParams("view=recent") },
+      openHistory: (path) => histories.push(path),
+      request: async (url) => {
+        if (String(url).includes("/knowledge/recent")) {
+          return {
+            revision: "rev-2",
+            complete: true,
+            changes: [
+              { path: "content/a.md", operation: "edit", actor: "git:DataTalksClub/dataops-knowledge@0123456789ab", actorName: "Git 0123456", time: now.toISOString(), changes: 3, deleted: false },
+              { path: "content/gone.md", operation: "delete", actor: "u1", actorName: "Orin Vale", time: now.toISOString(), changes: 1, deleted: true },
+            ],
+          };
+        }
+        return {};
+      },
+    });
+    harness.knowledgeState.allDocuments = [{ path: "content/a.md", title: "Alpha SOP" }];
+    harness.api.renderDocsSurface([]);
+    const list = harness.elements.documentList;
+    const current = findAllByClass(list, "dk-tab").find((tab) => tab.getAttribute("aria-current") === "page");
+    assert.equal(current.textContent, "Recently changed");
+    await nextTicks(4);
+    assert.ok(harness.requests.some((entry) => /\/knowledge\/recent\?limit=50$/.test(entry.url)));
+    const rows = findAllByClass(list, "ops-recent-doc");
+    assert.equal(rows.length, 2);
+    assert.equal(findByText(list, "Today", "h3").textContent, "Today");
+    assert.equal(findAllByClass(rows[0], "ops-recent-doc__title")[0].textContent, "Alpha SOP");
+    assert.equal(findAllByClass(rows[0], "ops-recent-doc__main")[0].href, "/a.md");
+    assert.match(findAllByClass(rows[0], "ops-recent-doc__meta")[0].textContent, /^Edited · Git 0123456 · 3 edits$/);
+    assert.equal(findAllByClass(rows[1], "is-deleted")[0].textContent, "gone.md");
+    findAllByClass(rows[1], "ops-recent-doc__history")[0].click();
+    assert.deepEqual(histories, ["content/gone.md"]);
+    // The catalog toolbar stays with the catalog view.
+    assert.equal(findAllByClass(list, "ops-docs-catalog").length, 0);
+    assert.equal(harness.elements.knowledgeTools.hidden, true);
+    findByText(list, "Catalog", "a").click();
+    assert.deepEqual(harness.navigations.at(-1).path, "/processes");
+  });
+
+  test("groups by day with Today and Yesterday labels", async () => {
+    const { groupRecentChanges } = await import("../src/surfaces/knowledge/recent.js");
+    const now = new Date(2026, 9, 15, 12, 0);
+    const groups = groupRecentChanges([
+      { path: "content/a.md", time: new Date(2026, 9, 15, 9, 0).toISOString() },
+      { path: "content/b.md", time: new Date(2026, 9, 14, 23, 0).toISOString() },
+      { path: "content/c.md", time: new Date(2026, 9, 12, 8, 0).toISOString() },
+    ], now);
+    assert.deepEqual(groups.map((group) => [group.label, group.changes.length]), [
+      ["Today", 1], ["Yesterday", 1], ["Mon 12 Oct", 1],
+    ]);
+  });
+});
 
 describe("Knowledge surface boundary", () => {
   test("directly imports production factory and exposes the stable Knowledge facade", () => {

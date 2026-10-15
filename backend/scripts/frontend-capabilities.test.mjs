@@ -88,6 +88,7 @@ const REQUIRED = {
       "validation",
       "storage-failure",
       "unavailable",
+      "recent",
     ],
   },
   admin: { route: "/admin", states: ["loading", "empty", "ready-read-only", "failure"] },
@@ -110,7 +111,7 @@ const REQUIRED_APIS = {
   sponsors: ["/api/sponsor-crm/*"],
   newsletter: ["/api/newsletter-slots"],
   calendar: ["/api/calendar-items"],
-  "process-docs": ["/docs", "/search", "/content/*", "/docs/registry", "/docs/backlinks"],
+  "process-docs": ["/docs", "/search", "/content/*", "/docs/registry", "/docs/backlinks", "/knowledge/recent"],
   admin: ["/docs/process-quality", "/knowledge/status", "/knowledge/publication"],
   users: ["/api/users", "/api/me"],
 };

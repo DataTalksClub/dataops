@@ -1,4 +1,13 @@
 import "../../dakit/collection.js";
+import { createRecentDocsView } from "./recent.js";
+
+// Process Docs views: the catalog, and the recently changed documents
+// (/processes?view=recent).
+export const PROCESS_DOCS_VIEWS = Object.freeze([
+  Object.freeze(["catalog", "Catalog"]),
+  Object.freeze(["recent", "Recently changed"]),
+]);
+
 export function createProcessDocsSurface(context, services) {
   const {
     basename,
@@ -25,6 +34,14 @@ export function createProcessDocsSurface(context, services) {
     request,
   } = context;
   const { openDocument, refreshDocuments } = services;
+  const recentDocs = createRecentDocsView({
+    apiUrl,
+    request,
+    openDocument: (path) => openDocument(path),
+    openHistory: (path) => context.openHistory?.(path),
+    titleForPath: (path) =>
+      (context.knowledgeState?.allDocuments || []).find((doc) => doc.path === path)?.title || "",
+  });
   const expandedDocIds = new Set();
   const knowledgeTools = context.knowledgeTools;
   const exportStatus = knowledgeTools?.querySelector("#knowledge-section");
@@ -462,6 +479,18 @@ export function createProcessDocsSurface(context, services) {
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-docs";
     wrap.append(renderSurfaceHeader("Process Docs"));
+    const view = activeProcessDocsView();
+    wrap.dataset.processDocsView = view;
+    wrap.append(renderViewTabs(view));
+    // The catalog toolbar (Filters, New process doc) and storage status
+    // belong to the catalog; the recent view hides them.
+    if (knowledgeTools) knowledgeTools.hidden = view === "recent";
+    if (exportStatus) exportStatus.hidden = view === "recent";
+    if (view === "recent") {
+      wrap.append(recentDocs.renderRecentDocs());
+      documentList.replaceChildren(wrap);
+      return;
+    }
     if (knowledgeTools) {
       // New process doc rides on the catalog toolbar, right after the
       // Filters that scope the list; the page header holds no actions.
@@ -478,6 +507,41 @@ export function createProcessDocsSurface(context, services) {
     wrap.append(renderProcessesSurface(visibleDocuments, model));
     if (exportStatus) wrap.append(exportStatus);
     documentList.replaceChildren(wrap);
+  }
+
+  function activeProcessDocsView() {
+    const route = context.getActiveWorkspaceRoute?.();
+    return route?.path === "/processes" && route.params?.get?.("view") === "recent"
+      ? "recent"
+      : "catalog";
+  }
+
+  // Route tabs: each view is its own URL, so it survives reload and Back.
+  function renderViewTabs(active) {
+    const nav = document.createElement("nav");
+    nav.className = "dk-tabs dk-tabs--sm ops-docs-views";
+    nav.setAttribute("aria-label", "Process Docs views");
+    for (const [view, label] of PROCESS_DOCS_VIEWS) {
+      const tab = document.createElement("a");
+      tab.className = "dk-tab";
+      tab.textContent = label;
+      tab.href = view === "recent" ? "/processes?view=recent" : "/processes";
+      tab.dataset.processDocsView = view;
+      if (view === active) tab.setAttribute("aria-current", "page");
+      tab.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button > 0) return;
+        event.preventDefault();
+        if (view === active) return;
+        context.navigateCanonicalWorkspace(
+          "/processes",
+          view === "recent" ? { view: "recent" } : Object.fromEntries(
+            Object.entries(knowledgeState.documentFilters || {}).filter(([, value]) => value),
+          ),
+        );
+      });
+      nav.append(tab);
+    }
+    return nav;
   }
 
   // The number is data (mono, tabular); the noun stays prose.

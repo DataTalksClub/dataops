@@ -398,14 +398,14 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('#settings-menu')).toContainText('Sign out');
     await expect(page.locator('[data-workspace-view="admin"]')).toBeVisible();
     await expect(page.locator('[data-workspace-view="users"]')).toBeVisible();
-    await page.keyboard.press('Escape');
+    await page.locator('#history-close').click();
     await expect(page.locator('#settings-menu')).toBeHidden();
     await expect(page.locator('#settings-button')).toBeFocused();
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('#settings-button').click();
     await expect(page.locator('#settings-menu')).toBeFocused();
-    await page.keyboard.press('Escape');
+    await page.locator('#history-close').click();
     await expect(page.locator('#settings-button')).toBeFocused();
     await page.locator('#settings-button').click();
     const logoutResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/logout');
@@ -945,7 +945,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.getByRole('button', { name: 'Add slot' }).click();
     await page.getByRole('button', { name: 'Save issue' }).click();
     await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Invalid publicationDate');
-    await page.keyboard.press('Escape');
+    await page.locator('#history-close').click();
     await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
     const editableSlot = page.locator('[data-slots] article', { hasText: `Synthetic newsletter ${id}` });
     await editableSlot.getByRole('button', { name: `More actions for Synthetic newsletter ${id}` }).click();
@@ -957,7 +957,7 @@ test.describe('canonical frontend capability behavior', () => {
     expect(concurrentSlot.status()).toBe(200);
     await page.getByRole('button', { name: 'Save issue' }).click();
     await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Slot changed; reload and retry');
-    await page.keyboard.press('Escape');
+    await page.locator('#history-close').click();
     await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
     await page.reload();
     await setNewsletterDateRange(page, '2026-09-01', '2026-09-30');
@@ -1406,6 +1406,50 @@ test.describe('canonical frontend capability behavior', () => {
       { route: '/processes', roleId: 'admin', stateIds: ['process-docs.loading', 'process-docs.empty', 'process-docs.filters.url-reload-clear-search', 'process-docs.result-detail', 'process-docs.create-read-edit', 'process-docs.draft-management', 'process-docs.partial-save-failure', 'process-docs.backlinks', 'process-docs.validation', 'process-docs.storage-failure'] },
       { route: '/admin', roleId: 'admin', stateIds: ['admin.loading', 'admin.empty', 'admin.ready-read-only', 'admin.failure'] },
     ]);
+  });
+
+  test('Process Docs Recently changed lists edited docs from publication history', async ({ browser }, testInfo) => {
+    const context = await portalContext(browser, servers.operator);
+    const page = await context.newPage();
+    const browserErrors = observeBrowserErrors(page);
+    const docPath = 'content/synthetic/capability.md';
+    for (const step of ['first', 'second']) {
+      const revision = (await json(await context.request.get('/knowledge/publication'))).revision;
+      const edit = await context.request.put(`/docs?path=${encodeURIComponent(docPath)}`, { data: {
+        expectedRevision: revision,
+        content: syntheticSop.replace('The visible state is reloadable.', `The visible state is reloadable (${step} edit).`),
+      } });
+      expect(edit.status()).toBe(200);
+    }
+    const recent = await json(await context.request.get('/knowledge/recent?limit=5'));
+    expect(recent.changes[0]).toMatchObject({ path: docPath, operation: 'edit', deleted: false });
+    expect(recent.changes[0].changes).toBeGreaterThanOrEqual(3);
+
+    await page.goto('/processes');
+    await page.locator('.ops-docs-views').getByRole('link', { name: 'Recently changed' }).click();
+    await expect(page).toHaveURL(/\/processes\?view=recent$/);
+    const row = page.locator('.ops-recent-doc').first();
+    await expect(row.getByRole('link', { name: 'Synthetic Capability Procedure' })).toBeVisible();
+    await expect(row.locator('.ops-recent-doc__meta')).toHaveText(/^Edited · .+ · \d+ edits$/);
+    await expect(page.locator('.ops-docs-catalog')).toHaveCount(0);
+    await row.getByRole('button', { name: /Version history of Synthetic Capability Procedure/ }).click();
+    await expect(page.locator('#history-path')).toHaveValue(docPath);
+    await expect(page.locator('.history-version').first()).toContainText('edit');
+    await page.locator('#history-close').click();
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.reload();
+    await expect(page).toHaveURL(/\/processes\?view=recent$/);
+    await expect(page.locator('.ops-recent-doc').first()).toBeVisible();
+    await expectNoHorizontalOverflow(page, '/processes?view=recent');
+    await row.getByRole('link', { name: 'Synthetic Capability Procedure' }).click();
+    await expect(page.locator('#document-title')).toHaveValue('Synthetic Capability Procedure');
+    expect(browserErrors).toEqual([]);
+    await context.close();
+    recordCapabilityEvidence(testInfo, [{
+      route: '/processes',
+      roleId: 'operator',
+      stateIds: ['process-docs.recent'],
+    }]);
   });
 
   test('Users derive controls from the server role and deny spoofed or operator mutations', async ({ browser }, testInfo) => {
