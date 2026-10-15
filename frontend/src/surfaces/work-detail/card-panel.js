@@ -1,3 +1,4 @@
+import { documentHref, opensInNewTab } from "../../core/links.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { createCardActions } from "./card-actions.js";
 import {
@@ -30,7 +31,6 @@ export function createCardPanel(context) {
     loadArtifactsForCard,
     localDocPathFromHref,
     navigateCanonicalWorkspace,
-    openDocument,
     openTaskPanel,
     refreshOperationsWorkSnapshot,
     renderArtifactList,
@@ -371,7 +371,7 @@ export function createCardPanel(context) {
       );
     }
     main.append(meta);
-    main.append(renderCardNewsletterSlot({ navigateCanonicalWorkspace, request, workApiUrl }, card));
+    main.append(renderCardNewsletterSlot({ request, workApiUrl }, card));
     const templateUpdate = renderCardTemplateUpdate(card, data);
     if (templateUpdate) main.append(templateUpdate);
 
@@ -437,10 +437,9 @@ export function createCardPanel(context) {
           const open = document.createElement("a");
           open.className = "card-link-open";
           open.href = linkUrl;
-          open.target = "_blank";
-          open.rel = "noopener";
           open.textContent = "Open";
-          open.setAttribute("aria-label", `Open ${linkName} in a new tab`);
+          open.setAttribute("aria-label", `Open ${linkName}`);
+          opensInNewTab(open);
           wrap.append(open);
         } else {
           const missing = document.createElement("span");
@@ -566,30 +565,15 @@ export function createCardPanel(context) {
       if (!refUrl) continue;
       const item = document.createElement("div");
       item.className = "task-history-event";
+      // Process docs and outside references both open in a new tab so the
+      // Card stays open.
       const docPath = localDocPathFromHref(refUrl);
-      if (docPath) {
-        const link = document.createElement("button");
-        link.type = "button";
-        link.className = "task-instruction-doc-link";
-        appendBreakableText(link, refName);
-        link.addEventListener("click", () =>
-          openDocument(docPath, {
-            returnContext: {
-              type: "workflow",
-              id: card.id,
-              title: workCardTitle(card),
-            },
-          }),
-        );
-        item.append(link);
-      } else {
-        const link = document.createElement("a");
-        link.href = String(refUrl);
-        link.target = "_blank";
-        link.rel = "noopener";
-        appendBreakableText(link, refName);
-        item.append(link);
-      }
+      const link = document.createElement("a");
+      link.href = docPath ? documentHref(docPath) : String(refUrl);
+      if (docPath) link.className = "task-instruction-doc-link";
+      appendBreakableText(link, refName);
+      opensInNewTab(link);
+      item.append(link);
       refsList.append(item);
     }
     refsSection.append(refsList);

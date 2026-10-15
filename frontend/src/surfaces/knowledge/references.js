@@ -1,3 +1,5 @@
+import { documentHref } from "../../core/links.js";
+
 export function createKnowledgeReferences(context, services) {
   const {
     basename,
@@ -7,9 +9,7 @@ export function createKnowledgeReferences(context, services) {
   } = context;
   const { apiUrl, openDocument, resolveDocReference } = services;
 
-  function visibleDocUrl(path) {
-    return "/" + String(path || "").replace(/^content\//, "");
-  }
+  const visibleDocUrl = documentHref;
 
   function resolveMarkdownDocLink(href) {
     if (!href || /^(https?:|mailto:|#)/i.test(href)) return null;

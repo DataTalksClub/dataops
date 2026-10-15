@@ -1,4 +1,5 @@
 import { renderIcon } from "../../core/icons.js";
+import { opensInNewTab } from "../../core/links.js";
 
 // The compact summary head of the Card detail modal: stage control, date and
 // flag chips on one row, the progress bar, the next-up line, and the clamped
@@ -68,7 +69,7 @@ function formatSlotDate(iso) {
 }
 
 export function renderCardNewsletterSlot(
-  { navigateCanonicalWorkspace, request, workApiUrl },
+  { request, workApiUrl },
   card,
 ) {
   const section = document.createElement("div");
@@ -88,11 +89,7 @@ export function renderCardNewsletterSlot(
       const link = document.createElement("a");
       link.href = `/newsletter?slotId=${encodeURIComponent(slot.id)}`;
       link.textContent = `${slot.campaignLabel || "Newsletter slot"} · ${formatSlotDate(slot.publicationDate)}`;
-      link.addEventListener("click", (event) => {
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button) return;
-        event.preventDefault();
-        navigateCanonicalWorkspace("/newsletter", { slotId: slot.id });
-      });
+      opensInNewTab(link);
       const status = document.createElement("span");
       status.className = "card-newsletter-slot__status";
       status.textContent = String(slot.status || "").replaceAll("-", " ");
@@ -147,9 +144,8 @@ function appendInlineLinks(lineEl, lineContent) {
     const a = document.createElement("a");
     a.className = "card-inline-link";
     a.setAttribute("href", cleanUrl);
-    a.target = "_blank";
-    a.rel = "noopener";
     appendBreakableText(a, label);
+    opensInNewTab(a);
     lineEl.append(a);
     lastIndex = match.index + match[0].length;
   }

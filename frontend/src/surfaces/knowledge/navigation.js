@@ -1,3 +1,4 @@
+import { documentHref } from "../../core/links.js";
 import { unavailableOperationsDocsSnapshot } from "../../core/operations-model.js";
 
 export function createKnowledgeNavigation(context, services) {
@@ -337,7 +338,7 @@ export function createKnowledgeNavigation(context, services) {
   }
 
   function setDocumentUrl(path) {
-    const visible = "/" + path.replace(/^content\//, "");
+    const visible = documentHref(path);
     if (
       locationAdapter.pathname !== visible ||
       locationAdapter.search ||

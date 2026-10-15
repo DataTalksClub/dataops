@@ -37,7 +37,6 @@ export function createTasksSurface(context) {
     isWorkspaceRouteFresh,
     listDraftPaths,
     navigateCanonicalWorkspace,
-    openDocument,
     openCardPanel,
     openTaskPanel,
     operationItemFromCard,

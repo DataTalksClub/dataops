@@ -1,5 +1,6 @@
 import { cardKind } from "../../core/card-kind.js";
 import { renderIcon } from "../../core/icons.js";
+import { opensInNewTab } from "../../core/links.js";
 import { taskMaterials, taskTitleParts } from "../../core/task-display.js";
 
 // The top of the task dialog answers, in order: which card is this for,
@@ -70,8 +71,9 @@ export function renderTaskContext(task, view, deps) {
   return context;
 }
 
-// "How to do it": every supporting material as a row with its icon. A
-// process doc opens inside the portal; links open in a new tab.
+// "How to do it": every supporting material as a row with its icon. Process
+// docs and links both open in a new tab so the task stays open; a process
+// doc the catalog cannot resolve is named without a link.
 export function renderTaskInstructions(task, view, deps) {
   const section = document.createElement("section");
   section.className = "task-instructions";
@@ -97,20 +99,14 @@ export function renderTaskInstructions(task, view, deps) {
     icon.append(renderIcon(material.icon, { size: 16 }));
     const text = document.createElement("span");
     text.className = "artifact-row-text";
-    let link;
-    if (material.href) {
-      link = document.createElement("a");
-      link.href = material.href;
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.title = material.href;
-    } else {
-      link = document.createElement("button");
-      link.type = "button";
-      link.addEventListener("click", () => deps.openMaterialDoc(material, task));
-    }
+    const link = document.createElement(material.href ? "a" : "span");
     link.className = "artifact-row-label";
     link.textContent = material.label;
+    if (material.href) {
+      link.href = material.href;
+      link.title = material.href;
+      opensInNewTab(link);
+    }
     const detail = document.createElement("span");
     detail.className = "artifact-row-detail";
     detail.textContent = material.detail;

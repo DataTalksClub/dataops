@@ -208,8 +208,8 @@ function createHarness(options = {}) {
       return { ready: Promise.resolve() };
     },
     openCardPanel: (id) => openedCards.push(id),
-    openDocument() {},
     openTaskPanel: (id) => openedTasks.push(id),
+    resolveDocReference: options.resolveDocReference || (() => null),
     operationItemFromCard: (card, tasks) => {
       const progress = summarizeCardProgress(card, tasks, "2026-08-12");
       return {
@@ -1008,8 +1008,41 @@ describe("Tasks surface boundary", () => {
     );
     const single = cells[1].querySelector("a");
     assert.equal(single.href, "https://docs.google.com/document/d/abc123/edit");
-    assert.equal(single.getAttribute("aria-label"), "Open Instructions · Google Doc");
+    assert.equal(single.getAttribute("aria-label"), "Open Instructions · Google Doc (opens in new tab)");
+    assert.equal(single.target, "_blank");
+    assert.equal(single.rel, "noopener noreferrer");
+    for (const item of items) assert.equal(item.target, "_blank");
     assert.equal(cells[2].children.length, 0);
+  });
+
+  test("opens a task's process doc from the queue in a new tab", () => {
+    const tasks = [
+      canonicalTask({ id: "doc", description: "Prepare the guest", date: "2026-08-12", instructionDocId: "guest-prep" }),
+      canonicalTask({ id: "gone", description: "Old step", date: "2026-08-12", instructionDocId: "removed" }),
+    ];
+    const { api, documentList, openedTasks } = createHarness({
+      resolveDocReference: (id) =>
+        id === "guest-prep" ? { id, title: "Guest prep", path: "content/process/guest-prep.md" } : null,
+      taskRouteContext: { date: "", tasks, cardId: "", filterCard: null, contextCardId: "", contextCard: null, failures: [] },
+    });
+
+    api.renderTasksSurface([], "queue");
+    const cells = findAllByClass(documentList, "ops-queue-materials-cell");
+    const byTitle = Object.fromEntries(
+      queueRowTitles(documentList).map((title, index) => [title, cells[index].children[0]]),
+    );
+    const doc = byTitle["Prepare the guest"];
+    assert.equal(doc.tagName, "A");
+    assert.equal(doc.href, "/process/guest-prep.md");
+    assert.equal(doc.target, "_blank");
+    assert.equal(doc.rel, "noopener noreferrer");
+    assert.equal(doc.getAttribute("aria-label"), "Open process doc Guest prep · Process doc (opens in new tab)");
+    // A doc the catalog cannot resolve has no address; the control opens
+    // the task, which names the missing doc.
+    const missing = byTitle["Old step"];
+    assert.equal(missing.tagName, "BUTTON");
+    missing.click();
+    assert.deepEqual(openedTasks, ["gone"]);
   });
 
   test("renders the active Cards board as exactly three columns and keeps Done in Archive", () => {

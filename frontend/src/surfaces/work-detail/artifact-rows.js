@@ -1,5 +1,5 @@
 import { renderIcon } from "../../core/icons.js";
-import { LINK_GROUPS, linkLabel, linkService } from "../../core/links.js";
+import { LINK_GROUPS, linkLabel, linkService, opensInNewTab } from "../../core/links.js";
 
 // Artifacts as tidy rows, grouped by what they are: documents, event pages,
 // videos, people, uploaded files, other links. Each row is the service icon,
@@ -84,8 +84,6 @@ function renderArtifactRow(artifact, display, renderActions, openFile) {
   if (display.href) {
     label = document.createElement("a");
     label.href = display.href;
-    label.target = "_blank";
-    label.rel = "noopener";
     label.title = display.href;
   } else {
     label = document.createElement("button");
@@ -95,6 +93,7 @@ function renderArtifactRow(artifact, display, renderActions, openFile) {
   }
   label.className = "artifact-row-label";
   label.textContent = display.label;
+  if (display.href) opensInNewTab(label);
   const detail = document.createElement("span");
   detail.className = "artifact-row-detail";
   detail.textContent = display.detail;

@@ -108,3 +108,30 @@ export function linkLabel(url, title) {
   if (service === GENERIC) return id ? `${address.hostname.replace(/^www\./, "")} · ${id}` : address.hostname;
   return id ? `${service.name} · ${id}` : service.name;
 }
+
+// The address the portal shows a process document at: its content path
+// without the `content/` prefix.
+export function documentHref(path) {
+  return `/${encodeURI(String(path || "").replace(/^\/+/, "").replace(/^content\//, ""))}`;
+}
+
+const NEW_TAB_NOTE = "(opens in new tab)";
+
+// A link that leaves the work in front of the operator — a process doc, a
+// material, an artifact, any outside page — opens in a new tab and says so
+// to assistive tech. Call it after the link has its label: an `aria-label`
+// gains the note, otherwise a visually hidden note is appended.
+export function opensInNewTab(link) {
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  const label = link.getAttribute("aria-label");
+  if (label) {
+    link.setAttribute("aria-label", `${label} ${NEW_TAB_NOTE}`);
+  } else {
+    const note = document.createElement("span");
+    note.className = "dk-visually-hidden";
+    note.textContent = ` ${NEW_TAB_NOTE}`;
+    link.append(note);
+  }
+  return link;
+}

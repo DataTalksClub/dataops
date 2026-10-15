@@ -347,25 +347,19 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await expect(complete).toHaveAttribute('title', /Fill in Evidence URL.*Upload required file/);
     const documentsPayload = await json(await context.request.get('/docs'));
     expect(documentsPayload.documents.some((document) => document.path === 'content/synthetic/capability.md')).toBe(true);
-    const instructionReady = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return response.request().method() === 'GET'
-        && url.pathname === '/docs'
-        && url.searchParams.get('path') === 'content/synthetic/capability.md';
-    });
-    await page.locator('#task-panel .task-instructions .artifact-row-label', { hasText: 'Synthetic Capability Procedure' }).click();
-    expect((await instructionReady).status()).toBe(200);
-    await expect(page.locator('#document-title')).toHaveValue('Synthetic Capability Procedure');
-    await expect(page.locator('#doc-context-return')).toContainText(`Opened from task: ${proofTitle}`);
-
-    const returnedPanel = openProofTask(
-      page,
-      proofTask.id,
-      card.id,
-      proofTitle,
-      { byNavigation: page.getByRole('button', { name: 'Back to Task' }) },
-    );
-    await returnedPanel;
+    // The process doc opens in a new tab: the task stays open where it was.
+    const instruction = page.locator('#task-panel .task-instructions a.artifact-row-label', { hasText: 'Synthetic Capability Procedure' });
+    await expect(instruction).toHaveAttribute('href', '/synthetic/capability.md');
+    await expect(instruction).toHaveAttribute('target', '_blank');
+    await expect(instruction).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(instruction).toContainText('(opens in new tab)');
+    const docTab = context.waitForEvent('page');
+    await instruction.click();
+    const docPage = await docTab;
+    await expect(docPage.locator('#document-title')).toHaveValue('Synthetic Capability Procedure');
+    await docPage.close();
+    await expect(page).toHaveURL(new RegExp(`[?&]taskId=${proofTask.id}`));
+    await expect(page.locator('#task-panel-title')).toHaveText(proofTitle);
     const requiredLink = page.locator('#task-panel .task-required-link input[type="url"]');
     const fileInput = page.locator('#task-panel input[type="file"]');
     const proofUrl = 'https://example.invalid/synthetic-evidence';

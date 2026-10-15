@@ -1,3 +1,4 @@
+import { documentHref, opensInNewTab } from "../../core/links.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { displayCardDescription } from "./card-summary.js";
 import { renderTaskContext, renderTaskInstructions, taskDisplayParts } from "./task-overview.js";
@@ -24,7 +25,6 @@ export function createTaskPanel(context) {
     markTaskWaiting,
     navigateCanonicalWorkspace,
     navigateTaskToWorkflow,
-    openDocument,
     openQualityFinding,
     parseWorkspaceLocation,
     recordTaskFollowUpSent,
@@ -57,13 +57,6 @@ export function createTaskPanel(context) {
     isOverdue: (task) =>
       !["done", "skipped"].includes(task.status) && Boolean(task.date) && String(task.date).slice(0, 10) < todayIsoDate(),
     navigateTaskToWorkflow: (task) => navigateTaskToWorkflow(task),
-    openMaterialDoc: (material, task) => {
-      const doc = material.docPath ? { path: material.docPath } : resolveDocReference(material.docId);
-      if (!doc?.path) return;
-      openDocument(doc.path, {
-        returnContext: { type: "task", id: task.id, title: taskDisplayParts(task, overviewDeps).parts.title },
-      });
-    },
     fetchCard: (cardId) =>
       request(workApiUrl(`/api/cards/${encodeURIComponent(cardId)}`))
         .then((payload) => {
@@ -809,22 +802,11 @@ export function createTaskPanel(context) {
     instruction.append(label);
 
     if (doc) {
-      const title = document.createElement("button");
-      title.type = "button";
+      const title = document.createElement("a");
       title.className = "task-instruction-doc-link";
+      title.href = documentHref(doc.path);
       title.textContent = doc.title || doc.id || doc.path;
-      title.addEventListener("click", () =>
-        openDocument(doc.path, {
-          returnContext: {
-            type: "task",
-            id: task.id,
-            title:
-              typeof workTaskTitle === "function"
-                ? workTaskTitle(task)
-                : task.description || task.title || task.id || "Task",
-          },
-        }),
-      );
+      opensInNewTab(title);
       instruction.append(title);
 
       const meta = document.createElement("div");

@@ -1,4 +1,4 @@
-import { isHttpLink, linkLabel, linkService, linkTarget } from "./links.js";
+import { documentHref, isHttpLink, linkLabel, linkService, linkTarget } from "./links.js";
 
 // How a task reads on screen: its title, an optional checklist tag, and the
 // supporting materials (process doc, instructions, the task's stored
@@ -32,13 +32,15 @@ function humanizeDocId(docId) {
 }
 
 // Every supporting material of a task, most authoritative first, one entry
-// per destination. `resolveDoc` maps a process-doc id to its document.
+// per destination. `resolveDoc` maps a process-doc id to its document; a
+// resolved process doc carries the portal address it opens at as `href`, an
+// unresolved one has none.
 export function taskMaterials(task, options = {}) {
   const { resolveDoc = () => null } = options;
   const materials = [];
   const seen = new Set();
   const add = (material) => {
-    const key = material.href ? linkTarget(material.href) : `doc:${material.docId}`;
+    const key = material.kind === "doc" ? `doc:${material.docId}` : linkTarget(material.href);
     if (seen.has(key)) return;
     seen.add(key);
     materials.push(material);
@@ -51,7 +53,7 @@ export function taskMaterials(task, options = {}) {
       label: doc?.title || humanizeDocId(task.instructionDocId),
       detail: "Process doc",
       docId: String(task.instructionDocId),
-      docPath: doc?.path || "",
+      href: doc?.path ? documentHref(doc.path) : "",
     });
   }
   if (isHttpLink(task?.instructionsUrl)) {

@@ -27,7 +27,6 @@ export function createTaskQueue(context) {
     isWaitingOrFollowUpTask,
     navigateCanonicalWorkspace,
     openCardPanel,
-    openDocument = () => {},
     openTaskPanel,
     refreshOperationsWorkSnapshot,
     request,
@@ -959,11 +958,7 @@ export function createTaskQueue(context) {
       taskMaterials(task, { resolveDoc: resolveDocReference }),
       {
         taskTitle: parts.title,
-        openDoc: (material) => {
-          const doc = material.docPath ? material : resolveDocReference(material.docId);
-          if (doc?.path || doc?.docPath) openDocument(doc.path || doc.docPath);
-          else openTaskPanel(task.id);
-        },
+        openTask: () => openTaskPanel(task.id),
       },
     );
     if (materials) materialsCell.append(materials);

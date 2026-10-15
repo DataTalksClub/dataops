@@ -97,7 +97,6 @@ function createHarness(options = {}) {
   const entityStates = [];
   const errors = [];
   const undo = [];
-  const openedDocuments = [];
   let route = options.route || {
     path: "/tasks",
     params: new URLSearchParams(),
@@ -166,13 +165,11 @@ function createHarness(options = {}) {
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join(" "),
     localDocPathFromHref: (href) =>
-      String(href).startsWith("/docs/") ? String(href) : "",
+      /^\/?content\/.+\.md$/.test(String(href)) ? String(href).replace(/^\//, "") : "",
     navigateCanonicalWorkspace: (path, params = {}, navigationOptions = {}) => {
       navigations.push({ path, params, options: navigationOptions });
       return { ready: Promise.resolve() };
     },
-    openDocument: (path, openOptions) =>
-      openedDocuments.push({ path, options: openOptions }),
     openQualityFinding() {},
     parseWorkspaceLocation: () => route,
     promptUser: options.promptUser || (() => "Vendor contact"),
@@ -194,6 +191,7 @@ function createHarness(options = {}) {
     },
     renderTasksSurface() {},
     request,
+    resolveDocReference: options.resolveDocReference || (() => null),
     scheduleAnimationFrame:
       options.scheduleAnimationFrame || ((callback) => setTimeout(callback, 0)),
     settledPayload: (result) =>
@@ -227,7 +225,6 @@ function createHarness(options = {}) {
     entityStates,
     errors,
     navigations,
-    openedDocuments,
     requests,
     setFresh: (value) => {
       fresh = value;
@@ -1591,7 +1588,9 @@ describe("Work Detail surface boundary", () => {
       anchors[0].getAttribute("href"),
       "https://docs.google.com/document/d/ABC123/edit",
     );
-    assert.equal(anchors[0].textContent, "Process documents");
+    assert.equal(anchors[0].textContent, "Process documents (opens in new tab)");
+    assert.equal(anchors[0].target, "_blank");
+    assert.equal(anchors[0].rel, "noopener noreferrer");
     assert.equal(
       anchors[1].getAttribute("href"),
       "https://docs.google.com/document/d/XYZ789/edit",
@@ -1697,6 +1696,66 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(harness.errors, []);
   });
 
+  test("opens process docs from a task and its card in a new tab", async () => {
+    const card = {
+      id: "card-doc",
+      version: 1,
+      title: "Podcast with Ada",
+      references: [
+        { name: "Guest prep", url: "content/process/podcast/guest-prep.md" },
+        { name: "Show notes", url: "https://docs.google.com/document/d/notes/edit" },
+      ],
+    };
+    const task = {
+      id: "task-doc",
+      version: 1,
+      cardId: card.id,
+      description: "Prepare the guest",
+      taskHistory: [],
+      instructionDocId: "process.podcast.guest-prep",
+      status: "todo",
+    };
+    const harness = createHarness({
+      cards: [card],
+      resolveDocReference: (id) =>
+        id === task.instructionDocId
+          ? { id, title: "Guest prep", path: "content/process/podcast/guest-prep.md" }
+          : null,
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+        if (url === `/api/cards/${card.id}`) return card;
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [task] };
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const material = findAllByClass(harness.taskPanelBody.querySelector(".task-instructions"), "artifact-row-label")[0];
+    assert.equal(material.tagName, "A");
+    assert.equal(material.href, "/process/podcast/guest-prep.md");
+    assert.equal(material.target, "_blank");
+    assert.equal(material.rel, "noopener noreferrer");
+    assert.equal(material.textContent, "Guest prep (opens in new tab)");
+    const processDoc = findAllByClass(harness.taskPanelBody.querySelector(".task-instruction-doc"), "task-instruction-doc-link")[0];
+    assert.equal(processDoc.tagName, "A");
+    assert.equal(processDoc.href, "/process/podcast/guest-prep.md");
+    assert.equal(processDoc.target, "_blank");
+
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    const references = harness.cardPanelBody.querySelector(".workflow-references-section").querySelectorAll("a");
+    assert.deepEqual(
+      references.map((link) => [link.href, link.target, link.rel]),
+      [
+        ["/process/podcast/guest-prep.md", "_blank", "noopener noreferrer"],
+        ["https://docs.google.com/document/d/notes/edit", "_blank", "noopener noreferrer"],
+      ],
+    );
+    assert.deepEqual(harness.errors, []);
+  });
+
   test("opens a task with its card context first and folds attachments and history", async () => {
     const card = { id: "card-ctx", version: 1, title: "LLM evals in practice", tags: ["webinar"] };
     const task = {
@@ -1742,10 +1801,11 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(
       findAllByClass(instructions, "artifact-row-label").map((link) => [link.textContent, link.href]),
       [
-        ["Instructions", "https://docs.google.com/document/d/sop1/edit"],
-        ["Template", "https://docs.google.com/document/d/tpl1/edit"],
+        ["Instructions (opens in new tab)", "https://docs.google.com/document/d/sop1/edit"],
+        ["Template (opens in new tab)", "https://docs.google.com/document/d/tpl1/edit"],
       ],
     );
+    for (const link of findAllByClass(instructions, "artifact-row-label")) assert.equal(link.target, "_blank");
     // The card's own links stay on the card; history and the optional
     // attachment controls fold into one disclosure.
     assert.ok(!body.textContent.includes("luma"));
@@ -1823,7 +1883,7 @@ describe("Work Detail surface boundary", () => {
     );
     assert.equal(success.getAttribute("role"), "status");
     assert.match(success.textContent, /confirmed in the refreshed Task/);
-    assert.ok(findByText(harness.taskPanelBody, title, "a"));
+    assert.ok(findByText(harness.taskPanelBody, `${title} (opens in new tab)`, "a"));
     assert.equal(
       harness.requests.filter(
         (entry) => entry.url === "/api/artifacts" && entry.options.method === "POST",
@@ -2643,7 +2703,7 @@ describe("Work Detail surface boundary", () => {
     assert.equal(
       harness.cardPanelBody.querySelector(".workflow-references-section a")
         .textContent,
-      card.references[0].name,
+      `${card.references[0].name} (opens in new tab)`,
     );
     assert.ok(harness.cardPanelBody.querySelector("wbr"));
   });

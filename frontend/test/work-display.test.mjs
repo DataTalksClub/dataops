@@ -6,7 +6,7 @@ import { describe, test } from "node:test";
 
 import { cardKind } from "../src/core/card-kind.js";
 import { hasIcon, TEMPLATE_ICON_NAMES } from "../src/core/icons.js";
-import { linkLabel, linkService, linkTarget } from "../src/core/links.js";
+import { documentHref, linkLabel, linkService, linkTarget, opensInNewTab } from "../src/core/links.js";
 import { taskMaterials, taskTitleParts } from "../src/core/task-display.js";
 import { renderArtifactGroups } from "../src/surfaces/work-detail/artifact-rows.js";
 import { FakeDocument, FakeElement, findAllByClass } from "./support/fake-dom.mjs";
@@ -66,6 +66,32 @@ describe("work display helpers", () => {
       materials.map((material) => [material.label, material.detail]),
       [["Create an event", "Process doc"], ["Instructions", "Google Doc"], ["Loom · abc", "Loom"], ["Website", "GitHub"]],
     );
+    // A resolved process doc carries the portal address it opens at; an
+    // unresolved one has no address to open.
+    assert.equal(materials[0].href, "/x.md");
+    assert.equal(taskMaterials({ instructionDocId: "missing" })[0].href, "");
+  });
+
+  test("addresses documents at their portal URL and marks new-tab links", () => {
+    assert.equal(documentHref("content/process/podcast/guest prep.md"), "/process/podcast/guest%20prep.md");
+    assert.equal(documentHref("process/x.md"), "/process/x.md");
+    const previous = globalThis.document;
+    globalThis.document = new FakeDocument(new FakeElement("main"));
+    try {
+      const plain = document.createElement("a");
+      plain.textContent = "Guest prep";
+      opensInNewTab(plain);
+      assert.equal(plain.target, "_blank");
+      assert.equal(plain.rel, "noopener noreferrer");
+      assert.equal(plain.querySelector(".dk-visually-hidden").textContent, " (opens in new tab)");
+      const icon = document.createElement("a");
+      icon.setAttribute("aria-label", "Open Guest prep");
+      opensInNewTab(icon);
+      assert.equal(icon.getAttribute("aria-label"), "Open Guest prep (opens in new tab)");
+      assert.equal(icon.querySelector(".dk-visually-hidden"), null);
+    } finally {
+      globalThis.document = previous;
+    }
   });
 
   test("renders artifacts as grouped rows with service labels, never raw URLs", () => {
@@ -88,12 +114,16 @@ describe("work display helpers", () => {
         row.querySelector(".task-status-badge").textContent,
       ]);
       assert.deepEqual(rows, [
-        ["Episode brief", "Google Doc", "Needs review"],
-        ["Luma · abc", "Luma", "Approved"],
-        ["LinkedIn · someone", "LinkedIn", "Approved"],
+        ["Episode brief (opens in new tab)", "Google Doc", "Needs review"],
+        ["Luma · abc (opens in new tab)", "Luma", "Approved"],
+        ["LinkedIn · someone (opens in new tab)", "LinkedIn", "Approved"],
         ["invoice.pdf", "PDF file", "Approved"],
       ]);
       assert.ok(!groups.textContent.includes("https://"));
+      for (const link of groups.querySelectorAll("a.artifact-row-label")) {
+        assert.equal(link.target, "_blank");
+        assert.equal(link.rel, "noopener noreferrer");
+      }
     } finally {
       globalThis.document = previous;
     }

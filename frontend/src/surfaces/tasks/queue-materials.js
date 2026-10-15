@@ -1,21 +1,26 @@
 import { renderIcon } from "../../core/icons.js";
+import { opensInNewTab } from "../../core/links.js";
 
 // A task's supporting materials as one small icon control in its queue row.
-// One material is a direct link (or a button for a process doc); several are
-// a single trigger that opens a short menu naming each. The menu is fixed to
-// the viewport because the queue board clips its overflow.
+// One material is a direct link; several are a single trigger that opens a
+// short menu naming each. Every material opens in a new tab so the queue
+// stays where it was. A process doc the catalog cannot resolve has no
+// address: it opens the task instead, which says the doc is unavailable.
+// The menu is fixed to the viewport because the queue board clips its
+// overflow.
 export function renderQueueMaterials(materials, options = {}) {
   if (!Array.isArray(materials) || materials.length === 0) return null;
-  const { taskTitle = "task", openDoc = () => {} } = options;
+  const { taskTitle = "task", openTask = () => {} } = options;
   if (materials.length === 1) {
-    const control = materialControl(materials[0], openDoc, "dk-icon-button dk-icon-button--sm ops-queue-material");
+    const control = materialControl(materials[0], openTask, "dk-icon-button dk-icon-button--sm ops-queue-material");
     const name = materialName(materials[0]);
     control.title = name;
-    control.setAttribute("aria-label", `${materials[0].href ? "Open" : "Open process doc"} ${name}`);
+    control.setAttribute("aria-label", `${materials[0].kind === "doc" ? "Open process doc" : "Open"} ${name}`);
     control.append(renderIcon(materials[0].icon || "instructions"));
+    if (materials[0].href) opensInNewTab(control);
     return control;
   }
-  return renderMaterialsMenu(materials, taskTitle, openDoc);
+  return renderMaterialsMenu(materials, taskTitle, openTask);
 }
 
 function materialName(material) {
@@ -24,25 +29,23 @@ function materialName(material) {
     : material.label;
 }
 
-function materialControl(material, openDoc, className) {
+function materialControl(material, openTask, className) {
   if (material.href) {
     const link = document.createElement("a");
     link.className = className;
     link.href = material.href;
-    link.target = "_blank";
-    link.rel = "noopener";
     return link;
   }
   const button = document.createElement("button");
   button.type = "button";
   button.className = className;
-  button.addEventListener("click", () => openDoc(material));
+  button.addEventListener("click", () => openTask());
   return button;
 }
 
 let menuSequence = 0;
 
-function renderMaterialsMenu(materials, taskTitle, openDoc) {
+function renderMaterialsMenu(materials, taskTitle, openTask) {
   const wrap = document.createElement("span");
   wrap.className = "ops-queue-materials";
   const menuId = `ops-queue-materials-${(menuSequence += 1)}`;
@@ -66,9 +69,9 @@ function renderMaterialsMenu(materials, taskTitle, openDoc) {
   menu.setAttribute("role", "menu");
   menu.hidden = true;
   for (const material of materials) {
-    const item = materialControl(material, (picked) => {
+    const item = materialControl(material, () => {
       close();
-      openDoc(picked);
+      openTask();
     }, "dk-menu__item");
     item.setAttribute("role", "menuitem");
     item.title = material.href || material.label;
@@ -82,7 +85,10 @@ function renderMaterialsMenu(materials, taskTitle, openDoc) {
       detail.textContent = material.detail;
       item.append(detail);
     }
-    if (material.href) item.addEventListener("click", () => close());
+    if (material.href) {
+      opensInNewTab(item);
+      item.addEventListener("click", () => close());
+    }
     menu.append(item);
   }
 
