@@ -172,7 +172,7 @@
     "padding: 2px 8px": 1
   },
   "src/styles/operations.css": {
-    "font-size: 12px": 4,
+    "font-size: 12px": 3,
     "font-size: 13px": 4,
     "font-size: 14px": 2,
     "gap: 14px": 1,
@@ -187,7 +187,6 @@
     "padding: 10px 14px": 1,
     "padding: 10px 16px": 1,
     "padding: 14px": 1,
-    "padding: 4px 10px": 1,
     "padding: 5px 10px": 1,
     "padding: 8px 10px": 1
   },

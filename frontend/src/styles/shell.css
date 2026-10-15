@@ -51,11 +51,8 @@ body:not([data-workspace-view="docs"]) .knowledge-tools { display: none; }
 .dk-main.page-shell { max-width: 100%; }
 @media (max-width: 820px) {
   .dk-main .view { max-width: 100%; }
-  .dk-page-header__actions { min-width: 0; max-width: 100%; justify-content: flex-end; }
 }
 
-/* App headers may stack their slots; a width basis must not become a height. */
-.dk-page-header__main { flex-basis: auto; }
 @media (max-width: 820px), (pointer: coarse) {
   body[data-view="library"] .library-view .document-list .dk-page-header button { min-height: var(--dk-size-touch); padding: var(--dk-space-1) var(--dk-space-3); }
 }
