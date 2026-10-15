@@ -6,6 +6,7 @@ import { getClient, disableLocalTransactionEmulation } from '../src/db/client';
 import { getTask, listTasksByCard, listTasksByCardConsistent, updateTask } from '../src/db/tasks';
 import { createCardFromTemplate, createTemplate, getTemplate, instantiateTemplate, updateTemplate } from '../src/db/templates';
 import { createCard, getCardConsistent } from '../src/db/cards';
+import { templateLink } from './helpers/cardTemplate';
 import { applyCardTemplateUpdate, CardTemplateUpdateConflictError } from '../src/db/cardTemplateUpdates';
 import {
   templateCardProjection,
@@ -142,6 +143,7 @@ describe('instantiation resolves refs to Task ids', () => {
   it('recovers missing Tasks with edges to Tasks that already exist', async () => {
     const template = await createTemplate(client, withoutId(podcastTemplate()));
     const card = await createCard(client, {
+      ...templateLink(),
       title: 'Recovered', anchorDate: '2026-10-01', templateId: template.id, selectedOptionalGroups: [],
     });
     const created = await instantiateTemplate(client, template.id, card.id, '2026-10-01');
@@ -158,7 +160,8 @@ describe('Card Template sync of dependencies', () => {
     return {
       id: 'card-podcast', version: 3, title: 'Episode', anchorDate: '2026-10-01',
       templateId: source.id, templateVersion: source.version, templateSourceRevision: source.sourceRevision,
-      templateDefinitionSnapshot: templateCardDefinitionSnapshot(source),
+      templateDefinitionSnapshot: templateCardDefinitionSnapshot(source, (source.taskDefinitions || []).map(({ refId }) => refId)),
+      selectedOptionalGroups: [],
       tags: [], sourceDocIds: [], references: [], cardLinks: [],
       stage: 'preparation', status: 'active', taskCount: 3, openTaskCount: 3,
       createdAt: CREATED, updatedAt: CREATED,

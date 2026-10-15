@@ -53,7 +53,8 @@ function cardFrom(source: Template): Card {
     templateId: source.id,
     templateVersion: source.version,
     templateSourceRevision: source.sourceRevision,
-    templateDefinitionSnapshot: templateCardDefinitionSnapshot(source),
+    templateDefinitionSnapshot: templateCardDefinitionSnapshot(source, (source.taskDefinitions || []).map(({ refId }) => refId)),
+    selectedOptionalGroups: [],
     tags: structuredClone(source.tags),
     sourceDocIds: structuredClone(source.sourceDocIds),
     references: structuredClone(source.references),
@@ -207,6 +208,39 @@ describe('Card Template update planning', () => {
     assert.equal(plan.preview.taskChanges.find((change) => change.taskRef === 'extra-skipped'), undefined);
   });
 
+  it('treats Tasks not instantiated from the Template as the Card\'s own and adds only new definitions', () => {
+    // A Card linked after the fact: its Tasks came from elsewhere (a Trello
+    // checklist), and it accounts for every definition of the version it records.
+    const source = template(1);
+    const card = cardFrom(source);
+    const imported: Task[] = ['Announce on Slack', 'Host'].map((description, index) => ({
+      id: `imported-${index}`,
+      version: 1,
+      taskHistory: [],
+      description,
+      date: '2026-04-15',
+      status: index === 0 ? 'done' : 'todo',
+      source: 'import',
+      cardId: card.id,
+      templateTaskRef: `trello-checklist-item-${index}`,
+      createdAt: CREATED,
+      updatedAt: CREATED,
+    } as Task));
+
+    const current = buildCardTemplateUpdatePlan(card, imported, source);
+    assert.equal(current.preview.state, 'current');
+    assert.deepEqual(current.preview.taskChanges, []);
+
+    const target = template(2);
+    target.taskDefinitions = [...target.taskDefinitions!, { refId: 'recap', description: 'Publish recap', offsetDays: 5 }];
+    const plan = buildCardTemplateUpdatePlan(card, imported, target);
+    assert.deepEqual(
+      plan.preview.taskChanges.map(({ action, taskRef }) => [action, taskRef]),
+      [['add', 'recap']],
+    );
+    assert.deepEqual(plan.targetCardSnapshot.taskRefs, ['announce', 'follow-up', 'host', 'recap']);
+  });
+
   it('marks an override only when its definition field also changes', () => {
     const source = template(1);
     const target = template(2);
@@ -260,7 +294,7 @@ describe('Card Template update planning', () => {
     assert.deepEqual(projectedCardLinks(
       card.cardLinks,
       card.templateDefinitionSnapshot,
-      templateCardDefinitionSnapshot(target),
+      templateCardDefinitionSnapshot(target, []),
     ), [
       { name: 'Registration', url: 'https://example.invalid/register' },
       { name: 'Slides', url: '' },

@@ -458,7 +458,7 @@ export async function applyCardTemplateUpdate(
   // Every Task the Card will hold after the update, by Template ref, so edges
   // can name Tasks the same update adds.
   const idsByRef = new Map<string, string>();
-  for (const task of tasks) if (task.templateTaskRef) idsByRef.set(task.templateTaskRef, task.id);
+  for (const task of tasks) if (task.templateTaskRef && task.templateId === template.id) idsByRef.set(task.templateTaskRef, task.id);
   for (const update of plan.taskUpdates) {
     if (update.action === 'add') idsByRef.set(update.taskRef, deterministicTaskId(card.id, template.id, update.taskRef));
   }

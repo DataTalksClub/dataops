@@ -204,11 +204,12 @@ function dependencyRefsOf(task: Task, refByTaskId: Map<string, string | undefine
   return refs.length > 0 ? { [DEPENDENCY_FIELD]: refs } : {};
 }
 
+/** Tasks instantiated from this Template; any other Task is the Card's own. */
 function templateTasksForCard(tasks: Task[], templateId: string): Task[] {
   return tasks.filter((task) => (
     typeof task.templateTaskRef === 'string'
     && task.templateTaskRef.length > 0
-    && (!task.templateId || task.templateId === templateId)
+    && task.templateId === templateId
   ));
 }
 
@@ -265,7 +266,12 @@ export function buildCardTemplateUpdatePlan(
   }
   const selectionChanged = !isDeepStrictEqual(currentGroups, selected);
   const relevantTasks = templateTasksForCard(tasks, template.id);
-  if (!card.templateDefinitionSnapshot || !Number.isInteger(card.templateVersion) || Number(card.templateVersion) < 1) {
+  if (
+    !card.templateDefinitionSnapshot
+    || !Array.isArray(card.templateDefinitionSnapshot.taskRefs)
+    || !Number.isInteger(card.templateVersion)
+    || Number(card.templateVersion) < 1
+  ) {
     throw new CardTemplateUpdateInvalidStateError(
       `Card ${card.id} has no canonical Template provenance`,
     );
@@ -308,11 +314,16 @@ export function buildCardTemplateUpdatePlan(
     targetCardSnapshot as unknown as Dict,
   );
 
+  const accountedRefs = new Set(card.templateDefinitionSnapshot.taskRefs);
   for (const [order, definition] of definitions.entries()) {
     const ref = definition.refId;
     targetRefs.add(ref);
     const current = byRef.get(ref) || null;
     const target = templateTaskDefinitionSnapshot(template, definition, order, card.anchorDate);
+    // A definition the Card already accounts for but holds no Task for was
+    // left out on purpose (or its work predates the Template); only a
+    // definition new to this Card adds a Task.
+    if (!current && accountedRefs.has(ref)) continue;
     if (!current) {
       taskUpdates.push({ action: 'add', taskRef: ref, before: null, target, changedFields: [...TASK_FIELDS] });
       taskChanges.push({
