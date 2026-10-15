@@ -14,7 +14,9 @@ import {
   resumeCard,
   updateCard,
   updateCardAdditive,
+  CardTemplateRequiredError,
 } from '../src/db/cards';
+import { templateLink } from './helpers/cardTemplate';
 import { TABLE_CARDS } from '../src/db/tableNames';
 
 describe('Cards data layer', () => {
@@ -30,6 +32,7 @@ describe('Cards data layer', () => {
 
   it('creates the strict canonical empty Card shape', async () => {
     const card = await createCard(client, {
+      ...templateLink(),
       title: 'DataOps',
       anchorDate: '2026-09-01',
       description: 'Operations work',
@@ -55,14 +58,14 @@ describe('Cards data layer', () => {
   });
 
   it('reads, lists, and returns null for missing Cards', async () => {
-    const created = await createCard(client, { title: 'Fetch', anchorDate: '2026-09-02' });
+    const created = await createCard(client, { ...templateLink(), title: 'Fetch', anchorDate: '2026-09-02' });
     assert.equal((await getCard(client, created.id))?.title, 'Fetch');
     assert.equal(await getCard(client, 'missing'), null);
     assert.ok((await listCards(client)).some(({ id }) => id === created.id));
   });
 
   it('updates caller-owned fields with an exact version condition', async () => {
-    const created = await createCard(client, { title: 'Original', anchorDate: '2026-09-03' });
+    const created = await createCard(client, { ...templateLink(), title: 'Original', anchorDate: '2026-09-03' });
     const updated = await updateCard(client, created.id, {
       expectedVersion: created.version,
       patch: {
@@ -80,7 +83,7 @@ describe('Cards data layer', () => {
   });
 
   it('returns one winner and rejects a stale direct Card mutation', async () => {
-    const created = await createCard(client, { title: 'Race', anchorDate: '2026-09-04' });
+    const created = await createCard(client, { ...templateLink(), title: 'Race', anchorDate: '2026-09-04' });
     const results = await Promise.allSettled([
       updateCard(client, created.id, { expectedVersion: 1, patch: { title: 'First' } }),
       updateCard(client, created.id, { expectedVersion: 1, patch: { title: 'Second' } }),
@@ -92,6 +95,7 @@ describe('Cards data layer', () => {
 
   it('bounds additive remerge to one strongly-consistent retry', async () => {
     const created = await createCard(client, {
+      ...templateLink(),
       title: 'Additive',
       anchorDate: '2026-09-05',
       references: [],
@@ -106,7 +110,7 @@ describe('Cards data layer', () => {
   });
 
   it('rejects lifecycle fields and completed stages from direct updates', async () => {
-    const created = await createCard(client, { title: 'System fields', anchorDate: '2026-09-06' });
+    const created = await createCard(client, { ...templateLink(), title: 'System fields', anchorDate: '2026-09-06' });
     await assert.rejects(
       updateCard(client, created.id, {
         expectedVersion: 1,
@@ -126,6 +130,7 @@ describe('Cards data layer', () => {
         PK: `CARD#${archivedId}`,
         SK: `CARD#${archivedId}`,
         id: archivedId,
+        ...templateLink(),
         version: 2,
         title: 'Completed Card',
         status: 'archived',
@@ -142,6 +147,29 @@ describe('Cards data layer', () => {
       CardVersionConflictError,
     );
     assert.strictEqual((await getCard(client, archivedId))?.stage, 'done');
+  });
+
+  it('rejects a Card that is not instantiated from a Template', async () => {
+    await assert.rejects(
+      createCard(client, { title: 'No Template', anchorDate: '2026-04-15' }),
+      (error: unknown) => error instanceof CardTemplateRequiredError && /templateId is missing/.test(error.message),
+    );
+    const { templateDefinitionSnapshot, ...withoutSnapshot } = templateLink();
+    assert.ok(templateDefinitionSnapshot);
+    await assert.rejects(
+      createCard(client, { ...withoutSnapshot, title: 'Half-linked', anchorDate: '2026-04-15' }),
+      /templateDefinitionSnapshot is missing/,
+    );
+
+    const id = crypto.randomUUID();
+    await client.send(new PutCommand({
+      TableName: TABLE_CARDS,
+      Item: {
+        PK: `CARD#${id}`, SK: `CARD#${id}`, id, version: 1, title: 'Stored without a Template',
+        status: 'active', stage: 'preparation', taskCount: 0, openTaskCount: 0,
+      },
+    }));
+    await assert.rejects(getCard(client, id), CardTemplateRequiredError);
   });
 
   it('fails loudly on non-canonical persisted Card rows', async () => {
@@ -214,7 +242,7 @@ describe('Cards data layer', () => {
 
   describe('parked Archive category', () => {
     it('parks an active Card keeping its stage and counters', async () => {
-      const created = await createCard(client, { title: 'Park me', anchorDate: '2026-09-10', stage: 'announced' });
+      const created = await createCard(client, { ...templateLink(), title: 'Park me', anchorDate: '2026-09-10', stage: 'announced' });
       const parked = await parkCard(client, created.id, created.version);
       assert.deepEqual(
         { version: parked.version, stage: parked.stage, status: parked.status },
@@ -226,7 +254,7 @@ describe('Cards data layer', () => {
     });
 
     it('resumes a parked Card back to the board', async () => {
-      const created = await createCard(client, { title: 'Resume me', anchorDate: '2026-09-10' });
+      const created = await createCard(client, { ...templateLink(), title: 'Resume me', anchorDate: '2026-09-10' });
       const parked = await parkCard(client, created.id, created.version);
       const resumed = await resumeCard(client, created.id, parked.version);
       assert.deepEqual(
@@ -236,20 +264,20 @@ describe('Cards data layer', () => {
     });
 
     it('rejects parking a parked Card and resuming an active Card', async () => {
-      const created = await createCard(client, { title: 'Double transition', anchorDate: '2026-09-10' });
+      const created = await createCard(client, { ...templateLink(), title: 'Double transition', anchorDate: '2026-09-10' });
       await assert.rejects(resumeCard(client, created.id, created.version), CardStatusTransitionError);
       const parked = await parkCard(client, created.id, created.version);
       await assert.rejects(parkCard(client, created.id, parked.version), CardStatusTransitionError);
     });
 
     it('rejects park and resume on stale versions and missing Cards', async () => {
-      const created = await createCard(client, { title: 'Stale park', anchorDate: '2026-09-10' });
+      const created = await createCard(client, { ...templateLink(), title: 'Stale park', anchorDate: '2026-09-10' });
       await assert.rejects(parkCard(client, created.id, created.version + 1), CardVersionConflictError);
       await assert.rejects(resumeCard(client, 'card-does-not-exist', 1), /was not found/);
     });
 
     it('keeps stage operator-owned while a Card is parked', async () => {
-      const created = await createCard(client, { title: 'Parked stage', anchorDate: '2026-09-10' });
+      const created = await createCard(client, { ...templateLink(), title: 'Parked stage', anchorDate: '2026-09-10' });
       const parked = await parkCard(client, created.id, created.version);
       const staged = await updateCard(client, created.id, {
         expectedVersion: parked.version,

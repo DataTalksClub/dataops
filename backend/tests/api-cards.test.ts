@@ -7,6 +7,7 @@ import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables, deleteTables } from '../scripts/local-dynamodb';
 import { createCard, listCards } from '../src/db/cards';
+import { EMPTY_TEMPLATE_ID, putEmptyTemplate, templateLink } from './helpers/cardTemplate';
 import { createTemplate } from '../src/db/templates';
 import { createTask } from '../src/db/tasks';
 import { createUserWithId } from '../src/db/users';
@@ -36,6 +37,7 @@ describe('API — Cards', () => {
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
+    await putEmptyTemplate(client);
   });
 
   after(async () => {
@@ -66,6 +68,7 @@ describe('API — Cards', () => {
       const res = await invoke('POST', '/api/cards', {
         title: 'ML Zoomcamp 2026',
         anchorDate: '2026-06-01',
+        templateId: EMPTY_TEMPLATE_ID,
       });
 
       assert.strictEqual(res.statusCode, 201);
@@ -80,13 +83,17 @@ describe('API — Cards', () => {
       assert.strictEqual(body.card.status, 'active');
       assert.ok(body.card.createdAt);
       assert.ok(body.card.updatedAt);
-      assert.strictEqual(body.tasks, undefined);
+      assert.strictEqual(body.card.templateId, EMPTY_TEMPLATE_ID);
+      assert.strictEqual(body.card.templateVersion, 1);
+      assert.deepStrictEqual(body.card.templateDefinitionSnapshot.taskRefs, []);
+      assert.deepStrictEqual(body.tasks, []);
     });
 
     it('creates a card with optional description', async () => {
       const res = await invoke('POST', '/api/cards', {
         title: 'Newsletter',
         anchorDate: '2026-03-01',
+        templateId: EMPTY_TEMPLATE_ID,
         description: 'Weekly newsletter',
       });
 
@@ -99,6 +106,7 @@ describe('API — Cards', () => {
       const res = await invoke('POST', '/api/cards', {
         title: 'Newsletter Mar 2026',
         anchorDate: '2026-03-15',
+        templateId: EMPTY_TEMPLATE_ID,
         tags: ['newsletter'],
         references: [{ name: 'Style guide', url: 'https://docs.google.com/style' }],
         cardLinks: [{ name: 'Luma', url: '' }],
@@ -117,15 +125,23 @@ describe('API — Cards', () => {
       const res = await invoke('POST', '/api/cards', {
         title: 'Simple Card',
         anchorDate: '2026-04-01',
+        templateId: EMPTY_TEMPLATE_ID,
       });
 
       assert.strictEqual(res.statusCode, 201);
       const body = JSON.parse(res.body);
       assert.strictEqual(body.card.stage, 'preparation');
       assert.strictEqual(body.card.status, 'active');
-      assert.strictEqual(body.card.tags, undefined);
-      assert.strictEqual(body.card.references, undefined);
-      assert.strictEqual(body.card.cardLinks, undefined);
+      assert.deepStrictEqual(body.card.tags, []);
+      assert.deepStrictEqual(body.card.references, []);
+      assert.deepStrictEqual(body.card.cardLinks, []);
+    });
+
+    it('refuses a Card without a Template and writes nothing', async () => {
+      const res = await invoke('POST', '/api/cards', { title: 'Template-less', anchorDate: '2026-04-02' });
+      assert.strictEqual(res.statusCode, 400);
+      assert.deepStrictEqual(JSON.parse(res.body), { error: 'Missing required field: templateId', code: 'template-required' });
+      assert.equal((await listCards(client)).some(({ title }) => title === 'Template-less'), false);
     });
 
     it('creates a card with a template and instantiates tasks', async () => {
@@ -271,6 +287,7 @@ describe('API — Cards', () => {
   describe('GET /api/cards/:id', () => {
     it('returns 200 with the card for a valid id', async () => {
       const created = await createCard(client, {
+        ...templateLink(),
         title: 'My Card',
         anchorDate: '2026-01-01',
       });
@@ -294,6 +311,7 @@ describe('API — Cards', () => {
 
     it('returns card with all new fields via GET', async () => {
       const created = await createCard(client, {
+        ...templateLink(),
         title: 'Full Card',
         anchorDate: '2026-07-01',
         tags: ['podcast'],
@@ -316,6 +334,7 @@ describe('API — Cards', () => {
 
     it('existing card without new fields still works', async () => {
       const created = await createCard(client, {
+        ...templateLink(),
         title: 'Old style card',
         anchorDate: '2026-01-01',
       });
@@ -334,6 +353,7 @@ describe('API — Cards', () => {
   describe('PUT /api/cards/:id', () => {
     it('updates a card and returns 200', async () => {
       const created = await createCard(client, {
+        ...templateLink(),
         title: 'Old Title',
         anchorDate: '2026-01-01',
       });
@@ -353,6 +373,7 @@ describe('API — Cards', () => {
 
     it('updates stage to announced', async () => {
       const created = await createCard(client, {
+        ...templateLink(),
         title: 'Stage test',
         anchorDate: '2026-01-01',
         stage: 'preparation',
@@ -370,6 +391,7 @@ describe('API — Cards', () => {
 
     it('rejects invalid stage value', async () => {
       const created = await createCard(client, {
+        ...templateLink(),
         title: 'Invalid stage test',
         anchorDate: '2026-01-01',
       });
@@ -386,6 +408,7 @@ describe('API — Cards', () => {
 
     it('rejects invalid status value', async () => {
       const created = await createCard(client, {
+        ...templateLink(),
         title: 'Invalid status test',
         anchorDate: '2026-01-01',
       });
@@ -402,6 +425,7 @@ describe('API — Cards', () => {
 
     it('updates references and cardLinks', async () => {
       const created = await createCard(client, {
+        ...templateLink(),
         title: 'Links update test',
         anchorDate: '2026-01-01',
       });
@@ -420,6 +444,7 @@ describe('API — Cards', () => {
 
     it('updates tags', async () => {
       const created = await createCard(client, {
+        ...templateLink(),
         title: 'Tags update',
         anchorDate: '2026-01-01',
       });
@@ -446,7 +471,7 @@ describe('API — Cards', () => {
     });
 
     it('returns the strongly current canonical Card for a stale direct write', async () => {
-      const created = await createCard(client, { title: 'Conflict', anchorDate: '2026-01-01' });
+      const created = await createCard(client, { ...templateLink(), title: 'Conflict', anchorDate: '2026-01-01' });
       const winner = await invoke('PUT', `/api/cards/${created.id}`, {
         expectedVersion: created.version,
         title: 'Winner',
@@ -477,6 +502,7 @@ describe('API — Cards', () => {
 
     it('returns 400 when body is empty', async () => {
       const created = await createCard(client, {
+        ...templateLink(),
         title: 'Test',
         anchorDate: '2026-01-01',
       });
@@ -488,6 +514,7 @@ describe('API — Cards', () => {
 
     it('returns 400 for malformed JSON', async () => {
       const created = await createCard(client, {
+        ...templateLink(),
         title: 'Test',
         anchorDate: '2026-01-01',
       });
@@ -499,18 +526,19 @@ describe('API — Cards', () => {
 
   describe('removed manual lifecycle routes', () => {
     it('does not expose a manual archive route', async () => {
-      const created = await createCard(client, { title: 'Lifecycle', anchorDate: '2026-01-01' });
+      const created = await createCard(client, { ...templateLink(), title: 'Lifecycle', anchorDate: '2026-01-01' });
       assert.strictEqual((await invoke('PUT', `/api/cards/${created.id}/archive`)).statusCode, 404);
     });
 
     it('refuses a Card deletion without expectedVersion and keeps the Card', async () => {
-      const created = await createCard(client, { title: 'Retained', anchorDate: '2026-01-01' });
+      const created = await createCard(client, { ...templateLink(), title: 'Retained', anchorDate: '2026-01-01' });
       assert.strictEqual((await invoke('DELETE', `/api/cards/${created.id}`)).statusCode, 400);
       assert.strictEqual((await invoke('GET', `/api/cards/${created.id}`)).statusCode, 200);
     });
 
     it('does not let a direct stage edit reactivate a completed Card', async () => {
       const created = await createCard(client, {
+        ...templateLink(),
         title: 'Completed stage is lifecycle-owned',
         anchorDate: '2026-01-01',
       });
@@ -539,6 +567,7 @@ describe('API — Cards', () => {
   describe('GET /api/cards/:id/tasks', () => {
     it('returns tasks for a card', async () => {
       const card = await createCard(client, {
+        ...templateLink(),
         title: 'Task List Card',
         anchorDate: '2026-01-01',
       });
@@ -569,6 +598,7 @@ describe('API — Cards', () => {
 
     it('returns empty tasks array for card with no tasks', async () => {
       const card = await createCard(client, {
+        ...templateLink(),
         title: 'No Tasks Card',
         anchorDate: '2026-01-01',
       });
@@ -608,6 +638,7 @@ describe('API — Cards', () => {
 
     it('returns 405 for POST /api/cards/:id', async () => {
       const card = await createCard(client, {
+        ...templateLink(),
         title: 'Test',
         anchorDate: '2026-01-01',
       });
@@ -617,6 +648,7 @@ describe('API — Cards', () => {
 
     it('returns 405 for PATCH /api/cards/:id', async () => {
       const card = await createCard(client, {
+        ...templateLink(),
         title: 'Test',
         anchorDate: '2026-01-01',
       });
@@ -626,6 +658,7 @@ describe('API — Cards', () => {
 
     it('returns 405 for POST /api/cards/:id/tasks', async () => {
       const card = await createCard(client, {
+        ...templateLink(),
         title: 'Test',
         anchorDate: '2026-01-01',
       });
@@ -1008,7 +1041,7 @@ describe('API — Cards', () => {
 
   describe('POST /api/cards/:id/park and /resume', () => {
     it('parks an active card and resumes it to the board', async () => {
-      const created = await createCard(client, { title: 'Route park', anchorDate: utcDateString() });
+      const created = await createCard(client, { ...templateLink(), title: 'Route park', anchorDate: utcDateString() });
       const parked = await invoke('POST', `/api/cards/${created.id}/park`, { expectedVersion: 1 });
       assert.strictEqual(parked.statusCode, 200);
       assert.strictEqual(JSON.parse(parked.body).card.status, 'parked');
@@ -1019,7 +1052,7 @@ describe('API — Cards', () => {
     });
 
     it('rejects parking a parked card and resuming an active card with 422', async () => {
-      const created = await createCard(client, { title: 'Route double', anchorDate: utcDateString() });
+      const created = await createCard(client, { ...templateLink(), title: 'Route double', anchorDate: utcDateString() });
       const resumeActive = await invoke('POST', `/api/cards/${created.id}/resume`, { expectedVersion: 1 });
       assert.strictEqual(resumeActive.statusCode, 422);
       assert.strictEqual(JSON.parse(resumeActive.body).code, 'card-status-transition');
@@ -1030,7 +1063,7 @@ describe('API — Cards', () => {
     });
 
     it('returns 409 on stale versions and 404 for missing cards', async () => {
-      const created = await createCard(client, { title: 'Route stale', anchorDate: utcDateString() });
+      const created = await createCard(client, { ...templateLink(), title: 'Route stale', anchorDate: utcDateString() });
       const stale = await invoke('POST', `/api/cards/${created.id}/park`, { expectedVersion: 99 });
       assert.strictEqual(stale.statusCode, 409);
       const missing = await invoke('POST', '/api/cards/card-missing/park', { expectedVersion: 1 });
@@ -1038,7 +1071,7 @@ describe('API — Cards', () => {
     });
 
     it('rejects non-POST methods and invalid bodies', async () => {
-      const created = await createCard(client, { title: 'Route invalid', anchorDate: utcDateString() });
+      const created = await createCard(client, { ...templateLink(), title: 'Route invalid', anchorDate: utcDateString() });
       assert.strictEqual((await invoke('GET', `/api/cards/${created.id}/park`)).statusCode, 405);
       const noVersion = await invoke('POST', `/api/cards/${created.id}/park`, {});
       assert.strictEqual(noVersion.statusCode, 400);
@@ -1047,7 +1080,7 @@ describe('API — Cards', () => {
 
   describe('PUT /api/cards/:id structured fields', () => {
     it('stores people, sponsor, secondarySponsors, and issueNumber', async () => {
-      const created = await createCard(client, { title: 'People card', anchorDate: utcDateString() });
+      const created = await createCard(client, { ...templateLink(), title: 'People card', anchorDate: utcDateString() });
       const res = await invoke('PUT', `/api/cards/${created.id}`, {
         expectedVersion: 1,
         people: ['Tony Zeljkovic', 'Juan Manuel Perafan'],
@@ -1064,7 +1097,7 @@ describe('API — Cards', () => {
     });
 
     it('clears sponsor with null and rejects malformed values', async () => {
-      const created = await createCard(client, { title: 'Sponsor card', anchorDate: utcDateString(), sponsor: 'Acme' });
+      const created = await createCard(client, { ...templateLink(), title: 'Sponsor card', anchorDate: utcDateString(), sponsor: 'Acme' });
       const cleared = await invoke('PUT', `/api/cards/${created.id}`, { expectedVersion: 1, sponsor: null });
       assert.strictEqual(cleared.statusCode, 200);
       assert.strictEqual(JSON.parse(cleared.body).card.sponsor, undefined);
@@ -1088,6 +1121,7 @@ describe('API — Cards', () => {
       const res = await invoke('POST', '/api/cards', {
         title: 'New event',
         anchorDate: utcDateString(),
+        templateId: EMPTY_TEMPLATE_ID,
         people: ['Irina Krotova'],
         sponsor: 'Snowplow',
         issueNumber: '42',
@@ -1103,18 +1137,21 @@ describe('API — Cards', () => {
       const res = await invoke('POST', '/api/cards', {
         title: '[Newsletter] Weekly email #298(12OCT 2026) -Astronomer',
         anchorDate: '2026-10-12',
+        templateId: EMPTY_TEMPLATE_ID,
       });
       assert.strictEqual(res.statusCode, 201);
       const card = JSON.parse(res.body).card;
       assert.strictEqual(card.title, 'Weekly email');
       assert.strictEqual(card.issueNumber, '298');
       assert.strictEqual(card.sponsor, 'Astronomer');
+      assert.strictEqual(card.templateId, EMPTY_TEMPLATE_ID, 'the title tag never picks the Template');
     });
   });
 
   describe('GET /api/cards read-time derivation for existing cards', () => {
     it('derives clean title, issue number, sponsor, and date on read for legacy cards', async () => {
       const created = await createCard(client, {
+        ...templateLink(),
         title: '[Newsletter] Weekly email #298(12OCT 2026) -Astronomer',
         anchorDate: '2026-08-01',
       });
@@ -1143,9 +1180,9 @@ describe('API — Cards', () => {
         title: 'No Template groups', anchorDate: utcDateString(), optionalGroups: [],
       });
       assert.strictEqual(noTemplate.statusCode, 400);
-      assert.strictEqual(JSON.parse(noTemplate.body).code, 'invalid-optional-groups');
+      assert.strictEqual(JSON.parse(noTemplate.body).code, 'template-required');
       const spoofed = await invoke('POST', '/api/cards', {
-        title: 'Spoofed groups', anchorDate: utcDateString(), selectedOptionalGroups: ['secondary'],
+        title: 'Spoofed groups', anchorDate: utcDateString(), templateId: EMPTY_TEMPLATE_ID, selectedOptionalGroups: ['secondary'],
       });
       assert.strictEqual(spoofed.statusCode, 400);
       assert.match(JSON.parse(spoofed.body).error, /selectedOptionalGroups is system-owned/);

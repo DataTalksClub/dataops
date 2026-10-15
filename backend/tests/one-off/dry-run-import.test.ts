@@ -9,6 +9,7 @@ import { getClient } from '../../src/db/client';
 import { startLocal, stopLocal } from '../../scripts/local-dynamodb';
 import { createTables } from '../../scripts/local-dynamodb';
 import { createCard } from '../../src/db/cards';
+import { templateLink } from '../helpers/cardTemplate';
 import { createIntakeItem } from '../../src/db/intake';
 import { createNotification } from '../../src/db/notifications';
 import { createTask } from '../../src/db/tasks';
@@ -36,7 +37,7 @@ describe('dry-run import', () => {
   it('reports would-write counts for a valid export without writing', async () => {
     const user = await createUser(client, { name: 'Ops', email: 'ops@test' });
     const template = await createTemplate(client, { name: 'Podcast', type: 'podcast' });
-    const card = await createCard(client, { title: 'Episode 1', anchorDate: '2026-06-27', templateId: template.id, status: 'active' });
+    const card = await createCard(client, { ...templateLink(), title: 'Episode 1', anchorDate: '2026-06-27', templateId: template.id, status: 'active' });
     const task = await createTask(client, {
       description: 'Send follow-up',
       date: '2026-06-20',

@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { emptyTemplateId } = require('./helpers/card-template');
 
 async function json(response, status = 200) {
   expect(response.status()).toBe(status);
@@ -7,7 +8,7 @@ async function json(response, status = 200) {
 
 async function createCardWithTasks(request, title, descriptions) {
   const { card } = await json(await request.post('/api/cards', {
-    data: { title, anchorDate: '2026-08-20', stage: 'announced' },
+    data: { title, anchorDate: '2026-08-20', stage: 'announced', templateId: await emptyTemplateId(request) },
   }), 201);
   const tasks = [];
   for (const [index, description] of descriptions.entries()) {

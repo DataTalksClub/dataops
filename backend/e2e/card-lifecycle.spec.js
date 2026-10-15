@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
+const { emptyTemplateId } = require('./helpers/card-template');
 
 const SCREENSHOT_DIR = path.resolve(__dirname, '..', '..', '.tmp', 'issue-168');
 
@@ -12,6 +13,7 @@ test.describe('canonical Card lifecycle', () => {
       data: {
         title: `Synthetic lifecycle ${unique}`,
         anchorDate: '2026-08-13',
+        templateId: await emptyTemplateId(request),
         stage: 'after-event',
       },
     });

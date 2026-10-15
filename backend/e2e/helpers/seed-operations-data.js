@@ -35,7 +35,7 @@ async function seedOperationsData(baseURL) {
       templateIds = (body.templates || []).map((template) => template.id).slice(0, 3);
     }
   } catch {
-    // Cards below still seed without templateId.
+    // Every Card needs a Template; with none listed the card seeds fail below.
   }
   result.templates = templateIds.length;
 
@@ -58,7 +58,7 @@ async function seedOperationsData(baseURL) {
         title: blueprint.title,
         stage: blueprint.stage,
         anchorDate: iso(blueprint.anchor),
-        ...(templateIds.length ? { templateId: templateIds[index % templateIds.length] } : {}),
+        templateId: templateIds[index % templateIds.length],
       });
       if (response.ok || response.status === 200) {
         const body = await response.json();

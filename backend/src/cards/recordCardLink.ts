@@ -154,7 +154,7 @@ export async function createLinkedCard(
     templateId: template.id,
   });
   if (!created.ok) return created;
-  const tasks = created.tasks || [];
+  const tasks = created.tasks;
   try {
     await link(created.card);
   } catch (error) {

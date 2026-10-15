@@ -5,6 +5,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { route } from '../src/router';
 import { createCard } from '../src/db/cards';
+import { templateLink } from './helpers/cardTemplate';
 import { createFile } from '../src/db/files';
 import {
   createNotification,
@@ -70,6 +71,7 @@ function cardData(id: string, overrides: Record<string, unknown> = {}): Record<s
   return {
     id,
     title: `Synthetic Card ${id}`,
+    ...templateLink(),
     ...overrides,
   };
 }

@@ -22,6 +22,7 @@ import {
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createCard, getCard, updateCard } from '../src/db/cards';
+import { templateLink } from './helpers/cardTemplate';
 import { createArtifact } from '../src/db/artifacts';
 import { createFile } from '../src/db/files';
 import { createIntakeItemIfAbsent } from '../src/db/intake';
@@ -117,6 +118,7 @@ describe('portable execution data export', () => {
     });
     template = (await updateTemplate(client, template.id, { triggerEnabled: true }))!;
     const card = await createCard(client, {
+      ...templateLink(),
       title: 'Representative workflow run',
       anchorDate: '2026-06-27',
       templateId: template.id,

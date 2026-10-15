@@ -4,6 +4,7 @@ import { GetCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import { createCard, getCard, parkCard, updateCard } from '../src/db/cards';
+import { templateLink } from './helpers/cardTemplate';
 import {
   CardLifecycleConflictError,
   createTask,
@@ -27,7 +28,7 @@ describe('Card lifecycle aggregate', () => {
   after(stopLocal);
 
   it('creates a canonical empty active Card', async () => {
-    const card = await createCard(client, { title: 'Empty', anchorDate: '2026-09-01' });
+    const card = await createCard(client, { ...templateLink(), title: 'Empty', anchorDate: '2026-09-01' });
     assert.deepEqual(
       {
         version: card.version,
@@ -42,7 +43,7 @@ describe('Card lifecycle aggregate', () => {
   });
 
   it('atomically completes and reactivates a Card while retaining lifecycle audit history', async () => {
-    const created = await createCard(client, { title: 'Lifecycle', anchorDate: '2026-09-02' });
+    const created = await createCard(client, { ...templateLink(), title: 'Lifecycle', anchorDate: '2026-09-02' });
     const staged = await updateCard(client, created.id, {
       expectedVersion: created.version,
       patch: { stage: 'announced' },
@@ -153,6 +154,7 @@ describe('Card lifecycle aggregate', () => {
 
   it('never regresses an active Card stage from an older Template Task hint', async () => {
     const card = await createCard(client, {
+      ...templateLink(),
       title: 'Monotonic stage Card',
       anchorDate: '2026-09-12',
       stage: 'after-event',
@@ -180,7 +182,7 @@ describe('Card lifecycle aggregate', () => {
   });
 
   it('keeps zero-Task Cards active after deleting their final Task', async () => {
-    const card = await createCard(client, { title: 'Delete final', anchorDate: '2026-09-03' });
+    const card = await createCard(client, { ...templateLink(), title: 'Delete final', anchorDate: '2026-09-03' });
     const task = await createTask(client, { description: 'Only', date: '2026-09-03', cardId: card.id });
     await deleteTask(client, task.id, task.version, 'operator-one');
     assert.equal(await getTask(client, task.id), null);
@@ -192,8 +194,8 @@ describe('Card lifecycle aggregate', () => {
   });
 
   it('treats skipped Tasks as resolved and moves Task aggregates between Cards', async () => {
-    const source = await createCard(client, { title: 'Source', anchorDate: '2026-09-04' });
-    const target = await createCard(client, { title: 'Target', anchorDate: '2026-09-04' });
+    const source = await createCard(client, { ...templateLink(), title: 'Source', anchorDate: '2026-09-04' });
+    const target = await createCard(client, { ...templateLink(), title: 'Target', anchorDate: '2026-09-04' });
     const task = await createTask(client, { description: 'Move', date: '2026-09-04', cardId: source.id });
     const moved = await updateTask(client, task.id, {
       expectedVersion: task.version,
@@ -226,7 +228,7 @@ describe('Card lifecycle aggregate', () => {
   });
 
   it('allows only one concurrent final-Task transition and completes after deliberate retry', async () => {
-    const card = await createCard(client, { title: 'Race', anchorDate: '2026-09-05' });
+    const card = await createCard(client, { ...templateLink(), title: 'Race', anchorDate: '2026-09-05' });
     const first = await createTask(client, { description: 'First', date: '2026-09-05', cardId: card.id });
     const second = await createTask(client, { description: 'Second', date: '2026-09-05', cardId: card.id });
     const results = await Promise.allSettled([
@@ -253,7 +255,7 @@ describe('Card lifecycle aggregate', () => {
   });
 
   it('rolls back Task and Card when the local transaction harness injects a failure', async () => {
-    const card = await createCard(client, { title: 'Rollback', anchorDate: '2026-09-06' });
+    const card = await createCard(client, { ...templateLink(), title: 'Rollback', anchorDate: '2026-09-06' });
     const task = await createTask(client, { description: 'Atomic', date: '2026-09-06', cardId: card.id });
     const beforeCard = await getCard(client, card.id);
     process.env.TASK_CARD_LIFECYCLE_TEST_FAIL_AFTER = '2';
@@ -373,7 +375,7 @@ describe('Card lifecycle aggregate', () => {
   });
 
   it('keeps a parked Card parked across Task changes until its work finishes', async () => {
-    const created = await createCard(client, { title: 'Parked aggregate', anchorDate: '2026-09-11' });
+    const created = await createCard(client, { ...templateLink(), title: 'Parked aggregate', anchorDate: '2026-09-11' });
     const first = await createTask(client, { description: 'First', date: '2026-09-11', cardId: created.id });
     const second = await createTask(client, { description: 'Second', date: '2026-09-12', cardId: created.id });
     const parked = await parkCard(client, created.id, (await getCard(client, created.id))!.version);
@@ -405,7 +407,7 @@ describe('Card lifecycle aggregate', () => {
   });
 
   it('reopens a parked Card in place instead of restoring it to the board', async () => {
-    const created = await createCard(client, { title: 'Parked reopen', anchorDate: '2026-09-11' });
+    const created = await createCard(client, { ...templateLink(), title: 'Parked reopen', anchorDate: '2026-09-11' });
     const first = await createTask(client, { description: 'First', date: '2026-09-11', cardId: created.id });
     await createTask(client, { description: 'Second', date: '2026-09-12', cardId: created.id });
     await parkCard(client, created.id, (await getCard(client, created.id))!.version);

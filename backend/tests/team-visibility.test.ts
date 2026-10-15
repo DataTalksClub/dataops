@@ -24,6 +24,7 @@ import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createBrowserSession, createSession } from '../src/db/sessions';
 import { createUserWithId, updateUser } from '../src/db/users';
 import { createCard, getCardConsistent } from '../src/db/cards';
+import { EMPTY_TEMPLATE_ID, putEmptyTemplate, templateLink } from './helpers/cardTemplate';
 import { createTask, getTaskConsistent } from '../src/db/tasks';
 import { route } from '../src/router';
 import type { Card, LambdaEvent, LambdaResponse, ProjectedCard, Task } from '../src/types';
@@ -98,15 +99,19 @@ describe('signed-in identity, teammate projections, and the work authorization b
     summaryCard: Card;
   }> {
     const averyCard = await createCard(client, {
+      ...templateLink(),
       title: 'Avery release checklist', anchorDate: '2031-03-04', ownerId: AVERY,
     });
     const morganCard = await createCard(client, {
+      ...templateLink(),
       title: 'Morgan event checklist', anchorDate: '2031-03-05', ownerId: MORGAN,
     });
     const unownedCard = await createCard(client, {
+      ...templateLink(),
       title: 'Legacy imported checklist', anchorDate: '2031-03-06',
     });
     const summaryCard = await createCard(client, {
+      ...templateLink(),
       title: 'Task assignee summary', anchorDate: '2031-03-07', ownerId: MORGAN,
     });
     await createTask(client, {
@@ -154,6 +159,7 @@ describe('signed-in identity, teammate projections, and the work authorization b
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
+    await putEmptyTemplate(client);
 
     await createUserWithId(client, AVERY, { name: 'Avery Operator', email: 'avery@example.test', role: 'operator' });
     await createUserWithId(client, MORGAN, { name: 'Morgan Teammate', email: 'morgan@example.test', role: 'operator' });
@@ -436,7 +442,7 @@ describe('signed-in identity, teammate projections, and the work authorization b
   it('gives an operator-created Card that operator as its owner', async () => {
     const response = await invoke({
       method: 'POST', path: '/api/cards', bearer: sessions[AVERY],
-      body: { title: 'Avery created card', anchorDate: '2031-04-01' },
+      body: { title: 'Avery created card', anchorDate: '2031-04-01', templateId: EMPTY_TEMPLATE_ID },
     });
     assert.strictEqual(response.statusCode, 201);
     assert.strictEqual(body(response).card.ownerId, AVERY);
@@ -448,7 +454,7 @@ describe('signed-in identity, teammate projections, and the work authorization b
   it('refuses an operator who tries to create work owned by a peer', async () => {
     const response = await invoke({
       method: 'POST', path: '/api/cards', bearer: sessions[AVERY],
-      body: { title: 'Peer owned card', anchorDate: '2031-04-02', ownerId: MORGAN },
+      body: { title: 'Peer owned card', anchorDate: '2031-04-02', templateId: EMPTY_TEMPLATE_ID, ownerId: MORGAN },
     });
     assert.strictEqual(response.statusCode, 403);
     assert.strictEqual(body(response).code, 'work_admin_forbidden');
@@ -457,7 +463,7 @@ describe('signed-in identity, teammate projections, and the work authorization b
   it('lets an admin own, reassign, and unassign a Card but not to a disabled or stale user', async () => {
     const created = body(await invoke({
       method: 'POST', path: '/api/cards', bearer: sessions[RILEY],
-      body: { title: 'Admin created card', anchorDate: '2031-04-03', ownerId: MORGAN },
+      body: { title: 'Admin created card', anchorDate: '2031-04-03', templateId: EMPTY_TEMPLATE_ID, ownerId: MORGAN },
     })).card;
     assert.strictEqual(created.ownerId, MORGAN);
 
@@ -484,7 +490,7 @@ describe('signed-in identity, teammate projections, and the work authorization b
 
     const toGhost = await invoke({
       method: 'POST', path: '/api/cards', bearer: sessions[RILEY],
-      body: { title: 'Stale owner card', anchorDate: '2031-04-04', ownerId: GHOST },
+      body: { title: 'Stale owner card', anchorDate: '2031-04-04', templateId: EMPTY_TEMPLATE_ID, ownerId: GHOST },
     });
     assert.strictEqual(toGhost.statusCode, 400);
   });
@@ -799,6 +805,7 @@ describe('signed-in identity, teammate projections, and the work authorization b
 
   it('lets only an admin delete a Card, even one the operator owns', async () => {
     const card = await createCard(client, {
+      ...templateLink(),
       title: 'Avery disposable checklist', anchorDate: '2031-04-01', ownerId: AVERY,
     });
     await createTask(client, {

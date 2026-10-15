@@ -3,6 +3,7 @@ const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 const AxeBuilder = require('@axe-core/playwright').default;
 const path = require('path');
 const { offsetBusinessDate } = require('./helpers/business-date');
+const { emptyTemplateId } = require('./helpers/card-template');
 
 const SHOTS = path.resolve(__dirname, '..', '..', '.tmp', 'screenshots', 'issue-156');
 
@@ -20,10 +21,10 @@ function berlinToday() {
 async function createFixtures(request, referenceTime = Date.now()) {
   const id = suffix();
   const card = (await (await request.post('/api/cards', {
-    data: { title: `Route workflow ${id}`, anchorDate: '2026-08-11' },
+    data: { title: `Route workflow ${id}`, anchorDate: '2026-08-11', templateId: await emptyTemplateId(request) },
   })).json()).card;
   const contextCard = (await (await request.post('/api/cards', {
-    data: { title: `Return workflow ${id}`, anchorDate: '2026-08-12' },
+    data: { title: `Return workflow ${id}`, anchorDate: '2026-08-12', templateId: await emptyTemplateId(request) },
   })).json()).card;
   const task = await (await request.post('/api/tasks', {
     data: { description: `Route task ${id}`, date: '2026-08-11', cardId: card.id },
@@ -400,8 +401,9 @@ test.describe('issue 156 canonical route and operator parity', () => {
   test('labels fresh combined task links from exact route context before a delayed larger snapshot', async ({ page, request }) => {
     test.setTimeout(120000);
     const fixture = await createFixtures(request);
+    const templateId = await emptyTemplateId(request);
     await Promise.all(Array.from({ length: 12 }, (_, index) => request.post('/api/cards', {
-      data: { title: `Larger snapshot workflow ${fixture.id} ${index + 1}`, anchorDate: '2026-08-11' },
+      data: { title: `Larger snapshot workflow ${fixture.id} ${index + 1}`, anchorDate: '2026-08-11', templateId },
     })));
     const route = `/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&cardId=${encodeURIComponent(fixture.card.id)}&contextCardId=${encodeURIComponent(fixture.contextCard.id)}`;
 
@@ -484,7 +486,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
   test('contains task and workflow dialog focus and restores recreated route targets', async ({ page, request }) => {
     const id = suffix();
     const card = (await (await request.post('/api/cards', {
-      data: { title: `Focus workflow ${id}`, anchorDate: '1900-01-01' },
+      data: { title: `Focus workflow ${id}`, anchorDate: '1900-01-01', templateId: await emptyTemplateId(request) },
     })).json()).card;
     const task = await (await request.post('/api/tasks', {
       data: { description: `Focus task ${id}`, date: berlinToday(), cardId: card.id },
@@ -520,7 +522,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
   test('contains Card and nested Task dialog focus and restores recreated route targets', async ({ page, request }) => {
     const id = suffix();
     const card = (await (await request.post('/api/cards', {
-      data: { title: `Focus workflow ${id}`, anchorDate: '1900-01-01' },
+      data: { title: `Focus workflow ${id}`, anchorDate: '1900-01-01', templateId: await emptyTemplateId(request) },
     })).json()).card;
     const task = await (await request.post('/api/tasks', {
       data: { description: `Focus task ${id}`, date: berlinToday(), cardId: card.id },

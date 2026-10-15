@@ -97,9 +97,6 @@ async function loadTemplateUpdate(cardId: string, client: DynamoDBDocumentClient
   // than the version the update will be conditioned on.
   const card = await getCardConsistent(client, cardId);
   if (!card) throw new CardTemplateUpdateRequestError(404, 'card-not-found', 'Card not found');
-  if (!card.templateId) {
-    throw new CardTemplateUpdateRequestError(422, 'card-has-no-template', 'Card was not created from a Template');
-  }
   const template = await getTemplate(client, card.templateId);
   if (!template) throw new CardTemplateUpdateRequestError(409, 'template-not-found', 'Card Template projection no longer exists');
   const tasks = await listTasksByCardConsistent(client, card.id);
@@ -474,7 +471,7 @@ async function handleCollection(
     if (!created.ok) return created.response;
     const templateIdByType = await getTemplateIdByType(client);
     const card = await projectCard(new TeamDirectory(client), created.card, created.tasks, templateIdByType);
-    return json(201, created.tasks ? { card, tasks: created.tasks } : { card });
+    return json(201, { card, tasks: created.tasks });
   }
 
   // Method not allowed

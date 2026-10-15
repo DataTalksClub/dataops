@@ -1,6 +1,7 @@
 // The Card checklist keeps even rows: a skipped Task gets its own mark and a
 // one-line muted reason that never widens the Card detail.
 const { test, expect } = require('@playwright/test');
+const { emptyTemplateId } = require('./helpers/card-template');
 
 async function json(response, status = 200) {
   expect(response.status()).toBe(status);
@@ -12,7 +13,7 @@ const LONG_REASON = 'No longer applicable on 2026-10-15: Building an AI Platform
 async function createChecklistCard(request) {
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const { card } = await json(await request.post('/api/cards', {
-    data: { title: `Synthetic checklist card ${unique}`, anchorDate: '2026-10-20', stage: 'announced' },
+    data: { title: `Synthetic checklist card ${unique}`, anchorDate: '2026-10-20', stage: 'announced', templateId: await emptyTemplateId(request) },
   }), 201);
   const tasks = [];
   for (const description of ['Synthetic open step', 'Synthetic done step', 'Synthetic skipped step with a calendar invite']) {

@@ -9,8 +9,9 @@ import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables, TABLE_AUDIT_EVENTS } from '../scripts/local-dynamodb';
 import { createCard, getCard } from '../src/db/cards';
+import { templateLink } from './helpers/cardTemplate';
 import { createTask, getTask, listTasksByCard, updateTask } from '../src/db/tasks';
-import { createTemplate, getTemplate, updateTemplate } from '../src/db/templates';
+import { createTemplate, updateTemplate } from '../src/db/templates';
 import type { LambdaResponse, Template } from '../src/types';
 
 function invoke(method: string, path: string, body?: unknown): Promise<LambdaResponse> {
@@ -437,9 +438,9 @@ describe('API — reviewed Card Template updates', () => {
   it('rejects Template rows without canonical provenance instead of baselining them', async () => {
     const source = await createSourceTemplate(client);
     const card = await createCard(client, {
+      ...templateLink(source),
       title: 'Invalid synthetic Card',
       anchorDate: '2026-04-15',
-      templateId: source.id,
       status: 'active',
     });
     const task = await createTask(client, {
@@ -460,13 +461,11 @@ describe('API — reviewed Card Template updates', () => {
     assert.equal((await getTask(client, task.id))?.comment, 'No baseline machinery');
   });
 
-  it('rejects invalid selections and Cards without a Template', async () => {
-    const manual = await createCard(client, { title: 'Manual Card', anchorDate: '2026-01-01' });
-    assert.equal((await invoke('GET', `/api/cards/${manual.id}/template-update`)).statusCode, 422);
+  it('rejects invalid selections', async () => {
+    const created = await createTemplateCard(await createSourceTemplate(client), 'selection');
     assert.equal((await invoke('POST', '/api/cards/template-updates/preview', { cardIds: [] })).statusCode, 400);
     assert.equal((await invoke('POST', '/api/cards/template-updates/apply', {
-      updates: [{ cardId: manual.id, previewToken: 'not-a-digest' }],
+      updates: [{ cardId: created.card.id, previewToken: 'not-a-digest' }],
     })).statusCode, 400);
-    assert.ok(await getTemplate(client, (await createSourceTemplate(client)).id));
   });
 });

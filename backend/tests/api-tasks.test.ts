@@ -7,6 +7,7 @@ import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables, deleteTables } from '../scripts/local-dynamodb';
 import { createTemplate } from '../src/db/templates';
 import { createCard, getCard } from '../src/db/cards';
+import { EMPTY_TEMPLATE_ID, putEmptyTemplate, templateLink } from './helpers/cardTemplate';
 import { createTask, getTask } from '../src/db/tasks';
 import type { LambdaResponse } from '../src/types';
 
@@ -17,6 +18,7 @@ describe('API — CRUD for tasks', () => {
   before(async () => {
     port = await startLocal();
     await createTables(await getClient(port));
+    await putEmptyTemplate(await getClient(port));
     process.env.IS_LOCAL = 'true';
 
     const mod = await import('../src/handler');
@@ -56,6 +58,7 @@ describe('API — CRUD for tasks', () => {
 
     it('creates a task with optional fields', async () => {
       const card = await createCard(await getClient(port), {
+        ...templateLink(),
         title: 'Optional Task Card',
         anchorDate: '2026-03-10',
       });
@@ -81,6 +84,7 @@ describe('API — CRUD for tasks', () => {
 
     it('creates a waiting task with follow-up metadata', async () => {
       const card = await createCard(await getClient(port), {
+        ...templateLink(),
         title: 'Initially waiting Task Card',
         anchorDate: '2026-03-10',
       });
@@ -129,6 +133,7 @@ describe('API — CRUD for tasks', () => {
 
     it('creates an attached done Task with completion history and archives the Card atomically', async () => {
       const card = await createCard(await getClient(port), {
+        ...templateLink(),
         title: 'Initially completed Task Card',
         anchorDate: '2026-03-10',
         stage: 'announced',
@@ -193,6 +198,7 @@ describe('API — CRUD for tasks', () => {
     it('returns the strongly current Card when attached Task creation loses the Card condition', async () => {
       const { route } = await import('../src/router');
       const initialCard = {
+        ...templateLink(),
         id: 'create-conflict-card', version: 4, title: 'Initial Card',
         status: 'active', stage: 'preparation', taskCount: 1, openTaskCount: 1,
         createdAt: '2026-03-01T00:00:00.000Z', updatedAt: '2026-03-01T00:00:00.000Z',
@@ -329,8 +335,8 @@ describe('API — CRUD for tasks', () => {
   describe('GET /api/tasks', () => {
     it('intersects date, range, card and status filters', async () => {
       const client = await getClient(port);
-      const card = await createCard(client, { title: 'Combined filters', anchorDate: '2099-02-10' });
-      const other = await createCard(client, { title: 'Other combined filters', anchorDate: '2099-02-10' });
+      const card = await createCard(client, { ...templateLink(), title: 'Combined filters', anchorDate: '2099-02-10' });
+      const other = await createCard(client, { ...templateLink(), title: 'Other combined filters', anchorDate: '2099-02-10' });
       const target = await createTask(client, { description: 'Matching task', date: '2099-02-10', cardId: card.id });
       await createTask(client, { description: 'Wrong card', date: '2099-02-10', cardId: other.id });
       await createTask(client, { description: 'Wrong date', date: '2099-02-11', cardId: card.id });
@@ -423,9 +429,11 @@ describe('API — CRUD for tasks', () => {
 
     it('returns tasks filtered by cardId', async () => {
       const bid = (await createCard(await getClient(port), {
+        ...templateLink(),
         title: 'Filter Card', anchorDate: '2092-01-01',
       })).id;
       const other = (await createCard(await getClient(port), {
+        ...templateLink(),
         title: 'Other Filter Card', anchorDate: '2092-01-01',
       })).id;
       await handler({
@@ -708,6 +716,7 @@ describe('API — CRUD for tasks', () => {
 
     it('returns canonical Task and Card snapshots for an aggregate conflict and succeeds on retry', async () => {
       const card = await createCard(await getClient(port), {
+        ...templateLink(),
         title: 'Aggregate API conflict',
         anchorDate: '2026-03-10',
       });
@@ -2300,6 +2309,7 @@ describe('API — CRUD for tasks', () => {
         body: JSON.stringify({
           title: 'Newsletter sponsor-only shared links',
           anchorDate: '2026-07-20',
+          templateId: EMPTY_TEMPLATE_ID,
           cardLinks: [
             { name: 'Mailchimp newsletter', url: 'https://mailchimp.example/newsletter' },
             { name: 'LinkedIn', url: '' },
@@ -2368,6 +2378,7 @@ describe('API — CRUD for tasks', () => {
         body: JSON.stringify({
           title: 'Newsletter social-only skip still needs Mailchimp',
           anchorDate: '2026-07-20',
+          templateId: EMPTY_TEMPLATE_ID,
           cardLinks: [
             { name: 'Mailchimp newsletter', url: '' },
             { name: 'LinkedIn', url: '' },
@@ -2444,7 +2455,7 @@ describe('API — CRUD for tasks', () => {
 
     it('skips a gated Task with a reason, bypassing link, file, and proof gates', async () => {
       const client = await getClient(port);
-      const card = await createCard(client, { title: 'Skip gate Card', anchorDate: '2026-05-01' });
+      const card = await createCard(client, { ...templateLink(), title: 'Skip gate Card', anchorDate: '2026-05-01' });
       const gated = await createTask(client, {
         description: 'Gated step',
         date: '2026-05-01',
@@ -2512,7 +2523,7 @@ describe('API — CRUD for tasks', () => {
 
     it('completes the Card when its remaining Tasks are done or skipped, and reactivates on unskip', async () => {
       const client = await getClient(port);
-      const card = await createCard(client, { title: 'Skip completion Card', anchorDate: '2026-05-03', stage: 'announced' });
+      const card = await createCard(client, { ...templateLink(), title: 'Skip completion Card', anchorDate: '2026-05-03', stage: 'announced' });
       const first = await createTask(client, { description: 'Finished', date: '2026-05-03', cardId: card.id });
       const second = await createTask(client, { description: 'Not applicable', date: '2026-05-03', cardId: card.id });
       const finished = await handler({

@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 const fs = require('fs');
+const { emptyTemplateId } = require('./helpers/card-template');
 
 const SHOTS = path.resolve(__dirname, '..', '..', '.tmp', 'screenshots');
 
@@ -33,7 +34,7 @@ test.describe('canonical DataOps frontend', () => {
   test('opens task and workflow entity deep links in canonical panels', async ({ page, request }) => {
     const id = suffix();
     const cardResponse = await request.post('/api/cards', {
-      data: { title: `Canonical workflow ${id}`, anchorDate: '2026-08-11' },
+      data: { title: `Canonical workflow ${id}`, anchorDate: '2026-08-11', templateId: await emptyTemplateId(request) },
     });
     expect(cardResponse.status()).toBe(201);
     const card = (await cardResponse.json()).card;

@@ -4,6 +4,7 @@ import assert from 'node:assert';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
+import { EMPTY_TEMPLATE_ID, putEmptyTemplate } from './helpers/cardTemplate';
 
 describe('API - Artifacts', () => {
   let handler: typeof import('../src/handler').handler;
@@ -11,6 +12,7 @@ describe('API - Artifacts', () => {
   before(async () => {
     const localPort = await startLocal();
     await createTables(await getClient(localPort));
+    await putEmptyTemplate(await getClient(localPort));
     process.env.IS_LOCAL = 'true';
 
     const mod = await import('../src/handler');
@@ -39,7 +41,7 @@ describe('API - Artifacts', () => {
     const res = await handler({
       httpMethod: 'POST',
       path: '/api/cards',
-      body: JSON.stringify({ title: 'Artifact card', anchorDate: '2026-06-28' }),
+      body: JSON.stringify({ title: 'Artifact card', anchorDate: '2026-06-28', templateId: EMPTY_TEMPLATE_ID }),
     }, {});
     assert.strictEqual(res.statusCode, 201, res.body);
     return JSON.parse(res.body).card;

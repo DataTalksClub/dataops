@@ -15,6 +15,7 @@ import {
   dismissAllNotifications,
 } from '../src/db/notifications';
 import { createCard } from '../src/db/cards';
+import { templateLink } from './helpers/cardTemplate';
 import { createTask, updateTask } from '../src/db/tasks';
 
 describe('Notifications data layer', () => {
@@ -152,6 +153,7 @@ describe('Notifications data layer', () => {
 
   it('createDueFollowUpNotifications creates one reminder for each due waiting task', async () => {
     await createCard(client, {
+      ...templateLink(),
       id: 'card-follow-up-test',
       title: 'Follow-up test Card',
       anchorDate: '2098-01-20',

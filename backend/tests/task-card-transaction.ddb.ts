@@ -36,6 +36,7 @@ import {
   updateTask,
 } from '../src/db/tasks';
 import type { Card, Task, TaskHistoryEvent } from '../src/types';
+import { templateLink } from './helpers/cardTemplate';
 
 type Dict = Record<string, unknown>;
 type Attempt = {
@@ -272,7 +273,7 @@ test('production Task/Card lifecycle is atomic on official DynamoDB Local', { ti
   };
 
   const startedAt = '2026-08-13T10:00:00.000Z';
-  const card: Card = {
+  const card = {
     id: `issue-183-card-${randomUUID()}`,
     version: 1,
     title: 'Synthetic transaction Card',
@@ -282,7 +283,8 @@ test('production Task/Card lifecycle is atomic on official DynamoDB Local', { ti
     status: 'active',
     createdAt: startedAt,
     updatedAt: startedAt,
-  };
+    ...templateLink(),
+  } as Card;
   const task: Task = {
     id: `issue-183-task-${randomUUID()}`,
     version: 1,

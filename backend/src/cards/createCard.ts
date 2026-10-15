@@ -3,13 +3,12 @@
  *
  * `POST /api/cards` and every route that creates a Card on behalf of another
  * record (a newsletter slot, a podcast episode) share this one path, so a Card
- * created anywhere gets the same validation, ownership rule, Template
- * projection, and title parsing.
+ * created anywhere is instantiated from a Template and gets the same
+ * validation, ownership rule, Template projection, and title parsing.
  */
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { normalizeCardLinks } from '../artifactLinks';
-import { createCard } from '../db/cards';
 import {
   createCardFromTemplate,
   getTemplate,
@@ -29,7 +28,7 @@ function json(statusCode: number, body: unknown): LambdaResponse {
 }
 
 export type CardCreation =
-  | { ok: true; card: Card; tasks?: Task[]; template: Template | null }
+  | { ok: true; card: Card; tasks: Task[]; template: Template }
   | { ok: false; response: LambdaResponse };
 
 function isRecordArrayWithStringId(value: unknown, idField: string): boolean {
@@ -170,16 +169,12 @@ export async function createCardFromInput(
     return fail(400, { error: `${suppliedSystemField} is system-owned and cannot be supplied` });
   }
 
-  // If templateId is provided, verify template exists before creating card
-  let template: Template | null = null;
-  if (body.templateId) {
-    template = await getTemplate(client, body.templateId as string);
-    if (!template) return fail(404, { error: 'Template not found' });
+  // Every Card is instantiated from a Template.
+  if (typeof body.templateId !== 'string' || body.templateId.trim() === '') {
+    return fail(400, { error: 'Missing required field: templateId', code: 'template-required' });
   }
-
-  if (body.optionalGroups !== undefined && !template) {
-    return fail(400, { error: 'optionalGroups requires a templateId', code: 'invalid-optional-groups' });
-  }
+  const template = await getTemplate(client, body.templateId);
+  if (!template) return fail(404, { error: 'Template not found' });
 
   const VALID_STAGES = ['preparation', 'announced', 'after-event'];
   if (body.stage !== undefined && !VALID_STAGES.includes(body.stage as string)) {
@@ -219,41 +214,31 @@ export async function createCardFromInput(
   if (body.description !== undefined) {
     cardData.description = body.description;
   }
-  if (body.templateId !== undefined) {
-    cardData.templateId = body.templateId;
-  }
 
-  // When templateId is provided, copy template fields to card (caller values take precedence)
-  if (template) {
-    Object.assign(cardData, templateCardProjection(template));
-    if (body.sourceDocIds !== undefined) {
-      cardData.sourceDocIds = body.sourceDocIds;
-    } else if (template.sourceDocIds && template.sourceDocIds.length > 0) {
-      cardData.sourceDocIds = template.sourceDocIds;
-    }
-    if (body.references !== undefined) {
-      cardData.references = body.references;
-    } else if (template.references && template.references.length > 0) {
-      cardData.references = template.references;
-    }
-    if (body.cardLinks !== undefined) {
-      cardData.cardLinks = normalizeCardLinks(body.cardLinks);
-    } else if (template.cardLinkDefinitions && template.cardLinkDefinitions.length > 0) {
-      cardData.cardLinks = template.cardLinkDefinitions.map((def: { name: string }) => ({
-        name: def.name,
-        url: '',
-      }));
-    }
-    if (body.tags !== undefined) {
-      cardData.tags = body.tags;
-    } else if (template.tags && template.tags.length > 0) {
-      cardData.tags = template.tags;
-    }
-  } else {
-    for (const field of ['references', 'tags', 'sourceDocIds']) {
-      if (body[field] !== undefined) cardData[field] = body[field];
-    }
-    if (body.cardLinks !== undefined) cardData.cardLinks = normalizeCardLinks(body.cardLinks);
+  // Copy Template fields to the Card; caller values take precedence.
+  Object.assign(cardData, templateCardProjection(template));
+  if (body.sourceDocIds !== undefined) {
+    cardData.sourceDocIds = body.sourceDocIds;
+  } else if (template.sourceDocIds && template.sourceDocIds.length > 0) {
+    cardData.sourceDocIds = template.sourceDocIds;
+  }
+  if (body.references !== undefined) {
+    cardData.references = body.references;
+  } else if (template.references && template.references.length > 0) {
+    cardData.references = template.references;
+  }
+  if (body.cardLinks !== undefined) {
+    cardData.cardLinks = normalizeCardLinks(body.cardLinks);
+  } else if (template.cardLinkDefinitions && template.cardLinkDefinitions.length > 0) {
+    cardData.cardLinks = template.cardLinkDefinitions.map((def: { name: string }) => ({
+      name: def.name,
+      url: '',
+    }));
+  }
+  if (body.tags !== undefined) {
+    cardData.tags = body.tags;
+  } else if (template.tags && template.tags.length > 0) {
+    cardData.tags = template.tags;
   }
   for (const field of ['artifactRefs', 'intakeRefs', 'people', 'sponsor', 'secondarySponsors', 'issueNumber']) {
     if (body[field] !== undefined) {
@@ -261,7 +246,6 @@ export async function createCardFromInput(
     }
   }
 
-  const templateIdByType = await getTemplateIdByType(client);
   const parsed = parseCardTitle(String(cardData.title || ''));
   if (parsed.tag && parsed.templateType) {
     if (cardData.issueNumber === undefined && parsed.issueNumber) {
@@ -276,10 +260,6 @@ export async function createCardFromInput(
     if ((!cardData.people || (cardData.people as string[]).length === 0) && parsed.people.length > 0) {
       cardData.people = parsed.people;
     }
-    if (!cardData.templateId && parsed.templateType) {
-      const tId = templateIdByType.get(parsed.templateType);
-      if (tId) cardData.templateId = tId;
-    }
     if (parsed.cleanTitle && parsed.cleanTitle !== cardData.title) {
       cardData.title = parsed.cleanTitle;
     }
@@ -290,42 +270,38 @@ export async function createCardFromInput(
     }
   }
 
-  if (template) {
-    let selectedGroups: string[] | undefined;
-    if (body.optionalGroups !== undefined) {
-      if (!Array.isArray(body.optionalGroups) || body.optionalGroups.some((group) => typeof group !== 'string')) {
-        return fail(400, { error: 'optionalGroups must be an array of strings', code: 'invalid-optional-groups' });
-      }
-      const knownGroups = new Set(
-        (template.taskDefinitions || [])
-          .map((definition) => definition.optionalGroup)
-          .filter((group): group is string => typeof group === 'string'),
-      );
-      const unknown = (body.optionalGroups as string[]).find((group) => !knownGroups.has(group));
-      if (unknown !== undefined) {
-        return fail(400, { error: `Unknown optional task group: ${unknown}`, code: 'unknown-optional-group' });
-      }
-      selectedGroups = [...(body.optionalGroups as string[])];
+  let selectedGroups: string[] | undefined;
+  if (body.optionalGroups !== undefined) {
+    if (!Array.isArray(body.optionalGroups) || body.optionalGroups.some((group) => typeof group !== 'string')) {
+      return fail(400, { error: 'optionalGroups must be an array of strings', code: 'invalid-optional-groups' });
     }
-    try {
-      const { card, tasks } = await createCardFromTemplate(
-        client,
-        cardData,
-        template,
-        body.anchorDate as string,
-        selectedGroups,
-      );
-      return { ok: true, card, tasks, template };
-    } catch (error) {
-      if (error instanceof TemplateVersionConflictError) {
-        return fail(409, {
-          code: 'template_version_conflict',
-          error: 'Template changed while the Card was being created. Review the latest Template and retry.',
-        });
-      }
-      throw error;
+    const knownGroups = new Set(
+      (template.taskDefinitions || [])
+        .map((definition) => definition.optionalGroup)
+        .filter((group): group is string => typeof group === 'string'),
+    );
+    const unknown = (body.optionalGroups as string[]).find((group) => !knownGroups.has(group));
+    if (unknown !== undefined) {
+      return fail(400, { error: `Unknown optional task group: ${unknown}`, code: 'unknown-optional-group' });
     }
+    selectedGroups = [...(body.optionalGroups as string[])];
   }
-
-  return { ok: true, card: await createCard(client, cardData), template: null };
+  try {
+    const { card, tasks } = await createCardFromTemplate(
+      client,
+      cardData,
+      template,
+      body.anchorDate as string,
+      selectedGroups,
+    );
+    return { ok: true, card, tasks, template };
+  } catch (error) {
+    if (error instanceof TemplateVersionConflictError) {
+      return fail(409, {
+        code: 'template_version_conflict',
+        error: 'Template changed while the Card was being created. Review the latest Template and retry.',
+      });
+    }
+    throw error;
+  }
 }

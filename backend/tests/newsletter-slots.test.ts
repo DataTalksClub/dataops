@@ -10,7 +10,9 @@ import { createSession } from "../src/db/sessions";
 import { createNewsletterSlot } from "../src/db/newsletterSlots";
 import { createCrmRecord } from "../src/db/sponsorCrm";
 import { createCard, getCard, updateCard } from "../src/db/cards";
+import { templateLink } from "./helpers/cardTemplate";
 import { createTemplate } from "../src/db/templates";
+import type { Template } from "../src/types";
 import { listTasksByCard } from "../src/db/tasks";
 import { PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { TABLE_CARDS, TABLE_NEWSLETTER_SLOTS } from "../src/db/tableNames";
@@ -307,6 +309,7 @@ describe("newsletter slots", () => {
     assert.notEqual(recurred.id, alert.id);
 
     const card = await createCard(client, {
+      ...templateLink(),
       title: "[Newsletter] Synthetic incomplete newsletter (20NOV 2026)",
       anchorDate: "2026-11-20",
       stage: "planning",
@@ -432,9 +435,9 @@ describe("newsletter slots", () => {
           ...extra,
         }),
       );
-    let newsletterTemplateId = "";
+    let newsletterTemplate: Template;
     before(async () => {
-      newsletterTemplateId = (await createTemplate(client, {
+      newsletterTemplate = (await createTemplate(client, {
         name: "Newsletter",
         type: "newsletter",
         cardTitle: "{date} · #{issue} · {sponsor} · {variant}",
@@ -442,16 +445,16 @@ describe("newsletter slots", () => {
           { refId: "draft", description: "Draft issue", offsetDays: -3 },
           { refId: "send", description: "Send issue", offsetDays: 0 },
         ],
-      })).id;
+      }));
     });
     const newsletterCard = (title: string) =>
-      createCard(client, { title, templateId: newsletterTemplateId, anchorDate: "2026-01-01", stage: "preparation" });
+      createCard(client, { ...templateLink(newsletterTemplate), title, anchorDate: "2026-01-01", stage: "preparation" });
     it("validates the linked Card, keeps links unique, and unlinks with null", async () => {
       const first = await slot("link-a", { publicationDate: "2026-12-07", campaignNumber: 310 });
       const second = await slot("link-b", { publicationDate: "2026-12-14", campaignNumber: 311 });
       const missing = await invoke("PUT", `/api/newsletter-slots/${first.id}`, { version: first.version, cardId: "no-such-card" });
       assert.equal(missing.statusCode, 422, missing.body);
-      const podcast = await createCard(client, { title: "[Podcast] 2026-DEC-07 - Topic - Ada Example", anchorDate: "2026-12-07", stage: "preparation" });
+      const podcast = await createCard(client, { ...templateLink(), title: "[Podcast] 2026-DEC-07 - Topic - Ada Example", anchorDate: "2026-12-07", stage: "preparation" });
       const wrongType = await invoke("PUT", `/api/newsletter-slots/${first.id}`, { version: first.version, cardId: podcast.id });
       assert.equal(wrongType.statusCode, 422, wrongType.body);
 

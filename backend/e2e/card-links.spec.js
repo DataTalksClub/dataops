@@ -1,6 +1,7 @@
 // Card links render as a dense list: a readable link per row, the text input
 // only while editing, and a mailto: address counted as present.
 const { test, expect } = require('@playwright/test');
+const { emptyTemplateId } = require('./helpers/card-template');
 
 async function json(response, status = 200) {
   expect(response.status()).toBe(status);
@@ -13,6 +14,7 @@ async function createLinkedCard(request) {
     data: {
       title: `Synthetic links card ${unique}`,
       anchorDate: '2026-10-20',
+      templateId: await emptyTemplateId(request),
       stage: 'announced',
       cardLinks: [
         { name: 'Meetup', url: '' },

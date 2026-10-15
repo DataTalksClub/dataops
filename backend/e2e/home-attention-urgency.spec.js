@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { setupPageWithAuth } = require('./helpers/auth');
+const { emptyTemplateId } = require('./helpers/card-template');
 const {
   assertOwnedServerResponse,
   startOwnedTestServer,
@@ -74,6 +75,7 @@ async function createAttentionFixtures(request) {
     data: {
       title: `Issue 201 proof workflow ${id}`,
       anchorDate: offsetBusinessDate(now, 1),
+      templateId: await emptyTemplateId(request),
       stage: 'preparation',
     },
   });

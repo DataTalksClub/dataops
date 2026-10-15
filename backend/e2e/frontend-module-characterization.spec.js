@@ -2,6 +2,7 @@ const { test, expect } = require("@playwright/test");
 const fs = require("node:fs");
 const path = require("node:path");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
+const { emptyTemplateId } = require('./helpers/card-template');
 const {
   assertOwnedServerResponse,
   startOwnedTestServer,
@@ -109,7 +110,7 @@ async function expectNoHorizontalOverflow(page, route = page.url()) {
 async function createCardWithTask(request) {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const cardResponse = await request.post(`${baseURL}/api/cards`, {
-    data: { title: `Characterization card ${suffix}`, anchorDate: "2026-08-12", stage: "preparation" },
+    data: { title: `Characterization card ${suffix}`, anchorDate: "2026-08-12", stage: "preparation", templateId: await emptyTemplateId(request, baseURL) },
   });
   expect(cardResponse.ok()).toBe(true);
   assertOwnedServerResponse(server, cardResponse, "characterization Card fixture");

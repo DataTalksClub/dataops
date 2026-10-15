@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { setupPageWithAuth } = require('./helpers/auth');
+const { emptyTemplateId } = require('./helpers/card-template');
 const {
   assertOwnedServerResponse,
   startOwnedTestServer,
@@ -53,6 +54,7 @@ async function createCard(request, title) {
     data: {
       title,
       anchorDate: '2026-08-12',
+      templateId: await emptyTemplateId(request),
       description: 'Public-safe synthetic Card for recovery evidence.',
       stage: 'preparation',
     },

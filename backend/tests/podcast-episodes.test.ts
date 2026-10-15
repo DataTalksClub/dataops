@@ -6,6 +6,7 @@ import { handler } from "../src/handler";
 import { createTables, startLocal, stopLocal } from "../scripts/local-dynamodb";
 import { getClient } from "../src/db/client";
 import { createCard, getCard } from "../src/db/cards";
+import { templateLink } from "./helpers/cardTemplate";
 import { createTemplate } from "../src/db/templates";
 import { listTasksByCard } from "../src/db/tasks";
 import { TABLE_CARDS, TABLE_PODCAST_EPISODES } from "../src/db/tableNames";
@@ -129,8 +130,8 @@ describe("podcast episodes", () => {
         { refId: "record", description: "Record", offsetDays: 0 },
       ],
     });
-    const newsletterCard = await createCard(client, { title: "[Newsletter] Weekly email #400(01MAR 2027) -Sponsor", anchorDate: "2027-03-01", stage: "preparation" });
-    const podcastCard = await createCard(client, { title: "Synthetic topic", templateId: podcastTemplate.id, anchorDate: "2027-06-07", stage: "preparation" });
+    const newsletterCard = await createCard(client, { ...templateLink(), title: "[Newsletter] Weekly email #400(01MAR 2027) -Sponsor", anchorDate: "2027-03-01", stage: "preparation" });
+    const podcastCard = await createCard(client, { ...templateLink(podcastTemplate), title: "Synthetic topic", anchorDate: "2027-06-07", stage: "preparation" });
     const a = data(await invoke("POST", "/api/podcast-episodes", { ...booked, recordingDate: "2027-06-14" }));
     const b = data(await invoke("POST", "/api/podcast-episodes", { ...booked, recordingDate: "2027-06-21" }));
     assert.equal((await invoke("PUT", `/api/podcast-episodes/${a.id}`, { version: a.version, cardId: newsletterCard.id })).statusCode, 422);

@@ -9,6 +9,7 @@ const {
 } = require('./helpers/isolated-capability-server');
 const fs = require('node:fs');
 const path = require('path');
+const { emptyTemplateId } = require('./helpers/card-template');
 
 const BACKEND_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
@@ -329,6 +330,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     const cardTitle = unique('Synthetic staged workflow');
     const cardResponse = await context.request.post('/api/cards', { data: {
       title: cardTitle, anchorDate: '2026-08-12', description: 'Public-safe staged workflow', stage: 'preparation',
+      templateId: await emptyTemplateId(context.request),
     } });
     expect(cardResponse.status()).toBe(201);
     const card = (await json(cardResponse)).card;
@@ -563,6 +565,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     const cardTitle = unique('Synthetic staged workflow');
     const cardResponse = await context.request.post('/api/cards', { data: {
       title: cardTitle, anchorDate: '2026-08-12', description: 'Public-safe staged workflow', stage: 'preparation',
+      templateId: await emptyTemplateId(context.request),
     } });
     expect(cardResponse.status()).toBe(201);
     const card = (await json(cardResponse)).card;

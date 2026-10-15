@@ -25,6 +25,7 @@ import {
 } from '../src/db/client';
 import { CardDeletionConflictError, deleteCardCascade } from '../src/db/cardDeletion';
 import { createCard, getCardConsistent } from '../src/db/cards';
+import { templateLink } from './helpers/cardTemplate';
 import { createNewsletterSlot } from '../src/db/newsletterSlots';
 import {
   TABLE_ARTIFACTS,
@@ -164,10 +165,10 @@ test('admin Card deletion is one transaction on official DynamoDB Local', { time
     return (send as (...args: unknown[]) => Promise<unknown>)(command, ...rest);
   }) as typeof client.send;
 
-  const card = await createCard(client, { title: 'Synthetic duplicate newsletter', anchorDate: '2031-01-05' });
+  const card = await createCard(client, { ...templateLink(), title: 'Synthetic duplicate newsletter', anchorDate: '2031-01-05' });
   const first = await createTask(client, { description: 'First', date: '2031-01-05', cardId: card.id });
   const second = await createTask(client, { description: 'Second', date: '2031-01-05', cardId: card.id });
-  const keeper = await createCard(client, { title: 'Synthetic kept newsletter', anchorDate: '2031-01-05' });
+  const keeper = await createCard(client, { ...templateLink(), title: 'Synthetic kept newsletter', anchorDate: '2031-01-05' });
   const kept = await createTask(client, { description: 'Kept', date: '2031-01-05', cardId: keeper.id });
   const { item: slot } = await createNewsletterSlot(client, {
     publicationDate: '2031-01-05', status: 'reserved', cardId: card.id,

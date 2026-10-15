@@ -8,6 +8,7 @@ import { createTables } from '../scripts/local-dynamodb';
 import { createNotification } from '../src/db/notifications';
 import { createSession } from '../src/db/sessions';
 import { createUserWithId } from '../src/db/users';
+import { EMPTY_TEMPLATE_ID, putEmptyTemplate } from './helpers/cardTemplate';
 
 describe('Portal broker authentication', () => {
   const originalSkipAuth = process.env.SKIP_AUTH;
@@ -18,6 +19,7 @@ describe('Portal broker authentication', () => {
     process.env.IS_LOCAL = 'true';
     const localPort = await startLocal();
     await createTables(await getClient(localPort));
+    await putEmptyTemplate(await getClient(localPort));
     const warmUp = await handler({ httpMethod: 'GET', path: '/api/health' }, {});
     assert.strictEqual(warmUp.statusCode, 200);
     const client = await getClient();
@@ -421,7 +423,7 @@ describe('Portal broker authentication', () => {
       {
         httpMethod: 'POST',
         path: '/api/cards',
-        body: JSON.stringify({ title: `Portal action card ${suffix}`, anchorDate: '2028-10-05' }),
+        body: JSON.stringify({ title: `Portal action card ${suffix}`, anchorDate: '2028-10-05', templateId: EMPTY_TEMPLATE_ID }),
         headers,
       },
       {},

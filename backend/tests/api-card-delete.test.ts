@@ -5,6 +5,7 @@ import { GetCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createCard, getCard } from '../src/db/cards';
+import { templateLink } from './helpers/cardTemplate';
 import { createFile } from '../src/db/files';
 import { createNewsletterSlot, getNewsletterSlot } from '../src/db/newsletterSlots';
 import { TABLE_ARTIFACTS, TABLE_AUDIT_EVENTS, TABLE_NOTIFICATIONS } from '../src/db/tableNames';
@@ -43,7 +44,7 @@ describe('DELETE /api/cards/:id', () => {
   }
 
   async function seed(title: string) {
-    const card = await createCard(client, { title, anchorDate: '2031-02-02' });
+    const card = await createCard(client, { ...templateLink(), title, anchorDate: '2031-02-02' });
     const first = await createTask(client, { description: `${title} first`, date: '2031-02-02', cardId: card.id });
     const second = await createTask(client, { description: `${title} second`, date: '2031-02-02', cardId: card.id, status: 'done' });
     const { item: slot } = await createNewsletterSlot(client, {
@@ -54,7 +55,7 @@ describe('DELETE /api/cards/:id', () => {
 
   it('deletes the Card with its Tasks, unlinks slots and artifacts, drops notifications, and audits it', async () => {
     const { card, first, second, slot } = await seed('Synthetic duplicate card');
-    const other = await createCard(client, { title: 'Synthetic other card', anchorDate: '2031-02-02' });
+    const other = await createCard(client, { ...templateLink(), title: 'Synthetic other card', anchorDate: '2031-02-02' });
     const otherTask = await createTask(client, { description: 'Other', date: '2031-02-02', cardId: other.id });
     await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: {
       PK: 'ARTIFACT#synthetic-art', SK: 'ARTIFACT#synthetic-art', id: 'synthetic-art', taskId: second.id, title: 'Draft',

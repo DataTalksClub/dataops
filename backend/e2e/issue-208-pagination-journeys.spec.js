@@ -2,6 +2,7 @@ const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { TEST_SERVER_PORT } = require('./test-server-port');
 const { berlinBusinessDate } = require('./helpers/business-date');
+const { emptyTemplateId } = require('./helpers/card-template');
 
 const SHOT_ROOT = path.resolve(
   __dirname,
@@ -140,6 +141,7 @@ test.describe('issue 208 paginated collections', () => {
       data: {
         anchorDate: '2026-08-26',
         stage: 'preparation',
+        templateId: await emptyTemplateId(request, BASE_URL),
         title: 'Issue 208 pagination Card',
       },
     });

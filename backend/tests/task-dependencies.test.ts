@@ -4,6 +4,7 @@ import { GetCommand, QueryCommand, ScanCommand, type DynamoDBDocumentClient } fr
 
 import { getClient } from '../src/db/client';
 import { createCard } from '../src/db/cards';
+import { templateLink } from './helpers/cardTemplate';
 import { CardLifecycleConflictError, createTask, deleteTask, getTask, updateTask } from '../src/db/tasks';
 import { TABLE_TASKS } from '../src/db/tableNames';
 import { TaskDependencyError } from '../src/db/taskDependencies';
@@ -59,7 +60,7 @@ describe('Task dependencies', () => {
   });
 
   async function newCard(title: string): Promise<string> {
-    return (await createCard(client, { title, anchorDate: '2026-10-01' })).id;
+    return (await createCard(client, { ...templateLink(), title, anchorDate: '2026-10-01' })).id;
   }
 
   describe('graph validation', () => {
@@ -375,7 +376,7 @@ describe('Task dependency races', () => {
     return () => { target.send = original; };
   }
 
-  const cardWith = async (title: string) => (await createCard(client, { title, anchorDate: '2026-10-01' })).id;
+  const cardWith = async (title: string) => (await createCard(client, { ...templateLink(), title, anchorDate: '2026-10-01' })).id;
   const task = (cardId: string, description: string, extra: Json = {}) => (
     createTask(client, { description, date: '2026-10-01', cardId, ...extra })
   );

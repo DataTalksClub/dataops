@@ -81,6 +81,26 @@ function isActiveCardStage(value: unknown): value is ActiveCardStage {
   return typeof value === 'string' && ACTIVE_CARD_STAGES.has(value as ActiveCardStage);
 }
 
+/**
+ * Every Card is instantiated from a Template. A Card record without the
+ * instantiation linkage is rejected on write and on read.
+ */
+function templateLinkageError(item: Record<string, unknown>): string | null {
+  const snapshot = item.templateDefinitionSnapshot as Record<string, unknown> | undefined;
+  if (typeof item.templateId !== 'string' || item.templateId.trim().length === 0) return 'templateId';
+  if (!Number.isInteger(item.templateVersion) || Number(item.templateVersion) < 1) return 'templateVersion';
+  if (!snapshot || typeof snapshot !== 'object' || !Array.isArray(snapshot.taskRefs)) return 'templateDefinitionSnapshot';
+  if (!Array.isArray(item.selectedOptionalGroups)) return 'selectedOptionalGroups';
+  return null;
+}
+
+class CardTemplateRequiredError extends Error {
+  constructor(readonly cardId: string, readonly field: string) {
+    super(`Card ${cardId} must be instantiated from a Template: ${field} is missing`);
+    this.name = 'CardTemplateRequiredError';
+  }
+}
+
 function cardKey(id: string) {
   return { PK: `CARD#${id}`, SK: `CARD#${id}` };
 }
@@ -120,6 +140,8 @@ function cleanItem(item: Record<string, unknown> | undefined): Card | null {
   ) {
     throw new Error(`Card ${String(rest.id || PK || 'unknown')} is not in the canonical lifecycle shape`);
   }
+  const missingLinkage = templateLinkageError(rest);
+  if (missingLinkage) throw new CardTemplateRequiredError(String(rest.id || PK || 'unknown'), missingLinkage);
   if ((active || parked) && (
     rest.completedAt !== undefined
     || rest.completedBy !== undefined
@@ -428,6 +450,7 @@ export {
   CardVersionConflictError,
   CardNotFoundError,
   CardStatusTransitionError,
+  CardTemplateRequiredError,
   isActiveCardStage,
   cardKey,
 };

@@ -307,15 +307,16 @@ export interface Card {
   title?: string;
   description?: string | null;
   anchorDate?: string;
-  templateId?: string;
+  /** Every Card is instantiated from a Template; these fields record it. */
+  templateId: string;
   /** Template projection used for the last reviewed application to this Card. */
-  templateVersion?: number;
+  templateVersion: number;
   templateSourceRevision?: string;
-  templateDefinitionSnapshot?: TemplateCardDefinitionSnapshot;
+  templateDefinitionSnapshot: TemplateCardDefinitionSnapshot;
   /** Source documents inherited from the runtime template at instantiation. */
   sourceDocIds?: string[];
   /** Optional task groups selected when the Card was created from its Template. */
-  selectedOptionalGroups?: string[];
+  selectedOptionalGroups: string[];
   /** People named by the Card: speakers and guests on event Cards. */
   people?: string[];
   /** Main sponsor of a newsletter Card. */

@@ -13,6 +13,7 @@ const {
 } = require('./helpers/isolated-capability-server');
 const fs = require('fs');
 const path = require('path');
+const { emptyTemplateId } = require('./helpers/card-template');
 
 const BACKEND_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
@@ -540,7 +541,7 @@ test.describe('canonical frontend capability behavior', () => {
     } });
     expect(notificationTask.status()).toBe(201);
     const cardTitle = unique('Synthetic home workflow');
-    expect((await context.request.post('/api/cards', { data: { title: cardTitle, anchorDate: '2026-08-12' } })).status()).toBe(201);
+    expect((await context.request.post('/api/cards', { data: { title: cardTitle, anchorDate: '2026-08-12', templateId: await emptyTemplateId(context.request) } })).status()).toBe(201);
     const populatedWork = freshHomeWork(page);
     const populatedRender = page.evaluate(() => window.__dataopsRefreshWork());
     const [todayResponse, waitingResponse, cardsResponse] = await populatedWork;

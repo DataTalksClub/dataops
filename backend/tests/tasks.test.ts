@@ -7,6 +7,7 @@ import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables, deleteTables } from '../scripts/local-dynamodb';
 import { TABLE_TASKS } from '../src/db/tableNames';
 import { createCard } from '../src/db/cards';
+import { templateLink } from './helpers/cardTemplate';
 import {
   createTask,
   getTask,
@@ -37,7 +38,7 @@ describe('Tasks data layer', () => {
   });
 
   it('createTask returns a task with id, createdAt, updatedAt', async () => {
-    const card = await createCard(client, { title: 'Task owner', anchorDate: '2026-02-23' });
+    const card = await createCard(client, { ...templateLink(), title: 'Task owner', anchorDate: '2026-02-23' });
     const task = await createTask(client, {
       description: 'Write unit tests',
       date: '2026-02-23',
@@ -296,8 +297,8 @@ describe('Tasks data layer', () => {
   });
 
   it('listTasksByCard returns tasks for a given card', async () => {
-    const bid = (await createCard(client, { title: 'Owned tasks', anchorDate: '2026-03-01' })).id;
-    const other = (await createCard(client, { title: 'Other tasks', anchorDate: '2026-03-01' })).id;
+    const bid = (await createCard(client, { ...templateLink(), title: 'Owned tasks', anchorDate: '2026-03-01' })).id;
+    const other = (await createCard(client, { ...templateLink(), title: 'Other tasks', anchorDate: '2026-03-01' })).id;
     await createTask(client, { description: 'P1', date: '2026-03-01', cardId: bid, status: 'todo' });
     await createTask(client, { description: 'P2', date: '2026-03-02', cardId: bid, status: 'todo' });
     await createTask(client, { description: 'P3', date: '2026-03-01', cardId: other, status: 'todo' });

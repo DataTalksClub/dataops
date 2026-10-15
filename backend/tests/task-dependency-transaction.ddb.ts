@@ -18,6 +18,7 @@ import { TABLE_AUDIT_EVENTS, TABLE_CARDS, TABLE_TASKS } from '../src/db/tableNam
 import { TaskDependencyError } from '../src/db/taskDependencies';
 import { CardLifecycleConflictError, deleteTask, getTaskConsistent, updateTask } from '../src/db/tasks';
 import type { Card, Task } from '../src/types';
+import { templateLink } from './helpers/cardTemplate';
 
 const ENDPOINT = process.env.DYNAMODB_ENDPOINT;
 const REGION = process.env.AWS_REGION || 'us-east-1';
@@ -158,11 +159,11 @@ test('task dependency guards hold on official DynamoDB Local', { timeout: 60_000
   };
 
   async function seedCard(taskCount: number): Promise<Card> {
-    const card: Card = {
+    const card = {
       id: `dep-card-${randomUUID()}`, version: 1, title: 'Synthetic dependency Card',
       taskCount, openTaskCount: taskCount, stage: 'preparation', status: 'active',
-      createdAt: NOW, updatedAt: NOW,
-    };
+      createdAt: NOW, updatedAt: NOW, ...templateLink(),
+    } as Card;
     await db.send(new PutCommand({
       TableName: TABLE_CARDS, Item: { PK: `CARD#${card.id}`, SK: `CARD#${card.id}`, ...card },
     }));
