@@ -49,7 +49,12 @@ export const BASELINE_RECURRING_CONFIGS: readonly BaselineRecurringConfig[] = [
   },
   { description: 'Ensure newsletter for next week is prepared', cronExpression: '0 9 * * 2' },
   { description: 'Prepare newsletter for the week after next', cronExpression: '0 9 * * 3' },
-  { description: 'Create Slack dump', cronExpression: '0 9 1 * *' },
+  {
+    description: 'Create Slack dump',
+    cronExpression: '0 9 1 * *',
+    instructionDocId: 'sop.community.slack.export-create-a-dump-of-slack-data',
+    requires: ['slack'],
+  },
   { description: 'Check bookkeeping, invoices, and receipts', cronExpression: '0 9 * * 1' },
 ] as const;
 
