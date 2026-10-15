@@ -14,6 +14,7 @@ Usage
   dataops sponsors show <kind> <id>
   dataops sponsors create <kind> --data '{...}'        Fields as the web form sends them
   dataops sponsors update <kind> <id> --data '{...}'
+  dataops sponsors update leads <id> --data '{"status":"ignored","version":N}' [--reason TEXT]
   dataops sponsors messages <organization-id>          Communications with an organization
   dataops sponsors history <deal-id>                   A deal's change history
   dataops sponsors finance <deal-id> [history|candidates/invoices|candidates/payments]
@@ -25,6 +26,10 @@ current record shape before writing one.
 Examples
   dataops sponsors list deals --json | jq '.items[] | {id, status}'
   dataops sponsors update deals 1f2e... --data '{"status":"won","version":3}'
+  dataops sponsors update leads 9a8b... --data '{"status":"ignored","version":1}' --reason "House ad"
+
+--reason (leads only) says why the lead has its status; a status change without one
+clears the previous reason.
 `;
 
 function kindOf(args, index = 0) {
@@ -98,7 +103,13 @@ export async function update(args, io) {
   const kind = kindOf(args);
   const id = positional(args, 1, "dataops sponsors update <kind> <id> --data '{...}'");
   const verb = kind === "leads" ? "patch" : "put";
-  const result = await apiFor(args)[verb](`/api/sponsor-crm/${kind}/${enc(id)}`, jsonData(args));
+  const data = jsonData(args);
+  const reason = optionalString(args, "reason");
+  if (reason !== undefined) {
+    if (kind !== "leads") throw new UsageError("--reason applies to leads only.");
+    data.statusReason = reason;
+  }
+  const result = await apiFor(args)[verb](`/api/sponsor-crm/${kind}/${enc(id)}`, data);
   if (!args.json) io.print(`Updated ${kind.replace(/s$/, "")} ${id}.`);
   return result;
 }

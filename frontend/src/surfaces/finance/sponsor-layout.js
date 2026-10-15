@@ -205,6 +205,26 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
         </footer>
       </form>
     </dialog>
+    <dialog class="surface-dialog" data-ignore-dialog>
+      <form method="dialog">
+        <header>
+          <h3>Ignore lead</h3>
+          <p>Say why, so the next reviewer knows. The reason is optional.</p>
+        </header>
+        <div class="dialog-fields">
+          <input name="leadId" type="hidden" /><input name="version" type="hidden" />
+          <label
+            >Reason
+            <input name="statusReason" maxlength="500" placeholder="House ad, not a sponsor" /></label
+          >
+          <p role="alert"></p>
+        </div>
+        <footer>
+          <button class="primary-button" data-ignore-confirm>Ignore lead</button
+          ><button value="cancel">Cancel</button>
+        </footer>
+      </form>
+    </dialog>
     <dialog class="surface-dialog" data-newsletter-dialog>
       <form method="dialog">
         <header>

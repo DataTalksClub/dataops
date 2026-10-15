@@ -441,6 +441,7 @@ function publicLead(lead: CrmRecord): Record<string, unknown> {
     newsletter: lead.newsletter,
     sponsor: lead.sponsor,
     status: lead.status,
+    ...(lead.statusReason ? { statusReason: lead.statusReason } : {}),
     active: lead.active,
     sourceType: lead.sourceType,
     version: lead.version,
@@ -605,10 +606,17 @@ export async function handleSponsorLeadRoutes(path: string, method: string, even
     const existing = await getCrmRecord(client, 'lead', id);
     if (!existing) return response(404, { error: 'Not found' });
     if (body.version !== existing.version) return response(409, { error: 'Lead was changed; reload and retry' });
-    const unknown = Object.keys(body).find((key) => !['version', 'status', 'organizationId', 'createNew'].includes(key));
+    const unknown = Object.keys(body).find((key) => !['version', 'status', 'statusReason', 'organizationId', 'createNew'].includes(key));
     if (unknown) return response(400, { error: `Unknown field: ${unknown}` });
     if (body.status !== undefined && !LEAD_STATUSES.has(String(body.status))) return response(400, { error: 'Invalid status' });
     if (body.status === undefined) return response(400, { error: 'Nothing to update' });
+    // The reason explains the status it is sent with; a status change without
+    // one clears the previous status's reason.
+    if (body.statusReason !== undefined && (typeof body.statusReason !== 'string' || body.statusReason.length > 500 || /[\u0000-\u001f\u007f]/.test(body.statusReason))) {
+      return response(400, { error: 'Invalid statusReason' });
+    }
+    const statusReason = typeof body.statusReason === 'string' && body.statusReason.trim() ? body.statusReason.trim() : undefined;
+    if (body.status === 'converted' && statusReason) return response(400, { error: 'A converted lead takes no statusReason' });
     if (body.status === 'converted') {
       const actorId = Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === 'x-user-id')?.[1] || 'authenticated-operator';
       try {
@@ -625,7 +633,7 @@ export async function handleSponsorLeadRoutes(path: string, method: string, even
       }
     }
     try {
-      const next = await updateCrmRecord(client, 'lead', existing, { status: body.status });
+      const next = await updateCrmRecord(client, 'lead', existing, { status: body.status, statusReason });
       return response(200, publicLead(next));
     } catch {
       return response(409, { error: 'Conflicting update; reload and retry' });

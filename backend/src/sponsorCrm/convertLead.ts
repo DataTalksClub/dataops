@@ -62,7 +62,7 @@ export async function convertLead(
     }
     const sightings = appendSighting(byDomain, lead);
     const organization = await updateOrganizationAtomic(client, byDomain, { sightings }, actorId, 'sighting');
-    const next = await updateCrmRecord(client, 'lead', lead, { status: 'converted', organizationId: organization.id });
+    const next = await updateCrmRecord(client, 'lead', lead, { status: 'converted', statusReason: undefined, organizationId: organization.id });
     return { ok: true, lead: next, organization, created: false };
   }
 
@@ -74,7 +74,7 @@ export async function convertLead(
         return { ok: false, statusCode: 409, error: 'Organization domain does not match lead' };
       }
       const organization = await updateOrganizationAtomic(client, existing, { domain, sightings: appendSighting(existing, lead) }, actorId, 'sighting');
-      const next = await updateCrmRecord(client, 'lead', lead, { status: 'converted', organizationId: organization.id });
+      const next = await updateCrmRecord(client, 'lead', lead, { status: 'converted', statusReason: undefined, organizationId: organization.id });
       return { ok: true, lead: next, organization, created: false };
     }
     const created = await createOrganizationAtomic(client, {
@@ -84,7 +84,7 @@ export async function convertLead(
       sightings: [sightingFrom(lead)],
       sourceKey: `lead-domain:${domain}`,
     }, actorId);
-    const next = await updateCrmRecord(client, 'lead', lead, { status: 'converted', organizationId: created.item.id });
+    const next = await updateCrmRecord(client, 'lead', lead, { status: 'converted', statusReason: undefined, organizationId: created.item.id });
     return { ok: true, lead: next, organization: created.item, created: !created.duplicate };
   }
 
@@ -92,7 +92,7 @@ export async function convertLead(
     const existing = await getCrmRecord(client, 'organization', requestedId);
     if (!existing || existing.archivedAt) return { ok: false, statusCode: 422, error: 'Invalid organization reference' };
     const organization = await updateOrganizationAtomic(client, existing, { sightings: appendSighting(existing, lead) }, actorId, 'sighting');
-    const next = await updateCrmRecord(client, 'lead', lead, { status: 'converted', organizationId: organization.id });
+    const next = await updateCrmRecord(client, 'lead', lead, { status: 'converted', statusReason: undefined, organizationId: organization.id });
     return { ok: true, lead: next, organization, created: false };
   }
 
@@ -103,7 +103,7 @@ export async function convertLead(
       sightings: [sightingFrom(lead)],
       sourceKey: `lead-new:${lead.id}`,
     }, actorId);
-    const next = await updateCrmRecord(client, 'lead', lead, { status: 'converted', organizationId: created.item.id });
+    const next = await updateCrmRecord(client, 'lead', lead, { status: 'converted', statusReason: undefined, organizationId: created.item.id });
     return { ok: true, lead: next, organization: created.item, created: !created.duplicate };
   }
 

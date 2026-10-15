@@ -189,6 +189,11 @@ export function createSponsorLeads(context) {
         <p class="crm-lead-source">${source}${newsletter.subject ? html` · ${escapeHtml(newsletter.subject)}` : ""}</p>
         ${sponsor.blurb ? html`<p class="crm-lead-blurb">${escapeHtml(sponsor.blurb)}</p>` : ""}
         ${sponsor.context ? html`<p class="crm-lead-context muted">${escapeHtml(sponsor.context)}</p>` : ""}
+        ${item.statusReason
+          ? html`<p class="crm-lead-reason" data-lead-reason>
+              ${escapeHtml(humanizeOptionLabel(item.status))}: ${escapeHtml(item.statusReason)}
+            </p>`
+          : ""}
       </div>
       ${item.status === "converted" ? "" : html`<div class="row-actions crm-lead-actions">
         ${leadAction(item.id, "converted", "Convert", "primary-button")}
@@ -377,6 +382,16 @@ export function createSponsorLeads(context) {
       const lead = leads.find((item) => item.id === transition.dataset.leadId);
       if (!lead || lead.status === "converted") return;
       const { leadStatus } = transition.dataset;
+      if (leadStatus === "ignored") {
+        const dialog = surface.querySelector("[data-ignore-dialog]");
+        const form = dialog.querySelector("form");
+        form.elements.leadId.value = lead.id;
+        form.elements.version.value = String(lead.version);
+        form.elements.statusReason.value = "";
+        if (openDialog) openDialog(dialog);
+        else dialog.showModal();
+        return;
+      }
       fail(async () => {
         let updated;
         try {
@@ -425,6 +440,29 @@ export function createSponsorLeads(context) {
       surface.querySelector("[data-convert-dialog]").close();
       applyLead(updated);
     };
+    surface.querySelector("[data-ignore-confirm]")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      const dialog = surface.querySelector("[data-ignore-dialog]");
+      const form = dialog.querySelector("form");
+      const lead = leads.find((item) => item.id === form.elements.leadId.value);
+      if (!lead || lead.status === "converted") {
+        dialog.close();
+        return;
+      }
+      const statusReason = String(form.elements.statusReason.value || "").trim();
+      fail(async () => {
+        const updated = await api(`/leads/${encodeURIComponent(lead.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            version: Number(form.elements.version.value),
+            status: "ignored",
+            ...(statusReason ? { statusReason } : {}),
+          }),
+        });
+        dialog.close();
+        applyLead(updated);
+      }, "Could not ignore lead");
+    });
     surface.querySelector("[data-convert-existing]")?.addEventListener("click", (event) => {
       event.preventDefault();
       const form = surface.querySelector("[data-convert-dialog] form");

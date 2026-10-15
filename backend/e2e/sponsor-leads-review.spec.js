@@ -71,7 +71,13 @@ test('Leads open on new leads, newest first, and page with Load more', async ({ 
   // Ignoring a lead keeps it in place; the next load drops it from New.
   const ignored = rows.filter({ hasText: 'One-off Vendor 05' });
   await ignored.getByRole('button', { name: 'Ignore' }).click();
+  const ignoreDialog = page.locator('[data-ignore-dialog]');
+  await expect(ignoreDialog).toBeVisible();
+  await ignoreDialog.getByRole('textbox', { name: 'Reason' }).fill('House ad, not a sponsor');
+  await ignoreDialog.getByRole('button', { name: 'Ignore lead' }).click();
+  await expect(ignoreDialog).toBeHidden();
   await expect(ignored.locator('.status-label')).toHaveText('Ignored');
+  await expect(ignored.locator('[data-lead-reason]')).toContainText('House ad, not a sponsor');
   await page.getByRole('radio', { name: 'Ignored' }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText('One-off Vendor 05');

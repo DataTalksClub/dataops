@@ -314,6 +314,20 @@ describe('sponsor lead intake and review', () => {
     const unknownField = await review('PATCH', `/api/sponsor-crm/leads/${beta.id}`, { version: 1, status: 'ignored', notes: 'x' });
     assert.strictEqual(unknownField.statusCode, 400);
 
+    const badReason = await review('PATCH', `/api/sponsor-crm/leads/${beta.id}`, { version: 1, status: 'ignored', statusReason: 'x'.repeat(501) });
+    assert.strictEqual(badReason.statusCode, 400);
+    const ignored = await review('PATCH', `/api/sponsor-crm/leads/${beta.id}`, { version: 1, status: 'ignored', statusReason: '  House ad, not a sponsor ' });
+    assert.strictEqual(ignored.statusCode, 200, ignored.body);
+    assert.strictEqual(JSON.parse(ignored.body).statusReason, 'House ad, not a sponsor');
+    const ignoredRow = JSON.parse((await review('GET', '/api/sponsor-crm/leads', undefined, { status: 'ignored' })).body)
+      .items.find((item: Record<string, unknown>) => item.id === beta.id);
+    assert.strictEqual(ignoredRow.statusReason, 'House ad, not a sponsor');
+    const reopened = await review('PATCH', `/api/sponsor-crm/leads/${beta.id}`, { version: 2, status: 'new' });
+    assert.strictEqual(reopened.statusCode, 200, reopened.body);
+    assert.strictEqual(JSON.parse(reopened.body).statusReason, undefined, 'a status change without a reason clears it');
+    const convertReason = await review('PATCH', `/api/sponsor-crm/leads/${beta.id}`, { version: 3, status: 'converted', statusReason: 'x' });
+    assert.strictEqual(convertReason.statusCode, 400);
+
     const filtered = JSON.parse((await review('GET', '/api/sponsor-crm/leads', undefined, { status: 'triaged' })).body);
     assert.ok(filtered.items.some((item: Record<string, unknown>) => item.id === alpha.id));
     assert.ok(!filtered.items.some((item: Record<string, unknown>) => item.id === beta.id));
