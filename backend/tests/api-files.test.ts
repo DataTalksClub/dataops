@@ -7,6 +7,10 @@ import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import type { LambdaResponse } from '../src/types';
+import type { S3Client } from '@aws-sdk/client-s3';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { setFileStorageClientForTests } from '../src/storage';
+import { TABLE_FILES } from '../src/db/tableNames';
 
 const TEST_UPLOAD_DIR = path.join(__dirname, '..', 'test-uploads-api-' + process.pid);
 
@@ -163,7 +167,73 @@ describe('API - File uploads', () => {
     }, {});
 
     assert.strictEqual(downloadRes.statusCode, 200);
-    assert.deepStrictEqual(Buffer.from(downloadRes.body, 'binary'), fileContent);
+    assert.strictEqual(downloadRes.isBase64Encoded, true);
+    assert.deepStrictEqual(Buffer.from(downloadRes.body, 'base64'), fileContent);
+  });
+
+  it('round-trips production S3 binary proofs, preserves earlier same-name uploads, and retains retryable deletion metadata', async () => {
+    const keys = ['TASK_FILES_BUCKET', 'DATAOPS_FILE_STORAGE_PROVIDER', 'AWS_LAMBDA_FUNCTION_NAME'];
+    const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+    process.env.TASK_FILES_BUCKET = 'private-proof-test';
+    process.env.DATAOPS_FILE_STORAGE_PROVIDER = 's3';
+    process.env.AWS_LAMBDA_FUNCTION_NAME = 'test-production';
+    const objects = new Map<string, Buffer>();
+    let failDelete = false;
+    setFileStorageClientForTests({ send: async (command: { constructor: { name: string }; input: Record<string, unknown> }) => {
+      const key = command.input.Key as string;
+      if (command.constructor.name === 'PutObjectCommand') objects.set(key, Buffer.from(command.input.Body as Buffer));
+      if (command.constructor.name === 'DeleteObjectCommand') {
+        if (failDelete) throw new Error('S3 temporarily unavailable');
+        objects.delete(key);
+      }
+      if (command.constructor.name === 'GetObjectCommand' && !objects.has(key)) throw Object.assign(new Error('missing'), { name: 'NoSuchKey' });
+      return { Body: { transformToByteArray: async () => objects.get(key) } };
+    } } as unknown as Pick<S3Client, 'send'>);
+    try {
+      const created = await handler({ httpMethod: 'POST', path: '/api/tasks', body: JSON.stringify({ description: 'Durable binary proof', date: '2026-06-01', requiresFile: true }) }, {});
+      assert.equal(created.statusCode, 201, created.body);
+      const task = JSON.parse(created.body);
+      const bytes = Buffer.from(Array.from({ length: 256 }, (_, index) => index));
+      const upload = async (data: Buffer) => {
+        const multipart = buildMultipart({ taskId: task.id }, { fieldName: 'file', filename: 'proof.png', content: data, contentType: 'image/png' });
+        return handler({ httpMethod: 'POST', path: '/api/files', headers: { 'content-type': multipart.contentType }, body: Buffer.from(multipart.body, 'binary').toString('base64'), isBase64Encoded: true }, {});
+      };
+      const firstRes = await upload(bytes);
+      assert.equal(firstRes.statusCode, 201, firstRes.body);
+      const first = JSON.parse(firstRes.body).file;
+      assert.equal(first.storageProvider, 's3');
+      const second = JSON.parse((await upload(Buffer.from('replacement'))).body).file;
+      assert.notEqual(first.storagePath, second.storagePath);
+      const downloaded = await handler({ httpMethod: 'GET', path: `/api/files/${first.id}/download` }, {});
+      assert.equal(downloaded.statusCode, 200, downloaded.body);
+      assert.equal(downloaded.isBase64Encoded, true);
+      assert.deepEqual(Buffer.from(downloaded.body, 'base64'), bytes);
+      assert.equal(downloaded.headers?.['Content-Type'], 'image/png');
+      const done = await handler({ httpMethod: 'PUT', path: `/api/tasks/${task.id}`, body: JSON.stringify({ expectedVersion: task.version, status: 'done' }) }, {});
+      assert.equal(done.statusCode, 200, done.body);
+
+      // A failed database write must clean up the object rather than orphan it.
+      const send = DynamoDBDocumentClient.prototype.send;
+      DynamoDBDocumentClient.prototype.send = (async function (this: DynamoDBDocumentClient, command: { constructor: { name: string }; input: { TableName?: string } }) {
+        if (command.constructor.name === 'PutCommand' && command.input.TableName === TABLE_FILES) throw new Error('metadata unavailable');
+        return send.call(this, command as never);
+      }) as typeof DynamoDBDocumentClient.prototype.send;
+      try { assert.equal((await upload(Buffer.from('failed metadata'))).statusCode, 500); }
+      finally { DynamoDBDocumentClient.prototype.send = send; }
+      assert.equal(objects.size, 2);
+
+      failDelete = true;
+      const failedDelete = await handler({ httpMethod: 'DELETE', path: `/api/files/${second.id}` }, {});
+      assert.equal(failedDelete.statusCode, 500);
+      assert.equal((await handler({ httpMethod: 'GET', path: `/api/files/${second.id}` }, {})).statusCode, 200);
+      failDelete = false;
+      assert.equal((await handler({ httpMethod: 'DELETE', path: `/api/files/${second.id}` }, {})).statusCode, 204);
+      assert.equal((await handler({ httpMethod: 'GET', path: `/api/files/${second.id}` }, {})).statusCode, 404);
+      assert.equal(objects.has(first.storagePath), true);
+    } finally {
+      setFileStorageClientForTests();
+      for (const key of keys) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; }
+    }
   });
 
   it('POST /api/files returns 400 when taskId missing', async () => {
@@ -306,7 +376,8 @@ describe('API - File uploads', () => {
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.headers!['Content-Type'], 'text/plain');
     assert.ok(res.headers!['Content-Disposition']!.includes('download.txt'));
-    const bodyBuffer = Buffer.from(res.body, 'binary');
+    assert.strictEqual(res.isBase64Encoded, true);
+    const bodyBuffer = Buffer.from(res.body, 'base64');
     assert.deepStrictEqual(bodyBuffer, fileContent);
   });
 

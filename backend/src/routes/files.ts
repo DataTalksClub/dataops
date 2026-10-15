@@ -13,7 +13,7 @@ import {
   listFiles,
 } from '../db/files';
 import { CollectionCursorError, encodeCollectionCursor } from '../db/collectionPagination';
-import { saveFile, readFile, removeFile, isLocalFilesystemStorageAllowed } from '../storage';
+import { saveFile, readFile, removeFile, validateFilename, FileStorageError, MAX_TASK_FILE_BYTES } from '../storage';
 import { resolveInteractiveActor } from '../identity/actor';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
@@ -97,7 +97,9 @@ function parseMultipart(body: string, contentType: string): ParsedMultipart {
   while (true) {
     const idx = bodyBuffer.indexOf(boundaryBuffer, searchFrom);
     if (idx === -1) break;
-    positions.push(idx);
+    const followsLine = idx === 0 || (bodyBuffer[idx - 2] === 13 && bodyBuffer[idx - 1] === 10);
+    const after = bodyBuffer.subarray(idx + boundaryBuffer.length, idx + boundaryBuffer.length + 2).toString('ascii');
+    if (followsLine && (after === '\r\n' || after === '--')) positions.push(idx);
     searchFrom = idx + boundaryBuffer.length;
   }
 
@@ -137,7 +139,7 @@ function parseMultipart(body: string, contentType: string): ParsedMultipart {
       const fileContentType = ctMatch ? ctMatch[1].trim() : 'application/octet-stream';
 
       result.file = {
-        filename: filename,
+        filename: Buffer.from(filename, 'binary').toString('utf8'),
         content: Buffer.from(bodyContent),
         contentType: fileContentType,
       };
@@ -199,6 +201,7 @@ async function handleFileRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
     // Not matched within /api/files
     return jsonResponse(404, { error: 'Not found' });
   } catch (err: unknown) {
+    if (err instanceof FileStorageError) return jsonResponse(err.statusCode, { error: err.message, code: err.code });
     console.error('File route error:', err);
     return jsonResponse(500, { error: 'Internal server error' });
   }
@@ -218,7 +221,8 @@ async function handleUpload(event: LambdaEvent, client: DynamoDBDocumentClient):
     return jsonResponse(400, { error: 'Request body is required' });
   }
 
-  const parsed = parseMultipart(event.body, contentType);
+  const body = event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString('binary') : event.body;
+  const parsed = parseMultipart(body, contentType);
 
   const taskId = parsed.fields.taskId;
   if (!taskId) {
@@ -228,6 +232,7 @@ async function handleUpload(event: LambdaEvent, client: DynamoDBDocumentClient):
   if (!parsed.file || !parsed.file.filename) {
     return jsonResponse(400, { error: 'Missing required field: file' });
   }
+  validateFilename(parsed.file.filename);
 
   // Validate that task exists
   const task = await getTask(client, taskId);
@@ -250,15 +255,7 @@ async function handleUpload(event: LambdaEvent, client: DynamoDBDocumentClient):
     }
   }
 
-  if (!isLocalFilesystemStorageAllowed()) {
-    return jsonResponse(409, {
-      error: 'Production file upload requires configured durable storage; local filesystem storage is disabled',
-    });
-  }
-
-  // Save file to filesystem
-  const storagePath = saveFile(taskId, parsed.file.filename, parsed.file.content);
-  const storageUri = `local-dev://${storagePath.replace(/\\/g, '/')}`;
+  const location = await saveFile(taskId, parsed.file.filename, parsed.file.content, parsed.file.contentType);
 
   // Create metadata record
   const fileData: Record<string, unknown> = {
@@ -266,9 +263,7 @@ async function handleUpload(event: LambdaEvent, client: DynamoDBDocumentClient):
     cardId: task.cardId,
     filename: parsed.file.filename,
     category,
-    storagePath,
-    storageProvider: 'local-dev',
-    storageUri,
+    ...location,
     contentType: parsed.file.contentType,
     checksum: `sha256:${crypto.createHash('sha256').update(parsed.file.content).digest('hex')}`,
     sizeBytes: parsed.file.content.length,
@@ -278,7 +273,13 @@ async function handleUpload(event: LambdaEvent, client: DynamoDBDocumentClient):
     fileData.tags = tags;
   }
 
-  const fileRecord = await createFile(client, fileData);
+  let fileRecord;
+  try { fileRecord = await createFile(client, fileData); }
+  catch (error) {
+    // Do not leave an untracked current object when the metadata write fails.
+    try { await removeFile(location); } catch { console.error('Failed to clean up task-file upload after metadata failure'); }
+    throw error;
+  }
 
   return jsonResponse(201, { file: fileRecord });
 }
@@ -341,22 +342,25 @@ async function handleDownload(id: string, client: DynamoDBDocumentClient): Promi
   }
 
   try {
-    if (!isLocalFilesystemStorageAllowed()) {
-      return jsonResponse(409, { error: 'Local filesystem downloads are disabled outside local/test mode' });
-    }
-    const content = readFile(file.storagePath);
-    const mimeType = getMimeType(file.filename);
+    const content = await readFile(file);
+    if (content.length > MAX_TASK_FILE_BYTES) throw new FileStorageError('File exceeds the 4 MiB download limit', 413, 'file_too_large');
+    const mimeType = file.contentType || getMimeType(file.filename);
+    const filename = encodeURIComponent(file.filename).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 
     return {
       statusCode: 200,
       headers: {
         'Content-Type': mimeType,
-        'Content-Disposition': `attachment; filename="${file.filename}"`,
+        'Content-Disposition': `attachment; filename="download"; filename*=UTF-8''${filename}`,
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
       },
-      body: content.toString('binary'),
+      body: content.toString('base64'),
+      isBase64Encoded: true,
     };
   } catch (err: unknown) {
-    return jsonResponse(404, { error: 'File not found on disk' });
+    if (err instanceof FileStorageError) return jsonResponse(err.statusCode, { error: err.message, code: err.code });
+    throw err;
   }
 }
 
@@ -369,10 +373,8 @@ async function handleDelete(id: string, client: DynamoDBDocumentClient): Promise
     return jsonResponse(404, { error: 'File not found' });
   }
 
-  // Remove local file content when this legacy/local-dev record points to disk.
-  if (file.storagePath && isLocalFilesystemStorageAllowed()) {
-    removeFile(file.storagePath);
-  }
+  // A storage failure must preserve the metadata so the deletion can be retried.
+  await removeFile(file);
 
   // Remove metadata from database
   await deleteFile(client, id);

@@ -393,6 +393,39 @@ Resources:
             Resource: [!GetAtt BookkeepingDocumentsBucket.Arn, !Sub "${BookkeepingDocumentsBucket.Arn}/*"]
             Condition: { Bool: { "aws:SecureTransport": false } }
 
+  TaskFilesBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, IgnorePublicAcls: true, BlockPublicPolicy: true, RestrictPublicBuckets: true }
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - Id: CleanupIncompleteUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 }
+          - Id: RetainNoncurrentProofs
+            Status: Enabled
+            NoncurrentVersionTransitions: [{ StorageClass: GLACIER, TransitionInDays: 90 }]
+
+  TaskFilesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TaskFilesBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt TaskFilesBucket.Arn, !Sub "${TaskFilesBucket.Arn}/*"]
+            Condition: { Bool: { "aws:SecureTransport": false } }
+
   EmailDocumentsKey:
     Type: AWS::KMS::Key
     DeletionPolicy: Retain
@@ -1305,6 +1338,10 @@ Resources:
             Resource: !Sub ${BookkeepingDocumentsBucket.Arn}/*
         - Statement:
             Effect: Allow
+            Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+            Resource: !Sub ${TaskFilesBucket.Arn}/tasks/*
+        - Statement:
+            Effect: Allow
             Action: [s3:GetObject]
             Resource:
               - !Sub ${EmailDocumentsBucket.Arn}/${EmailDocumentSourcePrefix}*
@@ -1339,6 +1376,8 @@ Resources:
           NEWSLETTER_OPEN_ALERT_LEAD_DAYS: !Ref NewsletterOpenAlertLeadDays
           NEWSLETTER_WORKFLOW_ALERT_LEAD_DAYS: !Ref NewsletterWorkflowAlertLeadDays
           BOOKKEEPING_DOCUMENTS_BUCKET: !Ref BookkeepingDocumentsBucket
+          TASK_FILES_BUCKET: !Ref TaskFilesBucket
+          DATAOPS_FILE_STORAGE_PROVIDER: s3
           BOOKKEEPING_DOCUMENTS_KMS_KEY: !Ref BookkeepingDocumentsKey
           DATAOPS_EXPORT_ARCHIVE_BUCKET: !Ref DataOpsExportArchiveBucket
           DATAOPS_EXPORT_ARCHIVE_PREFIX: !Ref ExportArchivePrefix
