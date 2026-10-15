@@ -208,9 +208,7 @@
   .form-feedback-status {
   color: var(--dk-success-text);
 }/* Operational overview building blocks. They are also used by the queue and
-   quality drill-downs, so the same row language survives outside Today. */.ops-surface-header {
-  min-width: 0;
-}.ops-section-header {
+   quality drill-downs, so the same row language survives outside Today. */.ops-section-header {
   justify-content: space-between;
   border-bottom: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);
@@ -429,12 +427,6 @@ body[data-workspace-view="sponsors"] .document-list,
 body[data-workspace-view="newsletter"] .document-list,
 body[data-workspace-view="calendar"] .document-list {
     max-width: none;
-  }.bookkeeping-header,
-.crm-header,
-.planner-header {
-    display: grid;
-    gap: 14px;
-    padding-bottom: 16px;
   }.bookkeeping-header h2:not([class*="dk-"]),
 .crm-header h1:not([class*="dk-"]),
 .crm-header h2:not([class*="dk-"]),

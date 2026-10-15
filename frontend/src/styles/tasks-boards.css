@@ -661,12 +661,6 @@ body[data-workspace-view="tasks"] .ops-queue-row:focus-within .ops-queue-skip {
 }body[data-workspace-view="tasks"] .ops-workflows-board {
   --cards-board-width: var(--task-content-width);
   gap: 16px;
-}body[data-workspace-view="tasks"] .workflow-board-header {
-  align-items: center;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--task-panel-radius);
-  background: var(--dk-bg-surface);
-  padding: var(--dk-space-4) var(--dk-space-5);
 }body[data-workspace-view="tasks"] .workflow-board-header p:not([class*="dk-"]) {
   max-width: 620px;
   margin-top: var(--dk-space-1);

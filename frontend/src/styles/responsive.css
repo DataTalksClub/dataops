@@ -10,7 +10,7 @@
   }.library-view {
     padding: 14px 14px 28px;
   }.newsletter-surface,
-.calendar-surface { gap: 16px; }.planner-header { display: grid; gap: 12px; padding-bottom: 16px; }.planner-heading h1:not([class*="dk-"]) { font-size: var(--dk-text-xl); }.planner-heading > p:not([class*="dk-"]):last-child { margin-top: 4px; font-size: 13px; }.planner-header > .primary-button,
+.calendar-surface { gap: 16px; }.planner-heading h1:not([class*="dk-"]) { font-size: var(--dk-text-xl); }.planner-heading > p:not([class*="dk-"]):last-child { margin-top: 4px; font-size: 13px; }.planner-header > .primary-button,
 .calendar-period-actions button,
 .newsletter-slot-actions button,
 .planner-alert button,
@@ -32,8 +32,6 @@
 .calendar-overlay span,
 .calendar-holiday > span { font-size: 12px; white-space: normal; }.newsletter-slot-row { grid-template-columns: 104px minmax(0, 1fr); align-items: start; gap: 10px 14px; }.newsletter-slot-actions { grid-column: 2; flex-wrap: wrap; }.newsletter-slot-actions a { display: inline-flex; min-height: 44px; align-items: center; }body[data-workspace-view="tasks"] .library-view {
     overflow-x: hidden;
-  }.workflow-board-header {
-    align-items: flex-start;
   }.workflow-board-header h1:not([class*="dk-"]) {
     font-size: 22px;
   }.workflow-board-header p:not([class*="dk-"]) {
@@ -413,14 +411,7 @@ body[data-workspace-view="sponsors"] .library-view {
     display: flex !important;
     flex-direction: column;
   }
-  .newsletter-surface > .planner-header {
-    order: 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 6px;
-    padding: 0 !important;
-  }
+
   .newsletter-surface > .newsletter-toolbar {
     order: 1;
     margin: 0;
@@ -469,12 +460,7 @@ body[data-workspace-view="sponsors"] .library-view {
   .calendar-layers { gap: 6px; }
 
   /* ---- Review: compact header and summary tiles ---- */
-  .review-header {
-    padding: 0 0 6px !important;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
+
   .review-controls {
     margin: 6px 0 !important;
   }

@@ -201,13 +201,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
   font-family: var(--dk-font-mono);
   font-size: 12px;
 }/* Cards uses the flat family header like every other route: no boxed
-   container, actions in a plain toolbar row. */body[data-workspace-view="tasks"] .workflow-board-header {
-  border: 0;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-  padding: 0 4px;
-}/* Board actions and artifact links meet the 44px mobile target. */
+   container, actions in a plain toolbar row. *//* Board actions and artifact links meet the 44px mobile target. */
 @media (max-width: 820px) {body[data-workspace-view="tasks"] .workflow-board-actions > button {
     min-height: 44px;
   }body[data-workspace-view="tasks"] .ops-state-list .ops-data-row a {

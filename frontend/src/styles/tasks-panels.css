@@ -1020,10 +1020,6 @@ body[data-workspace-view="tasks"] .recurring-form-footer button {
   }body[data-workspace-view="tasks"] .task-route-context p,
 body[data-workspace-view="tasks"] .task-context-state {
     grid-column: auto;
-  }body[data-workspace-view="tasks"] .workflow-board-header {
-    display: grid;
-    align-items: start;
-    gap: 12px;
   }body[data-workspace-view="tasks"] .workflow-board-actions {
     width: 100%;
   }body[data-workspace-view="tasks"] .workflow-board-actions > button {

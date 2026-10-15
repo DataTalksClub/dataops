@@ -352,7 +352,7 @@ body[data-view="library"] .library-view {
   max-width: none;
   margin: 0 auto;
   padding: 0;
-}.operating-model-header { margin-bottom: 24px; }.operating-model-header h1:not([class*="dk-"]) {
+}.operating-model-header h1:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: var(--dk-text-page);

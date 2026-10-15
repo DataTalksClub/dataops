@@ -195,14 +195,6 @@
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-}.workflow-board-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  width: min(100%, var(--cards-board-width));
-  justify-self: center;
-  padding: 0 4px;
 }.workflow-board-eyebrow {
   display: block;
   margin-bottom: 3px;
@@ -253,7 +245,7 @@ body[data-view="library"] .review-surface {
 }
 
 @media (max-width: 820px) {
-  body[data-view="library"] .library-view .document-list .calendar-page-header { margin: 0; }
+
   .document-list > .calendar-surface { gap: 6px; }
 }
 

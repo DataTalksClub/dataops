@@ -23,11 +23,8 @@ body[data-workspace-view="sponsors"] .document-list {
   letter-spacing: -0.025em;
 }.bookkeeping-header > div,
 .crm-header > div,
-.planner-heading,
-.ops-surface-admin .ops-surface-header,
-.ops-surface-users .ops-surface-header{
-  min-width: 0;
-}.bookkeeping-header > div > p:not([class*="dk-"]):last-child,
+.planner-heading { min-width: 0; }
+.bookkeeping-header > div > p:not([class*="dk-"]):last-child,
 .crm-header > div > p:not([class*="dk-"]):last-child,
 .planner-heading > p:not([class*="dk-"]):last-child,
 .ops-surface-admin .ops-surface-header p:not([class*="dk-"]),
@@ -324,9 +321,7 @@ body[data-workspace-view="sponsors"] .document-list {
   background: var(--dk-bg-muted);
   padding: 14px 16px;
 }/* Newsletter and Calendar: the planner controls should feel like one
-   instrument panel, while the content remains a calm list/grid below it. */.planner-header {
-  padding-bottom: 22px;
-}.planner-heading h1:not([class*="dk-"]) {
+   instrument panel, while the content remains a calm list/grid below it. */.planner-heading h1:not([class*="dk-"]) {
   font-size: 34px;
 }.newsletter-filters,
 .calendar-controls {
