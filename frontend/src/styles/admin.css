@@ -625,7 +625,7 @@ body[data-workspace-view="calendar"] .document-list {
 .ops-default-assignee {
   display: grid;
   gap: 8px;
-  margin-bottom: 24px;
+  margin-top: 24px;
 }
 .ops-default-assignee-hint {
   margin: 0;

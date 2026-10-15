@@ -175,7 +175,6 @@ export function createAdminSurface(context) {
     // The summary above already names the outage and owns the retry; repeating
     // it here would be a second voice for the same fact.
     if (!usersSnapshot.loaded) return section;
-    section.append(renderDefaultAssignee());
     // Add user rides on the account list it adds to; only admins see it.
     section.append(globalThis.dakitCollection.header({
       title: "Accounts",
@@ -217,6 +216,9 @@ export function createAdminSurface(context) {
     table.append(tbody);
     tableWrap.append(table);
     section.append(tableWrap);
+    // A workspace setting, not the page's subject: it follows the account
+    // list so the list itself starts near the top, also on a phone.
+    section.append(renderDefaultAssignee());
     return section;
   }
 
