@@ -40,7 +40,8 @@ import { createTask, getTask } from '../src/db/tasks';
 import { listUsers } from '../src/db/users';
 import { resolveDefaultAssigneeId } from '../src/db/workspaceSettings';
 import { extractTitleLinks } from '../src/taskMaterials';
-import type { TaskMaterial, User } from '../src/types';
+import type { TaskMaterial, Template, User } from '../src/types';
+import { templateLinkage } from '../src/templates/cardTemplateProjection';
 import { createArtifact, getArtifact } from '../src/db/artifacts';
 import { createDueFollowUpNotifications } from '../src/db/notifications';
 import { createRecurringConfig, listRecurringConfigs } from '../src/db/recurring';
@@ -818,6 +819,8 @@ interface TrelloArtifactPlan {
 interface TrelloActiveCardPlan {
   sourceKey: string;
   listName: string;
+  /** The Template type the Trello card's tag or label names. */
+  templateType: string;
   card: Record<string, unknown>;
   tasks: Record<string, unknown>[];
   artifacts: TrelloArtifactPlan[];
@@ -1178,7 +1181,7 @@ function planTrelloActiveCard(
     warnings.push(`unresolved workflow type: ${trelloCard.name}`);
   }
 
-  return { sourceKey, listName, card, tasks, artifacts, warnings };
+  return { sourceKey, listName, templateType, card, tasks, artifacts, warnings };
 }
 
 async function createTrelloActiveCardPlan(
@@ -1237,12 +1240,30 @@ async function createTrelloActiveCardPlan(
   }));
 }
 
+/**
+ * Every Card is instantiated from a Template: an imported Card is linked to the
+ * Template its tag names, and its Trello checklist becomes the Card's own Tasks.
+ * The import refuses before writing anything when a card names no Template.
+ */
+function linkTrelloPlansToTemplates(plans: TrelloActiveCardPlan[], templates: Template[]): void {
+  const unmapped = plans.filter((plan) => !templates.some((template) => template.type === plan.templateType));
+  if (unmapped.length > 0) {
+    const lines = unmapped.map((plan) => `  ${String(plan.card.title)} (type "${plan.templateType}")`);
+    throw new Error(`Trello cards name no deployed Template; map them or skip them:\n${lines.join('\n')}`);
+  }
+  for (const plan of plans) {
+    const template = templates.find((candidate) => candidate.type === plan.templateType)!;
+    Object.assign(plan.card, templateLinkage(template));
+  }
+}
+
 async function migrateTrelloActiveCards(
   client: DynamoDBDocumentClient | null,
   cards: TrelloCard[],
   boardChecklists: TrelloChecklist[],
   listMap: Record<string, TrelloList>,
-  skippedRecords: TrelloSkippedCard[]
+  skippedRecords: TrelloSkippedCard[],
+  templates: Template[],
 ): Promise<TrelloActiveCardReport> {
   const report = emptyTrelloActiveCardReport();
   report.skippedRecords.push(...skippedRecords);
@@ -1264,8 +1285,11 @@ async function migrateTrelloActiveCards(
     report.stats.waitingTasks += plan.tasks.filter((task) => task.status === 'waiting').length;
     report.stats.proofRequirements += plan.tasks.filter((task) => task.proofRequirement).length;
     for (const warning of plan.warnings) addReportWarning(report, warning, `${plan.sourceKey}`);
+  }
 
-    if (client) await createTrelloActiveCardPlan(client, plan, report);
+  linkTrelloPlansToTemplates(report.plans, templates);
+  if (client) {
+    for (const plan of report.plans) await createTrelloActiveCardPlan(client, plan, report);
   }
 
   if (client) {
@@ -1974,7 +1998,8 @@ async function main() {
       selection.activeCards,
       allChecklists,
       selection.listMap,
-      selection.skippedRecords
+      selection.skippedRecords,
+      await listTemplates(client || await getClient()),
     );
     for (const plan of trelloReport.plans) {
       const tags = plan.card.tags ? ` tags=${JSON.stringify(plan.card.tags)}` : '';
@@ -2062,6 +2087,7 @@ export {
   trelloChecklistItemsToTasks,
   selectActiveTrelloCards,
   planTrelloActiveCard,
+  linkTrelloPlansToTemplates,
   migrateTrelloActiveCards,
   emptyTrelloActiveCardReport,
   trelloTemplateToAppTemplate,
