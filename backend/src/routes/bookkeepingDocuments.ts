@@ -401,12 +401,19 @@ export async function handleBookkeepingDocumentRoutes(
     const doc = await getBookkeepingItem(client, "document", download[1]);
     if (!doc || doc.status !== "active")
       return json(404, { error: "Document not found" });
+    // ?disposition=inline lets the browser show the verified PDF in a tab
+    // ("View invoice"); the default stays a download. Both are the same
+    // short-lived signed URL to the private object.
+    const inline = event.queryStringParameters?.disposition === "inline";
+    const filename = String(doc.originalFilename || `${doc.documentType || "document"}-${doc.id}.pdf`)
+      .replace(/["\\]/g, "_");
     const downloadUrl = await signUrl(
       s3,
       new GetObjectCommand({
         Bucket: process.env.BOOKKEEPING_DOCUMENTS_BUCKET,
         Key: String(doc.s3Key),
-        ResponseContentDisposition: `attachment; filename="${String(doc.originalFilename).replace(/["\\]/g, "_")}"`,
+        ResponseContentDisposition: `${inline ? "inline" : "attachment"}; filename="${filename}"`,
+        ...(inline ? { ResponseContentType: "application/pdf" } : {}),
       }),
       { expiresIn: 300 },
     );
