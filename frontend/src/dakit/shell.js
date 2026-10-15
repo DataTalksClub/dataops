@@ -1,4 +1,4 @@
-/* dakit 0.2.0 4dbea95 */
+/* dakit 0.2.0 70faf9e */
 // Dakit app shell behaviour — the contract is docs/shell.md.
 //
 // Load once per page, at the end of <body> (no defer, so the persisted
@@ -67,7 +67,7 @@
     }
   }
 
-  function toggleDrawer(shell, open = shell.dataset.drawer !== "open") {
+  function toggleDrawer(shell, open = shell.dataset.drawer !== "open", { restoreFocus = true } = {}) {
     const sidebar = shell.querySelector(".dk-sidebar");
     const scrim = shell.querySelector(".dk-scrim");
     const toggles = shell.querySelectorAll("[data-dk-drawer-toggle]");
@@ -82,17 +82,18 @@
       if (scrim) scrim.hidden = false;
       outside.forEach((el) => { el.inert = true; });
       toggles.forEach((t) => t.setAttribute("aria-expanded", "true"));
-      // The drawer's visibility flips through a transition (the slide, or the
-      // reduced-motion 0.01ms one from base.css), so on this frame it's still
-      // hidden and can't take focus. Focus as soon as the target is visible.
+      // The open drawer is visible at once (shell.css transitions only its
+      // transform on open), so focus moves in this task. Should an app style
+      // still delay visibility, retry until the target is visible, bounded by
+      // time rather than frame count: a busy page can run many frames before
+      // a transition starts, and the modal drawer must never keep focus on body.
       const target = sidebar && (sidebar.querySelector('[aria-current="page"]') || focusables(sidebar)[0]);
-      let frames = 0;
+      const deadline = performance.now() + 2000;
       const focusWhenVisible = () => {
         if (shell.dataset.drawer !== "open" || !target) return;
-        // Check the target itself: under base.css's reduced-motion rule each
-        // element transitions its own inherited visibility.
+        if (sidebar.contains(document.activeElement) && document.activeElement !== sidebar) return;
         if (getComputedStyle(target).visibility === "visible") target.focus();
-        else if (++frames < 30) requestAnimationFrame(focusWhenVisible);
+        if (document.activeElement !== target && performance.now() < deadline) requestAnimationFrame(focusWhenVisible);
       };
       focusWhenVisible();
     } else {
@@ -104,7 +105,7 @@
       toggles.forEach((t) => t.setAttribute("aria-expanded", "false"));
       const back = drawerReturn && drawerReturn.isConnected && visible(drawerReturn) ? drawerReturn : toggles[0];
       drawerReturn = null;
-      if (back) back.focus();
+      if (restoreFocus && back) back.focus();
     }
     return open;
   }
@@ -145,9 +146,20 @@
     if (!popover) return;
     closePopovers({ restoreFocus: false });
     hideTooltip();
+    let returnTo = trigger || triggersFor(id)[0];
+    // A trigger inside the open mobile drawer (the brand switcher): the drawer
+    // is modal and popovers are its siblings, so the popover would sit
+    // outside the dialog that traps focus. The drawer hands over instead: it
+    // closes without moving focus, the popover opens as the sheet under the
+    // bar, and closing it returns focus to the drawer's menu button.
+    const shell = returnTo && returnTo.closest(".dk-shell");
+    if (shell && shell.dataset.drawer === "open" && returnTo.closest(".dk-sidebar")) {
+      toggleDrawer(shell, false, { restoreFocus: false });
+      returnTo = shell.querySelector("[data-dk-drawer-toggle]") || returnTo;
+    }
     popover.hidden = false;
     triggersFor(id).forEach((t) => t.setAttribute("aria-expanded", "true"));
-    open = { popover, trigger: trigger || triggersFor(id)[0] };
+    open = { popover, trigger: returnTo };
     const autofocus = popover.querySelector("[data-dk-autofocus]");
     if (autofocus) { autofocus.focus(); return; }
     if (!keyboard && popover.matches(".dk-menu")) {
@@ -338,21 +350,81 @@
     }
   });
 
-  // Outside pointer-down closes the open popover; focus returns to the trigger
-  // only when focus was inside the popover.
+  // A real control the person can land on. A tabindex="-1" container (main,
+  // a dialog body) or <body> is background, not a destination.
+  const CONTROL = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [contenteditable=""], [contenteditable="true"], [tabindex]:not([tabindex^="-"])';
+  const ownsFocus = (popover, el) => !!el && (popover.contains(el) || !!el.closest?.(`[data-dk-popover-trigger="${CSS.escape(popover.id)}"]`));
+
+  // Outside pointer-down closes the open popover. When focus was inside it,
+  // focus returns to the trigger — unless the click lands on a control, which
+  // keeps the focus the browser gives it. The browser moves focus after
+  // pointerdown (to the clicked control, or to a tabindex="-1" background such
+  // as main), so the return waits a task and then checks where focus landed.
   document.addEventListener("pointerdown", (event) => {
     if (!open) return;
-    if (open.popover.contains(event.target) || event.target.closest(`[data-dk-popover-trigger="${CSS.escape(open.popover.id)}"]`)) return;
-    closePopovers({ restoreFocus: open.popover.contains(document.activeElement) });
+    const { popover, trigger } = open;
+    if (ownsFocus(popover, event.target)) return;
+    const restore = popover.contains(document.activeElement);
+    closePopovers({ restoreFocus: false });
+    if (!restore || !trigger || !trigger.isConnected) return;
+    setTimeout(() => {
+      // The click may have opened another popover (its trigger), which owns focus now.
+      if (open) return;
+      const now = document.activeElement;
+      if (now && now !== document.body && now.matches(CONTROL)) return;
+      trigger.focus();
+    }, 0);
   });
 
-  // Non-modal: tabbing out closes without trapping.
+  // A press inside the open popover. Pressing its non-focusable parts (text, a
+  // row's padding) drops focus to <body> without the person leaving it.
+  let pressedInside = false;
+  document.addEventListener("pointerdown", (event) => {
+    pressedInside = !!open && open.popover.contains(event.target);
+  }, true);
+  document.addEventListener("keydown", () => { pressedInside = false; }, true);
+
+  // Non-modal: tabbing out closes without trapping. relatedTarget is null when
+  // focus leaves the document (Tab past the last element into browser chrome)
+  // or goes to something unfocusable, so that case is settled a task later
+  // from where focus actually is. A window blur keeps activeElement inside the
+  // popover, so switching apps does not close it.
+  //
+  // Focus can also be dropped inside the popover rather than moved out of it:
+  // the focused control went busy (disabled), was hidden, or was re-rendered
+  // away, or a press landed on the popover's own background. The document
+  // keeps focus and it falls to <body>. That is not the person leaving, so the
+  // popover stays open and focus is caught on its container, where the app
+  // can hand it on (to the re-rendered control, an error) and the keyboard
+  // still works. Tab into browser chrome leaves the departed control intact,
+  // so it still closes.
   document.addEventListener("focusout", (event) => {
     if (!open || !open.popover.contains(event.target)) return;
+    const { popover } = open;
+    const left = event.target;
     const next = event.relatedTarget;
-    if (next && !open.popover.contains(next) && !next.closest(`[data-dk-popover-trigger="${CSS.escape(open.popover.id)}"]`)) {
-      closePopovers({ restoreFocus: false });
+    if (next) {
+      if (!ownsFocus(popover, next)) closePopovers({ restoreFocus: false });
+      return;
     }
+    setTimeout(() => {
+      if (!open || open.popover !== popover) return;
+      const now = document.activeElement;
+      if (ownsFocus(popover, now)) return;
+      const dropped = !left.isConnected || left.disabled || !visible(left) || pressedInside;
+      if (dropped && document.hasFocus() && (!now || now === document.body)) {
+        if (!popover.hasAttribute("tabindex")) popover.tabIndex = -1;
+        popover.focus({ preventScroll: true });
+        return;
+      }
+      closePopovers({ restoreFocus: false });
+    }, 0);
+  });
+
+  // Focus arriving anywhere outside the open popover and its trigger (for
+  // example Tab wrapping back in from browser chrome) closes it.
+  document.addEventListener("focusin", (event) => {
+    if (open && !ownsFocus(open.popover, event.target)) closePopovers({ restoreFocus: false });
   });
 
   document.addEventListener("keydown", (event) => {
