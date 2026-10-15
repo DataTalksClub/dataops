@@ -148,6 +148,7 @@
     "src/dakit/dialogs.js",
     "src/dakit/shell.js",
     "src/dakit/tabs.js",
+    "src/dakit/tag-input.js",
     "src/dakit/split.js",
     "src/dakit/collection.js",
     "src/surfaces/split-back-icon.js",
