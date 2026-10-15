@@ -496,6 +496,14 @@ describe("Tasks surface boundary", () => {
       (note) => note.textContent,
     );
     assert.deepEqual(notes, ["Waiting for reply · Today", "Waiting for review · 14 Aug"]);
+    // The note is the title button's description, and its tooltip is the
+    // whole note, so truncation never hides what the task waits on.
+    for (const note of findAllByClass(documentList, "ops-queue-note")) {
+      assert.equal(note.dataset.note, "waiting");
+      assert.equal(note.title, note.textContent);
+      const main = note.closest(".ops-queue-main");
+      assert.equal(main.getAttribute("aria-describedby"), note.id);
+    }
     assert.match(board.textContent, /5 open, most urgent first/);
     const history = documentList.querySelector(".ops-queue-history");
     assert.equal(history.tagName, "DETAILS");
@@ -782,7 +790,11 @@ describe("Tasks surface boundary", () => {
     assert.equal(label.title, 'Complete "Review transcript" first');
     const [note] = findAllByClass(documentList, "ops-queue-note");
     assert.equal(note.textContent, "Blocked by Review transcript");
-    assert.ok(note.className.includes("is-blocked"));
+    assert.equal(note.dataset.note, "blocked");
+    assert.equal(
+      note.closest(".ops-queue-main").getAttribute("aria-describedby"),
+      note.id,
+    );
     assert.equal(requests.length, 0);
   });
 

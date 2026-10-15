@@ -795,11 +795,10 @@ export function createTaskQueue(context) {
     return cell;
   }
 
-  // The second line a row earns, and only when the task is waiting on
-  // someone. Proof requirements stay in the task panel, and instructions
-  // live behind the row's materials icon — the queue is one compact line per
-  // task so the list scans as a checklist.
-  // A date inside a note is data: mono. Words such as "Today" stay prose.
+  // The second line a row earns: what the task is waiting on or blocked by.
+  // Proof requirements stay in the task panel, and instructions live behind
+  // the row's materials icon. The line is muted and one line tall; the full
+  // text is its tooltip. A date inside a note is data: mono.
   function noteDate(text) {
     if (!/\d/.test(text)) return document.createTextNode(text);
     const date = document.createElement("span");
@@ -808,32 +807,38 @@ export function createTaskQueue(context) {
     return date;
   }
 
+  function queueNote(kind, task) {
+    const note = document.createElement("small");
+    note.className = "ops-queue-note";
+    note.dataset.note = kind;
+    // The title button's accessible name is its own label, so the note is
+    // its description rather than text the name would swallow.
+    note.id = `ops-queue-note-${task.id}`;
+    return note;
+  }
+
   function taskBlockerNote(task, today) {
     if (task.status === "done") return null;
     const blockedBy = blockedSummary(task);
+    let note = null;
     if (blockedBy) {
-      const note = document.createElement("small");
-      note.className = "ops-queue-note is-blocked";
+      note = queueNote("blocked", task);
       note.textContent = blockedBy;
       note.title = blockedReason(task);
       return note;
     }
     if (task.waitingFor) {
-      const note = document.createElement("small");
-      note.className = "ops-queue-note is-waiting";
+      note = queueNote("waiting", task);
       note.append(`Waiting for ${task.waitingFor}`);
       if (task.followUpAt) {
         note.append(" · ", noteDate(queueDueLabel(task.followUpAt, today)));
       }
-      return note;
-    }
-    if (isFollowUpDueTask(task, today)) {
-      const note = document.createElement("small");
-      note.className = "ops-queue-note";
+    } else if (isFollowUpDueTask(task, today)) {
+      note = queueNote("follow-up", task);
       note.append("Follow up ", noteDate(queueShortDate(task.followUpAt)));
-      return note;
     }
-    return null;
+    if (note) note.title = note.textContent;
+    return note;
   }
 
   function renderWorkQueueRow(task, today, cardsById) {
@@ -903,7 +908,10 @@ export function createTaskQueue(context) {
     }
     open.append(titleRow);
     const note = taskBlockerNote(task, today);
-    if (note) open.append(note);
+    if (note) {
+      open.append(note);
+      open.setAttribute("aria-describedby", note.id);
+    }
 
     // Instructions and other supporting material: one icon, never a line of
     // small text. Empty cells keep the grid column so rows stay aligned.

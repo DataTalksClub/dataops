@@ -170,6 +170,7 @@ body[data-workspace-view="tasks"] .task-context-state p {
    itself, but wide enough to read the card's title; Task takes the rest. */
 body[data-workspace-view="tasks"] .ops-queue-head,
 body[data-workspace-view="tasks"] .ops-queue-row {
+  --ops-queue-line: 2rem;
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) 28px minmax(0, 17rem) 5.5rem 4.5rem 2.75rem;
   gap: 12px;
@@ -195,6 +196,7 @@ body[data-workspace-view="tasks"] .ops-queue-head span:nth-child(5) {
    click for the title. One grid row, so every column still lines up with the
    heading above it. */
 body[data-workspace-view="tasks"] .ops-queue-row {
+  align-items: start;
   border-top: 1px solid var(--dk-border-default);
   background: var(--dk-bg-surface);
   color: var(--dk-text-primary);
@@ -203,6 +205,12 @@ body[data-workspace-view="tasks"] .ops-queue-row {
   cursor: pointer;
 }body[data-workspace-view="tasks"] .ops-queue-head + .ops-queue-row {
   border-top: 0;
+}/* Every cell sits on the row's first line, one band tall, so an optional
+   second line under the title (a waiting or blocked note) only adds height
+   below: the tick, the pill, the title and every other column stay put. */
+body[data-workspace-view="tasks"] .ops-queue-row > *,
+body[data-workspace-view="tasks"] .ops-queue-title-row {
+  min-height: var(--ops-queue-line);
 }body[data-workspace-view="tasks"] .ops-queue-row:hover {
   background: var(--dk-bg-hover);
 }/* The tick: a real checkbox wearing the checklist box. The input itself is
@@ -296,7 +304,7 @@ body[data-workspace-view="tasks"] .ops-queue-main:focus-visible strong {
 }
 body[data-workspace-view="tasks"] .ops-queue-title-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
@@ -314,16 +322,16 @@ body[data-workspace-view="tasks"] .ops-queue-tag {
   line-height: 1.6;
   text-overflow: ellipsis;
   white-space: nowrap;
-}body[data-workspace-view="tasks"] .ops-queue-note {
+}/* The second line: muted, one line, truncated (the full text is the
+   tooltip). It is never a link, so it never takes the accent colour. */
+body[data-workspace-view="tasks"] .ops-queue-note {
+  display: block;
   overflow: hidden;
-  color: var(--dk-text-faint);
+  color: var(--dk-text-muted);
   font-size: var(--dk-text-xs);
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
-}body[data-workspace-view="tasks"] .ops-queue-note.is-blocked {
-  color: var(--dk-warning-text);
-}body[data-workspace-view="tasks"] .ops-queue-note.is-waiting {
-  color: var(--dk-info-text);
 }/* Supporting material (instructions, docs pasted into the title): one icon
    button in its own narrow column, never a line of small text. Several
    materials share one trigger that opens a short menu. */
@@ -517,6 +525,9 @@ body[data-workspace-view="tasks"] .ops-queue-origin[data-source="recurring"] .op
   font-style: italic;
 }/* Due dates stay compact and align for scanning. */
 body[data-workspace-view="tasks"] .ops-queue-due {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   color: var(--dk-text-muted);
   font-size: var(--dk-text-sm);
   font-variant-numeric: tabular-nums;
@@ -645,6 +656,9 @@ body[data-workspace-view="tasks"] .ops-queue-row {
    labels would repeat what the columns used to say. */
 @media (max-width: 820px) {body[data-workspace-view="tasks"] .ops-queue-head {
     display: none;
+  }body[data-workspace-view="tasks"] .ops-queue-row > :not(.ops-queue-check),
+body[data-workspace-view="tasks"] .ops-queue-title-row {
+    min-height: 0;
   }body[data-workspace-view="tasks"] .ops-queue-row {
     grid-template-columns: var(--dk-size-touch) minmax(0, 1fr) auto auto 28px 2.75rem;
     grid-template-rows: auto auto;
