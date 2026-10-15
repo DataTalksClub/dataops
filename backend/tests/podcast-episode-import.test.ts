@@ -39,6 +39,10 @@ const merge = () =>
   });
 
 describe("podcast episode import", () => {
+  it("skips website files Jekyll does not publish", () => {
+    const slugs = readWebsiteEpisodes(fixtures).map((episode) => episode.slug);
+    assert.deepEqual(slugs, ["s30e01-synthetic-systems", "s30e02-synthetic-data-stories"]);
+  });
   it("merges website, schedule and RSS with the website owning numbering", () => {
     const { episodes, report } = merge();
     const ada = episodes.find((episode) => episode.websiteSlug === "s30e01-synthetic-systems")!;

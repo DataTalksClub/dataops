@@ -131,8 +131,10 @@ export function readWebsiteEpisodes(repo: string): WebsiteEpisode[] {
       people.set(file.replace(/\.md$/, ""), String(meta.title || meta.name || "").trim());
     }
   const dir = path.join(repo, "_podcast");
+  // Jekyll does not publish files whose name starts with "_" (drafts and the
+  // episode template), so they are not episodes.
   return readdirSync(dir)
-    .filter((name) => name.endsWith(".md"))
+    .filter((name) => name.endsWith(".md") && !name.startsWith("_"))
     .sort()
     .map((file) => {
       const meta = frontMatter(path.join(dir, file));
