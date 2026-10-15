@@ -116,7 +116,7 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
         json: {
           items: [
             {
-              provider: "newsletter-slots-readonly",
+              provider: "newsletter-issues-readonly",
               id: "slot-1",
               startDate: "2026-06-30",
               endDate: "2026-06-30",

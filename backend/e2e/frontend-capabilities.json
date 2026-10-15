@@ -800,7 +800,7 @@
       "surface": "Newsletter",
       "route": "/newsletter",
       "apiBoundaries": [
-        "/api/newsletter-slots"
+        "/api/newsletter-issues"
       ],
       "roleIds": [
         "operator",

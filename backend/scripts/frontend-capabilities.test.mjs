@@ -109,7 +109,7 @@ const REQUIRED_APIS = {
   notifications: ["/api/notifications", "/api/tasks"],
   bookkeeping: ["/api/bookkeeping/*"],
   sponsors: ["/api/sponsor-crm/*"],
-  newsletter: ["/api/newsletter-slots"],
+  newsletter: ["/api/newsletter-issues"],
   calendar: ["/api/calendar-items"],
   "process-docs": ["/docs", "/search", "/content/*", "/docs/registry", "/docs/backlinks", "/knowledge/recent"],
   admin: ["/docs/process-quality", "/knowledge/status", "/knowledge/publication"],

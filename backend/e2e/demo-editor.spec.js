@@ -25,9 +25,9 @@ async function openEditor(page, surface, viewport) {
       parsed: { frontmatter: { title: 'Synthetic editor' }, sections: [] },
     } : { documents: [{ path: 'content/testing/editor.md', title: 'Synthetic editor' }] } });
   });
-  await page.route('**/api/newsletter-slots**', (route) => route.fulfill({ json: {
-    items: [{ id: 'synthetic-editor-slot', publicationDate: '2026-10-12',
-      campaignLabel: 'Synthetic editor', status: 'draft', version: 1,
+  await page.route('**/api/newsletter-issues**', (route) => route.fulfill({ json: {
+    items: [{ id: 'synthetic-editor-issue', kind: 'weekly', label: 'Weekly #1', issueNumber: 1, publicationDate: '2026-10-12',
+      slots: { primary: { ticked: true }, secondary: { ticked: false } }, status: 'drafting', version: 1,
       planningNote: content }], alerts: [],
   } }));
   await page.goto(`${server.baseURL}/newsletter`);

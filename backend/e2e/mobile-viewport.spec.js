@@ -23,7 +23,7 @@ const VIEWPORTS = [
 // layout budget requires the primary content itself to start within the top
 // quarter of the viewport so chrome cannot crowd out the work. Routes are
 // measured against a seeded dataset (cards across stages from multiple
-// templates, tasks, sponsor organizations, newsletter slots), because empty
+// templates, tasks, sponsor organizations, newsletter issues), because empty
 // states stack differently than the boards operators actually use.
 //
 const ROUTES = [
@@ -57,7 +57,7 @@ test.beforeAll(async () => {
   const seeded = await seedOperationsData(server.baseURL);
   console.log(
     `mobile-viewport seed: ${seeded.cards} cards, ${seeded.tasks} tasks, ` +
-      `${seeded.organizations} organizations, ${seeded.slots} newsletter slots` +
+      `${seeded.organizations} organizations, ${seeded.issues} newsletter issues` +
       (seeded.failures.length ? `, failures: ${seeded.failures.join('; ')}` : ''),
   );
 });

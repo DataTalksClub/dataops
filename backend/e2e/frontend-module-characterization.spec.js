@@ -255,7 +255,7 @@ test.describe("pre-refactor frontend module characterization", () => {
     await expect(page.locator(".runtime-template-projection")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save template" })).toHaveCount(0);
     await page.goto(`${baseURL}/newsletter`);
-    await page.getByRole("button", { name: "Add slot" }).click();
+    await page.getByRole("button", { name: "Add issue" }).click();
     await expect(page.locator(".newsletter-surface dialog")).toBeVisible();
     await page.goto(`${baseURL}/calendar`);
     await page.getByRole("button", { name: "Add activity" }).click();

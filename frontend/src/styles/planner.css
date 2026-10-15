@@ -1522,4 +1522,19 @@ details.newsletter-filters .planner-filter-fields {
   padding: var(--dk-space-2) var(--dk-space-3) var(--dk-space-3);
 }
 .newsletter-slot-fields[hidden] { display: none; }
-.newsletter-slot-fields__tick { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--dk-space-2); }
+.newsletter-slot-fields .newsletter-slot-fields__tick {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--dk-space-2);
+  font-weight: 400;
+}
+.newsletter-slot-fields .newsletter-slot-fields__tick input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+}
+.newsletter-surface .planner-form-grid [hidden] { display: none; }

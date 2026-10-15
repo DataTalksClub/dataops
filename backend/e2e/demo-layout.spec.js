@@ -63,9 +63,9 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       expect(Math.abs(heading.x - canvas.x), `${route}: title left edge`).toBeLessThan(1);
       expect(canvas.x + canvas.width).toBeLessThanOrEqual(viewport.width);
       if (route === '/newsletter') {
-        // Add slot follows the view tabs it creates into.
-        await expect(header.getByRole('button', { name: 'Add slot', exact: true })).toHaveCount(0);
-        const actionButton = page.locator('.newsletter-toolbar').getByRole('button', { name: 'Add slot', exact: true });
+        // Add issue follows the view tabs it creates into.
+        await expect(header.getByRole('button', { name: 'Add issue', exact: true })).toHaveCount(0);
+        const actionButton = page.locator('.newsletter-toolbar').getByRole('button', { name: 'Add issue', exact: true });
         await expect(actionButton).toBeVisible();
         const action = await actionButton.boundingBox();
         const tabs = await page.locator('.newsletter-views').boundingBox();

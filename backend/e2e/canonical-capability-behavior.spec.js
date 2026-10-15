@@ -911,20 +911,29 @@ test.describe('canonical frontend capability behavior', () => {
     test.setTimeout(90_000);
     const { context, page } = await portalPage(browser);
     await page.goto('/newsletter');
-    await expect(page.getByText('No newsletter slots')).toBeVisible();
+    await expect(page.getByText('No newsletter issues')).toBeVisible();
     await page.goto('/calendar');
     await expect(page.getByRole('heading', { name: 'Calendar', exact: true, level: 1 })).toBeVisible();
     const id = unique('schedule');
-    const slotResponse = await context.request.post('/api/newsletter-slots', { data: {
-      publicationDate: '2026-09-03', campaignLabel: `Synthetic newsletter ${id}`, status: 'open', planningNote: 'Public-safe plan',
+    const sponsor = `Synthetic sponsor ${id}`;
+    // Every issue is created with its Card from the Template of its kind.
+    const templateFixture = await context.request.post('/__e2e__/template-fixtures', { data: {
+      name: 'Synthetic stand-alone newsletter', type: 'newsletter-standalone', triggerType: 'manual', references: [],
+      taskDefinitions: [{ refId: 'send', description: 'Send the synthetic stand-alone email', offsetDays: 0 }],
+    } });
+    expect(templateFixture.status()).toBe(201);
+    const slotResponse = await context.request.post('/api/newsletter-issues', { data: {
+      kind: 'standalone', publicationDate: '2026-09-03', status: 'planned', planningNote: 'Public-safe plan',
+      slots: { primary: { ticked: true, sponsor } },
     } });
     expect(slotResponse.status()).toBe(201);
     const slot = await json(slotResponse);
-    const invalidSlot = await context.request.post('/api/newsletter-slots', { data: { publicationDate: '2026-02-30', campaignLabel: 'Invalid', status: 'open' } });
+    expect(slot.cardId).toBeTruthy();
+    const invalidSlot = await context.request.post('/api/newsletter-issues', { data: { kind: 'weekly', publicationDate: '2026-02-30', slots: {} } });
     expect(invalidSlot.status()).toBe(400);
-    const changedSlot = await context.request.put(`/api/newsletter-slots/${slot.id}`, { data: { version: slot.version, status: 'scheduled' } });
+    const changedSlot = await context.request.put(`/api/newsletter-issues/${slot.id}`, { data: { version: slot.version, status: 'scheduled' } });
     expect(changedSlot.status()).toBe(200);
-    const slotConflict = await context.request.put(`/api/newsletter-slots/${slot.id}`, { data: { version: slot.version, status: 'sent' } });
+    const slotConflict = await context.request.put(`/api/newsletter-issues/${slot.id}`, { data: { version: slot.version, status: 'sent' } });
     expect(slotConflict.status()).toBe(409);
 
     const calendarResponse = await context.request.post('/api/calendar-items', { data: {
@@ -945,37 +954,37 @@ test.describe('canonical frontend capability behavior', () => {
 
     await page.goto('/newsletter');
     await setNewsletterDateRange(page, '2026-09-01', '2026-09-30');
-    await expect(page.getByText(`Synthetic newsletter ${id}`)).toBeVisible();
-    const scheduledSlot = page.locator('[data-slots] article', { hasText: `Synthetic newsletter ${id}` });
+    await expect(page.getByText(sponsor)).toBeVisible();
+    const scheduledSlot = page.locator('[data-slots] article', { hasText: sponsor });
     await expect(scheduledSlot.locator('.planner-status.is-info')).toHaveText('Scheduled');
-    await page.getByRole('button', { name: 'Add slot' }).click();
+    await page.getByRole('button', { name: 'Add issue' }).click();
     await page.getByRole('button', { name: 'Save issue' }).click();
     await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Invalid publicationDate');
     await page.keyboard.press('Escape');
     await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
-    const editableSlot = page.locator('[data-slots] article', { hasText: `Synthetic newsletter ${id}` });
-    await editableSlot.getByRole('button', { name: `More actions for Synthetic newsletter ${id}` }).click();
+    const editableSlot = page.locator('[data-slots] article', { hasText: sponsor });
+    await editableSlot.getByRole('button', { name: 'More actions for Stand-alone newsletter' }).click();
     await editableSlot.getByRole('menuitem', { name: 'Edit details', exact: true }).click();
-    const serverSlot = await json(await context.request.get(`/api/newsletter-slots/${slot.id}`));
-    const concurrentSlot = await context.request.put(`/api/newsletter-slots/${slot.id}`, { data: {
-      version: serverSlot.version, campaignLabel: `Server newsletter ${id}`,
+    const serverSlot = await json(await context.request.get(`/api/newsletter-issues/${slot.id}`));
+    const concurrentSlot = await context.request.put(`/api/newsletter-issues/${slot.id}`, { data: {
+      version: serverSlot.version, slots: { primary: { ticked: true, sponsor: `Server sponsor ${id}` } },
     } });
     expect(concurrentSlot.status()).toBe(200);
     await page.getByRole('button', { name: 'Save issue' }).click();
-    await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Slot changed; reload and retry');
+    await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Issue changed; reload and retry');
     await page.keyboard.press('Escape');
     await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
     await page.reload();
     await setNewsletterDateRange(page, '2026-09-01', '2026-09-30');
-    await expect(page.getByText(`Server newsletter ${id}`)).toBeVisible();
-    await setFaults(context.request, [{ method: 'GET', path: '/api/newsletter-slots', status: 503 }]);
+    await expect(page.getByText(`Server sponsor ${id}`)).toBeVisible();
+    await setFaults(context.request, [{ method: 'GET', path: '/api/newsletter-issues', status: 503 }]);
     await expandNewsletterFilters(page);
-    await page.locator('[data-status]').selectOption('open');
+    await page.locator('[data-status]').selectOption('planned');
     await expect(page.locator('.newsletter-surface [role="status"]')).toContainText('Could not load newsletter schedule');
     await clearFaults(context.request);
     await expandNewsletterFilters(page);
     await page.locator('[data-status]').selectOption('');
-    await expect(page.getByText(`Server newsletter ${id}`)).toBeVisible();
+    await expect(page.getByText(`Server sponsor ${id}`)).toBeVisible();
 
     await page.clock.setFixedTime(new Date('2026-09-03T12:00:00Z'));
     await page.goto('/calendar');
@@ -1019,7 +1028,7 @@ test.describe('canonical frontend capability behavior', () => {
     // overlay request, rather than treating the visible grid as overlay-ready.
     const refreshedOverlayResponse = await (await refreshedOverlayRequest).response();
     expect(refreshedOverlayResponse.ok()).toBe(true);
-    await expect(page.locator('[data-calendar]')).toContainText(`Server newsletter ${id}`);
+    await expect(page.locator('[data-calendar]')).toContainText(`Stand-alone newsletter · Server sponsor ${id}`);
     await setFaults(context.request, [{ method: 'GET', path: '/api/calendar-items', status: 503 }]);
     await page.locator('[data-next]').click();
     await expect(page.getByText('Calendar unavailable')).toBeVisible();
@@ -1567,7 +1576,7 @@ test.describe('canonical frontend capability behavior', () => {
     for (const endpoint of [
       '/api/artifacts/stale-capability',
       '/api/users/stale-capability',
-      '/api/newsletter-slots/stale-capability',
+      '/api/newsletter-issues/stale-capability',
       '/api/calendar-items/stale-capability',
     ]) {
       const response = await context.request.get(endpoint);

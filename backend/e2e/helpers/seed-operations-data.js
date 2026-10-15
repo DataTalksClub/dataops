@@ -2,7 +2,7 @@
  * Seeds a realistic operating dataset through the work API so layout checks
  * measure what operators actually see: cards spread across stages from
  * multiple templates, tasks on those cards, sponsor CRM organizations, and
- * newsletter slots. Idempotent: duplicates (409/200) count as seeded and
+ * newsletter issues. Idempotent: duplicates (409/200) count as seeded and
  * individual failures never throw — callers proceed with whatever landed.
  */
 async function seedOperationsData(baseURL) {
@@ -25,7 +25,7 @@ async function seedOperationsData(baseURL) {
     return date.toISOString().slice(0, 10);
   };
 
-  const result = { templates: 0, cards: 0, tasks: 0, organizations: 0, slots: 0, failures: [] };
+  const result = { templates: 0, cards: 0, tasks: 0, organizations: 0, issues: 0, failures: [] };
 
   let templateIds = [];
   try {
@@ -113,16 +113,17 @@ async function seedOperationsData(baseURL) {
 
   for (const [index, weeksAhead] of [0, 1, 2].entries()) {
     try {
-      const response = await posted('/api/newsletter-slots', {
+      const response = await posted('/api/newsletter-issues', {
+        kind: 'weekly',
         publicationDate: nextFriday(weeksAhead),
-        campaignLabel: 'DTC Weekly',
-        campaignNumber: 213 + index,
-        status: 'draft',
+        issueNumber: 213 + index,
+        status: 'drafting',
+        slots: { primary: { ticked: true }, secondary: { ticked: false } },
       });
-      if (response.ok || response.status === 200) result.slots += 1;
-      else result.failures.push(`newsletter slot +${weeksAhead}w: HTTP ${response.status}`);
+      if (response.ok || response.status === 200) result.issues += 1;
+      else result.failures.push(`newsletter issue +${weeksAhead}w: HTTP ${response.status}`);
     } catch (error) {
-      result.failures.push(`newsletter slot +${weeksAhead}w: ${error.message}`);
+      result.failures.push(`newsletter issue +${weeksAhead}w: ${error.message}`);
     }
   }
 

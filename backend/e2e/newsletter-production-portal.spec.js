@@ -28,7 +28,7 @@ test.describe("production newsletter planner", () => {
   test.afterAll(async () => {
     await stopOwnedTestServer(server);
   });
-  test("shows loading, booked/unbooked, alerts, editing, error and mobile states", async ({
+  test("shows loading, slot ticks, alerts, editing, error and mobile states", async ({
     browser,
   }) => {
     test.setTimeout(90_000);
@@ -36,86 +36,62 @@ test.describe("production newsletter planner", () => {
       page = await context.newPage();
     let release;
     const gate = new Promise((r) => (release = r)),
+      summary = (id, title, anchorDate, openTaskCount = 5) => ({
+        id, title, stage: "preparation", status: "active", anchorDate, taskCount: 6, openTaskCount,
+      }),
       items = [
         {
-          id: "slot-1",
+          id: "issue-1",
+          kind: "weekly",
+          label: "Weekly #99",
+          issueNumber: 99,
           publicationDate: "2026-12-31",
-          campaignLabel: "Synthetic Year End",
-          campaignNumber: 99,
-          status: "reserved",
-          bookedByDisplayName: "Synthetic Booker",
+          status: "planned",
+          slots: { primary: { ticked: true, sponsor: "Synthetic Booker" }, secondary: { ticked: false } },
           version: 1,
           cardId: "card-linked",
-          card: {
-            id: "card-linked",
-            title: "Newsletter #99",
-            stage: "preparation",
-            status: "active",
-            anchorDate: "2026-12-30",
-            taskCount: 6,
-            openTaskCount: 4,
-          },
+          card: summary("card-linked", "31 Dec · #99 · Synthetic Booker", "2026-12-30", 4),
         },
         {
-          id: "slot-2",
+          id: "issue-2",
+          kind: "weekly",
+          label: "Weekly #100",
+          issueNumber: 100,
           publicationDate: "2027-01-01",
-          campaignLabel: "Synthetic New Year",
-          status: "open",
+          status: "planned",
+          slots: { primary: { ticked: true }, secondary: { ticked: false } },
           version: 1,
+          cardId: "card-2",
+          card: summary("card-2", "1 Jan · #100", "2027-01-01"),
         },
       ];
     let conflict = false;
-    const summary = (card) => ({
-      id: card.id, title: card.title, stage: "preparation", status: "active",
-      anchorDate: card.anchorDate, taskCount: 5, openTaskCount: 5,
-    });
-    const freeCard = {
-      id: "card-free", title: "Newsletter spare", templateId: "tpl-newsletter",
-      stage: "preparation", status: "active", anchorDate: "2027-01-05",
-    };
-    await page.route("**/api/templates", (route) =>
-      route.fulfill({ json: { templates: [{ id: "tpl-newsletter", type: "newsletter", name: "Newsletter" }] } }),
-    );
-    await page.route("**/api/cards?**", (route) =>
-      route.fulfill({
-        json: {
-          cards: {
-            items: [
-              freeCard,
-              { ...freeCard, id: "card-linked", title: "Newsletter #99" },
-              { ...freeCard, id: "card-event", title: "Webinar", templateId: "tpl-event" },
-            ],
-          },
-        },
-      }),
-    );
-    await page.route("**/api/newsletter-slots**", async (route) => {
+    await page.route("**/api/newsletter-issues**", async (route) => {
       await gate;
       const request = route.request(),
         method = request.method();
-      if (method === "POST" && request.url().endsWith("/card")) {
-        const id = request.url().split("/").at(-2),
-          item = items.find((entry) => entry.id === id),
-          card = { id: `card-for-${id}`, title: `Newsletter for ${item.campaignLabel}`, anchorDate: item.publicationDate };
-        Object.assign(item, { cardId: card.id, card: summary(card), version: item.version + 1 });
-        return route.fulfill({ status: 201, json: { slot: item, card: item.card } });
-      }
       if (method === "POST") {
         const value = request.postDataJSON();
-        items.push({ id: "slot-created", version: 1, ...value });
-        return route.fulfill({ status: 201, json: items.at(-1) });
+        const created = {
+          id: "issue-created", version: 1, label: `Weekly #${value.issueNumber}`, ...value,
+          cardId: "card-created", card: summary("card-created", "Created card", value.publicationDate),
+        };
+        items.push(created);
+        return route.fulfill({ status: 201, json: created });
       }
       if (method === "PUT") {
         if (conflict)
           return route.fulfill({
             status: 409,
-            json: { error: "Slot changed; reload and retry" },
+            json: { error: "Issue changed; reload and retry" },
           });
         const value = request.postDataJSON(),
           id = request.url().split("/").at(-1),
           item = items.find((entry) => entry.id === id);
-        Object.assign(item, value, { version: item.version + 1 });
-        if ("cardId" in value) item.card = value.cardId ? summary(freeCard) : null;
+        const slots = { ...item.slots, ...(value.slots || {}) };
+        Object.assign(item, value, { slots, version: item.version + 1 });
+        if (value.slots?.secondary?.ticked) item.card = { ...item.card, taskCount: 14, openTaskCount: 12 };
+        if (value.status === "cancelled") Object.assign(item, { cardId: undefined, card: null });
         return route.fulfill({ json: item });
       }
       const url = new URL(request.url()),
@@ -127,9 +103,9 @@ test.describe("production newsletter planner", () => {
             : items,
           alerts: [
             {
-              reasonCode: "near-term-open-unbooked",
+              reasonCode: "near-term-open-slot",
               severity: "warning",
-              slotId: "slot-2",
+              issueId: "issue-2",
             },
           ],
         },
@@ -137,38 +113,24 @@ test.describe("production newsletter planner", () => {
     });
     await gotoOwnedNewsletterPage(page);
     await page.getByRole("link", { name: "Newsletter" }).click();
-    await expect(page.getByText("Loading newsletter slots…")).toBeVisible();
+    await expect(page.getByText("Loading newsletter issues…")).toBeVisible();
     await page.screenshot({ path: ".tmp/newsletter-production-loading.png" });
     release();
-    await expect(page.getByText("Synthetic Year End")).toBeVisible();
-    await expect(page.locator("[data-slots]")).toContainText(
-      "No sponsor",
-    );
-    await expect(page.getByText("An open slot needs booking soon")).toBeVisible();
-    const linkedRow = page.locator('[data-slot-id="slot-1"]');
-    await expect(linkedRow.locator(".newsletter-card-chip")).toContainText("Newsletter #99");
+    await expect(page.getByRole("heading", { name: "Weekly #99" })).toBeVisible();
+    await expect(page.getByText("A slot needs a sponsor soon")).toBeVisible();
+    const linkedRow = page.locator('article[data-issue-id="issue-1"]');
+    await expect(linkedRow.locator(".newsletter-slot-ticks")).toContainText("Primary: Synthetic Booker");
+    await expect(linkedRow.locator(".newsletter-slot-ticks")).toContainText("Secondary: open");
+    await expect(linkedRow.locator(".newsletter-card-chip")).toContainText("31 Dec · #99 · Synthetic Booker");
     await expect(linkedRow.locator(".newsletter-card-chip")).toContainText("4/6");
     await expect(linkedRow.locator(".newsletter-card-chip")).toHaveAttribute("href", "/cards?cardId=card-linked");
     await expect(linkedRow.locator("[data-card-date-mismatch]")).toHaveText("Card dated 30 Dec");
-    const freeRow = page.locator('[data-slot-id="slot-2"]');
-    await freeRow.getByRole("button", { name: "Link card…" }).click();
-    const linkDialog = page.locator("[data-card-link-dialog]");
-    await expect(linkDialog).toBeVisible();
-    await expect(linkDialog).toContainText("Newsletter spare");
-    await expect(linkDialog).not.toContainText("Newsletter #99");
-    await expect(linkDialog).not.toContainText("Webinar");
-    await expect(linkDialog.getByRole("button", { name: "Unlink card" })).toBeHidden();
-    await linkDialog.getByLabel(/Newsletter spare/).check();
-    await linkDialog.getByRole("button", { name: "Link card", exact: true }).click();
-    await expect(linkDialog).toBeHidden();
-    await expect(freeRow.locator(".newsletter-card-chip")).toContainText("Newsletter spare");
-    await freeRow.getByRole("button", { name: /More actions for/ }).click();
-    await freeRow.getByRole("menuitem", { name: "Change card link…" }).click();
-    await linkDialog.getByRole("button", { name: "Unlink card" }).click();
-    await expect(linkDialog).toBeHidden();
-    await freeRow.getByRole("button", { name: "Create card" }).click();
-    await expect(freeRow.locator(".newsletter-card-chip")).toContainText("Newsletter for Synthetic New Year");
-    await expect(freeRow.getByRole("button", { name: "Create card" })).toHaveCount(0);
+    const openRow = page.locator('article[data-issue-id="issue-2"]');
+    await expect(openRow.locator(".newsletter-slot-ticks")).toContainText("Primary: sponsor TBD");
+    await expect(page.getByRole("button", { name: /Create card|Link card/ })).toHaveCount(0);
+    await openRow.getByRole("checkbox", { name: /Secondary slot in Weekly #100/ }).check();
+    await expect(openRow.locator(".newsletter-card-chip")).toContainText("12/14");
+    await expect(openRow.getByRole("checkbox", { name: /Secondary slot in Weekly #100/ })).toBeChecked();
     await page
       .locator(".newsletter-surface")
       .screenshot({ path: ".tmp/newsletter-production-populated-alert.png" });
@@ -177,8 +139,8 @@ test.describe("production newsletter planner", () => {
     const weekSections = page.locator("[data-slots] > section");
     await expect(weekSections).toHaveCount(1);
     await expect(weekSections.locator("h3")).toHaveText("2026 · week 53");
-    await expect(weekSections).toContainText("Synthetic Year End");
-    await expect(weekSections).toContainText("Synthetic New Year");
+    await expect(weekSections).toContainText("Weekly #99");
+    await expect(weekSections).toContainText("Weekly #100");
     await expect(page.getByText("2027 · week 01", { exact: true })).toHaveCount(
       0,
     );
@@ -193,20 +155,22 @@ test.describe("production newsletter planner", () => {
     });
     await page.locator("select[data-view]").selectOption("month");
     await page.locator("[data-status]").selectOption("sent");
-    await expect(page.getByText("No newsletter slots")).toBeVisible();
+    await expect(page.getByText("No newsletter issues")).toBeVisible();
     await page
       .locator(".newsletter-surface")
       .screenshot({ path: ".tmp/newsletter-production-empty.png" });
     await page.locator("[data-status]").selectOption("");
-    await page.getByRole("button", { name: "Add slot" }).click();
+    await page.getByRole("button", { name: "Add issue" }).click();
     await page.getByLabel("Publication date").fill("2027-01-08");
-    await page.getByLabel("Campaign label").fill("Synthetic Created");
+    await page.getByLabel("Issue number").fill("101");
+    await page.locator("dialog [name=primarySponsor]").fill("Synthetic Created Sponsor");
     await page.getByRole("button", { name: "Save issue" }).click();
-    await expect(page.getByText(/Synthetic Created/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Weekly #101" })).toBeVisible();
+    await expect(page.locator('article[data-issue-id="issue-created"]')).toContainText("Primary: Synthetic Created Sponsor");
     await page.getByRole("button", { name: /More actions for/ }).first().click();
     await page.getByRole("menuitem", { name: "Edit details" }).click();
     await expect(
-      page.getByRole("heading", { name: "Newsletter slot" }),
+      page.getByRole("heading", { name: "Weekly #99" }).last(),
     ).toBeVisible();
     await page
       .locator(".newsletter-surface dialog")
@@ -244,7 +208,7 @@ test.describe("production newsletter planner", () => {
     await context.close();
     const errorContext = await browser.newContext({ baseURL: server.baseURL }),
       errorPage = await errorContext.newPage();
-    await errorPage.route("**/api/newsletter-slots**", (route) =>
+    await errorPage.route("**/api/newsletter-issues**", (route) =>
       route.fulfill({
         status: 403,
         json: { error: "Synthetic permission denied" },

@@ -29,12 +29,12 @@ const calendarPayload = {
 
 const newsletterPayload = {
   items: [
-    { id: "slot-community", publicationDate: "2026-08-14", campaignLabel: "Community highlights", campaignNumber: 71, status: "scheduled", bookedByDisplayName: "Editorial team", planningNote: "Final link review on Thursday", version: 1 },
-    { id: "slot-partner", publicationDate: "2026-08-21", campaignLabel: "Learning roundup", campaignNumber: 72, status: "reserved", sponsorBookingId: "safe-booking-reference", version: 1 },
-    { id: "slot-open", publicationDate: "2026-08-28", campaignLabel: "Open campaign slot", campaignNumber: 73, status: "open", version: 1 },
+    { id: "issue-community", kind: "weekly", label: "Weekly #71", issueNumber: 71, publicationDate: "2026-08-14", status: "scheduled", slots: { primary: { ticked: true, sponsor: "Community highlights" }, secondary: { ticked: false } }, planningNote: "Final link review on Thursday", version: 1, cardId: "card-71", card: { id: "card-71", title: "14 Aug · #71 · Community highlights", stage: "preparation", status: "active", anchorDate: "2026-08-14", taskCount: 12, openTaskCount: 3 } },
+    { id: "issue-partner", kind: "weekly", label: "Weekly #72", issueNumber: 72, publicationDate: "2026-08-21", status: "planned", slots: { primary: { ticked: true, sponsorBookingId: "safe-booking-reference" }, secondary: { ticked: true, sponsor: "Learning roundup" } }, version: 1, cardId: "card-72", card: { id: "card-72", title: "21 Aug · #72 · Learning roundup", stage: "preparation", status: "active", anchorDate: "2026-08-21", taskCount: 20, openTaskCount: 20 } },
+    { id: "issue-open", kind: "standalone", label: "Stand-alone newsletter", publicationDate: "2026-08-28", status: "planned", slots: { primary: { ticked: true } }, version: 1, cardId: "card-73", card: { id: "card-73", title: "28 Aug · stand-alone", stage: "preparation", status: "active", anchorDate: "2026-08-28", taskCount: 15, openTaskCount: 15 } },
   ],
   alerts: [
-    { reasonCode: "near-term-open-unbooked", severity: "warning", slotId: "slot-open" },
+    { reasonCode: "near-term-open-slot", severity: "warning", issueId: "issue-open" },
   ],
 };
 
@@ -42,12 +42,12 @@ async function mockPlanningApis(page) {
   await page.route("**/api/calendar-items**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/overlays")) {
-      return route.fulfill({ json: { items: [{ provider: "newsletter-slots-readonly", id: "overlay-community", startDate: "2026-08-14", endDate: "2026-08-14", label: "Community highlights", href: "/newsletter" }] } });
+      return route.fulfill({ json: { items: [{ provider: "newsletter-issues-readonly", id: "overlay-community", startDate: "2026-08-14", endDate: "2026-08-14", label: "Community highlights", href: "/newsletter" }] } });
     }
     if (url.pathname.includes("/alerts/") && route.request().method() === "POST") return route.fulfill({ json: { dismissed: true } });
     return route.fulfill({ json: calendarPayload });
   });
-  await page.route("**/api/newsletter-slots**", (route) => route.fulfill({ json: newsletterPayload }));
+  await page.route("**/api/newsletter-issues**", (route) => route.fulfill({ json: newsletterPayload }));
 }
 
 async function useTheme(page, dark) {
@@ -103,9 +103,9 @@ test("Newsletter is a readable, responsive planning queue in light and dark them
   assertOwnedServerResponse(server, root, "planning newsletter root");
   const surface = page.locator(".newsletter-surface");
   await expect(surface.getByRole("heading", { name: "Newsletter planner" })).toBeVisible();
-  await expect(surface.getByText("Community highlights")).toBeVisible();
-  await expect(surface.getByText("An open slot needs booking soon")).toBeVisible();
-  await expect(surface.getByText("near-term-open-unbooked")).toHaveCount(0);
+  await expect(surface.getByRole("heading", { name: "Weekly #71" })).toBeVisible();
+  await expect(surface.getByText("A slot needs a sponsor soon")).toBeVisible();
+  await expect(surface.getByText("near-term-open-slot")).toHaveCount(0);
   await expectNoPageOverflow(page, 1440);
   await expect(surface).toHaveCSS("gap", "20px");
   await expectExactPalette(page, false);
