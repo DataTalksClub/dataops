@@ -13,6 +13,7 @@ import { createBlockEditor } from "./block-editor.js";
 import { makeBlock, parseMarkdownBlocks, serializeBlocksToMarkdown } from "./block-model.js";
 import { focusEditable, neighbourEditable } from "./editable.js";
 import { installSelectionToolbar } from "./selection-toolbar.js";
+import { createCodeViewSurface } from "../knowledge/code-view.js";
 
 export function createDocumentRenderer(context, services) {
   const {
@@ -73,16 +74,70 @@ export function createDocumentRenderer(context, services) {
     "sop", "checklist", "template", "reference", "playbook", "prompt",
   ];
 
+  const codeViewSurface = createCodeViewSurface({});
+
+  async function fetchCodeViewPayload(codeViewPath) {
+    const url = apiUrl("/docs");
+    url.searchParams.set("path", codeViewPath);
+    return request(url);
+  }
+
   function toggleViewMode() {
     if (!documentState.currentDoc) return;
-    enterRenderedMode();
+    if (editorView.dataset.mode === "code") {
+      enterRenderedMode();
+      return;
+    }
+    enterCodeViewMode();
+  }
+
+  /** Show the linked SOP's alternate code view (or the open code-view doc). */
+  async function enterCodeViewMode() {
+    const doc = documentState.currentDoc;
+    if (!doc) return;
+    const openedPath = doc.path;
+    const isFresh = editorMutationGuard(context);
+    editorView.dataset.mode = "code";
+    let payload =
+      doc.docType === "code-view" ? documentState.currentParsedCodeView : null;
+    if (!payload && doc.codeView?.path) {
+      const cached = documentState.codeViewCache?.[doc.codeView.path] || null;
+      if (cached) payload = cached;
+      else {
+        try {
+          const fetched = await fetchCodeViewPayload(doc.codeView.path);
+          if (!isFresh() || documentState.currentDoc?.path !== openedPath) return;
+          payload = fetched.parsed_code_view || null;
+          if (documentState.codeViewCache) {
+            documentState.codeViewCache[doc.codeView.path] = payload;
+          }
+        } catch {
+          if (!isFresh() || documentState.currentDoc?.path !== openedPath) return;
+          payload = null;
+        }
+      }
+    }
+    renderedView.replaceChildren();
+    renderedView.dataset.editorRoot = "";
+    if (payload) {
+      codeViewSurface.renderCodeView(renderedView, payload, { renderMarkdown });
+    } else {
+      const note = document.createElement("div");
+      note.className = "code-view-unavailable";
+      note.textContent = doc.codeView
+        ? "The linked code view could not be loaded."
+        : "No code view is linked to this document.";
+      renderedView.append(note);
+    }
+    resizeDocumentTitle();
+    updateViewToggleAvailability();
   }
 
   async function enterRenderedMode() {
     const path = documentState.currentDoc?.path;
     const isFresh = editorMutationGuard(context);
     editorView.dataset.mode = "rendered";
-    viewToggleButton.hidden = true;
+    updateViewToggleAvailability();
     // If the user edited in raw mode without saving, re-parse the current
     // textarea content so the block view reflects the latest draft.
     if (documentState.currentDoc && editor.value && editor.value !== documentState.lastSavedContent) {
@@ -115,11 +170,18 @@ export function createDocumentRenderer(context, services) {
   }
 
   function updateViewToggleAvailability() {
-    // Show the toggle for any open doc — structured SOPs render as blocks,
-    // others render the full body as plain markdown.
-    const available = !!documentState.currentDoc;
-    viewToggleButton.hidden = true;
-    if (available && editorView.dataset.mode !== "rendered") enterRenderedMode();
+    // The toggle switches between the normal document view and the Gist-style
+    // code view. It appears when the open doc IS a code view or has one linked
+    // (GET /docs → code_view); otherwise there is nothing to switch to.
+    const doc = documentState.currentDoc;
+    const available =
+      !!doc && (!!doc.codeView || doc.docType === "code-view");
+    viewToggleButton.hidden = !available;
+    viewToggleButton.textContent =
+      editorView.dataset.mode === "code" ? "Document view" : "Code view";
+    if (doc && editorView.dataset.mode !== "rendered" && editorView.dataset.mode !== "code") {
+      enterRenderedMode();
+    }
   }
 
   async function refreshParsedFromApi() {
@@ -132,6 +194,11 @@ export function createDocumentRenderer(context, services) {
       const payload = await request(url);
       if (!isFresh() || documentState.currentDoc?.path !== path) return;
       documentState.currentParsed = payload.parsed || null;
+      documentState.currentParsedCodeView = payload.parsed_code_view || null;
+      if (documentState.currentDoc) {
+        documentState.currentDoc.docType = payload.doc_type || documentState.currentDoc.docType;
+        documentState.currentDoc.codeView = payload.code_view || null;
+      }
       updateViewToggleAvailability();
     } catch {
       if (!isFresh() || documentState.currentDoc?.path !== path) return;
@@ -139,7 +206,23 @@ export function createDocumentRenderer(context, services) {
     }
   }
 
-  function renderParsedDocument({ bodyBlocks, focusBlockIndex = -1, focus = null } = {}) {
+  function renderParsedDocument(options = {}) {
+    // A code-view document renders as its Gist-style body — files in author
+    // order, read-only — instead of the SOP block view.
+    if (
+      documentState.currentDoc?.docType === "code-view" &&
+      documentState.currentParsedCodeView
+    ) {
+      editorView.dataset.mode = "rendered";
+      renderedView.replaceChildren();
+      renderedView.dataset.editorRoot = "";
+      codeViewSurface.renderCodeView(renderedView, documentState.currentParsedCodeView, {
+        renderMarkdown,
+      });
+      updateViewToggleAvailability();
+      return;
+    }
+    const { bodyBlocks, focusBlockIndex = -1, focus = null } = options;
     const sections = (documentState.currentParsed && documentState.currentParsed.sections) || {};
     const blocks = [];
     const fm = (documentState.currentParsed && documentState.currentParsed.frontmatter) || {};

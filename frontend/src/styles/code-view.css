@@ -1,0 +1,162 @@
+/*
+ * Code view — the Gist-style alternate view of a SOP (named files in author
+ * order, highlighted and copyable, prose interleaved). Scoped to .code-view
+ * so the normal document view is unaffected.
+ */
+
+.code-view {
+  display: grid;
+  gap: var(--dk-gap-block);
+  min-width: 0;
+}
+
+.code-view-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-gap-control);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  padding: var(--dk-pad-cell);
+}
+
+.code-view-nav-label {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.code-view-nav-chip {
+  color: var(--dk-text-link);
+  font-family: var(--dk-font-mono);
+  font-size: var(--dk-text-sm);
+  text-decoration: none;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-full);
+  padding: var(--dk-pad-cell);
+}
+
+.code-view-nav-chip:hover {
+  background: var(--dk-bg-hover);
+  color: var(--dk-text-link-hover);
+}
+
+.code-file {
+  overflow: hidden;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  scroll-margin-top: 24px;
+}
+
+.code-file-header {
+  display: flex;
+  align-items: center;
+  gap: var(--dk-gap-control);
+  border-bottom: 1px solid var(--dk-border-default);
+  background: var(--dk-bg-muted);
+  padding: var(--dk-pad-cell);
+}
+
+.code-file-name {
+  font-family: var(--dk-font-mono);
+  font-size: var(--dk-text-sm);
+  color: var(--dk-text-heading);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.code-file-lang {
+  color: var(--dk-text-faint);
+  font-size: var(--dk-text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.code-copy {
+  margin-left: auto;
+}
+
+.code-file-code {
+  margin: 0;
+  padding: var(--dk-pad-cell);
+  overflow-x: auto;
+  background: var(--dk-bg-page);
+}
+
+.code-file-code code {
+  display: block;
+  font-family: var(--dk-font-mono);
+  font-size: var(--dk-text-sm);
+  line-height: 1.55;
+  color: var(--dk-text-body);
+  white-space: pre;
+}
+
+/* Token colours reuse semantic roles — no raw literals (see check-colors). */
+.tok-comment {
+  color: var(--dk-text-faint);
+  font-style: italic;
+}
+
+.tok-string {
+  color: var(--dk-text-link);
+}
+
+.tok-keyword {
+  color: var(--dk-text-heading);
+  font-weight: 600;
+}
+
+.tok-variable {
+  color: var(--dk-accent-default);
+}
+
+.tok-literal {
+  color: var(--dk-accent-deep);
+}
+
+.code-note {
+  border-left: 1px solid var(--dk-border-default);
+  border-left-width: 1px;
+  padding: 0 0 0 var(--dk-pad-cell);
+  scroll-margin-top: 24px;
+}
+
+.code-note-heading {
+  margin: 0 0 4px;
+  font-size: var(--dk-text-md);
+  color: var(--dk-text-heading);
+}
+
+.code-note-body {
+  color: var(--dk-text-body);
+  font-size: var(--dk-text-md);
+  line-height: 1.55;
+  min-width: 0;
+}
+
+.code-view-unavailable {
+  border: 1px dashed var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  color: var(--dk-text-muted);
+  padding: var(--dk-pad-cell);
+  font-size: var(--dk-text-md);
+}
+
+@media (max-width: 720px) {
+  .code-view-nav {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .code-file-header {
+    flex-wrap: wrap;
+  }
+
+  .code-copy {
+    margin-left: 0;
+  }
+}

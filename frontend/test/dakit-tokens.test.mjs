@@ -73,6 +73,7 @@ describe("dakit adoption contract", () => {
         "/src/styles/tasks-boards.css",
         "/src/styles/tasks-panels.css",
         "/src/styles/knowledge.css",
+        "/src/styles/code-view.css",
         "/src/styles/editor.css",
         "/src/styles/overrides.css",
         "/src/styles/responsive.css",

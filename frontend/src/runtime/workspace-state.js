@@ -23,6 +23,9 @@ export function createWorkspaceState(context) {
   const documentState = {
     currentDoc: null,
     currentParsed: null,
+    currentParsedCodeView: null,
+    // Fetched code-view payloads keyed by code-view doc path (per open doc).
+    codeViewCache: {},
     currentWarnings: [],
     lastSavedContent: "",
     hasDraft: false,

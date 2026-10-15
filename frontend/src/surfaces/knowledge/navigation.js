@@ -184,6 +184,8 @@ export function createKnowledgeNavigation(context, services) {
     clearDocumentStateNotice();
     documentState.currentDoc = null;
     documentState.currentParsed = null;
+    documentState.currentParsedCodeView = null;
+    documentState.codeViewCache = {};
     documentState.currentWarnings = [];
     documentState.lastSavedContent = "";
     documentState.hasDraft = false;
@@ -209,9 +211,16 @@ export function createKnowledgeNavigation(context, services) {
       if (!isCurrentDocumentRequest(requestId)) return;
       clearDocumentStateNotice();
 
-      documentState.currentDoc = { path: payload.path, updated: payload.updated, revision: payload.revision };
+      documentState.currentDoc = {
+        path: payload.path,
+        updated: payload.updated,
+        revision: payload.revision,
+        docType: payload.doc_type || "",
+        codeView: payload.code_view || null,
+      };
       if (options.updateUrl !== false) setDocumentUrl(payload.path);
       documentState.currentParsed = payload.parsed || null;
+      documentState.currentParsedCodeView = payload.parsed_code_view || null;
       documentState.currentWarnings = [];
       documentState.lastSavedContent = payload.content;
       docMenuButton.hidden = false;

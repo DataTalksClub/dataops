@@ -360,6 +360,12 @@ export class FakeDocument {
     return node;
   }
 
+  createDocumentFragment() {
+    const fragment = new FakeElement("#document-fragment");
+    fragment.ownerDocument = this;
+    return fragment;
+  }
+
   querySelectorAll(selector) {
     return this.roots
       .flatMap((root) => [root, ...descendants(root)])

@@ -1529,7 +1529,7 @@ describe("Knowledge surface boundary", () => {
 
     assert.deepEqual(harness.documentState.currentDoc, {
       path: "content/second.md",
-      updated: 2, revision: "r2",
+      updated: 2, revision: "r2", docType: "", codeView: null,
     });
     assert.equal(harness.elements.editor.value, "# Second document");
     assert.equal(harness.history.at(-1).url, "/second.md");
@@ -1565,7 +1565,7 @@ describe("Knowledge surface boundary", () => {
     });
     assert.deepEqual(loaded.documentState.currentDoc, {
       path: "content/runbook.md",
-      updated: 123, revision: "r1",
+      updated: 123, revision: "r1", docType: "", codeView: null,
     });
     assert.equal(loaded.elements.editor.value, "# Runbook\n\nDo the work.");
     assert.equal(loaded.body.dataset.view, "editor");
