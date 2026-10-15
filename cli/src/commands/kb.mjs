@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 
 import { ApiError } from "../api.mjs";
-import { UsageError } from "../errors.mjs";
+import { ConflictError, UsageError } from "../errors.mjs";
+import { apiMutation, batches, gitChanges, planPublication, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
 import { enc, fields, integer, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 
@@ -23,6 +24,10 @@ Usage
   dataops kb history <doc-id|path>             Published versions of it
   dataops kb write <path> --file F [--create] [--title T] [--type T]
                                                Publish new content (as the web editor does)
+  dataops kb publish --base REV [--head REV] [--repo DIR] [--dry-run]
+                                               Publish the managed files a knowledge-repo
+                                               Git range changed; refuses (exit 5) when prod
+                                               differs from every copy Git recorded
 
 Folders and paths may omit the leading "content/". Search runs on the server
 against an index of the current knowledge publication; nothing is downloaded.
@@ -267,6 +272,51 @@ export async function write(args, io) {
   return result;
 }
 
+export async function publish(args, io) {
+  const usage = "dataops kb publish --base REV [--head REV] [--repo DIR] [--dry-run]";
+  const baseRev = optionalString(args, "base");
+  if (!baseRev) throw new UsageError(`--base is required. ${usage}`);
+  const repo = optionalString(args, "repo") || ".";
+  let base;
+  let head;
+  try {
+    base = resolveCommit(repo, baseRev);
+    head = resolveCommit(repo, optionalString(args, "head") || "HEAD");
+  } catch (error) {
+    throw new UsageError(`Cannot resolve the Git range in ${repo}: ${String(error.stderr || error.message).trim()}`);
+  }
+  const api = apiFor(args);
+  const manifest = await api.get("/knowledge/manifest");
+  const plan = planPublication(gitChanges(repo, base, head, manifest.roots), manifest.entries);
+  const summary = (revision) => ({
+    base, head, checkedRevision: manifest.revision, revision,
+    published: plan.mutations.map(({ path, operation }) => ({ path, operation })),
+    current: plan.current,
+  });
+  if (plan.conflicts.length) {
+    const lines = plan.conflicts.map((item) => `  ${item.path} (prod ${item.prod === "absent" ? "has no copy" : "has a copy Git never recorded"})`);
+    throw new ConflictError(
+      `Prod changed ${plan.conflicts.length} file(s) since Git last saw them; nothing was published:\n${lines.join("\n")}\n`
+        + "Bring the prod edits into Git (wait for the daily mirror, or copy them in), then push again.",
+      { ...summary(manifest.revision), conflicts: plan.conflicts },
+    );
+  }
+  let revision = manifest.revision;
+  if (!args.dryRun && plan.mutations.length) {
+    const message = `Publish ${repositoryName(repo)} ${head}`;
+    for (const batch of batches(plan.mutations)) {
+      revision = (await api.post("/knowledge/publish", { expectedRevision: revision, message, mutations: batch.map(apiMutation) })).revision;
+    }
+  }
+  const result = { ...summary(revision), dryRun: Boolean(args.dryRun) };
+  if (args.json) return result;
+  for (const item of result.published) io.print(`${args.dryRun ? "would " : ""}${item.operation} ${item.path}`);
+  if (!result.published.length) io.print(`Nothing to publish: ${result.current.length} changed file(s) already match prod.`);
+  else if (args.dryRun) io.print(`Dry run: ${result.published.length} file(s) would be published onto revision ${manifest.revision}.`);
+  else io.print(`Published ${result.published.length} file(s) from ${head.slice(0, 12)} as revision ${revision}.`);
+  return result;
+}
+
 // ── related: docs for a Task or Card ─────────────────────────────────────────
 
 /** A doc reference inside a link the web app or a Template points at. */
@@ -402,4 +452,4 @@ export async function related(args, io) {
   return result;
 }
 
-export const commands = { search, related, show, tree, ls, resolve, backlinks, history, write };
+export const commands = { search, related, show, tree, ls, resolve, backlinks, history, write, publish };

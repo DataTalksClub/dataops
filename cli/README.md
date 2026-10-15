@@ -54,7 +54,7 @@ subcommands, flags, and examples.
 | `resources` | `list` the resource ids a Task can require (youtube, luma, mailchimp, ...) |
 | `cards` | `list`, `show` (with Tasks), `create --template`, `update`, `stage`, `link`, `park` / `resume`, `template-update` |
 | `templates` | `list`, `show` (read-only; authored in Git) |
-| `kb` | knowledge base: `search`, `related <task|card>`, `show`, `tree`, `ls`, `resolve`, `backlinks`, `history`, `write` |
+| `kb` | knowledge base: `search`, `related <task|card>`, `show`, `tree`, `ls`, `resolve`, `backlinks`, `history`, `write`, `publish` |
 | `newsletter` | slots: `list`, `show`, `create`, `update`, `link-card`, `create-card`, `delete`, `dismiss-alert` |
 | `podcast` | episodes: `list`, `show`, `create`, `update`, `create-card` |
 | `calendar` | activities and operational slot scheduling |
@@ -99,6 +99,20 @@ The CLI never downloads the corpus.
 `dataops kb related <task-id|card-id>` lists the documents the Task, its Card,
 and its Template link explicitly, then the best search matches for their
 titles.
+
+## Publishing a knowledge-repo Git range
+
+`dataops kb publish --base REV [--head REV] [--repo DIR]` publishes the
+managed files (`content/`, `_docs/`, `workflow-templates/`,
+`document-templates/`) that changed between two commits of a knowledge
+checkout, in one request (split only when the bytes exceed the API's request
+size), with `expectedRevision` set to the revision it checked. Before
+publishing it compares every changed file's prod copy (`GET
+/knowledge/manifest`) with the copies Git recorded in the range; if prod holds
+anything else, someone edited it in the web editor or the CLI since Git saw it,
+and the command publishes nothing, names the files, and exits 5. The knowledge
+repository's GitHub Action runs this command after its checks pass,
+authenticated by the workflow's GitHub OIDC token.
 
 ## Agents
 

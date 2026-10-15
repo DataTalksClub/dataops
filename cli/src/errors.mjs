@@ -22,6 +22,15 @@ export class UsageError extends Error {
   }
 }
 
+/** The operation would overwrite changes it has not seen; nothing was written. */
+export class ConflictError extends Error {
+  constructor(message, details) {
+    super(message);
+    this.name = "ConflictError";
+    this.details = details;
+  }
+}
+
 export class AuthError extends Error {
   constructor(message) {
     super(message);
@@ -32,6 +41,7 @@ export class AuthError extends Error {
 export function exitCodeFor(error) {
   if (error instanceof UsageError) return EXIT.usage;
   if (error instanceof AuthError) return EXIT.auth;
+  if (error instanceof ConflictError) return EXIT.conflict;
   if (error instanceof NetworkError) return EXIT.unavailable;
   if (error instanceof ApiError) {
     if (error.status === 401 || error.status === 403) return EXIT.auth;
@@ -50,6 +60,7 @@ export function errorPayload(error) {
     payload.status = error.status;
     if (error.code) payload.code = error.code;
   }
+  if (error instanceof ConflictError && error.details) payload.details = error.details;
   return { error: payload };
 }
 
