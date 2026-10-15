@@ -45,12 +45,15 @@ export function createTaskQueue(context) {
     workTaskTitle,
   } = context;
 
-  const PERSONA_FILTERS = [
-    { id: "all", label: "All", name: "All teammates" },
-    { id: "00000000-0000-0000-0000-000000000001", label: "Grace", name: "Grace" },
-    { id: "00000000-0000-0000-0000-000000000002", label: "Valeriia", name: "Valeriia" },
-    { id: "00000000-0000-0000-0000-000000000003", label: "Alexey", name: "Alexey" },
-  ];
+  function personaFilters() {
+    // The account menu receives this same workspace member snapshot.
+    const members = (state.workSnapshot.users || [])
+      .filter(member => member?.id && member.disabled !== true)
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    return [{ id: "all", label: "All", name: "All teammates" }, ...members.map(member => ({
+      id: String(member.id), label: member.name || member.email, name: member.name || member.email,
+    }))];
+  }
 
   let activePersonaFilter = "all";
   // "all", "none" (needs nothing outside DataOps), or one resource id.
@@ -116,17 +119,12 @@ export function createTaskQueue(context) {
     if (!filterId || filterId === "all") return true;
     const assigneeId = String(task.assigneeId || "");
     if (filterId === "unassigned") return !assigneeId;
-    if (assigneeId === filterId) return true;
-    const label = (resolveAssigneeLabel?.(assigneeId) || "").toLowerCase();
-    if (filterId === "00000000-0000-0000-0000-000000000001" && label.includes("grace")) return true;
-    if (filterId === "00000000-0000-0000-0000-000000000002" && label.includes("valeriia")) return true;
-    if (filterId === "00000000-0000-0000-0000-000000000003" && label.includes("alexey")) return true;
-    return false;
+    return assigneeId === filterId;
   }
 
   function countOpenByPersona(openTasks) {
     const counts = { all: openTasks.length };
-    for (const p of PERSONA_FILTERS) {
+    for (const p of personaFilters()) {
       if (p.id !== "all") {
         counts[p.id] = openTasks.filter((entry) => taskMatchesPersona(entry.task, p.id)).length;
       }
@@ -142,7 +140,7 @@ export function createTaskQueue(context) {
     nav.setAttribute("role", "radiogroup");
     nav.setAttribute("aria-label", "Filter queue by assignee");
 
-    for (const p of PERSONA_FILTERS) {
+    for (const p of personaFilters()) {
       const isSelected = activePersonaFilter === p.id;
       const count = counts[p.id] ?? 0;
       const btn = document.createElement("button");
@@ -223,6 +221,7 @@ export function createTaskQueue(context) {
         return;
       }
 
+      if (!personaFilters().some(person => person.id === activePersonaFilter)) activePersonaFilter = "all";
       const personaOpen = activePersonaFilter === "all"
         ? allOpenTasks
         : allOpenTasks.filter((entry) => taskMatchesPersona(entry.task, activePersonaFilter));
@@ -232,7 +231,7 @@ export function createTaskQueue(context) {
       const visibleDone = doneTasks.filter((task) =>
         taskMatchesPersona(task, activePersonaFilter) && taskMatchesResource(task, activeResourceFilter));
 
-      const activePersona = PERSONA_FILTERS.find((p) => p.id === activePersonaFilter);
+      const activePersona = personaFilters().find((p) => p.id === activePersonaFilter);
       const personaLabel = activePersona?.label || "All";
 
       if (allOpenTasks.length > 0 || doneTasks.length > 0) {
