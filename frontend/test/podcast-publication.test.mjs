@@ -74,6 +74,15 @@ describe("schedule grouping", () => {
     assert.deepEqual(past.episodes.map((item) => item.id).sort(), ["historical", "observed", "released"]);
   });
 
+  test("a live page observation does not retire an episode still awaiting audio publication", () => {
+    const unfinished = episode("unfinished", {
+      status: "recorded", releaseDate: "2099-01-01",
+      publication: { websiteObserved: { observedAt: NOW, proofUrl: "https://example.com/p" } },
+      readiness: { ...NONE, website: "observed-live" },
+    });
+    assert.deepEqual(scheduleGroups([unfinished])[0].episodes.map((item) => item.id), ["unfinished"]);
+  });
+
   test("verified public audio stays in Past while website evidence is unrecorded", () => {
     const audioPublic = episode("audio-public", {
       status: "published", releaseDate: "2020-01-01",

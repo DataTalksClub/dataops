@@ -135,7 +135,8 @@ export function scheduleGroups(episodes) {
   for (const episode of Array.isArray(episodes) ? episodes : []) {
     if (episode?.status === "cancelled") continue;
     const readiness = readinessOf(episode);
-    const released = readiness.website === "released" || readiness.website === "observed-live";
+    const released = readiness.website === "released"
+      || (readiness.website === "observed-live" && episode.status === "published" && !episode.publication?.audioSchedule);
     // Verified public audio belongs in publication history even when no
     // transcript or website observation has been recorded yet.
     const publicAudio = readiness.spotify === "public" || Boolean(episode.publication?.spotify?.publicVerifiedAt);
