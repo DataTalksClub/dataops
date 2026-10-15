@@ -144,6 +144,9 @@ export function createTaskActions(context) {
     ) {
       return false;
     }
+    if (intent.kind === "dependencies") {
+      return JSON.stringify(task.dependsOn || []) === JSON.stringify(intent.payload.dependsOn);
+    }
     if (intent.kind === "requires") {
       return JSON.stringify(task.requires || []) === JSON.stringify(intent.payload.requires);
     }
@@ -521,6 +524,29 @@ export function createTaskActions(context) {
     return submitTaskIntent(intent, expectedVersion);
   }
 
+  async function saveTaskDependencies(taskId, dependsOn, explicitVersion) {
+    const intent = {
+      taskId,
+      kind: "dependencies",
+      label: dependsOn.length ? `Waits for ${dependsOn.length} task(s)` : "Waits for no other task",
+      method: "PUT",
+      path: `/api/tasks/${encodeURIComponent(taskId)}`,
+      payload: { dependsOn },
+      pendingMessage: "Saving prerequisites…",
+      successMessage: "Prerequisites are saved in the refreshed Task.",
+      errorPrefix: "Could not save prerequisites",
+    };
+    const owner = taskIntentOwner(intent);
+    let expectedVersion;
+    try {
+      expectedVersion = displayedVersion(taskId, explicitVersion);
+    } catch (err) {
+      showIntentFailure(owner, intent, err, expectedVersion);
+      return null;
+    }
+    return submitTaskIntent(intent, expectedVersion);
+  }
+
   async function markTaskWaiting(taskId) {
     const today = todayIsoDate();
     const followUp = defaultNextFollowUpDate();
@@ -774,6 +800,7 @@ export function createTaskActions(context) {
     refreshTaskPanel,
     saveTaskLink,
     saveTaskRequires,
+    saveTaskDependencies,
     setCardPanelFeedback,
     setTaskPanelFeedback,
     skipTask,

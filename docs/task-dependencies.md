@@ -33,28 +33,48 @@ operator-added edges that would form a cycle make the update refuse to apply.
 
 ## Atomicity
 
-Each rule that depends on another Task's state becomes a `ConditionCheck`
-(`TaskGuard`) in the same `TransactWriteItems` as the Task write:
+The Card version is the dependency graph's revision. Every write that can
+change the graph or the statuses the rules read (Task create/delete, open/done
+transitions, edge edits, Template sync) writes the Card, and an edge edit bumps
+it even when no counter changes.
 
-- completing D guards each prerequisite `status = done`;
-- adding an edge reads the prerequisite closure with consistent reads and guards
-  every Task visited by version, so two edits that would together close a cycle
-  cannot both commit (verified on DynamoDB Local in
-  `tests/task-dependency-transaction.ddb.ts`);
-- reopening or deleting P guards the version of each dependent found for the Card.
+1. The checks read the Card first and pin its version.
+2. They then read the graph from the base table with consistent reads: the
+   prerequisite closure by `GetItem`, and a Card's dependents by a consistent
+   filtered `Scan` (never `GSI-Card`, which is eventually consistent).
+3. The write is one `TransactWriteItems` that commits only while the Card is
+   still at the pinned version, so a dependent or edge inserted after the read
+   cancels it (409) instead of slipping past.
+4. Task-level `ConditionCheck`s stay as a second guard: each prerequisite of a
+   completing Task must still be `done`, and every Task read for a cycle check
+   or dependents check must keep its version.
 
-The local transaction emulator validates the same guards under its lock.
+Card Template sync loads the Card and its Tasks consistently (Card first),
+conditions the update on the Card version, and additionally version-checks
+every Task on a dependency edge that the update does not rewrite.
+
+Concurrency is covered by `tests/task-dependencies.test.ts` (interleaved
+writes injected between the read and the write, a hidden `GSI-Card`, churn),
+`tests/template-task-dependencies.test.ts` (sync) and
+`tests/task-dependency-transaction.ddb.ts` (DynamoDB Local).
+
+## Web editor
+
+The task dialog's Prerequisites section lists each prerequisite by name and
+status and has an "Edit prerequisites" disclosure for tasks that are not done:
+it loads the Card's other tasks, shows name and status (never ids), greys a
+task that already waits on this one, and saves with the Task version.
 
 ## Limitations
 
-- Dependents of a prerequisite are found through `GSI-Card`, which is eventually
-  consistent. A dependent whose edge was added and completed within the index
-  lag could be missed by a reopen or delete of its prerequisite. An edge to a
-  deleted Task is treated as `missing`: it blocks completion until removed.
-- Reviewed Card Template updates version-check only the Tasks they rewrite; a
-  concurrent edge edit on an untouched Task in the same instant is not guarded.
-- Edges are edited through the API/CLI (`dataops tasks update --depends-on`);
-  the web UI displays them and blocks completion but has no edge editor.
+- Same-Card scope only (first version). Cross-Card prerequisites would need a
+  graph revision shared across Cards.
+- Reopen and delete of a prerequisite use a filtered consistent Scan of the
+  Tasks table, whose cost grows with the table. They are rare operations.
+- Any write to a Card, including one unrelated to dependencies, makes an
+  in-flight dependency check retry (409), as with other Card writes.
+- An edge to a Task removed by other means (for example a whole-Card delete
+  racing) is shown as `missing` and blocks completion until it is removed.
 
 ## Persisted data
 

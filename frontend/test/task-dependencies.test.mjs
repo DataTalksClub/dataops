@@ -7,7 +7,10 @@ import {
   blockingPrerequisites,
   prerequisiteStatusLabel,
   taskIsBlocked,
+  nextDependsOn,
+  prerequisiteChoices,
   taskPrerequisites,
+  waitsOnTask,
 } from "../src/core/task-dependencies.js";
 
 const task = (fields) => ({ id: "t", version: 1, taskHistory: [], status: "todo", description: "Publish page", ...fields });
@@ -49,5 +52,30 @@ describe("task dependency view model", () => {
     ]);
     assert.match(prerequisiteStatusLabel("missing"), /remove this dependency/);
     assert.match(prerequisiteStatusLabel("skipped"), /does not unblock/);
+  });
+});
+
+describe("prerequisite choices", () => {
+  const sibling = (id, description, status, dependsOn) => ({ id, description, status, ...(dependsOn ? { dependsOn } : {}) });
+
+  test("lists the card's other tasks by name and greys those that wait on this task", () => {
+    const subject = task({ id: "me", description: "Subject" });
+    const siblings = [
+      subject,
+      sibling("a", "Verify Spotify episode", "done"),
+      sibling("b", "Waits on me", "todo", ["me"]),
+      sibling("c", "Waits on b", "todo", ["b"]),
+      sibling("d", "Independent", "waiting"),
+    ];
+    const choices = prerequisiteChoices(subject, siblings);
+    assert.deepEqual(choices.map(({ id }) => id), ["a", "b", "c", "d"]);
+    assert.deepEqual(choices.map(({ unavailable }) => Boolean(unavailable)), [false, true, true, false]);
+    assert.equal(waitsOnTask(siblings[3], subject, siblings), true);
+    assert.equal(waitsOnTask(siblings[1], subject, siblings), false);
+  });
+
+  test("keeps the existing order and appends newly ticked ids", () => {
+    assert.deepEqual(nextDependsOn(["b", "a"], ["a", "c", "b"]), ["b", "a", "c"]);
+    assert.deepEqual(nextDependsOn(["a"], []), []);
   });
 });

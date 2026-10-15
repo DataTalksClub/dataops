@@ -41,6 +41,7 @@ export function createTaskPanel(context) {
     saveTaskLink,
     skipTask,
     saveTaskRequires,
+    saveTaskDependencies,
     state,
     taskPanelBody,
     taskPanelTitle,
@@ -445,6 +446,16 @@ export function createTaskPanel(context) {
     taskPanelBody.append(renderTaskRequires(task, panelMutationBusy));
     const prerequisites = renderTaskPrerequisites(task, {
       openTask: (taskId) => openTaskPanel(taskId),
+      busy: panelMutationBusy,
+      loadCardTasks: async () => {
+        const open = detail.activeCardPanelData?.tasks;
+        if (open?.length && detail.activeCardPanelId === task.cardId) return open;
+        const payload = await request(
+          workApiUrl(`/api/tasks?cardId=${encodeURIComponent(task.cardId)}`),
+        );
+        return payload?.tasks || [];
+      },
+      onSave: (dependsOn) => saveTaskDependencies(task.id, dependsOn, task.version),
     });
     if (prerequisites) taskPanelBody.append(prerequisites);
     const proofSlot = document.createElement("div");

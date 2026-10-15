@@ -1493,3 +1493,20 @@ body[data-workspace-view="tasks"] .task-prerequisite-note {
   margin: var(--dk-space-2) 0 0;
   color: var(--dk-warning-text);
 }
+body[data-workspace-view="tasks"] .task-prerequisite-empty {
+  margin: 0;
+  color: var(--dk-text-muted);
+}
+body[data-workspace-view="tasks"] .task-prerequisite-options {
+  display: grid;
+  gap: var(--dk-space-1);
+  margin-top: var(--dk-space-2);
+}
+body[data-workspace-view="tasks"] .task-prerequisite-option {
+  display: flex;
+  align-items: center;
+  gap: var(--dk-space-2);
+}
+body[data-workspace-view="tasks"] .task-prerequisite-option .task-status-badge {
+  margin-left: auto;
+}

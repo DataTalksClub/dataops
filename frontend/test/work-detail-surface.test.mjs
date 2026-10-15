@@ -2297,6 +2297,66 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(harness.errors, []);
   });
 
+  test("edits prerequisites by task name and status, not raw ids", async () => {
+    const card = { id: "card-edit-deps", version: 1, title: "Episode", status: "active", stage: "preparation", taskCount: 3, openTaskCount: 3, references: [] };
+    const subject = { id: "page", cardId: card.id, version: 4, taskHistory: [], description: "Publish page", status: "todo", date: "2026-08-12" };
+    const spotify = { id: "spotify-id", cardId: card.id, version: 1, taskHistory: [], description: "Verify Spotify episode", status: "done" };
+    const promo = { id: "promo-id", cardId: card.id, version: 1, taskHistory: [], description: "Promote episode", status: "todo", dependsOn: ["page"] };
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === "/api/tasks/page" && !requestOptions.method) return subject;
+        if (url === "/api/tasks/page" && requestOptions.method === "PUT") {
+          return { ...subject, version: 5, ...JSON.parse(requestOptions.body) };
+        }
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [subject, spotify, promo] };
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return {};
+      },
+    });
+    await hydrateTask(harness, subject);
+    const editor = harness.taskPanelBody.querySelector(".task-prerequisite-editor");
+    assert.ok(editor, "an unblocked task with a card can still gain prerequisites");
+    assert.equal(harness.requests.some(({ url }) => url === `/api/tasks?cardId=${card.id}`), false, "tasks load only when the editor opens");
+
+    editor.open = true;
+    await editor.dispatch("toggle");
+    await nextTicks(3);
+    const options = editor.querySelectorAll(".task-prerequisite-option");
+    assert.deepEqual(
+      options.map((option) => option.querySelector(".task-prerequisite-name").textContent),
+      ["Verify Spotify episode", "Promote episode"],
+    );
+    assert.doesNotMatch(editor.textContent, /spotify-id|promo-id/);
+    const [spotifyBox, promoBox] = options.map((option) => option.querySelector('input[type="checkbox"]'));
+    assert.equal(promoBox.disabled, true, "a task that already waits on this one cannot be its prerequisite");
+    assert.match(options[1].title, /Already waits on this task/);
+
+    spotifyBox.checked = true;
+    await findByText(editor, "Save prerequisites", "button").click();
+    await nextTicks(3);
+    const saved = harness.requests.find(({ url, options: o }) => url === "/api/tasks/page" && o?.method === "PUT");
+    assert.deepEqual(jsonBody(saved), { dependsOn: ["spotify-id"], expectedVersion: 4 });
+  });
+
+  test("offers no prerequisite editor on a completed or card-less Task", async () => {
+    const done = { id: "done-task", cardId: "c", version: 2, taskHistory: [], description: "Done", status: "done" };
+    const loose = { id: "loose-task", version: 1, taskHistory: [], description: "Loose", status: "todo" };
+    for (const subject of [done, loose]) {
+      const harness = createHarness({
+        request: async (url) => {
+          if (url === `/api/tasks/${subject.id}`) return subject;
+          if (url.startsWith("/api/files")) return { files: { items: [] } };
+          if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+          return {};
+        },
+      });
+      await hydrateTask(harness, subject);
+      assert.equal(harness.taskPanelBody.querySelector(".task-prerequisite-editor"), null, subject.id);
+    }
+  });
+
   test("loads every required-file page before enabling completion", async () => {
     const task = {
       id: "task-paged-files",

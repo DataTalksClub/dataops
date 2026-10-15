@@ -56,3 +56,39 @@ export function blockedSummary(task, siblings = []) {
   const rest = blocking.length - 1;
   return `Blocked by ${blocking[0].description}${rest ? ` +${rest} more` : ""}`;
 }
+
+// Whether `candidate` already waits on `task`, directly or through others.
+// Offering it as a prerequisite would close a cycle, so the editor greys it.
+export function waitsOnTask(candidate, task, siblings) {
+  const byId = new Map(siblings.map((sibling) => [sibling.id, sibling]));
+  const seen = new Set();
+  const stack = [...(candidate?.dependsOn || [])];
+  while (stack.length) {
+    const id = stack.pop();
+    if (id === task.id) return true;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    stack.push(...(byId.get(id)?.dependsOn || []));
+  }
+  return false;
+}
+
+// Same-card Tasks the operator may pick as prerequisites of `task`, by name,
+// each with its status and, when it cannot be chosen, why.
+export function prerequisiteChoices(task, siblings = []) {
+  return siblings
+    .filter((sibling) => sibling?.id && sibling.id !== task.id)
+    .map((sibling) => ({
+      id: sibling.id,
+      description: sibling.description,
+      status: sibling.status,
+      unavailable: waitsOnTask(sibling, task, siblings)
+        ? "Already waits on this task, so it cannot also be its prerequisite"
+        : "",
+    }));
+}
+
+// Order-preserving next value: kept ids stay where they were, new ones append.
+export function nextDependsOn(current = [], ticked = []) {
+  return [...current.filter((id) => ticked.includes(id)), ...ticked.filter((id) => !current.includes(id))];
+}
