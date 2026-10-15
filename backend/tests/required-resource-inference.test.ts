@@ -11,6 +11,10 @@ describe('required-resource inference', () => {
     assert.deepStrictEqual(inferRequires('Invite people to Slack from Airtable'), ['slack', 'airtable']);
   });
 
+  it('reads historical Figma banner work as Banner Generator', () => {
+    assert.deepStrictEqual(inferRequires('Create a banner for a podcast event in Figma'), ['banner-generator']);
+  });
+
   it('reads website-repo links as the website and only sending as email', () => {
     assert.deepStrictEqual(
       inferRequires('Add the event to the webpage ([site](https://github.com/DataTalksClub/datatalksclub.github.io/blob/x))'),

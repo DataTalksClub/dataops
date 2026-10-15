@@ -36,7 +36,7 @@ const RULES: ReadonlyArray<readonly [string, RegExp]> = [
   ['airtable', /airtable/],
   ['dropbox', /dropbox/],
   ['canva', /\bcanva\b/],
-  ['figma', /figma/],
+  ['banner-generator', /figma|banner ?generator/],
   ['spotify', /spotify|anchor\.fm|\banchor\b/],
   ['apple-podcasts', /apple podcasts?/],
   ['website', /website|github\.io|\bweb ?site\b|\b(podcast|event|events|book|speaker) page\b/],
