@@ -8,6 +8,8 @@ export const teamHelp = `dataops team - who is on the team, with the ids work co
 
 Usage
   dataops team list
+  dataops team default-assignee                       Who gets new work nothing else assigns
+  dataops team set-default-assignee <user-id|none>    Change it (admin); none leaves new work unassigned
 `;
 
 export const usersHelp = `dataops users - user accounts (admin only; operators get 403)
@@ -31,6 +33,34 @@ export async function teamList(args, io) {
   return result;
 }
 
+export async function teamDefaultAssignee(args, io) {
+  const api = apiFor(args);
+  const settings = await api.get("/api/team-members/default-assignee");
+  if (args.json) return settings;
+  const { teamMembers = [] } = await api.get("/api/team-members");
+  const member = teamMembers.find((candidate) => candidate.id === settings.defaultAssigneeId);
+  io.print(settings.defaultAssigneeId
+    ? `${member?.name || settings.defaultAssigneeId} (${settings.defaultAssigneeId})`
+    : "No default assignee: new work stays unassigned.");
+  return settings;
+}
+
+export async function teamSetDefaultAssignee(args, io) {
+  const target = positional(args, 0, "dataops team set-default-assignee <user-id|none>");
+  const api = apiFor(args);
+  const current = await api.get("/api/team-members/default-assignee");
+  const result = await api.put("/api/team-members/default-assignee", {
+    defaultAssigneeId: target === "none" ? null : target,
+    expectedVersion: current.version,
+  });
+  if (!args.json) {
+    io.print(result.defaultAssigneeId
+      ? `New work now goes to ${result.defaultAssigneeId}.`
+      : "No default assignee: new work stays unassigned.");
+  }
+  return result;
+}
+
 export async function usersList(args, io) {
   const result = await apiFor(args).get("/api/users");
   if (args.json) return result;
@@ -51,5 +81,9 @@ export async function usersShow(args, io) {
   return result;
 }
 
-export const teamCommands = { list: teamList };
+export const teamCommands = {
+  list: teamList,
+  "default-assignee": teamDefaultAssignee,
+  "set-default-assignee": teamSetDefaultAssignee,
+};
 export const usersCommands = { list: usersList, show: usersShow };

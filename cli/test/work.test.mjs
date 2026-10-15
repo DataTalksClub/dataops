@@ -392,3 +392,32 @@ describe("agent guide", () => {
     assert.match(io.text(), /leave it for another agent/);
   });
 });
+
+describe("team default assignee", () => {
+  test("shows and changes the workspace default assignee with the read version", async () => {
+    let settings = { defaultAssigneeId: null, version: 0 };
+    const calls = fakePortal({
+      "GET /api/team-members/default-assignee": () => settings,
+      "GET /api/team-members": { teamMembers: [{ id: "u-orin", name: "Orin" }], defaultAssigneeId: null },
+      "PUT /api/team-members/default-assignee": ({ body }) => {
+        settings = { defaultAssigneeId: body.defaultAssigneeId, version: body.expectedVersion + 1 };
+        return settings;
+      },
+    });
+    let io = captureIo();
+    assert.equal(await run(["team", "default-assignee"], io), 0);
+    assert.match(io.text(), /No default assignee/);
+
+    io = captureIo();
+    assert.equal(await run(["team", "set-default-assignee", "u-orin"], io), 0);
+    assert.deepEqual(calls.find((call) => call.method === "PUT").body, { defaultAssigneeId: "u-orin", expectedVersion: 0 });
+
+    io = captureIo();
+    assert.equal(await run(["team", "default-assignee"], io), 0);
+    assert.match(io.text(), /Orin \(u-orin\)/);
+
+    io = captureIo();
+    assert.equal(await run(["team", "set-default-assignee", "none"], io), 0);
+    assert.deepEqual(calls.filter((call) => call.method === "PUT").at(-1).body, { defaultAssigneeId: null, expectedVersion: 1 });
+  });
+});
