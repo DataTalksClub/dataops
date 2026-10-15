@@ -34,6 +34,8 @@ import {
   INVALID_STATUS_ERROR,
   SKIPPED_STATUS_ERROR,
   SKIPPED_TASK_ERROR,
+  SKIPPED_TASK_LIFECYCLE_ERROR,
+  SKIPPED_TASK_LOCKED_FIELDS,
   WAITING_COMPLETION_ERROR,
   WAITING_FIELDS_ERROR,
   WAITING_TODO_ERROR,
@@ -694,8 +696,10 @@ export async function handleTaskRoutes(
     if (existing.version !== expectedVersion) {
       throw new TaskVersionConflictError(existing.id, expectedVersion);
     }
-    if (existing.status === 'skipped') {
-      return jsonResponse(400, { error: SKIPPED_TASK_ERROR });
+    // A skipped Task is edited like a done one (title, assignee, date, ...);
+    // only its lifecycle waits for the unskip action.
+    if (existing.status === 'skipped' && SKIPPED_TASK_LOCKED_FIELDS.some((field) => updates[field] !== undefined)) {
+      return jsonResponse(400, { error: SKIPPED_TASK_LIFECYCLE_ERROR });
     }
     if (titleLinks.moved.length > 0 && !titleLinks.supplied) {
       updates.materials = mergeMaterials(existing.materials || [], titleLinks.moved);

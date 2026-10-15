@@ -49,6 +49,9 @@ const VALID_TASK_STATUSES = new Set<TaskStatus>(['todo', 'waiting', 'done', 'ski
 export const INVALID_STATUS_ERROR = "Invalid status. Must be 'todo', 'waiting', 'done', or 'skipped'";
 export const SKIPPED_STATUS_ERROR = 'skipped is set with the skip action, which requires a reason';
 export const SKIPPED_TASK_ERROR = 'Skipped Tasks must be unskipped before they can be changed';
+export const SKIPPED_TASK_LIFECYCLE_ERROR = 'A skipped Task keeps its status and has no follow-up; unskip it first';
+/** Lifecycle fields a skipped Task cannot take until it is unskipped. */
+export const SKIPPED_TASK_LOCKED_FIELDS = ['status', 'waitingFor', 'followUpAt', 'followUpChannel'] as const;
 const VALID_PROOF_REQUIREMENT_TYPES = new Set(['url', 'file', 'artifact', 'comment', 'external-status']);
 export const WAITING_FIELDS_ERROR = 'Waiting tasks require waitingFor, followUpAt, and comment';
 export const WAITING_COMPLETION_ERROR = 'Waiting tasks must be resolved with the follow-up resolve action before completion';

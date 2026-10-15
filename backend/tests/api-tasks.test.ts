@@ -902,7 +902,7 @@ describe('API — CRUD for tasks', () => {
       assert.ok(Date.parse(body.completedAt));
     });
 
-    it('rejects every generic update of a skipped Task without writing', async () => {
+    it('rejects lifecycle updates of a skipped Task without writing', async () => {
       const client = await getClient(port);
       const archived = await createTask(client, {
         description: 'Retired Template Task',
@@ -924,9 +924,8 @@ describe('API — CRUD for tasks', () => {
           comment: 'must not apply',
         },
         { status: 'done' },
-        { comment: 'must not change retirement evidence' },
-        { description: 'must not rename retired work' },
-        { date: '2026-03-20' },
+        { waitingFor: 'must not apply' },
+        { followUpAt: '2026-03-12', description: 'must not rename either' },
       ];
       for (const mutation of mutations) {
         const response = await handler({
@@ -940,10 +939,44 @@ describe('API — CRUD for tasks', () => {
         assert.strictEqual(response.statusCode, 400);
         assert.strictEqual(
           JSON.parse(response.body).error,
-          'Skipped Tasks must be unskipped before they can be changed',
+          'A skipped Task keeps its status and has no follow-up; unskip it first',
         );
         assert.deepStrictEqual(await getTask(client, archived.id), archived);
       }
+    });
+
+    it('edits a skipped Task like a done one and keeps it skipped', async () => {
+      const client = await getClient(port);
+      const skipped = await createTask(client, {
+        description: 'Fill in the announcement **– Valeriia**',
+        date: '2026-03-10',
+        status: 'skipped',
+        skipReason: 'Guest withdrew',
+        skippedAt: '2026-03-09T12:00:00.000Z',
+        skippedBy: 'ops-manager',
+        tags: ['newsletter'],
+      });
+      const response = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${skipped.id}`,
+        body: JSON.stringify({
+          expectedVersion: skipped.version,
+          description: 'Fill in the announcement',
+          assigneeId: 'ops-manager',
+          date: '2026-03-11',
+          comment: 'Title cleaned',
+        }),
+      }, {});
+      assert.strictEqual(response.statusCode, 200, response.body);
+      const stored = await getTask(client, skipped.id);
+      assert.ok(stored);
+      assert.strictEqual(stored.status, 'skipped');
+      assert.strictEqual(stored.skipReason, 'Guest withdrew');
+      assert.strictEqual(stored.skippedAt, '2026-03-09T12:00:00.000Z');
+      assert.strictEqual(stored.description, 'Fill in the announcement');
+      assert.strictEqual(stored.assigneeId, 'ops-manager');
+      assert.strictEqual(stored.date, '2026-03-11');
+      assert.strictEqual(stored.version, skipped.version + 1);
     });
 
     it('returns 404 for a nonexistent task', async () => {
