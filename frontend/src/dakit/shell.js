@@ -1,4 +1,4 @@
-/* dakit 0.2.0 69949cc */
+/* dakit 0.2.0 b4aafde */
 // Dakit app shell behaviour — the contract is docs/shell.md.
 //
 // Load once per page, at the end of <body> (no defer, so the persisted
