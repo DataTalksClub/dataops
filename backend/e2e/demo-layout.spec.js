@@ -14,7 +14,7 @@ const routes = [
   ['/templates', '.runtime-template-inspector .dk-split'], ['/recurring', '.ops-recurring-section'],
   ['/calendar', '.calendar-grid'], ['/newsletter', '.newsletter-views'],
   ['/processes', '.ops-docs-catalog'],
-  ['/operating-model', '.operating-model-grid, .review-empty-state'], ['/review', '.review-surface .dk-split, .review-empty-state'],
+  ['/operating-model', '.operating-model-grid, .operating-model-state'],
   ['/admin', '.ops-admin-card'], ['/users', '.ops-users-table'],
 ];
 test.beforeAll(async () => {

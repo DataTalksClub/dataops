@@ -23,7 +23,6 @@ import { handleSponsorCommunicationRoutes } from './routes/sponsorCommunications
 import { handleNewsletterSlotRoutes } from './routes/newsletterSlots';
 import { handlePodcastEpisodeRoutes } from './routes/podcastEpisodes';
 import { handleCalendarRoutes } from './routes/calendar';
-import { handleDocumentReviewRoutes } from './routes/documentReviews';
 import { handleOperatingModelRoutes } from './routes/operatingModel';
 import { handleAuthRoutes, extractToken } from './routes/auth';
 import { handleTeamMemberRoutes } from './routes/teamMembers';
@@ -306,11 +305,6 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
 
     // ── Artifact and file routes ──────────────────────
-
-    if (reqPath.startsWith('/api/document-reviews')) {
-      const result = await handleDocumentReviewRoutes(event, client);
-      if (result) return result;
-    }
 
     if (reqPath === '/api/operating-model') {
       const result = await handleOperatingModelRoutes(event, client);

@@ -264,7 +264,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .workflow-board-scroll-hint,
   .bookkeeping-header p:not([class*="dk-"]),
   .crm-header p:not([class*="dk-"]),
-  .review-header p:not([class*="dk-"]),
   .planner-header p:not([class*="dk-"]) {
     display: none !important;
   }
@@ -278,9 +277,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .workflow-board-filter select,
   .crm-pipeline button,
   .planner-header > .primary-button,
-  .review-header-actions button,
-  .review-controls select,
-  .review-controls input,
   .bookkeeping-header .primary-button,
   .period-nav__today,
   .period-nav__arrow,
@@ -453,12 +449,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .calendar-display-controls-bar { gap: 8px; }
   .calendar-layer-chip { min-height: 44px; font-size: 12px; }
   .calendar-layers { gap: 6px; }
-
-  /* ---- Review: compact header and summary tiles ---- */
-
-  .review-controls {
-    margin: 6px 0 !important;
-  }
 
   /* ---- Surface summaries stay visible (feedback contracts) but compact ---- */
   .surface-summary {

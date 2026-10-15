@@ -11,7 +11,6 @@ export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
   newsletter: "/newsletter",
   calendar: "/calendar",
   podcast: "/podcast",
-  review: "/review",
 });
 
 export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
@@ -64,11 +63,6 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
     view: "docs",
     tasksSection: "queue",
     params: ["domain", "type", "system", "tag"],
-  },
-  "/review": {
-    view: "review",
-    tasksSection: "queue",
-    params: ["documentId"],
   },
   "/admin": { view: "admin", tasksSection: "queue", params: [] },
   "/users": { view: "users", tasksSection: "queue", params: [] },

@@ -72,7 +72,7 @@ export function createOperatingModelSurface(context) {
   }
 
   function unavailable(root) {
-    const state = el(documentRef, "section", "review-empty-state");
+    const state = el(documentRef, "section", "operating-model-state");
     state.append(el(documentRef, "strong", "", loading ? "Loading operating model…" :
       definitionsUnavailable ? "Definitions aren't available yet" : "Operating model unavailable"));
     state.append(

@@ -229,7 +229,6 @@ test.describe("pre-refactor frontend module characterization", () => {
       ["/bookkeeping", "Bookkeeping", ".bookkeeping-surface"],
       // Bare /sponsors opens its default tab at /sponsors/queue.
       ["/sponsors", "Sponsors", ".sponsor-crm-surface", "/sponsors/queue"],
-      ["/review", "Document review", ".review-surface", `/review?documentId=${FIXTURE_DOC_ID}`],
       ["/processes", "Process Docs", ".ops-surface-docs"],
       ["/admin", "Admin", ".ops-surface-admin"],
       ["/users", "Users", ".ops-surface-users"],
@@ -308,7 +307,6 @@ test.describe("pre-refactor frontend module characterization", () => {
       "/bookkeeping",
       "/sponsors",
       "/processes",
-      "/review",
       "/admin",
       "/users",
     ];

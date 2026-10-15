@@ -90,10 +90,6 @@ const REQUIRED = {
       "unavailable",
     ],
   },
-  "document-review": {
-    route: "/review",
-    states: ["ready", "feedback"],
-  },
   admin: { route: "/admin", states: ["loading", "empty", "ready-read-only", "failure"] },
   users: {
     route: "/users",
@@ -115,7 +111,6 @@ const REQUIRED_APIS = {
   newsletter: ["/api/newsletter-slots"],
   calendar: ["/api/calendar-items"],
   "process-docs": ["/docs", "/search", "/content/*", "/docs/registry", "/docs/backlinks"],
-  "document-review": ["/api/document-reviews", "/docs", "/content/*"],
   admin: ["/docs/process-quality", "/knowledge/status", "/knowledge/publication"],
   users: ["/api/users", "/api/me"],
 };
@@ -158,7 +153,6 @@ const REQUIRED_ROUTE_SET = [
   "/newsletter",
   "/calendar",
   "/processes",
-  "/review",
   "/admin",
   "/users",
 ];

@@ -19,7 +19,6 @@ import {
   dedupeQualityFindings,
   emptyOperationsDocsSnapshot,
   emptyOperationsQualitySnapshot, emptyOperationsRecurringSnapshot,
-  emptyOperationsReviewSnapshot,
   emptyOperationsWorkSnapshot,
   findingMatchesCard,
   labelizeWorkValue, normalizeOperationsQualitySnapshot,
@@ -35,7 +34,6 @@ import { createTasksSurface } from "../surfaces/tasks/index.js";
 import { createWorkDetailSurface } from "../surfaces/work-detail/index.js";
 import { createKnowledgeSurface } from "../surfaces/knowledge/index.js";
 import { createDocumentEditor } from "../surfaces/document-editor/index.js";
-import { createReviewSurface } from "../surfaces/review/index.js";
 import { createPodcastSurface } from "../surfaces/podcast/index.js";
 import { createOperatingModelSurface } from "../surfaces/operating-model.js";
 import { createApiClient, resolveApiBase } from "../shell/api.js";
@@ -50,7 +48,6 @@ import { createWorkspaceState } from "../runtime/workspace-state.js";
 import { createSurfaceBridge, createSurfaceComposition } from "./surface-composition.js";
 let knowledgeSurface;
 let documentEditorSurface;
-let reviewSurface;
 let podcastSurface;
 let operatingModelSurface;
 let navigationShell;
@@ -80,7 +77,6 @@ const workspaceState = createWorkspaceState({
   emptyOperationsDocsSnapshot,
   emptyOperationsQualitySnapshot,
   emptyOperationsRecurringSnapshot,
-  emptyOperationsReviewSnapshot,
   emptyOperationsWorkSnapshot,
   getAccountIdentityState: () => getAccountIdentityState(),
   getWorkspaceEntityState,
@@ -90,7 +86,6 @@ const {
   documentState,
   knowledgeState,
   qualityFiltersState,
-  reviewSurfaceState,
   tasksSurfaceState,
   workDetailState,
   workModelState,
@@ -157,8 +152,6 @@ const {
   getRenderOperatingModel: () => operatingModelSurface?.renderOperatingModel || (() => undefined),
   getRenderPodcastSurface: () =>
     podcastSurface?.renderPodcastSurface || (() => undefined),
-  getRenderReviewSurface: () =>
-    reviewSurface?.renderReviewSurface || (() => undefined),
   getRenderSponsorCrmSurface: () => renderSponsorCrmSurface,
   getRenderTasksSurface: () => renderTasksSurface,
   getRenderUsersSurfaceView: () => renderUsersSurfaceView,
@@ -552,21 +545,6 @@ const {
 
 
 
-reviewSurface = createReviewSurface({
-  apiUrl,
-  documentList,
-  getActiveWorkspaceRoute,
-  getActiveWorkspaceView: () => workspaceState.activeWorkspaceView,
-  getDocsAvailability: () => workspaceState.docsSnapshot,
-  navigateCanonicalWorkspace,
-  openDocument,
-  refreshDocuments,
-  renderHonestState,
-  request,
-  reviewState: reviewSurfaceState,
-  setRouteTitle,
-});
-
 podcastSurface = createPodcastSurface({
   apiUrl,
   documentList,
@@ -788,7 +766,6 @@ navigationShell = createNavigationShell({
   prepareTaskPanel,
   refreshDocuments,
   refreshPodcastEpisodes: (...args) => podcastSurface.refreshPodcastEpisodes(...args),
-  refreshReviewSnapshot: (...args) => reviewSurface.refreshReviewSnapshot(...args),
   refreshUsersSurface,
   restoreDocumentFilters,
   renderWorkspaceNav: () => {

@@ -62,7 +62,6 @@ describe("dakit adoption contract", () => {
       [
         "/src/dakit/dakit.css",
         "/src/styles/base.css",
-        "/src/styles/review.css",
         "/src/styles/chrome.css",
         "/src/styles/finance.css",
         "/src/styles/operations.css",

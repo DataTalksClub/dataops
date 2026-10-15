@@ -11,13 +11,11 @@ Usage
 
 Routes are the web app's: /api/... (work, finance, CRM, calendar), /docs, /search,
 /knowledge/... (knowledge base). The response is printed as JSON. Prefer a dedicated
-command when one exists; this covers views without one (bookkeeping, operating model,
-document reviews).
+command when one exists; this covers views without one (bookkeeping, operating model).
 
 Examples
   dataops api GET /api/operating-model
   dataops api GET /api/bookkeeping/transactions --query month=2026-10
-  dataops api GET /api/document-reviews
 `;
 
 const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);

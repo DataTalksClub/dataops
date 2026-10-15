@@ -1408,43 +1408,6 @@ test.describe('canonical frontend capability behavior', () => {
     ]);
   });
 
-  test('Document Review derives a queue from live docs and records safe feedback', async ({ browser }, testInfo) => {
-    const context = await portalContext(browser, servers.operator);
-    const page = await context.newPage();
-    const browserErrors = observeBrowserErrors(page);
-    await page.goto('/review');
-    await expect(page.getByRole('heading', { name: 'Document review', exact: true })).toBeVisible();
-    await expect(page.locator('.review-surface')).toBeVisible();
-    await expect(page.locator('.review-surface .dk-split__item')).toHaveCount(1);
-    await expect(page.locator('.review-surface .dk-split__item').first()).toContainText('Synthetic Capability Procedure');
-
-    await page.locator('.review-surface .dk-split__item').first().click();
-    await expect(page).toHaveURL(/\/review\?documentId=sop\.synthetic\.capability$/);
-    await expect(page.locator('.review-markdown-preview')).toContainText('Verify the synthetic capability.');
-    await expect(page.getByRole('heading', { name: 'Record review evidence', exact: true })).toBeVisible();
-
-    await page.getByLabel('Feedback').fill('Add the observable validation result and owner handoff.');
-    await page.getByRole('button', { name: 'Request changes' }).click();
-    await expect(page.locator('.review-notice')).toContainText('Review evidence saved. The document lifecycle remains unchanged.');
-    await expect(page.locator('.review-history')).toContainText('Add the observable validation result and owner handoff.');
-
-    const documentResponse = await context.request.get('/docs/resolve?ref=sop.synthetic.capability');
-    expect(documentResponse.status()).toBe(200);
-    expect((await json(documentResponse)).document.status).toBe('proposed');
-    await page.setViewportSize({ width: 390, height: 844 });
-    await expectNoHorizontalOverflow(page, '/review');
-    await page.reload();
-    await expect(page).toHaveURL(/\/review\?documentId=sop\.synthetic\.capability$/);
-    await expect(page.locator('.review-history')).toContainText('Add the observable validation result and owner handoff.');
-    expect(browserErrors).toEqual([]);
-    await context.close();
-    recordCapabilityEvidence(testInfo, [{
-      route: '/review',
-      roleId: 'operator',
-      stateIds: ['document-review.ready', 'document-review.feedback'],
-    }]);
-  });
-
   test('Users derive controls from the server role and deny spoofed or operator mutations', async ({ browser }, testInfo) => {
     const admin = await portalContext(browser, servers.admin);
     const operator = await portalContext(browser, servers.operator);

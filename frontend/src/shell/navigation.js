@@ -23,7 +23,6 @@ export function createNavigationShell(context) {
     prepareTaskPanel,
     refreshDocuments,
     refreshPodcastEpisodes,
-    refreshReviewSnapshot,
     refreshUsersSurface,
     restoreDocumentFilters,
     renderWorkspaceNav,
@@ -245,9 +244,6 @@ export function createNavigationShell(context) {
     }
     if (route.view === "podcast" && typeof refreshPodcastEpisodes === "function") {
       jobs.push(refreshPodcastEpisodes({ rerender: true }));
-    }
-    if (route.path === "/review" && typeof refreshReviewSnapshot === "function") {
-      jobs.push(refreshReviewSnapshot({ rerender: true, token }));
     }
     if (route.path === "/users") {
       jobs.push(refreshUsersSurface({ rerender: true }));

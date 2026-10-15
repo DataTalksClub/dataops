@@ -1,4 +1,4 @@
-// The list–detail views (Review, Templates, Sponsors) use the
+// The list–detail views (Templates, Sponsors) use the
 // dakit split: the page never scrolls, each pane scrolls on its own, and a
 // phone shows one pane at a time with Back.
 const { test, expect } = require('@playwright/test');
@@ -71,10 +71,6 @@ async function scrollReport(page) {
 }
 
 const VIEWS = [
-  { route: '/review', open: async (page) => {
-    await page.locator('.review-controls select').selectOption('all');
-    await page.locator('.review-surface .dk-split__item').nth(10).click();
-  } },
   { route: '/sponsors', open: (page) => page.locator('.crm-master .dk-split__item').nth(10).click() },
 ];
 
@@ -84,7 +80,6 @@ for (const view of VIEWS) {
     await setupPageWithAuth(page);
     await page.goto(`${server.baseURL}${view.route}`);
     await expect(page.locator('.dk-split')).toBeVisible();
-    if (view.route === '/review') await expect(page).toHaveURL(/documentId=/);
     await view.open(page);
     await expect(page.locator('.dk-split')).toHaveAttribute('data-view', 'detail');
     await expect(page.locator('.dk-split__item[aria-current="true"]')).toHaveCount(1);

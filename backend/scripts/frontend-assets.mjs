@@ -15,7 +15,6 @@ const REQUIRED_FILES = [
   'index.html',
   'src/app.js',
   'src/styles/base.css',
-  'src/styles/review.css',
   'src/styles/chrome.css',
   'src/styles/finance.css',
   'src/styles/operations.css',

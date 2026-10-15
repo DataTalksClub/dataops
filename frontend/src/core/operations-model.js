@@ -67,15 +67,6 @@ export function emptyOperationsQualitySnapshot() {
   };
 }
 
-export function emptyOperationsReviewSnapshot() {
-  return {
-    loaded: false,
-    reviews: [],
-    errors: [],
-    updatedAt: null,
-  };
-}
-
 // ---------- Process document availability ----------
 //
 // One snapshot, derived from the single `GET /docs` bootstrap request, tells

@@ -35,10 +35,12 @@ describe("canonical workspace routing", () => {
     assert.doesNotMatch(markup, /mailing-exports-nav-button/);
     assert.doesNotMatch(markup, /data-workspace-view="mailing-exports"/);
     assert.doesNotMatch(markup, />Mailing exports</);
-    for (const view of ["bookkeeping", "sponsors", "newsletter", "calendar", "review"]) {
+    for (const view of ["bookkeeping", "sponsors", "newsletter", "calendar"]) {
       assert.match(markup, new RegExp(`data-workspace-view="${view}"`));
     }
     assert.equal(Object.hasOwn(WORKSPACE_PATH_BY_VIEW, "mailing-exports"), false);
+    assert.doesNotMatch(markup, /data-workspace-view="review"/);
+    assert.equal(Object.hasOwn(WORKSPACE_PATH_BY_VIEW, "review"), false);
   });
 
   test("retains every canonical workspace route", () => {
@@ -68,7 +70,6 @@ describe("canonical workspace routing", () => {
       "/podcast/schedule",
       "/podcast/:episodeId",
       "/processes",
-      "/review",
       "/admin",
       "/users",
       "/device",

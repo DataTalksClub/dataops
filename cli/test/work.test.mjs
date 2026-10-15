@@ -401,9 +401,9 @@ describe("cards and templates", () => {
 
 describe("api passthrough", () => {
   test("sends the method, route, repeated --query values, and --data", async () => {
-    const calls = fakePortal({ "POST /api/document-reviews": ({ body, query }) => ({ body, query }) });
+    const calls = fakePortal({ "POST /api/operating-model": ({ body, query }) => ({ body, query }) });
     const io = captureIo();
-    assert.equal(await run(["api", "post", "/api/document-reviews", "--data", '{"a":1}', "--query", "x=1", "--query", "y=2", "--json"], io), 0);
+    assert.equal(await run(["api", "post", "/api/operating-model", "--data", '{"a":1}', "--query", "x=1", "--query", "y=2", "--json"], io), 0);
     assert.deepEqual(calls[0].query, { x: "1", y: "2" });
     assert.deepEqual(io.json(), { body: { a: 1 }, query: { x: "1", y: "2" } });
     assert.equal(await run(["api", "GET", "/api/x", "--data", "{}"], captureIo()), 2);

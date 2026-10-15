@@ -236,8 +236,7 @@ body[data-view="library"] .library-view #document-list {
 }
 body[data-view="library"] .operations-home,
 body[data-view="library"] .ops-surface-docs,
-body[data-view="library"] .operating-model-surface,
-body[data-view="library"] .review-surface {
+body[data-view="library"] .operating-model-surface {
   width: 100%;
   max-width: none;
   margin-inline: 0;

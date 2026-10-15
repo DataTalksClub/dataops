@@ -39,7 +39,6 @@ const ROUTES = [
   { path: '/calendar', ready: '.calendar-surface', content: '.calendar-grid', contentReady: '.calendar-grid', mockCalendar: true },
   { path: '/processes', ready: '.ops-surface-docs', content: '.ops-docs-catalog, .ops-docs-state, .ops-docs-state-detail' },
   { path: '/operating-model', ready: '.operating-model-surface', content: '.operating-model-surface strong, .operating-model-surface table, .operating-model-surface .status-text' },
-  { path: '/review', ready: '.review-surface', content: '.review-controls, .review-empty-state' },
   { path: '/admin', ready: '.ops-surface-admin', content: '.ops-admin-card, .ops-admin-intake-recovery' },
   { path: '/users', ready: '.ops-surface-users', content: '.ops-users-outcome, .ops-users-toolbar, .ops-users-table' },
 ];

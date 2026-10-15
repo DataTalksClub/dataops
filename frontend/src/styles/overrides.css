@@ -244,8 +244,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
   }
 }/* Page titles are the document H1 on every surface (SCOPE: one clear H1
    per page); the eyebrow carries the section, the H1 the page name. */.bookkeeping-header h1:not([class*="dk-"]),
-.crm-header h1:not([class*="dk-"]),
-.review-header-copy h1:not([class*="dk-"]) {
+.crm-header h1:not([class*="dk-"]) {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: 16px;
@@ -293,13 +292,12 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
     min-height: 44px;
   }
 }/* ── Slice 5 review round 1 (#229): knowledge family, panels, finance r2 ── *//* Docs and Admin share the knowledge-family header: eyebrow, H1, subtitle on
-   the normal content column, left-aligned like Review. */.operations-home .ops-processes-surface {
+   the normal content column, left-aligned. */.operations-home .ops-processes-surface {
   width: min(var(--content-width), 100%);
 }.operations-home .ops-surface-header .section-kicker {
   margin: 0 0 2px;
-}/* Operating Model and Review use the same container as Docs instead of the
-   760px reading column, so the knowledge family shares one content width. */body[data-view="library"][data-workspace-view="operating-model"] .document-list:not(.is-operations-home),
-body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-operations-home) {
+}/* Operating Model uses the same container as Docs instead of the
+   760px reading column, so the knowledge family shares one content width. */body[data-view="library"][data-workspace-view="operating-model"] .document-list:not(.is-operations-home) {
   width: min(var(--content-width), 100%);
   max-width: none;
   margin: 0 auto;
@@ -350,9 +348,6 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
   font-family: var(--dk-font-mono);
   font-size: 11px;
   overflow-wrap: anywhere;
-}/* Review queue paths: quiet mono with middle elision (full path in title). */.review-queue-path {
-  font-family: var(--dk-font-mono);
-  font-size: 11px;
 }/* Task panel file control follows the system controls, not the native box:
    the input is a family control and the native picker button takes the
    quiet-control recipe. Tests dispatch change on the input itself. */.task-panel-body input[type="file"] {
@@ -385,8 +380,6 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
 }
 
 @media (max-width: 820px) {/* Knowledge-family controls meet the 44px floor on mobile. */.operating-model-surface button,
-.review-surface button,
-.review-surface select,
 .ops-quality-filters select,
 #clear-filters-button {
     min-height: 44px;

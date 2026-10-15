@@ -21,7 +21,6 @@ const TABLE_USERS = tableName('DATAOPS_USERS_TABLE', 'Users', 'users');
 const TABLE_FILES = tableName('DATAOPS_FILES_TABLE', 'Files', 'files');
 const TABLE_ARTIFACTS = tableName('DATAOPS_ARTIFACTS_TABLE', 'Artifacts', 'artifacts');
 const TABLE_AUDIT_EVENTS = tableName('DATAOPS_AUDIT_EVENTS_TABLE', 'AuditEvents', 'audit-events');
-const TABLE_DOCUMENT_REVIEWS = tableName('DATAOPS_DOCUMENT_REVIEWS_TABLE', 'DocumentReviews', 'document-reviews');
 const TABLE_INTAKE = tableName('DATAOPS_INTAKE_TABLE', 'IntakeItems', 'intake');
 const TABLE_NOTIFICATIONS = tableName('DATAOPS_NOTIFICATIONS_TABLE', 'Notifications', 'notifications');
 const TABLE_SESSIONS = tableName('DATAOPS_SESSIONS_TABLE', 'Sessions', 'sessions');
@@ -39,7 +38,6 @@ const DATAOPS_TABLES = Object.freeze([
   TABLE_FILES,
   TABLE_ARTIFACTS,
   TABLE_AUDIT_EVENTS,
-  TABLE_DOCUMENT_REVIEWS,
   TABLE_INTAKE,
   TABLE_NOTIFICATIONS,
   TABLE_SESSIONS,
@@ -58,7 +56,6 @@ export {
   TABLE_FILES,
   TABLE_ARTIFACTS,
   TABLE_AUDIT_EVENTS,
-  TABLE_DOCUMENT_REVIEWS,
   TABLE_INTAKE,
   TABLE_NOTIFICATIONS,
   TABLE_SESSIONS,
