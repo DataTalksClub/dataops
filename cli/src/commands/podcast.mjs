@@ -27,9 +27,15 @@ Usage
                                   (the episode needs a recording date)
 
 Statuses: ${STATUSES.join(", ")}.
-Publication facts (timezone, audio time, Spotify verification, transcript review,
-website release) are recorded in the web Podcast page or via PUT publication;
-a scheduled time never counts as public.
+Publication evidence is recorded with update flags; each observation is stamped now:
+  --spotify-schedule "2026-11-20T06:00:00+01:00" --timezone Europe/Berlin [--schedule-proof URL]
+  --spotify-verified https://open.spotify.com/episode/...   public episode played
+  --transcript-reviewed PROOF_URL                           review proof is required
+  --website-released PAGE_URL      only once the transcript and public Spotify are recorded
+  --website-observed PAGE_URL      a page already seen live: history, never authorisation
+  "none" clears one of them. --release-date is the intended release, not Spotify evidence.
+Status scheduled needs --spotify-schedule evidence; published needs --spotify-verified.
+Unrecorded evidence shows as not-recorded, never as a definite no.
 --from/--to filter on the episode's release date, else its recording date.
 Writes send the episode's current version; a changed episode exits 5.
 An episode links at most one podcast Card; its recording date and guests are
@@ -130,8 +136,48 @@ export async function list(args, io) {
 
 /** "2026-11-20T05:00:00.000Z Europe/Berlin" or "". */
 function scheduledAt(episode) {
-  const publication = episode.publication;
-  return publication?.audioScheduledAt ? `${publication.audioScheduledAt} ${publication.timezone || ""}`.trim() : "";
+  const schedule = episode.publication?.audioSchedule;
+  return schedule ? `${schedule.scheduledAt} ${schedule.timezone}` : "";
+}
+
+const PUBLICATION_FLAGS = ["spotifySchedule", "timezone", "scheduleProof", "spotifyVerified", "transcriptReviewed", "websiteReleased", "websiteObserved"];
+
+/**
+ * The `publication` body after applying the evidence flags to the current one,
+ * or undefined when no flag was given. An observation keeps its recorded time
+ * while its proof link is unchanged.
+ */
+export function publicationFromFlags(args, current, nowIso) {
+  const given = Object.fromEntries(
+    PUBLICATION_FLAGS.map((flag) => [flag, optionalString(args, flag)]).filter(([, value]) => value !== undefined),
+  );
+  if (!Object.keys(given).length) return undefined;
+  const next = { ...(current || {}) };
+  const clears = (flag) => given[flag] === "none";
+  if (given.spotifySchedule !== undefined || given.timezone !== undefined || given.scheduleProof !== undefined) {
+    if (clears("spotifySchedule")) delete next.audioSchedule;
+    else {
+      const before = next.audioSchedule || {};
+      const scheduledAt = given.spotifySchedule ?? before.scheduledAt;
+      const timezone = given.timezone ?? before.timezone;
+      if (!scheduledAt || !timezone) throw new UsageError("--spotify-schedule and --timezone are given together.");
+      if (Number.isNaN(Date.parse(scheduledAt))) throw new UsageError("--spotify-schedule must be an ISO time with an offset.");
+      const same = before.scheduledAt && Date.parse(before.scheduledAt) === Date.parse(scheduledAt) && before.timezone === timezone;
+      next.audioSchedule = { scheduledAt: new Date(scheduledAt).toISOString(), timezone, observedAt: same ? before.observedAt : nowIso };
+      const proof = given.scheduleProof === "none" ? undefined : (given.scheduleProof ?? before.proofUrl);
+      if (proof) next.audioSchedule.proofUrl = proof;
+    }
+  }
+  const observation = (flag, key, timeKey, url) => {
+    if (given[flag] === undefined) return;
+    if (clears(flag)) delete next[key];
+    else next[key] = { [timeKey]: next[key]?.[url] === given[flag] ? next[key][timeKey] : nowIso, [url]: given[flag] };
+  };
+  observation("spotifyVerified", "spotify", "publicVerifiedAt", "episodeUrl");
+  observation("transcriptReviewed", "transcript", "reviewedAt", "proofUrl");
+  observation("websiteReleased", "website", "releasedAt", "proofUrl");
+  observation("websiteObserved", "websiteObserved", "observedAt", "proofUrl");
+  return Object.keys(next).length ? next : null;
 }
 
 export async function schedule(args, io) {
@@ -169,11 +215,11 @@ export async function show(args, io) {
     ["releaseDate", episode.releaseDate],
     ...Object.entries(episode.links || {}),
     ["websiteSlug", episode.websiteSlug],
-    ["audio", scheduledAt(episode)],
+    ["spotify schedule", scheduledAt(episode)],
     ["spotify", episode.readiness?.spotify],
     ["transcript", episode.readiness?.transcript],
     ["website", episode.readiness?.website],
-    ["blockers", episode.readiness?.websiteBlockers],
+    ["release needs", episode.readiness?.websiteGate?.missing],
     ["cardId", episode.cardId],
     ["notes", episode.notes],
     ["version", episode.version],
@@ -200,11 +246,14 @@ export async function create(args, io) {
 export async function update(args, io) {
   const id = positional(args, 0, "dataops podcast update <episode-id> [--status S] ...");
   const { body, links } = episodeBody(args);
-  if (!Object.keys(body).length && !Object.keys(links).length) {
+  const hasPublicationFlag = PUBLICATION_FLAGS.some((flag) => optionalString(args, flag) !== undefined);
+  if (!Object.keys(body).length && !Object.keys(links).length && !hasPublicationFlag) {
     throw new UsageError("Nothing to change. See `dataops podcast --help`.");
   }
   const api = apiFor(args);
   const current = await api.get(`/api/podcast-episodes/${enc(id)}`);
+  const publication = publicationFromFlags(args, current.publication, new Date().toISOString());
+  if (publication !== undefined) body.publication = publication;
   if (Object.keys(links).length) {
     const merged = { ...(current.links || {}), ...links };
     body.links = Object.fromEntries(Object.entries(merged).filter(([, value]) => value));

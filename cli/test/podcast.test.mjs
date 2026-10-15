@@ -6,7 +6,7 @@ import { captureIo, fakePortal, isolateConfig } from "./helpers.mjs";
 isolateConfig();
 const realFetch = globalThis.fetch;
 const { run } = await import("../src/cli.mjs");
-const { parseGuests, episodeCode } = await import("../src/commands/podcast.mjs");
+const { parseGuests, episodeCode, publicationFromFlags } = await import("../src/commands/podcast.mjs");
 
 afterEach(() => {
   globalThis.fetch = realFetch;
@@ -134,8 +134,8 @@ describe("podcast schedule", () => {
         items: [
           episode({
             id: "ep-1",
-            publication: { timezone: "Europe/Berlin", audioScheduledAt: "2026-11-20T05:00:00.000Z" },
-            readiness: { spotify: "awaiting-public-check", transcript: "pending", website: "blocked", websiteBlockers: ["Transcript not reviewed"] },
+            publication: { audioSchedule: { scheduledAt: "2026-11-20T05:00:00.000Z", timezone: "Europe/Berlin", observedAt: "2026-11-01T00:00:00.000Z" } },
+            readiness: { spotify: "awaiting-public-check", transcript: "not-recorded", website: "not-recorded", websiteGate: { met: false, missing: ["Verified public Spotify episode"] } },
           }),
           episode({ id: "ep-2", status: "cancelled" }),
         ],
@@ -146,7 +146,50 @@ describe("podcast schedule", () => {
     assert.ok(calls.length === 1);
     const out = io.text();
     assert.match(out, /awaiting-public-check/);
-    assert.match(out, /blocked/);
+    assert.match(out, /not-recorded/);
     assert.doesNotMatch(out, /ep-2/);
+  });
+});
+
+describe("podcast publication evidence flags", () => {
+  const NOW = "2026-10-01T00:00:00.000Z";
+
+  test("records evidence with its observation time and keeps it while the proof is unchanged", () => {
+    const first = publicationFromFlags(
+      { spotifySchedule: "2026-11-20T06:00:00+01:00", timezone: "Europe/Berlin", spotifyVerified: "https://open.spotify.com/episode/x", transcriptReviewed: "https://example.com/review" },
+      null,
+      NOW,
+    );
+    assert.deepEqual(first, {
+      audioSchedule: { scheduledAt: "2026-11-20T05:00:00.000Z", timezone: "Europe/Berlin", observedAt: NOW },
+      spotify: { publicVerifiedAt: NOW, episodeUrl: "https://open.spotify.com/episode/x" },
+      transcript: { reviewedAt: NOW, proofUrl: "https://example.com/review" },
+    });
+    const again = publicationFromFlags({ spotifyVerified: "https://open.spotify.com/episode/x" }, first, "2027-01-01T00:00:00.000Z");
+    assert.equal(again.spotify.publicVerifiedAt, NOW);
+  });
+
+  test("keeps a seen-live page separate and clears with none", () => {
+    const observed = publicationFromFlags({ websiteObserved: "https://example.com/live" }, null, NOW);
+    assert.deepEqual(observed, { websiteObserved: { observedAt: NOW, proofUrl: "https://example.com/live" } });
+    assert.equal(publicationFromFlags({ websiteObserved: "none" }, observed, NOW), null);
+    assert.equal(publicationFromFlags({}, observed, NOW), undefined);
+  });
+
+  test("refuses half a schedule", () => {
+    assert.throws(() => publicationFromFlags({ spotifySchedule: "2026-11-20T06:00:00Z" }, null, NOW), /together/);
+  });
+
+  test("update sends publication with the current version; the API's status gate surfaces", async () => {
+    const calls = fakePortal({
+      "GET /api/podcast-episodes/ep-1": episode({ publication: { transcript: { reviewedAt: NOW, proofUrl: "https://example.com/review" } } }),
+      "PUT /api/podcast-episodes/ep-1": episode({ version: 5 }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["podcast", "update", "ep-1", "--website-observed", "https://example.com/live"], io), 0);
+    const put = calls.find((call) => call.method === "PUT");
+    assert.deepEqual(put.body.publication.transcript.proofUrl, "https://example.com/review");
+    assert.equal(put.body.publication.websiteObserved.proofUrl, "https://example.com/live");
+    assert.equal(put.body.version, 4);
   });
 });
