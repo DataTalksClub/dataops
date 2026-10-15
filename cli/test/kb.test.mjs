@@ -81,6 +81,103 @@ describe("kb browse", () => {
   });
 });
 
+describe("kb code", () => {
+  const CODE_VIEW_DOC = {
+    id: "news.schedule-code",
+    path: "content/newsletter/code-views/schedule-code.md",
+    title: "Schedule the newsletter — code view",
+    doc_type: "code-view",
+  };
+  const PARSED = {
+    files: [
+      { name: "schedule.sh", language: "bash", anchor: "file-schedule-sh" },
+      { name: "verify.py", language: "python", anchor: "file-verify-py" },
+    ],
+    blocks: [
+      { kind: "markdown", anchor: "section-1-notes", heading: "Notes", body_md: "Dry-run first." },
+      { kind: "file", name: "schedule.sh", language: "bash", anchor: "file-schedule-sh", code: "echo dry-run\n" },
+      { kind: "file", name: "verify.py", language: "python", anchor: "file-verify-py", code: "print('ok')\n" },
+    ],
+  };
+  const codeRoutes = {
+    ...docsRoutes,
+    "GET /docs/resolve": ({ query }) => ({ document: byRef(query.ref) || CODE_VIEW_DOC }),
+    "GET /docs": ({ query }) => {
+      if (query.path === CODE_VIEW_DOC.path) {
+        return {
+          path: CODE_VIEW_DOC.path,
+          content: "# code view\n",
+          revision: "rev-1",
+          doc_type: "code-view",
+          parsed_code_view: PARSED,
+          sop_doc: { path: DOCS[0].path, title: DOCS[0].title },
+        };
+      }
+      const base = docsRoutes["GET /docs"]({ query });
+      return { ...base, doc_type: "sop", code_view: { path: CODE_VIEW_DOC.path, title: CODE_VIEW_DOC.title } };
+    },
+  };
+
+  test("follows the SOP's linked code view and prints files in author order", async () => {
+    const calls = fakePortal(codeRoutes);
+    const io = captureIo();
+    assert.equal(await run(["kb", "code", "news.schedule"], io), 0);
+    assert.equal(calls[2].query.path, CODE_VIEW_DOC.path, "must fetch the linked code view document");
+    const text = io.text();
+    assert.match(text, /code view of content\/newsletter\/sops\/schedule\.md/);
+    assert.match(text, /```bash schedule\.sh\necho dry-run\n```/);
+    assert.match(text, /```python verify\.py/);
+    const order = [text.indexOf("schedule.sh"), text.indexOf("verify.py")];
+    assert.ok(order[0] >= 0 && order[0] < order[1], "author order is preserved");
+  });
+
+  test("prints the code view directly when given the view itself, with --json blocks", async () => {
+    fakePortal(codeRoutes);
+    const io = captureIo();
+    assert.equal(await run(["kb", "code", "news.schedule-code", "--json"], io), 0);
+    const result = io.json();
+    assert.equal(result.path, CODE_VIEW_DOC.path);
+    assert.equal(result.sop, DOCS[0].path);
+    assert.deepEqual(result.files, [
+      { name: "schedule.sh", language: "bash" },
+      { name: "verify.py", language: "python" },
+    ]);
+    assert.equal(result.blocks.length, 3);
+    assert.equal(result.blocks[1].code, "echo dry-run\n");
+  });
+
+  test("states plainly when no code view exists instead of inventing one", async () => {
+    fakePortal(docsRoutes);
+    const io = captureIo();
+    assert.equal(await run(["kb", "code", "fin.invoice"], io), 0);
+    assert.match(io.text(), /no code view is linked/);
+  });
+
+  test("reports a broken code view through parse_code_error", async () => {
+    fakePortal({
+      ...docsRoutes,
+      "GET /docs": ({ query }) => ({
+        ...docsRoutes["GET /docs"]({ query }),
+        doc_type: "sop",
+        code_view: { path: CODE_VIEW_DOC.path, title: CODE_VIEW_DOC.title },
+      }),
+      "GET /docs/resolve": ({ query }) => ({ document: byRef(query.ref) }),
+    });
+    const broken = fakePortal({
+      ...codeRoutes,
+      "GET /docs": ({ query }) => {
+        if (query.path === CODE_VIEW_DOC.path) {
+          return { path: query.path, content: "", revision: "rev-1", doc_type: "code-view", parsed_code_view: null, parse_code_error: "line 7: duplicate file block 'a.sh'", sop_doc: { path: DOCS[0].path, title: DOCS[0].title } };
+        }
+        return { path: query.path, content: "", revision: "rev-1", doc_type: "sop", code_view: { path: CODE_VIEW_DOC.path, title: CODE_VIEW_DOC.title } };
+      },
+    });
+    const io = captureIo();
+    assert.equal(await run(["kb", "code", "news.schedule"], io), 0);
+    assert.match(io.text(), /duplicate file block/);
+  });
+});
+
 describe("kb related", () => {
   test("lists the docs a task links, then search matches that are not already linked", async () => {
     const calls = fakePortal({

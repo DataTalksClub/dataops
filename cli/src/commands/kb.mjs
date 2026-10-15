@@ -17,6 +17,8 @@ Usage
                                                Docs for a piece of work: the docs it links,
                                                then search matches for its title/Template
   dataops kb show <doc-id|path> [--meta]       The document's markdown on stdout
+  dataops kb code <doc-id|path>                The SOP's alternate code view: files in
+                                               author order, language-fenced on stdout
   dataops kb tree [folder] [--depth N]         The folder tree with document titles
   dataops kb ls [folder]                       One folder: subfolders and documents
   dataops kb resolve <doc-id|alias|path>       The document's registry record
@@ -130,6 +132,54 @@ export async function show(args, io) {
     io.print("");
   }
   io.print(doc.content);
+  return result;
+}
+
+/**
+ * Print the alternate code view of a SOP (or the code view itself), files in
+ * author order with their language fences. Unknown automation is reported as
+ * absent, never invented.
+ */
+export async function code(args, io) {
+  const ref = positional(args, 0, "dataops kb code <doc-id|path>");
+  const api = apiFor(args);
+  const document = await resolveDocument(api, ref);
+  let doc = await api.get("/docs", { query: { path: document.path } });
+  const viewPath = doc.doc_type === "code-view" ? doc.path : doc.code_view?.path;
+  if (!viewPath) {
+    const result = { document: document.id, path: doc.path, code_view: null };
+    if (args.json) return result;
+    io.print(`${doc.path}: no code view is linked to this document.`);
+    return result;
+  }
+  if (viewPath !== doc.path) doc = await api.get("/docs", { query: { path: viewPath } });
+  const parsed = doc.parsed_code_view;
+  if (!parsed) {
+    const error = doc.parse_code_error || "code view exists but could not be parsed";
+    if (args.json) return { path: doc.path, code_view: doc.code_view ?? null, error };
+    io.print(`${doc.path}: ${error}`);
+    return { path: doc.path, code_view: doc.code_view ?? null, error };
+  }
+  const result = {
+    path: doc.path,
+    revision: doc.revision,
+    sop: doc.sop_doc?.path || null,
+    files: parsed.files.map((file) => ({ name: file.name, language: file.language })),
+  };
+  if (args.json) return { ...result, blocks: parsed.blocks };
+  io.print(`# ${viewPath}${doc.sop_doc?.path ? `  (code view of ${doc.sop_doc.path})` : ""}`);
+  io.print("");
+  for (const block of parsed.blocks) {
+    if (block.kind === "markdown") {
+      io.print(block.body_md);
+    } else {
+      io.print(`\`\`\`${block.language} ${block.name}`);
+      // The stored code usually ends with a newline; print() adds its own.
+      io.print(block.code.replace(/\n$/, ""));
+      io.print("```");
+    }
+    io.print("");
+  }
   return result;
 }
 
@@ -457,4 +507,4 @@ export async function related(args, io) {
   return result;
 }
 
-export const commands = { search, related, show, tree, ls, resolve, backlinks, history, write, publish };
+export const commands = { search, related, show, code, tree, ls, resolve, backlinks, history, write, publish };
