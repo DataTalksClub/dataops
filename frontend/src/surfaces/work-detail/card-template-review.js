@@ -31,7 +31,6 @@ export function renderCardTemplateUpdate(card, data, context) {
     applyCardTemplateUpdate,
     renderCardPanel,
   } = context;
-  if (!card.templateId) return null;
   const preview = data.templateUpdate;
   if (preview?.state === "current" && !preview.availableOptionalGroups?.length) return null;
   const section = document.createElement("section");
@@ -47,12 +46,7 @@ export function renderCardTemplateUpdate(card, data, context) {
     const unavailable = document.createElement("p");
     unavailable.className = "card-template-update-message is-error";
     unavailable.textContent = data.templateUpdateError || "Template update status is unavailable.";
-    const reload = document.createElement("button");
-    reload.type = "button";
-    reload.className = "task-action-btn";
-    reload.textContent = "Reload template status";
-    reload.addEventListener("click", () => reloadCardTemplateUpdate(card.id));
-    section.append(unavailable, reload);
+    section.append(unavailable);
     return section;
   }
 

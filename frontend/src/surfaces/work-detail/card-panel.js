@@ -95,15 +95,13 @@ export function createCardPanel(context) {
         : [];
       let templateUpdate = null;
       let templateUpdateError = "";
-      if (card?.templateId) {
-        try {
-          const updatePayload = await request(
-            workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
-          );
-          templateUpdate = updatePayload?.preview || updatePayload;
-        } catch (error) {
-          templateUpdateError = error.message || "Template update status is unavailable.";
-        }
+      try {
+        const updatePayload = await request(
+          workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
+        );
+        templateUpdate = updatePayload?.preview || updatePayload;
+      } catch (error) {
+        templateUpdateError = error.message || "Template update status is unavailable.";
       }
       if (
         isWorkspaceRouteFresh(token) &&
@@ -367,14 +365,12 @@ export function createCardPanel(context) {
     // The board badge replaces the legacy `[Tag]` title prefix; the detail
     // panel carries the same Template link as a real button, above the
     // stage/date summary.
-    if (card.templateId) {
-      main.append(
-        renderCardTemplateLink(
-          { navigateCanonicalWorkspace, request, workApiUrl },
-          card.templateId,
-        ),
-      );
-    }
+    main.append(
+      renderCardTemplateLink(
+        { navigateCanonicalWorkspace, request, workApiUrl },
+        card.templateId,
+      ),
+    );
     main.append(meta);
     main.append(renderCardNewsletterSlot({ request, workApiUrl }, card));
     const templateUpdate = renderCardTemplateUpdate(card, data, {

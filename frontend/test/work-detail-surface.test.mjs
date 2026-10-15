@@ -3503,13 +3503,16 @@ describe("Work Detail surface boundary", () => {
         }
         if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [] };
         if (url === `/api/artifacts?cardId=${card.id}`) return { artifacts: [] };
-        if (
-          url === `/api/cards/${card.id}/template-update` &&
-          !requestOptions.method
-        ) {
-          if (initialPreview) {
+        if (url === `/api/cards/${card.id}/template-update`) {
+          if (initialPreview && !requestOptions.method) {
             initialPreview = false;
-            throw new Error("Synthetic preview unavailable");
+            return {
+              preview: {
+                state: "current",
+                availableOptionalGroups: ["sponsored"],
+                targetOptionalGroups: [],
+              },
+            };
           }
           return delayedPreview;
         }
@@ -3521,7 +3524,7 @@ describe("Work Detail surface boundary", () => {
     await harness.api.hydrateCardPanel(card.id, 1);
     const reload = findByText(
       harness.cardPanelBody,
-      "Reload template status",
+      "Review option changes",
       "button",
     ).click();
     await nextTicks();
