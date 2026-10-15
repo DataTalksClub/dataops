@@ -19,6 +19,7 @@ import {
   type PodcastEpisode,
 } from "../db/podcastEpisodes";
 import { getCard } from "../db/cards";
+import { derivePublicationReadiness, normalizePublication } from "../podcast/publication";
 import { resolveInteractiveActor } from "../identity/actor";
 import {
   checkCardLink,
@@ -48,6 +49,7 @@ const WRITABLE = new Set([
   "scheduleSourceKey",
   "cardId",
   "notes",
+  "publication",
   "version",
 ]);
 const PODCAST_CARD_TYPES = ["podcast"];
@@ -170,9 +172,33 @@ async function pushEpisodeToCard(client: DynamoDBDocumentClient, episode: Podcas
   }
 }
 
+/** The episode as every response shows it: derived readiness, never stored. */
+const presented = <T extends PodcastEpisode>(episode: T) => ({
+  ...episode,
+  readiness: derivePublicationReadiness(episode.publication),
+});
+
 async function withCard(client: DynamoDBDocumentClient, episode: PodcastEpisode) {
   const card = episode.cardId ? await getCard(client, episode.cardId) : null;
-  return { ...episode, card: card ? await summarizeCard(client, card) : null };
+  return { ...presented(episode), card: card ? await summarizeCard(client, card) : null };
+}
+
+/**
+ * Validate a written `publication` and keep `releaseDate` equal to the audio's
+ * local date, so the date index and the schedule agree. Returns an error text.
+ */
+function applyPublication(body: Record<string, any>, written: boolean): string {
+  if (!written || body.publication == null) return "";
+  const result = normalizePublication(body.publication);
+  if (!result.ok) return result.error;
+  body.publication = result.value;
+  const local = derivePublicationReadiness(result.value).scheduledLocalDate;
+  if (local) {
+    if (body.releaseDate != null && body.releaseDate !== local)
+      return "releaseDate must match the local date of publication.audioScheduledAt";
+    body.releaseDate = local;
+  }
+  return "";
 }
 
 const parse = (event: LambdaEvent): Record<string, any> | null => {
@@ -240,7 +266,7 @@ export async function handlePodcastEpisodeRoutes(
   if (method === "POST" && !id) {
     if (Object.hasOwn(body, "version")) return json(400, { error: "version is system-owned" });
     const candidate = { guests: [], ...body } as Record<string, any>;
-    const error = validate(candidate);
+    const error = validate(candidate) || applyPublication(candidate, true);
     if (error) return json(400, { error });
     const episodes = await listPodcastEpisodes(client);
     const duplicate = duplicateOf(candidate, episodes, null);
@@ -254,8 +280,8 @@ export async function handlePodcastEpisodeRoutes(
       candidate as Parameters<typeof createPodcastEpisode>[1],
     );
     if (created.cardId)
-      return json(201, { ...created, cardSync: await pushEpisodeToCard(client, created) });
-    return json(201, created);
+      return json(201, { ...presented(created), cardSync: await pushEpisodeToCard(client, created) });
+    return json(201, presented(created));
   }
 
   if (!id) return json(405, { error: "Method not allowed" });
@@ -273,8 +299,13 @@ export async function handlePodcastEpisodeRoutes(
         .filter((name) => name !== "version")
         .map((name) => [name, Object.hasOwn(changes, name) ? changes[name] : (existing as any)[name]]),
     );
-    const error = validate(merged);
+    const error =
+      validate(merged) || applyPublication(merged, Object.hasOwn(changes, "publication"));
     if (error) return json(400, { error });
+    if (Object.hasOwn(changes, "publication")) {
+      changes.publication = merged.publication;
+      if (merged.releaseDate !== existing.releaseDate) changes.releaseDate = merged.releaseDate;
+    }
     const episodes = await listPodcastEpisodes(client);
     const duplicate = duplicateOf(merged, episodes, id);
     if (duplicate) return json(409, { error: duplicate });
@@ -295,8 +326,8 @@ export async function handlePodcastEpisodeRoutes(
         next.recordingDate !== existing.recordingDate ||
         JSON.stringify(next.guests) !== JSON.stringify(existing.guests))
     )
-      return json(200, { ...next, cardSync: await pushEpisodeToCard(client, next) });
-    return json(200, next);
+      return json(200, { ...presented(next), cardSync: await pushEpisodeToCard(client, next) });
+    return json(200, presented(next));
   }
 
   if (method === "DELETE") {
@@ -348,7 +379,7 @@ async function createEpisodeCard(
       },
     );
     if (!created.ok) return created.response;
-    return json(201, { episode: linked, card: await summarizeCard(client, created.card) });
+    return json(201, { episode: linked && presented(linked), card: await summarizeCard(client, created.card) });
   } catch (error) {
     if ((error as Error).name === "ConditionalCheckFailedException")
       return json(409, { error: "Episode changed; reload and retry" });

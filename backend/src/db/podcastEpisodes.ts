@@ -6,6 +6,7 @@ import {
   QueryCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import type { PodcastPublication } from "../podcast/publication";
 import { TABLE_PODCAST_EPISODES } from "./tableNames";
 import {
   collectBoundedPages,
@@ -43,6 +44,8 @@ export type PodcastEpisode = {
   scheduleSourceKey?: string | null;
   cardId?: string | null;
   notes?: string | null;
+  /** Observed publication facts; readiness is derived from them on read. */
+  publication?: PodcastPublication | null;
   version: number;
   createdAt: string;
   updatedAt: string;
