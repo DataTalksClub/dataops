@@ -273,9 +273,9 @@ jobs:
               and ([$body.templates.created, $body.templates.updated, $body.templates.unchanged] | all(.[]; nonnegative_integer))
               and ($body.templates.created + $body.templates.updated + $body.templates.unchanged == $body.templates.total)
               and ($body.recurring | keys == ["created", "repairedTasks", "skipped", "total", "updated"])
-              and ($body.recurring.total == 6)
+              and ($body.recurring.total == 5)
               and ([$body.recurring.created, $body.recurring.updated, $body.recurring.skipped, $body.recurring.repairedTasks] | all(.[]; nonnegative_integer))
-              and ($body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 6)
+              and ($body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 5)
             )
           ' "$seed_response" >/dev/null; then
             echo "Runtime seed did not confirm the authored-template reconciliation and recurring-config contract" >&2

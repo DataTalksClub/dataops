@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
+import { BASELINE_RECURRING_CONFIGS } from '../src/deploymentSeeds';
+
+const recurringTotal = BASELINE_RECURRING_CONFIGS.length;
 
 const workflow = readFileSync(new URL('../../.github/workflows/deploy-dataops-v1.yml', import.meta.url), 'utf8');
 const filter = workflow.match(/if ! jq -e '([\s\S]*?)' "\$seed_response"/)?.[1];
@@ -10,7 +13,7 @@ assert.ok(filter, 'deployment must validate the Lambda seed response');
 function response(templateTotal: number) {
   return { statusCode: 200, body: JSON.stringify({
     templates: { total: templateTotal, created: 0, updated: 0, unchanged: templateTotal },
-    recurring: { total: 6, created: 0, updated: 0, skipped: 6, repairedTasks: 0 },
+    recurring: { total: recurringTotal, created: 0, updated: 0, skipped: recurringTotal, repairedTasks: 0 },
   }) };
 }
 function accepted(value: unknown) {
@@ -31,7 +34,7 @@ test('deploy seed gate rejects malformed counts and incomplete reconciliation', 
     { templates: { total: 24, created: -1, updated: 0, unchanged: 25 } },
     { templates: { total: '24', created: 0, updated: 0, unchanged: 24 } },
     { recurring: { total: 8, created: 0, updated: 0, skipped: 8, repairedTasks: 0 } },
-    { recurring: { total: 6, created: 0, updated: 0, skipped: 6 } },
+    { recurring: { total: recurringTotal, created: 0, updated: 0, skipped: recurringTotal } },
     { templates: { total: 24, created: 0, updated: 0, unchanged: 24, unexpected: 1 } },
   ];
   for (const changes of invalid) {
