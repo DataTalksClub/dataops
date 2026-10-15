@@ -258,7 +258,12 @@ export function createTemplatesSurface(context) {
       if (!value) continue;
       const chip = document.createElement("span");
       chip.className = attention ? `runtime-template-chip ${attention}` : "runtime-template-chip";
-      chip.textContent = value;
+      if (/^\d/.test(value)) {
+        const quantity = document.createElement("span");
+        quantity.className = "dk-mono";
+        quantity.textContent = value.match(/^\d+/)[0];
+        chip.append(quantity, document.createTextNode(value.slice(quantity.textContent.length)));
+      } else chip.textContent = value;
       meta.append(chip);
     }
 
