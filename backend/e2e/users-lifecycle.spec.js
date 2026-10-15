@@ -16,10 +16,13 @@ async function shot(page, name) {
   await page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: true });
 }
 
-async function createPerson(request, name) {
-  const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+// Every person gets a run-unique name: the table is shared across specs and
+// retries, so a fixed name would match a leftover row from an earlier attempt.
+async function createPerson(request, baseName) {
+  const tag = Math.random().toString(36).slice(2, 7);
+  const unique = `${Date.now()}-${tag}`;
   const { user } = await json(await request.post('/api/users', {
-    data: { name, email: `synthetic-${unique}@example.invalid`, role: 'operator' },
+    data: { name: `${baseName} ${tag}`, email: `synthetic-${unique}@example.invalid`, role: 'operator' },
   }), 201);
   return user;
 }
@@ -27,6 +30,10 @@ async function createPerson(request, name) {
 async function openUsers(page) {
   await page.goto('/users');
   await expect(page.locator('.ops-users-table')).toBeVisible();
+  // The app's background work snapshot (one request per Card) re-renders the
+  // whole workspace when it lands. With a large shared table in CI it can land
+  // mid-interaction and replace the controls under test, so let it settle.
+  await page.waitForLoadState('networkidle');
 }
 
 function row(page, name) {
@@ -94,14 +101,14 @@ test.describe('Users: compact layout, and a person leaving', () => {
     await (await menuItem(page, leaver.name, 'Disable…')).click();
     const dialog = page.locator('dialog[data-user-dialog="disable"]');
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText('Synthetic Leaver has 2 open tasks.');
+    await expect(dialog).toContainText(`${leaver.name} has 2 open tasks.`);
     await shot(page, 'users-disable-dialog');
-    await dialog.getByRole('button', { name: 'Disable Synthetic Leaver' }).click();
+    await dialog.getByRole('button', { name: `Disable ${leaver.name}` }).click();
     await expect(dialog.locator('.user-lifecycle-error')).toContainText('Choose who takes over the open work.');
     await dialog.getByLabel('Hand over to').selectOption(heir.id);
-    await dialog.getByRole('button', { name: 'Disable Synthetic Leaver' }).click();
+    await dialog.getByRole('button', { name: `Disable ${leaver.name}` }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(page.locator('.ops-users-outcome')).toHaveText('Synthetic Leaver is now disabled. 2 open tasks went to Synthetic Heir.');
+    await expect(page.locator('.ops-users-outcome')).toHaveText(`${leaver.name} is now disabled. 2 open tasks went to ${heir.name}.`);
     await expect(row(page, leaver.name)).toContainText('disabled');
     for (const task of tasks) {
       expect((await json(await request.get(`/api/tasks/${task.id}`))).assigneeId).toBe(heir.id);
@@ -112,12 +119,12 @@ test.describe('Users: compact layout, and a person leaving', () => {
     await expect(confirm).toBeVisible();
     await expect(confirm.getByLabel('Hand over to')).toHaveCount(0);
     await shot(page, 'users-delete-dialog');
-    await confirm.getByRole('button', { name: 'Delete Synthetic Leaver' }).click();
+    await confirm.getByRole('button', { name: `Delete ${leaver.name}` }).click();
     await expect(confirm).toHaveCount(0);
-    await expect(page.locator('.ops-users-outcome')).toHaveText('Synthetic Leaver was deleted; past work still shows the name.');
+    await expect(page.locator('.ops-users-outcome')).toHaveText(`${leaver.name} was deleted; past work still shows the name.`);
     await expect(row(page, leaver.name)).toHaveCount(0);
     const listing = await json(await request.get('/api/users'));
-    expect(listing.formerUsers).toEqual(expect.arrayContaining([expect.objectContaining({ id: leaver.id, name: 'Synthetic Leaver' })]));
+    expect(listing.formerUsers).toEqual(expect.arrayContaining([expect.objectContaining({ id: leaver.id, name: leaver.name })]));
   });
 
   test('reassign moves a person\'s open work on its own', async ({ page, request }) => {
@@ -129,11 +136,11 @@ test.describe('Users: compact layout, and a person leaving', () => {
     await openUsers(page);
     await (await menuItem(page, gone.name, 'Reassign open work…')).click();
     const dialog = page.locator('dialog[data-user-dialog="reassign"]');
-    await expect(dialog).toContainText('Synthetic Gone has 1 open task.');
+    await expect(dialog).toContainText(`${gone.name} has 1 open task.`);
     await dialog.getByLabel('Hand over to').selectOption(heir.id);
     await dialog.getByRole('button', { name: 'Reassign' }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(page.locator('.ops-users-outcome')).toHaveText('Moved 1 open task from Synthetic Gone to Synthetic Taker.');
+    await expect(page.locator('.ops-users-outcome')).toHaveText(`Moved 1 open task from ${gone.name} to ${heir.name}.`);
     expect((await json(await request.get(`/api/tasks/${task.id}`))).assigneeId).toBe(heir.id);
   });
 
@@ -142,7 +149,7 @@ test.describe('Users: compact layout, and a person leaving', () => {
     const before = await json(await request.get('/api/team-members/default-assignee'));
     await openUsers(page);
     await page.getByLabel('Default assignee').selectOption(person.id);
-    await expect(page.locator('.ops-users-toast')).toHaveText('New tasks now go to Synthetic Default.');
+    await expect(page.locator('.ops-users-toast')).toHaveText(`New tasks now go to ${person.name}.`);
     expect((await json(await request.get('/api/team-members/default-assignee'))).defaultAssigneeId).toBe(person.id);
     await expect(row(page, person.name)).toContainText('default assignee');
     await expect(page.getByLabel('Default assignee')).toBeFocused();
