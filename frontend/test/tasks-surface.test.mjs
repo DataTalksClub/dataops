@@ -337,12 +337,6 @@ function queueOrigins(root) {
   }));
 }
 
-function queueTags(root) {
-  return findAllByClass(root, "ops-queue-row").map(
-    (row) => row.querySelector(".ops-queue-tag")?.textContent ?? "",
-  );
-}
-
 function queueOwners(root) {
   return findAllByClass(root, "ops-queue-owner").map((cell) =>
     cell.dataset.assignee === "none" ? null : cell.textContent,
@@ -823,7 +817,7 @@ describe("Tasks surface boundary", () => {
     ]);
   });
 
-  test("shows the bracket tag as its own pill and keeps proof needs out of the queue", () => {
+  test("shows no group pill, drops the bracket prefix and keeps proof needs out of the queue", () => {
     const tasks = [
       canonicalTask({
         id: "tagged",
@@ -855,7 +849,12 @@ describe("Tasks surface boundary", () => {
       "Add a podcast episode",
       "Upload the emails",
     ]);
-    assert.deepEqual(queueTags(documentList), ["Podcast page", "Other tasks"]);
+    // The group only repeated the title or the card's kind: no pill at all.
+    assert.equal(findAllByClass(documentList, "ops-queue-tag").length, 0);
+    assert.deepEqual(
+      findAllByClass(documentList, "ops-queue-title-row").map((row) => row.children.length),
+      [1, 1],
+    );
     const notes = findAllByClass(documentList, "ops-queue-note").map(
       (note) => note.textContent,
     );
@@ -1102,9 +1101,8 @@ describe("Tasks surface boundary", () => {
     assert.equal(originLink.tagName, "A");
     assert.equal(originLink.href, "/cards?cardId=card-1");
     assert.equal(originLink.getAttribute("aria-label"), "Open card LLM evals in practice · Webinar");
-    // A tag that only repeats the card's kind is not a pill; the checklist
-    // prefix is.
-    assert.deepEqual(queueTags(documentList), ["Emails", ""]);
+    // No group pill, whatever the tag says.
+    assert.equal(findAllByClass(documentList, "ops-queue-tag").length, 0);
   });
 
   test("names the sponsor a cardless Task is about in Where and opens the deal from it", async () => {

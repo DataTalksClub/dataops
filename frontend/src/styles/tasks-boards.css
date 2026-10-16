@@ -207,7 +207,7 @@ body[data-workspace-view="tasks"] .ops-queue-row {
   border-top: 0;
 }/* Every cell sits on the row's first line, one band tall, so an optional
    second line under the title (a waiting or follow-up note) only adds height
-   below: the tick, the pill, the title and every other column stay put. */
+   below: the tick, the title and every other column stay put. */
 body[data-workspace-view="tasks"] .ops-queue-row > *,
 body[data-workspace-view="tasks"] .ops-queue-title-row {
   min-height: var(--ops-queue-line);
@@ -312,21 +312,7 @@ body[data-workspace-view="tasks"] .ops-queue-title-row {
   gap: 8px;
   min-width: 0;
 }
-body[data-workspace-view="tasks"] .ops-queue-tag {
-  flex: none;
-  max-width: 11rem;
-  overflow: hidden;
-  border: 1px solid var(--dk-border-default);
-  border-radius: 999px;
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-muted);
-  padding: 0 8px;
-  font-size: var(--dk-text-xs);
-  font-weight: 600;
-  line-height: 1.6;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}/* The second line: muted, one line, truncated (the full text is the
+/* The second line: muted, one line, truncated (the full text is the
    tooltip). It is never a link, so it never takes the accent colour. */
 body[data-workspace-view="tasks"] .ops-queue-note {
   display: block;

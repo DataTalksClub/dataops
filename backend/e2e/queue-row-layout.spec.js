@@ -178,8 +178,7 @@ test('375px: the card line sits above the task title and the tick sits on the ti
     await expect(row).toBeVisible({ timeout: 20000 });
     const where = await rect(row.locator('.ops-queue-origin'));
     const due = await rect(row.locator('.ops-queue-due'));
-    // The first rendered line of the title row (a pill, or the title's
-    // first line when it wraps).
+    // The first rendered line of the title (its first line when it wraps).
     const firstLine = await row.locator('.ops-queue-title-row > :first-child').evaluate((node) => {
       const range = document.createRange();
       range.selectNodeContents(node);

@@ -647,21 +647,9 @@ export function createTaskQueue(context) {
     return label;
   }
 
-  // A task's display title: the checklist tag lifted out (unless it only
-  // repeats its card's type), and links pasted into the title moved to the
-  // row's materials control. The card kind comes from the work snapshot.
-  function taskKind(task) {
-    if (!task?.cardId) return null;
-    const card = state.workSnapshot.cardsById?.get(String(task.cardId));
-    return card ? cardKind(card, state.workSnapshot.templates) : null;
-  }
-
-  function titleParts(task) {
-    return taskTitleParts(workTaskTitle(task), task.tags, taskKind(task)?.type);
-  }
-
+  // A task's display title, without a legacy "[Group]" prefix.
   function cleanTaskTitle(task) {
-    return titleParts(task).title;
+    return taskTitleParts(workTaskTitle(task), task.tags).title;
   }
 
   // The one place a task names where it came from. Card membership wins
@@ -843,20 +831,15 @@ export function createTaskQueue(context) {
     cell.className = "ops-queue-task";
     const describedBy = [];
 
-    const parts = titleParts(task);
+    // The task's group (a "[Group]" title prefix or tag) is not shown: it
+    // mostly repeats the title or the card's kind. The task dialog keeps it.
+    const name = cleanTaskTitle(task);
     const titleRow = document.createElement("span");
     titleRow.className = "ops-queue-title-row";
-    if (parts.tag) {
-      const pill = document.createElement("span");
-      pill.className = "ops-queue-tag";
-      pill.textContent = parts.tag;
-      pill.title = parts.tag;
-      titleRow.append(pill);
-    }
     const title = document.createElement("strong");
-    title.textContent = parts.title;
+    title.textContent = name;
     // Titles truncate to one line; the full name stays one hover away.
-    title.title = parts.title;
+    title.title = name;
     titleRow.append(title);
     // What the task needs outside DataOps, as glyphs named on hover: an
     // operator or agent without that access can see it is not theirs.
@@ -890,7 +873,7 @@ export function createTaskQueue(context) {
     const materials = renderQueueMaterials(
       taskMaterials(task, { resolveDoc: resolveDocReference }),
       {
-        taskTitle: parts.title,
+        taskTitle: name,
         openTask: () => openTaskPanel(task.id),
       },
     );
