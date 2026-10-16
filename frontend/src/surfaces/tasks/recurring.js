@@ -2,6 +2,7 @@ import "../../dakit/collection.js";
 import { renderIcon } from "../../core/icons.js";
 import { documentHref, opensInNewTab } from "../../core/links.js";
 import { setControlPending } from "../operations-overview.js";
+import { createAutomations } from "./automations.js";
 
 const RECURRING_ICONS = Object.freeze({
   add: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
@@ -45,6 +46,7 @@ export function createRecurringTasks(context) {
   // says so in its own row, next to the control that was used, instead of in a
   // toast that disappears before it can be acted on.
   const recurringRowErrors = new Map();
+  const automations = createAutomations(context);
 
   function textSpan(value) {
     const span = document.createElement("span");
@@ -76,7 +78,7 @@ export function createRecurringTasks(context) {
       error.textContent = message;
       wrap.append(error);
     }
-    wrap.append(renderRecurringOperationsSection(recurring));
+    wrap.append(renderRecurringOperationsSection(recurring), automations.renderAutomationsSection());
     return wrap;
   }
 

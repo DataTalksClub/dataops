@@ -120,6 +120,42 @@
   flex-wrap: wrap;
   gap: 6px;
   justify-content: flex-end;
+}.automation-description {
+  margin: 0;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-md);
+}.automation-item.is-failed .recurring-status svg {
+  stroke: var(--dk-danger-text);
+}.automation-item.is-idle .recurring-status svg {
+  stroke: var(--dk-text-faint);
+}.automation-link {
+  color: var(--dk-text-link);
+}.automation-settings {
+  display: grid;
+  gap: var(--dk-space-1);
+}.automation-setting,
+.automation-setting-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-1) var(--dk-space-2);
+  font-size: var(--dk-text-md);
+}.automation-setting-label {
+  color: var(--dk-text-muted);
+}.automation-setting-value {
+  color: var(--dk-text-primary);
+  font-weight: 600;
+}.automation-setting-form .dk-input {
+  width: 9rem;
+}.automation-setting-hint {
+  flex-basis: 100%;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}.automation-setting-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--dk-danger-text);
+  font-size: var(--dk-text-sm);
 }.recurring-section-footer {
   border-top: 1px solid var(--dk-border-default);
   background: var(--dk-bg-muted);

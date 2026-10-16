@@ -2647,6 +2647,126 @@ describe("Tasks surface boundary", () => {
     assert.equal(harness.documentList.querySelector(".surface-summary"), null);
   });
 
+  test("lists automations next to the schedules and lets an admin change a setting", async () => {
+    let version = 3;
+    let reminderDays = [14, 10, 3];
+    const overview = (canEdit) => ({
+      canEdit,
+      settingsVersion: version,
+      automations: [
+        {
+          id: "recurring-tasks",
+          name: "Recurring tasks",
+          description: "Creates the Tasks of every active recurring schedule.",
+          runsIn: "Backend Lambda, daily job",
+          scheduleLabel: "Daily at 08:00 UTC",
+          nextRunAt: "2026-07-14T08:00:00.000Z",
+          lastRun: { at: "2026-07-13T08:00:02.000Z", ok: true, summary: "2 tasks created", source: "recorded" },
+          link: null,
+          settings: [],
+        },
+        {
+          id: "sponsor-booking-alerts",
+          name: "Sponsor booking alerts",
+          description: "Notifies about missing sponsor materials.",
+          runsIn: "Backend Lambda, daily job",
+          scheduleLabel: "Daily at 08:00 UTC",
+          nextRunAt: "2026-07-14T08:00:00.000Z",
+          lastRun: { at: "2026-07-13T08:00:03.000Z", ok: false, summary: "Failed: offline", source: "recorded" },
+          link: null,
+          settings: [{
+            key: "sponsorMaterialsReminderDays",
+            label: "Materials reminders",
+            description: "Days before publication to chase missing sponsor materials.",
+            kind: "day-list",
+            value: reminderDays,
+          }],
+        },
+        {
+          id: "knowledge-publish",
+          name: "Knowledge publish",
+          description: "Publishes the knowledge repository.",
+          runsIn: "GitHub Actions, dataops-knowledge",
+          scheduleLabel: "Push to main",
+          nextRunAt: null,
+          lastRun: null,
+          link: "https://github.com/example/actions",
+          settings: [],
+        },
+      ],
+    });
+    const calls = [];
+    const harness = createHarness({
+      model: baseModel({ recurring: recurringSnapshot([]) }),
+      request: async (url, options = {}) => {
+        calls.push({ url, options });
+        if (url === "/api/automations") return overview(true);
+        if (url === "/api/workspace-settings" && options.method === "PUT") {
+          const body = JSON.parse(options.body);
+          reminderDays = body.sponsorMaterialsReminderDays;
+          version += 1;
+          return {};
+        }
+        return {};
+      },
+    });
+    harness.api.renderTasksSurface([], "recurring");
+    await nextTicks();
+    const section = harness.documentList.querySelector(".ops-automations-section");
+    assert.ok(section);
+    assert.match(section.textContent, /3 automations/);
+    assert.match(section.textContent, /Daily at 10:00 CEST/);
+    assert.match(section.textContent, /Next Tue 14 Jul, 10:00 CEST/);
+    assert.match(section.textContent, /Last run Mon 13 Jul, 10:00 CEST: 2 tasks created/);
+    assert.match(section.textContent, /Failed Mon 13 Jul, 10:00 CEST: Failed: offline/);
+    assert.match(section.textContent, /Materials reminders:14, 10, 3 days/);
+    assert.equal(findByText(section, "Runs on GitHub", "a").href, "https://github.com/example/actions");
+
+    await findByText(section, "Edit", "button").dispatch("click");
+    const input = section.querySelector(".automation-setting-form input");
+    input.value = "21, x";
+    await section.querySelector(".automation-setting-form").dispatch("submit");
+    assert.match(section.textContent, /whole numbers of days/);
+    assert.equal(calls.filter((call) => call.options.method === "PUT").length, 0);
+
+    section.querySelector(".automation-setting-form input").value = "21, 7";
+    await section.querySelector(".automation-setting-form").dispatch("submit");
+    await nextTicks();
+    const put = calls.find((call) => call.options.method === "PUT");
+    assert.deepEqual(JSON.parse(put.options.body), { sponsorMaterialsReminderDays: [21, 7], expectedVersion: 3 });
+    assert.match(section.textContent, /Materials reminders:21, 7 days/);
+    assert.equal(section.querySelector(".automation-setting-form"), null);
+  });
+
+  test("shows automation settings read-only to someone who is not an admin", async () => {
+    const harness = createHarness({
+      model: baseModel({ recurring: recurringSnapshot([]) }),
+      request: async (url) => (url === "/api/automations"
+        ? {
+          canEdit: false,
+          settingsVersion: 1,
+          automations: [{
+            id: "newsletter-cards",
+            name: "Newsletter Cards",
+            description: "Creates newsletter Cards.",
+            runsIn: "Backend Lambda, daily job",
+            scheduleLabel: "Daily at 08:00 UTC",
+            nextRunAt: "2026-01-13T08:00:00.000Z",
+            lastRun: null,
+            link: null,
+            settings: [{ key: "newsletterCardLeadDays", label: "Lead time", description: "Days.", kind: "days", value: 21 }],
+          }],
+        }
+        : {}),
+    });
+    harness.api.renderTasksSurface([], "recurring");
+    await nextTicks();
+    const section = harness.documentList.querySelector(".ops-automations-section");
+    assert.match(section.textContent, /Daily at 09:00 CET/);
+    assert.match(section.textContent, /Lead time:21 days/);
+    assert.equal(findByText(section, "Edit", "button"), undefined);
+  });
+
   test("shows the recurring batch in Berlin time across winter and summer", () => {
     const harness = createHarness();
     for (const [date, expected] of [

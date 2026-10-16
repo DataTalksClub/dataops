@@ -11,6 +11,11 @@
 }body[data-workspace-view="tasks"] .ops-recurring-item {
   min-height: 82px;
   padding: 14px 16px;
+}body[data-workspace-view="tasks"] .ops-recurring-item.automation-item {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  min-height: 0;
+  padding: var(--dk-space-3) var(--dk-space-4);
 }body[data-workspace-view="tasks"] .ops-recurring-item:hover {
   background: var(--dk-bg-hover);
 }body[data-workspace-view="tasks"] .recurring-row-actions .task-action-btn {

@@ -126,6 +126,7 @@
     "src/surfaces/podcast/schedule.js",
     "src/surfaces/podcast/seasons-model.js",
     "src/surfaces/podcast/seasons.js",
+    "src/surfaces/tasks/automations.js",
     "src/surfaces/tasks/card-hovercard.js",
     "src/surfaces/tasks/cards.js",
     "src/surfaces/tasks/index.js",
