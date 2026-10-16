@@ -1,6 +1,6 @@
 import { cardKind } from "../../core/card-kind.js";
 import { personAvatar } from "../../core/identity.js";
-import { blockedReason, blockedSummary } from "../../core/task-dependencies.js";
+import { afterText, blockedReason, blockingPrerequisites } from "../../core/task-dependencies.js";
 import { taskMaterials, taskTitleParts } from "../../core/task-display.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { createQueueAssigneeFilter } from "./queue-assignee.js";
@@ -623,6 +623,9 @@ export function createTaskQueue(context) {
   // Row-level urgency for the checkbox. Overdue and due-today are the
   // only states that change the box; everything else scans as plain work.
   function queueUrgency(task, today) {
+    // A task waiting on a prerequisite cannot be started, so its date is not
+    // urgent yet: the prerequisite carries the urgency instead.
+    if (blockingPrerequisites(task).length > 0) return "blocked";
     const due = String(task.date || "").slice(0, 10);
     if (isOpenWorkTask(task) && overdueDays(due, today) > 0) return "overdue";
     if (due && due === today) return "today";
@@ -734,7 +737,8 @@ export function createTaskQueue(context) {
     const cell = document.createElement("span");
     cell.className = "ops-queue-due dk-mono";
     const due = String(task.date || "").slice(0, 10);
-    const debt = isOpenWorkTask(task) ? overdueDays(due, today) : 0;
+    const blocked = blockingPrerequisites(task).length > 0;
+    const debt = isOpenWorkTask(task) && !blocked ? overdueDays(due, today) : 0;
     if (debt > 0) {
       cell.dataset.due = "overdue";
       cell.textContent = `${debt}d late`;
@@ -744,6 +748,11 @@ export function createTaskQueue(context) {
     if (!task.date) {
       cell.dataset.due = "none";
       cell.textContent = "—";
+      return cell;
+    }
+    if (blocked) {
+      cell.dataset.due = "later";
+      cell.textContent = queueShortDate(task.date);
       return cell;
     }
     cell.dataset.due = due === today ? "today" : "later";
@@ -774,16 +783,41 @@ export function createTaskQueue(context) {
     return note;
   }
 
+  // "after <first blocker> +N": quiet, one line. The name opens the task
+  // it waits on; the tooltip names every blocker.
+  function taskAfterNote(task) {
+    const blocking = blockingPrerequisites(task);
+    if (blocking.length === 0) return null;
+    const note = queueNote("after", task);
+    note.append("after ");
+    const [first] = blocking;
+    if (first.status === "missing") {
+      note.append(first.description);
+    } else {
+      // A real link (inline text that wraps, opens in a new tab on demand);
+      // a plain click opens the blocker in place.
+      const link = document.createElement("a");
+      link.className = "ops-queue-after-link";
+      link.href = `/tasks?taskId=${encodeURIComponent(first.id)}`;
+      link.textContent = first.description;
+      link.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openTaskPanel(first.id);
+      });
+      note.append(link);
+    }
+    if (blocking.length > 1) note.append(` +${blocking.length - 1}`);
+    note.title = afterText(blocking);
+    return note;
+  }
+
   function taskBlockerNote(task, today) {
     if (task.status === "done") return null;
-    const blockedBy = blockedSummary(task);
+    const after = taskAfterNote(task);
+    if (after) return after;
     let note = null;
-    if (blockedBy) {
-      note = queueNote("blocked", task);
-      note.textContent = blockedBy;
-      note.title = blockedReason(task);
-      return note;
-    }
     if (task.waitingFor) {
       note = queueNote("waiting", task);
       note.append(`Waiting for ${task.waitingFor}`);
@@ -840,6 +874,10 @@ export function createTaskQueue(context) {
     open.setAttribute("aria-label", `Open task ${cleanTaskTitle(task)}`);
     open.addEventListener("click", () => openTaskPanel(task.id));
 
+    const cell = document.createElement("div");
+    cell.className = "ops-queue-task";
+    const describedBy = [];
+
     const parts = titleParts(task);
     const titleRow = document.createElement("span");
     titleRow.className = "ops-queue-title-row";
@@ -857,18 +895,30 @@ export function createTaskQueue(context) {
     titleRow.append(title);
     // What the task needs outside DataOps, as glyphs named on hover: an
     // operator or agent without that access can see it is not theirs.
+    // The button's name stays the task's name; what it needs and what it
+    // waits on describe it instead of riding inside the label.
     const resources = renderResourceMarks(task.requires, state.workSnapshot.resourcesById);
     if (resources) {
       titleRow.append(resources);
       const needs = task.requires.map((id) => resourceLabel(id, state.workSnapshot.resourcesById));
-      open.setAttribute("aria-label", `Open task ${cleanTaskTitle(task)}, needs ${needs.join(", ")}`);
+      const needsText = document.createElement("span");
+      needsText.className = "dk-visually-hidden";
+      needsText.id = `ops-queue-needs-${task.id}`;
+      needsText.textContent = `Needs ${needs.join(", ")}`;
+      cell.append(needsText);
+      describedBy.push(needsText.id);
     }
     open.append(titleRow);
+    cell.prepend(open);
+    // The second line sits beside the button, not in it: it can hold a
+    // link to the blocker, and a button cannot contain one.
     const note = taskBlockerNote(task, today);
     if (note) {
-      open.append(note);
-      open.setAttribute("aria-describedby", note.id);
+      cell.append(note);
+      describedBy.push(note.id);
     }
+    if (describedBy.length) open.setAttribute("aria-describedby", describedBy.join(" "));
+    if (note?.dataset.note === "after") row.dataset.blocked = "true";
 
     // Instructions and other supporting material: one icon, never a line of
     // small text. Empty cells keep the grid column so rows stay aligned.
@@ -887,7 +937,7 @@ export function createTaskQueue(context) {
 
     // Where comes first: which card the work belongs to, then what to do.
     // The DOM follows the visual order so Tab does too.
-    row.append(toggle, originCell, open, materialsCell, taskDueCell(task, today), owner);
+    row.append(toggle, originCell, cell, materialsCell, taskDueCell(task, today), owner);
     return row;
   }
 

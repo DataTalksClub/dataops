@@ -501,7 +501,9 @@ describe("Tasks surface boundary", () => {
     for (const note of findAllByClass(documentList, "ops-queue-note")) {
       assert.equal(note.dataset.note, "waiting");
       assert.equal(note.title, note.textContent);
-      const main = note.closest(".ops-queue-main");
+      // Beside the title button, not inside it, so it may hold a link.
+      assert.equal(note.closest(".ops-queue-main"), null);
+      const main = note.closest(".ops-queue-task").querySelector(".ops-queue-main");
       assert.equal(main.getAttribute("aria-describedby"), note.id);
     }
     assert.match(board.textContent, /5 open, most urgent first/);
@@ -649,7 +651,7 @@ describe("Tasks surface boundary", () => {
     // Where comes first, and the DOM (so Tab) follows the columns.
     assert.deepEqual(
       row.children.map((cell) => cell.className.split(" ")[0]),
-      ["ops-queue-check", "ops-queue-origin", "ops-queue-main", "ops-queue-materials-cell", "ops-queue-due", "ops-queue-owner"],
+      ["ops-queue-check", "ops-queue-origin", "ops-queue-task", "ops-queue-materials-cell", "ops-queue-due", "ops-queue-owner"],
     );
     assert.deepEqual(
       findAllByClass(documentList, "ops-queue-head")[0].children.map((cell) => cell.textContent),
@@ -753,12 +755,17 @@ describe("Tasks surface boundary", () => {
     assert.equal(input.disabled, true);
     assert.equal(label.title, 'Complete or skip "Review transcript" first');
     const [note] = findAllByClass(documentList, "ops-queue-note");
-    assert.equal(note.textContent, "Blocked by Review transcript");
-    assert.equal(note.dataset.note, "blocked");
+    assert.equal(note.textContent, "after Review transcript");
+    assert.equal(note.dataset.note, "after");
     assert.equal(
-      note.closest(".ops-queue-main").getAttribute("aria-describedby"),
+      note.closest(".ops-queue-task").querySelector(".ops-queue-main").getAttribute("aria-describedby"),
       note.id,
     );
+    // The waiting row keeps quiet: no urgency, a dashed box, the date plain.
+    const [row] = findAllByClass(documentList, "ops-queue-row");
+    assert.equal(row.dataset.urgency, "blocked");
+    assert.equal(row.dataset.blocked, "true");
+    assert.notEqual(findAllByClass(documentList, "ops-queue-due")[0].dataset.due, "overdue");
     assert.equal(requests.length, 0);
   });
 
@@ -870,10 +877,12 @@ describe("Tasks surface boundary", () => {
     assert.deepEqual(marks, [["YouTube"], ["Luma", "YouTube"], []]);
     const firstMark = findAllByClass(documentList, "ops-resource")[0];
     assert.equal(firstMark.title, "YouTube: Channel");
-    assert.match(
-      findAllByClass(documentList, "ops-queue-main")[1].getAttribute("aria-label"),
-      /needs Luma, YouTube$/,
-    );
+    // The name stays the task's name; what it needs is its description.
+    const main = findAllByClass(documentList, "ops-queue-main")[1];
+    assert.equal(main.getAttribute("aria-label"), "Open task Create events on Luma");
+    const needs = findAllByClass(documentList, "dk-visually-hidden")
+      .find((node) => node.id === main.getAttribute("aria-describedby"));
+    assert.equal(needs.textContent, "Needs Luma, YouTube");
 
     const filter = findAllByClass(documentList, "ops-queue-resource-filter")[0];
     const select = filter.querySelector("select");

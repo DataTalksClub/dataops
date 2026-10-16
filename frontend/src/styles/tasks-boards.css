@@ -274,6 +274,17 @@ body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="overdue"] .ops-qu
 }body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="today"]:hover .ops-queue-check-input:not(:checked) + .ops-queue-box {
   border-color: var(--dk-border-default);
   background: var(--dk-warning-bg);
+}/* A task still waiting on a prerequisite: a dashed, hollow box and a muted
+   title. It keeps its place in the queue but none of the urgency colour. */
+body[data-workspace-view="tasks"] .ops-queue-row[data-urgency="blocked"] .ops-queue-check-input:not(:checked) + .ops-queue-box {
+  border-style: dashed;
+  background: var(--dk-bg-muted);
+}body[data-workspace-view="tasks"] .ops-queue-row[data-blocked="true"] .ops-queue-main strong {
+  color: var(--dk-text-muted);
+}body[data-workspace-view="tasks"] .ops-queue-task {
+  display: grid;
+  align-content: start;
+  min-width: 0;
 }body[data-workspace-view="tasks"] .ops-queue-main {
   display: grid;
   min-width: 0;
@@ -332,6 +343,18 @@ body[data-workspace-view="tasks"] .ops-queue-note {
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
+}/* "after <blocker>": the blocker's name opens it. Underlined in a quiet
+   colour so it reads as a link without shouting. */
+body[data-workspace-view="tasks"] .ops-queue-after-link {
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--dk-border-strong);
+  text-underline-offset: 2px;
+}body[data-workspace-view="tasks"] .ops-queue-after-link:hover,
+body[data-workspace-view="tasks"] .ops-queue-after-link:focus-visible {
+  color: var(--dk-text-link);
+  text-decoration-color: currentColor;
 }/* Supporting material (instructions, docs pasted into the title): one icon
    button in its own narrow column, never a line of small text. Several
    materials share one trigger that opens a short menu. */
@@ -678,12 +701,13 @@ body[data-workspace-view="tasks"] .ops-queue-title-row {
     align-self: stretch;
     align-items: start;
     padding-top: calc(var(--ops-queue-card-line) + var(--dk-space-1));
-  }body[data-workspace-view="tasks"] .ops-queue-main {
+  }body[data-workspace-view="tasks"] .ops-queue-task {
     grid-column: 2;
     grid-row: 2;
+    padding-block: var(--dk-space-1);
+  }body[data-workspace-view="tasks"] .ops-queue-main {
     align-content: start;
     min-height: var(--dk-space-6);
-    padding-block: var(--dk-space-1);
   }body[data-workspace-view="tasks"] .ops-queue-title-row {
     flex-wrap: wrap;
     row-gap: var(--dk-space-1);
