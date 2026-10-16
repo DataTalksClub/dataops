@@ -1,3 +1,4 @@
+import { createBrowserRequirementSelect } from "./browser-requirement.js";
 import "../../dakit/tag-input.js";
 import { documentHref, opensInNewTab } from "../../core/links.js";
 import {
@@ -58,16 +59,7 @@ export function createQuickTaskActions(context) {
     const dateInput = createQuickInput("Due date", "date", todayIsoDate());
     // The execution need is chosen at creation when it is known; leaving it
     // unclassified is the honest default, never a headless claim.
-    const browser = createQuickSelect(
-      "Browser need",
-      [
-        ["unclassified", "Not classified"],
-        ["headless", "Headless — finishes without a browser"],
-        ["required", "Browser required"],
-      ],
-      "unclassified",
-    );
-    browser.input.value = "unclassified";
+    const browser = createBrowserRequirementSelect(createQuickSelect, "unclassified");
     const feedback = createFormFeedback();
 
     const createBtn = document.createElement("button");
@@ -518,16 +510,7 @@ export function createQuickTaskActions(context) {
     assignee.input.value = preset.assigneeId;
     // Generated Tasks inherit the schedule's classification, so an operator on
     // a headless machine can tell from the queue what a firing will produce.
-    const browser = createQuickSelect(
-      "Browser need",
-      [
-        ["unclassified", "Not classified"],
-        ["headless", "Headless — finishes without a browser"],
-        ["required", "Browser required"],
-      ],
-      preset.browserRequirement || "unclassified",
-    );
-    browser.input.value = preset.browserRequirement || "unclassified";
+    const browser = createBrowserRequirementSelect(createQuickSelect, preset.browserRequirement || "unclassified");
     const enabled = createQuickCheckbox(
       editing ? "Active" : "Activate immediately",
       preset.enabled,
