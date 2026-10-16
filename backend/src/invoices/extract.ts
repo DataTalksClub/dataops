@@ -17,6 +17,12 @@ function calendar(value: string): string | undefined {
   if (match) return isoDate(match[3], match[2], match[1]);
   match = /(\d{4})-(\d{2})-(\d{2})/.exec(text);
   if (match) { const result = match[0]; return new Date(result).toISOString().slice(0,10) === result ? result : undefined; }
+  match = /\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b/.exec(text);
+  if (match) {
+    const result = `${match[3]}-${match[2].padStart(2,'0')}-${match[1].padStart(2,'0')}`;
+    const date = new Date(result);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0,10) === result ? result : undefined;
+  }
   return undefined;
 }
 // Canonical operator ledger names for common billing senders. Names and
@@ -58,13 +64,14 @@ function subjectDescription(subject: string, provider: string | undefined): stri
   value = value.replace(/[\s·–—:,-]+$/,'').trim();
   return value.length >= 3 && value.length <= 120 ? value : undefined;
 }
-const NON_ISSUER = /^(?:vat|gst|tax|invoice|receipt|number|date|due|bill|sold|from|to|amount|total|paid|order|statement|account|iban|bic|swift|period|terms|status|customer|client|email|website|address|phone|subscription|plan|product|description|quantity|qty|price|currency|card|payment|method|reference|ref|stripe|paypal|paddle|square|klarna|mollie|adyen)\b/i;
+const NON_ISSUER = /^(?:page|seite|company\s+name|vat|gst|tax|invoice|receipt|number|date|due|bill|sold|from|to|amount|total|paid|order|statement|account|iban|bic|swift|period|terms|status|customer|client|email|website|address|phone|subscription|plan|product|description|quantity|qty|price|currency|card|payment|method|reference|ref|stripe|paypal|paddle|square|klarna|mollie|adyen)\b/i;
 function plausibleIssuer(line: unknown): string | undefined {
-  const value = String(line || '').replace(/\s+/g,' ').trim().replace(/^[—–-]+|[—–-]+$/g,'');
+  const value = String(line || '').replace(/\s+/g,' ').trim().replace(/^[—–-]+|[—–-]+$/g,'').replace(/\s+@[A-Za-z0-9_.-]+$/, '');
   if (value.length < 2 || value.length > 100) return undefined;
   if (/[:;]/.test(value) || /\d{5,}/.test(value)) return undefined;
   if (!/[a-zA-Z]{2}/.test(value) || /^(?:https?:\/\/|www\.)/i.test(value)) return undefined;
   if (NON_ISSUER.test(value)) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}\b|^\d{1,2}[./]\d{1,2}[./]\d{4}\b|^[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}\b/.test(value)) return undefined;
   return value;
 }
 // Standalone-line issuers outside a named layout must look like a company:
@@ -87,10 +94,27 @@ function issuerCandidates(text: string): string[] {
   if (first) candidates.push(first[1]);
   const above = /([^\n]{1,120})\n(?:Receipt|Invoice)\s*(?:\n|$)/.exec(text);
   if (above) candidates.push(above[1]);
-  const afterDate = /(?:Date (?:of issue|paid|due)|Invoice date|Billing date|Due date)[^\n]*\n([^\n]{1,120})\n?([^\n]{1,120})?\n?([^\n]{1,120})?/.exec(text);
-  if (afterDate) candidates.push(afterDate[1], afterDate[2], afterDate[3]);
+  const afterDate = /(?:Date (?:of issue|paid|due)|Invoice date|Billing date|Due date)[^\n]*\n/.exec(text);
+  if (afterDate) {
+    for (const line of text.slice(afterDate.index+afterDate[0].length).split('\n').slice(0,8)) {
+      if (/^\s*(?:bill\s+to|sold\s+to|customer|client)\b/i.test(line)) break;
+      candidates.push(line);
+    }
+  }
   const afterHeading = /^(?:Receipt|Invoice)\s*\n(?!Invoice number|Receipt number)([^\n]{1,120})\n/m.exec(text);
   if (afterHeading) candidates.push(afterHeading[1]);
+  // Some documents identify their issuer only in a legal footer. A legal
+  // company suffix bounds the name before an address separator; arbitrary
+  // prose elsewhere in the email is not an issuer candidate.
+  const lines = text.split('\n');
+  for (const [index, line] of lines.entries()) {
+    const copyright = /^©\s*\d{4}\s*/.test(line.trim());
+    const registration = /\b(?:Sitz|Registergericht|registered\s+office|company\s+registration)\b/i.test(lines.slice(index,index+3).join(' '));
+    if (!copyright && !registration) continue;
+    const clean = line.trim().replace(/^©\s*\d{4}\s*/, '');
+    const legal = /^(.{2,100}?\b(?:gmbh\s*&\s*co\.?\s*kg|gmbh|limited|inc|llc|corp(?:oration)?|bv|plc|ltd)\.?)(?:\s+[-•]\s+|$)/i.exec(clean);
+    if (legal && credibleIssuer(legal[1])) candidates.push(legal[1]);
+  }
   return candidates;
 }
 function money(value: string): string | undefined {
@@ -131,7 +155,7 @@ function labeledDate(text: string, labels: RegExp): string | undefined {
   const match = labels.exec(text);
   return match?.[1] ? calendar(match[1]) : undefined;
 }
-const ISSUED_LABELS = /(?:invoice\s+date|date\s+of\s+issue|issue\s+date|billing\s+date|order\s+date|\bdate\b)[^\n]{0,30}?([^\n]{1,40})/i;
+const ISSUED_LABELS = /(?:invoice\s+date|date\s+of\s+issue|issue\s+date|billing\s+date|order\s+date|rechnungsdatum|\bdate\b)[^\n]{0,30}?([^\n]{1,40})/i;
 const PAID_LABELS = /(?:date\s+paid|paid\s+on|payment\s+date)[^\n]{0,30}?([^\n]{1,40})/i;
 function invoiceNumber(text: string): string | undefined {
   const labeled = /(?:invoice|receipt|order)\s+(?:number|no\.?|num\.?|#|id)\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\/_.-]{2,40})/i.exec(text);
