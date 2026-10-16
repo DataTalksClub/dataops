@@ -62,7 +62,7 @@ function civilDateInZone(instant: Date, timeZone: string): string {
   return `${part('year')}-${part('month')}-${part('day')}`;
 }
 
-function addCivilDays(civilDate: string, days: number): string {
+export function addCivilDays(civilDate: string, days: number): string {
   const [year, month, day] = civilDate.split('-').map(Number);
   const next = new Date(Date.UTC(year, month - 1, day + days));
   return next.toISOString().slice(0, 10);
@@ -122,39 +122,50 @@ export function cronMatchesCivilDate(cron: CronExpression, civilDate: string): b
   return matchesDay(cron, day, month, new Date(Date.UTC(year, month - 1, day)).getUTCDay());
 }
 
-/** True when an instant satisfies the day fields of a schedule. */
-export function cronMatchesDate(expression: string, date: Date): boolean {
-  const cron = parseCronExpression(expression);
-  if (!cron) return false;
-  return matchesDay(cron, date.getUTCDate(), date.getUTCMonth() + 1, date.getUTCDay());
-}
-
 function civilWeekday(civilDate: string): number {
   const [year, month, day] = civilDate.split('-').map(Number);
   return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
 }
 
 /**
- * True when a recurring schedule has an occurrence on a Berlin civil date.
- *
- * The team works weekdays and the calendar hides weekends, so a schedule date
- * that falls on a Saturday or Sunday occurs on the following Monday instead.
- * Saturdays and Sundays therefore never carry an occurrence, and a Monday
- * carries one when the schedule matches that Monday or the weekend before it:
- * a daily schedule's Saturday, Sunday and Monday collapse into one Monday
- * occurrence, not three.
+ * The team works weekdays and the calendar hides weekends, so no work item
+ * lands on a Saturday or Sunday (Berlin civil dates): a weekend date moves to
+ * the following Monday and a weekday stays where it is. Recurring schedules
+ * and automatic Template Cards share this rule.
  */
-export function recurringOccursOn(cron: CronExpression, civilDate: string): boolean {
+export function moveWeekendToMonday(civilDate: string): string {
   const weekday = civilWeekday(civilDate);
-  if (weekday === 0 || weekday === 6) return false;
-  if (cronMatchesCivilDate(cron, civilDate)) return true;
-  return weekday === 1
-    && (cronMatchesCivilDate(cron, addCivilDays(civilDate, -1)) || cronMatchesCivilDate(cron, addCivilDays(civilDate, -2)));
+  if (weekday === 6) return addCivilDays(civilDate, 2);
+  if (weekday === 0) return addCivilDays(civilDate, 1);
+  return civilDate;
+}
+
+/**
+ * The schedule dates whose occurrence falls on a civil date, oldest first.
+ *
+ * A schedule date occurs on itself, or on the following Monday when it is a
+ * Saturday or Sunday. Saturdays and Sundays therefore never carry an
+ * occurrence, and a Monday carries the schedule's matches on that Monday and
+ * the weekend before it.
+ */
+export function scheduleDatesOccurringOn(cron: CronExpression, civilDate: string): string[] {
+  return [-2, -1, 0]
+    .map((days) => addCivilDays(civilDate, days))
+    .filter((date) => moveWeekendToMonday(date) === civilDate && cronMatchesCivilDate(cron, date));
+}
+
+/**
+ * True when a schedule has an occurrence on a Berlin civil date, weekend
+ * dates moved to Monday: a daily schedule's Saturday, Sunday and Monday
+ * collapse into one Monday occurrence, not three.
+ */
+export function scheduleOccursOn(cron: CronExpression, civilDate: string): boolean {
+  return scheduleDatesOccurringOn(cron, civilDate).length > 0;
 }
 
 /**
  * First Berlin civil date on or after `fromDate`'s civil date in `timeZone`
- * that a recurring schedule occurs on, weekend dates moved to Monday. Returns
+ * that a schedule occurs on, weekend dates moved to Monday. Returns
  * '' when the expression cannot match any date.
  */
 export function nextOccurrenceDate(
@@ -167,7 +178,7 @@ export function nextOccurrenceDate(
   let civilDate = civilDateInZone(fromDate, timeZone);
   // Two extra days let a final weekend match still reach its Monday.
   for (let step = 0; step < MAX_SCHEDULE_SEARCH_DAYS + 2; step += 1) {
-    if (recurringOccursOn(cron, civilDate)) return civilDate;
+    if (scheduleOccursOn(cron, civilDate)) return civilDate;
     civilDate = addCivilDays(civilDate, 1);
   }
   return '';

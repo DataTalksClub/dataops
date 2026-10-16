@@ -82,7 +82,7 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
   {
     id: 'automatic-template-cards',
     name: 'Automatic template Cards',
-    description: 'Creates a Card from each Template set to trigger automatically, on the days its schedule matches. Each Template sets its own schedule and lead days.',
+    description: 'Creates a Card from each Template set to trigger automatically, on the days its schedule matches. Each Template sets its own schedule and lead days. A schedule date on a Saturday or Sunday in Berlin creates its Card on the following Monday, and a Card whose anchor date (schedule date plus lead days) falls on a weekend is anchored on the Monday, its Tasks dated from that Monday.',
     runsIn: DAILY_JOB,
     infraSchedule: 'BackendFunctionDailyBackendCron',
     schedule: DAILY_JOB_SCHEDULE,

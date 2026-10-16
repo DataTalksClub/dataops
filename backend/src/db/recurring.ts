@@ -11,7 +11,7 @@ import { readAllPages } from './readAllPages';
 import { TABLE_TASKS } from './tableNames';
 import { loadAssignmentPolicy } from './workspaceSettings';
 import { createTask } from './tasks';
-import { nextOccurrenceDate, parseCronExpression, recurringOccursOn } from '../cron/cronMatch';
+import { nextOccurrenceDate, parseCronExpression, scheduleOccursOn } from '../cron/cronMatch';
 import { berlinDate } from '../sponsorFinance/core';
 import type { RecurringConfig, RecurringRun, RecurringRunOutcome, Task } from '../types';
 
@@ -373,7 +373,7 @@ async function generateRecurringTasks(
       for (const dateStr of dates) {
         // Weekend schedule dates occur on the following Monday, so a weekend
         // pass creates nothing and Monday's pass creates the one Task.
-        if (!cron || !recurringOccursOn(cron, dateStr)) continue;
+        if (!cron || !scheduleOccursOn(cron, dateStr)) continue;
         firedDate = dateStr;
 
         // Idempotency: one Task per schedule and occurrence date, however

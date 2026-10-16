@@ -5,7 +5,7 @@ import { listCards } from '../db/cards';
 import { createNotification } from '../db/notifications';
 import { generateRecurringTasks } from '../db/recurring';
 import { emitRecurringCronMetrics } from './recurringMetrics';
-import { cronMatchesDate } from './cronMatch';
+import { addCivilDays, moveWeekendToMonday, parseCronExpression, scheduleDatesOccurringOn } from './cronMatch';
 import type { Template, Card } from '../types';
 import { evaluateSponsorBookingAlerts } from '../sponsorCrm/alerts';
 import { evaluateSponsorFinanceAlerts } from '../sponsorFinance/alerts';
@@ -66,6 +66,81 @@ function formatAnchorDate(dateStr: string): string {
   const monthIdx = parseInt(parts[1], 10) - 1;
   const day = parseInt(parts[2], 10);
   return `${months[monthIdx]} ${day}`;
+}
+
+/**
+ * The one Card a Template has for an anchor date: created when missing, and
+ * when it already exists any missing Template Tasks are recovered instead of
+ * duplicating the Card, however many passes reach the same anchor.
+ */
+async function ensureAutomaticCard(
+  client: DynamoDBDocumentClient,
+  template: Template,
+  anchorDate: string,
+  allCards: Card[],
+): Promise<{ created: Card | null; recovered: number }> {
+  const duplicate = allCards.find(
+    (b: Card) => b.templateId === template.id && b.anchorDate === anchorDate
+  );
+
+  if (duplicate) {
+    const recoveredTasks = await instantiateTemplate(client, template.id, duplicate.id, anchorDate);
+    if (recoveredTasks.length > 0) {
+      await createNotification(client, {
+        type: 'automation-failure',
+        message: `${template.name} workflow run was missing ${recoveredTasks.length} task(s); cron recovered them for ${formatAnchorDate(anchorDate)}`,
+        cardId: duplicate.id,
+        templateId: template.id,
+        dueAt: anchorDate,
+        metadata: {
+          recoveredTaskIds: recoveredTasks.map((task) => task.id),
+          anchorDate,
+        },
+      });
+    }
+    return { created: null, recovered: recoveredTasks.length };
+  }
+
+  const cardData: Record<string, unknown> = {
+    ...templateCardProjection(template),
+    title: `${template.name} - ${formatAnchorDate(anchorDate)}`,
+    anchorDate,
+    templateId: template.id,
+    stage: 'preparation',
+    status: 'active',
+  };
+
+  // Copy template fields to card
+  if (template.tags && template.tags.length > 0) {
+    cardData.tags = template.tags;
+  }
+  if (template.references && template.references.length > 0) {
+    cardData.references = template.references;
+  }
+  if (template.cardLinkDefinitions && template.cardLinkDefinitions.length > 0) {
+    cardData.cardLinks = template.cardLinkDefinitions.map((def) => ({
+      name: def.name,
+      url: '',
+    }));
+  }
+
+  const { card } = await createCardFromTemplate(client, cardData, template, anchorDate);
+
+  // Notify the workspace default assignee when one is set.
+  const notificationData: Record<string, unknown> = {
+    type: 'stage-change',
+    message: `${template.name} card auto-created for ${formatAnchorDate(anchorDate)}`,
+    cardId: card.id,
+    templateId: template.id,
+    dueAt: anchorDate,
+  };
+  const defaultAssigneeId = await resolveDefaultAssigneeId(client);
+  if (defaultAssigneeId) {
+    notificationData.userId = defaultAssigneeId;
+  }
+  await createNotification(client, notificationData);
+
+  return { created: card, recovered: 0 };
 }
 
 /**
@@ -202,83 +277,28 @@ async function runCron(
 
   for (const template of autoTemplates) {
     try {
-      // 3. Check if today matches the cron schedule
-      if (!cronMatchesDate(template.triggerSchedule!, today)) {
-        continue;
-      }
-
-      // 4. Calculate anchor date: today + triggerLeadDays
+      // 3. The anchors whose Cards come due today. A schedule date on a
+      // Saturday or Sunday occurs on the following Monday, so weekend passes
+      // create nothing and Monday's pass handles the weekend's dates too.
+      // Each anchor is its schedule date plus the lead days, itself moved off
+      // a weekend: no Card is anchored on a Saturday or Sunday, and the
+      // Tasks dated from the anchor follow it.
+      const cron = parseCronExpression(template.triggerSchedule!);
+      if (!cron) continue;
       const leadDays = template.triggerLeadDays || 0;
-      const anchorDateObj = new Date(`${todayDate}T12:00:00.000Z`);
-      anchorDateObj.setUTCDate(anchorDateObj.getUTCDate() + leadDays);
-      const anchorDate = anchorDateObj.toISOString().split('T')[0];
+      const anchorDates = [...new Set(scheduleDatesOccurringOn(cron, todayDate)
+        .map((scheduleDate) => moveWeekendToMonday(addCivilDays(scheduleDate, leadDays))))];
 
-      // 5. Duplicate check: same templateId + anchorDate
-      const duplicate = allCards.find(
-        (b: Card) => b.templateId === template.id && b.anchorDate === anchorDate
-      );
-
-      if (duplicate) {
-        skipped++;
-        const recoveredTasks = await instantiateTemplate(client, template.id, duplicate.id, anchorDate);
-        recovered += recoveredTasks.length;
-        if (recoveredTasks.length > 0) {
-          await createNotification(client, {
-            type: 'automation-failure',
-            message: `${template.name} workflow run was missing ${recoveredTasks.length} task(s); cron recovered them for ${formatAnchorDate(anchorDate)}`,
-            cardId: duplicate.id,
-            templateId: template.id,
-            dueAt: anchorDate,
-            metadata: {
-              recoveredTaskIds: recoveredTasks.map((task) => task.id),
-              anchorDate,
-            },
-          });
+      for (const anchorDate of anchorDates) {
+        const outcome = await ensureAutomaticCard(client, template, anchorDate, allCards);
+        if (outcome.created) {
+          allCards.push(outcome.created);
+          created.push(outcome.created.id);
+        } else {
+          skipped++;
+          recovered += outcome.recovered;
         }
-        continue;
       }
-
-      // 6. Create the card
-      const cardData: Record<string, unknown> = {
-        ...templateCardProjection(template),
-        title: `${template.name} - ${formatAnchorDate(anchorDate)}`,
-        anchorDate,
-        templateId: template.id,
-        stage: 'preparation',
-        status: 'active',
-      };
-
-      // Copy template fields to card
-      if (template.tags && template.tags.length > 0) {
-        cardData.tags = template.tags;
-      }
-      if (template.references && template.references.length > 0) {
-        cardData.references = template.references;
-      }
-      if (template.cardLinkDefinitions && template.cardLinkDefinitions.length > 0) {
-        cardData.cardLinks = template.cardLinkDefinitions.map((def) => ({
-          name: def.name,
-          url: '',
-        }));
-      }
-
-      const { card } = await createCardFromTemplate(client, cardData, template, anchorDate);
-
-      // 8. Create notification (targeted to the workspace default assignee if set)
-      const notificationData: Record<string, unknown> = {
-        type: 'stage-change',
-        message: `${template.name} card auto-created for ${formatAnchorDate(anchorDate)}`,
-        cardId: card.id,
-        templateId: template.id,
-        dueAt: anchorDate,
-      };
-      const defaultAssigneeId = await resolveDefaultAssigneeId(client);
-      if (defaultAssigneeId) {
-        notificationData.userId = defaultAssigneeId;
-      }
-      await createNotification(client, notificationData);
-
-      created.push(card.id);
     } catch (err: unknown) {
       failures++;
       templateFailures++;

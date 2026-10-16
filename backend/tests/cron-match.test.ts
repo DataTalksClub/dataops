@@ -4,10 +4,11 @@ import assert from 'node:assert';
 import {
   cronFieldMatches,
   cronMatchesCivilDate,
-  cronMatchesDate,
+  moveWeekendToMonday,
   nextOccurrenceDate,
   parseCronExpression,
-  recurringOccursOn,
+  scheduleDatesOccurringOn,
+  scheduleOccursOn,
 } from '../src/cron/cronMatch';
 import { describeSchedule, nextRunLabel, recurringConfigView } from '../src/cron/scheduleView';
 
@@ -90,30 +91,25 @@ describe('cron matching', () => {
     });
   });
 
-  describe('cronMatchesDate', () => {
+  describe('cronMatchesCivilDate', () => {
     // 2028 is a leap year, so every one of these civil dates exists.
     it('matches daily, weekly, monthly, and yearly schedules', () => {
-      assert.strictEqual(cronMatchesDate('0 9 * * *', new Date('2028-01-15T00:00:00Z')), true);
+      assert.strictEqual(cronMatchesCivilDate(parseCronExpression('0 9 * * *')!, '2028-01-15'), true);
       // 2028-02-02 is a Wednesday.
-      assert.strictEqual(cronMatchesDate('0 9 * * 3', new Date('2028-02-02T00:00:00Z')), true);
-      assert.strictEqual(cronMatchesDate('0 9 * * 3', new Date('2028-02-01T00:00:00Z')), false);
-      assert.strictEqual(cronMatchesDate('0 9 15 * *', new Date('2028-06-15T00:00:00Z')), true);
-      assert.strictEqual(cronMatchesDate('0 9 15 * *', new Date('2028-06-14T00:00:00Z')), false);
-      assert.strictEqual(cronMatchesDate('0 9 25 12 *', new Date('2028-12-25T00:00:00Z')), true);
-      assert.strictEqual(cronMatchesDate('0 9 25 12 *', new Date('2028-11-25T00:00:00Z')), false);
+      assert.strictEqual(cronMatchesCivilDate(parseCronExpression('0 9 * * 3')!, '2028-02-02'), true);
+      assert.strictEqual(cronMatchesCivilDate(parseCronExpression('0 9 * * 3')!, '2028-02-01'), false);
+      assert.strictEqual(cronMatchesCivilDate(parseCronExpression('0 9 15 * *')!, '2028-06-15'), true);
+      assert.strictEqual(cronMatchesCivilDate(parseCronExpression('0 9 15 * *')!, '2028-06-14'), false);
+      assert.strictEqual(cronMatchesCivilDate(parseCronExpression('0 9 25 12 *')!, '2028-12-25'), true);
+      assert.strictEqual(cronMatchesCivilDate(parseCronExpression('0 9 25 12 *')!, '2028-11-25'), false);
     });
 
     it('honours day-of-week ranges and 7 as Sunday', () => {
       // 2028-02-01 is a Tuesday, 2028-02-05 is a Saturday, 2028-02-06 a Sunday.
-      assert.strictEqual(cronMatchesDate('0 9 * * 1-5', new Date('2028-02-01T00:00:00Z')), true);
-      assert.strictEqual(cronMatchesDate('0 9 * * 1-5', new Date('2028-02-05T00:00:00Z')), false);
-      assert.strictEqual(cronMatchesDate('0 9 * * 7', new Date('2028-02-06T00:00:00Z')), true);
-      assert.strictEqual(cronMatchesDate('0 9 * * 0', new Date('2028-02-06T00:00:00Z')), true);
-    });
-
-    it('rejects expressions that do not parse', () => {
-      assert.strictEqual(cronMatchesDate('0 9 * *', new Date('2028-01-15T00:00:00Z')), false);
-      assert.strictEqual(cronMatchesDate('every wednesday', new Date('2028-01-15T00:00:00Z')), false);
+      assert.strictEqual(cronMatchesCivilDate(parseCronExpression('0 9 * * 1-5')!, '2028-02-01'), true);
+      assert.strictEqual(cronMatchesCivilDate(parseCronExpression('0 9 * * 1-5')!, '2028-02-05'), false);
+      assert.strictEqual(cronMatchesCivilDate(parseCronExpression('0 9 * * 7')!, '2028-02-06'), true);
+      assert.strictEqual(cronMatchesCivilDate(parseCronExpression('0 9 * * 0')!, '2028-02-06'), true);
     });
 
     it('resolves a civil date independently of the instant that produced it', () => {
@@ -122,43 +118,66 @@ describe('cron matching', () => {
       assert.ok(cronMatchesCivilDate(sixth, '2028-10-06'));
       assert.strictEqual(cronMatchesCivilDate(sixth, '2028-10-05'), false);
       assert.strictEqual(cronMatchesCivilDate(sixth, '2028-10-07'), false);
-      assert.strictEqual(cronMatchesDate('0 9 6 10 *', new Date('2028-10-06T00:00:00Z')), true);
     });
   });
 
-  describe('recurringOccursOn', () => {
+  describe('moveWeekendToMonday', () => {
+    it('moves Saturday and Sunday to the following Monday and keeps weekdays', () => {
+      // 2026-10-30 is a Friday; 2026-11-01 is a Sunday.
+      assert.strictEqual(moveWeekendToMonday('2026-10-30'), '2026-10-30');
+      assert.strictEqual(moveWeekendToMonday('2026-10-31'), '2026-11-02');
+      assert.strictEqual(moveWeekendToMonday('2026-11-01'), '2026-11-02');
+      assert.strictEqual(moveWeekendToMonday('2026-11-02'), '2026-11-02');
+      // Across a month and a year end.
+      assert.strictEqual(moveWeekendToMonday('2028-12-30'), '2029-01-01');
+    });
+  });
+
+  describe('scheduleDatesOccurringOn', () => {
+    it('gives Monday the weekend schedule dates that move onto it', () => {
+      const daily = parseCronExpression('0 9 * * *')!;
+      assert.deepStrictEqual(scheduleDatesOccurringOn(daily, '2026-11-02'), ['2026-10-31', '2026-11-01', '2026-11-02']);
+      assert.deepStrictEqual(scheduleDatesOccurringOn(daily, '2026-11-01'), []);
+      assert.deepStrictEqual(scheduleDatesOccurringOn(daily, '2026-10-31'), []);
+      assert.deepStrictEqual(scheduleDatesOccurringOn(daily, '2026-11-03'), ['2026-11-03']);
+      const first = parseCronExpression('0 9 1 * *')!;
+      assert.deepStrictEqual(scheduleDatesOccurringOn(first, '2026-11-02'), ['2026-11-01']);
+    });
+  });
+
+  describe('scheduleOccursOn', () => {
     it('moves a monthly 1st that lands on a Sunday to the Monday', () => {
       const first = parseCronExpression('0 9 1 * *')!;
       // 2026-11-01 is a Sunday.
-      assert.strictEqual(recurringOccursOn(first, '2026-10-31'), false);
-      assert.strictEqual(recurringOccursOn(first, '2026-11-01'), false);
-      assert.strictEqual(recurringOccursOn(first, '2026-11-02'), true);
-      assert.strictEqual(recurringOccursOn(first, '2026-11-03'), false);
+      assert.strictEqual(scheduleOccursOn(first, '2026-10-31'), false);
+      assert.strictEqual(scheduleOccursOn(first, '2026-11-01'), false);
+      assert.strictEqual(scheduleOccursOn(first, '2026-11-02'), true);
+      assert.strictEqual(scheduleOccursOn(first, '2026-11-03'), false);
     });
 
     it('moves a monthly 1st that lands on a Saturday to the Monday', () => {
       const first = parseCronExpression('0 9 1 * *')!;
       // 2026-08-01 is a Saturday.
-      assert.strictEqual(recurringOccursOn(first, '2026-08-01'), false);
-      assert.strictEqual(recurringOccursOn(first, '2026-08-02'), false);
-      assert.strictEqual(recurringOccursOn(first, '2026-08-03'), true);
+      assert.strictEqual(scheduleOccursOn(first, '2026-08-01'), false);
+      assert.strictEqual(scheduleOccursOn(first, '2026-08-02'), false);
+      assert.strictEqual(scheduleOccursOn(first, '2026-08-03'), true);
       // A weekday 1st stays where it is.
-      assert.strictEqual(recurringOccursOn(first, '2026-10-01'), true);
+      assert.strictEqual(scheduleOccursOn(first, '2026-10-01'), true);
     });
 
     it('collapses a daily schedule\'s weekend into one Monday occurrence', () => {
       const daily = parseCronExpression('0 9 * * *')!;
       const week = ['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02', '2026-11-03'];
-      assert.deepStrictEqual(week.map((date) => recurringOccursOn(daily, date)), [true, false, false, true, true]);
+      assert.deepStrictEqual(week.map((date) => scheduleOccursOn(daily, date)), [true, false, false, true, true]);
     });
 
     it('moves weekly schedules set on a weekend day to Monday', () => {
       for (const expression of ['0 9 * * 6', '0 9 * * 0', '0 9 * * 7']) {
         const weekly = parseCronExpression(expression)!;
-        assert.strictEqual(recurringOccursOn(weekly, '2026-10-31'), false, expression);
-        assert.strictEqual(recurringOccursOn(weekly, '2026-11-01'), false, expression);
-        assert.strictEqual(recurringOccursOn(weekly, '2026-11-02'), true, expression);
-        assert.strictEqual(recurringOccursOn(weekly, '2026-11-03'), false, expression);
+        assert.strictEqual(scheduleOccursOn(weekly, '2026-10-31'), false, expression);
+        assert.strictEqual(scheduleOccursOn(weekly, '2026-11-01'), false, expression);
+        assert.strictEqual(scheduleOccursOn(weekly, '2026-11-02'), true, expression);
+        assert.strictEqual(scheduleOccursOn(weekly, '2026-11-03'), false, expression);
       }
     });
   });

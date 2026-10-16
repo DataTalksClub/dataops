@@ -273,20 +273,145 @@ describe('Cron runner', () => {
     await updateRecurringConfig(client, recurring.id, { enabled: true });
     await updateTemplate(client, template.id, { triggerEnabled: true });
     const resumed = await runCron(client, saturday);
-    // The recurring Saturday schedule occurs on the following Monday.
+    // Both Saturday schedules occur on the following Monday.
     assert.strictEqual(resumed.recurring.generated.length, 0);
-    assert.strictEqual(resumed.templates.created.length, 1);
+    assert.strictEqual(resumed.templates.created.length, 0);
     const monday = new Date('2029-01-08T09:00:00Z');
     const mondayPass = await runCron(client, monday);
     assert.strictEqual(mondayPass.recurring.generated.length, 1);
+    const mondayCards = (await listCards(client)).filter((card) => card.templateId === template.id);
+    assert.deepStrictEqual(mondayCards.map((card) => card.anchorDate), ['2029-01-08']);
 
     const second = await runCron(client, saturday);
-    assert.strictEqual(second.templates.skipped, 1);
+    assert.strictEqual(second.templates.created.length, 0);
     const secondMonday = await runCron(client, monday);
     assert.strictEqual(secondMonday.recurring.generated.length, 0);
     assert.strictEqual(secondMonday.recurring.skipped, 1);
+    assert.strictEqual((await listCards(client)).filter((card) => card.templateId === template.id).length, 1);
 
     await updateRecurringConfig(client, recurring.id, { enabled: false });
+    await updateTemplate(client, template.id, { triggerEnabled: false });
+  });
+
+  describe('automatic Template Cards on weekends', () => {
+    const cardsOf = async (templateId: string) => (await listCards(client))
+      .filter((card) => card.templateId === templateId)
+      .sort((a, b) => a.anchorDate!.localeCompare(b.anchorDate!));
+    // 2033-01-08 is a Saturday, 2033-01-09 a Sunday, 2033-01-10 a Monday.
+    const at = (date: string) => new Date(`${date}T08:00:00Z`);
+
+    it('creates the Card of a Saturday or Sunday schedule date on Monday, anchored on Monday', async () => {
+      const template = await createTemplate(client, {
+        name: 'Daily weekend collapse',
+        type: 'workflow',
+        triggerType: 'automatic',
+        triggerSchedule: '0 9 * * *',
+        triggerLeadDays: 0,
+        taskDefinitions: [
+          { refId: 'same-day', description: 'Same day', offsetDays: 0 },
+          { refId: 'next-day', description: 'Next day', offsetDays: 1 },
+        ],
+      });
+
+      const saturday = await runCron(client, at('2033-01-08'));
+      const sunday = await runCron(client, at('2033-01-09'));
+      assert.deepStrictEqual(await cardsOf(template.id), []);
+      assert.strictEqual(saturday.failures + sunday.failures, 0);
+
+      await runCron(client, at('2033-01-10'));
+      // Saturday, Sunday and Monday collapse into one Monday Card.
+      const cards = await cardsOf(template.id);
+      assert.deepStrictEqual(cards.map((card) => card.anchorDate), ['2033-01-10']);
+      const tasks = await listTasksByCard(client, cards[0].id);
+      assert.deepStrictEqual(
+        tasks.map((task) => [task.templateTaskRef, task.date]).sort(),
+        [['next-day', '2033-01-11'], ['same-day', '2033-01-10']],
+      );
+      await updateTemplate(client, template.id, { triggerEnabled: false });
+    });
+
+    it('moves a Sunday monthly date and its Card to the Monday', async () => {
+      const template = await createTemplate(client, {
+        name: 'Monthly report on a Sunday',
+        type: 'workflow',
+        triggerType: 'automatic',
+        triggerSchedule: '0 9 9 * *',
+        triggerLeadDays: 0,
+        taskDefinitions: [{ refId: 'report', description: 'Report', offsetDays: 0 }],
+      });
+
+      await runCron(client, at('2033-01-09'));
+      assert.deepStrictEqual(await cardsOf(template.id), []);
+      await runCron(client, at('2033-01-10'));
+      const cards = await cardsOf(template.id);
+      assert.deepStrictEqual(cards.map((card) => [card.anchorDate, card.title]), [['2033-01-10', 'Monthly report on a Sunday - Jan 10']]);
+      await updateTemplate(client, template.id, { triggerEnabled: false });
+    });
+
+    it('anchors a weekday schedule whose lead days reach a weekend on the Monday', async () => {
+      const template = await createTemplate(client, {
+        name: 'Lead days onto a weekend',
+        type: 'workflow',
+        triggerType: 'automatic',
+        // Wednesday + 3 lead days is a Saturday.
+        triggerSchedule: '0 9 * * 3',
+        triggerLeadDays: 3,
+        taskDefinitions: [{ refId: 'event', description: 'Event', offsetDays: 0 }],
+      });
+
+      // 2033-01-05 is a Wednesday: the Card is created that day.
+      await runCron(client, at('2033-01-05'));
+      const cards = await cardsOf(template.id);
+      assert.deepStrictEqual(cards.map((card) => card.anchorDate), ['2033-01-10']);
+      const tasks = await listTasksByCard(client, cards[0].id);
+      assert.deepStrictEqual(tasks.map((task) => task.date), ['2033-01-10']);
+      await updateTemplate(client, template.id, { triggerEnabled: false });
+    });
+
+    it('keeps one Card per occurrence across weekend reruns and backfills', async () => {
+      const template = await createTemplate(client, {
+        name: 'Saturday with lead days',
+        type: 'workflow',
+        triggerType: 'automatic',
+        // Saturday + 2 lead days is the Monday the Saturday moves to anyway.
+        triggerSchedule: '0 9 * * 6',
+        triggerLeadDays: 2,
+        taskDefinitions: [{ refId: 'one', description: 'One', offsetDays: 0 }],
+      });
+
+      for (const date of ['2033-01-08', '2033-01-09', '2033-01-10', '2033-01-08', '2033-01-10', '2033-01-11', '2033-01-10']) {
+        await runCron(client, at(date));
+      }
+      const cards = await cardsOf(template.id);
+      assert.deepStrictEqual(cards.map((card) => card.anchorDate), ['2033-01-10']);
+      assert.strictEqual((await listTasksByCard(client, cards[0].id)).length, 1);
+      await updateTemplate(client, template.id, { triggerEnabled: false });
+    });
+
+    it('reads the weekday from the Berlin date across both DST switches', async () => {
+      const template = await createTemplate(client, {
+        name: 'Sunday across DST',
+        type: 'workflow',
+        triggerType: 'automatic',
+        triggerSchedule: '0 9 * * 0',
+        triggerLeadDays: 0,
+        taskDefinitions: [{ refId: 'one', description: 'One', offsetDays: 0 }],
+      });
+
+      // 2028-03-26 and 2028-10-29 are the Sundays Berlin switches to and
+      // from summer time. 23:30 Berlin Sunday is still the weekend; 00:30
+      // Berlin Monday is still Sunday in UTC but creates the Monday Card.
+      await runCron(client, new Date('2028-03-26T21:30:00Z'));
+      assert.deepStrictEqual(await cardsOf(template.id), []);
+      await runCron(client, new Date('2028-03-26T22:30:00Z'));
+      assert.deepStrictEqual((await cardsOf(template.id)).map((card) => card.anchorDate), ['2028-03-27']);
+
+      await runCron(client, new Date('2028-10-29T22:30:00Z'));
+      assert.deepStrictEqual((await cardsOf(template.id)).map((card) => card.anchorDate), ['2028-03-27']);
+      await runCron(client, new Date('2028-10-29T23:30:00Z'));
+      assert.deepStrictEqual((await cardsOf(template.id)).map((card) => card.anchorDate), ['2028-03-27', '2028-10-30']);
+      await updateTemplate(client, template.id, { triggerEnabled: false });
+    });
   });
 
   it('recovers missing template tasks for an existing automatic card instead of duplicating the card', async () => {
