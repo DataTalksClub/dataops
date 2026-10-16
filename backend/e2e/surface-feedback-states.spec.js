@@ -309,12 +309,14 @@ test.describe('issue 204 owning-surface feedback', () => {
     await page.getByRole('button', { name: 'Add user' }).click();
     const userForm = page.locator('.ops-user-form');
     await userForm.getByLabel('Name').fill('Synthetic User');
-    await userForm.getByLabel('Email').fill('synthetic-user@datatalks.club');
+    // One email is one account, so a retry must not reuse the address.
+    const email = `synthetic-user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@example.invalid`;
+    await userForm.getByLabel('Email').fill(email);
     await userForm.getByRole('button', { name: 'Create user' }).click();
     const usersOutcome = page.locator('.ops-users-outcome');
     await expect(usersOutcome).toBeVisible();
     await expect(usersOutcome).toContainText('Synthetic User added.');
-    await expect(page.getByText('synthetic-user@datatalks.club')).toBeVisible();
+    await expect(page.getByText(email)).toBeVisible();
     await shot(page, 'users-save-success-desktop-1440x900');
     await context.close();
   });

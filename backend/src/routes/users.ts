@@ -1,5 +1,5 @@
 import { getClient } from '../db/client';
-import { getUser, listFormerUsers, listUsers, createUser, updateUser } from '../db/users';
+import { getUser, getUsersByNormalizedEmail, listFormerUsers, listUsers, createUser, normalizeEmail, updateUser } from '../db/users';
 import {
   deleteUser,
   disableUser,
@@ -161,6 +161,9 @@ async function handleLifecycle(
 
 /**
  * Handle /api/users collection routes: GET (list) and POST (create).
+ *
+ * Creating a user is the only way an account comes to exist: sign-in never
+ * provisions one, so only people an admin has added can sign in.
  */
 async function handleCollection(
   method: string,
@@ -197,9 +200,13 @@ async function handleCollection(
     if (!isNonEmptyString(body.email)) {
       return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'email is required' }) };
     }
-    const email = String(body.email).trim();
+    const email = normalizeEmail(String(body.email));
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return { statusCode: 400, headers: JSON_HEADERS, body: JSON.stringify({ error: 'email must be a valid email address' }) };
+    }
+    // Sign-in finds the account by email, so one email is one account.
+    if ((await getUsersByNormalizedEmail(client, email)).length > 0) {
+      return { statusCode: 409, headers: JSON_HEADERS, body: JSON.stringify({ error: `A user with email ${email} already exists`, code: 'email_taken' }) };
     }
 
     const data: Record<string, unknown> = { name: String(body.name).trim(), email };

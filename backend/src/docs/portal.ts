@@ -19,7 +19,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import {resolveInteractiveActor} from '../identity/actor';
 import { userDisplayNames } from '../identity/directory';
-import { authErrorPage, browserAuthConfigured, browserUser, handleCallback, logout, startLogin, unauthenticatedApi } from '../auth/browserAuth';
+import { authErrorPage, browserAuthConfigured, signInRefusal, browserUser, handleCallback, logout, startLogin, unauthenticatedApi } from '../auth/browserAuth';
 import { RUNTIME_ROOT } from '../runtimePaths';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { isAnonymousDeviceRequest } from '../routes/cliAuth';
@@ -281,7 +281,7 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
   // non-secret relying-party configuration is intentionally absent.
   if (path === '/login' && method === 'GET') return { response: await startLogin(event, client), authorized: false };
   if (path === '/auth/callback' && method === 'GET') return { response: await handleCallback(event, client), authorized: false };
-  if (path === '/auth/error' && method === 'GET') return { response: authErrorPage(), authorized: false };
+  if (path === '/auth/error' && method === 'GET') return { response: authErrorPage(signInRefusal(event.queryStringParameters?.reason)), authorized: false };
   if (path === '/logout' && (method === 'GET' || method === 'POST')) return { response: await logout(event, client), authorized: false };
   // Full portal mode replaces password login with OAuth/device flows. Docs-domain
   // local development keeps the canonical login reachable behind the rewritten

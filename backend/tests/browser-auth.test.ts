@@ -3,12 +3,14 @@ import assert from 'node:assert';
 import { createHash, createSign, generateKeyPairSync, type KeyObject } from 'node:crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { authErrorPage, handleCallback, logout, resetBrowserAuthCaches, startLogin } from '../src/auth/browserAuth';
+import { authErrorPage, handleCallback, logout, resetBrowserAuthCaches, signInRefusal, startLogin } from '../src/auth/browserAuth';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createBrowserSession, createSession, getSession } from '../src/db/sessions';
-import { createUserWithId, getUser, getUsersByNormalizedEmail, provisionBrowserOperator } from '../src/db/users';
+import { createUserWithId, getFormerUserByEmail, getUser, getUsersByNormalizedEmail, listUsers } from '../src/db/users';
+import { deleteUser, disableUser } from '../src/db/userLifecycle';
+import { handleUserRoutes } from '../src/routes/users';
 import { route } from '../src/router';
 import type { LambdaEvent, LambdaResponse } from '../src/types';
 
@@ -27,6 +29,12 @@ const CONFIG = {
 
 function event(method: string, path: string, query: Record<string, string> = {}, cookie = ''): LambdaEvent {
   return { httpMethod: method, path, queryStringParameters: query, headers: cookie ? { cookie } : {} };
+}
+
+/** An admin adding a person on the Users page. */
+async function adminAddsUser(name: string, email: string): Promise<LambdaResponse> {
+  const body = JSON.stringify({ name, email });
+  return handleUserRoutes('/api/users', 'POST', body, { httpMethod: 'POST', path: '/api/users', headers: { 'x-user-id': 'enabled-admin' }, body });
 }
 
 function cookiePair(response: LambdaResponse, name: string): string {
@@ -218,8 +226,8 @@ describe('shared Cognito browser authentication', () => {
     }
   });
 
-  it('stores the picture of a first-time sign-in', async () => {
-    tokenClaims.name = 'Picture Newcomer';
+  it('stores the picture of an added person signing in for the first time', async () => {
+    assert.strictEqual((await adminAddsUser('Picture Newcomer', 'picture.newcomer@datatalks.club'))!.statusCode, 201);
     tokenClaims.picture = 'https://lh3.googleusercontent.com/a/stub-newcomer=s96-c';
     assert.strictEqual((await complete('picture.newcomer@datatalks.club')).statusCode, 302);
     const [user] = await getUsersByNormalizedEmail(client, 'picture.newcomer@datatalks.club');
@@ -324,51 +332,80 @@ describe('shared Cognito browser authentication', () => {
     assert.strictEqual((await complete()).statusCode, 303);
   });
 
-  it('provisions verified domain identities once as operators and serves their browser session', async () => {
+  it('never creates an account at sign-in: an unknown verified identity is refused as not added', async () => {
     tokenClaims.name = 'New Colleague';
-    const response = await complete('  NEW.COLLEAGUE@DataTalks.Club  ');
-    assert.strictEqual(response.statusCode, 302);
-    const users = await getUsersByNormalizedEmail(client, 'new.colleague@datatalks.club');
-    assert.strictEqual(users.length, 1);
-    assert.strictEqual(users[0].email, 'new.colleague@datatalks.club');
-    assert.strictEqual(users[0].name, 'New Colleague');
-    assert.strictEqual(users[0].role, 'operator');
-    const me = await route(event('GET', '/api/me', {}, cookiePair(response, 'dataops_session')), client);
-    assert.strictEqual(me.statusCode, 200);
-    assert.strictEqual(JSON.parse(me.body).user.id, users[0].id);
-    assert.strictEqual(JSON.parse(me.body).user.role, 'operator');
-    assert.strictEqual((await complete('new.colleague@datatalks.club')).statusCode, 302);
-    assert.strictEqual((await getUsersByNormalizedEmail(client, users[0].email)).length, 1);
-  });
-
-  it('does not provision unverified emails or domain lookalikes', async () => {
-    tokenClaims.email_verified = false;
-    assert.strictEqual((await complete('unverified@datatalks.club')).statusCode, 303);
-    assert.strictEqual((await getUsersByNormalizedEmail(client, 'unverified@datatalks.club')).length, 0);
-    tokenClaims.email_verified = true;
-    for (const email of ['outside@example.com', 'user@datatalks.club.evil.test', 'user@sub.datatalks.club', 'user@@datatalks.club']) {
-      assert.strictEqual((await complete(email)).statusCode, 303, email);
-      assert.strictEqual((await getUsersByNormalizedEmail(client, email)).length, 0);
+    for (const email of ['  NEW.COLLEAGUE@DataTalks.Club  ', 'outside@example.com']) {
+      const response = await complete(email);
+      assert.strictEqual(response.statusCode, 303, email);
+      assert.strictEqual(response.headers?.location, '/auth/error?reason=not_added', email);
+      assert.doesNotMatch(response.headers?.['set-cookie'] || '', /dataops_session=[^;]/);
+      assert.strictEqual((await getUsersByNormalizedEmail(client, email)).length, 0, email);
     }
+    assert.strictEqual((await listUsers(client)).some((user) => user.email.includes('new.colleague')), false);
   });
 
-  it('shares one user across simultaneous provisioning and preserves disabled accounts', async () => {
-    const users = await Promise.all(Array.from({ length: 4 }, () => provisionBrowserOperator(client, 'concurrent@datatalks.club', 'Concurrent')));
-    assert.strictEqual(new Set(users.map(user => user.id)).size, 1);
-    assert.strictEqual((await getUsersByNormalizedEmail(client, 'concurrent@datatalks.club')).length, 1);
-    await createUserWithId(client, users[0].id, { email: users[0].email, name: 'Disabled', role: 'operator', disabled: true });
-    const existing = await provisionBrowserOperator(client, users[0].email, 'Replacement');
-    assert.strictEqual(existing.disabled, true);
-    assert.strictEqual(existing.name, 'Disabled');
-    assert.strictEqual((await complete(users[0].email)).statusCode, 303);
+  it('refuses unverified emails without saying whether an account exists', async () => {
+    tokenClaims.email_verified = false;
+    const response = await complete('admin@datatalks.club');
+    assert.strictEqual(response.statusCode, 303);
+    assert.strictEqual(response.headers?.location, '/auth/error');
   });
 
-  it('denies outside-domain, disabled and duplicate local users', async () => {
-    assert.strictEqual((await complete('unknown@example.com')).statusCode, 303);
-    assert.strictEqual((await complete('disabled@datatalks.club')).statusCode, 303);
+  it('signs in a person an admin added, then refuses them once disabled and once deleted', async () => {
+    const created = (await adminAddsUser('Added Later', 'Added.Later@datatalks.club'))!;
+    assert.strictEqual(created.statusCode, 201);
+    const added = JSON.parse(created.body).user;
+    assert.strictEqual(added.email, 'added.later@datatalks.club');
+    assert.strictEqual(added.role, 'operator');
+
+    const signedIn = await complete('added.later@datatalks.club');
+    assert.strictEqual(signedIn.statusCode, 302);
+    const me = await route(event('GET', '/api/me', {}, cookiePair(signedIn, 'dataops_session')), client);
+    assert.strictEqual(JSON.parse(me.body).user.id, added.id);
+
+    await disableUser(client, added.id, { actorId: 'enabled-admin' });
+    const disabled = await complete('added.later@datatalks.club');
+    assert.strictEqual(disabled.statusCode, 303);
+    assert.strictEqual(disabled.headers?.location, '/auth/error?reason=disabled');
+
+    await deleteUser(client, added.id, { actorId: 'enabled-admin' });
+    const deleted = await complete('added.later@datatalks.club');
+    assert.strictEqual(deleted.statusCode, 303);
+    assert.strictEqual(deleted.headers?.location, '/auth/error?reason=deleted');
+    // Signing in again did not bring the account back.
+    assert.strictEqual((await getUsersByNormalizedEmail(client, 'added.later@datatalks.club')).length, 0);
+    // The former-user record keeps a hash of the email, never the email.
+    const former = await getFormerUserByEmail(client, 'ADDED.LATER@datatalks.club');
+    assert.strictEqual(former?.id, added.id);
+    assert.doesNotMatch(JSON.stringify(former), /added\.later|emailHash/);
+
+    // Only an admin adding them again lets them back in.
+    assert.strictEqual((await adminAddsUser('Added Later', 'added.later@datatalks.club'))!.statusCode, 201);
+    // One email is one account: adding it twice is refused.
+    const twice = (await adminAddsUser('Added Twice', ' ADDED.later@datatalks.club '))!;
+    assert.strictEqual(twice.statusCode, 409);
+    assert.strictEqual(JSON.parse(twice.body).code, 'email_taken');
+    assert.strictEqual((await complete('added.later@datatalks.club')).statusCode, 302);
+  });
+
+  it('refuses a disabled account and an email shared by two accounts', async () => {
+    const disabled = await complete('disabled@datatalks.club');
+    assert.strictEqual(disabled.statusCode, 303);
+    assert.strictEqual(disabled.headers?.location, '/auth/error?reason=disabled');
     await createUserWithId(client, 'duplicate-one', { name: 'Duplicate one', email: 'duplicate@datatalks.club', role: 'operator' });
     await createUserWithId(client, 'duplicate-two', { name: 'Duplicate two', email: 'DUPLICATE@datatalks.club', role: 'operator' });
-    assert.strictEqual((await complete('duplicate@datatalks.club')).statusCode, 303);
+    const duplicate = await complete('duplicate@datatalks.club');
+    assert.strictEqual(duplicate.statusCode, 303);
+    assert.strictEqual(duplicate.headers?.location, '/auth/error');
+  });
+
+  it('explains each refusal on the error page and ignores unknown reasons', () => {
+    assert.match(authErrorPage(signInRefusal('not_added')).body, /Ask a DataOps admin to add you/);
+    assert.match(authErrorPage(signInRefusal('disabled')).body, /account is disabled/);
+    assert.match(authErrorPage(signInRefusal('deleted')).body, /account was deleted/);
+    assert.strictEqual(signInRefusal('<script>'), null);
+    assert.strictEqual(signInRefusal('toString'), null);
+    assert.match(authErrorPage(signInRefusal('<script>')).body, /We couldn’t sign you in/);
   });
 
   it('serves pages and /api/me from the browser cookie, propagating the real local id and role', async () => {

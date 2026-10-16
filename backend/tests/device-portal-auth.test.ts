@@ -7,6 +7,7 @@ import { useTestDatabase } from './helpers/db';
 import { createUserWithId, updateUser } from '../src/db/users';
 import { createBrowserSession } from '../src/db/sessions';
 import { createDeviceGrant, getDeviceGrantByDeviceCode } from '../src/db/cliAuth';
+import { deleteUser, disableUser } from '../src/db/userLifecycle';
 
 const config = {
   DATAOPS_DOCS_DOMAIN: '1', WORK_ENGINE_AUTH_MODE: 'portal', SKIP_AUTH: 'false',
@@ -135,5 +136,27 @@ describe('device authentication through the configured portal and router', () =>
       assert.deepEqual(json(await request('POST', '/api/auth/device/token', { deviceCode: blocked.deviceCode })), { error: 'access_denied' });
       assert.equal((await request('POST', '/api/auth/device/approve', { userCode: (await start()).userCode }, { cookie })).statusCode, 401);
     } finally { await updateUser(client, 'device-browser-operator', { disabled: false }); }
+  });
+
+  it('follows the sign-in rule: only an existing, enabled account gets a CLI token', async () => {
+    // A browser session for an id with no account cannot approve a device.
+    const orphan = await createBrowserSession(client, 'never-added', { lifetimeSeconds: 3600 });
+    const unapproved = await start();
+    assert.equal((await request('POST', '/api/auth/device/approve', { userCode: unapproved.userCode }, { cookie: `dataops_session=${orphan.token}` })).statusCode, 401);
+    assert.deepEqual(json(await request('POST', '/api/auth/device/token', { deviceCode: unapproved.deviceCode })), { error: 'authorization_pending' });
+
+    // Approved, then disabled and deleted before the CLI collects: no token,
+    // and the deleted person is not re-created by trying.
+    await createUserWithId(client, 'device-leaver', { name: 'Leaver', email: 'leaver@example.test', role: 'operator' });
+    const leaverSession = await createBrowserSession(client, 'device-leaver', { lifetimeSeconds: 3600 });
+    const grant = await start();
+    assert.equal((await request('POST', '/api/auth/device/approve', { userCode: grant.userCode }, { cookie: `dataops_session=${leaverSession.token}` })).statusCode, 200);
+    await disableUser(client, 'device-leaver', { actorId: 'device-browser-operator' });
+    await deleteUser(client, 'device-leaver', { actorId: 'device-browser-operator' });
+    // Disabling revoked the pending grant with every other credential.
+    const collected = await request('POST', '/api/auth/device/token', { deviceCode: grant.deviceCode });
+    assert.equal(collected.statusCode, 400);
+    assert.equal(json(collected).token, undefined);
+    assert.equal((await request('POST', '/api/auth/device/approve', { userCode: (await start()).userCode }, { cookie: `dataops_session=${leaverSession.token}` })).statusCode, 401);
   });
 });

@@ -123,27 +123,6 @@ async function createUserWithId(client: DynamoDBDocumentClient, id: string, data
   return cleanItem(item) as User;
 }
 
-/** Create once per normalized email, so simultaneous first logins share an identity. */
-async function provisionBrowserOperator(client: DynamoDBDocumentClient, email: string, name: string): Promise<User> {
-  const normalized = email.trim().toLowerCase();
-  const id = `email-${createHash('sha256').update(normalized).digest('hex')}`;
-  const item = {
-    PK: `USER#${id}`, SK: `USER#${id}`, id,
-    email: normalized, name, role: 'operator', createdAt: new Date().toISOString(),
-  };
-  try {
-    await client.send(new PutCommand({
-      TableName: TABLE_USERS, Item: item, ConditionExpression: 'attribute_not_exists(PK)',
-    }));
-    return cleanItem(item)!;
-  } catch (error: unknown) {
-    if (!(error && typeof error === 'object' && (error as { name?: string }).name === 'ConditionalCheckFailedException')) throw error;
-    const existing = await getUser(client, id);
-    if (!existing || existing.email.trim().toLowerCase() !== normalized) throw new Error('Browser user identity mismatch');
-    return existing;
-  }
-}
-
 /**
  * Get a user by id. Returns the clean object or null if not found.
  */
@@ -176,7 +155,7 @@ async function listUsers(client: DynamoDBDocumentClient): Promise<User[]> {
 
 /** Return all users whose normalized email exactly matches the supplied identity. */
 async function getUsersByNormalizedEmail(client: DynamoDBDocumentClient, email: string): Promise<User[]> {
-  const normalized = email.trim().toLowerCase();
+  const normalized = normalizeEmail(email);
   const items: Record<string, unknown>[] = [];
   let exclusiveStartKey: Record<string, unknown> | undefined;
   do {
@@ -192,15 +171,28 @@ async function getUsersByNormalizedEmail(client: DynamoDBDocumentClient, email: 
   } while (exclusiveStartKey);
   return items
     .map((item) => cleanItem(item as Record<string, unknown>) as User)
-    .filter((user) => user.email.trim().toLowerCase() === normalized);
+    .filter((user) => normalizeEmail(user.email) === normalized);
+}
+
+/** The sign-in identity form: emails compare trimmed and lowercased. */
+function normalizeEmail(email: string): string {
+  return String(email || '').trim().toLowerCase();
 }
 
 /**
  * The display record a deleted account leaves behind: its id and name, so
  * history that names the person (who completed a Task, who published a
  * revision) still reads as a name. It lives under its own `FORMER#` key, so
- * no account lookup, sign-in or USER# scan can ever find it.
+ * no account lookup or USER# scan can ever find it.
+ *
+ * It also keeps a hash of the email, never the email itself, so sign-in can
+ * tell a deleted person "your account was deleted" rather than "you were
+ * never added". The hash is not returned by any API.
  */
+function formerUserEmailHash(email: string): string {
+  return createHash('sha256').update(normalizeEmail(email)).digest('hex');
+}
+
 function formerUserKey(id: string) {
   return { PK: `FORMER#${id}`, SK: `FORMER#${id}` };
 }
@@ -217,6 +209,25 @@ function cleanFormerUser(item: Record<string, unknown> | undefined): FormerUser 
 async function getFormerUser(client: DynamoDBDocumentClient, id: string): Promise<FormerUser | null> {
   const result = await client.send(new GetCommand({ TableName: TABLE_USERS, Key: formerUserKey(id) }));
   return cleanFormerUser(result.Item as Record<string, unknown> | undefined);
+}
+
+/** The former-user record a deleted account with this email left behind. */
+async function getFormerUserByEmail(client: DynamoDBDocumentClient, email: string): Promise<FormerUser | null> {
+  const emailHash = formerUserEmailHash(email);
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(new ScanCommand({
+      TableName: TABLE_USERS,
+      FilterExpression: 'begins_with(PK, :prefix) AND emailHash = :emailHash',
+      ExpressionAttributeValues: { ':prefix': 'FORMER#', ':emailHash': emailHash },
+      ExclusiveStartKey: exclusiveStartKey,
+      ConsistentRead: true,
+    }));
+    const item = (result.Items || [])[0] as Record<string, unknown> | undefined;
+    if (item) return cleanFormerUser(item);
+    exclusiveStartKey = result.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+  return null;
 }
 
 async function listFormerUsers(client: DynamoDBDocumentClient): Promise<FormerUser[]> {
@@ -281,7 +292,9 @@ export {
   getUser,
   listUsers,
   getUsersByNormalizedEmail,
-  provisionBrowserOperator,
+  formerUserEmailHash,
+  getFormerUserByEmail,
+  normalizeEmail,
   recordSignInPicture,
   updateUser,
 };

@@ -3,7 +3,7 @@ import { DeleteCommand, PutCommand, type DynamoDBDocumentClient } from '@aws-sdk
 
 import { TABLE_SESSIONS } from '../db/tableNames';
 import { createBrowserSession, deleteSession, getSession } from '../db/sessions';
-import { getUser, getUsersByNormalizedEmail, provisionBrowserOperator, recordSignInPicture } from '../db/users';
+import { getFormerUserByEmail, getUser, getUsersByNormalizedEmail, normalizeEmail, recordSignInPicture } from '../db/users';
 import type { LambdaEvent, LambdaResponse, User } from '../types';
 
 const SESSION_COOKIE = 'dataops_session';
@@ -146,8 +146,37 @@ const ERROR_HEADERS = {
   'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
 };
 
+/**
+ * Why a verified identity was turned away. Only people an admin has added can
+ * sign in; nothing is created on first sign-in.
+ */
+export type SignInRefusal = 'not_added' | 'disabled' | 'deleted';
+
+const REFUSAL_MESSAGES: Record<SignInRefusal, { title: string; text: string }> = {
+  not_added: {
+    title: 'You don’t have a DataOps account',
+    text: 'Only people an admin has added can sign in. Ask a DataOps admin to add you, then sign in again.',
+  },
+  disabled: {
+    title: 'Your DataOps account is disabled',
+    text: 'An admin has disabled your account, so you can’t sign in. Ask a DataOps admin to enable it.',
+  },
+  deleted: {
+    title: 'Your DataOps account was deleted',
+    text: 'An admin has deleted your account, so you can’t sign in. Ask a DataOps admin to add you again.',
+  },
+};
+
+export function signInRefusal(value: unknown): SignInRefusal | null {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(REFUSAL_MESSAGES, value) ? value as SignInRefusal : null;
+}
+
 /** Render only on the clean route; callback URLs must never contain this HTML. */
-export function authErrorPage(): LambdaResponse {
+export function authErrorPage(refusal: SignInRefusal | null = null): LambdaResponse {
+  const message = refusal ? REFUSAL_MESSAGES[refusal] : {
+    title: 'We couldn’t sign you in',
+    text: 'Your sign-in could not be completed. Please try again. If the issue continues, contact the DataOps administrator.',
+  };
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -177,8 +206,8 @@ export function authErrorPage(): LambdaResponse {
   <main class="panel" aria-labelledby="auth-error-title">
     <div class="brand" aria-label="DataOps by DataTalks.Club"><div class="mark" aria-hidden="true">D</div><div><strong>DataOps</strong><span>DataTalks.Club operations workspace</span></div></div>
     <div class="status" aria-hidden="true">!</div>
-    <h1 id="auth-error-title" tabindex="-1" autofocus>We couldn’t sign you in</h1>
-    <p>Your sign-in could not be completed. Please try again. If the issue continues, contact the DataOps administrator.</p>
+    <h1 id="auth-error-title" tabindex="-1" autofocus>${message.title}</h1>
+    <p>${message.text}</p>
     <div class="actions"><a href="/login">Try signing in again</a></div>
   </main>
 </body>
@@ -186,11 +215,11 @@ export function authErrorPage(): LambdaResponse {
   return { statusCode: 403, headers: ERROR_HEADERS, body: html };
 }
 
-function callbackFailure(): LambdaResponse {
+function callbackFailure(refusal: SignInRefusal | null = null): LambdaResponse {
   return {
     statusCode: 303,
     headers: {
-      location: '/auth/error',
+      location: refusal ? `/auth/error?reason=${refusal}` : '/auth/error',
       'set-cookie': secureCookie(TRANSACTION_COOKIE, '', 0),
       'cache-control': 'no-store',
       'referrer-policy': 'no-referrer',
@@ -332,15 +361,14 @@ export async function handleCallback(event: LambdaEvent, client: DynamoDBDocumen
   if (query.error || !query.code) return callbackFailure();
   try {
     const claims = await validateIdToken(await exchangeCode(query.code, transaction.verifier), transaction.nonce, now);
-    const users = await getUsersByNormalizedEmail(client, claims.email!);
-    const email = claims.email!.trim().toLowerCase();
+    // Only an existing, enabled account signs in. Nothing is provisioned here:
+    // admins add people from the Users page or `dataops team add-user`.
+    const email = normalizeEmail(claims.email!);
+    const users = await getUsersByNormalizedEmail(client, email);
     if (users.length > 1) return callbackFailure();
-    let user = users[0];
-    if (!user) {
-      if (!/^[^@\s]+@datatalks\.club$/.test(email)) return callbackFailure();
-      user = await provisionBrowserOperator(client, email, claims.name?.trim() || email.split('@')[0]);
-    }
-    if (user.disabled) return callbackFailure();
+    const user = users[0];
+    if (!user) return callbackFailure(await getFormerUserByEmail(client, email) ? 'deleted' : 'not_added');
+    if (user.disabled) return callbackFailure('disabled');
     await recordSignInPicture(client, user.id, claims.picture);
     const session = await createBrowserSession(client, user.id, { now, lifetimeSeconds: authConfig().sessionLifetimeSeconds });
     return {

@@ -43,7 +43,7 @@ import {
 } from './sponsorCrm';
 import { TABLE_AUDIT_EVENTS, TABLE_CARDS, TABLE_SESSIONS, TABLE_USERS } from './tableNames';
 import { getTaskConsistent, listTasksByOwner, TaskVersionConflictError, updateTask } from './tasks';
-import { formerUserKey, getUser, listUsers, updateUser } from './users';
+import { formerUserEmailHash, formerUserKey, getUser, listUsers, updateUser } from './users';
 import {
   getWorkspaceSettings,
   setDefaultAssignee,
@@ -482,7 +482,8 @@ export async function deleteUser(client: DynamoDBDocumentClient, userId: string,
   const now = new Date().toISOString();
   const userKey = { PK: `USER#${user.id}`, SK: `USER#${user.id}` };
   const formerKey = formerUserKey(user.id);
-  const former = { ...formerKey, id: user.id, name: displayName(user), deletedAt: now };
+  // The email hash lets sign-in refuse the person as deleted; see users.ts.
+  const former = { ...formerKey, id: user.id, name: displayName(user), emailHash: formerUserEmailHash(user.email), deletedAt: now };
   const settingsKey = { PK: 'SETTINGS#workspace', SK: 'SETTINGS#workspace' };
   const auditEvent = {
     id: randomUUID(),

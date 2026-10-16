@@ -214,7 +214,8 @@ describe('user lifecycle: handover, disable, delete', () => {
       [{ id: LEAVER, name: 'Lee Leaver' }],
     );
     const former = (await client.send(new GetCommand({ TableName: TABLE_USERS, Key: { PK: `FORMER#${LEAVER}`, SK: `FORMER#${LEAVER}` } }))).Item;
-    assert.deepStrictEqual(Object.keys(former || {}).sort(), ['PK', 'SK', 'deletedAt', 'id', 'name'], 'only a name is kept');
+    assert.deepStrictEqual(Object.keys(former || {}).sort(), ['PK', 'SK', 'deletedAt', 'emailHash', 'id', 'name'], 'only a name and an email hash are kept');
+    assert.doesNotMatch(JSON.stringify(former), /@/, 'the email itself is not kept');
 
     // History still reads as a person, never as an active member.
     const directory = new TeamDirectory(client);

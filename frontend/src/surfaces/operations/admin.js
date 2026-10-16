@@ -683,8 +683,11 @@ export function createAdminSurface(context) {
         const failure =
           `Could not save user: ${err?.message || "request failed"}` +
           ` Select ${submitLabel} to retry.`;
-        reloadUserOnCancel = err?.status === 409;
-        if (err?.status === 409) feedback.conflict(conflict).focus();
+        // A 409 on create means the email already has an account, not a
+        // concurrent edit, so it reads as a plain failure.
+        const editConflict = isEdit && err?.status === 409;
+        reloadUserOnCancel = editConflict;
+        if (editConflict) feedback.conflict(conflict).focus();
         else feedback.failure(failure).focus();
         setControlPending(submit, { pending: false, label: submitLabel });
       } finally {
