@@ -82,6 +82,35 @@ test.describe('task Needs tag input', () => {
     expect(saved.requires).toEqual(['finom', secondId]);
   });
 
+  test('a panel rebuild mid-typing keeps the open, filtered list', async ({ page, request }) => {
+    const fixture = await taskNeeding(request, ['finom']);
+    // Hold the Task's artifact hydration so it lands, and rebuilds the
+    // panel, only after the operator has typed into the open editor.
+    let releaseArtifacts;
+    const artifactsHeld = new Promise((resolve) => { releaseArtifacts = resolve; });
+    await page.route(`**/api/artifacts?taskId=${fixture.task.id}*`, async (route) => {
+      await artifactsHeld;
+      await route.continue();
+    });
+    const needs = await openNeeds(page, fixture);
+    await needs.getByRole('button', { name: 'Edit what this task needs' }).click();
+    const combo = needs.getByRole('combobox', { name: 'Needs' });
+    await expect(combo).toBeFocused();
+    await page.keyboard.type('yout');
+    await expect(combo).toHaveAttribute('aria-expanded', 'true');
+
+    // Mark this panel's section; the hydration rebuild replaces it.
+    await needs.evaluate((section) => { section.dataset.beforeRebuild = 'true'; });
+    releaseArtifacts();
+    await expect(page.locator('#task-panel section.task-requires:not([data-before-rebuild])')).toHaveCount(1);
+    await expect(combo).toBeFocused();
+    await expect(combo).toHaveValue('yout');
+    await expect(combo).toHaveAttribute('aria-expanded', 'true');
+    await expect(needs.getByRole('listbox').getByRole('option')).toHaveText(['YouTube']);
+    await page.keyboard.press('Enter');
+    await expect(chips(needs)).toHaveText(['Finom', 'YouTube']);
+  });
+
   test('mouse: the chips open the editor, an option click adds, × removes; Esc discards the draft', async ({ page, request }) => {
     const fixture = await taskNeeding(request, ['finom', 'youtube']);
     const needs = await openNeeds(page, fixture);

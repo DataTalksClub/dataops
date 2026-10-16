@@ -23,6 +23,11 @@ export function createTaskRequires({
   // drop quick successive picks or need a queue around the intent pipeline.
   // The draft survives panel re-renders until it is saved or cancelled.
   let requiresDraft = null; // { taskId, value: string[] } while editing
+  // The live tag input while the draft is open. Snapshot refreshes and
+  // artifact/file hydration rebuild the whole panel mid-typing; a fresh tag
+  // input would get the typed text back but not its open, filtered list, so
+  // the same instance moves into each rebuilt panel instead.
+  let requiresEditor = null; // { taskId, tags }
   // The vocabulary from GET /api/resources when the work snapshot has none
   // yet (a Task opened by deep link before the queue loads).
   let requiresVocabulary = { status: "idle", resources: [] };
@@ -51,6 +56,7 @@ export function createTaskRequires({
 
   function editTaskRequires(task) {
     requiresDraft = { taskId: task.id, value: [...(task.requires || [])] };
+    requiresEditor = null;
     if (!(state.workSnapshot.resources || []).length) loadRequiresVocabulary();
     renderTaskPanel({ preserveDrafts: true });
     taskPanelBody.querySelector('[data-panel-field="requires"]')?.focus();
@@ -58,6 +64,7 @@ export function createTaskRequires({
 
   function stopEditingTaskRequires() {
     requiresDraft = null;
+    requiresEditor = null;
     renderTaskPanel({ preserveDrafts: true });
     taskPanelBody.querySelector("[data-requires-edit]")?.focus();
   }
@@ -70,6 +77,7 @@ export function createTaskRequires({
     const requires = Array.isArray(task.requires) ? task.requires : [];
     const editable = ["todo", "waiting"].includes(task.status);
     if (requiresDraft && (requiresDraft.taskId !== task.id || !editable)) requiresDraft = null;
+    if (!requiresDraft || requiresEditor?.taskId !== task.id) requiresEditor = null;
     const section = document.createElement("section");
     section.className = "task-requires";
     section.setAttribute("aria-label", "Required resources");
@@ -126,23 +134,35 @@ export function createTaskRequires({
     const editor = document.createElement("div");
     editor.className = "task-requires-editor";
     const loading = !resources.length && requiresVocabulary.status !== "failed";
-    const tags = globalThis.dakitTagInput.create({
-      labelledBy: "task-requires-label",
-      label: "Needs",
-      placeholder: loading ? "Loading resources…" : "Type to add an account or tool…",
-      noMatches: "No matching resource",
-      options: resources.map((resource) => ({
-        value: resource.id,
-        label: resource.name,
-        aliases: [resource.id],
-        icon: () => renderIcon(resource.icon, { size: 16 }),
-      })),
-      value: requiresDraft.value,
-      disabled: busy || loading,
-      onChange: (value) => {
-        if (requiresDraft?.taskId === task.id) requiresDraft.value = value;
-      },
-    });
+    const placeholder = loading ? "Loading resources…" : "Type to add an account or tool…";
+    const options = resources.map((resource) => ({
+      value: resource.id,
+      label: resource.name,
+      aliases: [resource.id],
+      icon: () => renderIcon(resource.icon, { size: 16 }),
+    }));
+    if (requiresEditor) {
+      requiresEditor.tags.setOptions(options);
+      requiresEditor.tags.setDisabled(busy || loading);
+      requiresEditor.tags.input.placeholder = placeholder;
+    } else {
+      requiresEditor = {
+        taskId: task.id,
+        tags: globalThis.dakitTagInput.create({
+          labelledBy: "task-requires-label",
+          label: "Needs",
+          placeholder,
+          noMatches: "No matching resource",
+          options,
+          value: requiresDraft.value,
+          disabled: busy || loading,
+          onChange: (value) => {
+            if (requiresDraft?.taskId === task.id) requiresDraft.value = value;
+          },
+        }),
+      };
+    }
+    const { tags } = requiresEditor;
     tags.input.dataset.panelField = "requires";
     editor.append(tags.element);
     if (requiresVocabulary.status === "failed" && !resources.length) {
