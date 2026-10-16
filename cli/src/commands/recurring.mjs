@@ -14,7 +14,8 @@ Usage
   dataops recurring pause <id> | resume <id> | delete <id>
   dataops recurring generate [--date YYYY-MM-DD] [--until YYYY-MM-DD]
 
-<id> may be a unique prefix. Deleting a schedule keeps the Tasks it generated.
+<id> may be a unique prefix. Deleting a schedule keeps the Tasks it generated;
+a schedule that has generated Tasks must be paused first.
 --doc names the process doc (an id, alias or path, as for \`dataops kb show\`)
 that every Task the schedule generates links; \`--doc none\` removes it.
 `;

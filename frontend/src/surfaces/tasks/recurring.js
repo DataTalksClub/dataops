@@ -266,7 +266,7 @@ export function createRecurringTasks(context) {
 
   async function deleteRecurringConfigFromUi(config, button) {
     const confirmed = await confirmDialog(
-      `Delete recurring schedule “${recurringConfigTitle(config)}”? This removes only the schedule. Tasks already generated from it are never deleted.`,
+      `Delete recurring schedule “${recurringConfigTitle(config)}”? It stops creating tasks. Tasks it already generated are kept.`,
       { okText: "Delete schedule", danger: true },
     );
     if (!confirmed) return;
@@ -288,9 +288,11 @@ export function createRecurringTasks(context) {
         await refreshOperationsRecurringSnapshot({ rerender: false });
         return;
       }
+      // A conflict is the server saying what to do first (pause a schedule
+      // that has generated tasks); anything else is retryable as is.
       const message =
         error.status === 409
-          ? "This schedule has generated history and cannot be deleted. Pause it instead; generated tasks and notifications are preserved."
+          ? error.message || "This schedule cannot be deleted yet. Reload and try again."
           : `${error.message || "Could not delete this schedule"} Select Delete schedule to retry.`;
       recurringRowErrors.set(config.id, message);
       await refreshOperationsRecurringSnapshot({ rerender: true });

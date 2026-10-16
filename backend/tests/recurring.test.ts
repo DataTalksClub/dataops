@@ -10,7 +10,7 @@ import {
   getRecurringConfig,
   updateRecurringConfig,
   deleteRecurringConfig,
-  countRecurringConfigRuns,
+  countRecurringConfigHistory,
   listRecurringRuns,
   recordRecurringRun,
   listRecurringConfigs,
@@ -202,7 +202,7 @@ describe('Recurring configs data layer', () => {
     const afterSecond = await getRecurringConfig(client, created.id);
     assert.strictEqual(afterSecond!.lastRunOutcome, 'succeeded');
 
-    assert.strictEqual(await countRecurringConfigRuns(client, created.id), 1);
+    assert.strictEqual((await countRecurringConfigHistory(client, created.id)).runs, 1);
   });
 
   it('a backfill over past dates leaves the next run at today or later', async () => {
@@ -246,7 +246,7 @@ describe('Recurring configs data layer', () => {
     );
   });
 
-  it('countRecurringConfigRuns counts ledger rows only for the config asked about', async () => {
+  it('countRecurringConfigHistory counts ledger rows only for the config asked about', async () => {
     const created = await createRecurringConfig(client, {
       description: 'Ledger owner',
       cronExpression: '0 9 * * *',
@@ -275,12 +275,12 @@ describe('Recurring configs data layer', () => {
       generatedTaskIds: [],
     });
 
-    assert.strictEqual(await countRecurringConfigRuns(client, created.id), 2);
-    assert.strictEqual(await countRecurringConfigRuns(client, other.id), 1);
-    assert.strictEqual(await countRecurringConfigRuns(client, 'not-a-config'), 0);
+    assert.strictEqual((await countRecurringConfigHistory(client, created.id)).runs, 2);
+    assert.strictEqual((await countRecurringConfigHistory(client, other.id)).runs, 1);
+    assert.deepStrictEqual(await countRecurringConfigHistory(client, 'not-a-config'), { runs: 0, tasks: 0 });
   });
 
-  it('countRecurringConfigRuns does not read generated tasks as history', async () => {
+  it('countRecurringConfigHistory does not reach another config\'s ledger rows', async () => {
     const created = await createRecurringConfig(client, {
       description: 'Conflicting config id',
       cronExpression: '0 9 * * *',
@@ -295,7 +295,7 @@ describe('Recurring configs data layer', () => {
       generatedTaskIds: [],
     });
 
-    assert.strictEqual(await countRecurringConfigRuns(client, created.id), 0);
+    assert.deepStrictEqual(await countRecurringConfigHistory(client, created.id), { runs: 0, tasks: 0 });
   });
 
   it('listRecurringConfigs returns all configs', async () => {

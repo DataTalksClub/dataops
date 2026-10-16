@@ -550,6 +550,8 @@ export interface RecurringConfig {
   nextRunDate?: string;
   lastRunAt?: string;
   lastRunOutcome?: RecurringRunOutcome;
+  /** Set when a schedule with generated history is deleted; the row stays as its tombstone. */
+  deletedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

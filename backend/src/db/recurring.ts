@@ -77,7 +77,8 @@ async function createRecurringConfig(client: DynamoDBDocumentClient, data: Recor
 }
 
 /**
- * Get a recurring config by id.
+ * Get a live recurring config by id. A deleted schedule's tombstone is not a
+ * schedule: it reads as missing.
  */
 async function getRecurringConfig(client: DynamoDBDocumentClient, id: string): Promise<RecurringConfig | null> {
   const result = await client.send(
@@ -87,7 +88,8 @@ async function getRecurringConfig(client: DynamoDBDocumentClient, id: string): P
     })
   );
 
-  return result.Item ? cleanItem(result.Item as Record<string, unknown>) : null;
+  const config = result.Item ? cleanItem(result.Item as Record<string, unknown>) : null;
+  return config && !config.deletedAt ? config : null;
 }
 
 /**
@@ -135,7 +137,26 @@ async function updateRecurringConfig(client: DynamoDBDocumentClient, id: string,
 }
 
 /**
- * Delete a recurring config by id.
+ * Delete a paused schedule that has generated history. The row stays as a
+ * tombstone holding the schedule's name and settings, so every Task,
+ * notification and run that cites it still resolves to what generated it; it
+ * is gone from every list, lookup and daily pass.
+ */
+async function tombstoneRecurringConfig(client: DynamoDBDocumentClient, id: string): Promise<void> {
+  const now = new Date().toISOString();
+  await client.send(
+    new UpdateCommand({
+      TableName: TABLE_TASKS,
+      Key: { PK: `RECURRING#${id}`, SK: `RECURRING#${id}` },
+      UpdateExpression: 'SET deletedAt = :now, updatedAt = :now REMOVE nextRunDate',
+      ConditionExpression: 'attribute_exists(PK) AND enabled = :paused AND attribute_not_exists(deletedAt)',
+      ExpressionAttributeValues: { ':now': now, ':paused': false },
+    })
+  );
+}
+
+/**
+ * Hard-delete a schedule that never generated anything: nothing cites it.
  */
 async function deleteRecurringConfig(client: DynamoDBDocumentClient, id: string): Promise<void> {
   await client.send(
@@ -162,8 +183,23 @@ async function listRecurringRuns(client: DynamoDBDocumentClient, configId: strin
   });
 }
 
-async function countRecurringConfigRuns(client: DynamoDBDocumentClient, configId: string): Promise<number> {
-  return (await listRecurringRuns(client, configId)).length;
+/**
+ * What a schedule has generated: its run-ledger rows and the Tasks that cite
+ * it. Tasks from before the ledger existed count too.
+ */
+async function countRecurringConfigHistory(
+  client: DynamoDBDocumentClient,
+  configId: string,
+): Promise<{ runs: number; tasks: number }> {
+  const runs = (await listRecurringRuns(client, configId)).length;
+  const tasks = (await readAllPages(client, (exclusiveStartKey) => new ScanCommand({
+    TableName: TABLE_TASKS,
+    FilterExpression: 'begins_with(PK, :taskPrefix) AND recurringConfigId = :configId',
+    ExpressionAttributeValues: { ':taskPrefix': 'TASK#', ':configId': configId },
+    ProjectionExpression: 'PK',
+    ExclusiveStartKey: exclusiveStartKey,
+  }))).length;
+  return { runs, tasks };
 }
 
 /**
@@ -195,12 +231,12 @@ async function recordRecurringRun(
 }
 
 /**
- * List all recurring configs by scanning for items where PK begins with "RECURRING#".
+ * List every live recurring config; deleted schedules' tombstones are left out.
  */
 async function listRecurringConfigs(client: DynamoDBDocumentClient): Promise<RecurringConfig[]> {
   const items = await readAllPages(client, (exclusiveStartKey) => new ScanCommand({
     TableName: TABLE_TASKS,
-    FilterExpression: 'begins_with(PK, :prefix)',
+    FilterExpression: 'begins_with(PK, :prefix) AND attribute_not_exists(deletedAt)',
     ExpressionAttributeValues: { ':prefix': 'RECURRING#' },
     ExclusiveStartKey: exclusiveStartKey,
   }));
@@ -214,7 +250,7 @@ async function listRecurringConfigs(client: DynamoDBDocumentClient): Promise<Rec
 async function listEnabledRecurringConfigs(client: DynamoDBDocumentClient): Promise<RecurringConfig[]> {
   const items = await readAllPages(client, (exclusiveStartKey) => new ScanCommand({
     TableName: TABLE_TASKS,
-    FilterExpression: 'begins_with(PK, :prefix) AND enabled = :enabled',
+    FilterExpression: 'begins_with(PK, :prefix) AND enabled = :enabled AND attribute_not_exists(deletedAt)',
     ExpressionAttributeValues: {
       ':prefix': 'RECURRING#',
       ':enabled': true,
@@ -377,7 +413,8 @@ export {
   getRecurringConfig,
   updateRecurringConfig,
   deleteRecurringConfig,
-  countRecurringConfigRuns,
+  tombstoneRecurringConfig,
+  countRecurringConfigHistory,
   listRecurringRuns,
   recordRecurringRun,
   listRecurringConfigs,

@@ -1,6 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 
 import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
@@ -11,6 +11,8 @@ import {
   listRecurringConfigs,
   updateRecurringConfig,
 } from '../src/db/recurring';
+import { createTask } from '../src/db/tasks';
+import { TABLE_TASKS } from '../src/db/tableNames';
 import type { LambdaResponse } from '../src/types';
 
 function invoke(method: string, path: string, body?: unknown): Promise<LambdaResponse> {
@@ -458,10 +460,10 @@ describe('API -- Recurring', () => {
       assert.strictEqual(getRes.statusCode, 404);
     });
 
-    it('returns 409 and keeps the config when generated tasks reference it', async () => {
+    it('refuses to delete an active schedule with generated tasks until it is paused', async () => {
       await disableAllConfigs(client);
       const created = await createRecurringConfig(client, {
-        description: 'Delete blocked by generated history',
+        description: 'Delete after pause',
         cronExpression: '0 9 * * *',
       });
 
@@ -470,45 +472,55 @@ describe('API -- Recurring', () => {
         endDate: '2031-04-10',
       });
       assert.strictEqual(generateRes.statusCode, 200);
+      const [task] = JSON.parse(generateRes.body).generated;
 
       const res = await invoke('DELETE', `/api/recurring/${created.id}`);
       assert.strictEqual(res.statusCode, 409);
-
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.code, 'recurring_config_has_generated_history');
+      assert.strictEqual(body.code, 'pause_first');
       assert.strictEqual(body.recurringConfigId, created.id);
-      assert.strictEqual(body.references.runs, 1);
-      assert.ok(body.error.includes('Pause or disable'));
+      assert.match(body.error, /Pause this schedule/);
+      assert.strictEqual((await invoke('GET', `/api/recurring/${created.id}`)).statusCode, 200);
 
-      const getRes = await invoke('GET', `/api/recurring/${created.id}`);
-      assert.strictEqual(getRes.statusCode, 200);
-      assert.strictEqual(JSON.parse(getRes.body).recurringConfig.lastRunOutcome, 'succeeded');
-      assert.strictEqual(
-        JSON.parse(getRes.body).recurringConfig.scheduleLabel,
-        'Every day at 09:00',
-      );
-      assert.ok(JSON.parse(getRes.body).recurringConfig.nextRunDate);
-      await updateRecurringConfig(client, created.id, { enabled: false });
+      // Paused, it deletes: gone from every lookup, list and daily pass,
+      // while its row stays as the tombstone its Task still cites.
+      await invoke('PUT', `/api/recurring/${created.id}`, { enabled: false });
+      const deleted = await invoke('DELETE', `/api/recurring/${created.id}`);
+      assert.strictEqual(deleted.statusCode, 204);
+      assert.strictEqual((await invoke('GET', `/api/recurring/${created.id}`)).statusCode, 404);
+      assert.strictEqual((await invoke('PUT', `/api/recurring/${created.id}`, { enabled: true })).statusCode, 404);
+      assert.strictEqual((await invoke('DELETE', `/api/recurring/${created.id}`)).statusCode, 404);
+      const list = JSON.parse((await invoke('GET', '/api/recurring')).body).recurringConfigs;
+      assert.ok(!list.some((config: { id: string }) => config.id === created.id));
+
+      const tombstone = await client.send(new GetCommand({
+        TableName: TABLE_TASKS,
+        Key: { PK: `RECURRING#${created.id}`, SK: `RECURRING#${created.id}` },
+      }));
+      assert.strictEqual(tombstone.Item?.description, 'Delete after pause');
+      assert.ok(tombstone.Item?.deletedAt);
+      const taskRes = await invoke('GET', `/api/tasks/${task.id}`);
+      assert.strictEqual(taskRes.statusCode, 200);
+      const kept = JSON.parse(taskRes.body);
+      assert.strictEqual((kept.task || kept).recurringConfigId, created.id);
     });
 
-    it('returns 409 when the config fired but generated nothing new', async () => {
+    it('counts a Task that cites the schedule as history even without a run row', async () => {
       await disableAllConfigs(client);
       const created = await createRecurringConfig(client, {
-        description: 'Replay blocked by run history',
+        description: 'Pre-ledger history',
         cronExpression: '0 9 * * 1',
       });
-
-      for (const _ of [0, 1]) {
-        const generateRes = await invoke('POST', '/api/recurring/generate', {
-          startDate: '2031-04-07',
-          endDate: '2031-04-07',
-        });
-        assert.strictEqual(generateRes.statusCode, 200);
-      }
+      await createTask(client, {
+        description: 'Generated before the run ledger',
+        date: '2031-04-07',
+        source: 'recurring',
+        recurringConfigId: created.id,
+      });
 
       const res = await invoke('DELETE', `/api/recurring/${created.id}`);
       assert.strictEqual(res.statusCode, 409);
-      assert.strictEqual(JSON.parse(res.body).references.runs, 1);
+      assert.strictEqual(JSON.parse(res.body).code, 'pause_first');
       await updateRecurringConfig(client, created.id, { enabled: false });
     });
 

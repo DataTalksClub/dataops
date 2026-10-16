@@ -127,6 +127,8 @@ Application fields:
 - `cron_expression`
 - `assignee_id`
 - `enabled`
+- `deleted_at`: set when a schedule that generated tasks is deleted; the row
+  stays as a tombstone so those tasks keep resolving to it
 - `created_at`
 - `updated_at`
 - later: `last_generated_at`

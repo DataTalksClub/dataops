@@ -670,14 +670,14 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.goto('/recurring');
     const removableRow = page.locator('.ops-recurring-item', { hasText: removableRecurring.description });
     await removableRow.getByRole('button', { name: /Delete recurring schedule/ }).click();
-    await expect(page.locator('#confirm-message')).toContainText('removes only the schedule');
+    await expect(page.locator('#confirm-message')).toContainText('Tasks it already generated are kept');
     await page.locator('#confirm-ok').click();
     await expect(removableRow).toHaveCount(0);
     const recurringRow = page.locator('.ops-recurring-item', { hasText: recurring.description });
     await recurringRow.getByRole('button', { name: /Delete recurring schedule/ }).click();
-    await expect(page.locator('#confirm-message')).toContainText('removes only the schedule');
+    await expect(page.locator('#confirm-message')).toContainText('Tasks it already generated are kept');
     await page.locator('#confirm-ok').click();
-    await expect(recurringRow.locator('[role="alert"]')).toContainText('Pause it instead');
+    await expect(recurringRow.locator('[role="alert"]')).toContainText('Pause this schedule before deleting it');
     await page.screenshot({ path: path.join(SHOTS, 'desktop-recurring-delete-guidance-1440x900.png'), fullPage: true });
     await expectNoSeriousA11y(page, '.ops-recurring-section');
 
@@ -686,6 +686,16 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.screenshot({ path: path.join(SHOTS, 'mobile-recurring-delete-guidance-390x844.png') });
     await expectNoHorizontalOverflow(page);
     await expectNoSeriousA11y(page, '.ops-recurring-section');
+
+    // Paused, the schedule deletes; the task it generated stays.
+    await recurringRow.getByRole('button', { name: /Pause recurring schedule/ }).click();
+    await expect(recurringRow.getByRole('button', { name: /Resume recurring schedule/ })).toBeVisible();
+    await recurringRow.getByRole('button', { name: /Delete recurring schedule/ }).click();
+    await page.locator('#confirm-ok').click();
+    await expect(recurringRow).toHaveCount(0);
+    const generated = (await (await request.get('/api/tasks', { params: { date: '2026-08-11' } })).json());
+    const generatedTasks = Array.isArray(generated) ? generated : generated.tasks || [];
+    expect(generatedTasks.some((task) => task.recurringConfigId === recurring.id)).toBe(true);
     recordCapabilityEvidence(testInfo, [{
       route: '/recurring',
       roleId: 'admin',

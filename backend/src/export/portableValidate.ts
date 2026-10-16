@@ -341,6 +341,7 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     optionalStringField(recurring, 'required_link_name', errors, context);
     optionalBooleanField(recurring, 'requires_file', errors, context);
     optionalStringArrayField(recurring, 'tags', errors, context);
+    optionalStringField(recurring, 'deleted_at', errors, context);
     validateDateOrTimestampField(recurring, 'created_at', errors, context);
     validateDateOrTimestampField(recurring, 'updated_at', errors, context);
   }

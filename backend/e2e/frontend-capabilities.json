@@ -559,7 +559,7 @@
           "roleIds": [
             "admin"
           ],
-          "description": "A referenced schedule remains and directs the operator to pause.",
+          "description": "An active schedule with generated tasks remains and directs the operator to pause it first; paused, it deletes and its tasks stay.",
           "coverage": {
             "status": "runtime"
           }

@@ -176,6 +176,7 @@ export function mapRecurringConfig(item: Record<string, unknown>): JsonRecord {
     requires_file: optionalBoolean(item.requiresFile),
     tags: stringArray(item.tags),
     enabled: optionalBoolean(item.enabled),
+    deleted_at: optionalString(item.deletedAt),
     created_at: optionalString(item.createdAt),
     updated_at: optionalString(item.updatedAt),
   });

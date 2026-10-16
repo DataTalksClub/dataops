@@ -2647,7 +2647,7 @@ describe("Tasks surface boundary", () => {
     assert.equal(previewCalls, 2);
   });
 
-  test("renders Recurring empty/list states and maps pause plus protected-delete guidance", async () => {
+  test("renders Recurring empty/list states and maps pause plus pause-before-delete guidance", async () => {
     const recurring = recurringSnapshot([
       serverSchedule({
         id: "recurring-1",
@@ -2666,7 +2666,7 @@ describe("Tasks surface boundary", () => {
           url === "/api/recurring/recurring-1" &&
           options.method === "DELETE"
         ) {
-          const error = new Error("In use");
+          const error = new Error("Pause this schedule before deleting it. The tasks it already generated are kept.");
           error.status = 409;
           throw error;
         }
@@ -2694,7 +2694,7 @@ describe("Tasks surface boundary", () => {
     assert.equal(calls.at(-1).options.method, "DELETE");
     assert.match(
       harness.documentList.textContent,
-      /cannot be deleted\. Pause it instead; generated tasks and notifications are preserved/,
+      /Pause this schedule before deleting it\. The tasks it already generated are kept\./,
     );
 
     harness.setModel(baseModel());

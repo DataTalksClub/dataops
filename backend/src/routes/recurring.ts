@@ -5,7 +5,8 @@ import {
   getRecurringConfig,
   updateRecurringConfig,
   deleteRecurringConfig,
-  countRecurringConfigRuns,
+  tombstoneRecurringConfig,
+  countRecurringConfigHistory,
   listRecurringConfigs,
   generateRecurringTasks,
 } from '../db/recurring';
@@ -345,17 +346,41 @@ async function handleSingle(
       };
     }
 
-    const runs = await countRecurringConfigRuns(client, id);
-    if (runs > 0) {
+    // A schedule that generated Tasks is deleted the way a person is: pause
+    // it first, then delete. Its row stays as a tombstone so the Tasks it
+    // generated keep naming it; one that generated nothing is simply removed.
+    const history = await countRecurringConfigHistory(client, id);
+    if (history.runs > 0 || history.tasks > 0) {
+      if (existing.enabled !== false) {
+        return {
+          statusCode: 409,
+          headers: JSON_HEADERS,
+          body: JSON.stringify({
+            error: 'Pause this schedule before deleting it. The tasks it already generated are kept.',
+            code: 'pause_first',
+            recurringConfigId: id,
+          }),
+        };
+      }
+      try {
+        await tombstoneRecurringConfig(client, id);
+      } catch (err: unknown) {
+        // Resumed or deleted between the read and the write.
+        if ((err as Error).name !== 'ConditionalCheckFailedException') throw err;
+        return {
+          statusCode: 409,
+          headers: JSON_HEADERS,
+          body: JSON.stringify({
+            error: 'This schedule changed while it was being deleted. Reload and try again.',
+            code: 'recurring_config_changed',
+            recurringConfigId: id,
+          }),
+        };
+      }
       return {
-        statusCode: 409,
+        statusCode: 204,
         headers: JSON_HEADERS,
-        body: JSON.stringify({
-          error: 'Recurring config has generated history and cannot be deleted. Pause or disable it instead to preserve generated tasks and notifications.',
-          code: 'recurring_config_has_generated_history',
-          recurringConfigId: id,
-          references: { runs },
-        }),
+        body: '',
       };
     }
 
