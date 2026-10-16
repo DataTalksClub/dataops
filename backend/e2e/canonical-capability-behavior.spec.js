@@ -833,13 +833,11 @@ test.describe('canonical frontend capability behavior', () => {
     const contact = await json(contactResponse);
     const bookingResponse = await admin.request.post('/api/sponsor-crm/deals', { data: {
       organizationId: organization.id, primaryContactId: contact.id, status: 'open',
-      nextAction: { type: 'follow_up', due: '2026-09-01', owner: '00000000-0000-0000-0000-000000000001', note: 'route' },
       sourceKey: `${id}-booking`,
     } });
     const booking = await json(bookingResponse);
     const adminMutation = await admin.request.put(`/api/sponsor-crm/deals/${booking.id}`, { data: {
       version: booking.version, status: 'agreed',
-      nextAction: { type: 'follow_up', due: '2026-09-01', owner: '00000000-0000-0000-0000-000000000001', note: 'route' },
       historyNote: 'Synthetic permitted update',
     } });
     expect(adminMutation.status()).toBe(200);
@@ -854,7 +852,6 @@ test.describe('canonical frontend capability behavior', () => {
     } }));
     const operatorBooking = await json(await operator.request.post('/api/sponsor-crm/deals', { data: {
       organizationId: operatorOrganization.id, status: 'open',
-      nextAction: { type: 'follow_up', due: '2026-09-01', owner: '00000000-0000-0000-0000-000000000001', note: 'route' },
       sourceKey: `${id}-operator-booking`,
     } }));
     const operatorProjection = await operator.request.get(`/api/sponsor-crm/deals/${operatorBooking.id}/finance`);

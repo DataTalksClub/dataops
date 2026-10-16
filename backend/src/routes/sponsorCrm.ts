@@ -1,5 +1,5 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import type { LambdaEvent, LambdaResponse } from '../types';
+import type { LambdaEvent, LambdaResponse, Task } from '../types';
 import {
   createContactAtomic,
   createCrmRecord,
@@ -16,6 +16,7 @@ import {
   updateOrganizationAtomic,
   type CrmRecord,
 } from '../db/sponsorCrm';
+import { listOpenDealTasks } from '../db/taskSubjects';
 import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { importCrmSnapshot } from '../sponsorCrm/importSnapshot';
 import { financeEnabled } from '../sponsorFinance/repository';
@@ -26,10 +27,8 @@ import {
   LOST_REASONS,
   PRODUCT_KINDS,
   type DealMoneyFacts,
-  dealIsRotting,
   deriveFulfillment,
   deriveMoney,
-  parseNextAction,
   realDate,
   registrableDomain,
   relationshipTag,
@@ -88,14 +87,6 @@ function validateDeal(body: Record<string, unknown>, partial = false, existing?:
   if (body.amountEur !== undefined && (typeof body.amountEur !== 'number' || !Number.isFinite(body.amountEur))) return 'Invalid amountEur';
   if (body.agreementDate != null && !realDate(body.agreementDate)) return 'Invalid agreementDate';
   if (body.primaryContactId != null && !ID.test(String(body.primaryContactId))) return 'Invalid primaryContactId';
-  if (body.nextAction !== undefined) {
-    if (status === 'lost' && body.nextAction === null) return '';
-    if (parseNextAction(body.nextAction) === null) return 'Invalid nextAction';
-  } else if (!partial && (status === 'open' || status === 'agreed') && parseNextAction(body.nextAction) == null) {
-    return 'Invalid nextAction';
-  }
-  const mergedNext = body.nextAction !== undefined ? parseNextAction(body.nextAction) : existing?.nextAction;
-  if ((status === 'open' || status === 'agreed') && !mergedNext) return 'Invalid nextAction';
   return '';
 }
 
@@ -122,8 +113,17 @@ const safeDeliverableSummary = (deliverable: CrmRecord) => ({
 
 function publicDeal(deal: CrmRecord, extras: Record<string, unknown> = {}) {
   const { historyNote, ...record } = deal;
-  return { ...record, rotting: dealIsRotting(deal), ...extras };
+  return { ...record, ...extras };
 }
+
+/** A deal's open Tasks, earliest first: what the pipeline shows as next. */
+const publicDealTask = (task: Task) => ({
+  id: task.id,
+  description: task.description,
+  date: task.date,
+  status: task.status,
+  ...(task.assigneeId ? { assigneeId: task.assigneeId } : {}),
+});
 
 async function moneyFacts(client: DynamoDBDocumentClient, today: string, preload: CrmPreload) {
   const facts = new Map<string, DealMoneyFacts>();
@@ -150,12 +150,16 @@ async function decorateDeals(client: DynamoDBDocumentClient, deals: CrmRecord[],
     listCrmRecords(client, 'deal'),
     listCrmRecords(client, 'deliverable'),
   ]);
-  const facts = await moneyFacts(client, today, { organizations, deals: allDeals, deliverables });
+  const [facts, tasksByDeal] = await Promise.all([
+    moneyFacts(client, today, { organizations, deals: allDeals, deliverables }),
+    listOpenDealTasks(client),
+  ]);
   return deals.map((deal) => {
     const kids = deliverables.filter((item) => item.dealId === deal.id);
     const money = facts.get(deal.id);
     return publicDeal(deal, {
       money: deriveMoney(money), fulfillment: deriveFulfillment(kids), deliverables: kids,
+      openTasks: (tasksByDeal.get(deal.id) || []).map(publicDealTask),
       ...(money ? { finance: publicMoney(money) } : {}),
     });
   });
@@ -310,11 +314,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
       const contact = await getCrmRecord(client, 'contact', String(body.primaryContactId));
       if (!contact || contact.organizationId !== body.organizationId) return json(422, { error: 'Invalid primary contact reference' });
     }
-    if (kind === 'deal') {
-      const nextAction = parseNextAction(body.nextAction);
-      body.nextAction = nextAction || undefined;
-      body.productKind = body.productKind || 'one-off';
-    }
+    if (kind === 'deal') body.productKind = body.productKind || 'one-off';
     if (kind === 'organization' && body.domain) body.domain = registrableDomain(String(body.domain));
     try {
       const values = { ...body, active: body.active !== false, sourceType: body.sourceType || 'portal' };
@@ -357,7 +357,6 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
         if (!contact || contact.archivedAt || contact.organizationId !== nextOrganizationId) return json(422, { error: 'Invalid primary contact reference' });
       }
     }
-    if (kind === 'deal' && body.nextAction !== undefined) body.nextAction = parseNextAction(body.nextAction);
     if (kind === 'organization' && body.domain) body.domain = registrableDomain(String(body.domain));
     try {
       if (kind === 'deal') return json(200, publicDeal(await updateDealAtomic(client, existing, body, user)));

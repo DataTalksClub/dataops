@@ -38,7 +38,7 @@ test.beforeAll(async () => {
   for (const [index, org] of [...organizations.items, organizations.items[0]].entries()) {
     const response = await fetch(`${server.baseURL}/api/sponsor-crm/deals`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ organizationId: org.id, status: index === 0 ? 'open' : 'agreed', productKind: index === 1 ? 'package' : index === 2 ? 'course' : 'one-off', amountEur: 1500 + index * 500, nextAction: { type: 'follow_up', due: '2026-10-20', owner: 'Grace' } }),
+      body: JSON.stringify({ organizationId: org.id, status: index === 0 ? 'open' : 'agreed', productKind: index === 1 ? 'package' : index === 2 ? 'course' : 'one-off', amountEur: 1500 + index * 500 }),
     });
     expect(response.ok).toBeTruthy();
     const createdDeal = await response.json();

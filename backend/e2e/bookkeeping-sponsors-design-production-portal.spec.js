@@ -104,12 +104,6 @@ async function routeSponsors(page) {
     primaryContactId: contact.id,
     status: "agreed",
     productKind: "one-off",
-    nextAction: {
-      type: "chase_materials",
-      due: "2026-09-03",
-      owner: "00000000-0000-0000-0000-000000000001",
-      note: "Confirm the public campaign link before scheduling.",
-    },
     deliverables: [{
       id: "deliverable-example",
       dealId: "booking-example",

@@ -1,12 +1,10 @@
 export const DEAL_STATUSES = new Set(['open', 'agreed', 'lost']);
 export const PRODUCT_KINDS = new Set(['one-off', 'package', 'course']);
 export const CHANNELS = new Set(['main', 'secondary', 'standalone', 'social', 'podcast', 'webinar', 'workshop', 'course', 'other']);
-export const NEXT_ACTION_TYPES = new Set(['follow_up', 'send_invoice', 'chase_payment', 'chase_materials', 'send_stats', 'other']);
 export const LOST_REASONS = new Set(['no_budget', 'no_reply', 'wrong_fit', 'timing', 'other']);
 export const MONEY_STATES = ['none', 'invoiced', 'partial', 'paid', 'overdue'] as const;
 export type MoneyState = (typeof MONEY_STATES)[number];
 
-export type NextAction = { type: string; due: string; owner: string; note: string };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -31,25 +29,6 @@ export function registrableDomain(urlOrHost: unknown): string | null {
   host = host.replace(/^www\./, '').replace(/\.$/, '');
   if (!host || host.includes(' ') || !host.includes('.')) return null;
   return host;
-}
-
-export function parseNextAction(value: unknown): NextAction | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const record = value as Record<string, unknown>;
-  if (!NEXT_ACTION_TYPES.has(String(record.type)) || !realDate(record.due) || typeof record.owner !== 'string' || !record.owner.trim() || record.owner.length > 128) {
-    return null;
-  }
-  if (record.note !== undefined && (typeof record.note !== 'string' || record.note.length > 500)) return null;
-  return { type: String(record.type), due: String(record.due), owner: String(record.owner).trim(), note: typeof record.note === 'string' ? record.note : '' };
-}
-
-export function dealIsRotting(deal: Record<string, unknown>): boolean {
-  const status = String(deal.status || '');
-  if (status !== 'open' && status !== 'agreed') return false;
-  const action = deal.nextAction as NextAction | null | undefined;
-  return !action || !action.type || !action.due || !action.owner;
 }
 
 /** The money facts the CRM reads from the deal's sponsor finance state. */

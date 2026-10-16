@@ -113,8 +113,7 @@ async function schedulesOf(client: DynamoDBDocumentClient, userId: string): Prom
 
 function dealHeldBy(deal: CrmRecord, userId: string): boolean {
   if (!LIVE_DEAL_STATUSES.has(String(deal.status || ''))) return false;
-  const nextAction = deal.nextAction as { owner?: unknown } | null | undefined;
-  return deal.owner === userId || nextAction?.owner === userId;
+  return deal.owner === userId;
 }
 
 async function sponsorRecordsOf(client: DynamoDBDocumentClient, userId: string) {
@@ -270,13 +269,7 @@ export async function reassignOpenWork(
   }
   for (const deal of sponsor.deals) {
     const done = await withFreshRetry<CrmRecord>(
-      (current) => {
-        const nextAction = current.nextAction as Dict | null | undefined;
-        return updateDealAtomic(client, current, {
-          ...(current.owner === fromId ? { owner: to } : {}),
-          ...(nextAction?.owner === fromId ? { nextAction: { ...nextAction, owner: to } } : {}),
-        }, actorId);
-      },
+      (current) => updateDealAtomic(client, current, { owner: to }, actorId),
       deal,
       () => getCrmRecord(client, 'deal', deal.id),
       (current) => dealHeldBy(current, fromId),

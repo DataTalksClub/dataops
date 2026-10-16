@@ -55,12 +55,6 @@ test.describe("production sponsor CRM portal", () => {
         primaryContactId: "contact-1",
         status: "agreed",
         productKind: "one-off",
-        nextAction: {
-          type: "chase_materials",
-          due: "2026-08-01",
-          owner: "00000000-0000-0000-0000-000000000001",
-          note: "Get materials",
-        },
         deliverables: [{
           id: "deliverable-1",
           dealId: "booking-1",

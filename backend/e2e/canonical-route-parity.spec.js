@@ -37,7 +37,6 @@ async function createFixtures(request, referenceTime = Date.now()) {
     data: {
       organizationId: organization.id,
       status: 'open',
-      nextAction: { type: 'follow_up', due: '2026-09-01', owner: '00000000-0000-0000-0000-000000000001', note: 'route' },
       deliverable: { channel: 'main', plannedPublicationDate: '2026-09-01' },
     },
   })).json();

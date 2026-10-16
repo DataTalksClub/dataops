@@ -303,22 +303,22 @@ export function createSponsorCrmSurface(context) {
         .filter(
           (item) =>
             shownIds.has(item.organizationId) &&
-            item.nextAction?.due &&
+            item.openTasks?.length &&
             item.status !== "lost",
         )
         .sort((left, right) =>
-          String(left.nextAction.due).localeCompare(String(right.nextAction.due)),
+          String(left.openTasks[0].date).localeCompare(String(right.openTasks[0].date)),
         )
         .slice(0, 6);
       upcomingRoot.innerHTML = upcoming.length
-        ? html`<h3>Next actions</h3>
+        ? html`<h3>Next tasks</h3>
             <ul class="crm-upcoming-list">
               ${upcoming
                 .map(
                   (item) => html`<li>
                     <button type="button" data-open-deal="${escapeHtml(item.id)}">
                       <strong>${escapeHtml(organizationName(item.organizationId))}</strong>
-                      <span>${escapeHtml(humanSponsorDate(item.nextAction.due))}</span>
+                      <span>${escapeHtml(humanSponsorDate(item.openTasks[0].date))}</span>
                     </button>
                   </li>`,
                 )
@@ -370,7 +370,7 @@ export function createSponsorCrmSurface(context) {
         )
         .slice()
         .sort((left, right) =>
-          String(left.nextAction?.due || "9999").localeCompare(String(right.nextAction?.due || "9999")),
+          String(left.openTasks?.[0]?.date || "9999").localeCompare(String(right.openTasks?.[0]?.date || "9999")),
         );
       surface.querySelector("[data-booking-count]").textContent =
         `${visible.length} ${visible.length === 1 ? "deal" : "deals"}`;
@@ -775,14 +775,6 @@ export function createSponsorCrmSurface(context) {
         if (raw.version) payload.version = Number(raw.version);
         if (raw.amountEur) payload.amountEur = Number(raw.amountEur);
         if (raw.lostReason) payload.lostReason = raw.lostReason;
-        if (raw.status !== "lost") {
-          payload.nextAction = {
-            type: raw.nextActionType || "follow_up",
-            due: raw.nextActionDue,
-            owner: raw.nextActionOwner,
-            note: raw.nextActionNote || "",
-          };
-        }
         if (!id && (raw.channel || raw.plannedPublicationDate || raw.materialDeadline)) {
           payload.deliverable = {
             channel: raw.channel || "main",
@@ -790,10 +782,24 @@ export function createSponsorCrmSurface(context) {
             materialDeadline: raw.materialDeadline,
           };
         }
-        await api(`/deals${id ? `/${id}` : ""}`, {
+        const saved = await api(`/deals${id ? `/${id}` : ""}`, {
           method: id ? "PUT" : "POST",
           body: JSON.stringify(payload),
         });
+        // The deal's next step is a Task about the deal, so it lands in the
+        // Tasks queue with everything else.
+        if (raw.taskDescription) {
+          await request(workApiUrl("/api/tasks"), {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              description: raw.taskDescription,
+              date: raw.taskDate || new Date().toISOString().slice(0, 10),
+              ...(raw.taskAssignee ? { assigneeId: raw.taskAssignee } : {}),
+              subject: { type: "sponsor-deal", id: saved.id },
+            }),
+          });
+        }
         dialog.close();
         await refresh();
       }, "Could not save deal");

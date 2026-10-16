@@ -7,7 +7,6 @@ import { renderPageHeaderMarkup } from "../operations-overview.js";
 const DEAL_STATUSES = ["open", "agreed", "lost"];
 const PRODUCT_KINDS = ["one-off", "package", "course"];
 const CHANNELS = ["main", "secondary", "standalone", "social", "workshop", "course", "other"];
-const NEXT_ACTION_TYPES = ["follow_up", "send_invoice", "chase_payment", "chase_materials", "send_stats", "other"];
 const LOST_REASONS = ["no_budget", "no_reply", "wrong_fit", "timing", "other"];
 
 
@@ -21,7 +20,6 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
   const dealStatusOptions = options(DEAL_STATUSES, humanizeOptionLabel);
   const productOptions = options(PRODUCT_KINDS, (kind) => ({ "one-off": "One-off", package: "Package", course: "Course" })[kind]);
   const channelOptions = options(CHANNELS, humanizeOptionLabel);
-  const actionOptions = options(NEXT_ACTION_TYPES, humanizeOptionLabel);
   const lostOptions = options(LOST_REASONS, humanizeOptionLabel);
   // Each create rides on the collection it creates into: Add deal on the
   // Pipeline list head, Add sponsor on the Companies header. Refresh
@@ -311,18 +309,15 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
               <option value="">Not lost</option>
               ${lostOptions}
             </select></label
+          ><label class="span-all"
+            >Add a task <input name="taskDescription" placeholder="What to do next (lands in the Tasks queue)"
+          /></label
+          ><label>Task due <input name="taskDate" type="date" /></label
           ><label
-            >Next action
-            <select name="nextActionType">
-              ${actionOptions}
+            >Assignee
+            <select name="taskAssignee">
+              <option value="">Select an assignee</option>
             </select></label
-          ><label>Due <input name="nextActionDue" type="date" /></label
-          ><label
-            >Owner
-            <select name="nextActionOwner">
-              <option value="">Select an owner</option>
-            </select></label
-          ><label class="span-all">Action note <input name="nextActionNote" /></label
           ><label
             >Channel
             <select name="channel">

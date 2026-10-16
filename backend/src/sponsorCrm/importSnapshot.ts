@@ -9,7 +9,7 @@ import {
   getCrmRecord,
   listCrmRecords,
 } from '../db/sponsorCrm';
-import { CHANNELS, DEAL_STATUSES, PRODUCT_KINDS, parseNextAction, realDate, registrableDomain } from './model';
+import { CHANNELS, DEAL_STATUSES, PRODUCT_KINDS, realDate, registrableDomain } from './model';
 import { newsletterRecord, validateNewsletter } from './newsletters';
 
 export type SnapshotCompany = {
@@ -44,7 +44,6 @@ export type SnapshotDeal = {
   productKind?: string;
   amountEur?: number;
   agreementDate?: string;
-  nextAction?: unknown;
   sourceKey?: string;
   deliverables?: SnapshotDeliverable[];
 };
@@ -180,10 +179,6 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
     if (deal.productKind && !PRODUCT_KINDS.has(deal.productKind)) {
       throw Object.assign(new Error('Invalid deal'), { statusCode: 400 });
     }
-    const nextAction = deal.status === 'lost' ? undefined : parseNextAction(deal.nextAction);
-    if ((deal.status === 'open' || deal.status === 'agreed') && deal.nextAction !== undefined && nextAction === null) {
-      throw Object.assign(new Error('Invalid next action'), { statusCode: 400 });
-    }
     const sourceKey = deal.sourceKey || `import-deal:${deal.organizationDomain}:${deal.status}:${deal.amountEur || 0}`;
     if (deal.title !== undefined && (typeof deal.title !== 'string' || deal.title.length > 200)) {
       throw Object.assign(new Error('Invalid deal'), { statusCode: 400 });
@@ -198,7 +193,6 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
       productKind: deal.productKind || 'one-off',
       amountEur: deal.amountEur,
       agreementDate: deal.agreementDate,
-      nextAction: nextAction || undefined,
       sourceType: 'import',
       sourceKey,
     }, actorId);

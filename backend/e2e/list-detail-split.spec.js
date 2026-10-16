@@ -6,7 +6,6 @@ const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { seedOperationsData } = require('./helpers/seed-operations-data');
 const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
 
-const GRACE_ID = '00000000-0000-0000-0000-000000000001';
 const DESKTOP = { width: 1280, height: 800 };
 const MOBILE = { width: 390, height: 844 };
 let server;
@@ -38,7 +37,6 @@ test.beforeAll(async () => {
       status: 'open',
       productKind: 'one-off',
       amountEur: 1000 + index,
-      nextAction: { type: 'follow_up', due: '2026-01-05', owner: GRACE_ID },
     });
   }
 });

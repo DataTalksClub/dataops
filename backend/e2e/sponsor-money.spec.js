@@ -33,11 +33,9 @@ test.describe('Sponsors Money', () => {
     } }));
     const created = await json(await api.post('/api/sponsor-crm/deals', { data: {
       organizationId: organization.id, status: 'open', sourceKey: 'money-deal',
-      nextAction: { type: 'follow_up', due: '2026-09-01', owner: server.userId, note: 'money' },
     } }));
     const deal = await json(await api.put(`/api/sponsor-crm/deals/${created.id}`, { data: {
       version: created.version, status: 'agreed',
-      nextAction: { type: 'follow_up', due: '2026-09-01', owner: server.userId, note: 'money' },
     } }));
     // The isolated server's local DynamoDB has no transactions, so finance
     // writes cannot run there; the finance API is served from a stateful fake

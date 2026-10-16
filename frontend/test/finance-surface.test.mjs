@@ -931,7 +931,6 @@ describe("Finance surface boundary", () => {
                 organizationId: "org-1",
                 status: "open",
                 money: "none",
-                nextAction: { type: "follow_up", due: "2026-08-01", owner: "grace", note: "ping" },
               },
             ],
           };

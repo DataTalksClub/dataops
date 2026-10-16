@@ -329,7 +329,6 @@ test.describe('issue 208 paginated collections', () => {
             id: 'booking-pagination',
             organizationId: 'sponsor-org',
             status: 'agreed',
-            nextAction: { type: 'follow_up', due: '2026-08-30', owner: '00000000-0000-0000-0000-000000000001', note: 'nudge' },
           }],
         });
       }

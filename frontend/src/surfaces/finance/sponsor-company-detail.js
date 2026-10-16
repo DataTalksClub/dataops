@@ -114,12 +114,10 @@ export function createSponsorCompanyDetail({
     const dealCards = orgDeals.length
       ? orgDeals
           .map((item) => {
-            const action = item.nextAction;
-            const next = action?.due
-              ? `${humanizeOptionLabel(action.type)} · ${humanSponsorDate(action.due)}`
-              : item.rotting
-                ? "Next action missing"
-                : "No next action";
+            const task = item.openTasks?.[0];
+            const next = task
+              ? `${task.description} · ${humanSponsorDate(task.date)}`
+              : item.status === "lost" ? "" : "No open task";
             const current = deal?.id === item.id ? 'aria-current="true"' : "";
             return html`<article class="crm-card crm-company-deal" ${current}>
               <div class="crm-deal-card-header">

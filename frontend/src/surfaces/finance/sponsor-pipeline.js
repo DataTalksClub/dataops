@@ -42,12 +42,11 @@ function pipelineCard(deal, { organizationName, escapeHtml, humanSponsorDate }) 
     ? new Intl.NumberFormat("en-GB", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(deal.amountEur))
     : "";
   const publication = deal.deliverables?.find((item) => item.plannedPublicationDate)?.plannedPublicationDate;
-  const actionType = deal.nextAction?.type
-    ? deal.nextAction.type.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase())
-    : "Next action";
-  const action = deal.nextAction?.due
-    ? `${actionType} · ${humanSponsorDate(deal.nextAction.due)}`
-    : publication ? `Publishes ${humanSponsorDate(publication)}` : "Next action not set";
+  // What happens next is the deal's earliest open Task; the Tasks queue owns it.
+  const task = deal.openTasks?.[0];
+  const action = task
+    ? `${task.description} · ${humanSponsorDate(task.date)}`
+    : publication ? `Publishes ${humanSponsorDate(publication)}` : "No open task";
   return html`<article class="crm-pipeline-card" data-open-deal="${escapeHtml(deal.id)}">
     <h4>${escapeHtml(organizationName(deal.organizationId))}</h4>
     <p class="crm-pipeline-card-meta"><span>${escapeHtml(product)}</span>${amount ? html`<strong>${escapeHtml(amount)}</strong>` : ""}</p>

@@ -5,7 +5,7 @@ export function sponsorOwnerOptions(teamMembers, selectedId, escapeHtml) {
   if (selectedId && !members.some((member) => member.id === selectedId)) {
     members.push({ id: selectedId, name: "Unavailable assignee", active: false });
   }
-  return html`<option value="">Select an owner</option>${members.map((member) => {
+  return html`<option value="">Select an assignee</option>${members.map((member) => {
     const id = escapeHtml(member.id).replaceAll('"', "&quot;");
     const selected = member.id === selectedId ? " selected" : "";
     const disabled = member.active ? "" : " disabled";
@@ -32,7 +32,7 @@ export function createSponsorOwnerDirectory({ request, workApiUrl, escapeHtml })
 
 export function populateSponsorDealForm(form, item, ownerDirectory, fillContacts) {
   form.reset();
-  ownerDirectory.fill(form.elements.nextActionOwner, item?.nextAction?.owner);
+  ownerDirectory.fill(form.elements.taskAssignee, "");
   form.elements.dealId.value = item?.id || "";
   if (item?.version) form.elements.version.value = item.version;
   if (item?.organizationId) form.elements.organizationId.value = item.organizationId;
@@ -40,12 +40,6 @@ export function populateSponsorDealForm(form, item, ownerDirectory, fillContacts
   if (item?.productKind) form.elements.productKind.value = item.productKind;
   if (item?.amountEur != null) form.elements.amountEur.value = item.amountEur;
   if (item?.lostReason) form.elements.lostReason.value = item.lostReason;
-  if (item?.nextAction) {
-    form.elements.nextActionType.value = item.nextAction.type || "follow_up";
-    form.elements.nextActionDue.value = item.nextAction.due || "";
-    form.elements.nextActionOwner.value = item.nextAction.owner || "";
-    form.elements.nextActionNote.value = item.nextAction.note || "";
-  }
   const slot = item?.deliverables?.[0];
   if (slot) {
     if (slot.channel) form.elements.channel.value = slot.channel;

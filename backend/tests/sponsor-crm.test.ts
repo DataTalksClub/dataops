@@ -1,11 +1,11 @@
 import { createUserWithId } from '../src/db/users';
-import { setDefaultAssignee, getWorkspaceSettings } from '../src/db/workspaceSettings';
+import { setDefaultAssignee } from '../src/db/workspaceSettings';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { before, after, describe, it } from 'node:test';
 import assert from 'node:assert';
-import { GetCommand, PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { handler } from '../src/handler';
 import { createTables } from '../scripts/local-dynamodb';
@@ -30,8 +30,6 @@ const invoke = (method: string, path: string, body?: unknown, headers: Record<st
   }, {});
 };
 const data = (response: any) => JSON.parse(response.body);
-const ACTION = { type: 'follow_up', due: '2026-08-01', owner: GRACE_USER_ID, note: 'ping' };
-const grace = { 'x-user-id': GRACE_USER_ID };
 
 describe('sponsor CRM', () => {
   let client: DynamoDBDocumentClient;
@@ -95,15 +93,14 @@ describe('sponsor CRM', () => {
   it('maintains deals, deliverables, versions and immutable status history', async () => {
     const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'History Sponsor', sourceKey: 'history-org' }));
     const contact = data(await invoke('POST', '/api/sponsor-crm/contacts', { organizationId: organization.id, name: 'Synthetic Contact', emails: ['operator@example.invalid'], primary: true, sourceKey: 'history-contact' }));
-    const created = await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, primaryContactId: contact.id, status: 'open', nextAction: ACTION, sourceKey: 'history-deal', historyNote: 'Synthetic create context' });
+    const created = await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, primaryContactId: contact.id, status: 'open', sourceKey: 'history-deal', historyNote: 'Synthetic create context' });
     assert.equal(created.statusCode, 201, created.body);
     const deal = data(created);
     assert.equal(deal.historyNote, undefined);
     assert.equal(deal.status, 'open');
-    assert.equal(deal.rotting, false);
     let history = data(await invoke('GET', `/api/sponsor-crm/deals/${deal.id}/history`)).items;
     assert.equal(history[0].note, 'Synthetic create context');
-    const updated = await invoke('PUT', `/api/sponsor-crm/deals/${deal.id}`, { version: deal.version, status: 'agreed', nextAction: ACTION, historyNote: 'Synthetic confirmation' });
+    const updated = await invoke('PUT', `/api/sponsor-crm/deals/${deal.id}`, { version: deal.version, status: 'agreed', historyNote: 'Synthetic confirmation' });
     assert.equal(updated.statusCode, 200, updated.body);
     assert.equal(data(updated).version, 2);
     assert.equal((await invoke('PUT', `/api/sponsor-crm/deals/${deal.id}`, { version: 1, status: 'lost' })).statusCode, 409);
@@ -117,11 +114,26 @@ describe('sponsor CRM', () => {
     assert.equal(fetched.money, 'none');
   });
 
-  it('requires next action on open deals and marks rotting when it is missing after a lost-to-open mistake is impossible', async () => {
-    const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Rot Sponsor', sourceKey: 'rot-org' }));
-    assert.equal((await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'open', sourceKey: 'rot-missing' })).statusCode, 400);
-    const lost = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'lost', lostReason: 'no_reply', sourceKey: 'rot-lost' }));
-    assert.equal(lost.status, 'lost');
+  it('needs no next action on a live deal and lists its open Tasks earliest first', async () => {
+    const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Task Sponsor', sourceKey: 'task-org' }));
+    const created = await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'open', sourceKey: 'task-deal' });
+    assert.equal(created.statusCode, 201, created.body);
+    const deal = data(created);
+    assert.equal(deal.rotting, undefined);
+    const task = async (description: string, date: string, status?: string) => {
+      const response = await invoke('POST', '/api/tasks', { description, date, ...(status ? { status } : {}), subject: { type: 'sponsor-deal', id: deal.id } });
+      assert.equal(response.statusCode, 201, response.body);
+    };
+    await task('Send the invoice', '2026-08-10');
+    await task('Confirm the date', '2026-08-01');
+    await task('Already done', '2026-07-01', 'done');
+    const fetched = data(await invoke('GET', `/api/sponsor-crm/deals/${deal.id}`));
+    assert.deepEqual(fetched.openTasks.map((item: any) => [item.description, item.date]), [
+      ['Confirm the date', '2026-08-01'],
+      ['Send the invoice', '2026-08-10'],
+    ]);
+    const listed = data(await invoke('GET', '/api/sponsor-crm/deals?limit=100')).items.find((item: any) => item.id === deal.id);
+    assert.equal(listed.openTasks.length, 2);
   });
 
   it('derives money and finance chores from the sponsor finance state', async () => {
@@ -129,7 +141,7 @@ describe('sponsor CRM', () => {
     process.env.SPONSOR_FINANCE_ENABLED = 'true';
     try {
       const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Money Sponsor', lastOutboundAt: '2026-06-20', lastInboundAt: '2026-06-21', sourceKey: 'money-org' }));
-      const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, title: 'Synthetic package', status: 'agreed', nextAction: { type: 'chase_payment', due: '2026-06-15', owner: GRACE_USER_ID, note: 'chase' }, sourceKey: 'money-deal' }));
+      const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, title: 'Synthetic package', status: 'agreed', sourceKey: 'money-deal' }));
       const at = (today: string) => handler({ httpMethod: 'GET', path: `/api/sponsor-crm/deals/${deal.id}`, headers: {}, queryStringParameters: { today }, body: null }, {}).then(data);
       assert.equal((await at('2026-07-01')).money, 'none');
       const financeItem = {
@@ -170,7 +182,7 @@ describe('sponsor CRM', () => {
 
   it('atomically prevents duplicate active schedule links and exposes safe summaries', async () => {
     const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Link Sponsor', notes: 'private org note', sourceKey: 'link-org' }));
-    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'open', nextAction: ACTION, sourceKey: 'link-deal' }));
+    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'open', sourceKey: 'link-deal' }));
     const first = data(await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'standalone', sourceKey: 'link-one' }));
     const second = data(await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'standalone', sourceKey: 'link-two' }));
     const linked = await invoke('PUT', `/api/sponsor-crm/deliverables/${first.id}/schedule-link`, { version: first.version, scheduleEntryId: 'newsletter-slot-1' });
@@ -182,7 +194,7 @@ describe('sponsor CRM', () => {
 
   it('evaluates deterministic alerts and resolves cleared conditions', async () => {
     const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Alert Sponsor', sourceKey: 'alert-org' }));
-    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'agreed', nextAction: ACTION, sourceKey: 'alert-deal' }));
+    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'agreed', sourceKey: 'alert-deal' }));
     const slot = data(await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'secondary', plannedPublicationDate: '2026-07-15', materialDeadline: '2026-07-04', sourceKey: 'alert-slot' }));
     const first = await evaluateSponsorBookingAlerts(client, '2026-07-05');
     const second = await evaluateSponsorBookingAlerts(client, '2026-07-05');
@@ -199,14 +211,14 @@ describe('sponsor CRM', () => {
   it('rejects invalid references, dates, enums and unsafe artifact URLs', async () => {
     assert.equal((await invoke('POST', '/api/sponsor-crm/deals', { organizationId: 'missing', status: 'bad' })).statusCode, 400);
     const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Validation Sponsor', sourceKey: 'validation-org' }));
-    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'open', nextAction: ACTION, sourceKey: 'validation-deal' }));
+    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'open', sourceKey: 'validation-deal' }));
     assert.equal((await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'main', plannedPublicationDate: '2026-02-30' })).statusCode, 400);
     assert.equal((await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'main', artifactUrls: ['http://unsafe.invalid'] })).statusCode, 400);
   });
 
   it('rolls back conflicting create claims and serializes primary contacts', async () => {
     const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Concurrency Sponsor', sourceKey: 'concurrency-org' }));
-    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'open', nextAction: ACTION, sourceKey: 'concurrency-deal' }));
+    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'open', sourceKey: 'concurrency-deal' }));
     assert.equal((await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'main', scheduleEntryId: 'exclusive-slot', sourceKey: 'claim-first' })).statusCode, 201);
     const conflict = await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'secondary', scheduleEntryId: 'exclusive-slot', sourceKey: 'claim-loser' });
     assert.equal(conflict.statusCode, 409, conflict.body);
@@ -223,8 +235,8 @@ describe('sponsor CRM', () => {
     const first = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Reference One', sourceKey: 'ref-one' }));
     const second = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Reference Two', sourceKey: 'ref-two' }));
     const contact = data(await invoke('POST', '/api/sponsor-crm/contacts', { organizationId: first.id, name: 'Owned Contact', emails: ['owned@example.invalid'], sourceKey: 'owned-contact' }));
-    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: first.id, primaryContactId: contact.id, status: 'open', nextAction: ACTION, sourceKey: 'owned-deal' }));
-    assert.equal((await invoke('PUT', `/api/sponsor-crm/deals/${deal.id}`, { version: deal.version, organizationId: second.id, nextAction: ACTION })).statusCode, 422);
+    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: first.id, primaryContactId: contact.id, status: 'open', sourceKey: 'owned-deal' }));
+    assert.equal((await invoke('PUT', `/api/sponsor-crm/deals/${deal.id}`, { version: deal.version, organizationId: second.id })).statusCode, 422);
     assert.equal((await invoke('PUT', `/api/sponsor-crm/contacts/${contact.id}`, { version: contact.version, organizationId: 'missing' })).statusCode, 422);
     for (const query of [{ cursor: '-1' }, { cursor: 'nope' }, { limit: '101' }, { status: 'bogus' }, { from: '2026-02-30' }, { from: '2026-09-01', to: '2026-08-01' }]) {
       const response = await handler({ httpMethod: 'GET', path: '/api/sponsor-crm/deals', headers: {}, queryStringParameters: query, body: null }, {});
@@ -234,7 +246,7 @@ describe('sponsor CRM', () => {
 
   it('provides authenticated safe newsletter lookup, attach and detach', async () => {
     const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Contract Sponsor', notes: 'private org note', sourceKey: 'contract-org' }));
-    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'open', nextAction: ACTION, sourceKey: 'contract-deal' }));
+    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'open', sourceKey: 'contract-deal' }));
     const slot = data(await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'standalone', notes: 'private booking note', artifactUrls: ['https://example.invalid/private.pdf'], sourceKey: 'contract-slot' }));
     process.env.SKIP_AUTH = 'false';
     assert.equal((await invoke('GET', `/api/sponsor-crm/integrations/newsletter/deliverables/${slot.id}`)).statusCode, 401);
@@ -252,7 +264,7 @@ describe('sponsor CRM', () => {
 
   it('covers every alert rule and recreates an occurrence after resolution', async () => {
     const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Rule Sponsor', sourceKey: 'rule-org' }));
-    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'agreed', nextAction: ACTION, sourceKey: 'rule-deal' }));
+    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'agreed', sourceKey: 'rule-deal' }));
     const make = async (sourceKey: string, publication: string, extra: any = {}) => data(await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'main', plannedPublicationDate: publication, sourceKey, ...extra }));
     const fourteen = await make('rule-14', '2026-07-15');
     const ten = await make('rule-10', '2026-07-11');
@@ -299,36 +311,6 @@ describe('sponsor CRM', () => {
     assert.equal(replayed.statusCode, 200, replayed.body);
     const replay = data(replayed);
     assert.equal(replay.activity, 0);
-  });
-
-  it('replays an imported deal with a next action after DynamoDB reorders its keys', async () => {
-    const snapshot = {
-      companies: [{ domain: 'replay.example.invalid', displayName: 'Replay Corp', sourceKey: 'replay-org' }],
-      deals: [{
-        organizationDomain: 'replay.example.invalid',
-        status: 'open',
-        amountEur: 1200,
-        nextAction: { type: 'follow_up', due: '2026-08-01', owner: GRACE_USER_ID, note: 'ping' },
-        sourceKey: 'replay-deal',
-        deliverables: [{ channel: 'main', plannedPublicationDate: '2026-09-01' }],
-      }],
-    };
-    const first = await invoke('POST', '/api/sponsor-crm/imports', snapshot);
-    assert.equal(first.statusCode, 200, first.body);
-    assert.equal(data(first).deals, 1);
-    // Real DynamoDB returns map attributes in arbitrary key order.
-    const id = deterministicCrmId('deal', 'replay-deal'), dealKey = `DEAL#${id}`;
-    const stored = (await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: dealKey, SK: dealKey } }))).Item!;
-    const reordered = Object.fromEntries(Object.entries(stored.nextAction).reverse());
-    assert.notEqual(JSON.stringify(reordered), JSON.stringify(stored.nextAction));
-    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { ...stored, nextAction: reordered } }));
-    const second = await invoke('POST', '/api/sponsor-crm/imports', snapshot);
-    assert.equal(second.statusCode, 200, second.body);
-    assert.equal(data(second).deals, 0);
-    assert.equal(data(second).deliverables, 0);
-    assert.ok(data(second).duplicates >= 3);
-    const changed = await invoke('POST', '/api/sponsor-crm/imports', { deals: [{ ...snapshot.deals[0], amountEur: 9999, deliverables: [] }] });
-    assert.equal(changed.statusCode, 409, changed.body);
   });
 
   it('imports name-only companies and attaches people by company name', async () => {

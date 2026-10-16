@@ -28,12 +28,6 @@
       "productKind": "package",
       "amountEur": 9000,
       "agreementDate": "2026-01-15",
-      "nextAction": {
-        "type": "send_stats",
-        "due": "2026-08-01",
-        "owner": "00000000-0000-0000-0000-000000000001",
-        "note": "send package stats"
-      },
       "sourceKey": "fixture-cash-deal",
       "deliverables": [
         {
@@ -50,12 +44,6 @@
       "status": "agreed",
       "productKind": "one-off",
       "amountEur": 2700,
-      "nextAction": {
-        "type": "send_invoice",
-        "due": "2026-08-01",
-        "owner": "00000000-0000-0000-0000-000000000001",
-        "note": "invoice the verbal yes"
-      },
       "sourceKey": "fixture-verbal-deal"
     }
   ],

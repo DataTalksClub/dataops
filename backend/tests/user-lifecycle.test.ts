@@ -70,8 +70,7 @@ describe('user lifecycle: handover, disable, delete', () => {
     })).id;
     ids.organization = (await createCrmRecord(client, 'organization', { name: 'Acme', owner: LEAVER })).item.id;
     ids.deal = (await createCrmRecord(client, 'deal', {
-      organizationId: ids.organization, status: 'open', owner: HEIR,
-      nextAction: { type: 'follow_up', due: '2026-10-30', owner: LEAVER, note: '' },
+      organizationId: ids.organization, status: 'open', owner: LEAVER,
     })).item.id;
     ids.lostDeal = (await createCrmRecord(client, 'deal', { organizationId: ids.organization, status: 'lost', owner: LEAVER })).item.id;
     await setDefaultAssignee(client, { defaultAssigneeId: LEAVER, expectedVersion: 0, actorId: ADMIN });
@@ -166,7 +165,7 @@ describe('user lifecycle: handover, disable, delete', () => {
     assert.strictEqual((await getCard(client, ids.card))?.ownerId, HEIR);
     assert.strictEqual((await getRecurringConfig(client, ids.schedule))?.assigneeId, HEIR);
     assert.strictEqual((await getCrmRecord(client, 'organization', ids.organization))?.owner, HEIR);
-    assert.strictEqual(((await getCrmRecord(client, 'deal', ids.deal))?.nextAction as { owner: string }).owner, HEIR);
+    assert.strictEqual((await getCrmRecord(client, 'deal', ids.deal))?.owner, HEIR);
     assert.strictEqual((await getCrmRecord(client, 'deal', ids.lostDeal))?.owner, LEAVER, 'a lost deal is history');
 
     assert.strictEqual(await getSession(client, session.token), null);
