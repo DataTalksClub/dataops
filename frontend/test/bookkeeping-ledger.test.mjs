@@ -13,6 +13,7 @@ import {
   ledgerTableMarkup,
   needsCategory,
   originalValue,
+  suggestionsMarkup,
   vocabulary,
 } from "../src/surfaces/finance/bookkeeping-ledger.js";
 
@@ -106,4 +107,26 @@ test("details show every field, attached files one click away, and an attach act
   const eurOnly = detailMarkup({ entry: rows[2], documents: [], vocab, e: escapeHtml });
   assert.doesNotMatch(eurOnly, /name="amountEur"/, "EUR rows have no separate EUR value");
   assert.match(eurOnly, /No receipt attached/);
+});
+
+test("suggested matches offer attaching a file or opening the sponsor deal", () => {
+  assert.match(suggestionsMarkup({ suggestions: null, e: escapeHtml }), /Looking for matches/);
+  assert.match(suggestionsMarkup({ suggestions: { documents: [], sponsor: { deals: [] } }, e: escapeHtml }), /No matching invoice or sponsor deal/);
+  const markup = suggestionsMarkup({
+    suggestions: {
+      documents: [{ id: "doc-9", documentType: "invoice", facts: { counterparty: "Cloudbase <Inc>", amount: "86.00", currency: "EUR", transactionDate: "2026-09-02" }, reasons: ["same amount", "1 day apart"] }],
+      sponsor: { deals: [{ dealId: "deal 1", organizationName: "Example Sponsor", outstanding: "2000", currency: "EUR", reasons: ["sponsor name matches"] }] },
+    },
+    e: escapeHtml,
+  });
+  assert.match(markup, /data-attach-suggestion="doc-9"/);
+  assert.match(markup, /data-view-document="doc-9"/);
+  assert.match(markup, /Cloudbase &lt;Inc>/);
+  assert.match(markup, /Same amount, 1 day apart/);
+  assert.match(markup, /href="\/sponsors\/deals\/deal%201"/);
+  assert.match(markup, /€2,000\.00 outstanding/);
+  const claimed = detailMarkup({ entry: { ...rows[1], sponsorDealId: "deal-7" }, documents: [], vocab: {}, e: escapeHtml });
+  assert.match(claimed, /Payment for a sponsor deal/);
+  assert.match(claimed, /href="\/sponsors\/deals\/deal-7"/);
+  assert.match(claimed, /data-suggestions/);
 });

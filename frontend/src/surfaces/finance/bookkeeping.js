@@ -18,6 +18,8 @@ import {
   ledgerTableMarkup,
   needsCategory,
   SECONDARY_VIEWS,
+  suggestionLoader,
+  suggestionsMarkup,
   vocabulary,
 } from "./bookkeeping-ledger.js";
 import { mountInvoiceReview } from "./invoices.js";
@@ -93,6 +95,9 @@ export function createBookkeepingSurface(context) {
     let defaultLens = "";
     let invoicesMounted = false;
     let vocab = {};
+    const suggestions = suggestionLoader({ load: (id) => api(`/transactions/${encodeURIComponent(id)}/suggestions`),
+      holder: (id) => (selectedId === id ? detail.querySelector("[data-suggestions]") : null),
+      render: (result) => suggestionsMarkup({ suggestions: result, humanize: humanizeOptionLabel, e: escapeHtml }) });
 
     const ledger = surface.querySelector(".bookkeeping-ledger"),
       split = surface.querySelector("[data-bk-split]"),
@@ -261,6 +266,7 @@ export function createBookkeepingSurface(context) {
         humanize: humanizeOptionLabel,
         e: escapeHtml,
       });
+      suggestions.show(entry.id);
     }
     function openTransaction(id) {
       selectedId = id;
@@ -515,6 +521,7 @@ export function createBookkeepingSurface(context) {
         ]);
       documents = docResult.items || [];
       links = linkResult.items || [];
+      suggestions.clear();
       accounts = accountResult.items || [];
       reports = reportResult.items || [];
       const setupButton = surface.querySelector("[data-setup-accounts]");
@@ -655,6 +662,15 @@ export function createBookkeepingSurface(context) {
       if (event.target.closest("[data-close-detail]")) closeTransaction();
       const documentId = event.target.closest("[data-view-document]")?.dataset.viewDocument;
       if (documentId) safeAction(() => viewDocument(documentId), "Could not open the file");
+      const suggested = event.target.closest("[data-attach-suggestion]");
+      if (suggested) {
+        const link = { documentId: suggested.dataset.attachSuggestion, transactionId: selectedId, coverageType: "evidence" };
+        safeAction(async () => {
+          await api("/links", { method: "POST", body: JSON.stringify(link) });
+          await refreshEvidence();
+          status.textContent = "Attached the suggested file.";
+        }, "Could not attach the file");
+      }
       const del = event.target.closest("[data-delete]")?.dataset.delete;
       if (del) {
         const dialog = surface.querySelector(".bookkeeping-delete-dialog"),

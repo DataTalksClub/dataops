@@ -3,6 +3,7 @@
 // original amount, EUR amount, account, type, category, period). Pure
 // functions from records to markup and from URL state to filters; the
 // surface (bookkeeping.js) owns fetching, events and saving.
+import { sponsorRecordPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
 import { entryDirection, formatAmount, ledgerDate, monthLabel, monthOf } from "./bookkeeping-format.js";
 
@@ -307,6 +308,78 @@ function documentLabel(document, humanize) {
   return `${type} PDF${kb}`;
 }
 
+const capitalize = (text) => String(text || "").replace(/^./, (letter) => letter.toUpperCase());
+
+/**
+ * Suggested matches for the open transaction: unattached invoices or receipts
+ * whose date, amount or provider fit, and sponsor deals still waiting for this
+ * money. Each is a suggestion the operator confirms.
+ */
+export function suggestionsMarkup({ suggestions, humanize, e }) {
+  if (!suggestions) return html`<p class="bk-suggest__none">Looking for matches…</p>`;
+  const documents = suggestions.documents || [];
+  const deals = suggestions.sponsor?.deals || [];
+  if (!documents.length && !deals.length)
+    return html`<p class="bk-suggest__none">No matching invoice or sponsor deal found.</p>`;
+  const why = (reasons) => e(capitalize((reasons || []).join(", ")));
+  const documentItems = documents.map((item) => {
+    const facts = item.facts || {};
+    const type = humanize ? humanize(item.documentType || "document") : String(item.documentType || "document");
+    const parts = [facts.counterparty, facts.amount ? formatAmount(facts.amount, facts.currency) : "", facts.transactionDate ? ledgerDate(facts.transactionDate) : ""]
+      .filter(Boolean)
+      .map((part) => e(part));
+    return html`<li class="bk-suggest">
+        <div class="bk-suggest__text">
+          <span class="bk-suggest__name">${e(type)}${parts.length ? html` · ${parts.join(" · ")}` : ""}</span>
+          <span class="bk-suggest__why">${why(item.reasons)}</span>
+        </div>
+        <div class="bk-suggest__actions">
+          <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-view-document="${e(item.id)}">View</button>
+          <button type="button" class="dk-button dk-button--primary dk-button--sm" data-attach-suggestion="${e(item.id)}">Attach</button>
+        </div>
+      </li>`;
+  });
+  const dealItems = deals.map((deal) => html`<li class="bk-suggest">
+      <div class="bk-suggest__text">
+        <span class="bk-suggest__name">Sponsor deal · ${e(deal.organizationName || "Sponsor")}${deal.dealTitle ? html` · ${e(deal.dealTitle)}` : ""}${
+          deal.outstanding ? html` · ${e(formatAmount(deal.outstanding, deal.currency))} outstanding` : ""}</span>
+        <span class="bk-suggest__why">${why(deal.reasons)}. Link the payment in the deal.</span>
+      </div>
+      <div class="bk-suggest__actions">
+        <a class="dk-button dk-button--secondary dk-button--sm" href="${e(sponsorRecordPath("deal", deal.dealId))}">Open deal</a>
+      </div>
+    </li>`);
+  return html`<ul class="bk-suggests">${[...documentItems, ...dealItems].join("")}</ul>`;
+}
+
+/**
+ * Suggestions per transaction, fetched when its details open and dropped
+ * whenever attachments change. `holder(id)` is the element to fill, or null
+ * once another transaction is open.
+ */
+export function suggestionLoader({ load, holder, render }) {
+  const cache = new Map();
+  const fill = (id) => {
+    const target = holder(id);
+    if (target) target.innerHTML = render(cache.get(id) || null);
+  };
+  return {
+    clear: () => cache.clear(),
+    show(id) {
+      if (cache.has(id)) return fill(id);
+      load(id)
+        .then((result) => {
+          cache.set(id, result);
+          fill(id);
+        })
+        .catch(() => {
+          const target = holder(id);
+          if (target) target.textContent = "Suggestions are unavailable right now.";
+        });
+    },
+  };
+}
+
 export function detailMarkup({ entry, documents, vocab, humanize, e }) {
   const eur = eurValue(entry);
   const original = originalValue(entry);
@@ -343,6 +416,8 @@ export function detailMarkup({ entry, documents, vocab, humanize, e }) {
       <section class="bk-detail__section" aria-labelledby="bk-receipt-heading">
         <h3 class="bk-detail__subhead" id="bk-receipt-heading">Invoice / receipt</h3>
         ${receipts}
+        ${entry.sponsorDealId ? html`<p class="bk-sponsor-link">Payment for a sponsor deal; the deal holds its amount and date.
+          <a href="${e(sponsorRecordPath("deal", entry.sponsorDealId))}">Open deal</a></p>` : ""}
         <div class="bk-attach">
           <label class="dk-label" for="bk-attach-type">Attach a PDF</label>
           <div class="bk-attach__row">
@@ -353,6 +428,10 @@ export function detailMarkup({ entry, documents, vocab, humanize, e }) {
             <input class="dk-input" type="file" accept="application/pdf,.pdf" data-attach-file aria-label="PDF file" />
           </div>
         </div>
+      </section>
+      <section class="bk-detail__section" aria-labelledby="bk-suggest-heading">
+        <h3 class="bk-detail__subhead" id="bk-suggest-heading">Suggested matches</h3>
+        <div data-suggestions>${suggestionsMarkup({ suggestions: null, humanize, e })}</div>
       </section>
       <form class="bk-detail__form" data-detail-form data-id="${e(entry.id)}" novalidate>
         <h3 class="bk-detail__subhead">Details</h3>

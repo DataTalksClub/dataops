@@ -89,6 +89,7 @@ const mountScript = async () => {
     { id: "doc-1", documentType: "invoice", status: "active", verifiedByteSize: 48213 },
     { id: "doc-2", documentType: "receipt", status: "active", verifiedByteSize: 20480 },
     { id: "doc-3", documentType: "bank-statement", status: "active", statementMonth: "2026-09", accountId: "business-1" },
+    { id: "doc-4", documentType: "invoice", status: "active", verifiedByteSize: 30720 },
   ];
   const links = [
     { id: "link-1", documentId: "doc-1", transactionId: "tx-21", coverageType: "evidence" },
@@ -117,6 +118,15 @@ const mountScript = async () => {
       }
       Object.assign(item, body);
       return { ...item };
+    }
+    if (p === "/api/bookkeeping/transactions/tx-28/suggestions") return {
+      documents: [{ id: "doc-4", documentType: "invoice", facts: { counterparty: "Hotel Example", amount: "280.45", currency: "EUR", transactionDate: "2026-09-15" }, reasons: ["same amount", "provider matches"] }],
+      sponsor: { linkedDealId: null, deals: [{ dealId: "deal-1", organizationName: "Example Analytics Ltd", dealTitle: "Newsletter", outstanding: "2000", currency: "EUR", reasons: ["same amount"] }] },
+    };
+    if (p.endsWith("/suggestions")) return { documents: [], sponsor: { linkedDealId: null, deals: [] } };
+    if (p.endsWith("/links") && method === "POST") {
+      links.push({ id: `link-${links.length + 1}`, ...body });
+      return { outcome: "created" };
     }
     if (p.endsWith("/download")) return { downloadUrl: `https://private.test${p}?signed=1`, expiresIn: 300 };
     if (p.endsWith("/links")) return { items: links };
@@ -228,6 +238,14 @@ try {
   await page.click('.bk-row[data-tx="tx-28"] .bk-col-date');
   assert.match(await page.$eval(".bk-receipts__none", (el) => el.textContent), /No receipt/);
   assert.ok(await page.$(".bk-detail [data-attach-file]"));
+  // Suggested matches: an unattached invoice to attach, a sponsor deal to open.
+  await page.waitForSelector(".bk-detail [data-attach-suggestion=doc-4]");
+  assert.match(await page.$eval("[data-suggestions]", (el) => el.textContent), /Same amount, provider matches/);
+  assert.equal(await page.$eval("[data-suggestions] a[href]", (el) => el.getAttribute("href")), "/sponsors/deals/deal-1");
+  await shot(page, "suggestions");
+  await page.click("[data-attach-suggestion=doc-4]");
+  await page.waitForFunction(() => window.__calls.some((c) => c.method === "POST" && c.url === "/api/bookkeeping/links" && c.body.documentId === "doc-4" && c.body.transactionId === "tx-28"));
+  await page.waitForSelector(".bk-receipts [data-view-document=doc-4]");
   await page.click(".bk-detail__close");
   assert.equal(await page.$eval(".bk-detail", (el) => el.hidden), true);
   assert.doesNotMatch(await page.evaluate(() => location.search), /tx=/);
