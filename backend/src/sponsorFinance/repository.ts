@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import {
+  BatchGetCommand,
   GetCommand,
   QueryCommand,
   ScanCommand,
@@ -1205,7 +1206,7 @@ export async function listFinanceCandidates(
   if (!result.complete) {
     throw Object.assign(new Error('Candidate discovery incomplete; retry'), { statusCode: 503 });
   }
-  const items = [];
+  const eligible = [];
   const candidateDeadline = Date.now() + DISCOVERY_DEADLINE_MS;
   for (const raw of result.items) {
     if (Date.now() >= candidateDeadline) {
@@ -1216,13 +1217,7 @@ export async function listFinanceCandidates(
     try {
       const identityToken = input.kind === 'document' ? invoiceIdentity(source) : paymentIdentity(source);
       if (input.kind === 'transaction' && source.currency !== input.currency) continue;
-      const claimed = (await client.send(new GetCommand({
-        TableName: TABLE_BOOKKEEPING,
-        Key: singleton(claimKey(input.kind, String(source.id))),
-        ConsistentRead: true,
-      }))).Item;
-      if (claimed) continue;
-      items.push(input.kind === 'document'
+      eligible.push(input.kind === 'document'
         ? { id: source.id, label: `Invoice ${String(source.id).slice(0, 8)}`, uploadedAt: source.createdAt, identityToken }
         : {
           id: source.id, effectiveDate: source.paidDate || source.transactionDate,
@@ -1230,7 +1225,34 @@ export async function listFinanceCandidates(
         });
     } catch { /* ineligible source */ }
   }
-  items.sort((left, right) => String(left.id).localeCompare(String(right.id)));
+  eligible.sort((left, right) => String(left.id).localeCompare(String(right.id)));
+  const items: typeof eligible = [];
+  // Check claims in sorted batches and stop after finding a page plus a
+  // continuation item. Reading every eligible claim separately exhausted the
+  // bounded discovery deadline on normal-sized ledgers.
+  for (let offset = 0; offset < eligible.length && items.length <= limit; offset += 100) {
+    const batch = eligible.slice(offset, offset + 100);
+    let keys = batch.map((item) => singleton(claimKey(input.kind, String(item.id))));
+    const claimed = new Set<string>();
+    for (let attempt = 0; keys.length && attempt < 3; attempt++) {
+      if (Date.now() >= candidateDeadline) {
+        throw Object.assign(new Error('Candidate discovery incomplete; retry'), { statusCode: 503 });
+      }
+      const result = await client.send(new BatchGetCommand({
+        RequestItems: {
+          [TABLE_BOOKKEEPING]: { Keys: keys, ConsistentRead: true, ProjectionExpression: 'PK' },
+        },
+      }));
+      for (const claim of result.Responses?.[TABLE_BOOKKEEPING] || []) claimed.add(String(claim.PK));
+      keys = (result.UnprocessedKeys?.[TABLE_BOOKKEEPING]?.Keys || []) as typeof keys;
+    }
+    if (keys.length || Date.now() >= candidateDeadline) {
+      throw Object.assign(new Error('Candidate discovery incomplete; retry'), { statusCode: 503 });
+    }
+    for (const item of batch) {
+      if (!claimed.has(claimKey(input.kind, String(item.id)))) items.push(item);
+    }
+  }
   const page = items.slice(0, limit);
   return {
     items: page,
