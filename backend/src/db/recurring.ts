@@ -428,5 +428,4 @@ export {
   listRecurringConfigs,
   listEnabledRecurringConfigs,
   generateRecurringTasks,
-  recurringTaskDefaults,
 };

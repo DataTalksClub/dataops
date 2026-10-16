@@ -5,7 +5,6 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { handler } from '../src/handler';
 import { route } from '../src/router';
 import { createArtifact } from '../src/db/artifacts';
-import { BASELINE_RECURRING_CONFIGS } from '../src/deploymentSeeds';
 import { setArtifactDownloadSignerForTests } from '../src/routes/artifacts';
 import type { LambdaEvent, LambdaResponse } from '../src/types';
 import { truncateTestTables, useTestDatabase } from './helpers/db';
@@ -103,12 +102,5 @@ describe('mailing-export capability is removed', () => {
     assert.ok('created' in result, 'unknown scheduled actions fall through to cron');
     assert.ok('skipped' in result);
     assert.ok(!('statusCode' in result));
-  });
-
-  it('does not seed a MailChimp mailing-list backup recurring config', () => {
-    assert.equal(
-      BASELINE_RECURRING_CONFIGS.some((config) => /mailchimp|mailing list/i.test(config.description)),
-      false,
-    );
   });
 });

@@ -4,14 +4,11 @@ import { after, before, describe, it } from 'node:test';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { stopLocal } from '../scripts/local-dynamodb';
-import { listRecurringConfigs } from '../src/db/recurring';
+import { createRecurringConfig, listRecurringConfigs } from '../src/db/recurring';
 import { listUsers } from '../src/db/users';
 import { listTemplates } from '../src/db/templates';
 import { handler } from '../src/handler';
-import {
-  BASELINE_RECURRING_CONFIGS,
-  setDeploymentTemplateLoaderForTest,
-} from '../src/deploymentSeeds';
+import { setDeploymentTemplateLoaderForTest } from '../src/deploymentSeeds';
 import { loadAuthoredTemplatesFromKnowledge } from '../src/templates/authoredTemplates';
 import { templateToYaml } from '../src/templates/yamlTemplates';
 import { useTestDatabase } from './helpers/db';
@@ -60,7 +57,7 @@ describe('handler - IAM-only deployment seeds', () => {
     assert.strictEqual((await listTemplates(client)).length, 0);
   });
 
-  it('runs authored templates, then recurring configs, creating no people, with idempotent counts', async () => {
+  it('projects authored templates only, creating no people and leaving recurring schedules alone', async () => {
     const event = {
       source: 'dataops.deploy',
       'detail-type': 'Runtime Seed',
@@ -68,25 +65,19 @@ describe('handler - IAM-only deployment seeds', () => {
     };
     const files = syntheticAuthoredFiles(11);
     const { store, requests } = syntheticKnowledgeStore(files);
-    const loadTemplates = async () => {
-      assert.strictEqual((await listRecurringConfigs(client)).length, 0, 'recurring configs must wait for templates');
-      return loadAuthoredTemplatesFromKnowledge(store);
-    };
+    const paused = await createRecurringConfig(client, {
+      description: 'Check bookkeeping, invoices, and receipts',
+      cronExpression: '0 9 * * 1',
+      enabled: false,
+    });
 
-    setDeploymentTemplateLoaderForTest(loadTemplates);
+    setDeploymentTemplateLoaderForTest(() => loadAuthoredTemplatesFromKnowledge(store));
     const firstResponse = await handler(event);
     assert.ok('statusCode' in firstResponse);
     assert.strictEqual(firstResponse.statusCode, 200);
     const first = JSON.parse(firstResponse.body);
     assert.deepStrictEqual(first, {
       templates: { total: 11, created: 11, updated: 0, unchanged: 0 },
-      recurring: {
-        created: BASELINE_RECURRING_CONFIGS.length,
-        updated: 0,
-        skipped: 0,
-        repairedTasks: 0,
-        total: BASELINE_RECURRING_CONFIGS.length,
-      },
     });
     const firstTemplates = await listTemplates(client);
     assert.strictEqual(firstTemplates.length, 11);
@@ -105,13 +96,6 @@ describe('handler - IAM-only deployment seeds', () => {
     const second = JSON.parse(secondResponse.body);
     assert.deepStrictEqual(second, {
       templates: { total: 11, created: 0, updated: 0, unchanged: 11 },
-      recurring: {
-        created: 0,
-        updated: 0,
-        skipped: BASELINE_RECURRING_CONFIGS.length,
-        repairedTasks: 0,
-        total: BASELINE_RECURRING_CONFIGS.length,
-      },
     });
     assert.deepStrictEqual(
       (await listTemplates(client)).sort((left, right) => left.id.localeCompare(right.id)),
@@ -124,6 +108,10 @@ describe('handler - IAM-only deployment seeds', () => {
     // Accounts are added on the Users page and sign in with SSO; a deploy
     // never creates a person or a password.
     assert.deepStrictEqual(await listUsers(client), []);
+
+    // Recurring schedules are user data: a deploy neither creates nor
+    // re-enables nor rewrites them.
+    assert.deepStrictEqual(await listRecurringConfigs(client), [paused]);
 
     // The shipped handler owns the exact action. Its success path uses the
     // same function above with the GitHub loader; near-miss dispatch is covered

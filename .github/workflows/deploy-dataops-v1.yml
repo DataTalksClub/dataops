@@ -241,7 +241,7 @@ jobs:
               "ParameterKey=SponsorSesFromAddress,ParameterValue=$SPONSOR_SES_FROM_ADDRESS" \
               "ParameterKey=SponsorSesConfigurationSetName,ParameterValue=$SPONSOR_SES_CONFIGURATION_SET_NAME"
 
-      - name: Seed runtime workflow templates and recurring configs
+      - name: Project authored workflow templates
         run: |
           set -euo pipefail
           backend_function="$(aws cloudformation describe-stack-resource \
@@ -265,32 +265,27 @@ jobs:
             def nonnegative_integer: type == "number" and floor == . and . >= 0;
             .statusCode == 200
             and ((.body | fromjson) as $body
-              | ($body | keys == ["recurring", "templates"])
+              | ($body | keys == ["templates"])
               and ($body.templates | keys == ["created", "total", "unchanged", "updated"])
               # Authored templates come from the private knowledge branch, whose
               # valid template count changes independently of application code.
               and ($body.templates.total | nonnegative_integer and . > 0)
               and ([$body.templates.created, $body.templates.updated, $body.templates.unchanged] | all(.[]; nonnegative_integer))
               and ($body.templates.created + $body.templates.updated + $body.templates.unchanged == $body.templates.total)
-              and ($body.recurring | keys == ["created", "repairedTasks", "skipped", "total", "updated"])
-              and ($body.recurring.total == 4)
-              and ([$body.recurring.created, $body.recurring.updated, $body.recurring.skipped, $body.recurring.repairedTasks] | all(.[]; nonnegative_integer))
-              and ($body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 4)
             )
           ' "$seed_response" >/dev/null; then
-            echo "Runtime seed did not confirm the authored-template reconciliation and recurring-config contract" >&2
+            echo "Runtime seed did not confirm the authored-template reconciliation contract" >&2
             # Emit only numeric counts, never raw runtime or private knowledge data.
             jq -c '
               def safe_count: if type == "number" then . else null end;
               try ((.body | fromjson) as $body | {
                 status: (.statusCode | safe_count),
-                templates: ($body.templates.total | safe_count),
-                recurring: ($body.recurring.total | safe_count)
+                templates: ($body.templates.total | safe_count)
               }) catch {error: "malformed-seed-response"}
             ' "$seed_response" >&2 || true
             exit 1
           fi
-          echo "Runtime workflow templates and recurring configs synchronized."
+          echo "Authored workflow templates projected."
 
       - name: Smoke test deployed single-origin backend
         run: |

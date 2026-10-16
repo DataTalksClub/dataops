@@ -27,7 +27,7 @@
 | Tax report zip | Dropbox/S3, linked in task | Private finance artifact |
 | Runtime tasks | DynamoDB | Execution state |
 | Runtime workflow cards | DynamoDB | Execution state |
-| Recurring configs | DynamoDB with optional Git seed | Runtime schedule state |
+| Recurring configs | DynamoDB (user data, never seeded on deploy) | Runtime schedule state |
 | Audit history | DynamoDB | Execution history |
 | Domain/OIDC/IAM | `aws-infra` | Shared infrastructure ownership |
 | App Lambda/SAM template | `dataops/infra/app` or current `lambda-functions` | Deployable app code boundary |

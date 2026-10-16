@@ -3,237 +3,38 @@ import assert from 'node:assert';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
-import { startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createTables } from '../scripts/local-dynamodb';
-import { listUndismissedNotifications } from '../src/db/notifications';
-import {
-  createRecurringConfig,
-  listRecurringConfigs,
-  updateRecurringConfig,
-} from '../src/db/recurring';
-import { createTask, listTasksByDate, updateTask } from '../src/db/tasks';
-import { runCron } from '../src/cron/runner';
-import { seed as seedUsers } from '../scripts/seed-users';
-import {
-  BASELINE_RECURRING_CONFIGS,
-  seed as seedRecurring,
-} from '../scripts/seed-recurring';
-import { setDefaultAssignee } from '../src/db/workspaceSettings';
-import { ALEXEY_USER_ID } from '../scripts/seed-users';
+import { startLocal, stopLocal, createTables } from '../scripts/local-dynamodb';
+import { listRecurringConfigs, updateRecurringConfig } from '../src/db/recurring';
+import { SAMPLE_RECURRING_CONFIGS, seed as seedRecurring } from '../scripts/seed-recurring';
 
-const ADMIN_PICKED_ASSIGNEE = '00000000-0000-0000-0000-000000000099';
-
-describe('Seed recurring script', () => {
+describe('Local sample recurring schedules', () => {
   let client: DynamoDBDocumentClient;
 
   before(async () => {
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
-    await seedUsers();
   });
 
   after(async () => {
     await stopLocal();
   });
 
-  it('seeds baseline recurring configs idempotently and cron generates daily work without duplicates', async () => {
-    const first = await seedRecurring();
+  it('creates each sample once and never touches a schedule that already exists', async () => {
+    assert.deepStrictEqual(await seedRecurring(), { created: SAMPLE_RECURRING_CONFIGS.length });
+    const seeded = await listRecurringConfigs(client);
+    assert.strictEqual(seeded.length, SAMPLE_RECURRING_CONFIGS.length);
+    assert.ok(seeded.every((config) => config.assigneeId === undefined), 'no person is seeded onto a schedule');
 
-    assert.deepStrictEqual(first, {
-      created: BASELINE_RECURRING_CONFIGS.length,
-      updated: 0,
-      skipped: 0,
-      repairedTasks: 0,
-      total: BASELINE_RECURRING_CONFIGS.length,
-    });
+    const slack = seeded.find((config) => config.description === 'Invite people to Slack from Airtable');
+    assert.ok(slack);
+    await updateRecurringConfig(client, slack.id, { enabled: false, cronExpression: '0 10 * * *' });
 
-    const configsAfterFirstRun = await listRecurringConfigs(client);
-    assert.strictEqual(configsAfterFirstRun.length, BASELINE_RECURRING_CONFIGS.length);
-
-    for (const expected of BASELINE_RECURRING_CONFIGS) {
-      const matches = configsAfterFirstRun.filter(
-        (config) =>
-          config.description === expected.description &&
-          config.cronExpression === expected.cronExpression
-      );
-      assert.strictEqual(matches.length, 1, `${expected.description} should be seeded once`);
-      assert.strictEqual(matches[0].enabled, true);
-      assert.strictEqual(matches[0].assigneeId, undefined, 'no person is seeded onto a schedule');
-      if (expected.instructionDocId) {
-        assert.strictEqual(matches[0].instructionDocId, expected.instructionDocId);
-      }
-      if (expected.requires) {
-        assert.deepStrictEqual(matches[0].requires, expected.requires);
-      }
-    }
-
-    const slackConfig = configsAfterFirstRun.find(
-      (config) => config.description === 'Invite people to Slack from Airtable'
-    );
-    assert.ok(slackConfig);
-    assert.strictEqual(
-      slackConfig.instructionDocId,
-      'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form'
-    );
-    assert.deepStrictEqual(slackConfig.requires, ['airtable', 'slack']);
-
-    assert.ok(!configsAfterFirstRun.some((config) => /Trello/.test(config.description)));
-
-    const second = await seedRecurring();
-    assert.deepStrictEqual(second, {
-      created: 0,
-      updated: 0,
-      skipped: BASELINE_RECURRING_CONFIGS.length,
-      repairedTasks: 0,
-      total: BASELINE_RECURRING_CONFIGS.length,
-    });
-
-    const drifted = (await listRecurringConfigs(client)).find(
-      (config) => config.description === 'Invite people to Slack from Airtable'
-    );
-    assert.ok(drifted);
-    await updateRecurringConfig(client, drifted.id, {
-      enabled: false,
-      assigneeId: ADMIN_PICKED_ASSIGNEE,
-    });
-
-    const repaired = await seedRecurring();
-    assert.deepStrictEqual(repaired, {
-      created: 0,
-      updated: 1,
-      skipped: BASELINE_RECURRING_CONFIGS.length - 1,
-      repairedTasks: 0,
-      total: BASELINE_RECURRING_CONFIGS.length,
-    });
-
-    const configsAfterRepair = await listRecurringConfigs(client);
-    assert.strictEqual(configsAfterRepair.length, BASELINE_RECURRING_CONFIGS.length);
-    const repairedConfig = configsAfterRepair.find(
-      (config) => config.description === 'Invite people to Slack from Airtable'
-    );
-    assert.ok(repairedConfig);
-    assert.strictEqual(repairedConfig.enabled, true);
-    // The seed restores the baseline but keeps the person an admin chose.
-    assert.strictEqual(repairedConfig.assigneeId, ADMIN_PICKED_ASSIGNEE);
-    await setDefaultAssignee(client, { defaultAssigneeId: ALEXEY_USER_ID, expectedVersion: 0 });
-
-    const friday = new Date('2029-01-05T09:00:00Z');
-    const firstCron = await runCron(client, friday);
-    assert.strictEqual(firstCron.failures, 0);
-    assert.strictEqual(firstCron.recurring.generated.length, 1);
-    assert.strictEqual(firstCron.recurring.skipped, 0);
-
-    const tasks = (await listTasksByDate(client, '2029-01-05')).filter(
-      (task) => task.source === 'recurring'
-    );
-    assert.strictEqual(tasks.length, 1);
-    assert.deepStrictEqual(
-      tasks.map((task) => task.description).sort(),
-      [
-        'Invite people to Slack from Airtable',
-      ]
-    );
-    for (const task of tasks) {
-      assert.strictEqual(task.status, 'todo');
-      assert.strictEqual(task.date, '2029-01-05');
-      assert.ok(task.recurringConfigId);
-      assert.strictEqual(
-        task.assigneeId,
-        task.recurringConfigId === repairedConfig.id ? ADMIN_PICKED_ASSIGNEE : ALEXEY_USER_ID,
-        'a schedule without its own assignee uses the workspace default',
-      );
-      assert.ok(task.instructionDocId, `${task.description} should include instructionDocId`);
-      assert.ok(Array.isArray(task.requires), `${task.description} should include requires`);
-    }
-
-    const slackTask = tasks.find((task) => task.description === 'Invite people to Slack from Airtable');
-    assert.ok(slackTask);
-    assert.strictEqual(
-      slackTask.instructionDocId,
-      'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form'
-    );
-    assert.deepStrictEqual(slackTask.requires, ['airtable', 'slack']);
-
-    const notificationsAfterFirstCron = (await listUndismissedNotifications(client)).filter(
-      (notification) => notification.type === 'recurring-due'
-    );
-    assert.strictEqual(notificationsAfterFirstCron.length, 1);
-    assert.deepStrictEqual(
-      notificationsAfterFirstCron.map((notification) => notification.taskId).sort(),
-      tasks.map((task) => task.id).sort()
-    );
-
-    const secondCron = await runCron(client, friday);
-    assert.strictEqual(secondCron.recurring.generated.length, 0);
-    assert.strictEqual(secondCron.recurring.skipped, 1);
-
-    const tasksAfterSecondCron = (await listTasksByDate(client, '2029-01-05')).filter(
-      (task) => task.source === 'recurring'
-    );
-    assert.strictEqual(tasksAfterSecondCron.length, 1);
-
-    const notificationsAfterSecondCron = (await listUndismissedNotifications(client)).filter(
-      (notification) => notification.type === 'recurring-due'
-    );
-    assert.strictEqual(notificationsAfterSecondCron.length, 1);
-
-    await updateTask(client, slackTask.id, {
-      expectedVersion: slackTask.version,
-      patch: { instructionDocId: '', requires: [] },
-    });
-    const manualTask = await createTask(client, {
-      description: 'Invite people to Slack from Airtable',
-      date: '2029-01-05',
-      source: 'manual',
-      status: 'todo',
-    });
-
-    const repairedTasks = await seedRecurring();
-    assert.deepStrictEqual(repairedTasks, {
-      created: 0,
-      updated: 0,
-      skipped: BASELINE_RECURRING_CONFIGS.length,
-      repairedTasks: 1,
-      total: BASELINE_RECURRING_CONFIGS.length,
-    });
-
-    const tasksAfterRepair = (await listTasksByDate(client, '2029-01-05')).filter(
-      (task) => task.source === 'recurring'
-    );
-    assert.strictEqual(tasksAfterRepair.length, 1);
-    const repairedSlackTask = tasksAfterRepair.find(
-      (task) => task.description === 'Invite people to Slack from Airtable'
-    );
-    assert.ok(repairedSlackTask);
-    assert.strictEqual(
-      repairedSlackTask.instructionDocId,
-      'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form'
-    );
-    assert.deepStrictEqual(repairedSlackTask.requires, ['airtable', 'slack']);
-
-    const manualTaskAfterRepair = (await listTasksByDate(client, '2029-01-05')).find(
-      (task) => task.id === manualTask.id
-    );
-    assert.ok(manualTaskAfterRepair);
-    assert.strictEqual(manualTaskAfterRepair.instructionDocId, undefined);
-    assert.strictEqual(manualTaskAfterRepair.requires, undefined);
-
-    const retiredSchedule = await createRecurringConfig(client, {
-      description: 'Create new Trello cards and review existing ones',
-      cronExpression: '0 9 * * *',
-      enabled: false,
-    });
-
-    const idempotentRepair = await seedRecurring();
-    assert.deepStrictEqual(idempotentRepair, {
-      created: 0,
-      updated: 0,
-      skipped: BASELINE_RECURRING_CONFIGS.length,
-      repairedTasks: 0,
-      total: BASELINE_RECURRING_CONFIGS.length,
-    });
-    const retiredAfterSeed = (await listRecurringConfigs(client)).find((config) => config.id === retiredSchedule.id);
-    assert.strictEqual(retiredAfterSeed?.enabled, false, 'deployment must not reactivate the retired Trello routine');
+    assert.deepStrictEqual(await seedRecurring(), { created: 0 });
+    const after = await listRecurringConfigs(client);
+    assert.strictEqual(after.length, SAMPLE_RECURRING_CONFIGS.length);
+    const paused = after.find((config) => config.id === slack.id);
+    assert.strictEqual(paused?.enabled, false, 'a paused schedule stays paused');
+    assert.strictEqual(paused?.cronExpression, '0 10 * * *', 'an edited cadence is kept');
   });
 });

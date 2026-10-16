@@ -628,7 +628,7 @@ def test_deploy_workflow_projects_private_templates_through_the_deployed_lambda(
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
     deploy = workflow.split("\n  deploy:\n", 1)[1]
 
-    seed = "Seed runtime workflow templates and recurring configs"
+    seed = "Project authored workflow templates"
     assert seed in workflow
     assert "--logical-resource-id BackendFunction" in workflow
     assert deploy.count("aws lambda invoke") == 1
@@ -641,18 +641,18 @@ def test_deploy_workflow_projects_private_templates_through_the_deployed_lambda(
     assert 'seed_response="$RUNNER_TEMP/dataops-runtime-seeds.json"' in deploy
     assert "FunctionError" in deploy
     assert 'if [ "$seed_error" != "None" ]' in deploy
-    # The deploy seed creates no people; authored templates come from the
+    # The deploy seed creates no people and no schedules; authored templates come from the
     # private knowledge branch, so only their count arithmetic is pinned.
     assert "$body.users" not in deploy
     for exact_total in (
-        '($body | keys == ["recurring", "templates"])',
+        '($body | keys == ["templates"])',
         "($body.templates.total | nonnegative_integer and . > 0)",
         "$body.templates.created + $body.templates.updated + $body.templates.unchanged == $body.templates.total",
-        "$body.recurring.total == 4",
-        "$body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 4",
-        "$body.recurring.repairedTasks",
     ):
         assert exact_total in deploy
+    # Recurring schedules are user data managed on /recurring; a deploy never
+    # seeds, re-enables or rewrites them.
+    assert "recurring" not in deploy.split(seed, 1)[1].split("- name:", 1)[0]
     assert workflow.index("Deploy DataOps v1 stack") < workflow.index(seed)
     assert workflow.index(seed) < workflow.index("Smoke test deployed single-origin backend")
     assert "npm exec" not in deploy
@@ -729,7 +729,7 @@ def test_deploy_workflow_passes_shared_auth_contract_through_github_oidc_only():
         "aws s3api put-object",
         "aws cloudformation create-change-set",
         "aws cloudformation execute-change-set",
-        "Seed runtime workflow templates and recurring configs",
+        "Project authored workflow templates",
     ):
         if operation in deploy_job:
             assert oidc < deploy_job.index(operation)
