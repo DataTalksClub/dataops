@@ -1,4 +1,5 @@
 import { apiFor } from "../session.mjs";
+import { resolveDocument } from "./kb.mjs";
 
 const client = apiFor;
 
@@ -8,12 +9,14 @@ export const help = `dataops recurring - schedules that generate Tasks on a cron
 
 Usage
   dataops recurring list
-  dataops recurring create --description D --cron "0 9 * * 1" [--assignee ID] [--paused]
-  dataops recurring edit <id> [--description D] [--cron C] [--assignee ID]
+  dataops recurring create --description D --cron "0 9 * * 1" [--assignee ID] [--doc DOC] [--paused]
+  dataops recurring edit <id> [--description D] [--cron C] [--assignee ID] [--doc DOC|none]
   dataops recurring pause <id> | resume <id> | delete <id>
   dataops recurring generate [--date YYYY-MM-DD] [--until YYYY-MM-DD]
 
 <id> may be a unique prefix. Deleting a schedule keeps the Tasks it generated.
+--doc names the process doc (an id, alias or path, as for \`dataops kb show\`)
+that every Task the schedule generates links; \`--doc none\` removes it.
 `;
 
 function configsFrom(payload) {
@@ -36,6 +39,25 @@ function requireCron(value) {
     throw new Error('--cron needs five fields, for example "0 9 * * 1".');
   }
   return cronExpression;
+}
+
+/** The canonical id of the process doc `--doc` names; null for `none`. */
+async function processDocId(api, ref, { allowNone }) {
+  const value = ref === true ? "" : String(ref ?? "").trim();
+  if (allowNone && value.toLowerCase() === "none") return null;
+  if (!value) {
+    throw new Error(
+      allowNone
+        ? "--doc needs a process doc id, alias or path, or none."
+        : "--doc needs a process doc id, alias or path.",
+    );
+  }
+  const document = await resolveDocument(api, value);
+  return String(document.id);
+}
+
+function docSuffix(config) {
+  return config.instructionDocId ? `  [doc ${config.instructionDocId}]` : "";
 }
 
 async function findConfig(api, idOrPrefix) {
@@ -66,7 +88,7 @@ export async function list(args, io) {
         config.enabled === false ? "paused " : "active ",
         config.description,
         `(${scheduleLine(config)})`,
-      ].join("  "),
+      ].join("  ") + docSuffix(config),
     );
   }
   return result;
@@ -80,11 +102,14 @@ export async function create(args, io) {
     enabled: args.paused ? false : true,
   };
   if (args.assignee) body.assigneeId = String(args.assignee);
-  const result = await client(args).post("/api/recurring", body);
+  const api = client(args);
+  if (args.doc !== undefined)
+    body.instructionDocId = await processDocId(api, args.doc, { allowNone: false });
+  const result = await api.post("/api/recurring", body);
   if (args.json) return result;
   const config = result.recurringConfig || result;
   io.print(
-    `Created ${config.id} - ${config.description} (${scheduleLine(config)}).`,
+    `Created ${config.id} - ${config.description} (${scheduleLine(config)}).${docSuffix(config)}`,
   );
   return result;
 }
@@ -93,7 +118,7 @@ export async function edit(args, io) {
   const id = args._[0];
   if (!id)
     throw new Error(
-      "Usage: dataops recurring edit <id> [--description D] [--cron C]",
+      "Usage: dataops recurring edit <id> [--description D] [--cron C] [--assignee ID] [--doc DOC|none]",
     );
   const api = client(args);
   const config = await findConfig(api, id);
@@ -102,9 +127,11 @@ export async function edit(args, io) {
     body.description = String(args.description);
   if (args.cron !== undefined) body.cronExpression = requireCron(args.cron);
   if (args.assignee !== undefined) body.assigneeId = String(args.assignee);
+  if (args.doc !== undefined)
+    body.instructionDocId = await processDocId(api, args.doc, { allowNone: true });
   if (Object.keys(body).length === 0) {
     throw new Error(
-      "Nothing to change. Pass --description, --cron, or --assignee.",
+      "Nothing to change. Pass --description, --cron, --assignee, or --doc.",
     );
   }
   const result = await api.put(
@@ -114,7 +141,7 @@ export async function edit(args, io) {
   if (args.json) return result;
   const updated = result.recurringConfig || result;
   io.print(
-    `Updated ${config.id} - ${updated.description} (${scheduleLine(updated)}).`,
+    `Updated ${config.id} - ${updated.description} (${scheduleLine(updated)}).${docSuffix(updated)}`,
   );
   return result;
 }

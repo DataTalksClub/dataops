@@ -312,6 +312,44 @@ describe("recurring commands", () => {
     globalThis.fetch = globalFetch;
   });
 
+  test("--doc stores the canonical id of the process doc it names", async () => {
+    saveProfile("https://portal.test", { token: "dops_abc", tokenId: "id-1" });
+    const { create, edit } = await import("../src/commands/recurring.mjs");
+    const sent = [];
+    globalThis.fetch = fakeFetch({
+      "/docs/resolve?ref=bookkeeping-report": {
+        body: { document: { id: "sop.finance.prepare-a-bookkeeping-report", path: "content/x.md" } },
+      },
+      "/api/recurring": (options) => {
+        if (options.method === "POST") sent.push(JSON.parse(options.body));
+        return {
+          status: options.method === "POST" ? 201 : 200,
+          body: options.method === "POST"
+            ? { recurringConfig: { id: "abc", description: "Report", ...sent.at(-1) } }
+            : { recurringConfigs: [{ id: "abc12345", description: "Report", cronExpression: "0 9 1 * *" }] },
+        };
+      },
+      "/api/recurring/abc12345": (options) => {
+        sent.push(JSON.parse(options.body));
+        return { body: { recurringConfig: { id: "abc12345", description: "Report" } } };
+      },
+    });
+    const io = captureIo();
+    await create(
+      { url: "https://portal.test", description: "Report", cron: "0 9 1 * *", doc: "bookkeeping-report", _: [] },
+      { print: io.log },
+    );
+    await edit({ url: "https://portal.test", doc: "none", _: ["abc1"] }, { print: io.log });
+    assert.equal(sent[0].instructionDocId, "sop.finance.prepare-a-bookkeeping-report");
+    assert.deepEqual(sent[1], { instructionDocId: null });
+    assert.match(io.out[0], /\[doc sop\.finance\.prepare-a-bookkeeping-report\]$/);
+    await assert.rejects(
+      () => edit({ url: "https://portal.test", doc: true, _: ["abc1"] }, { print: () => {} }),
+      /--doc needs a process doc/,
+    );
+    globalThis.fetch = globalFetch;
+  });
+
   test("rejects a cron expression that is not five fields", async () => {
     saveProfile("https://portal.test", { token: "dops_abc", tokenId: "id-1" });
     const { create } = await import("../src/commands/recurring.mjs");
