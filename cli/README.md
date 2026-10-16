@@ -68,6 +68,7 @@ subcommands, flags, and examples.
 | `bookkeeping` | `sync` transactions from the bookkeeping sheet (dry run unless `--apply`), `classify` missing Type/Category/Period from a provider's history, `facts` reads unattached invoice PDFs for match suggestions |
 | `team`, `users` | the team directory (ids for `--assignee`/`--owner`) and the workspace default assignee; adding a person: `add-user` (admin; only added people can sign in); a person leaving: `handover`, `reassign`, `disable-user`, `enable-user`, `delete-user` (admin); accounts (admin) |
 | `api` | any other route: `dataops api GET /api/<route>` |
+| `secrets` | team secrets store (admin): `list`, `get` (`--field`, `--out`), `set` (`--field KEY=VALUE`, bare `--field KEY` reads stdin, `--from-file`), `delete`; values encrypted at rest, every access audited |
 | `login`, `logout`, `whoami`, `tokens` | credentials |
 | `agent-guide` | the workflow guide for agents ([skill/SKILL.md](skill/SKILL.md)) |
 

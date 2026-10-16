@@ -17,6 +17,7 @@ import * as raw from "./commands/raw.mjs";
 import * as reconcile from "./commands/reconcile.mjs";
 import * as recurring from "./commands/recurring.mjs";
 import * as resources from "./commands/resources.mjs";
+import * as secrets from "./commands/secrets.mjs";
 import * as sponsors from "./commands/sponsors.mjs";
 import * as tasks from "./commands/tasks.mjs";
 import * as templates from "./commands/templates.mjs";
@@ -117,6 +118,7 @@ export const FAMILIES = {
   logout: { group: "Account", summary: "Revoke this machine's token", help: AUTH_HELP, run: auth.logout },
   whoami: { group: "Account", summary: "Show who the credential acts as", help: AUTH_HELP, run: auth.whoami },
   tokens: { group: "Account", summary: "List or revoke your API tokens", help: AUTH_HELP, commands: { list: auth.tokensList, revoke: auth.tokensRevoke } },
+  secrets: { group: "Account", summary: secrets.summary, help: secrets.help, commands: secrets.commands },
   api: { group: "Other", summary: raw.summary, help: raw.help, run: raw.call },
   "agent-guide": {
     group: "Other",
@@ -170,7 +172,7 @@ export function usage() {
 }
 
 // Flags that may repeat; every other flag keeps its last value.
-const REPEATABLE = new Set(["link", "query"]);
+const REPEATABLE = new Set(["link", "query", "field"]);
 
 /**
  * Minimal flag parser: `--flag value`, `--flag=value`, and `--boolean`.
