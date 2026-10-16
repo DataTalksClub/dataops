@@ -172,7 +172,7 @@ test('admin Card deletion is one transaction on official DynamoDB Local', { time
   const kept = await createTask(client, { description: 'Kept', date: '2031-01-05', cardId: keeper.id });
   // The newsletter issue that owns the Card is deleted in the same transaction.
   const issue = buildNewsletterIssue({
-    kind: 'weekly', publicationDate: '2031-01-05', status: 'planned', slots: { primary: { ticked: true } }, cardId: card.id,
+    kind: 'weekly', publicationDate: '2031-01-05', status: 'planned', slots: { primary: {} }, cardId: card.id,
   }, 'synthetic-issue');
   await client.send(new PutCommand(createIssueWrite(issue).item.Put as any));
   const owner = { newsletterIssueId: issue.id, write: deleteIssueWrite(issue) };

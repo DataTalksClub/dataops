@@ -238,16 +238,16 @@ describe("operations calendar", () => {
       publicationDate: "2027-04-12",
       issueNumber: 402,
       status: "planned",
-      slots: { primary: { ticked: true, sponsor: "Synthetic Alpha" }, secondary: { ticked: true } },
+      slots: { primary: { sponsor: "Synthetic Alpha" }, secondary: {} },
       cardId: "calendar-one-item-card",
     }, "calendar-one-item-test");
     await client.send(new PutCommand(createIssueWrite(issue).item.Put as any));
     const response = await invoke("GET", "/api/calendar-items/overlays", undefined, {}, { from: "2027-04-12", to: "2027-04-12" });
     const items = parse(response).items.filter((i: any) => i.provider === "newsletter-issues-readonly");
     assert.equal(items.length, 1);
-    assert.equal(items[0].label, "Weekly #402 · Synthetic Alpha + open");
+    assert.equal(items[0].label, "Weekly #402 · Synthetic Alpha");
     assert.equal(items[0].isAvailableSlot, true);
-    const booked = newsletterOverlayItem({ ...issue, slots: { ...issue.slots, secondary: { ticked: true, sponsor: "Synthetic Beta" } } });
+    const booked = newsletterOverlayItem({ ...issue, slots: { ...issue.slots, secondary: { sponsor: "Synthetic Beta" } } });
     assert.equal(booked.label, "Weekly #402 · Synthetic Alpha + Synthetic Beta");
     assert.equal(booked.isAvailableSlot, false);
   });
@@ -257,7 +257,7 @@ describe("operations calendar", () => {
       publicationDate: "2027-04-05",
       issueNumber: 401,
       status: "cancelled",
-      slots: { primary: { ticked: false }, secondary: { ticked: false } },
+      slots: { primary: {}, secondary: {} },
     }, "calendar-overlay-test"));
     let response = await invoke(
       "GET",

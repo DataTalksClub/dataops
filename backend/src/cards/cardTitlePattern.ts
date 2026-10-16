@@ -76,16 +76,16 @@ export function newsletterIssueTitleValues(issue: {
   kind: string;
   publicationDate: string;
   issueNumber?: number | null;
-  slots: Partial<Record<'primary' | 'secondary', { ticked: boolean; sponsor?: string } | undefined>>;
+  slots: Partial<Record<'primary' | 'secondary', { sponsor?: string } | undefined>>;
 }): CardTitleValues {
   const booked = (['primary', 'secondary'] as const)
     .map((position) => issue.slots[position])
-    .filter((slot) => slot?.ticked && slot.sponsor)
+    .filter((slot) => slot?.sponsor)
     .map((slot) => String(slot!.sponsor));
   return {
     date: shortDate(issue.publicationDate),
     issue: issue.issueNumber == null ? '' : String(issue.issueNumber),
-    sponsor: issue.slots.primary?.ticked ? issue.slots.primary.sponsor || '' : '',
+    sponsor: issue.slots.primary?.sponsor || '',
     sponsors: booked.join(' + '),
     variant: issue.kind === 'standalone' ? 'stand-alone' : '',
   };

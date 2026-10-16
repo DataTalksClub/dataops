@@ -1,5 +1,7 @@
 import { renderIcon } from "../../core/icons.js";
 import { opensInNewTab } from "../../core/links.js";
+import { escapeHtml } from "../document-editor/inline-markdown.js";
+import { attachSlotControls, issueSlotsMarkup } from "../planning-newsletter-slots.js";
 
 // The compact summary head of the Card detail modal: stage control, date and
 // flag chips on one row, the progress bar, the next-up line, and the clamped
@@ -56,7 +58,6 @@ export function renderCardTemplateLink(
 // refetching on every stage or task mutation.
 const newsletterIssueCache = new Map();
 const newsletterIssueFreshMs = 30_000;
-const SLOT_POSITIONS = { weekly: ["primary", "secondary"], standalone: ["primary"] };
 
 function formatIssueDate(iso) {
   const parsed = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
@@ -79,32 +80,26 @@ export function renderCardNewsletterIssue(
   section.className = "workflow-detail-section card-newsletter-slot";
   section.dataset.cardNewsletterIssue = "";
 
-  async function toggle(issue, position, input) {
-    const slot = { ...(issue.slots?.[position] || {}), ticked: input.checked };
-    if (!input.checked) {
-      delete slot.sponsor;
-      delete slot.bookedByUserId;
-      delete slot.sponsorBookingId;
-    }
-    const url = workApiUrl(`/api/newsletter-issues/${encodeURIComponent(issue.id)}`);
-    const body = { version: issue.version, slots: { [position]: slot } };
-    input.disabled = true;
-    try {
-      try {
-        await request(url, { method: "PUT", body: JSON.stringify(body) });
-      } catch (error) {
-        if (error?.code !== "slot-has-completed-tasks" || !globalThis.confirm?.(error.message)) throw error;
-        await request(url, { method: "PUT", body: JSON.stringify({ ...body, confirmSlotRemoval: true }) });
-      }
+  let shownIssues = [];
+  const slotError = document.createElement("p");
+  slotError.className = "card-newsletter-slot__error";
+  slotError.setAttribute("role", "alert");
+  attachSlotControls(section, {
+    findIssue: (id) => shownIssues.find((issue) => issue.id === id),
+    request,
+    workApiUrl,
+    onChanged: async () => {
       newsletterIssueCache.delete(card.id);
       await reload?.();
-    } catch {
-      input.checked = !input.checked;
-      input.disabled = false;
-    }
-  }
+    },
+    onError: (message) => {
+      slotError.textContent = message;
+      section.append(slotError);
+    },
+  });
 
   const fill = (issues) => {
+    shownIssues = issues;
     section.replaceChildren();
     section.hidden = issues.length === 0;
     if (!issues.length) return;
@@ -132,36 +127,9 @@ export function renderCardNewsletterIssue(
         row.append(warning);
       }
       section.append(row);
-      const slots = document.createElement("ul");
-      slots.className = "newsletter-slot-ticks";
-      slots.setAttribute("aria-label", "Sponsor slots");
-      const locked = ["sent", "cancelled"].includes(issue.status);
-      for (const position of SLOT_POSITIONS[issue.kind] || []) {
-        const slot = issue.slots?.[position] || { ticked: false };
-        const name = issue.kind === "standalone" ? "Sponsor" : position === "primary" ? "Primary" : "Secondary";
-        const item = document.createElement("li");
-        item.className = `newsletter-slot-tick${slot.ticked ? " is-ticked" : ""}${slot.ticked && !slot.sponsor ? " is-tbd" : ""}`;
-        item.dataset.slotPosition = position;
-        const text = document.createElement("span");
-        const strong = document.createElement("strong");
-        strong.textContent = `${name}:`;
-        text.append(strong, ` ${slot.ticked ? slot.sponsor || "sponsor TBD" : "open"}`);
-        const labelEl = document.createElement("label");
-        if (issue.kind === "weekly") {
-          const input = document.createElement("input");
-          input.type = "checkbox";
-          input.checked = Boolean(slot.ticked);
-          input.disabled = locked;
-          input.dataset.slotToggle = position;
-          input.setAttribute("aria-label", `${name} slot in ${issue.label || "this issue"}`);
-          input.onchange = () => toggle(issue, position, input);
-          labelEl.append(input);
-        }
-        labelEl.append(text);
-        item.append(labelEl);
-        slots.append(item);
-      }
-      section.append(slots);
+      const slots = document.createElement("div");
+      slots.innerHTML = issueSlotsMarkup(issue, escapeHtml);
+      section.append(...slots.children);
     }
   };
   const cached = newsletterIssueCache.get(card.id);

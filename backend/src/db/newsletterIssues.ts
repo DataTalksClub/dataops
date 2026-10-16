@@ -2,10 +2,11 @@
  * Newsletter issues: one row per email the newsletter sends.
  *
  * A weekly issue has a date, an issue number and two sponsor slots (primary
- * and secondary); a stand-alone issue has a date and one slot. Each slot is
- * ticked when the issue carries it, and names its sponsor once booked. Every
- * issue that is not cancelled links exactly one Card (`cardId`), created from
- * the Template of its kind in the same transaction as the issue row.
+ * and secondary); a stand-alone issue has a date and one slot. A slot is
+ * booked when it names its sponsor and open otherwise; booking it through the
+ * Newsletter tab also records a deliverable on the sponsor's deal, which
+ * points back at the issue (`newsletterIssueId`). An issue links at most one
+ * Card (`cardId`), the Card that executes it.
  *
  * The rows live in the newsletter table (named `newsletter-slots` in
  * infrastructure, from before slots became part of an issue).
@@ -21,11 +22,9 @@ export type NewsletterIssueKind = 'weekly' | 'standalone';
 export type NewsletterSlotPosition = 'primary' | 'secondary';
 
 export interface NewsletterSlot {
-  /** The issue carries this slot; ticking it adds the slot's Tasks to the Card. */
-  ticked: boolean;
+  /** The booked sponsor; an open slot has none. Booking adds the slot's Tasks to the Card. */
   sponsor?: string;
   bookedByUserId?: string;
-  sponsorBookingId?: string;
   /** Row ID in the schedule sheet, e.g. `NL-297-secondary`. */
   sheetId?: string;
   /** The sponsor's placement document. */

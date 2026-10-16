@@ -32,7 +32,6 @@ import {
   type NewsletterSlot,
   type NewsletterSlotPosition,
 } from '../db/newsletterIssues';
-import { getCrmRecord } from '../db/sponsorCrm';
 import { getCard, getCardConsistent } from '../db/cards';
 import { listTasksByCardConsistent } from '../db/tasks';
 import {
@@ -42,6 +41,15 @@ import {
 } from '../db/cardDeletion';
 import { resolveInteractiveActor, type VerifiedActor } from '../identity/actor';
 import { summarizeCard, type CardSummary } from '../cards/recordCardLink';
+import {
+  createSlotDeliverable,
+  moveIssueDeliverables,
+  resolveSponsorDeal,
+  sponsorOptions,
+  withdrawDeliverable,
+  withdrawSlotDeliverables,
+  type SponsorChoice,
+} from '../newsletter/slotBooking';
 import {
   completedTasksLeavingCard,
   createIssueCard,
@@ -76,7 +84,7 @@ const UPDATABLE_FIELDS = [
 ] as const;
 const CREATE_FIELDS = new Set<string>([...UPDATABLE_FIELDS, 'kind', 'sourceType', 'sourceKey']);
 const CONFIRMATIONS = ['confirmCardDeletion', 'confirmSlotRemoval'];
-const SLOT_FIELDS = new Set(['ticked', 'sponsor', 'bookedByUserId', 'sponsorBookingId', 'sheetId', 'documentUrl']);
+const SLOT_FIELDS = new Set(['sponsor', 'bookedByUserId', 'sheetId', 'documentUrl']);
 
 type Body = Record<string, any>;
 
@@ -105,20 +113,15 @@ function slotError(position: string, slot: unknown): string {
   const value = slot as Record<string, unknown>;
   const unknown = Object.keys(value).find((name) => !SLOT_FIELDS.has(name));
   if (unknown) return `Unknown ${position} slot field: ${unknown}`;
-  if (typeof value.ticked !== 'boolean') return `${position} slot needs ticked true or false`;
   if (value.sponsor != null && (typeof value.sponsor !== 'string' || !value.sponsor.trim() || value.sponsor.length > 200)) {
     return `Invalid ${position} slot sponsor`;
   }
-  for (const name of ['bookedByUserId', 'sponsorBookingId']) {
-    if (value[name] != null && !ID.test(String(value[name]))) return `Invalid ${position} slot ${name}`;
-  }
+  if (value.bookedByUserId != null && !ID.test(String(value.bookedByUserId))) return `Invalid ${position} slot bookedByUserId`;
   if (value.sheetId != null && (typeof value.sheetId !== 'string' || !value.sheetId || value.sheetId.length > 100)) {
     return `Invalid ${position} slot sheetId`;
   }
   if (value.documentUrl != null && !httpsUrl(value.documentUrl)) return `Invalid ${position} slot documentUrl`;
-  if (!value.ticked && (value.sponsor || value.bookedByUserId || value.sponsorBookingId)) {
-    return `Tick the ${position} slot before booking a sponsor on it`;
-  }
+  if (!value.sponsor && value.bookedByUserId) return `Name the ${position} slot's sponsor before recording who booked it`;
   return '';
 }
 
@@ -154,7 +157,6 @@ function validate(issue: Body): string {
     const error = slotError(position, issue.slots[position]);
     if (error) return error;
   }
-  if (issue.kind === 'standalone' && !issue.slots.primary.ticked) return 'A stand-alone issue always has its slot';
   if (issue.publicUrl != null && !httpsUrl(issue.publicUrl)) return 'Invalid publicUrl';
   if (issue.planningNote != null && (typeof issue.planningNote !== 'string' || issue.planningNote.length > 1000)) {
     return 'Invalid planningNote';
@@ -165,11 +167,11 @@ function validate(issue: Body): string {
   return '';
 }
 
-/** Missing slots default to unticked; strings are trimmed. */
+/** Every slot of the kind is present (open when empty); strings are trimmed. */
 function normalizedSlots(kind: NewsletterIssueKind, slots: Body | undefined): NewsletterIssue['slots'] {
   const out: NewsletterIssue['slots'] = {};
   for (const position of SLOT_POSITIONS[kind] as readonly NewsletterSlotPosition[]) {
-    const slot = { ticked: kind === 'standalone', ...(slots?.[position] || {}) } as NewsletterSlot;
+    const slot = { ...(slots?.[position] || {}) } as NewsletterSlot;
     if (typeof slot.sponsor === 'string') slot.sponsor = slot.sponsor.trim();
     for (const name of Object.keys(slot) as (keyof NewsletterSlot)[]) {
       if (slot[name] === null || slot[name] === '') delete slot[name];
@@ -179,23 +181,10 @@ function normalizedSlots(kind: NewsletterIssueKind, slots: Body | undefined): Ne
   return out;
 }
 
-async function sponsorBookingError(client: DynamoDBDocumentClient, issue: Body): Promise<string> {
-  for (const slot of Object.values(issue.slots || {}) as NewsletterSlot[]) {
-    if (slot?.sponsorBookingId && !(await getCrmRecord(client, 'deliverable', String(slot.sponsorBookingId)))) {
-      return 'Sponsor booking unavailable';
-    }
-  }
-  return '';
-}
+/** The issue's main slot (primary, or a stand-alone's only one) has no sponsor yet. */
+const needsSponsor = (issue: NewsletterIssue) => !issue.slots.primary?.sponsor;
 
-/** A ticked slot nobody has booked yet. */
-const openSlots = (issue: NewsletterIssue) =>
-  (Object.entries(issue.slots) as [NewsletterSlotPosition, NewsletterSlot | undefined][])
-    .filter(([, slot]) => slot?.ticked && !slot.sponsor && !slot.bookedByUserId && !slot.sponsorBookingId)
-    .map(([position]) => position);
-
-const bookedSlots = (issue: NewsletterIssue) =>
-  Object.values(issue.slots).filter((slot) => slot?.ticked && (slot.sponsor || slot.bookedByUserId || slot.sponsorBookingId));
+const bookedSlots = (issue: NewsletterIssue) => Object.values(issue.slots).filter((slot) => slot?.sponsor);
 
 function alerts(items: NewsletterIssue[], today: string) {
   const boundedDays = (name: string, fallback: number) => {
@@ -209,7 +198,7 @@ function alerts(items: NewsletterIssue[], today: string) {
     const days = Math.floor(
       (Date.parse(`${item.publicationDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86400000,
     );
-    if (days >= 0 && days <= openLeadDays && item.status !== 'sent' && openSlots(item).length) {
+    if (days >= 0 && days <= openLeadDays && item.status !== 'sent' && needsSponsor(item)) {
       out.push({
         reasonCode: 'near-term-open-slot',
         severity: 'warning',
@@ -256,8 +245,8 @@ function cardAlerts(items: NewsletterIssue[], cards: Map<string, Card | null>) {
       card.anchorDate !== item.publicationDate
       || (item.issueNumber != null && card.issueNumber != null && String(card.issueNumber) !== String(item.issueNumber))
     ) add(item, 'card-date-mismatch', 'warning');
-    const expected = issueTaskGroups(item).sort();
-    if (item.kind === 'weekly' && JSON.stringify([...(card.selectedOptionalGroups || [])].sort()) !== JSON.stringify(expected)) {
+    const cardGroups = new Set(card.selectedOptionalGroups || []);
+    if (item.kind === 'weekly' && issueTaskGroups(item).some((group) => !cardGroups.has(group))) {
       add(item, 'card-slot-tasks-mismatch', 'warning');
     }
     if (item.status === 'sent') {
@@ -339,9 +328,9 @@ async function listRoute(event: LambdaEvent, client: DynamoDBDocumentClient) {
   let items = await listNewsletterIssues(client, from, to);
   if (query.status) items = items.filter((item) => item.status === query.status);
   if (query.kind) items = items.filter((item) => item.kind === query.kind);
-  // Booked: at least one sponsor booked. Unbooked: a ticked slot still needs one.
+  // Booked: at least one sponsor booked. Unbooked: the main slot still needs one.
   if (query.booked === 'true') items = items.filter((item) => bookedSlots(item).length > 0);
-  if (query.booked === 'false') items = items.filter((item) => openSlots(item).length > 0);
+  if (query.booked === 'false') items = items.filter(needsSponsor);
   const cards = await linkedCards(client, items);
   const current = [
     ...alerts(items, query.today || new Date().toISOString().slice(0, 10)),
@@ -408,8 +397,6 @@ async function createRoute(body: Body, event: LambdaEvent, client: DynamoDBDocum
   };
   const error = validate(candidate);
   if (error) return json(400, { error });
-  const bookingError = await sponsorBookingError(client, candidate);
-  if (bookingError) return json(422, { error: bookingError });
   const sourceKey = typeof body.sourceKey === 'string' && body.sourceKey ? body.sourceKey : '';
   const id = sourceKey ? newsletterIssueId(sourceKey) : randomUUID();
   if (sourceKey) {
@@ -471,8 +458,6 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
   const merged = { ...existing, ...changes };
   const error = validate(merged);
   if (error) return json(400, { error });
-  const bookingError = await sponsorBookingError(client, merged);
-  if (bookingError) return json(422, { error: bookingError });
   const resolved = await resolveInteractiveActor(client, event, 'work-write');
   if (!resolved.ok) return resolved.response;
   const actor = resolved.actor;
@@ -522,9 +507,12 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
   }
   let cardSync = 'unchanged';
   try {
-    const slotTasks = await syncIssueSlotTasks(client, next, actor.id || 'system');
+    const slotTasks = await syncIssueSlotTasks(client, existing, next, actor.id || 'system');
     await pushIssueToCard(client, next);
-    if (next.publicationDate !== existing.publicationDate) await rescheduleOpenIssueTasks(client, next);
+    if (next.publicationDate !== existing.publicationDate) {
+      await rescheduleOpenIssueTasks(client, next);
+      await moveIssueDeliverables(client, next, actor.id || 'system');
+    }
     cardSync = slotTasks === 'synced' ? 'synced' : 'pushed';
   } catch (failure) {
     console.error('Newsletter issue card sync failed:', failure);
@@ -564,6 +552,120 @@ async function deleteRoute(id: string, body: Body, event: LambdaEvent, client: D
   return { statusCode: 204, headers: {}, body: '' };
 }
 
+/** The issue as the routes return it: label and Card summary attached. */
+async function issueView(client: DynamoDBDocumentClient, issue: NewsletterIssue, extra: Body = {}) {
+  const card = issue.cardId ? await getCard(client, issue.cardId) : null;
+  return { ...issue, label: issueLabel(issue), card: card ? await summarizeCard(client, card) : null, ...extra };
+}
+
+/**
+ * Apply a slot change made by booking, changing or releasing a sponsor:
+ * refuse when releasing would leave completed slot Tasks unless confirmed,
+ * write the issue, then bring the Card's slot Tasks and title along.
+ */
+async function writeSlotChange(
+  client: DynamoDBDocumentClient,
+  existing: NewsletterIssue,
+  slots: NewsletterIssue['slots'],
+  actorId: string,
+  confirmed: boolean,
+): Promise<{ ok: true; issue: NewsletterIssue; cardSync: string } | { ok: false; response: LambdaResponse }> {
+  const draft = nextNewsletterIssue(existing, { slots });
+  const leaving = await completedTasksLeavingCard(client, existing, draft);
+  if (leaving.length && !confirmed) {
+    return {
+      ok: false,
+      response: json(409, {
+        error: `Releasing the slot keeps ${leaving.length} completed Task${leaving.length === 1 ? '' : 's'} and skips its open ones; confirm to continue`,
+        code: 'slot-has-completed-tasks',
+        completedTasks: leaving.map((task) => ({ id: task.id, description: task.description })),
+      }),
+    };
+  }
+  let issue: NewsletterIssue;
+  try {
+    issue = await updateNewsletterIssue(client, existing, { slots });
+  } catch {
+    return { ok: false, response: json(409, { error: 'Issue changed; reload and retry' }) };
+  }
+  let cardSync = 'unchanged';
+  try {
+    const synced = await syncIssueSlotTasks(client, existing, issue, actorId);
+    await pushIssueToCard(client, issue);
+    cardSync = synced === 'synced' ? 'synced' : issue.cardId ? 'pushed' : 'unchanged';
+  } catch (failure) {
+    console.error('Newsletter issue card sync failed:', failure);
+    cardSync = 'failed';
+  }
+  return { ok: true, issue, cardSync };
+}
+
+/**
+ * PUT books the slot for a sponsor from the Sponsors tab (`dealId`, or
+ * `organizationId` to open a new deal) and withdraws the slot's previous
+ * booking, so changing the sponsor is one step. DELETE releases the slot.
+ */
+async function slotRoute(
+  id: string,
+  position: string,
+  method: string,
+  body: Body,
+  event: LambdaEvent,
+  client: DynamoDBDocumentClient,
+) {
+  const existing = await getNewsletterIssue(client, id);
+  if (!existing) return json(404, { error: 'Not found' });
+  if (!(SLOT_POSITIONS[existing.kind] as readonly string[]).includes(position)) {
+    return json(400, { error: `A ${existing.kind} issue has no ${position} slot` });
+  }
+  if (body.version !== existing.version) return json(409, { error: 'Issue changed; reload and retry' });
+  if (['sent', 'cancelled'].includes(existing.status)) {
+    return json(409, { error: `A ${existing.status} issue's slots cannot change` });
+  }
+  const resolved = await resolveInteractiveActor(client, event, 'work-write');
+  if (!resolved.ok) return resolved.response;
+  const actorId = resolved.actor.id || 'system';
+  const slotPosition = position as NewsletterSlotPosition;
+  const current = existing.slots[slotPosition] || {};
+
+  if (method === 'DELETE') {
+    const slots = { ...existing.slots, [slotPosition]: current.sheetId ? { sheetId: current.sheetId } : {} };
+    const written = await writeSlotChange(client, existing, slots, actorId, body.confirmSlotRemoval === true);
+    if (!written.ok) return written.response;
+    const withdrawn = await withdrawSlotDeliverables(client, written.issue, slotPosition, actorId);
+    return json(200, await issueView(client, written.issue, { cardSync: written.cardSync, withdrawnDeliverables: withdrawn }));
+  }
+
+  const choice: SponsorChoice | null = typeof body.dealId === 'string' && ID.test(body.dealId)
+    ? { dealId: body.dealId }
+    : typeof body.organizationId === 'string' && ID.test(body.organizationId)
+      ? { organizationId: body.organizationId }
+      : null;
+  if (!choice) return json(400, { error: 'Choose a sponsor: dealId or organizationId' });
+  const sponsor = await resolveSponsorDeal(client, choice, actorId, `${issueLabel(existing)} ${position} slot`);
+  if ('error' in sponsor) return json(422, { error: sponsor.error });
+  const deliverable = await createSlotDeliverable(client, existing, slotPosition, sponsor.deal, actorId);
+  const slot = {
+    ...(current.sheetId ? { sheetId: current.sheetId } : {}),
+    // The placement document belongs to the sponsor it was made for.
+    ...(current.documentUrl && current.sponsor === sponsor.name ? { documentUrl: current.documentUrl } : {}),
+    sponsor: sponsor.name,
+    bookedByUserId: actorId,
+  };
+  const written = await writeSlotChange(client, existing, { ...existing.slots, [slotPosition]: slot }, actorId, true);
+  if (!written.ok) {
+    await withdrawDeliverable(client, deliverable, actorId);
+    return written.response;
+  }
+  const withdrawn = await withdrawSlotDeliverables(client, written.issue, slotPosition, actorId, deliverable.id);
+  return json(200, await issueView(client, written.issue, {
+    cardSync: written.cardSync,
+    deliverableId: deliverable.id,
+    dealId: sponsor.deal.id,
+    withdrawnDeliverables: withdrawn,
+  }));
+}
+
 export async function handleNewsletterIssueRoutes(
   path: string,
   method: string,
@@ -579,6 +681,17 @@ export async function handleNewsletterIssueRoutes(
     } catch {
       return json(404, { error: 'Alert not found' });
     }
+  }
+  if (path === '/api/newsletter-issues/sponsor-options') {
+    if (method !== 'GET') return json(405, { error: 'Method not allowed' });
+    return json(200, { items: await sponsorOptions(client) });
+  }
+  const slot = path.match(/^\/api\/newsletter-issues\/([^/]+)\/slots\/([^/]+)$/);
+  if (slot) {
+    if (method !== 'PUT' && method !== 'DELETE') return json(405, { error: 'Method not allowed' });
+    const body = parse(event);
+    if (!body) return json(400, { error: 'Invalid JSON' });
+    return slotRoute(slot[1], slot[2], method, body, event, client);
   }
   const match = path.match(/^\/api\/newsletter-issues(?:\/([^/]+))?$/);
   if (!match) return json(404, { error: 'Not found' });

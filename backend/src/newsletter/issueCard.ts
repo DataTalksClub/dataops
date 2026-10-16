@@ -4,10 +4,12 @@
  * Every issue that is not cancelled has exactly one Card, created from the
  * Template of its kind (weekly -> `newsletter`, stand-alone ->
  * `newsletter-standalone`) in the same transaction as the issue row. A weekly
- * issue's ticked slots select the Template's optional task groups
- * (`primary-slot`, `secondary-slot`): ticking a slot adds its sponsor Tasks to
- * the Card, unticking skips its open ones. The issue owns the shared facts
- * (date, issue number, sponsors, title) and pushes them onto the Card.
+ * Card starts with the slot task groups (`primary-slot`, `secondary-slot`) of
+ * the slots that have a booked sponsor and no others. Booking a slot later
+ * adds its group's Tasks; releasing it skips the group's open ones. A group
+ * enabled on the Card itself stays until its slot is released. The issue owns
+ * the shared facts (date, issue number, sponsors, title) and pushes them onto
+ * the Card.
  */
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
@@ -32,15 +34,32 @@ export const SLOT_GROUP: Record<NewsletterSlotPosition, string> = {
   secondary: 'secondary-slot',
 };
 
-/** The Template optional groups a weekly issue's ticked slots select. */
+/** The slot task groups of a weekly issue's booked slots. */
 export function issueTaskGroups(issue: Pick<NewsletterIssue, 'kind' | 'slots'>): string[] {
   if (issue.kind !== 'weekly') return [];
-  return SLOT_POSITIONS.weekly.filter((position) => issue.slots[position]?.ticked).map((position) => SLOT_GROUP[position]);
+  return SLOT_POSITIONS.weekly.filter((position) => issue.slots[position]?.sponsor).map((position) => SLOT_GROUP[position]);
+}
+
+/**
+ * The Card's slot groups after the issue changed from `previous` to `next`:
+ * a newly booked slot adds its group, a released slot removes it, and every
+ * other group the Card holds stays as it is.
+ */
+export function cardGroupsAfterIssueChange(
+  cardGroups: readonly string[],
+  previous: Pick<NewsletterIssue, 'kind' | 'slots'>,
+  next: Pick<NewsletterIssue, 'kind' | 'slots'>,
+): string[] {
+  const before = new Set(issueTaskGroups(previous));
+  const after = new Set(issueTaskGroups(next));
+  const groups = new Set(cardGroups);
+  for (const group of before) if (!after.has(group)) groups.delete(group);
+  for (const group of after) if (!before.has(group)) groups.add(group);
+  return [...groups].sort();
 }
 
 export function issueSponsor(issue: Pick<NewsletterIssue, 'slots'>, position: NewsletterSlotPosition): string | null {
-  const slot = issue.slots[position];
-  return slot?.ticked && slot.sponsor ? slot.sponsor : null;
+  return issue.slots[position]?.sponsor || null;
 }
 
 /** The facts an issue pushes onto its Card. */
@@ -112,7 +131,7 @@ export async function pushIssueToCard(client: DynamoDBDocumentClient, issue: New
   return pushFieldsToCard(client, issue.cardId, issueCardFields(issue), newsletterIssueTitleValues(issue));
 }
 
-/** Done Tasks of the slot groups `issue` stops selecting. */
+/** Done Tasks of the slot groups whose slots `next` releases. */
 export async function completedTasksLeavingCard(
   client: DynamoDBDocumentClient,
   previous: NewsletterIssue,
@@ -132,23 +151,24 @@ export async function completedTasksLeavingCard(
 }
 
 /**
- * Bring the Card's Tasks in line with the issue's ticked slots: a newly ticked
- * slot's Tasks are added; an unticked slot's open Tasks are skipped with
- * history (done ones stay). Uses the Card's Template update, so it applies the
- * Template's current definition at the same time.
+ * Bring the Card's slot Tasks in line with the bookings that changed from
+ * `previous` to `issue`: a newly booked slot's Tasks are added; a released
+ * slot's open Tasks are skipped with history (done ones stay). Uses the
+ * Card's Template update, so it applies the Template's current definition at
+ * the same time.
  */
 export async function syncIssueSlotTasks(
   client: DynamoDBDocumentClient,
+  previous: NewsletterIssue,
   issue: NewsletterIssue,
   actorId: string,
 ): Promise<'unchanged' | 'synced'> {
   if (!issue.cardId || issue.kind !== 'weekly') return 'unchanged';
   const card = await getCardConsistent(client, issue.cardId);
   if (!card?.templateId) throw new Error(`Newsletter issue ${issue.id} Card is missing or has no Template`);
-  const groups = issueTaskGroups(issue);
-  if (JSON.stringify([...(card.selectedOptionalGroups || [])].sort()) === JSON.stringify([...groups].sort())) {
-    return 'unchanged';
-  }
+  const current = [...(card.selectedOptionalGroups || [])].sort();
+  const groups = cardGroupsAfterIssueChange(current, previous, issue);
+  if (JSON.stringify(current) === JSON.stringify(groups)) return 'unchanged';
   const template = await getTemplate(client, card.templateId);
   if (!template) throw new Error(`Template ${card.templateId} is not available`);
   const tasks = await listTasksByCardConsistent(client, card.id);

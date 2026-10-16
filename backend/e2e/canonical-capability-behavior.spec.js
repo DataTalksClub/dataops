@@ -924,7 +924,7 @@ test.describe('canonical frontend capability behavior', () => {
     expect(templateFixture.status()).toBe(201);
     const slotResponse = await context.request.post('/api/newsletter-issues', { data: {
       kind: 'standalone', publicationDate: '2026-09-03', status: 'planned', planningNote: 'Public-safe plan',
-      slots: { primary: { ticked: true, sponsor } },
+      slots: { primary: { sponsor } },
     } });
     expect(slotResponse.status()).toBe(201);
     const slot = await json(slotResponse);
@@ -966,7 +966,7 @@ test.describe('canonical frontend capability behavior', () => {
     await editableSlot.getByRole('button', { name: 'Stand-alone newsletter', exact: true }).click();
     const serverSlot = await json(await context.request.get(`/api/newsletter-issues/${slot.id}`));
     const concurrentSlot = await context.request.put(`/api/newsletter-issues/${slot.id}`, { data: {
-      version: serverSlot.version, slots: { primary: { ticked: true, sponsor: `Server sponsor ${id}` } },
+      version: serverSlot.version, slots: { primary: { sponsor: `Server sponsor ${id}` } },
     } });
     expect(concurrentSlot.status()).toBe(200);
     await page.getByRole('button', { name: 'Save issue' }).click();

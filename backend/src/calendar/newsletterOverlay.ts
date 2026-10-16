@@ -5,25 +5,26 @@ import type { CalendarOverlayItem, CalendarOverlayProvider } from './overlays';
 
 export const NEWSLETTER_OVERLAY = 'newsletter-issues-readonly';
 
-/** Slot state as the calendar shows it: who booked each ticked slot, or open. */
+/** Slot state as the calendar shows it: who booked each slot, or open. */
 function slotSummary(issue: NewsletterIssue) {
   const slots = (SLOT_POSITIONS[issue.kind] as readonly ('primary' | 'secondary')[]).map((position) => ({
     position,
-    ticked: Boolean(issue.slots[position]?.ticked),
     sponsor: issue.slots[position]?.sponsor || null,
   }));
-  const ticked = slots.filter((slot) => slot.ticked);
-  return { slots, ticked: ticked.length, booked: ticked.filter((slot) => slot.sponsor).length };
+  return { slots, booked: slots.filter((slot) => slot.sponsor).length };
 }
 
 /**
  * One calendar item per newsletter issue, labelled with its sponsors, e.g.
- * `Weekly #297 · VectorAI DB + Astronomer` or `Weekly #302 · open`. An issue
- * with a ticked slot nobody has booked is offered as available.
+ * `Weekly #297 · VectorAI DB + Astronomer` or `Weekly #302 · open`: the
+ * primary slot (unless the week is cancelled), the secondary once booked. An issue with a slot
+ * nobody has booked is offered as available.
  */
 export function newsletterOverlayItem(issue: NewsletterIssue): CalendarOverlayItem {
   const summary = slotSummary(issue);
-  const names = summary.slots.filter((slot) => slot.ticked).map((slot) => slot.sponsor || 'open');
+  const names = summary.slots
+    .filter((slot) => slot.sponsor || (slot.position === 'primary' && issue.status !== 'cancelled'))
+    .map((slot) => slot.sponsor || 'open');
   return {
     provider: NEWSLETTER_OVERLAY,
     id: issue.id,
@@ -32,7 +33,7 @@ export function newsletterOverlayItem(issue: NewsletterIssue): CalendarOverlayIt
     label: [issueLabel(issue), names.join(' + ')].filter(Boolean).join(' · '),
     status: issue.status,
     href: `/newsletter?issueId=${encodeURIComponent(issue.id)}`,
-    isAvailableSlot: !['sent', 'cancelled'].includes(issue.status) && summary.booked < summary.ticked,
+    isAvailableSlot: !['sent', 'cancelled'].includes(issue.status) && summary.booked < summary.slots.length,
     newsletter: { kind: issue.kind, issueNumber: issue.issueNumber ?? null, ...summary },
   };
 }

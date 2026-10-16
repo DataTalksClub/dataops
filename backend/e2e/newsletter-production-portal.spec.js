@@ -28,7 +28,7 @@ test.describe("production newsletter planner", () => {
   test.afterAll(async () => {
     await stopOwnedTestServer(server);
   });
-  test("shows loading, slot ticks, alerts, editing, error and mobile states", async ({
+  test("shows loading, slot bookings, alerts, editing, error and mobile states", async ({
     browser,
   }) => {
     test.setTimeout(90_000);
@@ -47,7 +47,7 @@ test.describe("production newsletter planner", () => {
           issueNumber: 99,
           publicationDate: "2026-12-31",
           status: "planned",
-          slots: { primary: { ticked: true, sponsor: "Synthetic Booker" }, secondary: { ticked: false } },
+          slots: { primary: { sponsor: "Synthetic Booker" }, secondary: {} },
           version: 1,
           cardId: "card-linked",
           card: summary("card-linked", "31 Dec · #99 · Synthetic Booker", "2026-12-30", 4),
@@ -59,7 +59,7 @@ test.describe("production newsletter planner", () => {
           issueNumber: 100,
           publicationDate: "2027-01-01",
           status: "planned",
-          slots: { primary: { ticked: true }, secondary: { ticked: false } },
+          slots: { primary: {}, secondary: {} },
           version: 1,
           cardId: "card-2",
           card: summary("card-2", "1 Jan · #100", "2027-01-01"),
@@ -79,6 +79,17 @@ test.describe("production newsletter planner", () => {
         items.push(created);
         return route.fulfill({ status: 201, json: created });
       }
+      const slotPath = new URL(request.url()).pathname.match(/\/api\/newsletter-issues\/([^/]+)\/slots\/([a-z]+)$/);
+      if (slotPath && method === "PUT") {
+        const item = items.find((entry) => entry.id === slotPath[1]);
+        item.slots = { ...item.slots, [slotPath[2]]: { sponsor: "Synthetic Partner" } };
+        item.version += 1;
+        item.card = { ...item.card, taskCount: 14, openTaskCount: 12 };
+        return route.fulfill({ json: item });
+      }
+      if (new URL(request.url()).pathname.endsWith("/sponsor-options")) {
+        return route.fulfill({ json: { items: [{ dealId: "deal-1", organizationId: "org-1", name: "Synthetic Partner", dealTitle: "Q1 package", dealStatus: "agreed" }] } });
+      }
       if (method === "PUT") {
         if (conflict)
           return route.fulfill({
@@ -90,7 +101,6 @@ test.describe("production newsletter planner", () => {
           item = items.find((entry) => entry.id === id);
         const slots = { ...item.slots, ...(value.slots || {}) };
         Object.assign(item, value, { slots, version: item.version + 1 });
-        if (value.slots?.secondary?.ticked) item.card = { ...item.card, taskCount: 14, openTaskCount: 12 };
         if (value.status === "cancelled") Object.assign(item, { cardId: undefined, card: null });
         return route.fulfill({ json: item });
       }
@@ -119,8 +129,8 @@ test.describe("production newsletter planner", () => {
     await expect(page.getByRole("heading", { name: "Weekly #99" })).toBeVisible();
     await expect(page.getByText("A slot needs a sponsor soon")).toBeVisible();
     const linkedRow = page.locator('article[data-issue-id="issue-1"]');
-    await expect(linkedRow.locator(".newsletter-slot-ticks")).toContainText("Primary: Synthetic Booker");
-    await expect(linkedRow.locator(".newsletter-slot-ticks")).toContainText("Secondary: open");
+    await expect(linkedRow.locator(".newsletter-slots")).toContainText("Primary: Synthetic Booker");
+    await expect(linkedRow.locator(".newsletter-slots")).toContainText("Secondary: + sponsor");
     await expect(linkedRow.locator(".newsletter-card-chip")).not.toContainText("31 Dec · #99");
     await expect(linkedRow.locator(".newsletter-card-chip")).toContainText("Preparation");
     await expect(linkedRow.locator(".newsletter-card-chip")).toHaveAttribute("title", /^Open card: 31 Dec · #99/);
@@ -128,11 +138,13 @@ test.describe("production newsletter planner", () => {
     await expect(linkedRow.locator(".newsletter-card-chip")).toHaveAttribute("href", "/cards?cardId=card-linked");
     await expect(linkedRow.locator("[data-card-date-mismatch]")).toHaveText("Card dated 30 Dec");
     const openRow = page.locator('article[data-issue-id="issue-2"]');
-    await expect(openRow.locator(".newsletter-slot-ticks")).toContainText("Primary: sponsor TBD");
-    await expect(page.getByRole("button", { name: /Create card|Link card/ })).toHaveCount(0);
-    await openRow.getByRole("checkbox", { name: /Secondary slot in Weekly #100/ }).check();
+    await expect(openRow.locator(".newsletter-slots")).toContainText("Primary: + sponsor");
+    await expect(page.getByRole("button", { name: /Link card/ })).toHaveCount(0);
+    await openRow.getByRole("button", { name: "Book a sponsor for the secondary slot of Weekly #100" }).click();
+    await openRow.getByRole("combobox").fill("Partner");
+    await openRow.getByRole("option", { name: /Synthetic Partner/ }).click();
     await expect(openRow.locator(".newsletter-card-chip")).toContainText("12/14");
-    await expect(openRow.getByRole("checkbox", { name: /Secondary slot in Weekly #100/ })).toBeChecked();
+    await expect(openRow.getByRole("button", { name: /Change the secondary sponsor of Weekly #100/ })).toContainText("Synthetic Partner");
     await page
       .locator(".newsletter-surface")
       .screenshot({ path: ".tmp/newsletter-production-populated-alert.png" });
@@ -165,10 +177,11 @@ test.describe("production newsletter planner", () => {
     await page.getByRole("button", { name: "Add issue" }).click();
     await page.getByLabel("Publication date").fill("2027-01-08");
     await page.getByLabel("Issue number").fill("101");
-    await page.locator("dialog [name=primarySponsor]").fill("Synthetic Created Sponsor");
+    await expect(page.locator("dialog [name=primarySponsor]")).toHaveCount(0);
+    await page.locator("dialog [name=primaryDocumentUrl]").fill("https://docs.example.com/created");
     await page.getByRole("button", { name: "Save issue" }).click();
     await expect(page.getByRole("heading", { name: "Weekly #101" })).toBeVisible();
-    await expect(page.locator('article[data-issue-id="issue-created"]')).toContainText("Primary: Synthetic Created Sponsor");
+    await expect(page.locator('article[data-issue-id="issue-created"]')).toContainText("Primary: + sponsor");
     await page.locator("[data-slots] button[data-edit]").first().click();
     await expect(
       page.getByRole("heading", { name: "Weekly #99" }).last(),

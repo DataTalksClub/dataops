@@ -7,26 +7,29 @@ export const summary = "Plan newsletter issues, their sponsor slots, and their C
 export const help = `dataops newsletter - newsletter issues (the web Planning > Newsletter view)
 
 An issue is one email. A weekly issue has an issue number and two sponsor
-slots, primary and secondary; a stand-alone issue has one slot. A ticked slot
-is part of the issue (its sponsor may still be TBD); ticking a slot adds its
-sponsor Tasks to the issue's Card, unticking skips the slot's open Tasks.
-Every issue that is not cancelled has exactly one Card, created with it from
-the Template of its kind. The Card cannot be linked or unlinked; cancelling or
-deleting the issue deletes its Card.
+slots, primary and secondary; a stand-alone issue has one. A slot is booked
+when it names a sponsor and open otherwise. Booking a slot for a sponsor from
+the Sponsors tab records a deliverable on their deal for the issue; booking
+adds the slot's sponsor Tasks to the issue's Card, releasing it skips the
+slot's open Tasks (done ones stay). Every issue that is not cancelled has one
+Card; cancelling or deleting the issue deletes it.
 
 Usage
   dataops newsletter list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--status S] [--kind K]
-      [--booked true|false]       true: a sponsor is booked; false: a ticked slot has none
+      [--booked true|false]       true: a sponsor is booked; false: the primary slot has none
   dataops newsletter list --card <card-id>     The issue a Card belongs to
   dataops newsletter show <issue-id>
   dataops newsletter create --date YYYY-MM-DD [--kind weekly|standalone] [--number N]
-      [--primary-sponsor NAME] [--secondary on|off] [--secondary-sponsor NAME]
       [--time HH:MM] [--status S] [--note N] [--url URL]
-                                  weekly by default, primary slot ticked, status planned
+                                  weekly by default, slots open, status planned
   dataops newsletter update <issue-id> [--date D] [--number N] [--time HH:MM] [--status S]
-      [--primary on|off] [--primary-sponsor NAME|none] [--primary-doc URL|none]
-      [--secondary on|off] [--secondary-sponsor NAME|none] [--secondary-doc URL|none]
-      [--note N] [--url URL] [--confirm]
+      [--primary-doc URL|none] [--secondary-doc URL|none] [--note N] [--url URL] [--confirm]
+  dataops newsletter sponsors                  Who a slot can be booked for (deals, organizations)
+  dataops newsletter book <issue-id> <primary|secondary> (--deal <deal-id> | --organization <org-id>)
+                                  Books the slot (replacing a previous sponsor); an
+                                  organization without a live deal gets a new open deal
+  dataops newsletter release <issue-id> <primary|secondary> [--confirm]
+                                  Frees the slot; its deliverable is marked withdrawn
   dataops newsletter delete <issue-id> [--confirm]   Deletes the issue and its Card
   dataops newsletter dismiss-alert <alert-id>
   dataops newsletter card-lead-days [<days>]    Show, or set (admin), how many days before
@@ -34,9 +37,9 @@ Usage
 
 Statuses: planned, drafting, review, scheduled, sent, cancelled. Cancelling
 deletes the Card; reinstating a cancelled issue creates a new one. --confirm
-is needed when that deletes completed Tasks, or when unticking a slot whose
-Tasks are partly done (done Tasks stay). Naming a sponsor ticks its slot.
-Writes send the issue's current version.
+is needed when that deletes completed Tasks, or when releasing a slot whose
+Tasks are partly done. A stand-alone issue's slot is "primary". Writes send
+the issue's current version.
 
 Examples
   dataops newsletter list --from 2026-11-01 --to 2026-11-30 --booked false
@@ -45,37 +48,15 @@ Examples
 
 const POSITIONS = ["primary", "secondary"];
 
-function switchValue(args, name) {
-  const value = optionalString(args, name);
-  if (value === undefined) return undefined;
-  if (!["on", "off"].includes(value)) throw new UsageError(`--${name} must be on or off.`);
-  return value === "on";
-}
-
-/** Slot changes from flags, applied over `current` slots. */
+/** Placement-document changes from flags, applied over `current` slots. */
 function slotChanges(args, current = {}) {
   const slots = {};
   for (const position of POSITIONS) {
-    const ticked = switchValue(args, position);
-    const sponsor = optionalString(args, `${position}Sponsor`);
     const documentUrl = optionalString(args, `${position}Doc`);
-    if (ticked === undefined && sponsor === undefined && documentUrl === undefined) continue;
-    const slot = { ...(current[position] || { ticked: false }) };
-    if (sponsor !== undefined) {
-      if (sponsor === "none") delete slot.sponsor;
-      else {
-        slot.sponsor = sponsor;
-        slot.ticked = true;
-      }
-    }
-    if (documentUrl !== undefined) {
-      if (documentUrl === "none") delete slot.documentUrl;
-      else slot.documentUrl = documentUrl;
-    }
-    if (ticked !== undefined) {
-      slot.ticked = ticked;
-      if (!ticked) for (const name of ["sponsor", "bookedByUserId", "sponsorBookingId"]) delete slot[name];
-    }
+    if (documentUrl === undefined) continue;
+    const slot = { ...(current[position] || {}) };
+    if (documentUrl === "none") delete slot.documentUrl;
+    else slot.documentUrl = documentUrl;
     slots[position] = slot;
   }
   return slots;
@@ -95,11 +76,7 @@ function issueFields(args) {
 
 const slotText = (issue) =>
   POSITIONS.filter((position) => issue.slots?.[position])
-    .map((position) => {
-      const slot = issue.slots[position];
-      if (!slot.ticked) return `${position}: -`;
-      return `${position}: ${slot.sponsor || "TBD"}`;
-    })
+    .map((position) => `${position}: ${issue.slots[position].sponsor || "open"}`)
     .join(", ");
 
 export async function list(args, io) {
@@ -146,12 +123,7 @@ export async function create(args, io) {
   if (!["weekly", "standalone"].includes(kind)) throw new UsageError("--kind must be weekly or standalone.");
   body.kind = kind;
   body.status = body.status || "planned";
-  body.slots = slotChanges(args, kind === "weekly"
-    ? { primary: { ticked: true }, secondary: { ticked: false } }
-    : { primary: { ticked: true } });
-  for (const position of kind === "weekly" ? POSITIONS : ["primary"]) {
-    body.slots[position] ||= { ticked: position === "primary" };
-  }
+  body.slots = Object.fromEntries((kind === "weekly" ? POSITIONS : ["primary"]).map((position) => [position, {}]));
   const issue = await apiFor(args).post("/api/newsletter-issues", body);
   if (args.json) return issue;
   io.print(`Created ${issue.label} on ${issue.publicationDate} [${issue.status}]${issue.cardId ? `, Card ${issue.cardId}` : ""}.`);
@@ -170,6 +142,52 @@ export async function update(args, io) {
   const issue = await api.put(`/api/newsletter-issues/${enc(id)}`, { ...body, version: current.version });
   if (args.json) return issue;
   io.print(`Updated ${issue.label} on ${issue.publicationDate} [${issue.status}]${issue.cardId ? `, Card ${issue.cardId}` : ", no Card"}.`);
+  return issue;
+}
+
+export async function sponsors(args, io) {
+  const result = await apiFor(args).get("/api/newsletter-issues/sponsor-options");
+  if (args.json) return result;
+  table(io, result.items || [], [
+    ["SPONSOR", (item) => item.name],
+    ["DEAL", (item) => item.dealId ? `${item.dealId} ${item.dealTitle || ""} [${item.dealStatus}]`.trim() : "-"],
+    ["ORGANIZATION", (item) => item.organizationId],
+  ], "No sponsors in the Sponsors tab yet.");
+  return result;
+}
+
+function slotArgs(args, usage) {
+  const id = positional(args, 0, usage);
+  const position = positional(args, 1, usage);
+  if (!POSITIONS.includes(position)) throw new UsageError("The slot is primary or secondary.");
+  return { id, position };
+}
+
+export async function book(args, io) {
+  const usage = "dataops newsletter book <issue-id> <primary|secondary> (--deal <id> | --organization <id>)";
+  const { id, position } = slotArgs(args, usage);
+  const deal = optionalString(args, "deal");
+  const organization = optionalString(args, "organization");
+  if (Boolean(deal) === Boolean(organization)) throw new UsageError(`Name one of --deal or --organization. ${usage}`);
+  const api = apiFor(args);
+  const current = await api.get(`/api/newsletter-issues/${enc(id)}`);
+  const issue = await api.put(`/api/newsletter-issues/${enc(id)}/slots/${position}`, {
+    version: current.version,
+    ...(deal ? { dealId: deal } : { organizationId: organization }),
+  });
+  if (!args.json) io.print(`Booked ${issue.slots[position].sponsor} on the ${position} slot of ${issue.label} (deliverable ${issue.deliverableId}).`);
+  return issue;
+}
+
+export async function release(args, io) {
+  const { id, position } = slotArgs(args, "dataops newsletter release <issue-id> <primary|secondary> [--confirm]");
+  const api = apiFor(args);
+  const current = await api.get(`/api/newsletter-issues/${enc(id)}`);
+  const issue = await api.delete(`/api/newsletter-issues/${enc(id)}/slots/${position}`, {
+    version: current.version,
+    ...(args.confirm ? { confirmSlotRemoval: true } : {}),
+  });
+  if (!args.json) io.print(`Released the ${position} slot of ${issue.label}; ${issue.withdrawnDeliverables.length} deliverable(s) marked withdrawn.`);
   return issue;
 }
 
@@ -217,6 +235,9 @@ export const commands = {
   create,
   update,
   delete: remove,
+  sponsors,
+  book,
+  release,
   "dismiss-alert": dismissAlert,
   "card-lead-days": cardLeadDays,
 };

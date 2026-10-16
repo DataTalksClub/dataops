@@ -111,8 +111,8 @@ async function seedOperationsData(baseURL) {
     }
   }
 
-  // A weekly issue is created with its Card from the newsletter Template; its
-  // ticked primary slot selects the Template's primary-slot group.
+  // Weekly issues with open slots; a booked slot would select the Template's
+  // primary-slot group.
   try {
     const listed = await fetch(`${baseURL}/api/templates`).then((response) => response.json());
     if (!(listed.templates || []).some((template) => template.type === 'newsletter')) {
@@ -139,7 +139,7 @@ async function seedOperationsData(baseURL) {
         publicationDate: nextFriday(weeksAhead),
         issueNumber: 213 + index,
         status: 'drafting',
-        slots: { primary: { ticked: true }, secondary: { ticked: false } },
+        slots: { primary: {}, secondary: {} },
       });
       if (response.ok || response.status === 200) result.issues += 1;
       else result.failures.push(`newsletter issue +${weeksAhead}w: HTTP ${response.status}`);

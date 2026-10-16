@@ -961,9 +961,10 @@ details.newsletter-filters .planner-filter-fields {
     display: none;
   }
 }
-/* Newsletter issue slots: one compact tick per sponsor slot. Ticked means the
-   issue carries the slot; the sponsor may still be TBD; unticked is open. */
-.newsletter-slot-ticks {
+/* Newsletter issue slots: one compact control per sponsor slot. An open slot
+   is a "+ sponsor" button that opens a sponsor picker in place; a booked slot
+   names its sponsor (click to change) with a small remove button. */
+.newsletter-slots {
   display: flex;
   flex-wrap: wrap;
   gap: var(--dk-space-1) var(--dk-space-3);
@@ -971,18 +972,74 @@ details.newsletter-filters .planner-filter-fields {
   padding: 0;
   list-style: none;
 }
-.newsletter-slot-tick label {
+.newsletter-slot {
   display: inline-flex;
   align-items: center;
-  gap: var(--dk-space-2);
+  gap: var(--dk-space-1);
   min-height: var(--dk-space-6);
+  font-size: var(--dk-text-sm);
+}
+.newsletter-slot strong { font-weight: 600; }
+.newsletter-slot__text { color: var(--dk-text-muted); }
+.newsletter-slot.is-booked .newsletter-slot__text { color: var(--dk-text-body, var(--dk-text-heading)); }
+.newsletter-slot__book {
+  min-height: var(--dk-space-6);
+  padding: 0 var(--dk-space-2);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-sm, 6px);
+  background: transparent;
+  color: var(--dk-text-body, var(--dk-text-heading));
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.newsletter-slot.is-open .newsletter-slot__book {
+  border-style: dashed;
+  color: var(--dk-text-muted);
+}
+.newsletter-slot__book:hover,
+.newsletter-slot__book:focus-visible { border-color: var(--dk-border-control-hover); }
+.newsletter-slot__remove {
+  display: inline-grid;
+  place-items: center;
+  width: var(--dk-space-6);
+  height: var(--dk-space-6);
+  padding: 0;
+  border: 0;
+  border-radius: var(--dk-radius-sm, 6px);
+  background: transparent;
+  color: var(--dk-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.newsletter-slot__remove:hover,
+.newsletter-slot__remove:focus-visible { color: var(--dk-danger-text, var(--dk-text-heading)); }
+.newsletter-slot__picker {
+  min-width: min(260px, 100%);
+}
+/* Phones: a compact 28px box per slot control, with the 44px touch area
+   kept by an invisible hit box, so the row stays within its height budget. */
+@media (max-width: 820px), (pointer: coarse) {
+  .newsletter-slots { margin-top: 0; }
+  #main-content .newsletter-slots .newsletter-slot :is(.newsletter-slot__book, .newsletter-slot__remove) {
+    position: relative;
+    min-height: 28px;
+    min-width: 28px;
+  }
+  .newsletter-slot__book { height: 28px; }
+  .newsletter-slot__remove { height: 28px; width: 28px; }
+  .newsletter-slot :is(.newsletter-slot__book, .newsletter-slot__remove)::before {
+    position: absolute;
+    inset: -8px 0;
+    content: "";
+  }
+}
+.newsletter-slot-fields__sponsor {
+  grid-column: 1 / -1;
+  margin: 0;
   color: var(--dk-text-muted);
   font-size: var(--dk-text-sm);
 }
-.newsletter-slot-tick.is-ticked label { color: var(--dk-text-body, var(--dk-text-heading)); }
-.newsletter-slot-tick.is-tbd label span { color: var(--dk-warning-text); }
-.newsletter-slot-tick strong { font-weight: 600; }
-.newsletter-slot-tick input { margin: 0; }
 .newsletter-slot-fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -992,21 +1049,6 @@ details.newsletter-filters .planner-filter-fields {
   padding: var(--dk-space-2) var(--dk-space-3) var(--dk-space-3);
 }
 .newsletter-slot-fields[hidden] { display: none; }
-.newsletter-slot-fields .newsletter-slot-fields__tick {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--dk-space-2);
-  font-weight: 400;
-}
-.newsletter-slot-fields .newsletter-slot-fields__tick input[type="checkbox"] {
-  flex: 0 0 auto;
-  width: auto;
-  height: auto;
-  min-height: 0;
-  margin: 0;
-}
 .newsletter-surface .planner-form-grid [hidden] { display: none; }
 
 /* The issue name opens its details: a text button, not a chrome button. */

@@ -36,29 +36,29 @@ describe("newsletter issue import", () => {
       {
         kind: "weekly", publicationDate: "2027-01-04", issueNumber: 310, status: "sent",
         slots: {
-          primary: { ticked: true, sheetId: "NL-310", sponsor: "Sponsor A", documentUrl: "https://docs.example.com/a" },
-          secondary: { ticked: true, sheetId: "NL-310-secondary", sponsor: "Sponsor B", documentUrl: "https://docs.example.com/b" },
+          primary: { sheetId: "NL-310", sponsor: "Sponsor A", documentUrl: "https://docs.example.com/a" },
+          secondary: { sheetId: "NL-310-secondary", sponsor: "Sponsor B", documentUrl: "https://docs.example.com/b" },
         },
         sourceKey: issueSourceKey("NL-310"),
       },
       {
         kind: "standalone", publicationDate: "2027-01-06", status: "planned",
-        slots: { primary: { ticked: true, sheetId: "NL-2027-01-06-standalone", sponsor: "Sponsor D" } },
+        slots: { primary: { sheetId: "NL-2027-01-06-standalone", sponsor: "Sponsor D" } },
         sourceKey: issueSourceKey("NL-2027-01-06-standalone"),
       },
       {
         kind: "weekly", publicationDate: "2027-01-11", issueNumber: 311, status: "planned",
-        slots: { primary: { ticked: true, sheetId: "NL-311", sponsor: "Sponsor C" }, secondary: { ticked: false } },
+        slots: { primary: { sheetId: "NL-311", sponsor: "Sponsor C" }, secondary: {} },
         sourceKey: issueSourceKey("NL-311"),
       },
       {
         kind: "weekly", publicationDate: "2027-01-18", issueNumber: 312, status: "planned",
-        slots: { primary: { ticked: true, sheetId: "NL-312" }, secondary: { ticked: false } },
+        slots: { primary: { sheetId: "NL-312" }, secondary: {} },
         sourceKey: issueSourceKey("NL-312"),
       },
       {
         kind: "weekly", publicationDate: "2027-01-25", status: "cancelled",
-        slots: { primary: { ticked: false, sheetId: "NL-2027-01-25-vacation" }, secondary: { ticked: false } },
+        slots: { primary: { sheetId: "NL-2027-01-25-vacation" }, secondary: {} },
         planningNote: "Holiday",
         sourceKey: issueSourceKey("NL-2027-01-25-vacation"),
       },

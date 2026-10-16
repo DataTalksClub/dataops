@@ -2,7 +2,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createNotification, dismissNotification, listAllNotifications } from '../db/notifications';
 import { listCrmRecords } from '../db/sponsorCrm';
 import { dealMoneyFacts } from '../sponsorFinance/ledger';
-import { dayDiff, dealIsComplete } from './model';
+import { dayDiff, dealIsComplete, NEWSLETTER_CHANNELS } from './model';
 import { getWorkspaceSettings } from '../db/workspaceSettings';
 
 /** The admin-set timing the reminders follow (workspace settings). */
@@ -57,7 +57,8 @@ function rulesForDeliverable(
   if (deadline && deadline < today && !hasMaterials) {
     rules.push({ ...base, code: 'materials-deadline-overdue', dueDate: deadline, message: 'Sponsor deliverable material deadline is overdue' });
   }
-  if ((deliverable.scheduleEntryId || published) && (!deliverable.cardId || !deliverable.requiredLinkUrl)) {
+  const workflow = NEWSLETTER_CHANNELS.has(String(deliverable.channel)) ? deliverable.newsletterIssueId : deliverable.cardId;
+  if ((deliverable.scheduleEntryId || published) && (!workflow || !deliverable.requiredLinkUrl)) {
     rules.push({ ...base, code: 'newsletter-workflow-incomplete', dueDate: publication || today, message: 'Sponsor deliverable is missing its newsletter workflow or required link' });
   }
   if (published && dayDiff(published, today) >= timing.followUpDays) {

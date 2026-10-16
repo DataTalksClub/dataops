@@ -150,9 +150,11 @@ Card is then named from the pattern.
 For a one-off Task: `dataops tasks create --description "..." --date 2026-11-02 [--card <card-id>]`.
 
 For a newsletter issue: `dataops newsletter list`. Every issue already has its Card
-(created with the issue from the newsletter Template of its kind); book a sponsor with
-`dataops newsletter update <issue-id> --primary-sponsor NAME` (or `--secondary-sponsor`,
-which ticks the secondary slot and adds its Tasks to the Card).
+(created with the issue from the newsletter Template of its kind). Book a slot for a
+sponsor from the Sponsors tab with `dataops newsletter sponsors` (pick a deal or an
+organization) and `dataops newsletter book <issue-id> primary|secondary --deal <id>`;
+booking records a deliverable on the deal and adds the slot's Tasks to the Card.
+`dataops newsletter release <issue-id> <slot>` frees it again.
 `dataops newsletter list --card <card-id>` finds the issue a Card belongs to.
 
 For a podcast episode: `dataops podcast list --status booked` (or `--season N`),

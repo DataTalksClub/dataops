@@ -67,9 +67,8 @@ export function issueSlotText(issue) {
   const positions = issue?.kind === "standalone" ? ["primary"] : ["primary", "secondary"];
   return positions
     .map((position) => {
-      const slot = issue?.slots?.[position] || { ticked: false };
       const name = issue?.kind === "standalone" ? "Sponsor" : position === "primary" ? "Primary" : "Secondary";
-      return `${name}: ${slot.ticked ? slot.sponsor || "TBD" : "open"}`;
+      return `${name}: ${issue?.slots?.[position]?.sponsor || "open"}`;
     })
     .join(" · ");
 }

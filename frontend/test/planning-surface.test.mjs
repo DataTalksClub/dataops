@@ -1098,7 +1098,7 @@ describe("Planning surface production behavior", () => {
     kind: "weekly",
     label: "Weekly #42",
     issueNumber: 42,
-    slots: { primary: { ticked: true, sponsor: "Example Sponsor" }, secondary: { ticked: false } },
+    slots: { primary: { sponsor: "Example Sponsor" }, secondary: {} },
     ...overrides,
   });
 
@@ -1115,7 +1115,7 @@ describe("Planning surface production behavior", () => {
             publicUrl: "https://example.invalid/campaign/42",
             publicationDate: "2026-08-21",
             status: "scheduled",
-            slots: { primary: { ticked: true, sponsor: "Example Sponsor" }, secondary: { ticked: true, sponsor: "Second <Sponsor>" } },
+            slots: { primary: { sponsor: "Example Sponsor" }, secondary: { sponsor: "Second <Sponsor>" } },
             cardId: "card-1",
             card: { id: "card-1", title: "21 Aug · #42", stage: "preparation", status: "active", anchorDate: "2026-08-20", taskCount: 6, openTaskCount: 4 },
           }),
@@ -1125,7 +1125,7 @@ describe("Planning surface production behavior", () => {
             issueNumber: 43,
             publicationDate: "2026-08-28",
             status: "planned",
-            slots: { primary: { ticked: true }, secondary: { ticked: false } },
+            slots: { primary: {}, secondary: {} },
             card: null,
           }),
           {
@@ -1134,7 +1134,7 @@ describe("Planning surface production behavior", () => {
             label: "Stand-alone newsletter",
             publicationDate: "2026-08-26",
             status: "planned",
-            slots: { primary: { ticked: true, sponsor: "Solo Sponsor" } },
+            slots: { primary: { sponsor: "Solo Sponsor" } },
             card: null,
           },
         ],
@@ -1152,13 +1152,18 @@ describe("Planning surface production behavior", () => {
     for (const [kind, distance] of [["Weekly", "in 8d"], ["Weekly", "in 2w"], ["Stand-alone", "in 13d"]]) {
       assert.match(html, new RegExp(`newsletter-kind-badge">${kind}</small>\\s*<span class="newsletter-relative-badge">${distance}</span>`));
     }
-    assert.match(html, /<strong>Primary:<\/strong> Example Sponsor/);
-    assert.match(html, /<strong>Secondary:<\/strong> Second &lt;Sponsor&gt;/);
-    assert.match(html, /<strong>Primary:<\/strong> sponsor TBD/);
-    assert.match(html, /<strong>Secondary:<\/strong> open/);
-    assert.match(html, /data-slot-toggle="secondary" data-issue-id="issue-2"\s+(?!checked)/);
-    assert.match(html, /<strong>Sponsor:<\/strong> Solo Sponsor/);
-    assert.doesNotMatch(html, /data-slot-toggle="primary" data-issue-id="issue-3"/);
+    // A scheduled issue's booked slots: the sponsor (click to change) and a remove button.
+    assert.match(html, /data-slot-book="primary" data-issue-id="issue-1"[^>]*title="Change sponsor"[^>]*><strong>Primary:<\/strong> Example Sponsor<\/button>/);
+    assert.match(html, /<strong>Secondary:<\/strong> Second &lt;Sponsor&gt;<\/button>/);
+    assert.match(html, /data-slot-release="secondary" data-issue-id="issue-1"\s+aria-label="Remove Second &lt;Sponsor&gt; from the secondary slot of Weekly #42"/);
+    // Open slots are booking buttons.
+    assert.match(html, /data-slot-book="primary" data-issue-id="issue-2"[^>]*><strong>Primary:<\/strong> \+ sponsor<\/button>/);
+    assert.match(html, /data-slot-book="secondary" data-issue-id="issue-2"[^>]*><strong>Secondary:<\/strong> \+ sponsor<\/button>/);
+    assert.doesNotMatch(html, /data-slot-release="[a-z]+" data-issue-id="issue-2"/);
+    // A stand-alone issue has one slot, named Sponsor.
+    assert.match(html, /data-slot-book="primary" data-issue-id="issue-3"[^>]*><strong>Sponsor:<\/strong> Solo Sponsor<\/button>/);
+    assert.doesNotMatch(html, /data-slot-book="secondary" data-issue-id="issue-3"/);
+    assert.doesNotMatch(html, /type="checkbox"/, "slots are buttons, not ticks");
     assert.match(html, /href="\/cards\?cardId=card-1"\s+data-open-card="card-1" title="Open card: 21 Aug · #42">/);
     assert.doesNotMatch(html, />21 Aug · #42</, "the chip does not repeat the Card title the row already shows");
     assert.match(html, /Preparation ·\s+<span class="dk-mono">4\/6<\/span> open/);
@@ -1172,26 +1177,26 @@ describe("Planning surface production behavior", () => {
     assert.equal(range.get("to"), "2027-12-31");
   });
 
-  test("ticks and unticks a slot from the row, confirming when done tasks would stay", async () => {
+  test("removes a slot's sponsor from the row after confirming, and again when done tasks would stay", async () => {
     const dom = createNewsletterDom();
     let issue = weeklyIssue({ id: "issue-1", version: 3, publicationDate: "2026-08-21", status: "planned" });
-    const puts = [];
-    let confirmations = 0;
+    const deletes = [];
+    const prompts = [];
     const originalConfirm = globalThis.confirm;
-    globalThis.confirm = () => {
-      confirmations += 1;
+    globalThis.confirm = (message) => {
+      prompts.push(message);
       return true;
     };
     const harness = createPlanningHarness({
       newsletter: dom,
-      request: async (_url, options) => {
-        if (options.method === "PUT") {
+      request: async (url, options = {}) => {
+        if (options.method === "DELETE") {
           const body = JSON.parse(options.body);
-          puts.push(body);
-          if (body.slots.primary?.ticked === false && !body.confirmSlotRemoval) {
-            throw Object.assign(new Error("Unticking keeps 1 completed Task"), { code: "slot-has-completed-tasks" });
+          deletes.push({ url, body });
+          if (!body.confirmSlotRemoval) {
+            throw Object.assign(new Error("Releasing the slot keeps 1 completed Task"), { code: "slot-has-completed-tasks" });
           }
-          issue = { ...issue, slots: { ...issue.slots, ...body.slots }, version: issue.version + 1 };
+          issue = { ...issue, slots: { ...issue.slots, primary: {} }, version: issue.version + 1 };
           return issue;
         }
         return { alerts: [], items: [issue] };
@@ -1199,23 +1204,19 @@ describe("Planning surface production behavior", () => {
     });
     try {
       await harness.surface.renderNewsletterSurface();
-      const [change] = dom.slots.listeners.get("change");
-      const toggle = (position, checked) => ({
-        checked,
+      const [click] = dom.slots.listeners.get("click");
+      const remove = {
         disabled: false,
-        dataset: { slotToggle: position, issueId: "issue-1" },
-        closest() { return this; },
-      });
-      const secondary = toggle("secondary", true);
-      change({ target: secondary });
+        dataset: { slotRelease: "primary", issueId: "issue-1" },
+        closest(selector) { return selector === "[data-slot-release]" ? this : null; },
+      };
+      dom.slots.contains = () => true;
+      click({ target: remove, preventDefault() {} });
       await new Promise((resolve) => setTimeout(resolve, 0));
-      assert.deepEqual(puts[0], { version: 3, slots: { secondary: { ticked: true } } });
-
-      const primary = toggle("primary", false);
-      change({ target: primary });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      assert.equal(confirmations, 1);
-      assert.deepEqual(puts.at(-1), { version: 4, slots: { primary: { ticked: false } }, confirmSlotRemoval: true });
+      assert.match(prompts[0], /Remove Example Sponsor from the primary slot of Weekly #42\?/);
+      assert.equal(prompts.length, 2, "asks again because done tasks stay");
+      assert.match(String(deletes[0].url), /\/api\/newsletter-issues\/issue-1\/slots\/primary$/);
+      assert.deepEqual(deletes.map(({ body }) => body), [{ version: 3 }, { version: 3, confirmSlotRemoval: true }]);
     } finally {
       globalThis.confirm = originalConfirm;
     }
@@ -1232,7 +1233,7 @@ describe("Planning surface production behavior", () => {
         publicationDate: "2026-08-21",
         status: "planned",
         version: 3,
-        slots: { primary: { ticked: true, sponsor: "Sponsor A", sheetId: "NL-7" }, secondary: { ticked: false } },
+        slots: { primary: { sponsor: "Sponsor A", sheetId: "NL-7" }, secondary: {} },
       }),
     ];
     const harness = createPlanningHarness({
@@ -1251,16 +1252,14 @@ describe("Planning surface production behavior", () => {
     dom.surface.querySelector("[data-newsletter-add]").onclick();
     assert.equal(dom.dialog.open, true);
     assert.equal(dom.form.elements.kind.value, "weekly");
-    assert.equal(dom.form.elements.primaryTicked.checked, true);
-    assert.equal(dom.form.elements.secondaryTicked.checked, false);
 
     dom.slots.onclick({ target: { closest: () => ({ dataset: { edit: "issue-1" } }) } });
     assert.equal(dom.form.elements.issueNumber.value, 7);
     assert.equal(dom.form.elements.version.value, 3);
-    assert.equal(dom.form.elements.primarySponsor.value, "Sponsor A");
+    assert.equal(dom.form.elements.primaryDocumentUrl.value, "");
     assert.equal(dom.form.elements.kind.disabled, true);
 
-    dom.form.elements.secondarySponsor.value = "Sponsor B";
+    dom.form.elements.secondaryDocumentUrl.value = "https://docs.example.com/b";
     dom.form.formEntries = [
       ["id", "issue-1"],
       ["version", "3"],
@@ -1268,8 +1267,7 @@ describe("Planning surface production behavior", () => {
       ["issueNumber", "8"],
       ["publicationDate", "2026-08-22"],
       ["status", "scheduled"],
-      ["primaryTicked", "on"],
-      ["primarySponsor", "Sponsor A"],
+      ["secondaryDocumentUrl", "https://docs.example.com/b"],
     ];
     await dom.surface.querySelector("[data-save]").onclick({ preventDefault() {} });
     const update = harness.requests.find((entry) => entry.options.method === "PUT");
@@ -1280,8 +1278,8 @@ describe("Planning surface production behavior", () => {
       status: "scheduled",
       version: 3,
       slots: {
-        primary: { ticked: true, sponsor: "Sponsor A", sheetId: "NL-7" },
-        secondary: { ticked: true, sponsor: "Sponsor B" },
+        primary: { sponsor: "Sponsor A", sheetId: "NL-7" },
+        secondary: { documentUrl: "https://docs.example.com/b" },
       },
     });
     assert.equal(dom.dialog.open, false);
@@ -1354,7 +1352,9 @@ describe("Planning surface production behavior", () => {
       assert.match(dom.slots.innerHTML, new RegExp(label));
     }
     // A sent issue's slots can no longer be changed.
-    assert.match(dom.slots.innerHTML, /data-issue-id="issue-4"\s+checked\s+disabled/);
+    // A sent issue's slots are read-only text.
+    assert.doesNotMatch(dom.slots.innerHTML, /data-slot-(book|release)="[a-z]+" data-issue-id="issue-4"/);
+    assert.match(dom.slots.innerHTML, /<span class="newsletter-slot__text"><strong>Primary:<\/strong> Example Sponsor<\/span>/);
 
     dom.viewUpcoming.onclick();
     await new Promise((r) => setTimeout(r, 0));
@@ -1385,7 +1385,7 @@ describe("Planning surface production behavior", () => {
       status: "drafting",
       version: 3,
       publicUrl: "https://example.com/campaign-16",
-      slots: { primary: { ticked: true, sponsor: "Example" }, secondary: { ticked: false } },
+      slots: { primary: { sponsor: "Example" }, secondary: {} },
     };
     let lastPutPayload = null;
     const harness = createPlanningHarness({

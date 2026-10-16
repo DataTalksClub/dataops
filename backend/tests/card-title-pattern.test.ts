@@ -15,23 +15,23 @@ describe('card title patterns', () => {
   it('renders a weekly issue and drops empty parts with their separators', () => {
     const weekly = {
       kind: 'weekly', publicationDate: '2026-10-19', issueNumber: 299,
-      slots: { primary: { ticked: true, sponsor: 'Synthetic Sponsor' }, secondary: { ticked: false } },
+      slots: { primary: { sponsor: 'Synthetic Sponsor' }, secondary: {} },
     };
     assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterIssueTitleValues(weekly)), '19 Oct · #299 · Synthetic Sponsor');
-    const unbooked = { ...weekly, slots: { primary: { ticked: true } } };
+    const unbooked = { ...weekly, slots: { primary: {} } };
     assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterIssueTitleValues(unbooked)), '19 Oct · #299');
   });
 
   it('names both slot sponsors of one issue, and stand-alone sends', () => {
     const both = {
       kind: 'weekly', publicationDate: '2026-10-05', issueNumber: 297,
-      slots: { primary: { ticked: true, sponsor: 'Sponsor A' }, secondary: { ticked: true, sponsor: 'Sponsor B' } },
+      slots: { primary: { sponsor: 'Sponsor A' }, secondary: { sponsor: 'Sponsor B' } },
     };
     assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterIssueTitleValues(both)), '5 Oct · #297 · Sponsor A + Sponsor B');
     assert.strictEqual(newsletterIssueTitleValues(both).sponsor, 'Sponsor A');
-    const secondaryOnly = { ...both, slots: { primary: { ticked: true }, secondary: { ticked: true, sponsor: 'Sponsor B' } } };
+    const secondaryOnly = { ...both, slots: { primary: {}, secondary: { sponsor: 'Sponsor B' } } };
     assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterIssueTitleValues(secondaryOnly)), '5 Oct · #297 · Sponsor B');
-    const standalone = { kind: 'standalone', publicationDate: '2026-10-21', slots: { primary: { ticked: true, sponsor: 'Synthetic Sponsor' } } };
+    const standalone = { kind: 'standalone', publicationDate: '2026-10-21', slots: { primary: { sponsor: 'Synthetic Sponsor' } } };
     assert.strictEqual(renderCardTitle(NEWSLETTER, newsletterIssueTitleValues(standalone)), '21 Oct · Synthetic Sponsor · stand-alone');
   });
 

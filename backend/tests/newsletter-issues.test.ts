@@ -10,7 +10,7 @@ import { getCard, updateCard } from "../src/db/cards";
 import { createTemplate } from "../src/db/templates";
 import { listTasksByCard, updateTask } from "../src/db/tasks";
 import { TABLE_CARDS, TABLE_NEWSLETTER_SLOTS, TABLE_TASKS } from "../src/db/tableNames";
-import { createCrmRecord } from "../src/db/sponsorCrm";
+import { createCrmRecord, getCrmRecord } from "../src/db/sponsorCrm";
 import { newsletterOverlayItem } from "../src/calendar/newsletterOverlay";
 import { handleNewsletterIssueRoutes } from "../src/routes/newsletterIssues";
 
@@ -36,7 +36,7 @@ const weekly = (overrides: Record<string, unknown> = {}) => ({
   kind: "weekly",
   publicationDate: "2027-03-01",
   issueNumber: 340,
-  slots: { primary: { ticked: true, sponsor: "Sponsor A" }, secondary: { ticked: false } },
+  slots: { primary: { sponsor: "Sponsor A" }, secondary: {} },
   ...overrides,
 });
 
@@ -115,7 +115,7 @@ describe("newsletter issues", () => {
     const standalone = await create({
       kind: "standalone",
       publicationDate: "2027-03-03",
-      slots: { primary: { ticked: true, sponsor: "Sponsor S" } },
+      slots: { primary: { sponsor: "Sponsor S" } },
     });
     const card = (await getCard(client, standalone.cardId))!;
     assert.equal(card.title, "3 Mar · Sponsor S · stand-alone");
@@ -124,7 +124,7 @@ describe("newsletter issues", () => {
       publicationDate: "2027-03-08",
       issueNumber: undefined,
       status: "cancelled",
-      slots: { primary: { ticked: false }, secondary: { ticked: false } },
+      slots: { primary: {}, secondary: {} },
       planningNote: "Vacation",
     }));
     assert.equal(vacation.cardId, undefined);
@@ -135,13 +135,12 @@ describe("newsletter issues", () => {
       [weekly({ kind: "monthly" }), /Invalid kind/],
       [weekly({ status: "open" }), /Invalid status/],
       [weekly({ publicationDate: "2027-02-30" }), /Invalid publicationDate/],
-      [weekly({ slots: { primary: { ticked: false, sponsor: "Early" } } }), /Tick the primary slot/],
-      [weekly({ slots: { tertiary: { ticked: true } } }), /no tertiary slot/],
-      [weekly({ slots: { primary: { ticked: "yes" } } }), /ticked true or false/],
-      [weekly({ slots: { primary: { ticked: true, documentUrl: "http://x" } } }), /documentUrl/],
-      [{ kind: "standalone", publicationDate: "2027-03-03", issueNumber: 3, slots: { primary: { ticked: true } } }, /no issueNumber/],
-      [{ kind: "standalone", publicationDate: "2027-03-03", slots: { primary: { ticked: false } } }, /always has its slot/],
-      [{ kind: "standalone", publicationDate: "2027-03-03", slots: { secondary: { ticked: true } } }, /no secondary slot/],
+      [weekly({ slots: { primary: { bookedByUserId: "someone" } } }), /Name the primary slot's sponsor/],
+      [weekly({ slots: { primary: { ticked: true } } }), /Unknown primary slot field: ticked/],
+      [weekly({ slots: { tertiary: {} } }), /no tertiary slot/],
+      [weekly({ slots: { primary: { documentUrl: "http://x" } } }), /documentUrl/],
+      [{ kind: "standalone", publicationDate: "2027-03-03", issueNumber: 3, slots: { primary: {} } }, /no issueNumber/],
+      [{ kind: "standalone", publicationDate: "2027-03-03", slots: { secondary: {} } }, /no secondary slot/],
       [weekly({ cardId: "linked-elsewhere" }), /Unknown field: cardId/],
     ];
     for (const [body, error] of cases) {
@@ -149,17 +148,10 @@ describe("newsletter issues", () => {
       assert.equal(response.statusCode, 400, `${JSON.stringify(body)} -> ${response.body}`);
       assert.match(data(response).error, error);
     }
-    const missingBooking = await invoke("POST", "/api/newsletter-issues", weekly({
-      slots: { primary: { ticked: true, sponsorBookingId: "no-such-deliverable" } },
+    const booking = await invoke("POST", "/api/newsletter-issues", weekly({
+      slots: { primary: { sponsor: "Sponsor A", sponsorBookingId: "a-deliverable" } },
     }));
-    assert.equal(missingBooking.statusCode, 422);
-    const deliverable = await createCrmRecord(client, "deliverable", { title: "Synthetic placement", status: "booked" } as any);
-    const booked = await invoke("POST", "/api/newsletter-issues", weekly({
-      publicationDate: "2027-03-15",
-      issueNumber: 342,
-      slots: { primary: { ticked: true, sponsorBookingId: deliverable.item.id } },
-    }));
-    assert.equal(booked.statusCode, 201, booked.body);
+    assert.equal(booking.statusCode, 400, "the booking lives on the deliverable, not the slot");
   });
 
   it("creates the issue and its Card atomically", async () => {
@@ -190,41 +182,89 @@ describe("newsletter issues", () => {
     assert.equal(listed.items.length, 0);
   });
 
-  it("ticking a slot adds its Tasks; unticking skips the open ones after confirming done work", async () => {
+  it("starts a Card with only the booked slots' Tasks", async () => {
+    const open = await create(weekly({ publicationDate: "2027-05-10", issueNumber: 351, slots: { primary: {}, secondary: {} } }));
+    assert.deepEqual((await getCard(client, open.cardId))!.selectedOptionalGroups, []);
+    assert.deepEqual(await tasksOf(open.cardId), ["schedule:todo", "write-issue:todo"]);
+  });
+
+  it("books, changes and releases a slot through the sponsor's deal", async () => {
+    const org = (await createCrmRecord(client, "organization", { displayName: "Synthetic Org One" } as any)).item;
+    const otherOrg = (await createCrmRecord(client, "organization", { displayName: "Synthetic Org Two" } as any)).item;
+    const deal = (await createCrmRecord(client, "deal", { organizationId: org.id, status: "agreed", title: "Synthetic package" } as any)).item;
+    const options = data(await invoke("GET", "/api/newsletter-issues/sponsor-options"));
+    assert.ok(options.items.some((item: any) => item.dealId === deal.id && item.name === "Synthetic Org One"));
+    assert.ok(options.items.some((item: any) => !item.dealId && item.organizationId === otherOrg.id));
+
     let issue = await create(weekly({ publicationDate: "2027-05-03", issueNumber: 350 }));
-    let response = await invoke("PUT", `/api/newsletter-issues/${issue.id}`, {
-      version: issue.version,
-      slots: { secondary: { ticked: true } },
-    });
+    const slot = `/api/newsletter-issues/${issue.id}/slots/secondary`;
+    let response = await invoke("PUT", slot, { version: issue.version, dealId: deal.id });
     assert.equal(response.statusCode, 200, response.body);
     issue = data(response);
     assert.equal(issue.cardSync, "synced");
+    assert.equal(issue.slots.secondary.sponsor, "Synthetic Org One");
+    const firstBooking = await getCrmRecord(client, "deliverable", issue.deliverableId);
+    assert.equal(firstBooking!.newsletterIssueId, issue.id);
+    assert.equal(firstBooking!.channel, "secondary");
+    assert.equal(firstBooking!.plannedPublicationDate, "2027-05-03");
     let card = (await getCard(client, issue.cardId))!;
     assert.deepEqual(card.selectedOptionalGroups, ["primary-slot", "secondary-slot"]);
     assert.ok((await tasksOf(card.id)).includes("secondary-invoice:todo"));
-    assert.equal(card.title, "3 May · #350 · Sponsor A");
+    assert.equal(card.title, "3 May · #350 · Sponsor A + Synthetic Org One");
 
-    response = await invoke("PUT", `/api/newsletter-issues/${issue.id}`, {
-      version: issue.version,
-      slots: { secondary: { ticked: true, sponsor: "Sponsor B" } },
-    });
+    // Changing the sponsor is one step: the new booking replaces the old one.
+    response = await invoke("PUT", slot, { version: issue.version, organizationId: otherOrg.id });
+    assert.equal(response.statusCode, 200, response.body);
     issue = data(response);
+    assert.equal(issue.slots.secondary.sponsor, "Synthetic Org Two");
+    assert.deepEqual(issue.withdrawnDeliverables, [firstBooking!.id]);
+    assert.ok((await getCrmRecord(client, "deliverable", firstBooking!.id))!.withdrawnAt, "withdrawn, not deleted");
+    const newDeal = await getCrmRecord(client, "deal", issue.dealId);
+    assert.equal(newDeal!.organizationId, otherOrg.id);
+    assert.equal(newDeal!.status, "open");
     card = (await getCard(client, issue.cardId))!;
-    assert.equal(card.title, "3 May · #350 · Sponsor A + Sponsor B");
-    assert.deepEqual(card.secondarySponsors, ["Sponsor B"]);
+    assert.deepEqual(card.secondarySponsors, ["Synthetic Org Two"]);
+    assert.deepEqual(card.selectedOptionalGroups, ["primary-slot", "secondary-slot"]);
 
     const document = (await listTasksByCard(client, card.id)).find((task) => task.templateTaskRef === "secondary-sponsor-document")!;
     await updateTask(client, document.id, { expectedVersion: document.version, patch: { status: "done" } });
-    const untick = { version: issue.version, slots: { secondary: { ticked: false } } };
-    response = await invoke("PUT", `/api/newsletter-issues/${issue.id}`, untick);
+    response = await invoke("DELETE", slot, { version: issue.version });
     assert.equal(response.statusCode, 409, response.body);
     assert.equal(data(response).code, "slot-has-completed-tasks");
-    response = await invoke("PUT", `/api/newsletter-issues/${issue.id}`, { ...untick, confirmSlotRemoval: true });
+    response = await invoke("DELETE", slot, { version: issue.version, confirmSlotRemoval: true });
     assert.equal(response.statusCode, 200, response.body);
+    issue = data(response);
+    assert.deepEqual(issue.slots.secondary, {});
+    assert.equal(issue.withdrawnDeliverables.length, 1);
     const tasks = await tasksOf(issue.cardId);
     assert.ok(tasks.includes("secondary-sponsor-document:done"));
     assert.ok(tasks.includes("secondary-invoice:skipped"));
     assert.deepEqual((await getCard(client, issue.cardId))!.selectedOptionalGroups, ["primary-slot"]);
+
+    assert.equal((await invoke("PUT", `/api/newsletter-issues/${issue.id}/slots/tertiary`, { version: issue.version, dealId: deal.id })).statusCode, 400);
+    assert.equal((await invoke("PUT", slot, { version: issue.version })).statusCode, 400);
+    assert.equal((await invoke("PUT", slot, { version: 1, dealId: deal.id })).statusCode, 409);
+  });
+
+  it("links a newsletter deliverable to its issue, never to a Card", async () => {
+    const org = (await createCrmRecord(client, "organization", { displayName: "Synthetic Org Three" } as any)).item;
+    const deal = (await createCrmRecord(client, "deal", { organizationId: org.id, status: "open" } as any)).item;
+    const issue = await create(weekly({ publicationDate: "2027-05-24", issueNumber: 353 }));
+    const post = (body: Record<string, unknown>) => invoke("POST", "/api/sponsor-crm/deliverables", { dealId: deal.id, ...body });
+    assert.equal((await post({ channel: "main", cardId: issue.cardId })).statusCode, 400);
+    assert.equal((await post({ channel: "workshop", newsletterIssueId: issue.id })).statusCode, 400);
+    assert.equal((await post({ channel: "main", newsletterIssueId: "no-such-issue" })).statusCode, 422);
+    const linked = await post({ channel: "main", newsletterIssueId: issue.id, plannedPublicationDate: "2027-05-24" });
+    assert.equal(linked.statusCode, 201, linked.body);
+    const cleared = await invoke("PUT", `/api/sponsor-crm/deliverables/${data(linked).id}`, { version: 1, newsletterIssueId: null });
+    assert.equal(cleared.statusCode, 200, cleared.body);
+    assert.equal(Object.hasOwn(data(cleared), "newsletterIssueId"), false);
+  });
+
+  it("keeps a sent issue's slots read-only", async () => {
+    const sent = await create(weekly({ publicationDate: "2027-05-17", issueNumber: 352, status: "sent" }));
+    const response = await invoke("DELETE", `/api/newsletter-issues/${sent.id}/slots/primary`, { version: sent.version });
+    assert.equal(response.statusCode, 409, response.body);
   });
 
   it("moving the issue re-derives its open Tasks' due dates and leaves resolved ones alone", async () => {
@@ -310,17 +350,17 @@ describe("newsletter issues", () => {
 
   it("lists with booking filters and alerts on open slots, duplicates and Card drift", async () => {
     const range = { from: "2027-09-01", to: "2027-09-30", today: "2027-09-01" };
-    const open = await create(weekly({ publicationDate: "2027-09-06", issueNumber: 370, slots: { primary: { ticked: true } } }));
+    const open = await create(weekly({ publicationDate: "2027-09-06", issueNumber: 370, slots: { primary: {} } }));
     const booked = await create(weekly({ publicationDate: "2027-09-13", issueNumber: 371 }));
-    const duplicate = await create(weekly({ publicationDate: "2027-09-13", issueNumber: 371, slots: { primary: { ticked: false } } }));
+    const duplicate = await create(weekly({ publicationDate: "2027-09-13", issueNumber: 371, slots: { primary: {} } }));
     let listed = data(await invoke("GET", "/api/newsletter-issues", undefined, {}, range));
     const reasons = (id: string) => listed.alerts.filter((alert: any) => alert.issueId === id).map((alert: any) => alert.reasonCode).sort();
     assert.deepEqual(reasons(open.id), ["near-term-open-slot"]);
     assert.deepEqual(reasons(booked.id), ["duplicate-active-issue"]);
-    assert.deepEqual(reasons(duplicate.id), ["duplicate-active-issue"]);
+    assert.deepEqual(reasons(duplicate.id), ["duplicate-active-issue", "near-term-open-slot"]);
     const ids = async (query: Record<string, string>) =>
       data(await invoke("GET", "/api/newsletter-issues", undefined, {}, { ...range, ...query })).items.map((item: any) => item.id).sort();
-    assert.deepEqual(await ids({ booked: "false" }), [open.id]);
+    assert.deepEqual(await ids({ booked: "false" }), [open.id, duplicate.id].sort());
     assert.deepEqual(await ids({ booked: "true" }), [booked.id]);
     assert.equal((await invoke("GET", "/api/newsletter-issues", undefined, {}, { booked: "maybe" })).statusCode, 400);
 
@@ -337,18 +377,18 @@ describe("newsletter issues", () => {
     };
     const sent = newsletterOverlayItem({
       ...base,
-      slots: { primary: { ticked: true, sponsor: "VectorAI DB" }, secondary: { ticked: true, sponsor: "Astronomer" } },
+      slots: { primary: { sponsor: "VectorAI DB" }, secondary: { sponsor: "Astronomer" } },
     });
     assert.equal(sent.label, "Weekly #297 · VectorAI DB + Astronomer");
     assert.equal(sent.isAvailableSlot, false);
     assert.deepEqual(sent.newsletter, {
-      kind: "weekly", issueNumber: 297, ticked: 2, booked: 2,
+      kind: "weekly", issueNumber: 297, booked: 2,
       slots: [
-        { position: "primary", ticked: true, sponsor: "VectorAI DB" },
-        { position: "secondary", ticked: true, sponsor: "Astronomer" },
+        { position: "primary", sponsor: "VectorAI DB" },
+        { position: "secondary", sponsor: "Astronomer" },
       ],
     });
-    const open = newsletterOverlayItem({ ...base, status: "planned", slots: { primary: { ticked: true }, secondary: { ticked: false } } });
+    const open = newsletterOverlayItem({ ...base, status: "planned", slots: { primary: {}, secondary: {} } });
     assert.equal(open.label, "Weekly #297 · open");
     assert.equal(open.isAvailableSlot, true);
   });

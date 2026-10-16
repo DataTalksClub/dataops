@@ -4,7 +4,7 @@ import {
   setupNewsletterDialog,
 } from "./planning-newsletter-dialog.js";
 import { renderPageHeaderMarkup } from "./operations-overview.js";
-import { issueSlotsMarkup, SLOT_NAMES } from "./planning-newsletter-slots.js";
+import { attachSlotControls, issueSlotsMarkup } from "./planning-newsletter-slots.js";
 
 export function createNewsletterPlanner(context) {
   const {
@@ -70,7 +70,7 @@ export function createNewsletterPlanner(context) {
   function newsletterAlertAdvice(reasonCode) {
     return {
       "near-term-open-slot":
-        "Book a sponsor for the ticked slot, or untick it to run the issue without one.",
+        "Book a sponsor for the primary slot, or run the issue without one.",
       "duplicate-active-issue":
         "Check the schedule sheet: one of them probably has the wrong date or number.",
       "card-unavailable":
@@ -78,7 +78,7 @@ export function createNewsletterPlanner(context) {
       "card-date-mismatch":
         "The issue's date wins: save the issue to move its card.",
       "card-slot-tasks-mismatch":
-        "Save the issue's slots again to add or skip the slot tasks on its card.",
+        "Book the slot again, or turn on its task group on the card.",
       "sent-issue-card-incomplete":
         "Add the Mailchimp link to the card and resolve its remaining tasks.",
     }[reasonCode] || "Check the publication date and slots.";
@@ -425,49 +425,12 @@ export function createNewsletterPlanner(context) {
       openIssueDialog(null);
     };
 
-    /**
-     * Tick or untick a slot from the row. Unticking a slot whose Tasks are
-     * partly done asks first: done Tasks stay, open ones are skipped.
-     */
-    async function toggleSlot(input) {
-      const item = items.find((value) => value.id === input.dataset.issueId);
-      const position = input.dataset.slotToggle;
-      if (!item || !position) return;
-      const current = item.slots?.[position] || { ticked: false };
-      const slot = { ...current, ticked: input.checked };
-      if (!input.checked) {
-        delete slot.sponsor;
-        delete slot.bookedByUserId;
-        delete slot.sponsorBookingId;
-      }
-      const body = { version: item.version, slots: { [position]: slot } };
-      input.disabled = true;
-      try {
-        try {
-          await api(`/${encodeURIComponent(item.id)}`, { method: "PUT", body: JSON.stringify(body) });
-        } catch (error) {
-          if (error?.code !== "slot-has-completed-tasks") throw error;
-          if (!globalThis.confirm?.(`${error.message}`)) {
-            input.checked = !input.checked;
-            return;
-          }
-          await api(`/${encodeURIComponent(item.id)}`, {
-            method: "PUT",
-            body: JSON.stringify({ ...body, confirmSlotRemoval: true }),
-          });
-        }
-        await load();
-      } catch (error) {
-        input.checked = !input.checked;
-        status.textContent = `Could not change the ${SLOT_NAMES[position].toLowerCase()} slot: ${error.message}`;
-      } finally {
-        input.disabled = false;
-      }
-    }
-
-    surface.querySelector("[data-slots]").addEventListener("change", (event) => {
-      const input = event.target.closest?.("[data-slot-toggle]");
-      if (input) toggleSlot(input);
+    attachSlotControls(surface.querySelector("[data-slots]"), {
+      findIssue: (id) => items.find((value) => value.id === id),
+      request,
+      workApiUrl,
+      onChanged: () => load(),
+      onError: (message) => { status.textContent = message; },
     });
 
     surface.querySelector("[data-slots]").onclick = (event) => {

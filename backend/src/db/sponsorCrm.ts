@@ -177,6 +177,8 @@ export async function createDeliverableAtomic(client:DynamoDBDocumentClient,valu
 
 export async function updateDeliverableAtomic(client:DynamoDBDocumentClient,existing:CrmRecord,value:Record<string,unknown>,actorId:string){
   const now=new Date().toISOString(),next={...existing,...value,id:existing.id,createdAt:existing.createdAt,updatedAt:now,version:existing.version+1} as CrmRecord,previous=String(existing.scheduleEntryId||''),target=String(next.scheduleEntryId||'');
+  // A null link clears it.
+  for(const name of ['cardId','newsletterIssueId'])if(next[name]===null)delete next[name];
   const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('deliverable',next),ConditionExpression:'#version = :version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}},historyPut(`deliverable:${existing.id}`,{actorId,entityKind:'deliverable',entityId:existing.id,action:'updated'})];
   if(target&&target!==previous)items.push({Put:{TableName:TABLE_SPONSOR_CRM,Item:{PK:key('schedule',target),SK:key('schedule',target),deliverableId:existing.id},ConditionExpression:'attribute_not_exists(PK)'}});
   if(previous&&previous!==target)items.push({Delete:{TableName:TABLE_SPONSOR_CRM,Key:{PK:key('schedule',previous),SK:key('schedule',previous)},ConditionExpression:'deliverableId = :deliverableId',ExpressionAttributeValues:{':deliverableId':existing.id}}});

@@ -53,7 +53,7 @@ describe('DELETE /api/cards/:id', () => {
   /** A newsletter issue owning `cardId`, written directly. */
   async function issueOwning(cardId: string) {
     const issue = buildNewsletterIssue({
-      kind: 'weekly', publicationDate: '2031-02-02', status: 'planned', slots: { primary: { ticked: true } }, cardId,
+      kind: 'weekly', publicationDate: '2031-02-02', status: 'planned', slots: { primary: {} }, cardId,
     }, `issue-${cardId}`);
     await client.send(new PutCommand(createIssueWrite(issue).item.Put as any));
     return issue;

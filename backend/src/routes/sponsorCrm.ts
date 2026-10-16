@@ -1,3 +1,4 @@
+import { getNewsletterIssue } from '../db/newsletterIssues';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse, Task } from '../types';
 import {
@@ -22,6 +23,7 @@ import { importCrmSnapshot } from '../sponsorCrm/importSnapshot';
 import { dealMoneyFacts } from '../sponsorFinance/ledger';
 import {
   CHANNELS,
+  NEWSLETTER_CHANNELS,
   DEAL_STATUSES,
   LOST_REASONS,
   PRODUCT_KINDS,
@@ -90,11 +92,15 @@ function validateDeal(body: Record<string, unknown>, partial = false, existing?:
   return '';
 }
 
-function validateDeliverable(body: Record<string, unknown>, partial = false) {
+function validateDeliverable(body: Record<string, unknown>, partial = false, existing?: CrmRecord) {
   if (!partial && !ID.test(String(body.dealId || ''))) return 'Invalid dealId';
   if ((!partial || body.channel !== undefined) && !CHANNELS.has(String(body.channel))) return 'Invalid channel';
   for (const name of ['plannedPublicationDate', 'materialDeadline']) if (body[name] != null && !realDate(body[name])) return `Invalid ${name}`;
-  for (const name of ['primaryContactId', 'scheduleEntryId', 'cardId']) if (body[name] != null && !ID.test(String(body[name]))) return `Invalid ${name}`;
+  for (const name of ['primaryContactId', 'scheduleEntryId', 'cardId', 'newsletterIssueId']) if (body[name] != null && !ID.test(String(body[name]))) return `Invalid ${name}`;
+  const channel = String(body.channel ?? existing?.channel ?? '');
+  const next = (name: string) => (Object.hasOwn(body, name) ? body[name] : existing?.[name]);
+  if (NEWSLETTER_CHANNELS.has(channel) && next('cardId') != null) return 'A newsletter deliverable links its issue (newsletterIssueId), not a Card';
+  if (!NEWSLETTER_CHANNELS.has(channel) && next('newsletterIssueId') != null) return 'Only a newsletter deliverable links a newsletter issue';
   if (body.artifactUrls !== undefined && (!Array.isArray(body.artifactUrls) || body.artifactUrls.length > 20 || body.artifactUrls.some((url) => { try { const parsed = new URL(String(url)); return parsed.protocol !== 'https:'; } catch { return true; } }))) return 'Invalid artifactUrls';
   return '';
 }
@@ -107,6 +113,7 @@ const safeDeliverableSummary = (deliverable: CrmRecord) => ({
   plannedPublicationDate: deliverable.plannedPublicationDate,
   scheduleEntryId: deliverable.scheduleEntryId,
   cardId: deliverable.cardId,
+  newsletterIssueId: deliverable.newsletterIssueId,
   version: deliverable.version,
   updatedAt: deliverable.updatedAt,
 });
@@ -148,7 +155,7 @@ async function decorateDeals(client: DynamoDBDocumentClient, deals: CrmRecord[],
     listOpenDealTasks(client),
   ]);
   return deals.map((deal) => {
-    const kids = deliverables.filter((item) => item.dealId === deal.id);
+    const kids = deliverables.filter((item) => item.dealId === deal.id && !item.archivedAt);
     const money = facts.get(deal.id);
     return publicDeal(deal, {
       money: deriveMoney(money), fulfillment: deriveFulfillment(kids), deliverables: kids,
@@ -298,6 +305,9 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
       const organization = await getCrmRecord(client, 'organization', String(body.organizationId));
       if (!organization || organization.archivedAt) return json(422, { error: 'Invalid organization reference' });
     }
+    if (kind === 'deliverable' && body.newsletterIssueId != null && !(await getNewsletterIssue(client, String(body.newsletterIssueId)))) {
+      return json(422, { error: 'Invalid newsletter issue reference' });
+    }
     if (kind === 'deliverable') {
       const deal = await getCrmRecord(client, 'deal', String(body.dealId));
       if (!deal || deal.archivedAt) return json(422, { error: 'Invalid deal reference' });
@@ -337,7 +347,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     const error = kind === 'organization' ? validateOrganization(body, true)
       : kind === 'contact' ? validateContact(body, true)
       : kind === 'deal' ? validateDeal(body, true, existing)
-      : validateDeliverable(body, true);
+      : validateDeliverable(body, true, existing);
     if (error) return json(400, { error });
     const nextOrganizationId = String(body.organizationId || existing.organizationId || '');
     if (kind === 'contact' || kind === 'deal') {
@@ -350,6 +360,9 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
         const contact = await getCrmRecord(client, 'contact', contactId);
         if (!contact || contact.archivedAt || contact.organizationId !== nextOrganizationId) return json(422, { error: 'Invalid primary contact reference' });
       }
+    }
+    if (kind === 'deliverable' && body.newsletterIssueId != null && !(await getNewsletterIssue(client, String(body.newsletterIssueId)))) {
+      return json(422, { error: 'Invalid newsletter issue reference' });
     }
     if (kind === 'organization' && body.domain) body.domain = registrableDomain(String(body.domain));
     try {

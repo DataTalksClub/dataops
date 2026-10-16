@@ -102,8 +102,8 @@ export function setupNewsletterDialog(options) {
         try {
           await send(value);
         } catch (error) {
-          // Cancelling deletes the issue's card; unticking a slot skips its
-          // open tasks. Both ask first when completed work is involved.
+          // Cancelling deletes the issue's card; it asks first when the card
+          // has completed work.
           if (!["card-has-completed-tasks", "slot-has-completed-tasks"].includes(error?.code)) throw error;
           if (!globalThis.confirm?.(error.message)) return;
           await send({ ...value, confirmCardDeletion: true, confirmSlotRemoval: true });

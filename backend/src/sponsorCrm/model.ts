@@ -1,6 +1,8 @@
 export const DEAL_STATUSES = new Set(['open', 'agreed', 'lost']);
 export const PRODUCT_KINDS = new Set(['one-off', 'package', 'course']);
 export const CHANNELS = new Set(['main', 'secondary', 'standalone', 'social', 'podcast', 'webinar', 'workshop', 'course', 'other']);
+/** Channels that are a newsletter slot: their deliverable links its issue (`newsletterIssueId`), never a Card. */
+export const NEWSLETTER_CHANNELS = new Set(['main', 'secondary', 'standalone']);
 export const LOST_REASONS = new Set(['no_budget', 'no_reply', 'wrong_fit', 'timing', 'other']);
 export const MONEY_STATES = ['none', 'invoiced', 'partial', 'paid', 'overdue'] as const;
 export type MoneyState = (typeof MONEY_STATES)[number];

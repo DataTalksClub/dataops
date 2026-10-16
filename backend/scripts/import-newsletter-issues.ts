@@ -6,19 +6,17 @@
  * Stand-Alone Newsletter row per stand-alone send, and a Vacation row for a
  * cancelled week. Every row has a stable `ID` (`NL-306`, `NL-306-secondary`,
  * `NL-<date>-standalone`, `NL-<date>-vacation`). Rows are grouped into one
- * issue per email: `NL-306` and `NL-306-secondary` become weekly issue #306
- * with both slots ticked, each slot keeping its row ID. A slot is ticked when
- * the sheet has a row for it; its sponsor is the row's Sponsor (`N/A` or blank
- * means not booked yet).
+ * issue per email: `NL-306` and `NL-306-secondary` become weekly issue #306,
+ * each slot keeping its row ID. A slot is booked when its row names a Sponsor
+ * (`N/A` or blank means open).
  *
- * Writing creates each issue through the API, which creates its Card from the
- * Template of its kind in the same transaction. Issues already imported are
+ * Writing creates each issue through the API. Issues already imported are
  * matched by source key and left alone.
  */
 import ExcelJS from 'exceljs';
 import { createHash } from 'crypto';
 
-type ImportSlot = { ticked: boolean; sponsor?: string; sheetId: string; documentUrl?: string };
+type ImportSlot = { sponsor?: string; sheetId?: string; documentUrl?: string };
 export type ImportIssue = {
   kind: 'weekly' | 'standalone';
   publicationDate: string;
@@ -151,7 +149,6 @@ export async function inspectNewsletterIssues(file: string, options: { today?: s
       continue;
     }
     const slot = (row: Row | undefined): ImportSlot | undefined => row && {
-      ticked: true,
       sheetId: row.id,
       ...(row.sponsor ? { sponsor: row.sponsor } : {}),
       ...(row.documentUrl ? { documentUrl: row.documentUrl } : {}),
@@ -166,8 +163,8 @@ export async function inspectNewsletterIssues(file: string, options: { today?: s
       slots: kind === 'standalone'
         ? { primary: slot(primary) }
         : head.type === 'vacation'
-          ? { primary: { ticked: false, sheetId: head.id }, secondary: { ticked: false } as ImportSlot }
-          : { primary: slot(primary) || ({ ticked: false } as ImportSlot), secondary: slot(secondary) || ({ ticked: false } as ImportSlot) },
+          ? { primary: { sheetId: head.id }, secondary: {} }
+          : { primary: slot(primary) || {}, secondary: slot(secondary) || {} },
       ...(note ? { planningNote: note } : {}),
       sourceType: 'xlsx-import',
       sourceKey: issueSourceKey(issueId),

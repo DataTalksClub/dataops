@@ -16,8 +16,7 @@ export type CalendarOverlayItem = {
   newsletter?: {
     kind: string;
     issueNumber: number | null;
-    slots: { position: string; ticked: boolean; sponsor: string | null }[];
-    ticked: number;
+    slots: { position: string; sponsor: string | null }[];
     booked: number;
   };
 };

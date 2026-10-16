@@ -438,42 +438,41 @@ describe("api passthrough", () => {
 });
 
 describe("newsletter", () => {
-  test("create makes a weekly issue with its primary slot ticked; naming a sponsor ticks its slot", async () => {
+  test("create makes a weekly issue with both slots open", async () => {
     const calls = fakePortal({
       "POST /api/newsletter-issues": ({ body }) => ({ status: 201, body: { id: "i-1", label: "Weekly #302", cardId: "c-1", ...body } }),
     });
     const io = captureIo();
-    assert.equal(await run(["newsletter", "create", "--date", "2026-11-09", "--number", "302", "--secondary-sponsor", "Example"], io), 0);
+    assert.equal(await run(["newsletter", "create", "--date", "2026-11-09", "--number", "302"], io), 0);
     assert.deepEqual(calls.at(-1).body, {
       publicationDate: "2026-11-09",
       issueNumber: 302,
       kind: "weekly",
       status: "planned",
-      slots: { primary: { ticked: true }, secondary: { ticked: true, sponsor: "Example" } },
+      slots: { primary: {}, secondary: {} },
     });
     assert.match(io.text(), /Created Weekly #302 on 2026-11-09 \[planned\], Card c-1/);
   });
 
-  test("update merges slot flags over the current slots at the current version", async () => {
+  test("update merges placement documents over the current slots at the current version", async () => {
     const current = {
       id: "i-3", version: 4, label: "Weekly #306",
-      slots: { primary: { ticked: true, sponsor: "A", sheetId: "NL-306" }, secondary: { ticked: true, sponsor: "B", documentUrl: "https://d/b" } },
+      slots: { primary: { sponsor: "A", sheetId: "NL-306" }, secondary: { sponsor: "B", documentUrl: "https://d/b" } },
     };
     const calls = fakePortal({
       "GET /api/newsletter-issues/i-3": current,
       "PUT /api/newsletter-issues/i-3": ({ body }) => ({ ...current, ...body, version: 5 }),
     });
-    assert.equal(await run(["newsletter", "update", "i-3", "--secondary", "off", "--primary-sponsor", "C", "--confirm"], captureIo()), 0);
+    assert.equal(await run(["newsletter", "update", "i-3", "--secondary-doc", "none", "--primary-doc", "https://d/a", "--confirm"], captureIo()), 0);
     assert.deepEqual(calls.at(-1).body, {
       slots: {
-        primary: { ticked: true, sponsor: "C", sheetId: "NL-306" },
-        secondary: { ticked: false, documentUrl: "https://d/b" },
+        primary: { sponsor: "A", sheetId: "NL-306", documentUrl: "https://d/a" },
+        secondary: { sponsor: "B" },
       },
       confirmCardDeletion: true,
       confirmSlotRemoval: true,
       version: 4,
     });
-    assert.equal(await run(["newsletter", "update", "i-3", "--secondary", "maybe"], captureIo()), 2);
     assert.equal(await run(["newsletter", "update", "i-3"], captureIo()), 2);
   });
 
@@ -696,5 +695,29 @@ describe("automations", () => {
     assert.deepEqual(calls.at(-1).body, { sponsorFollowUpDays: 10, expectedVersion: 3 });
     assert.equal(await run(["automations", "set", "sponsorFollowUpDays", "soon"], captureIo()), 2);
     assert.equal(await run(["automations", "set", "nightlyMagic", "1"], captureIo()), 2);
+  });
+});
+
+describe("newsletter slots", () => {
+  const issue = { id: "i-1", version: 3, kind: "weekly", label: "Weekly #350", publicationDate: "2027-05-03", status: "planned", slots: { primary: {}, secondary: {} } };
+
+  test("book sends the deal or organization with the issue version, release confirms on request", async () => {
+    const calls = fakePortal({
+      "GET /api/newsletter-issues/i-1": issue,
+      "PUT /api/newsletter-issues/i-1/slots/secondary": ({ body }) => ({
+        status: 200, body: { ...issue, slots: { ...issue.slots, secondary: { sponsor: "Synthetic Org" } }, deliverableId: "d-1", sent: body },
+      }),
+      "DELETE /api/newsletter-issues/i-1/slots/secondary": () => ({ status: 200, body: { ...issue, withdrawnDeliverables: ["d-1"] } }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["newsletter", "book", "i-1", "secondary", "--deal", "deal-1"], io), 0);
+    assert.deepEqual(calls.at(-1).body, { version: 3, dealId: "deal-1" });
+    assert.match(io.text(), /Booked Synthetic Org on the secondary slot/);
+    assert.equal(await run(["newsletter", "book", "i-1", "secondary", "--organization", "org-1"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { version: 3, organizationId: "org-1" });
+    assert.equal(await run(["newsletter", "book", "i-1", "secondary"], captureIo()), 2);
+    assert.equal(await run(["newsletter", "book", "i-1", "tertiary", "--deal", "deal-1"], captureIo()), 2);
+    assert.equal(await run(["newsletter", "release", "i-1", "secondary", "--confirm"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { version: 3, confirmSlotRemoval: true });
   });
 });

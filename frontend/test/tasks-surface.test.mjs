@@ -1304,7 +1304,7 @@ describe("Tasks surface boundary", () => {
       request: async (url) => (url === `/api/newsletter-issues?cardId=${card.id}`
         ? { items: [{
           id: "issue-1", kind: "weekly", label: "Weekly #299", issueNumber: 299, publicationDate: "2026-08-14", status: "planned",
-          slots: { primary: { ticked: true, sponsor: "Acme" }, secondary: { ticked: true } },
+          slots: { primary: { sponsor: "Acme" }, secondary: {} },
         }] }
         : {}),
       taskRouteContext: {
@@ -1323,7 +1323,7 @@ describe("Tasks surface boundary", () => {
     assert.deepEqual(rows.slice(0, 4), [
       ["Issue", "Weekly #299"],
       ["Date", "14 Aug"],
-      ["Slots", "Primary: Acme · Secondary: TBD"],
+      ["Slots", "Primary: Acme · Secondary: open"],
       ["Status", "planned"],
     ]);
     assert.deepEqual(rows.slice(4).map(([label]) => label), ["Progress", "Due"]);
