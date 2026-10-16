@@ -277,7 +277,7 @@ test('seasons overview shows each season as status cells, the unnumbered lane an
   await expect(s25.locator('.podcast-cell--gap')).toHaveText(['E1']);
   await expect(s25.locator(`[data-episode-id="${episodes.edited.id}"]`)).toHaveAttribute('data-status', 'edited');
   const s24 = page.locator('.podcast-season[data-season="24"]');
-  await expect(s24.locator('.podcast-season__issues')).toHaveText('no E1, E2, E3, E4, E5, E6, E7, E8');
+  await expect(s24.locator('.podcast-season__head')).toHaveText(/^Season 24\s*1 published$/);
   await expect(s24.locator('.podcast-cell--gap')).toHaveCount(8);
   const lane = page.locator('.podcast-pipeline');
   await expect(lane.locator('.dk-split__item')).toHaveCount(1);

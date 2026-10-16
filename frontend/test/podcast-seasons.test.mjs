@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import {
-  buildSeasonGrid, countsLabel, episodeFlag, formatAge, numberingLabel, STALE_DAYS,
+  buildSeasonGrid, countsLabel, episodeFlag, formatAge, STALE_DAYS,
 } from "../src/surfaces/podcast/seasons-model.js";
 import { createPodcastSurface } from "../src/surfaces/podcast/index.js";
 import { FakeDocument, FakeElement, findAllByClass, findByText, nextTicks } from "./support/fake-dom.mjs";
@@ -68,9 +68,6 @@ describe("seasons model", () => {
       s3.cells.map((cell) => (cell.kind === "gap" ? `gap${cell.number}` : `${cell.episode.id}${cell.duplicate ? "*" : ""}`)),
       ["s3e1", "gap2", "gap3", "s3e4a*", "s3e4b*"],
     );
-    assert.deepEqual(s3.gaps, [2, 3]);
-    assert.deepEqual(s3.duplicates, [4]);
-    assert.equal(numberingLabel(s3), "E4 twice · no E2, E3");
     assert.equal(countsLabel(grid.seasons[0].counts), "1 published · 1 recorded");
     assert.equal(countsLabel({ booked: 1, published: 6, recorded: 1 }), "6 published · 1 recorded · 1 booked");
     assert.deepEqual(grid.pipeline.map((item) => item.episode.id), ["kim", "late", "booked"]);
@@ -129,7 +126,7 @@ describe("Podcast seasons view", () => {
     assert.deepEqual(seasons, ["4", "3"]);
     const s3 = documentList.querySelector('.podcast-season[data-season="3"]');
     assert.ok(findByText(s3, "3 published", ".podcast-season__counts"));
-    assert.ok(findByText(s3, "E4 twice · no E2, E3", ".podcast-season__issues"));
+    assert.equal(s3.querySelector(".podcast-season__head").children.length, 2, "title and counts; gaps show only as dashed cells");
     assert.deepEqual(findAllByClass(s3, "podcast-cell").map((cell) => cell.textContent), ["E1", "E2", "E3", "E4", "E4"]);
     assert.equal(findAllByClass(s3, "podcast-cell--gap").length, 2);
     const duplicate = s3.querySelector('[data-episode-id="s3e4a"]');

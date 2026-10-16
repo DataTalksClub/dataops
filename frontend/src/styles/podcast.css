@@ -164,7 +164,6 @@ body[data-workspace-view="podcast"] .document-list {
 .podcast-season__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--dk-space-1) var(--dk-space-2); }
 .podcast-season__title { margin: 0; color: var(--dk-text-heading); font-size: var(--dk-text-sm); font-weight: var(--dk-weight-semibold); }
 .podcast-season__counts { color: var(--dk-text-muted); font-size: var(--dk-text-xs); }
-.podcast-season__issues { color: var(--dk-danger-text); font-size: var(--dk-text-xs); font-weight: var(--dk-weight-medium); }
 .podcast-cells { display: flex; flex-wrap: wrap; gap: var(--dk-space-1); margin: 0; padding: 0; list-style: none; }
 .podcast-cells > li { display: flex; }
 

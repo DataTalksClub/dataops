@@ -7,7 +7,7 @@
 import { attachHovercard } from "../../core/hovercard.js";
 import { element, emptyState, formatDate, icon, statusChip } from "./dom.js";
 import { episodeCode, episodeSummary, LINK_KINDS, matchesSearch, statusLabel } from "./model.js";
-import { countsLabel, GRID_STATUSES, numberingLabel } from "./seasons-model.js";
+import { countsLabel, GRID_STATUSES } from "./seasons-model.js";
 
 const enc = encodeURIComponent;
 
@@ -108,8 +108,6 @@ function renderSeason(documentRef, row, options) {
   const title = element(documentRef, "h3", "podcast-season__title", `Season ${row.season}`);
   title.id = `podcast-season-${row.season}`;
   head.append(title, element(documentRef, "span", "podcast-season__counts", countsLabel(row.counts)));
-  const numbering = numberingLabel(row);
-  if (numbering) head.append(element(documentRef, "span", "podcast-season__issues", numbering));
   const cells = element(documentRef, "ol", "podcast-cells");
   cells.setAttribute("aria-labelledby", title.id);
   for (const cell of row.cells) cells.append(renderCell(documentRef, cell, row, options));

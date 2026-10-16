@@ -81,7 +81,7 @@ export function countsLabel(counts) {
 /**
  * The overview of `episodes` as of `today` (YYYY-MM-DD):
  *   pipeline  in-flight episodes with no episode number, soonest date first;
- *   seasons   newest first: { season, cells, counts, gaps, duplicates };
+ *   seasons   newest first: { season, cells, counts };
  *             a cell is { kind: "episode", number, episode, duplicate, flag }
  *             or { kind: "gap", number }; an unnumbered episode that is not in
  *             flight sits after the numbered ones with number null;
@@ -111,16 +111,12 @@ export function buildSeasonGrid(episodes, today) {
     }
     const highest = Math.max(0, ...numbered.keys());
     const cells = [];
-    const gaps = [];
-    const duplicates = [];
     for (let number = 1; number <= highest; number += 1) {
       const holders = (numbered.get(number) || []).sort(byKeyDate);
       if (!holders.length) {
-        gaps.push(number);
         cells.push({ kind: "gap", number });
         continue;
       }
-      if (holders.length > 1) duplicates.push(number);
       for (const episode of holders) {
         cells.push({ kind: "episode", number, episode, duplicate: holders.length > 1, flag: episodeFlag(episode, today) });
       }
@@ -128,19 +124,11 @@ export function buildSeasonGrid(episodes, today) {
     for (const episode of unnumbered.sort(byKeyDate)) {
       cells.push({ kind: "episode", number: null, episode, duplicate: false, flag: episodeFlag(episode, today) });
     }
-    return { season, cells, counts: countStatuses(members), gaps, duplicates };
+    return { season, cells, counts: countStatuses(members) };
   });
   return {
     pipeline: pipeline.sort(byKeyDate).map((episode) => ({ episode, flag: episodeFlag(episode, today) })),
     seasons,
     loose: loose.sort(byKeyDate),
   };
-}
-
-/** "E4 twice · no E5": the numbering problems of one season, or "". */
-export function numberingLabel(row) {
-  const parts = [];
-  if (row.duplicates.length) parts.push(`${row.duplicates.map((n) => `E${n}`).join(", ")} twice`);
-  if (row.gaps.length) parts.push(`no ${row.gaps.map((n) => `E${n}`).join(", ")}`);
-  return parts.join(" · ");
 }
