@@ -47,6 +47,8 @@ export function createSponsorCrmSurface(context) {
   } = context;
 
   let sponsorCommunications = null;
+  // Whether the operator unfolded the alerts; a repaint of the surface keeps it.
+  let alertsOpen = false;
 
   async function canLeaveFinanceSurface(reason = "navigation") {
     return (
@@ -71,6 +73,11 @@ export function createSponsorCrmSurface(context) {
     const surface = document.createElement("section");
     surface.className = "sponsor-crm-surface";
     surface.innerHTML = sponsorSurfaceMarkup(humanizeOptionLabel);
+    const alertsSection = surface.querySelector(".crm-alerts");
+    alertsSection.open = alertsOpen;
+    alertsSection.addEventListener("toggle", () => {
+      alertsOpen = alertsSection.open;
+    });
     documentList.append(surface);
     surface.querySelector("[data-crm-bookings]").classList.add("crm-pipeline-board");
     surface.querySelector("[data-crm-status]").innerHTML = html`<option value="">All stages</option>${

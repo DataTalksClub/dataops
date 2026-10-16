@@ -903,6 +903,26 @@ describe("Finance surface boundary", () => {
     );
   });
 
+  test("unfolded sponsor alerts stay unfolded when the surface repaints", async () => {
+    const { document, finance } = createHarness({
+      request: async (url) => {
+        const path = requestPath(url);
+        if (path === "/api/notifications") return { notifications: { items: [] } };
+        return { items: [] };
+      },
+    });
+    await finance.renderSponsorCrmSurface();
+    const first = document.surface.querySelector(".crm-alerts");
+    assert.equal(first.open, false, "alerts start folded");
+    first.open = true;
+    await first.dispatch("toggle");
+    await finance.renderSponsorCrmSurface();
+    const sections = document.created.filter((element) => element.tagName === "SECTION");
+    const repainted = sections.at(-1);
+    assert.notEqual(repainted, document.surface);
+    assert.equal(repainted.querySelector(".crm-alerts").open, true);
+  });
+
   test("renders Pipeline, Company, and Leads and Convert hits the leads API", async () => {
     let lead = {
       id: "lead-convert",
