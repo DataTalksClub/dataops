@@ -835,6 +835,49 @@ Resources:
         - Key: DataClass
           Value: ExecutionState
 
+  DataOpsSecretsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-secrets
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: PrivateTeamSecrets
+
+  SecretsStoreKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" }
+            Action: "kms:*"
+            Resource: "*"
+
   DataOpsSessionsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -1217,6 +1260,7 @@ Resources:
               - !Sub ${DataOpsFilesTable.Arn}/index/*
               - !GetAtt DataOpsArtifactsTable.Arn
               - !GetAtt DataOpsAuditEventsTable.Arn
+              - !GetAtt DataOpsSecretsTable.Arn
               - !GetAtt DataOpsIntakeTable.Arn
               - !Sub ${DataOpsIntakeTable.Arn}/index/*
               - !GetAtt DataOpsNotificationsTable.Arn
@@ -1320,6 +1364,7 @@ Resources:
             Resource:
               - !GetAtt BookkeepingDocumentsKey.Arn
               - !GetAtt EmailDocumentsKey.Arn
+              - !GetAtt SecretsStoreKey.Arn
         - !If
           - HasEmailDocumentExternalSourceKms
           - Statement:
@@ -1332,6 +1377,8 @@ Resources:
           DATAOPS_ENV: !Ref DataOpsEnvironment
           DATAOPS_TABLE_PREFIX: !Ref AWS::StackName
           DATAOPS_PODCAST_EPISODES_TABLE: !Ref DataOpsPodcastEpisodesTable
+          DATAOPS_SECRETS_TABLE: !Ref DataOpsSecretsTable
+          DATAOPS_SECRETS_KMS_KEY: !Ref SecretsStoreKey
           SPONSOR_FINANCE_ENABLED: !Ref SponsorFinanceEnabled
           NEWSLETTER_OPEN_ALERT_LEAD_DAYS: !Ref NewsletterOpenAlertLeadDays
           NEWSLETTER_WORKFLOW_ALERT_LEAD_DAYS: !Ref NewsletterWorkflowAlertLeadDays
@@ -1630,6 +1677,9 @@ Outputs:
   DataOpsArtifactsTableName:
     Description: DynamoDB table for artifact metadata
     Value: !Ref DataOpsArtifactsTable
+  DataOpsSecretsTableName:
+    Description: DynamoDB table for the encrypted team secrets store
+    Value: !Ref DataOpsSecretsTable
   DataOpsAuditEventsTableName:
     Description: DynamoDB table for assistant job and workflow audit events
     Value: !Ref DataOpsAuditEventsTable
