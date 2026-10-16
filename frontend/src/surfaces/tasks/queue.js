@@ -246,7 +246,7 @@ export function createTaskQueue(context) {
         // the browser-need filter share one toolbar row with the create actions.
         filters.prepend(
           renderAssigneeFilter(allOpenTasks),
-          ...[resourceFilter, browserFilter],
+          ...[resourceFilter, browserFilter].filter(Boolean),
         );
 
         if (visibleOpen.length > 0) {
