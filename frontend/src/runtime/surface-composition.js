@@ -174,6 +174,23 @@ export function createSurfaceComposition(context) {
     );
   }
 
+  // Surfaces that fetch and own their data. The shared bootstrap snapshots
+  // (work, recurring, quality, docs catalog) never feed them, so a snapshot
+  // landing must not repaint them: the repaint would rebuild the page under
+  // the operator, refetch it, and drop the tab or filter they had chosen.
+  const SELF_LOADING_VIEWS = new Set([
+    "bookkeeping", "calendar", "newsletter", "podcast", "sponsors", "users",
+  ]);
+
+  // Whether what is on screen renders from the shared snapshots, so a
+  // background snapshot refresh has something to repaint.
+  function showsSharedSnapshots() {
+    return !(
+      isOperationsWorkspaceVisible() &&
+      SELF_LOADING_VIEWS.has(workspaceState.activeWorkspaceView)
+    );
+  }
+
   function workApiUrl(path, params = {}) {
     const url = apiUrl(path);
     for (const [key, value] of Object.entries(params)) {
@@ -213,7 +230,7 @@ export function createSurfaceComposition(context) {
       context.renderInBackground({
         previous,
         next: workspaceState.recurringSnapshot,
-        when: isOperationsWorkspaceVisible,
+        when: () => isOperationsWorkspaceVisible() && showsSharedSnapshots(),
       });
     } else if (options.rerender && isOperationsWorkspaceVisible()) {
       refreshDocuments();
@@ -334,6 +351,7 @@ export function createSurfaceComposition(context) {
     renderOperationsWorkspace,
     setRouteTitle,
     setView,
+    showsSharedSnapshots,
     showWorkspaceSurface,
     syncWorkspaceNav,
     workApiUrl,

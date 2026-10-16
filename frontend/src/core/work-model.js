@@ -46,6 +46,7 @@ export function createWorkModel(context) {
     request,
     resolveDocReference,
     settledPayload,
+    showsSharedSnapshots,
     state,
     summarizeWorkflowTemplate,
     taskHasClearProofInstruction,
@@ -64,7 +65,11 @@ export function createWorkModel(context) {
   // waits for the operator to finish what they are doing.
   function repaintAfterRefresh(options, previous, next) {
     if (options.background) {
-      renderInBackground({ previous, next, when: isOperationsWorkspaceVisible });
+      renderInBackground({
+        previous,
+        next,
+        when: () => isOperationsWorkspaceVisible() && showsSharedSnapshots(),
+      });
     } else if (options.rerender && isOperationsWorkspaceVisible()) {
       refreshDocuments();
     }

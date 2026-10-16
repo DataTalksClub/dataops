@@ -138,6 +138,7 @@ const {
   renderOperationsWorkspace,
   setRouteTitle,
   setView,
+  showsSharedSnapshots,
   showWorkspaceSurface,
   syncWorkspaceNav,
   workApiUrl,
@@ -328,6 +329,7 @@ const {
   refreshOperationsWorkSnapshot,
 } = createWorkModel({
   renderInBackground,
+  showsSharedSnapshots,
   activeWorkOwner,
   activeWorkOwnerId,
   allWorkTasks,
@@ -570,6 +572,7 @@ podcastSurface = createPodcastSurface({
 knowledgeSurface = createKnowledgeSurface({
   knowledgeTools: document.querySelector("#knowledge-tools"),
   renderInBackground,
+  showsSharedSnapshots,
   apiUrl,
   basename,
   beginDocumentNavigation,

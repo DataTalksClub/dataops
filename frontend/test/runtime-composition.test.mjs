@@ -274,6 +274,27 @@ describe("runtime surface composition", () => {
     ]);
   });
 
+  test("a landing bootstrap snapshot never repaints a surface that loads its own data", async () => {
+    for (const view of ["bookkeeping", "calendar", "newsletter", "podcast", "sponsors", "users"]) {
+      const harness = createSurfaceHarness({ view });
+      assert.equal(harness.composition.showsSharedSnapshots(), false, view);
+      await harness.composition.refreshOperationsRecurringSnapshot({ background: true });
+      const [, change] = harness.calls.find(([name]) => name === "render-in-background");
+      assert.equal(change.when(), false, view);
+    }
+    for (const view of ["tasks", "docs", "admin", "operating-model"]) {
+      const harness = createSurfaceHarness({ view });
+      assert.equal(harness.composition.showsSharedSnapshots(), true, view);
+      await harness.composition.refreshOperationsRecurringSnapshot({ background: true });
+      const [, change] = harness.calls.find(([name]) => name === "render-in-background");
+      assert.equal(change.when(), true, view);
+    }
+    // Off the workspace (a search, a folder) the list renders from the docs
+    // catalog whatever workspace view was last active.
+    const searching = createSurfaceHarness({ view: "newsletter", searchValue: "sponsor" });
+    assert.equal(searching.composition.showsSharedSnapshots(), true);
+  });
+
   test("short-circuits retained dirty-surface leave guards in stable order", async () => {
     const harness = createSurfaceHarness({ financeLeave: false });
     assert.equal(await harness.composition.canLeaveCurrentDocument(), false);

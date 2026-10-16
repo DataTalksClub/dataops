@@ -15,6 +15,7 @@ export function createKnowledgeCatalog(context, services) {
     renderInBackground,
     request,
     setDocsAvailability,
+    showsSharedSnapshots,
   } = context;
   const { populateFilterOptions } = services;
   let catalogRequestId = 0;
@@ -41,7 +42,7 @@ export function createKnowledgeCatalog(context, services) {
       setDocsAvailability(loadedOperationsDocsSnapshot(knowledgeState.allDocuments));
       rebuildDocumentIdMap();
       populateFilterOptions();
-      renderInBackground();
+      renderInBackground({ when: showsSharedSnapshots });
     } catch (error) {
       if (requestId !== catalogRequestId) return;
       // The bootstrap catalog request is the single source of docs
@@ -50,7 +51,7 @@ export function createKnowledgeCatalog(context, services) {
       // reading like an empty corpus.
       knowledgeState.allDocuments = [];
       setDocsAvailability(unavailableOperationsDocsSnapshot(error));
-      renderInBackground();
+      renderInBackground({ when: showsSharedSnapshots });
     }
   }
 
