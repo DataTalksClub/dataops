@@ -4,22 +4,27 @@
  *   1. Website (`<repo>/_podcast/*.md` front matter, guests resolved through
  *      `_people/*.md`) is primary for published episodes. Season and episode
  *      numbers always come from the website.
- *   2. The schedule sheet ("Time table" + "Extra podcast slots", read by
- *      import-calendar.ts) adds recording dates to published episodes and
- *      contributes upcoming episodes (booked / recorded).
+ *   2. The schedule sheet (read by import-calendar.ts). "Extra podcast
+ *      slots" is the register: it adds recording dates to published episodes
+ *      (matched by season/episode, else guest and date) and contributes
+ *      upcoming episodes (booked / recorded). "Time table" is the weekly plan
+ *      and never creates an episode: a row only confirms the episode recorded
+ *      that week, or dates a published episode that has no recording date.
+ *      The host (`--hosts "Name,Name"`) is never a guest.
  *   3. The RSS feed only fills missing anchor/spotify/apple links. Numbering
  *      that disagrees with the website is reported, never stored.
  *
  * Existing episodes are matched by websiteSlug, then scheduleSourceKey, then
- * (normalized guest name, recording within ±60 days of release). The importer
- * never creates Cards.
+ * (normalized guest name, recording within ±60 days of release). Register
+ * episodes nothing matches are listed as `registerUnmatched`. The importer
+ * never creates Cards and never deletes.
  *
  * Dry run is the default and prints the report to stdout; nothing is written
  * to disk. `--write` goes through the API and requires PODCAST_IMPORT_API,
  * PODCAST_IMPORT_TOKEN and PODCAST_IMPORT_CONFIRM (equal to the API URL).
  *
  *   tsx scripts/import-podcast-episodes.ts --website ../datatalksclub.github.io \
- *     --schedule <schedule.xlsx> --rss <feed.xml> [--write]
+ *     --schedule <schedule.xlsx> --rss <feed.xml> --hosts "Host Name" [--write]
  */
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
@@ -35,6 +40,8 @@ type Guest = { name: string; slug?: string };
 const STATUS_RANK = ["booked", "recorded", "edited", "scheduled", "published"];
 const MATCH_DAYS = 60;
 const SAME_RECORDING_DAYS = 21;
+/** A Time table row's date and the episode recorded that week. */
+const WEEK_DAYS = 6;
 
 export type WebsiteEpisode = {
   slug: string;
@@ -105,10 +112,14 @@ const guestNames = (value: string) =>
 const sameTitle = (site: Pick<WebsiteEpisode, "title" | "short">, title: string | undefined) =>
   Boolean(title) &&
   [site.title, site.short].some((value) => value && normalizeName(value) === normalizeName(title!));
+/** A guest name with transliteration variants folded: Aleksandr = Alexander. */
+export const nameKey = (value: string) =>
+  normalizeName(value).replace(/ks/g, "x").replace(/andr\b/g, "ander");
 const sameGuest = (left: Guest[], right: Guest[]) => {
-  const names = new Set(left.map((guest) => normalizeName(guest.name)));
-  return right.some((guest) => names.has(normalizeName(guest.name)));
+  const names = new Set(left.map((guest) => nameKey(guest.name)));
+  return right.some((guest) => names.has(nameKey(guest.name)));
 };
+const asGuests = (row: PodcastScheduleRow) => row.guests.map((name) => ({ name }));
 
 function frontMatter(file: string): Record<string, any> {
   const source = readFileSync(file, "utf8");
@@ -195,7 +206,10 @@ export function mergeSources(input: {
   schedule: PodcastScheduleRow[];
   rss: RssItem[];
   today: string;
+  /** The podcast host(s): never a guest. */
+  hosts?: string[];
 }) {
+  const where = (row: PodcastScheduleRow) => `${row.sheet}!${row.row}`;
   const report = {
     website: input.website.length,
     scheduleRows: input.schedule.length,
@@ -205,11 +219,23 @@ export function mergeSources(input: {
     rssUnmatched: [] as string[],
     scheduleMatched: 0,
     scheduleDuplicateRows: 0,
+    scheduleHostRows: [] as string[],
+    timetableMatched: 0,
+    timetableRecordingDates: 0,
+    timetableUnmatched: [] as string[],
     scheduleUnmatchedHistory: 0,
     scheduleNotBooked: [] as string[],
     scheduleCancelled: [] as string[],
     scheduleAmbiguous: [] as string[],
     publishedWithoutReleaseDate: input.website.filter((site) => !site.releaseDate).length,
+  };
+  /** Classify a schedule row that is not a booked recording; true when it is not one. */
+  const unbooked = (row: PodcastScheduleRow) => {
+    if (row.hidden) report.scheduleUnmatchedHistory++;
+    else if (row.status.includes("cancel")) report.scheduleCancelled.push(where(row));
+    else if (!row.status.includes("confirm")) report.scheduleNotBooked.push(where(row));
+    else return false;
+    return true;
   };
   const episodes: DesiredEpisode[] = input.website.map((site) => ({
     source: "website",
@@ -264,17 +290,26 @@ export function mergeSources(input: {
       });
   }
 
-  // Schedule: recording dates for published episodes, upcoming episodes otherwise.
-  // "Time table" (weekly plan) and "Extra podcast slots" often both carry the
-  // same recording a few days apart; keep one row per guest within
-  // SAME_RECORDING_DAYS, preferring a titled row, then the Extra slot.
-  const rank = (row: PodcastScheduleRow) =>
-    (row.title ? 2 : 0) + (row.sheet === "Extra podcast slots" ? 1 : 0);
+  // The host appears in schedule cells (a week's workshop, a solo
+  // recording) but is never a guest.
+  const hosts = new Set((input.hosts || []).map(nameKey));
+  const rows: PodcastScheduleRow[] = [];
+  for (const row of input.schedule) {
+    const guests = row.guests.filter((name) => !hosts.has(nameKey(name)));
+    if (guests.length) rows.push({ ...row, guests });
+    else if (!row.hidden) report.scheduleHostRows.push(where(row));
+  }
+
+  // "Extra podcast slots" is the episode register: recording dates for
+  // published episodes, upcoming episodes otherwise. A row with a season and
+  // episode matches that website episode; otherwise guest and date. Twin rows
+  // for one recording keep the titled one.
   const kept: PodcastScheduleRow[] = [];
-  for (const row of [...input.schedule].sort((left, right) => rank(right) - rank(left))) {
+  const extra = rows.filter((row) => row.sheet === "Extra podcast slots");
+  for (const row of extra.sort((left, right) => (right.title ? 1 : 0) - (left.title ? 1 : 0))) {
     const twin = kept.find(
       (other) =>
-        sameGuest(other.guests.map((name) => ({ name })), row.guests.map((name) => ({ name }))) &&
+        sameGuest(asGuests(other), asGuests(row)) &&
         days(other.recordingDate, row.recordingDate) <= SAME_RECORDING_DAYS,
     );
     if (twin) report.scheduleDuplicateRows++;
@@ -284,17 +319,28 @@ export function mergeSources(input: {
   const claimed = new Map<string, { days: number; row: PodcastScheduleRow }>();
   const unmatched: PodcastScheduleRow[] = [];
   for (const row of kept) {
-    const candidates = episodes
-      .filter(
-        (episode) =>
-          sameGuest(episode.guests, row.guests.map((name) => ({ name }))) &&
-          (episode.releaseDate
-            ? days(episode.releaseDate, row.recordingDate) <= MATCH_DAYS
-            : sameTitle(sites.get(episode.websiteSlug!)!, row.title)),
-      )
+    const numbered = episodes.filter(
+      (episode) =>
+        row.season !== undefined &&
+        row.episode !== undefined &&
+        episode.season === row.season &&
+        episode.episode === row.episode,
+    );
+    const candidates = (
+      numbered.length === 1
+        ? numbered
+        : episodes.filter(
+            (episode) =>
+              episode.source === "website" &&
+              sameGuest(episode.guests, asGuests(row)) &&
+              (episode.releaseDate
+                ? days(episode.releaseDate, row.recordingDate) <= MATCH_DAYS
+                : sameTitle(sites.get(episode.websiteSlug!)!, row.title)),
+          )
+    )
       .map((episode) => ({
         episode,
-        days: episode.releaseDate ? days(episode.releaseDate, row.recordingDate) : 0,
+        days: numbered.length === 1 || !episode.releaseDate ? 0 : days(episode.releaseDate, row.recordingDate),
       }))
       .sort((left, right) => left.days - right.days);
     if (candidates.length === 0) {
@@ -304,10 +350,10 @@ export function mergeSources(input: {
     const best = candidates[0];
     const previous = claimed.get(best.episode.websiteSlug!);
     if (previous && previous.days <= best.days) {
-      report.scheduleAmbiguous.push(`${row.sheet}!${row.row}`);
+      report.scheduleAmbiguous.push(where(row));
       continue;
     }
-    if (previous) report.scheduleAmbiguous.push(`${previous.row.sheet}!${previous.row.row}`);
+    if (previous) report.scheduleAmbiguous.push(where(previous.row));
     claimed.set(best.episode.websiteSlug!, { days: best.days, row });
   }
   for (const [slug, { row }] of claimed) {
@@ -317,28 +363,59 @@ export function mergeSources(input: {
     report.scheduleMatched++;
   }
   for (const row of unmatched) {
-    const where = `${row.sheet}!${row.row}`;
-    if (row.hidden) {
-      report.scheduleUnmatchedHistory++;
-      continue;
-    }
-    if (row.status.includes("cancel")) {
-      report.scheduleCancelled.push(where);
-      continue;
-    }
-    if (!row.status.includes("confirm")) {
-      report.scheduleNotBooked.push(where);
-      continue;
-    }
-    episodes.push({
-      source: "schedule",
-      ...(row.title ? { title: row.title } : {}),
-      guests: row.guests.map((name) => ({ name })),
-      recordingDate: row.recordingDate,
-      status: row.recordingDate >= input.today ? "booked" : "recorded",
-      scheduleSourceKey: scheduleSourceKey(row),
-    });
+    if (!unbooked(row))
+      episodes.push({
+        source: "schedule",
+        ...(row.title ? { title: row.title } : {}),
+        guests: asGuests(row),
+        recordingDate: row.recordingDate,
+        status: row.recordingDate >= input.today ? "booked" : "recorded",
+        scheduleSourceKey: scheduleSourceKey(row),
+      });
   }
+
+  // "Time table" is the weekly plan: it never creates an episode. A row
+  // confirms the episode recorded within its week (sharing a guest, or on the
+  // same day), and otherwise gives a published website episode without a
+  // recording date its recording date (same guest, released within
+  // MATCH_DAYS after).
+  const dated: string[] = [];
+  for (const row of rows
+    .filter((row) => row.sheet === "Time table")
+    .sort((left, right) => left.recordingDate.localeCompare(right.recordingDate))) {
+    const week = episodes.filter(
+      (episode) => episode.recordingDate && days(episode.recordingDate, row.recordingDate) <= WEEK_DAYS,
+    );
+    const named = week.filter((episode) => sameGuest(episode.guests, asGuests(row)));
+    const match = named.length ? named : week.filter((episode) => episode.recordingDate === row.recordingDate);
+    if (match.length === 1) {
+      report.timetableMatched++;
+      continue;
+    }
+    if (match.length > 1) {
+      report.scheduleAmbiguous.push(where(row));
+      continue;
+    }
+    const published = episodes
+      .filter(
+        (episode) =>
+          episode.source === "website" &&
+          !episode.recordingDate &&
+          episode.releaseDate &&
+          episode.releaseDate >= row.recordingDate &&
+          days(episode.releaseDate, row.recordingDate) <= MATCH_DAYS &&
+          sameGuest(episode.guests, asGuests(row)),
+      )
+      .sort((left, right) => left.releaseDate!.localeCompare(right.releaseDate!));
+    if (published.length) {
+      published[0].recordingDate = row.recordingDate;
+      dated.push(published[0].websiteSlug!);
+      report.timetableMatched++;
+      continue;
+    }
+    if (!unbooked(row)) report.timetableUnmatched.push(where(row));
+  }
+  report.timetableRecordingDates = dated.length;
   return { episodes, report };
 }
 
@@ -412,7 +489,18 @@ export function planWrites(desired: DesiredEpisode[], existing: ExistingEpisode[
     if (Object.keys(changes).length) updates.push({ id: current.id, version: current.version, changes });
     else unchanged++;
   }
-  return { creates, updates, unchanged, conflicts };
+  // Register episodes no source row accounts for: manual entries, or junk
+  // and duplicates from an earlier import to review and delete.
+  const unmatched = existing
+    .filter((episode) => !used.has(episode.id))
+    .map((episode) => ({
+      id: episode.id,
+      guests: (episode.guests || []).map((guest) => guest.name),
+      recordingDate: episode.recordingDate || null,
+      status: episode.status,
+      cardId: episode.cardId || null,
+    }));
+  return { creates, updates, unchanged, conflicts, unmatched };
 }
 
 const body = (episode: DesiredEpisode) => {
@@ -445,6 +533,7 @@ async function main() {
     schedule: schedulePath ? await readPodcastSchedule(schedulePath) : [],
     rss: rssPath ? parseRss(readFileSync(rssPath, "utf8")) : [],
     today,
+    hosts: option("--hosts").split(",").map((name) => name.trim()).filter(Boolean),
   });
   const base = (process.env.PODCAST_IMPORT_API || "").replace(/\/$/, "");
   const token = process.env.PODCAST_IMPORT_TOKEN || "";
@@ -467,6 +556,7 @@ async function main() {
     updates: plan.updates.length,
     unchanged: plan.unchanged,
     matchConflicts: plan.conflicts,
+    registerUnmatched: plan.unmatched,
   };
   if (!write) {
     console.log(JSON.stringify(summary, null, 2));

@@ -331,11 +331,20 @@ export async function inspectCalendarImport(
 export type PodcastScheduleRow = {
   sheet: (typeof ALLOWED_SHEETS)[number];
   row: number;
+  /**
+   * "Extra podcast slots": the Date column. "Time table": the "(Aug 18)"
+   * date in the guest cell when present, else the week's Monday (`weekOf`).
+   */
   recordingDate: string;
+  /** "Time table" only: the week's Monday (podcast live column). */
+  weekOf?: string;
   guests: string[];
   status: string;
   releaseDate?: string;
   title?: string;
+  /** "Extra podcast slots" only; used to match a website episode, never stored. */
+  season?: number;
+  episode?: number;
   /** Hidden rows are the sheet's archived history. */
   hidden: boolean;
 };
@@ -346,12 +355,37 @@ const scheduleGuests = (value: string) =>
     .split(/\s*(?:&|,|\band\b)\s*/)
     .map((name) => name.replace(/\s+/g, " ").trim())
     .filter(Boolean);
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+/**
+ * The first "(Aug 18)" / "(sept 8)" date in a Time table guest cell, in the
+ * year that puts it closest to the week's Monday (a cell can point into the
+ * next week, across New Year too).
+ */
+export function guestCellDate(value: string, weekOf: string) {
+  const match = value.match(/\(\s*([A-Za-z]{3,9})\.?\s+(\d{1,2})\b/);
+  if (!match) return "";
+  const month = MONTHS.indexOf(match[1].slice(0, 3).toLowerCase()),
+    day = Number(match[2]);
+  if (month < 0) return "";
+  const anchor = Date.parse(`${weekOf}T00:00:00Z`),
+    year = Number(weekOf.slice(0, 4));
+  const candidates = [year - 1, year, year + 1]
+    .map((y) => new Date(Date.UTC(y, month, day)))
+    .filter((date) => date.getUTCDate() === day);
+  if (!candidates.length) return "";
+  candidates.sort((a, b) => Math.abs(a.getTime() - anchor) - Math.abs(b.getTime() - anchor));
+  return candidates[0].toISOString().slice(0, 10);
+}
+const positiveInteger = (value: unknown) => {
+  const number = Number(text(value));
+  return Number.isSafeInteger(number) && number > 0 ? number : undefined;
+};
 /**
  * Read every podcast recording row (past and upcoming) from "Time table"
  * (podcast live / status / release / podcast title) and "Extra podcast
- * slots", with the same trusted-date rules as the calendar import. Hidden rows
- * are the sheet's archived history and are returned flagged. Season and
- * episode cells are deliberately not read: the website owns numbering.
+ * slots" (date, guest, status, release, title, season, episode), with the
+ * same trusted-date rules as the calendar import. Hidden rows are the sheet's
+ * archived history and are returned flagged.
  */
 export async function readPodcastSchedule(file: string) {
   const workbook = new ExcelJS.Workbook();
@@ -370,21 +404,28 @@ export async function readPodcastSchedule(file: string) {
     sheet: PodcastScheduleRow["sheet"],
     row: number,
     hidden: boolean,
-    [dateCell, guestCell, statusCell, releaseCell, titleCell]: ExcelJS.Cell[],
+    [dateCell, guestCell, statusCell, releaseCell, titleCell, seasonCell, episodeCell]: ExcelJS.Cell[],
   ) => {
-    const recordingDate = date(dateCell),
-      guests = scheduleGuests(text(guestCell.value));
-    if (!recordingDate || guests.length === 0) return;
+    const sheetDate = date(dateCell),
+      guestText = text(guestCell.value),
+      guests = scheduleGuests(guestText);
+    if (!sheetDate || guests.length === 0) return;
+    const timetableRow = sheet === "Time table";
     const releaseDate = date(releaseCell),
-      title = text(titleCell.value).replace(/\s+/g, " ").trim();
+      title = text(titleCell.value).replace(/\s+/g, " ").trim(),
+      season = seasonCell && positiveInteger(seasonCell.value),
+      episode = episodeCell && positiveInteger(episodeCell.value);
     rows.push({
       sheet,
       row,
-      recordingDate,
+      recordingDate: (timetableRow && guestCellDate(guestText, sheetDate)) || sheetDate,
+      ...(timetableRow ? { weekOf: sheetDate } : {}),
       guests,
       status: text(statusCell.value).toLowerCase(),
       ...(releaseDate ? { releaseDate } : {}),
       ...(title ? { title } : {}),
+      ...(season ? { season } : {}),
+      ...(episode ? { episode } : {}),
       hidden,
     });
   };
@@ -396,7 +437,7 @@ export async function readPodcastSchedule(file: string) {
   if (!extra) throw new Error("Extra podcast slots worksheet is required");
   extra.eachRow((row, n) => {
     if (n === 1) return;
-    add("Extra podcast slots", n, row.hidden, [1, 4, 5, 6, 7].map((column) => row.getCell(column)));
+    add("Extra podcast slots", n, row.hidden, [1, 4, 5, 6, 7, 8, 9].map((column) => row.getCell(column)));
   });
   return rows;
 }
