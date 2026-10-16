@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node src/dakit/sync.mjs --check --dest src/dakit && node src/dakit/check-borders.mjs . && node src/dakit/check-colors.mjs . && node src/dakit/check-scale.mjs --baseline scale-baseline.json . && node --test test/*.test.mjs"
+    "test": "node src/dakit/sync.mjs --check --dest src/dakit && node src/dakit/check-borders.mjs ../frontend && node src/dakit/check-colors.mjs ../frontend && node src/dakit/check-scale.mjs --baseline scale-baseline.json . && node --test test/*.test.mjs"
   }
 }
