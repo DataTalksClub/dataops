@@ -50,9 +50,13 @@ describe("seasons model", () => {
     const recordedOn = (days) => new Date(Date.UTC(2026, 9, 15) - days * 86400000).toISOString().slice(0, 10);
     assert.equal(episodeFlag({ status: "recorded", recordingDate: recordedOn(STALE_DAYS - 1) }, TODAY), null);
     assert.deepEqual(episodeFlag({ status: "edited", recordingDate: recordedOn(STALE_DAYS) }, TODAY), {
-      kind: "stale", days: STALE_DAYS, text: "Edited 6 weeks after recording",
+      kind: "stale", days: STALE_DAYS, text: "Stuck: recorded 6 weeks ago, edited but still not scheduled",
     });
-    assert.equal(episodeFlag({ status: "recorded", recordingDate: "2026-06-15" }, TODAY).text, "Recorded 4 months after recording");
+    assert.equal(episodeFlag({ status: "recorded", recordingDate: "2026-06-15" }, TODAY).text, "Stuck: recorded 4 months ago, still not edited");
+    assert.equal(
+      episodeFlag({ status: "recorded", recordingDate: recordedOn(56) }, TODAY).text,
+      "Stuck: recorded 8 weeks ago, still not edited",
+    );
     assert.equal(episodeFlag({ status: "booked", recordingDate: "2026-10-12" }, TODAY).text, "Recording date passed 3 days ago");
     assert.equal(episodeFlag({ status: "scheduled", releaseDate: "2026-10-14" }, TODAY).kind, "overdue");
     assert.equal(episodeFlag({ status: "published", recordingDate: "2020-01-01" }, TODAY), null);
@@ -139,7 +143,8 @@ describe("Podcast seasons view", () => {
     const lane = documentList.querySelector(".podcast-pipeline");
     assert.ok(findByText(lane, "Not yet numbered", "h3"));
     assert.deepEqual(findAllByClass(lane, "dk-split__item").map((row) => row.dataset.episodeId), ["kim", "late", "booked"]);
-    assert.ok(findByText(lane.querySelector('[data-episode-id="kim"]'), "Stuck"));
+    const stuck = findByText(lane.querySelector('[data-episode-id="kim"]'), "Stuck");
+    assert.equal(stuck.title, "Stuck: recorded 4 months ago, still not edited");
     assert.ok(findByText(lane.querySelector('[data-episode-id="late"]'), "Late"));
     assert.ok(findByText(documentList, "No season", "h3"));
 

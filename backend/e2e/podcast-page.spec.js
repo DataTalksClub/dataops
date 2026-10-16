@@ -282,6 +282,8 @@ test('seasons overview shows each season as status cells, the unnumbered lane an
   const lane = page.locator('.podcast-pipeline');
   await expect(lane.locator('.dk-split__item')).toHaveCount(1);
   await expect(lane.locator(`[data-episode-id="${stuck.id}"]`)).toContainText('Stuck');
+  await expect(lane.locator(`[data-episode-id="${stuck.id}"] .podcast-row__flag`))
+    .toHaveAttribute('title', 'Stuck: recorded 4 months ago, still not edited');
   // Nothing open: no detail pane, the overview takes the whole width.
   const detail = page.getByRole('region', { name: 'Selected episode' });
   await expect(detail).toHaveCount(0);

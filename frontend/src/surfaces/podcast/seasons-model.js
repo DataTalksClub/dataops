@@ -13,6 +13,13 @@ export const GRID_STATUSES = Object.freeze(["booked", "recorded", "edited", "sch
 
 const DAY_MS = 86400000;
 
+// The stage a stuck episode has not reached. Records keep no date for when
+// an episode was edited, so the age is always counted from the recording.
+const STALLED_AT = Object.freeze({
+  recorded: "still not edited",
+  edited: "edited but still not scheduled",
+});
+
 function dayNumber(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
   return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / DAY_MS : null;
@@ -34,6 +41,7 @@ export function formatAge(days) {
 /**
  * What is wrong with where an episode stands, as of `today`:
  * - stale: recorded or edited, and the recording is STALE_DAYS or more ago;
+ *   the text names the stage it has not reached;
  * - overdue: booked past its recording date, or scheduled past its release.
  * Returns null when nothing is.
  */
@@ -42,7 +50,7 @@ export function episodeFlag(episode, today) {
   if (status === "recorded" || status === "edited") {
     const age = daysBetween(episode.recordingDate, today);
     if (age !== null && age >= STALE_DAYS) {
-      return { kind: "stale", days: age, text: `${STATUS_LABELS[status]} ${formatAge(age)} after recording` };
+      return { kind: "stale", days: age, text: `Stuck: recorded ${formatAge(age)} ago, ${STALLED_AT[status]}` };
     }
   }
   if (status === "booked") {
