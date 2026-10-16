@@ -507,16 +507,17 @@ async function buildSharedArtifact(destination, fingerprint) {
       target: esbuildTarget,
     });
     // PDF.js runs as native ESM with its adjacent worker. Preserve only the
-    // library runtime and installed platform canvas packages in the artifact.
+    // library runtime and installed platform canvas packages in the payload,
+    // the directory Lambda runs from, so dist/handler.js resolves them.
     const requireInWorkspace = createRequire(join(workspace, 'backend', 'package.json'));
     const pdfRoot = dirname(requireInWorkspace.resolve('pdfjs-dist/package.json'));
-    const pdfTarget = join(destination, 'node_modules', 'pdfjs-dist');
+    const pdfTarget = join(payload, 'node_modules', 'pdfjs-dist');
     mkdirSync(join(pdfTarget, 'legacy', 'build'), { recursive: true });
     cpSync(join(pdfRoot, 'package.json'), join(pdfTarget, 'package.json'));
     for (const filename of ['pdf.mjs', 'pdf.worker.mjs']) cpSync(join(pdfRoot, 'legacy', 'build', filename), join(pdfTarget, 'legacy', 'build', filename));
     const canvasRoot = join(dirname(pdfRoot), '@napi-rs');
-    if (existsSync(canvasRoot)) for (const name of readdirSync(canvasRoot)) if (name === 'canvas' || name.startsWith('canvas-')) cpSync(join(canvasRoot, name), join(destination, 'node_modules', '@napi-rs', name), { recursive: true });
-    await runOwnedCommand(process.execPath, ['backend/scripts/verify-invoice-pdf-artifact.mjs', destination], { cwd:workspace, phase:'packaged invoice PDF verification', env:{...process.env,NODE_PATH:''} });
+    if (existsSync(canvasRoot)) for (const name of readdirSync(canvasRoot)) if (name === 'canvas' || name.startsWith('canvas-')) cpSync(join(canvasRoot, name), join(payload, 'node_modules', '@napi-rs', name), { recursive: true });
+    await runOwnedCommand(process.execPath, ['backend/scripts/verify-invoice-pdf-artifact.mjs', payload], { cwd:workspace, phase:'packaged invoice PDF verification', env:{...process.env,NODE_PATH:''} });
     phaseMessage(fingerprint, 'bundle-complete');
     throwIfCancelled();
 
