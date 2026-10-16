@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import {
+  afterText,
   blockedReason,
-  blockedSummary,
   blockingPrerequisites,
+  orderAfterPrerequisites,
+  taskDependents,
   prerequisiteStatusLabel,
   taskIsBlocked,
   nextDependsOn,
@@ -30,9 +32,7 @@ describe("task dependency view model", () => {
     assert.deepEqual(blockingPrerequisites(blocked).map(({ id }) => id), ["c", "d"]);
     assert.equal(taskIsBlocked(blocked), true);
     assert.equal(blockedReason(blocked), 'Complete or skip "Approve cover", "Confirm guest" first');
-    assert.equal(blockedSummary(blocked), "Blocked by Approve cover +1 more");
     assert.equal(taskIsBlocked(task({ prerequisites: [prerequisite("b", "Skipped", "skipped")] })), false);
-    assert.equal(blockedSummary(task({ prerequisites: [prerequisite("a", "Only one", "waiting")] })), "Blocked by Only one");
   });
 
   test("a satisfied, finished or independent Task is not blocked", () => {
@@ -79,5 +79,43 @@ describe("prerequisite choices", () => {
   test("keeps the existing order and appends newly ticked ids", () => {
     assert.deepEqual(nextDependsOn(["b", "a"], ["a", "c", "b"]), ["b", "a", "c"]);
     assert.deepEqual(nextDependsOn(["a"], []), []);
+  });
+});
+
+describe("dependency display helpers", () => {
+  test("names what a task waits on as one quiet line", () => {
+    assert.equal(afterText([prerequisite("a", "A", "todo")]), "after A");
+    assert.equal(afterText([prerequisite("a", "A", "todo"), prerequisite("b", "B", "todo")]), "after A and B");
+    assert.equal(
+      afterText(["A", "B", "C"].map((name) => prerequisite(name, name, "todo"))),
+      "after A, B and C",
+    );
+  });
+
+  test("lists the same-card tasks a task unblocks", () => {
+    const subject = { id: "p" };
+    const siblings = [subject, { id: "a", dependsOn: ["p"] }, { id: "b", dependsOn: ["x"] }, { id: "c", dependsOn: ["x", "p"] }];
+    assert.deepEqual(taskDependents(subject, siblings).map(({ id }) => id), ["a", "c"]);
+  });
+
+  test("never lists a step before its prerequisite, and keeps every other place", () => {
+    const rows = [
+      { id: "page", status: "todo", dependsOn: ["review"] },
+      { id: "other", status: "todo" },
+      { id: "review", status: "todo", dependsOn: ["draft"] },
+      { id: "draft", status: "todo" },
+      { id: "done-dependent", status: "done", dependsOn: ["done-prereq"] },
+      { id: "done-prereq", status: "done" },
+    ];
+    assert.deepEqual(
+      orderAfterPrerequisites(rows).map(({ id }) => id),
+      ["other", "draft", "review", "page", "done-prereq", "done-dependent"],
+    );
+    // A resolved prerequisite does not pull an open task down to the done group.
+    const mixed = [
+      { id: "open", status: "todo", dependsOn: ["closed"] },
+      { id: "closed", status: "done" },
+    ];
+    assert.deepEqual(orderAfterPrerequisites(mixed).map(({ id }) => id), ["open", "closed"]);
   });
 });

@@ -97,3 +97,40 @@ export function prerequisiteChoices(task, siblings = []) {
 export function nextDependsOn(current = [], ticked = []) {
   return [...current.filter((id) => ticked.includes(id)), ...ticked.filter((id) => !current.includes(id))];
 }
+
+// Same-card Tasks that wait on `task`: what finishing it unblocks.
+export function taskDependents(task, siblings = []) {
+  if (!task?.id) return [];
+  return siblings.filter((sibling) => sibling?.id !== task.id
+    && Array.isArray(sibling?.dependsOn) && sibling.dependsOn.includes(task.id));
+}
+
+// "after A", "after A and B", "after A, B and C": the quiet line under a
+// waiting task. Names only, in listed order.
+export function afterText(entries) {
+  const names = entries.map((entry) => entry.description);
+  if (names.length <= 1) return `after ${names[0] || ""}`.trim();
+  return `after ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+// Order that never puts a step before its prerequisite. `tasks` arrive in
+// their display order; a task moves down only as far as its last listed
+// prerequisite, and everything else keeps its place. Only edges between two
+// open (or two resolved) tasks count, so resolved tasks can stay grouped
+// last; edges to tasks outside the list, and cycles, are ignored.
+export function orderAfterPrerequisites(tasks) {
+  const byId = new Map(tasks.map((task) => [task?.id, task]));
+  const placed = new Set();
+  const pending = [...tasks];
+  const ordered = [];
+  const counts = (task, id) => byId.has(id) && id !== task.id
+    && prerequisiteResolved(byId.get(id).status) === prerequisiteResolved(task.status);
+  while (pending.length) {
+    const next = pending.findIndex((task) => (task?.dependsOn || [])
+      .every((id) => !counts(task, id) || placed.has(id)));
+    const [task] = pending.splice(next === -1 ? 0 : next, 1);
+    placed.add(task?.id);
+    ordered.push(task);
+  }
+  return ordered;
+}

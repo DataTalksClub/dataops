@@ -1,4 +1,5 @@
 import { concreteRoutePath, matchRoutePath } from "./route-patterns.js";
+import { orderAfterPrerequisites, taskIsBlocked } from "./task-dependencies.js";
 
 export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
   "operating-model": "/operating-model",
@@ -946,7 +947,8 @@ export function summarizeCardProgress(card, tasks, today) {
 }
 
 export function nextDueOpenTask(tasks, today) {
-  const openTasks = dedupeWorkTasks(tasks).filter(isOpenWorkTask);
+  // "Next" is never a task still blocked by a prerequisite.
+  const openTasks = dedupeWorkTasks(tasks).filter((task, _, all) => isOpenWorkTask(task) && !taskIsBlocked(task, all));
   openTasks.sort((left, right) => {
     const byDate = compareIsoDate(
       taskDate(left) || left.followUpAt || today,
@@ -966,7 +968,7 @@ export function sortCardChecklistTasks(tasks, today) {
     if (leftDone !== rightDone) return leftDone ? 1 : -1;
     return compareIsoDate(taskDate(left) || today, taskDate(right) || today);
   });
-  return sorted;
+  return orderAfterPrerequisites(sorted); // dates alone could list a step above its prerequisite
 }
 
 export function workflowTaskGroups(tasks, today) {

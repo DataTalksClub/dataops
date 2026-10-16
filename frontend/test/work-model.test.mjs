@@ -293,6 +293,17 @@ describe("frontend work model", () => {
     });
   });
 
+  test("never names a task still waiting on a prerequisite as next", () => {
+    const tasks = [
+      canonicalTask({ id: "page", description: "Publish page", date: "2026-08-11", dependsOn: ["review"] }),
+      canonicalTask({ id: "review", description: "Review transcript", date: "2026-08-12" }),
+    ];
+    assert.equal(summarizeCardProgress({ id: "card-1" }, tasks, TODAY).nextDueTask.id, "review");
+    // Ties and inverted dates still list the prerequisite first.
+    const groups = workflowTaskGroups(tasks, TODAY);
+    assert.deepEqual(groups[0].tasks.map(({ id }) => id), ["review", "page"]);
+  });
+
   test("summarizes Card progress, evidence gaps, next Task, and risk", () => {
     const card = {
       id: "card-1",
