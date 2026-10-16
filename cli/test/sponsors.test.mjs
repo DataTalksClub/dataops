@@ -50,3 +50,48 @@ test("sponsors update leads sends --reason as the lead's statusReason", async ()
     if (oldUrl === undefined) delete process.env.DATAOPS_URL; else process.env.DATAOPS_URL = oldUrl;
   }
 });
+
+test("sponsors link-payment links a transaction and replaces the payment recorded before it", async () => {
+  const originalFetch = globalThis.fetch;
+  const oldToken = process.env.DATAOPS_TOKEN;
+  const oldUrl = process.env.DATAOPS_URL;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  process.env.DATAOPS_URL = "https://portal.example.test";
+  const calls = [];
+  const finance = {
+    finance: { version: 4, currency: "EUR" },
+    payments: [{ id: "a".repeat(32), source: "recorded", amount: "500", currency: "EUR", effectiveDate: "2026-09-04" }],
+  };
+  const replies = {
+    "GET /api/sponsor-crm/deals/deal-demo": { id: "deal-demo", version: 2 },
+    "GET /api/sponsor-crm/deals/deal-demo/finance": finance,
+    "GET /api/sponsor-crm/deals/deal-demo/finance/candidates/payments": (query) =>
+      query.cursor
+        ? { items: [{ id: "tx-demo", effectiveDate: "2026-09-05", amount: "500.00", currency: "EUR", identityToken: "token-demo" }] }
+        : { items: [{ id: "tx-other", effectiveDate: "2026-01-01", amount: "1.00", currency: "EUR", identityToken: "x" }], nextCursor: "next" },
+    "POST /api/sponsor-crm/deals/deal-demo/finance/payments": { projection: { paymentState: "paid" } },
+  };
+  globalThis.fetch = async (url, options) => {
+    const parsed = new URL(url);
+    const route = parsed.pathname.replace(/^\/work/, "");
+    calls.push({ method: options.method, route, headers: options.headers, body: options.body && JSON.parse(options.body) });
+    const reply = replies[`${options.method} ${route}`];
+    const body = typeof reply === "function" ? reply(Object.fromEntries(parsed.searchParams)) : reply;
+    return new Response(JSON.stringify(body));
+  };
+  const out = [];
+  const io = { log: (value) => out.push(String(value)), error() {} };
+  try {
+    assert.equal(await run(["sponsors", "link-payment", "deal-demo", "tx-demo"], io), 0);
+    assert.ok(!calls.some((call) => call.method === "POST"), "a dry run writes nothing");
+    assert.match(out.join("\n"), /dry-run: link 2026-09-05 500\.00 EUR, replacing the payment recorded on 2026-09-04/);
+    assert.equal(await run(["sponsors", "link-payment", "deal-demo", "tx-demo", "--apply"], io), 0);
+    const post = calls.find((call) => call.method === "POST");
+    assert.deepEqual(post.body, { dealVersion: 2, expectedVersion: 4, sourceId: "tx-demo", identityToken: "token-demo", replacesPaymentId: "a".repeat(32) });
+    assert.match(post.headers["Idempotency-Key"], /^[A-Za-z0-9_-]{16,128}$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
+    if (oldUrl === undefined) delete process.env.DATAOPS_URL; else process.env.DATAOPS_URL = oldUrl;
+  }
+});

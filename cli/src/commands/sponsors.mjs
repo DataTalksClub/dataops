@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { UsageError } from "../errors.mjs";
 import { enc, integer, jsonData, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
@@ -17,6 +18,10 @@ Usage
   dataops sponsors messages <organization-id>          Communications with an organization
   dataops sponsors history <deal-id>                   A deal's change history
   dataops sponsors finance <deal-id> [history|candidates/invoices|candidates/payments]
+  dataops sponsors link-payment <deal-id> <transaction-id> [--apply]
+      Link a bookkeeping transaction to the deal as its payment. A payment the deal
+      recorded before the row existed (same amount, within 14 days) is replaced by
+      the link. Prints what it would do unless --apply is given.
 
 Invoice drafts: use dataops invoices. To find invoice evidence for a sponsor deal,
 use dataops sponsors finance <deal-id> candidates/invoices.
@@ -127,4 +132,62 @@ export async function finance(args, io) {
   return result;
 }
 
-export const commands = { list, show, create, update, messages, history, finance };
+const DAY = 86_400_000;
+
+/** The recorded (pre-bookkeeping) payment a transaction confirms, if one fits. */
+export function replaceablePayment(payments, candidate) {
+  const date = Date.parse(String(candidate.effectiveDate || ""));
+  return (payments || []).find(
+    (payment) =>
+      payment.source === "recorded" &&
+      Number(payment.amount) === Number(candidate.amount) &&
+      Number.isFinite(date) &&
+      Math.abs(Date.parse(String(payment.effectiveDate)) - date) <= 14 * DAY,
+  );
+}
+
+async function paymentCandidate(api, dealId, transactionId) {
+  let cursor;
+  do {
+    const page = await api.get(`/api/sponsor-crm/deals/${enc(dealId)}/finance/candidates/payments`, { query: { limit: 50, cursor } });
+    const found = (page?.items || []).find((item) => item.id === transactionId);
+    if (found) return found;
+    cursor = page?.nextCursor;
+  } while (cursor);
+  return null;
+}
+
+export async function linkPayment(args, io) {
+  const usage = "dataops sponsors link-payment <deal-id> <transaction-id> [--apply]";
+  const dealId = positional(args, 0, usage);
+  const transactionId = positional(args, 1, usage);
+  const api = apiFor(args);
+  const [deal, projection] = await Promise.all([
+    api.get(`/api/sponsor-crm/deals/${enc(dealId)}`),
+    api.get(`/api/sponsor-crm/deals/${enc(dealId)}/finance`),
+  ]);
+  if (!projection?.finance) throw new UsageError(`Deal ${dealId} has no finance record to link a payment to.`);
+  const candidate = await paymentCandidate(api, dealId, transactionId);
+  if (!candidate)
+    throw new UsageError(`Transaction ${transactionId} is not an unclaimed ${projection.finance.currency || ""} payment candidate for this deal.`.replace("  ", " "));
+  const replaced = replaceablePayment(projection.payments, candidate);
+  const body = {
+    dealVersion: deal.version,
+    expectedVersion: projection.finance.version,
+    sourceId: candidate.id,
+    identityToken: candidate.identityToken,
+    ...(replaced ? { replacesPaymentId: replaced.id } : {}),
+  };
+  const plan = `${candidate.effectiveDate} ${candidate.amount} ${candidate.currency}${replaced ? `, replacing the payment recorded on ${replaced.effectiveDate}` : ""}`;
+  const result = { mode: args.apply ? "apply" : "dry-run", dealId, transactionId, replacesPaymentId: replaced?.id || null };
+  if (args.apply) {
+    const response = await api.post(`/api/sponsor-crm/deals/${enc(dealId)}/finance/payments`, body, {
+      headers: { "Idempotency-Key": randomUUID() },
+    });
+    result.paymentState = response?.projection?.paymentState;
+  }
+  if (!args.json) io.print(`${result.mode}: link ${plan}${result.paymentState ? ` (deal is now ${result.paymentState})` : ""}`);
+  return result;
+}
+
+export const commands = { list, show, create, update, messages, history, finance, "link-payment": linkPayment };
