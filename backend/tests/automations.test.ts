@@ -148,6 +148,7 @@ describe('GET /api/automations', () => {
     assert.strictEqual(byId.get('recurring-tasks')!.nextRunAt, '2026-10-17T08:00:00.000Z');
     assert.strictEqual(byId.get('knowledge-mirror')!.lastRun?.source, 'knowledge-checkpoint');
     assert.strictEqual(byId.get('knowledge-backup')!.lastRun, null);
+    assert.deepStrictEqual(byId.get('newsletter-cards')!.settings.map(({ key, value }) => ({ key, value })), [{ key: 'newsletterCardLeadDays', value: 21 }]);
     assert.strictEqual(byId.get('knowledge-publish')!.lastRun, null);
     assert.match(byId.get('knowledge-publish')!.link || '', /^https:\/\/github\.com\//);
   });

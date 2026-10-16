@@ -75,6 +75,21 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
     settings: [],
   },
   {
+    id: 'newsletter-cards',
+    name: 'Newsletter Cards',
+    description: 'Creates the Card of each upcoming newsletter issue a set number of days before the issue goes out, earlier when the Template has a Task due further ahead.',
+    runsIn: DAILY_JOB,
+    infraSchedule: 'BackendFunctionDailyBackendCron',
+    schedule: DAILY_JOB_SCHEDULE,
+    runSource: 'recorded',
+    settings: [{
+      key: 'newsletterCardLeadDays',
+      label: 'Lead time',
+      description: 'Days before the issue date that its Card is created.',
+      kind: 'days',
+    }],
+  },
+  {
     id: 'sponsor-booking-alerts',
     name: 'Sponsor booking alerts',
     description: 'Notifies about agreed deals without a primary contact, missing or overdue sponsor materials, incomplete newsletter workflows and due performance follow-ups.',
