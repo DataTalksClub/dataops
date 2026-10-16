@@ -206,8 +206,8 @@ describe("dataops CLI against a local backend", () => {
     assert.equal(cli("kb", "show", "no.such.doc").code, 4);
   });
 
-  test("a newsletter slot gets a linked Card", async () => {
-    // The server creates issue Cards from the Template of type "newsletter".
+  test("a newsletter issue owns its Card", async () => {
+    // The server creates weekly issue Cards from the Template of type "newsletter".
     const fixture = await fetch(`${baseUrl}/__e2e__/template-fixtures`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -216,27 +216,25 @@ describe("dataops CLI against a local backend", () => {
         type: "newsletter",
         triggerType: "manual",
         references: [],
-        taskDefinitions: [{ refId: "draft", description: "Draft the synthetic issue", offsetDays: -3 }],
+        taskDefinitions: [
+          { refId: "draft", description: "Draft the synthetic issue", offsetDays: -3 },
+          { refId: "primary-copy", description: "Collect primary sponsor copy", offsetDays: -5, optionalGroup: "primary-slot" },
+        ],
       }),
     });
     assert.equal(fixture.status, 201);
-    const slot = cli("newsletter", "create", "--date", "2026-11-09", "--label", "Synthetic issue", "--json");
-    assert.equal(slot.code, 0, slot.stderr);
-    const linked = cli("newsletter", "create-card", slot.json.id, "--json");
-    assert.equal(linked.code, 0, linked.stderr);
-    assert.equal(linked.json.slot.cardId, linked.json.card.id);
-    const lookup = cli("newsletter", "list", "--card", linked.json.card.id, "--json");
-    assert.deepEqual(lookup.json.items.map((item) => item.id), [slot.json.id]);
-    assert.equal(cli("newsletter", "create-card", slot.json.id).code, 2);
+    const issue = cli("newsletter", "create", "--date", "2026-11-09", "--number", "401", "--json");
+    assert.equal(issue.code, 0, issue.stderr);
+    assert.ok(issue.json.cardId);
+    const lookup = cli("newsletter", "list", "--card", issue.json.cardId, "--json");
+    assert.deepEqual(lookup.json.items.map((item) => item.id), [issue.json.id]);
 
-    const cardToDelete = linked.json.card.id;
-    assert.equal(cli("cards", "delete", cardToDelete).code, 2);
-    const deleted = cli("cards", "delete", cardToDelete, "--yes", "--json");
+    // The Card cannot be deleted on its own; deleting the issue deletes it.
+    assert.notEqual(cli("cards", "delete", issue.json.cardId, "--yes").code, 0);
+    const deleted = cli("newsletter", "delete", issue.json.id, "--confirm", "--json");
     assert.equal(deleted.code, 0, deleted.stderr);
-    assert.deepEqual(deleted.json.deleted.unlinked.newsletterSlots, [slot.json.id]);
-    assert.equal(cli("cards", "show", cardToDelete).code, 4);
-    const unlinked = cli("newsletter", "list", "--card", cardToDelete, "--json");
-    assert.deepEqual(unlinked.json.items, []);
+    assert.equal(cli("cards", "show", issue.json.cardId).code, 4);
+    assert.equal(cli("newsletter", "show", issue.json.id).code, 4);
   });
 
   test("unknown records and bad input use their exit codes", () => {
