@@ -227,8 +227,9 @@ describe('API — Cards', () => {
       assert.strictEqual(body.error, 'Template not found');
     });
 
-    it('returns 400 when title is missing', async () => {
+    it('returns 400 when title is missing and the Template has no card_title', async () => {
       const res = await invoke('POST', '/api/cards', {
+        templateId: EMPTY_TEMPLATE_ID,
         anchorDate: '2026-06-01',
       });
 
@@ -239,6 +240,7 @@ describe('API — Cards', () => {
 
     it('returns 400 when title is empty string', async () => {
       const res = await invoke('POST', '/api/cards', {
+        templateId: EMPTY_TEMPLATE_ID,
         title: '  ',
         anchorDate: '2026-06-01',
       });
@@ -246,6 +248,31 @@ describe('API — Cards', () => {
       assert.strictEqual(res.statusCode, 400);
       const body = JSON.parse(res.body);
       assert.ok(body.error.toLowerCase().includes('title'));
+    });
+
+    it('names the Card from the Template card_title when the title is omitted', async () => {
+      const template = await createTemplate(client, {
+        name: 'Synthetic weekly newsletter',
+        type: 'newsletter',
+        cardTitle: '{date} · #{issue} · {sponsors} · {variant}',
+        taskDefinitions: [{ refId: 'send', description: 'Send issue', offsetDays: 0 }],
+      });
+      const res = await invoke('POST', '/api/cards', {
+        templateId: template.id,
+        anchorDate: '2026-10-19',
+        issueNumber: '299',
+        sponsor: 'Synthetic Alpha',
+        secondarySponsors: ['Synthetic Beta'],
+      });
+      assert.strictEqual(res.statusCode, 201, res.body);
+      assert.strictEqual(JSON.parse(res.body).card.title, '19 Oct · #299 · Synthetic Alpha + Synthetic Beta');
+
+      const bare = await invoke('POST', '/api/cards', { templateId: template.id, anchorDate: '2026-10-26', title: '' });
+      assert.strictEqual(bare.statusCode, 201, bare.body);
+      assert.strictEqual(JSON.parse(bare.body).card.title, '26 Oct');
+
+      const named = await invoke('POST', '/api/cards', { templateId: template.id, anchorDate: '2026-10-26', title: 'Typed title' });
+      assert.strictEqual(JSON.parse(named.body).card.title, 'Typed title');
     });
 
     it('returns 400 when anchorDate is missing', async () => {

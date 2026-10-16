@@ -2328,6 +2328,48 @@ describe("Tasks surface boundary", () => {
     overlay.remove();
   });
 
+  test("Create card requires a title unless the Template generates one", async () => {
+    const posted = [];
+    const harness = createHarness({
+      request: async (url, init = {}) => {
+        if (url === "/api/templates") {
+          return {
+            templates: [
+              { id: "tpl-plain", name: "Plain", taskDefinitions: [] },
+              { id: "tpl-news", name: "Newsletter", type: "newsletter", cardTitle: "{date} · #{issue}", taskDefinitions: [] },
+            ],
+          };
+        }
+        if (url === "/api/cards" && init.method === "POST") {
+          posted.push(JSON.parse(init.body));
+          return { card: { id: "card-new" } };
+        }
+        return {};
+      },
+    });
+    await harness.api.openQuickWorkflowForm();
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    const select = overlay.querySelector("select");
+    const titleLabel = findAllByClass(overlay, "quick-form-label")
+      .find((label) => /^Card title/.test(label.textContent));
+    assert.match(titleLabel.textContent, /^Card title$/);
+
+    select.value = "tpl-plain";
+    await select.dispatch("change");
+    await submitQuickForm(overlay);
+    assert.deepEqual(posted, []);
+    assert.match(overlay.textContent, /Card title is required\./);
+
+    select.value = "tpl-news";
+    await select.dispatch("change");
+    assert.match(titleLabel.textContent, /^Card title \(optional\)$/);
+    await submitQuickForm(overlay);
+    await nextTicks();
+    assert.equal(posted.length, 1);
+    assert.equal(posted[0].templateId, "tpl-news");
+    assert.equal(posted[0].title, undefined);
+  });
+
   test("reviews explicit Card selections and reports partial batch conflicts without retrying", async () => {
     const template = {
       id: "template-1",
@@ -3172,12 +3214,14 @@ describe("Tasks surface boundary", () => {
     assert.equal(boxes.length, 1);
     assert.match(boxes[0].parentElement.textContent, /secondary/);
     boxes[0].checked = true;
+    overlay.querySelector('input[type="text"]').value = "Synthetic issue";
 
     await submitQuickForm(overlay);
     assert.deepEqual(bodies, [
       {
         templateId: "tpl-news",
         anchorDate: "2026-08-12",
+        title: "Synthetic issue",
         optionalGroups: ["secondary"],
       },
     ]);

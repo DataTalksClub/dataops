@@ -347,6 +347,16 @@ describe("cards and templates", () => {
     assert.match(io.text(), /Created Card c-1/);
   });
 
+  test("create leaves the title to the Template's card_title when --title is omitted", async () => {
+    const calls = fakePortal({
+      "GET /api/templates/newsletter-issue": { status: 404, body: { error: "Template not found" } },
+      "GET /api/templates": { templates: [template] },
+      "POST /api/cards": ({ body }) => ({ status: 201, body: { card: { id: "c-2", title: "2 Nov", ...body }, tasks: [] } }),
+    });
+    assert.equal(await run(["cards", "create", "--date", "2026-11-02", "--template", "newsletter-issue"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { anchorDate: "2026-11-02", templateId: "tpl-1" });
+  });
+
   test("an unknown template is a usage error before anything is created", async () => {
     const calls = fakePortal({
       "GET /api/templates/nope": { status: 404, body: { error: "Template not found" } },

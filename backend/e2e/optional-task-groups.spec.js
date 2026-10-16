@@ -41,7 +41,7 @@ for (const includeOptional of [false, true]) {
       await expect(checkbox).not.toBeChecked();
       await expect(form.getByRole('checkbox')).toHaveCount(1);
       if (includeOptional) await checkbox.check();
-      await form.getByLabel('Card title (optional)').fill(`Synthetic optional Card ${includeOptional}`);
+      await form.getByLabel('Card title').fill(`Synthetic optional Card ${includeOptional}`);
       const pending = page.waitForResponse(response => response.request().method() === 'POST'
         && new URL(response.url()).pathname === '/api/cards');
       await form.getByRole('button', { name: 'Create card' }).click();

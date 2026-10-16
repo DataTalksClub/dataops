@@ -122,6 +122,9 @@ dataops cards create --title "..." --date 2026-11-02 --template <type> [--option
 dataops cards show <card-id>                  # the generated Tasks
 ```
 
+`--title` may be left out when the Template has a `card_title` pattern; the
+Card is then named from the pattern.
+
 For a one-off Task: `dataops tasks create --description "..." --date 2026-11-02 [--card <card-id>]`.
 
 For a newsletter issue: `dataops newsletter list`. Every issue already has its Card

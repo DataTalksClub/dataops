@@ -150,11 +150,7 @@ export function createQuickTaskActions(context) {
       "date",
       options.anchorDate || todayIsoDate(),
     );
-    const titleInput = createQuickInput(
-      "Card title (optional)",
-      "text",
-      options.title || "",
-    );
+    const titleInput = createQuickInput("Card title", "text", options.title || "");
     const templateControl = { label: selectLabel, input: templateSelect };
     const templateState = document.createElement("p");
     templateState.className = "quick-form-state";
@@ -272,8 +268,23 @@ export function createQuickTaskActions(context) {
         groupsWrap.append(label);
       }
     };
-    templateSelect.addEventListener("change", syncOptionalGroups);
+    // A Template with a card_title pattern names its Cards, so the title is
+    // optional there; any other Template needs one.
+    const selectedTitlePattern = () =>
+      liveTemplates.find((template) => template.id === templateSelect.value)?.cardTitle || "";
+    const syncTitleField = () => {
+      const generated = Boolean(selectedTitlePattern());
+      titleInput.label.textContent = generated ? "Card title (optional)" : "Card title";
+      titleInput.label.append(titleInput.input);
+      titleInput.input.setAttribute("aria-required", String(!generated));
+      titleInput.input.placeholder = generated ? "Generated from the template if left empty" : "";
+    };
+    templateSelect.addEventListener("change", () => {
+      syncOptionalGroups();
+      syncTitleField();
+    });
     syncOptionalGroups();
+    syncTitleField();
     if (liveTemplates.length > 0) createBtn.disabled = false;
     else {
       const emptyOpt = document.createElement("option");
@@ -286,8 +297,10 @@ export function createQuickTaskActions(context) {
       if (cardSubmitInFlight) return;
       const templateId = templateSelect.value;
       const anchorDate = anchorInput.input.value;
+      const titleMissing = !titleInput.input.value.trim() && !selectedTitlePattern();
       const invalid = reportFieldValidation([
         [templateControl, templateId ? "" : "Select a template."],
+        [titleInput, templateId && titleMissing ? "Card title is required." : ""],
         [anchorInput, anchorDate ? "" : "Date is required."],
       ]);
       if (invalid) {

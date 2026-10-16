@@ -14,7 +14,7 @@ Usage
       [--status active|parked|archived] [--all] [--limit N]
                                                 Default: active and parked; --all adds archived
   dataops cards show <card-id>                  The Card, its links, and its Tasks
-  dataops cards create --title T --date YYYY-MM-DD --template ID|TYPE|NAME
+  dataops cards create --date YYYY-MM-DD --template ID|TYPE|NAME [--title T]
       [--optional-groups a,b] [--stage S] [--description D] [--owner ID] [--tags a,b]
   dataops cards update <card-id> [--title T] [--description D] [--date D] [--owner ID|none]
       [--tags a,b]
@@ -26,6 +26,8 @@ Usage
                                                 Review Template and Card option changes
 
 --date is the Card's anchor date: Template Tasks are scheduled relative to it.
+--title is required unless the Template has a card_title pattern, which
+names the Card when the title is left out.
 Writes read the Card's current version first (or pass --expected-version N).
 Optional groups default off. Existing Cards need an explicit option decision;
 --optional-groups sponsored activates sponsor work; none disables all optional work.
@@ -124,10 +126,9 @@ export async function show(args, io) {
 
 export async function create(args, io) {
   const api = apiFor(args);
-  const body = {
-    title: required(args, "title", "title"),
-    anchorDate: isoDate(required(args, "date", "date"), "date"),
-  };
+  const body = { anchorDate: isoDate(required(args, "date", "date"), "date") };
+  const title = optionalString(args, "title");
+  if (title !== undefined) body.title = title;
   // Every Card is instantiated from a Template.
   body.templateId = (await findTemplate(api, required(args, "template", "template"))).id;
   if (args.optionalGroups !== undefined) body.optionalGroups = csv(args.optionalGroups);

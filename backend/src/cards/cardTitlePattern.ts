@@ -91,6 +91,29 @@ export function newsletterIssueTitleValues(issue: {
   };
 }
 
+/**
+ * Title values for a Card created directly from a Template with a
+ * `card_title`, before any planning record links it: the Card's own date,
+ * issue number and sponsors fill the tokens they share with the record.
+ */
+export function cardFieldTitleValues(templateType: string, fields: {
+  anchorDate?: unknown;
+  issueNumber?: unknown;
+  sponsor?: unknown;
+  secondarySponsors?: unknown;
+}): CardTitleValues {
+  const text = (value: unknown) => (typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '');
+  const sponsor = text(fields.sponsor);
+  const secondary = Array.isArray(fields.secondarySponsors) ? fields.secondarySponsors.map(text).filter(Boolean) : [];
+  return {
+    date: shortDate(text(fields.anchorDate)),
+    issue: text(fields.issueNumber),
+    sponsor,
+    sponsors: [sponsor, ...secondary].filter(Boolean).join(' + '),
+    variant: templateType === 'newsletter-standalone' ? 'stand-alone' : '',
+  };
+}
+
 export function podcastEpisodeTitleValues(episode: {
   season?: number | null;
   episode?: number | null;

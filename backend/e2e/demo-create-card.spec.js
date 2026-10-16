@@ -24,7 +24,7 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     await expect(dialog.locator('select')).toBeEnabled();
     expect(await dialog.locator('select option').count()).toBeGreaterThan(1);
     await expect(dialog).not.toContainText('template available');
-    const field = await dialog.getByLabel('Card title (optional)').boundingBox();
+    const field = await dialog.getByLabel('Card title').boundingBox();
     const panel = await dialog.boundingBox();
     expect(field.width).toBeGreaterThan(panel.width * 0.8);
     const header = await dialog.locator('.quick-form-header').boundingBox();

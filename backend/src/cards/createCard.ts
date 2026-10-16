@@ -16,6 +16,7 @@ import {
   TemplateVersionConflictError,
 } from '../db/templates';
 import { parseCardTitle } from './cardTitleStructure';
+import { cardFieldTitleValues, renderCardTitle } from './cardTitlePattern';
 import { templateCardProjection } from '../templates/cardTemplateProjection';
 import { workAdminForbidden, type VerifiedActor } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
@@ -152,8 +153,8 @@ export async function createCardFromInput(
 ): Promise<CardCreation> {
   const fail = (statusCode: number, payload: unknown): CardCreation => ({ ok: false, response: json(statusCode, payload) });
 
-  if (!body.title || typeof body.title !== 'string' || (body.title as string).trim() === '') {
-    return fail(400, { error: 'Missing required field: title' });
+  if (body.title !== undefined && typeof body.title !== 'string') {
+    return fail(400, { error: 'title must be a string' });
   }
   if (!body.anchorDate) {
     return fail(400, { error: 'Missing required field: anchorDate' });
@@ -177,6 +178,14 @@ export async function createCardFromInput(
   }
   const template = await getTemplate(client, body.templateId);
   if (!template) return fail(404, { error: 'Template not found' });
+
+  // A Template with a card_title pattern names its Cards; otherwise the
+  // caller must.
+  let title = typeof body.title === 'string' ? body.title.trim() : '';
+  if (!title && template.cardTitle) {
+    title = renderCardTitle(template.cardTitle, cardFieldTitleValues(template.type || '', body)) || template.name;
+  }
+  if (!title) return fail(400, { error: 'Missing required field: title' });
 
   const VALID_STAGES = ['preparation', 'announced', 'after-event'];
   if (body.stage !== undefined && !VALID_STAGES.includes(body.stage as string)) {
@@ -208,7 +217,7 @@ export async function createCardFromInput(
   }
 
   const cardData: Record<string, unknown> = {
-    title: body.title,
+    title,
     anchorDate: body.anchorDate,
     stage: body.stage || 'preparation',
   };

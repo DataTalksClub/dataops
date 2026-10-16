@@ -13,7 +13,7 @@ test('Create card requires a Template and opens the Card linked to it', async ({
   const form = page.locator('.quick-form-overlay');
   await expect(form.locator('.quick-form-select')).toBeEnabled();
   const title = `Synthetic templated Card ${Date.now()}`;
-  await form.getByLabel('Card title (optional)').fill(title);
+  await form.getByLabel('Card title').fill(title);
 
   await form.getByRole('button', { name: 'Create card' }).click();
   await expect(form).toContainText('Select a template.');
