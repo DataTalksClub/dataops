@@ -40,12 +40,12 @@ export type ForecastBucket = { bucket: string; currency: string; amount: string;
 export type FinanceLedger = {
   asOf: string;
   rows: LedgerRow[];
-  chase: LedgerRow[];
+  followUps: LedgerRow[];
   totals: Array<{ currency: string; outstanding: string; overdue: string; notInvoiced: string; paidThisYear: string }>;
   forecast: ForecastBucket[];
 };
 
-const CHASE_CODES = new Set<FollowUp['code']>(['reconcile', 'unblock', 'chase-payment', 'send-invoice', 'classify']);
+const FOLLOW_UP_CODES = new Set<FollowUp['code']>(['reconcile', 'unblock', 'payment-follow-up', 'send-invoice', 'classify']);
 
 async function ledgerSources(client: DynamoDBDocumentClient, ids: string[]) {
   const found = new Map<string, Record<string, unknown>>();
@@ -62,7 +62,7 @@ async function ledgerSources(client: DynamoDBDocumentClient, ids: string[]) {
 }
 
 /**
- * Portfolio view of every deal's money: what to chase today, what is
+ * Portfolio view of every deal's money: what to follow up on today, what is
  * outstanding, and when cash is expected. Built from stored finance state
  * plus linked ledger amounts; per-deal reconciliation proof stays in the
  * deal projection.
@@ -211,7 +211,7 @@ export async function financeLedger(
   return {
     asOf: today,
     rows,
-    chase: rows.filter((row) => row.followUp.party === 'us' && CHASE_CODES.has(row.followUp.code)),
+    followUps: rows.filter((row) => row.followUp.party === 'us' && FOLLOW_UP_CODES.has(row.followUp.code)),
     totals: [...totals.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([currency, value]) => ({
       currency,
       outstanding: displayMoney(value.outstanding),

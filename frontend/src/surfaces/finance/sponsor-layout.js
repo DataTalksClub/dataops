@@ -131,7 +131,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
       <header class="section-header">
         <div>
           <h3 id="crm-money-heading">Money</h3>
-          <p>What to chase today, what is open, and when cash should arrive.</p>
+          <p>What to follow up on today, what is open, and when cash should arrive.</p>
         </div>
       </header>
       <div data-crm-money></div>

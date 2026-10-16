@@ -409,52 +409,52 @@ export function createSponsorFinance(context) {
           `
         : "";
     const evidence = finance.evidence || [];
-    const chaseTasks = projection.chase?.tasks || [];
-    const existingTasks = projection.chase?.existingTasks || [];
-    const chaseable = projection.followUp?.code === "chase-payment";
-    const chaseTaskRow = (task) => {
+    const paymentFollowUpTasks = projection.paymentFollowUp?.tasks || [];
+    const existingTasks = projection.paymentFollowUp?.existingTasks || [];
+    const needsPaymentFollowUp = projection.followUp?.code === "payment-follow-up";
+    const paymentFollowUpTaskRow = (task) => {
       const detail = [
         `Due ${ledgerDate(task.date)}`,
         task.status === "waiting" && task.followUpAt
           ? `Next follow-up ${ledgerDate(task.followUpAt)}`
           : "",
       ].filter(Boolean).join(" · ");
-      return html`<li class="finance-chase-row" data-finance-chase-task="${escapeHtml(task.id)}">
+      return html`<li class="finance-payment-follow-up-row" data-finance-payment-follow-up-task="${escapeHtml(task.id)}">
         <div>
           <strong>${escapeHtml(task.description)}</strong>
           <p class="dk-muted">${escapeHtml(detail)} · ${escapeHtml(task.status)}</p>
         </div>
         <button
           class="dk-button dk-button--secondary dk-button--sm"
-          data-finance-chase-open="${escapeHtml(task.id)}"
+          data-finance-payment-follow-up-open="${escapeHtml(task.id)}"
         >
           Open in Tasks
         </button>
       </li>`;
     };
-    const chaseSection = chaseable || chaseTasks.length
-      ? html`<div class="finance-chase" data-finance-chase>
+    const paymentFollowUpSection = needsPaymentFollowUp || paymentFollowUpTasks.length
+      ? html`<div class="finance-payment-follow-up" data-finance-payment-follow-up>
           <header class="crm-company-section-header">
-            <h4>Payment chase</h4>
+            <h4>Payment follow-up</h4>
             ${
-              live && chaseable && !chaseTasks.length
-                ? html`<button data-finance-chase-create>Create payment chase task</button>`
+              live && needsPaymentFollowUp && !paymentFollowUpTasks.length
+                ? html`<button data-finance-payment-follow-up-create>Follow up on the payment</button>`
                 : ""
             }
           </header>
-          ${!chaseTasks.length && existingTasks.length ? html`
+          ${!paymentFollowUpTasks.length && existingTasks.length ? html`
             <p>Review the deal's open Tasks before adding another follow-up.</p>
             <ul>${existingTasks.map((task) => html`<li>${escapeHtml(task.description)}
-              <button data-finance-chase-link="${escapeHtml(task.id)}">Use this Task for the payment follow-up</button>
+              <button data-finance-payment-follow-up-link="${escapeHtml(task.id)}">Use this Task for the payment follow-up</button>
             </li>`).join("")}</ul>
-            <label><input type="checkbox" data-finance-chase-reviewed>
+            <label><input type="checkbox" data-finance-payment-follow-up-reviewed>
               I reviewed these Tasks; a new payment follow-up is separate work.
             </label>` : ""}
           ${
-            chaseTasks.length
-              ? html`<ul class="finance-chase-list">${chaseTasks.map(chaseTaskRow).join("")}</ul>`
+            paymentFollowUpTasks.length
+              ? html`<ul class="finance-payment-follow-up-list">${paymentFollowUpTasks.map(paymentFollowUpTaskRow).join("")}</ul>`
               : html`<p class="dk-muted">
-                  No chase yet. Creating one adds a Task to the regular task pool —
+                  No payment follow-up yet. Creating one adds a Task to the regular task pool —
                   it uses the regular Task lifecycle and proof requirements.
                   Bank review and specific message approval remain required.
                 </p>`
@@ -535,7 +535,7 @@ export function createSponsorFinance(context) {
         <header class="crm-company-section-header"><h4>Payments</h4></header>
         ${paymentMarkup}
       </div>
-      ${paymentLimitWarning} ${chaseSection} ${evidenceMarkup} ${actions}
+      ${paymentLimitWarning} ${paymentFollowUpSection} ${evidenceMarkup} ${actions}
     </section>`;
   }
   async function loadFinance(booking) {
@@ -750,34 +750,34 @@ export function createSponsorFinance(context) {
       ),
     );
     panel
-      .querySelector("[data-finance-chase-create]")
+      .querySelector("[data-finance-payment-follow-up-create]")
       ?.addEventListener("click", () =>
         safe(async () => {
-          const existing = projection.chase?.existingTasks || [];
-          if (existing.length && !panel.querySelector("[data-finance-chase-reviewed]")?.checked) {
+          const existing = projection.paymentFollowUp?.existingTasks || [];
+          if (existing.length && !panel.querySelector("[data-finance-payment-follow-up-reviewed]")?.checked) {
             throw new Error("Review existing Tasks and link one, or confirm the new follow-up is separate work.");
           }
-          await financeMutation(booking, "/chase", "POST", {
+          await financeMutation(booking, "/follow-up", "POST", {
             expectedVersion: projection.finance.version,
             ...(existing.length ? { reviewedOpenTasks: existing.map(({ id, version }) => ({ id, version })) } : {}),
           });
           await reopenBookingDetail(booking);
-        }, "Could not create the payment chase task"),
+        }, "Could not create the payment follow-up task"),
       );
-    panel.querySelectorAll("[data-finance-chase-link]").forEach((button) =>
+    panel.querySelectorAll("[data-finance-payment-follow-up-link]").forEach((button) =>
       button.addEventListener("click", () => safe(async () => {
-        await financeMutation(booking, "/chase", "POST", {
+        await financeMutation(booking, "/follow-up", "POST", {
           expectedVersion: projection.finance.version,
-          existingTaskId: button.dataset.financeChaseLink,
+          existingTaskId: button.dataset.financePaymentFollowUpLink,
         });
         await reopenBookingDetail(booking);
       }, "Could not link the existing follow-up")),
     );
-    panel.querySelectorAll("[data-finance-chase-open]").forEach((button) =>
+    panel.querySelectorAll("[data-finance-payment-follow-up-open]").forEach((button) =>
       button.addEventListener("click", () =>
         navigateCanonicalWorkspace(
           "/tasks",
-          { taskId: button.dataset.financeChaseOpen },
+          { taskId: button.dataset.financePaymentFollowUpOpen },
         ),
       ),
     );

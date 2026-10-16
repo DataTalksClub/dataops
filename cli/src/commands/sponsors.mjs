@@ -18,7 +18,7 @@ Usage
   dataops sponsors messages <organization-id>          Communications with an organization
   dataops sponsors history <deal-id>                   A deal's change history
   dataops sponsors finance <deal-id> [history|candidates/invoices|candidates/payments]
-  dataops sponsors chase <deal-id> [--date YYYY-MM-DD]  Create a main-pool payment follow-up
+  dataops sponsors follow-up <deal-id> [--date YYYY-MM-DD]  Create a main-pool payment follow-up
       [--task ID | --review-existing]  Link an existing deal Task, or confirm review before adding separate work
   dataops sponsors link-payment <deal-id> <transaction-id> [--apply]
       Link a bookkeeping transaction to the deal as its payment. A payment the deal
@@ -193,12 +193,12 @@ export async function linkPayment(args, io) {
 }
 
 /**
- * Create the deal's payment chase Task in the main task pool. The Task is
+ * Create the deal's payment follow-up Task in the main task pool. The Task is
  * ordinary work from here on: `dataops tasks` owns waiting, follow-ups and
  * resolution; this only writes the finance-side record once.
  */
-export async function chase(args, io) {
-  const id = positional(args, 0, "dataops sponsors chase <deal-id> [--date YYYY-MM-DD]");
+export async function followUp(args, io) {
+  const id = positional(args, 0, "dataops sponsors follow-up <deal-id> [--date YYYY-MM-DD]");
   const api = apiFor(args);
   const [deal, finance] = await Promise.all([
     api.get(`/api/sponsor-crm/deals/${enc(id)}`),
@@ -209,17 +209,17 @@ export async function chase(args, io) {
   const date = isoDate(args.date, "date");
   if (date) body.date = date;
   if (args.task) body.existingTaskId = String(args.task);
-  if (args.reviewExisting) body.reviewedOpenTasks = (finance.chase?.existingTasks || [])
+  if (args.reviewExisting) body.reviewedOpenTasks = (finance.paymentFollowUp?.existingTasks || [])
     .map(({ id, version }) => ({ id, version })).sort((a, b) => a.id.localeCompare(b.id));
-  const result = await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/chase`, body, {
+  const result = await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/follow-up`, body, {
     headers: { "Idempotency-Key": randomUUID() },
   });
   if (!args.json) {
     const task = result.task || {};
-    io.print(`${args.task ? "Linked existing" : "Created"} payment chase Task ${task.id} for deal ${id} (due ${task.date}).`);
+    io.print(`${args.task ? "Linked existing" : "Created"} payment follow-up Task ${task.id} for deal ${id} (due ${task.date}).`);
     io.print(`Work it in the task pool: dataops tasks show ${task.id}`);
   }
   return result;
 }
 
-export const commands = { list, show, create, update, messages, history, finance, chase, "link-payment": linkPayment };
+export const commands = { list, show, create, update, messages, history, finance, "follow-up": followUp, "link-payment": linkPayment };

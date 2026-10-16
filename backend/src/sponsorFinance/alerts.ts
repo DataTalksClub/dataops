@@ -60,8 +60,8 @@ export async function evaluateSponsorFinanceAlerts(
     if (finance.invoiceRequestedAt && projection.invoiceState !== 'issued' && finance.expectedInvoiceBy && finance.expectedInvoiceBy < today) {
       conditions.push({ dealId: String(deal.id), rule: 'invoice-missing', basisDate: finance.expectedInvoiceBy, version: finance.version });
     }
-    const invoiceChased = conditions.some((item) => item.dealId === String(deal.id));
-    if (!invoiceChased && projection.followUp.code === 'send-invoice' && delivered) {
+    const invoiceFlagged = conditions.some((item) => item.dealId === String(deal.id));
+    if (!invoiceFlagged && projection.followUp.code === 'send-invoice' && delivered) {
       conditions.push({ dealId: String(deal.id), rule: 'invoice-after-delivery', basisDate: delivered, version: finance.version });
     }
     if (projection.followUp.code === 'unblock' && finance.waitingOn) {

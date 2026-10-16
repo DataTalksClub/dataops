@@ -50,4 +50,4 @@ NODE_ENV=test \
 SKIP_AUTH=true \
 SPONSOR_FINANCE_ENABLED=true \
 node --import tsx --test --test-concurrency=1 --test-force-exit \
-  tests/sponsor-finance-transaction.ddb.ts tests/sponsor-finance-chase.ddb.ts
+  tests/sponsor-finance-transaction.ddb.ts tests/sponsor-finance-payment-follow-up.ddb.ts

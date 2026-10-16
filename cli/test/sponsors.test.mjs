@@ -96,7 +96,7 @@ test("sponsors link-payment links a transaction and replaces the payment recorde
   }
 });
 
-test("sponsors chase creates the payment chase Task with an Idempotency-Key", async () => {
+test("sponsors follow-up creates the payment follow-up Task with an Idempotency-Key", async () => {
   const originalFetch = globalThis.fetch;
   const oldToken = process.env.DATAOPS_TOKEN;
   const oldUrl = process.env.DATAOPS_URL;
@@ -114,11 +114,11 @@ test("sponsors chase creates the payment chase Task with an Idempotency-Key", as
   const logs = [];
   const io = { log: (value) => logs.push(String(value)), error() {} };
   try {
-    assert.equal(await run(["sponsors", "chase", "deal-demo", "--date", "2026-10-20", "--json"], io), 0);
+    assert.equal(await run(["sponsors", "follow-up", "deal-demo", "--date", "2026-10-20", "--json"], io), 0);
     assert.equal(calls.length, 3);
     assert.ok(calls[0].url.endsWith("/api/sponsor-crm/deals/deal-demo"));
     assert.ok(calls[1].url.endsWith("/api/sponsor-crm/deals/deal-demo/finance"));
-    assert.ok(calls[2].url.endsWith("/api/sponsor-crm/deals/deal-demo/finance/chase"));
+    assert.ok(calls[2].url.endsWith("/api/sponsor-crm/deals/deal-demo/finance/follow-up"));
     assert.equal(calls[2].method, "POST");
     assert.deepEqual(calls[2].body, { dealVersion: 7, expectedVersion: 4, date: "2026-10-20" });
     assert.match(calls[2].headers["Idempotency-Key"], /^[A-Za-z0-9_-]{16,128}$/);
@@ -131,7 +131,7 @@ test("sponsors chase creates the payment chase Task with an Idempotency-Key", as
 });
 
 
-test("sponsors chase explicitly links existing work or submits the reviewed task versions", async () => {
+test("sponsors follow-up explicitly links existing work or submits the reviewed task versions", async () => {
   const originalFetch = globalThis.fetch;
   const oldToken = process.env.DATAOPS_TOKEN;
   const oldUrl = process.env.DATAOPS_URL;
@@ -144,14 +144,14 @@ test("sponsors chase explicitly links existing work or submits the reviewed task
       return new Response(JSON.stringify({ task: { id: "task-existing" } }));
     }
     return new Response(JSON.stringify(String(url).endsWith("/finance")
-      ? { finance: { version: 4 }, chase: { existingTasks: [{ id: "task-existing", version: 3 }] } }
+      ? { finance: { version: 4 }, paymentFollowUp: { existingTasks: [{ id: "task-existing", version: 3 }] } }
       : { id: "deal-demo", version: 7 }));
   };
   try {
     const io = { log() {}, error() {} };
-    assert.equal(await run(["sponsors", "chase", "deal-demo", "--task", "task-existing", "--json"], io), 0);
+    assert.equal(await run(["sponsors", "follow-up", "deal-demo", "--task", "task-existing", "--json"], io), 0);
     assert.deepEqual(posts[0], { dealVersion: 7, expectedVersion: 4, existingTaskId: "task-existing" });
-    assert.equal(await run(["sponsors", "chase", "deal-demo", "--review-existing", "--json"], io), 0);
+    assert.equal(await run(["sponsors", "follow-up", "deal-demo", "--review-existing", "--json"], io), 0);
     assert.deepEqual(posts[1], { dealVersion: 7, expectedVersion: 4, reviewedOpenTasks: [{ id: "task-existing", version: 3 }] });
   } finally {
     globalThis.fetch = originalFetch;

@@ -1118,7 +1118,7 @@ test("sponsor finance panel leads with the derived next step, the blocker, payme
       payments: [
         { id: "a".repeat(32), effectiveDate: "2026-09-20", amount: "1000.00", currency: "EUR", source: "recorded", method: "sponsor-confirmation" },
       ],
-      followUp: { code: "chase-payment", party: "us", since: "2026-09-30", daysOverdue: 14 },
+      followUp: { code: "payment-follow-up", party: "us", since: "2026-09-30", daysOverdue: 14 },
       reconciliationStatus: "coherent",
       paymentLinkCount: 0,
       paymentLinkLimit: 10,
@@ -1126,8 +1126,8 @@ test("sponsor finance panel leads with the derived next step, the blocker, payme
   });
   await sponsorFinance.loadFinance({ id: "deal-1", version: 3 });
   const markup = panel.innerHTML;
-  assert.ok(markup.indexOf("Chase the payment") < markup.indexOf("Waiting on the sponsor for a purchase order"));
-  assert.match(markup, /data-finance-next-step="chase-payment"/);
+  assert.ok(markup.indexOf("Follow up on the payment") < markup.indexOf("Waiting on the sponsor for a purchase order"));
+  assert.match(markup, /data-finance-next-step="payment-follow-up"/);
   assert.match(markup, /Overdue 14 days, due/);
   assert.match(markup, /AP queue/);
   assert.match(markup, /data-finance-waiting-clear/);
@@ -1146,16 +1146,16 @@ test("follow-up summaries name the fix and who acts", () => {
   assert.equal(followUpSummary({ code: "unblock", party: "us", reason: "payment-link" }).title, "Send the sponsor a payment link");
   assert.equal(followUpSummary({ code: "await-sponsor", party: "sponsor", reason: "billing-details" }).tone, "info");
   assert.equal(followUpSummary({ code: "reconcile", party: "us" }).tone, "danger");
-  assert.equal(followUpSummary({ code: "none", party: "none" }).title, "Nothing to chase");
+  assert.equal(followUpSummary({ code: "none", party: "none" }).title, "Nothing to follow up on");
 });
 
-test("Money lists what to chase first with each fix, then outstanding and expected cash without tiles", async () => {
+test("Money lists what to follow up on first with each fix, then outstanding and expected cash without tiles", async () => {
   const { moneyMarkup, forecastBucketLabel } = await import("../src/surfaces/finance/sponsor-money.js");
   const markup = moneyMarkup(
     {
       asOf: "2026-10-14",
       rows: [],
-      chase: [
+      followUps: [
         {
           dealId: "deal-1",
           organizationName: "Sponsor A",
@@ -1163,7 +1163,7 @@ test("Money lists what to chase first with each fix, then outstanding and expect
           currency: "EUR",
           amountDue: "2500.00",
           outstanding: "2500.00",
-          followUp: { code: "chase-payment", party: "us", since: "2026-09-30", daysOverdue: 14 },
+          followUp: { code: "payment-follow-up", party: "us", since: "2026-09-30", daysOverdue: 14 },
         },
         { dealId: "deal-2", organizationName: "Sponsor B", followUp: { code: "classify", party: "us" } },
       ],
@@ -1178,9 +1178,9 @@ test("Money lists what to chase first with each fix, then outstanding and expect
     },
     escapeHtml,
   );
-  assert.ok(markup.indexOf("What to chase") < markup.indexOf("Outstanding"));
+  assert.ok(markup.indexOf("What to follow up on") < markup.indexOf("Outstanding"));
   assert.ok(markup.indexOf("Outstanding") < markup.indexOf("Expected cash"));
-  assert.match(markup, /Chase the payment/);
+  assert.match(markup, /Follow up on the payment/);
   assert.match(markup, /Sponsor A · Q4 newsletter/);
   assert.match(markup, /data-money-open-deal="deal-2"/);
   assert.match(markup, /1 agreed deal has no money recorded/);
@@ -1203,7 +1203,7 @@ test("a bookkeeping row replaces the payment recorded before it: same amount, wi
   assert.equal(replaceablePayment(payments, { amount: "5950.00", effectiveDate: "2026-10-04" }), undefined);
 });
 
-const chaseProjection = (chase) => ({
+const paymentFollowUpProjection = (paymentFollowUp) => ({
   enabled: true,
   classified: true,
   dealId: "deal-1",
@@ -1222,14 +1222,14 @@ const chaseProjection = (chase) => ({
   timingState: "overdue",
   outstanding: "1000.00",
   payments: [],
-  followUp: { code: "chase-payment", party: "us", since: "2026-09-30", daysOverdue: 14 },
+  followUp: { code: "payment-follow-up", party: "us", since: "2026-09-30", daysOverdue: 14 },
   reconciliationStatus: "coherent",
   paymentLinkCount: 0,
   paymentLinkLimit: 10,
-  ...(chase ? { chase } : {}),
+  ...(paymentFollowUp ? { paymentFollowUp } : {}),
 });
 
-test("an overdue invoice without a chase offers creating the chase Task in the main pool", async () => {
+test("an overdue invoice without a payment follow-up offers creating the follow-up Task in the main pool", async () => {
   createHarness();
   const surface = new FakeElement("section");
   const panel = surface.querySelector('[data-booking-panel="finance"]');
@@ -1244,31 +1244,32 @@ test("an overdue invoice without a chase offers creating the chase Task in the m
   globalThis.fetch = async () => ({
     ok: true,
     status: 200,
-    json: async () => chaseProjection(null),
+    json: async () => paymentFollowUpProjection(null),
   });
   await sponsorFinance.loadFinance({ id: "deal-1", version: 3 });
   const markup = panel.innerHTML;
-  assert.match(markup, /Payment chase/);
-  assert.match(markup, /data-finance-chase-create/);
+  assert.match(markup, /Payment follow-up/);
+  assert.match(markup, /data-finance-payment-follow-up-create>Follow up on the payment</);
   assert.match(markup, /regular task pool/);
+  assert.doesNotMatch(markup, /chase/i);
 
-  // Clicking creates the chase through the finance endpoint and repaints.
+  // Clicking creates the payment follow-up through the finance endpoint and repaints.
   const requests = [];
   globalThis.fetch = async (url, options) => {
     requests.push({ url: String(url), method: options?.method, body: options?.body && JSON.parse(options.body) });
-    return { ok: true, status: 200, json: async () => chaseProjection(null) };
+    return { ok: true, status: 200, json: async () => paymentFollowUpProjection(null) };
   };
   const createButton = surface
     .querySelector("[data-finance-panel]")
-    .querySelector("[data-finance-chase-create]");
+    .querySelector("[data-finance-payment-follow-up-create]");
   await createButton.dispatch("click", {});
-  const chaseCall = requests.find((request) => request.url.endsWith("/finance/chase"));
-  assert.ok(chaseCall, "creates through the finance chase endpoint");
-  assert.equal(chaseCall.method, "POST");
-  assert.deepEqual(chaseCall.body, { dealVersion: 3, expectedVersion: 4 });
+  const followUpCall = requests.find((request) => request.url.endsWith("/finance/follow-up"));
+  assert.ok(followUpCall, "creates through the finance follow-up endpoint");
+  assert.equal(followUpCall.method, "POST");
+  assert.deepEqual(followUpCall.body, { dealVersion: 3, expectedVersion: 4 });
 });
 
-test("open chase work is listed with its next follow-up and opens in the Tasks surface", async () => {
+test("open payment follow-up work is listed with its next follow-up and opens in the Tasks surface", async () => {
   createHarness();
   const surface = new FakeElement("section");
   const panel = surface.querySelector('[data-booking-panel="finance"]');
@@ -1285,19 +1286,19 @@ test("open chase work is listed with its next follow-up and opens in the Tasks s
   // The open buttons bind through querySelectorAll, so seed the one the
   // dispatch will use before the panel renders and binds.
   const openButton = new FakeElement("button");
-  openButton.dataset.financeChaseOpen = "task-chase-1";
+  openButton.dataset.financePaymentFollowUpOpen = "task-follow-up-1";
   surface
     .querySelector("[data-finance-panel]")
-    .setQueryAll("[data-finance-chase-open]", [openButton]);
+    .setQueryAll("[data-finance-payment-follow-up-open]", [openButton]);
   globalThis.fetch = async () => ({
     ok: true,
     status: 200,
     json: async () =>
-      chaseProjection({
+      paymentFollowUpProjection({
         tasks: [
           {
-            id: "task-chase-1",
-            description: "Chase payment from Synthetic Sponsor. 1000 EUR outstanding.",
+            id: "task-follow-up-1",
+            description: "Follow up on the payment from Synthetic Sponsor. 1000 EUR outstanding.",
             date: "2026-10-16",
             status: "waiting",
             followUpAt: "2026-10-23",
@@ -1308,23 +1309,23 @@ test("open chase work is listed with its next follow-up and opens in the Tasks s
   });
   await sponsorFinance.loadFinance({ id: "deal-1", version: 3 });
   const markup = panel.innerHTML;
-  assert.match(markup, /Chase payment from Synthetic Sponsor/);
+  assert.match(markup, /Follow up on the payment from Synthetic Sponsor/);
   assert.match(markup, /Next follow-up/);
-  assert.match(markup, /data-finance-chase-open="task-chase-1"/);
-  assert.doesNotMatch(markup, /data-finance-chase-create/);
+  assert.match(markup, /data-finance-payment-follow-up-open="task-follow-up-1"/);
+  assert.doesNotMatch(markup, /data-finance-payment-follow-up-create/);
 
   await openButton.dispatch("click", {});
-  assert.deepEqual(navigations, [{ path: "/tasks", params: { taskId: "task-chase-1" } }]);
+  assert.deepEqual(navigations, [{ path: "/tasks", params: { taskId: "task-follow-up-1" } }]);
 });
 
 
-test("existing sponsor work must be reviewed before adding a separate chase", async () => {
+test("existing sponsor work must be reviewed before adding a separate payment follow-up", async () => {
   createHarness();
   const surface = new FakeElement("section");
   const message = new FakeElement("p");
   const finance = createSponsorFinance({ surface, escapeHtml, humanizeOptionLabel, message,
     request: async () => ({}), workApiUrl: (path) => path });
-  const projection = chaseProjection({ tasks: [], existingTasks: [
+  const projection = paymentFollowUpProjection({ tasks: [], existingTasks: [
     { id: "existing-1", version: 3, description: "Existing payment follow-up", date: "2026-10-16", status: "todo" },
   ] });
   const posts = [];
@@ -1335,10 +1336,10 @@ test("existing sponsor work must be reviewed before adding a separate chase", as
   await finance.loadFinance({ id: "deal-1", version: 3 });
   assert.match(surface.querySelector('[data-booking-panel="finance"]').innerHTML, /Existing payment follow-up/);
   const panel = surface.querySelector("[data-finance-panel]");
-  await panel.querySelector("[data-finance-chase-create]").dispatch("click", {});
+  await panel.querySelector("[data-finance-payment-follow-up-create]").dispatch("click", {});
   assert.equal(posts.length, 0, "unreviewed duplicate creation is refused before a write");
-  panel.querySelector("[data-finance-chase-reviewed]").checked = true;
-  await panel.querySelector("[data-finance-chase-create]").dispatch("click", {});
+  panel.querySelector("[data-finance-payment-follow-up-reviewed]").checked = true;
+  await panel.querySelector("[data-finance-payment-follow-up-create]").dispatch("click", {});
   assert.deepEqual(posts[0], { dealVersion: 3, expectedVersion: 4,
     reviewedOpenTasks: [{ id: "existing-1", version: 3 }] });
 });

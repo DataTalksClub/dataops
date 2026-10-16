@@ -155,7 +155,7 @@ describe('sponsor CRM', () => {
       assert.equal(fetched.money, 'overdue');
       assert.equal(fetched.title, 'Synthetic package');
       assert.equal(fetched.finance.invoiceNumber, 'SYN-1');
-      assert.deepEqual(fetched.finance.followUp, { code: 'chase-payment', party: 'us', since: '2026-06-01', daysOverdue: 30 });
+      assert.deepEqual(fetched.finance.followUp, { code: 'payment-follow-up', party: 'us', since: '2026-06-01', daysOverdue: 30 });
       assert.equal((await at('2026-05-15')).money, 'invoiced');
       const paymentKey = `SPONSOR_FINANCE_PAYMENT#${deal.id}#${'a'.repeat(32)}`;
       await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: {

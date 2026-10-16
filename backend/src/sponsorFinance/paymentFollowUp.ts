@@ -1,12 +1,12 @@
 /**
- * Payment chasing: the one piece of sponsor finance that becomes actionable
+ * Payment follow-ups: the one piece of sponsor finance that becomes actionable
  * work in the main task pool.
  *
- * A chase is an ordinary Task with a `sponsor-deal` subject — the canonical
+ * A payment follow-up is an ordinary Task with a `sponsor-deal` subject — the canonical
  * cardless Task shape — so it appears in the regular queue with the regular
  * filters, assignee rules, waiting lifecycle, and proof semantics. This module
- * only decides *whether* the money is chaseable, *what* the Task says, and
- * keeps `FinanceState.chaseTaskIds` as the finance-side record of the chases
+ * only decides *whether* the money needs a payment follow-up, *what* the Task says, and
+ * keeps `FinanceState.paymentFollowUpTaskIds` as the finance-side record of the follow-ups
  * it created; every later update (waiting, follow-ups, resolution) goes
  * through the ordinary Task routes, which this module never bypasses.
  */
@@ -34,7 +34,7 @@ import {
   safeConflict,
 } from './repository';
 import type {
-  ChaseTaskView,
+  PaymentFollowUpTaskView,
   FinanceProjection,
   FinanceState,
   FollowUp,
@@ -48,11 +48,11 @@ const singleton = (key: string) => ({ PK: key, SK: key });
 const nowIso = () => new Date().toISOString();
 const OPEN_STATUSES = new Set(['todo', 'waiting']);
 
-export const CHASE_SOURCE = 'sponsor-finance';
-export const CHASE_TAG = 'payment-chase';
+export const PAYMENT_FOLLOW_UP_SOURCE = 'sponsor-finance';
+export const PAYMENT_FOLLOW_UP_TAG = 'payment-follow-up';
 
-/** The facts a chase decision is made from, derived with the canonical derivation code. */
-export type ChaseDecision = {
+/** The facts a payment follow-up decision is made from, derived with the canonical derivation code. */
+export type PaymentFollowUpDecision = {
   invoiceState: InvoiceState;
   paymentState: PaymentState;
   timingState: TimingState;
@@ -63,27 +63,27 @@ export type ChaseDecision = {
 };
 
 /**
- * Why the money is not chaseable yet, or null when it is. Only an issued,
+ * Why the money does not need a payment follow-up yet, or null when it is. Only an issued,
  * overdue, unsettled, coherent invoice whose next step is ours to take may be
- * chased — the same conditions that derive the `chase-payment` next step.
+ * followed up — the same conditions that derive the `payment-follow-up` next step.
  */
-export function chaseBlocker(decision: ChaseDecision): string | null {
-  if (decision.followUp.code === 'chase-payment') return null;
+export function paymentFollowUpBlocker(decision: PaymentFollowUpDecision): string | null {
+  if (decision.followUp.code === 'payment-follow-up') return null;
   if (decision.paymentState === 'paid') return 'Payment is already settled';
-  if (!decision.coherent) return 'Payment evidence must be reconciled before chasing';
+  if (!decision.coherent) return 'Payment evidence must be reconciled before following up';
   if (decision.followUp.code === 'unblock') return 'The sponsor is waiting on us; unblock first';
   if (decision.invoiceState !== 'issued') return 'The invoice has not been issued yet';
   if (decision.timingState !== 'overdue') return 'The invoice is not overdue yet';
-  return 'The money is not in a state that needs chasing';
+  return 'The money is not in a state that needs a payment follow-up';
 }
 
 /** Use the same coherent transaction snapshot and claim checks as the finance view. */
-export async function deriveChaseDecision(
+export async function derivePaymentFollowUpDecision(
   client: DynamoDBDocumentClient,
   state: FinanceState,
   dealStatus: string,
   today: string,
-): Promise<ChaseDecision> {
+): Promise<PaymentFollowUpDecision> {
   const projection = await projectFinance(client, state.dealId, 'admin', { dealStatus, today });
   if (projection.finance?.version !== state.version) throw safeConflict();
   return {
@@ -97,8 +97,8 @@ export async function deriveChaseDecision(
   };
 }
 
-/** The Task's due date: the day the chase should happen. */
-function chaseDate(value: unknown, today: string): string {
+/** The Task's due date: the day the payment follow-up should happen. */
+function paymentFollowUpDate(value: unknown, today: string): string {
   if (value === undefined) return today;
   if (typeof value !== 'string' || !realDate(value)) {
     throw Object.assign(new Error('date must be a YYYY-MM-DD date'), { statusCode: 400 });
@@ -106,8 +106,8 @@ function chaseDate(value: unknown, today: string): string {
   return value;
 }
 
-/** What the chase Task says: the sponsor, the deal, the invoice facts, and the verification rule. */
-export function chaseTaskDescription(input: {
+/** What the payment follow-up Task says: the sponsor, the deal, the invoice facts, and the verification rule. */
+export function paymentFollowUpTaskDescription(input: {
   organizationName: string;
   dealTitle?: string;
   invoiceNumber?: string;
@@ -132,40 +132,40 @@ export function chaseTaskDescription(input: {
       : `due ${input.dueOn}`);
   }
   const detail = facts.length ? ` ${facts.join(', ')}.` : '';
-  return `Chase payment from ${subject}.${detail} Check the linked payment evidence and the ledger for anything already received before chasing — record what you verified and the outcome before resolving this Task.`.slice(0, 500);
+  return `Follow up on the payment from ${subject}.${detail} Check the linked payment evidence and the ledger for anything already received before following up — record what you verified and the outcome before resolving this Task.`.slice(0, 500);
 }
 
-/** Open chase Tasks recorded on the finance state, earliest first. */
-export async function openChaseTasks(client: DynamoDBDocumentClient, state: FinanceState): Promise<Task[]> {
-  const found = await Promise.all((state.chaseTaskIds || []).map((id) => getTask(client, id)));
+/** Open payment follow-up Tasks recorded on the finance state, earliest first. */
+export async function openPaymentFollowUpTasks(client: DynamoDBDocumentClient, state: FinanceState): Promise<Task[]> {
+  const found = await Promise.all((state.paymentFollowUpTaskIds || []).map((id) => getTask(client, id)));
   return found
     .filter((task): task is Task => Boolean(task) && OPEN_STATUSES.has(String(task!.status)))
     .sort((left, right) => String(left.date).localeCompare(String(right.date)) || left.id.localeCompare(right.id));
 }
 
-/** The projection's public view of an open chase Task. */
-export function chaseTaskView(task: Task): ChaseTaskView {
+/** The projection's public view of an open payment follow-up Task. */
+export function paymentFollowUpTaskView(task: Task): PaymentFollowUpTaskView {
   return {
     id: task.id,
     version: task.version,
     description: task.description,
     date: task.date,
-    status: task.status as ChaseTaskView['status'],
+    status: task.status as PaymentFollowUpTaskView['status'],
     ...(task.followUpAt ? { followUpAt: task.followUpAt } : {}),
     ...(task.assigneeId ? { assigneeId: task.assigneeId } : {}),
   };
 }
 
-/** Attach the deal's open chase work to a finance projection. */
-export async function withChaseTasks(
+/** Attach the deal's open payment follow-up work to a finance projection. */
+export async function withPaymentFollowUpTasks(
   client: DynamoDBDocumentClient,
   projection: FinanceProjection,
   state: FinanceState | null,
 ): Promise<FinanceProjection> {
   if (!state) return projection;
-  const open = await openChaseTasks(client, state);
-  const existing = (await relatedDealTasks(client, state.dealId)).filter((task) => !open.some((chase) => chase.id === task.id));
-  return { ...projection, chase: { tasks: open.map(chaseTaskView), existingTasks: existing.map(chaseTaskView) } };
+  const open = await openPaymentFollowUpTasks(client, state);
+  const existing = (await relatedDealTasks(client, state.dealId)).filter((task) => !open.some((followUp) => followUp.id === task.id));
+  return { ...projection, paymentFollowUp: { tasks: open.map(paymentFollowUpTaskView), existingTasks: existing.map(paymentFollowUpTaskView) } };
 }
 
 /** Current related work, read consistently before creating another follow-up. */
@@ -202,7 +202,7 @@ function reviewedTaskReferences(value: unknown): Array<{ id: string; version: nu
   return value.map(({ id, version }) => ({ id, version })).sort((a, b) => a.id.localeCompare(b.id));
 }
 
-export async function createChaseTask(
+export async function createPaymentFollowUpTask(
   client: DynamoDBDocumentClient,
   input: {
     actorId: string; dealId: string; dealVersion: number; expectedVersion: number;
@@ -218,7 +218,7 @@ export async function createChaseTask(
     ...(reviewed !== undefined ? { reviewedOpenTasks: reviewed } : {}),
   };
   const replay = await replayMutation(client, {
-    actorId: input.actorId, operation: 'chase-task', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
+    actorId: input.actorId, operation: 'payment-follow-up-task', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
   });
   if (replay) {
     const task = await getTask(client, replay.recordId);
@@ -229,13 +229,13 @@ export async function createChaseTask(
   if (!state || state.version !== input.expectedVersion || state.voidedAt) throw safeConflict();
   const deal = await getCrmRecord(client, 'deal', input.dealId);
   if (!deal || deal.archivedAt) throw safeConflict();
-  const decision = await deriveChaseDecision(client, state, String(deal.status || ''), input.today || berlinDate());
-  const blocker = chaseBlocker(decision);
+  const decision = await derivePaymentFollowUpDecision(client, state, String(deal.status || ''), input.today || berlinDate());
+  const blocker = paymentFollowUpBlocker(decision);
   if (blocker) throw Object.assign(new Error(blocker), { statusCode: 422 });
-  const open = await openChaseTasks(client, state);
+  const open = await openPaymentFollowUpTasks(client, state);
   if (open.length > 0) {
     throw Object.assign(
-      new Error('An open payment chase Task already exists for this deal'),
+      new Error('An open payment follow-up Task already exists for this deal'),
       { statusCode: 409, taskId: open[0].id },
     );
   }
@@ -259,7 +259,7 @@ export async function createChaseTask(
     SK: `TASK#${taskId}`,
     id: taskId,
     version: 1,
-    description: chaseTaskDescription({
+    description: paymentFollowUpTaskDescription({
       organizationName: String(organization?.displayName || 'Unknown sponsor'),
       ...(typeof deal.title === 'string' && deal.title ? { dealTitle: deal.title } : {}),
       ...(state.invoiceNumber ? { invoiceNumber: state.invoiceNumber } : {}),
@@ -269,10 +269,10 @@ export async function createChaseTask(
       ...(state.dueOn ? { dueOn: state.dueOn } : {}),
       ...(decision.daysOverdue !== undefined ? { daysOverdue: decision.daysOverdue } : {}),
     }),
-    date: chaseDate(input.date, today),
+    date: paymentFollowUpDate(input.date, today),
     status: 'todo',
-    source: CHASE_SOURCE,
-    tags: [CHASE_TAG],
+    source: PAYMENT_FOLLOW_UP_SOURCE,
+    tags: [PAYMENT_FOLLOW_UP_TAG],
     subject: { type: 'sponsor-deal', id: input.dealId },
     proofRequirement: { type: 'comment', required: true, label: 'Payment verification and outcome' },
     assigneeId: input.actorId,
@@ -299,19 +299,19 @@ export async function createChaseTask(
       Update: {
         TableName: TABLE_SPONSOR_CRM,
         Key: financeRow,
-        UpdateExpression: 'SET chaseTaskIds = :ids, updatedAt = :now, actorId = :actor, #version = #version + :one',
+        UpdateExpression: 'SET paymentFollowUpTaskIds = :ids, updatedAt = :now, actorId = :actor, #version = #version + :one',
         ConditionExpression: '#version = :version AND attribute_not_exists(voidedAt)',
         ExpressionAttributeNames: { '#version': 'version' },
         ExpressionAttributeValues: {
-          ':ids': [...(state.chaseTaskIds || []), taskId], ':now': now, ':actor': input.actorId, ':one': 1, ':version': state.version,
+          ':ids': [...(state.paymentFollowUpTaskIds || []), taskId], ':now': now, ':actor': input.actorId, ':one': 1, ':version': state.version,
         },
       },
     },
   ];
   await executeMutation(client, {
-    actorId: input.actorId, operation: 'chase-task', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
+    actorId: input.actorId, operation: 'payment-follow-up-task', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
     request,
-    financeVersion: nextVersion, recordId: taskId, eventCode: existing ? 'chase-task-linked' : 'chase-task-created',
+    financeVersion: nextVersion, recordId: taskId, eventCode: existing ? 'payment-follow-up-task-linked' : 'payment-follow-up-task-created',
     transactItems: transaction,
   });
   const created = await getTask(client, taskId);

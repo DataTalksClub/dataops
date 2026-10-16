@@ -63,10 +63,10 @@ export function followUpSummary(followUp = {}) {
         title: `Send the sponsor ${reasonText(followUp.reason)}`,
         detail: since ? `They have been waiting on us since ${since}.` : "They are waiting on us.",
       };
-    case "chase-payment":
+    case "payment-follow-up":
       return {
         tone: "danger",
-        title: "Chase the payment",
+        title: "Follow up on the payment",
         detail: `Overdue ${followUp.daysOverdue ?? ""} day${followUp.daysOverdue === 1 ? "" : "s"}${since ? `, due ${since}` : ""}.`,
       };
     case "send-invoice":
@@ -84,7 +84,7 @@ export function followUpSummary(followUp = {}) {
     case "invoice-later":
       return { tone: "info", title: "Invoice later", detail: since ? `Invoice by ${since}.` : "Not invoiceable yet." };
     default:
-      return { tone: "success", title: "Nothing to chase", detail: "" };
+      return { tone: "success", title: "Nothing to follow up on", detail: "" };
   }
 }
 

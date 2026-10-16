@@ -48,8 +48,8 @@ export type FinanceState = {
   recordedPaymentIds: string[];
   waitingOn?: WaitingOn;
   evidence?: FinanceEvidence[];
-  /** Payment chase Tasks created for this deal's money; open ones throttle re-creation. */
-  chaseTaskIds: string[];
+  /** Payment follow-up Tasks created for this deal's money; open ones throttle re-creation. */
+  paymentFollowUpTaskIds: string[];
   voidedAt?: string;
   actorId: string;
   createdAt: string;
@@ -98,7 +98,7 @@ export type FollowUpCode =
   | 'classify'
   | 'send-invoice'
   | 'unblock'
-  | 'chase-payment'
+  | 'payment-follow-up'
   | 'reconcile'
   | 'await-sponsor'
   | 'await-payment'
@@ -117,8 +117,8 @@ export type InvoiceState = 'unclassified' | 'not-required' | 'to-request' | 'req
 export type PaymentState = 'not-applicable' | 'unpaid' | 'partially-paid' | 'paid' | 'reconciliation-required';
 export type TimingState = 'not-applicable' | 'not-due' | 'overdue' | 'settled';
 
-/** An open payment chase Task as the finance projection shows it. */
-export type ChaseTaskView = {
+/** An open payment follow-up Task as the finance projection shows it. */
+export type PaymentFollowUpTaskView = {
   id: string;
   version: number;
   description: string;
@@ -164,6 +164,6 @@ export type FinanceProjection = {
   reconciliationStatus: 'coherent' | 'reconciliation-required';
   paymentLinkCount: number;
   paymentLinkLimit: number;
-  /** Open payment chase Tasks in the main task pool, attached at the route layer. */
-  chase?: { tasks: ChaseTaskView[]; existingTasks: ChaseTaskView[] };
+  /** Open payment follow-up Tasks in the main task pool, attached at the route layer. */
+  paymentFollowUp?: { tasks: PaymentFollowUpTaskView[]; existingTasks: PaymentFollowUpTaskView[] };
 };

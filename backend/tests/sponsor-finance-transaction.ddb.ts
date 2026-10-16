@@ -1196,7 +1196,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     assert.equal(projection.daysOverdue, 25);
     assert.equal(projection.finance?.invoiceNumber, 'SYN/2026/1');
     assert.equal(projection.finance?.sentOn, '2026-08-20');
-    assert.deepEqual(projection.followUp, { code: 'chase-payment', party: 'us', since: '2026-09-19', daysOverdue: 25 });
+    assert.deepEqual(projection.followUp, { code: 'payment-follow-up', party: 'us', since: '2026-09-19', daysOverdue: 25 });
 
     version = (await updateFollowThrough(client, {
       ...base, expectedVersion: version, idempotencyKey: idem('evidence-waiting'),
@@ -1247,7 +1247,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     assert.equal(row.deliveredOn, '2026-08-18');
     assert.deepEqual(row.recordedPayments, [{ id: projection.payments[0].id, amount: '2000', receivedOn: '2026-09-30' }],
       'the portfolio row carries the payment a bookkeeping row can still confirm');
-    assert.ok(ledger.chase.some((item) => item.dealId === dealId && item.followUp.code === 'chase-payment'));
+    assert.ok(ledger.followUps.some((item) => item.dealId === dealId && item.followUp.code === 'payment-follow-up'));
     const overdue = ledger.forecast.find((item) => item.bucket === 'overdue' && item.currency === 'EUR')!;
     assert.ok(overdue.dealIds.includes(dealId));
 

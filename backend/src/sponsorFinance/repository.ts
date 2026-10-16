@@ -321,7 +321,7 @@ export async function classifyFinance(
     ...(existing?.invoiceLinkId ? { invoiceLinkId: existing.invoiceLinkId } : {}),
     paymentLinkIds: existing?.paymentLinkIds || [],
     recordedPaymentIds: existing?.recordedPaymentIds || [],
-    chaseTaskIds: existing?.chaseTaskIds || [],
+    paymentFollowUpTaskIds: existing?.paymentFollowUpTaskIds || [],
     ...(existing?.waitingOn ? { waitingOn: existing.waitingOn } : {}),
     ...(existing?.evidence ? { evidence: existing.evidence } : {}),
     actorId: input.actorId,

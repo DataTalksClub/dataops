@@ -31,7 +31,7 @@ export function deriveFollowUp(input: FollowUpInput, today: string): FollowUp {
   if (waitingOn?.party === 'us') return { code: 'unblock', party: 'us', since: waitingOn.since, reason: waitingOn.reason };
   if (invoiceState === 'issued') {
     if (input.dueOn && input.dueOn < today) {
-      return { code: 'chase-payment', party: 'us', since: input.dueOn, daysOverdue: daysBetween(input.dueOn, today) };
+      return { code: 'payment-follow-up', party: 'us', since: input.dueOn, daysOverdue: daysBetween(input.dueOn, today) };
     }
     if (waitingOn) return { code: 'await-sponsor', party: 'sponsor', since: waitingOn.since, reason: waitingOn.reason };
     return { code: 'await-payment', party: 'sponsor', ...(input.dueOn ? { since: input.dueOn } : {}) };
@@ -46,7 +46,7 @@ export function deriveFollowUp(input: FollowUpInput, today: string): FollowUp {
 const URGENCY: Record<FollowUp['code'], number> = {
   reconcile: 0,
   unblock: 1,
-  'chase-payment': 2,
+  'payment-follow-up': 2,
   'send-invoice': 3,
   classify: 4,
   'await-sponsor': 5,

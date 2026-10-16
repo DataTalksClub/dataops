@@ -1,6 +1,6 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
-import { createChaseTask, withChaseTasks } from '../sponsorFinance/chase';
+import { createPaymentFollowUpTask, withPaymentFollowUpTasks } from '../sponsorFinance/paymentFollowUp';
 import {
   classifyFinance,
   financeActor,
@@ -70,7 +70,7 @@ export async function handleSponsorFinanceRoutes(
   try {
     const write = method !== 'GET';
     const actor = await financeActor(client, actorId, write || action.startsWith('candidates/'));
-    const project = async () => withChaseTasks(
+    const project = async () => withPaymentFollowUpTasks(
       client,
       await projectFinance(client, dealId, actor.role, await dealProjectionContext(client, dealId)),
       await getFinanceState(client, dealId),
@@ -170,10 +170,10 @@ export async function handleSponsorFinanceRoutes(
       const result = await updateFollowThrough(client, { ...common, expectedVersion: Number(body.expectedVersion), body });
       return json(200, { result, projection: await project() });
     }
-    if (method === 'POST' && action === 'chase') {
+    if (method === 'POST' && action === 'follow-up') {
       // The Task is the result; the finance projection is unchanged (the
-      // linked chase work is re-read with the projection on every GET).
-      const result = await createChaseTask(client, {
+      // linked payment follow-up work is re-read with the projection on every GET).
+      const result = await createPaymentFollowUpTask(client, {
         ...common,
         expectedVersion: Number(body.expectedVersion),
         ...(body.date !== undefined ? { date: body.date } : {}),

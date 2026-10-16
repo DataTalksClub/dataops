@@ -11,7 +11,7 @@ private links. The real ledger lives outside this repository.
 | 2 | Know what was delivered | Which promised deliverables are published, which are still ahead? | Deliverable `publishedAt` and planned dates; fulfillment chip |
 | 3 | Know the invoice position | Is an invoice needed, sent, paid, partially paid, overdue or void? Which number, when sent, when due? | Finance state per deal: classification, invoice number, issued/sent/due dates, payment state, timing state |
 | 4 | Know the cash | What came in, when, from which evidence (ledger row, accountant report, sponsor confirmation)? | Payments: linked ledger rows plus recorded payments with a method and reference |
-| 5 | Chase today | What must I do today: send an invoice after delivery, chase an overdue invoice, provide payment details or a card link, reconcile? | Derived follow-up per deal and the Money "chase" list; finance alerts in notifications |
+| 5 | Follow up today | What must I do today: send an invoice after delivery, follow up on an overdue payment, provide payment details or a card link, reconcile? | Derived follow-up per deal and the Money "What to follow up on" list; finance alerts in notifications |
 | 6 | Know who we wait on | Is the ball with us (billing info, payment link, vendor form) or with the sponsor (billing details, PO, payment run)? | `waitingOn {party, reason, since, note}` on the finance state |
 | 7 | Forecast | What cash do I expect and when? What is overdue? What is agreed but not yet invoiced? | Money ledger summary: outstanding and overdue per currency, expected cash by due month, uninvoiced agreed amounts |
 | 8 | Prove it | Where is the evidence: mail thread, invoice PDF, bookkeeping row? | Evidence references on the finance state, linked invoice document and ledger rows |
@@ -27,7 +27,7 @@ private links. The real ledger lives outside this repository.
   `reconciliation-required` when linked ledger evidence drifts.
 - Timing: `not-due`, `overdue`, `settled`.
 - Follow-up (derived, never stored): `classify`, `send-invoice`,
-  `unblock` (we owe the sponsor something), `chase-payment`,
+  `unblock` (we owe the sponsor something), `payment-follow-up`,
   `reconcile`, `await-sponsor`, `await-payment`, `invoice-later`, `none`.
 
 ## Model decisions

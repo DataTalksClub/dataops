@@ -17,21 +17,21 @@ function dealName(row) {
 }
 
 /**
- * Markup for the Money view: what to chase first, each row carrying its fix,
+ * Markup for the Money view: what to follow up on first, each row carrying its fix,
  * then outstanding money per currency and expected cash by month as compact
  * lists. Fed by GET /api/sponsor-crm/finance/ledger.
  */
 export function moneyMarkup(ledger, escapeHtml) {
-  const chaseRow = (row) => {
+  const followUpRow = (row) => {
     const next = followUpSummary(row.followUp);
     const amount = row.outstanding || row.amountDue;
-    return html`<li class="money-chase-row" data-money-tone="${escapeHtml(next.tone)}">
-      <div class="money-chase-row__main">
+    return html`<li class="money-follow-up-row" data-money-tone="${escapeHtml(next.tone)}">
+      <div class="money-follow-up-row__main">
         <span><strong>${escapeHtml(next.title)}</strong> · ${escapeHtml(dealName(row))}</span>
         ${next.detail ? html`<span class="dk-muted">${escapeHtml(next.detail)}</span>` : ""}
       </div>
       ${amount
-        ? html`<span class="dk-mono money-chase-row__amount">${escapeHtml(formatAmount(amount, row.currency))}</span>`
+        ? html`<span class="dk-mono money-follow-up-row__amount">${escapeHtml(formatAmount(amount, row.currency))}</span>`
         : ""}
       <button
         type="button"
@@ -44,22 +44,22 @@ export function moneyMarkup(ledger, escapeHtml) {
   };
   // Unclassified agreed deals are real chores but rarely urgent; they sit
   // under one disclosure so they don't bury the overdue and blocked money.
-  const urgent = ledger.chase.filter((row) => row.followUp.code !== "classify");
-  const unclassified = ledger.chase.filter((row) => row.followUp.code === "classify");
+  const urgent = ledger.followUps.filter((row) => row.followUp.code !== "classify");
+  const unclassified = ledger.followUps.filter((row) => row.followUp.code === "classify");
   const unclassifiedMarkup = unclassified.length
     ? html`<details class="money-unclassified" data-money-unclassified>
         <summary>
           ${escapeHtml(`${unclassified.length} agreed deal${unclassified.length === 1 ? " has" : "s have"} no money recorded`)}
         </summary>
-        <ul class="money-list">${unclassified.map(chaseRow).join("")}</ul>
+        <ul class="money-list">${unclassified.map(followUpRow).join("")}</ul>
       </details>`
     : "";
-  const chase = urgent.length
-    ? html`<ul class="money-list">${urgent.map(chaseRow).join("")}</ul>`
+  const followUps = urgent.length
+    ? html`<ul class="money-list">${urgent.map(followUpRow).join("")}</ul>`
     : html`<div class="dk-empty dk-empty--compact">
         <p class="dk-empty__title">Nothing overdue or blocked</p>
         <p class="dk-empty__desc">
-          No invoice to send, payment to chase or blocker on our side.
+          No invoice to send, payment to follow up on or blocker on our side.
         </p>
       </div>`;
   const totals = ledger.totals.filter(
@@ -92,11 +92,11 @@ export function moneyMarkup(ledger, escapeHtml) {
       </li>`,
     )
     .join("");
-  return html`<section class="money-block" aria-labelledby="money-chase-heading">
-      <h4 id="money-chase-heading">
-        What to chase${urgent.length ? html` <span class="dk-count">${urgent.length}</span>` : ""}
+  return html`<section class="money-block" aria-labelledby="money-follow-up-heading">
+      <h4 id="money-follow-up-heading">
+        What to follow up on${urgent.length ? html` <span class="dk-count">${urgent.length}</span>` : ""}
       </h4>
-      ${chase} ${unclassifiedMarkup}
+      ${followUps} ${unclassifiedMarkup}
     </section>
     <div class="money-summary">
     <section class="money-block" aria-labelledby="money-outstanding-heading">

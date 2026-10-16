@@ -6,17 +6,17 @@ import { getClient } from '../src/db/client';
 import { createTables, TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_USERS } from '../scripts/local-dynamodb';
 import { invoiceIdentity } from '../src/sponsorFinance/core';
 import { getFinanceState } from '../src/sponsorFinance/repository';
-import { withChaseTasks } from '../src/sponsorFinance/chase';
+import { withPaymentFollowUpTasks } from '../src/sponsorFinance/paymentFollowUp';
 import { createDealAtomic, createOrganizationAtomic } from '../src/db/sponsorCrm';
 import type { FinanceProjection, LambdaEvent, LambdaResponse } from '../src/types';
 
 // Run only through the real DynamoDB Local transaction gate. Production uses
 // the canonical finance projection's TransactGet and claim-identity checks;
 // tests must exercise those commands rather than weakening production for dynalite.
-describe('sponsor payment chasing', () => {
+describe('sponsor payment follow-ups', () => {
   let client: DynamoDBDocumentClient;
-  const ADMIN = 'chase-admin-1';
-  const OPERATOR = 'chase-operator-1';
+  const ADMIN = 'follow-up-admin-1';
+  const OPERATOR = 'follow-up-operator-1';
   const today = berlinToday();
   const day = (offset: number) => {
     const date = new Date(`${today}T00:00:00Z`);
@@ -43,17 +43,17 @@ describe('sponsor payment chasing', () => {
     return { status: response.statusCode, body: JSON.parse(response.body || '{}') };
   };
 
-  const chase = async (
+  const requestFollowUp = async (
     dealId: string, body: Record<string, unknown>, idempotencyLabel: string, userId = ADMIN,
-  ) => invoke('POST', `/api/sponsor-crm/deals/${dealId}/finance/chase`, body, {
+  ) => invoke('POST', `/api/sponsor-crm/deals/${dealId}/finance/follow-up`, body, {
     'x-user-id': userId,
-    'idempotency-key': `chase-test-key-${idempotencyLabel}`,
+    'idempotency-key': `follow-up-test-key-${idempotencyLabel}`,
   });
 
-  /** The chase view the finance projection route would attach. */
-  const chaseView = async (dealId: string) => {
-    const projection = await withChaseTasks(client, { dealId } as FinanceProjection, await getFinanceState(client, dealId));
-    return projection.chase;
+  /** The payment follow-up view the finance projection route would attach. */
+  const followUpView = async (dealId: string) => {
+    const projection = await withPaymentFollowUpTasks(client, { dealId } as FinanceProjection, await getFinanceState(client, dealId));
+    return projection.paymentFollowUp;
   };
 
   const put = (table: string, item: Record<string, unknown>) => client.send(new PutCommand({ TableName: table, Item: item }));
@@ -67,7 +67,7 @@ describe('sponsor payment chasing', () => {
   async function bootstrapDeal(options: { dueIn?: number; issue?: boolean; recordedAmount?: string; amountDue?: string } = {}) {
     sequence += 1;
     const amountDue = options.amountDue || '1000';
-    const organization = await createOrganizationAtomic(client, { displayName: `Synthetic Chase Sponsor ${sequence}` }, 'test');
+    const organization = await createOrganizationAtomic(client, { displayName: `Synthetic Follow-up Sponsor ${sequence}` }, 'test');
     const deal = await createDealAtomic(
       client, { organizationId: organization.item.id, status: 'agreed', productKind: 'one-off', title: `Fall bundle ${sequence}` }, 'test',
     );
@@ -98,9 +98,9 @@ describe('sponsor payment chasing', () => {
       PK: `SPONSOR_FINANCE#${dealId}`, SK: `SPONSOR_FINANCE#${dealId}`,
       id: dealId, recordType: 'sponsor-finance', dealId, version: 2,
       invoiceRequirement: 'required', amountDue, currency: 'EUR', taxMode: 'included',
-      ...(issued ? { invoiceNumber: `CHASE-INV-${sequence}`, issuedOn, sentOn: issuedOn, dueOn } : {}),
+      ...(issued ? { invoiceNumber: `FOLLOW-UP-INV-${sequence}`, issuedOn, sentOn: issuedOn, dueOn } : {}),
       ...(issued ? { invoiceLinkId: linkId } : {}),
-      paymentLinkIds: [], recordedPaymentIds: recordedIds, chaseTaskIds: [],
+      paymentLinkIds: [], recordedPaymentIds: recordedIds, paymentFollowUpTaskIds: [],
       actorId: ADMIN, createdAt: `${issuedOn}T09:00:00.000Z`, updatedAt: `${issuedOn}T09:00:00.000Z`,
     });
     if (issued) {
@@ -147,14 +147,14 @@ describe('sponsor payment chasing', () => {
     assert.strictEqual(created.status, 201);
     const task = created.body.task || created.body;
     const body = { dealVersion: 1, expectedVersion: seeded.financeVersion, existingTaskId: task.id };
-    const linked = await chase(seeded.dealId, body, 'link-existing');
+    const linked = await requestFollowUp(seeded.dealId, body, 'link-existing');
     assert.strictEqual(linked.status, 201, JSON.stringify(linked.body));
     assert.strictEqual(linked.body.task.id, task.id);
     assert.strictEqual(linked.body.task.date, task.date);
     assert.strictEqual(linked.body.task.assigneeId, OPERATOR);
     assert.strictEqual(linked.body.task.version, task.version);
-    assert.deepStrictEqual((await getFinanceState(client, seeded.dealId))!.chaseTaskIds, [task.id]);
-    const replay = await chase(seeded.dealId, body, 'link-existing');
+    assert.deepStrictEqual((await getFinanceState(client, seeded.dealId))!.paymentFollowUpTaskIds, [task.id]);
+    const replay = await requestFollowUp(seeded.dealId, body, 'link-existing');
     assert.strictEqual(replay.body.task.id, task.id);
     assert.strictEqual(replay.body.replayed, true);
   });
@@ -168,37 +168,37 @@ describe('sponsor payment chasing', () => {
     assert.strictEqual(created.status, 201);
     const task = created.body.task || created.body;
     const before = { dealVersion: 1, expectedVersion: seeded.financeVersion };
-    assert.strictEqual((await chase(seeded.dealId, before, 'no-review')).status, 409);
-    assert.strictEqual((await chase(seeded.dealId, { ...before, reviewedOpenTasks: [] }, 'incomplete-review')).status, 409);
-    assert.strictEqual((await chase(seeded.dealId, { ...before, existingTaskId: 'unrelated' }, 'wrong-task')).status, 400);
-    assert.strictEqual((await chase(seeded.dealId, { ...before, reviewedOpenTasks: 'yes' }, 'invalid-review')).status, 400);
+    assert.strictEqual((await requestFollowUp(seeded.dealId, before, 'no-review')).status, 409);
+    assert.strictEqual((await requestFollowUp(seeded.dealId, { ...before, reviewedOpenTasks: [] }, 'incomplete-review')).status, 409);
+    assert.strictEqual((await requestFollowUp(seeded.dealId, { ...before, existingTaskId: 'unrelated' }, 'wrong-task')).status, 400);
+    assert.strictEqual((await requestFollowUp(seeded.dealId, { ...before, reviewedOpenTasks: 'yes' }, 'invalid-review')).status, 400);
     const updated = await invoke('PUT', `/api/tasks/${task.id}`, {
       description: 'Other work changed after review', expectedVersion: task.version,
     }, { 'x-user-id': ADMIN });
     assert.strictEqual(updated.status, 200);
     const currentTask = updated.body.task || updated.body;
-    assert.strictEqual((await chase(seeded.dealId, {
+    assert.strictEqual((await requestFollowUp(seeded.dealId, {
       ...before, reviewedOpenTasks: [{ id: task.id, version: task.version }],
     }, 'stale-review')).status, 409);
-    const reviewed = await chase(seeded.dealId, {
+    const reviewed = await requestFollowUp(seeded.dealId, {
       ...before, reviewedOpenTasks: [{ id: task.id, version: currentTask.version }],
     }, 'reviewed-separate');
     assert.strictEqual(reviewed.status, 201, JSON.stringify(reviewed.body));
     assert.notStrictEqual(reviewed.body.task.id, task.id);
   });
 
-  it('makes concurrent chase creation converge on one finance-linked Task', async () => {
+  it('makes concurrent payment follow-up creation converge on one finance-linked Task', async () => {
     const seeded = await bootstrapDeal();
     const body = { dealVersion: 1, expectedVersion: seeded.financeVersion };
     const attempts = await Promise.all([
-      chase(seeded.dealId, body, 'race-create-one'),
-      chase(seeded.dealId, body, 'race-create-two'),
+      requestFollowUp(seeded.dealId, body, 'race-create-one'),
+      requestFollowUp(seeded.dealId, body, 'race-create-two'),
     ]);
     assert.deepStrictEqual(attempts.map((result) => result.status).sort(), [201, 409]);
-    assert.strictEqual((await getFinanceState(client, seeded.dealId))!.chaseTaskIds.length, 1);
+    assert.strictEqual((await getFinanceState(client, seeded.dealId))!.paymentFollowUpTaskIds.length, 1);
   });
 
-  it('rejects a chase when the canonical invoice claim identity is inconsistent', async () => {
+  it('rejects a payment follow-up when the canonical invoice claim identity is inconsistent', async () => {
     const seeded = await bootstrapDeal();
     const state = await getFinanceState(client, seeded.dealId);
     const sourceId = state!.invoiceLinkId!.split('#').at(-1)!;
@@ -208,44 +208,45 @@ describe('sponsor payment chasing', () => {
       UpdateExpression: 'SET identityToken = :bad',
       ExpressionAttributeValues: { ':bad': 'stale-claim-identity' },
     }));
-    const response = await chase(seeded.dealId,
+    const response = await requestFollowUp(seeded.dealId,
       { dealVersion: 1, expectedVersion: seeded.financeVersion }, 'inconsistent-claim');
     assert.strictEqual(response.status, 422);
     assert.match(response.body.error, /reconciled/);
     const after = await getFinanceState(client, seeded.dealId);
     assert.strictEqual(after!.version, seeded.financeVersion);
-    assert.deepStrictEqual(after!.chaseTaskIds, []);
+    assert.deepStrictEqual(after!.paymentFollowUpTaskIds, []);
   });
 
-  it('refuses to chase money that is not an overdue issued invoice', async () => {
+  it('refuses to follow up on money that is not an overdue issued invoice', async () => {
     const bare = await bootstrapDeal({ issue: false });
-    const notIssued = await chase(bare.dealId, { dealVersion: 1, expectedVersion: bare.financeVersion }, 'blocked-not-issued');
+    const notIssued = await requestFollowUp(bare.dealId, { dealVersion: 1, expectedVersion: bare.financeVersion }, 'blocked-not-issued');
     assert.strictEqual(notIssued.status, 422, JSON.stringify(notIssued.body));
     assert.match(notIssued.body.error, /invoice has not been issued/);
 
     const notOverdue = await bootstrapDeal({ dueIn: 7 });
-    const response = await chase(notOverdue.dealId, {
+    const response = await requestFollowUp(notOverdue.dealId, {
       dealVersion: 1, expectedVersion: notOverdue.financeVersion,
     }, 'blocked-not-overdue');
     assert.strictEqual(response.status, 422);
     assert.match(response.body.error, /not overdue/);
   });
 
-  it('creates one chase Task in the main pool with deal, invoice, and verification context', async () => {
+  it('creates one payment follow-up Task in the main pool with deal, invoice, and verification context', async () => {
     const { dealId, organizationName, financeVersion } = await bootstrapDeal({});
-    const response = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'create-1');
+    const response = await requestFollowUp(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'create-1');
     assert.strictEqual(response.status, 201, JSON.stringify(response.body));
     const task = response.body.task;
     assert.strictEqual(task.status, 'todo');
     assert.strictEqual(task.source, 'sponsor-finance');
-    assert.deepStrictEqual(task.tags, ['payment-chase']);
+    assert.deepStrictEqual(task.tags, ['payment-follow-up']);
     assert.deepStrictEqual(task.subject, { type: 'sponsor-deal', id: dealId });
     assert.strictEqual(task.date, today);
     assert.deepStrictEqual(task.proofRequirement, {
       type: 'comment', required: true, label: 'Payment verification and outcome',
     });
+    assert.match(task.description, /^Follow up on the payment from /);
     assert.ok(task.description.includes(organizationName));
-    assert.match(task.description, /CHASE-INV-\d+/);
+    assert.match(task.description, /FOLLOW-UP-INV-\d+/);
     assert.match(task.description, /1000 EUR outstanding/);
     assert.match(task.description, /record what you verified/);
 
@@ -257,45 +258,45 @@ describe('sponsor payment chasing', () => {
     const dealView = await invoke('GET', `/api/sponsor-crm/deals/${dealId}`);
     assert.ok(dealView.body.openTasks.some((item: { id: string }) => item.id === task.id));
 
-    // The finance projection composes the same open chase work for website and CLI.
-    assert.deepStrictEqual(await chaseView(dealId), {
+    // The finance projection composes the same open payment follow-up work for website and CLI.
+    assert.deepStrictEqual(await followUpView(dealId), {
       tasks: [{ id: task.id, version: task.version, description: task.description, date: today, status: 'todo', assigneeId: task.assigneeId }],
       existingTasks: [],
     });
   });
 
-  it('never creates a second open chase Task for the same deal', async () => {
+  it('never creates a second open payment follow-up Task for the same deal', async () => {
     const { dealId, financeVersion } = await bootstrapDeal({});
-    const first = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'dup-1');
+    const first = await requestFollowUp(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'dup-1');
     assert.strictEqual(first.status, 201);
-    const second = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion + 1 }, 'dup-2');
+    const second = await requestFollowUp(dealId, { dealVersion: 1, expectedVersion: financeVersion + 1 }, 'dup-2');
     assert.strictEqual(second.status, 409);
     assert.strictEqual(second.body.taskId, first.body.task.id);
 
     const pool = await invoke('GET', '/api/tasks?status=todo');
-    const chases = pool.body.tasks.filter((item: { source?: string; subject?: { id: string } }) =>
+    const followUps = pool.body.tasks.filter((item: { source?: string; subject?: { id: string } }) =>
       item.source === 'sponsor-finance' && item.subject?.id === dealId);
-    assert.strictEqual(chases.length, 1);
+    assert.strictEqual(followUps.length, 1);
   });
 
   it('replays a retried creation with the same Idempotency-Key to the same Task', async () => {
     const { dealId, financeVersion } = await bootstrapDeal({});
-    const first = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'replay-1');
+    const first = await requestFollowUp(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'replay-1');
     assert.strictEqual(first.status, 201);
-    const retry = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'replay-1');
+    const retry = await requestFollowUp(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'replay-1');
     assert.strictEqual(retry.status, 201);
     assert.strictEqual(retry.body.task.id, first.body.task.id);
     const pool = await invoke('GET', '/api/tasks?status=todo');
-    const chases = pool.body.tasks.filter((item: { subject?: { id: string } }) => item.subject?.id === dealId);
-    assert.strictEqual(chases.length, 1);
+    const followUps = pool.body.tasks.filter((item: { subject?: { id: string } }) => item.subject?.id === dealId);
+    assert.strictEqual(followUps.length, 1);
   });
 
   it('gates resolution on the payment-verification proof and allows the full waiting lifecycle', async () => {
     const { dealId, financeVersion } = await bootstrapDeal({});
-    const created = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'life-1');
+    const created = await requestFollowUp(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'life-1');
     const taskId = created.body.task.id as string;
 
-    // Without the verification comment the chase cannot be resolved done.
+    // Without the verification comment the payment follow-up cannot be resolved done.
     const noProof = await invoke('PUT', `/api/tasks/${taskId}`, { status: 'done', expectedVersion: 1 });
     assert.strictEqual(noProof.status, 400);
     assert.match(noProof.body.error, /comment/);
@@ -306,9 +307,9 @@ describe('sponsor payment chasing', () => {
     });
     assert.strictEqual(waiting.status, 200, JSON.stringify(waiting.body));
     assert.strictEqual(waiting.body.status, 'waiting');
-    const chaseState = await chaseView(dealId);
-    assert.strictEqual(chaseState!.tasks[0].status, 'waiting');
-    assert.strictEqual(chaseState!.tasks[0].followUpAt, day(7));
+    const followUpState = await followUpView(dealId);
+    assert.strictEqual(followUpState!.tasks[0].status, 'waiting');
+    assert.strictEqual(followUpState!.tasks[0].followUpAt, day(7));
     const waitingQueue = await invoke('GET', '/api/tasks?status=waiting');
     assert.ok(waitingQueue.body.tasks.some((item: { id: string }) => item.id === taskId));
 
@@ -331,35 +332,35 @@ describe('sponsor payment chasing', () => {
     assert.strictEqual(resolved.status, 200);
     assert.strictEqual(resolved.body.status, 'done');
 
-    // Resolved chase work leaves the projection, and a new chase may be created.
-    assert.deepStrictEqual(await chaseView(dealId), { tasks: [], existingTasks: [] });
-    const nextChase = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion + 1 }, 'life-2');
-    assert.strictEqual(nextChase.status, 201);
-    assert.notStrictEqual(nextChase.body.task.id, taskId);
+    // Resolved payment follow-up work leaves the projection, and a new payment follow-up may be created.
+    assert.deepStrictEqual(await followUpView(dealId), { tasks: [], existingTasks: [] });
+    const nextFollowUp = await requestFollowUp(dealId, { dealVersion: 1, expectedVersion: financeVersion + 1 }, 'life-2');
+    assert.strictEqual(nextFollowUp.status, 201);
+    assert.notStrictEqual(nextFollowUp.body.task.id, taskId);
   });
 
-  it('stays consistent with the projection: settled money is not chaseable, partial payments are', async () => {
+  it('stays consistent with the projection: settled money is not followed up, partial payments are', async () => {
     const settled = await bootstrapDeal({ recordedAmount: '1000' });
-    const settledChase = await chase(settled.dealId, {
+    const settledFollowUp = await requestFollowUp(settled.dealId, {
       dealVersion: 1, expectedVersion: settled.financeVersion,
     }, 'blocked-paid');
-    assert.strictEqual(settledChase.status, 422);
-    assert.match(settledChase.body.error, /already settled/);
+    assert.strictEqual(settledFollowUp.status, 422);
+    assert.match(settledFollowUp.body.error, /already settled/);
 
     const partial = await bootstrapDeal({ recordedAmount: '400' });
-    const partialChase = await chase(partial.dealId, {
+    const partialFollowUp = await requestFollowUp(partial.dealId, {
       dealVersion: 1, expectedVersion: partial.financeVersion,
     }, 'create-partial');
-    assert.strictEqual(partialChase.status, 201, JSON.stringify(partialChase.body));
-    assert.match(partialChase.body.task.description, /600 EUR outstanding/);
-    assert.match(partialChase.body.task.description, /partially paid/);
-    const chaseState = await chaseView(partial.dealId);
-    assert.strictEqual(chaseState!.tasks.length, 1);
+    assert.strictEqual(partialFollowUp.status, 201, JSON.stringify(partialFollowUp.body));
+    assert.match(partialFollowUp.body.task.description, /600 EUR outstanding/);
+    assert.match(partialFollowUp.body.task.description, /partially paid/);
+    const followUpState = await followUpView(partial.dealId);
+    assert.strictEqual(followUpState!.tasks.length, 1);
   });
 
-  it('keeps the existing task rules in force for chase Tasks', async () => {
+  it('keeps the existing task rules in force for payment follow-up Tasks', async () => {
     const { dealId, financeVersion } = await bootstrapDeal({});
-    const created = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'rules-1');
+    const created = await requestFollowUp(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'rules-1');
     const taskId = created.body.task.id as string;
 
     // dependsOn stays Card-only: no parallel prerequisite machinery on subject Tasks.
@@ -373,14 +374,14 @@ describe('sponsor payment chasing', () => {
     const adminDelete = await invoke('DELETE', `/api/tasks/${taskId}`, { expectedVersion: 1 }, { 'x-user-id': ADMIN });
     assert.strictEqual(adminDelete.status, 204);
 
-    // A deleted chase stops throttling re-creation: the money still needs chasing.
-    const recreated = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion + 1 }, 'rules-2');
+    // A deleted payment follow-up stops throttling re-creation: the money still needs a payment follow-up.
+    const recreated = await requestFollowUp(dealId, { dealVersion: 1, expectedVersion: financeVersion + 1 }, 'rules-2');
     assert.strictEqual(recreated.status, 201);
   });
 
-  it('rejects a chase when the deal is lost or the actor is not a finance admin', async () => {
+  it('rejects a payment follow-up when the deal is lost or the actor is not a finance admin', async () => {
     const { dealId, financeVersion } = await bootstrapDeal({});
-    const operatorAttempt = await chase(dealId, {
+    const operatorAttempt = await requestFollowUp(dealId, {
       dealVersion: 1, expectedVersion: financeVersion,
     }, 'blocked-operator', OPERATOR);
     assert.strictEqual(operatorAttempt.status, 403);
@@ -390,19 +391,19 @@ describe('sponsor payment chasing', () => {
       id: dealId, version: 2, status: 'lost', active: true,
       organizationId: 'organization-unknown', productKind: 'one-off',
     });
-    const response = await chase(dealId, { dealVersion: 2, expectedVersion: financeVersion }, 'blocked-lost');
+    const response = await requestFollowUp(dealId, { dealVersion: 2, expectedVersion: financeVersion }, 'blocked-lost');
     assert.strictEqual(response.status, 409);
   });
 
   it('accepts an explicit follow-up date and rejects a malformed one', async () => {
     const { dealId, financeVersion } = await bootstrapDeal({});
-    const badDate = await chase(dealId, {
+    const badDate = await requestFollowUp(dealId, {
       dealVersion: 1, expectedVersion: financeVersion, date: 'not-a-date',
     }, 'date-bad');
     assert.strictEqual(badDate.status, 400);
     assert.match(badDate.body.error, /date/);
 
-    const good = await chase(dealId, {
+    const good = await requestFollowUp(dealId, {
       dealVersion: 1, expectedVersion: financeVersion, date: day(3),
     }, 'date-good');
     assert.strictEqual(good.status, 201);

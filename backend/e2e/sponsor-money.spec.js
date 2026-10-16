@@ -23,7 +23,7 @@ test.describe('Sponsors Money', () => {
     await stopIsolatedCapabilityServer(server);
   });
 
-  test('chases the overdue invoice first, records a payment from its deal, and forecasts the rest', async ({ browser }) => {
+  test('follows up on the overdue invoice first, records a payment from its deal, and forecasts the rest', async ({ browser }) => {
     test.setTimeout(120_000);
     const context = await browser.newContext({ baseURL: `http://127.0.0.1:${server.port}`, timezoneId: BERLIN_TIME_ZONE });
     assertOwnedServerResponse(server, await context.request.get('/__e2e__/browser-session'), 'money session');
@@ -54,7 +54,7 @@ test.describe('Sponsors Money', () => {
         outstanding: (2500 - paid).toFixed(2), paid: paid.toFixed(2), payments,
         followUp: finance.waitingOn
           ? { code: 'await-sponsor', party: 'sponsor', since: finance.waitingOn.since, reason: finance.waitingOn.reason }
-          : { code: 'chase-payment', party: 'us', since: '2026-02-04', daysOverdue: 30 },
+          : { code: 'payment-follow-up', party: 'us', since: '2026-02-04', daysOverdue: 30 },
         reconciliationStatus: 'coherent', paymentLinkCount: payments.length, paymentLinkLimit: 10,
       };
     };
@@ -62,10 +62,10 @@ test.describe('Sponsors Money', () => {
       const row = {
         dealId: deal.id, organizationId: organization.id, organizationName: 'Synthetic Money Sponsor', dealStatus: 'agreed',
         amountDue: '2500.00', currency: 'EUR', outstanding: '2500.00', invoiceState: 'issued', paymentState: 'unpaid',
-        timingState: 'overdue', dueOn: '2026-02-04', followUp: { code: 'chase-payment', party: 'us', since: '2026-02-04', daysOverdue: 30 },
+        timingState: 'overdue', dueOn: '2026-02-04', followUp: { code: 'payment-follow-up', party: 'us', since: '2026-02-04', daysOverdue: 30 },
       };
       return route.fulfill({ json: {
-        asOf: '2026-03-06', rows: [row], chase: [row],
+        asOf: '2026-03-06', rows: [row], followUps: [row],
         totals: [{ currency: 'EUR', outstanding: '2500.00', overdue: '2500.00', notInvoiced: '0.00', paidThisYear: '0.00' }],
         forecast: [{ bucket: 'overdue', currency: 'EUR', amount: '2500.00', dealIds: [deal.id] }],
       } });
@@ -93,16 +93,16 @@ test.describe('Sponsors Money', () => {
     const page = await context.newPage();
     await page.goto('/sponsors/money');
     await expect(page.locator('[data-crm-view="money"]')).toBeVisible();
-    const chase = page.locator('.money-chase-row').filter({ hasText: 'Synthetic Money Sponsor' });
-    await expect(chase).toContainText('Chase the payment');
-    await expect(chase).toContainText('€2,500.00');
+    const followUp = page.locator('.money-follow-up-row').filter({ hasText: 'Synthetic Money Sponsor' });
+    await expect(followUp).toContainText('Follow up on the payment');
+    await expect(followUp).toContainText('€2,500.00');
     await expect(page.locator('[data-money-currency="EUR"]')).toContainText('overdue');
     await expect(page.locator('[data-money-bucket="overdue"]')).toContainText('€2,500.00');
 
-    await chase.getByRole('button', { name: 'Open deal' }).click();
+    await followUp.getByRole('button', { name: 'Open deal' }).click();
     await expect(page).toHaveURL(new RegExp(`/sponsors/deals/${deal.id}$`));
     const panel = page.locator('[data-finance-panel]');
-    await expect(panel.locator('[data-finance-next-step="chase-payment"]')).toBeVisible();
+    await expect(panel.locator('[data-finance-next-step="payment-follow-up"]')).toBeVisible();
     await expect(panel).toContainText('Invoice without number');
     await panel.getByRole('button', { name: 'Record payment' }).click();
     const dialog = page.locator('[data-finance-record-payment-dialog]');
