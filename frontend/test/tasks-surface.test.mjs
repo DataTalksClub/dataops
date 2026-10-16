@@ -1193,9 +1193,10 @@ describe("Tasks surface boundary", () => {
     assert.match(text, /S21E5 · AI data products/);
     assert.match(text, /Ada Lovelace/);
     assert.match(text, /Recorded/);
-    assert.match(text, /1 Sept? 2026/);
+    // Dates in the current year omit it, like every other task date.
+    assert.match(text, /1 Sept?(?! 2026)/);
     assert.match(text, /9 of 12 tasks done/);
-    assert.match(text, /10 Aug 2026 · 2 days late/);
+    assert.match(text, /10 Aug · 2 days late/);
     assert.doesNotMatch(text, /Podcast card|Send the guest brief|Grace Meyer|Unassigned/);
     assert.equal(summary.querySelectorAll("a").length, 0);
     assert.equal(summary.querySelectorAll("button").length, 0);
@@ -1248,7 +1249,7 @@ describe("Tasks surface boundary", () => {
       .map((row) => [row.querySelector("dt").textContent, row.querySelector("dd").textContent]);
     assert.deepEqual(rows.slice(0, 4), [
       ["Issue", "Weekly #299"],
-      ["Date", "14 Aug 2026"],
+      ["Date", "14 Aug"],
       ["Slots", "Primary: Acme · Secondary: TBD"],
       ["Status", "planned"],
     ]);

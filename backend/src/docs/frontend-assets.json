@@ -5,6 +5,7 @@
     "src/app.js",
     "src/core/card-kind.js",
     "src/core/collection-loader.js",
+    "src/core/dates.js",
     "src/core/hovercard.js",
     "src/core/code-highlight.js",
     "src/core/icons.js",

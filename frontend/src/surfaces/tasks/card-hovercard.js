@@ -1,6 +1,7 @@
 import { cardKind } from "../../core/card-kind.js";
 import { attachHovercard } from "../../core/hovercard.js";
 import { renderIcon } from "../../core/icons.js";
+import { formatDayLabel } from "../../core/dates.js";
 import { STATUS_LABELS, episodeCode, guestNames } from "../podcast/model.js";
 
 // The Card behind a queue row, summarised on hover as a few short facts: a
@@ -12,12 +13,9 @@ import { STATUS_LABELS, episodeCode, guestNames } from "../podcast/model.js";
 const PODCAST_TYPES = new Set(["podcast"]);
 const NEWSLETTER_TYPES = new Set(["newsletter", "newsletter-standalone"]);
 
-function formatDay(iso) {
+function formatDay(iso, today) {
   const value = String(iso || "").slice(0, 10);
-  const parsed = new Date(`${value}T00:00:00Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(parsed.getTime())) return "";
-  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })
-    .format(parsed);
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? formatDayLabel(value, today) : "";
 }
 
 function daysBetween(fromIso, toIso) {
@@ -28,7 +26,7 @@ function daysBetween(fromIso, toIso) {
 
 // "Due 12 Aug 2026 · 3 days late" / "· in 5 days" / "· today".
 export function cardDueText(card, today) {
-  const day = formatDay(card?.anchorDate);
+  const day = formatDay(card?.anchorDate, today);
   if (!day) return "";
   const open = Number(card.openTaskCount) || 0;
   const delta = daysBetween(today, card.anchorDate);
@@ -76,20 +74,20 @@ export function issueSlotText(issue) {
     .join(" · ");
 }
 
-function episodeFacts(episode) {
+function episodeFacts(episode, today) {
   return [
     ["Episode", [episodeCode(episode), episode.title].filter(Boolean).join(" · ")],
     ["Guests", guestNames(episode)],
     ["Status", STATUS_LABELS[episode.status] || episode.status],
-    ["Recording", formatDay(episode.recordingDate)],
-    ["Release", formatDay(episode.releaseDate)],
+    ["Recording", formatDay(episode.recordingDate, today)],
+    ["Release", formatDay(episode.releaseDate, today)],
   ];
 }
 
-function issueFacts(issue) {
+function issueFacts(issue, today) {
   return [
     ["Issue", issue.label || ""],
-    ["Date", formatDay(issue.publicationDate)],
+    ["Date", formatDay(issue.publicationDate, today)],
     ["Slots", issueSlotText(issue)],
     ["Status", String(issue.status || "").replaceAll("-", " ")],
   ];
@@ -125,7 +123,7 @@ export function createCardHovercards(context) {
         .then((payload) => {
           const item = Array.isArray(payload?.items) ? payload.items[0] : null;
           if (!item) return null;
-          return PODCAST_TYPES.has(type) ? episodeFacts(item) : issueFacts(item);
+          return (today) => (PODCAST_TYPES.has(type) ? episodeFacts(item, today) : issueFacts(item, today));
         })
         .catch((error) => {
           extras.delete(card.id);
@@ -142,7 +140,7 @@ export function createCardHovercards(context) {
     const kind = cardKind(card, state.workSnapshot.templates);
     const extra = await loadExtra(card, kind);
     const facts = el("dl", "card-hovercard__facts");
-    for (const [label, value] of extra || []) fact(facts, label, value);
+    for (const [label, value] of extra ? extra(today) : []) fact(facts, label, value);
     fact(facts, "Progress", cardProgressText(card));
     const dueText = cardDueText(card, today);
     if (dueText) {

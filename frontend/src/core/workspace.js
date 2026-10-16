@@ -1,4 +1,5 @@
 import { concreteRoutePath, matchRoutePath } from "./route-patterns.js";
+import { formatDayLabel } from "./dates.js";
 import { orderAfterPrerequisites, taskIsBlocked } from "./task-dependencies.js";
 
 export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
@@ -363,10 +364,7 @@ export function formatTaskDateMeta(value, today) {
   if (date === addDaysIso(today, -1)) return "Yesterday";
   if (date === addDaysIso(today, 1)) return "Tomorrow";
   // Every surface shows human dates; the ISO input never leaks through.
-  const short = formatShortDate(date);
-  return date.slice(0, 4) === String(today || "").slice(0, 4)
-    ? short
-    : `${short} ${date.slice(0, 4)}`;
+  return formatDayLabel(date, today);
 }
 
 export function formatCardAnchorLabel(value, today = todayIsoDate()) {

@@ -2,6 +2,7 @@ import { cardKind } from "../../core/card-kind.js";
 import { personAvatar } from "../../core/identity.js";
 import { afterText, blockedReason, blockingPrerequisites } from "../../core/task-dependencies.js";
 import { taskMaterials, taskTitleParts } from "../../core/task-display.js";
+import { formatDayLabel } from "../../core/dates.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { createQueueAssigneeFilter } from "./queue-assignee.js";
 import { createCardHovercards } from "./card-hovercard.js";
@@ -492,31 +493,11 @@ export function createTaskQueue(context) {
     return routeState;
   }
 
-  // Short human date for instants (follow-ups), independent of lane wording.
-  function queueShortDate(value) {
-    const parsed = new Date(String(value || ""));
-    if (Number.isNaN(parsed.getTime())) return String(value || "");
-    return new Intl.DateTimeFormat("en-GB", {
-      day: "numeric",
-      month: "short",
-    }).format(parsed);
-  }
-
   // Human due moments: relative words for today/yesterday/tomorrow, a short
-  // date otherwise — never a bare ISO quantity in the queue. Timestamped
+  // date otherwise, with the year only outside the current one. Timestamped
   // values (followUpAt carries a time) are compared on their day.
   function queueDueLabel(date, today) {
-    const day = String(date || "").slice(0, 10);
-    const relative = formatTaskDateMeta(day, today);
-    if (relative !== day) return relative;
-    const parsed = new Date(`${day}T00:00:00Z`);
-    return Number.isNaN(parsed.getTime())
-      ? relative
-      : new Intl.DateTimeFormat("en-GB", {
-          day: "numeric",
-          month: "short",
-          timeZone: "UTC",
-        }).format(parsed);
+    return formatTaskDateMeta(String(date || "").slice(0, 10), today);
   }
 
   // Overdue time reads as accumulated debt (mono day blocks + days) — not a
@@ -767,7 +748,7 @@ export function createTaskQueue(context) {
     }
     if (blocked) {
       cell.dataset.due = "later";
-      cell.textContent = queueShortDate(task.date);
+      cell.textContent = formatDayLabel(task.date, today);
       return cell;
     }
     cell.dataset.due = due === today ? "today" : "later";
@@ -841,7 +822,7 @@ export function createTaskQueue(context) {
       }
     } else if (isFollowUpDueTask(task, today)) {
       note = queueNote("follow-up", task);
-      note.append("Follow up ", noteDate(queueShortDate(task.followUpAt)));
+      note.append("Follow up ", noteDate(formatDayLabel(task.followUpAt, today)));
     }
     if (note) note.title = note.textContent;
     return note;
