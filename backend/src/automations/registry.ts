@@ -72,7 +72,7 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
   {
     id: 'recurring-tasks',
     name: 'Recurring tasks',
-    description: 'Creates the Tasks of every active recurring schedule whose cadence matches the day.',
+    description: 'Creates the Tasks of every active recurring schedule whose cadence matches the day. A schedule date that falls on a Saturday or Sunday in Berlin creates its one Task on the following Monday instead.',
     runsIn: DAILY_JOB,
     infraSchedule: 'BackendFunctionDailyBackendCron',
     schedule: DAILY_JOB_SCHEDULE,
