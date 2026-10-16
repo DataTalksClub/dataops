@@ -1321,7 +1321,8 @@ describe('sponsor finance production DynamoDB transactions', () => {
       idempotencyKey: idem('verified-receipt'), receivedOn: '2026-10-01', amount: '40', currency: 'EUR',
       reference: 'synthetic-bank:account-one:txn-verified', counterparty: 'Synthetic Sponsor', amountEur: '39' };
     const recorded = await receivePayment(client, input);
-    assert.equal((await receivePayment(client, input)).recordId, recorded.recordId, 'same-key retry returns the committed receipt');
+    assert.equal((await receivePayment(client, { ...input, expectedVersion: recorded.financeVersion })).recordId, recorded.recordId, 'same-key retry survives a CLI version refresh');
+    await assert.rejects(() => receivePayment(client, { ...input, amount: '41', expectedVersion: recorded.financeVersion }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
     let projection = await projectFinance(client, seeded.dealId, 'admin');
     assert.equal(projection.paymentState, 'partially-paid');
     assert.equal(projection.outstanding, '60');
@@ -1340,7 +1341,8 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const correctedInput = { ...input, sourceId, expectedVersion: recorded.financeVersion,
       amount: '35', amountEur: '34', idempotencyKey: idem('correct-verified-receipt') };
     const corrected = await correctReceipt(client, correctedInput);
-    assert.equal((await correctReceipt(client, correctedInput)).recordId, corrected.recordId);
+    assert.equal((await correctReceipt(client, { ...correctedInput, expectedVersion: corrected.financeVersion })).recordId, corrected.recordId);
+    await assert.rejects(() => correctReceipt(client, { ...correctedInput, amount: '36', expectedVersion: corrected.financeVersion }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
     projection = await projectFinance(client, seeded.dealId, 'admin');
     assert.equal(projection.reconciliationStatus, 'coherent');
     assert.equal(projection.outstanding, '65');
@@ -1351,6 +1353,48 @@ describe('sponsor finance production DynamoDB transactions', () => {
     assert.deepEqual((audit.details as { before: { amount: string }; after: { amount: string } }).before.amount, '40');
     await assert.rejects(() => correctReceipt(client, { ...correctedInput, amount: '36', idempotencyKey: idem('stale-correction') }));
     assert.equal((await projectFinance(client, seeded.dealId, 'admin')).paid, '35');
+  });
+
+  it('CLI recovers lost receipt and correction responses after rereading versions without double booking', async () => {
+    const seeded = await bootstrapPayable('cli-receipt-retry', '100');
+    const { handleSponsorFinanceRoutes } = await import('../src/routes/sponsorFinance');
+    const cli = await import(String('../../cli/src/commands/sponsors.mjs'));
+    const originalFetch = globalThis.fetch, originalToken = process.env.DATAOPS_TOKEN;
+    process.env.DATAOPS_TOKEN = 'synthetic-local-test';
+    let loseResponse = true;
+    globalThis.fetch = async (url, options) => {
+      const path = new URL(String(url)).pathname.replace(/^\/work/, '');
+      if (path === `/api/sponsor-crm/deals/${seeded.dealId}`) return new Response(JSON.stringify({ version: 1 }));
+      const response = await handleSponsorFinanceRoutes(path, String(options?.method || 'GET'), {
+        headers: { ...options?.headers as Record<string, string>, 'x-user-id': adminId }, body: String(options?.body || ''),
+      }, client);
+      if (loseResponse && options?.method !== 'GET' && response?.statusCode === 200) {
+        loseResponse = false;
+        throw new Error('Synthetic committed response lost');
+      }
+      return new Response(response!.body, { status: response!.statusCode });
+    };
+    const data = { receivedOn: '2026-10-01', amount: '40', currency: 'EUR',
+      reference: 'synthetic-bank:account-one:cli-retry', counterparty: 'Synthetic Sponsor' };
+    const args = { _: [seeded.dealId], url: 'https://portal.example.test', data: JSON.stringify(data),
+      apply: true, json: true, idempotencyKey: idem('cli-receipt-retry') };
+    try {
+      await assert.rejects(() => cli.receivePayment(args, {}), /Could not reach/);
+      await cli.receivePayment(args, {});
+      const projection = await projectFinance(client, seeded.dealId, 'admin');
+      assert.equal(projection.paid, '40'); assert.equal(projection.payments.length, 1);
+      loseResponse = true;
+      const correction = { ...args, _: [seeded.dealId, projection.payments[0].id], data: JSON.stringify({ ...data, amount: '35' }),
+        idempotencyKey: idem('cli-correction-retry') };
+      await assert.rejects(() => cli.correctPayment(correction, {}), /Could not reach/);
+      await cli.correctPayment(correction, {});
+      assert.equal((await projectFinance(client, seeded.dealId, 'admin')).paid, '35');
+      await assert.rejects(() => cli.correctPayment({ ...correction, data: JSON.stringify({ ...data, amount: '34' }) }, {}));
+      assert.equal((await projectFinance(client, seeded.dealId, 'admin')).paid, '35');
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = originalToken;
+    }
   });
 
   it('requires a cancellation reason and keeps the original invoice when closing unpaid follow-through', async () => {

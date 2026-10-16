@@ -751,8 +751,9 @@ export async function receivePayment(
     || (input.category !== undefined && input.category !== '' && !boundedText(input.category, 300))) {
     throw Object.assign(new Error('Receipt date, amount, currency, counterparty and statement reference are required'), { statusCode: 400 });
   }
-  const request = { ...input };
-  delete (request as Partial<typeof input>).idempotencyKey;
+  // Version tokens guard a new write; they do not change the meaning of a
+  // receipt retry after the CLI has re-read the newly committed version.
+  const { idempotencyKey: _key, dealVersion: _dealVersion, expectedVersion: _expectedVersion, ...request } = input;
   const replay = await replayMutation(client, {
     actorId: input.actorId, operation: 'receive-payment', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
   });
@@ -792,7 +793,7 @@ export async function correctReceipt(
   catch { throw Object.assign(new Error('Invalid received amount'), { statusCode: 400 }); }
   if (!OPAQUE.test(input.sourceId) || !realDate(input.receivedOn) || !CURRENCY.test(input.currency)
     || !boundedText(input.reference, 200) || (input.category !== undefined && input.category !== '' && !boundedText(input.category, 300))) throw Object.assign(new Error('Receipt date, amount, currency and evidence reference are required'), { statusCode: 400 });
-  const { idempotencyKey: _key, ...request } = input;
+  const { idempotencyKey: _key, dealVersion: _dealVersion, expectedVersion: _expectedVersion, ...request } = input;
   const replay = await replayMutation(client, {
     actorId: input.actorId, operation: 'correct-receipt', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
   });
