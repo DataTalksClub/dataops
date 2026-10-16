@@ -336,6 +336,8 @@ test.describe('issue 208 paginated collections', () => {
     });
 
     await page.goto(`${BASE_URL}/sponsors`);
+    // The alert list is folded into one line until opened.
+    await page.locator('[data-crm-alert-summary]').click();
     const alerts = page.locator('[data-crm-alerts]');
     const articles = alerts.locator('article.crm-card strong');
     await expect(articles).toHaveText(['Sponsor alert one', 'Sponsor alert two']);

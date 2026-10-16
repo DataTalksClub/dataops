@@ -912,6 +912,9 @@ export function createSponsorCrmSurface(context) {
           await open(id);
         } catch (error) {
           if (stale()) return;
+          // A deal or company that cannot load still takes the detail pane,
+          // which Pipeline shows only while a record is open.
+          if (container === "[data-crm-detail]") surface.classList.add("has-booking-detail");
           renderEntityLoadState(surface.querySelector(container), {
             kind,
             id,

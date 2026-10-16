@@ -364,6 +364,10 @@ body[data-workspace-view="sponsors"] .library-view {
     min-width: 0;
     margin: 0 !important;
   }
+  /* The folded alerts line follows the stage filters. */
+  .sponsor-crm-surface > .crm-alerts {
+    order: 2;
+  }
   .crm-directory,
   .crm-leads,
   .crm-newsletters {

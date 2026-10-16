@@ -1108,6 +1108,10 @@ body[data-workspace-view="sponsors"] .document-list {
 .sponsor-crm-surface.is-pipeline.has-booking-detail .crm-master {
   display: none;
 }
+/* The open record replaced the board, so Back is how to reach it again. */
+.sponsor-crm-surface.is-pipeline.has-booking-detail .dk-split__back {
+  display: inline-flex;
+}
 .sponsor-crm-surface [data-crm-bookings].crm-pipeline-board:not([hidden]) {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1204,10 +1208,16 @@ body[data-workspace-view="sponsors"] .document-list {
   }
 }
 @media (max-width: 600px) {
+  /* The stage filters stay one row that scrolls sideways. */
   .sponsor-crm-surface > .crm-pipeline {
     flex: 0 1 100%;
     max-width: 100%;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .sponsor-crm-surface > .crm-pipeline button {
+    flex: none;
+    white-space: nowrap;
   }
   .sponsor-crm-surface [data-crm-bookings].crm-pipeline-board:not([hidden]) {
     grid-template-columns: minmax(0, 1fr);

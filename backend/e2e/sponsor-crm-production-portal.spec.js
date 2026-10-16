@@ -458,11 +458,17 @@ test.describe("production sponsor CRM portal", () => {
     await expect(page.locator("[data-crm-orgs]")).toContainText(
       "Synthetic Sponsor",
     );
+    await page.locator("[data-crm-alert-summary]").click();
     await expect(page.getByText(/materials are missing/)).toBeVisible();
     await page
       .locator(".crm-layout")
       .screenshot({ path: ".tmp/sponsor-crm-production-populated.png" });
-    await page.locator(".crm-master .dk-split__item").first().click();
+    await page.locator("[data-crm-bookings]").getByRole("button", { name: "Open deal" }).first().click();
+    // An open deal replaces the board; Back returns to it to open the deal afresh.
+    const reopenDeal = async () => {
+      await page.getByRole("button", { name: "Back to Sponsors" }).click();
+      await page.locator("[data-crm-bookings]").getByRole("button", { name: "Open deal" }).first().click();
+    };
     await expect(page.getByText("Inquiry → Confirmed")).toBeVisible();
     await expect(
       page.getByText("This deal has not been classified."),
@@ -599,9 +605,6 @@ test.describe("production sponsor CRM portal", () => {
     await page
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-paid.png" });
-    await page
-      .locator("[data-crm-alerts]")
-      .screenshot({ path: ".tmp/sponsor-crm-production-alert.png" });
     await page.getByRole("button", { name: "Download invoice" }).click();
     await expect.poll(() => downloadRequests).toBe(1);
     await page
@@ -652,7 +655,7 @@ test.describe("production sponsor CRM portal", () => {
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-voided.png" });
     financeStage = "not-required";
-    await page.locator(".crm-master .dk-split__item").first().click();
+    await reopenDeal();
     await expect(page.locator("[data-finance-panel]")).toContainText(
       "not-required",
     );
@@ -660,7 +663,7 @@ test.describe("production sponsor CRM portal", () => {
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-not-required.png" });
     financeStage = "reconciliation";
-    await page.locator(".crm-master .dk-split__item").first().click();
+    await reopenDeal();
     await expect(page.locator("[data-finance-panel]")).toContainText(
       "Evidence is unavailable or changed",
     );
@@ -668,7 +671,7 @@ test.describe("production sponsor CRM portal", () => {
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-reconciliation-required.png" });
     financeStage = "limit";
-    await page.locator(".crm-master .dk-split__item").first().click();
+    await reopenDeal();
     await expect(page.locator("[data-finance-panel]")).toContainText(
       "Payment link limit reached",
     );
@@ -708,7 +711,7 @@ test.describe("production sponsor CRM portal", () => {
     expect(mutationKeys.at(-1)).toBe(unknownKey);
     financeStage = "paid";
     financeRole = "operator";
-    await page.locator(".crm-master .dk-split__item").first().click();
+    await reopenDeal();
     await expect(page.locator("[data-finance-panel]")).toContainText("paid");
     await expect(
       page.getByRole("button", { name: "Download invoice" }),
@@ -725,14 +728,14 @@ test.describe("production sponsor CRM portal", () => {
       fullPage: true,
     });
     financeDisabled = true;
-    await page.locator(".crm-master .dk-split__item").first().click();
+    await reopenDeal();
     await expect(page.locator("[data-finance-panel]")).toHaveCount(0);
     await page
       .locator("[data-crm-detail]")
       .screenshot({ path: ".tmp/sponsor-finance-disabled.png" });
     financeDisabled = false;
     financeRole = "operator";
-    await page.locator(".crm-master .dk-split__item").first().click();
+    await reopenDeal();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => dakitShell.toggleDrawer(document.querySelector(".dk-shell"), false));
     await expect

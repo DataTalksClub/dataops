@@ -272,7 +272,7 @@ test.describe('production sponsor CRM communications portal', () => {
       await gotoOwnedCommunicationsPage(page);
       await page.getByRole('link', { name: 'Sponsors' }).click();
       await expect(page.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
-      await page.locator('.crm-master .dk-split__item').first().click();
+      await page.locator('[data-crm-bookings]').getByRole('button', { name: 'Open deal' }).first().click();
       await expect(page.locator('[data-crm-communications]')).toContainText('Booking confirmed with an active recipient');
     };
     const captureCommunications = async (page, screenshotPath) => {
@@ -340,7 +340,7 @@ test.describe('production sponsor CRM communications portal', () => {
     await operatorPage.reload();
     await operatorPage.getByRole('link', { name: 'Sponsors' }).click();
     await expect(operatorPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
-    await operatorPage.locator('.crm-master .dk-split__item').first().click();
+    await operatorPage.locator('[data-crm-bookings]').getByRole('button', { name: 'Open deal' }).first().click();
     await expect(operatorPage.locator('[data-crm-communications]')).toContainText('Draft version 1');
     await expect(operatorPage.getByRole('button', { name: 'Review exact draft' })).toHaveCount(0);
 
@@ -414,7 +414,7 @@ test.describe('production sponsor CRM communications portal', () => {
 
     await adminPage.getByRole('link', { name: 'Sponsors' }).click();
     await expect(adminPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
-    await adminPage.locator('.crm-master .dk-split__item').first().click();
+    await adminPage.locator('[data-crm-bookings]').getByRole('button', { name: 'Open deal' }).first().click();
     await adminPage.getByRole('button', { name: 'Review exact draft' }).click();
     failNextApprove = true;
     await adminPage.getByRole('button', { name: 'Approve and queue' }).click();
@@ -485,7 +485,7 @@ test.describe('production sponsor CRM communications portal', () => {
     await disabledPage.goto('/');
     await disabledPage.getByRole('link', { name: 'Sponsors' }).click();
     await expect(disabledPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
-    await disabledPage.locator('.crm-master .dk-split__item').click();
+    await disabledPage.locator('[data-crm-bookings]').getByRole('button', { name: 'Open deal' }).click();
     await expect(disabledPage.getByText('Reviewed sending is disabled')).toBeVisible();
     await expect(disabledPage.locator('[data-communication-state="disabled"]')).toContainText('History remains available. Ask an administrator to enable reviewed sending before approving new messages.');
     await captureCommunications(
