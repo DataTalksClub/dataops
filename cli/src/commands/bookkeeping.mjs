@@ -18,9 +18,10 @@ Usage
       Fill a missing Type, Category or Period from the provider's other transactions
       when they all agree. Default --since 2025-01-01 (older tabs have no classification).
 
-  dataops bookkeeping facts [--apply]
+  dataops bookkeeping facts [--retry] [--apply]
       Read each unattached invoice or receipt PDF that has not been read yet and keep
       its date, amount and provider, so the row details can suggest a match.
+      --retry also re-reads documents an earlier run could not read.
 
 All three print a dry run unless --apply is given. Run the dry run first and read it.
 
@@ -142,7 +143,7 @@ export async function facts(args, io) {
       document.status === "active" &&
       ["invoice", "receipt"].includes(document.documentType) &&
       !Number(document.linkRefCount || 0) &&
-      !document.facts,
+      (!document.facts || (args.retry && document.facts.method === "unreadable")),
   );
   const result = { mode: args.apply ? "apply" : "dry-run", counts: { unread: pending.length } };
   if (args.apply) {

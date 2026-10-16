@@ -89,6 +89,7 @@ describe('bookkeeping matching suggestions', () => {
       assert.equal(response.statusCode, 200);
       const body = JSON.parse(response.body);
       assert.equal(body.facts.method, 'unreadable');
+      assert.match(body.facts.reason, /\w+: /, 'the reason says why');
       assert.equal(body.s3Key, undefined);
       const listed = JSON.parse((await invoke('GET', '/api/bookkeeping/documents')).body).items;
       assert.equal(listed.find((item: any) => item.id === target.id).facts.method, 'unreadable');

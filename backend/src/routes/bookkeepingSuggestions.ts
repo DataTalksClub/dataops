@@ -25,6 +25,7 @@ export type DocumentFacts = {
   counterparty?: string;
   invoiceNumber?: string;
   method: string;
+  reason?: string;
   extractedAt: string;
 };
 
@@ -141,13 +142,16 @@ export async function extractDocumentFacts(client: DynamoDBDocumentClient, id: s
   const document = await getRawDocument(client, id);
   if (!document || document.status !== "active") return null;
   const facts: DocumentFacts = { method: "unreadable", extractedAt: new Date().toISOString() };
+  // A storage failure is retried by the caller; only the PDF itself can be unreadable.
+  const bytes = await readPdf(document);
   try {
-    const { fields, extraction } = extractInvoiceText(await pdfText(await readPdf(document)));
+    const { fields, extraction } = extractInvoiceText(await pdfText(bytes));
     facts.method = extraction.method;
     for (const field of ["transactionDate", "paidDate", "amount", "currency", "counterparty", "invoiceNumber"] as const)
       if (fields[field]) facts[field] = String(fields[field]);
   } catch (error) {
-    if ((error as Error).message === "document-object-missing") throw error;
+    facts.reason = `${(error as Error).name}: ${String((error as Error).message).slice(0, 120)}`;
+    console.error(JSON.stringify({ message: "bookkeeping document unreadable", documentId: id, reason: facts.reason }));
   }
   await setDocumentFacts(client, id, facts);
   return { ...publicDocument(document), facts };
