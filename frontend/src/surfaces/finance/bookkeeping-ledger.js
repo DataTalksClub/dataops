@@ -313,7 +313,7 @@ const capitalize = (text) => String(text || "").replace(/^./, (letter) => letter
 /**
  * Suggested matches for the open transaction: unattached invoices or receipts
  * whose date, amount or provider fit, and sponsor deals still waiting for this
- * money. Each is a suggestion the operator confirms.
+ * money or holding a payment recorded before this row existed. Each is a suggestion the operator confirms.
  */
 export function suggestionsMarkup({ suggestions, humanize, e }) {
   if (!suggestions) return html`<p class="bk-suggest__none">Looking for matches…</p>`;
@@ -342,7 +342,7 @@ export function suggestionsMarkup({ suggestions, humanize, e }) {
   const dealItems = deals.map((deal) => html`<li class="bk-suggest">
       <div class="bk-suggest__text">
         <span class="bk-suggest__name">Sponsor deal · ${e(deal.organizationName || "Sponsor")}${deal.dealTitle ? html` · ${e(deal.dealTitle)}` : ""}${
-          deal.outstanding ? html` · ${e(formatAmount(deal.outstanding, deal.currency))} outstanding` : ""}</span>
+          Number(deal.outstanding) > 0 ? html` · ${e(formatAmount(deal.outstanding, deal.currency))} outstanding` : ""}</span>
         <span class="bk-suggest__why">${why(deal.reasons)}. Link the payment in the deal.</span>
       </div>
       <div class="bk-suggest__actions">

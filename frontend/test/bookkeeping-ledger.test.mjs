@@ -125,6 +125,12 @@ test("suggested matches offer attaching a file or opening the sponsor deal", () 
   assert.match(markup, /Same amount, 1 day apart/);
   assert.match(markup, /href="\/sponsors\/deals\/deal%201"/);
   assert.match(markup, /€2,000\.00 outstanding/);
+  const confirming = suggestionsMarkup({
+    suggestions: { documents: [], sponsor: { deals: [{ dealId: "deal-2", organizationName: "Example Sponsor", outstanding: "0", currency: "EUR", reasons: ["confirms the payment recorded on 2026-09-04"], replacesPaymentId: "a".repeat(32) }] } },
+    e: escapeHtml,
+  });
+  assert.match(confirming, /Confirms the payment recorded on 2026-09-04/);
+  assert.doesNotMatch(confirming, /outstanding/, "a paid deal shows no zero balance");
   const claimed = detailMarkup({ entry: { ...rows[1], sponsorDealId: "deal-7" }, documents: [], vocab: {}, e: escapeHtml });
   assert.match(claimed, /Payment for a sponsor deal/);
   assert.match(claimed, /href="\/sponsors\/deals\/deal-7"/);

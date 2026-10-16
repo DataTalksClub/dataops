@@ -34,6 +34,16 @@ describe('bookkeeping matching suggestions', () => {
     assert.equal(scoreDocument(transaction, { counterparty: 'Example Services Ltd', method: 'x', extractedAt: '' }), null, 'generic words do not match a provider');
   });
 
+  it('suggests a paid deal whose payment was recorded before its bookkeeping row arrived', () => {
+    const income = { ...transaction, entryType: 'income', transactionDate: '2026-09-04', counterparty: 'Example Sponsor GmbH', amount: '5950.00', currency: 'EUR' };
+    const recorded = { id: 'a'.repeat(32), amount: '5950', receivedOn: '2026-09-04' };
+    assert.deepEqual(scoreSponsorDeal(income, ledgerRow({ paymentState: 'paid', amountDue: '5950', outstanding: '0', currency: 'EUR', recordedPayments: [recorded] })),
+      { score: 6, reasons: ['confirms the payment recorded on 2026-09-04', 'sponsor name matches'], replacesPaymentId: recorded.id });
+    assert.equal(scoreSponsorDeal({ ...income, amount: '5900.00' }, ledgerRow({ paymentState: 'paid', currency: 'EUR', recordedPayments: [recorded] })), null, 'a different amount confirms nothing');
+    assert.equal(scoreSponsorDeal({ ...income, transactionDate: '2026-11-04' }, ledgerRow({ paymentState: 'paid', currency: 'EUR', recordedPayments: [recorded] })), null, 'nor does a row months later');
+    assert.equal(scoreSponsorDeal(income, ledgerRow({ paymentState: 'paid', currency: 'USD', recordedPayments: [recorded] })), null, 'nor one in another currency');
+  });
+
   it('suggests only sponsor deals still waiting for money, for income', () => {
     const income = { ...transaction, entryType: 'income', counterparty: 'EXAMPLE SPONSOR', amount: '5000.00', currency: 'EUR' };
     assert.deepEqual(scoreSponsorDeal(income, ledgerRow({ amountDue: '5000', outstanding: '5000', currency: 'EUR', dueOn: '2026-09-10' }))?.reasons,

@@ -1245,6 +1245,8 @@ describe('sponsor finance production DynamoDB transactions', () => {
     assert.equal(row.dealTitle, 'Synthetic workshop');
     assert.equal(row.outstanding, '3000');
     assert.equal(row.deliveredOn, '2026-08-18');
+    assert.deepEqual(row.recordedPayments, [{ id: projection.payments[0].id, amount: '2000', receivedOn: '2026-09-30' }],
+      'the portfolio row carries the payment a bookkeeping row can still confirm');
     assert.ok(ledger.chase.some((item) => item.dealId === dealId && item.followUp.code === 'chase-payment'));
     const overdue = ledger.forecast.find((item) => item.bucket === 'overdue' && item.currency === 'EUR')!;
     assert.ok(overdue.dealIds.includes(dealId));

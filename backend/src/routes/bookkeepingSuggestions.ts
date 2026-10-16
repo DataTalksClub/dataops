@@ -99,12 +99,21 @@ export function scoreDocument(transaction: Record_, facts: DocumentFacts) {
 /** How well a sponsor deal still waiting for payment fits an income transaction. */
 export function scoreSponsorDeal(transaction: Record_, row: LedgerRow) {
   if (transaction.entryType !== "income") return null;
-  if (!["unpaid", "partially-paid"].includes(row.paymentState)) return null;
+  const sameCurrency = row.currency === transaction.currency;
+  // A payment recorded from a bank report before its row existed: this row confirms it.
+  const recorded = sameCurrency
+    ? row.recordedPayments?.find(
+        (payment) => near(transaction.amount, payment.amount, 0) && (days(transaction.transactionDate, payment.receivedOn) ?? 99) <= 14,
+      )
+    : undefined;
+  if (!recorded && !["unpaid", "partially-paid"].includes(row.paymentState)) return null;
   const reasons: string[] = [];
   let score = 0;
-  const sameCurrency = row.currency === transaction.currency;
-  const amount = sameCurrency && (near(transaction.amount, row.outstanding, 0.01) || near(transaction.amount, row.amountDue, 0.01));
-  if (amount) {
+  const amount = recorded || (sameCurrency && (near(transaction.amount, row.outstanding, 0.01) || near(transaction.amount, row.amountDue, 0.01)));
+  if (recorded) {
+    score += 3;
+    reasons.push(`confirms the payment recorded on ${recorded.receivedOn}`);
+  } else if (amount) {
     score += 3;
     reasons.push(row.paymentState === "partially-paid" ? "matches the outstanding amount" : "same amount");
   }
@@ -114,12 +123,12 @@ export function scoreSponsorDeal(transaction: Record_, row: LedgerRow) {
     reasons.push("sponsor name matches");
   }
   const gap = days(transaction.transactionDate, row.dueOn || row.issuedOn || row.deliveredOn);
-  if (gap !== null && gap <= 60) {
+  if (!recorded && gap !== null && gap <= 60) {
     score += 1;
     reasons.push("around the due date");
   }
   if (!amount && !named) return null;
-  return { score, reasons };
+  return { score, reasons, ...(recorded ? { replacesPaymentId: recorded.id } : {}) };
 }
 
 async function readPdf(document: Record_) {
@@ -195,6 +204,7 @@ export async function transactionSuggestions(client: DynamoDBDocumentClient, tra
             currency: row.currency,
             dueOn: row.dueOn,
             paymentState: row.paymentState,
+            ...(match!.replacesPaymentId ? { replacesPaymentId: match!.replacesPaymentId } : {}),
             score: match!.score,
             reasons: match!.reasons,
           }));

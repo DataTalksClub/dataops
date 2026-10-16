@@ -27,6 +27,8 @@ export type LedgerRow = {
   paid?: string;
   outstanding?: string;
   lastPaymentOn?: string;
+  /** Payments recorded before their bookkeeping row existed; a row that arrives confirms one. */
+  recordedPayments?: Array<{ id: string; amount: string; receivedOn: string }>;
   deliveredOn?: string;
   nextDeliverableOn?: string;
   waitingOn?: WaitingOn;
@@ -146,9 +148,11 @@ export async function financeLedger(
         if (date.slice(0, 4) === today.slice(0, 4)) yearPaid.push(amount);
       } catch { coherent = false; }
     }
+    const unconfirmed: NonNullable<LedgerRow['recordedPayments']> = [];
     for (const id of state.recordedPaymentIds || []) {
       const record = recorded.get(id);
       if (!record || record.currency !== state.currency) { coherent = false; continue; }
+      unconfirmed.push({ id: record.paymentId, amount: record.amount, receivedOn: record.receivedOn });
       const amount = scaledMoney(record.amount);
       paid += amount;
       paymentDates.push(record.receivedOn);
@@ -175,6 +179,7 @@ export async function financeLedger(
       ...(states_.timingState === 'overdue' && state.dueOn ? { daysOverdue: daysBetween(state.dueOn, today) } : {}),
       ...(outstanding !== undefined ? { paid: displayMoney(paid), outstanding: displayMoney(outstanding) } : {}),
       ...(paymentDates.length ? { lastPaymentOn: paymentDates.sort().at(-1) } : {}),
+      ...(unconfirmed.length ? { recordedPayments: unconfirmed } : {}),
       ...(state.waitingOn ? { waitingOn: state.waitingOn } : {}),
       followUp,
     };
