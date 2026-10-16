@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { captureIo, fakePortal, isolateConfig } from "./helpers.mjs";
 
 isolateConfig();
 delete process.env.DATAOPS_CAPABILITIES;
 const realFetch = globalThis.fetch;
-const { run, FAMILIES } = await import("../src/cli.mjs");
+const { run, FAMILIES, guideBody } = await import("../src/cli.mjs");
 const { orderQueue, queueSegment, multipart, requiresQuery } = await import("../src/commands/tasks.mjs");
 
 afterEach(() => {
@@ -132,7 +133,7 @@ describe("tasks", () => {
       "GET /api/tasks/t-3": task({ id: "t-3", version: 1 }),
       "PUT /api/tasks/t-3": ({ body }) => task({ id: "t-3", ...body }),
     });
-    const file = new URL("../package.json", import.meta.url).pathname;
+    const file = fileURLToPath(new URL("../package.json", import.meta.url));
     assert.equal(await run(["tasks", "done", "t-3", "--file", file], captureIo()), 0);
     assert.equal(calls[0].route, "/api/files");
     assert.match(String(calls[0].body), /name="taskId"\r\n\r\nt-3/);
@@ -452,6 +453,16 @@ describe("newsletter", () => {
 });
 
 describe("agent guide", () => {
+  test("strips LF and CRLF metadata without rewriting the guide body", () => {
+    for (const newline of ["\n", "\r\n"]) {
+      for (const bom of ["", "\uFEFF"]) {
+        const body = `# Synthetic guide${newline}${newline}Keep this body.${newline}`;
+        assert.equal(guideBody(`${bom}---${newline}name: synthetic${newline}---${newline}${newline}${body}`), body);
+      }
+    }
+    assert.equal(guideBody("# No metadata\r\nBody\r\n"), "# No metadata\r\nBody\r\n");
+  });
+
   test("prints the skill body without its frontmatter", async () => {
     const io = captureIo();
     assert.equal(await run(["agent-guide"], io), 0);

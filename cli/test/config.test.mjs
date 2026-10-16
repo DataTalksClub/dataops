@@ -39,8 +39,11 @@ test('credential writes preserve other profiles, enforce owner-only modes, and l
         'https://portal.test': { token: 'synthetic-device-token', tokenId: 'synthetic-id', kind: 'user' },
       },
     });
-    assert.equal(statSync(file).mode & 0o777, 0o600);
-    assert.equal(statSync(dir).mode & 0o777, 0o700);
+    // Windows reports DOS permissions through stat, not the filesystem ACL.
+    if (process.platform !== 'win32') {
+      assert.equal(statSync(file).mode & 0o777, 0o600);
+      assert.equal(statSync(dir).mode & 0o777, 0o700);
+    }
     assert.deepEqual(readdirSync(dir), ['credentials.json']);
     // A separate process must be able to reuse the saved profile.
     runScript(dir, `

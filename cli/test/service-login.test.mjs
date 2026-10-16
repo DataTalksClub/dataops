@@ -42,7 +42,7 @@ test('real CLI configures a verified service profile, identifies it, and removes
     assert.equal(store.defaultUrl, url);
     assert.equal(store.profiles[url].kind, 'service');
     assert.equal(store.profiles[url].expiresAt, null);
-    assert.equal(statSync(file).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') assert.equal(statSync(file).mode & 0o777, 0o600);
     assert.equal((await cli(['whoami'], dir)).output.includes('invoice-reader (invoices:read)'), true);
     const count = calls.length;
     assert.equal((await cli(['logout'], dir)).code, 0);

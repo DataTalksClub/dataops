@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { captureIo, fakePortal, isolateConfig } from "./helpers.mjs";
 
@@ -279,7 +280,7 @@ describe("kb write", () => {
       ...docsRoutes,
       "PUT /docs": ({ query, body }) => ({ path: query.path, revision: "rev-2", warnings: [], received: body }),
     });
-    const file = new URL("../package.json", import.meta.url).pathname;
+    const file = fileURLToPath(new URL("../package.json", import.meta.url));
     assert.equal(await run(["kb", "write", "newsletter/reference.md", "--file", file], captureIo()), 0);
     const put = calls.at(-1);
     assert.equal(put.query.path, "content/newsletter/reference.md");
@@ -293,7 +294,7 @@ describe("kb write", () => {
       "POST /docs": ({ body }) => ({ status: 201, body: { path: body.path, revision: "rev-new" } }),
       "PUT /docs": ({ query }) => ({ path: query.path, revision: "rev-3" }),
     });
-    const file = new URL("../package.json", import.meta.url).pathname;
+    const file = fileURLToPath(new URL("../package.json", import.meta.url));
     assert.equal(await run(["kb", "write", "new/doc.md", "--file", file], captureIo()), 2);
     assert.equal(await run(["kb", "write", "new/doc.md", "--file", file, "--create", "--title", "New"], captureIo()), 0);
     const post = calls.find((call) => call.method === "POST");

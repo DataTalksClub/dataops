@@ -22,7 +22,11 @@ import { EXIT, UsageError, errorPayload, exitCodeFor, hintFor } from "./errors.m
 const GUIDE_PATH = fileURLToPath(new URL("../skill/SKILL.md", import.meta.url));
 
 export function agentGuide() {
-  return readFileSync(GUIDE_PATH, "utf8").replace(/^---\n[\s\S]*?\n---\n+/, "");
+  return guideBody(readFileSync(GUIDE_PATH, "utf8"));
+}
+
+export function guideBody(markdown) {
+  return markdown.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n)+/, "");
 }
 
 const AUTH_HELP = `dataops login | logout | whoami | tokens

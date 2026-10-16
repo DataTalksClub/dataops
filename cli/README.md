@@ -30,8 +30,9 @@ label, the requesting IP, and the time so you can check.
 
 ## Credentials
 
-Tokens are stored in `~/.config/dataops/credentials.json` with mode `0600`, one
-entry per portal URL. `DATAOPS_TOKEN` and `DATAOPS_URL` override the stored
+Tokens are stored in `~/.config/dataops/credentials.json`, one entry per portal
+URL. POSIX systems use mode `0600`; Windows access follows filesystem ACLs.
+`DATAOPS_TOKEN` and `DATAOPS_URL` override the stored
 profile. Without `DATAOPS_URL` the CLI talks to `https://ops.dtcdev.click`, which
 is the right default. A token expires after 90 days; `dataops tokens list` shows
 your tokens and `dataops logout` or `dataops tokens revoke <id>` revokes one.

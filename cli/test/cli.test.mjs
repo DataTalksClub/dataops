@@ -119,7 +119,7 @@ describe("credential storage", () => {
   test("writes credentials owner-only and reads them back", () => {
     saveProfile("https://portal.test", { token: "dops_abc", tokenId: "id-1" });
     const mode = statSync(credentialsPath()).mode & 0o777;
-    assert.equal(mode, 0o600);
+    if (process.platform !== "win32") assert.equal(mode, 0o600);
     const stored = JSON.parse(readFileSync(credentialsPath(), "utf8"));
     assert.equal(stored.profiles["https://portal.test"].token, "dops_abc");
     const profile = resolveProfile({ url: "https://portal.test" });
