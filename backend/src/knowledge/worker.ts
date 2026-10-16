@@ -3,6 +3,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {CopyObjectCommand,DeleteObjectCommand,GetObjectCommand,HeadObjectCommand,PutObjectCommand,S3Client} from '@aws-sdk/client-s3';
 import {GetSecretValueCommand,SecretsManagerClient} from '@aws-sdk/client-secrets-manager';
 import {KnowledgeStore,bounded,checksum,isManagedKnowledgePath,type Publication} from '../docs/knowledgeStore';
+import {writeEmbeddedMetric} from '../embeddedMetrics';
 
 export interface RecoverySnapshot {schemaVersion:1; revision:string; createdAt:string; publications:Publication[]; payloads:{sha:string;size:number;key:string}[];}
 export class GitHubMirrorError extends Error {constructor(readonly status:number,message:string){super(message);}}
@@ -127,7 +128,7 @@ export class KnowledgeJobs {
   }
 }
 function metric(job:string,success:number):void {
-  console.log(JSON.stringify({_aws:{Timestamp:Date.now(),CloudWatchMetrics:[{Namespace:'DataOps/Knowledge',Dimensions:[['Job']],Metrics:[{Name:'Success',Unit:'Count'},{Name:'Failure',Unit:'Count'}]}]},Job:job,Success:success,Failure:success?0:1}));
+  writeEmbeddedMetric({_aws:{Timestamp:Date.now(),CloudWatchMetrics:[{Namespace:'DataOps/Knowledge',Dimensions:[['Job']],Metrics:[{Name:'Success',Unit:'Count'},{Name:'Failure',Unit:'Count'}]}]},Job:job,Success:success,Failure:success?0:1});
 }
 export async function handler(event:{detail?:{dataopsAction?:string}}):Promise<unknown> {
   const job=event.detail?.dataopsAction;

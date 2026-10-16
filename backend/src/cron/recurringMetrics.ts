@@ -1,3 +1,5 @@
+import { writeEmbeddedMetric } from '../embeddedMetrics';
+
 const METRIC_NAMESPACE = 'DataOps/Recurring';
 const METRIC_COMPONENT = 'recurring-generation';
 
@@ -5,7 +7,6 @@ export interface RecurringCronMetricInput {
   passes: number;
   failures: number;
   timestamp?: number;
-  emit?: (record: string) => void;
 }
 
 /**
@@ -20,8 +21,7 @@ export function emitRecurringCronMetrics(input: RecurringCronMetricInput): void 
     const passes = Math.max(0, Math.trunc(Number(input.passes)));
     const failures = Math.max(0, Math.trunc(Number(input.failures)));
     if (!Number.isSafeInteger(timestamp) || !Number.isFinite(passes) || !Number.isFinite(failures)) return;
-    const emit = input.emit || ((record: string) => console.log(record));
-    emit(JSON.stringify({
+    writeEmbeddedMetric({
       _aws: {
         Timestamp: timestamp,
         CloudWatchMetrics: [{
@@ -36,7 +36,7 @@ export function emitRecurringCronMetrics(input: RecurringCronMetricInput): void 
       Component: METRIC_COMPONENT,
       CronPass: passes,
       CronFailure: failures,
-    }));
+    });
   } catch {
     // Telemetry must never replace the pass's business outcome.
   }

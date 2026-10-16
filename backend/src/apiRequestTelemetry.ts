@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { DOCS_ROUTE_PREFIXES } from './docs/contentApi';
+import { writeEmbeddedMetric } from './embeddedMetrics';
 
 export const API_TELEMETRY_NAMESPACE = 'DataOps/PortalAPI';
 
@@ -181,7 +182,7 @@ export function emitApiRequestMetrics(input: ApiRequestMetricInput): void {
     };
 
     if (failureValue === 1) record.ErrorClass = input.errorClass ?? 'route_handled';
-    console.log(JSON.stringify(record));
+    writeEmbeddedMetric(record);
   } catch {
     // Observability must never replace the HTTP business response.
   }

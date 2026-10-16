@@ -14,16 +14,20 @@ import { runCron, formatAnchorDate } from '../src/cron/runner';
 
 /** Captures the EMF records the pass writes, so tests can read the metric it emits. */
 function captureRecurringMetrics() {
-  const original = console.log;
+  const original = process.stdout.write;
   const records: string[] = [];
-  console.log = (line: unknown) => {
-    const text = String(line);
-    if (text.includes('DataOps/Recurring')) records.push(text);
-  };
+  process.stdout.write = ((chunk: unknown, ...rest: unknown[]) => {
+    const text = String(chunk);
+    if (text.includes('DataOps/Recurring')) {
+      records.push(text);
+      return true;
+    }
+    return (original as (...args: unknown[]) => boolean).call(process.stdout, chunk, ...rest);
+  }) as typeof process.stdout.write;
   return {
     records,
     done: () => {
-      console.log = original;
+      process.stdout.write = original;
     },
   };
 }

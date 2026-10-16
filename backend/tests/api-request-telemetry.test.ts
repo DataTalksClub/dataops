@@ -22,13 +22,25 @@ const CONTEXT = { awsRequestId: 'lambda-request-id-209' };
 
 type CapturedConsole = { lines: string[]; restore(): void };
 
+/** Captures console lines and the raw stdout lines EMF records are written as. */
 function captureConsoleLog(): CapturedConsole {
   const lines: string[] = [];
   const original = console.log;
+  const originalWrite = process.stdout.write;
   console.log = (...values: unknown[]) => {
     lines.push(values.map(String).join(' '));
   };
-  return { lines, restore() { console.log = original; } };
+  process.stdout.write = ((chunk: unknown) => {
+    lines.push(...String(chunk).split('\n').filter(Boolean));
+    return true;
+  }) as typeof process.stdout.write;
+  return {
+    lines,
+    restore() {
+      console.log = original;
+      process.stdout.write = originalWrite;
+    },
+  };
 }
 
 function jsonRecords(lines: string[]): Record<string, unknown>[] {
