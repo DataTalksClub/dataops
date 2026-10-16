@@ -92,7 +92,7 @@ test('desktop: hovering Where shows the Card summary and a click opens the Card'
   await expect(summary).toBeHidden();
 
   await where.click();
-  await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${card.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/tasks\\?card=${card.id}$`));
   await expect(page.locator('#card-panel-title')).toHaveText('Synthetic hover card episode');
 });
 
@@ -139,7 +139,7 @@ test.describe('phone', () => {
     await expect(summary).toBeHidden();
 
     await row.locator('.ops-queue-origin-link').tap();
-    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${card.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/tasks\\?card=${card.id}$`));
     await expect(page.locator('#card-panel-title')).toHaveText('Synthetic hover card episode');
   });
 });

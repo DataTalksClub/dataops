@@ -65,7 +65,8 @@ test.describe('canonical Card lifecycle', () => {
     await expect(conflict).toContainText('Your retained change: Set status to done');
     await conflict.getByRole('button', { name: 'Retry my change' }).click();
 
-    await expect(page).toHaveURL(new RegExp(`/cards/archive\\?cardId=${cardId}&taskId=${taskId}$`));
+    // Done keeps the Task over its Card, which shows it completed.
+    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${cardId}&taskId=${taskId}$`));
     await expect(page.locator('#card-panel')).toBeVisible();
     await expect(page.locator('#card-panel')).toContainText('Completed');
     await expect(page.locator('#card-panel')).toContainText('from After Event');

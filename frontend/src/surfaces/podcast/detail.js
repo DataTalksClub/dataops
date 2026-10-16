@@ -116,10 +116,6 @@ function cardSection(documentRef, episode, actions, messages) {
     const link = element(documentRef, "a", "podcast-card-chip");
     link.href = `/cards?cardId=${encodeURIComponent(card.id)}`;
     link.dataset.cardId = card.id;
-    link.addEventListener("click", (event) => {
-      event.preventDefault();
-      actions.openCard(card.id);
-    });
     link.append(icon("card", { size: 16 }), element(documentRef, "span", "podcast-card-chip__title", card.title || "Untitled card"));
     const meta = element(documentRef, "span", "podcast-card-chip__meta");
     const stage = cardStageLabel(card.stage);

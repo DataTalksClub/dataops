@@ -2,6 +2,7 @@ import { openDeleteCardDialog } from "./work-dialogs.js";
 
 export function createCardActions(context) {
   const {
+    closeCardPanel,
     cardPanelBody,
     captureCardPanelDrafts,
     detail,
@@ -354,6 +355,7 @@ export function createCardActions(context) {
     if (!route || route.invalid) return undefined;
     return navigateCanonicalWorkspace(route.path, route.params, {
       history: "none",
+      reload: true,
     }).ready;
   }
 
@@ -461,8 +463,8 @@ export function createCardActions(context) {
         });
         detail.activeCardPanelId = null;
         detail.activeCardPanelData = null;
-        await refreshOperationsWorkSnapshot({ rerender: false });
-        await navigateCanonicalWorkspace("/cards", {}).ready;
+        await refreshOperationsWorkSnapshot({ rerender: true });
+        await closeCardPanel();
       },
     });
   }

@@ -536,14 +536,15 @@ test.describe('canonical frontend capability behavior', () => {
       fullPage: true,
     });
     await queueTaskRow.click();
-    await expect(page).toHaveURL(new RegExp(`/tasks\\?taskId=${createdTask.id}(?:&|$)`));
+    await expect(page).toHaveURL(new RegExp(`/\\?taskId=${createdTask.id}$`));
     await expect(page.locator('#task-panel-title')).toHaveText(title);
     await expect(page.locator('#task-panel-close')).toBeFocused();
     await page.locator('#task-panel-close').click();
     await expect(page.locator('#task-panel')).toBeHidden();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator('.ops-queue-board')).toBeVisible();
-    await expect(queueTaskRow).toBeFocused();
+    // Focus returns to the control that opened the Task.
+    await expect(queueTaskRow.locator('.ops-queue-main')).toBeFocused();
     await page.locator('#work-bell-button').click();
     const bellItem = page.locator('.dk-notif-item', { hasText: notificationTitle });
     await expect(bellItem).toBeVisible();
@@ -978,9 +979,10 @@ test.describe('canonical frontend capability behavior', () => {
     await clearFaults(context.request);
     await page.locator('[data-today]').click();
     await expect(calendarEvent).toBeVisible();
-    // Clicking an event opens its Card.
+    // Clicking an event opens its Card over the calendar.
     await calendarEvent.click();
-    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${calendarCard.id}`));
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?card=${calendarCard.id}$`));
+    await expect(page.locator('#card-panel')).toBeVisible();
 
     await page.clock.setFixedTime(new Date('2030-12-20T12:00:00Z'));
     await page.goto('/calendar');

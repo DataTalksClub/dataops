@@ -9,9 +9,9 @@
 //
 // 1. A refresh whose data did not change does not repaint at all.
 // 2. A changed refresh waits while the operator is in the middle of something
-//    (editing a field in the surface, an open menu or modal dialog, a
-//    half-typed field) and repaints once that ends: on blur, close, Escape or
-//    submit.
+//    (editing a field in the surface, an open menu or modal dialog, the Card
+//    or Task dialog over the page, a half-typed field) and repaints once that
+//    ends: on blur, close, Escape or submit.
 // 3. When it repaints, keyboard focus that sat on an element of the old
 //    surface (a button, a heading) moves to the same element of the new one.
 //
@@ -23,7 +23,8 @@ const NON_TEXT_INPUT_TYPES = new Set([
   "reset", "submit",
 ]);
 
-const SETTLE_EVENTS = ["focusout", "click", "keyup", "submit", "close", "toggle"];
+// `focusin` settles a dialog closed by Back: focus returns to the page.
+const SETTLE_EVENTS = ["focusout", "focusin", "click", "keyup", "submit", "close", "toggle"];
 
 export function snapshotFingerprint(value) {
   return JSON.stringify(value, (_key, item) => {
@@ -75,6 +76,11 @@ export function interactionHold({ documentRef, root, editedControls = new Set() 
   if (within(root, active) && isEditingControl(active)) return "editing";
   for (const dialog of documentRef.querySelectorAll("dialog")) {
     if (dialog.open) return "dialog";
+  }
+  // The Card and Task dialogs are not <dialog> elements; one that is showing
+  // holds the page under it just the same.
+  for (const modal of documentRef.querySelectorAll('[aria-modal="true"]')) {
+    if (isShown(modal)) return "modal";
   }
   for (const menu of documentRef.querySelectorAll('[role="menu"]')) {
     if (isShown(menu)) return "menu";
@@ -215,13 +221,16 @@ export function createBackgroundRender({
     // `previous` and `next` are the data before and after the refresh; when
     // they are equal the screen already shows it. `when` says whether the
     // repaint still applies once it runs (its surface may be gone by then).
-    request({ when = () => true, ...change } = {}) {
+    // `initial` is the page's first data: a Card or Task dialog opened from
+    // the address does not keep the page under it empty.
+    request({ when = () => true, initial = false, ...change } = {}) {
       const compared = "previous" in change && "next" in change;
       if (compared && snapshotFingerprint(change.previous) === snapshotFingerprint(change.next)) {
         return "unchanged";
       }
       pending.push(when);
-      if (interactionHold({ documentRef, root, editedControls })) {
+      const hold = interactionHold({ documentRef, root, editedControls });
+      if (hold && !(initial && hold === "modal")) {
         listen(true);
         return "deferred";
       }

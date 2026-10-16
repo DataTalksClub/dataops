@@ -20,8 +20,6 @@ export function createTaskPanel(context) {
     getActiveWorkspaceRoute,
     getCurrentOperator,
     hasApprovedArtifactEvidence,
-    isArchivedWorkCard,
-    isParkedWorkCard,
     isWorkspaceRouteFresh,
     labelizeWorkValue,
     loadArtifactsForTask,
@@ -29,7 +27,6 @@ export function createTaskPanel(context) {
     navigateCanonicalWorkspace,
     navigateTaskToWorkflow,
     openQualityFinding,
-    parseWorkspaceLocation,
     recordTaskFollowUpSent,
     recordTaskResponseReceived,
     reviewLatestTask,
@@ -100,42 +97,16 @@ export function createTaskPanel(context) {
 
   const taskPanelMoreOpen = new Set();
 
-  function taskRouteParams(taskId) {
-    const route = parseWorkspaceLocation();
-    if (route && !route.invalid && route.path === "/tasks") {
-      const params = new URLSearchParams(route.params);
-      params.set("taskId", taskId);
-      return { path: "/tasks", params };
+  // A Task opens as a dialog over the page showing (`?taskId=`), above the
+  // Card it was opened from; outside any workspace page, over the queue.
+  function openTaskPanel(taskId) {
+    const route = getActiveWorkspaceRoute();
+    if (!route || route.invalid) {
+      return navigateCanonicalWorkspace("/tasks", { taskId }).ready;
     }
-    if (detail.activeCardPanelId) {
-      const path =
-        getActiveWorkspaceRoute()?.path === "/cards/archive"
-          ? "/cards/archive"
-          : "/cards";
-      return { path, params: { cardId: detail.activeCardPanelId, taskId } };
-    }
-    return { path: "/tasks", params: { taskId } };
-  }
-
-  function openTaskPanel(taskId, options = {}) {
-    const currentRoute = parseWorkspaceLocation();
-    detail.taskPanelOrigin =
-      currentRoute && !currentRoute.invalid && currentRoute.path === "/"
-        ? {
-            path: "/",
-            params: {},
-            restoreFocus: { kind: "queue-task", id: taskId },
-          }
-        : null;
-    let target = taskRouteParams(taskId);
-    if (options.preserveCard && options.expectedCardId) {
-      const expected = state.workSnapshot.cardsById?.get(
-        options.expectedCardId,
-      );
-      const path = isArchivedWorkCard(expected) || isParkedWorkCard(expected) ? "/cards/archive" : "/cards";
-      target = { path, params: { cardId: options.expectedCardId, taskId } };
-    }
-    return navigateCanonicalWorkspace(target.path, target.params).ready;
+    const params = new URLSearchParams(route.params);
+    params.set("taskId", taskId);
+    return navigateCanonicalWorkspace(route.path, params).ready;
   }
 
   async function hydrateTaskPanel(taskId, token, options = {}) {
@@ -166,7 +137,7 @@ export function createTaskPanel(context) {
             navigateCanonicalWorkspace(
               getActiveWorkspaceRoute().path,
               getActiveWorkspaceRoute().params,
-              { history: "none" },
+              { history: "none", reload: true },
             ),
           returnToList: () => closeTaskPanel(),
         });
@@ -200,7 +171,7 @@ export function createTaskPanel(context) {
             navigateCanonicalWorkspace(
               getActiveWorkspaceRoute().path,
               getActiveWorkspaceRoute().params,
-              { history: "none" },
+              { history: "none", reload: true },
             ),
           returnToList: () => closeTaskPanel(),
         });

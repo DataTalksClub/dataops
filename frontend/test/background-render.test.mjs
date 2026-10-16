@@ -152,6 +152,25 @@ describe("background render gate", () => {
     assert.equal(harness.renders(), 1);
   });
 
+  test("an open Card or Task dialog holds the repaint until it closes, except the first data", async () => {
+    const harness = createHarness();
+    const panel = element(harness.documentRef, "section");
+    const modal = element(harness.documentRef, "div");
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    panel.append(modal);
+    harness.documentRef.addRoot(panel);
+    assert.equal(interactionHold({ documentRef: harness.documentRef, root: harness.root }), "modal");
+    // A dialog opened from the address does not keep the page under it empty.
+    assert.equal(harness.scheduler.request({ initial: true }), "rendered");
+    assert.equal(harness.renders(), 1);
+    assert.equal(harness.scheduler.request(), "deferred");
+
+    panel.hidden = true;
+    await harness.settle("focusin", { target: harness.controls().heading });
+    assert.equal(harness.renders(), 2);
+  });
+
   test("an open menu holds the repaint until it hides", async () => {
     const harness = createHarness();
     const menu = element(harness.documentRef, "div");

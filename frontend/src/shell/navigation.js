@@ -1,3 +1,5 @@
+import { modalParamNames } from "../core/route-patterns.js";
+
 export function createNavigationShell(context) {
   const {
     canLeaveCurrentDocument,
@@ -47,6 +49,8 @@ export function createNavigationShell(context) {
   let initialRouteReady = false;
   let initialRouteReadyPromise = Promise.resolve();
   let locationRouteTimer = null;
+  // What had focus when each dialog opened, so closing it hands focus back.
+  const modalOpeners = { card: null, task: null };
 
   function getActiveWorkspaceRoute() {
     return activeRoute;
@@ -226,12 +230,10 @@ export function createNavigationShell(context) {
     refreshDocuments();
     if (!preserveComposer) closeSidebar();
 
-    const cardId = ["/cards", "/cards/archive"].includes(route.path)
-      ? route.params.get("cardId")
-      : "";
-    const taskId = route.params.get("taskId");
-    if (cardId) prepareCardPanel(cardId);
-    if (taskId) prepareTaskPanel(taskId);
+    modalOpeners.card = null;
+    modalOpeners.task = null;
+    if (route.modalCardId) prepareCardPanel(route.modalCardId);
+    if (route.modalTaskId) prepareTaskPanel(route.modalTaskId);
   }
 
   function hydrateWorkspaceRoute(route, token) {
@@ -248,15 +250,11 @@ export function createNavigationShell(context) {
     if (route.path === "/users") {
       jobs.push(refreshUsersSurface({ background: true }));
     }
-    const cardId = ["/cards", "/cards/archive"].includes(route.path)
-      ? route.params.get("cardId")
-      : "";
-    const taskId = route.params.get("taskId");
-    if (cardId) jobs.push(hydrateCardPanel(cardId, token));
-    if (taskId) {
+    if (route.modalCardId) jobs.push(hydrateCardPanel(route.modalCardId, token));
+    if (route.modalTaskId) {
       jobs.push(
-        hydrateTaskPanel(taskId, token, {
-          expectedCardId: cardId || "",
+        hydrateTaskPanel(route.modalTaskId, token, {
+          expectedCardId: route.modalCardId,
         }),
       );
     }
@@ -278,6 +276,101 @@ export function createNavigationShell(context) {
     renderWorkspaceNav();
   }
 
+  // The page a route shows, without the dialogs open over it.
+  function pageKey(route) {
+    const params = new URLSearchParams(route.params);
+    for (const name of modalParamNames(route)) params.delete(name);
+    params.sort();
+    return `${route.path}?${params}`;
+  }
+
+  function samePage(current, next) {
+    return Boolean(current && next && pageKey(current) === pageKey(next));
+  }
+
+  function sameModals(current, next) {
+    return (
+      current.modalCardId === next.modalCardId &&
+      current.modalTaskId === next.modalTaskId
+    );
+  }
+
+  function isVisible(element) {
+    return (
+      element instanceof HTMLElementClass &&
+      element.isConnected &&
+      element.offsetParent !== null &&
+      !element.closest("[inert]")
+    );
+  }
+
+  // Focus goes back to what opened the dialog; when a repaint replaced it,
+  // to the same row or Card drawn again.
+  function returnModalFocus(opener, fallback, token) {
+    if (isVisible(opener)) {
+      opener.focus({ preventScroll: true });
+      return Promise.resolve();
+    }
+    return restoreWorkspaceEntityFocus(fallback, token);
+  }
+
+  // Only the dialogs changed: open, close or swap them over the page, which
+  // keeps its filters, scroll position and focus memory. Closing a Task over
+  // its Card reloads the Card, so its checklist shows what the Task became.
+  function syncWorkspaceModals(previous, route, token) {
+    const jobs = [];
+    const focusAfter = [];
+    const opener = documentRef.activeElement;
+    const cardChanged = previous.modalCardId !== route.modalCardId;
+    const taskChanged = previous.modalTaskId !== route.modalTaskId;
+    if (cardChanged) {
+      if (route.modalCardId) {
+        if (!previous.modalCardId) modalOpeners.card = opener;
+        prepareCardPanel(route.modalCardId);
+        jobs.push(hydrateCardPanel(route.modalCardId, token));
+      } else {
+        resetCardPanel();
+        focusAfter.push([modalOpeners.card, { kind: "workflow", id: previous.modalCardId }]);
+        modalOpeners.card = null;
+      }
+    } else if (route.modalCardId && taskChanged) {
+      jobs.push(hydrateCardPanel(route.modalCardId, token));
+    }
+    if (taskChanged) {
+      if (route.modalTaskId) {
+        if (!previous.modalTaskId || cardChanged) modalOpeners.task = cardChanged ? null : opener;
+        prepareTaskPanel(route.modalTaskId);
+        jobs.push(
+          hydrateTaskPanel(route.modalTaskId, token, {
+            expectedCardId: route.modalCardId,
+          }),
+        );
+      } else {
+        resetTaskPanel();
+        if (!cardChanged || !route.modalCardId) {
+          focusAfter.unshift([
+            modalOpeners.task,
+            {
+              kind: "task",
+              id: previous.modalTaskId,
+              surface: route.modalCardId ? "workflows" : "tasks",
+            },
+          ]);
+        }
+        modalOpeners.task = null;
+      }
+    }
+    const settled = Promise.allSettled(jobs);
+    const [focus] = focusAfter;
+    if (!focus) return settled;
+    const [element, fallback] = focus;
+    if (isVisible(element)) {
+      element.focus({ preventScroll: true });
+      return settled;
+    }
+    return settled.then(() => returnModalFocus(element, fallback, token));
+  }
+
   function navigateCanonicalWorkspace(path, params = {}, options = {}) {
     const route = options.route || workspaceRouteFor(path, params);
     if (!route || route.invalid) {
@@ -287,22 +380,43 @@ export function createNavigationShell(context) {
         ready: Promise.resolve(),
       };
     }
+    const previous = activeRoute;
+    const modalsOnly = !options.reload && samePage(previous, route);
+    // Back to the address already showing (a dialog's close followed by its
+    // history entry popping) changes nothing.
+    if (modalsOnly && sameModals(previous, route)) {
+      activeRoute = route;
+      return { route, token: activeRouteToken, ready: Promise.resolve() };
+    }
     const token = ++activeRouteToken;
     const visible = route.canonicalUrl;
     const current = `${locationRef.pathname}${locationRef.search}${
       locationRef.hash
     }`;
     const historyMode = options.history || "push";
-    if (historyMode !== "none" && current !== visible) {
+    // Closing a dialog that was opened on this page goes back one entry, so
+    // Back afterwards leaves the page instead of reopening the dialog.
+    const returnsToPage =
+      modalsOnly &&
+      historyMode === "push" &&
+      historyRef.state?.modalReturn === visible;
+    if (returnsToPage) {
+      historyRef.back();
+    } else if (historyMode !== "none" && current !== visible) {
       historyRef[historyMode === "replace" ? "replaceState" : "pushState"](
         {
           workspace: route.view,
           tasksSection: route.tasksSection,
           ...(options.restoreFocus ? { restoreFocus: options.restoreFocus } : {}),
+          ...(modalsOnly && historyMode === "push" ? { modalReturn: current } : {}),
         },
         "",
         visible,
       );
+    }
+    if (modalsOnly) {
+      activeRoute = route;
+      return { route, token, ready: syncWorkspaceModals(previous, route, token) };
     }
     // A surface that already shows the entity (a list–detail selection opened
     // in place) only records it: the URL and the active route move, nothing

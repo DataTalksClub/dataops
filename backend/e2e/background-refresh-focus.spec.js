@@ -64,7 +64,7 @@ test.describe('background refresh while the operator is mid-interaction', () => 
     await expect(page.locator('#ops-default-assignee-select[data-e2e-original="yes"]')).toHaveCount(0);
   });
 
-  test('a task skip dialog keeps its typed reason and the Cards board updates after it closes', async ({ page, request }) => {
+  test('a task skip dialog keeps its typed reason and the Cards board updates after the dialogs close', async ({ page, request }) => {
     const tag = runTag();
     const card = await createCard(request, `Synthetic refresh card ${tag}`);
     const task = await json(await request.post('/api/tasks', {
@@ -95,9 +95,13 @@ test.describe('background refresh while the operator is mid-interaction', () => 
     await expect(board.locator(`.workflow-board-card[data-card-id="${late.id}"]`)).toHaveCount(0);
     await expect(board.locator('.workflow-board-card[data-e2e-original="yes"]')).toHaveCount(1);
 
-    // Closing the dialog lets the waiting repaint through.
+    // The Task dialog still holds the board; closing it lets the waiting
+    // repaint through.
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(dialog).toHaveCount(0);
+    await expect(board.locator('.workflow-board-card[data-e2e-original="yes"]')).toHaveCount(1);
+    await page.locator('#task-panel-close').click();
+    await page.locator('#card-panel-close').click();
     await expect(board.locator(`.workflow-board-card[data-card-id="${late.id}"]`)).toHaveCount(1);
     await expect(board.locator('.workflow-board-card[data-e2e-original="yes"]')).toHaveCount(0);
     expect((await json(await request.get(`/api/tasks/${task.id}`))).status).toBe('todo');

@@ -68,6 +68,7 @@ export function createWorkModel(context) {
       renderInBackground({
         previous,
         next,
+        initial: !previous?.loaded,
         when: () => isOperationsWorkspaceVisible() && showsSharedSnapshots(),
       });
     } else if (options.rerender && isOperationsWorkspaceVisible()) {

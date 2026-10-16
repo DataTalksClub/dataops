@@ -28,7 +28,7 @@ function spotifyCell(documentRef, episode, state) {
   return cell;
 }
 
-function cardCell(documentRef, episode, actions) {
+function cardCell(documentRef, episode) {
   const cell = element(documentRef, "td");
   const card = episode.card;
   if (!card) {
@@ -38,11 +38,6 @@ function cardCell(documentRef, episode, actions) {
   const link = element(documentRef, "a", "podcast-schedule__card");
   link.href = `/cards?cardId=${enc(card.id)}`;
   link.dataset.cardId = card.id;
-  link.addEventListener("click", (event) => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button > 0) return;
-    event.preventDefault();
-    actions.openCard(card.id);
-  });
   const open = Number(card.openTaskCount) || 0;
   const total = Number(card.taskCount) || 0;
   link.append(element(documentRef, "span", "", "Tasks"), element(documentRef, "span", "dk-mono", `${open}/${total} open`));
@@ -77,7 +72,7 @@ function renderRow(documentRef, episode, actions) {
   if (links.length) for (const proof of links) proofList.append(proofAnchor(documentRef, proof));
   else proofList.append(element(documentRef, "span", "dk-hint", "None recorded"));
   proofs.append(proofList);
-  row.append(name, intendedCell(documentRef, episode), spotifyCell(documentRef, episode, readiness.spotify), transcript, website, cardCell(documentRef, episode, actions), proofs);
+  row.append(name, intendedCell(documentRef, episode), spotifyCell(documentRef, episode, readiness.spotify), transcript, website, cardCell(documentRef, episode), proofs);
   return row;
 }
 

@@ -230,6 +230,7 @@ export function createSurfaceComposition(context) {
       context.renderInBackground({
         previous,
         next: workspaceState.recurringSnapshot,
+        initial: !previous?.loaded,
         when: () => isOperationsWorkspaceVisible() && showsSharedSnapshots(),
       });
     } else if (options.rerender && isOperationsWorkspaceVisible()) {

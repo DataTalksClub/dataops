@@ -1206,7 +1206,7 @@ describe("Tasks surface boundary", () => {
       canonicalTask({ id: "sooner", cardId: card.id, description: "Send the guest brief", date: "2026-08-11" }),
     ];
     const requests = [];
-    const { api, documentList, openedCards, openedTasks } = createHarness({
+    const { api, documentList, openedTasks } = createHarness({
       userNames: { grace: "Grace Meyer" },
       workSnapshot: {
         cardsById: new Map([[card.id, card]]),
@@ -1242,12 +1242,9 @@ describe("Tasks surface boundary", () => {
     assert.equal(info.getAttribute("aria-haspopup"), "dialog");
     assert.equal(info.getAttribute("aria-expanded"), "false");
 
-    // A plain click opens the Card in place; a modified click is left to the
-    // browser, which opens the link in a new tab. Neither opens the task.
-    await link.dispatch("click", { metaKey: true });
-    assert.deepEqual(openedCards, []);
+    // The link is the Card's own page: the app opens it over the queue, a
+    // modified click in a new tab. Neither opens the task.
     await link.click();
-    assert.deepEqual(openedCards, ["card-pod"]);
     assert.deepEqual(openedTasks, []);
 
     await info.click();

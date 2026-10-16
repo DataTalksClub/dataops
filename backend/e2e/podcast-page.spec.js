@@ -129,9 +129,12 @@ test('podcast list opens an episode in place, deep-links it, and creates its car
   await shoot(page, 'detail-card');
   const linked = await api('GET', `/api/podcast-episodes/${episodes.next.id}`);
   expect(linked.card.id).toBeTruthy();
+  // The Card opens over the episode; Back closes it there.
   await chip.click();
-  await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${linked.card.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.next.id}\\?view=list&card=${linked.card.id}$`));
+  await expect(page.locator('#card-panel')).toBeVisible();
   await page.goBack();
+  await expect(page.locator('#card-panel')).toBeHidden();
   await expect(detail.locator('.podcast-card-chip')).toBeVisible();
 
   // No Mark button: ticking the Card's recording Task moves the episode.

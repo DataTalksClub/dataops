@@ -7,6 +7,7 @@ export function createTaskActions(context) {
     detail,
     getActiveWorkspaceRoute,
     getActiveWorkspaceRouteToken = () => 0,
+    hydrateCardPanel,
     isArchivedWorkCard,
     isParkedWorkCard,
     isWorkspaceRouteFresh,
@@ -378,30 +379,19 @@ export function createTaskActions(context) {
       card = payload?.card || payload;
     }
     if (!routeIsFresh(routeToken)) return;
-    if (
-      card
-      && (
-        detail.activeTaskPanelId === taskId
-        || detail.activeCardPanelId === card.id
-      )
-    ) {
-      const inArchiveView = isArchivedWorkCard(card) || isParkedWorkCard(card);
-      const route = inArchiveView ? "/cards/archive" : "/cards";
-      const navigation = navigateCanonicalWorkspace(route, {
-        cardId: card.id,
-        taskId,
-      });
-      await navigation.ready;
-      if (!routeIsFresh(navigation.token)) return;
-      // A reopened Task restores a done Card to the board; a parked Card
-      // stays parked, so only the board case names a restored stage.
-      if (!inArchiveView && status !== "done") {
-        showUndoToast(
-          `Task reopened. Card restored to ${String(card.stage).replace("-", " ")}.`,
-          () => updateTaskStatus(taskId, "done", updated.version),
-        );
-        return;
-      }
+    // The Card behind the Task dialog shows what the change did to it
+    // (completed into the Archive, or back on the board).
+    if (card && detail.activeTaskPanelId === taskId && detail.activeCardPanelId === card.id) {
+      await hydrateCardPanel(card.id, routeToken);
+    }
+    // A reopened Task restores a done Card to the board; a parked Card stays
+    // parked, so only the board case names a restored stage.
+    if (card && status !== "done" && !isArchivedWorkCard(card) && !isParkedWorkCard(card)) {
+      showUndoToast(
+        `Task reopened. Card restored to ${String(card.stage).replace("-", " ")}.`,
+        () => updateTaskStatus(taskId, "done", updated.version),
+      );
+      return;
     }
     showUndoToast(`Task marked ${status}.`, () =>
       updateTaskStatus(
@@ -807,6 +797,7 @@ export function createTaskActions(context) {
     if (!route || route.invalid) return undefined;
     return navigateCanonicalWorkspace(route.path, route.params, {
       history: "none",
+      reload: true,
     }).ready;
   }
 

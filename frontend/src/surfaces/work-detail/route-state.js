@@ -13,7 +13,6 @@ export function createRouteState(context) {
     getAllDocuments,
     isWorkspaceRouteFresh,
     navigateCanonicalWorkspace,
-    parseWorkspaceLocation,
     renderCardPanel,
     renderEntityLoadingState,
     renderTaskPanel,
@@ -27,40 +26,21 @@ export function createRouteState(context) {
     workApiUrl,
   } = context;
 
+  // Closing a dialog drops its params from the page's address; the page
+  // under it stays as it was.
+  function closeModal(route, names) {
+    const params = new URLSearchParams(route.params);
+    for (const name of names) params.delete(name);
+    return navigateCanonicalWorkspace(route.path, params).ready;
+  }
+
   function closeTaskPanel(options = {}) {
-    const route = parseWorkspaceLocation();
-    if (
-      options.updateUrl === false ||
-      !route ||
-      route.invalid ||
-      !route.params.has("taskId")
-    ) {
-      detail.taskPanelOrigin = null;
+    const route = getActiveWorkspaceRoute();
+    if (options.updateUrl === false || !route?.modalTaskId) {
       resetTaskPanel();
       return;
     }
-    if (route.params.has("taskId")) {
-      const taskId = route.params.get("taskId");
-      const origin = detail.taskPanelOrigin;
-      detail.taskPanelOrigin = null;
-      const params = new URLSearchParams(route.params);
-      params.delete("taskId");
-      const target = origin || {
-        path: route.path,
-        params,
-        restoreFocus: {
-          kind: "task",
-          id: taskId,
-          surface:
-            route.path === "/cards" || route.path === "/cards/archive"
-              ? "workflows"
-              : "tasks",
-        },
-      };
-      return navigateCanonicalWorkspace(target.path, target.params, {
-        restoreFocus: target.restoreFocus,
-      }).ready;
-    }
+    return closeModal(route, ["taskId"]);
   }
 
   // Task detail can sit above workflow detail, so one handler selects the
@@ -112,27 +92,34 @@ export function createRouteState(context) {
   }
 
   function closeCardPanel(options = {}) {
-    const route = parseWorkspaceLocation();
-    if (
-      options.updateUrl === false ||
-      !route ||
-      route.invalid ||
-      !["/cards", "/cards/archive"].includes(route.path)
-    ) {
+    const route = getActiveWorkspaceRoute();
+    if (options.updateUrl === false || !route?.modalCardId) {
       resetCardPanel();
       return;
     }
-    return navigateCanonicalWorkspace(
-      route.path,
-      {},
-      {
-        restoreFocus: {
-          kind: "workflow",
-          id: route.params.get("cardId"),
-          surface: "workflows",
-        },
-      },
-    ).ready;
+    return closeModal(route, [route.cardParam, "taskId"]);
+  }
+
+  // While a dialog is open the page behind it is inert: every sibling on the
+  // way up to the app shell, so the toast and kit dialogs outside it stay
+  // usable.
+  let inertPage = [];
+  function syncPageInert() {
+    for (const element of inertPage) element.inert = false;
+    inertPage = [];
+    if (cardPanel.hidden && taskPanel.hidden) return;
+    const modals = new Set([cardPanel, taskPanel]);
+    for (
+      let node = cardPanel;
+      node.parentElement && node.parentElement !== body;
+      node = node.parentElement
+    ) {
+      for (const sibling of node.parentElement.children) {
+        if (sibling === node || modals.has(sibling) || sibling.inert) continue;
+        sibling.inert = true;
+        inertPage.push(sibling);
+      }
+    }
   }
 
   function emptyTaskRouteContext(route = null) {
@@ -165,6 +152,7 @@ export function createRouteState(context) {
     } else {
       body.classList.remove("task-panel-open", "task-modal-open");
     }
+    syncPageInert();
   }
 
   function resetCardPanel() {
@@ -178,8 +166,8 @@ export function createRouteState(context) {
     detail.activeCardTemplateBusy = false;
     detail.activeCardTemplateMessage = "";
     cardPanel.hidden = true;
-    body.classList.remove("task-panel-open");
-    body.classList.remove("task-modal-open");
+    if (taskPanel.hidden) body.classList.remove("task-panel-open", "task-modal-open");
+    syncPageInert();
   }
 
   function prepareTaskPanel(taskId) {
@@ -199,6 +187,7 @@ export function createRouteState(context) {
       cardPanel.inert = true;
       cardPanel.setAttribute("aria-hidden", "true");
     }
+    syncPageInert();
     renderEntityLoadingState(taskPanelBody, "task", taskId);
     taskPanelClose.focus();
   }
@@ -220,6 +209,7 @@ export function createRouteState(context) {
     cardPanel.removeAttribute("aria-hidden");
     cardPanel.hidden = false;
     body.classList.add("task-panel-open", "task-modal-open");
+    syncPageInert();
     renderEntityLoadingState(cardPanelBody, "card", cardId);
     cardPanelClose.focus();
   }

@@ -96,14 +96,14 @@ export function createCardHovercards(context) {
   const {
     isArchivedWorkCard,
     isParkedWorkCard,
-    openCardPanel,
     request,
     state,
     workApiUrl,
   } = context;
   const extras = new Map();
 
-  // The Card's own address, the one openCardPanel navigates to.
+  // The Card's own address: a new tab opens it there, a plain click opens it
+  // as a dialog over the queue.
   function cardHref(card) {
     const path = isArchivedWorkCard(card) || isParkedWorkCard(card) ? "/cards/archive" : "/cards";
     return `${path}?cardId=${encodeURIComponent(card.id)}`;
@@ -151,7 +151,7 @@ export function createCardHovercards(context) {
   }
 
   // The Where cell of a queue row. A card task's Where is a link to that
-  // Card: a plain click opens it in place, a modified click in a new tab.
+  // Card: a plain click opens it over the queue, a modified click in a new tab.
   // Pointing at it (or focusing it) shows the Card's summary; on touch, where
   // nothing hovers, the info button beside it toggles the summary and a tap
   // on the name opens the Card.
@@ -188,11 +188,6 @@ export function createCardHovercards(context) {
     link.href = cardHref(card);
     link.setAttribute("aria-label", `Open card ${origin.title}`);
     link.append(icon, text);
-    link.addEventListener("click", (event) => {
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button) return;
-      event.preventDefault();
-      openCardPanel(card.id);
-    });
     const info = el("button", "dk-icon-button dk-icon-button--sm ops-queue-origin-info");
     info.type = "button";
     info.setAttribute("aria-label", `Card summary: ${origin.label}`);

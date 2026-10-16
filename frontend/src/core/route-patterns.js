@@ -29,3 +29,25 @@ export function concreteRoutePath(pattern, pathParams) {
     .map((part) => (part.startsWith(":") ? encodeURIComponent(pathParams[part.slice(1)]) : part))
     .join("/");
 }
+
+// The Card and Task dialogs open over whatever page is showing, so their
+// params ride on every route: `card` (a Card page names it `cardId`) and
+// `taskId`. Changing only these opens or closes a dialog; the page under it
+// stays as it is.
+export const MODAL_TASK_PARAM = "taskId";
+
+export function cardParamOf(definition) {
+  return definition.cardParam || "card";
+}
+
+export function routeParamNames(definition) {
+  const names = [...definition.params];
+  for (const name of [cardParamOf(definition), MODAL_TASK_PARAM]) {
+    if (!names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+export function modalParamNames(route) {
+  return [route?.cardParam || "card", MODAL_TASK_PARAM];
+}

@@ -20,6 +20,7 @@ export function createCardPanel(context) {
   const {
     cardAnchorTone,
     closeCardPanel,
+    closeTaskPanel,
     createTaskActionButton,
     detail,
     formatCardAnchorLabel,
@@ -63,10 +64,20 @@ export function createCardPanel(context) {
   // Link rows whose editor is open, so an unsaved edit survives a rerender.
   const openLinkEditors = new Set();
 
+  // A Card opens as a dialog over the page showing (`?card=`), which stays
+  // as it was underneath. On the Cards pages, and outside any workspace page,
+  // it opens at its own address.
   function openCardPanel(cardId) {
-    const card = state.workSnapshot.cardsById?.get(cardId);
-    const path = isArchivedWorkCard(card) || isParkedWorkCard(card) ? "/cards/archive" : "/cards";
-    return navigateCanonicalWorkspace(path, { cardId: cardId }).ready;
+    const route = getActiveWorkspaceRoute();
+    if (!route || route.invalid || route.cardParam === "cardId") {
+      const card = state.workSnapshot.cardsById?.get(cardId);
+      const path = isArchivedWorkCard(card) || isParkedWorkCard(card) ? "/cards/archive" : "/cards";
+      return navigateCanonicalWorkspace(path, { cardId }).ready;
+    }
+    const params = new URLSearchParams(route.params);
+    params.delete("taskId");
+    params.set(route.cardParam, cardId);
+    return navigateCanonicalWorkspace(route.path, params).ready;
   }
 
   function routeIsFresh(token) {
@@ -134,7 +145,7 @@ export function createCardPanel(context) {
             navigateCanonicalWorkspace(
               getActiveWorkspaceRoute().path,
               getActiveWorkspaceRoute().params,
-              { history: "none" },
+              { history: "none", reload: true },
             ),
           returnToList: () => closeCardPanel(),
         });
@@ -732,12 +743,7 @@ export function createCardPanel(context) {
     label.className = `card-checklist-label${isSkipped ? " is-skipped" : isDone ? " is-done" : ""}`;
     label.dataset.taskId = task.id;
     appendBreakableText(label, workTaskTitle(task));
-    label.addEventListener("click", () =>
-      openTaskPanel(task.id, {
-        preserveCard: true,
-        expectedCardId: cardId,
-      }),
-    );
+    label.addEventListener("click", () => openTaskPanel(task.id));
     body.append(label);
 
     // One muted line under the title: why it is skipped or what it waits
@@ -777,7 +783,7 @@ export function createCardPanel(context) {
         link.addEventListener("click", (event) => {
           if (event.metaKey || event.ctrlKey || event.shiftKey) return;
           event.preventDefault();
-          openTaskPanel(entry.id, { preserveCard: true, expectedCardId: cardId });
+          openTaskPanel(entry.id);
         });
         after.append(link);
       });
@@ -860,14 +866,15 @@ export function createCardPanel(context) {
     restoreCardPanelDrafts(drafts);
   }
 
+  // The Task dialog's Card row: back to the Card when the Task was opened
+  // from it, otherwise the Card in place of the Task.
   async function navigateTaskToWorkflow(task) {
     if (!task?.cardId) return;
-    const card = state.workSnapshot.cardsById?.get(task.cardId);
-    const path = isArchivedWorkCard(card) || isParkedWorkCard(card) ? "/cards/archive" : "/cards";
-    await navigateCanonicalWorkspace(path, {
-      cardId: task.cardId,
-      taskId: task.id,
-    }).ready;
+    if (getActiveWorkspaceRoute()?.modalCardId === task.cardId) {
+      await closeTaskPanel();
+      return;
+    }
+    await openCardPanel(task.cardId);
   }
 
   const {

@@ -221,7 +221,8 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const openReturnCard = page.getByRole('complementary', { name: 'Task queue route context' }).getByRole('button');
     await expect(openReturnCard).toBeVisible();
     await openReturnCard.click();
-    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${fixture.contextCard.id}$`));
+    // The return Card opens over the queue it was named from.
+    await expect(page).toHaveURL(new RegExp(`/tasks\\?contextCardId=${fixture.contextCard.id}&card=${fixture.contextCard.id}$`));
     await expect(page.locator('#card-panel-title')).toHaveText(fixture.contextCard.title);
     await page.goto(`/tasks?taskId=${encodeURIComponent(fixture.task.id)}`);
     await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
@@ -286,9 +287,16 @@ test.describe('issue 156 canonical route and operator parity', () => {
   test('keeps relationship, notification, search, and panel close routes synchronized', async ({ page, request }, testInfo) => {
     const fixture = await createFixtures(request);
 
+    // The Task dialog's Card row opens the Card in its place, over the queue.
     await page.goto(`/tasks?taskId=${fixture.task.id}`);
     await page.locator('#task-panel .task-context-card', { hasText: fixture.card.title }).click();
-    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${fixture.card.id}&taskId=${fixture.task.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/tasks\\?card=${fixture.card.id}$`));
+    await expect(page.locator('#task-panel')).toBeHidden();
+    await expect(page.locator('#card-panel')).toBeVisible();
+
+    // A deep link to a Task in its Card closes back to the Card.
+    await page.goto(`/cards?cardId=${fixture.card.id}&taskId=${fixture.task.id}`);
+    await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
     await page.locator('#task-panel-close').click();
     await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${fixture.card.id}$`));
     await expect(page.locator('#card-panel')).toBeVisible();
@@ -312,7 +320,8 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.locator('#work-bell-button').click();
     const notice = page.locator('.dk-notif-item', { hasText: dueTask.description });
     await notice.getByRole('link').click();
-    await expect(page).toHaveURL(new RegExp(`/tasks\\?taskId=${dueTask.id}$`));
+    // The Task opens over Home, where the bell was clicked.
+    await expect(page).toHaveURL(new RegExp(`/\\?taskId=${dueTask.id}$`));
     await page.locator('#task-panel-close').click();
     await expect(page).toHaveURL(/\/$/);
     await page.locator('#work-bell-button').click();
@@ -508,7 +517,8 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(filteredTasksRoute);
     await expect(page.locator('#task-panel')).toBeHidden();
-    await expect(taskRow).toBeFocused();
+    // Focus returns to the control that opened the Task.
+    await expect(taskRow.locator('.ops-queue-main')).toBeFocused();
 
     await page.goto('/tasks?taskId=keyboard-missing-task');
     await expect(page.locator('#task-panel .entity-route-not-found')).toBeVisible();

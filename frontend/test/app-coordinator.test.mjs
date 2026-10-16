@@ -244,19 +244,20 @@ describe("app shell coordinator characterization", () => {
       "closeSettingsMenu()",
       "documentList.replaceChildren()",
       "refreshDocuments()",
-      "if (cardId) prepareCardPanel(cardId)",
-      "if (taskId) prepareTaskPanel(taskId)",
+      "if (route.modalCardId) prepareCardPanel(route.modalCardId)",
+      "if (route.modalTaskId) prepareTaskPanel(route.modalTaskId)",
     ]);
     for (const routePath of [
       "/tasks",
       "/templates",
       "/users",
-      "/cards",
-      "/cards/archive",
       "/recurring",
     ]) {
       assert.ok(hydrate.includes(`"${routePath}"`), `${routePath} hydration is retained`);
     }
+    // The Card and Task dialogs hydrate on any route that names them.
+    assert.match(hydrate, /hydrateCardPanel\(route\.modalCardId, token\)/);
+    assert.match(hydrate, /hydrateTaskPanel\(route\.modalTaskId, token/);
     assertInOrder(navigate, [
       "commitWorkspaceRoute(route, token, options)",
       "hydrateWorkspaceRoute(route, token)",

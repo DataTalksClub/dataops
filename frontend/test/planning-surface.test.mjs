@@ -1095,7 +1095,7 @@ describe("Planning surface production behavior", () => {
     assert.match(html, /data-slot-book="primary" data-issue-id="issue-3"[^>]*><strong>Sponsor:<\/strong> Solo Sponsor<\/button>/);
     assert.doesNotMatch(html, /data-slot-book="secondary" data-issue-id="issue-3"/);
     assert.doesNotMatch(html, /type="checkbox"/, "slots are buttons, not ticks");
-    assert.match(html, /href="\/cards\?cardId=card-1"\s+data-open-card="card-1" title="Open card: 21 Aug · #42">/);
+    assert.match(html, /href="\/cards\?cardId=card-1"\s+title="Open card: 21 Aug · #42">/);
     assert.doesNotMatch(html, />21 Aug · #42</, "the chip does not repeat the Card title the row already shows");
     assert.match(html, /Preparation ·\s+<span class="dk-mono">4\/6<\/span> open/);
     assert.match(html, /data-card-date-mismatch><span class="newsletter-card-chip__warning-label">Card dated <\/span>\s*20 Aug/);

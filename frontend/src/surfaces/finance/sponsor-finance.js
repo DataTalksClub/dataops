@@ -14,7 +14,7 @@ export function createSponsorFinance(context) {
     escapeHtml,
     humanizeOptionLabel,
     message,
-    navigateCanonicalWorkspace,
+    openTaskPanel,
     request,
     surface,
     workApiUrl,
@@ -775,10 +775,7 @@ export function createSponsorFinance(context) {
     );
     panel.querySelectorAll("[data-finance-payment-follow-up-open]").forEach((button) =>
       button.addEventListener("click", () =>
-        navigateCanonicalWorkspace(
-          "/tasks",
-          { taskId: button.dataset.financePaymentFollowUpOpen },
-        ),
+        openTaskPanel(button.dataset.financePaymentFollowUpOpen),
       ),
     );
     panel

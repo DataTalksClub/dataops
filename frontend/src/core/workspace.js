@@ -1,4 +1,4 @@
-import { concreteRoutePath, matchRoutePath } from "./route-patterns.js";
+import { cardParamOf, concreteRoutePath, matchRoutePath, MODAL_TASK_PARAM, routeParamNames } from "./route-patterns.js";
 import { formatDayLabel } from "./dates.js";
 import { orderAfterPrerequisites, taskIsBlocked } from "./task-dependencies.js";
 
@@ -26,16 +26,9 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
     // one URL, so `assignee=me` normalizes away.
     paramDefaults: { assignee: "me" },
   },
-  "/cards": {
-    view: "tasks",
-    tasksSection: "workflows",
-    params: ["cardId", "taskId"],
-  },
-  "/cards/archive": {
-    view: "tasks",
-    tasksSection: "workflows",
-    params: ["cardId", "taskId"],
-  },
+  // A Card's own address; the open Card is `cardId` here, `card` elsewhere.
+  "/cards": { view: "tasks", tasksSection: "workflows", params: ["cardId", "taskId"], cardParam: "cardId" },
+  "/cards/archive": { view: "tasks", tasksSection: "workflows", params: ["cardId", "taskId"], cardParam: "cardId" },
   "/templates": {
     view: "tasks",
     tasksSection: "templates",
@@ -133,7 +126,7 @@ export function canonicalWorkspaceUrl(path, params = new URLSearchParams()) {
   if (definition.canonicalPath) path = definition.canonicalPath;
   else if (matched?.pattern.includes(":")) path = concreteRoutePath(matched.pattern, matched.pathParams);
   const ordered = new URLSearchParams();
-  for (const name of definition.params) {
+  for (const name of routeParamNames(definition)) {
     const value =
       params instanceof URLSearchParams ? params.get(name) : params?.[name];
     if (value && value !== definition.paramDefaults?.[name]) ordered.set(name, value);
@@ -196,7 +189,7 @@ export function parseWorkspaceLocation(
 
   const incoming = new URLSearchParams(rawQuery);
   const params = new URLSearchParams();
-  for (const name of definition.params) {
+  for (const name of routeParamNames(definition)) {
     const values = incoming.getAll(name);
     if (values.length > 1 || (values.length === 1 && !values[0])) {
       return { invalid: true, reason: `invalid ${name}` };
@@ -218,11 +211,17 @@ export function parseWorkspaceLocation(
   }
 
   const canonicalUrl = canonicalWorkspaceUrl(path, params);
+  const cardParam = cardParamOf(definition);
+  const modalCardId = params.get(cardParam) || "";
+  const modalTaskId = params.get(MODAL_TASK_PARAM) || "";
   for (const [name, value] of Object.entries(matched.pathParams)) params.set(name, value);
   const currentUrl = `${location?.pathname || "/"}${location?.search || ""}`;
   return {
     view: definition.view,
     tasksSection: definition.tasksSection,
+    cardParam,
+    modalCardId,
+    modalTaskId,
     ...(definition.sponsorsTab ? { sponsorsTab: definition.sponsorsTab } : {}),
     path,
     params,

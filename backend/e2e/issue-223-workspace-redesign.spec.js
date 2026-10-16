@@ -72,9 +72,12 @@ test('the queue caps its list, expands in place, and returns focus to the exact 
   await page.keyboard.press('Enter');
   await expect(page.locator('.ops-queue-row').nth(firstIds.length - 1)).toBeFocused();
   await page.screenshot({ path: path.join(screenshots, 'task-return.png'), fullPage: true });
-  await page.goBack();
-  await expect(page.locator('#task-panel-title')).toHaveText(lastTask.description);
+  // Closing went back past the Task's history entry: Forward reopens it and
+  // Back closes it again.
   await page.goForward();
+  await expect(page.locator('#task-panel-title')).toHaveText(lastTask.description);
+  await page.goBack();
+  await expect(page.locator('#task-panel')).toBeHidden();
   await expect(page.locator('.ops-queue-row').nth(firstIds.length - 1)).toBeFocused();
 });
 

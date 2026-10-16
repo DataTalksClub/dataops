@@ -410,11 +410,29 @@ describe("canonical navigation shell behavior", () => {
       kind: "queue-task",
       id: "queue-task",
     });
+    const queueEntryState = harness.history.state;
+    await harness.shell.navigateCanonicalWorkspace("/templates").ready;
     harness.queueTaskButton.focused = false;
+    harness.history.state = queueEntryState;
     await harness.shell.applyWorkspaceRoute(
       workspaceRouteFor("/tasks", {}, harness.location),
     );
     assert.equal(harness.queueTaskButton.focused, true);
+  });
+
+  test("a dialog param change opens the dialog over the page without re-rendering it", async () => {
+    const harness = createNavigationHarness();
+    await harness.shell.navigateCanonicalWorkspace("/tasks", { assignee: "all" }).ready;
+    Object.assign(harness.location, { pathname: "/tasks", search: "?assignee=all" });
+    const renders = harness.calls.filter(([name]) => name === "refresh-docs").length;
+    await harness.shell.navigateCanonicalWorkspace("/tasks", { assignee: "all", card: "card-1" }).ready;
+    assert.equal(harness.history.pushed.at(-1).url, "/tasks?assignee=all&card=card-1");
+    assert.equal(harness.calls.filter(([name]) => name === "refresh-docs").length, renders);
+    assert.deepEqual(harness.calls.filter(([name]) => name.endsWith("-card")).slice(-2).map(([name, id]) => [name, id]), [
+      ["prepare-card", "card-1"],
+      ["hydrate-card", "card-1"],
+    ]);
+    assert.equal(harness.history.state.modalReturn, "/tasks?assignee=all");
   });
 
   test("starts document navigation by invalidating route work and closing overlays", () => {

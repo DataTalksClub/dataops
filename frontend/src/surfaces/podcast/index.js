@@ -156,9 +156,6 @@ export function createPodcastSurface(context) {
     openEpisode(id) {
       navigateCanonicalWorkspace(`/podcast/${enc(id)}`, viewParams());
     },
-    openCard(cardId) {
-      navigateCanonicalWorkspace("/cards", { cardId });
-    },
   };
 
   function openCreate(trigger) {

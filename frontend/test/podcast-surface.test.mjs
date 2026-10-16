@@ -247,9 +247,8 @@ describe("Podcast surface", () => {
     assert.ok(findByText(documentList, "Marked edited."));
     assert.ok(findByText(documentList, "Edited", ".podcast-status"));
     assert.ok(documentList.querySelector(".podcast-card-chip"), "the card summary survives a save");
-
-    await documentList.querySelector(".podcast-card-chip").dispatch("click");
-    assert.deepEqual(calls.filter(([kind]) => kind === "navigate").at(-1), ["navigate", "/cards", { cardId: "card-1" }, {}]);
+    // A link to the Card's own page: the app opens it over the episode.
+    assert.equal(documentList.querySelector(".podcast-card-chip").href, "/cards?cardId=card-1");
   });
 
   test("an episode without a Card is set by hand, with no evidence gate", async () => {

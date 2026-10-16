@@ -39,6 +39,7 @@ import { createOperatingModelSurface } from "../surfaces/operating-model.js";
 import { createApiClient, resolveApiBase } from "../shell/api.js";
 import { createFeedbackShell } from "../shell/feedback.js";
 import { createNavigationShell } from "../shell/navigation.js";
+import { cardLinkTarget } from "../core/links.js";
 import { initializeAppShell } from "../shell/bootstrap.js";
 import { queryAppDom } from "../shell/dom-bindings.js";
 import { bindApplicationEvents } from "./application-events.js";
@@ -207,6 +208,7 @@ const {
   humanizeOptionLabel,
   isWorkspaceRouteFresh,
   navigateCanonicalWorkspace,
+  openTaskPanel: (...args) => openTaskPanel(...args),
   request,
   renderEntityLoadState,
   setRouteTitle, todayIsoDate,
@@ -471,11 +473,13 @@ const {
   workTaskTitle,
   workflowTaskGroups,
 });
-taskPanelClose.addEventListener("click", closeTaskPanel);
-taskModalBackdrop.addEventListener("click", closeTaskPanel);
-cardPanelClose.addEventListener("click", closeCardPanel);
-cardModalBackdrop?.addEventListener("click", closeCardPanel);
-document.addEventListener("keydown", handleWorkspaceEntityModalKeydown);
+// A plain click on a link to a Card opens it as a dialog over this page.
+document.addEventListener("click", (event) => {
+  const cardId = cardLinkTarget(event, window.location.origin);
+  if (!cardId) return;
+  event.preventDefault();
+  openCardPanel(cardId);
+});
 const {
   openQuickTaskForm,
   openQuickWorkflowForm,

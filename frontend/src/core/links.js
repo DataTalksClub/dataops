@@ -173,3 +173,23 @@ export function opensInNewTab(link) {
   }
   return link;
 }
+
+// The Card a plain click on a link opens: a link to a Card's own page
+// (`/cards?cardId=…`, or the archive) opens that Card as a dialog over the
+// current page instead. A modified or middle click, a link to a Task inside
+// the Card, or one that opens in another window keeps its browser default.
+export function cardLinkTarget(event, origin = globalThis.location?.origin) {
+  if (event.defaultPrevented || event.button !== 0) return "";
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return "";
+  const link = event.target?.closest?.("a[href]");
+  if (!link || (link.target && link.target !== "_self") || link.hasAttribute("download")) return "";
+  let url;
+  try {
+    url = new URL(link.getAttribute("href"), origin);
+  } catch {
+    return "";
+  }
+  if (url.origin !== origin || !["/cards", "/cards/archive"].includes(url.pathname)) return "";
+  if (url.searchParams.has("taskId")) return "";
+  return url.searchParams.get("cardId") || "";
+}

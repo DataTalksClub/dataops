@@ -20,7 +20,6 @@ export function createWorkDetailSurface(context) {
     activeTaskPanelConflict: null,
     activeTaskPanelFeedback: null,
     activeTaskMutationBusy: false,
-    taskPanelOrigin: null,
     activeCardPanelId: null,
     activeCardPanelData: null,
     activeCardPanelDraft: null,
@@ -44,6 +43,7 @@ export function createWorkDetailSurface(context) {
     createTaskActionButton: (...args) =>
       taskActionsApi.createTaskActionButton(...args),
     formatMetaDate,
+    hydrateCardPanel: (...args) => cardPanelApi.hydrateCardPanel(...args),
     loadArtifactsForCard: (...args) =>
       taskEvidenceApi.loadArtifactsForCard(...args),
     loadArtifactsForTask: (...args) =>

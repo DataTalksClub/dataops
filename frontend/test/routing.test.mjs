@@ -16,6 +16,7 @@ import {
   workspacePath,
   workspaceRouteFor,
 } from "../src/core/workspace.js";
+import { cardLinkTarget } from "../src/core/links.js";
 import { SPONSORS_TABS, sponsorRecordPath, sponsorsPath } from "../src/core/sponsor-routes.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -308,5 +309,51 @@ describe("podcast schedule route", () => {
     assert.equal(open.params.get("view"), "list");
     assert.equal(open.params.get("episodeId"), "abc-123");
     assert.equal(parseWorkspaceLocation("/podcast/schedule?view=list").canonicalUrl, "/podcast/schedule");
+  });
+});
+
+describe("Card and Task dialogs over any page", () => {
+  test("every route carries the dialog params; a Card page names its Card cardId", () => {
+    const queue = parseWorkspaceLocation("/tasks?assignee=all&card=card-1", { pathname: "/tasks", search: "?assignee=all&card=card-1" });
+    assert.equal(queue.canonicalUrl, "/tasks?assignee=all&card=card-1");
+    assert.equal(queue.modalCardId, "card-1");
+    assert.equal(queue.modalTaskId, "");
+    assert.equal(queue.cardParam, "card");
+    const calendar = workspaceRouteFor("/calendar", { card: "card-2", taskId: "task-2" });
+    assert.equal(calendar.canonicalUrl, "/calendar?card=card-2&taskId=task-2");
+    assert.equal(calendar.modalTaskId, "task-2");
+    const deal = workspaceRouteFor("/sponsors/deals/deal-1", { card: "card-3" });
+    assert.equal(deal.canonicalUrl, "/sponsors/deals/deal-1?card=card-3");
+    const board = workspaceRouteFor("/cards", { cardId: "card-4", card: "ignored" });
+    assert.equal(board.canonicalUrl, "/cards?cardId=card-4");
+    assert.equal(board.modalCardId, "card-4");
+    assert.equal(board.cardParam, "cardId");
+  });
+
+  test("a plain click on a link to a Card's page opens it in place", () => {
+    const origin = "https://ops.example";
+    const click = (href, extra = {}, attributes = {}) => cardLinkTarget({
+      button: 0,
+      defaultPrevented: false,
+      target: {
+        closest: () => ({
+          target: attributes.target || "",
+          getAttribute: () => href,
+          hasAttribute: (name) => name in attributes,
+        }),
+      },
+      ...extra,
+    }, origin);
+    assert.equal(click("/cards?cardId=card-1"), "card-1");
+    assert.equal(click("/cards/archive?cardId=card-2"), "card-2");
+    assert.equal(click("/cards?cardId=card-1", { metaKey: true }), "");
+    assert.equal(click("/cards?cardId=card-1", { ctrlKey: true }), "");
+    assert.equal(click("/cards?cardId=card-1", { button: 1 }), "");
+    assert.equal(click("/cards?cardId=card-1", { defaultPrevented: true }), "");
+    assert.equal(click("/cards?cardId=card-1", {}, { target: "_blank" }), "");
+    assert.equal(click("/cards?cardId=card-1&taskId=task-1"), "");
+    assert.equal(click("/cards"), "");
+    assert.equal(click("https://elsewhere.example/cards?cardId=card-1"), "");
+    assert.equal(click("/tasks?cardId=card-1"), "");
   });
 });

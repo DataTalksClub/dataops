@@ -114,7 +114,7 @@ export function createNewsletterPlanner(context) {
       return `
         <div class="newsletter-slot-card">
           <a class="newsletter-card-chip${mismatch ? " is-mismatch" : ""}" href="/cards?cardId=${encodeURIComponent(card.id)}"
-            data-open-card="${escapeHtml(card.id)}" title="${escapeHtml(name)}">
+            title="${escapeHtml(name)}">
             <span class="newsletter-card-chip__label">Card</span>
             <span class="newsletter-card-chip__meta">${escapeHtml(stageLabel(card.stage))} ·
               <span class="dk-mono">${escapeHtml(`${card.openTaskCount}/${card.taskCount}`)}</span> open</span>
@@ -416,14 +416,6 @@ export function createNewsletterPlanner(context) {
 
     surface.querySelector("[data-slots]").onclick = (event) => {
       const target = event.target;
-      const cardChip = target.closest("[data-open-card]");
-      if (cardChip?.dataset.openCard) {
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button) return;
-        if (!context.navigateCanonicalWorkspace) return;
-        event.preventDefault();
-        context.navigateCanonicalWorkspace("/cards", { cardId: cardChip.dataset.openCard });
-        return;
-      }
       const createCard = target.closest("[data-create-card]");
       if (createCard) {
         const item = items.find((value) => value.id === createCard.dataset.createCard);

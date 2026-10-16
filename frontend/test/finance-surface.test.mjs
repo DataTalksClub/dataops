@@ -1269,17 +1269,17 @@ test("an overdue invoice without a payment follow-up offers creating the follow-
   assert.deepEqual(followUpCall.body, { dealVersion: 3, expectedVersion: 4 });
 });
 
-test("open payment follow-up work is listed with its next follow-up and opens in the Tasks surface", async () => {
+test("open payment follow-up work is listed with its next follow-up and opens its Task over the deal", async () => {
   createHarness();
   const surface = new FakeElement("section");
   const panel = surface.querySelector('[data-booking-panel="finance"]');
-  const navigations = [];
+  const openedTasks = [];
   const sponsorFinance = createSponsorFinance({
     surface,
     escapeHtml,
     humanizeOptionLabel,
     message: new FakeElement("p"),
-    navigateCanonicalWorkspace: (path, params) => navigations.push({ path, params }),
+    openTaskPanel: (taskId) => openedTasks.push(taskId),
     request: async () => ({}),
     workApiUrl: (path) => path,
   });
@@ -1315,7 +1315,7 @@ test("open payment follow-up work is listed with its next follow-up and opens in
   assert.doesNotMatch(markup, /data-finance-payment-follow-up-create/);
 
   await openButton.dispatch("click", {});
-  assert.deepEqual(navigations, [{ path: "/tasks", params: { taskId: "task-follow-up-1" } }]);
+  assert.deepEqual(openedTasks, ["task-follow-up-1"]);
 });
 
 

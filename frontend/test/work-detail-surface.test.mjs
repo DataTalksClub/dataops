@@ -97,11 +97,22 @@ function createHarness(options = {}) {
   const entityStates = [];
   const errors = [];
   const undo = [];
-  let route = options.route || {
+  // Routes carry the dialogs they name, as parseWorkspaceLocation sets them.
+  const withModals = (value) => {
+    const cardParam = ["/cards", "/cards/archive"].includes(value.path) ? "cardId" : "card";
+    const params = value.params instanceof URLSearchParams ? value.params : new URLSearchParams(value.params);
+    return {
+      cardParam,
+      modalCardId: params.get(cardParam) || "",
+      modalTaskId: params.get("taskId") || "",
+      ...value,
+    };
+  };
+  let route = withModals(options.route || {
     path: "/tasks",
     params: new URLSearchParams(),
     invalid: false,
-  };
+  });
   let routeToken = options.routeToken ?? 1;
   let fresh = options.fresh ?? true;
   const cards = options.cards || [];
@@ -233,7 +244,7 @@ function createHarness(options = {}) {
       routeToken = value;
     },
     setRoute: (value) => {
-      route = value;
+      route = withModals(value);
     },
     state,
     taskModal,
@@ -343,21 +354,18 @@ describe("Work Detail surface boundary", () => {
     assert.equal(close.params.has("taskId"), false);
     assert.equal(close.params.get("date"), "2026-08-12");
     assert.equal(close.params.get("contextCardId"), "card-2");
-    assert.deepEqual(close.options.restoreFocus, {
-      kind: "task",
-      id: "task-1",
-      surface: "tasks",
-    });
   });
 
-  test("returns a Queue task to its originating action with focus restored", async () => {
+  test("opens a Home task over Home and closes back to it", async () => {
     const harness = createHarness({
       route: { path: "/", params: new URLSearchParams(), invalid: false },
     });
 
     await harness.api.openTaskPanel("queue-task");
+    assert.equal(harness.navigations.at(-1).path, "/");
+    assert.equal(harness.navigations.at(-1).params.toString(), "taskId=queue-task");
     harness.setRoute({
-      path: "/tasks",
+      path: "/",
       params: new URLSearchParams("taskId=queue-task"),
       invalid: false,
     });
@@ -365,11 +373,7 @@ describe("Work Detail surface boundary", () => {
 
     const close = harness.navigations.at(-1);
     assert.equal(close.path, "/");
-    assert.deepEqual(close.params, {});
-    assert.deepEqual(close.options.restoreFocus, {
-      kind: "queue-task",
-      id: "queue-task",
-    });
+    assert.equal(close.params.toString(), "");
   });
 
   test("keeps keyboard focus in the top Task modal and Escape closes only that route layer", async () => {
@@ -956,7 +960,7 @@ describe("Work Detail surface boundary", () => {
     );
   });
 
-  test("navigates a retried final-Task conflict to the completed Card in Archive", async () => {
+  test("a retried final-Task conflict completes the Card without leaving the page", async () => {
     const card = {
       id: "card-final-conflict",
       version: 2,
@@ -1031,11 +1035,8 @@ describe("Work Detail surface boundary", () => {
       "Retry my change",
       "button",
     ).click();
-    assert.deepEqual(harness.navigations.at(-1), {
-      path: "/cards/archive",
-      params: { cardId: card.id, taskId: task.id },
-      options: {},
-    });
+    // Done keeps the operator where they are; the Card moved to the Archive.
+    assert.equal(harness.navigations.some(({ path }) => path.startsWith("/cards")), false);
     assert.equal(harness.undo.at(-1).message, "Task marked done.");
   });
 
@@ -3087,9 +3088,16 @@ describe("Work Detail surface boundary", () => {
       },
     });
 
+    // Over a page, a Card opens as a dialog on that page's address.
     await harness.api.openCardPanel(archived.id);
-    assert.equal(harness.navigations[0].path, "/cards/archive");
-    assert.deepEqual(harness.navigations[0].params, { cardId: archived.id });
+    assert.equal(harness.navigations[0].path, "/tasks");
+    assert.equal(harness.navigations[0].params.toString(), `card=${archived.id}`);
+    // On the Cards pages it opens at its own address.
+    harness.setRoute({ path: "/cards", params: new URLSearchParams(), invalid: false });
+    await harness.api.openCardPanel(archived.id);
+    assert.equal(harness.navigations.at(-1).path, "/cards/archive");
+    assert.deepEqual(harness.navigations.at(-1).params, { cardId: archived.id });
+    harness.setRoute({ path: "/cards", params: new URLSearchParams("cardId=card-1"), invalid: false });
 
     harness.api.prepareCardPanel(card.id);
     await harness.api.hydrateCardPanel(card.id, 1);
@@ -3118,10 +3126,7 @@ describe("Work Detail surface boundary", () => {
     await nestedTask.click();
     const nested = harness.navigations.at(-1);
     assert.equal(nested.path, "/cards");
-    assert.deepEqual(nested.params, {
-      cardId: "card-1",
-      taskId: "card-task",
-    });
+    assert.equal(nested.params.toString(), "cardId=card-1&taskId=card-task");
   });
 
   test("keeps long Card detail values breakable without changing their text or URL values", async () => {
@@ -3910,7 +3915,7 @@ describe("Work Detail surface boundary", () => {
     assert.equal(missing.entityStates.at(-1).status, "not-found");
 
     missing.entityStates.at(-1).retry();
-    assert.deepEqual(missing.navigations.at(-1).options, { history: "none" });
+    assert.deepEqual(missing.navigations.at(-1).options, { history: "none", reload: true });
     await missing.entityStates.at(-1).returnToList();
     assert.equal(missing.navigations.at(-1).params.has("taskId"), false);
   });
@@ -4172,6 +4177,7 @@ describe("Work Detail surface boundary", () => {
       cards: [card],
       operator: { id: "riley", name: "Riley", role: "admin" },
       request: async (url, o) => route(url, o),
+      route: { path: "/calendar", params: new URLSearchParams("card=card-dup"), invalid: false },
     });
     const dialogs = withDialogs(harness);
     try {
@@ -4194,7 +4200,10 @@ describe("Work Detail surface boundary", () => {
       assert.equal(deleted.url, "/api/cards/card-dup");
       assert.deepEqual(jsonBody(deleted), { expectedVersion: 5 });
       assert.equal(dialog.open, false);
-      assert.deepEqual(harness.navigations.at(-1), { path: "/cards", params: {}, options: {} });
+      // The Card closes over the page it was opened on.
+      const close = harness.navigations.at(-1);
+      assert.equal(close.path, "/calendar");
+      assert.equal(close.params.toString(), "");
     } finally {
       dialogs.restore();
     }

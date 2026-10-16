@@ -232,9 +232,8 @@ describe("Podcast schedule view", () => {
     assert.equal(findAllByClass(rowOf("b-ready"), "podcast-proof").length, 2);
     assert.ok(findByText(rowOf("a-scheduled"), "None recorded"));
     const cardLink = findAllByClass(rowOf("a-scheduled"), "podcast-schedule__card")[0];
+    // A link to the Card's own page: the app opens it over the schedule.
     assert.equal(cardLink.href, "/cards?cardId=card-1");
-    await cardLink.click();
-    assert.deepEqual(calls.at(-1), ["navigate", "/cards", { cardId: "card-1" }]);
     const tabs = findAllByClass(documentList, "dk-tab");
     assert.deepEqual(tabs.map((tab) => tab.getAttribute("aria-current")), [null, null, "page"]);
   });
