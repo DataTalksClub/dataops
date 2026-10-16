@@ -2,7 +2,6 @@ import { timingSafeEqual } from 'crypto';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { handleBannerIdMigration } from './routes/bannerIdMigration';
 import { handleCardRoutes } from './routes/cards';
 import { handleSponsorNextActionTasksMigration } from './routes/sponsorNextActionTasksMigration';
 import { handleTemplateRoutes } from './routes/templates';
@@ -320,11 +319,6 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/files')) {
       const result = await handleFileRoutes(event);
-      if (result) return result;
-    }
-
-    if (reqPath === '/api/admin/banner-id-migration') {
-      const result = await handleBannerIdMigration(reqPath, method, event.body || null, event, client);
       if (result) return result;
     }
 
