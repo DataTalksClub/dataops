@@ -270,6 +270,22 @@ describe('API -- Recurring', () => {
       assert.strictEqual(body.recurringConfig.assigneeId, 'user-valeriia');
     });
 
+    it('walks the next run again from today when a paused schedule resumes', async () => {
+      const created = await createRecurringConfig(client, {
+        description: 'Resume recomputes next run',
+        cronExpression: '0 9 1 * *',
+        enabled: false,
+      });
+      await updateRecurringConfig(client, created.id, { nextRunDate: '2020-01-01' });
+
+      const res = await invoke('PUT', `/api/recurring/${created.id}`, { enabled: true });
+      assert.strictEqual(res.statusCode, 200);
+      const { recurringConfig } = JSON.parse(res.body);
+      assert.notStrictEqual(recurringConfig.nextRunDate, '2020-01-01');
+      assert.match(recurringConfig.nextRunDate, /^\d{4}-\d{2}-01$/);
+      assert.ok(recurringConfig.nextRunLabel);
+    });
+
     it('links a process doc and clears it with null', async () => {
       const created = await createRecurringConfig(client, {
         description: 'Process doc test',

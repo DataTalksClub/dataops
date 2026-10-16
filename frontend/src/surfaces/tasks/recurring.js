@@ -169,7 +169,7 @@ export function createRecurringTasks(context) {
       [
         "next",
         paused
-          ? "Paused - no tasks generated"
+          ? "Paused"
           : config.nextRunLabel
             ? `Next ${config.nextRunLabel}${config.nextRunDate ? ` at ${recurringRunTime(config.nextRunDate)}` : ""}`
             : "",

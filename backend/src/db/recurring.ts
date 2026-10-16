@@ -98,8 +98,16 @@ async function getRecurringConfig(client: DynamoDBDocumentClient, id: string): P
 async function updateRecurringConfig(client: DynamoDBDocumentClient, id: string, updates: Record<string, unknown>): Promise<RecurringConfig | null> {
   const now = new Date().toISOString();
   const fields: Record<string, unknown> = { ...updates, updatedAt: now };
-  if (updates.cronExpression !== undefined && updates.nextRunDate === undefined) {
-    fields.nextRunDate = nextMatchingDate(String(updates.cronExpression));
+  // The next run is walked again from today whenever the schedule changes or
+  // comes back from a pause; a paused schedule's stored date went stale while
+  // the daily pass skipped it.
+  if (updates.nextRunDate === undefined) {
+    if (updates.cronExpression !== undefined) {
+      fields.nextRunDate = nextMatchingDate(String(updates.cronExpression));
+    } else if (updates.enabled === true) {
+      const current = await getRecurringConfig(client, id);
+      if (current) fields.nextRunDate = nextMatchingDate(current.cronExpression);
+    }
   }
 
   const expressionParts: string[] = [];
