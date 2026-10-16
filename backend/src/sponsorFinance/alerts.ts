@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { TABLE_NOTIFICATIONS, TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { berlinDate, digest } from './core';
-import { financeEnabled, projectFinance } from './repository';
+import { financeEnabled, getFinanceState, projectFinance } from './repository';
 import { deliveredOn } from './context';
 
 type Condition = { dealId: string; rule: string; basisDate: string; version: number };
@@ -43,7 +43,10 @@ export async function evaluateSponsorFinanceAlerts(
   } while (cursor);
   const conditions: Condition[] = [];
   for (const deal of deals) {
-    if (deal.archivedAt || deal.active !== true || ['lost'].includes(String(deal.status))) continue;
+    if (deal.archivedAt || deal.active !== true || deal.status === 'lost') {
+      const state = await getFinanceState(client, String(deal.id));
+      if (!state?.issuedOn || state.voidedAt) continue;
+    }
     const delivered = deliveredOn(deliverables.filter((item) => item.dealId === deal.id));
     const projection = await projectFinance(client, String(deal.id), 'operator', {
       today, dealStatus: String(deal.status), ...(delivered ? { deliveredOn: delivered } : {}),
@@ -98,12 +101,27 @@ export async function evaluateSponsorFinanceAlerts(
   } while (cursor);
   let created = 0, resolved = 0;
   for (const condition of wanted.values()) {
-    const continuing = existing.some((item) => {
+    const continuing = existing.find((item) => {
       const metadata = item.metadata as Record<string, unknown>;
       return metadata.financeDealId === condition.dealId
         && metadata.financeRule === condition.rule && !item.resolvedAt;
     });
-    if (continuing) continue;
+    if (continuing) {
+      // Dismissal acknowledges a notification; it does not settle an invoice.
+      // The existing sweep restores unresolved finance work without duplicating it.
+      if (continuing.dismissed === true) {
+        try {
+          await client.send(new UpdateCommand({ TableName: TABLE_NOTIFICATIONS,
+            Key: { PK: continuing.PK, SK: continuing.SK }, UpdateExpression: 'SET dismissed = :false',
+            ConditionExpression: 'dismissed = :true AND attribute_not_exists(resolvedAt)',
+            ExpressionAttributeValues: { ':false': false, ':true': true } }));
+          created++;
+        } catch (error) {
+          if ((error as Error).name !== 'ConditionalCheckFailedException') throw error;
+        }
+      }
+      continue;
+    }
     const id = `sponsor-finance-${condition.fingerprint}`;
     try {
       await client.send(new PutCommand({

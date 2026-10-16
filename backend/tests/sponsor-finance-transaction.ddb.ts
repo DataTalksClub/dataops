@@ -346,7 +346,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     }
   });
 
-  it('respects alert dismissal, resolution, and later Berlin-date recurrence', async () => {
+  it('reopens unresolved dismissed finance alerts and respects resolution and later recurrence', async () => {
     const alertBooking = 'booking-alert-recurrence';
     await put(client, TABLE_SPONSOR_CRM, {
       ...key('DEAL', alertBooking), id: alertBooking, version: 1,
@@ -405,7 +405,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       evaluateSponsorFinanceAlerts(client, '2026-01-02')));
     alerts = await findAlerts();
     assert.equal(alerts.length, 1);
-    assert.equal(alerts[0].dismissed, true);
+    assert.equal(alerts[0].dismissed, false, 'the next existing sweep restores unresolved collection work');
     const concurrentResolution = await Promise.all(Array.from({ length: 4 }, () =>
       evaluateSponsorFinanceAlerts(client, '2025-12-31')));
     assert.equal(concurrentResolution.reduce((sum, result) => sum + result.resolved, 0), 1);
@@ -422,6 +422,23 @@ describe('sponsor finance production DynamoDB transactions', () => {
     alerts = await findAlerts();
     assert.equal(alerts.length, 2);
     assert.equal(new Set(alerts.map((item) => item.metadata.financeFingerprint)).size, 2);
+  });
+
+  it('keeps an issued unpaid invoice visible in alerts and the portfolio after a deal becomes inactive', async () => {
+    const seeded = await bootstrapPayable('inactive-invoice-alert');
+    await put(client, TABLE_SPONSOR_CRM, { ...key('DEAL', seeded.dealId), id: seeded.dealId,
+      version: 1, active: false, status: 'lost', archivedAt: '2099-01-01', organizationId: 'organization-inactive-invoice-alert' });
+    await evaluateSponsorFinanceAlerts(client, '2100-01-01');
+    const ownAlerts = async () => ((await client.send(new ScanCommand({ TableName: process.env.DATAOPS_NOTIFICATIONS_TABLE || 'Notifications' }))).Items || [])
+      .filter((item) => item.metadata?.financeDealId === seeded.dealId);
+    assert.ok((await ownAlerts()).some((item) => !item.dismissed && !item.resolvedAt));
+    assert.ok((await financeLedger(client, '2100-01-01')).rows.some((row) => row.dealId === seeded.dealId));
+    await put(client, TABLE_SPONSOR_CRM, { ...key('DEAL', seeded.dealId), id: seeded.dealId,
+      version: 1, active: true, status: 'agreed', organizationId: 'organization-inactive-invoice-alert' });
+    await voidFinance(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
+      expectedVersion: seeded.version, idempotencyKey: idem('inactive-invoice-cancel'), reason: 'Verified synthetic cancellation' });
+    await evaluateSponsorFinanceAlerts(client, '2100-01-01');
+    assert.ok((await ownAlerts()).every((item) => item.resolvedAt));
   });
 
   it('fails locked for orphan claims and complete tuple/source drift', async () => {
