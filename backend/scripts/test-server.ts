@@ -378,8 +378,9 @@ async function runSeeds() {
         references: [],
         taskDefinitions: [
           { refId: 'prepare-questions', description: 'Prepare interview questions', offsetDays: -2 },
-          { refId: 'record', description: 'Record the episode', offsetDays: 0 },
-          { refId: 'edit', description: 'Edit the recording', offsetDays: 7 },
+          // The episode's status follows these two (podcast/cardStatus.ts).
+          { refId: 'actual-stream', description: 'Record the episode', offsetDays: 0 },
+          { refId: 'edit-final-podcast-audio', description: 'Edit the recording', offsetDays: 7 },
         ],
       });
     }

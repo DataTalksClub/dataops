@@ -22,14 +22,6 @@ export const STATUS_LABELS = Object.freeze({
   cancelled: "Cancelled",
 });
 
-// The one step forward from each in-flight status.
-const NEXT_STATUS = Object.freeze({
-  booked: "recorded",
-  recorded: "edited",
-  edited: "scheduled",
-  scheduled: "published",
-});
-
 export const STATUS_FILTERS = Object.freeze([
   Object.freeze(["upcoming", "Upcoming"]),
   Object.freeze(["published", "Published"]),
@@ -46,10 +38,6 @@ export const LINK_KINDS = Object.freeze([
 
 export function isUpcoming(episode) {
   return UPCOMING_STATUSES.includes(episode?.status);
-}
-
-export function nextStatus(status) {
-  return NEXT_STATUS[status] || "";
 }
 
 export function statusLabel(status) {

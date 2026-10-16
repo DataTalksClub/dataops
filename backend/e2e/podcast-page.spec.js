@@ -128,7 +128,14 @@ test('podcast list opens an episode in place, deep-links it, and creates its car
   await page.goBack();
   await expect(detail.locator('.podcast-card-chip')).toBeVisible();
 
-  await detail.getByRole('button', { name: 'Mark recorded' }).click();
+  // No Mark button: ticking the Card's recording Task moves the episode.
+  await expect(detail.getByRole('button', { name: /^Mark / })).toHaveCount(0);
+  await expect(detail.locator('.podcast-status-hint')).toContainText('Moves with the Card');
+  const listed = await api('GET', `/api/tasks?cardId=${encodeURIComponent(linked.card.id)}`);
+  const tasks = Array.isArray(listed) ? listed : listed.items || listed.tasks;
+  const recording = tasks.find((task) => task.templateTaskRef === 'actual-stream');
+  await api('PUT', `/api/tasks/${recording.id}`, { expectedVersion: recording.version, status: 'done' });
+  await page.reload();
   await expect(detail.locator('.podcast-status')).toHaveText('Recorded');
   expect((await api('GET', `/api/podcast-episodes/${episodes.next.id}`)).status).toBe('recorded');
 });
@@ -215,7 +222,6 @@ test('schedule shows not-recorded without evidence, keeps plan apart from eviden
   await row.locator('.podcast-schedule__episode').click();
   const detail = page.getByRole('region', { name: 'Selected episode' });
   await expect(detail.locator('.podcast-blockers')).toContainText('Scheduled audio does not count');
-  await expect(detail.getByRole('button', { name: 'Mark scheduled' })).toBeDisabled();
 
   // Record Spotify scheduling evidence: the intended date stays untouched.
   await detail.getByRole('button', { name: 'Edit' }).click();
@@ -224,7 +230,6 @@ test('schedule shows not-recorded without evidence, keeps plan apart from eviden
   await detail.getByLabel('Spotify scheduled for').fill(future);
   await detail.getByRole('button', { name: 'Save episode' }).click();
   await expect(detail.locator('[data-track="spotify"]')).toHaveText('Scheduled in Spotify');
-  await expect(detail.getByRole('button', { name: 'Mark scheduled' })).toBeEnabled();
   expect((await api('GET', `/api/podcast-episodes/${gated.id}`)).releaseDate).toBe(isoDate(5));
 
   // Transcript review needs proof.

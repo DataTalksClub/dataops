@@ -67,7 +67,8 @@ body[data-workspace-view="podcast"] .document-list {
 .podcast-status-controls { margin-left: auto; }
 .podcast-status-select { width: auto; }
 .podcast-code { color: var(--dk-text-muted); }
-.podcast-inline-hint { margin: 0; }
+.podcast-inline-hint,
+.podcast-status-hint { margin: 0; }
 .podcast-message:not([hidden]) { margin: 0; }
 .podcast-notes { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 

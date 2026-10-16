@@ -160,8 +160,10 @@ booking records a deliverable on the deal and adds the slot's Tasks to the Card.
 For a podcast episode: `dataops podcast list --status booked` (or `--season N`),
 `dataops podcast create --guests "Name[:slug]" --title "..." --recording-date YYYY-MM-DD`,
 then `dataops podcast create-card <episode-id>` creates the episode Card from the
-podcast Template on the recording date and links it. Move an episode along with
-`dataops podcast update <episode-id> --status recorded|edited|scheduled|published`;
+podcast Template on the recording date and links it. The episode then moves with
+its Card: ticking the recording, audio edit, Spotify scheduling and Spotify
+verification Tasks makes it recorded, edited, scheduled and published. Use
+`dataops podcast update <episode-id> --status S` only to correct it or cancel it;
 `dataops podcast list --card <card-id>` finds the episode a Card belongs to.
 
 ## What is on my plate

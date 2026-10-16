@@ -7,10 +7,11 @@ import { createTables, startLocal, stopLocal } from "../scripts/local-dynamodb";
 import { getClient } from "../src/db/client";
 import { createCard, getCard } from "../src/db/cards";
 import { templateLink } from "./helpers/cardTemplate";
-import { createTemplate } from "../src/db/templates";
+import { createTemplate, instantiateTemplate } from "../src/db/templates";
 import { listTasksByCard } from "../src/db/tasks";
 import { TABLE_CARDS, TABLE_PODCAST_EPISODES } from "../src/db/tableNames";
 import { handlePodcastEpisodeRoutes } from "../src/routes/podcastEpisodes";
+import { STAGE_TASK_REFS, statusFromCard } from "../src/podcast/cardStatus";
 
 const invoke = (method: string, path: string, body?: unknown, query: Record<string, string> = {}) =>
   handler(
@@ -193,5 +194,65 @@ describe("podcast episodes", () => {
     assert.equal(failed.statusCode, 409, failed.body);
     const leftovers = await client.send(new ScanCommand({ TableName: TABLE_CARDS, FilterExpression: "title = :title", ExpressionAttributeValues: { ":title": "Synthetic Doomed Episode" } }));
     assert.equal(leftovers.Items?.length, 0);
+  });
+  it("moves with its Card: a ticked stage Task advances the status, gated stages need their evidence", async () => {
+    // Synthetic Template named after the podcast Template's stage Tasks.
+    const template = await createTemplate(client, {
+      name: "Podcast stages",
+      type: "podcast",
+      taskDefinitions: [
+        { refId: "prep", description: "Prepare questions", offsetDays: -2 },
+        ...Object.values(STAGE_TASK_REFS).map((refId, index) => ({ refId, description: `Synthetic ${refId}`, offsetDays: index })),
+      ],
+    });
+    const card = await createCard(client, { ...templateLink(template), title: "Synthetic stages", anchorDate: "2027-08-02", stage: "preparation" });
+    await instantiateTemplate(client, template.id, card.id, "2027-08-02");
+    const episode = data(await invoke("POST", "/api/podcast-episodes", { ...booked, recordingDate: "2027-08-02" }));
+    const linked = data(await invoke("PUT", `/api/podcast-episodes/${episode.id}`, { version: episode.version, cardId: card.id }));
+    assert.equal(linked.status, "booked");
+    const tasks = await listTasksByCard(client, card.id);
+    const tick = async (ref: string) => {
+      const task = (await listTasksByCard(client, card.id)).find((item) => item.templateTaskRef === ref)!;
+      const done = await invoke("PUT", `/api/tasks/${task.id}`, { expectedVersion: task.version, status: "done" });
+      assert.equal(done.statusCode, 200, done.body);
+    };
+    const status = async () => data(await invoke("GET", `/api/podcast-episodes/${episode.id}`)).status;
+    assert.equal(tasks.length, 5);
+
+    await tick("prep");
+    assert.equal(await status(), "booked", "a Task that is no stage moves nothing");
+    await tick(STAGE_TASK_REFS.recorded);
+    assert.equal(await status(), "recorded");
+    const listed = data(await invoke("GET", "/api/podcast-episodes", undefined, { status: "recorded" }));
+    assert.ok(listed.items.some((item: any) => item.id === episode.id), "the status filter reads the derived status");
+    await tick(STAGE_TASK_REFS.edited);
+    assert.equal(await status(), "edited");
+    await tick(STAGE_TASK_REFS.scheduled);
+    assert.equal(await status(), "edited", "scheduling without Spotify evidence stays edited");
+
+    const current = data(await invoke("GET", `/api/podcast-episodes/${episode.id}`));
+    const evidenced = await invoke("PUT", `/api/podcast-episodes/${episode.id}`, {
+      version: current.version,
+      publication: { audioSchedule: { scheduledAt: "2027-08-09T07:00:00Z", timezone: "UTC", observedAt: "2026-10-01T09:00:00Z" } },
+    });
+    assert.equal(evidenced.statusCode, 200, evidenced.body);
+    assert.equal(data(evidenced).status, "scheduled", "the PUT answer carries the derived status");
+    await tick(STAGE_TASK_REFS.published);
+    assert.equal(await status(), "scheduled", "published needs a verified public Spotify episode");
+
+    const stored = data(await invoke("GET", `/api/podcast-episodes/${episode.id}`));
+    const cancelled = await invoke("PUT", `/api/podcast-episodes/${episode.id}`, { version: stored.version, status: "cancelled" });
+    assert.equal(data(cancelled).status, "cancelled", "a cancelled episode stays cancelled");
+  });
+
+  it("derives the furthest stage from the stored status and the done stage Tasks", () => {
+    const done = (...refs: string[]) => new Set(refs);
+    const spotify = { spotify: { publicVerifiedAt: "2026-01-15T09:00:00Z", episodeUrl: "https://open.spotify.com/episode/synthetic" } };
+    assert.equal(statusFromCard("booked", done(), null), "booked");
+    assert.equal(statusFromCard("booked", done(STAGE_TASK_REFS.recorded), null), "recorded");
+    assert.equal(statusFromCard("edited", done(STAGE_TASK_REFS.recorded), null), "edited", "the Card never moves a status back");
+    assert.equal(statusFromCard("booked", done(STAGE_TASK_REFS.published), null), "edited");
+    assert.equal(statusFromCard("booked", done(STAGE_TASK_REFS.published), spotify), "published");
+    assert.equal(statusFromCard("cancelled", done(STAGE_TASK_REFS.recorded), null), "cancelled");
   });
 });

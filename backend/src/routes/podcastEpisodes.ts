@@ -4,7 +4,8 @@
  * An episode is the planning record for one podcast episode from booking to
  * publication. `episode.cardId` is the single canonical link to the Card that
  * executes it; the episode pushes its recording date and guests onto that
- * Card one way.
+ * Card one way, and reads its status back from the Card's done Tasks
+ * (podcast/cardStatus.ts).
  */
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import type { LambdaEvent, LambdaResponse } from "../types";
@@ -19,6 +20,8 @@ import {
   type PodcastEpisode,
 } from "../db/podcastEpisodes";
 import { getCard } from "../db/cards";
+import { listTasksByCard } from "../db/tasks";
+import { cardCanAdvance, statusFromCard } from "../podcast/cardStatus";
 import {
   derivePublicationReadiness,
   normalizePublication,
@@ -182,15 +185,27 @@ async function pushEpisodeToCard(client: DynamoDBDocumentClient, episode: Podcas
   }
 }
 
-/** The episode as every response shows it: derived readiness, never stored. */
-const presented = <T extends PodcastEpisode>(episode: T) => ({
+/** The status the episode's Card has moved it to, or the stored one. */
+async function derivedStatus(client: DynamoDBDocumentClient, episode: PodcastEpisode) {
+  if (!episode.cardId || !cardCanAdvance(episode.status)) return episode.status;
+  const done = new Set(
+    (await listTasksByCard(client, episode.cardId))
+      .filter((task) => task.status === "done" && task.templateTaskRef)
+      .map((task) => String(task.templateTaskRef)),
+  );
+  return statusFromCard(episode.status, done, episode.publication);
+}
+
+/** The episode as every response shows it: status and readiness derived, never stored. */
+const presented = async (client: DynamoDBDocumentClient, episode: PodcastEpisode) => ({
   ...episode,
+  status: await derivedStatus(client, episode),
   readiness: derivePublicationReadiness(episode.publication),
 });
 
 async function withCard(client: DynamoDBDocumentClient, episode: PodcastEpisode) {
   const card = episode.cardId ? await getCard(client, episode.cardId) : null;
-  return { ...presented(episode), card: card ? await summarizeCard(client, card) : null };
+  return { ...(await presented(client, episode)), card: card ? await summarizeCard(client, card) : null };
 }
 
 /** Validate a written `publication` and normalise it in place. Returns an error text. */
@@ -247,13 +262,14 @@ export async function handlePodcastEpisodeRoutes(
       return json(400, { error: "Invalid cardId" });
     const items = (await listPodcastEpisodes(client, { from: query.from, to: query.to })).filter(
       (episode) =>
-        (query.status === undefined || episode.status === query.status) &&
         (query.season === undefined || episode.season === Number(query.season)) &&
         (query.cardId === undefined || episode.cardId === query.cardId),
     );
     const enriched = [];
     for (const episode of items) enriched.push(await withCard(client, episode));
-    return json(200, { items: enriched });
+    return json(200, {
+      items: enriched.filter((episode) => query.status === undefined || episode.status === query.status),
+    });
   }
 
   if (method === "GET" && id) {
@@ -283,8 +299,8 @@ export async function handlePodcastEpisodeRoutes(
       candidate as Parameters<typeof createPodcastEpisode>[1],
     );
     if (created.cardId)
-      return json(201, { ...presented(created), cardSync: await pushEpisodeToCard(client, created) });
-    return json(201, presented(created));
+      return json(201, { ...(await presented(client, created)), cardSync: await pushEpisodeToCard(client, created) });
+    return json(201, await presented(client, created));
   }
 
   if (!id) return json(405, { error: "Method not allowed" });
@@ -334,8 +350,8 @@ export async function handlePodcastEpisodeRoutes(
         next.episode !== existing.episode ||
         JSON.stringify(next.guests) !== JSON.stringify(existing.guests))
     )
-      return json(200, { ...presented(next), cardSync: await pushEpisodeToCard(client, next) });
-    return json(200, presented(next));
+      return json(200, { ...(await presented(client, next)), cardSync: await pushEpisodeToCard(client, next) });
+    return json(200, await presented(client, next));
   }
 
   if (method === "DELETE") {
@@ -388,7 +404,10 @@ async function createEpisodeCard(
       },
     );
     if (!created.ok) return created.response;
-    return json(201, { episode: linked && presented(linked), card: await summarizeCard(client, created.card) });
+    return json(201, {
+      episode: linked && (await presented(client, linked)),
+      card: await summarizeCard(client, created.card),
+    });
   } catch (error) {
     if ((error as Error).name === "ConditionalCheckFailedException")
       return json(409, { error: "Episode changed; reload and retry" });

@@ -39,12 +39,14 @@ Unrecorded evidence shows as not-recorded, never as a definite no.
 --from/--to filter on the episode's release date, else its recording date.
 Writes send the episode's current version; a changed episode exits 5.
 An episode links at most one podcast Card; its recording date and guests are
-pushed onto that Card.
+pushed onto that Card, and ticking the Card's recording, audio edit, Spotify
+scheduling and Spotify verification Tasks moves the episode to recorded,
+edited, scheduled and published. --status corrects or cancels an episode.
 
 Examples
   dataops podcast list --status booked
   dataops podcast create --guests "Jane Doe:jane-doe" --title "Shipping ML" --recording-date 2026-11-04
-  dataops podcast update 6f1c... --status recorded
+  dataops podcast update 6f1c... --status cancelled
   dataops podcast create-card 6f1c...
 `;
 

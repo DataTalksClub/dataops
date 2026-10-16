@@ -10,7 +10,7 @@ import { buildPublication, samePublication, statusGateHint } from "./publication
 import { publicationFormFields, publicationSection } from "./publication-section.js";
 import {
   cardStageLabel, EPISODE_STATUSES, episodeCode, episodeTitle, guestNames, LINK_KINDS,
-  nextStatus, parseGuestNames, statusLabel,
+  parseGuestNames, statusLabel,
 } from "./model.js";
 
 const NOTES_MAX = 2000;
@@ -63,7 +63,6 @@ function statusSection(documentRef, episode, actions, messages) {
   const code = episodeCode(episode);
   if (code) row.append(element(documentRef, "span", "dk-mono podcast-code", code));
   row.append(statusChip(documentRef, episode.status));
-  const next = nextStatus(episode.status);
   const controls = element(documentRef, "div", "dk-cluster podcast-status-controls");
   async function move(status, trigger) {
     trigger.setAttribute("aria-busy", "true");
@@ -76,23 +75,6 @@ function statusSection(documentRef, episode, actions, messages) {
       trigger.removeAttribute("aria-disabled");
       if (trigger.tagName === "SELECT") trigger.value = episode.status;
       showFailure(documentRef, messages, error, "change the status", actions, episode);
-    }
-  }
-  if (next) {
-    const advance = button(documentRef, `Mark ${statusLabel(next).toLowerCase()}`, "primary");
-    advance.dataset.podcastAction = "advance";
-    const gate = statusGateHint(next, episode.publication);
-    if (gate) {
-      advance.disabled = true;
-      advance.setAttribute("aria-disabled", "true");
-      advance.title = gate;
-      controls.append(advance, element(documentRef, "span", "dk-hint podcast-inline-hint", gate));
-    } else {
-      advance.addEventListener("click", () => {
-        if (advance.getAttribute("aria-busy") === "true") return;
-        move(next, advance);
-      });
-      controls.append(advance);
     }
   }
   const choose = select(
@@ -117,6 +99,10 @@ function statusSection(documentRef, episode, actions, messages) {
   controls.append(choose);
   row.append(controls);
   section.append(row);
+  // Ticking a stage's Task on the Card moves the status; the select corrects it.
+  if (episode.cardId) {
+    section.append(element(documentRef, "p", "dk-hint podcast-status-hint", "Moves with the Card: recorded, edited, scheduled and published follow its ticked Tasks."));
+  }
   return section;
 }
 
