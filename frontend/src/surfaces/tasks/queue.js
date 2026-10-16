@@ -914,10 +914,14 @@ export function createTaskQueue(context) {
     // What the task needs outside DataOps, as glyphs named on hover: an
     // operator or agent without that access can see it is not theirs.
     // The button's name stays the task's name; what it needs and what it
-    // waits on describe it instead of riding inside the label.
+    // waits on describe it instead of riding inside the label. The glyphs
+    // share one group after the title, which wraps instead of overflowing
+    // when a narrow column cannot fit them all on the title line.
+    const marks = document.createElement("span");
+    marks.className = "ops-queue-marks";
     const resources = renderResourceMarks(task.requires, state.workSnapshot.resourcesById);
     if (resources) {
-      titleRow.append(resources);
+      marks.append(resources);
       const needs = task.requires.map((id) => resourceLabel(id, state.workSnapshot.resourcesById));
       const needsText = document.createElement("span");
       needsText.className = "dk-visually-hidden";
@@ -938,9 +942,10 @@ export function createTaskQueue(context) {
       mark.setAttribute("role", "img");
       mark.setAttribute("aria-label", browser.label);
       mark.append(renderIcon(browser.icon, { size: 16 }));
-      titleRow.append(mark);
+      marks.append(mark);
       row.dataset.browser = task.browserRequirement;
     }
+    if (marks.children.length) titleRow.append(marks);
     open.append(titleRow);
     cell.prepend(open);
     // The second line sits beside the button, not in it, and describes it.

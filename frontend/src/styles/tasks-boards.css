@@ -167,13 +167,19 @@ body[data-workspace-view="tasks"] .task-context-state p {
    columns line up without a second set of hand-tuned widths. The mark column
    is fixed because it is a square; the materials column holds one small icon
    button; Where is bounded so a long card name cannot squeeze the task
-   itself, but wide enough to read the card's title; Task takes the rest. */
+   itself, but wide enough to read the card's title; Task takes the rest.
+   Where's cap is also a share of the row: a grid grows bounded columns to
+   their maximum before 1fr gets anything, so a fixed cap alone would starve
+   Task in a narrow window.
+   --ops-queue-line is the row's first line and --ops-queue-subline its
+   optional second line: every cell sizes its text to these two bands. */
 body[data-workspace-view="tasks"] .ops-queue-head,
 body[data-workspace-view="tasks"] .ops-queue-row {
-  --ops-queue-line: 2rem;
+  --ops-queue-line: var(--dk-space-5);
+  --ops-queue-subline: var(--dk-space-4);
   display: grid;
-  grid-template-columns: 16px minmax(9rem, 15rem) minmax(0, 1fr) 28px 5.5rem 4.5rem;
-  gap: 12px;
+  grid-template-columns: 16px minmax(9rem, min(15rem, 30%)) minmax(0, 1fr) 28px 5.5rem 4.5rem;
+  gap: var(--dk-space-3);
   align-items: center;
   min-width: 0;
 }body[data-workspace-view="tasks"] .ops-queue-head {
@@ -205,13 +211,11 @@ body[data-workspace-view="tasks"] .ops-queue-row {
   cursor: pointer;
 }body[data-workspace-view="tasks"] .ops-queue-head + .ops-queue-row {
   border-top: 0;
-}/* Every cell sits on the row's first line, one band tall, so an optional
-   second line under the title (a waiting or follow-up note) only adds height
-   below: the tick, the title and every other column stay put. */
-body[data-workspace-view="tasks"] .ops-queue-row > *,
-body[data-workspace-view="tasks"] .ops-queue-title-row {
-  min-height: var(--ops-queue-line);
-}body[data-workspace-view="tasks"] .ops-queue-row:hover {
+}/* Every cell starts at the row's top and puts its first line in the same
+   --ops-queue-line band: the tick, the card's title, the task's title, the
+   due date and the owner share one line. An optional second line (the
+   card's kind, a waiting or follow-up note) only adds height below. */
+body[data-workspace-view="tasks"] .ops-queue-row:hover {
   background: var(--dk-bg-hover);
 }/* The tick: a real checkbox wearing the checklist box. The input itself is
    visually hidden but stays the focusable, keyboard-operable control; the box
@@ -220,7 +224,10 @@ body[data-workspace-view="tasks"] .ops-queue-title-row {
 body[data-workspace-view="tasks"] .ops-queue-check {
   display: grid;
   position: relative;
-  place-items: center;
+  align-self: stretch;
+  place-items: start center;
+  /* The box is centred on the first line, however tall the hit area grows. */
+  padding-top: calc((var(--ops-queue-line) - 16px) / 2);
   cursor: pointer;
 }body[data-workspace-view="tasks"] .ops-queue-check:has(input:disabled) {
   cursor: not-allowed;
@@ -302,15 +309,34 @@ body[data-workspace-view="tasks"] .ops-queue-main:focus-visible strong {
   color: var(--dk-text-heading);
   font-size: var(--dk-text-md);
   font-weight: 500;
-  line-height: 1.3;
+  line-height: var(--ops-queue-line);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 body[data-workspace-view="tasks"] .ops-queue-title-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: var(--dk-space-2);
   min-width: 0;
+}
+/* What the task needs, after the title. The group takes at most half the
+   column and wraps onto further lines beyond that, so the title truncates
+   first and the glyphs never run past the column into the next. */
+body[data-workspace-view="tasks"] .ops-queue-marks {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--dk-space-1);
+  max-width: 50%;
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .ops-queue-marks .ops-resources {
+  display: contents;
+}
+body[data-workspace-view="tasks"] .ops-queue-marks .ops-resource,
+body[data-workspace-view="tasks"] .ops-queue-marks .ops-queue-browser {
+  height: var(--ops-queue-line);
 }
 /* The second line: muted, one line, truncated (the full text is the
    tooltip). It is never a link, so it never takes the accent colour. */
@@ -319,7 +345,7 @@ body[data-workspace-view="tasks"] .ops-queue-note {
   overflow: hidden;
   color: var(--dk-text-muted);
   font-size: var(--dk-text-xs);
-  line-height: 1.4;
+  line-height: var(--ops-queue-subline);
   text-overflow: ellipsis;
   white-space: nowrap;
 }/* Supporting material (instructions, docs pasted into the title): one icon
@@ -328,6 +354,7 @@ body[data-workspace-view="tasks"] .ops-queue-note {
 body[data-workspace-view="tasks"] .ops-queue-materials-cell {
   display: grid;
   place-items: center;
+  height: var(--ops-queue-line);
   min-width: 0;
 }
 body[data-workspace-view="tasks"] .ops-queue-materials {
@@ -447,7 +474,7 @@ body[data-workspace-view="tasks"] .ops-queue-material-count {
    plainly instead of rendering an empty column. */
 body[data-workspace-view="tasks"] .ops-queue-origin {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--dk-space-2);
   min-width: 0;
   /* The card name truncates inside its column and never paints over the
@@ -474,7 +501,7 @@ body[data-workspace-view="tasks"] .ops-queue-row[data-source="card"] .ops-queue-
 body[data-workspace-view="tasks"] .ops-queue-origin-text {
   display: grid;
   min-width: 0;
-  line-height: 1.3;
+  line-height: var(--ops-queue-line);
 }
 body[data-workspace-view="tasks"] .ops-queue-origin-label {
   overflow: hidden;
@@ -487,6 +514,7 @@ body[data-workspace-view="tasks"] .ops-queue-origin-type {
   overflow: hidden;
   color: var(--dk-text-faint);
   font-size: var(--dk-text-xs);
+  line-height: var(--ops-queue-subline);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -494,7 +522,7 @@ body[data-workspace-view="tasks"] .ops-queue-origin-type {
    opens the Card summary where nothing hovers. */
 body[data-workspace-view="tasks"] .ops-queue-origin-link {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--dk-space-2);
   min-width: 0;
   border-radius: var(--dk-radius-md);
@@ -522,6 +550,7 @@ body[data-workspace-view="tasks"] .ops-queue-due {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  height: var(--ops-queue-line);
   color: var(--dk-text-muted);
   font-size: var(--dk-text-sm);
   font-variant-numeric: tabular-nums;
@@ -540,6 +569,7 @@ body[data-workspace-view="tasks"] .ops-queue-due {
 body[data-workspace-view="tasks"] .ops-queue-owner {
   display: grid;
   place-items: center;
+  height: var(--ops-queue-line);
 }body[data-workspace-view="tasks"] .ops-queue-owner[data-assignee="none"] {
   color: var(--dk-text-faint);
   font-size: var(--dk-text-xs);
@@ -635,7 +665,7 @@ body[data-workspace-view="tasks"] .ops-queue-owner {
    inset and nothing reaches outside its own cell. */
 @media (max-width: 820px), (pointer: coarse) {body[data-workspace-view="tasks"] .ops-queue-head,
 body[data-workspace-view="tasks"] .ops-queue-row {
-    grid-template-columns: var(--dk-size-touch) minmax(9rem, 15rem) minmax(0, 1fr) 28px 5.5rem 4.5rem;
+    grid-template-columns: var(--dk-size-touch) minmax(9rem, min(15rem, 30%)) minmax(0, 1fr) 28px 5.5rem 4.5rem;
     padding-left: 0;
   }body[data-workspace-view="tasks"] .ops-queue-check {
     min-width: var(--dk-size-touch);
@@ -652,6 +682,21 @@ body[data-workspace-view="tasks"] .ops-queue-row {
   }body[data-workspace-view="tasks"] .ops-queue-row > :not(.ops-queue-check),
 body[data-workspace-view="tasks"] .ops-queue-title-row {
     min-height: 0;
+  }/* The folded row places its cells itself: the desktop first-line band
+     neither sizes nor offsets them here. */
+  body[data-workspace-view="tasks"] .ops-queue-materials-cell,
+  body[data-workspace-view="tasks"] .ops-queue-due,
+  body[data-workspace-view="tasks"] .ops-queue-owner {
+    height: auto;
+  }body[data-workspace-view="tasks"] .ops-queue-row strong,
+  body[data-workspace-view="tasks"] .ops-queue-origin-text {
+    line-height: var(--dk-leading-tight);
+  }body[data-workspace-view="tasks"] .ops-queue-origin,
+  body[data-workspace-view="tasks"] .ops-queue-origin-link,
+  body[data-workspace-view="tasks"] .ops-queue-title-row {
+    align-items: center;
+  }body[data-workspace-view="tasks"] .ops-queue-marks {
+    max-width: none;
   }body[data-workspace-view="tasks"] .ops-queue-row {
     --ops-queue-card-line: var(--dk-space-6);
     grid-template-columns: var(--dk-size-touch) minmax(0, 1fr) auto 28px;

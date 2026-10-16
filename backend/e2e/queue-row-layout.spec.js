@@ -10,6 +10,8 @@ const CARD_TITLE = 'Synthetic observability for agent-built applications webinar
 const PLAIN = 'Synthetic layout task without a note';
 const WAITING = '[Synthetic stage] Synthetic layout task waiting on a reply';
 const WAITING_FOR = 'Synthetic copy and graphics, then a synthetic review';
+const NEEDY = 'Synthetic layout task that needs many outside accounts to share a recording';
+const NEEDS = ['linkedin', 'x', 'telegram', 'slack', 'youtube', 'gmail', 'mailchimp', 'discord'];
 
 let server;
 
@@ -49,6 +51,8 @@ test.beforeAll(async () => {
     followUpAt: `${isoDate(1)}T09:00:00Z`,
     comment: 'Synthetic waiting fixture',
   });
+  const needy = await api('POST', '/api/tasks', { description: NEEDY, date: isoDate(2), cardId: card.id });
+  await api('PUT', `/api/tasks/${needy.id}`, { requires: NEEDS, browserRequirement: 'headless', expectedVersion: needy.version });
 });
 
 test.afterAll(async () => stopOwnedTestServer(server));
@@ -112,6 +116,75 @@ test('desktop: a second line never moves the first, and reads muted', async ({ p
   await expect(main).toHaveAttribute('aria-describedby', noteId);
   await expect(main).toHaveAccessibleDescription(new RegExp(`Waiting for ${WAITING_FOR}`));
 });
+
+for (const width of [1280, 1440]) {
+  test(`${width}px: every row's title shares its Where first line, and the needs glyphs stay in the table`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await setupPageWithAuth(page);
+    await page.goto(`${server.baseURL}/tasks`);
+    await expect(page.locator('.ops-queue-row', { hasText: NEEDY })).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('.ops-queue-row .ops-queue-note')).not.toHaveCount(0);
+
+    const rows = await page.locator('.ops-queue-row').evaluateAll((nodes) => {
+      // The top of the first rendered line of an element's text.
+      const firstLine = (node) => {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        return range.getClientRects()[0].top;
+      };
+      return nodes.map((row) => {
+        const box = row.querySelector('.ops-queue-box').getBoundingClientRect();
+        const icon = row.querySelector('.ops-queue-origin-icon').getBoundingClientRect();
+        const titleLine = row.querySelector('.ops-queue-title-row strong').getBoundingClientRect();
+        const whereLine = row.querySelector('.ops-queue-origin-label').getBoundingClientRect();
+        const glyphs = [...row.querySelectorAll('.ops-queue-marks > *, .ops-queue-marks .ops-resource')]
+          .map((node) => node.getBoundingClientRect());
+        const task = row.querySelector('.ops-queue-task').getBoundingClientRect();
+        return {
+          hasNote: Boolean(row.querySelector('.ops-queue-note')),
+          titleText: firstLine(row.querySelector('.ops-queue-title-row strong')),
+          whereText: firstLine(row.querySelector('.ops-queue-origin-label')),
+          titleTop: titleLine.top,
+          whereTop: whereLine.top,
+          iconTop: icon.top,
+          boxCenter: (box.top + box.bottom) / 2,
+          titleCenter: (titleLine.top + titleLine.bottom) / 2,
+          glyphRight: glyphs.length ? Math.max(...glyphs.map((rect) => rect.right)) : null,
+          taskRight: task.right,
+          rowRight: row.getBoundingClientRect().right,
+        };
+      });
+    });
+
+    // Mixed rows: some carry a second line, some do not.
+    expect(rows.some((row) => row.hasNote)).toBe(true);
+    expect(rows.some((row) => !row.hasNote)).toBe(true);
+    for (const row of rows) {
+      expect(Math.abs(row.titleTop - row.whereTop)).toBeLessThanOrEqual(2);
+      expect(Math.abs(row.titleText - row.whereText)).toBeLessThanOrEqual(2);
+      expect(Math.abs(row.iconTop - row.titleTop)).toBeLessThanOrEqual(2);
+      expect(Math.abs(row.boxCenter - row.titleCenter)).toBeLessThanOrEqual(2);
+      if (row.glyphRight !== null) {
+        expect(row.glyphRight).toBeLessThanOrEqual(row.taskRight + 1);
+        expect(row.glyphRight).toBeLessThanOrEqual(row.rowRight);
+      }
+    }
+    const needy = page.locator('.ops-queue-row', { hasText: NEEDY });
+    await expect(needy.locator('.ops-resource')).toHaveCount(NEEDS.length);
+
+    const board = await rect(page.locator('.ops-queue-board'));
+    expect(board.right).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    expect(await page.locator('.ops-queue-list').evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+
+    // The headings sit on their columns' left edges.
+    const first = page.locator('.ops-queue-row').first();
+    const where = await rect(page.locator('.ops-queue-head span').nth(1));
+    const task = await rect(page.locator('.ops-queue-head span').nth(2));
+    expect(Math.abs(where.left - (await rect(first.locator('.ops-queue-origin'))).left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(task.left - (await rect(first.locator('.ops-queue-title-row strong'))).left)).toBeLessThanOrEqual(1);
+  });
+}
 
 test('a queue row offers no Skip: skipping happens in the task, with a reason', async ({ page }) => {
   for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 667 }]) {
