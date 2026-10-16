@@ -83,6 +83,7 @@ export function mapTask(item: Record<string, unknown>): JsonRecord {
     assignee_id: optionalString(item.assigneeId),
     created_by: optionalString(item.createdBy),
     card_id: optionalString(item.cardId),
+    subject: optionalJsonStringOrObject(item.subject),
     template_id: optionalString(item.templateId),
     template_task_ref: optionalString(item.templateTaskRef),
     template_offset_days: optionalNumber(item.templateOffsetDays),

@@ -26,6 +26,7 @@ Application fields:
 - `requires_file`
 - `assignee_id`
 - `card_id`
+- `subject` (a Task outside any Card: `{type: sponsor-deal | sponsor-company, id}`; never with `card_id`)
 - `template_id`
 - `template_task_ref`
 - `recurring_config_id`

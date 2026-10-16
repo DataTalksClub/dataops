@@ -3,7 +3,7 @@ import { renderIcon } from "../../core/icons.js";
 import { opensInNewTab } from "../../core/links.js";
 import { taskMaterials, taskTitleParts } from "../../core/task-display.js";
 
-// The top of the task dialog answers, in order: which card is this for,
+// The top of the task dialog answers, in order: which card (or sponsor) is this for,
 // when is it due and whose is it, and how do I do it. Everything else
 // (attachments, history, process notes) folds below.
 
@@ -55,6 +55,32 @@ export function renderTaskContext(task, view, deps) {
     cardRow.append(icon, text, open);
     cardRow.addEventListener("click", () => deps.navigateTaskToWorkflow(task));
     context.append(cardRow);
+  }
+
+  // A Task outside any Card names the sponsor deal or company it is about,
+  // in the same row a Card would take.
+  if (task.subject?.href) {
+    const type = task.subject.type === "sponsor-company" ? "Sponsor" : "Sponsor deal";
+    const subjectRow = document.createElement("button");
+    subjectRow.type = "button";
+    subjectRow.className = "task-context-card";
+    subjectRow.title = `Open the ${type.toLowerCase()}`;
+    const icon = document.createElement("span");
+    icon.className = "task-context-card-icon";
+    icon.append(renderIcon("megaphone", { size: 16 }));
+    const text = document.createElement("span");
+    text.className = "task-context-card-text";
+    const name = document.createElement("strong");
+    name.textContent = task.subject.label || type;
+    const meta = document.createElement("span");
+    meta.textContent = type;
+    text.append(name, meta);
+    const open = document.createElement("span");
+    open.className = "task-context-card-open";
+    open.textContent = task.subject.type === "sponsor-company" ? "Open company" : "Open deal";
+    subjectRow.append(icon, text, open);
+    subjectRow.addEventListener("click", () => deps.openSubject(task.subject));
+    context.append(subjectRow);
   }
 
   const chips = document.createElement("div");

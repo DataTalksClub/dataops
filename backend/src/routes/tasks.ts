@@ -4,6 +4,7 @@ import { resolveInteractiveActor, workAdminForbidden } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
 import { projectTask, projectTasks } from '../identity/projections';
 import { attachPrerequisites, normalizeDependsOn } from '../db/taskDependencies';
+import { attachSubjects, parseTaskSubject } from '../db/taskSubjects';
 import {
   matchesOwnerFilter,
   ownerFilterUserId,
@@ -71,6 +72,7 @@ import {
  */
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
+const SUBJECT_WITH_CARD_ERROR = 'A Task belongs to a Card or has a subject, not both';
 
 function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
   return {
@@ -91,7 +93,7 @@ function parseBody(event: LambdaEvent): Record<string, unknown> | null {
 }
 /** Project a Task with its resolved prerequisites and blocked state. */
 async function projectWithPrerequisites(client: DynamoDBDocumentClient, task: Task) {
-  const [withPrerequisites] = await attachPrerequisites(client, [task]);
+  const [withPrerequisites] = await attachSubjects(client, await attachPrerequisites(client, [task]));
   return projectTask(new TeamDirectory(client), withPrerequisites);
 }
 
@@ -136,6 +138,7 @@ export async function handleTaskRoutes(
     if (body.date) taskData.date = body.date;
     if (body.comment !== undefined) taskData.comment = body.comment;
     if (body.cardId !== undefined) taskData.cardId = body.cardId;
+    if (body.subject !== undefined) taskData.subject = body.subject;
     if (body.waitingFor !== undefined) taskData.waitingFor = body.waitingFor;
     if (body.followUpAt !== undefined) taskData.followUpAt = body.followUpAt;
     if (body.followUpChannel !== undefined) taskData.followUpChannel = body.followUpChannel;
@@ -198,6 +201,12 @@ export async function handleTaskRoutes(
     }
     if (taskData.cardId !== undefined && !isNonEmptyString(taskData.cardId)) {
       return jsonResponse(400, { error: 'cardId must be a non-empty string' });
+    }
+    if (taskData.subject !== undefined) {
+      if (taskData.cardId !== undefined) return jsonResponse(400, { error: SUBJECT_WITH_CARD_ERROR });
+      const parsed = await parseTaskSubject(client, taskData.subject);
+      if ('error' in parsed) return jsonResponse(parsed.statusCode, { error: parsed.error });
+      taskData.subject = parsed.subject;
     }
     const createTitleLinks = applyTitleLinksToTaskData(taskData);
     if ('error' in createTitleLinks) {
@@ -299,7 +308,7 @@ export async function handleTaskRoutes(
         && (!ownerFilter || matchesOwnerFilter(task.assigneeId, ownerFilter, activeMemberIds))
         && matchesRequiresFilter(task.requires, requiresFilter)
       ));
-      const responseBody: Record<string, unknown> = { tasks: await projectTasks(directory, await attachPrerequisites(client, visible)) };
+      const responseBody: Record<string, unknown> = { tasks: await projectTasks(directory, await attachSubjects(client, await attachPrerequisites(client, visible))) };
       const ownerReference = ownerFilterUserId(ownerFilter);
       // A concrete reference always answers with its honest availability,
       // including for a disabled or missing teammate, so a deep link never
@@ -674,6 +683,11 @@ export async function handleTaskRoutes(
     if (updates.cardId !== undefined && updates.cardId !== null && !isNonEmptyString(updates.cardId)) {
       return jsonResponse(400, { error: 'cardId must be a non-empty string or null' });
     }
+    if (updates.subject !== undefined && updates.subject !== null) {
+      const parsed = await parseTaskSubject(client, updates.subject);
+      if ('error' in parsed) return jsonResponse(parsed.statusCode, { error: parsed.error });
+      updates.subject = parsed.subject;
+    }
     const titleLinks = applyTitleLinksToTaskData(updates);
     if ('error' in titleLinks) {
       return jsonResponse(400, { error: titleLinks.error });
@@ -712,6 +726,9 @@ export async function handleTaskRoutes(
     }
     // A skipped Task is edited like a done one (title, assignee, date, ...);
     // only its lifecycle waits for the unskip action.
+    const nextCard = updates.cardId !== undefined ? updates.cardId : existing.cardId;
+    const nextSubject = updates.subject !== undefined ? updates.subject : existing.subject;
+    if (nextCard && nextSubject) return jsonResponse(400, { error: SUBJECT_WITH_CARD_ERROR });
     if (existing.status === 'skipped' && SKIPPED_TASK_LOCKED_FIELDS.some((field) => updates[field] !== undefined)) {
       return jsonResponse(400, { error: SKIPPED_TASK_LIFECYCLE_ERROR });
     }

@@ -71,6 +71,7 @@ export function createTaskPanel(context) {
     isOverdue: (task) => !["done", "skipped"].includes(task.status) && blockingPrerequisites(task).length === 0
       && Boolean(task.date) && String(task.date).slice(0, 10) < todayIsoDate(),
     navigateTaskToWorkflow: (task) => navigateTaskToWorkflow(task),
+    openSubject: (subject) => navigateCanonicalWorkspace(subject.href),
     fetchCard: (cardId) =>
       request(workApiUrl(`/api/cards/${encodeURIComponent(cardId)}`))
         .then((payload) => {

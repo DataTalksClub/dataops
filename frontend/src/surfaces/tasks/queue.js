@@ -683,6 +683,21 @@ export function createTaskQueue(context) {
   // hand-made ad hoc work. The column heading already says where, so a card
   // cell carries the card's name, not "Card · name".
   function taskOrigin(task, cardsById) {
+    // A Task outside any Card can be about a sponsor deal or company; the
+    // cell names the company and opens the record.
+    if (task.subject?.href) {
+      const type = task.subject.type === "sponsor-company" ? "Sponsor" : "Sponsor deal";
+      const label = task.subject.label || type;
+      return {
+        label,
+        kind: "sponsor",
+        icon: "megaphone",
+        type,
+        title: `${label} · ${type}`,
+        href: task.subject.href,
+        open: () => navigateCanonicalWorkspace(task.subject.href),
+      };
+    }
     if (task.cardId) {
       const card = cardsById.get(String(task.cardId));
       const kind = card ? cardKind(card, state.workSnapshot.templates) : null;
@@ -935,7 +950,7 @@ export function createTaskQueue(context) {
 
     const originCell = cardHovercards.renderOriginCell(origin, () => ({ today }));
 
-    // Where comes first: which card the work belongs to, then what to do.
+    // Where comes first: which card or sponsor the work belongs to, then what to do.
     // The DOM follows the visual order so Tab does too.
     row.append(toggle, originCell, cell, materialsCell, taskDueCell(task, today), owner);
     return row;

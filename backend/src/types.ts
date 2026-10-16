@@ -211,6 +211,13 @@ export interface TaskMaterial {
   label?: string;
 }
 
+export type TaskSubjectType = 'sponsor-deal' | 'sponsor-company';
+
+export interface TaskSubject {
+  type: TaskSubjectType;
+  id: string;
+}
+
 export interface Task {
   id: string;
   /** Monotonic optimistic-concurrency token. */
@@ -252,6 +259,8 @@ export interface Task {
   createdBy?: string;
   tags?: string[];
   cardId?: string;
+  /** What a Task outside any Card is about (a sponsor deal or company); never set with `cardId`. */
+  subject?: TaskSubject;
   templateId?: string;
   templateTaskRef?: string;
   templateOffsetDays?: number;

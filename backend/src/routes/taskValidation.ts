@@ -21,6 +21,7 @@ export const ALLOWED_UPDATE_FIELDS = [
   'comment',
   'status',
   'cardId',
+  'subject',
   'source',
   'waitingFor',
   'followUpAt',

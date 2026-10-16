@@ -1877,6 +1877,33 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(harness.errors, []);
   });
 
+  test("names the sponsor deal a cardless task is about and opens it", async () => {
+    const task = {
+      id: "task-sponsor",
+      version: 1,
+      taskHistory: [],
+      description: "Chase the signed order form",
+      status: "todo",
+      date: "2026-08-20",
+      subject: { type: "sponsor-deal", id: "deal-1", label: "Synthetic Sponsor Co", href: "/sponsors/deals/deal-1" },
+    };
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const row = harness.taskPanelBody.querySelector(".task-context-card");
+    assert.match(row.textContent, /Synthetic Sponsor Co/);
+    assert.match(row.textContent, /Open deal/);
+    await row.click();
+    assert.equal(harness.navigations.at(-1).path, "/sponsors/deals/deal-1");
+  });
+
   test("opens a task with its card context first and folds attachments and history", async () => {
     const card = { id: "card-ctx", version: 1, title: "LLM evals in practice", tags: ["webinar"] };
     const task = {

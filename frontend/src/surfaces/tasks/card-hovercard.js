@@ -167,6 +167,20 @@ export function createCardHovercards(context) {
     const text = el("span", "ops-queue-origin-text");
     text.append(el("span", "ops-queue-origin-label", origin.label));
     if (origin.type) text.append(el("span", "ops-queue-origin-type", origin.type));
+    if (origin.href) {
+      const link = el("a", "ops-queue-origin-link");
+      link.href = origin.href;
+      link.setAttribute("aria-label", `Open ${origin.title}`);
+      link.append(icon, text);
+      link.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button) return;
+        event.preventDefault();
+        origin.open();
+      });
+      cell.append(link);
+      cell.title = origin.title;
+      return cell;
+    }
     if (!origin.card) {
       cell.append(icon, text);
       cell.title = origin.title;

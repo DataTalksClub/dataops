@@ -1088,6 +1088,31 @@ describe("Tasks surface boundary", () => {
     assert.deepEqual(queueTags(documentList), ["Emails", ""]);
   });
 
+  test("names the sponsor a cardless Task is about in Where and opens the deal from it", async () => {
+    const task = canonicalTask({
+      id: "sponsor-task",
+      description: "Chase the signed order form",
+      date: "2026-08-12",
+      subject: { type: "sponsor-deal", id: "deal-1", label: "Synthetic Sponsor Co", href: "/sponsors/deals/deal-1" },
+    });
+    const { api, documentList, navigations, openedTasks } = createHarness({
+      taskRouteContext: { date: "", tasks: [task], cardId: "", filterCard: null, contextCardId: "", contextCard: null, failures: [] },
+    });
+
+    api.renderTasksSurface([], "queue");
+    assert.deepEqual(queueOrigins(documentList), [
+      { label: "Synthetic Sponsor Co", kind: "sponsor", icon: "megaphone" },
+    ]);
+    const link = findAllByClass(documentList, "ops-queue-origin-link")[0];
+    assert.equal(link.href, "/sponsors/deals/deal-1");
+    assert.equal(link.getAttribute("aria-label"), "Open Synthetic Sponsor Co · Sponsor deal");
+    await link.dispatch("click", { metaKey: true });
+    assert.equal(navigations.some((entry) => entry.path === "/sponsors/deals/deal-1"), false);
+    await link.click();
+    assert.equal(navigations.at(-1).path, "/sponsors/deals/deal-1");
+    assert.deepEqual(openedTasks, []);
+  });
+
   test("opens the Card from Where and summarises it with its podcast episode", async () => {
     const card = {
       id: "card-pod",
