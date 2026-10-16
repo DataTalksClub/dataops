@@ -183,6 +183,32 @@ function linkClearWrite(tableName: string, row: Dict, cardId: string, taskIds: S
   };
 }
 
+/** Records that keep a Card from being deleted, other than its owner. */
+async function cardBlockingReferences(
+  client: DynamoDBDocumentClient,
+  card: Card,
+  tasks: Task[],
+  owner?: CardOwnerWrite,
+): Promise<CardBlockingReferences> {
+  const taskIds = new Set(tasks.map(({ id }) => id));
+  const pointsHere = (row: Dict) => row.cardId === card.id
+    || (typeof row.taskId === 'string' && taskIds.has(row.taskId));
+  const [files, calendar, sponsorCrm, issues] = await Promise.all([
+    scanAll(client, TABLE_FILES, 'FILE#'),
+    scanAll(client, TABLE_CALENDAR, 'ITEM#'),
+    scanAll(client, TABLE_SPONSOR_CRM, 'DELIVERABLE#'),
+    listNewsletterIssuesByCardId(client, card.id),
+  ]);
+  return {
+    files: files.filter(pointsHere).map((row) => String(row.id)),
+    calendarItems: calendar
+      .filter((row) => row.SK === 'META' && row.cardId === card.id)
+      .map((row) => String(row.id)),
+    sponsorDeliverables: sponsorCrm.filter((row) => row.cardId === card.id).map((row) => String(row.id)),
+    newsletterIssues: issues.map((issue) => issue.id).filter((id) => id !== owner?.newsletterIssueId),
+  };
+}
+
 async function loadDeletionPlan(
   client: DynamoDBDocumentClient,
   card: Card,
@@ -194,24 +220,12 @@ async function loadDeletionPlan(
   const pointsHere = (row: Dict) => row.cardId === card.id
     || (typeof row.taskId === 'string' && taskIds.has(row.taskId));
 
-  const [files, calendar, sponsorCrm, artifacts, intake, notifications, issues] = await Promise.all([
-    scanAll(client, TABLE_FILES, 'FILE#'),
-    scanAll(client, TABLE_CALENDAR, 'ITEM#'),
-    scanAll(client, TABLE_SPONSOR_CRM, 'DELIVERABLE#'),
+  const [blocking, artifacts, intake, notifications] = await Promise.all([
+    cardBlockingReferences(client, card, tasks, owner),
     scanAll(client, TABLE_ARTIFACTS, 'ARTIFACT#'),
     scanAll(client, TABLE_INTAKE, 'INTAKE#'),
     scanAll(client, TABLE_NOTIFICATIONS, 'NOTIFICATION#'),
-    listNewsletterIssuesByCardId(client, card.id),
   ]);
-
-  const blocking: CardBlockingReferences = {
-    files: files.filter(pointsHere).map((row) => String(row.id)),
-    calendarItems: calendar
-      .filter((row) => row.SK === 'META' && row.cardId === card.id)
-      .map((row) => String(row.id)),
-    sponsorDeliverables: sponsorCrm.filter((row) => row.cardId === card.id).map((row) => String(row.id)),
-    newsletterIssues: issues.map((issue) => issue.id).filter((id) => id !== owner?.newsletterIssueId),
-  };
   if (Object.values(blocking).some((ids) => ids.length > 0)) {
     throw new CardDeletionBlockedError(card.id, blocking);
   }
@@ -444,6 +458,7 @@ export {
   CardDeletionBlockedError,
   CardDeletionConflictError,
   CardDeletionTooLargeError,
+  cardBlockingReferences,
   deleteCardCascade,
 };
 export type {
