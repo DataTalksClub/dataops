@@ -619,3 +619,20 @@ describe("team: a person leaving", () => {
     assert.equal(JSON.parse(io.errors[0]).error.code, "disable_first");
   });
 });
+
+describe("newsletter card lead time", () => {
+  test("shows the setting and writes a new value with the version it read", async () => {
+    const calls = fakePortal({
+      "GET /api/workspace-settings": { defaultAssigneeId: null, newsletterCardLeadDays: 21, version: 4 },
+      "PUT /api/workspace-settings": ({ body }) => ({ status: 200, body: { newsletterCardLeadDays: body.newsletterCardLeadDays, version: 5 } }),
+    });
+    const shown = captureIo();
+    assert.equal(await run(["newsletter", "card-lead-days"], shown), 0);
+    assert.match(shown.text(), /21 days before/);
+    const set = captureIo();
+    assert.equal(await run(["newsletter", "card-lead-days", "14"], set), 0);
+    assert.deepEqual(calls.at(-1).body, { newsletterCardLeadDays: 14, expectedVersion: 4 });
+    assert.match(set.text(), /now created 14 days before/);
+    assert.equal(await run(["newsletter", "card-lead-days", "soon"], captureIo()), 2);
+  });
+});

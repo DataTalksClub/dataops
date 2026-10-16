@@ -60,7 +60,7 @@ describe('workspace default assignee', () => {
   it('starts unset', async () => {
     const response = await invoke('GET', PATH, sessions[OPERATOR]);
     assert.strictEqual(response.statusCode, 200);
-    assert.deepStrictEqual(parsed(response), { defaultAssigneeId: null, version: 0 });
+    assert.deepStrictEqual(parsed(response), { defaultAssigneeId: null, newsletterCardLeadDays: 21, version: 0 });
     assert.strictEqual(parsed(await invoke('GET', '/api/team-members', sessions[OPERATOR])).defaultAssigneeId, null);
     assert.strictEqual(await resolveDefaultAssigneeId(client), null);
   });
@@ -105,10 +105,33 @@ describe('workspace default assignee', () => {
     await updateUser(client, TEAMMATE, { disabled: false });
   });
 
+  it('keeps the newsletter Card lead time, which an admin sets on /api/workspace-settings', async () => {
+    const SETTINGS = '/api/workspace-settings';
+    const read = parsed(await invoke('GET', SETTINGS, sessions[OPERATOR]));
+    assert.strictEqual(read.newsletterCardLeadDays, 21);
+    assert.strictEqual(read.defaultAssigneeId, TEAMMATE);
+    const forbidden = await invoke('PUT', SETTINGS, sessions[OPERATOR], { newsletterCardLeadDays: 14, expectedVersion: read.version });
+    assert.strictEqual(forbidden.statusCode, 403);
+    for (const body of [
+      { newsletterCardLeadDays: -1 }, { newsletterCardLeadDays: 2.5 }, { newsletterCardLeadDays: 366 },
+      { newsletterCardLeadDays: '14' }, { defaultAssigneeId: OPERATOR }, {},
+    ]) {
+      const response = await invoke('PUT', SETTINGS, sessions[ADMIN], { ...body, expectedVersion: read.version });
+      assert.strictEqual(response.statusCode, 400, JSON.stringify(body));
+    }
+    const saved = await invoke('PUT', SETTINGS, sessions[ADMIN], { newsletterCardLeadDays: 14, expectedVersion: read.version });
+    assert.strictEqual(saved.statusCode, 200, saved.body);
+    assert.strictEqual(parsed(saved).newsletterCardLeadDays, 14);
+    assert.strictEqual(parsed(saved).defaultAssigneeId, TEAMMATE, 'changing one setting keeps the others');
+    const stale = await invoke('PUT', SETTINGS, sessions[ADMIN], { newsletterCardLeadDays: 7, expectedVersion: read.version });
+    assert.strictEqual(stale.statusCode, 409);
+  });
+
   it('can be cleared', async () => {
-    const response = await invoke('PUT', PATH, sessions[ADMIN], { defaultAssigneeId: null, expectedVersion: 1 });
+    const response = await invoke('PUT', PATH, sessions[ADMIN], { defaultAssigneeId: null, expectedVersion: 2 });
     assert.strictEqual(response.statusCode, 200, response.body);
     assert.strictEqual(parsed(response).defaultAssigneeId, null);
+    assert.strictEqual(parsed(response).newsletterCardLeadDays, 14, 'changing the default assignee keeps the lead time');
     assert.strictEqual(await resolveDefaultAssigneeId(client), null);
   });
 });

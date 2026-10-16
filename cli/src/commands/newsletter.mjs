@@ -29,6 +29,8 @@ Usage
       [--note N] [--url URL] [--confirm]
   dataops newsletter delete <issue-id> [--confirm]   Deletes the issue and its Card
   dataops newsletter dismiss-alert <alert-id>
+  dataops newsletter card-lead-days [<days>]    Show, or set (admin), how many days before
+                                  an issue's date the daily run creates its Card (default 21)
 
 Statuses: planned, drafting, review, scheduled, sent, cancelled. Cancelling
 deletes the Card; reinstating a cancelled issue creates a new one. --confirm
@@ -191,6 +193,24 @@ export async function dismissAlert(args, io) {
   return result;
 }
 
+export async function cardLeadDays(args, io) {
+  const api = apiFor(args);
+  const current = await api.get("/api/workspace-settings");
+  const value = args._?.[0];
+  if (value === undefined) {
+    if (!args.json) io.print(`Newsletter Cards are created ${current.newsletterCardLeadDays} days before the issue date.`);
+    return current;
+  }
+  const days = Number(value);
+  if (!Number.isInteger(days) || days < 0) throw new UsageError("<days> must be a whole number, 0 or more.");
+  const result = await api.put("/api/workspace-settings", {
+    newsletterCardLeadDays: days,
+    expectedVersion: current.version,
+  });
+  if (!args.json) io.print(`Newsletter Cards are now created ${result.newsletterCardLeadDays} days before the issue date.`);
+  return result;
+}
+
 export const commands = {
   list,
   show,
@@ -198,4 +218,5 @@ export const commands = {
   update,
   delete: remove,
   "dismiss-alert": dismissAlert,
+  "card-lead-days": cardLeadDays,
 };

@@ -1,9 +1,14 @@
 /**
  * Workspace settings: one record in the Users table, next to the accounts it
- * refers to. Today it holds the default assignee: the team member new work
- * goes to when nothing more specific names a person (a Template Task with
- * its own assignee, a recurring schedule with one, or a name in an imported
- * title). People change, so no person is ever hardcoded; an admin sets it.
+ * refers to. An admin sets them; nothing here is hardcoded in the code that
+ * reads them.
+ *
+ * - `defaultAssigneeId`: the team member new work goes to when nothing more
+ *   specific names a person (a Template Task with its own assignee, a
+ *   recurring schedule with one, or a name in an imported title).
+ * - `newsletterCardLeadDays`: how many days before a newsletter issue goes
+ *   out the daily run creates its Card (earlier when the Template has a Task
+ *   due further ahead, so no Task is born overdue).
  */
 
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
@@ -14,9 +19,15 @@ import { getFormerUser, getUser } from './users';
 
 const SETTINGS_KEY = { PK: 'SETTINGS#workspace', SK: 'SETTINGS#workspace' } as const;
 
+/** `newsletterCardLeadDays` until an admin sets it. */
+export const DEFAULT_NEWSLETTER_CARD_LEAD_DAYS = 21;
+export const MAX_NEWSLETTER_CARD_LEAD_DAYS = 365;
+
 export interface WorkspaceSettings {
   /** Team member who receives new work no one else is named for; null when unset. */
   defaultAssigneeId: string | null;
+  /** Days before an issue's date that the daily run creates its Card. */
+  newsletterCardLeadDays: number;
   /** 0 until the record is first written. */
   version: number;
   updatedAt?: string;
@@ -37,21 +48,31 @@ export async function getWorkspaceSettings(client: DynamoDBDocumentClient): Prom
     ConsistentRead: true,
   }));
   const item = result.Item as Record<string, unknown> | undefined;
-  if (!item) return { defaultAssigneeId: null, version: 0 };
+  if (!item) return { defaultAssigneeId: null, newsletterCardLeadDays: DEFAULT_NEWSLETTER_CARD_LEAD_DAYS, version: 0 };
   return {
     defaultAssigneeId: typeof item.defaultAssigneeId === 'string' && item.defaultAssigneeId ? item.defaultAssigneeId : null,
+    newsletterCardLeadDays: Number.isInteger(item.newsletterCardLeadDays)
+      ? Number(item.newsletterCardLeadDays)
+      : DEFAULT_NEWSLETTER_CARD_LEAD_DAYS,
     version: Number(item.version) || 0,
     ...(typeof item.updatedAt === 'string' ? { updatedAt: item.updatedAt } : {}),
     ...(typeof item.updatedBy === 'string' ? { updatedBy: item.updatedBy } : {}),
   };
 }
 
-export async function setDefaultAssignee(
+export type WorkspaceSettingsChanges = Partial<Pick<WorkspaceSettings, 'defaultAssigneeId' | 'newsletterCardLeadDays'>>;
+
+/** Write `changes` over the current settings, if they are still at `expectedVersion`. */
+export async function updateWorkspaceSettings(
   client: DynamoDBDocumentClient,
-  input: { defaultAssigneeId: string | null; expectedVersion: number; actorId?: string },
+  input: { changes: WorkspaceSettingsChanges; expectedVersion: number; actorId?: string },
 ): Promise<WorkspaceSettings> {
+  const current = await getWorkspaceSettings(client);
+  if (current.version !== input.expectedVersion) throw new WorkspaceSettingsConflictError(input.expectedVersion);
   const next: WorkspaceSettings = {
-    defaultAssigneeId: input.defaultAssigneeId,
+    defaultAssigneeId: current.defaultAssigneeId,
+    newsletterCardLeadDays: current.newsletterCardLeadDays,
+    ...input.changes,
     version: input.expectedVersion + 1,
     updatedAt: new Date().toISOString(),
     ...(input.actorId ? { updatedBy: input.actorId } : {}),
@@ -75,6 +96,17 @@ export async function setDefaultAssignee(
     throw error;
   }
   return next;
+}
+
+export async function setDefaultAssignee(
+  client: DynamoDBDocumentClient,
+  input: { defaultAssigneeId: string | null; expectedVersion: number; actorId?: string },
+): Promise<WorkspaceSettings> {
+  return updateWorkspaceSettings(client, {
+    changes: { defaultAssigneeId: input.defaultAssigneeId },
+    expectedVersion: input.expectedVersion,
+    actorId: input.actorId,
+  });
 }
 
 /**

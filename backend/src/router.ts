@@ -25,6 +25,7 @@ import { handleCalendarRoutes } from './routes/calendar';
 import { handleOperatingModelRoutes } from './routes/operatingModel';
 import { handleAuthRoutes, extractToken } from './routes/auth';
 import { handleTeamMemberRoutes } from './routes/teamMembers';
+import { handleWorkspaceSettingsRoutes } from './routes/workspaceSettings';
 import { handleResourceRoutes } from './routes/resources';
 import { handleTaskRoutes } from './routes/tasks';
 import { resolveInteractiveActor } from './identity/actor';
@@ -276,6 +277,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // account-management surface and is not used by routine work views.
     if (reqPath.startsWith('/api/team-members')) {
       const result = await handleTeamMemberRoutes(reqPath, method, event);
+      if (result) return result;
+    }
+    if (reqPath.startsWith('/api/workspace-settings')) {
+      const result = await handleWorkspaceSettingsRoutes(reqPath, method, event);
       if (result) return result;
     }
 
