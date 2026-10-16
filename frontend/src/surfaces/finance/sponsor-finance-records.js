@@ -260,7 +260,23 @@ export function createFinanceRecordForms({ surface, financeMutation, reopenBooki
     };
     voidDialog.showModal();
   }
-  surface.append(invoiceDialog, paymentDialog, waitingDialog, evidenceDialog);
+  const adjustmentDialog = formDialog("financeAdjustmentDialog", html`<form>
+    <h3>Approve noncash settlement</h3>
+    <p>This reduces the outstanding receivable. It records no income. Use only an explicit owner approval supported by evidence.</p>
+    <label>Adjustment amount<input name="amount" required inputmode="decimal"></label>
+    <label>Reason<textarea name="reason" required maxlength="1000"></textarea></label>
+    <label>Approved by<input name="approvedBy" required maxlength="160"></label>
+    <label>Approval date<input name="approvedOn" type="date" required></label>
+    <label>Approval evidence kind<select name="kind">
+      <option value="document">Document</option><option value="email">Mail thread</option>
+      <option value="url">Link</option><option value="note">Source note</option>
+    </select></label>
+    <label>Approval evidence reference<input name="ref" required maxlength="300"></label>
+    <label>Replaces reviewed reported entry<select name="replacesPaymentId"></select></label>
+    <p role="alert"></p><button class="primary-button">Approve noncash settlement</button>
+    <button type="button" data-close>Cancel</button></form>`);
+  adjustmentDialog.querySelector("[data-close]").onclick = () => adjustmentDialog.close();
+  surface.append(invoiceDialog, paymentDialog, waitingDialog, evidenceDialog, adjustmentDialog);
   const showFormError = (form, error) => {
     form.querySelector('[role="alert"]').textContent = error.message;
   };
@@ -366,6 +382,29 @@ export function createFinanceRecordForms({ surface, financeMutation, reopenBooki
     };
     paymentDialog.showModal();
   }
+  function openSettlementAdjustment(booking, projection) {
+    const form = adjustmentDialog.querySelector("form"); form.reset();
+    form.querySelector('[role="alert"]').textContent = "";
+    form.elements.amount.value = projection.outstanding || "";
+    form.elements.approvedOn.value = todayIso();
+    const select = form.elements.replacesPaymentId; select.replaceChildren();
+    const empty = document.createElement("option"); empty.value = ""; empty.textContent = "No reported entry replaced"; select.append(empty);
+    for (const payment of projection.payments.filter((item) => item.source === "recorded")) {
+      const option = document.createElement("option"); option.value = payment.id;
+      option.textContent = `${payment.amount} ${payment.currency}: ${payment.reference || payment.effectiveDate}`; select.append(option);
+    }
+    form.onsubmit = (event) => {
+      event.preventDefault(); const values = Object.fromEntries(new FormData(form));
+      financeMutation(booking, "/settlement-adjustment", "POST", {
+        expectedVersion: projection.finance.version, amount: values.amount.trim(), currency: projection.finance.currency,
+        reason: values.reason.trim(), approvedBy: values.approvedBy.trim(), approvedOn: values.approvedOn,
+        evidence: [{ kind: values.kind, ref: values.ref.trim() }],
+        ...(values.replacesPaymentId ? { replacesPaymentId: values.replacesPaymentId } : {}),
+      }).then(async () => { adjustmentDialog.close(); await reopenBookingDetail(booking); })
+        .catch((error) => showFormError(form, error));
+    };
+    adjustmentDialog.showModal();
+  }
   function openWaitingOn(booking, projection) {
     const form = waitingDialog.querySelector("form");
     form.reset();
@@ -430,5 +469,5 @@ export function createFinanceRecordForms({ surface, financeMutation, reopenBooki
     };
     evidenceDialog.showModal();
   }
-  return { openIssueInvoice, openRecordPayment, openWaitingOn, openAddEvidence, openVoidFinance };
+  return { openIssueInvoice, openRecordPayment, openSettlementAdjustment, openWaitingOn, openAddEvidence, openVoidFinance };
 }

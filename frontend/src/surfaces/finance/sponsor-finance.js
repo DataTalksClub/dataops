@@ -221,7 +221,7 @@ export function createSponsorFinance(context) {
       throw error;
     }
   };
-  const { openIssueInvoice, openRecordPayment, openWaitingOn, openAddEvidence, openVoidFinance } =
+  const { openIssueInvoice, openRecordPayment, openSettlementAdjustment, openWaitingOn, openAddEvidence, openVoidFinance } =
     createFinanceRecordForms({
       surface,
       financeMutation,
@@ -340,6 +340,9 @@ export function createSponsorFinance(context) {
     const actions = live
       ? html`<div class="finance-actions">
           ${issueAction} ${recordPaymentAction} ${requestInvoiceAction}
+          ${finance.settlementAdjustment ? html`<button data-finance-reverse-settlement>Reverse noncash settlement</button>`
+            : coherent && finance.issuedOn && Number(projection.paid) > 0 && Number(projection.outstanding) > 0
+              ? html`<button data-finance-approve-settlement>Approve noncash settlement</button>` : ""}
           ${waiting ? "" : html`<button data-finance-waiting-edit>Set waiting on</button>`}
           <button data-finance-classify>Update classification</button>
           ${linkInvoiceAction} ${linkPaymentAction}
@@ -508,10 +511,15 @@ export function createSponsorFinance(context) {
         >${escapeHtml(`${projection.invoiceState} ${projection.paymentState} ${projection.timingState} ${projection.reconciliationStatus}`)}</span
       >
       ${nextStep} ${waitingBanner}
+      ${finance.settlementAdjustment ? html`<p>
+        Noncash settlement: ${escapeHtml(formatAmount(finance.settlementAdjustment.amount, finance.currency))}.
+        ${escapeHtml(finance.settlementAdjustment.reason)}
+        Approved by ${escapeHtml(finance.settlementAdjustment.approvedBy)} on ${escapeHtml(finance.settlementAdjustment.approvedOn)}.
+        Cash received: ${escapeHtml(formatAmount(projection.paid, finance.currency))}.</p>` : ""}
       ${finance.voidReason ? html`<p>Cancellation reason: ${escapeHtml(finance.voidReason)}</p>` : ""}
       <header>
         <div>
-          <h3>${escapeHtml(humanizeOptionLabel(projection.paymentState))}</h3>
+          <h3>${escapeHtml((finance.settlementAdjustment && projection.paymentState === "paid" ? "Settled with adjustment" : humanizeOptionLabel(projection.paymentState)))}</h3>
           <p>
             ${escapeHtml(humanizeOptionLabel(projection.invoiceState))} ·
             ${escapeHtml(humanizeOptionLabel(projection.timingState))}
@@ -709,6 +717,17 @@ export function createSponsorFinance(context) {
     panel
       .querySelector("[data-finance-issue]")
       ?.addEventListener("click", () => openIssueInvoice(booking, projection));
+    panel.querySelector("[data-finance-approve-settlement]")?.addEventListener("click", () => openSettlementAdjustment(booking, projection));
+    panel.querySelector("[data-finance-reverse-settlement]")?.addEventListener("click", () => {
+      const reason = window.prompt("Reason for reversing this approved noncash settlement");
+      if (!reason?.trim()) return;
+      safe(async () => {
+        await financeMutation(booking, "/settlement-adjustment", "DELETE", {
+          expectedVersion: projection.finance.version, reason: reason.trim(),
+        });
+        await reopenBookingDetail(booking);
+      }, "Could not reverse settlement");
+    });
     panel
       .querySelector("[data-finance-record-payment]")
       ?.addEventListener("click", () => openRecordPayment(booking, projection));

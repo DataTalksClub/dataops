@@ -2,6 +2,7 @@ import { BatchGetCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynam
 import { listCrmRecords, scanCrmPrefix } from '../db/sponsorCrm';
 import { TABLE_BOOKKEEPING } from '../db/tableNames';
 import { berlinDate, displayMoney, scaledMoney, sourceKey } from './core';
+import { settlementBalance, type SettlementAdjustment } from './settlementAdjustment';
 import { financeEnabled } from './repository';
 import { deliveredOn } from './context';
 import { daysBetween, deriveFollowUp, deriveStates, followUpUrgency } from './followUp';
@@ -25,6 +26,8 @@ export type LedgerRow = {
   dueOn?: string;
   daysOverdue?: number;
   paid?: string;
+  adjusted?: string;
+  settlementAdjustment?: SettlementAdjustment;
   outstanding?: string;
   lastPaymentOn?: string;
   /** Payments recorded before their bookkeeping row existed; a row that arrives confirms one. */
@@ -157,14 +160,16 @@ export async function financeLedger(
       // A report awaits verification; it is visible but is not booked cash.
     }
     const due = state.amountDue ? scaledMoney(state.amountDue) : undefined;
-    if (due !== undefined && paid > due) coherent = false;
-    const states_ = deriveStates(state, paid, due, coherent, today);
+    const settlement = due !== undefined && state.currency ? settlementBalance(due, paid, state.currency, state.settlementAdjustment)
+      : { adjusted: 0n, outstanding: 0n, coherent: !state.settlementAdjustment };
+    if (!settlement.coherent) coherent = false;
+    const states_ = deriveStates(state, paid + settlement.adjusted, due, coherent, today);
     const followUp = deriveFollowUp({
       dealStatus: String(deal.status), ...states_, reportedPayments: unconfirmed.length > 0,
       requestBy: state.invoiceRequestedAt ? undefined : state.requestBy,
       expectedInvoiceBy: state.expectedInvoiceBy, dueOn: state.dueOn, sentOn: state.sentOn, waitingOn: state.waitingOn, deliveredOn: delivered,
     }, today);
-    const outstanding = due !== undefined && coherent ? due - paid : undefined;
+    const outstanding = due !== undefined && coherent ? settlement.outstanding : undefined;
     const row: LedgerRow = {
       ...base,
       ...(state.amountDue ? { amountDue: state.amountDue } : {}),
@@ -175,9 +180,10 @@ export async function financeLedger(
       ...(state.sentOn ? { sentOn: state.sentOn } : {}),
       ...(state.dueOn ? { dueOn: state.dueOn } : {}),
       ...(states_.timingState === 'overdue' && state.dueOn ? { daysOverdue: daysBetween(state.dueOn, today) } : {}),
-      ...(outstanding !== undefined ? { paid: displayMoney(paid), outstanding: displayMoney(outstanding) } : {}),
+      ...(outstanding !== undefined ? { paid: displayMoney(paid), adjusted: displayMoney(settlement.adjusted), outstanding: displayMoney(outstanding) } : {}),
       ...(paymentDates.length ? { lastPaymentOn: paymentDates.sort().at(-1) } : {}),
       ...(unconfirmed.length ? { recordedPayments: unconfirmed } : {}),
+      ...(state.settlementAdjustment ? { settlementAdjustment: state.settlementAdjustment } : {}),
       ...(state.waitingOn ? { waitingOn: state.waitingOn } : {}),
       followUp,
     };

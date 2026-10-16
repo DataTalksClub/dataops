@@ -18,6 +18,8 @@ import {
   receivePayment,
   correctReceipt,
   attachPaymentEvidence,
+  recordSettlementAdjustment,
+  removeSettlementAdjustment,
   unlinkFinanceSource,
   updateFollowThrough,
   voidFinance,
@@ -148,6 +150,14 @@ export async function handleSponsorFinanceRoutes(
         dueOn: String(body.dueOn || ''),
         ...(body.sentOn !== undefined ? { sentOn: String(body.sentOn) } : {}),
       });
+      return json(200, { result, projection: await project() });
+    }
+    if (method === 'POST' && action === 'settlement-adjustment') {
+      const result = await recordSettlementAdjustment(client, { ...common, expectedVersion: Number(body.expectedVersion), body });
+      return json(200, { result, projection: await project() });
+    }
+    if (method === 'DELETE' && action === 'settlement-adjustment') {
+      const result = await removeSettlementAdjustment(client, { ...common, expectedVersion: Number(body.expectedVersion), reason: String(body.reason || '') });
       return json(200, { result, projection: await project() });
     }
     if (method === 'POST' && action === 'payment-evidence') {

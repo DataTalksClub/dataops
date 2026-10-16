@@ -23,6 +23,12 @@ Usage
       [--task ID | --review-existing]  Link an existing deal Task, or confirm review before adding separate work
   dataops sponsors attach-invoice <deal-id> --file original.pdf [--apply]
       Attach an original issued invoice through verified private storage; no payment is created.
+  dataops sponsors approve-settlement <deal-id> --data @approval.json [--apply]
+      Explicit owner-approved noncash reduction; creates no bookkeeping income.
+      Required: amount,currency,reason,approvedBy,approvedOn,evidence. Optional replacesPaymentId.
+      For a wrong imported nominal total: restoredInvoiceAmountDue + originalInvoiceDocumentId (already attached).
+  dataops sponsors reverse-settlement <deal-id> --reason TEXT [--apply]
+      Reverse the noncash adjustment; preserve its audit and all actual receipts.
   dataops sponsors attach-payment-evidence <deal-id> <transaction-id> [--apply]
       Link the reviewed invoice to an existing allocated receipt for bookkeeping and reports.
       New verified receipts include attached originals automatically; use this for late or repaired evidence.
@@ -280,6 +286,37 @@ export async function attachInvoice(args, io) {
   return result;
 }
 
+export async function approveSettlement(args, io) {
+  const id = positional(args, 0, "dataops sponsors approve-settlement <deal-id> --data @approval.json [--apply]");
+  const api = apiFor(args), data = jsonData(args);
+  const [deal, projection] = await Promise.all([
+    api.get(`/api/sponsor-crm/deals/${enc(id)}`), api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
+  ]);
+  if (!projection.finance) throw new UsageError("An issued invoice and verified receipt are required.");
+  const body = { ...data, dealVersion: deal.version, expectedVersion: projection.finance.version };
+  let result = { mode: args.apply ? "apply" : "dry-run", dealId: id, noncashAdjustment: body };
+  if (args.apply) result = { ...result, ...await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/settlement-adjustment`, body,
+    { headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() } }) };
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
+export async function reverseSettlement(args, io) {
+  const id = positional(args, 0, "dataops sponsors reverse-settlement <deal-id> --reason TEXT [--apply]");
+  if (!args.reason) throw new UsageError("--reason must explain the approved adjustment reversal.");
+  const api = apiFor(args);
+  const [deal, projection] = await Promise.all([
+    api.get(`/api/sponsor-crm/deals/${enc(id)}`), api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
+  ]);
+  if (!projection.finance?.settlementAdjustment) throw new UsageError("No active noncash adjustment exists.");
+  const body = { reason: String(args.reason), dealVersion: deal.version, expectedVersion: projection.finance.version };
+  let result = { mode: args.apply ? "apply" : "dry-run", dealId: id, reversal: body };
+  if (args.apply) result = { ...result, ...await api.delete(`/api/sponsor-crm/deals/${enc(id)}/finance/settlement-adjustment`, body,
+    { headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() } }) };
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
 export async function attachPaymentEvidence(args, io) {
   const id = positional(args, 0, "dataops sponsors attach-payment-evidence <deal-id> <transaction-id> [--apply]");
   const transactionId = positional(args, 1, "dataops sponsors attach-payment-evidence <deal-id> <transaction-id> [--apply]");
@@ -330,4 +367,4 @@ export async function correctPayment(args, io) {
   return result;
 }
 
-export const commands = { list, show, create, update, messages, history, finance, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence };
+export const commands = { list, show, create, update, messages, history, finance, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement };

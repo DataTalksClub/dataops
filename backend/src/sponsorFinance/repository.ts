@@ -8,6 +8,7 @@ import {
   TransactWriteCommand,
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
+import { settlementBalance, validateSettlementAdjustment } from './settlementAdjustment';
 import { documentLinkItem } from '../db/bookkeeping';
 import { TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_USERS } from '../db/tableNames';
 import {
@@ -323,6 +324,7 @@ export async function classifyFinance(
     ...(existing?.sentOn ? { sentOn: existing.sentOn } : {}),
     ...(existing?.dueOn ? { dueOn: existing.dueOn } : {}),
     ...(existing?.invoiceLinkId ? { invoiceLinkId: existing.invoiceLinkId } : {}),
+    ...(existing?.settlementAdjustment ? { settlementAdjustment: existing.settlementAdjustment } : {}),
     paymentLinkIds: existing?.paymentLinkIds || [],
     recordedPaymentIds: existing?.recordedPaymentIds || [],
     paymentFollowUpTaskIds: existing?.paymentFollowUpTaskIds || [],
@@ -543,6 +545,96 @@ function paidTotal(projection: FinanceProjection): bigint {
   return projection.payments.filter((item) => item.source === 'ledger').reduce((sum, item) => sum + scaledMoney(item.amount), 0n);
 }
 
+function settledTotal(projection: FinanceProjection): bigint {
+  return paidTotal(projection) + (projection.finance?.settlementAdjustment ? scaledMoney(projection.finance.settlementAdjustment.amount) : 0n);
+}
+
+/** An explicit owner-approved reduction settles receivable, never cash income. */
+export async function recordSettlementAdjustment(
+  client: DynamoDBDocumentClient,
+  input: { actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string; body: Record<string, unknown> },
+) {
+  const body = input.body;
+  const request = { amount: body.amount, currency: body.currency, reason: body.reason, evidence: body.evidence,
+    approvedBy: body.approvedBy, approvedOn: body.approvedOn, replacesPaymentId: body.replacesPaymentId,
+    restoredInvoiceAmountDue: body.restoredInvoiceAmountDue, originalInvoiceDocumentId: body.originalInvoiceDocumentId };
+  const replay = await replayMutation(client, { actorId: input.actorId, operation: 'settlement-adjustment', dealId: input.dealId,
+    idempotencyKey: input.idempotencyKey, request });
+  if (replay) return replay;
+  const projection = await projectFinance(client, input.dealId, 'admin');
+  const state = await getFinanceState(client, input.dealId);
+  if (!state || state.version !== input.expectedVersion || state.voidedAt || !state.issuedOn || state.settlementAdjustment
+    || projection.reconciliationStatus !== 'coherent' || paidTotal(projection) <= 0n || !state.currency || !state.amountDue) throw safeConflict();
+  let nominal = scaledMoney(state.amountDue);
+  let nominalRestoration: Record<string, unknown> | undefined;
+  if (body.restoredInvoiceAmountDue !== undefined) {
+    try { nominal = scaledMoney(body.restoredInvoiceAmountDue); }
+    catch { throw Object.assign(new Error('Invalid original invoice total'), { statusCode: 400 }); }
+    if (typeof body.originalInvoiceDocumentId !== 'string' || projection.invoice?.id !== body.originalInvoiceDocumentId) {
+      throw Object.assign(new Error('Attach and review the exact original invoice before restoring its nominal total'), { statusCode: 422 });
+    }
+    const original = await sourceItem(client, 'document', body.originalInvoiceDocumentId);
+    if (!original) throw safeConflict();
+    nominalRestoration = { before: state.amountDue, after: displayMoney(nominal), documentId: body.originalInvoiceDocumentId,
+      identityToken: invoiceIdentity(original) };
+  } else if (body.originalInvoiceDocumentId !== undefined) {
+    throw Object.assign(new Error('Original invoice reference requires an explicit restored total'), { statusCode: 400 });
+  }
+  const adjustmentInput = validateSettlementAdjustment(body, { currency: state.currency,
+    outstanding: nominal - paidTotal(projection), today: berlinDate(), validateEvidence });
+  const replaced = body.replacesPaymentId === undefined ? undefined
+    : projection.payments.find((payment) => payment.source === 'recorded' && payment.id === body.replacesPaymentId);
+  if (body.replacesPaymentId !== undefined && (!replaced || scaledMoney(replaced.amount) !== scaledMoney(adjustmentInput.amount)
+    || replaced.currency !== adjustmentInput.currency)) {
+    throw Object.assign(new Error('Select the exact reviewed reported entry with the approved adjustment amount and currency'), { statusCode: 400 });
+  }
+  const now = nowIso();
+  const adjustment = { ...adjustmentInput, id: digest({ dealId: input.dealId, idempotencyKey: input.idempotencyKey }).slice(0, 32),
+    actorId: input.actorId, createdAt: now };
+  const replacedKey = replaced ? recordedPaymentKey(input.dealId, replaced.id) : undefined;
+  return executeMutation(client, { actorId: input.actorId, operation: 'settlement-adjustment', dealId: input.dealId,
+    idempotencyKey: input.idempotencyKey, request, financeVersion: state.version + 1, recordId: adjustment.id,
+    eventCode: 'noncash-settlement-approved', details: { adjustment, ...(replaced ? { replacedReportedPayment: replaced } : {}),
+      ...(nominalRestoration ? { nominalRestoration } : {}) },
+    transactItems: [adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
+      ...(nominalRestoration ? await invoiceEvidenceActions(client, state, [], now) : []),
+      ...(replacedKey ? [{ Delete: { TableName: TABLE_SPONSOR_CRM, Key: singleton(replacedKey),
+        ConditionExpression: 'dealId = :deal AND amount = :amount AND currency = :currency',
+        ExpressionAttributeValues: { ':deal': input.dealId, ':amount': replaced!.amount, ':currency': replaced!.currency } } }] : []),
+      { Update: { TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
+        UpdateExpression: 'SET settlementAdjustment = :adjustment, amountDue = :nominal, recordedPaymentIds = :records, #version = :next, updatedAt = :now, actorId = :actor',
+        ConditionExpression: '#version = :prior AND attribute_not_exists(settlementAdjustment) AND attribute_not_exists(voidedAt) AND recordedPaymentIds = :priorRecords',
+        ExpressionAttributeNames: { '#version': 'version' }, ExpressionAttributeValues: {
+          ':adjustment': adjustment, ':nominal': displayMoney(nominal), ':records': state.recordedPaymentIds.filter((id) => id !== replacedKey), ':priorRecords': state.recordedPaymentIds,
+          ':next': state.version + 1, ':prior': state.version, ':now': now, ':actor': input.actorId,
+        } } },
+    ],
+  });
+}
+
+export async function removeSettlementAdjustment(
+  client: DynamoDBDocumentClient,
+  input: { actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string; reason: string },
+) {
+  if (!boundedText(input.reason, 1000)) throw Object.assign(new Error('An adjustment reversal reason is required'), { statusCode: 400 });
+  const request = { reason: input.reason };
+  const replay = await replayMutation(client, { actorId: input.actorId, operation: 'remove-settlement-adjustment', dealId: input.dealId,
+    idempotencyKey: input.idempotencyKey, request });
+  if (replay) return replay;
+  const state = await getFinanceState(client, input.dealId);
+  if (!state || state.version !== input.expectedVersion || !state.settlementAdjustment || state.voidedAt) throw safeConflict();
+  return executeMutation(client, { actorId: input.actorId, operation: 'remove-settlement-adjustment', dealId: input.dealId,
+    idempotencyKey: input.idempotencyKey, request, financeVersion: state.version + 1, recordId: state.settlementAdjustment.id,
+    eventCode: 'noncash-settlement-reversed', details: { adjustment: state.settlementAdjustment, reason: input.reason },
+    transactItems: [adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
+      { Update: { TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
+        UpdateExpression: 'SET #version = :next, updatedAt = :now, actorId = :actor REMOVE settlementAdjustment',
+        ConditionExpression: '#version = :prior AND settlementAdjustment.id = :id', ExpressionAttributeNames: { '#version': 'version' },
+        ExpressionAttributeValues: { ':next': state.version + 1, ':prior': state.version, ':now': nowIso(), ':actor': input.actorId, ':id': state.settlementAdjustment.id } } },
+    ],
+  });
+}
+
 export async function recordPayment(
   client: DynamoDBDocumentClient,
   input: {
@@ -570,7 +662,7 @@ export async function recordPayment(
     !state || state.version !== input.expectedVersion || state.voidedAt || state.invoiceRequirement !== 'required'
     || !state.issuedOn || state.currency !== input.currency || projection.reconciliationStatus !== 'coherent'
     || state.paymentLinkIds.length + state.recordedPaymentIds.length >= PAYMENT_LINK_LIMIT
-    || projection.payments.reduce((sum, item) => sum + scaledMoney(item.amount), 0n) + scaledMoney(input.amount) > scaledMoney(state.amountDue)
+    || projection.payments.reduce((sum, item) => sum + scaledMoney(item.amount), 0n) + (state.settlementAdjustment ? scaledMoney(state.settlementAdjustment.amount) : 0n) + scaledMoney(input.amount) > scaledMoney(state.amountDue)
   ) throw safeConflict();
   const paymentId = digest({ dealId: input.dealId, actorId: input.actorId, idempotencyKey: input.idempotencyKey }).slice(0, 32);
   const id = recordedPaymentKey(input.dealId, paymentId);
@@ -806,7 +898,7 @@ export async function correctReceipt(
   if (!state || state.version !== input.expectedVersion || state.voidedAt || !source
     || !state.paymentLinkIds.includes(id) || input.currency !== state.currency
     || projection.reconciliationStatus !== 'coherent'
-    || paidTotal(projection) - scaledMoney(source.amount) + scaledMoney(input.amount) > scaledMoney(state.amountDue)) throw safeConflict();
+    || settledTotal(projection) - scaledMoney(source.amount) + scaledMoney(input.amount) > scaledMoney(state.amountDue)) throw safeConflict();
   if (source.sourceType === 'sponsor-receipt' && input.reference.trim() !== source.statementRef) {
     throw Object.assign(new Error('The bank/account transaction identity is immutable; correct the amount or date using its original reference'), { statusCode: 400 });
   }
@@ -853,7 +945,7 @@ async function invoiceEvidenceActions(
   transactionIds: string[],
   now: string,
 ): Promise<any[]> {
-  if (!state.invoiceLinkId || !transactionIds.length) return [];
+  if (!state.invoiceLinkId) return [];
   const documentId = state.invoiceLinkId.split('#').at(-1)!;
   const document = await sourceItem(client, 'document', documentId);
   if (!document) throw safeConflict();
@@ -989,7 +1081,7 @@ export async function linkPayment(
   if (lookalike) {
     throw Object.assign(new Error('A recorded payment looks like this bookkeeping row; link it as its replacement'), { statusCode: 409 });
   }
-  if (paidTotal(projection) + scaledMoney(source.amount) > scaledMoney(state.amountDue)) throw safeConflict();
+  if (settledTotal(projection) + scaledMoney(source.amount) > scaledMoney(state.amountDue)) throw safeConflict();
   const replacedKey = replaced ? recordedPaymentKey(input.dealId, replaced.id) : undefined;
   const nextRecorded = state.recordedPaymentIds.filter((item) => item !== replacedKey);
   const id = linkKey(input.dealId, 'transaction', input.sourceId);
@@ -1304,10 +1396,13 @@ export async function projectFinance(
       || orphanDiscovery.keys.length !== expectedClaims.size
       || orphanDiscovery.keys.some((key) => !expectedClaims.has(key))
     ) coherent = false;
-    if (state.amountDue && total > scaledMoney(state.amountDue)) coherent = false;
-    const outstandingValue = state.amountDue ? scaledMoney(state.amountDue) - total : 0n;
+    const settlement = state.amountDue && state.currency
+      ? settlementBalance(scaledMoney(state.amountDue), total, state.currency, state.settlementAdjustment)
+      : { adjusted: 0n, outstanding: 0n, coherent: !state.settlementAdjustment };
+    if (!settlement.coherent) coherent = false;
+    const outstandingValue = settlement.outstanding;
     const { invoiceState, paymentState, timingState } = deriveStates(
-      state, total, state.amountDue ? scaledMoney(state.amountDue) : undefined, coherent, today,
+      state, total + settlement.adjusted, state.amountDue ? scaledMoney(state.amountDue) : undefined, coherent, today,
     );
     const visiblePayments = coherent
       ? payments.sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate) || a.id.localeCompare(b.id))
@@ -1339,9 +1434,10 @@ export async function projectFinance(
         ...(state.evidence?.length ? { evidence: state.evidence } : {}),
         ...(state.voidedAt ? { voidedAt: state.voidedAt } : {}),
         ...(state.voidReason ? { voidReason: state.voidReason } : {}),
+        ...(state.settlementAdjustment ? { settlementAdjustment: state.settlementAdjustment } : {}),
       },
       invoiceState, paymentState, timingState,
-      ...(state.amountDue && coherent ? { outstanding: displayMoney(outstandingValue), paid: displayMoney(total) } : {}),
+      ...(state.amountDue && coherent ? { outstanding: displayMoney(outstandingValue), paid: displayMoney(total), adjusted: displayMoney(settlement.adjusted) } : {}),
       ...(timingState === 'overdue' && state.dueOn ? { daysOverdue: daysBetween(state.dueOn, today) } : {}),
       ...(lastPaymentOn ? { lastPaymentOn } : {}),
       ...(invoice ? { invoice } : {}),

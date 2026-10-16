@@ -4,7 +4,7 @@ import { run } from "../src/cli.mjs";
 import { mkdtemp, writeFile, unlink, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { attachInvoice, attachPaymentEvidence, receivePayment, correctPayment, list } from "../src/commands/sponsors.mjs";
+import { attachInvoice, attachPaymentEvidence, receivePayment, correctPayment, approveSettlement, reverseSettlement, list } from "../src/commands/sponsors.mjs";
 
 test("invoice evidence repair selects an already allocated receipt and previews the exact original", async () => {
   const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
@@ -280,4 +280,33 @@ test("sponsors follow-up explicitly links existing work or submits the reviewed 
     if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
     if (oldUrl === undefined) delete process.env.DATAOPS_URL; else process.env.DATAOPS_URL = oldUrl;
   }
+});
+
+
+test("noncash approval and reversal preview first and preserve explicit proof and nominal restoration", async () => {
+  const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, ...options, body: options.body && JSON.parse(options.body) });
+    return new Response(JSON.stringify(options.method === "GET"
+      ? (url.endsWith("/finance") ? { finance: { version: 4, settlementAdjustment: { id: "approved" } } } : { version: 2 })
+      : { financeVersion: 5 }));
+  };
+  const proof = { amount: "10", currency: "EUR", reason: "Approved conversion fee", approvedBy: "Owner", approvedOn: "2026-10-02",
+    evidence: [{ kind: "document", ref: "owner-proof" }], replacesPaymentId: "reviewed-report",
+    restoredInvoiceAmountDue: "1200", originalInvoiceDocumentId: "reviewed-original" };
+  const args = { _: ["demo"], data: JSON.stringify(proof), url: "https://portal.example.test", json: true, idempotencyKey: "settlement-stable-012345" };
+  try {
+    await approveSettlement(args, {}); assert.equal(calls.filter((item) => item.method !== "GET").length, 0);
+    await approveSettlement({ ...args, apply: true }, {});
+    const approval = calls.find((item) => item.method === "POST");
+    assert.ok(approval.url.endsWith("/finance/settlement-adjustment"));
+    assert.deepEqual(approval.body, { ...proof, dealVersion: 2, expectedVersion: 4 });
+    assert.equal(approval.headers["Idempotency-Key"], args.idempotencyKey);
+    await reverseSettlement({ ...args, reason: "Owner revoked approval" }, {});
+    assert.equal(calls.filter((item) => item.method === "DELETE").length, 0);
+    await reverseSettlement({ ...args, reason: "Owner revoked approval", apply: true }, {});
+    assert.deepEqual(calls.find((item) => item.method === "DELETE").body, { reason: "Owner revoked approval", dealVersion: 2, expectedVersion: 4 });
+  } finally { globalThis.fetch = originalFetch; if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken; }
 });

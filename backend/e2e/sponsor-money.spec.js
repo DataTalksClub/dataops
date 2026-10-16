@@ -50,12 +50,13 @@ test.describe('Sponsors Money', () => {
     const bookkeeping = new Map(), evidenceLinks = new Map();
     const projection = () => {
       const paid = payments.filter((item) => item.source === 'ledger').reduce((sum, item) => sum + Number(item.amount), 0);
+      const adjusted = Number(finance.settlementAdjustment?.amount || 0), settled = paid + adjusted === 2500;
       return {
         enabled: true, classified: true, dealId: deal.id, role: 'admin', finance: { ...finance },
-        invoiceState: 'issued', invoice, paymentState: paid === 2500 ? 'paid' : paid ? 'partially-paid' : 'unpaid', timingState: paid === 2500 ? 'settled' : 'overdue',
-        outstanding: (2500 - paid).toFixed(2), paid: paid.toFixed(2), payments,
+        invoiceState: 'issued', invoice, paymentState: settled ? 'paid' : paid ? 'partially-paid' : 'unpaid', timingState: settled ? 'settled' : 'overdue',
+        outstanding: (2500 - paid - adjusted).toFixed(2), adjusted: adjusted.toFixed(2), paid: paid.toFixed(2), payments,
         followUp: payments.some((item) => item.source === 'recorded') ? { code: 'reconcile', party: 'us' }
-          : paid === 2500 ? { code: 'none', party: 'none' } : finance.waitingOn
+          : settled ? { code: 'none', party: 'none' } : finance.waitingOn
           ? { code: 'await-sponsor', party: 'sponsor', since: finance.waitingOn.since, reason: finance.waitingOn.reason }
           : { code: 'payment-follow-up', party: 'us', since: '2026-02-04', daysOverdue: 30 },
         reconciliationStatus: 'coherent', paymentLinkCount: payments.length, paymentLinkLimit: 10,
@@ -90,6 +91,9 @@ test.describe('Sponsors Money', () => {
       } else if (suffix.startsWith('/receipts/')) {
         const id = suffix.split('/').at(-1), existing = bookkeeping.get(id);
         Object.assign(existing, { amount: body.amount, effectiveDate: body.receivedOn, reference: body.reference });
+      } else if (suffix === '/settlement-adjustment') {
+        if (request.method() === 'DELETE') delete finance.settlementAdjustment;
+        else finance.settlementAdjustment = { ...body, id: 'explicit-owner-approved-adjustment' };
       } else if (suffix === '/payment-evidence') {
         expect(body.documentId).toBe(invoice.id);
         for (const id of body.transactionIds) { expect(bookkeeping.has(id)).toBe(true); evidenceLinks.set(id, body.documentId); }
@@ -152,6 +156,24 @@ test.describe('Sponsors Money', () => {
     await expect.poll(() => requests.some((entry) => entry.suffix === '/payment-evidence')).toBe(true);
     expect(evidenceLinks.size).toBe(1);
 
+    await test.step('owner-approved noncash settlement is distinct from cash and can be reversed', async () => {
+      await panel.getByRole('button', { name: 'Approve noncash settlement', exact: true }).click();
+      const approval = page.locator('[data-finance-adjustment-dialog]');
+      await approval.locator('[name="reason"]').fill('Synthetic owner accepted documented reduction');
+      await approval.locator('[name="approvedBy"]').fill('Synthetic owner');
+      await approval.locator('[name="ref"]').fill('synthetic-owner-approval-source');
+      await approval.getByRole('button', { name: 'Approve noncash settlement', exact: true }).click();
+      await expect(approval).toBeHidden();
+      await expect(panel.locator('header h3').first()).toHaveText('Settled with adjustment');
+      await expect(panel).toContainText('Cash received: \u20ac950.00');
+      expect(bookkeeping.size).toBe(1); expect(finance.amountDue).toBe('2500.00');
+      page.once('dialog', (dialog) => dialog.accept('Synthetic owner revoked settlement'));
+      await panel.getByRole('button', { name: 'Reverse noncash settlement', exact: true }).click();
+      await expect(panel.locator('header h3').first()).toHaveText('Partially Paid');
+      await expect(panel).toContainText('\u20ac1,550.00');
+      expect(bookkeeping.size).toBe(1);
+    });
+
     await test.step('reported cash remains unverified until an actual receipt confirms it', async () => {
       payments.push({ id: 'c'.repeat(32), source: 'recorded', effectiveDate: '2026-03-07', amount: '1550.00',
         currency: 'EUR', method: 'sponsor-confirmation', reference: 'Sponsor says paid' });
@@ -172,7 +194,7 @@ test.describe('Sponsors Money', () => {
     });
     expect(requests.map((entry) => `${entry.method} ${entry.suffix}`)).toEqual([
       'POST /receipts', 'PUT /follow-through', 'PUT /follow-through', 'PUT /receipts/verified-receipt-1',
-      'POST /payment-evidence', 'POST /receipts',
+      'POST /payment-evidence', 'POST /settlement-adjustment', 'DELETE /settlement-adjustment', 'POST /receipts',
     ]);
     expect(requests[0].body).toMatchObject({ amount: '1000.00', currency: 'EUR', counterparty: 'Synthetic Money Sponsor', reference: 'synthetic-bank:account:receipt-one' });
     expect(requests.at(-1).body.replacesPaymentId).toBe('c'.repeat(32));

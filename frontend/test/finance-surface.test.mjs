@@ -44,6 +44,19 @@ test("the payment form books verified receipts and corrects actual cash without 
   assert.equal(calls[1][3].amount, "94");
 });
 
+test("noncash settlement requires explicit approval fields and evidence and never calls cash receipts", () => {
+  createHarness();
+  const surface = new FakeElement("section"), calls = [];
+  const forms = createFinanceRecordForms({ surface, financeMutation: async (...args) => calls.push(args), reopenBookingDetail: async () => {}, safe() {} });
+  const projection = { finance: { version: 4, currency: "EUR" }, paid: "95", outstanding: "5", payments: [{ source: "recorded", id: "reviewed-report", amount: "5", currency: "EUR" }] };
+  forms.openSettlementAdjustment({ id: "deal" }, projection);
+  const form = surface.children.find((child) => "financeAdjustmentDialog" in child.dataset).querySelector("form");
+  form.formEntries = Object.entries({ amount: "5", reason: "Conversion fee accepted", approvedBy: "Owner", approvedOn: "2026-10-02", kind: "document", ref: "owner-approval", replacesPaymentId: "reviewed-report" });
+  form.onsubmit({ preventDefault() {} });
+  assert.equal(calls[0][1], "/settlement-adjustment"); assert.equal(calls[0][2], "POST");
+  assert.deepEqual(calls[0][3], { expectedVersion: 4, amount: "5", currency: "EUR", reason: "Conversion fee accepted", approvedBy: "Owner", approvedOn: "2026-10-02", evidence: [{ kind: "document", ref: "owner-approval" }], replacesPaymentId: "reviewed-report" });
+});
+
 afterEach(() => {
   for (const [name, value] of Object.entries(originalGlobals)) {
     if (value === undefined) delete globalThis[name];

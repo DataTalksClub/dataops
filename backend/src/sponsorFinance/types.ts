@@ -1,3 +1,4 @@
+import type { SettlementAdjustment } from './settlementAdjustment';
 export const WAITING_PARTIES = ['us', 'sponsor'] as const;
 export const WAITING_REASONS = [
   'billing-details',
@@ -44,6 +45,7 @@ export type FinanceState = {
   sentOn?: string;
   dueOn?: string;
   invoiceLinkId?: string;
+  settlementAdjustment?: SettlementAdjustment;
   paymentLinkIds: string[];
   recordedPaymentIds: string[];
   waitingOn?: WaitingOn;
@@ -153,13 +155,15 @@ export type FinanceProjection = {
     waitingOn?: WaitingOn;
     evidence?: FinanceEvidence[];
     voidedAt?: string;
-  voidReason?: string;
+    voidReason?: string;
+    settlementAdjustment?: SettlementAdjustment;
   };
   invoiceState: InvoiceState;
   paymentState: PaymentState;
   timingState: TimingState;
   outstanding?: string;
   paid?: string;
+  adjusted?: string;
   daysOverdue?: number;
   lastPaymentOn?: string;
   invoice?: { id: string; label: string; uploadedAt: string };

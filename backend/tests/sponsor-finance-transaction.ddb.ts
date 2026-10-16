@@ -23,6 +23,8 @@ import {
   projectFinance,
   recordInvoiceRequest,
   recordPayment,
+  recordSettlementAdjustment,
+  removeSettlementAdjustment,
   receivePayment,
   correctReceipt,
   attachPaymentEvidence,
@@ -1536,6 +1538,69 @@ describe('sponsor finance production DynamoDB transactions', () => {
     assert.equal(rows.Items?.length, 0);
     await assert.rejects(() => receivePayment(client, { ...receipt, dealId: b.dealId, expectedVersion: b.version,
       reference: '', idempotencyKey: idem('missing-receipt-evidence') }), (error: Error & { statusCode?: number }) => error.statusCode === 400);
+  });
+
+  it('settles approved shortfalls without inventing cash, replaces only explicit reports, and reverses audibly', async () => {
+    const seeded = await bootstrapPayable('approved-shortfall', '2700');
+    const cash = await receivePayment(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
+      expectedVersion: seeded.version, idempotencyKey: idem('shortfall-cash'), receivedOn: '2026-10-02',
+      amount: '2690', currency: 'EUR', reference: 'synthetic-bank:shortfall:receipt', counterparty: 'Synthetic Sponsor' });
+    const reported = await recordPayment(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
+      expectedVersion: cash.financeVersion, idempotencyKey: idem('shortfall-report'), receivedOn: '2026-10-02',
+      amount: '10', currency: 'EUR', method: 'other', reference: 'Synthetic reviewed owner approval' });
+    const before = await projectFinance(client, seeded.dealId, 'admin');
+    const reportId = before.payments.find((item) => item.source === 'recorded')!.id;
+    const approval = { amount: '10', currency: 'EUR', reason: 'Owner accepted documented conversion shortfall',
+      approvedBy: 'Synthetic owner', approvedOn: '2026-10-02', evidence: [{ kind: 'document', ref: 'synthetic-owner-approval' }], replacesPaymentId: reportId };
+    const input = { actorId: adminId, dealId: seeded.dealId, dealVersion: 1, expectedVersion: reported.financeVersion,
+      idempotencyKey: idem('shortfall-approve'), body: approval };
+    await assert.rejects(() => recordSettlementAdjustment(client, { ...input, body: { ...approval, evidence: [] } }));
+    await assert.rejects(() => recordSettlementAdjustment(client, { ...input, body: { ...approval, replacesPaymentId: 'wrong-report' } }));
+    const cashTotalsBefore = (await financeLedger(client, '2026-10-16')).totals.map(({ currency, paidThisYear }) => ({ currency, paidThisYear }));
+    const accepted = await recordSettlementAdjustment(client, input);
+    const replay = await recordSettlementAdjustment(client, { ...input, dealVersion: 999, expectedVersion: accepted.financeVersion });
+    assert.equal(replay.financeVersion, accepted.financeVersion); assert.equal(replay.recordId, accepted.recordId); assert.equal(replay.outcome, 'replayed');
+    await assert.rejects(() => recordSettlementAdjustment(client, { ...input, body: { ...approval, reason: 'Different payload' } }),
+      (error: Error & { statusCode?: number }) => error.statusCode === 409);
+    const after = await projectFinance(client, seeded.dealId, 'admin');
+    assert.equal(after.finance!.amountDue, '2700'); assert.equal(after.paid, '2690'); assert.equal(after.adjusted, '10');
+    assert.equal(after.outstanding, '0'); assert.equal(after.paymentState, 'paid');
+    assert.equal(after.payments.length, 1); assert.equal(after.payments[0].source, 'ledger');
+    const ledger = await financeLedger(client, '2026-10-16');
+    assert.deepEqual(ledger.totals.map(({ currency, paidThisYear }) => ({ currency, paidThisYear })), cashTotalsBefore);
+    const row = ledger.rows.find((item) => item.dealId === seeded.dealId)!;
+    assert.equal(row.paid, '2690'); assert.equal(row.adjusted, '10');
+    await assert.rejects(() => receivePayment(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
+      expectedVersion: accepted.financeVersion, idempotencyKey: idem('shortfall-extra-cash'), receivedOn: '2026-10-02',
+      amount: '10', currency: 'EUR', reference: 'synthetic-bank:shortfall:extra', counterparty: 'Synthetic Sponsor' }));
+    await removeSettlementAdjustment(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
+      expectedVersion: accepted.financeVersion, idempotencyKey: idem('shortfall-reverse'), reason: 'Owner revoked settlement; collection reopened' });
+    const reopened = await projectFinance(client, seeded.dealId, 'admin');
+    assert.equal(reopened.paid, '2690'); assert.equal(reopened.outstanding, '10'); assert.equal(reopened.payments.length, 1);
+    const history = await listFinanceHistory(client, seeded.dealId);
+    assert.ok(history.some((event) => event.eventCode === 'noncash-settlement-approved'));
+    assert.ok(history.some((event) => event.eventCode === 'noncash-settlement-reversed'));
+  });
+
+  it('restores an imported nominal from the exact pinned original atomically with a noncash adjustment', async () => {
+    const seeded = await bootstrapPayable('restore-original-total', '1190');
+    const cash = await receivePayment(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
+      expectedVersion: seeded.version, idempotencyKey: idem('restore-total-cash'), receivedOn: '2026-06-29',
+      amount: '1190', currency: 'EUR', reference: 'synthetic-bank:restore-total:receipt', counterparty: 'Synthetic Sponsor' });
+    const body = { amount: '10', currency: 'EUR', reason: 'Original invoice total restored; owner accepted conversion fee',
+      approvedBy: 'Synthetic owner', approvedOn: '2026-10-02', evidence: [{ kind: 'document', ref: 'synthetic-owner-approval' }] };
+    const input = { actorId: adminId, dealId: seeded.dealId, dealVersion: 1, expectedVersion: cash.financeVersion,
+      idempotencyKey: idem('restore-original-total-approval'), body };
+    await assert.rejects(() => recordSettlementAdjustment(client, input));
+    await assert.rejects(() => recordSettlementAdjustment(client, { ...input, body: { ...body, restoredInvoiceAmountDue: '1200', originalInvoiceDocumentId: 'wrong-original' } }));
+    const restoration = { ...body, restoredInvoiceAmountDue: '1200', originalInvoiceDocumentId: 'invoice-restore-original-total' };
+    await assert.rejects(() => recordSettlementAdjustment(client, { ...input, dealVersion: 999, body: restoration }));
+    assert.equal((await projectFinance(client, seeded.dealId, 'admin')).finance!.amountDue, '1190');
+    await recordSettlementAdjustment(client, { ...input, body: restoration });
+    const after = await projectFinance(client, seeded.dealId, 'admin');
+    assert.equal(after.finance!.amountDue, '1200'); assert.equal(after.finance!.taxMode, 'included');
+    assert.equal(after.paid, '1190'); assert.equal(after.adjusted, '10'); assert.equal(after.outstanding, '0');
+    assert.equal(after.payments.length, 1); assert.equal(after.reconciliationStatus, 'coherent');
   });
 
   it('fails closed at the real DynamoDB 5,000-evaluated-row discovery boundary', async () => {

@@ -69,7 +69,7 @@ export function deriveStates(
     voidedAt?: string; invoiceRequirement: 'required' | 'not-required'; issuedOn?: string;
     invoiceRequestedAt?: string; amountDue?: string; dueOn?: string;
   },
-  paidScaled: bigint,
+  settledScaled: bigint,
   amountDueScaled: bigint | undefined,
   coherent: boolean,
   today: string,
@@ -80,8 +80,8 @@ export function deriveStates(
         : state.invoiceRequestedAt ? 'requested' : 'to-request';
   const paymentState: PaymentState = !coherent ? 'reconciliation-required'
     : state.invoiceRequirement === 'not-required' ? 'not-applicable'
-      : paidScaled === 0n ? 'unpaid'
-        : amountDueScaled !== undefined && paidScaled === amountDueScaled ? 'paid' : 'partially-paid';
+      : settledScaled === 0n ? 'unpaid'
+        : amountDueScaled !== undefined && settledScaled === amountDueScaled ? 'paid' : 'partially-paid';
   const timingState: TimingState = paymentState === 'not-applicable' ? 'not-applicable'
     : paymentState === 'paid' ? 'settled'
       : state.dueOn && state.dueOn < today ? 'overdue' : 'not-due';
