@@ -106,6 +106,15 @@
   stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
+}.recurring-fact-doc {
+  min-width: 0;
+  max-width: 100%;
+}.recurring-fact-doc.is-missing {
+  color: var(--dk-text-faint);
+}.recurring-doc-link {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }.recurring-row-actions {
   display: flex;
   flex-wrap: wrap;
@@ -153,6 +162,24 @@
 }.recurring-form-grid > .recurring-form-wide,
 .recurring-form .recurring-form-wide {
   grid-column: 1 / -1;
+}.recurring-form-doc {
+  display: grid;
+  gap: var(--dk-space-1);
+}.recurring-form-doc-label {
+  color: var(--dk-text-heading);
+  font-weight: 600;
+}.recurring-form-doc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--dk-space-2);
+  align-items: center;
+}.recurring-form-doc-open {
+  font-size: var(--dk-text-md);
+  white-space: nowrap;
+}.recurring-form-doc-hint {
+  margin: 0;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
 }.recurring-form-footer {
   display: flex;
   gap: 8px;

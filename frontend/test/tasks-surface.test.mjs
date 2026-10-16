@@ -189,7 +189,7 @@ function createHarness(options = {}) {
     getActiveTasksSection: () => "templates",
     getActiveWorkspaceRoute: () => route,
     getActiveWorkspaceRouteToken: () => activeRouteToken,
-    getAllDocuments: () => [],
+    getAllDocuments: () => options.documents || [],
     getCurrentOperator: () => options.currentOperator ?? null,
     getPendingLegacyRoute: () => null,
     getTaskRouteContext: () => taskRouteContext,
@@ -2775,6 +2775,83 @@ describe("Tasks surface boundary", () => {
       enabled: true,
       assigneeId: "user-grace",
     });
+  });
+
+  const editButtons = (harness) =>
+    findAllByClass(harness.documentList, "task-action-btn").filter((button) => button.textContent === "Edit");
+
+  test("links each schedule to a process doc picked by typing, and lists it on the row", async () => {
+    const documents = [
+      { id: "sop.finance.prepare-a-bookkeeping-report", title: "Prepare a bookkeeping report", path: "content/06-finance/bookkeeping-report.md", doc_type: "sop" },
+      { id: "sop.community.slack.export", title: "Create a Slack dump", path: "content/03-community/slack-export.md", doc_type: "sop" },
+      { id: "reference.finance.tax-ids", title: "Bookkeeping tax ids", path: "content/06-finance/tax-ids.md", doc_type: "reference" },
+    ];
+    const byId = new Map(documents.map((doc) => [doc.id, doc]));
+    const harness = createHarness({
+      documents,
+      resolveDocReference: (ref) => byId.get(ref) || null,
+      model: baseModel({
+        recurring: recurringSnapshot([
+          serverSchedule({ id: "rc-doc", description: "Prepare a bookkeeping report", instructionDocId: "sop.finance.prepare-a-bookkeeping-report" }),
+          serverSchedule({ id: "rc-none", description: "Water the plants" }),
+        ]),
+      }),
+    });
+    harness.api.renderTasksSurface([], "recurring");
+
+    const docLink = findAllByClass(harness.documentList, "recurring-doc-link")[0];
+    assert.equal(docLink.href, "/06-finance/bookkeeping-report.md");
+    assert.equal(docLink.target, "_blank");
+    assert.match(docLink.textContent, /Prepare a bookkeeping report/);
+    assert.match(findAllByClass(harness.documentList, "recurring-fact-doc")[1].textContent, /No process doc/);
+
+    await editButtons(harness)[0].dispatch("click");
+    let overlay = findAllByClass(harness.shellBody, "quick-form-overlay").at(-1);
+    assert.deepEqual(
+      findAllByClass(overlay, "dk-tag-input__chip").map((chip) => chip.dataset.value),
+      ["sop.finance.prepare-a-bookkeeping-report"],
+    );
+    const open = findAllByClass(overlay, "recurring-form-doc-open")[0];
+    assert.equal(open.hidden, false);
+    assert.equal(open.href, "/06-finance/bookkeeping-report.md");
+    assert.equal(open.target, "_blank");
+
+    // Typing finds process docs only; a pick replaces the current doc.
+    const field = overlay.querySelector('[data-form-field="instructionDocId"]');
+    field.value = "book";
+    await field.dispatch("input");
+    assert.deepEqual(
+      findAllByClass(overlay, "dk-tag-input__option").map((option) => option.dataset.value),
+      [],
+      "the chosen SOP is not offered again and references are not process docs",
+    );
+    field.value = "slack";
+    await field.dispatch("input");
+    await field.dispatch("keydown", { key: "Enter", preventDefault() {} });
+    assert.deepEqual(
+      findAllByClass(overlay, "dk-tag-input__chip").map((chip) => chip.dataset.value),
+      ["sop.community.slack.export"],
+    );
+    assert.equal(open.href, "/03-community/slack-export.md");
+    await submitQuickForm(overlay);
+    await nextTicks();
+    assert.equal(JSON.parse(harness.requests.at(-1).options.body).instructionDocId, "sop.community.slack.export");
+
+    // Removing the doc clears it on the schedule.
+    await editButtons(harness)[0].dispatch("click");
+    overlay = findAllByClass(harness.shellBody, "quick-form-overlay").at(-1);
+    await findAllByClass(overlay, "dk-tag-input__remove")[0].click();
+    assert.equal(findAllByClass(overlay, "recurring-form-doc-open")[0].hidden, true);
+    await submitQuickForm(overlay);
+    await nextTicks();
+    assert.equal(JSON.parse(harness.requests.at(-1).options.body).instructionDocId, null);
+
+    // A schedule without a doc sends none.
+    await editButtons(harness)[1].dispatch("click");
+    overlay = findAllByClass(harness.shellBody, "quick-form-overlay").at(-1);
+    await submitQuickForm(overlay);
+    await nextTicks();
+    assert.equal("instructionDocId" in JSON.parse(harness.requests.at(-1).options.body), false);
   });
 
   test("manages focus and dialog semantics for recurring create and edit forms", async () => {

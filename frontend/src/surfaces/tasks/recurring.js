@@ -1,4 +1,6 @@
 import "../../dakit/collection.js";
+import { renderIcon } from "../../core/icons.js";
+import { documentHref, opensInNewTab } from "../../core/links.js";
 import { setControlPending } from "../operations-overview.js";
 
 const RECURRING_ICONS = Object.freeze({
@@ -34,6 +36,7 @@ export function createRecurringTasks(context) {
     refreshOperationsRecurringSnapshot,
     request,
     resolveAssigneeLabel,
+    resolveDocReference,
     scheduleAnimationFrame,
     todayIsoDate,
     workApiUrl,
@@ -178,6 +181,7 @@ export function createRecurringTasks(context) {
       fact.append(iconElement(icon), textSpan(value));
       facts.append(fact);
     }
+    facts.append(renderRecurringDocFact(config));
     text.append(facts);
 
     const edit = document.createElement("button");
@@ -228,6 +232,34 @@ export function createRecurringTasks(context) {
       item.append(guidance);
     }
     return item;
+  }
+
+  // The process doc the schedule's tasks link, with the same book icon the
+  // queue shows; a schedule without one says so, so undocumented work is
+  // visible at a glance.
+  function renderRecurringDocFact(config) {
+    const fact = document.createElement("span");
+    fact.className = "recurring-fact recurring-fact-doc";
+    fact.append(renderIcon("instructions", { size: 15 }));
+    const docId = String(config.instructionDocId || "");
+    if (!docId) {
+      fact.classList.add("is-missing");
+      fact.append(textSpan("No process doc"));
+      return fact;
+    }
+    const doc = resolveDocReference?.(docId);
+    if (!doc?.path) {
+      fact.append(textSpan(`Doc unavailable: ${docId}`));
+      return fact;
+    }
+    const link = document.createElement("a");
+    link.className = "recurring-doc-link";
+    link.href = documentHref(doc.path);
+    link.textContent = doc.title || docId;
+    link.title = doc.title || docId;
+    opensInNewTab(link);
+    fact.append(link);
+    return fact;
   }
 
   async function deleteRecurringConfigFromUi(config, button) {
