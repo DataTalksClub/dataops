@@ -383,25 +383,6 @@
   color: var(--dk-text-muted);
   font-size: 11px;
   line-height: 1.35;
-}.workflow-board-card .ops-progress {
-  height: 3px;
-  margin: 2px 0 1px;
-  background: var(--dk-bg-inset);
-  border-radius: 3px;
-  overflow: hidden;
-}.workflow-board-card .ops-progress i,
-.workflow-board-card.ops-risk-high .ops-progress i,
-.workflow-board-card.ops-risk-medium .ops-progress i {
-  min-width: 0;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--dk-accent-default);
-  opacity: 0.85;
-}.workflow-board-card .ops-progress.is-complete i,
-.workflow-board-card.ops-risk-high .ops-progress.is-complete i,
-.workflow-board-card.ops-risk-medium .ops-progress.is-complete i {
-  background: var(--dk-success-text);
-  opacity: 1;
 }.ops-progress {
   height: 3px;
   overflow: hidden;

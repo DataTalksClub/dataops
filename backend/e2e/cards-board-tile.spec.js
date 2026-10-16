@@ -3,8 +3,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 // The board tile opens with one row: where the card comes from (its Template),
-// when it is anchored, and how far along it is. The row must never push the
-// tile wider than its column; the Template name gives way first.
+// when it is anchored, and how far along it is (the task count, the tile's
+// only progress indicator). The row must never push the tile wider than its
+// column; the Template name gives way first.
 
 async function createTemplate(request, name) {
   const response = await request.post('/__e2e__/template-fixtures', {
@@ -72,6 +73,8 @@ test.describe('Cards board tile', () => {
       expect(order).toEqual(['workflow-card-lead', 'workflow-card-template', 'workflow-card-anchor', 'workflow-card-count']);
       await expect(row.locator('.workflow-card-template')).toHaveText('Book of the Week');
       await expect(row.locator('.workflow-card-count')).toHaveText('0/3 tasks');
+      // The count is the tile's one progress indicator; no bar repeats it.
+      await expect(tile.locator('[role="progressbar"], .ops-progress')).toHaveCount(0);
 
       const measure = (node) => {
         const box = (selector) => {

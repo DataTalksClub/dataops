@@ -511,21 +511,6 @@ export function createCardsSurface(context) {
       card.append(next);
     }
 
-    if (item.progress) {
-      const percent = Number(item.progress.percent) || 0;
-      const progress = document.createElement("div");
-      progress.className = `ops-progress${percent >= 100 ? " is-complete" : ""}`;
-      progress.setAttribute("role", "progressbar");
-      progress.setAttribute("aria-label", `${item.title} progress`);
-      progress.setAttribute("aria-valuemin", "0");
-      progress.setAttribute("aria-valuemax", "100");
-      progress.setAttribute("aria-valuenow", String(percent));
-      const fill = document.createElement("i");
-      fill.style.width = `${percent}%`;
-      progress.append(fill);
-      card.append(progress);
-    }
-
     const flags = cardFlags(item.progress);
     if (flags.length > 0) {
       const flagRow = document.createElement("small");

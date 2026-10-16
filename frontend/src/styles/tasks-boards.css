@@ -812,11 +812,6 @@ body[data-workspace-view="tasks"] .workflow-card-lead > .workflow-card-template 
   line-height: 1.4;
 }body[data-workspace-view="tasks"] .workflow-card-count {
   font-weight: 600;
-}body[data-workspace-view="tasks"] .workflow-board-card .ops-progress {
-  height: 4px;
-  margin: var(--dk-space-1) 0 0;
-}body[data-workspace-view="tasks"] .workflow-board-card .ops-progress i {
-  transition: width 240ms ease;
 }body[data-workspace-view="tasks"] .cards-archive-month-title {
   padding-inline: 4px;
 }
