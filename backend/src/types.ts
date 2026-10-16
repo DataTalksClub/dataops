@@ -1,3 +1,5 @@
+import type { EpisodeStage, EpisodeStageRefs } from './podcast/cardStatus';
+
 // --- Task ---
 
 /**
@@ -420,6 +422,8 @@ export interface TaskDefinition {
   closure?: TaskClosure;
   isMilestone?: boolean;
   stageOnComplete?: string;
+  /** The podcast episode stage completing this Task marks (podcast/cardStatus.ts). */
+  episodeStage?: EpisodeStage;
   assigneeId?: string;
   instructionsUrl?: string;
   instructionDocId?: string;
@@ -453,6 +457,8 @@ export interface TemplateCardDefinitionSnapshot {
    * a Task only for a ref outside this set.
    */
   taskRefs: string[];
+  /** The Template's episode stage Tasks by stage; absent when the Template marks none. */
+  episodeStages?: EpisodeStageRefs;
 }
 
 /**

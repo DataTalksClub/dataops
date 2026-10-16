@@ -11,7 +11,10 @@ import { createTemplate, instantiateTemplate } from "../src/db/templates";
 import { listTasksByCard } from "../src/db/tasks";
 import { TABLE_CARDS, TABLE_PODCAST_EPISODES } from "../src/db/tableNames";
 import { handlePodcastEpisodeRoutes } from "../src/routes/podcastEpisodes";
-import { STAGE_TASK_REFS, statusFromCard } from "../src/podcast/cardStatus";
+import { EPISODE_STAGES, statusFromCard } from "../src/podcast/cardStatus";
+
+/** Synthetic stage Task refs; the Template, not the code, says which Task marks which stage. */
+const STAGE_REFS = Object.fromEntries(EPISODE_STAGES.map((stage) => [stage, `synthetic-${stage}-step`])) as Record<(typeof EPISODE_STAGES)[number], string>;
 
 const invoke = (method: string, path: string, body?: unknown, query: Record<string, string> = {}) =>
   handler(
@@ -196,13 +199,18 @@ describe("podcast episodes", () => {
     assert.equal(leftovers.Items?.length, 0);
   });
   it("moves with its Card: a ticked stage Task advances the status", async () => {
-    // Synthetic Template named after the podcast Template's stage Tasks.
+    // Synthetic Template whose Tasks mark the episode stages.
     const template = await createTemplate(client, {
       name: "Podcast stages",
       type: "podcast",
       taskDefinitions: [
         { refId: "prep", description: "Prepare questions", offsetDays: -2 },
-        ...Object.values(STAGE_TASK_REFS).map((refId, index) => ({ refId, description: `Synthetic ${refId}`, offsetDays: index })),
+        ...EPISODE_STAGES.map((episodeStage, index) => ({
+          refId: STAGE_REFS[episodeStage],
+          description: `Synthetic ${episodeStage}`,
+          offsetDays: index,
+          episodeStage,
+        })),
       ],
     });
     const card = await createCard(client, { ...templateLink(template), title: "Synthetic stages", anchorDate: "2027-08-02", stage: "preparation" });
@@ -221,19 +229,19 @@ describe("podcast episodes", () => {
 
     await tick("prep");
     assert.equal(await status(), "booked", "a Task that is no stage moves nothing");
-    await tick(STAGE_TASK_REFS.recorded);
+    await tick(STAGE_REFS.recorded);
     assert.equal(await status(), "recorded");
     const listed = data(await invoke("GET", "/api/podcast-episodes", undefined, { status: "recorded" }));
     assert.ok(listed.items.some((item: any) => item.id === episode.id), "the status filter reads the derived status");
-    await tick(STAGE_TASK_REFS.edited);
+    await tick(STAGE_REFS.edited);
     assert.equal(await status(), "edited");
-    await tick(STAGE_TASK_REFS.scheduled);
+    await tick(STAGE_REFS.scheduled);
     assert.equal(await status(), "scheduled");
 
     const current = data(await invoke("GET", `/api/podcast-episodes/${episode.id}`));
     const noted = await invoke("PUT", `/api/podcast-episodes/${episode.id}`, { version: current.version, notes: "Synthetic note" });
     assert.equal(data(noted).status, "scheduled", "the PUT answer carries the derived status");
-    await tick(STAGE_TASK_REFS.published);
+    await tick(STAGE_REFS.published);
     assert.equal(await status(), "published");
 
     const stored = data(await invoke("GET", `/api/podcast-episodes/${episode.id}`));
@@ -243,10 +251,12 @@ describe("podcast episodes", () => {
 
   it("derives the furthest stage from the stored status and the done stage Tasks", () => {
     const done = (...refs: string[]) => new Set(refs);
-    assert.equal(statusFromCard("booked", done()), "booked");
-    assert.equal(statusFromCard("booked", done(STAGE_TASK_REFS.recorded)), "recorded");
-    assert.equal(statusFromCard("edited", done(STAGE_TASK_REFS.recorded)), "edited", "the Card never moves a status back");
-    assert.equal(statusFromCard("booked", done(STAGE_TASK_REFS.recorded, STAGE_TASK_REFS.published)), "published");
-    assert.equal(statusFromCard("cancelled", done(STAGE_TASK_REFS.recorded)), "cancelled");
+    assert.equal(statusFromCard("booked", STAGE_REFS, done()), "booked");
+    assert.equal(statusFromCard("booked", STAGE_REFS, done(STAGE_REFS.recorded)), "recorded");
+    assert.equal(statusFromCard("edited", STAGE_REFS, done(STAGE_REFS.recorded)), "edited", "the Card never moves a status back");
+    assert.equal(statusFromCard("booked", STAGE_REFS, done(STAGE_REFS.recorded, STAGE_REFS.published)), "published");
+    assert.equal(statusFromCard("cancelled", STAGE_REFS, done(STAGE_REFS.recorded)), "cancelled");
+    assert.equal(statusFromCard("booked", {}, done(STAGE_REFS.recorded)), "booked", "a Template that marks no stages moves nothing");
+    assert.equal(statusFromCard("booked", { recorded: "renamed-stream" }, done("renamed-stream")), "recorded", "the snapshot names the stage Task");
   });
 });

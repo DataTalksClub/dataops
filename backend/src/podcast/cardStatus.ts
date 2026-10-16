@@ -6,17 +6,24 @@
  * (see recordCardLink.ts): the status is derived on every read from the
  * stored status and the Card's done Tasks, and the furthest stage wins.
  * A cancelled episode stays cancelled.
+ *
+ * Which Task marks which stage is authored on the Template (a task's
+ * `episode_stage`) and captured in the Card's Template snapshot as
+ * `episodeStages`, so a renamed Task carries its stage with it.
  */
 
-/** The podcast Template Task whose completion means the episode reached a stage. */
-export const STAGE_TASK_REFS = Object.freeze({
-  recorded: 'actual-stream',
-  edited: 'edit-final-podcast-audio',
-  scheduled: 'schedule-podcast-spotify',
-  published: 'add-podcast-episode-airtable',
-} as const);
+/** Stages a Template Task can mark, in the order an episode reaches them. */
+export const EPISODE_STAGES = ['recorded', 'edited', 'scheduled', 'published'] as const;
+export type EpisodeStage = (typeof EPISODE_STAGES)[number];
 
-const ORDER = ['booked', 'recorded', 'edited', 'scheduled', 'published'] as const;
+/** For each stage, the Template task ref whose completion means the episode reached it. */
+export type EpisodeStageRefs = Partial<Record<EpisodeStage, string>>;
+
+const ORDER = ['booked', ...EPISODE_STAGES] as const;
+
+export function isEpisodeStage(value: unknown): value is EpisodeStage {
+  return typeof value === 'string' && (EPISODE_STAGES as readonly string[]).includes(value);
+}
 
 /** Statuses a Card can still move forward; others never need the Card's Tasks. */
 export function cardCanAdvance(status: string): boolean {
@@ -25,14 +32,20 @@ export function cardCanAdvance(status: string): boolean {
 }
 
 /**
- * The furthest of `stored` and the stages whose Task is done in `doneRefs`
- * (the `templateTaskRef`s of the Card's done Tasks).
+ * The furthest of `stored` and the stages in `stageRefs` (the Card's Template
+ * snapshot) whose Task is done in `doneRefs` (the `templateTaskRef`s of the
+ * Card's done Tasks).
  */
-export function statusFromCard(stored: string, doneRefs: ReadonlySet<string>): string {
+export function statusFromCard(
+  stored: string,
+  stageRefs: EpisodeStageRefs,
+  doneRefs: ReadonlySet<string>,
+): string {
   if (!cardCanAdvance(stored)) return stored;
   let furthest = ORDER.indexOf(stored as (typeof ORDER)[number]);
-  for (const [stage, ref] of Object.entries(STAGE_TASK_REFS)) {
-    if (doneRefs.has(ref)) furthest = Math.max(furthest, ORDER.indexOf(stage as (typeof ORDER)[number]));
+  for (const stage of EPISODE_STAGES) {
+    const ref = stageRefs[stage];
+    if (ref && doneRefs.has(ref)) furthest = Math.max(furthest, ORDER.indexOf(stage));
   }
   return ORDER[furthest];
 }

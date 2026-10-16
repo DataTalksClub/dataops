@@ -6,6 +6,7 @@ import type {
   TemplateTaskDefinitionSnapshot,
 } from '../types';
 import type { AssignmentPolicy } from '../db/workspaceSettings';
+import type { EpisodeStageRefs } from '../podcast/cardStatus';
 
 type Dict = Record<string, unknown>;
 
@@ -32,6 +33,15 @@ export function selectedTaskDefinitions(template: Template, selectedGroups?: rea
     .filter((definition) => !definition.optionalGroup || selected.has(definition.optionalGroup));
 }
 
+/** The Template's episode stage Tasks by stage, or undefined when it marks none. */
+function episodeStageRefs(template: Template): EpisodeStageRefs | undefined {
+  const refs: EpisodeStageRefs = {};
+  for (const definition of template.taskDefinitions || []) {
+    if (definition.episodeStage) refs[definition.episodeStage] = definition.refId;
+  }
+  return Object.keys(refs).length > 0 ? refs : undefined;
+}
+
 export function templateCardDefinitionSnapshot(
   template: Template,
   taskRefs: readonly string[],
@@ -42,6 +52,7 @@ export function templateCardDefinitionSnapshot(
     references: copy(template.references || []),
     cardLinkDefinitions: copy(template.cardLinkDefinitions || []),
     taskRefs: [...new Set(taskRefs)].sort(),
+    episodeStages: episodeStageRefs(template),
   });
 }
 

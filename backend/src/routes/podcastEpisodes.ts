@@ -4,7 +4,7 @@
  * An episode is the planning record for one podcast episode from booking to
  * publication. `episode.cardId` is the single canonical link to the Card that
  * executes it; the episode pushes its recording date and guests onto that
- * Card one way, and reads its status back from the Card's done Tasks
+ * Card one way, and reads its status back from the Card's done stage Tasks
  * (podcast/cardStatus.ts).
  */
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
@@ -187,12 +187,14 @@ async function pushEpisodeToCard(client: DynamoDBDocumentClient, episode: Podcas
 /** The status the episode's Card has moved it to, or the stored one. */
 async function derivedStatus(client: DynamoDBDocumentClient, episode: PodcastEpisode) {
   if (!episode.cardId || !cardCanAdvance(episode.status)) return episode.status;
+  const stageRefs = (await getCard(client, episode.cardId))?.templateDefinitionSnapshot?.episodeStages;
+  if (!stageRefs) return episode.status;
   const done = new Set(
     (await listTasksByCard(client, episode.cardId))
       .filter((task) => task.status === "done" && task.templateTaskRef)
       .map((task) => String(task.templateTaskRef)),
   );
-  return statusFromCard(episode.status, done);
+  return statusFromCard(episode.status, stageRefs, done);
 }
 
 /** The episode as every response shows it: status and readiness derived, never stored. */

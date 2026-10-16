@@ -130,6 +130,39 @@ describe('Card Template update planning', () => {
     for (const task of writes) assert.equal(task.assigneeId, 'former-default', task.id);
   });
 
+  it('captures newly authored episode stages in the Card snapshot even when the stage Task is done', async () => {
+    const source = template(1);
+    const target = template(2);
+    target.taskDefinitions = target.taskDefinitions!.map((definition) => (
+      definition.refId === 'host' ? { ...definition, episodeStage: 'recorded' as const } : definition
+    ));
+    const card = cardFrom(source);
+    assert.equal(card.templateDefinitionSnapshot!.episodeStages, undefined, 'a Template that marks no stages leaves none');
+    const tasks = tasksFrom(source);
+    tasks[1].status = 'done';
+
+    const plan = buildCardTemplateUpdatePlan(card, tasks, target);
+    assert.equal(plan.preview.state, 'update-available');
+    assert.deepEqual(plan.targetCardSnapshot.episodeStages, { recorded: 'host' });
+
+    const cards: Card[] = [];
+    const fake = {
+      send: async (command: unknown) => {
+        if (command instanceof GetCommand) return {};
+        if (command instanceof TransactWriteCommand) {
+          for (const item of command.input.TransactItems || []) {
+            if (String(item.Put?.Item?.PK).startsWith('CARD#')) cards.push(item.Put.Item as unknown as Card);
+          }
+          return {};
+        }
+        throw new Error('Unexpected command');
+      },
+    } as any;
+    disableLocalTransactionEmulation();
+    await applyCardTemplateUpdate(fake, card, tasks, target, plan.preview.previewToken, 'operator');
+    assert.deepEqual(cards[0]?.templateDefinitionSnapshot?.episodeStages, { recorded: 'host' });
+  });
+
   it('propagates a new browser requirement to the open Task the Template owns', () => {
     const source = template(1);
     const target = template(2);

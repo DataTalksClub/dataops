@@ -9,6 +9,7 @@
  */
 
 import type { JsonRecord, JsonValue } from './portableMappers';
+import { EPISODE_STAGES } from '../podcast/cardStatus';
 
 export const VALID_TASK_STATUSES = new Set(['todo', 'waiting', 'done', 'skipped']);
 const VALID_ACTIVE_CARD_STAGES = new Set(['preparation', 'announced', 'after-event']);
@@ -372,6 +373,7 @@ export function validateTaskDefinitionDocContext(
       errors.push(`${definitionContext} field offsetDays must be an integer`);
     }
     optionalEnum(record, 'stageOnComplete', VALID_ACTIVE_CARD_STAGES, errors, definitionContext);
+    optionalEnum(record, 'episodeStage', new Set(EPISODE_STAGES), errors, definitionContext);
     for (const field of [
       'assigneeId', 'instructionsUrl', 'instructionDocId',
       'instructionStepId', 'phase', 'requiredLinkName',

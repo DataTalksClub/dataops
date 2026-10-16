@@ -161,6 +161,33 @@ describe('authored YAML template mapping', () => {
     assert.ok(unlinked.some((message) => message.startsWith('card_title is only supported')));
   });
 
+  it('round-trips a task episode_stage and allows each stage once on a podcast template only', () => {
+    const stageTask = (refId: string, episodeStage: string) => ({ refId, description: `Synthetic ${refId}`, offsetDays: 0, episodeStage });
+    const authored = templateToYaml({
+      ...RUNTIME_TEMPLATE,
+      type: 'podcast',
+      taskDefinitions: [stageTask('synthetic-stream', 'recorded'), stageTask('synthetic-publish', 'published')],
+    });
+    assert.strictEqual((authored.tasks as Record<string, unknown>[])[0].episode_stage, 'recorded');
+    assert.deepStrictEqual(validateAuthoredTemplate(authored), []);
+    assert.deepStrictEqual(templateToYaml(templateFromYaml(authored)), authored);
+
+    const messages = (doc: Record<string, unknown>) => validateAuthoredTemplate(doc).map((issue) => issue.message).join('\n');
+    const tasks = authored.tasks as Record<string, unknown>[];
+    assert.match(
+      messages({ ...authored, tasks: [{ ...tasks[0], episode_stage: 'aired' }, tasks[1]] }),
+      /task 'synthetic-stream' episode_stage must be recorded, edited, scheduled, published/,
+    );
+    assert.match(
+      messages({ ...authored, tasks: [tasks[0], { ...tasks[1], episode_stage: 'recorded' }] }),
+      /task 'synthetic-publish' episode_stage recorded is already marked by task 'synthetic-stream'/,
+    );
+    assert.match(
+      messages({ ...authored, type: 'webinar' }),
+      /task 'synthetic-stream' episode_stage is only supported on templates that create podcast episodes \(podcast\)/,
+    );
+  });
+
   it('round-trips optional task groups and rejects malformed group slugs', () => {
     const authored = templateToYaml({
       ...RUNTIME_TEMPLATE,

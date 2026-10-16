@@ -15,7 +15,8 @@
  * throughout the content corpus and the workflow-template JSON Schema.
  */
 
-import { cardTitlePatternIssues } from '../cards/cardTitlePattern';
+import { cardTitlePatternIssues, recordTemplateTypes } from '../cards/cardTitlePattern';
+import { EPISODE_STAGES, isEpisodeStage } from '../podcast/cardStatus';
 import { requiresError } from '../resources/vocabulary';
 import { browserRequirementError } from '../browserRequirement';
 import { isTemplateIcon, TEMPLATE_ICONS } from './templateIcons';
@@ -48,6 +49,7 @@ const TASK_FIELDS = [
   ['runtimeInstructionSource', 'runtime_instruction_source'],
   ['isMilestone', 'milestone'],
   ['stageOnComplete', 'stage_on_complete'],
+  ['episodeStage', 'episode_stage'],
   ['assigneeId', 'assignee_id'],
   ['instructionsUrl', 'instructions_url'],
   ['instructionDocId', 'instruction_doc_id'],
@@ -246,6 +248,8 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
   }
   const linkNames = new Set(((doc.card_links as Dict[] | undefined) || []).map((link) => String(link.name)));
   const seen = new Set<string>();
+  const episodeStageTasks = new Map<string, string>();
+  const createsEpisodes = recordTemplateTypes('podcast-episode').includes(type);
 
   for (const task of tasks) {
     strings(task, ['task_kind', 'owner_role', 'instruction_exempt_reason', 'runtime_instruction_source', 'optional_group']);
@@ -301,6 +305,18 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
       && !['preparation', 'announced', 'after-event'].includes(String(task.stage_on_complete))
     ) {
       fail(`task '${id}' stage_on_complete must be preparation, announced, or after-event`);
+    }
+    if (task.episode_stage !== undefined) {
+      const stage = task.episode_stage;
+      if (!createsEpisodes) {
+        fail(`task '${id}' episode_stage is only supported on templates that create podcast episodes (${recordTemplateTypes('podcast-episode').join(', ')})`);
+      } else if (!isEpisodeStage(stage)) {
+        fail(`task '${id}' episode_stage must be ${EPISODE_STAGES.join(', ')}`);
+      } else if (episodeStageTasks.has(stage)) {
+        fail(`task '${id}' episode_stage ${stage} is already marked by task '${episodeStageTasks.get(stage)}'`);
+      } else {
+        episodeStageTasks.set(stage, id);
+      }
     }
     const link = task.required_link;
     if (typeof link === 'string' && linkNames.size > 0 && !linkNames.has(link)) {
