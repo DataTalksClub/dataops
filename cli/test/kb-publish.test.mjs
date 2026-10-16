@@ -10,7 +10,7 @@ import { captureIo, fakePortal, isolateConfig } from "./helpers.mjs";
 isolateConfig();
 const realFetch = globalThis.fetch;
 const { run } = await import("../src/cli.mjs");
-const { ORIGIN, batches, classify, isManagedPath, planReconcile, sha256 } = await import("../src/knowledgePublish.mjs");
+const { ORIGIN, MAX_BATCH_BYTES, apiMutation, batches, classify, isManagedPath, planReconcile, sha256 } = await import("../src/knowledgePublish.mjs");
 
 const ROOTS = ["content", "_docs", "workflow-templates", "document-templates"];
 const h = (value) => (value === null ? null : sha256(Buffer.from(value)));
@@ -95,6 +95,18 @@ describe("three-way classification", () => {
     const mutation = (name, size) => ({ path: name, operation: "edit", base64: "a".repeat(size) });
     assert.deepEqual(batches([mutation("a", 40), mutation("b", 40), mutation("c", 40)], 220).map((batch) => batch.map((item) => item.path)), [["a", "b"], ["c"]]);
     assert.throws(() => batches([mutation("huge", 500)], 220), /too large/);
+  });
+
+  test("publishes a 3.5 MB file without exceeding the API request budget", () => {
+    const large = { path: "_docs/audit/catalog.csv", operation: "edit", base64: Buffer.alloc(3_520_000, 97).toString("base64") };
+    const next = { path: "content/next.md", operation: "edit", base64: Buffer.alloc(300_000, 98).toString("base64") };
+    const result = batches([large, next]);
+    assert.deepEqual(result.map(batch => batch.map(item => item.path)), [[large.path], [next.path]]);
+    for (const batch of result) {
+      const body = { expectedRevision: "r".repeat(64), message: "Publish repository commit", mutations: batch.map(apiMutation) };
+      assert.ok(Buffer.byteLength(JSON.stringify(body)) < MAX_BATCH_BYTES);
+    }
+    assert.throws(() => batches([{ ...large, base64: "a".repeat(MAX_BATCH_BYTES) }]), /too large/);
   });
 });
 

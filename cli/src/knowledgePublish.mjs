@@ -22,8 +22,8 @@ import path from "node:path";
 
 const ZERO = /^0+$/;
 const REGULAR_MODES = new Set(["100644", "100755"]);
-/** Request bodies stay well under the API's 6 MB payload limit. */
-export const MAX_BATCH_BYTES = 4_000_000;
+/** Leave 1 MB below Lambda's 6 MB limit for the request envelope and headers. */
+export const MAX_BATCH_BYTES = 5_000_000;
 /** History pages read per diverged path before its lineage counts as unknown. */
 export const MAX_HISTORY_PAGES = 20;
 
