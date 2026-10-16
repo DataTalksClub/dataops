@@ -70,6 +70,7 @@ const ROUTE_FAMILIES: ReadonlyArray<readonly [ApiRouteFamily, string]> = [
   ['cards', '/api/cards'],
   ['templates', '/api/templates'],
   ['recurring', '/api/recurring'],
+  ['recurring', '/api/automations'],
   ['files', '/api/files'],
   ['artifacts', '/api/artifacts'],
   ['users_tokens', '/api/users'],

@@ -13,6 +13,7 @@ import { berlinDate } from '../sponsorFinance/core';
 import { evaluateCommunicationSuggestions } from '../sponsorCommunications/suggestions';
 import { templateCardProjection } from '../templates/cardTemplateProjection';
 import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
+import { recordAutomationRun } from '../automations/runs';
 
 export interface CronRunnerResult {
   created: string[];
@@ -41,6 +42,17 @@ const defaultSponsorAutomationEvaluators: SponsorAutomationEvaluators = {
   financeAlerts: evaluateSponsorFinanceAlerts,
   communicationSuggestions: evaluateCommunicationSuggestions,
 };
+
+/** `created 2, resolved 1` from an evaluator's counts. */
+function countsSummary(result: unknown): string {
+  if (!result || typeof result !== 'object') return 'Done';
+  const counts = Object.entries(result as Record<string, unknown>)
+    .filter(([, value]) => typeof value === 'number')
+    .map(([name, value]) => `${name} ${value}`);
+  return counts.length ? counts.join(', ') : 'Done';
+}
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 /**
  * Format an anchor date as a human-readable string (e.g., "Mar 15").
@@ -79,20 +91,23 @@ async function runCron(
   let skipped = 0;
   let recovered = 0;
   let failures = 0;
+  let templateFailures = 0;
   const recurringGenerated: string[] = [];
   let recurringSkipped = 0;
   let recurringFailures = 0;
 
   const sponsorAutomations = [
-    ['sponsor booking alerts', sponsorEvaluators.bookingAlerts],
-    ['sponsor finance alerts', sponsorEvaluators.financeAlerts],
-    ['sponsor communication suggestions', sponsorEvaluators.communicationSuggestions],
+    ['sponsor-booking-alerts', 'sponsor booking alerts', sponsorEvaluators.bookingAlerts],
+    ['sponsor-finance-alerts', 'sponsor finance alerts', sponsorEvaluators.financeAlerts],
+    ['sponsor-communication-suggestions', 'sponsor communication suggestions', sponsorEvaluators.communicationSuggestions],
   ] as const;
-  for (const [name, evaluate] of sponsorAutomations) {
+  for (const [automationId, name, evaluate] of sponsorAutomations) {
     try {
-      await evaluate(client, todayDate);
-    } catch {
+      const result = await evaluate(client, todayDate);
+      await recordAutomationRun(client, automationId, { ok: true, summary: countsSummary(result) }, today);
+    } catch (err: unknown) {
       failures++;
+      await recordAutomationRun(client, automationId, { ok: false, summary: `Failed: ${(err as Error)?.message || 'unknown error'}` }, today);
       console.error(`Sponsor automation evaluator failed: ${name}`);
       try {
         await createNotification(client, {
@@ -138,6 +153,13 @@ async function runCron(
       dueAt: todayDate,
     });
   } finally {
+    await recordAutomationRun(client, 'recurring-tasks', {
+      ok: recurringFailures === 0,
+      summary: [
+        `${plural(recurringGenerated.length, 'task')} created`,
+        ...(recurringFailures ? [plural(recurringFailures, 'failure')] : []),
+      ].join(', '),
+    }, today);
     // The function's error metrics cannot see a pass that never ran, so the
     // pass reports itself: no datapoint means a missed day, and a datapoint
     // carrying a failure count says the recurring schedules are broken.
@@ -225,6 +247,7 @@ async function runCron(
       created.push(card.id);
     } catch (err: unknown) {
       failures++;
+      templateFailures++;
       await createNotification(client, {
         type: 'automation-failure',
         message: `Automatic template generation failed for ${template.name} (${template.id}) on ${todayDate}: ${(err as Error).message}`,
@@ -237,6 +260,15 @@ async function runCron(
       });
     }
   }
+
+  await recordAutomationRun(client, 'automatic-template-cards', {
+    ok: templateFailures === 0,
+    summary: [
+      `${plural(created.length, 'card')} created`,
+      ...(recovered ? [`${plural(recovered, 'task')} recovered`] : []),
+      ...(templateFailures ? [plural(templateFailures, 'failure')] : []),
+    ].join(', '),
+  }, today);
 
   return {
     created,

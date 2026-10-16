@@ -5,6 +5,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { handleCardRoutes } from './routes/cards';
 import { handleTemplateRoutes } from './routes/templates';
 import { handleRecurringRoutes } from './routes/recurring';
+import { handleAutomationRoutes } from './routes/automations';
 import { handleUserRoutes } from './routes/users';
 import { handleFileRoutes } from './routes/files';
 import { handleArtifactRoutes } from './routes/artifacts';
@@ -345,6 +346,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/recurring')) {
       const result = await handleRecurringRoutes(reqPath, method, event.body || null, event);
+      if (result) return result;
+    }
+
+    if (reqPath.startsWith('/api/automations')) {
+      const result = await handleAutomationRoutes(reqPath, method, event, client);
       if (result) return result;
     }
 

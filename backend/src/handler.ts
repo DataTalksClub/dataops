@@ -2,6 +2,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { route } from './router';
 import { getClient } from './db/client';
 import { runCron } from './cron/runner';
+import { recordAutomationRun } from './automations/runs';
 import { writePortableExportArchive } from './export/archive';
 import { backupConfigFromEnv, writeRawDynamoBackup } from './export/dynamoBackup';
 import { sanitizeJsonResponse } from './responsePrivacy';
@@ -45,6 +46,18 @@ async function ensureInitialized(): Promise<void> {
   if (!initialized) {
     client = await getClient();
     initialized = true;
+  }
+}
+
+/** Run a scheduled job and record its outcome for the automations overview. */
+async function recordedRun<T>(automationId: string, job: () => Promise<T>, summarize: (result: T) => string): Promise<T> {
+  try {
+    const result = await job();
+    await recordAutomationRun(client!, automationId, { ok: true, summary: summarize(result) });
+    return result;
+  } catch (error) {
+    await recordAutomationRun(client!, automationId, { ok: false, summary: `Failed: ${(error as Error)?.message || 'unknown error'}` });
+    throw error;
   }
 }
 
@@ -287,12 +300,12 @@ async function handleInvocation(
       const archiveBucket = process.env.DATAOPS_EXPORT_ARCHIVE_BUCKET || '';
       const archivePrefix = process.env.DATAOPS_EXPORT_ARCHIVE_PREFIX || 'execution-exports';
       const archiveLocalDir = process.env.DATAOPS_EXPORT_ARCHIVE_LOCAL_DIR || '';
-      const result = await writePortableExportArchive(client!, {
+      const result = await recordedRun('execution-export', () => writePortableExportArchive(client!, {
         bucket: archiveBucket || undefined,
         prefix: archivePrefix,
         environment: process.env.DATAOPS_ENV,
         localArchiveDir: archiveLocalDir || undefined,
-      });
+      }), (archive) => `${Object.values(archive.manifest.entity_counts).reduce((sum, count) => sum + Number(count || 0), 0)} records exported`);
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -310,7 +323,8 @@ async function handleInvocation(
       };
     }
     if (detail?.dataopsAction === 'dynamo-backup') {
-      const result = await writeRawDynamoBackup(client!, backupConfigFromEnv());
+      const result = await recordedRun('dynamo-backup', () => writeRawDynamoBackup(client!, backupConfigFromEnv()),
+        (backup) => `${backup.manifest.item_count} items from ${backup.manifest.table_count} tables`);
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/json' },
