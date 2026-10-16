@@ -16,6 +16,8 @@ export interface OwnerCalendarConfig {
   accountId?: string;
   settings?: CalendarOverlaySettings;
   includeAll?: boolean;
+  /** Berlin date the overlay counts as today; defaults to the current one. */
+  today?: string;
 }
 
 export interface DapierConnectionOption {
@@ -49,6 +51,20 @@ export function formatBerlinDate(isoString: string): string {
   }).formatToParts(new Date(isoString));
   const get = (type: string) => parts.find((p) => p.type === type)!.value;
   return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+export function berlinToday(): string {
+  return formatBerlinDate(new Date().toISOString());
+}
+
+/**
+ * The part of a range the owner's calendar is read for: today onward, in
+ * Berlin time. Past days need no open slots, so the calendar is not read for
+ * them; a range wholly in the past gives null.
+ */
+export function ownerCalendarRange(from: string, to: string, today = berlinToday()): { from: string; to: string } | null {
+  const start = from < today ? today : from;
+  return start > to ? null : { from: start, to };
 }
 
 export function eachDayOfInterval(from: string, to: string): string[] {
@@ -277,9 +293,14 @@ export async function fetchDapierConnections(config?: OwnerCalendarConfig): Prom
 export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOverlayProvider {
   return {
     name: 'owner-calendar',
-    async project(from: string, to: string): Promise<CalendarOverlayProjection> {
+    async project(requestedFrom: string, requestedTo: string): Promise<CalendarOverlayProjection> {
       const blank = (connection: CalendarOverlayConnection): CalendarOverlayProjection => ({ items: [], connection });
       const connected = (items: CalendarOverlayItem[]): CalendarOverlayProjection => ({ items, connection: { state: 'connected' } });
+      const range = ownerCalendarRange(requestedFrom, requestedTo, config?.today);
+      // Callers leave this source out for a past range; if one asks anyway,
+      // there is nothing to read rather than a broker call.
+      if (!range) return connected([]);
+      const { from, to } = range;
       let activeSettings = config?.settings;
       if (!activeSettings && config?.client) {
         try {

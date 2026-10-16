@@ -1,18 +1,18 @@
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ownerCalendarOverlay,
   determineSlotType,
   setOwnerCalendarProviderClientsForTests,
   shouldFilterOwnerCalendarEvent,
+  ownerCalendarRange,
 } from '../src/calendar/ownerCalendarOverlay';
-import { resetCalendarOverlayProvidersForTests } from '../src/calendar/overlays';
 import { DEFAULT_CALENDAR_OVERLAY_SETTINGS } from '../src/db/calendar';
 
-describe('Alexey calendar overlay and filtering', () => {
-  beforeEach(() => {
-    resetCalendarOverlayProvidersForTests();
-  });
+// Every fixture range starts on or after this day, so none of it is clipped as past.
+const TODAY = '2026-10-01';
+
+describe('owner calendar overlay and filtering', () => {
 
   describe('shouldFilterOwnerCalendarEvent', () => {
     it('filters out lunch placeholders and routine personal tasks per SOP and guidelines', () => {
@@ -335,6 +335,7 @@ describe('Alexey calendar overlay and filtering', () => {
 
       setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
       const provider = ownerCalendarOverlay({
+        today: TODAY,
         brokerCredential: 'test-token',
         includeAll: true,
         settings: {
@@ -366,7 +367,7 @@ describe('Alexey calendar overlay and filtering', () => {
         } as any,
       });
 
-      const provider = ownerCalendarOverlay({ brokerCredential: '' });
+      const provider = ownerCalendarOverlay({ today: TODAY, brokerCredential: '' });
       const { items, connection } = await provider.project('2026-10-01', '2026-10-31');
       assert.deepEqual(items, []);
       assert.equal(connection.state, 'not-configured');
@@ -381,7 +382,7 @@ describe('Alexey calendar overlay and filtering', () => {
           },
         } as any,
       });
-      const { connection } = await ownerCalendarOverlay({ settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS }).project('2026-10-01', '2026-10-31');
+      const { connection } = await ownerCalendarOverlay({ today: TODAY, settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS }).project('2026-10-01', '2026-10-31');
       assert.deepEqual(connection, {
         state: 'not-configured',
         reason: 'This environment is not allowed to read the calendar broker secret personal-scheduler/dapier-api-token.',
@@ -392,7 +393,7 @@ describe('Alexey calendar overlay and filtering', () => {
       setOwnerCalendarProviderClientsForTests({
         fetch: (async () => new Response('Unauthorized', { status: 401 })) as typeof fetch,
       });
-      const provider = ownerCalendarOverlay({ brokerCredential: 'test-token', settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS });
+      const provider = ownerCalendarOverlay({ today: TODAY, brokerCredential: 'test-token', settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS });
       const { items, connection } = await provider.project('2026-10-01', '2026-10-31');
       assert.deepEqual(items, []);
       assert.deepEqual(connection, { state: 'unavailable', reason: 'The calendar broker refused the token request (HTTP 401).' });
@@ -473,6 +474,7 @@ describe('Alexey calendar overlay and filtering', () => {
       setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
 
       const provider = ownerCalendarOverlay({
+        today: TODAY,
         brokerUrl: 'https://dapier.dtcdev.click',
         brokerCredential: 'dap_synthetic_token',
         agent: 'personal-scheduler',
@@ -586,6 +588,7 @@ describe('Alexey calendar overlay and filtering', () => {
       setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
 
       const provider = ownerCalendarOverlay({
+        today: TODAY,
         brokerCredential: 'synthetic-token',
       });
 
@@ -676,6 +679,7 @@ describe('Alexey calendar overlay and filtering', () => {
       // Without includeAll (the calendar grid): only open slots, never the events.
       // The 12:30 podcast takes the midday slot; the Tuesday evening slot stays open.
       const defaultProvider = ownerCalendarOverlay({
+        today: TODAY,
         brokerCredential: 'token',
         includeAll: false,
         settings: {
@@ -695,6 +699,7 @@ describe('Alexey calendar overlay and filtering', () => {
 
       // With includeAll: morning meeting is kept and tagged with slot: outside
       const allProvider = ownerCalendarOverlay({
+        today: TODAY,
         brokerCredential: 'token',
         includeAll: true,
       });
@@ -706,6 +711,39 @@ describe('Alexey calendar overlay and filtering', () => {
       assert.equal(allItems[1].id, 'owner-calendar:evt-midday');
       assert.equal(allItems[1].slot, 'midday');
       assert.equal(allItems[1].isSlotEvent, true);
+    });
+  });
+
+  describe('past days', () => {
+    it('reads the calendar only from today onward, and not at all for a past range', () => {
+      assert.equal(ownerCalendarRange('2026-09-28', '2026-10-04', '2026-10-16'), null);
+      assert.equal(ownerCalendarRange('2026-10-12', '2026-10-15', '2026-10-16'), null);
+      assert.deepEqual(ownerCalendarRange('2026-10-12', '2026-10-18', '2026-10-16'), { from: '2026-10-16', to: '2026-10-18' });
+      assert.deepEqual(ownerCalendarRange('2026-10-16', '2026-10-16', '2026-10-16'), { from: '2026-10-16', to: '2026-10-16' });
+      assert.deepEqual(ownerCalendarRange('2026-10-19', '2026-10-25', '2026-10-16'), { from: '2026-10-19', to: '2026-10-25' });
+    });
+
+    it('offers open slots only from today and asks Google only for today onward', async () => {
+      const urls: string[] = [];
+      setOwnerCalendarProviderClientsForTests({
+        fetch: (async (input: RequestInfo | URL) => {
+          const url = String(input);
+          urls.push(url);
+          if (url.endsWith('/api/agent/token')) return Response.json({ access_token: 'g' });
+          return Response.json({ items: [] });
+        }) as typeof fetch,
+      });
+      // Wednesday 14 October 2026 is today; the week runs Mon 12 to Sun 18.
+      const provider = ownerCalendarOverlay({ today: '2026-10-14', brokerCredential: 'token', settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS });
+      const { items } = await provider.project('2026-10-12', '2026-10-18');
+      assert.deepEqual([...new Set(items.map((item) => item.startDate))], ['2026-10-14', '2026-10-15', '2026-10-16']);
+      const googleUrl = new URL(urls.find((url) => url.includes('googleapis.com'))!);
+      assert.equal(googleUrl.searchParams.get('timeMin'), '2026-10-14T00:00:00Z');
+
+      urls.length = 0;
+      const past = await provider.project('2026-09-28', '2026-10-04');
+      assert.deepEqual(past.items, []);
+      assert.deepEqual(urls, [], 'a past week makes no broker or Google request');
     });
   });
 });

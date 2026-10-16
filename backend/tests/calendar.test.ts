@@ -275,6 +275,10 @@ describe("operations calendar", () => {
     );
     assert.deepEqual(parse(response).sources["newsletter-issues-readonly"], { state: "connected" });
     assert.ok(parse(response).sources["owner-calendar"].state);
+    // A past range still shows newsletter issues but never reads the owner's calendar.
+    response = await invoke("GET", "/api/calendar-items/overlays", undefined, {}, { from: "2020-01-01", to: "2020-01-31" });
+    assert.deepEqual(Object.keys(parse(response).sources), ["newsletter-issues-readonly"]);
+    assert.ok(!parse(response).items.some((i: any) => i.isAvailableSlot && i.provider === "owner-calendar"));
     response = await invoke("POST", "/api/calendar-items", {
       activityType: "webinar",
       title: "Dismissible synthetic",

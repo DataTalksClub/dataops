@@ -401,6 +401,10 @@ export function createPlanningSurface(context) {
         )),
         overlaysOn = (date) => overlays.filter((overlay) => {
           if (overlay.startDate > date || overlay.endDate < date) return false;
+          // A past day has no open event slots. The server reads the owner's
+          // calendar only from today (Berlin); this also covers a page left
+          // open past midnight.
+          if (overlay.provider === "owner-calendar" && date < todayIso) return false;
           if (isAvailableOverlay(overlay)) return showAvailable;
           // Alexey's own events (vacations, flights, meetings) are never items on
           // the calendar: they only decide which event slots are open.
@@ -669,7 +673,10 @@ export function createPlanningSurface(context) {
           : "";
         const planningWarnings = `${holidayStaleMessage}${holidayHorizonMessage}`;
         status.textContent = planningWarnings.trimEnd();
-        setIndicator("loading", "Loading open event slots…");
+        // A wholly past range has no open slots to wait for: the overlay
+        // request then only carries newsletter issues, so it loads quietly.
+        if (to >= todayIsoDate()) setIndicator("loading", "Loading open event slots…");
+        else setIndicator(planningWarnings ? "warning" : "idle", planningWarnings.trimEnd());
         const overlayResult = await overlayPromise;
         if (revision !== loadRevision) return;
         overlays = overlayResult.status === "fulfilled" ? overlayResult.value.items || [] : [];
@@ -800,6 +807,7 @@ export function createPlanningSurface(context) {
       api,
       escapeHtml,
       plannerLabel,
+      todayIsoDate,
       onAddActivity: (selectedDayIso) => openActivityDialog(null, selectedDayIso),
       onEditActivity: (itemId) => {
         const item = items.find((value) => value.id === itemId);

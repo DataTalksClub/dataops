@@ -468,6 +468,7 @@ describe("Planning surface production behavior", () => {
     const dom = createCalendarDom();
     const harness = createPlanningHarness({
       calendar: dom,
+      today: "2026-08-10",
       request: async (url) => String(url).includes("/overlays")
         ? {
           items: [
@@ -504,6 +505,7 @@ describe("Planning surface production behavior", () => {
     const dom = createCalendarDom();
     const harness = createPlanningHarness({
       calendar: dom,
+      today: "2026-08-10",
       request: async (url) => String(url).includes("/overlays")
         ? {
           items: [
@@ -524,6 +526,73 @@ describe("Planning surface production behavior", () => {
     assert.doesNotMatch(html, /Vacation|Flight to Lisbon/);
     assert.match(html, /data-day="2026-08-12"[\s\S]*?12:30 Available/);
     assert.equal((html.match(/class="calendar-overlay /g) || []).length, 1);
+  });
+
+  test("shows open event slots only from today, never on past days", async () => {
+    const dom = createCalendarDom();
+    dom.view.value = "week";
+    const slot = (date) => ({ provider: "owner-calendar", id: `owner-slot:${date}:midday`, startDate: date, endDate: date,
+      label: "12:30 Available", category: "Available slot", isAvailableSlot: true });
+    const harness = createPlanningHarness({
+      calendar: dom,
+      today: "2026-10-14",
+      // Even a slot for a past day in the response (a page left open past
+      // midnight) stays off the grid.
+      request: async (url) => String(url).includes("/overlays")
+        ? { items: ["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-16"].map(slot), sources: { "owner-calendar": { state: "connected" } } }
+        : { items: [], holidays: [], alerts: [] },
+    });
+    await harness.surface.renderCalendarSurface();
+    await nextTicks();
+    const html = dom.grid.innerHTML;
+    const slotDays = [...html.matchAll(/data-open-day="([^"]+)" title="Open event slot/g)].map((match) => match[1]);
+    assert.deepEqual(slotDays, ["2026-10-14", "2026-10-16"]);
+  });
+
+  test("a past week shows real items, no open slots and no slot spinner", async () => {
+    const dom = createCalendarDom();
+    dom.view.value = "week";
+    const indicator = dom.surface.setQuery("[data-calendar-indicator]", new TestElement("span"));
+    let finishOverlay;
+    const harness = createPlanningHarness({
+      calendar: dom,
+      today: "2026-10-14",
+      request: async (url) => {
+        if (!String(url).includes("/overlays")) {
+          return { items: [{ id: "past-webinar", title: "Past webinar", activityType: "webinar", allDay: true,
+            startDate: "2026-09-08", endDate: "2026-09-08" }], holidays: [], alerts: [] };
+        }
+        return new Promise((resolve) => { finishOverlay = resolve; });
+      },
+    });
+    const opening = harness.surface.renderCalendarSurface();
+    await nextTicks();
+    finishOverlay({ items: [] });
+    await opening;
+    // Navigate back to the week of Monday 7 September 2026, wholly past.
+    for (let week = 0; week < 4; week++) {
+      const moving = dom.surface.querySelector("[data-prev]").onclick();
+      await nextTicks();
+      finishOverlay({ items: [] });
+      await moving;
+      await nextTicks();
+    }
+    const pastLoad = dom.surface.querySelector("[data-prev]").onclick();
+    await nextTicks();
+    assert.match(dom.surface.querySelector("[data-period-heading]").textContent, /Week of September 7, 2026/);
+    assert.match(dom.grid.innerHTML, /Past webinar/);
+    // Only the newsletter issues are still loading; there is no slot spinner.
+    assert.notEqual(indicator.dataset.state, "loading");
+    assert.equal(dom.grid.getAttribute("aria-busy"), "false");
+    finishOverlay({ items: [
+      { provider: "newsletter-issues-readonly", id: "past-issue", startDate: "2026-09-08", endDate: "2026-09-08",
+        label: "Weekly #290 · Sponsor", status: "sent", isAvailableSlot: false, href: "/newsletter?issueId=past-issue" },
+    ], sources: { "newsletter-issues-readonly": { state: "connected" } } });
+    await pastLoad;
+    await nextTicks();
+    assert.match(dom.grid.innerHTML, /Weekly #290 · Sponsor/);
+    assert.doesNotMatch(dom.grid.innerHTML, /Open event slot|Available/);
+    assert.equal(indicator.dataset.state, "idle");
   });
 
   test("marks the open-slot source as not connected instead of showing an empty layer", async () => {
@@ -1047,6 +1116,28 @@ describe("Planning surface production behavior", () => {
     // Click close
     dom.dayClose.onclick();
     assert.equal(dom.dayDialog.open, false);
+  });
+
+  test("a past day's schedule lists what happened, with no slots and no calendar request", async () => {
+    const dom = createCalendarDom();
+    const harness = createPlanningHarness({
+      calendar: dom,
+      today: "2026-08-14",
+      request: async (url) => String(url).includes("/overlays") ? { items: [] } : {
+        alerts: [], holidays: [],
+        items: [{ id: "past-webinar", title: "Past webinar", activityType: "webinar", status: "confirmed",
+          startDate: "2026-08-13", endDate: "2026-08-13", startKey: "2026-08-13", endKey: "2026-08-13", allDay: true, version: 1 }],
+      },
+    });
+    await harness.surface.renderCalendarSurface();
+    await nextTicks();
+    const before = harness.requests.length;
+    await dom.grid.onclick({ target: { closest: (sel) => sel === "[data-open-day]" ? { dataset: { openDay: "2026-08-13" } } : null } });
+    await nextTicks();
+    assert.equal(dom.dayDialog.open, true);
+    assert.equal(harness.requests.length, before, "a past day makes no overlay request");
+    assert.match(dom.dayBody.innerHTML, /Past webinar/);
+    assert.doesNotMatch(dom.dayBody.innerHTML, /Event Slot|Available/);
   });
 
   // Timed activities are UTC instants; the day schedule shows Berlin time.

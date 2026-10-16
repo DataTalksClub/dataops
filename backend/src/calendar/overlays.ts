@@ -41,18 +41,8 @@ export type CalendarOverlayProvider = {
   project(from: string, to: string): Promise<CalendarOverlayProjection>;
 };
 
-const providers: CalendarOverlayProvider[] = [];
-
-export function registerCalendarOverlayProvider(provider: CalendarOverlayProvider) {
-  const existingIndex = providers.findIndex((p) => p.name === provider.name);
-  if (existingIndex >= 0) {
-    providers[existingIndex] = provider;
-  } else {
-    providers.push(provider);
-  }
-}
-
-export async function projectCalendarOverlays(from: string, to: string): Promise<{
+/** Projects the given overlay sources over a date range, one request at a time. */
+export async function projectCalendarOverlays(from: string, to: string, providers: CalendarOverlayProvider[]): Promise<{
   items: CalendarOverlayItem[];
   sources: Record<string, CalendarOverlayConnection>;
 }> {
@@ -69,8 +59,4 @@ export async function projectCalendarOverlays(from: string, to: string): Promise
     }
   });
   return { items, sources };
-}
-
-export function resetCalendarOverlayProvidersForTests() {
-  providers.length = 0;
 }

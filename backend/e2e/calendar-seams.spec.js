@@ -327,8 +327,8 @@ test("calendar grid is ready before the external overlay response", async ({ pag
   await page.route("**/api/calendar-items**", async (route) => {
     if (new URL(route.request().url()).pathname.endsWith("/overlays")) {
       await overlayReady;
-      return route.fulfill({ json: { items: [{ id: "owner-slot:2026-06-30:midday", provider: "owner-calendar",
-        startDate: "2026-06-30", endDate: "2026-06-30", category: "Available slot", label: "12:30 Available",
+      return route.fulfill({ json: { items: [{ id: "owner-slot:2026-07-01:midday", provider: "owner-calendar",
+        startDate: "2026-07-01", endDate: "2026-07-01", category: "Available slot", label: "12:30 Available",
         isAvailableSlot: true }] } });
     }
     return route.fulfill({ json: payload });
@@ -498,3 +498,70 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
     await expectWeekdaysOnly();
   });
 }
+
+// Open event slots are for planning ahead: a past day never offers one, and a
+// wholly past range never waits on the owner's calendar.
+test("open event slots show only from today and a past week never waits on the owner's calendar", async ({ page }) => {
+  // Wednesday 14 October 2026, midday in Berlin.
+  await page.clock.setFixedTime(new Date("2026-10-14T10:00:00Z"));
+  const overlayRanges = [];
+  let releasePastOverlay;
+  const pastOverlay = new Promise((resolve) => { releasePastOverlay = resolve; });
+  const slot = (date) => ({ id: `owner-slot:${date}:midday`, provider: "owner-calendar", startDate: date, endDate: date,
+    category: "Available slot", label: "12:30 Available", isAvailableSlot: true });
+  await page.route("**/api/calendar-items**", async (route) => {
+    const url = new URL(route.request().url());
+    const from = url.searchParams.get("from"), to = url.searchParams.get("to");
+    if (url.pathname.endsWith("/overlays")) {
+      overlayRanges.push(`${from}..${to}`);
+      if (to < "2026-10-14") {
+        await pastOverlay;
+        return route.fulfill({ json: { items: [
+          { id: "past-issue", provider: "newsletter-issues-readonly", startDate: "2026-09-08", endDate: "2026-09-08",
+            label: "Weekly #290 · Sponsor", status: "sent", isAvailableSlot: false, href: "/newsletter?issueId=past-issue" },
+        ], sources: { "newsletter-issues-readonly": { state: "connected" } } } });
+      }
+      return route.fulfill({ json: {
+        items: ["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16"].map(slot),
+        sources: { "owner-calendar": { state: "connected" } },
+      } });
+    }
+    return route.fulfill({ json: { ...payload, alerts: [], holidays: [], items: [{
+      id: "past-webinar", activityType: "webinar", title: "Past webinar", status: "confirmed", allDay: true,
+      startDate: "2026-09-08", endDate: "2026-09-08", startKey: "2026-09-08", endKey: "2026-09-08", version: 1,
+    }] } });
+  });
+  await page.route("**/api/**", (route) => new URL(route.request().url()).pathname.includes("/calendar-items")
+    ? route.fallback() : route.fulfill({ json: { items: [] } }));
+  await page.goto(`${frontendBase}/calendar`);
+  const surface = page.locator(".calendar-surface");
+  const indicator = surface.locator("[data-calendar-indicator]");
+  await surface.getByLabel("Calendar view", { exact: true }).selectOption("week");
+  const openSlotDays = surface.locator('.calendar-overlay.is-available-slot[title^="Open event slot"]');
+  await expect(openSlotDays).toHaveCount(3);
+  expect(await openSlotDays.evaluateAll((nodes) => nodes.map((node) => node.dataset.openDay)))
+    .toEqual(["2026-10-14", "2026-10-15", "2026-10-16"]);
+
+  // Five weeks back is the week of Monday 7 September, wholly in the past.
+  for (let week = 0; week < 5; week++) await surface.locator("[data-prev]").click();
+  await expect(surface.locator("[data-period-heading]")).toHaveText(/September 7, 2026/);
+  try {
+    await expect(surface.getByText("Past webinar")).toBeVisible();
+    // The newsletter part of the overlay is still pending, but nothing shows
+    // a slot spinner for it.
+    await expect.poll(() => overlayRanges.at(-1)).toBe("2026-09-07..2026-09-13");
+    await expect(indicator).not.toHaveAttribute("data-state", "loading");
+    await expect(surface.locator("[data-calendar]")).toHaveAttribute("aria-busy", "false");
+  } finally {
+    releasePastOverlay();
+  }
+  await expect(surface.getByText("Weekly #290 · Sponsor")).toBeVisible();
+  await expect(surface.locator(".calendar-overlay.is-available-slot")).toHaveCount(0);
+  await expect(indicator).toHaveAttribute("data-state", "idle");
+});
+
+test("the API never reads the owner's calendar for a past range", async ({ request }) => {
+  const past = await request.get("/api/calendar-items/overlays?from=2020-01-06&to=2020-01-12");
+  expect(past.ok()).toBe(true);
+  expect(Object.keys((await past.json()).sources)).toEqual(["newsletter-issues-readonly"]);
+});

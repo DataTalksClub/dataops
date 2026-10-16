@@ -6,6 +6,7 @@ export function setupDayScheduleDialog(options) {
     api,
     escapeHtml,
     plannerLabel,
+    todayIsoDate,
     onAddActivity,
     onEditActivity,
     getCalendarState,
@@ -206,12 +207,14 @@ export function setupDayScheduleDialog(options) {
           )
           .join("");
 
+    // A past day has no slots left to offer, so it shows only what happened.
+    const isPast = dateIso < todayIsoDate();
     dayBody.innerHTML = `
-      ${blockerAlert}
+      ${isPast ? "" : `${blockerAlert}
       <div>
         <h3 class="calendar-day-section-title">Operational Slot Availability</h3>
         ${slotCardsHtml}
-      </div>
+      </div>`}
       <div>
         <h3 class="calendar-day-section-title">
           <span>Full Schedule & Other Events</span>
@@ -246,7 +249,9 @@ export function setupDayScheduleDialog(options) {
     dayDialog.showModal();
 
     try {
-      let overlayItems = dayOverlayCache.get(dateIso);
+      // The owner's calendar is not read for past days, so there is nothing
+      // to fetch for one.
+      let overlayItems = dateIso < todayIsoDate() ? [] : dayOverlayCache.get(dateIso);
       if (!overlayItems) {
         const res = await api(`/overlays?from=${dateIso}&to=${dateIso}&includeAll=true`);
         overlayItems = res.items || [];
