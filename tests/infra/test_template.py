@@ -648,8 +648,8 @@ def test_deploy_workflow_projects_private_templates_through_the_deployed_lambda(
         '($body | keys == ["recurring", "templates"])',
         "($body.templates.total | nonnegative_integer and . > 0)",
         "$body.templates.created + $body.templates.updated + $body.templates.unchanged == $body.templates.total",
-        "$body.recurring.total == 5",
-        "$body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 5",
+        "$body.recurring.total == 4",
+        "$body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 4",
         "$body.recurring.repairedTasks",
     ):
         assert exact_total in deploy
