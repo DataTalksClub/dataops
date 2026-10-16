@@ -14,7 +14,12 @@
  *   folded into its secondary-slot Tasks (resolved state and links carried
  *   over) and deleted;
  * - create: a new Card is created from the Template of the issue's kind, in
- *   the same transaction as the issue row.
+ *   the same transaction as the issue row;
+ * - retemplate: a Card built from the wrong Template is replaced by a new Card
+ *   from the Template of the issue's kind. Each old Task maps onto a new
+ *   template Task (by `taskMap`, else by equal ref) and carries its resolved
+ *   state and evidence there; an unmapped Task that is not skipped moves to
+ *   the new Card with its history; filled links move; the old Card is deleted.
  * Kept Cards get the issue's slot groups selected and its facts pushed. The
  * old slot rows are deleted. An issue row that already exists is skipped, so
  * a rerun finishes an interrupted migration.
@@ -22,7 +27,7 @@
 import { DeleteCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { deleteCardCascade } from '../db/cardDeletion';
+import { cardBlockingReferences, deleteCardCascade } from '../db/cardDeletion';
 import { getCardConsistent, updateCardAdditive } from '../db/cards';
 import {
   buildNewsletterIssue,
@@ -37,7 +42,7 @@ import { getTemplate } from '../db/templates';
 import { loadAssignmentPolicy } from '../db/workspaceSettings';
 import { resolveInteractiveActor } from '../identity/actor';
 import { templateTaskProjection } from '../templates/cardTemplateProjection';
-import type { Card, LambdaEvent, LambdaResponse } from '../types';
+import type { Card, LambdaEvent, LambdaResponse, Task } from '../types';
 import { createIssueCard, issueTaskGroups, pushIssueToCard } from '../newsletter/issueCard';
 
 type PlannedIssue = {
@@ -46,7 +51,8 @@ type PlannedIssue = {
   card:
     | { action: 'keep'; cardId: string }
     | { action: 'merge'; cardId: string; mergeCardId: string }
-    | { action: 'create' };
+    | { action: 'create' }
+    | { action: 'retemplate'; cardId: string; taskMap?: Record<string, string | null> };
 };
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
@@ -76,6 +82,75 @@ async function addGroupTasks(client: DynamoDBDocumentClient, card: Card, groups:
     }));
   }
   return created;
+}
+
+const EVIDENCE_FIELDS = ['link', 'comment', 'externalStatus', 'completedAt', 'completedBy', 'skipReason', 'skippedAt', 'skippedBy'];
+
+/** Copy a resolved Task's state and evidence onto an open target Task. */
+async function carryResolvedTask(client: DynamoDBDocumentClient, source: Task, target: Task) {
+  const patch: Record<string, unknown> = { status: source.status };
+  const fields = source as unknown as Record<string, unknown>;
+  for (const field of EVIDENCE_FIELDS) {
+    if (fields[field] !== undefined) patch[field] = fields[field];
+  }
+  await updateTask(client, target.id, { expectedVersion: target.version, patch: patch as any });
+}
+
+/** Replace a Card built from the wrong Template with the issue's new Card. */
+async function retemplateCard(
+  client: DynamoDBDocumentClient,
+  oldCard: Card,
+  newCard: Card,
+  taskMap: Record<string, string | null>,
+  actorId: string,
+) {
+  const newTasks = await listTasksByCardConsistent(client, newCard.id);
+  const byRef = new Map(newTasks.filter((task) => task.templateTaskRef).map((task) => [task.templateTaskRef!, task]));
+  const carried: string[] = [];
+  const moved: string[] = [];
+  const dropped: string[] = [];
+  for (const source of await listTasksByCardConsistent(client, oldCard.id)) {
+    const ref = Object.hasOwn(taskMap, source.id)
+      ? taskMap[source.id]
+      : (source.templateTaskRef && byRef.has(source.templateTaskRef) ? source.templateTaskRef : undefined);
+    if (ref === null) {
+      dropped.push(`${source.id} (${source.status})`);
+      continue;
+    }
+    if (ref !== undefined) {
+      const target = byRef.get(ref);
+      if (!target) throw new Error(`Task ${source.id} maps to unknown ref ${ref}`);
+      if (['done', 'skipped'].includes(source.status) && target.status === 'todo') {
+        await carryResolvedTask(client, source, target);
+        carried.push(`${source.id} -> ${ref} (${source.status})`);
+      } else {
+        dropped.push(`${source.id} -> ${ref} (${source.status}, target ${target.status})`);
+      }
+      continue;
+    }
+    if (source.status === 'skipped') {
+      dropped.push(`${source.id} (skipped)`);
+      continue;
+    }
+    await updateTask(client, source.id, { expectedVersion: source.version, patch: { cardId: newCard.id } as any });
+    moved.push(`${source.id} (${source.status})`);
+  }
+  const links = (oldCard.cardLinks || []).filter((link) => link.url);
+  if (links.length) {
+    await updateCardAdditive(client, (await getCardConsistent(client, newCard.id))!, (current) => {
+      const next = [...(current.cardLinks || [])];
+      for (const link of links) {
+        const index = next.findIndex((entry) => entry.name === link.name);
+        if (index >= 0 && next[index].url) continue;
+        if (index >= 0) next[index] = { ...next[index], url: link.url };
+        else next.push({ name: link.name, url: link.url });
+      }
+      return { cardLinks: next };
+    });
+  }
+  const current = (await getCardConsistent(client, oldCard.id))!;
+  await deleteCardCascade(client, oldCard.id, current.version, actorId);
+  return { carried, moved, dropped, movedLinks: links.map((link) => link.name), deletedCardId: oldCard.id };
 }
 
 /** Fold a secondary slot's Card into the kept Card's secondary-slot Tasks. */
@@ -132,9 +207,29 @@ async function migrateIssue(
   }
   const issue = buildNewsletterIssue({ ...planned.issue } as any, id);
   const report: Record<string, unknown> = { id, sourceKey, action: planned.card.action };
+  // A Card this issue deletes must have nothing else pointing at it; check
+  // before writing anything so a blocked issue is left untouched.
+  const doomedCardId = planned.card.action === 'merge'
+    ? planned.card.mergeCardId
+    : planned.card.action === 'retemplate' ? planned.card.cardId : null;
+  if (doomedCardId) {
+    const doomed = await getCardConsistent(client, doomedCardId);
+    if (!doomed) throw new Error(`Card ${doomedCardId} is missing`);
+    const blockers = await cardBlockingReferences(client, doomed, await listTasksByCardConsistent(client, doomed.id));
+    if (Object.values(blockers).some((ids) => ids.length > 0)) {
+      throw new Error(`Card ${doomedCardId} is still referenced: ${JSON.stringify(blockers)}`);
+    }
+  }
   if (dryRun) return { ...report, outcome: 'planned' };
 
-  if (planned.card.action === 'create') {
+  if (planned.card.action === 'retemplate') {
+    const oldCard = await getCardConsistent(client, planned.card.cardId);
+    if (!oldCard) throw new Error(`Card ${planned.card.cardId} is missing`);
+    const created = await createIssueCard(client, actor, issue);
+    if (!created.ok) throw new Error(`Card for ${sourceKey}: ${created.response.body}`);
+    report.cardId = created.card.id;
+    report.retemplate = await retemplateCard(client, oldCard, created.card, planned.card.taskMap || {}, actor.id || 'system');
+  } else if (planned.card.action === 'create') {
     if (issue.status === 'cancelled') {
       await client.send(new PutCommand(createIssueWrite(issue).item.Put as any));
     } else {

@@ -8,7 +8,9 @@ import { createTables, startLocal, stopLocal } from "../scripts/local-dynamodb";
 import { getClient } from "../src/db/client";
 import { getCard } from "../src/db/cards";
 import { createTemplate } from "../src/db/templates";
-import { listTasksByCard, updateTask } from "../src/db/tasks";
+import type { Template } from "../src/types";
+import { createTask, listTasksByCard, updateTask } from "../src/db/tasks";
+import { templateLink } from "./helpers/cardTemplate";
 import { TABLE_NEWSLETTER_SLOTS } from "../src/db/tableNames";
 import { getNewsletterIssue, newsletterIssueId } from "../src/db/newsletterIssues";
 import { issueSourceKey } from "../scripts/import-newsletter-issues";
@@ -19,13 +21,14 @@ const data = (response: any) => JSON.parse(response.body);
 
 describe("newsletter slot to issue migration", () => {
   let client: DynamoDBDocumentClient;
+  let weekly: Template;
   before(async () => {
     client = await getClient(await startLocal());
     await createTables(client);
     const sponsorTask = (refId: string, group: string) => ({
       refId: `${group === "secondary-slot" ? "secondary-" : ""}${refId}`, description: `${group} ${refId}`, offsetDays: -7, optionalGroup: group,
     });
-    await createTemplate(client, {
+    weekly = await createTemplate(client, {
       name: "Newsletter", type: "newsletter", cardTitle: "{date} · #{issue} · {sponsors}",
       cardLinkDefinitions: [{ name: "Sponsorship document" }, { name: "Secondary sponsorship document" }],
       taskDefinitions: [
@@ -34,6 +37,14 @@ describe("newsletter slot to issue migration", () => {
         sponsorTask("create-sponsorship-document", "secondary-slot"),
         sponsorTask("create-invoice", "primary-slot"),
         sponsorTask("create-invoice", "secondary-slot"),
+      ],
+    });
+    await createTemplate(client, {
+      name: "Stand-alone newsletter", type: "newsletter-standalone", cardTitle: "{date} · {sponsor} · {variant}",
+      cardLinkDefinitions: [{ name: "Sponsorship document" }],
+      taskDefinitions: [
+        { refId: "create-sponsorship-document", description: "Create document", offsetDays: -7 },
+        { refId: "create-invoice", description: "Invoice", offsetDays: 0 },
       ],
     });
   });
@@ -111,5 +122,41 @@ describe("newsletter slot to issue migration", () => {
 
     const again = data(await invoke("POST", "/api/newsletter-issues/migrations/from-slots", { dryRun: false, plan }));
     assert.deepEqual(again.results.map((result: any) => result.outcome), ["exists", "exists"]);
+  });
+
+  it("re-templates a stand-alone issue's Card onto the stand-alone Template", async () => {
+    const old = await (await import("../src/db/cards")).createCard(client, {
+      ...templateLink(weekly), title: "Old stand-alone", anchorDate: "2026-08-26",
+      cardLinks: [{ name: "Sponsorship document", url: "https://docs.example/sa" }],
+    });
+    const doc = await createTask(client, { description: "[Trello] Create doc", date: "2026-08-19", cardId: old.id, templateTaskRef: "trello-doc", status: "done", link: "https://docs.example/sa" });
+    const chase = await createTask(client, { description: "Chase payment", date: "2026-09-01", cardId: old.id });
+    await createTask(client, { description: "Fill block", date: "2026-08-25", cardId: old.id, status: "skipped", skipReason: "No blocks" });
+    const sheetId = "SA-2026-08-26";
+    await slotRow(sheetId, { publicationDate: "2026-08-26", status: "sent", cardId: old.id });
+    const plan = [{
+      slotIds: [newsletterIssueId(issueSourceKey(sheetId))],
+      issue: { kind: "standalone", publicationDate: "2026-08-26", status: "sent", sourceType: "xlsx-import", sourceKey: issueSourceKey(sheetId),
+        slots: { primary: { ticked: true, sponsor: "Sponsor C", sheetId } } },
+      card: { action: "retemplate", cardId: old.id, taskMap: { [doc.id]: "create-sponsorship-document" } },
+    }];
+    const run = data(await invoke("POST", "/api/newsletter-issues/migrations/from-slots", { dryRun: false, plan }));
+    assert.equal(run.results[0].outcome, "migrated", JSON.stringify(run));
+
+    const issue = (await getNewsletterIssue(client, newsletterIssueId(issueSourceKey(sheetId))))!;
+    const card = (await getCard(client, issue.cardId!))!;
+    assert.notEqual(card.id, old.id);
+    assert.notEqual(card.templateId, weekly.id);
+    assert.equal(card.templateId, (await (await import("../src/db/templates")).listTemplates(client)).find((template) => template.type === "newsletter-standalone")!.id);
+    assert.equal(card.title, "26 Aug · Sponsor C · stand-alone");
+    assert.equal(card.cardLinks?.find((link) => link.name === "Sponsorship document")?.url, "https://docs.example/sa");
+    const tasks = await listTasksByCard(client, card.id);
+    const carried = tasks.find((task) => task.templateTaskRef === "create-sponsorship-document")!;
+    assert.equal(carried.status, "done");
+    assert.equal(carried.link, "https://docs.example/sa");
+    assert.equal(tasks.find((task) => task.id === chase.id)?.status, "todo");
+    assert.equal(tasks.some((task) => task.description === "Fill block"), false);
+    assert.equal(await getCard(client, old.id), null);
+    assert.ok(await slotGone(newsletterIssueId(issueSourceKey(sheetId))));
   });
 });
