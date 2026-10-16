@@ -3,7 +3,6 @@ import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-sec
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { handleCardRoutes } from './routes/cards';
-import { handleSponsorNextActionTasksMigration } from './routes/sponsorNextActionTasksMigration';
 import { handleTemplateRoutes } from './routes/templates';
 import { handleRecurringRoutes } from './routes/recurring';
 import { handleUserRoutes } from './routes/users';
@@ -319,11 +318,6 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/files')) {
       const result = await handleFileRoutes(event);
-      if (result) return result;
-    }
-
-    if (reqPath === '/api/admin/sponsor-next-action-tasks') {
-      const result = await handleSponsorNextActionTasksMigration(reqPath, method, event.body || null, event, client);
       if (result) return result;
     }
 
