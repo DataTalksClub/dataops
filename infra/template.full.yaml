@@ -220,17 +220,9 @@ Resources:
       AttributeDefinitions:
         - { AttributeName: PK, AttributeType: S }
         - { AttributeName: SK, AttributeType: S }
-        - { AttributeName: rangeMonth, AttributeType: S }
-        - { AttributeName: rangeStart, AttributeType: S }
       KeySchema:
         - { AttributeName: PK, KeyType: HASH }
         - { AttributeName: SK, KeyType: RANGE }
-      GlobalSecondaryIndexes:
-        - IndexName: GSI-Range
-          KeySchema:
-            - { AttributeName: rangeMonth, KeyType: HASH }
-            - { AttributeName: rangeStart, KeyType: RANGE }
-          Projection: { ProjectionType: ALL }
   DataOpsNewsletterSlotsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
