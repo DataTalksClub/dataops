@@ -4,7 +4,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { S3Client } from '@aws-sdk/client-s3';
-import { saveFile, readFile, removeFile, isLocalFilesystemStorageAllowed, setFileStorageClientForTests, MAX_TASK_FILE_BYTES } from '../src/storage';
+import type { FileRecord } from '../src/types';
+import { saveFile, readFile, removeFile, isLocalFilesystemStorageAllowed, setFileStorageClientForTests, setLocalDownloadKeyForTests, createFileDownloadAuthorization, verifyLocalDownloadLink, MAX_TASK_FILE_BYTES } from '../src/storage';
 
 describe('Task file storage', () => {
   const variables = ['UPLOAD_DIR', 'NODE_ENV', 'AWS_LAMBDA_FUNCTION_NAME', 'IS_LOCAL', 'DATAOPS_FILE_STORAGE_PROVIDER', 'TASK_FILES_BUCKET'];
@@ -90,5 +91,57 @@ describe('Task file storage', () => {
     process.env.TASK_FILES_BUCKET = 'private-task-files';
     setFileStorageClientForTests({ send: async () => { throw Object.assign(new Error('denied'), { name: 'AccessDenied' }); } } as unknown as Pick<S3Client, 'send'>);
     await assert.rejects(readFile({ storageProvider: 's3', storagePath: 'tasks/task/file', storageUri: 's3://private-task-files/tasks/task/file' }), { name: 'AccessDenied' });
+  });
+
+  it('mints a real short-lived presigned GET that names the private object and carries the disposition', async () => {
+    // SigV4 presigning is local computation: with static test credentials the
+    // real presigner runs without any network access.
+    const credentialVariables = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION', 'AWS_DEFAULT_REGION', 'AWS_SESSION_TOKEN'];
+    const savedCredentials = Object.fromEntries(credentialVariables.map(key => [key, process.env[key]]));
+    process.env.AWS_ACCESS_KEY_ID = 'ASIA-test';
+    process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
+    process.env.AWS_REGION = 'eu-central-1';
+    process.env.TASK_FILES_BUCKET = 'private-task-files';
+    try {
+      const authorization = await createFileDownloadAuthorization({
+        id: 'file-1',
+        filename: 'a proof.png',
+        storageProvider: 's3',
+        storagePath: 'tasks/task-1/abc/proof.png',
+        storageUri: 's3://private-task-files/tasks/task-1/abc/proof.png',
+        contentType: 'image/png',
+      } as FileRecord);
+      assert.equal(authorization.expiresIn, 300);
+      const url = new URL(authorization.url);
+      assert.equal(url.protocol, 'https:');
+      assert.equal(url.host, 'private-task-files.s3.eu-central-1.amazonaws.com');
+      assert.equal(url.pathname, '/tasks/task-1/abc/proof.png');
+      assert.equal(url.searchParams.get('X-Amz-Expires'), '300');
+      assert.ok(url.searchParams.get('X-Amz-Signature'), 'the URL carries a SigV4 signature');
+      assert.equal(url.searchParams.get('X-Amz-SignedHeaders'), 'host');
+      assert.match(url.searchParams.get('response-content-disposition') || '', /^attachment; filename="download"; filename\*=UTF-8''a%20proof\.png$/);
+      assert.equal(url.searchParams.get('response-content-type'), 'image/png');
+    } finally {
+      for (const key of credentialVariables) { if (savedCredentials[key] === undefined) delete process.env[key]; else process.env[key] = savedCredentials[key]; }
+    }
+  });
+
+  it('signs local-dev delivery links with the per-process key and refuses tampering', async () => {
+    const authorization = await createFileDownloadAuthorization({
+      id: 'file-9',
+      filename: 'local.txt',
+      storageProvider: 'local-dev',
+      storagePath: 'tasks/task/file',
+    } as FileRecord);
+    assert.match(authorization.url, /^\/api\/files\/file-9\/content\?expires=\d+&mac=[0-9a-f]{64}$/);
+    const params = Object.fromEntries(new URLSearchParams(authorization.url.split('?')[1]));
+    assert.equal(verifyLocalDownloadLink('file-9', params.expires, params.mac), true);
+    const flipped = params.mac.slice(0, -1) + (params.mac.endsWith('0') ? '1' : '0');
+    assert.equal(verifyLocalDownloadLink('file-9', params.expires, flipped), false);
+    assert.equal(verifyLocalDownloadLink('other-file', params.expires, params.mac), false);
+    assert.equal(verifyLocalDownloadLink('file-9', String(Number(params.expires) - 1), params.mac), false);
+    // A different process (fresh key) must not accept the first process's link.
+    setLocalDownloadKeyForTests();
+    assert.equal(verifyLocalDownloadLink('file-9', params.expires, params.mac), false);
   });
 });

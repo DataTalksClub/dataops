@@ -64,6 +64,7 @@ const AUTHENTICATED_ROUTES: RouteCase[] = [
   { method: 'GET', path: '/api/notifications' },
   { method: 'GET', path: '/api/files?taskId=some-task' },
   { method: 'POST', path: '/api/files', body: {} },
+  { method: 'GET', path: '/api/files/some-file/download' },
   { method: 'GET', path: '/api/artifacts' },
   { method: 'POST', path: '/api/artifacts', body: {} },
   { method: 'GET', path: '/api/bookkeeping' },
@@ -96,6 +97,9 @@ const EXEMPT_ROUTES: RouteCase[] = [
   { method: 'POST', path: '/api/auth/device/token', body: {} },
   { method: 'POST', path: '/api/v1/intake/email-documents', body: {} },
   { method: 'POST', path: '/api/v1/intake/leads', body: {} },
+  // The local-dev content link carries its own short-lived HMAC proof minted
+  // after an authorized download request; it serves only local-dev storage.
+  { method: 'GET', path: '/api/files/some-file/content' },
 ];
 
 /** Mutations an operator must not be able to perform. */

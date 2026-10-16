@@ -1,5 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -9,7 +10,8 @@ import { createTables } from '../scripts/local-dynamodb';
 import type { LambdaResponse } from '../src/types';
 import type { S3Client } from '@aws-sdk/client-s3';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { setFileStorageClientForTests } from '../src/storage';
+import { setFileStorageClientForTests, setFileDownloadSignerForTests, setLocalDownloadKeyForTests, MAX_TASK_FILE_BYTES } from '../src/storage';
+import { createFile } from '../src/db/files';
 import { TABLE_FILES } from '../src/db/tableNames';
 
 const TEST_UPLOAD_DIR = path.join(__dirname, '..', 'test-uploads-api-' + process.pid);
@@ -161,17 +163,29 @@ describe('API - File uploads', () => {
     const uploaded = JSON.parse(uploadRes.body);
     assert.strictEqual(uploaded.file.filename, 'base64.txt');
 
+    // The download route mints a link; the bytes are delivered by the scoped
+    // local-dev content route, not through this response.
     const downloadRes = await handler({
       httpMethod: 'GET',
       path: `/api/files/${uploaded.file.id}/download`,
     }, {});
 
     assert.strictEqual(downloadRes.statusCode, 200);
-    assert.strictEqual(downloadRes.isBase64Encoded, true);
-    assert.deepStrictEqual(Buffer.from(downloadRes.body, 'base64'), fileContent);
+    const link = JSON.parse(downloadRes.body);
+    assert.ok(link.downloadUrl.startsWith(`/api/files/${uploaded.file.id}/content?`), link.downloadUrl);
+    assert.strictEqual(link.expiresIn, 300);
+    const [contentPath, contentQuery] = link.downloadUrl.split('?');
+    const contentRes = await handler({
+      httpMethod: 'GET',
+      path: contentPath,
+      queryStringParameters: Object.fromEntries(new URLSearchParams(contentQuery)),
+    }, {});
+    assert.strictEqual(contentRes.statusCode, 200);
+    assert.strictEqual(contentRes.isBase64Encoded, true);
+    assert.deepStrictEqual(Buffer.from(contentRes.body, 'base64'), fileContent);
   });
 
-  it('round-trips production S3 binary proofs, preserves earlier same-name uploads, and retains retryable deletion metadata', async () => {
+  it('round-trips production S3 binary proofs, mints short-lived links instead of streaming bytes, preserves earlier same-name uploads, and retains retryable deletion metadata', async () => {
     const keys = ['TASK_FILES_BUCKET', 'DATAOPS_FILE_STORAGE_PROVIDER', 'AWS_LAMBDA_FUNCTION_NAME'];
     const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
     process.env.TASK_FILES_BUCKET = 'private-proof-test';
@@ -189,6 +203,11 @@ describe('API - File uploads', () => {
       if (command.constructor.name === 'GetObjectCommand' && !objects.has(key)) throw Object.assign(new Error('missing'), { name: 'NoSuchKey' });
       return { Body: { transformToByteArray: async () => objects.get(key) } };
     } } as unknown as Pick<S3Client, 'send'>);
+    const signedCommands: Array<Record<string, unknown>> = [];
+    setFileDownloadSignerForTests(async (_client, command) => {
+      signedCommands.push({ ...command.input });
+      return `https://private-proof-test.s3.eu-central-1.amazonaws.com/${command.input.Key as string}?X-Amz-Expires=300&X-Amz-Signature=synthetic`;
+    });
     try {
       const created = await handler({ httpMethod: 'POST', path: '/api/tasks', body: JSON.stringify({ description: 'Durable binary proof', date: '2026-06-01', requiresFile: true }) }, {});
       assert.equal(created.statusCode, 201, created.body);
@@ -204,11 +223,40 @@ describe('API - File uploads', () => {
       assert.equal(first.storageProvider, 's3');
       const second = JSON.parse((await upload(Buffer.from('replacement'))).body).file;
       assert.notEqual(first.storagePath, second.storagePath);
-      const downloaded = await handler({ httpMethod: 'GET', path: `/api/files/${first.id}/download` }, {});
-      assert.equal(downloaded.statusCode, 200, downloaded.body);
-      assert.equal(downloaded.isBase64Encoded, true);
-      assert.deepEqual(Buffer.from(downloaded.body, 'base64'), bytes);
-      assert.equal(downloaded.headers?.['Content-Type'], 'image/png');
+      const minted = await handler({ httpMethod: 'GET', path: `/api/files/${first.id}/download` }, {});
+      assert.equal(minted.statusCode, 200, minted.body);
+      assert.notEqual(minted.isBase64Encoded, true);
+      const link = JSON.parse(minted.body);
+      assert.equal(link.expiresIn, 300);
+      assert.equal(link.downloadUrl, `https://private-proof-test.s3.eu-central-1.amazonaws.com/${first.storagePath}?X-Amz-Expires=300&X-Amz-Signature=synthetic`);
+      assert.deepEqual(signedCommands[0], {
+        Bucket: 'private-proof-test',
+        Key: first.storagePath,
+        ResponseContentType: 'image/png',
+        ResponseContentDisposition: `attachment; filename="download"; filename*=UTF-8''proof.png`,
+      });
+      // The object bytes stay out of the Lambda response regardless of size:
+      // a full-limit proof mints a link response orders of magnitude smaller.
+      const bigRecord = await createFile(await getClient(), {
+        taskId: task.id,
+        filename: 'full-limit.png',
+        category: 'image',
+        storageProvider: 's3',
+        storagePath: first.storagePath,
+        storageUri: `s3://private-proof-test/${first.storagePath}`,
+        contentType: 'image/png',
+        sizeBytes: MAX_TASK_FILE_BYTES,
+      });
+      const bigMinted = await handler({ httpMethod: 'GET', path: `/api/files/${bigRecord.id}/download` }, {});
+      assert.equal(bigMinted.statusCode, 200, bigMinted.body);
+      assert.ok(bigMinted.body.length < 1024, `mint response carried ${bigMinted.body.length} bytes`);
+      assert.equal(JSON.parse(bigMinted.body).expiresIn, 300);
+      // The scoped content route never serves S3 objects, even with a valid MAC.
+      setLocalDownloadKeyForTests(Buffer.alloc(32, 7));
+      const expires = Math.floor(Date.now() / 1000) + 60;
+      const mac = crypto.createHmac('sha256', Buffer.alloc(32, 7)).update(`${first.id}:${expires}`).digest('hex');
+      const refused = await handler({ httpMethod: 'GET', path: `/api/files/${first.id}/content`, queryStringParameters: { expires: String(expires), mac } }, {});
+      assert.equal(refused.statusCode, 409, refused.body);
       const done = await handler({ httpMethod: 'PUT', path: `/api/tasks/${task.id}`, body: JSON.stringify({ expectedVersion: task.version, status: 'done' }) }, {});
       assert.equal(done.statusCode, 200, done.body);
 
@@ -232,6 +280,8 @@ describe('API - File uploads', () => {
       assert.equal(objects.has(first.storagePath), true);
     } finally {
       setFileStorageClientForTests();
+      setFileDownloadSignerForTests();
+      setLocalDownloadKeyForTests();
       for (const key of keys) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; }
     }
   });
@@ -353,7 +403,7 @@ describe('API - File uploads', () => {
     assert.strictEqual(res.statusCode, 404);
   });
 
-  it('GET /api/files/:id/download returns file content', async () => {
+  it('GET /api/files/:id/download mints a link and the content route delivers the bytes', async () => {
     const fileContent = Buffer.from('download me');
     const { body, contentType } = buildMultipart(
       { taskId },
@@ -374,11 +424,90 @@ describe('API - File uploads', () => {
     }, {});
 
     assert.strictEqual(res.statusCode, 200);
-    assert.strictEqual(res.headers!['Content-Type'], 'text/plain');
-    assert.ok(res.headers!['Content-Disposition']!.includes('download.txt'));
-    assert.strictEqual(res.isBase64Encoded, true);
-    const bodyBuffer = Buffer.from(res.body, 'base64');
-    assert.deepStrictEqual(bodyBuffer, fileContent);
+    assert.strictEqual(res.headers!['Content-Type'], 'application/json');
+    assert.notEqual(res.isBase64Encoded, true);
+    const link = JSON.parse(res.body);
+    assert.ok(link.downloadUrl.startsWith(`/api/files/${uploaded.file.id}/content?`), link.downloadUrl);
+    assert.strictEqual(link.expiresIn, 300);
+
+    const [contentPath, contentQuery] = link.downloadUrl.split('?');
+    const contentRes = await handler({
+      httpMethod: 'GET',
+      path: contentPath,
+      queryStringParameters: Object.fromEntries(new URLSearchParams(contentQuery)),
+    }, {});
+    assert.strictEqual(contentRes.statusCode, 200);
+    assert.strictEqual(contentRes.headers!['Content-Type'], 'text/plain');
+    assert.ok(contentRes.headers!['Content-Disposition']!.includes('download.txt'));
+    assert.strictEqual(contentRes.isBase64Encoded, true);
+    assert.deepStrictEqual(Buffer.from(contentRes.body, 'base64'), fileContent);
+  });
+
+  it('GET /api/files/:id/content rejects a tampered link', async () => {
+    const fileContent = Buffer.from('protected content');
+    const { body, contentType } = buildMultipart(
+      { taskId },
+      { fieldName: 'file', filename: 'protected.txt', content: fileContent, contentType: 'text/plain' }
+    );
+    const uploadRes = await handler({
+      httpMethod: 'POST',
+      path: '/api/files',
+      headers: { 'content-type': contentType },
+      body,
+    }, {});
+    const uploaded = JSON.parse(uploadRes.body);
+    const minted = JSON.parse((await handler({
+      httpMethod: 'GET',
+      path: `/api/files/${uploaded.file.id}/download`,
+    }, {})).body);
+    const [contentPath, contentQuery] = minted.downloadUrl.split('?');
+    const params = Object.fromEntries(new URLSearchParams(contentQuery));
+    params.mac = params.mac.slice(0, -2) + (params.mac.endsWith('00') ? '11' : '00');
+    const contentRes = await handler({
+      httpMethod: 'GET',
+      path: contentPath,
+      queryStringParameters: params,
+    }, {});
+    assert.strictEqual(contentRes.statusCode, 403);
+    assert.strictEqual(contentRes.body.includes('protected content'), false);
+  });
+
+  it('GET /api/files/:id/content rejects a forged link for an unknown file', async () => {
+    const contentRes = await handler({
+      httpMethod: 'GET',
+      path: '/api/files/not-a-file/content',
+      queryStringParameters: { expires: String(Math.floor(Date.now() / 1000) + 60), mac: 'ab'.repeat(32) },
+    }, {});
+    assert.strictEqual(contentRes.statusCode, 403);
+  });
+
+  it('GET /api/files/:id/content rejects an expired link and validates the signature before lookup', async () => {
+    // Pinning the local key lets the test mint links directly, including one
+    // whose expiry has passed.
+    setLocalDownloadKeyForTests(Buffer.alloc(32, 9));
+    try {
+      const key = Buffer.alloc(32, 9);
+      const sign = (fileId: string, expires: number) =>
+        crypto.createHmac('sha256', key).update(`${fileId}:${expires}`).digest('hex');
+      const expired = Math.floor(Date.now() / 1000) - 10;
+      const expiredRes = await handler({
+        httpMethod: 'GET',
+        path: '/api/files/any-file/content',
+        queryStringParameters: { expires: String(expired), mac: sign('any-file', expired) },
+      }, {});
+      assert.strictEqual(expiredRes.statusCode, 403);
+      // A valid, unexpired signature is required before the file lookup: an
+      // unknown file then answers 404, not 403.
+      const fresh = Math.floor(Date.now() / 1000) + 60;
+      const unknownRes = await handler({
+        httpMethod: 'GET',
+        path: '/api/files/never-uploaded/content',
+        queryStringParameters: { expires: String(fresh), mac: sign('never-uploaded', fresh) },
+      }, {});
+      assert.strictEqual(unknownRes.statusCode, 404);
+    } finally {
+      setLocalDownloadKeyForTests();
+    }
   });
 
   it('GET /api/files/:id/download returns 404 for non-existent file', async () => {

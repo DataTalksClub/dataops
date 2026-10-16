@@ -1,4 +1,3 @@
-import path from 'path';
 import crypto from 'crypto';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../db/client';
@@ -13,7 +12,17 @@ import {
   listFiles,
 } from '../db/files';
 import { CollectionCursorError, encodeCollectionCursor } from '../db/collectionPagination';
-import { saveFile, readFile, removeFile, validateFilename, FileStorageError, MAX_TASK_FILE_BYTES } from '../storage';
+import {
+  saveFile,
+  readFile,
+  removeFile,
+  validateFilename,
+  FileStorageError,
+  createFileDownloadAuthorization,
+  verifyLocalDownloadLink,
+  contentDispositionFor,
+  getMimeType,
+} from '../storage';
 import { resolveInteractiveActor } from '../identity/actor';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { recordRequestError } from '../requestErrorLog';
@@ -35,34 +44,6 @@ function paginationFailure(error: unknown): LambdaResponse | null {
 
 function fileViewer(actorId: string): string {
   return actorId || 'test-bypass';
-}
-
-/**
- * Determine MIME type from filename extension.
- */
-function getMimeType(filename: string): string {
-  const ext = path.extname(filename).toLowerCase();
-  const mimeTypes: Record<string, string> = {
-    '.txt': 'text/plain',
-    '.html': 'text/html',
-    '.css': 'text/css',
-    '.js': 'application/javascript',
-    '.json': 'application/json',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.svg': 'image/svg+xml',
-    '.pdf': 'application/pdf',
-    '.zip': 'application/zip',
-    '.csv': 'text/csv',
-    '.xml': 'application/xml',
-    '.doc': 'application/msword',
-    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    '.xls': 'application/vnd.ms-excel',
-    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  };
-  return mimeTypes[ext] || 'application/octet-stream';
 }
 
 /**
@@ -179,11 +160,18 @@ async function handleFileRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
       return await handleList(event, client);
     }
 
-    // Route: GET /api/files/:id/download
+    // Route: GET /api/files/:id/download — mint a short-lived download link
     const downloadMatch = suffix.match(/^\/([^/]+)\/download\/?$/);
     if (downloadMatch && method === 'GET') {
       const id = downloadMatch[1];
       return await handleDownload(id, client);
+    }
+
+    // Route: GET /api/files/:id/content — HMAC-scoped delivery for local-dev
+    // storage only; the link proves its own authorization.
+    const contentMatch = suffix.match(/^\/([^/]+)\/content$/);
+    if (contentMatch && method === 'GET') {
+      return await handleLocalContent(contentMatch[1], event, client);
     }
 
     // Route: GET /api/files/:id (metadata)
@@ -334,7 +322,10 @@ async function handleGetMetadata(id: string, client: DynamoDBDocumentClient): Pr
 }
 
 /**
- * Handle GET /api/files/:id/download - download file content.
+ * Handle GET /api/files/:id/download — mint a short-lived download link.
+ * The bytes never move through this Lambda response; the consumer fetches the
+ * link directly from storage. The link is minted only after the caller passed
+ * authentication and the file record was resolved, and it is never persisted.
  */
 async function handleDownload(id: string, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const file = await getFile(client, id);
@@ -343,16 +334,41 @@ async function handleDownload(id: string, client: DynamoDBDocumentClient): Promi
   }
 
   try {
-    const content = await readFile(file);
-    if (content.length > MAX_TASK_FILE_BYTES) throw new FileStorageError('File exceeds the 4 MiB download limit', 413, 'file_too_large');
-    const mimeType = file.contentType || getMimeType(file.filename);
-    const filename = encodeURIComponent(file.filename).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+    const authorization = await createFileDownloadAuthorization(file);
+    return jsonResponse(200, { downloadUrl: authorization.url, expiresIn: authorization.expiresIn });
+  } catch (err: unknown) {
+    if (err instanceof FileStorageError) return jsonResponse(err.statusCode, { error: err.message, code: err.code });
+    throw err;
+  }
+}
 
+/**
+ * Handle GET /api/files/:id/content — deliver a local-dev object behind its
+ * signed link. The route is auth-exempt because the link itself is the
+ * credential (HMAC + expiry, minted post-authorization), and it serves only
+ * local-dev objects: production runs on S3 and cannot mint or store
+ * local-dev files, so this never becomes an inline-bytes fallback there.
+ */
+async function handleLocalContent(id: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+  const params = event.queryStringParameters || {};
+  if (!verifyLocalDownloadLink(id, params.expires, params.mac)) {
+    return jsonResponse(403, { error: 'Download link is invalid or expired', code: 'file_download_link_invalid' });
+  }
+  const file = await getFile(client, id);
+  if (!file) {
+    return jsonResponse(404, { error: 'File not found' });
+  }
+  if (file.storageProvider !== 'local-dev') {
+    return jsonResponse(409, { error: 'File storage provider is unavailable', code: 'file_storage_unavailable' });
+  }
+
+  try {
+    const content = await readFile(file);
     return {
       statusCode: 200,
       headers: {
-        'Content-Type': mimeType,
-        'Content-Disposition': `attachment; filename="download"; filename*=UTF-8''${filename}`,
+        'Content-Type': file.contentType || getMimeType(file.filename),
+        'Content-Disposition': contentDispositionFor(file.filename),
         'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff',
       },

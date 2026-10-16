@@ -60,6 +60,11 @@ function isAuthExempt(method: string, path: string): boolean {
   if (AUTH_EXEMPT_PATHS.has(path)) return true;
   if (method === 'POST' && path === '/api/v1/intake/email-documents') return true;
   if (method === 'POST' && path === '/api/v1/intake/leads') return true;
+  // Local-dev file content links carry their own short-lived HMAC proof,
+  // minted only after an authorized download request. They serve exclusively
+  // local-dev storage, which production cannot create, so the link is the
+  // credential and bearer middleware has nothing to add.
+  if (method === 'GET' && /^\/api\/files\/[^/]+\/content$/.test(path)) return true;
   return false;
 }
 

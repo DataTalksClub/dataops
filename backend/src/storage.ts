@@ -1,10 +1,12 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { randomUUID } from 'crypto';
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { FileRecord } from './types';
 
 export const MAX_TASK_FILE_BYTES = 4 * 1024 * 1024;
+export const DOWNLOAD_URL_SECONDS = 300;
 type FileLocation = Pick<FileRecord, 'storagePath' | 'storageProvider' | 'storageUri'>;
 export type StoredFile = FileLocation & { storageProvider: 's3' | 'local-dev'; storageUri: string };
 let s3: Pick<S3Client, 'send'> | undefined;
@@ -101,4 +103,102 @@ export async function removeFile(file: FileLocation): Promise<void> {
   }
   if (file.storageProvider !== 'local-dev' || !isLocalFilesystemStorageAllowed()) throw new FileStorageError('File storage provider is unavailable', 409, 'file_storage_unavailable');
   await fs.rm(localPath(file.storagePath), { force: true });
+}
+
+/**
+ * Determine MIME type from filename extension.
+ */
+export function getMimeType(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    '.txt': 'text/plain',
+    '.html': 'text/html',
+    '.css': 'text/css',
+    '.js': 'application/javascript',
+    '.json': 'application/json',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.pdf': 'application/pdf',
+    '.zip': 'application/zip',
+    '.csv': 'text/csv',
+    '.xml': 'application/xml',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  };
+  return mimeTypes[ext] || 'application/octet-stream';
+}
+
+/** RFC 5987 encoding for a filename in a Content-Disposition header value. */
+export function encodeFilename(filename: string): string {
+  return encodeURIComponent(filename).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+export function contentDispositionFor(filename: string): string {
+  return `attachment; filename="download"; filename*=UTF-8''${encodeFilename(filename)}`;
+}
+
+export interface FileDownloadAuthorization {
+  /** Absolute https (S3) or API-relative (local-dev) URL for the object. */
+  url: string;
+  expiresIn: number;
+}
+
+type DownloadSigner = (
+  client: Pick<S3Client, 'send'>,
+  command: GetObjectCommand,
+  options: { expiresIn: number },
+) => Promise<string>;
+let signDownloadUrl: DownloadSigner = getSignedUrl as unknown as DownloadSigner;
+export function setFileDownloadSignerForTests(value?: DownloadSigner): void { signDownloadUrl = value ?? (getSignedUrl as unknown as DownloadSigner); }
+
+// Local-dev delivery links are signed with a per-process key: only the server
+// process that minted a link accepts it, and no secret reaches deployment or
+// infrastructure. Production never takes this path (local-dev storage is
+// disabled there).
+let localDownloadKey: Buffer | undefined;
+function localKey(): Buffer { return localDownloadKey ||= randomBytes(32); }
+export function setLocalDownloadKeyForTests(value?: Buffer): void { localDownloadKey = value; }
+
+function localDownloadMac(fileId: string, expires: number): string {
+  return createHmac('sha256', localKey()).update(`${fileId}:${expires}`).digest('hex');
+}
+
+export function localDownloadUrl(fileId: string, atMs: number = Date.now()): string {
+  const expires = Math.floor(atMs / 1000) + DOWNLOAD_URL_SECONDS;
+  return `/api/files/${encodeURIComponent(fileId)}/content?expires=${expires}&mac=${localDownloadMac(fileId, expires)}`;
+}
+
+export function verifyLocalDownloadLink(fileId: string, expires: unknown, mac: unknown): boolean {
+  const seconds = Number(expires);
+  if (!Number.isSafeInteger(seconds) || seconds * 1000 <= Date.now() || typeof mac !== 'string') return false;
+  const expected = Buffer.from(localDownloadMac(fileId, seconds), 'hex');
+  const provided = Buffer.from(mac, 'hex');
+  return expected.length === provided.length && timingSafeEqual(expected, provided);
+}
+
+/**
+ * Authorize one download of a stored file without moving its bytes through
+ * the Lambda: S3 objects get a short-lived presigned GET; local-dev objects
+ * (test/offline only) get a signed link to the scoped content route. Callers
+ * must have authorized the download already; this never persists the link.
+ */
+export async function createFileDownloadAuthorization(file: FileRecord): Promise<FileDownloadAuthorization> {
+  if (file.storageProvider === 's3') {
+    const url = await signDownloadUrl(client(), new GetObjectCommand({
+      Bucket: bucket(),
+      Key: s3Key(file),
+      ResponseContentType: file.contentType || getMimeType(file.filename),
+      ResponseContentDisposition: contentDispositionFor(file.filename),
+    }), { expiresIn: DOWNLOAD_URL_SECONDS });
+    return { url, expiresIn: DOWNLOAD_URL_SECONDS };
+  }
+  if (file.storageProvider !== 'local-dev' || !isLocalFilesystemStorageAllowed()) {
+    throw new FileStorageError('File storage provider is unavailable', 409, 'file_storage_unavailable');
+  }
+  return { url: localDownloadUrl(file.id), expiresIn: DOWNLOAD_URL_SECONDS };
 }
