@@ -46,7 +46,7 @@ export const BASELINE_RECURRING_CONFIGS: readonly BaselineRecurringConfig[] = [
     instructionDocId: 'sop.community.slack.export-create-a-dump-of-slack-data',
     requires: ['slack'],
   },
-  { description: 'Check bookkeeping, invoices, and receipts', cronExpression: '0 9 * * 1' },
+  { description: 'Check bookkeeping, invoices, and receipts', cronExpression: '0 9 1 * *' },
 ] as const;
 
 export interface RecurringSeedReport {
