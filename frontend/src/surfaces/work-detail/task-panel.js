@@ -543,6 +543,8 @@ export function createTaskPanel(context) {
           taskTitle: workTaskTitle(task),
           trigger: skip,
           onSkip: (reason) => skipTask(task.id, reason, task.version),
+          // A skipped Task is finished: back to where it was opened from.
+          onSkipped: () => closeTaskPanel(),
         }),
       );
       skip.dataset.taskAction = "skip";
@@ -615,9 +617,10 @@ export function createTaskPanel(context) {
             !blockedReason(task) && !missingLink && !missingFile && !missingArtifact,
         };
       };
-      const complete = createTaskActionButton("Mark done", () =>
-        updateTaskStatus(task.id, "done", task.version),
-      );
+      // Done finishes the Task: back to where it was opened from.
+      const complete = createTaskActionButton("Mark done", async () => {
+        if (await updateTaskStatus(task.id, "done", task.version)) await closeTaskPanel();
+      });
       // A blocked task's Mark done is not the next action, so it is not primary.
       if (blockingPrerequisites(task).length === 0) complete.classList.add("is-primary");
 

@@ -167,16 +167,13 @@ test.describe('issue 204 slice 3 Task/Card action recovery', () => {
       .toBeDisabled();
     await capture(page, 'task-pending-desktop-1440x900');
     await expectNoSeriousA11y(page, '#task-panel');
-    await expect(page.locator('#task-panel [data-task-mutation-feedback="success"]'))
-      .toBeVisible();
-    await expect(page.locator('#task-panel .task-status-badge')).toHaveText('done');
-    await capture(
-      page,
-      'task-success-desktop-1440x900',
-      page.locator('#task-panel [data-task-mutation-feedback="success"]'),
-    );
+    // Done finishes the Task: its dialog closes back to the queue, and the
+    // toast offers the way back.
+    await expect(page.locator('#task-panel')).toBeHidden();
+    await expect(page).toHaveURL(/\/tasks$/);
+    await expect(page.getByText('Task marked done.')).toBeVisible();
     await clearFaults(context.request);
-    await page.reload();
+    await page.goto(`/tasks?taskId=${pendingTask.id}`);
     await expect(page.locator('#task-panel .task-status-badge')).toHaveText('done');
 
     const failedTask = await createTask(

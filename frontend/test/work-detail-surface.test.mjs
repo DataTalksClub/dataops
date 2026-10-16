@@ -94,6 +94,7 @@ function createHarness(options = {}) {
 
   const requests = [];
   const navigations = [];
+  const appliedTasks = [];
   const entityStates = [];
   const errors = [];
   const undo = [];
@@ -177,6 +178,7 @@ function createHarness(options = {}) {
         .join(" "),
     localDocPathFromHref: (href) =>
       /^\/?content\/.+\.md$/.test(String(href)) ? String(href).replace(/^\//, "") : "",
+    applyTaskToWorkSnapshot: (task) => appliedTasks.push(task),
     navigateCanonicalWorkspace: (path, params = {}, navigationOptions = {}) => {
       navigations.push({ path, params, options: navigationOptions });
       return { ready: Promise.resolve() };
@@ -235,6 +237,7 @@ function createHarness(options = {}) {
     document,
     entityStates,
     errors,
+    appliedTasks,
     navigations,
     requests,
     setFresh: (value) => {
@@ -4113,6 +4116,7 @@ describe("Work Detail surface boundary", () => {
     const dialogs = withDialogs(harness);
     try {
       await hydrateTask(harness, task);
+      harness.setRoute({ path: "/tasks", params: new URLSearchParams(`assignee=all&taskId=${task.id}`), invalid: false });
       const skip = findByText(harness.taskPanelBody, "Skip…", "button");
       assert.ok(skip, "an open Task offers Skip…");
       await skip.click();
@@ -4142,6 +4146,12 @@ describe("Work Detail surface boundary", () => {
       assert.equal(posted.options.method, "POST");
       assert.deepEqual(jsonBody(posted), { reason: "Self-hosted, no recording", expectedVersion: 3 });
       assert.equal(dialog.open, false);
+      // The skipped Task leaves the page's lists at once, and its dialog
+      // closes back to the page it was opened on.
+      assert.equal(harness.appliedTasks.at(-1).status, "skipped");
+      const close = harness.navigations.at(-1);
+      assert.equal(close.path, "/tasks");
+      assert.equal(close.params.toString(), "assignee=all");
     } finally {
       dialogs.restore();
     }

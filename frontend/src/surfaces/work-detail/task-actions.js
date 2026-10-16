@@ -3,6 +3,7 @@ import { isCanonicalWorkTask } from "../../core/workspace.js";
 export function createTaskActions(context) {
   const {
     addDaysIso,
+    applyTaskToWorkSnapshot,
     cardPanelBody,
     detail,
     getActiveWorkspaceRoute,
@@ -292,6 +293,9 @@ export function createTaskActions(context) {
       ) {
         return null;
       }
+      // The page under the dialogs shows the change at once, not after the
+      // refresh below.
+      applyTaskToWorkSnapshot(updated);
       if (owner === "task" && updated?.id === intent.taskId) {
         detail.activeTaskPanelTask = updated;
         renderTaskPanel({ preserveDrafts: true });
@@ -314,6 +318,8 @@ export function createTaskActions(context) {
       if (!confirmed || !taskOwnerIsCurrent(owner, intent, routeToken)) {
         return null;
       }
+      // The refresh may have read the lists before the write reached them.
+      applyTaskToWorkSnapshot(confirmed);
       if (owner === "task") {
         detail.activeTaskPanelTask = confirmed;
       } else {

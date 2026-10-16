@@ -39,9 +39,9 @@ function mount(dialog, trigger) {
 /**
  * Ask why a Task does not apply, then call `onSkip(reason)`. The form is in
  * memory, so the dialog opens at once. A failed skip keeps the dialog open
- * with the server's message; a successful one closes it.
+ * with the server's message; a successful one closes it, then `onSkipped()`.
  */
-export function openSkipTaskDialog({ taskTitle, trigger, onSkip }) {
+export function openSkipTaskDialog({ taskTitle, trigger, onSkip, onSkipped }) {
   const { dialog, body, foot } = buildDialog("Skip task", "480px");
   dialog.dataset.workDialog = "skip-task";
   const form = element("form", "work-dialog-form");
@@ -108,6 +108,7 @@ export function openSkipTaskDialog({ taskTitle, trigger, onSkip }) {
     try {
       await onSkip(value);
       dialog.close();
+      onSkipped?.();
     } catch (err) {
       showError(`Could not skip task: ${err?.message || "request failed"}`);
       submit.disabled = false;

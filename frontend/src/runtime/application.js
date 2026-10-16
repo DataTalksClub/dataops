@@ -327,6 +327,7 @@ const {
   buildOperationsWorkModel,
   buildProcessQualityModel,
   buildTaskProcessQualityFindings,
+  applyTaskToWorkSnapshot,
   refreshOperationsQualitySnapshot,
   refreshOperationsWorkSnapshot,
 } = createWorkModel({
@@ -445,6 +446,7 @@ const {
   parseWorkspaceLocation,
   promptUser: (message, initialValue) => window.prompt(message, initialValue),
   refreshDocuments,
+  applyTaskToWorkSnapshot,
   refreshOperationsWorkSnapshot,
   refreshWorkBell,
   renderEntityLoadState,

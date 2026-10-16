@@ -305,13 +305,22 @@ export function createNavigationShell(context) {
   }
 
   // Focus goes back to what opened the dialog; when a repaint replaced it,
-  // to the same row or Card drawn again.
+  // to the same row or Card drawn again; when that is gone too (a finished
+  // Task left the queue), to the page heading. The page does not scroll.
   function returnModalFocus(opener, fallback, token) {
-    if (isVisible(opener)) {
-      opener.focus({ preventScroll: true });
-      return Promise.resolve();
-    }
-    return restoreWorkspaceEntityFocus(fallback, token);
+    return new Promise((resolve) => {
+      requestAnimationFrameImpl(() => {
+        if (isWorkspaceRouteFresh(token)) {
+          const heading = documentList.querySelector("h1,h2,h3");
+          const target = isVisible(opener)
+            ? opener
+            : visibleEntityFocusTarget(fallback) || (isVisible(heading) ? heading : null);
+          if (target === heading) target.tabIndex = -1;
+          target?.focus({ preventScroll: true });
+        }
+        resolve();
+      });
+    });
   }
 
   // Only the dialogs changed: open, close or swap them over the page, which

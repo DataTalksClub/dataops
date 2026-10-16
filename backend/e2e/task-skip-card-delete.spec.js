@@ -51,14 +51,22 @@ test.describe('skip a Task and delete a Card', () => {
     await dialog.getByRole('button', { name: 'Skip task' }).click();
     await expect(dialog).toHaveCount(0);
 
-    await expect(panel).toContainText('Skipped: not applicable');
-    await expect(panel).toContainText('Self-hosted event, no recording');
+    // A skipped Task is finished: its dialog closes back to the Card, whose
+    // checklist shows the skip and its reason.
+    await expect(panel).toBeHidden();
+    await expect(page).toHaveURL(`/cards?cardId=${card.id}`);
+    const cardPanel = page.locator('#card-panel');
+    const gatedLabel = cardPanel.locator('.card-checklist-label', { hasText: `Synthetic gated step ${unique}` });
+    await expect(gatedLabel).toHaveClass(/is-skipped/);
+    await expect(cardPanel).toContainText('Self-hosted event, no recording');
     const skipped = await json(await request.get(`/api/tasks/${gated.id}`));
     expect(skipped).toMatchObject({ status: 'skipped', skipReason: 'Self-hosted event, no recording' });
     expect(skipped.taskHistory.at(-1)).toMatchObject({ action: 'skipped', note: 'Self-hosted event, no recording' });
     const completed = (await json(await request.get(`/api/cards/${card.id}`))).card;
     expect(completed).toMatchObject({ status: 'archived', stage: 'done', openTaskCount: 0 });
 
+    await gatedLabel.click();
+    await expect(panel).toContainText('Skipped: not applicable');
     await panel.getByRole('button', { name: 'Unskip' }).click();
     await expect(panel.getByRole('button', { name: 'Skip…' })).toBeVisible();
     const reopened = await json(await request.get(`/api/tasks/${gated.id}`));

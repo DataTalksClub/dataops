@@ -1,5 +1,6 @@
 import { createCollectionLoader } from "./collection-loader.js";
 import { resourcesFromPayload } from "./resources.js";
+import { taskIsBlocked } from "./task-dependencies.js";
 import {
   addDaysIso,
   deriveScopedWorkState,
@@ -663,7 +664,58 @@ export function createWorkModel(context) {
     refreshWorkBell();
   }
 
+  // A Task the server just changed, put straight into the snapshot: a done
+  // or skipped Task leaves the lanes at once, and a dependent it was holding
+  // back joins them. List reads may lag a write (they come from indexes), so
+  // an older copy never replaces a newer one.
+  function applyTaskToWorkSnapshot(task) {
+    const snapshot = state.workSnapshot;
+    if (!task?.id || !snapshot) return;
+    const update = (entry) => {
+      if (entry?.id === task.id) {
+        return Number(entry.version) > Number(task.version) ? entry : task;
+      }
+      if (!entry?.prerequisites?.some((prerequisite) => prerequisite.id === task.id)) return entry;
+      const prerequisites = entry.prerequisites.map((prerequisite) =>
+        prerequisite.id === task.id ? { ...prerequisite, status: task.status } : prerequisite,
+      );
+      return { ...entry, prerequisites, blocked: taskIsBlocked({ ...entry, prerequisites }) };
+    };
+    const lanes = (tasks) => (tasks || []).map(update);
+    const cardTasks = Object.fromEntries(
+      Object.entries(snapshot.cardTasks || {}).map(([cardId, tasks]) => [cardId, lanes(tasks)]),
+    );
+    const laneIds = new Set(
+      [...snapshot.todayTasks, ...snapshot.overdueTasks, ...snapshot.waitingTasks].map((entry) => entry.id),
+    );
+    const released = Object.values(cardTasks)
+      .flat()
+      .filter((entry) =>
+        !laneIds.has(entry.id) &&
+        entry.prerequisites?.some((prerequisite) => prerequisite.id === task.id) &&
+        !entry.blocked,
+      );
+    state.workSnapshot = normalizeOperationsWorkSnapshot(
+      {
+        ...snapshot,
+        tasks: released,
+        todayTasks: lanes(snapshot.todayTasks),
+        overdueTasks: lanes(snapshot.overdueTasks),
+        waitingTasks: lanes(snapshot.waitingTasks),
+        cardTasks,
+        formerUsers: [...(snapshot.usersById?.values() || [])].filter((user) => user.deleted),
+        todayTaskCount: undefined,
+        overdueTaskCount: undefined,
+        waitingTaskCount: undefined,
+      },
+      { today: todayIsoDate() },
+    );
+    if (isOperationsWorkspaceVisible()) refreshDocuments();
+    refreshWorkBell();
+  }
+
   return {
+    applyTaskToWorkSnapshot,
     buildOperationsWorkModel,
     buildProcessQualityModel,
     buildTaskProcessQualityFindings,
