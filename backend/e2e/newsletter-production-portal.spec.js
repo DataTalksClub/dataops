@@ -121,7 +121,9 @@ test.describe("production newsletter planner", () => {
     const linkedRow = page.locator('article[data-issue-id="issue-1"]');
     await expect(linkedRow.locator(".newsletter-slot-ticks")).toContainText("Primary: Synthetic Booker");
     await expect(linkedRow.locator(".newsletter-slot-ticks")).toContainText("Secondary: open");
-    await expect(linkedRow.locator(".newsletter-card-chip")).toContainText("31 Dec · #99 · Synthetic Booker");
+    await expect(linkedRow.locator(".newsletter-card-chip")).not.toContainText("31 Dec · #99");
+    await expect(linkedRow.locator(".newsletter-card-chip")).toContainText("Preparation");
+    await expect(linkedRow.locator(".newsletter-card-chip")).toHaveAttribute("title", /^Open card: 31 Dec · #99/);
     await expect(linkedRow.locator(".newsletter-card-chip")).toContainText("4/6");
     await expect(linkedRow.locator(".newsletter-card-chip")).toHaveAttribute("href", "/cards?cardId=card-linked");
     await expect(linkedRow.locator("[data-card-date-mismatch]")).toHaveText("Card dated 30 Dec");

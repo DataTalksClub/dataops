@@ -95,10 +95,11 @@ export function createNewsletterPlanner(context) {
   }
 
   /**
-   * The issue's Card as a chip in the actions row: title, stage, open/total
+   * The issue's Card as a chip in the actions row: stage and open/total
    * Tasks, and a warning when the Card's date drifted from the issue's (the
-   * issue wins on the next save). Every issue that is not cancelled has its
-   * Card, created with the issue, so there is nothing to create or link here.
+   * issue wins on the next save). The row already names the date, number and
+   * sponsors, so the chip does not repeat the Card's title; it carries it as
+   * the link's name.
    */
   function issueCardMarkup(item) {
     if (item.card) {
@@ -107,11 +108,12 @@ export function createNewsletterPlanner(context) {
         ? `<span class="newsletter-card-chip__warning" data-card-date-mismatch><span class="newsletter-card-chip__warning-label">Card dated </span>${
           escapeHtml(formatShortPlanningDate(card.anchorDate))}</span>`
         : "";
+      const name = `Open card: ${card.title || "Untitled card"}`;
       return `
         <div class="newsletter-slot-card">
           <a class="newsletter-card-chip${mismatch ? " is-mismatch" : ""}" href="/cards?cardId=${encodeURIComponent(card.id)}"
-            data-open-card="${escapeHtml(card.id)}">
-            <span class="newsletter-card-chip__title">${escapeHtml(card.title || "Untitled card")}</span>
+            data-open-card="${escapeHtml(card.id)}" title="${escapeHtml(name)}">
+            <span class="newsletter-card-chip__label">Card</span>
             <span class="newsletter-card-chip__meta">${escapeHtml(stageLabel(card.stage))} ·
               <span class="dk-mono">${escapeHtml(`${card.openTaskCount}/${card.taskCount}`)}</span> open</span>
             ${mismatch}

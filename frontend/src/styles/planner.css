@@ -937,11 +937,9 @@ details.newsletter-filters .planner-filter-fields {
 .newsletter-card-chip:hover {
   border-color: var(--dk-border-strong);
 }
-.newsletter-card-chip__title {
-  overflow: hidden;
+.newsletter-card-chip__label {
+  flex: 0 0 auto;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .newsletter-card-chip__meta {
   flex: 0 0 auto;
@@ -959,7 +957,6 @@ details.newsletter-filters .planner-filter-fields {
     flex: 1 1 0;
     order: 1;
   }
-  .newsletter-card-chip__meta,
   .newsletter-card-chip__warning-label {
     display: none;
   }
