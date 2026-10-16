@@ -190,19 +190,33 @@ describe('Task dependencies', () => {
       assert.equal(resolved.body.status, 'done');
     });
 
-    it('does not accept a skipped prerequisite as done', async () => {
+    it('accepts a skipped prerequisite as resolved', async () => {
       cardId = await newCard('Skipped prerequisite');
       const prerequisite = await makeTask('Prerequisite');
-      const dependent = await makeTask('Dependent', { dependsOn: [prerequisite.id] });
+      const other = await makeTask('Other prerequisite');
+      const dependent = await makeTask('Dependent', { dependsOn: [prerequisite.id, other.id] });
       const skipped = await call('POST', `/api/tasks/${prerequisite.id}/actions/skip`, {
         expectedVersion: prerequisite.version,
         reason: 'Not applicable this time',
       });
       assert.equal(skipped.status, 200);
 
+      // Only the open prerequisite still blocks.
       const blocked = await put(dependent.id, { status: 'done' });
       assert.equal(blocked.status, 409);
-      assert.equal(blocked.body.tasks[0].status, 'skipped');
+      assert.deepEqual(blocked.body.tasks.map((task: Json) => task.id), [other.id]);
+      assert.equal((await put(other.id, { status: 'done' })).status, 200);
+      const read = await call('GET', `/api/tasks/${dependent.id}`);
+      assert.equal(read.body.blocked, false);
+
+      assert.equal((await put(dependent.id, { status: 'done' })).status, 200);
+
+      // Unskipping a prerequisite of a completed Task reopens it, which is refused.
+      const unskip = await call('POST', `/api/tasks/${prerequisite.id}/actions/unskip`, {
+        expectedVersion: (await fresh(prerequisite.id)).version,
+      });
+      assert.equal(unskip.status, 409, JSON.stringify(unskip.body));
+      assert.equal(unskip.body.code, 'prerequisite-of-completed-task');
     });
 
     it('reports a prerequisite deleted behind the edge as missing and blocks completion', async () => {

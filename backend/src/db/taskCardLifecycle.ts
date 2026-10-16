@@ -387,10 +387,11 @@ function guardTransactionItem(guard: TaskGuard): TransactionItems[number] {
     names['#version'] = 'version';
     values[':guardVersion'] = guard.version;
   }
-  if (guard.status !== undefined) {
-    conditions.push('#status = :guardStatus');
+  if (guard.resolved) {
+    conditions.push('#status IN (:guardDone, :guardSkipped)');
     names['#status'] = 'status';
-    values[':guardStatus'] = guard.status;
+    values[':guardDone'] = 'done';
+    values[':guardSkipped'] = 'skipped';
   }
   return {
     ConditionCheck: {
@@ -409,7 +410,7 @@ async function guardsHold(client: DynamoDBDocumentClient, guards: TaskGuard[]): 
     const current = await rawItem(client, TABLE_TASKS, taskKey(guard.taskId));
     if (!current) return false;
     if (guard.version !== undefined && current.version !== guard.version) return false;
-    if (guard.status !== undefined && current.status !== guard.status) return false;
+    if (guard.resolved && current.status !== 'done' && current.status !== 'skipped') return false;
   }
   return true;
 }

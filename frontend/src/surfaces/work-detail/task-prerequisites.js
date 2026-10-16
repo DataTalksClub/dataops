@@ -61,7 +61,7 @@ export function renderTaskPrerequisites(
     note.className = "task-prerequisite-note";
     note.dataset.blocked = "true";
     note.textContent = task.status === "todo" || task.status === "waiting"
-      ? "Blocked: this task can be completed once every prerequisite is done."
+      ? "Blocked: this task can be completed once every prerequisite is done or skipped."
       : "Blocked by an unfinished prerequisite.";
     section.append(note);
   }

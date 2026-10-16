@@ -239,7 +239,7 @@ export interface Task {
   requires?: string[];
   /**
    * Ids of prerequisite Tasks on the same Card. This Task cannot be completed
-   * until every one of them is `done`; a skipped prerequisite does not count.
+   * until every one of them is resolved: `done` or `skipped`.
    */
   dependsOn?: string[];
   validation?: string | Record<string, unknown>;

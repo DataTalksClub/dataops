@@ -7,8 +7,8 @@ import { getTaskConsistent, listTasksByCardConsistent } from './tasks';
 
 /**
  * Task dependencies: `Task.dependsOn` lists prerequisite Task ids on the same
- * Card. A prerequisite satisfies a dependency only when it is `done`; a
- * skipped prerequisite keeps its dependents blocked.
+ * Card. A prerequisite is resolved, and satisfies its dependents, when it is
+ * `done` or `skipped`.
  *
  * Every rule is evaluated here, below the routes, so each way of changing a
  * Task (PUT, the resolve-done action, create-as-done, Template sync) meets the
@@ -23,15 +23,20 @@ interface TaskGuard {
   taskId: string;
   /** The Task must have exactly this version. */
   version?: number;
-  /** The Task must have exactly this status. */
-  status?: TaskStatus;
+  /** The Task must be resolved (`done` or `skipped`). */
+  resolved?: true;
+}
+
+/** A resolved prerequisite (done or skipped) no longer holds its dependents back. */
+function isResolvedStatus(status: TaskStatus | 'missing'): boolean {
+  return status === 'done' || status === 'skipped';
 }
 
 /**
  * What a Task write must carry besides its own change.
  *
  * Every mutation that can alter a Card's dependency graph or the statuses the
- * rules read (membership, open/done transitions, edge edits) writes the Card,
+ * rules read (membership, open/resolved transitions, edge edits) writes the Card,
  * so the Card version is the graph's revision. The checks below read the Card
  * *first* and the graph after it from the base table with consistent reads;
  * the write then commits only if the Card is still at the pinned version, so
@@ -42,7 +47,7 @@ interface TaskDependencyPlan {
   guards: TaskGuard[];
   /** Card versions read before the graph; the write requires them unchanged. */
   cardPins: Record<string, number>;
-  /** Card to bump for an edge edit that changes no open/done count. */
+  /** Card to bump for an edge edit that changes no open/resolved count. */
   touchCardId: string | null;
 }
 
@@ -168,8 +173,8 @@ async function planTaskDependencyChecks(
   const dependsOn = after?.dependsOn || [];
   const edgesChanged = after !== null && !sameIds(before?.dependsOn, dependsOn);
   const enteringDone = after !== null && after.status === 'done' && before?.status !== 'done';
-  const leavingDone = before !== null && before.status === 'done'
-    && after !== null && after.status !== 'done';
+  const reopening = before !== null && isResolvedStatus(before.status)
+    && after !== null && !isResolvedStatus(after.status);
   const deleting = before !== null && after === null;
   const movingCard = before !== null && after !== null && cardIdOf(before) !== cardIdOf(after);
   const priorCardId = cardIdOf(before);
@@ -201,7 +206,7 @@ async function planTaskDependencyChecks(
   // Pin the graph revision before reading any of the graph.
   const cardPins: Record<string, number> = {};
   const graphRelevant = edgesChanged || (enteringDone && dependsOn.length > 0)
-    || leavingDone || deleting || movingCard;
+    || reopening || deleting || movingCard;
   if (graphRelevant) {
     for (const id of new Set([cardId, priorCardId])) {
       if (!id) continue;
@@ -254,35 +259,35 @@ async function planTaskDependencyChecks(
     }
 
     if (enteringDone) {
-      // Completion needs every prerequisite done. A skipped one does not count,
-      // and a prerequisite deleted behind the edge's back blocks until the
-      // edge is removed.
+      // Completion needs every prerequisite resolved (done or skipped). A
+      // prerequisite deleted behind the edge's back blocks until the edge is
+      // removed.
       const unmet = [
         ...missing.map((id): TaskReference => ({ id, description: id, status: 'missing' })),
-        ...present.filter((task) => task.status !== 'done').map(reference),
+        ...present.filter((task) => !isResolvedStatus(task.status)).map(reference),
       ];
       if (unmet.length > 0) {
         throw new TaskDependencyError(
           'prerequisites-incomplete',
-          `Cannot mark task as done: complete ${names(unmet)} first`,
+          `Cannot mark task as done: complete or skip ${names(unmet)} first`,
           409,
           unmet,
         );
       }
-      for (const id of dependsOn) guards.push({ taskId: id, status: 'done' });
+      for (const id of dependsOn) guards.push({ taskId: id, resolved: true });
     }
   }
 
   // A prerequisite leaves its dependents behind when it is reopened, deleted,
   // or moved to another Card.
-  if (priorCardId && (leavingDone || deleting || movingCard)) {
+  if (priorCardId && (reopening || deleting || movingCard)) {
     const siblings = await listTasksByCardConsistent(client, priorCardId);
     const dependents = siblings.filter((task) => task.id !== before!.id && task.dependsOn?.includes(before!.id));
     const completed = dependents.filter((task) => task.status === 'done');
-    if (completed.length > 0 && (leavingDone || deleting)) {
+    if (completed.length > 0 && (reopening || deleting)) {
       throw new TaskDependencyError(
         'prerequisite-of-completed-task',
-        `${leavingDone ? 'Cannot reopen' : 'Cannot delete'} "${before!.description}": `
+        `${reopening ? 'Cannot reopen' : 'Cannot delete'} "${before!.description}": `
           + `completed ${names(completed.map(reference))} depends on it`,
         409,
         completed.map(reference),
@@ -350,7 +355,7 @@ async function attachPrerequisites<T extends Task>(
       ...task,
       prerequisites,
       blocked: (task.status === 'todo' || task.status === 'waiting')
-        && prerequisites.some((entry) => entry.status !== 'done'),
+        && prerequisites.some((entry) => !isResolvedStatus(entry.status)),
     };
   });
 }
@@ -358,6 +363,7 @@ async function attachPrerequisites<T extends Task>(
 export {
   TaskDependencyError,
   attachPrerequisites,
+  isResolvedStatus,
   normalizeDependsOn,
   planTaskDependencyChecks,
 };

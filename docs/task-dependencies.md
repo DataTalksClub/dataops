@@ -1,8 +1,8 @@
 # Task dependencies
 
 A Task can depend on other Tasks of its own Card. It cannot be completed until
-every prerequisite is `done`. A `skipped` prerequisite does **not** satisfy a
-dependency: skip the dependent too, or remove the edge.
+every prerequisite is resolved: `done` or `skipped`. A skipped prerequisite
+unblocks its dependents just as a completed one does.
 
 ## Model
 
@@ -24,7 +24,7 @@ dependency: skip the dependent too, or remove the edge.
 | --- | --- |
 | self / missing / duplicate / cross-Card / cyclic edge, or an edge on a Card-less Task | 400 |
 | complete a Task (PUT, `resolve-done`, create as done) with an unfinished prerequisite | 409 `prerequisites-incomplete`, naming the prerequisites |
-| reopen or delete a prerequisite of a completed Task | 409 `prerequisite-of-completed-task` |
+| reopen (to `todo`/`waiting`, including unskip) or delete a prerequisite of a completed Task | 409 `prerequisite-of-completed-task` |
 | delete a Task that others depend on | 409 `has-dependents` |
 | change the edges of a completed Task, or move a Task with edges to another Card | 409 `dependencies-locked` |
 
@@ -34,8 +34,8 @@ operator-added edges that would form a cycle make the update refuse to apply.
 ## Atomicity
 
 The Card version is the dependency graph's revision. Every write that can
-change the graph or the statuses the rules read (Task create/delete, open/done
-transitions, edge edits, Template sync) writes the Card, and an edge edit bumps
+change the graph or the statuses the rules read (Task create/delete,
+open/resolved transitions, edge edits, Template sync) writes the Card, and an edge edit bumps
 it even when no counter changes.
 
 1. The checks read the Card first and pin its version.
@@ -46,8 +46,11 @@ it even when no counter changes.
    still at the pinned version, so a dependent or edge inserted after the read
    cancels it (409) instead of slipping past.
 4. Task-level `ConditionCheck`s stay as a second guard: each prerequisite of a
-   completing Task must still be `done`, and every Task read for a cycle check
+   completing Task must still be `done` or `skipped`, and every Task read for a cycle check
    or dependents check must keep its version.
+
+A `done` <-> `skipped` change does not write the Card: both are resolved, so it
+changes nothing the rules read.
 
 Card Template sync loads the Card and its Tasks consistently (Card first),
 conditions the update on the Card version, and additionally version-checks

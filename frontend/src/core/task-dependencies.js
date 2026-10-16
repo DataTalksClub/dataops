@@ -1,7 +1,7 @@
 // Task dependencies as the UI reads them. The API resolves each Task's
 // prerequisites (`prerequisites`: name and current status) and whether it is
-// `blocked`; a prerequisite satisfies a dependency only when it is done, so a
-// skipped one keeps its dependents blocked. When a Task arrives without the
+// `blocked`; a prerequisite is resolved, and satisfies its dependents, when it
+// is done or skipped. When a Task arrives without the
 // resolved list (it only has `dependsOn` ids), sibling Tasks on the card fill
 // it in.
 
@@ -9,7 +9,7 @@ const STATUS_LABELS = {
   done: "Done",
   todo: "To do",
   waiting: "Waiting",
-  skipped: "Skipped, does not unblock",
+  skipped: "Skipped",
   missing: "Missing, remove this dependency",
 };
 
@@ -29,10 +29,15 @@ export function taskPrerequisites(task, siblings = []) {
   });
 }
 
+// A done or skipped prerequisite no longer holds its dependents back.
+export function prerequisiteResolved(status) {
+  return status === "done" || status === "skipped";
+}
+
 // The prerequisites still in the way of an open Task, in listed order.
 export function blockingPrerequisites(task, siblings = []) {
-  if (!task || task.status === "done" || task.status === "skipped") return [];
-  return taskPrerequisites(task, siblings).filter((entry) => entry.status !== "done");
+  if (!task || prerequisiteResolved(task.status)) return [];
+  return taskPrerequisites(task, siblings).filter((entry) => !prerequisiteResolved(entry.status));
 }
 
 export function taskIsBlocked(task, siblings = []) {
@@ -43,10 +48,10 @@ function quoted(entries) {
   return entries.map((entry) => `"${entry.description}"`).join(", ");
 }
 
-// "Complete "A", "B" first": the reason a blocked Task cannot be completed.
+// "Complete or skip "A", "B" first": the reason a blocked Task cannot be completed.
 export function blockedReason(task, siblings = []) {
   const blocking = blockingPrerequisites(task, siblings);
-  return blocking.length ? `Complete ${quoted(blocking)} first` : "";
+  return blocking.length ? `Complete or skip ${quoted(blocking)} first` : "";
 }
 
 // Short form for a row: the first blocker's name plus a count of the rest.

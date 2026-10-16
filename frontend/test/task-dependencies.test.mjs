@@ -17,19 +17,21 @@ const task = (fields) => ({ id: "t", version: 1, taskHistory: [], status: "todo"
 const prerequisite = (id, description, status) => ({ id, description, status });
 
 describe("task dependency view model", () => {
-  test("only unfinished prerequisites block, and a skipped one does not unblock", () => {
+  test("only unresolved prerequisites block; a skipped one unblocks like a done one", () => {
     const blocked = task({
       dependsOn: ["a", "b", "c"],
       prerequisites: [
         prerequisite("a", "Verify Spotify episode", "done"),
         prerequisite("b", "Review transcript", "skipped"),
         prerequisite("c", "Approve cover", "todo"),
+        prerequisite("d", "Confirm guest", "waiting"),
       ],
     });
-    assert.deepEqual(blockingPrerequisites(blocked).map(({ id }) => id), ["b", "c"]);
+    assert.deepEqual(blockingPrerequisites(blocked).map(({ id }) => id), ["c", "d"]);
     assert.equal(taskIsBlocked(blocked), true);
-    assert.equal(blockedReason(blocked), 'Complete "Review transcript", "Approve cover" first');
-    assert.equal(blockedSummary(blocked), "Blocked by Review transcript +1 more");
+    assert.equal(blockedReason(blocked), 'Complete or skip "Approve cover", "Confirm guest" first');
+    assert.equal(blockedSummary(blocked), "Blocked by Approve cover +1 more");
+    assert.equal(taskIsBlocked(task({ prerequisites: [prerequisite("b", "Skipped", "skipped")] })), false);
     assert.equal(blockedSummary(task({ prerequisites: [prerequisite("a", "Only one", "waiting")] })), "Blocked by Only one");
   });
 
@@ -51,7 +53,7 @@ describe("task dependency view model", () => {
       prerequisite("gone", "gone", "missing"),
     ]);
     assert.match(prerequisiteStatusLabel("missing"), /remove this dependency/);
-    assert.match(prerequisiteStatusLabel("skipped"), /does not unblock/);
+    assert.equal(prerequisiteStatusLabel("skipped"), "Skipped");
   });
 });
 

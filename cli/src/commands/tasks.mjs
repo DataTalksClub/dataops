@@ -39,7 +39,7 @@ List views (default: --queue)
 
 Dependencies
   --depends-on ID,ID       Prerequisite Tasks on the same Card; the Task cannot be completed
-                           until every one is done (a skipped prerequisite does not count).
+                           until every one is done or skipped.
                            \`none\` clears them. show lists each prerequisite's name and status;
                            list marks blocked Tasks. The API rejects self, missing,
                            cross-Card and cyclic prerequisites, completing a blocked Task,
@@ -214,7 +214,7 @@ export async function show(args, io) {
     ["link", task.link],
     ["requires", task.requires?.length ? task.requires.join(", ") : ""],
     ["depends on", prerequisiteLines(task)],
-    ["blocked", task.blocked ? "yes - complete the prerequisites first" : ""],
+    ["blocked", task.blocked ? "yes - complete or skip the prerequisites first" : ""],
     ["required link", task.requiredLinkName],
     ["requires file", task.requiresFile ? "yes" : ""],
     ["proof", task.proofRequirement ? `${task.proofRequirement.type}${task.proofRequirement.label ? ` (${task.proofRequirement.label})` : ""}` : ""],

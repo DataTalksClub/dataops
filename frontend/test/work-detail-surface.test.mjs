@@ -2320,7 +2320,8 @@ describe("Work Detail surface boundary", () => {
       blocked: true,
       prerequisites: [
         { id: "spotify", description: "Verify Spotify episode", status: "done" },
-        { id: "transcript", description: "Review transcript", status: "skipped" },
+        { id: "transcript", description: "Review transcript", status: "todo" },
+        { id: "cover", description: "Approve cover", status: "skipped" },
       ],
     };
     const harness = createHarness({
@@ -2338,16 +2339,16 @@ describe("Work Detail surface boundary", () => {
     assert.match(section.textContent, /Verify Spotify episode/);
     assert.match(section.textContent, /Review transcript/);
     const rows = section.querySelectorAll(".task-prerequisite-row");
-    assert.deepEqual(rows.map((row) => row.dataset.status), ["done", "skipped"]);
-    assert.match(rows[1].textContent, /does not unblock/);
+    assert.deepEqual(rows.map((row) => row.dataset.status), ["done", "todo", "skipped"]);
+    assert.match(rows[2].textContent, /Skipped/);
     assert.ok(section.querySelector('[data-blocked="true"]'));
 
     const complete = findByText(harness.taskPanelBody, "Mark done", "button");
     assert.equal(complete.disabled, true);
-    assert.equal(complete.title, 'Complete "Review transcript" first');
+    assert.equal(complete.title, 'Complete or skip "Review transcript" first');
   });
 
-  test("completes normally when every prerequisite is done", async () => {
+  test("completes normally when every prerequisite is done or skipped", async () => {
     const task = {
       id: "ready-task",
       version: 2,
@@ -2413,7 +2414,7 @@ describe("Work Detail surface boundary", () => {
     assert.equal(open.querySelector(".card-checklist-blocked"), null);
     const box = blocked.querySelector('input[type="checkbox"]');
     assert.equal(box.disabled, true);
-    assert.equal(box.title, 'Complete "Verify Spotify episode" first');
+    assert.equal(box.title, 'Complete or skip "Verify Spotify episode" first');
     assert.match(blocked.querySelector(".card-checklist-blocked").textContent, /Blocked by Verify Spotify episode/);
     assert.deepEqual(harness.errors, []);
   });

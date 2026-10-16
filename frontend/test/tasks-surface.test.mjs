@@ -732,7 +732,7 @@ describe("Tasks surface boundary", () => {
       dependsOn: ["spotify", "transcript"],
       prerequisites: [
         { id: "spotify", description: "Verify Spotify episode", status: "done" },
-        { id: "transcript", description: "Review transcript", status: "skipped" },
+        { id: "transcript", description: "Review transcript", status: "todo" },
       ],
     });
     const { api, documentList, requests } = createHarness({
@@ -751,7 +751,7 @@ describe("Tasks surface boundary", () => {
     const [input] = findAllByClass(documentList, "ops-queue-check-input");
     const [label] = findAllByClass(documentList, "ops-queue-check");
     assert.equal(input.disabled, true);
-    assert.equal(label.title, 'Complete "Review transcript" first');
+    assert.equal(label.title, 'Complete or skip "Review transcript" first');
     const [note] = findAllByClass(documentList, "ops-queue-note");
     assert.equal(note.textContent, "Blocked by Review transcript");
     assert.equal(note.dataset.note, "blocked");

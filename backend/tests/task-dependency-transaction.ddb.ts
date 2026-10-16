@@ -195,6 +195,15 @@ test('task dependency guards hold on official DynamoDB Local', { timeout: 60_000
     assert.equal(sawConditionCheck, true, 'the production ConditionCheck was not exercised');
   });
 
+  await t.test('a skipped prerequisite satisfies the ConditionCheck as a done one does', async () => {
+    const card = await seedCard(3);
+    const done = await seedTask(card, 'Done prerequisite', { status: 'done', completedAt: NOW });
+    const skipped = await seedTask(card, 'Skipped prerequisite', { status: 'skipped', skippedAt: NOW });
+    const dependent = await seedTask(card, 'Dependent', { dependsOn: [done.id, skipped.id] });
+    const completed = await updateTask(db, dependent.id, { expectedVersion: 1, patch: { status: 'done' } });
+    assert.equal(completed.status, 'done');
+  });
+
   await t.test('a prerequisite reopened between the check and the write cancels the completion', async () => {
     const card = await seedCard(2);
     const prerequisite = await seedTask(card, 'Prerequisite', { status: 'done', completedAt: NOW });
