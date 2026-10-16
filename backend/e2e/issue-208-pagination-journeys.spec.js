@@ -186,7 +186,7 @@ test.describe('issue 208 paginated collections', () => {
     const failure = files.locator('.task-file-error');
     await expect(failure).toContainText('More files are available');
     await expect(failure).toContainText('Files continuation offline');
-    await expect(files.locator('.task-file-item span')).toHaveText([
+    await expect(files.locator('.task-file-item .task-file-download')).toHaveText([
       'evidence-one.txt',
     ]);
     await expect(failure.getByRole('button', { name: 'Retry loading files' })).toBeVisible();
@@ -201,7 +201,7 @@ test.describe('issue 208 paginated collections', () => {
       ),
     );
     await expect(files.locator('.task-file-error')).toHaveCount(0);
-    await expect(files.locator('.task-file-item span')).toHaveText([
+    await expect(files.locator('.task-file-item .task-file-download')).toHaveText([
       'evidence-one.txt',
       'evidence-two.txt',
     ]);
