@@ -73,3 +73,22 @@ export function taskMaterials(task, options = {}) {
   }
   return materials;
 }
+
+// The execution need beside the accounts: does this task need an interactive
+// browser? A human classification carried on the task — never inferred from a
+// service name, since a YouTube or Typefully task may have a full API route.
+// Anything unclassified stays unknown on purpose: it is never shown as, or
+// filtered into, safe headless work.
+export function browserRequirementParts(value) {
+  if (value === "required") {
+    return { label: "Browser required", short: "browser", icon: "globe", classified: true };
+  }
+  if (value === "headless") {
+    return { label: "Runs headless", short: "headless", icon: "code", classified: true };
+  }
+  return { label: "Browser need not classified", short: "", icon: "", classified: false };
+}
+
+export function taskBrowserRequirement(task) {
+  return browserRequirementParts(task?.browserRequirement);
+}

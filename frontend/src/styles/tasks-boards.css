@@ -1148,7 +1148,8 @@ body[data-workspace-view="tasks"] .ops-queue-filters {
   body[data-workspace-view="tasks"] .ops-work-queue { gap: var(--dk-space-2); }
 }
 body[data-workspace-view="tasks"] .ops-queue-assignee-filter,
-body[data-workspace-view="tasks"] .ops-queue-resource-filter {
+body[data-workspace-view="tasks"] .ops-queue-resource-filter,
+body[data-workspace-view="tasks"] .ops-queue-browser-filter {
   display: inline-flex;
   align-items: center;
   gap: var(--dk-space-2);
@@ -1156,6 +1157,20 @@ body[data-workspace-view="tasks"] .ops-queue-resource-filter {
   font-size: var(--dk-text-sm);
 }
 body[data-workspace-view="tasks"] .ops-queue-assignee-filter .dk-select,
-body[data-workspace-view="tasks"] .ops-queue-resource-filter .dk-select {
+body[data-workspace-view="tasks"] .ops-queue-resource-filter .dk-select,
+body[data-workspace-view="tasks"] .ops-queue-browser-filter .dk-select {
   width: auto;
+}
+/* The row's execution-need mark: a browser glyph when the work needs one, a
+   terminal glyph when it is classified headless. Quiet like the resource
+   glyphs; the accessible name is the full sentence. */
+.ops-queue-browser {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--dk-text-muted);
+}
+.ops-queue-browser > svg {
+  width: 16px;
+  height: 16px;
 }

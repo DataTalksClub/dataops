@@ -1327,6 +1327,77 @@ body[data-workspace-view="tasks"] .work-dialog-lead {
     padding: 0 var(--dk-space-3);
   }
 }
+/* The browser requirement: the execution need beside the accounts. Same
+   label row, quiet value line, and the draft editor with its own actions. */
+.task-browser {
+  display: grid;
+  gap: var(--dk-space-2);
+}
+.task-browser-value {
+  margin: 0;
+  color: var(--dk-text-primary);
+  font-size: var(--dk-text-sm);
+}
+.task-browser-value[data-browser="headless"] {
+  color: var(--dk-text-primary);
+}
+.task-browser-value[data-browser="unclassified"] {
+  color: var(--dk-text-muted);
+}
+.task-browser-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-2);
+}
+.task-browser-row .task-browser-value {
+  margin: 0;
+}
+.task-browser-edit {
+  min-height: 24px;
+  padding: 0 var(--dk-space-1);
+  border: 0;
+  border-radius: var(--dk-radius-sm);
+  background: transparent;
+  color: var(--dk-text-link);
+  font-size: var(--dk-text-sm);
+  cursor: pointer;
+}
+.task-browser-edit:hover {
+  color: var(--dk-text-link-hover);
+  text-decoration: underline;
+}
+.task-browser-edit:disabled {
+  color: var(--dk-text-muted);
+  text-decoration: none;
+  cursor: not-allowed;
+}
+.task-browser.is-editing {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.task-browser.is-editing > .task-history-label {
+  grid-row: 1;
+  grid-column: 1;
+}
+.task-browser-editor {
+  display: contents;
+}
+.task-browser-editor > .dk-select {
+  grid-column: 1 / -1;
+}
+.task-browser-actions {
+  display: flex;
+  grid-row: 1;
+  grid-column: 2;
+  gap: var(--dk-space-2);
+}
+@media (max-width: 820px), (pointer: coarse) {
+  .task-browser-edit {
+    min-height: var(--dk-size-touch);
+    padding: 0 var(--dk-space-3);
+  }
+}
 /* Dependencies: "Waiting on" and "Unblocks", each only when it has an
    entry. A row is a dot (green once resolved), the task's name (opens it)
    and its due date or status. Quiet throughout: waiting is the normal order

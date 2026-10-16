@@ -1,4 +1,5 @@
 import { SPLIT_BACK_ICON } from "../split-back-icon.js";
+import { browserRequirementParts } from "../../core/task-display.js";
 
 export function createTemplatesSurface(context) {
   const {
@@ -349,7 +350,12 @@ export function createTemplatesSurface(context) {
       const name = document.createElement("strong");
       name.textContent = task.description || task.refId || "Untitled task";
       const meta = document.createElement("span");
-      meta.textContent = dayOffsetLabel(task.offsetDays);
+      // The authored execution need rides the step line, so an operator
+      // starting a card knows which steps need a browser before they exist.
+      const browser = browserRequirementParts(task.browserRequirement);
+      meta.textContent = browser.classified
+        ? `${dayOffsetLabel(task.offsetDays)} · ${browser.label}`
+        : dayOffsetLabel(task.offsetDays);
       item.append(name, meta);
       tasks.append(item);
     }

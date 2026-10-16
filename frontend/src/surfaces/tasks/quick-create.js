@@ -56,6 +56,18 @@ export function createQuickTaskActions(context) {
 
     const descInput = createQuickInput("What needs doing?", "text", "");
     const dateInput = createQuickInput("Due date", "date", todayIsoDate());
+    // The execution need is chosen at creation when it is known; leaving it
+    // unclassified is the honest default, never a headless claim.
+    const browser = createQuickSelect(
+      "Browser need",
+      [
+        ["unclassified", "Not classified"],
+        ["headless", "Headless — finishes without a browser"],
+        ["required", "Browser required"],
+      ],
+      "unclassified",
+    );
+    browser.input.value = "unclassified";
     const feedback = createFormFeedback();
 
     const createBtn = document.createElement("button");
@@ -87,7 +99,13 @@ export function createQuickTaskActions(context) {
       try {
         const created = await request(workApiUrl("/api/tasks"), {
           method: "POST",
-          body: JSON.stringify({ description, date }),
+          body: JSON.stringify({
+            description,
+            date,
+            ...(browser.input.value !== "unclassified"
+              ? { browserRequirement: browser.input.value }
+              : {}),
+          }),
         });
         overlay.close();
         const task = created?.task || created;
@@ -132,7 +150,7 @@ export function createQuickTaskActions(context) {
     };
     form.addEventListener("submit", submitTask);
 
-    form.append(descInput.label, dateInput.label, feedback.node, createBtn);
+    form.append(descInput.label, dateInput.label, browser.label, feedback.node, createBtn);
     overlay.querySelector(".quick-form-body").append(form);
     descInput.input.focus();
     descInput.input.focus();
@@ -498,6 +516,18 @@ export function createQuickTaskActions(context) {
       preset.assigneeId,
     );
     assignee.input.value = preset.assigneeId;
+    // Generated Tasks inherit the schedule's classification, so an operator on
+    // a headless machine can tell from the queue what a firing will produce.
+    const browser = createQuickSelect(
+      "Browser need",
+      [
+        ["unclassified", "Not classified"],
+        ["headless", "Headless — finishes without a browser"],
+        ["required", "Browser required"],
+      ],
+      preset.browserRequirement || "unclassified",
+    );
+    browser.input.value = preset.browserRequirement || "unclassified";
     const enabled = createQuickCheckbox(
       editing ? "Active" : "Activate immediately",
       preset.enabled,
@@ -609,6 +639,11 @@ export function createQuickTaskActions(context) {
       const instructionDocId = processDoc.getValue();
       if (instructionDocId) body.instructionDocId = instructionDocId;
       else if (preset.instructionDocId) body.instructionDocId = null;
+      // Send the classification only when it changed: an unrelated edit of a
+      // schedule whose classification predates the form must not clear it.
+      const nextBrowser =
+        browser.input.value !== "unclassified" ? browser.input.value : null;
+      if (nextBrowser !== preset.browserRequirement) body.browserRequirement = nextBrowser;
       scheduleSubmitInFlight = true;
       setControlPending(submitBtn, {
         pending: true,
@@ -668,6 +703,7 @@ export function createQuickTaskActions(context) {
       preview,
       processDoc.element,
       assignee.label,
+      browser.label,
       enabled.label,
       feedback.node,
       footer,
@@ -801,6 +837,10 @@ export function createQuickTaskActions(context) {
       description: String(config?.description || config?.name || ""),
       assigneeId: String(config?.assigneeId || ""),
       instructionDocId: String(config?.instructionDocId || ""),
+      browserRequirement:
+        config?.browserRequirement === "required" || config?.browserRequirement === "headless"
+          ? config.browserRequirement
+          : null,
       enabled: config ? config.enabled !== false : true,
       schedule: "daily",
       time: "09:00",

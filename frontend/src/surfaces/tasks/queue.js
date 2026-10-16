@@ -1,12 +1,13 @@
 import { cardKind } from "../../core/card-kind.js";
 import { personAvatar } from "../../core/identity.js";
 import { blockingPrerequisites, prerequisiteResolved } from "../../core/task-dependencies.js";
-import { taskMaterials, taskTitleParts } from "../../core/task-display.js";
+import { browserRequirementParts, taskMaterials, taskTitleParts } from "../../core/task-display.js";
 import { formatDayLabel } from "../../core/dates.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { createQueueAssigneeFilter } from "./queue-assignee.js";
 import { createCardHovercards } from "./card-hovercard.js";
 import { renderQueueMaterials } from "./queue-materials.js";
+import { renderIcon } from "../../core/icons.js";
 import { renderResourceMarks, resourceLabel } from "../../core/resources.js";
 
 // One queue, not one section per state. Every open task the snapshot knows
@@ -59,6 +60,56 @@ export function createTaskQueue(context) {
 
   // "all", "none" (needs nothing outside DataOps), or one resource id.
   let activeResourceFilter = "all";
+
+  // "all", or one execution-need mode: "headless" keeps only tasks explicitly
+  // classified as browser-free, "required" the ones needing a browser, and
+  // "unclassified" the work nobody has decided about yet.
+  let activeBrowserFilter = "all";
+
+  function taskMatchesBrowser(task, filterId) {
+    if (!filterId || filterId === "all") return true;
+    const value = task.browserRequirement;
+    if (filterId === "unclassified") return value !== "required" && value !== "headless";
+    return value === filterId;
+  }
+
+  // Execution-need filter, always offered: headless mode is how an operator on
+  // a browserless machine finds the work they can actually do, and unclassified
+  // work must stay visible as un-triaged rather than silently safe.
+  function renderBrowserFilter(openTasks, onSelect) {
+    const counts = new Map();
+    let unclassified = 0;
+    for (const { task } of openTasks) {
+      const parts = browserRequirementParts(task.browserRequirement);
+      if (!parts.classified) unclassified += 1;
+      else counts.set(task.browserRequirement, (counts.get(task.browserRequirement) || 0) + 1);
+    }
+    const label = document.createElement("label");
+    label.className = "ops-queue-browser-filter";
+    const text = document.createElement("span");
+    text.textContent = "Browser";
+    const select = document.createElement("select");
+    select.className = "dk-select";
+    select.setAttribute("aria-label", "Filter queue by browser requirement");
+    const option = (value, name) => {
+      const entry = document.createElement("option");
+      entry.value = value;
+      entry.textContent = name;
+      entry.selected = value === activeBrowserFilter;
+      select.append(entry);
+    };
+    option("all", "Any execution need");
+    option("headless", `Headless (${counts.get("headless") || 0})`);
+    option("required", `Browser required (${counts.get("required") || 0})`);
+    option("unclassified", `Not classified (${unclassified})`);
+    select.value = activeBrowserFilter;
+    select.addEventListener("change", () => {
+      activeBrowserFilter = select.value;
+      onSelect();
+    });
+    label.append(text, select);
+    return label;
+  }
 
   function taskMatchesResource(task, filterId) {
     if (!filterId || filterId === "all") return true;
@@ -177,22 +228,41 @@ export function createTaskQueue(context) {
       const scope = assigneeScope(assigneeFilter);
       const assigneeOpen = allOpenTasks.filter((entry) => taskMatchesAssignee(entry.task, target));
       const resourceFilter = renderResourceFilter(assigneeOpen, () => populateBoard());
-      const visibleOpen = assigneeOpen.filter((entry) => taskMatchesResource(entry.task, activeResourceFilter));
+      const browserFilter = renderBrowserFilter(assigneeOpen, () => populateBoard());
+      const visibleOpen = assigneeOpen.filter(
+        (entry) =>
+          taskMatchesResource(entry.task, activeResourceFilter) &&
+          taskMatchesBrowser(entry.task, activeBrowserFilter),
+      );
       visibleOpenTasks = visibleOpen;
 
       const visibleDone = doneTasks.filter((task) =>
-        taskMatchesAssignee(task, target) && taskMatchesResource(task, activeResourceFilter));
+        taskMatchesAssignee(task, target) &&
+        taskMatchesResource(task, activeResourceFilter) &&
+        taskMatchesBrowser(task, activeBrowserFilter));
 
       if (allOpenTasks.length > 0 || doneTasks.length > 0) {
-        // Who and what: the assignee filter and the required-resource filter
-        // share one toolbar row with the create actions.
-        filters.prepend(renderAssigneeFilter(allOpenTasks), ...[resourceFilter].filter(Boolean));
+        // Who and what: the assignee filter, the required-resource filter, and
+        // the browser-need filter share one toolbar row with the create actions.
+        filters.prepend(
+          renderAssigneeFilter(allOpenTasks),
+          ...[resourceFilter, browserFilter],
+        );
 
         if (visibleOpen.length > 0) {
           board.append(renderQueueTotalLine(visibleOpen.length, scope));
           board.append(renderQueueRows(visibleOpen, today, cardsById));
           const expander = renderQueueExpander(visibleOpen.length);
           if (expander) board.append(expander);
+        } else if (activeBrowserFilter !== "all" && assigneeOpen.length > 0) {
+          const emptyMsg = document.createElement("p");
+          emptyMsg.className = "ops-empty ops-queue-browser-empty";
+          emptyMsg.textContent = activeBrowserFilter === "headless"
+            ? "No open task here is classified headless. Classify work from its task panel; unclassified tasks stay out of headless mode."
+            : activeBrowserFilter === "required"
+              ? "No open task here is marked as needing a browser."
+              : "Every open task here already has a browser classification.";
+          board.append(emptyMsg);
         } else if (activeResourceFilter !== "all" && assigneeOpen.length > 0) {
           const emptyMsg = document.createElement("p");
           emptyMsg.className = "ops-empty ops-queue-resource-empty";
@@ -855,6 +925,21 @@ export function createTaskQueue(context) {
       needsText.textContent = `Needs ${needs.join(", ")}`;
       cell.append(needsText);
       describedBy.push(needsText.id);
+    }
+    // The execution need beside the accounts: a browser-required or
+    // headless-classified task carries its mark; an unclassified one stays
+    // unmarked here and asks to be classified from the task panel.
+    const browser = browserRequirementParts(task.browserRequirement);
+    if (browser.classified) {
+      const mark = document.createElement("span");
+      mark.className = "ops-queue-browser";
+      mark.dataset.browser = task.browserRequirement;
+      mark.title = browser.label;
+      mark.setAttribute("role", "img");
+      mark.setAttribute("aria-label", browser.label);
+      mark.append(renderIcon(browser.icon, { size: 16 }));
+      titleRow.append(mark);
+      row.dataset.browser = task.browserRequirement;
     }
     open.append(titleRow);
     cell.prepend(open);

@@ -6,6 +6,7 @@ import { openSkipTaskDialog } from "./work-dialogs.js";
 import { blockedReason, blockingPrerequisites } from "../../core/task-dependencies.js";
 import { renderAddPrerequisite, renderTaskDependencies } from "./task-prerequisites.js";
 import { createTaskRequires } from "./task-requires.js";
+import { createTaskBrowser } from "./task-browser.js";
 
 export function createTaskPanel(context) {
   const {
@@ -41,6 +42,7 @@ export function createTaskPanel(context) {
     saveTaskLink,
     skipTask,
     saveTaskRequires,
+    saveTaskBrowser,
     saveTaskDependencies,
     state,
     taskPanelBody,
@@ -63,6 +65,13 @@ export function createTaskPanel(context) {
     state,
     taskPanelBody,
     workApiUrl,
+  });
+
+  const { renderTaskBrowser } = createTaskBrowser({
+    createTaskActionButton,
+    renderTaskPanel: (options) => renderTaskPanel(options),
+    saveTaskBrowser,
+    taskPanelBody,
   });
 
   const overviewDeps = {
@@ -464,6 +473,7 @@ export function createTaskPanel(context) {
     const view = taskDisplayParts(task, overviewDeps);
     taskPanelBody.append(renderTaskContext(task, view, overviewDeps));
     taskPanelBody.append(renderTaskRequires(task, panelMutationBusy));
+    taskPanelBody.append(renderTaskBrowser(task, panelMutationBusy));
     const cardTasksAtHand = detail.activeCardPanelId === task.cardId
       ? detail.activeCardPanelData?.tasks || []
       : [];

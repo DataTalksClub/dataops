@@ -524,6 +524,31 @@ export function createTaskActions(context) {
     return submitTaskIntent(intent, expectedVersion);
   }
 
+  async function saveTaskBrowser(taskId, browserRequirement, explicitVersion) {
+    const intent = {
+      taskId,
+      kind: "browser-requirement",
+      label: browserRequirement
+        ? `Browser: ${browserRequirement}`
+        : "Browser need: not classified",
+      method: "PUT",
+      path: `/api/tasks/${encodeURIComponent(taskId)}`,
+      payload: { browserRequirement },
+      pendingMessage: "Saving the browser requirement…",
+      successMessage: "Browser requirement is saved in the refreshed Task.",
+      errorPrefix: "Could not save the browser requirement",
+    };
+    const owner = taskIntentOwner(intent);
+    let expectedVersion;
+    try {
+      expectedVersion = displayedVersion(taskId, explicitVersion);
+    } catch (err) {
+      showIntentFailure(owner, intent, err, expectedVersion);
+      return null;
+    }
+    return submitTaskIntent(intent, expectedVersion);
+  }
+
   async function saveTaskDependencies(taskId, dependsOn, explicitVersion) {
     const intent = {
       taskId,
@@ -800,6 +825,7 @@ export function createTaskActions(context) {
     refreshTaskPanel,
     saveTaskLink,
     saveTaskRequires,
+    saveTaskBrowser,
     saveTaskDependencies,
     setCardPanelFeedback,
     setTaskPanelFeedback,

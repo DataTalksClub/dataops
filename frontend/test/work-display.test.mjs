@@ -7,7 +7,7 @@ import { describe, test } from "node:test";
 import { cardKind } from "../src/core/card-kind.js";
 import { hasIcon, TEMPLATE_ICON_NAMES } from "../src/core/icons.js";
 import { documentHref, isMailLink, linkAddress, linkLabel, linkService, linkTarget, mailAddress, opensInNewTab } from "../src/core/links.js";
-import { taskMaterials, taskTitleParts } from "../src/core/task-display.js";
+import { browserRequirementParts, taskMaterials, taskTitleParts } from "../src/core/task-display.js";
 import { renderArtifactGroups } from "../src/surfaces/work-detail/artifact-rows.js";
 import { FakeDocument, FakeElement, findAllByClass } from "./support/fake-dom.mjs";
 
@@ -55,6 +55,23 @@ describe("work display helpers", () => {
     assert.equal(isMailLink("https://example.com"), false);
     assert.equal(mailAddress("mailto:dewang@example.com?subject=Hi"), "dewang@example.com");
     assert.equal(linkService("mailto:dewang@example.com").icon, "mail");
+  });
+
+  test("names the browser requirement and keeps unclassified work honestly unknown", () => {
+    const required = browserRequirementParts("required");
+    assert.equal(required.label, "Browser required");
+    assert.equal(required.classified, true);
+    assert.equal(required.icon, "globe");
+    assert.ok(hasIcon(required.icon));
+    const headless = browserRequirementParts("headless");
+    assert.equal(headless.label, "Runs headless");
+    assert.equal(headless.classified, true);
+    assert.ok(hasIcon(headless.icon));
+    for (const unclassified of [undefined, null, "", "maybe", "UNKNOWN"]) {
+      const unknown = browserRequirementParts(unclassified);
+      assert.equal(unknown.classified, false);
+      assert.equal(unknown.short, "");
+    }
   });
 
   test("lists a task's materials after its process doc and instructions", () => {

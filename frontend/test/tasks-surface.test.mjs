@@ -918,6 +918,62 @@ describe("Tasks surface boundary", () => {
     assert.equal(findAllByClass(documentList, "ops-queue-resource-filter").length, 1);
   });
 
+  test("marks each task's browser need and filters by it, never trusting unclassified work as headless", async () => {
+    const tasks = [
+      canonicalTask({ id: "studio", description: "Fix thumbnail in Studio", date: "2026-08-12", browserRequirement: "required" }),
+      canonicalTask({ id: "api", description: "Refresh metrics via API", date: "2026-08-12", browserRequirement: "headless" }),
+      canonicalTask({ id: "unclear", description: "Chase the invoice", date: "2026-08-12" }),
+    ];
+    const { api, documentList } = createHarness({
+      taskRouteContext: {
+        date: "",
+        tasks,
+        cardId: "",
+        filterCard: null,
+        contextCard: null,
+        contextCardId: "",
+        failures: [],
+      },
+    });
+
+    api.renderTasksSurface([], "queue");
+    const marks = findAllByClass(documentList, "ops-queue-row").map((row) => {
+      const mark = findAllByClass(row, "ops-queue-browser")[0];
+      return mark ? mark.getAttribute("aria-label") : null;
+    });
+    assert.deepEqual(marks, [null, "Browser required", "Runs headless"]);
+    // The unclassified row carries no mark: unknown is not headless-safe.
+    const filter = findAllByClass(documentList, "ops-queue-browser-filter")[0];
+    const select = filter.querySelector("select");
+    assert.deepEqual(
+      select.children.map((option) => [option.value, option.textContent]),
+      [
+        ["all", "Any execution need"],
+        ["headless", "Headless (1)"],
+        ["required", "Browser required (1)"],
+        ["unclassified", "Not classified (1)"],
+      ],
+    );
+    // Headless mode keeps only the explicit classification.
+    select.value = "headless";
+    await select.dispatch("change");
+    assert.deepEqual(queueRowTitles(documentList), ["Refresh metrics via API"]);
+    // Composing with the resource filter keeps both narrowings.
+    const resourceSelect = findAllByClass(documentList, "ops-queue-resource-filter").length
+      ? findAllByClass(documentList, "ops-queue-resource-filter")[0].querySelector("select")
+      : null;
+    if (resourceSelect) {
+      resourceSelect.value = "none";
+      await resourceSelect.dispatch("change");
+      assert.deepEqual(queueRowTitles(documentList), ["Refresh metrics via API"]);
+    }
+    // Unclassified is its own honest triage bucket.
+    const browserAgain = findAllByClass(documentList, "ops-queue-browser-filter")[0].querySelector("select");
+    browserAgain.value = "unclassified";
+    await browserAgain.dispatch("change");
+    assert.deepEqual(queueRowTitles(documentList), ["Chase the invoice"]);
+  });
+
   test("opens on the signed-in operator's tasks and moves the assignee scope through the URL", async () => {
     const mine = Array.from({ length: 27 }, (_, index) =>
       canonicalTask({
@@ -2852,12 +2908,20 @@ describe("Tasks surface boundary", () => {
     const createInputs = createOverlay.querySelectorAll("input");
     createInputs[0].value = "Daily standup";
     const createSelects = createOverlay.querySelectorAll("select");
-    const assigneeSelect = createSelects.at(-1);
+    const assigneeSelect = createSelects.at(-2);
     assert.deepEqual(
       assigneeSelect.querySelectorAll("option").map((o) => o.textContent),
       ["Unassigned", "Grace", "Sam"],
     );
     assigneeSelect.value = "user-sam";
+    // The browser-need select ships with the honest default: nothing is
+    // claimed about the generated tasks until a person classifies them.
+    const browserSelect = createSelects.at(-1);
+    assert.deepEqual(
+      browserSelect.querySelectorAll("option").map((o) => o.value),
+      ["unclassified", "headless", "required"],
+    );
+    assert.equal(browserSelect.value, "unclassified");
     await submitQuickForm(createOverlay);
     await nextTicks();
     assert.equal(harness.requests.at(-1).url, "/api/recurring");
@@ -2880,7 +2944,8 @@ describe("Tasks surface boundary", () => {
     const editSelects = editOverlay.querySelectorAll("select");
     assert.equal(editSelects[0].value, "weekly");
     assert.equal(editSelects[1].value, "1");
-    assert.equal(editSelects.at(-1).value, "user-grace");
+    assert.equal(editSelects.at(-2).value, "user-grace");
+    assert.equal(editSelects.at(-1).value, "unclassified");
     // The preview echoes the cron that will be sent; the next run is the
     // server's to compute once it stores the schedule.
     assert.match(editOverlay.textContent, /0 9 \* \* 1/);
@@ -3779,6 +3844,30 @@ describe("Tasks surface boundary", () => {
     });
     assert.deepEqual(openedTasks, ["task-created"]);
     assert.equal(overlay.removed, true);
+  });
+
+  test("creates a quick Task with the chosen browser requirement, absent when unclassified", async () => {
+    const requests = [];
+    const harness = createHarness({
+      request: async (url, options = {}) => {
+        requests.push({ url, options });
+        if (url === "/api/tasks") return { id: "task-headless" };
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.openQuickTaskForm();
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    overlay.querySelectorAll("input").find((input) => input.type === "text").value = "Post the newsletter";
+    overlay.querySelectorAll("input").find((input) => input.type === "date").value = "2026-08-15";
+    const browserSelect = overlay.querySelectorAll("select")[0];
+    browserSelect.value = "headless";
+    await submitQuickForm(overlay);
+    await nextTicks();
+    assert.deepEqual(JSON.parse(requests[0].options.body), {
+      description: "Post the newsletter",
+      date: "2026-08-15",
+      browserRequirement: "headless",
+    });
   });
 
   test("validates and creates quick Cards from a live Template UUID", async () => {
