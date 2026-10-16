@@ -50,6 +50,7 @@ import {
   CardTemplateUpdateInvalidStateError,
 } from '../templates/cardTemplateUpdates';
 import type { Card, LambdaEvent, LambdaResponse, Task } from '../types';
+import { recordRequestError } from '../requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
@@ -380,7 +381,7 @@ async function handleCardRoutes(
         status: err.status,
       });
     }
-    console.error('Card route error:', err);
+    recordRequestError(err);
     return {
       statusCode: 500,
       headers: JSON_HEADERS,

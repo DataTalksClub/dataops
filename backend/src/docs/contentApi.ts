@@ -55,6 +55,7 @@ import { parse, ParseError, splitFrontmatter, lintDocument, parseCodeView, CodeV
 import { newDocContent } from './docScaffolds';
 import { DEFAULT_HEADERS, jsonResponse, method, queryParam } from './http';
 import { search } from './contentSearch';
+import { recordRequestError } from '../requestErrorLog';
 
 const CONTENT_PREFIX = 'content/';
 const DOC_PATH_RE = /^[a-zA-Z0-9][a-zA-Z0-9/_-]*\.md$/;
@@ -279,7 +280,7 @@ export async function handleDocsRoutes(event: LambdaEvent, actor = process.env.D
     if (err instanceof KnowledgeVersionNotFound) return jsonResponse(404,{error:err.message});
     if (err instanceof RevisionConflict) return jsonResponse(409, { error: err.message });
     if (err instanceof KnowledgeError) return jsonResponse(400, { error: err.message });
-    console.error('Docs content API error:', err);
+    recordRequestError(err);
     return jsonResponse(500, { error: 'Internal server error' });
   }
 }

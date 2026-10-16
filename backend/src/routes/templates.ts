@@ -3,6 +3,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../db/client';
 import { getTemplate, listTemplates } from '../db/templates';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { recordRequestError } from '../requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
@@ -47,7 +48,7 @@ async function handleTemplateRoutes(
     if (idMatch) return handleSingle(method, idMatch[1], client);
     return json(404, { error: 'Not found' });
   } catch (error) {
-    console.error('Template read route error:', error);
+    recordRequestError(error);
     return json(500, { error: 'Internal server error' });
   }
 }

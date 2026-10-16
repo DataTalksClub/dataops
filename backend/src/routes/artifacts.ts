@@ -10,6 +10,7 @@ import { getFile } from '../db/files';
 import { getTask, updateTaskAdditive, TaskVersionConflictError } from '../db/tasks';
 import { isLocalFilesystemStorageAllowed } from '../storage';
 import type { ArtifactRecord, ArtifactRef, LambdaEvent, LambdaResponse } from '../types';
+import { recordRequestError } from '../requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 const ARTIFACT_TYPES = new Set(['podcast-doc', 'transcript', 'recording', 'report', 'invoice', 'event-page', 'assistant-output', 'external-link', 'other']);
@@ -417,7 +418,7 @@ async function handleArtifactRoutes(event: LambdaEvent): Promise<LambdaResponse 
     return jsonResponse(404, { error: 'Not found' });
   } catch (err: unknown) {
     if (err instanceof TaskVersionConflictError) throw err;
-    console.error('Artifact route error:', err);
+    recordRequestError(err);
     return jsonResponse(500, { error: 'Internal server error' });
   }
 }

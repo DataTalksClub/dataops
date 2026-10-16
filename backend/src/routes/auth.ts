@@ -3,6 +3,7 @@ import { getUser } from '../db/users';
 import { getSession, deleteSession } from '../db/sessions';
 import { identityProjection } from '../identity/projections';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { recordRequestError } from '../requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
@@ -86,7 +87,7 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
 
     return null;
   } catch (err: unknown) {
-    console.error('Auth route error:', err);
+    recordRequestError(err);
     return {
       statusCode: 500,
       headers: JSON_HEADERS,

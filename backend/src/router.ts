@@ -42,6 +42,7 @@ import { handleInvoiceReader } from './auth/invoiceReader';
 import { handleKnowledgePublisher } from './auth/knowledgePublisher';
 import { handleCliAuthRoutes, isAnonymousDeviceRequest } from './routes/cliAuth';
 import type { LambdaEvent, LambdaResponse } from './types';
+import { recordRequestError } from './requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 let cachedPortalSecret: string | null | undefined;
@@ -434,7 +435,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         currentCards: cards.length > 1 ? cards : undefined,
       });
     }
-    console.error('Unexpected error:', err);
+    recordRequestError(err);
     return jsonResponse(500, { error: 'Internal server error' });
   }
 }

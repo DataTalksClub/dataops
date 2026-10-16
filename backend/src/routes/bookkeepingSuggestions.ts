@@ -15,6 +15,7 @@ import { extractInvoiceText, pdfText } from "../invoices/extract";
 import { financeLedger, type LedgerRow } from "../sponsorFinance/ledger";
 import { financeEnabled } from "../sponsorFinance/repository";
 import { json, publicDocument, s3 } from "./bookkeepingShared";
+import { recordRequestError } from '../requestErrorLog';
 
 type Record_ = Record<string, unknown>;
 export type DocumentFacts = {
@@ -231,7 +232,7 @@ export async function handleBookkeepingSuggestionRoutes(
       const document = await extractDocumentFacts(client, facts[1]);
       return document ? json(200, document) : json(404, { error: "Document not found" });
     } catch (error) {
-      console.error(JSON.stringify({ message: "bookkeeping document facts failed", error: String(error) }));
+      recordRequestError(error);
       return json(503, { error: "Document could not be read; retry" });
     }
   }

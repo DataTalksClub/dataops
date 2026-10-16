@@ -15,6 +15,7 @@ import { berlinDate } from '../sponsorFinance/core';
 import { getUser } from '../db/users';
 import { requiresError } from '../resources/vocabulary';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { recordRequestError } from '../requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
@@ -143,7 +144,7 @@ async function handleRecurringRoutes(path: string, method: string, rawBody: stri
       body: JSON.stringify({ error: 'Not found' }),
     };
   } catch (err: unknown) {
-    console.error('Recurring route error:', err);
+    recordRequestError(err);
     return {
       statusCode: 500,
       headers: JSON_HEADERS,

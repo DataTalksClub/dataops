@@ -3,6 +3,7 @@ import { resolveInteractiveActor } from '../identity/actor';
 import { loadOperatingModelSnapshot } from '../operatingModel/loader';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { recordRequestError } from '../requestErrorLog';
 
 const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' };
 let cached: Awaited<ReturnType<typeof loadOperatingModelSnapshot>> | null = null;
@@ -34,7 +35,7 @@ export async function handleOperatingModelRoutes(
     const model = await snapshot(store);
     return { statusCode: 200, headers, body: JSON.stringify({ model }) };
   } catch (error) {
-    console.error('Operating model load failed', error instanceof Error ? error.message : 'unknown');
+    recordRequestError(error);
     return { statusCode: 503, headers, body: JSON.stringify({ error: 'Operating model definitions are unavailable' }) };
   }
 }

@@ -32,6 +32,7 @@ import {
   registrableDomain,
   relationshipTag,
 } from '../sponsorCrm/model';
+import { recordRequestError } from '../requestErrorLog';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -322,6 +323,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
       }
       return json(created.duplicate ? 200 : 201, kind === 'deal' ? publicDeal(created.item) : created.item);
     } catch (error) {
+      recordRequestError(error);
       const conflict = (error as Error).name.includes('Transaction') || (error as Error).name.includes('Conditional');
       return json((error as { statusCode?: number }).statusCode || (conflict ? 409 : 500), { error: (error as { statusCode?: number }).statusCode ? (error as Error).message : (conflict ? 'Exclusive CRM reference is already claimed' : 'Could not create record') });
     }
@@ -356,6 +358,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
       if (kind === 'contact') return json(200, await updateContactAtomic(client, existing, body, user));
       return json(200, await updateOrganizationAtomic(client, existing, body, user));
     } catch (error) {
+      recordRequestError(error);
       return json((error as Error).name.includes('Transaction') || (error as Error).name.includes('Conditional') ? 409 : 500, { error: 'Conflicting update; reload and retry' });
     }
   }

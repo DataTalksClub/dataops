@@ -16,6 +16,7 @@ import { CollectionCursorError, encodeCollectionCursor } from '../db/collectionP
 import { saveFile, readFile, removeFile, validateFilename, FileStorageError, MAX_TASK_FILE_BYTES } from '../storage';
 import { resolveInteractiveActor } from '../identity/actor';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { recordRequestError } from '../requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
@@ -202,7 +203,7 @@ async function handleFileRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
     return jsonResponse(404, { error: 'Not found' });
   } catch (err: unknown) {
     if (err instanceof FileStorageError) return jsonResponse(err.statusCode, { error: err.message, code: err.code });
-    console.error('File route error:', err);
+    recordRequestError(err);
     return jsonResponse(500, { error: 'Internal server error' });
   }
 }

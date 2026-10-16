@@ -18,6 +18,11 @@ import {
   safeApiRequestId,
 } from './apiRequestTelemetry';
 import type { ApiErrorClass, ApiRequestMetricEmitter } from './apiRequestTelemetry';
+import {
+  currentRequestError,
+  logApiRequestFailure,
+  runWithRequestErrorScope,
+} from './requestErrorLog';
 
 let client: DynamoDBDocumentClient | null = null;
 let initialized = false;
@@ -137,15 +142,22 @@ async function withApiRequestTelemetry(
     // A faulty telemetry clock must not prevent the business route from running.
   }
   let errorClass: ApiErrorClass | undefined;
+  let failure: unknown;
 
   let response: LambdaResponse;
   try {
-    response = await operation();
+    response = await runWithRequestErrorScope(async () => {
+      try {
+        return await operation();
+      } finally {
+        failure = currentRequestError();
+      }
+    });
   } catch (error) {
     errorClass = 'unhandled_exception';
-    // Preserve the pre-telemetry behavior of exposing an escaping failure in
-    // runtime diagnostics while keeping its raw details out of the response.
-    console.error('Unhandled API request error:', error);
+    // The escaping failure is reported on the 5xx log line below; its raw
+    // details stay out of the response.
+    failure = error;
     response = sanitizeJsonResponse({
       statusCode: 500,
       headers: { 'Content-Type': 'application/json' },
@@ -184,9 +196,25 @@ async function withApiRequestTelemetry(
       // The dedicated emitter supplies the real wall clock when an injected
       // timestamp source fails, so the invocation still gets exactly one record.
     }
+    const routeFamily = classifyApiRouteFamily(event.path);
+    const method = apiRequestMethod(event.httpMethod);
+    if (errorClass) {
+      logApiRequestFailure({
+        method,
+        path: event.path,
+        routeFamily,
+        statusCode: correlatedResponse.statusCode,
+        durationMs,
+        requestId,
+        coldStart,
+        errorClass,
+        error: failure,
+        responseError: response.body,
+      });
+    }
     emitMetric({
-      routeFamily: classifyApiRouteFamily(event.path),
-      method: apiRequestMethod(event.httpMethod),
+      routeFamily,
+      method,
       statusCode: correlatedResponse.statusCode,
       durationMs,
       requestId,

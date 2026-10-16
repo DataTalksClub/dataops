@@ -16,6 +16,7 @@ import {
   resolveDeviceGrant,
 } from '../db/cliAuth';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { recordRequestError } from '../requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
@@ -204,7 +205,7 @@ async function handleCliAuthRoutes(
 
     return null;
   } catch (err: unknown) {
-    console.error('CLI auth route error:', err);
+    recordRequestError(err);
     return json(500, { error: 'Internal server error' });
   }
 }

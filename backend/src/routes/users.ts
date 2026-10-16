@@ -9,6 +9,7 @@ import {
   UserLifecycleError,
 } from '../db/userLifecycle';
 import type { LambdaEvent, LambdaResponse, UserRole } from '../types';
+import { recordRequestError } from '../requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 const VALID_ROLES = new Set<UserRole>(['admin', 'operator']);
@@ -53,7 +54,7 @@ async function handleUserRoutes(path: string, method: string, rawBody: string | 
       body: JSON.stringify({ error: 'Not found' }),
     };
   } catch (err: unknown) {
-    console.error('User route error:', err);
+    recordRequestError(err);
     return {
       statusCode: 500,
       headers: JSON_HEADERS,

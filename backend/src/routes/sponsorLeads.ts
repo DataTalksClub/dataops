@@ -7,6 +7,7 @@ import { convertLead } from '../sponsorCrm/convertLead';
 import { recordInboxIssue } from '../sponsorCrm/newsletterIssues';
 import { TABLE_AUDIT_EVENTS, TABLE_SPONSOR_CRM } from '../db/tableNames';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { recordRequestError } from '../requestErrorLog';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const CONTRACT_VERSION = '2026-10-10';
@@ -431,7 +432,7 @@ export async function handleSponsorLeadIntake(event: LambdaEvent, client: Dynamo
     // Tables belong to infrastructure and are never created here. A missing
     // table surfaces as an augmented ResourceNotFoundException naming it;
     // log that detail so the deployment gap is loud instead of a bare 503.
-    console.error(JSON.stringify({ event: 'sponsor-lead-intake', outcome: 'persistence-failed', detail: error instanceof Error ? error.message : 'unknown' }));
+    recordRequestError(error);
     audit('persistence-failed', credential, correlation, sponsors.length, sponsors.length - leads.length);
     return safeError(503, 'configuration-error', 'persistence-unavailable', 'Lead storage is unavailable');
   }

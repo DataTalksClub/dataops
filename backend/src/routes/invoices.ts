@@ -3,6 +3,7 @@ import type { LambdaEvent, LambdaResponse } from '../types';
 import { publicInvoice, validateFields, missingEvidence } from '../invoices/model';
 import { getInvoice, listInvoices, saveInvoice } from '../invoices/store';
 import { confirmInvoice, documentUrl, processInvoiceIntake, publishInvoice, readiness, reextractInvoice, verifyInvoice } from '../invoices/service';
+import { recordRequestError } from '../requestErrorLog';
 const json=(statusCode:number,body:unknown):LambdaResponse=>({statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify(body)});
 export async function handleInvoiceRoutes(path:string,method:string,event:LambdaEvent,client:DynamoDBDocumentClient,authorized:boolean):Promise<LambdaResponse> {
   if(!authorized) return json(401,{error:'Unauthorized'});
@@ -37,6 +38,7 @@ export async function handleInvoiceRoutes(path:string,method:string,event:Lambda
     if(method==='POST' && match[2]==='reject') {if(record.status==='confirmed')return json(409,{error:'Confirmed invoices cannot be rejected'});const next=structuredClone(record);next.status='rejected';next.audit.push({action:'rejected',actor,at:new Date().toISOString(),revision:next.revision});return json(200,publicInvoice(await saveInvoice(client,next,record)));}
     return json(405,{error:'Method not allowed'});
   } catch(error) {
+    recordRequestError(error);
     const name=(error as Error).name;const message=(error as Error).message;
     if(['ConditionalCheckFailedException','TransactionCanceledException'].includes(name))return json(409,{error:'Invoice changed or publication already in progress'});
     return json(/not-found/.test(message)?404:/required|rejected|ambiguous|not-invoice|reextract|only-pending|corrected/.test(message)?409:503,{error:/^[a-z-]+$/.test(message)?message:'Invoice operation unavailable'});

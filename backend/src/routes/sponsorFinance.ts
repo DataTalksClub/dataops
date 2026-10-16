@@ -21,6 +21,7 @@ import {
 import { financeLedger } from '../sponsorFinance/ledger';
 import { dealProjectionContext } from '../sponsorFinance/context';
 import { OPAQUE } from '../sponsorFinance/core';
+import { recordRequestError } from '../requestErrorLog';
 
 const headers = {
   'Content-Type': 'application/json',
@@ -53,6 +54,7 @@ export async function handleSponsorFinanceRoutes(
       return json(200, await financeLedger(client, today && /^\d{4}-\d{2}-\d{2}$/.test(today) ? today : undefined));
     } catch (error) {
       const statusCode = Number((error as { statusCode?: number }).statusCode || 503);
+      recordRequestError(error);
       return json(statusCode, {
         error: statusCode === 401 ? 'Unauthorized' : statusCode === 403 ? 'Forbidden' : 'Finance data is temporarily unavailable; retry',
       });
@@ -173,6 +175,7 @@ export async function handleSponsorFinanceRoutes(
     return json(405, { error: 'Method not allowed' });
   } catch (error) {
     const statusCode = Number((error as { statusCode?: number }).statusCode || 409);
+    recordRequestError(error);
     const outcome = (error as { outcome?: string }).outcome;
     return json(statusCode, {
       error: statusCode === 503 && outcome === 'outcome_unknown'

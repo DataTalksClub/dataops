@@ -4,6 +4,7 @@ import { writePortableExportArchive } from '../export/archive';
 import { backupConfigFromEnv, writeRawDynamoBackup } from '../export/dynamoBackup';
 import { writePortableExport } from '../export/portable';
 import type { LambdaResponse } from '../types';
+import { recordRequestError } from '../requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
@@ -45,7 +46,7 @@ async function handleCronRoutes(path: string, method: string): Promise<LambdaRes
       body: JSON.stringify(result),
     };
   } catch (err: unknown) {
-    console.error('Cron route error:', err);
+    recordRequestError(err);
     return {
       statusCode: 500,
       headers: JSON_HEADERS,
@@ -115,7 +116,7 @@ async function handleScheduledExport(method: string): Promise<LambdaResponse> {
       }),
     };
   } catch (err: unknown) {
-    console.error('Scheduled export route error:', err);
+    recordRequestError(err);
     return {
       statusCode: 500,
       headers: JSON_HEADERS,
@@ -156,7 +157,7 @@ async function handleScheduledDynamoBackup(method: string): Promise<LambdaRespon
       }),
     };
   } catch (err: unknown) {
-    console.error('Scheduled Dynamo backup route error:', err);
+    recordRequestError(err);
     return {
       statusCode: 500,
       headers: JSON_HEADERS,

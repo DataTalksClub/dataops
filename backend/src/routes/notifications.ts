@@ -11,6 +11,7 @@ import {
 } from '../db/notifications';
 import { CollectionCursorError, encodeCollectionCursor } from '../db/collectionPagination';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { recordRequestError } from '../requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
@@ -95,7 +96,7 @@ async function handleNotificationRoutes(path: string, method: string, _rawBody: 
         body: JSON.stringify({ error: 'Invalid pagination input', code: 'invalid_pagination_input' }),
       };
     }
-    console.error('Notification route error:', error);
+    recordRequestError(error);
     return {
       statusCode: 500,
       headers: JSON_HEADERS,
