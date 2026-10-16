@@ -150,8 +150,8 @@ dataops notifications list
 
 ## Anything else
 
-Sponsors (`dataops sponsors`), calendar, recurring schedules, invoices, files and
-artifacts have their own families. For a web view without a command, call its
+Sponsors (`dataops sponsors`), calendar, recurring schedules, automations
+(`dataops automations`), invoices, files and artifacts have their own families. For a web view without a command, call its
 route directly: `dataops api GET /api/<route>` (see `dataops api --help`).
 
 ## Rules

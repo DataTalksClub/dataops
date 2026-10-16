@@ -646,3 +646,55 @@ describe("newsletter card lead time", () => {
     assert.equal(await run(["newsletter", "card-lead-days", "soon"], captureIo()), 2);
   });
 });
+
+describe("automations", () => {
+  const overview = {
+    settingsVersion: 3,
+    canEdit: true,
+    automations: [
+      {
+        id: "recurring-tasks", name: "Recurring tasks", runsIn: "Backend Lambda, daily job",
+        scheduleLabel: "Daily at 08:00 UTC", nextRunAt: "2026-10-17T08:00:00.000Z",
+        lastRun: { at: "2026-10-16T08:00:01.000Z", ok: true, summary: "2 tasks created", source: "recorded" },
+        link: null, settings: [],
+      },
+      {
+        id: "sponsor-booking-alerts", name: "Sponsor booking alerts", runsIn: "Backend Lambda, daily job",
+        scheduleLabel: "Daily at 08:00 UTC", nextRunAt: "2026-10-17T08:00:00.000Z", lastRun: null, link: null,
+        settings: [
+          { key: "sponsorMaterialsReminderDays", label: "Materials reminders", kind: "day-list", value: [14, 10, 3] },
+          { key: "sponsorFollowUpDays", label: "Performance follow-up", kind: "days", value: 7 },
+        ],
+      },
+      {
+        id: "knowledge-publish", name: "Knowledge publish", runsIn: "GitHub Actions, dataops-knowledge",
+        scheduleLabel: "Push to main", nextRunAt: null, lastRun: null,
+        link: "https://github.com/example/actions", settings: [],
+      },
+    ],
+  };
+
+  test("list shows when each runs, its last run, and its settings", async () => {
+    fakePortal({ "GET /api/automations": overview });
+    const io = captureIo();
+    assert.equal(await run(["automations", "list"], io), 0);
+    assert.match(io.text(), /Daily at 08:00 UTC \| next 2026-10-17 08:00 UTC \| last 2026-10-16 08:00 UTC ok: 2 tasks created/);
+    assert.match(io.text(), /Materials reminders \(sponsorMaterialsReminderDays\): 14, 10, 3 days/);
+    assert.match(io.text(), /Push to main \| runs: https:\/\/github\.com\/example\/actions/);
+  });
+
+  test("set writes the workspace setting with the version it read", async () => {
+    const calls = fakePortal({
+      "GET /api/automations": overview,
+      "PUT /api/workspace-settings": ({ body }) => ({ status: 200, body: { ...body, version: 4 } }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["automations", "set", "sponsorMaterialsReminderDays", "21, 7"], io), 0);
+    assert.deepEqual(calls.at(-1).body, { sponsorMaterialsReminderDays: [21, 7], expectedVersion: 3 });
+    assert.match(io.text(), /now 21, 7 days/);
+    assert.equal(await run(["automations", "set", "sponsorFollowUpDays", "10"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { sponsorFollowUpDays: 10, expectedVersion: 3 });
+    assert.equal(await run(["automations", "set", "sponsorFollowUpDays", "soon"], captureIo()), 2);
+    assert.equal(await run(["automations", "set", "nightlyMagic", "1"], captureIo()), 2);
+  });
+});

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import * as auth from "./commands/auth.mjs";
+import * as automations from "./commands/automations.mjs";
 import * as bookkeeping from "./commands/bookkeeping.mjs";
 import * as calendar from "./commands/calendar.mjs";
 import * as cards from "./commands/cards.mjs";
@@ -66,6 +67,7 @@ export const FAMILIES = {
       generate: recurring.generate,
     },
   },
+  automations: { group: "Work", summary: automations.summary, help: automations.help, commands: automations.commands },
   notifications: { group: "Work", summary: notifications.summary, help: notifications.help, commands: notifications.commands },
   files: { group: "Work", summary: files.filesSummary, help: files.filesHelp, commands: files.filesCommands },
   artifacts: { group: "Work", summary: files.artifactsSummary, help: files.artifactsHelp, commands: files.artifactsCommands },

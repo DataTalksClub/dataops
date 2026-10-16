@@ -60,6 +60,7 @@ subcommands, flags, and examples.
 | `podcast` | episodes: `list`, `show`, `create`, `update`, `create-card` |
 | `calendar` | activities and operational slot scheduling |
 | `recurring` | schedules that generate Tasks |
+| `automations` | `list` every scheduled or triggered job with its last and next run; `set` the settings they read (admin) |
 | `notifications` | `list`, `dismiss`, `dismiss-all` |
 | `files`, `artifacts` | Task files and artifacts |
 | `sponsors` | CRM records, messages, deal history and finance |
