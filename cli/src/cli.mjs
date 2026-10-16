@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import * as auth from "./commands/auth.mjs";
+import * as bookkeeping from "./commands/bookkeeping.mjs";
 import * as calendar from "./commands/calendar.mjs";
 import * as cards from "./commands/cards.mjs";
 import * as files from "./commands/files.mjs";
@@ -91,6 +92,7 @@ export const FAMILIES = {
       "sync-holidays": calendar.syncHolidays,
     },
   },
+  bookkeeping: { group: "Finance", summary: bookkeeping.summary, help: bookkeeping.help, commands: bookkeeping.commands },
   sponsors: { group: "Finance", summary: sponsors.summary, help: sponsors.help, commands: sponsors.commands },
   invoices: {
     group: "Finance",

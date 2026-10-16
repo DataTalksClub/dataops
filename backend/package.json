@@ -28,7 +28,6 @@
     "validate:docs-links": "tsx scripts/validate-docs-links.ts --repo-root .. --content-root content",
     "validate:export": "tsx scripts/validate-execution-export.ts",
     "dry-run:import": "tsx scripts/dry-run-import.ts",
-    "bookkeeping:import": "tsx scripts/import-bookkeeping.ts",
     "bookkeeping:documents:import": "tsx scripts/import-bookkeeping-documents.ts",
     "calendar:import": "tsx scripts/import-calendar.ts",
     "podcast:import": "tsx scripts/import-podcast-episodes.ts",
