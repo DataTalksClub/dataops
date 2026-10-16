@@ -228,8 +228,8 @@ test.describe("pre-refactor frontend module characterization", () => {
       ["/newsletter", "Newsletter", ".newsletter-surface"],
       ["/calendar", "Calendar", ".calendar-surface"],
       ["/bookkeeping", "Bookkeeping", ".bookkeeping-surface"],
-      // Bare /sponsors opens its default tab at /sponsors/queue.
-      ["/sponsors", "Sponsors", ".sponsor-crm-surface", "/sponsors/queue"],
+      // Bare /sponsors opens its default tab at /sponsors/pipeline.
+      ["/sponsors", "Sponsors", ".sponsor-crm-surface", "/sponsors/pipeline"],
       ["/processes", "Process Docs", ".ops-surface-docs"],
       ["/admin", "Admin", ".ops-surface-admin"],
       ["/users", "Users", ".ops-surface-users"],

@@ -145,8 +145,8 @@ test.describe("sponsor newsletter catalog", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto(`${server.baseURL}/sponsors`);
-    await expect(page).toHaveURL(/\/sponsors\/queue$/);
-    const tabs = { queue: ".crm-layout", pipeline: "[data-crm-bookings]", companies: "[data-crm-companies-section]", leads: ".crm-leads", newsletters: ".crm-newsletters" };
+    await expect(page).toHaveURL(/\/sponsors\/pipeline$/);
+    const tabs = { pipeline: "[data-crm-bookings]", companies: "[data-crm-companies-section]", leads: ".crm-leads", newsletters: ".crm-newsletters" };
     for (const [tab, visible] of Object.entries(tabs)) {
       await page.goto(`${server.baseURL}/sponsors/${tab}`);
       await expect(page.locator("[data-crm-message]")).toBeHidden({ timeout: 20_000 });
@@ -158,7 +158,7 @@ test.describe("sponsor newsletter catalog", () => {
     }
 
     // Tabs push history in place; Back and Forward restore them.
-    await page.goto(`${server.baseURL}/sponsors/queue`);
+    await page.goto(`${server.baseURL}/sponsors/pipeline`);
     await expect(page.locator("[data-crm-message]")).toBeHidden({ timeout: 20_000 });
     await page.locator("[data-crm-view='leads']").click();
     await expect(page).toHaveURL(/\/sponsors\/leads$/);

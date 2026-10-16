@@ -322,7 +322,6 @@ test.describe('issue 208 paginated collections', () => {
         return json(route, 200, { items: [{ displayName: 'Pagination Sponsor', id: 'sponsor-org' }] });
       }
       if (pathname.endsWith('/contacts')) return json(route, 200, { items: [] });
-      if (pathname.endsWith('/queue')) return json(route, 200, { items: [] });
       if (pathname.endsWith('/leads')) return json(route, 200, { items: [] });
       if (pathname.endsWith('/deals')) {
         return json(route, 200, {

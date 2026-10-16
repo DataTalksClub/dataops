@@ -24,7 +24,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
   const actionOptions = options(NEXT_ACTION_TYPES, humanizeOptionLabel);
   const lostOptions = options(LOST_REASONS, humanizeOptionLabel);
   // Each create rides on the collection it creates into: Add deal on the
-  // Queue/Pipeline list head, Add sponsor on the Companies header. Refresh
+  // Pipeline list head, Add sponsor on the Companies header. Refresh
   // suggestions trails the list head. The page header holds no actions.
   return html`${renderPageHeaderMarkup({
     title: "Sponsors",
@@ -43,10 +43,10 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
       <div data-crm-alerts>Loading alerts…</div>
     </section>
     <div class="dk-split crm-layout" data-crm-split data-view="list">
-      <section class="dk-split__list crm-master" aria-labelledby="crm-queue-heading">
+      <section class="dk-split__list crm-master" aria-labelledby="crm-list-heading">
         <header class="dk-split__head crm-list-head">
           <div class="dk-collection-header__lead">
-            <h2 class="dk-split__title" id="crm-queue-heading" data-crm-list-heading>Queue</h2>
+            <h2 class="dk-split__title" id="crm-list-heading" data-crm-list-heading>Pipeline</h2>
             ${globalThis.dakitCollection.createButtonMarkup({ label: "Add deal", attributes: "data-add-deal" })}
           </div>
           <div class="dk-collection-header__trail">
@@ -73,8 +73,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
           >
         </div>
         <div class="dk-split__scroll" data-crm-list-scroll>
-          <div data-crm-queue class="crm-booking-list">Loading queue…</div>
-          <div data-crm-bookings class="crm-booking-list" hidden>Loading pipeline…</div>
+          <div data-crm-bookings class="crm-booking-list">Loading pipeline…</div>
         </div>
       </section>
       <section class="dk-split__detail crm-detail-pane" data-crm-detail aria-label="Selected sponsor" aria-live="polite">
@@ -82,8 +81,8 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
           <div class="dk-empty">
             <p class="dk-empty__title">Select a company</p>
             <p class="dk-empty__desc">
-              Open a queue row or pipeline deal to review people, deals, mail, and
-              finance in one place.
+              Open a pipeline deal to review people, deals, mail, and finance in
+              one place.
             </p>
           </div>
           <div data-crm-upcoming></div>

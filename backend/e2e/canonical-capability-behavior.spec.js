@@ -818,10 +818,10 @@ test.describe('canonical frontend capability behavior', () => {
     const page = await admin.newPage();
     await page.goto('/sponsors');
     await expect(page.locator('[data-crm-message]')).toBeHidden();
-    await expect(page.getByText('Queue is clear')).toBeVisible();
+    await expect(page.locator('[data-crm-bookings]')).toContainText('No deals in this stage');
     await page.locator('[data-crm-view="companies"]').click();
     await expect(page.getByText('No sponsors found')).toBeVisible();
-    await page.locator('[data-crm-view="queue"]').click();
+    await page.locator('[data-crm-view="pipeline"]').click();
     const id = unique('sponsor');
     const organizationResponse = await admin.request.post('/api/sponsor-crm/organizations', { data: {
       displayName: `Synthetic Sponsor ${id}`, notes: 'Synthetic private note', sourceKey: `${id}-org`,

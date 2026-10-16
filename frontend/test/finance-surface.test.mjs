@@ -411,7 +411,6 @@ describe("Finance surface boundary", () => {
               },
             ],
           };
-        if (path.endsWith("/queue")) return { items: [] };
         if (path.endsWith("/leads")) return { items: [] };
         if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         throw new Error(`Unexpected request: ${url}`);
@@ -481,7 +480,6 @@ describe("Finance surface boundary", () => {
           return {
             items: [{ id: "deal-alert", organizationId: "org-1", status: "agreed" }],
           };
-        if (path.endsWith("/queue")) return { items: [] };
         if (path.endsWith("/leads")) return { items: [] };
         throw new Error(`Unexpected request: ${url}`);
       },
@@ -565,7 +563,6 @@ describe("Finance surface boundary", () => {
           return { items: [{ id: "org-1", displayName: "Sponsor" }] };
         if (path.endsWith("/contacts")) return { items: [] };
         if (path.endsWith("/deals")) return { items: [] };
-        if (path.endsWith("/queue")) return { items: [] };
         if (path === "/api/sponsor-crm/leads") {
           if (!leadsOnline) throw new Error("Leads offline");
           assert.equal(query.get("limit"), "50");
@@ -670,7 +667,7 @@ describe("Finance surface boundary", () => {
     const { document, finance } = createHarness({
       route: {
         view: "sponsors",
-        sponsorsTab: "queue",
+        sponsorsTab: "pipeline",
         path: `/sponsors/deals/${booking.id}`,
         token: 1,
         params: new URLSearchParams({ dealId: booking.id }),
@@ -691,7 +688,6 @@ describe("Finance surface boundary", () => {
             ],
           };
         if (path.endsWith("/deals")) return { items: [booking] };
-        if (path.endsWith("/queue")) return { items: [] };
         if (path.endsWith("/leads")) return { items: [] };
         if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
@@ -782,7 +778,7 @@ describe("Finance surface boundary", () => {
     const { document, finance } = createHarness({
       route: {
         view: "sponsors",
-        sponsorsTab: "queue",
+        sponsorsTab: "pipeline",
         path: `/sponsors/deals/${booking.id}`,
         token: 1,
         params: new URLSearchParams({ dealId: booking.id }),
@@ -794,7 +790,6 @@ describe("Finance surface boundary", () => {
           return { items: [{ id: "org-1", displayName: "Safe Sponsor" }] };
         if (path.endsWith("/contacts")) return { items: [] };
         if (path.endsWith("/deals")) return { items: [booking] };
-        if (path.endsWith("/queue")) return { items: [] };
         if (path.endsWith("/leads")) return { items: [] };
         if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
@@ -904,7 +899,7 @@ describe("Finance surface boundary", () => {
     );
   });
 
-  test("renders Queue, Pipeline, Company, and Leads and Convert hits the leads API", async () => {
+  test("renders Pipeline, Company, and Leads and Convert hits the leads API", async () => {
     let lead = {
       id: "lead-convert",
       version: 1,
@@ -940,21 +935,6 @@ describe("Finance surface boundary", () => {
               },
             ],
           };
-        if (path.endsWith("/queue"))
-          return {
-            items: [
-              {
-                id: "relationship:org-1::quiet:2026-08-13",
-                kind: "relationship",
-                why: "quiet",
-                action: "chase_materials",
-                companyId: "org-1",
-                companyName: "Talking Co",
-                due: "2026-08-13",
-                owner: "grace",
-              },
-            ],
-          };
         if (path === "/api/sponsor-crm/leads") return { items: [lead] };
         if (path === "/api/sponsor-crm/leads/lead-convert" && options.method === "PATCH") {
           lead = { ...lead, status: "converted", version: 2 };
@@ -965,13 +945,12 @@ describe("Finance surface boundary", () => {
     });
 
     await finance.renderSponsorCrmSurface();
-    const queue = document.surface.querySelector("[data-crm-queue]");
+    // Sponsor work lives in the Tasks queue; Sponsors has no Queue of its own.
+    assert.doesNotMatch(document.surface.innerHTML, /data-crm-queue|data-crm-view="queue"/);
+    assert.match(document.surface.innerHTML, /data-crm-bookings/);
     const pipeline = document.surface.querySelector("[data-crm-bookings]");
     const companies = document.surface.querySelector("[data-crm-orgs]");
     const leads = document.surface.querySelector("[data-crm-leads]");
-    assert.match(queue.innerHTML, /Talking Co/);
-    assert.match(queue.innerHTML, /Chase Materials/);
-    assert.doesNotMatch(queue.innerHTML, /chase_materials/);
     assert.match(pipeline.innerHTML, /Talking Co/);
     assert.match(pipeline.innerHTML, /Open/);
     assert.match(companies.innerHTML, /Talking Co/);

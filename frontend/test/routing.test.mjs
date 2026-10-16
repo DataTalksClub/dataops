@@ -54,7 +54,6 @@ describe("canonical workspace routing", () => {
       "/recurring",
       "/bookkeeping",
       "/sponsors",
-      "/sponsors/queue",
       "/sponsors/pipeline",
       "/sponsors/companies",
       "/sponsors/leads",
@@ -85,10 +84,10 @@ describe("canonical workspace routing", () => {
       assert.equal(route.canonicalUrl, url, url);
       assert.equal(route.normalized, false, url);
     }
-    assert.equal(WORKSPACE_PATH_BY_VIEW.sponsors, "/sponsors/queue");
+    assert.equal(WORKSPACE_PATH_BY_VIEW.sponsors, "/sponsors/pipeline");
     for (const [kind, param, tab] of [
-      ["deal", "dealId", "queue"],
-      ["company", "companyId", "queue"],
+      ["deal", "dealId", "pipeline"],
+      ["company", "companyId", "pipeline"],
       ["lead", "leadId", "leads"],
       ["newsletter", "newsletterId", "newsletters"],
     ]) {
@@ -104,12 +103,12 @@ describe("canonical workspace routing", () => {
   test("redirects bare /sponsors to the default tab and rejects unknown tabs", () => {
     for (const url of ["/sponsors", "/sponsors/", "/sponsors?dealId=old"]) {
       const route = parseWorkspaceLocation(url, browserLocation(url));
-      assert.equal(route.canonicalUrl, "/sponsors/queue", url);
-      assert.equal(route.sponsorsTab, "queue", url);
+      assert.equal(route.canonicalUrl, "/sponsors/pipeline", url);
+      assert.equal(route.sponsorsTab, "pipeline", url);
       assert.equal(route.normalized, true, url);
     }
-    assert.equal(workspaceRouteFor("/sponsors").canonicalUrl, "/sponsors/queue");
-    for (const url of ["/sponsors/finance", "/sponsors/deals", "/sponsors/companies/a/b"]) {
+    assert.equal(workspaceRouteFor("/sponsors").canonicalUrl, "/sponsors/pipeline");
+    for (const url of ["/sponsors/queue", "/sponsors/finance", "/sponsors/deals", "/sponsors/companies/a/b"]) {
       assert.deepEqual(parseWorkspaceLocation(url, browserLocation(url)), { invalid: true, reason: "unknown path" }, url);
     }
   });

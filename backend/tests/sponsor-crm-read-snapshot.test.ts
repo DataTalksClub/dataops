@@ -84,7 +84,7 @@ describe('sponsor CRM read snapshot', () => {
     assert.equal(scans.length, 2);
   });
 
-  for (const path of ['/api/sponsor-crm/deals', '/api/sponsor-crm/organizations', '/api/sponsor-crm/queue']) {
+  for (const path of ['/api/sponsor-crm/deals', '/api/sponsor-crm/organizations']) {
     it(`GET ${path} scans the CRM table once`, async () => {
       const previous = process.env.SPONSOR_FINANCE_ENABLED;
       process.env.SPONSOR_FINANCE_ENABLED = 'true';

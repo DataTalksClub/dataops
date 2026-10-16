@@ -204,8 +204,8 @@ describe("canonical navigation shell behavior", () => {
   test("bare /sponsors opens the default Sponsors tab", async () => {
     const harness = createNavigationHarness({ hash: "", pathname: "/sponsors", search: "?dealId=old" });
     await harness.shell.initializeRouting(Promise.resolve());
-    assert.equal(harness.shell.getActiveWorkspaceRoute().canonicalUrl, "/sponsors/queue");
-    assert.equal(harness.history.replaced.at(-1).url, "/sponsors/queue");
+    assert.equal(harness.shell.getActiveWorkspaceRoute().canonicalUrl, "/sponsors/pipeline");
+    assert.equal(harness.history.replaced.at(-1).url, "/sponsors/pipeline");
   });
 
   test("invalid direct-link parameters return to Queue instead of becoming document paths", async () => {

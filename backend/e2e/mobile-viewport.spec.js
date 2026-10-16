@@ -34,7 +34,7 @@ const ROUTES = [
   { path: '/templates', ready: '.runtime-template-inspector .dk-split', content: '.runtime-template-inspector .dk-split' },
   { path: '/recurring', ready: '.ops-recurring-surface', content: '.ops-recurring-section' },
   { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bk-split' },
-  { path: '/sponsors', ready: '.sponsor-crm-surface', content: '.crm-layout, .crm-upcoming-list, .crm-directory-row, .crm-booking-row', contentReady: '.crm-master .crm-booking-row, .crm-master .honest-state' },
+  { path: '/sponsors', ready: '.sponsor-crm-surface', content: '.crm-layout, .crm-pipeline-card, .crm-directory-row', contentReady: '.crm-master .crm-pipeline-column' },
   { path: '/newsletter', ready: '.newsletter-surface', content: '.newsletter-slot-row, .newsletter-slot-list, .newsletter-schedule' },
   { path: '/calendar', ready: '.calendar-surface', content: '.calendar-grid', contentReady: '.calendar-grid', mockCalendar: true },
   { path: '/processes', ready: '.ops-surface-docs', content: '.ops-docs-catalog, .ops-docs-state, .ops-docs-state-detail' },

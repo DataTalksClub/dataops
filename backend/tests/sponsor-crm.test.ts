@@ -145,11 +145,6 @@ describe('sponsor CRM', () => {
       assert.equal(fetched.finance.invoiceNumber, 'SYN-1');
       assert.deepEqual(fetched.finance.followUp, { code: 'chase-payment', party: 'us', since: '2026-06-01', daysOverdue: 30 });
       assert.equal((await at('2026-05-15')).money, 'invoiced');
-      const queue = data(await handler({ httpMethod: 'GET', path: '/api/sponsor-crm/queue', headers: grace, queryStringParameters: { today: '2026-07-01', limit: '100' }, body: null }, {})).items;
-      const chases = queue.filter((item: any) => item.dealId === deal.id && item.why === 'chase_payment');
-      assert.equal(chases.length, 1, 'the finance follow-up and the next action raise one chase');
-      const [chase] = chases;
-      assert.equal(chase.due, '2026-06-01');
       const paymentKey = `SPONSOR_FINANCE_PAYMENT#${deal.id}#${'a'.repeat(32)}`;
       await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: {
         PK: paymentKey, SK: paymentKey, id: paymentKey, recordType: 'sponsor-finance-payment', dealId: deal.id,
@@ -278,71 +273,6 @@ describe('sponsor CRM', () => {
     notifications = await listAllNotifications(client);
     assert.equal(notifications.filter((item) => (item.metadata as any)?.sponsorDeliverableId === ten.id && (item.metadata as any)?.sponsorAlertRule === 'materials-missing-10d').length, 2);
     assert.ok(fourteen);
-  });
-
-  it('computes a queue for quiet companies and operational chores and excludes never-contacted prospects', async () => {
-    const quiet = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Quiet Co', domain: 'quiet.example.invalid', lastOutboundAt: '2026-06-01', sourceKey: 'queue-quiet' }));
-    await invoke('POST', '/api/sponsor-crm/deals', { organizationId: quiet.id, status: 'agreed', agreementDate: '2026-01-01', nextAction: { type: 'follow_up', due: '2026-07-01', owner: GRACE_USER_ID, note: 'nudge' }, sourceKey: 'queue-quiet-deal' });
-    const cold = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Cold Co', domain: 'cold.example.invalid', sourceKey: 'queue-cold' }));
-    const materialsOrg = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Materials Co', domain: 'materials.example.invalid', lastOutboundAt: '2026-07-01', lastInboundAt: '2026-07-01', sourceKey: 'queue-mat' }));
-    const matDeal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: materialsOrg.id, status: 'agreed', nextAction: { type: 'chase_materials', due: '2026-07-20', owner: GRACE_USER_ID, note: 'assets' }, sourceKey: 'queue-mat-deal' }));
-    await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: matDeal.id, channel: 'main', plannedPublicationDate: '2026-07-10', sourceKey: 'queue-mat-slot' });
-    const listed = data(await handler({ httpMethod: 'GET', path: '/api/sponsor-crm/queue', headers: grace, queryStringParameters: { today: '2026-07-01', limit: '100' }, body: null }, {}));
-    const whys = listed.items.map((item: any) => item.why);
-    assert.ok(whys.includes('quiet'), JSON.stringify(listed.items));
-    assert.ok(whys.includes('chase_materials') || listed.items.some((item: any) => item.deliverableId), JSON.stringify(listed.items));
-    assert.ok(!listed.items.some((item: any) => item.companyId === cold.id));
-    assert.ok(listed.items.every((item: any) => item.kind === 'relationship' || item.kind === 'operational'));
-  });
-
-  it('uses the configured workspace assignee for requests without a local actor', async () => {
-    const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', {
-      displayName: 'Skip Auth Co',
-      domain: 'skip-auth.example.invalid',
-      lastOutboundAt: '2026-06-01',
-      sourceKey: 'queue-skip-auth',
-    }));
-    await invoke('POST', '/api/sponsor-crm/deals', {
-      organizationId: organization.id,
-      status: 'agreed',
-      agreementDate: '2026-01-01',
-      nextAction: { type: 'send_invoice', due: '2026-08-01', owner: GRACE_USER_ID, note: 'bill them' },
-      sourceKey: 'queue-skip-auth-deal',
-    });
-    const listed = data(await handler({
-      httpMethod: 'GET',
-      path: '/api/sponsor-crm/queue',
-      headers: {},
-      queryStringParameters: { today: '2026-10-10', limit: '100' },
-      body: null,
-    }, {}));
-    assert.ok(listed.items.some((item: any) => item.companyId === organization.id), JSON.stringify(listed.items));
-    assert.ok(listed.items.every((item: any) => !item.owner || item.owner === GRACE_USER_ID));
-  });
-
-  it('routes generated chores to the configured workspace owner while preserving explicit owners', async () => {
-    const replacement = 'sponsor-queue-replacement';
-    await createUserWithId(client, replacement, { name: 'Replacement Operator', email: 'replacement@example.test', role: 'admin' });
-    let settings = await getWorkspaceSettings(client);
-    await setDefaultAssignee(client, { defaultAssigneeId: replacement, expectedVersion: settings.version });
-    try {
-      const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', {
-        displayName: 'Configured Queue Co', lastOutboundAt: '2026-06-01', sourceKey: 'queue-configured-owner',
-      }));
-      await invoke('POST', '/api/sponsor-crm/deals', {
-        organizationId: organization.id, status: 'agreed', agreementDate: '2026-01-01',
-        nextAction: { type: 'follow_up', due: '2026-07-01', owner: GRACE_USER_ID, note: 'explicit owner stays' },
-        sourceKey: 'queue-configured-owner-deal',
-      });
-      const replacementQueue = data(await invoke('GET', '/api/sponsor-crm/queue?today=2026-07-01&limit=100', undefined, { 'x-user-id': replacement }));
-      assert.ok(replacementQueue.items.some((item: any) => item.companyId === organization.id && item.why === 'quiet' && item.owner === replacement));
-      const explicitQueue = data(await invoke('GET', '/api/sponsor-crm/queue?today=2026-07-01&limit=100', undefined, grace));
-      assert.ok(explicitQueue.items.some((item: any) => item.companyId === organization.id && item.owner === GRACE_USER_ID));
-      assert.ok(!explicitQueue.items.some((item: any) => item.companyId === organization.id && item.why === 'quiet'));
-    } finally {
-      settings = await getWorkspaceSettings(client);
-      await setDefaultAssignee(client, { defaultAssigneeId: GRACE_USER_ID, expectedVersion: settings.version });
-    }
   });
 
   it('imports a sanitized snapshot of companies, deals, deliverables and mail activity', async () => {

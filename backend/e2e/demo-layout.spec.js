@@ -8,7 +8,7 @@ const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolate
 let server;
 const routes = [
   ['/bookkeeping', '.bk-split'],
-  ['/sponsors', '.crm-master .crm-booking-row, .crm-master .honest-state'],
+  ['/sponsors', '.crm-master .crm-pipeline-column'],
   ['/tasks', '.ops-queue-list'], ['/cards', '.workflow-board-card'],
   ['/cards/archive', '.cards-archive-grid, .ops-honest-state'],
   ['/templates', '.runtime-template-inspector .dk-split'], ['/recurring', '.ops-recurring-section'],

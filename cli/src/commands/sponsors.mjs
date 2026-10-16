@@ -2,14 +2,13 @@ import { UsageError } from "../errors.mjs";
 import { enc, integer, jsonData, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 
-export const summary = "Sponsor CRM: queue, organizations, contacts, deals, deliverables, leads, finance";
+export const summary = "Sponsor CRM: organizations, contacts, deals, deliverables, leads, finance";
 
 const KINDS = ["organizations", "contacts", "deals", "deliverables", "leads", "newsletters"];
 
 export const help = `dataops sponsors - the sponsor CRM (the web Finance > Sponsors views)
 
 Usage
-  dataops sponsors queue                               What needs attention
   dataops sponsors list <kind> [--limit N]             kind: ${KINDS.join(", ")}
   dataops sponsors show <kind> <id>
   dataops sponsors create <kind> --data '{...}'        Fields as the web form sends them
@@ -52,18 +51,6 @@ function itemsOf(payload) {
 
 function label(item) {
   return item.name || item.title || item.organizationName || item.email || item.subject || item.campaignLabel || "";
-}
-
-export async function queue(args, io) {
-  const result = await apiFor(args).get("/api/sponsor-crm/queue");
-  if (args.json) return result;
-  table(io, itemsOf(result), [
-    ["ID", (item) => item.id],
-    ["KIND", (item) => item.kind || item.type || ""],
-    ["STATUS", (item) => item.status || ""],
-    ["ITEM", (item) => label(item) || item.reason || ""],
-  ], "Nothing in the sponsor queue.");
-  return result;
 }
 
 export async function list(args, io) {
@@ -140,4 +127,4 @@ export async function finance(args, io) {
   return result;
 }
 
-export const commands = { queue, list, show, create, update, messages, history, finance };
+export const commands = { list, show, create, update, messages, history, finance };

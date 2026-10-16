@@ -25,7 +25,6 @@ import {
   DEAL_STATUSES,
   LOST_REASONS,
   PRODUCT_KINDS,
-  computeQueue,
   type DealMoneyFacts,
   dealIsRotting,
   deriveFulfillment,
@@ -175,15 +174,6 @@ async function organizationMoney(client: DynamoDBDocumentClient, today: string) 
 export async function handleSponsorCrmRoutes(path: string, method: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const defaultAssigneeId = await resolveDefaultAssigneeId(client);
   const body = parse(event), user = actor(event) || defaultAssigneeId || '', today = todayOf(event);
-
-  if (path === '/api/sponsor-crm/queue' && method === 'GET') {
-    const organizations = await listCrmRecords(client, 'organization');
-    const deals = await listCrmRecords(client, 'deal');
-    const deliverables = await listCrmRecords(client, 'deliverable');
-    const finance = await moneyFacts(client, today, { organizations, deals, deliverables });
-    const items = computeQueue({ organizations, deals, deliverables, finance, today, actorId: user, defaultAssigneeId });
-    return json(200, page(items, event));
-  }
 
   if (path === '/api/sponsor-crm/imports' && method === 'POST') {
     if (!body) return json(400, { error: 'Invalid JSON' });

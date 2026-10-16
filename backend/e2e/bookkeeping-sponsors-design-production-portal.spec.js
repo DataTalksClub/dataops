@@ -137,17 +137,6 @@ async function routeSponsors(page) {
     const pathname = new URL(request.url()).pathname;
     if (pathname.endsWith("/organizations")) return route.fulfill({ json: { items: [organization] } });
     if (pathname.endsWith("/contacts")) return route.fulfill({ json: { items: [contact] } });
-    if (pathname.endsWith("/queue")) return route.fulfill({ json: { items: [{
-      id: "queue-example",
-      kind: "operational",
-      why: "chase_materials",
-      action: "Get materials",
-      companyId: organization.id,
-      companyName: organization.displayName,
-      dealId: booking.id,
-      due: "2026-09-03",
-      owner: "00000000-0000-0000-0000-000000000001",
-    }] } });
     if (pathname.endsWith("/leads")) return route.fulfill({ json: { items: [] } });
     if (pathname.endsWith("/messages")) return route.fulfill({ json: { items: [] } });
     if (pathname.endsWith("/deals")) return route.fulfill({ json: { items: [booking] } });
@@ -270,15 +259,14 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     const root = await page.goto("/sponsors");
     assertOwnedServerResponse(server, root, "sponsor design root");
     await expect(page.getByRole("heading", { name: "Sponsors" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Queue" })).toBeVisible();
-    await expect(page.locator("[data-crm-queue] .status-label")).toHaveText("Deal work");
-    await expect(page).toHaveURL(/\/sponsors\/queue$/);
-    await page.getByRole("link", { name: "Pipeline" }).click();
+    // Sponsors opens on Pipeline; sponsor work lives in the Tasks queue.
+    await expect(page.getByRole("heading", { name: "Pipeline" })).toBeVisible();
     await expect(page).toHaveURL(/\/sponsors\/pipeline$/);
+    await expect(page.locator('[data-crm-view="queue"]')).toHaveCount(0);
     await expect(page.locator("[data-crm-pipeline]")).toContainText("Agreed");
     await expect(page.locator("[data-crm-pipeline]")).not.toContainText("Inquiry");
     await expect(page.locator("[data-crm-alerts]")).toContainText("Due 3 Sept");
-    await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-queue-light.png") });
+    await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-pipeline-light.png") });
     await page.getByRole("button", { name: "Open deal" }).click();
     await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Company detail sections" })).toContainText("Finance");

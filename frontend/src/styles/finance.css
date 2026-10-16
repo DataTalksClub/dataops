@@ -558,16 +558,6 @@ body[data-workspace-view="sponsors"] .document-list {
   font-weight: 500;
 }.crm-deal-pub {
   color: var(--dk-text-faint);
-}/* Queue row content inside the kit's .dk-split__item: the company name,
-   then one line per piece of work (kind, action, mono due date). */.crm-booking-items {
-  display: grid;
-  gap: var(--dk-space-1);
-}.crm-queue-action {
-  color: var(--dk-text-primary);
-  font-weight: 500;
-}.crm-queue-due {
-  font-family: var(--dk-font-mono);
-  font-variant-numeric: tabular-nums;
 }.crm-directory .section-header label {
   width: 130px;
 }.crm-leads,

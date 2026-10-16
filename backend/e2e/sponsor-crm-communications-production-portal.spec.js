@@ -125,23 +125,6 @@ test.describe('production sponsor CRM communications portal', () => {
         const pathname = url.pathname;
         if (pathname.endsWith('/organizations')) return route.fulfill({ json: { items: [organization] } });
         if (pathname.endsWith('/contacts')) return route.fulfill({ json: { items: [contact, alternateContact] } });
-        if (pathname.endsWith('/queue')) {
-          return route.fulfill({
-            json: {
-              items: [{
-                id: 'queue-1',
-                kind: 'operational',
-                why: 'chase_materials',
-                action: 'Get materials',
-                companyId: organization.id,
-                companyName: organization.displayName,
-                dealId: booking.id,
-                due: '2026-08-20',
-                owner: '00000000-0000-0000-0000-000000000001',
-              }],
-            },
-          });
-        }
         if (pathname.endsWith('/leads')) return route.fulfill({ json: { items: [] } });
         if (pathname.endsWith('/messages')) return route.fulfill({ json: { items: [] } });
         if (pathname.endsWith('/deals')) return route.fulfill({ json: { items: [booking] } });
@@ -489,23 +472,6 @@ test.describe('production sponsor CRM communications portal', () => {
       const pathname = url.pathname;
       if (pathname.endsWith('/organizations')) return route.fulfill({ json: { items: [organization] } });
       if (pathname.endsWith('/contacts')) return route.fulfill({ json: { items: [contact] } });
-      if (pathname.endsWith('/queue')) {
-        return route.fulfill({
-          json: {
-            items: [{
-              id: 'queue-1',
-              kind: 'operational',
-              why: 'chase_materials',
-              action: 'Get materials',
-              companyId: organization.id,
-              companyName: organization.displayName,
-              dealId: booking.id,
-              due: '2026-08-20',
-              owner: '00000000-0000-0000-0000-000000000001',
-            }],
-          },
-        });
-      }
       if (pathname.endsWith('/leads')) return route.fulfill({ json: { items: [] } });
       if (pathname.endsWith('/messages')) return route.fulfill({ json: { items: [] } });
       if (pathname.endsWith('/deals')) return route.fulfill({ json: { items: [booking] } });

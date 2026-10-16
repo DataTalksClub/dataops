@@ -13,10 +13,10 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
   test(`direct Newsletter and Sponsors URLs open their screens at ${viewport.width}x${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await setupPageWithAuth(page);
-    // Bare /sponsors opens its default tab, /sponsors/queue.
+    // Bare /sponsors opens its default tab, /sponsors/pipeline.
     for (const [route, canonical, selector] of [
       ['newsletter', 'newsletter', '#newsletter-surface-title'],
-      ['sponsors', 'sponsors/queue', '.sponsor-crm-surface'],
+      ['sponsors', 'sponsors/pipeline', '.sponsor-crm-surface'],
     ]) {
       await page.goto(`${server.baseURL}/${route}`);
       await expect(page).toHaveURL(`${server.baseURL}/${canonical}`);

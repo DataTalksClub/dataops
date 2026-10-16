@@ -59,7 +59,7 @@ export function createSponsorCrmSurface(context) {
     const routeAtStart = getPendingLegacyRoute();
     const routeToken = routeAtStart?.token;
     const sponsorsRoute = routeAtStart?.view === "sponsors" ? routeAtStart : null;
-    const initialTab = sponsorsRoute?.sponsorsTab || "queue";
+    const initialTab = sponsorsRoute?.sponsorsTab || "pipeline";
     const requested = (name) => sponsorsRoute?.params.get(name) || null;
     const requestedDealId = requested("dealId");
     const requestedCompanyId = requested("companyId");
@@ -89,9 +89,8 @@ export function createSponsorCrmSurface(context) {
     const ownerDirectory = createSponsorOwnerDirectory({ request, workApiUrl, escapeHtml });
     let organizations = [],
       contacts = [],
-      deals = [],
-      queueItems = [];
-    let currentView = "queue";
+      deals = [];
+    let currentView = "pipeline";
     const notificationLoader = createCollectionLoader({
       collection: "notifications",
       createUrl: ({ cursor, limit }) => {
@@ -227,13 +226,12 @@ export function createSponsorCrmSurface(context) {
         if (link.dataset.crmView === view) link.setAttribute("aria-current", "page");
         else link.removeAttribute("aria-current");
       });
-      const queue = surface.querySelector("[data-crm-queue]");
       const pipeline = surface.querySelector("[data-crm-bookings]");
       const companies = surface.querySelector("[data-crm-companies-section]");
       const filters = surface.querySelector(".crm-filters");
       if (view === "companies") {
         companies.insertBefore(filters, surface.querySelector("[data-crm-orgs]"));
-      } else if (view === "queue" || view === "pipeline") {
+      } else if (view === "pipeline") {
         surface.querySelector(".crm-master").insertBefore(
           filters,
           surface.querySelector("[data-crm-list-scroll]"),
@@ -241,20 +239,18 @@ export function createSponsorCrmSurface(context) {
       }
       // Inside the list pane the filters are its tool band.
       filters.classList.toggle("dk-split__tools", view !== "companies");
-      queue.hidden = view !== "queue";
       pipeline.hidden = view !== "pipeline";
       companies.hidden = view !== "companies";
       surface.querySelector(".crm-leads").hidden = view !== "leads";
       surface.querySelector(".crm-newsletters").hidden = view !== "newsletters";
       if (!(surface.querySelector(".crm-money").hidden = view !== "money")) sponsorMoney.loadMoney();
       surface.querySelector(".crm-layout").hidden = PAGE_VIEWS.has(view);
-      // Queue and Pipeline fill the content area; the other views scroll the page.
+      // Pipeline fills the content area; the other views scroll the page.
       surface.classList.toggle("dk-fill", !surface.querySelector(".crm-layout").hidden);
       surface.querySelector("[data-crm-pipeline]").hidden = view !== "pipeline";
       const heading = surface.querySelector("[data-crm-list-heading]");
       heading.textContent =
-        view === "queue" ? "Queue"
-        : view === "pipeline" ? "Pipeline"
+        view === "pipeline" ? "Pipeline"
         : view === "leads" ? "Leads"
         : view === "newsletters" ? "Newsletters"
         : view === "money" ? "Money"
@@ -365,46 +361,6 @@ export function createSponsorCrmSurface(context) {
           </div>`;
       const shownIds = new Set(shown.map((item) => item.id));
       drawPipeline(shownIds);
-      const grouped = new Map();
-      for (const item of queueItems) {
-        if (search && !String(item.companyName || "").toLowerCase().includes(search)) continue;
-        const list = grouped.get(item.companyId) || [];
-        list.push(item);
-        grouped.set(item.companyId, list);
-      }
-      const queueMarkup = grouped.size
-        ? [...grouped.entries()]
-            .map(([companyId, items]) => {
-              const name = items[0].companyName || organizationName(companyId);
-              const current = surface.dataset.selectedCompany === companyId ? ' aria-current="true"' : "";
-              return html`<button
-                type="button"
-                class="dk-split__item crm-booking-row"
-                data-open-company="${escapeHtml(companyId)}"
-                data-open-deal="${escapeHtml(items.find((item) => item.dealId)?.dealId || "")}"${current}
-              >
-                <span class="dk-split__name crm-booking-name">${escapeHtml(name)}</span>
-                  <span class="crm-booking-items">
-                    ${items
-                      .map(
-                        (item) => html`<span class="dk-split__meta crm-queue-item">
-                          <span class="status-label" data-status="${escapeHtml(item.kind)}">${escapeHtml(
-                            { relationship: "Follow up", operational: "Deal work" }[item.kind] || "Work",
-                          )}</span>
-                          <span class="crm-queue-action">${escapeHtml(humanizeOptionLabel(String(item.action || "Follow up")))}</span>
-                          <span class="crm-queue-due">${escapeHtml(humanSponsorDate(item.due))}</span>
-                        </span>`,
-                      )
-                      .join("")}
-                </span>
-              </button>`;
-            })
-            .join("")
-        : html`<div class="honest-state">
-            <strong>Queue is clear</strong>
-            <p>No follow-ups or operational work for you right now.</p>
-          </div>`;
-      surface.querySelector("[data-crm-queue]").innerHTML = queueMarkup;
       const visible = deals
         .filter(
           (item) =>
@@ -417,9 +373,7 @@ export function createSponsorCrmSurface(context) {
           String(left.nextAction?.due || "9999").localeCompare(String(right.nextAction?.due || "9999")),
         );
       surface.querySelector("[data-booking-count]").textContent =
-        currentView === "queue"
-          ? `${grouped.size} ${grouped.size === 1 ? "company" : "companies"}`
-          : `${visible.length} ${visible.length === 1 ? "deal" : "deals"}`;
+        `${visible.length} ${visible.length === 1 ? "deal" : "deals"}`;
       surface.querySelector("[data-crm-bookings]").innerHTML = renderSponsorPipelineBoard({
         deals: visible,
         organizationName,
@@ -435,12 +389,11 @@ export function createSponsorCrmSurface(context) {
       const pendingAlertPage = notificationLoader.load();
       notificationState = notificationLoader.getSnapshot();
       drawAlerts();
-      const [organizationsResult, contactsResult, dealsResult, queueResult, alertPage] =
+      const [organizationsResult, contactsResult, dealsResult, alertPage] =
         await Promise.all([
           api("/organizations?limit=100"),
           api("/contacts?limit=100"),
           api("/deals?limit=100"),
-          api("/queue?limit=100"),
           pendingAlertPage,
           ownerDirectory.load(),
         ]);
@@ -448,7 +401,6 @@ export function createSponsorCrmSurface(context) {
       contacts = contactsResult.items || [];
       deals = dealsResult.items || [];
       if (currentView !== "money") moneyTab.hidden = !deals.some((deal) => deal.finance);
-      queueItems = queueResult.items || [];
       notificationState = alertPage;
       drawAlerts();
       orgOptions();
@@ -495,14 +447,14 @@ export function createSponsorCrmSurface(context) {
         : null;
       if (deal) {
         if (PAGE_VIEWS.has(currentView)) {
-          setView("queue");
+          setView("pipeline");
         }
         safe(() => reopenDealDetail(deal), "Could not open deal");
         return true;
       }
       if (organization) {
         if (PAGE_VIEWS.has(currentView)) {
-          setView("queue");
+          setView("pipeline");
         }
         safe(() => reopenCompanyDetail(organization), "Could not open company");
         return true;
@@ -571,7 +523,6 @@ export function createSponsorCrmSurface(context) {
       }
     };
     surface.querySelector("[data-crm-bookings]").onclick = openFromList;
-    surface.querySelector("[data-crm-queue]").onclick = openFromList;
     surface.querySelector("[data-crm-alerts]").onclick = (event) => {
       if (event.target.closest("[data-load-sponsor-alerts]")) {
         safe(async () => {
@@ -934,7 +885,7 @@ export function createSponsorCrmSurface(context) {
       if (requestedNewsletterId) await sponsorNewsletters.showNewsletter(requestedNewsletterId);
       // [id, kind, where its load state renders, tab to return to, open it]
       const record = [
-        [requestedDealId, "deal", "[data-crm-detail]", "queue", async (id) => {
+        [requestedDealId, "deal", "[data-crm-detail]", "pipeline", async (id) => {
           let deal = deals.find((item) => item.id === id);
           if (!deal) {
             deal = await api(`/deals/${encodeURIComponent(id)}`);
@@ -944,7 +895,7 @@ export function createSponsorCrmSurface(context) {
           }
           await reopenDealDetail(deal);
         }],
-        [requestedCompanyId, "company", "[data-crm-detail]", "queue", async (id) => reopenCompanyDetail(
+        [requestedCompanyId, "company", "[data-crm-detail]", "pipeline", async (id) => reopenCompanyDetail(
           organizations.find((item) => item.id === id) || await api(`/organizations/${encodeURIComponent(id)}`),
         )],
         [requestedLeadId, "lead", "[data-crm-leads]", "leads", (id) => sponsorLeads.focusLead(id)],
@@ -967,7 +918,6 @@ export function createSponsorCrmSurface(context) {
       }
     } catch (error) {
       surface.querySelector("[data-crm-orgs]").textContent = "Could not load sponsors.";
-      surface.querySelector("[data-crm-queue]").textContent = "Could not load queue.";
       surface.querySelector("[data-crm-bookings]").textContent = "Could not load deals.";
       message.hidden = false;
       message.textContent = `Permission or API error: ${error.message}. Reopen Sponsors to retry.`;

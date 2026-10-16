@@ -68,7 +68,7 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     });
     await page.goto(`${server.baseURL}/sponsors`);
     await expect(page.locator('[data-crm-message]')).toBeHidden();
-    await expect(page.locator('[data-crm-queue]')).toBeVisible();
+    await expect(page.locator('[data-crm-bookings]')).toBeVisible();
     await expect(page.locator('[data-crm-companies-section]')).toBeHidden();
     await expect(page.locator('.crm-leads')).toBeHidden();
     await page.locator('[data-crm-view="companies"]').click();
