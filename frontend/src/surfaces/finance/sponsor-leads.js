@@ -295,6 +295,19 @@ export function createSponsorLeads(context) {
     fail(loadLeads, "Could not load potential leads");
   }
 
+  /**
+   * Switch between sightings and sponsor groups. The rows on screen belong
+   * to the other view, so they give way to the loading state until the new
+   * view's first page lands instead of sitting under the wrong tab.
+   */
+  function showView(next) {
+    view = next;
+    nextCursor = null;
+    surface.querySelector("[data-crm-leads]").textContent = "Loading potential leads…";
+    drawControls();
+    reload();
+  }
+
   /** Show one lead (from a newsletter issue link) highlighted in the list. */
   async function focusLead(id) {
     focusedLeadId = id;
@@ -333,10 +346,8 @@ export function createSponsorLeads(context) {
     surface.querySelector("[data-crm-lead-views]").addEventListener("click", (event) => {
       const segment = event.target.closest("[data-lead-view]");
       if (!segment || segment.dataset.leadView === view) return;
-      view = segment.dataset.leadView;
-      if (view === "sponsors") filters.sponsor = "";
-      drawControls();
-      reload();
+      if (segment.dataset.leadView === "sponsors") filters.sponsor = "";
+      showView(segment.dataset.leadView);
     });
     surface.querySelector("[data-crm-lead-newsletter]").addEventListener("change", (event) => {
       filters.newsletter = event.target.value || "";
@@ -354,9 +365,7 @@ export function createSponsorLeads(context) {
     surface.querySelector("[data-crm-lead-scope]").onclick = (event) => {
       if (!event.target.closest("[data-lead-clear-sponsor]")) return;
       filters.sponsor = "";
-      view = "sponsors";
-      drawControls();
-      reload();
+      showView("sponsors");
     };
     surface.querySelector("[data-crm-leads]").onclick = (event) => {
       if (event.target.closest("[data-retry-leads]")) {
@@ -372,9 +381,7 @@ export function createSponsorLeads(context) {
       if (sponsorGroup) {
         filters.sponsor = sponsorGroup.dataset.leadSponsor;
         sponsorLabel = groups.find((group) => group.key === filters.sponsor)?.name || "";
-        view = "sightings";
-        drawControls();
-        reload();
+        showView("sightings");
         return;
       }
       const transition = event.target.closest("[data-lead-status]");

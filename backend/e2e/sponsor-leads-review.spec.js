@@ -104,7 +104,18 @@ test('Leads narrow by newsletter, search and sponsor', async ({ page }) => {
   await search.fill('');
   await expect(rows).toHaveCount(50);
 
+  // Until the sponsor groups land, the sightings must not linger under the
+  // By sponsor tab.
+  let releaseGroups;
+  const groupsHeld = new Promise((resolve) => { releaseGroups = resolve; });
+  await page.route('**/leads?*group=sponsor*', async (route) => {
+    await groupsHeld;
+    await route.fallback();
+  });
   await page.getByRole('tab', { name: 'By sponsor' }).click();
+  await expect(rows).toHaveCount(0);
+  await expect(page.locator('[data-crm-leads]')).toHaveText('Loading potential leads…');
+  releaseGroups();
   const recurring = rows.filter({ hasText: 'Recurring Tools Co' });
   await expect(recurring).toContainText('32 sightings');
   await expect(recurring).toContainText('Synthetic ML Digest, Synthetic Data Weekly');
