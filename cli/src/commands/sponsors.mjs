@@ -44,7 +44,7 @@ current record shape before writing one.
 
 Examples
   dataops sponsors list deals --json | jq '.items[] | {id, status}'
-  dataops sponsors update deals 1f2e... --data '{"status":"won","version":3}'
+  dataops sponsors update deals 1f2e... --data '{"status":"agreed","version":3}'
   dataops sponsors update leads 9a8b... --data '{"status":"ignored","version":1}' --reason "House ad"
 
 --reason (leads only) says why the lead has its status; a status change without one
