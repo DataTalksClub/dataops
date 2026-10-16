@@ -56,6 +56,24 @@ describe('Cron runner', () => {
     });
   });
 
+  it('creates an automatic Card with every optional task group unticked', async () => {
+    const template = await createTemplate(client, {
+      name: 'Grouped automatic',
+      type: 'grouped-automatic',
+      triggerType: 'automatic',
+      triggerSchedule: '0 9 2 * *',
+      taskDefinitions: [
+        { refId: 'core', description: 'Core step', offsetDays: 0 },
+        { refId: 'sponsor', description: 'Sponsor step', offsetDays: 0, optionalGroup: 'sponsored' },
+      ],
+    });
+    await runCron(client, new Date('2031-01-02T09:00:00Z'));
+    const card = (await listCards(client)).find((candidate) => candidate.templateId === template.id)!;
+    assert.deepStrictEqual(card.selectedOptionalGroups, []);
+    assert.deepStrictEqual((await listTasksByCard(client, card.id)).map((task) => task.templateTaskRef), ['core']);
+    await updateTemplate(client, template.id, { triggerEnabled: false });
+  });
+
   it('creates a card for a weekly template when cron matches', async () => {
     // Create a template with automatic trigger, every Monday (day 1)
     const template = await createTemplate(client, {
