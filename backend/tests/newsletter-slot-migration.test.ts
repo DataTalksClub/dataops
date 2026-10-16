@@ -44,8 +44,10 @@ describe("newsletter slot to issue migration", () => {
       name: "Stand-alone newsletter", type: "newsletter-standalone", cardTitle: "{date} · {sponsor} · {variant}",
       cardLinkDefinitions: [{ name: "Sponsorship document" }],
       taskDefinitions: [
+        { refId: "prepare-markdown", description: "Prepare Markdown", offsetDays: -3 },
+        { refId: "send", description: "Send", offsetDays: 0, dependsOn: ["prepare-markdown"] },
+        { refId: "create-invoice", description: "Invoice", offsetDays: 0, dependsOn: ["create-sponsorship-document"] },
         { refId: "create-sponsorship-document", description: "Create document", offsetDays: -7 },
-        { refId: "create-invoice", description: "Invoice", offsetDays: 0 },
       ],
     });
   });
@@ -133,6 +135,7 @@ describe("newsletter slot to issue migration", () => {
     const doc = await createTask(client, { description: "[Trello] Create doc", date: "2026-08-19", cardId: old.id, templateTaskRef: "trello-doc", status: "done", link: "https://docs.example/sa" });
     const chase = await createTask(client, { description: "Chase payment", date: "2026-09-01", cardId: old.id });
     await createTask(client, { description: "Fill block", date: "2026-08-25", cardId: old.id, status: "skipped", skipReason: "No blocks" });
+    const sent = await createTask(client, { description: "[Trello] Send campaign", date: "2026-08-26", cardId: old.id, templateTaskRef: "trello-send", status: "done", link: "https://campaign.example/sa" });
     const invoice = await createTask(client, { description: "[Trello] Invoice", date: "2026-08-26", cardId: old.id, templateTaskRef: "trello-invoice", status: "done" });
     const file = await createFile(client, { cardId: old.id, taskId: invoice.id, filename: "synthetic-invoice.pdf", category: "invoice" });
     await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { PK: "DELIVERABLE#synthetic-d", SK: "DELIVERABLE#synthetic-d", id: "synthetic-d", cardId: old.id } }));
@@ -142,7 +145,7 @@ describe("newsletter slot to issue migration", () => {
       slotIds: [newsletterIssueId(issueSourceKey(sheetId))],
       issue: { kind: "standalone", publicationDate: "2026-08-26", status: "sent", sourceType: "xlsx-import", sourceKey: issueSourceKey(sheetId),
         slots: { primary: { ticked: true, sponsor: "Sponsor C", sheetId } } },
-      card: { action: "retemplate", cardId: old.id, taskMap: { [doc.id]: "create-sponsorship-document", [invoice.id]: "create-invoice" } },
+      card: { action: "retemplate", cardId: old.id, taskMap: { [doc.id]: "create-sponsorship-document", [invoice.id]: "create-invoice", [sent.id]: "send" } },
     }];
     const run = data(await invoke("POST", "/api/newsletter-issues/migrations/from-slots", { dryRun: false, plan }));
     assert.equal(run.results[0].outcome, "migrated", JSON.stringify(run));
@@ -161,6 +164,9 @@ describe("newsletter slot to issue migration", () => {
     assert.equal(tasks.find((task) => task.id === chase.id)?.status, "todo");
     assert.equal(tasks.some((task) => task.description === "Fill block"), false);
     assert.equal(await getCard(client, old.id), null);
+    // Its prerequisite never resolves, so the old Task moves with its evidence.
+    assert.equal(tasks.find((task) => task.templateTaskRef === "send")?.status, "todo");
+    assert.equal(tasks.find((task) => task.id === sent.id)?.link, "https://campaign.example/sa");
     const invoiceTask = tasks.find((task) => task.templateTaskRef === "create-invoice")!;
     assert.equal(invoiceTask.status, "done");
     const movedFile = (await getFile(client, file.id))!;

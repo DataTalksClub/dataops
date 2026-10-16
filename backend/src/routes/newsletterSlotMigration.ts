@@ -191,23 +191,51 @@ async function retemplateCard(
   const moved: string[] = [];
   const dropped: string[] = [];
   const taskTargets = new Map<string, string>();
+  // Carries run in dependency order: a target Task can only resolve once its
+  // prerequisites have. A carry whose prerequisite never resolves moves the
+  // old Task onto the new Card instead, so its evidence is kept.
+  const pending: { source: Task; ref: string }[] = [];
+  const toMove: Task[] = [];
   for (const source of await listTasksByCardConsistent(client, oldCard.id)) {
     const fate = retemplateFate(source, taskMap, refs);
     if (fate.kind === 'drop') {
       dropped.push(`${source.id} (${source.status})`);
     } else if (fate.kind === 'map') {
-      const target = (await listTasksByCardConsistent(client, newCard.id)).find((task) => task.id === byRef.get(fate.ref)!.id)!;
-      taskTargets.set(source.id, target.id);
-      if (['done', 'skipped'].includes(source.status) && target.status === 'todo') {
-        await carryResolvedTask(client, source, target);
-        carried.push(`${source.id} -> ${fate.ref} (${source.status})`);
-      } else {
-        dropped.push(`${source.id} -> ${fate.ref} (${source.status}, target ${target.status})`);
-      }
+      taskTargets.set(source.id, byRef.get(fate.ref)!.id);
+      if (['done', 'skipped'].includes(source.status)) pending.push({ source, ref: fate.ref });
+      else dropped.push(`${source.id} -> ${fate.ref} (${source.status})`);
     } else {
-      await updateTask(client, source.id, { expectedVersion: source.version, patch: { cardId: newCard.id } as any });
-      moved.push(`${source.id} (${source.status})`);
+      toMove.push(source);
     }
+  }
+  let progressed = true;
+  while (pending.length && progressed) {
+    progressed = false;
+    const current = new Map((await listTasksByCardConsistent(client, newCard.id)).map((task) => [task.id, task]));
+    const resolved = (id: string) => ['done', 'skipped'].includes(current.get(id)?.status || 'done');
+    for (const item of [...pending]) {
+      const target = current.get(byRef.get(item.ref)!.id)!;
+      if (target.status !== 'todo') {
+        pending.splice(pending.indexOf(item), 1);
+        taskTargets.set(item.source.id, target.id);
+        dropped.push(`${item.source.id} -> ${item.ref} (${item.source.status}, target ${target.status})`);
+        progressed = true;
+        continue;
+      }
+      if (!(target.dependsOn || []).every(resolved)) continue;
+      await carryResolvedTask(client, item.source, target);
+      carried.push(`${item.source.id} -> ${item.ref} (${item.source.status})`);
+      pending.splice(pending.indexOf(item), 1);
+      progressed = true;
+    }
+  }
+  for (const item of pending) {
+    taskTargets.delete(item.source.id);
+    toMove.push(item.source);
+  }
+  for (const source of toMove) {
+    await updateTask(client, source.id, { expectedVersion: source.version, patch: { cardId: newCard.id } as any });
+    moved.push(`${source.id} (${source.status})`);
   }
   const links = (oldCard.cardLinks || []).filter((link) => link.url);
   if (links.length) {
@@ -275,7 +303,21 @@ async function migrateIssue(
   const sourceKey = String(planned.issue.sourceKey || '');
   const id = newsletterIssueId(sourceKey);
   if (planned.slotIds[0] !== id) throw new Error(`Issue ${sourceKey} id does not match its primary slot row`);
-  if (await getNewsletterIssue(client, id)) return { id, outcome: 'exists' };
+  const existing = await getNewsletterIssue(client, id);
+  if (existing) {
+    // An interrupted retemplate: the issue and its new Card exist, the old Card is still there.
+    if (planned.card.action !== 'retemplate' || !existing.cardId) return { id, outcome: 'exists' };
+    const oldCard = await getCardConsistent(client, planned.card.cardId);
+    if (!oldCard) return { id, outcome: 'exists' };
+    const newCard = await getCardConsistent(client, existing.cardId);
+    if (!newCard) throw new Error(`Issue ${id} Card ${existing.cardId} is missing`);
+    if (dryRun) return { id, sourceKey, action: 'retemplate', outcome: 'resume-planned' };
+    const retemplate = await retemplateCard(client, oldCard, newCard, planned.card.taskMap || {}, actor.id || 'system');
+    for (const slotId of planned.slotIds) {
+      await client.send(new DeleteCommand({ TableName: TABLE_NEWSLETTER_SLOTS, Key: slotKey(slotId) }));
+    }
+    return { id, sourceKey, action: 'retemplate', cardId: newCard.id, retemplate, outcome: 'resumed' };
+  }
   for (const slotId of planned.slotIds) {
     const row = (await client.send(new GetCommand({ TableName: TABLE_NEWSLETTER_SLOTS, Key: slotKey(slotId) }))).Item;
     if (!row) throw new Error(`Slot row ${slotId} is missing`);
