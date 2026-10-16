@@ -47,8 +47,8 @@ const defaultSponsorAutomationEvaluators: SponsorAutomationEvaluators = {
 function countsSummary(result: unknown): string {
   if (!result || typeof result !== 'object') return 'Done';
   const counts = Object.entries(result as Record<string, unknown>)
-    .filter(([, value]) => typeof value === 'number')
-    .map(([name, value]) => `${name} ${value}`);
+    .filter(([, value]) => typeof value === 'number' || Array.isArray(value))
+    .map(([name, value]) => `${name} ${Array.isArray(value) ? value.length : value}`);
   return counts.length ? counts.join(', ') : 'Done';
 }
 

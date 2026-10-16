@@ -51,6 +51,21 @@ export interface AutomationDefinition {
 
 const DAILY_JOB = 'Backend Lambda, daily job';
 const DAILY_JOB_SCHEDULE: AutomationSchedule = { kind: 'cron', expression: 'cron(0 8 * * ? *)' };
+/** Shared by the sponsor alerts and the email suggestions, which chase on the same days. */
+const SPONSOR_REMINDER_SETTINGS: AutomationSettingSpec[] = [
+  {
+    key: 'sponsorMaterialsReminderDays',
+    label: 'Materials reminders',
+    description: 'Days before publication to chase missing sponsor materials.',
+    kind: 'day-list',
+  },
+  {
+    key: 'sponsorFollowUpDays',
+    label: 'Performance follow-up',
+    description: 'Days after publication that the performance follow-up is due.',
+    kind: 'days',
+  },
+];
 const KNOWLEDGE_REPO_WORKFLOWS = 'https://github.com/DataTalksClub/dataops-knowledge/actions/workflows';
 
 export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
@@ -97,7 +112,7 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
     infraSchedule: 'BackendFunctionDailyBackendCron',
     schedule: DAILY_JOB_SCHEDULE,
     runSource: 'recorded',
-    settings: [],
+    settings: SPONSOR_REMINDER_SETTINGS,
   },
   {
     id: 'sponsor-finance-alerts',
@@ -117,7 +132,7 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
     infraSchedule: 'BackendFunctionDailyBackendCron',
     schedule: DAILY_JOB_SCHEDULE,
     runSource: 'recorded',
-    settings: [],
+    settings: SPONSOR_REMINDER_SETTINGS,
   },
   {
     id: 'execution-export',

@@ -81,13 +81,13 @@ describe('GET /api/automations', () => {
   let savedSkipAuth: string | undefined;
   const sessions: Record<string, string> = {};
 
-  function invoke(bearer: string): Promise<LambdaResponse> {
+  function invoke(bearer: string, method = 'GET', path = '/api/automations', body?: unknown): Promise<LambdaResponse> {
     return route({
-      httpMethod: 'GET',
-      path: '/api/automations',
+      httpMethod: method,
+      path,
       queryStringParameters: null,
       headers: { authorization: `Bearer ${bearer}` },
-      body: null,
+      body: body === undefined ? null : JSON.stringify(body),
     }, client);
   }
 
@@ -159,5 +159,32 @@ describe('GET /api/automations', () => {
     const overview = await automationsOverview(client, { readCheckpoint: async () => null });
     const backup = overview.automations.find((automation) => automation.id === 'dynamo-backup')!;
     assert.deepStrictEqual(backup.lastRun, { at: '2026-10-16T09:00:00.000Z', ok: true, summary: '10 items from 2 tables', source: 'recorded' });
+  });
+
+  it('shows the sponsor reminder timing an admin sets on /api/workspace-settings', async () => {
+    const before = JSON.parse((await invoke(sessions.admin)).body);
+    const alerts = before.automations.find((automation: { id: string }) => automation.id === 'sponsor-booking-alerts');
+    assert.deepStrictEqual(
+      alerts.settings.map(({ key, value }: { key: string; value: unknown }) => ({ key, value })),
+      [{ key: 'sponsorMaterialsReminderDays', value: [14, 10, 3] }, { key: 'sponsorFollowUpDays', value: 7 }],
+    );
+    for (const body of [
+      { sponsorMaterialsReminderDays: [3, -1] }, { sponsorMaterialsReminderDays: '14,10' },
+      { sponsorMaterialsReminderDays: Array.from({ length: 11 }, (_, index) => index) },
+      { sponsorFollowUpDays: 0 }, { sponsorFollowUpDays: 400 },
+    ]) {
+      const response = await invoke(sessions.admin, 'PUT', '/api/workspace-settings', { ...body, expectedVersion: before.settingsVersion });
+      assert.strictEqual(response.statusCode, 400, JSON.stringify(body));
+    }
+    const saved = await invoke(sessions.admin, 'PUT', '/api/workspace-settings', {
+      sponsorMaterialsReminderDays: [7, 21, 7],
+      sponsorFollowUpDays: 10,
+      expectedVersion: before.settingsVersion,
+    });
+    assert.strictEqual(saved.statusCode, 200, saved.body);
+    const after = JSON.parse((await invoke(sessions.operator)).body);
+    const suggestions = after.automations.find((automation: { id: string }) => automation.id === 'sponsor-communication-suggestions');
+    assert.deepStrictEqual(suggestions.settings.map(({ value }: { value: unknown }) => value), [[21, 7], 10]);
+    assert.strictEqual(after.settingsVersion, before.settingsVersion + 1);
   });
 });

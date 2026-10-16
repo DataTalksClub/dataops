@@ -60,7 +60,13 @@ describe('workspace default assignee', () => {
   it('starts unset', async () => {
     const response = await invoke('GET', PATH, sessions[OPERATOR]);
     assert.strictEqual(response.statusCode, 200);
-    assert.deepStrictEqual(parsed(response), { defaultAssigneeId: null, newsletterCardLeadDays: 21, version: 0 });
+    assert.deepStrictEqual(parsed(response), {
+      defaultAssigneeId: null,
+      newsletterCardLeadDays: 21,
+      sponsorMaterialsReminderDays: [14, 10, 3],
+      sponsorFollowUpDays: 7,
+      version: 0,
+    });
     assert.strictEqual(parsed(await invoke('GET', '/api/team-members', sessions[OPERATOR])).defaultAssigneeId, null);
     assert.strictEqual(await resolveDefaultAssigneeId(client), null);
   });

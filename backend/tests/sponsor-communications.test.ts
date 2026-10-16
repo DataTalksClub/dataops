@@ -139,11 +139,22 @@ describe('sponsor reviewed communication core', () => {
       status: 'agreed',
     };
     const deliverables = [{ plannedPublicationDate: '2026-08-13', artifactUrls: [] }];
-    assert.deepEqual(communicationCandidates(deal, deliverables, '2026-07-30').map((item) => item.type), [
+    const timing = { materialsReminderDays: [14, 10, 3], followUpDays: 7 };
+    assert.deepEqual(communicationCandidates(deal, deliverables, '2026-07-30', timing).map((item) => item.type), [
       'booking-confirmation',
       'materials-reminder',
     ]);
-    assert.deepEqual(communicationCandidates({ ...deal, status: 'lost' }, deliverables, '2026-07-30'), []);
+    assert.deepEqual(communicationCandidates({ ...deal, status: 'lost' }, deliverables, '2026-07-30', timing), []);
+    // The reminder days are the admin's: 14 days out is no longer one of them.
+    assert.deepEqual(
+      communicationCandidates(deal, deliverables, '2026-07-30', { materialsReminderDays: [7], followUpDays: 7 }).map((item) => item.type),
+      ['booking-confirmation'],
+    );
+    const published = [{ plannedPublicationDate: '2026-07-01', publishedAt: '2026-07-01T10:00:00Z', artifactUrls: ['https://example.test/a'] }];
+    assert.ok(communicationCandidates(deal, published, '2026-07-05', { materialsReminderDays: [], followUpDays: 3 })
+      .some((item) => item.type === 'performance-follow-up'));
+    assert.ok(!communicationCandidates(deal, published, '2026-07-05', timing)
+      .some((item) => item.type === 'performance-follow-up'));
   });
 
   it('validates exactly four allowlisted templates and only declared placeholders', () => {

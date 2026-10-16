@@ -9,6 +9,10 @@
  * - `newsletterCardLeadDays`: how many days before a newsletter issue goes
  *   out the daily run creates its Card (earlier when the Template has a Task
  *   due further ahead, so no Task is born overdue).
+ * - `sponsorMaterialsReminderDays`: the days before a sponsor publication on
+ *   which the daily run alerts about missing materials and drafts a reminder.
+ * - `sponsorFollowUpDays`: days after publication when the performance
+ *   follow-up becomes due.
  */
 
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
@@ -22,12 +26,23 @@ const SETTINGS_KEY = { PK: 'SETTINGS#workspace', SK: 'SETTINGS#workspace' } as c
 /** `newsletterCardLeadDays` until an admin sets it. */
 export const DEFAULT_NEWSLETTER_CARD_LEAD_DAYS = 21;
 export const MAX_NEWSLETTER_CARD_LEAD_DAYS = 365;
+/** `sponsorMaterialsReminderDays` until an admin sets it. */
+export const DEFAULT_SPONSOR_MATERIALS_REMINDER_DAYS: readonly number[] = Object.freeze([14, 10, 3]);
+export const MAX_SPONSOR_MATERIALS_REMINDERS = 10;
+/** `sponsorFollowUpDays` until an admin sets it. */
+export const DEFAULT_SPONSOR_FOLLOW_UP_DAYS = 7;
+/** Bound on every day count the sponsor settings hold. */
+export const MAX_SPONSOR_SETTING_DAYS = 365;
 
 export interface WorkspaceSettings {
   /** Team member who receives new work no one else is named for; null when unset. */
   defaultAssigneeId: string | null;
   /** Days before an issue's date that the daily run creates its Card. */
   newsletterCardLeadDays: number;
+  /** Days before a sponsor publication that missing materials are chased, largest first. */
+  sponsorMaterialsReminderDays: number[];
+  /** Days after publication that the performance follow-up is due. */
+  sponsorFollowUpDays: number;
   /** 0 until the record is first written. */
   version: number;
   updatedAt?: string;
@@ -48,19 +63,34 @@ export async function getWorkspaceSettings(client: DynamoDBDocumentClient): Prom
     ConsistentRead: true,
   }));
   const item = result.Item as Record<string, unknown> | undefined;
-  if (!item) return { defaultAssigneeId: null, newsletterCardLeadDays: DEFAULT_NEWSLETTER_CARD_LEAD_DAYS, version: 0 };
+  if (!item) {
+    return {
+      defaultAssigneeId: null,
+      newsletterCardLeadDays: DEFAULT_NEWSLETTER_CARD_LEAD_DAYS,
+      sponsorMaterialsReminderDays: [...DEFAULT_SPONSOR_MATERIALS_REMINDER_DAYS],
+      sponsorFollowUpDays: DEFAULT_SPONSOR_FOLLOW_UP_DAYS,
+      version: 0,
+    };
+  }
   return {
     defaultAssigneeId: typeof item.defaultAssigneeId === 'string' && item.defaultAssigneeId ? item.defaultAssigneeId : null,
     newsletterCardLeadDays: Number.isInteger(item.newsletterCardLeadDays)
       ? Number(item.newsletterCardLeadDays)
       : DEFAULT_NEWSLETTER_CARD_LEAD_DAYS,
+    sponsorMaterialsReminderDays: Array.isArray(item.sponsorMaterialsReminderDays)
+      ? item.sponsorMaterialsReminderDays.map(Number)
+      : [...DEFAULT_SPONSOR_MATERIALS_REMINDER_DAYS],
+    sponsorFollowUpDays: Number.isInteger(item.sponsorFollowUpDays)
+      ? Number(item.sponsorFollowUpDays)
+      : DEFAULT_SPONSOR_FOLLOW_UP_DAYS,
     version: Number(item.version) || 0,
     ...(typeof item.updatedAt === 'string' ? { updatedAt: item.updatedAt } : {}),
     ...(typeof item.updatedBy === 'string' ? { updatedBy: item.updatedBy } : {}),
   };
 }
 
-export type WorkspaceSettingsChanges = Partial<Pick<WorkspaceSettings, 'defaultAssigneeId' | 'newsletterCardLeadDays'>>;
+export type WorkspaceSettingsChanges = Partial<Pick<WorkspaceSettings,
+  'defaultAssigneeId' | 'newsletterCardLeadDays' | 'sponsorMaterialsReminderDays' | 'sponsorFollowUpDays'>>;
 
 /** Write `changes` over the current settings, if they are still at `expectedVersion`. */
 export async function updateWorkspaceSettings(
@@ -72,6 +102,8 @@ export async function updateWorkspaceSettings(
   const next: WorkspaceSettings = {
     defaultAssigneeId: current.defaultAssigneeId,
     newsletterCardLeadDays: current.newsletterCardLeadDays,
+    sponsorMaterialsReminderDays: current.sponsorMaterialsReminderDays,
+    sponsorFollowUpDays: current.sponsorFollowUpDays,
     ...input.changes,
     version: input.expectedVersion + 1,
     updatedAt: new Date().toISOString(),

@@ -3,6 +3,18 @@ import { createNotification, dismissNotification, listAllNotifications } from '.
 import { listCrmRecords } from '../db/sponsorCrm';
 import { dealMoneyFacts } from '../sponsorFinance/ledger';
 import { dayDiff, dealIsComplete } from './model';
+import { getWorkspaceSettings } from '../db/workspaceSettings';
+
+/** The admin-set timing the reminders follow (workspace settings). */
+export interface SponsorReminderTiming {
+  materialsReminderDays: readonly number[];
+  followUpDays: number;
+}
+
+export async function sponsorReminderTiming(client: DynamoDBDocumentClient): Promise<SponsorReminderTiming> {
+  const settings = await getWorkspaceSettings(client);
+  return { materialsReminderDays: settings.sponsorMaterialsReminderDays, followUpDays: settings.sponsorFollowUpDays };
+}
 
 type Rule = { code: string; dueDate: string; message: string; dealId: string; organizationId: string; deliverableId?: string };
 
@@ -20,7 +32,12 @@ function rulesForDeal(deal: Record<string, unknown>, today: string): Rule[] {
   return rules;
 }
 
-function rulesForDeliverable(deliverable: Record<string, unknown>, deal: Record<string, unknown>, today: string): Rule[] {
+function rulesForDeliverable(
+  deliverable: Record<string, unknown>,
+  deal: Record<string, unknown>,
+  today: string,
+  timing: SponsorReminderTiming,
+): Rule[] {
   const rules: Rule[] = [];
   const publication = String(deliverable.plannedPublicationDate || '');
   const deadline = String(deliverable.materialDeadline || '');
@@ -33,7 +50,7 @@ function rulesForDeliverable(deliverable: Record<string, unknown>, deal: Record<
   };
   if (deal.status === 'agreed' && publication && !hasMaterials && !published) {
     const days = dayDiff(today, publication);
-    if ([14, 10, 3].includes(days)) {
+    if (timing.materialsReminderDays.includes(days)) {
       rules.push({ ...base, code: `materials-missing-${days}d`, dueDate: publication, message: `Sponsor deliverable materials are missing ${days} days before publication` });
     }
   }
@@ -43,7 +60,7 @@ function rulesForDeliverable(deliverable: Record<string, unknown>, deal: Record<
   if ((deliverable.scheduleEntryId || published) && (!deliverable.cardId || !deliverable.requiredLinkUrl)) {
     rules.push({ ...base, code: 'newsletter-workflow-incomplete', dueDate: publication || today, message: 'Sponsor deliverable is missing its newsletter workflow or required link' });
   }
-  if (published && dayDiff(published, today) >= 7) {
+  if (published && dayDiff(published, today) >= timing.followUpDays) {
     rules.push({ ...base, code: 'performance-follow-up-due', dueDate: published, message: 'Sponsor deliverable performance follow-up is due' });
   }
   return rules;
@@ -56,6 +73,7 @@ export async function evaluateSponsorBookingAlerts(client: DynamoDBDocumentClien
     listCrmRecords(client, 'deliverable'),
   ]);
   const facts = await dealMoneyFacts(client, today, { organizations, deals, deliverables });
+  const timing = await sponsorReminderTiming(client);
   const deliverablesByDeal = new Map<string, typeof deliverables>();
   for (const deliverable of deliverables) {
     const dealId = String(deliverable.dealId);
@@ -72,7 +90,7 @@ export async function evaluateSponsorBookingAlerts(client: DynamoDBDocumentClien
     const live = (deal.status === 'open' || deal.status === 'agreed') && !dealIsComplete(deal, facts.get(deal.id), dealDeliverables);
     if (!live) continue;
     rules.push(...rulesForDeal(deal, today));
-    for (const deliverable of dealDeliverables) rules.push(...rulesForDeliverable(deliverable, deal, today));
+    for (const deliverable of dealDeliverables) rules.push(...rulesForDeliverable(deliverable, deal, today, timing));
   }
   for (const rule of rules) {
     const fingerprint = `${rule.deliverableId || rule.dealId}#${rule.code}#${rule.dueDate}`;

@@ -10,6 +10,8 @@ import { getClient } from '../db/client';
 import {
   getWorkspaceSettings,
   MAX_NEWSLETTER_CARD_LEAD_DAYS,
+  MAX_SPONSOR_MATERIALS_REMINDERS,
+  MAX_SPONSOR_SETTING_DAYS,
   updateWorkspaceSettings,
   WorkspaceSettingsConflictError,
   type WorkspaceSettingsChanges,
@@ -18,7 +20,9 @@ import { resolveInteractiveActor, workAdminForbidden } from '../identity/actor';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 export const WORKSPACE_SETTINGS_PATH = '/api/workspace-settings';
-const EDITABLE = new Set(['newsletterCardLeadDays']);
+const EDITABLE = new Set(['newsletterCardLeadDays', 'sponsorMaterialsReminderDays', 'sponsorFollowUpDays']);
+
+const isDayCount = (value: unknown, max: number) => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= max;
 
 function json(statusCode: number, body: unknown): LambdaResponse {
   return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
@@ -63,6 +67,26 @@ export async function handleWorkspaceSettingsRoutes(
       return json(400, { error: `newsletterCardLeadDays must be a whole number of days from 0 to ${MAX_NEWSLETTER_CARD_LEAD_DAYS}` });
     }
     changes.newsletterCardLeadDays = Number(days);
+  }
+  if (Object.hasOwn(requested, 'sponsorMaterialsReminderDays')) {
+    const days = requested.sponsorMaterialsReminderDays;
+    if (
+      !Array.isArray(days)
+      || days.length > MAX_SPONSOR_MATERIALS_REMINDERS
+      || !days.every((day) => isDayCount(day, MAX_SPONSOR_SETTING_DAYS))
+    ) {
+      return json(400, {
+        error: `sponsorMaterialsReminderDays must be a list of at most ${MAX_SPONSOR_MATERIALS_REMINDERS} whole numbers of days from 0 to ${MAX_SPONSOR_SETTING_DAYS}`,
+      });
+    }
+    changes.sponsorMaterialsReminderDays = [...new Set(days.map(Number))].sort((a, b) => b - a);
+  }
+  if (Object.hasOwn(requested, 'sponsorFollowUpDays')) {
+    const days = requested.sponsorFollowUpDays;
+    if (!isDayCount(days, MAX_SPONSOR_SETTING_DAYS) || Number(days) < 1) {
+      return json(400, { error: `sponsorFollowUpDays must be a whole number of days from 1 to ${MAX_SPONSOR_SETTING_DAYS}` });
+    }
+    changes.sponsorFollowUpDays = Number(days);
   }
   try {
     return json(200, await updateWorkspaceSettings(client, {
