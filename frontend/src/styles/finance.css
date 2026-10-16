@@ -1077,6 +1077,27 @@ body[data-workspace-view="sponsors"] .document-list {
   color: var(--dk-text-primary);
 }
 
+/* Alerts fold into one line above the board; opened, the list scrolls inside
+   its own box so the board and an open deal never move down the page. */
+.sponsor-crm-surface .crm-alerts > summary {
+  cursor: pointer;
+  padding: var(--dk-space-1) 0;
+  color: var(--dk-text-heading);
+  font-size: var(--dk-text-sm);
+  font-weight: 500;
+}
+.sponsor-crm-surface .crm-alerts [data-crm-alerts] {
+  max-height: 40vh;
+  overflow: auto;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+}
+/* An open deal or company gets the space: the stage filters and alerts step aside. */
+.sponsor-crm-surface.has-booking-detail > .crm-alerts,
+.sponsor-crm-surface.has-booking-detail > .crm-pipeline {
+  display: none;
+}
+
 /* Pipeline progress spans the surface; opening a record replaces the board. */
 .sponsor-crm-surface.is-pipeline > .crm-layout {
   grid-template-columns: minmax(0, 1fr);

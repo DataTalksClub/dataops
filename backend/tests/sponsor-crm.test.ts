@@ -208,6 +208,50 @@ describe('sponsor CRM', () => {
     assert.ok(resolved.resolved >= 1);
   });
 
+  it('raises alerts only for live deals and resolves them once a deal is lost or paid and delivered', async () => {
+    const previous = process.env.SPONSOR_FINANCE_ENABLED;
+    process.env.SPONSOR_FINANCE_ENABLED = 'true';
+    try {
+      const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Live Alert Sponsor', sourceKey: 'live-alert-org' }));
+      const make = async (key: string) => {
+        const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'agreed', sourceKey: `live-alert-${key}` }));
+        await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'main', plannedPublicationDate: '2026-06-01', publishedAt: '2026-06-01T00:00:00Z', sourceKey: `live-alert-${key}-slot` });
+        return deal;
+      };
+      const [live, lost, finished] = [await make('live'), await make('lost'), await make('finished')];
+      await evaluateSponsorBookingAlerts(client, '2026-07-01');
+      const activeFor = async (dealId: string) => (await listAllNotifications(client))
+        .filter((item) => !item.dismissed && (item.metadata as any)?.sponsorDealId === dealId)
+        .map((item) => (item.metadata as any).sponsorAlertRule).sort();
+      const raised = ['agreed-missing-primary-contact', 'newsletter-workflow-incomplete', 'performance-follow-up-due'];
+      for (const deal of [live, lost, finished]) assert.deepEqual(await activeFor(deal.id), raised);
+
+      await invoke('PUT', `/api/sponsor-crm/deals/${lost.id}`, { version: lost.version, status: 'lost', lostReason: 'timing' });
+      const financeItem = {
+        PK: `SPONSOR_FINANCE#${finished.id}`, SK: `SPONSOR_FINANCE#${finished.id}`, id: finished.id, recordType: 'sponsor-finance',
+        dealId: finished.id, version: 4, invoiceRequirement: 'required', amountDue: '900', currency: 'EUR', taxMode: 'included',
+        invoiceNumber: 'SYN-LIVE', issuedOn: '2026-05-01', dueOn: '2026-06-01', paymentLinkIds: [], recordedPaymentIds: [] as string[],
+        actorId: 'admin-1', createdAt: '2026-05-01T00:00:00.000Z', updatedAt: '2026-05-01T00:00:00.000Z',
+      };
+      const paymentKey = `SPONSOR_FINANCE_PAYMENT#${finished.id}#${'b'.repeat(32)}`;
+      await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: {
+        PK: paymentKey, SK: paymentKey, id: paymentKey, recordType: 'sponsor-finance-payment', dealId: finished.id,
+        paymentId: 'b'.repeat(32), receivedOn: '2026-05-20', amount: '900', currency: 'EUR', method: 'bank-report',
+        actorId: 'admin-1', financeVersion: 4, createdAt: '2026-05-20T00:00:00.000Z',
+      } }));
+      await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { ...financeItem, recordedPaymentIds: [paymentKey] } }));
+      assert.equal(data(await invoke('GET', `/api/sponsor-crm/deals/${finished.id}?today=2026-07-01`)).money, 'paid');
+
+      await evaluateSponsorBookingAlerts(client, '2026-07-01');
+      assert.deepEqual(await activeFor(live.id), raised);
+      assert.deepEqual(await activeFor(lost.id), []);
+      assert.deepEqual(await activeFor(finished.id), []);
+    } finally {
+      if (previous === undefined) delete process.env.SPONSOR_FINANCE_ENABLED;
+      else process.env.SPONSOR_FINANCE_ENABLED = previous;
+    }
+  });
+
   it('rejects invalid references, dates, enums and unsafe artifact URLs', async () => {
     assert.equal((await invoke('POST', '/api/sponsor-crm/deals', { organizationId: 'missing', status: 'bad' })).statusCode, 400);
     const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Validation Sponsor', sourceKey: 'validation-org' }));

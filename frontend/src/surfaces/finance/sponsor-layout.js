@@ -37,9 +37,10 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
       ).join("")}
     </nav>
     <nav class="crm-pipeline" data-crm-pipeline aria-label="Deal pipeline"></nav>
-    <section class="crm-alerts" aria-label="Alerts">
+    <details class="crm-alerts">
+      <summary data-crm-alert-summary>Alerts</summary>
       <div data-crm-alerts>Loading alerts…</div>
-    </section>
+    </details>
     <div class="dk-split crm-layout" data-crm-split data-view="list">
       <section class="dk-split__list crm-master" aria-labelledby="crm-list-heading">
         <header class="dk-split__head crm-list-head">

@@ -19,8 +19,7 @@ import {
 import { listOpenDealTasks } from '../db/taskSubjects';
 import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { importCrmSnapshot } from '../sponsorCrm/importSnapshot';
-import { financeEnabled } from '../sponsorFinance/repository';
-import { financeLedger, type CrmPreload } from '../sponsorFinance/ledger';
+import { dealMoneyFacts } from '../sponsorFinance/ledger';
 import {
   CHANNELS,
   DEAL_STATUSES,
@@ -125,13 +124,6 @@ const publicDealTask = (task: Task) => ({
   ...(task.assigneeId ? { assigneeId: task.assigneeId } : {}),
 });
 
-async function moneyFacts(client: DynamoDBDocumentClient, today: string, preload: CrmPreload) {
-  const facts = new Map<string, DealMoneyFacts>();
-  if (!financeEnabled()) return facts;
-  for (const row of (await financeLedger(client, today, preload)).rows) facts.set(row.dealId, row);
-  return facts;
-}
-
 const publicMoney = (facts: DealMoneyFacts | undefined) => facts ? {
   invoiceState: facts.invoiceState,
   paymentState: facts.paymentState,
@@ -151,7 +143,7 @@ async function decorateDeals(client: DynamoDBDocumentClient, deals: CrmRecord[],
     listCrmRecords(client, 'deliverable'),
   ]);
   const [facts, tasksByDeal] = await Promise.all([
-    moneyFacts(client, today, { organizations, deals: allDeals, deliverables }),
+    dealMoneyFacts(client, today, { organizations, deals: allDeals, deliverables }),
     listOpenDealTasks(client),
   ]);
   return deals.map((deal) => {
@@ -171,7 +163,7 @@ async function organizationMoney(client: DynamoDBDocumentClient, today: string) 
     listCrmRecords(client, 'deal'),
     listCrmRecords(client, 'deliverable'),
   ]);
-  const facts = await moneyFacts(client, today, { organizations, deals, deliverables });
+  const facts = await dealMoneyFacts(client, today, { organizations, deals, deliverables });
   return deals.map((deal): CrmRecord => ({ ...deal, money: deriveMoney(facts.get(deal.id)) }));
 }
 

@@ -43,11 +43,20 @@ test.beforeAll(async () => {
 test.afterAll(async () => stopOwnedTestServer(server));
 
 // Sponsors has no list pane of its own: the Pipeline board is the list, and
-// opening a deal replaces the board with the deal's detail.
+// opening a deal replaces the board with the deal's detail. Hundreds of
+// alerts fold into one line, so they never push the deal down the page.
 test('/sponsors: opening a pipeline deal replaces the board with its detail', async ({ page }) => {
   await page.setViewportSize(DESKTOP);
   await setupPageWithAuth(page);
+  const alerts = Array.from({ length: 300 }, (_, index) => ({
+    id: `alert-${index}`, message: `Synthetic sponsor alert ${index}`, dismissed: false, dueAt: '2026-08-20',
+    metadata: { sponsorDealId: `deal-${index}`, sponsorAlertRule: 'performance-follow-up-due' },
+  }));
+  await page.route('**/api/notifications*', (route) => route.fulfill({ json: { notifications: { items: alerts } } }));
   await page.goto(`${server.baseURL}/sponsors`);
+  await expect(page.locator('[data-crm-alert-summary]')).toHaveText('300 sponsor alerts');
+  await expect(page.locator('.crm-alerts')).not.toHaveAttribute('open', '');
+  await expect(page.locator('[data-crm-bookings] .crm-pipeline-card').first()).toBeInViewport();
   await expect(page).toHaveURL(/\/sponsors\/pipeline$/);
   await expect(page.locator('[data-crm-message]')).toBeHidden();
   await page.locator('[data-crm-bookings] .crm-pipeline-card').first().getByRole('button', { name: 'Open deal' }).click();
@@ -56,6 +65,7 @@ test('/sponsors: opening a pipeline deal replaces the board with its detail', as
   const title = page.locator('.dk-split__detail .dk-split__title');
   await expect(title).toBeVisible();
   await expect(title).toBeInViewport();
+  await expect(page.locator('.crm-alerts')).toBeHidden();
 });
 
 test('/templates: list and preview share the split and the page stays put', async ({ page }) => {

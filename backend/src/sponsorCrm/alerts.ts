@@ -1,12 +1,12 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createNotification, dismissNotification, listAllNotifications } from '../db/notifications';
 import { listCrmRecords } from '../db/sponsorCrm';
-import { dayDiff } from './model';
+import { dealMoneyFacts } from '../sponsorFinance/ledger';
+import { dayDiff, dealIsComplete } from './model';
 
 type Rule = { code: string; dueDate: string; message: string; dealId: string; organizationId: string; deliverableId?: string };
 
 function rulesForDeal(deal: Record<string, unknown>, today: string): Rule[] {
-  if (deal.status === 'lost') return [];
   const rules: Rule[] = [];
   if (deal.status === 'agreed' && !deal.primaryContactId) {
     rules.push({
@@ -20,8 +20,7 @@ function rulesForDeal(deal: Record<string, unknown>, today: string): Rule[] {
   return rules;
 }
 
-function rulesForDeliverable(deliverable: Record<string, unknown>, deal: Record<string, unknown> | undefined, today: string): Rule[] {
-  if (!deal || deal.status === 'lost') return [];
+function rulesForDeliverable(deliverable: Record<string, unknown>, deal: Record<string, unknown>, today: string): Rule[] {
   const rules: Rule[] = [];
   const publication = String(deliverable.plannedPublicationDate || '');
   const deadline = String(deliverable.materialDeadline || '');
@@ -51,15 +50,30 @@ function rulesForDeliverable(deliverable: Record<string, unknown>, deal: Record<
 }
 
 export async function evaluateSponsorBookingAlerts(client: DynamoDBDocumentClient, today = new Date().toISOString().slice(0, 10)) {
-  const deals = await listCrmRecords(client, 'deal');
-  const deliverables = await listCrmRecords(client, 'deliverable');
-  const dealById = new Map(deals.map((deal) => [deal.id, deal]));
+  const [organizations, deals, deliverables] = await Promise.all([
+    listCrmRecords(client, 'organization'),
+    listCrmRecords(client, 'deal'),
+    listCrmRecords(client, 'deliverable'),
+  ]);
+  const facts = await dealMoneyFacts(client, today, { organizations, deals, deliverables });
+  const deliverablesByDeal = new Map<string, typeof deliverables>();
+  for (const deliverable of deliverables) {
+    const dealId = String(deliverable.dealId);
+    deliverablesByDeal.set(dealId, [...(deliverablesByDeal.get(dealId) || []), deliverable]);
+  }
   const existing = await listAllNotifications(client);
   const active = new Set<string>();
   const created: string[] = [];
   const rules: Rule[] = [];
-  for (const deal of deals) rules.push(...rulesForDeal(deal, today));
-  for (const deliverable of deliverables) rules.push(...rulesForDeliverable(deliverable, dealById.get(String(deliverable.dealId)), today));
+  // Only a live deal raises alerts: open or agreed, and not yet both paid and
+  // delivered. A finished or lost deal's alerts resolve on the next run.
+  for (const deal of deals) {
+    const dealDeliverables = deliverablesByDeal.get(deal.id) || [];
+    const live = (deal.status === 'open' || deal.status === 'agreed') && !dealIsComplete(deal, facts.get(deal.id), dealDeliverables);
+    if (!live) continue;
+    rules.push(...rulesForDeal(deal, today));
+    for (const deliverable of dealDeliverables) rules.push(...rulesForDeliverable(deliverable, deal, today));
+  }
   for (const rule of rules) {
     const fingerprint = `${rule.deliverableId || rule.dealId}#${rule.code}#${rule.dueDate}`;
     active.add(fingerprint);

@@ -86,6 +86,15 @@ export function renderSponsorBookingAlerts({
 
   surface.querySelector("[data-crm-alerts]").innerHTML =
     `${alertCards}${continuation}`;
+  // The list folds into one line so it never pushes the pipeline or an open
+  // deal down the page; the line says how many alerts wait inside.
+  const summary = surface.querySelector("[data-crm-alert-summary]");
+  if (summary) {
+    const more = notificationState.moreAvailable ? "+" : "";
+    summary.textContent = alerts.length
+      ? `${alerts.length}${more} sponsor ${alerts.length === 1 && !more ? "alert" : "alerts"}`
+      : "Sponsor alerts";
+  }
   const section = surface.querySelector(".crm-alerts");
   if (section) {
     const empty =

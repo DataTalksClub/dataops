@@ -2,6 +2,7 @@ import { BatchGetCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynam
 import { listCrmRecords, scanCrmPrefix } from '../db/sponsorCrm';
 import { TABLE_BOOKKEEPING } from '../db/tableNames';
 import { berlinDate, displayMoney, scaledMoney, sourceKey } from './core';
+import { financeEnabled } from './repository';
 import { deliveredOn } from './context';
 import { daysBetween, deriveFollowUp, deriveStates, followUpUrgency } from './followUp';
 import type { FinanceState, FollowUp, InvoiceState, PaymentState, RecordedPayment, TimingState, WaitingOn } from './types';
@@ -217,4 +218,12 @@ export async function financeLedger(
       .sort((left, right) => order(left.bucket).localeCompare(order(right.bucket)) || left.currency.localeCompare(right.currency))
       .map((entry) => ({ ...entry, amount: displayMoney(entry.amount) })),
   };
+}
+
+/** Each deal's money facts from the ledger, keyed by deal id; empty while sponsor finance is off. */
+export async function dealMoneyFacts(client: DynamoDBDocumentClient, today: string, preload: CrmPreload): Promise<Map<string, LedgerRow>> {
+  const facts = new Map<string, LedgerRow>();
+  if (!financeEnabled()) return facts;
+  for (const row of (await financeLedger(client, today, preload)).rows) facts.set(row.dealId, row);
+  return facts;
 }

@@ -512,6 +512,9 @@ describe("Finance surface boundary", () => {
       alerts.innerHTML,
       /<button type="button" data-load-sponsor-alerts>/,
     );
+    // The folded list's one line counts what waits inside.
+    const summary = document.surface.querySelector("[data-crm-alert-summary]");
+    assert.equal(summary.textContent, "2+ sponsor alerts");
 
     await clickAlertControl("[data-load-sponsor-alerts]");
     assert.match(alerts.innerHTML, /First alert/);
@@ -525,6 +528,7 @@ describe("Finance surface boundary", () => {
       ...alerts.innerHTML.matchAll(/<article class="crm-card crm-alert-row">/g),
     ].length;
     assert.equal(renderedArticleCount, 3);
+    assert.equal(summary.textContent, "3 sponsor alerts");
     assert.match(alerts.innerHTML, /First alert/);
     assert.match(alerts.innerHTML, /Second alert/);
     assert.match(alerts.innerHTML, /Third alert/);
