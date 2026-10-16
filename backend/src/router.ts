@@ -3,6 +3,7 @@ import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-sec
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { handleCardRoutes } from './routes/cards';
+import { handlePaymentFollowUpMigration } from './routes/paymentFollowUpMigration';
 import { handleTemplateRoutes } from './routes/templates';
 import { handleRecurringRoutes } from './routes/recurring';
 import { handleAutomationRoutes } from './routes/automations';
@@ -330,6 +331,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/files')) {
       const result = await handleFileRoutes(event);
+      if (result) return result;
+    }
+
+    if (reqPath === '/api/admin/payment-follow-up-migration') {
+      const result = await handlePaymentFollowUpMigration(reqPath, method, event.body || null, event, client);
       if (result) return result;
     }
 
