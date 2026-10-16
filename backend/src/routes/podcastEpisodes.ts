@@ -84,6 +84,15 @@ const httpsUrl = (value: unknown) => {
     return false;
   }
 };
+/** Resource mentions keep legacy http links; everything else must be https. */
+const httpUrl = (value: unknown) => {
+  try {
+    const protocol = new URL(value as string).protocol;
+    return typeof value === "string" && (protocol === "https:" || protocol === "http:");
+  } catch {
+    return false;
+  }
+};
 
 /** Validate a full episode shape (after merging a PUT onto the current one). */
 function validate(body: Record<string, any>): string {
@@ -174,7 +183,7 @@ function validate(body: Record<string, any>): string {
           return "Invalid transcript";
         if (entry.time !== undefined && (typeof entry.time !== "string" || entry.time.length > 32))
           return "Invalid transcript";
-        if (entry.who !== undefined && (typeof entry.who !== "string" || entry.who.length > 200))
+        if (entry.who !== undefined && (typeof entry.who !== "string" || entry.who.length > 2000))
           return "Invalid transcript";
       } else return "Invalid transcript";
     }
@@ -202,7 +211,7 @@ function validate(body: Record<string, any>): string {
         return "Invalid resources";
       if (typeof resource.type !== "string" || !resource.type.trim() || resource.type.length > 40)
         return "Invalid resources";
-      if (resource.url !== undefined && !httpsUrl(resource.url)) return "Invalid resources";
+      if (resource.url !== undefined && !httpUrl(resource.url)) return "Invalid resources";
       if (resource.context !== undefined && (typeof resource.context !== "string" || resource.context.length > 2000))
         return "Invalid resources";
     }
