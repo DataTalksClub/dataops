@@ -233,8 +233,16 @@ async function retemplateCard(
     taskTargets.delete(item.source.id);
     toMove.push(item.source);
   }
+  // Prerequisite edges are per Card and the old Card is going away: clear
+  // them before moving, as a Task with edges cannot change Card.
+  for (const task of await listTasksByCardConsistent(client, oldCard.id)) {
+    if (task.dependsOn?.length) {
+      await updateTask(client, task.id, { expectedVersion: task.version, patch: { dependsOn: null } as any });
+    }
+  }
+  const versions = new Map((await listTasksByCardConsistent(client, oldCard.id)).map((task) => [task.id, task.version]));
   for (const source of toMove) {
-    await updateTask(client, source.id, { expectedVersion: source.version, patch: { cardId: newCard.id } as any });
+    await updateTask(client, source.id, { expectedVersion: versions.get(source.id)!, patch: { cardId: newCard.id } as any });
     moved.push(`${source.id} (${source.status})`);
   }
   const links = (oldCard.cardLinks || []).filter((link) => link.url);

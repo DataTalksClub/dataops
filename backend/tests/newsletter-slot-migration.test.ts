@@ -133,7 +133,7 @@ describe("newsletter slot to issue migration", () => {
       cardLinks: [{ name: "Sponsorship document", url: "https://docs.example/sa" }],
     });
     const doc = await createTask(client, { description: "[Trello] Create doc", date: "2026-08-19", cardId: old.id, templateTaskRef: "trello-doc", status: "done", link: "https://docs.example/sa" });
-    const chase = await createTask(client, { description: "Chase payment", date: "2026-09-01", cardId: old.id });
+    const chase = await createTask(client, { description: "Chase payment", date: "2026-09-01", cardId: old.id, dependsOn: [doc.id] });
     await createTask(client, { description: "Fill block", date: "2026-08-25", cardId: old.id, status: "skipped", skipReason: "No blocks" });
     const sent = await createTask(client, { description: "[Trello] Send campaign", date: "2026-08-26", cardId: old.id, templateTaskRef: "trello-send", status: "done", link: "https://campaign.example/sa" });
     const invoice = await createTask(client, { description: "[Trello] Invoice", date: "2026-08-26", cardId: old.id, templateTaskRef: "trello-invoice", status: "done" });
