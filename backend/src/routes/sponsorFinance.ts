@@ -1,5 +1,6 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { createChaseTask, withChaseTasks } from '../sponsorFinance/chase';
 import {
   classifyFinance,
   financeActor,
@@ -69,7 +70,11 @@ export async function handleSponsorFinanceRoutes(
   try {
     const write = method !== 'GET';
     const actor = await financeActor(client, actorId, write || action.startsWith('candidates/'));
-    const project = async () => projectFinance(client, dealId, actor.role, await dealProjectionContext(client, dealId));
+    const project = async () => withChaseTasks(
+      client,
+      await projectFinance(client, dealId, actor.role, await dealProjectionContext(client, dealId)),
+      await getFinanceState(client, dealId),
+    );
     if (method === 'GET' && !action) return json(200, await project());
     if (method === 'GET' && action === 'history') return json(200, { items: await listFinanceHistory(client, dealId) });
     if (method === 'GET' && (action === 'candidates/invoices' || action === 'candidates/payments')) {
@@ -165,6 +170,19 @@ export async function handleSponsorFinanceRoutes(
       const result = await updateFollowThrough(client, { ...common, expectedVersion: Number(body.expectedVersion), body });
       return json(200, { result, projection: await project() });
     }
+    if (method === 'POST' && action === 'chase') {
+      // The Task is the result; the finance projection is unchanged (the
+      // linked chase work is re-read with the projection on every GET).
+      const result = await createChaseTask(client, {
+        ...common,
+        expectedVersion: Number(body.expectedVersion),
+        ...(body.date !== undefined ? { date: body.date } : {}),
+      });
+      return json(201, {
+        task: result.task,
+        ...(result.replayed ? { replayed: true } : {}),
+      });
+    }
     if (method === 'POST' && action === 'void') {
       const result = await voidFinance(client, { ...common, expectedVersion: Number(body.expectedVersion) });
       return json(200, { result, projection: await project() });
@@ -177,15 +195,17 @@ export async function handleSponsorFinanceRoutes(
     const statusCode = Number((error as { statusCode?: number }).statusCode || 409);
     recordRequestError(error);
     const outcome = (error as { outcome?: string }).outcome;
+    const taskId = (error as { taskId?: string }).taskId;
     return json(statusCode, {
       error: statusCode === 503 && outcome === 'outcome_unknown'
         ? 'Finance outcome unknown; reload or retry with the same Idempotency-Key'
         : statusCode === 503 ? 'Finance data is temporarily unavailable; retry'
         : statusCode === 401 ? 'Unauthorized'
           : statusCode === 403 ? 'Forbidden'
-            : statusCode === 400 ? (error as Error).message
+            : statusCode === 400 || statusCode === 422 ? (error as Error).message
               : 'Finance state changed; reload and retry',
       ...(outcome ? { outcome } : {}),
+      ...(taskId ? { taskId } : {}),
     });
   }
 }

@@ -1,0 +1,342 @@
+import { describe, it, before, after } from 'node:test';
+import assert from 'node:assert';
+import { PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal, createTables, TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_USERS } from '../scripts/local-dynamodb';
+import { invoiceIdentity } from '../src/sponsorFinance/core';
+import { getFinanceState } from '../src/sponsorFinance/repository';
+import { withChaseTasks } from '../src/sponsorFinance/chase';
+import { createDealAtomic, createOrganizationAtomic } from '../src/db/sponsorCrm';
+import type { FinanceProjection, LambdaEvent, LambdaResponse } from '../src/types';
+
+/**
+ * Payment chasing end to end against the local database: the finance chase
+ * endpoint creates ordinary Tasks in the main pool (with the deal subject),
+ * refuses duplicates and replays retries, gates resolution on the
+ * payment-verification proof, respects the existing task rules, and stays
+ * consistent with the finance projection (paid and partially-paid states).
+ *
+ * Finance states are seeded as the sanitized fixture rows the classify/issue
+ * mutations would store: those mutations are real DynamoDB transactions, and
+ * the projection GET uses TransactGet, neither of which the local test
+ * database implements. The chase creation decision itself uses plain reads
+ * and the shared deriveStates/deriveFollowUp code, so it is exercised for
+ * real here; `withChaseTasks` is checked at the module boundary where the
+ * route would compose it.
+ */
+describe('sponsor payment chasing', () => {
+  let client: DynamoDBDocumentClient;
+  const ADMIN = 'chase-admin-1';
+  const OPERATOR = 'chase-operator-1';
+  const today = berlinToday();
+  const day = (offset: number) => {
+    const date = new Date(`${today}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + offset);
+    return date.toISOString().slice(0, 10);
+  };
+
+  function berlinToday(): string {
+    const parts = new Intl.DateTimeFormat('en', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    const value = (type: string) => parts.find((item) => item.type === type)!.value;
+    return `${value('year')}-${value('month')}-${value('day')}`;
+  }
+
+  const invoke = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
+    const [pathname, search = ''] = path.split('?');
+    const event: LambdaEvent = {
+      httpMethod: method,
+      path: pathname,
+      queryStringParameters: Object.fromEntries(new URLSearchParams(search)),
+      headers,
+      body: body === undefined ? null : JSON.stringify(body),
+    };
+    const response: LambdaResponse = await (await import('../src/handler')).handler(event, {});
+    return { status: response.statusCode, body: JSON.parse(response.body || '{}') };
+  };
+
+  const chase = async (
+    dealId: string, body: Record<string, unknown>, idempotencyLabel: string, userId = ADMIN,
+  ) => invoke('POST', `/api/sponsor-crm/deals/${dealId}/finance/chase`, body, {
+    'x-user-id': userId,
+    'idempotency-key': `chase-test-key-${idempotencyLabel}`,
+  });
+
+  /** The chase view the finance projection route would attach. */
+  const chaseView = async (dealId: string) => {
+    const projection = await withChaseTasks(client, { dealId } as FinanceProjection, await getFinanceState(client, dealId));
+    return projection.chase;
+  };
+
+  const put = (table: string, item: Record<string, unknown>) => client.send(new PutCommand({ TableName: table, Item: item }));
+
+  let sequence = 0;
+  /**
+   * Seed an agreed deal with an issued, payable invoice as raw fixture rows.
+   * `dueIn` days from today (negative = overdue); `recordedAmount` seeds a
+   * recorded pre-ledger payment of that size.
+   */
+  async function bootstrapDeal(options: { dueIn?: number; issue?: boolean; recordedAmount?: string; amountDue?: string } = {}) {
+    sequence += 1;
+    const amountDue = options.amountDue || '1000';
+    const organization = await createOrganizationAtomic(client, { displayName: `Synthetic Chase Sponsor ${sequence}` }, 'test');
+    const deal = await createDealAtomic(
+      client, { organizationId: organization.item.id, status: 'agreed', productKind: 'one-off', title: `Fall bundle ${sequence}` }, 'test',
+    );
+    const dealId = deal.item.id;
+    const issuedOn = day(-30);
+    const dueOn = day(options.dueIn ?? -7);
+    const issued = options.issue !== false;
+    const invoiceSourceId = `inv-src-${sequence}`;
+    const invoiceSource = {
+      PK: `DOCUMENT#${invoiceSourceId}`, SK: `DOCUMENT#${invoiceSourceId}`,
+      id: invoiceSourceId, documentType: 'invoice', status: 'active',
+      sha256: 'c'.repeat(64), objectVersionId: `obj-${sequence}`, verifiedByteSize: 800,
+      createdAt: `${issuedOn}T09:00:00.000Z`, updatedAt: `${issuedOn}T09:00:00.000Z`,
+    };
+    const linkId = `SPONSOR_FINANCE_LINK#${dealId}#document#${invoiceSourceId}`;
+    const recordedIds: string[] = [];
+    if (options.recordedAmount !== undefined) {
+      const paymentKey = `SPONSOR_FINANCE_PAYMENT#${dealId}#recorded-${sequence}`;
+      recordedIds.push(paymentKey);
+      await put(TABLE_SPONSOR_CRM, {
+        PK: paymentKey, SK: paymentKey, id: paymentKey,
+        recordType: 'sponsor-finance-payment', dealId, paymentId: `recorded-${sequence}`,
+        receivedOn: day(-1), amount: options.recordedAmount, currency: 'EUR', method: 'bank-report',
+        actorId: ADMIN, financeVersion: 2, createdAt: `${day(-1)}T09:00:00.000Z`,
+      });
+    }
+    await put(TABLE_SPONSOR_CRM, {
+      PK: `SPONSOR_FINANCE#${dealId}`, SK: `SPONSOR_FINANCE#${dealId}`,
+      id: dealId, recordType: 'sponsor-finance', dealId, version: 2,
+      invoiceRequirement: 'required', amountDue, currency: 'EUR', taxMode: 'included',
+      ...(issued ? { invoiceNumber: `CHASE-INV-${sequence}`, issuedOn, sentOn: issuedOn, dueOn } : {}),
+      ...(issued ? { invoiceLinkId: linkId } : {}),
+      paymentLinkIds: [], recordedPaymentIds: recordedIds, chaseTaskIds: [],
+      actorId: ADMIN, createdAt: `${issuedOn}T09:00:00.000Z`, updatedAt: `${issuedOn}T09:00:00.000Z`,
+    });
+    if (issued) {
+      await put(TABLE_SPONSOR_CRM, {
+        PK: linkId, SK: linkId, id: linkId, recordType: 'sponsor-finance-link',
+        dealId, kind: 'document', sourceId: invoiceSourceId, identityToken: invoiceIdentity(invoiceSource),
+        actorId: ADMIN, financeVersion: 2, createdAt: `${issuedOn}T09:00:00.000Z`,
+      });
+      await put(TABLE_BOOKKEEPING, {
+        PK: `SPONSOR_FINANCE_CLAIM#document#${invoiceSourceId}`, SK: `SPONSOR_FINANCE_CLAIM#document#${invoiceSourceId}`,
+        recordType: 'sponsor-finance-claim', kind: 'document', sourceId: invoiceSourceId,
+        dealId, linkId, identityToken: invoiceIdentity(invoiceSource), actorId: ADMIN,
+        createdAt: `${issuedOn}T09:00:00.000Z`,
+      });
+      await put(TABLE_BOOKKEEPING, invoiceSource);
+    }
+    return { dealId, organizationName: String(organization.item.displayName), financeVersion: 2 };
+  }
+
+  before(async () => {
+    client = await getClient(await startLocal());
+    await createTables(client);
+    process.env.IS_LOCAL = 'true';
+    process.env.SPONSOR_FINANCE_ENABLED = 'true';
+    await Promise.all([
+      put(TABLE_USERS, { PK: `USER#${ADMIN}`, SK: `USER#${ADMIN}`, id: ADMIN, role: 'admin', disabled: false }),
+      put(TABLE_USERS, { PK: `USER#${OPERATOR}`, SK: `USER#${OPERATOR}`, id: OPERATOR, role: 'operator', disabled: false }),
+    ]);
+  });
+
+  after(async () => {
+    await stopLocal();
+    delete process.env.IS_LOCAL;
+    delete process.env.SPONSOR_FINANCE_ENABLED;
+  });
+
+  it('refuses to chase money that is not an overdue issued invoice', async () => {
+    const bare = await bootstrapDeal({ issue: false });
+    const notIssued = await chase(bare.dealId, { dealVersion: 1, expectedVersion: bare.financeVersion }, 'blocked-not-issued');
+    assert.strictEqual(notIssued.status, 422, JSON.stringify(notIssued.body));
+    assert.match(notIssued.body.error, /invoice has not been issued/);
+
+    const notOverdue = await bootstrapDeal({ dueIn: 7 });
+    const response = await chase(notOverdue.dealId, {
+      dealVersion: 1, expectedVersion: notOverdue.financeVersion,
+    }, 'blocked-not-overdue');
+    assert.strictEqual(response.status, 422);
+    assert.match(response.body.error, /not overdue/);
+  });
+
+  it('creates one chase Task in the main pool with deal, invoice, and verification context', async () => {
+    const { dealId, organizationName, financeVersion } = await bootstrapDeal({});
+    const response = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'create-1');
+    assert.strictEqual(response.status, 201, JSON.stringify(response.body));
+    const task = response.body.task;
+    assert.strictEqual(task.status, 'todo');
+    assert.strictEqual(task.source, 'sponsor-finance');
+    assert.deepStrictEqual(task.tags, ['payment-chase']);
+    assert.deepStrictEqual(task.subject, { type: 'sponsor-deal', id: dealId });
+    assert.strictEqual(task.date, today);
+    assert.deepStrictEqual(task.proofRequirement, {
+      type: 'comment', required: true, label: 'Payment verification and outcome',
+    });
+    assert.ok(task.description.includes(organizationName));
+    assert.match(task.description, /CHASE-INV-\d+/);
+    assert.match(task.description, /1000 EUR outstanding/);
+    assert.match(task.description, /record what you verified/);
+
+    // The main task pool lists it like any other Task; the ordinary filters work.
+    const pool = await invoke('GET', '/api/tasks?status=todo');
+    assert.ok(pool.body.tasks.some((item: { id: string }) => item.id === task.id));
+
+    // The deal view's open tasks (the sponsor pipeline surface) show it too.
+    const dealView = await invoke('GET', `/api/sponsor-crm/deals/${dealId}`);
+    assert.ok(dealView.body.openTasks.some((item: { id: string }) => item.id === task.id));
+
+    // The finance projection composes the same open chase work for website and CLI.
+    assert.deepStrictEqual(await chaseView(dealId), {
+      tasks: [{ id: task.id, description: task.description, date: today, status: 'todo', assigneeId: task.assigneeId }],
+    });
+  });
+
+  it('never creates a second open chase Task for the same deal', async () => {
+    const { dealId, financeVersion } = await bootstrapDeal({});
+    const first = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'dup-1');
+    assert.strictEqual(first.status, 201);
+    const second = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion + 1 }, 'dup-2');
+    assert.strictEqual(second.status, 409);
+    assert.strictEqual(second.body.taskId, first.body.task.id);
+
+    const pool = await invoke('GET', '/api/tasks?status=todo');
+    const chases = pool.body.tasks.filter((item: { source?: string; subject?: { id: string } }) =>
+      item.source === 'sponsor-finance' && item.subject?.id === dealId);
+    assert.strictEqual(chases.length, 1);
+  });
+
+  it('replays a retried creation with the same Idempotency-Key to the same Task', async () => {
+    const { dealId, financeVersion } = await bootstrapDeal({});
+    const first = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'replay-1');
+    assert.strictEqual(first.status, 201);
+    const retry = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'replay-1');
+    assert.strictEqual(retry.status, 201);
+    assert.strictEqual(retry.body.task.id, first.body.task.id);
+    const pool = await invoke('GET', '/api/tasks?status=todo');
+    const chases = pool.body.tasks.filter((item: { subject?: { id: string } }) => item.subject?.id === dealId);
+    assert.strictEqual(chases.length, 1);
+  });
+
+  it('gates resolution on the payment-verification proof and allows the full waiting lifecycle', async () => {
+    const { dealId, financeVersion } = await bootstrapDeal({});
+    const created = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'life-1');
+    const taskId = created.body.task.id as string;
+
+    // Without the verification comment the chase cannot be resolved done.
+    const noProof = await invoke('PUT', `/api/tasks/${taskId}`, { status: 'done', expectedVersion: 1 });
+    assert.strictEqual(noProof.status, 400);
+    assert.match(noProof.body.error, /comment/);
+
+    // Waiting on the sponsor carries the next follow-up date into the projection view.
+    const waiting = await invoke('POST', `/api/tasks/${taskId}/actions/mark-waiting`, {
+      expectedVersion: 1, waitingFor: 'Sponsor accounts team', followUpAt: day(7), channel: 'email', note: 'Sent the reminder',
+    });
+    assert.strictEqual(waiting.status, 200, JSON.stringify(waiting.body));
+    assert.strictEqual(waiting.body.status, 'waiting');
+    const chaseState = await chaseView(dealId);
+    assert.strictEqual(chaseState!.tasks[0].status, 'waiting');
+    assert.strictEqual(chaseState!.tasks[0].followUpAt, day(7));
+    const waitingQueue = await invoke('GET', '/api/tasks?status=waiting');
+    assert.ok(waitingQueue.body.tasks.some((item: { id: string }) => item.id === taskId));
+
+    // A recorded follow-up moves the next follow-up date.
+    const followedUp = await invoke('POST', `/api/tasks/${taskId}/actions/follow-up-sent`, {
+      expectedVersion: 2, channel: 'email', note: 'Second reminder', nextFollowUpAt: day(14),
+    });
+    assert.strictEqual(followedUp.status, 200);
+    assert.strictEqual(followedUp.body.followUpAt, day(14));
+
+    // Response received returns the Task to todo; resolution still needs the proof.
+    const responded = await invoke('POST', `/api/tasks/${taskId}/actions/response-received`, { expectedVersion: 3, note: 'Sponsor confirmed the payment run' });
+    assert.strictEqual(responded.status, 200);
+    assert.strictEqual(responded.body.status, 'todo');
+
+    const resolved = await invoke('PUT', `/api/tasks/${taskId}`, {
+      status: 'done', expectedVersion: 4,
+      comment: 'Ledger and linked evidence checked today: no payment received; reminder sent and sponsor acknowledged.',
+    });
+    assert.strictEqual(resolved.status, 200);
+    assert.strictEqual(resolved.body.status, 'done');
+
+    // Resolved chase work leaves the projection, and a new chase may be created.
+    assert.strictEqual(await chaseView(dealId), undefined);
+    const nextChase = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion + 1 }, 'life-2');
+    assert.strictEqual(nextChase.status, 201);
+    assert.notStrictEqual(nextChase.body.task.id, taskId);
+  });
+
+  it('stays consistent with the projection: settled money is not chaseable, partial payments are', async () => {
+    const settled = await bootstrapDeal({ recordedAmount: '1000' });
+    const settledChase = await chase(settled.dealId, {
+      dealVersion: 1, expectedVersion: settled.financeVersion,
+    }, 'blocked-paid');
+    assert.strictEqual(settledChase.status, 422);
+    assert.match(settledChase.body.error, /already settled/);
+
+    const partial = await bootstrapDeal({ recordedAmount: '400' });
+    const partialChase = await chase(partial.dealId, {
+      dealVersion: 1, expectedVersion: partial.financeVersion,
+    }, 'create-partial');
+    assert.strictEqual(partialChase.status, 201, JSON.stringify(partialChase.body));
+    assert.match(partialChase.body.task.description, /600 EUR outstanding/);
+    assert.match(partialChase.body.task.description, /partially paid/);
+    const chaseState = await chaseView(partial.dealId);
+    assert.strictEqual(chaseState!.tasks.length, 1);
+  });
+
+  it('keeps the existing task rules in force for chase Tasks', async () => {
+    const { dealId, financeVersion } = await bootstrapDeal({});
+    const created = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion }, 'rules-1');
+    const taskId = created.body.task.id as string;
+
+    // dependsOn stays Card-only: no parallel prerequisite machinery on subject Tasks.
+    const depends = await invoke('PUT', `/api/tasks/${taskId}`, { dependsOn: [taskId], expectedVersion: 1 });
+    assert.strictEqual(depends.status, 400);
+    assert.match(depends.body.error, /depend/i);
+
+    // Deletion stays an admin action.
+    const operatorDelete = await invoke('DELETE', `/api/tasks/${taskId}`, { expectedVersion: 1 }, { 'x-user-id': OPERATOR });
+    assert.strictEqual(operatorDelete.status, 403);
+    const adminDelete = await invoke('DELETE', `/api/tasks/${taskId}`, { expectedVersion: 1 }, { 'x-user-id': ADMIN });
+    assert.strictEqual(adminDelete.status, 204);
+
+    // A deleted chase stops throttling re-creation: the money still needs chasing.
+    const recreated = await chase(dealId, { dealVersion: 1, expectedVersion: financeVersion + 1 }, 'rules-2');
+    assert.strictEqual(recreated.status, 201);
+  });
+
+  it('rejects a chase when the deal is lost or the actor is not a finance admin', async () => {
+    const { dealId, financeVersion } = await bootstrapDeal({});
+    const operatorAttempt = await chase(dealId, {
+      dealVersion: 1, expectedVersion: financeVersion,
+    }, 'blocked-operator', OPERATOR);
+    assert.strictEqual(operatorAttempt.status, 403);
+
+    await put(TABLE_SPONSOR_CRM, {
+      PK: `DEAL#${dealId}`, SK: `DEAL#${dealId}`,
+      id: dealId, version: 2, status: 'lost', active: true,
+      organizationId: 'organization-unknown', productKind: 'one-off',
+    });
+    const response = await chase(dealId, { dealVersion: 2, expectedVersion: financeVersion }, 'blocked-lost');
+    assert.strictEqual(response.status, 409);
+  });
+
+  it('accepts an explicit follow-up date and rejects a malformed one', async () => {
+    const { dealId, financeVersion } = await bootstrapDeal({});
+    const badDate = await chase(dealId, {
+      dealVersion: 1, expectedVersion: financeVersion, date: 'not-a-date',
+    }, 'date-bad');
+    assert.strictEqual(badDate.status, 400);
+    assert.match(badDate.body.error, /date/);
+
+    const good = await chase(dealId, {
+      dealVersion: 1, expectedVersion: financeVersion, date: day(3),
+    }, 'date-good');
+    assert.strictEqual(good.status, 201);
+    assert.strictEqual(good.body.task.date, day(3));
+  });
+});

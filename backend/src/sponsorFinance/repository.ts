@@ -55,7 +55,7 @@ const clean = <T>(item?: Record<string, unknown>): T | null => {
 const userKey = (id: string) => ({ PK: `USER#${id}`, SK: `USER#${id}` });
 const dealKey = (id: string) => singleton(`DEAL#${id}`);
 const nowIso = () => new Date().toISOString();
-const safeConflict = () => Object.assign(new Error('Finance state changed; reload and retry'), { statusCode: 409 });
+export const safeConflict = () => Object.assign(new Error('Finance state changed; reload and retry'), { statusCode: 409 });
 const DISCOVERY_MAX_ITEMS = 5_000;
 const DISCOVERY_MAX_PAGES = 100;
 const DISCOVERY_DEADLINE_MS = 2_000;
@@ -102,7 +102,7 @@ function identityCondition(kind: 'document' | 'transaction', source: Record<stri
   };
 }
 
-function adminCheck(actorId: string) {
+export function adminCheck(actorId: string) {
   return {
     ConditionCheck: {
       TableName: TABLE_USERS,
@@ -114,7 +114,7 @@ function adminCheck(actorId: string) {
   };
 }
 
-function dealCheck(dealId: string, version: number) {
+export function dealCheck(dealId: string, version: number) {
   return {
     ConditionCheck: {
       TableName: TABLE_SPONSOR_CRM,
@@ -141,7 +141,7 @@ async function existingReceipt(
   return { financeVersion: Number(item.financeVersion), recordId: String(item.recordId), outcome: 'replayed' };
 }
 
-async function replayMutation(
+export async function replayMutation(
   client: DynamoDBDocumentClient,
   input: { actorId: string; operation: string; dealId: string; idempotencyKey: string; request: unknown },
 ): Promise<MutationResult | null> {
@@ -155,7 +155,52 @@ async function replayMutation(
   );
 }
 
-async function executeMutation(
+/** The receipt and history rows every finance mutation commits with its change. */
+export function financeMutationTail(input: {
+  actorId: string;
+  operation: string;
+  dealId: string;
+  idempotencyKey: string;
+  request: unknown;
+  financeVersion: number;
+  recordId: string;
+  eventCode: string;
+  sourceId?: string;
+  linkId?: string;
+}) {
+  const at = nowIso();
+  const requestDigest = digest(input.request);
+  const key = receiptKey(input.actorId, input.operation, input.dealId, input.idempotencyKey);
+  const receipt = {
+    ...singleton(key),
+    id: key.slice('SPONSOR_FINANCE_RECEIPT#'.length),
+    recordType: 'sponsor-finance-receipt',
+    actorId: input.actorId,
+    operation: input.operation,
+    dealId: input.dealId,
+    requestDigest,
+    recordId: input.recordId,
+    financeVersion: input.financeVersion,
+    createdAt: at,
+  };
+  const historyId = `${at}#${randomUUID()}`;
+  const history = {
+    PK: `SPONSOR_FINANCE_HISTORY#${input.dealId}`,
+    SK: historyId,
+    id: historyId,
+    recordType: 'sponsor-finance-history',
+    dealId: input.dealId,
+    actorId: input.actorId,
+    eventCode: input.eventCode,
+    financeVersion: input.financeVersion,
+    ...(input.sourceId ? { sourceId: input.sourceId } : {}),
+    ...(input.linkId ? { linkId: input.linkId } : {}),
+    createdAt: at,
+  };
+  return { key, requestDigest, receipt, history };
+}
+
+export async function executeMutation(
   client: DynamoDBDocumentClient,
   input: {
     actorId: string;
@@ -172,54 +217,27 @@ async function executeMutation(
   },
 ): Promise<MutationResult> {
   if (!IDEMPOTENCY.test(input.idempotencyKey)) throw Object.assign(new Error('Invalid Idempotency-Key'), { statusCode: 400 });
-  const requestDigest = digest(input.request);
-  const key = receiptKey(input.actorId, input.operation, input.dealId, input.idempotencyKey);
-  const prior = await existingReceipt(client, key, requestDigest);
+  const prior = await existingReceipt(client, receiptKey(input.actorId, input.operation, input.dealId, input.idempotencyKey), digest(input.request));
   if (prior) return prior;
-  const at = nowIso();
-  const receipt = {
-    ...singleton(key),
-    id: key.slice('SPONSOR_FINANCE_RECEIPT#'.length),
-    recordType: 'sponsor-finance-receipt',
-    actorId: input.actorId,
-    operation: input.operation,
-    dealId: input.dealId,
-    requestDigest,
-    recordId: input.recordId,
-    financeVersion: input.financeVersion,
-    createdAt: at,
-  };
-  const historyId = `${at}#${randomUUID()}`;
+  const tail = financeMutationTail(input);
   try {
     await client.send(new TransactWriteCommand({
       TransactItems: [
         ...input.transactItems,
-        { Put: { TableName: TABLE_SPONSOR_CRM, Item: receipt, ConditionExpression: 'attribute_not_exists(PK)' } },
+        { Put: { TableName: TABLE_SPONSOR_CRM, Item: tail.receipt, ConditionExpression: 'attribute_not_exists(PK)' } },
         {
           Put: {
             TableName: TABLE_SPONSOR_CRM,
-            Item: {
-              PK: `SPONSOR_FINANCE_HISTORY#${input.dealId}`,
-              SK: historyId,
-              id: historyId,
-              recordType: 'sponsor-finance-history',
-              dealId: input.dealId,
-              actorId: input.actorId,
-              eventCode: input.eventCode,
-              financeVersion: input.financeVersion,
-              ...(input.sourceId ? { sourceId: input.sourceId } : {}),
-              ...(input.linkId ? { linkId: input.linkId } : {}),
-              createdAt: at,
-            },
+            Item: tail.history,
             ConditionExpression: 'attribute_not_exists(PK) AND attribute_not_exists(SK)',
           },
         },
       ],
-      ClientRequestToken: digest({ key, requestDigest }).slice(0, 36),
+      ClientRequestToken: digest({ key: tail.key, requestDigest: tail.requestDigest }).slice(0, 36),
     }));
     return { financeVersion: input.financeVersion, recordId: input.recordId };
   } catch (error) {
-    const receipt = await existingReceipt(client, key, requestDigest).catch(() => null);
+    const receipt = await existingReceipt(client, tail.key, tail.requestDigest).catch(() => null);
     if (receipt) return receipt;
     const candidate = error as Error & { CancellationReasons?: Array<{ Code?: string }> };
     const reasons = candidate.CancellationReasons || [];
@@ -303,6 +321,7 @@ export async function classifyFinance(
     ...(existing?.invoiceLinkId ? { invoiceLinkId: existing.invoiceLinkId } : {}),
     paymentLinkIds: existing?.paymentLinkIds || [],
     recordedPaymentIds: existing?.recordedPaymentIds || [],
+    chaseTaskIds: existing?.chaseTaskIds || [],
     ...(existing?.waitingOn ? { waitingOn: existing.waitingOn } : {}),
     ...(existing?.evidence ? { evidence: existing.evidence } : {}),
     actorId: input.actorId,
