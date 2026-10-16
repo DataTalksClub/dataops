@@ -25,7 +25,7 @@ export const PAYMENT_SOURCE_LABELS = {
 export const EVIDENCE_KIND_LABELS = {
   email: "Mail thread",
   document: "Invoice PDF",
-  ledger: "Ledger row",
+  ledger: "Bookkeeping row",
   url: "Link",
   note: "Note",
 };
@@ -56,7 +56,7 @@ export function followUpSummary(followUp = {}) {
   const since = followUp.since ? ledgerDate(followUp.since) : "";
   switch (followUp.code) {
     case "reconcile":
-      return { tone: "danger", title: "Reconcile the payment evidence", detail: "Linked ledger rows no longer match this deal." };
+      return { tone: "danger", title: "Reconcile the payment evidence", detail: "Linked bookkeeping rows no longer match this deal." };
     case "unblock":
       return {
         tone: "warning",
@@ -149,8 +149,8 @@ export function createFinanceRecordForms({ surface, financeMutation, reopenBooki
       <header>
         <h3>Record payment</h3>
         <p>
-          Cash the ledger has not caught up with yet. Remove it once the ledger
-          row arrives and link that row instead.
+          Money received that bookkeeping has not caught up with yet. When the
+          bookkeeping row arrives, linking it replaces this payment.
         </p>
       </header>
       <div class="dialog-fields">
@@ -220,7 +220,7 @@ export function createFinanceRecordForms({ surface, financeMutation, reopenBooki
     html`<form>
       <header>
         <h3>Add evidence</h3>
-        <p>Where the proof lives: a mail thread, the invoice PDF or a ledger row.</p>
+        <p>Where the proof lives: a mail thread, the invoice PDF or a bookkeeping row.</p>
       </header>
       <div class="dialog-fields">
         <label>Kind <select name="kind">${evidenceOptions}</select></label>

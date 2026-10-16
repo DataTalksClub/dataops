@@ -319,7 +319,7 @@ export function createSponsorFinance(context) {
       finance.issuedOn &&
       coherent &&
       projection.paymentLinkCount < projection.paymentLinkLimit
-        ? html` <button data-finance-payment>Link ledger payment</button> `
+        ? html` <button data-finance-payment>Link bookkeeping payment</button> `
         : "";
     const voidAction =
       !projection.invoice && projection.paymentLinkCount === 0
@@ -368,7 +368,7 @@ export function createSponsorFinance(context) {
       const source =
         payment.source === "recorded"
           ? PAYMENT_SOURCE_LABELS[payment.method] || "Recorded"
-          : "Ledger";
+          : "Bookkeeping";
       const unlink =
         live && payment.source === "recorded"
           ? html`<button
@@ -434,7 +434,7 @@ export function createSponsorFinance(context) {
       </header>
       ${evidence.length
         ? html`<ul class="finance-evidence-list">${evidence.map(evidenceRow).join("")}</ul>`
-        : html`<p class="dk-muted">No mail thread, invoice PDF or ledger row linked yet.</p>`}
+        : html`<p class="dk-muted">No mail thread, invoice PDF or bookkeeping row linked yet.</p>`}
     </div>`;
     return html`<section class="finance-panel" data-finance-panel>
       <span hidden
@@ -681,7 +681,7 @@ export function createSponsorFinance(context) {
           if (
             !(await confirmSponsorAction(
               "Remove recorded payment?",
-              "Use this once the ledger row has arrived and is linked, or when the payment was recorded by mistake.",
+              "Use this when the payment was recorded by mistake. Linking its bookkeeping row replaces it on its own.",
               "Remove payment",
             ))
           )

@@ -755,7 +755,7 @@ export async function linkPayment(
     && item.amount === String(source.amount) && realDate(sourceDate)
     && Math.abs(daysBetween(item.effectiveDate, sourceDate)) <= 14);
   if (lookalike) {
-    throw Object.assign(new Error('A recorded payment looks like this ledger row; link it as its replacement'), { statusCode: 409 });
+    throw Object.assign(new Error('A recorded payment looks like this bookkeeping row; link it as its replacement'), { statusCode: 409 });
   }
   const replacedAmount = replaced ? scaledMoney(replaced.amount) : 0n;
   if (paidTotal(projection) - replacedAmount + scaledMoney(source.amount) > scaledMoney(state.amountDue)) throw safeConflict();

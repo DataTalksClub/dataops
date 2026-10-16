@@ -142,7 +142,7 @@ export function createSponsorMoney(context) {
       target.innerHTML = html`<div class="dk-callout dk-callout--danger" role="alert">
         <div class="dk-callout__body">
           <div class="dk-callout__title">Couldn't load sponsor money</div>
-          <p>${escapeHtml(error.message || "The finance ledger is temporarily unavailable.")}</p>
+          <p>${escapeHtml(error.message || "Sponsor finance is temporarily unavailable.")}</p>
         </div>
         <div class="dk-callout__actions">
           <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-money-retry>Retry</button>

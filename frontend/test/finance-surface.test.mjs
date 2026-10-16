@@ -1137,7 +1137,7 @@ test("sponsor finance panel leads with the derived next step, the blocker, payme
   assert.match(markup, /Sponsor confirmation/);
   assert.match(markup, new RegExp(`data-finance-delete-payment="${"a".repeat(32)}"`));
   assert.match(markup, /href="https:\/\/mail\.example\.invalid\/thread\/1"[^>]*>Invoice thread/);
-  assert.match(markup, /Ledger row/);
+  assert.match(markup, /Bookkeeping row/);
   assert.match(markup, /data-finance-evidence-remove="1"/);
 });
 
