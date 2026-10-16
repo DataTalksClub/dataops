@@ -89,6 +89,21 @@ export function parseSettingInput(setting, raw) {
   return { value: setting.kind === "day-list" ? days : days[0] };
 }
 
+/** Consecutive automations that run in the same place on the same schedule. */
+export function groupByRun(automations) {
+  const groups = [];
+  for (const automation of automations) {
+    const last = groups.at(-1)?.[0];
+    const same = last
+      && last.runsIn === automation.runsIn
+      && last.scheduleLabel === automation.scheduleLabel
+      && last.nextRunAt === automation.nextRunAt;
+    if (same) groups.at(-1).push(automation);
+    else groups.push([automation]);
+  }
+  return groups;
+}
+
 export function createAutomations(context) {
   const { request, workApiUrl } = context;
   const state = { loaded: false, loading: null, error: "", data: null, editing: "", editError: "" };
@@ -137,7 +152,10 @@ export function createAutomations(context) {
     }
     const list = document.createElement("ul");
     list.className = "ops-recurring-list";
-    for (const automation of automations) list.append(renderItem(automation));
+    for (const group of groupByRun(automations)) {
+      if (group.length === 1) list.append(renderItem(group[0], { shared: false }));
+      else list.append(renderGroup(group));
+    }
     section.append(list);
     section.append(text(
       "footer",
@@ -146,7 +164,40 @@ export function createAutomations(context) {
     ));
   }
 
-  function renderItem(automation) {
+  // Parts of one job (same runner, same schedule) share one header, so the
+  // daily job's schedule is said once instead of once per part.
+  function renderGroup(group) {
+    const [first] = group;
+    const item = document.createElement("li");
+    item.className = "automation-group";
+    const header = document.createElement("div");
+    header.className = "automation-group-header";
+    header.append(text("strong", "", first.runsIn));
+    header.append(renderFacts([
+      ["cadence", automationCadence(first)],
+      ["next", first.nextRunAt ? `Next ${berlinMoment(first.nextRunAt)}` : ""],
+    ]));
+    const parts = document.createElement("ul");
+    parts.className = "ops-recurring-list automation-group-parts";
+    for (const automation of group) parts.append(renderItem(automation, { shared: true }));
+    item.append(header, parts);
+    return item;
+  }
+
+  function renderFacts(entries) {
+    const facts = document.createElement("div");
+    facts.className = "recurring-item-facts";
+    for (const [name, value] of entries) {
+      if (!value) continue;
+      const fact = document.createElement("span");
+      fact.className = `recurring-fact recurring-fact-${name}`;
+      fact.append(icon(name), text("span", "", value));
+      facts.append(fact);
+    }
+    return facts;
+  }
+
+  function renderItem(automation, { shared }) {
     const item = document.createElement("li");
     item.className = "ops-recurring-item automation-item";
     item.dataset.automationId = automation.id;
@@ -164,21 +215,14 @@ export function createAutomations(context) {
     body.append(text("strong", "", automation.name));
     body.append(text("p", "automation-description", automation.description));
 
-    const facts = document.createElement("div");
-    facts.className = "recurring-item-facts";
-    const factList = [
-      ["cadence", automationCadence(automation)],
-      ["next", automation.nextRunAt ? `Next ${berlinMoment(automation.nextRunAt)}` : ""],
-      ["last", automationLastRun(automation)],
-      ["where", automation.runsIn],
-    ];
-    for (const [name, value] of factList) {
-      if (!value) continue;
-      const fact = document.createElement("span");
-      fact.className = `recurring-fact recurring-fact-${name}`;
-      fact.append(icon(name), text("span", "", value));
-      facts.append(fact);
-    }
+    const facts = renderFacts(shared
+      ? [["last", automationLastRun(automation)]]
+      : [
+        ["cadence", automationCadence(automation)],
+        ["next", automation.nextRunAt ? `Next ${berlinMoment(automation.nextRunAt)}` : ""],
+        ["last", automationLastRun(automation)],
+        ["where", automation.runsIn],
+      ]);
     if (automation.link) {
       const link = text("a", "recurring-fact automation-link", "Runs on GitHub");
       link.href = automation.link;
@@ -207,7 +251,7 @@ export function createAutomations(context) {
       row.append(text("span", "automation-setting-label", `${setting.label}:`));
       row.append(text("span", "automation-setting-value", settingValueLabel(setting)));
       if (state.data?.canEdit) {
-        const edit = text("button", "task-action-btn", "Edit");
+        const edit = text("button", "automation-setting-edit", "Edit");
         edit.type = "button";
         edit.setAttribute("aria-label", `Edit ${setting.label} of ${automation.name}`);
         edit.addEventListener("click", () => {

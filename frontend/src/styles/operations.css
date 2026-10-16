@@ -131,8 +131,35 @@
 }.automation-link {
   color: var(--dk-text-link);
 }.automation-settings {
-  display: grid;
-  gap: var(--dk-space-1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dk-space-1) var(--dk-space-4);
+}.automation-setting-edit {
+  border: 0;
+  background: transparent;
+  padding: 0 var(--dk-space-1);
+  color: var(--dk-text-link);
+  font-size: var(--dk-text-md);
+  font-weight: 600;
+  cursor: pointer;
+}.automation-setting-edit:hover {
+  color: var(--dk-text-link-hover);
+  text-decoration: underline;
+}.automation-group {
+  border-top: 1px solid var(--dk-border-default);
+}.automation-group:first-child {
+  border-top: 0;
+}.automation-group-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-1) var(--dk-space-4);
+  padding: var(--dk-space-3) var(--dk-space-4) var(--dk-space-1);
+}.automation-group-header strong {
+  color: var(--dk-text-heading);
+  font-size: var(--dk-text-md);
+}.automation-group-parts .ops-recurring-item {
+  padding-left: var(--dk-space-7);
 }.automation-setting,
 .automation-setting-form {
   display: flex;

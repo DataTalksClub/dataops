@@ -653,13 +653,13 @@ describe("automations", () => {
     canEdit: true,
     automations: [
       {
-        id: "recurring-tasks", name: "Recurring tasks", runsIn: "Backend Lambda, daily job",
+        id: "recurring-tasks", name: "Recurring tasks", runsIn: "Daily job (backend Lambda)",
         scheduleLabel: "Daily at 08:00 UTC", nextRunAt: "2026-10-17T08:00:00.000Z",
         lastRun: { at: "2026-10-16T08:00:01.000Z", ok: true, summary: "2 tasks created", source: "recorded" },
         link: null, settings: [],
       },
       {
-        id: "sponsor-booking-alerts", name: "Sponsor booking alerts", runsIn: "Backend Lambda, daily job",
+        id: "sponsor-booking-alerts", name: "Sponsor booking alerts", runsIn: "Daily job (backend Lambda)",
         scheduleLabel: "Daily at 08:00 UTC", nextRunAt: "2026-10-17T08:00:00.000Z", lastRun: null, link: null,
         settings: [
           { key: "sponsorMaterialsReminderDays", label: "Materials reminders", kind: "day-list", value: [14, 10, 3] },
