@@ -268,6 +268,38 @@ describe('API -- Recurring', () => {
       assert.strictEqual(body.recurringConfig.assigneeId, 'user-valeriia');
     });
 
+    it('links a process doc and clears it with null', async () => {
+      const created = await createRecurringConfig(client, {
+        description: 'Process doc test',
+        cronExpression: '0 9 1 * *',
+      });
+
+      const linked = await invoke('PUT', `/api/recurring/${created.id}`, {
+        instructionDocId: 'sop.finance.prepare-bookkeeping-report',
+      });
+      assert.strictEqual(linked.statusCode, 200);
+      assert.strictEqual(
+        JSON.parse(linked.body).recurringConfig.instructionDocId,
+        'sop.finance.prepare-bookkeeping-report',
+      );
+
+      const cleared = await invoke('PUT', `/api/recurring/${created.id}`, { instructionDocId: null });
+      assert.strictEqual(cleared.statusCode, 200);
+      assert.strictEqual(JSON.parse(cleared.body).recurringConfig.instructionDocId, undefined);
+    });
+
+    it('rejects a process doc that is not a doc id', async () => {
+      const created = await createRecurringConfig(client, {
+        description: 'Bad process doc test',
+        cronExpression: '0 9 1 * *',
+      });
+      for (const instructionDocId of ['', '  ', 42, ['sop.a']]) {
+        const res = await invoke('PUT', `/api/recurring/${created.id}`, { instructionDocId });
+        assert.strictEqual(res.statusCode, 400, JSON.stringify(instructionDocId));
+        assert.match(JSON.parse(res.body).error, /instructionDocId/);
+      }
+    });
+
     it('updates description and enabled and returns 200', async () => {
       const created = await createRecurringConfig(client, {
         description: 'Old description',
@@ -521,6 +553,34 @@ describe('API -- Recurring', () => {
       const body = JSON.parse(res.body);
       assert.strictEqual(body.generated.length, 1);
       assert.strictEqual(body.generated[0].assigneeId, 'user-grace');
+    });
+
+    it('generated tasks link the schedule process doc', async () => {
+      await disableAllConfigs(client);
+
+      const created = await invoke('POST', '/api/recurring', {
+        description: 'API gen with process doc',
+        cronExpression: '0 9 * * *',
+        instructionDocId: 'sop.community.slack.export-create-a-dump-of-slack-data',
+      });
+      assert.strictEqual(created.statusCode, 201);
+      assert.strictEqual(
+        JSON.parse(created.body).recurringConfig.instructionDocId,
+        'sop.community.slack.export-create-a-dump-of-slack-data',
+      );
+
+      const res = await invoke('POST', '/api/recurring/generate', {
+        startDate: '2028-05-03',
+        endDate: '2028-05-03',
+      });
+
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.generated.length, 1);
+      assert.strictEqual(
+        body.generated[0].instructionDocId,
+        'sop.community.slack.export-create-a-dump-of-slack-data',
+      );
     });
 
     it('skips disabled configs', async () => {

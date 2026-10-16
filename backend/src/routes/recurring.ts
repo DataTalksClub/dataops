@@ -94,6 +94,13 @@ function validateRecurringData(body: Record<string, unknown>, isUpdate: boolean)
     return 'assigneeId must be a string, or null for the workspace default assignee';
   }
 
+  // The process doc a schedule's Tasks link, as a knowledge-base doc id (the
+  // same reference a template task carries); null clears it on an update.
+  if (body.instructionDocId !== undefined && body.instructionDocId !== null
+    && (typeof body.instructionDocId !== 'string' || body.instructionDocId.trim() === '')) {
+    return 'instructionDocId must be a non-empty doc id, or null to remove the process doc';
+  }
+
   // Validate enabled type if provided
   if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
     return 'enabled must be a boolean';
@@ -196,7 +203,7 @@ async function handleCollection(
       };
     }
 
-    const allowedFields = ['description', 'cronExpression', 'assigneeId', 'enabled', 'requires'];
+    const allowedFields = ['description', 'cronExpression', 'assigneeId', 'enabled', 'requires', 'instructionDocId'];
     const data: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined && body[field] !== null) {
@@ -288,7 +295,7 @@ async function handleSingle(
       };
     }
 
-    const allowedFields = ['description', 'cronExpression', 'assigneeId', 'enabled', 'requires'];
+    const allowedFields = ['description', 'cronExpression', 'assigneeId', 'enabled', 'requires', 'instructionDocId'];
     const updates: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
