@@ -15,6 +15,7 @@ import { handleEmailDocumentIntake } from './routes/emailDocuments';
 import { handleNotificationRoutes } from './routes/notifications';
 import { handleCronRoutes } from './routes/cron';
 import { handleBookkeepingRoutes } from './routes/bookkeeping';
+import { handleReconcileRoutes } from './routes/reconcile';
 import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
 import { handleSponsorLeadIntake, handleSponsorLeadRoutes } from './routes/sponsorLeads';
 import { handleSponsorNewsletterRoutes } from './routes/sponsorNewsletters';
@@ -296,6 +297,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       return await handleBookkeepingRoutes(reqPath, method, event, client, skipAuth || !!portalUserId || portalAuthorized || !!headerValue(event.headers, 'x-user-id'));
     }
 
+    if (reqPath.startsWith('/api/reconcile')) {
+      return await handleReconcileRoutes(reqPath, method, event, client);
+    }
     if (reqPath.startsWith('/api/sponsor-crm')) {
       const sponsorRoute = () => handleSponsorRoute(reqPath, method, event, client);
       // A read-only request scans the CRM table once, not once per kind.

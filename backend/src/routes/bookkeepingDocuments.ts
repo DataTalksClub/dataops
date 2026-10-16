@@ -23,11 +23,16 @@ import {
   publicDocument,
   s3,
   signUrl,
-  verifyPdfObject,
+  verifyDocumentObject,
 } from "./bookkeepingShared";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const OPAQUE = /^[a-zA-Z0-9._:-]{1,160}$/;
+const STATEMENT_CONTENT_TYPES = new Set([
+  "application/pdf",
+  "text/csv",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]);
 const DOCUMENT_TYPES = new Set([
   "invoice",
   "receipt",
@@ -59,8 +64,12 @@ export async function handleBookkeepingDocumentRoutes(
       !OPAQUE.test(String(body.sourceRef || "")) ||
       (statement &&
         (!OPAQUE.test(String(body.accountId || "")) ||
-          !MONTH.test(String(body.statementMonth || "")))) ||
-      (!statement && (body.accountId !== undefined || body.statementMonth !== undefined))
+          !MONTH.test(String(body.statementMonth || "")) ||
+          (body.contentType !== undefined &&
+            !STATEMENT_CONTENT_TYPES.has(String(body.contentType))))) ||
+      (!statement &&
+        ((body.accountId !== undefined || body.statementMonth !== undefined) ||
+          (body.contentType !== undefined && String(body.contentType) !== "application/pdf")))
     )
       return json(400, { error: "Invalid request" });
     const bucket = process.env.BOOKKEEPING_DOCUMENTS_BUCKET;
@@ -79,6 +88,7 @@ export async function handleBookkeepingDocumentRoutes(
       sha256,
       byteSize,
       documentType,
+      contentType: statement && body.contentType ? String(body.contentType) : "application/pdf",
       ...(statement ? { accountId: String(body.accountId), statementMonth: String(body.statementMonth) } : {}),
       idempotencyKey: String(body.idempotencyKey),
       sourceRef: String(body.sourceRef),
@@ -104,6 +114,7 @@ export async function handleBookkeepingDocumentRoutes(
           sha256,
           byteSize,
           documentType,
+          contentType: statement && body.contentType ? String(body.contentType) : "application/pdf",
           ...(statement ? { accountId: String(body.accountId), statementMonth: String(body.statementMonth) } : {}),
           idempotencyKey: String(body.idempotencyKey),
               sourceRef: String(body.sourceRef),
@@ -141,6 +152,7 @@ export async function handleBookkeepingDocumentRoutes(
           sha256,
           byteSize,
           documentType,
+          contentType: statement && body.contentType ? String(body.contentType) : "application/pdf",
           ...(statement
             ? {
                 accountId: String(body.accountId),
@@ -186,10 +198,16 @@ export async function handleBookkeepingDocumentRoutes(
       );
     }
     const checksum = Buffer.from(sha256, "hex").toString("base64");
+    const contentType =
+      prepared.outcome === "retry" || prepared.outcome === "created"
+        ? statement && body.contentType
+          ? String(body.contentType)
+          : "application/pdf"
+        : String(prepared.document!.contentType || "application/pdf");
     const command = new PutObjectCommand({
       Bucket: bucket,
       Key: String(prepared.document!.s3Key),
-      ContentType: "application/pdf",
+      ContentType: contentType,
       ContentLength: byteSize,
       ChecksumSHA256: checksum,
       IfNoneMatch: "*",
@@ -208,7 +226,7 @@ export async function handleBookkeepingDocumentRoutes(
       uploadUrl,
       expiresIn: uploadSeconds,
       uploadHeaders: {
-        "content-type": "application/pdf",
+        "content-type": contentType,
         "content-length": String(byteSize),
         "if-none-match": "*",
         "x-amz-checksum-sha256": checksum,
@@ -277,9 +295,9 @@ export async function handleBookkeepingDocumentRoutes(
       )
         return json(409, { error: "Completion refused" });
       const bucket = process.env.BOOKKEEPING_DOCUMENTS_BUCKET || "";
-      let verified: Awaited<ReturnType<typeof verifyPdfObject>>;
+      let verified: Awaited<ReturnType<typeof verifyDocumentObject>>;
       try {
-        verified = await verifyPdfObject(bucket, await getRawDocument(client, complete[1]) || doc);
+        verified = await verifyDocumentObject(bucket, await getRawDocument(client, complete[1]) || doc);
       } catch (error) {
         if ((error as Error).message === "upload-missing")
           return json(409, { error: "Upload unavailable" });
@@ -318,7 +336,7 @@ export async function handleBookkeepingDocumentRoutes(
       if (
         verified.size !== Number(doc.declaredByteSize) ||
         verified.sha256 !== doc.declaredSha256 ||
-        !verified.pdf ||
+        !verified.contentOk ||
         !verified.versionId
       ) {
         try {
@@ -418,7 +436,9 @@ export async function handleBookkeepingDocumentRoutes(
         Bucket: process.env.BOOKKEEPING_DOCUMENTS_BUCKET,
         Key: String(doc.s3Key),
         ResponseContentDisposition: `${inline ? "inline" : "attachment"}; filename="${filename}"`,
-        ...(inline ? { ResponseContentType: "application/pdf" } : {}),
+        ...(inline && String(doc.contentType || "application/pdf") === "application/pdf"
+          ? { ResponseContentType: "application/pdf" }
+          : {}),
       }),
       { expiresIn: 300 },
     );

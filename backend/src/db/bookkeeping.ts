@@ -353,6 +353,7 @@ export type PrepareDocumentInput = {
   sha256: string;
   byteSize: number;
   documentType: string;
+  contentType?: string;
   accountId?: string;
   statementMonth?: string;
   idempotencyKey: string;
@@ -411,7 +412,7 @@ export async function prepareDocument(
     SK: documentKey(id),
     id,
     status: "pending",
-    contentType: "application/pdf",
+    contentType: input.contentType || "application/pdf",
     declaredSha256: input.sha256,
     declaredByteSize: input.byteSize,
     byteSize: input.byteSize,
