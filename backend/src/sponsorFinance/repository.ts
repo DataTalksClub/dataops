@@ -309,7 +309,7 @@ export async function classifyFinance(
     existing.amountDue !== (values as any).amountDue || existing.currency !== (values as any).currency
     || existing.taxMode !== (values as any).taxMode || existing.taxAmount !== (values as any).taxAmount
   )) throw safeConflict();
-  if (existing && input.expectedVersion !== existing.version) throw safeConflict();
+  if (existing ? input.expectedVersion !== existing.version : Number(input.expectedVersion || 0) !== 0) throw safeConflict();
   const now = nowIso();
   const nextVersion = (existing?.version || 0) + 1;
   const state: FinanceState = {
@@ -352,6 +352,43 @@ export async function classifyFinance(
           } : {}),
         },
       },
+    ],
+  });
+}
+
+/** Correct a proposal imported as debt. Issued/requested invoices and receipts are never cleared. */
+export async function clearProposalClassification(
+  client: DynamoDBDocumentClient,
+  input: { actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string; reason: unknown; evidence: unknown },
+) {
+  const reason = input.reason;
+  const evidence = validateEvidence(input.evidence);
+  if (!boundedText(reason, 2000) || !evidence.length) throw Object.assign(new Error('A correction reason and source evidence are required'), { statusCode: 400 });
+  const request = { reason, evidence };
+  const operation = 'clear-proposal-classification';
+  const replay = await replayMutation(client, { ...input, operation, request });
+  if (replay) return replay;
+  const state = await getFinanceState(client, input.dealId);
+  if (!state || state.version !== input.expectedVersion || state.issuedOn || state.sentOn || state.invoiceNumber
+    || state.invoiceRequestedAt || state.invoiceLinkId || state.paymentLinkIds.length || state.recordedPaymentIds.length
+    || state.settlementAdjustment || state.voidedAt) throw safeConflict();
+  return executeMutation(client, {
+    ...input, operation, request, financeVersion: state.version + 1, recordId: state.id,
+    eventCode: 'proposal-classification-cleared', details: { reason, evidence, previousClassification: state },
+    transactItems: [
+      adminCheck(input.actorId),
+      { Update: {
+        TableName: TABLE_SPONSOR_CRM, Key: dealKey(input.dealId),
+        UpdateExpression: 'SET #version = #version + :one, updatedAt = :now',
+        ConditionExpression: '#version = :version AND #status = :open AND active = :true AND attribute_not_exists(archivedAt)',
+        ExpressionAttributeNames: { '#version': 'version', '#status': 'status' },
+        ExpressionAttributeValues: { ':version': input.dealVersion, ':one': 1, ':now': nowIso(), ':open': 'open', ':true': true },
+      } },
+      { Delete: {
+        TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
+        ConditionExpression: '#version = :version',
+        ExpressionAttributeNames: { '#version': 'version' }, ExpressionAttributeValues: { ':version': state.version },
+      } },
     ],
   });
 }

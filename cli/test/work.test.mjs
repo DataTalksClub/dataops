@@ -52,6 +52,32 @@ describe("contract", () => {
 });
 
 describe("tasks", () => {
+  test("sales reminders bind to the deal so the pipeline can display the next action", async () => {
+    const calls = fakePortal({ "POST /api/tasks": ({ body }) => task({ id: "sales-task", ...body }) });
+    assert.equal(await run(["tasks", "create", "--description", "Review proposal reply", "--date", "2026-10-20", "--assignee", "owner-1", "--subject-type", "sponsor-deal", "--subject-id", "proposal-1", "--json"], captureIo()), 0);
+    assert.deepEqual(calls[0].body.subject, { type: "sponsor-deal", id: "proposal-1" });
+    assert.equal(calls[0].body.assigneeId, "owner-1");
+    assert.equal(calls[0].body.date, "2026-10-20");
+  });
+
+  test("existing work can acquire or clear a subject with optimistic versions", async () => {
+    const calls = fakePortal({
+      "GET /api/tasks/t-1": task({ id: "t-1", version: 7 }),
+      "PUT /api/tasks/t-1": ({ body }) => task({ id: "t-1", ...body }),
+    });
+    assert.equal(await run(["tasks", "update", "t-1", "--subject-type", "sponsor-company", "--subject-id", "company-1"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { subject: { type: "sponsor-company", id: "company-1" }, expectedVersion: 7 });
+    assert.equal(await run(["tasks", "update", "t-1", "--clear-subject"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { subject: null, expectedVersion: 7 });
+  });
+
+  test("incomplete subjects and Card/subject conflicts fail before a write", async () => {
+    const calls = fakePortal({});
+    for (const flags of [["--subject-type", "sponsor-deal"], ["--subject-id", "deal-1"], ["--subject-type", "wrong", "--subject-id", "deal-1"], ["--subject-type", "sponsor-deal", "--subject-id", "deal-1", "--card", "card-1"], ["--clear-subject", "--subject-id", "deal-1"], ["--clear-subject"]]) {
+      assert.equal(await run(["tasks", "create", "--description", "Review", ...flags], captureIo()), 2);
+    }
+    assert.equal(calls.length, 0);
+  });
   test("queue segments follow the web order: overdue, follow-up due, today, waiting", () => {
     const day = "2026-10-14";
     const ordered = orderQueue(

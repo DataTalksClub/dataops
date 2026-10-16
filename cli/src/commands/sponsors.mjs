@@ -19,6 +19,9 @@ Usage
   dataops sponsors messages <organization-id>          Communications with an organization
   dataops sponsors history <deal-id>                   A deal's change history
   dataops sponsors finance <deal-id> [history|candidates/invoices|candidates/payments]
+  dataops sponsors clear-proposal-classification <deal-id> --data @correction.json [--apply]
+      Correct an unaccepted open quote imported as debt. Required: reason,evidence.
+      Refuses any invoice request, issued invoice, receipt/report or settlement; retains an audit snapshot.
   dataops sponsors follow-up <deal-id> [--date YYYY-MM-DD]  Queue the next finance action (classification, invoice, verification or payment)
       [--task ID | --review-existing]  Link an existing deal Task, or confirm review before adding separate work
   dataops sponsors attach-invoice <deal-id> --file original.pdf [--apply]
@@ -301,6 +304,22 @@ export async function approveSettlement(args, io) {
   return result;
 }
 
+export async function clearProposalClassification(args, io) {
+  const id = positional(args, 0, "dataops sponsors clear-proposal-classification <deal-id> --data @correction.json [--apply]");
+  const api = apiFor(args), data = jsonData(args);
+  if (!data.reason || !Array.isArray(data.evidence) || !data.evidence.length) throw new UsageError("reason and nonempty evidence are required.");
+  const [deal, projection] = await Promise.all([
+    api.get(`/api/sponsor-crm/deals/${enc(id)}`), api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
+  ]);
+  if (deal.status !== "open" || !projection.finance) throw new UsageError("Select an open proposal with an incorrect finance classification.");
+  const body = { ...data, dealVersion: deal.version, expectedVersion: projection.finance.version };
+  let result = { mode: args.apply ? "apply" : "dry-run", dealId: id, correction: body };
+  if (args.apply) result = { ...result, ...await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/clear-proposal-classification`, body,
+    { headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() } }) };
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
 export async function reverseSettlement(args, io) {
   const id = positional(args, 0, "dataops sponsors reverse-settlement <deal-id> --reason TEXT [--apply]");
   if (!args.reason) throw new UsageError("--reason must explain the approved adjustment reversal.");
@@ -367,4 +386,4 @@ export async function correctPayment(args, io) {
   return result;
 }
 
-export const commands = { list, show, create, update, messages, history, finance, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement };
+export const commands = { list, show, create, update, messages, history, finance, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification };

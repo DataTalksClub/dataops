@@ -1,7 +1,7 @@
 import { html } from "./shared.js";
 
 export const SPONSOR_PIPELINE_STAGES = Object.freeze([
-  { id: "open", label: "Open" },
+  { id: "open", label: "Opportunities" },
   { id: "agreed", label: "Agreed" },
   { id: "invoiced", label: "Invoiced" },
   { id: "delivered", label: "Delivered" },

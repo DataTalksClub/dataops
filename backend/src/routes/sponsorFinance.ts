@@ -3,6 +3,7 @@ import type { LambdaEvent, LambdaResponse } from '../types';
 import { createPaymentFollowUpTask, withPaymentFollowUpTasks } from '../sponsorFinance/paymentFollowUp';
 import {
   classifyFinance,
+  clearProposalClassification,
   financeActor,
   financeEnabled,
   deleteRecordedPayment,
@@ -104,6 +105,11 @@ export async function handleSponsorFinanceRoutes(
     };
     if (method === 'PUT' && !action) {
       const result = await classifyFinance(client, { ...common, body });
+      return json(200, { result, projection: await project() });
+    }
+    if (method === 'POST' && action === 'clear-proposal-classification') {
+      const result = await clearProposalClassification(client, { ...common,
+        expectedVersion: Number(body.expectedVersion), reason: body.reason, evidence: body.evidence });
       return json(200, { result, projection: await project() });
     }
     if (method === 'POST' && action === 'request') {

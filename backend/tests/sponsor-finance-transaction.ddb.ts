@@ -14,6 +14,7 @@ import { createTables, TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_USERS } from 
 import { getClient } from '../src/db/client';
 import {
   classifyFinance,
+  clearProposalClassification,
   deleteRecordedPayment,
   issueInvoice,
   linkInvoice,
@@ -125,6 +126,44 @@ describe('sponsor finance production DynamoDB transactions', () => {
 
   after(() => {
     delete process.env.SPONSOR_FINANCE_ENABLED;
+  });
+
+  it('removes only an unaccepted quote from receivables and preserves correction evidence and Tasks', async () => {
+    const dealId = 'proposal-correction';
+    await put(client, TABLE_SPONSOR_CRM, { ...key('DEAL', dealId), id: dealId, version: 1, status: 'open', active: true, organizationId: 'proposal-org' });
+    await classifyFinance(client, { actorId: adminId, dealId, dealVersion: 1, idempotencyKey: idem('proposal-classify'), body: { invoiceRequirement: 'required', amountDue: '2500', currency: 'EUR', taxMode: 'unknown' } });
+    const input = { actorId: adminId, dealId, dealVersion: 1, expectedVersion: 1, idempotencyKey: idem('proposal-clear'), reason: 'Quoted only; scope never accepted', evidence: [{ kind: 'email', ref: 'synthetic-thread' }] };
+    await assert.rejects(clearProposalClassification(client, { ...input, actorId: 'finance-operator-1' }), /changed/);
+    await assert.rejects(clearProposalClassification(client, { ...input, expectedVersion: 9 }), /changed/);
+    await clearProposalClassification(client, input);
+    assert.equal((await projectFinance(client, dealId, 'operator', { today: '2026-10-16', dealStatus: 'open' })).classified, false);
+    const ledger = await financeLedger(client, '2026-10-16');
+    const row = ledger.rows.find((item) => item.dealId === dealId)!;
+    assert.equal(row.outstanding, undefined);
+    assert.equal(row.followUp.code, 'none');
+    assert.ok(!ledger.forecast.some((bucket) => bucket.dealIds.includes(dealId)));
+    const history = (await listFinanceHistory(client, dealId)).find((item) => item.eventCode === 'proposal-classification-cleared')!;
+    assert.deepEqual((history.details as any).evidence, input.evidence);
+    assert.equal((history.details as any).previousClassification.amountDue, '2500');
+    assert.equal((await clearProposalClassification(client, { ...input, dealVersion: 2, expectedVersion: 0 })).outcome, 'replayed', 'lost-response retry remains safe after deletion');
+    const deal = (await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: key('DEAL', dealId) }))).Item!;
+    assert.equal(deal.version, 2, 'clearing advances deal version to prevent old finance writes on a recreated classification');
+    await assert.rejects(classifyFinance(client, { actorId: adminId, dealId, dealVersion: 2, expectedVersion: 1, idempotencyKey: idem('proposal-stale'), body: { invoiceRequirement: 'required', amountDue: '2500', currency: 'EUR', taxMode: 'unknown' } }), /changed/);
+  });
+
+  it('never clears an accepted commitment or any requested invoice, original, receipt, report or adjustment', async () => {
+    const cases = [
+      { status: 'agreed' }, { invoiceRequestedAt: '2026-10-01' }, { issuedOn: '2026-10-01' },
+      { invoiceLinkId: 'invoice-link' }, { invoiceNumber: '202610/1' }, { sentOn: '2026-10-01' },
+      { paymentLinkIds: ['payment-link'] }, { recordedPaymentIds: ['reported'] }, { settlementAdjustment: { amount: '1' } }, { voidedAt: '2026-10-01' },
+    ];
+    for (const [index, extra] of cases.entries()) {
+      const dealId = `proposal-protected-${index}`;
+      await put(client, TABLE_SPONSOR_CRM, { ...key('DEAL', dealId), id: dealId, version: 1, status: extra.status || 'open', active: true });
+      await put(client, TABLE_SPONSOR_CRM, { ...key('SPONSOR_FINANCE', dealId), id: dealId, recordType: 'sponsor-finance', dealId, version: 1, invoiceRequirement: 'required', amountDue: '100', currency: 'EUR', paymentLinkIds: [], recordedPaymentIds: [], paymentFollowUpTaskIds: [], ...extra });
+      await assert.rejects(clearProposalClassification(client, { actorId: adminId, dealId, dealVersion: 1, expectedVersion: 1, idempotencyKey: idem(`protected-${index}`), reason: 'not allowed', evidence: [{ kind: 'note', ref: 'synthetic review' }] }), /changed/);
+      assert.ok((await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: key('SPONSOR_FINANCE', dealId) }))).Item);
+    }
   });
 
   it('runs the exact lifecycle, protects claimed sources, and returns strict DTOs', async () => {

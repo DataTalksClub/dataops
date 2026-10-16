@@ -4,7 +4,29 @@ import { run } from "../src/cli.mjs";
 import { mkdtemp, writeFile, unlink, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { attachInvoice, attachPaymentEvidence, receivePayment, correctPayment, approveSettlement, reverseSettlement, list } from "../src/commands/sponsors.mjs";
+import { attachInvoice, attachPaymentEvidence, receivePayment, correctPayment, approveSettlement, reverseSettlement, clearProposalClassification, list } from "../src/commands/sponsors.mjs";
+
+test("proposal correction previews first and applies with fresh versions and a stable retry key", async () => {
+  const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, ...options });
+    return new Response(JSON.stringify(url.endsWith("/finance") ? { finance: { version: 8 } } : { status: "open", version: 3 }));
+  };
+  const data = { reason: "Unaccepted quote", evidence: [{ kind: "email", ref: "synthetic-thread" }] };
+  const args = { _: ["proposal"], data: JSON.stringify(data), json: true, idempotencyKey: "reviewed-proposal-0123456789" };
+  try {
+    const preview = await clearProposalClassification(args, { print() {} });
+    assert.equal(preview.mode, "dry-run");
+    assert.equal(calls.filter((call) => call.method === "POST").length, 0);
+    await clearProposalClassification({ ...args, apply: true }, { print() {} });
+    const mutation = calls.find((call) => call.method === "POST");
+    assert.ok(mutation.url.endsWith("/finance/clear-proposal-classification"));
+    assert.deepEqual(JSON.parse(mutation.body), { ...data, dealVersion: 3, expectedVersion: 8 });
+    assert.equal(new Headers(mutation.headers).get("Idempotency-Key"), args.idempotencyKey);
+  } finally { globalThis.fetch = originalFetch; process.env.DATAOPS_TOKEN = oldToken; }
+});
 
 test("invoice evidence repair selects an already allocated receipt and previews the exact original", async () => {
   const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;

@@ -14,9 +14,11 @@ Usage
   dataops tasks list [view] [filters]
   dataops tasks show <task-id>
   dataops tasks create --description D [--date YYYY-MM-DD] [--card ID] [--assignee ID|me]
+      [--subject-type sponsor-deal|sponsor-company --subject-id ID]
       [--comment C] [--link URL] [--tags a,b] [--required-link-name NAME] [--instruction-doc DOC-ID]
       [--requires youtube,luma] [--browser required|headless] [--depends-on ID,ID]
   dataops tasks update <task-id> [--description D] [--date D] [--comment C] [--link URL]
+      [--subject-type sponsor-deal|sponsor-company --subject-id ID | --clear-subject]
       [--external-status S] [--tags a,b] [--card ID|none] [--instruction-doc DOC-ID]
       [--requires a,b|none] [--browser required|headless|none] [--depends-on ID,ID|none]
   dataops tasks done <task-id> [--link URL] [--comment C] [--external-status S] [--file PATH]
@@ -293,6 +295,17 @@ async function resolveAssignee(api, value) {
 
 function writableFields(args) {
   const body = {};
+  if (args.clearSubject) {
+    if (args.subjectType !== undefined || args.subjectId !== undefined) throw new UsageError("Use --clear-subject or a subject, not both.");
+    body.subject = null;
+  } else if (args.subjectType !== undefined || args.subjectId !== undefined) {
+    const type = required(args, "subjectType", "subject-type");
+    const id = required(args, "subjectId", "subject-id");
+    if (!["sponsor-deal", "sponsor-company"].includes(type)) throw new UsageError("--subject-type must be sponsor-deal or sponsor-company.");
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id)) throw new UsageError("--subject-id must be a record id.");
+    if (args.card && args.card !== "none") throw new UsageError("A Task has a Card or a subject, not both.");
+    body.subject = { type, id };
+  }
   const description = optionalString(args, "description");
   if (description !== undefined) body.description = description;
   const date = isoDate(args.date, "date");
@@ -328,6 +341,7 @@ export async function create(args, io) {
   body.description = required(args, "description", "description");
   body.date = body.date || today();
   if (body.cardId === null) delete body.cardId;
+  if (body.subject === null) throw new UsageError("--clear-subject applies to tasks update only.");
   if (args.assignee !== undefined) body.assigneeId = await resolveAssignee(api, String(args.assignee));
   const task = await api.post("/api/tasks", body);
   if (args.json) return task;
