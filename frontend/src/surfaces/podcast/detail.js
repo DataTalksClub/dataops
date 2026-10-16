@@ -9,7 +9,7 @@ import {
 import { buildPublication, samePublication } from "./publication-model.js";
 import { publicationFormFields, publicationSection } from "./publication-section.js";
 import {
-  cardStageLabel, EPISODE_STATUSES, episodeCode, episodeTitle, guestNames, LINK_KINDS,
+  cardStageLabel, EPISODE_STATUSES, episodeCode, episodeTitle, guestNames, isUpcoming, LINK_KINDS,
   parseGuestNames, statusLabel,
 } from "./model.js";
 
@@ -182,31 +182,6 @@ function factsSection(documentRef, episode) {
   return section;
 }
 
-function linksSection(documentRef, episode) {
-  const section = element(documentRef, "section", "podcast-section");
-  section.append(element(documentRef, "h3", "podcast-section__title", "Links"));
-  const links = LINK_KINDS.filter((kind) => episode.links?.[kind.id]);
-  if (!links.length) {
-    section.append(element(documentRef, "p", "dk-hint", "No links yet. Add them with Edit once the episode is out."));
-    return section;
-  }
-  const list = element(documentRef, "ul", "podcast-links");
-  for (const kind of links) {
-    const item = element(documentRef, "li");
-    const anchor = element(documentRef, "a", "podcast-link");
-    anchor.href = episode.links[kind.id];
-    anchor.target = "_blank";
-    anchor.rel = "noopener noreferrer";
-    anchor.title = episode.links[kind.id];
-    anchor.dataset.link = kind.id;
-    anchor.append(icon(kind.icon, { size: 16 }), element(documentRef, "span", "", kind.label));
-    item.append(anchor);
-    list.append(item);
-  }
-  section.append(list);
-  return section;
-}
-
 function notesSection(documentRef, episode) {
   const section = element(documentRef, "section", "podcast-section");
   section.append(element(documentRef, "h3", "podcast-section__title", "Notes"));
@@ -372,10 +347,9 @@ export function renderEpisodeDetail(pane, { documentRef, episode, editing, notic
     scroll.append(
       statusSection(documentRef, episode, actions, messages),
       messages.node,
-      cardSection(documentRef, episode, actions, messages),
+      ...(episode.card || episode.cardId || isUpcoming(episode) ? [cardSection(documentRef, episode, actions, messages)] : []),
       publicationSection(documentRef, episode),
       factsSection(documentRef, episode),
-      linksSection(documentRef, episode),
       notesSection(documentRef, episode),
     );
   }

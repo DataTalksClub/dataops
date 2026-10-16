@@ -106,6 +106,12 @@ test('podcast list opens an episode in place, deep-links it, and creates its car
   const detail = page.getByRole('region', { name: 'Selected episode' });
   await expect(detail.locator('.dk-split__title')).toHaveText('From notebook to service');
   await expect(detail.locator('.podcast-link')).toHaveText(['YouTube', 'Spotify', 'Apple Podcasts', 'Website']);
+  // Published: links and what is missing, no plan rows, no evidence nags, no Create card.
+  await expect(detail.locator('.podcast-links-missing')).toHaveText('Missing: Anchor');
+  await expect(detail.getByText('Intended release')).toHaveCount(0);
+  await expect(detail.getByText('Spotify schedule')).toHaveCount(0);
+  await expect(detail.getByText('Website release needs evidence')).toHaveCount(0);
+  await expect(detail.getByRole('button', { name: 'Create card' })).toHaveCount(0);
   await shoot(page, 'detail-links');
 
   await page.locator(`[data-episode-id="${episodes.next.id}"]`).click();

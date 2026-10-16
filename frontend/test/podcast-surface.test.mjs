@@ -295,6 +295,44 @@ describe("Podcast surface", () => {
     assert.ok(findByText(documentList, "Episode saved."));
   });
 
+  test("a published episode shows its links as chips, names only the missing ones, and asks for no Card", async () => {
+    const out = episode("out", {
+      status: "published",
+      releaseDate: "2026-09-01",
+      websiteSlug: "synthetic-out",
+      links: {
+        youtube: "https://youtube.example/watch?v=out",
+        spotify: "https://open.spotify.com/episode/out",
+        apple: "https://podcasts.apple.example/out",
+        website: "https://site.example/out",
+      },
+      readiness: { spotify: "not-recorded", transcript: "not-recorded", website: "not-recorded", scheduledLocalDate: null },
+    });
+    const { surface, documentList } = harness({ episodes: [out], routeId: "out" });
+    surface.renderPodcastSurface();
+    await nextTicks(4);
+    const publication = documentList.querySelector(".podcast-publication");
+    assert.deepEqual(publication.querySelectorAll(".podcast-link").map((link) => link.dataset.link), ["youtube", "spotify", "apple", "website"]);
+    assert.ok(findByText(publication, "Missing: Anchor"));
+    for (const gone of ["Intended release", "Spotify schedule", "Not recorded", "Website release needs evidence"]) {
+      assert.equal(findByText(publication, gone), undefined, `${gone} is not shown on a published episode`);
+    }
+    assert.equal(documentList.querySelector('[data-podcast-action="create-card"]'), null);
+    assert.equal(documentList.querySelector(".podcast-card-section"), null);
+  });
+
+  test("an episode on its way out keeps its plan and Spotify rows and says nothing is missing", async () => {
+    const { surface, documentList } = harness({ episodes: [episode("soon", { releaseDate: "2026-12-01" })], routeId: "soon" });
+    surface.renderPodcastSurface();
+    await nextTicks(4);
+    const publication = documentList.querySelector(".podcast-publication");
+    assert.ok(findByText(publication, "Intended release", "dt"));
+    assert.ok(findByText(publication, "Spotify schedule", "dt"));
+    assert.equal(publication.querySelector(".podcast-links-missing"), null);
+    assert.ok(findByText(publication, "No links yet. Add them with Edit once the episode is out."));
+    assert.ok(documentList.querySelector('[data-podcast-action="create-card"]'));
+  });
+
   test("Create card posts the version and shows the linked card; undated episodes wait", async () => {
     const { surface, documentList, calls } = harness({
       episodes: [episode("dated", { version: 5 }), episode("undated", { recordingDate: null })],

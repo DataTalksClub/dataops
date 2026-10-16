@@ -85,7 +85,7 @@ body[data-workspace-view="podcast"] .document-list {
   text-decoration: none;
 }
 .podcast-card-chip { flex-wrap: wrap; justify-self: start; padding: var(--dk-space-2) var(--dk-space-3); }
-.podcast-link { padding: var(--dk-space-1) var(--dk-space-3); font-size: var(--dk-text-md); }
+.podcast-link { gap: var(--dk-space-1); padding: var(--dk-space-1) var(--dk-space-2); font-size: var(--dk-text-sm); }
 .podcast-card-chip:hover,
 .podcast-link:hover { background: var(--dk-bg-hover); }
 .podcast-card-chip:focus-visible,
@@ -95,6 +95,8 @@ body[data-workspace-view="podcast"] .document-list {
 .podcast-card-chip__title { min-width: 0; font-weight: var(--dk-weight-medium); overflow-wrap: anywhere; }
 .podcast-card-chip__meta { display: inline-flex; gap: var(--dk-space-1); color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
 .podcast-links { display: flex; flex-wrap: wrap; gap: var(--dk-space-2); margin: 0; padding: 0; list-style: none; }
+.podcast-links-missing,
+.podcast-proofs { margin: 0; }
 
 /* Forms (edit in place and the New episode dialog) */
 .podcast-field { display: grid; min-width: 0; }
@@ -227,6 +229,7 @@ a.podcast-cell:focus-visible { outline: 3px solid var(--dk-focus-ring); outline-
 
 @media (max-width: 820px), (pointer: coarse) {
   a.podcast-cell, .podcast-cells .podcast-cell--gap { min-width: 2.75rem; height: 2.75rem; }
+  .podcast-link { min-height: var(--dk-size-touch); }
 }
 
 @media (max-width: 820px) {

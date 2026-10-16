@@ -1,7 +1,9 @@
-// The publication block of an episode: what is scheduled, what is verified
-// public, and whether the website is out. Read view for the detail pane
+// The publication block of an episode: its links, and while it is on its way
+// out what is scheduled, what is verified public, and whether the website is
+// out. Read view for the detail pane
 // and the controls the edit form adds. Readiness comes from the API.
-import { element, field, formatDate, input } from "./dom.js";
+import { element, field, formatDate, icon, input } from "./dom.js";
+import { LINK_KINDS } from "./model.js";
 import {
   formatPublicationTime, proofLinks, publicationFormValues, readinessOf,
   SPOTIFY_LABELS, TRANSCRIPT_LABELS, WEBSITE_LABELS,
@@ -41,10 +43,53 @@ export function proofAnchor(documentRef, proof) {
   return anchor;
 }
 
+/** The episode's links as compact chips, the ones the hover summary shows. */
+function linkChips(documentRef, episode) {
+  const list = element(documentRef, "ul", "podcast-links");
+  for (const kind of LINK_KINDS.filter((entry) => episode.links?.[entry.id])) {
+    const item = element(documentRef, "li");
+    const anchor = element(documentRef, "a", "podcast-link");
+    anchor.href = episode.links[kind.id];
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.title = episode.links[kind.id];
+    anchor.dataset.link = kind.id;
+    anchor.append(icon(kind.icon, { size: 14 }), element(documentRef, "span", "", kind.label));
+    item.append(anchor);
+    list.append(item);
+  }
+  return list;
+}
+
+/**
+ * Where the episode is out: its links, and for a published episode the
+ * links it lacks. An episode on its way out also shows its intended release,
+ * the Spotify schedule and what has been verified so far.
+ */
 export function publicationSection(documentRef, episode) {
   const section = element(documentRef, "section", "podcast-section podcast-publication");
   section.setAttribute("aria-label", "Publication");
   section.append(element(documentRef, "h3", "podcast-section__title", "Publication"));
+  const published = episode.status === "published";
+  const present = LINK_KINDS.filter((kind) => episode.links?.[kind.id]);
+  if (present.length) section.append(linkChips(documentRef, episode));
+  const missing = LINK_KINDS.filter((kind) => !episode.links?.[kind.id]);
+  if (published && missing.length) {
+    section.append(element(documentRef, "p", "dk-hint podcast-links-missing", `Missing: ${missing.map((kind) => kind.label).join(", ")}`));
+  } else if (!present.length) {
+    section.append(element(documentRef, "p", "dk-hint", "No links yet. Add them with Edit once the episode is out."));
+  }
+  if (published) {
+    // Proofs a chip already links (the Spotify episode, the page) are not repeated.
+    const linked = new Set(Object.values(episode.links || {}));
+    const proofs = proofLinks(episode).filter((entry) => !linked.has(entry.url)).map((entry) => proofAnchor(documentRef, entry));
+    if (proofs.length) {
+      const evidence = element(documentRef, "p", "podcast-publication__value podcast-proofs");
+      evidence.append(...proofs);
+      section.append(evidence);
+    }
+    return section;
+  }
   const readiness = readinessOf(episode);
   const publication = episode.publication || {};
   const list = element(documentRef, "dl", "dk-dl podcast-facts");
