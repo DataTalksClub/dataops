@@ -23,7 +23,7 @@ test.describe('Sponsors Money', () => {
     await stopIsolatedCapabilityServer(server);
   });
 
-  test('follows up on the overdue invoice first, records a payment from its deal, and forecasts the rest', async ({ browser }) => {
+  test('follows up on the overdue invoice first, records verified receipts and preserves reported-payment reconciliation, and forecasts the rest', async ({ browser }) => {
     test.setTimeout(120_000);
     const context = await browser.newContext({ baseURL: `http://127.0.0.1:${server.port}`, timezoneId: BERLIN_TIME_ZONE });
     assertOwnedServerResponse(server, await context.request.get('/__e2e__/browser-session'), 'money session');
@@ -42,17 +42,20 @@ test.describe('Sponsors Money', () => {
     // that follows the backend's projection contract.
     const finance = {
       version: 3, invoiceRequirement: 'required', amountDue: '2500.00', currency: 'EUR', taxMode: 'included',
-      issuedOn: '2026-01-05', dueOn: '2026-02-04',
+      issuedOn: '2026-01-05', sentOn: '2026-01-06', dueOn: '2026-02-04',
     };
     let payments = [];
     const requests = [];
+    const invoice = { id: 'reviewed-money-original', label: 'Original invoice', uploadedAt: '2026-01-05' };
+    const bookkeeping = new Map(), evidenceLinks = new Map();
     const projection = () => {
-      const paid = payments.reduce((sum, item) => sum + Number(item.amount), 0);
+      const paid = payments.filter((item) => item.source === 'ledger').reduce((sum, item) => sum + Number(item.amount), 0);
       return {
         enabled: true, classified: true, dealId: deal.id, role: 'admin', finance: { ...finance },
-        invoiceState: 'issued', paymentState: paid ? 'partially-paid' : 'unpaid', timingState: 'overdue',
+        invoiceState: 'issued', invoice, paymentState: paid === 2500 ? 'paid' : paid ? 'partially-paid' : 'unpaid', timingState: paid === 2500 ? 'settled' : 'overdue',
         outstanding: (2500 - paid).toFixed(2), paid: paid.toFixed(2), payments,
-        followUp: finance.waitingOn
+        followUp: payments.some((item) => item.source === 'recorded') ? { code: 'reconcile', party: 'us' }
+          : paid === 2500 ? { code: 'none', party: 'none' } : finance.waitingOn
           ? { code: 'await-sponsor', party: 'sponsor', since: finance.waitingOn.since, reason: finance.waitingOn.reason }
           : { code: 'payment-follow-up', party: 'us', since: '2026-02-04', daysOverdue: 30 },
         reconciliationStatus: 'coherent', paymentLinkCount: payments.length, paymentLinkLimit: 10,
@@ -78,10 +81,18 @@ test.describe('Sponsors Money', () => {
       requests.push({ method: request.method(), suffix, body });
       expect(body.expectedVersion).toBe(finance.version);
       expect(request.headers()['idempotency-key']).toBeTruthy();
-      if (suffix === '/recorded-payments') {
-        payments.push({ id: 'b'.repeat(32), effectiveDate: body.receivedOn, amount: body.amount, currency: body.currency, source: 'recorded', method: body.method });
-      } else if (suffix.startsWith('/recorded-payments/')) {
-        payments = payments.filter((item) => item.id !== suffix.split('/').at(-1));
+      if (suffix === '/receipts') {
+        const id = `verified-receipt-${bookkeeping.size + 1}`;
+        const row = { id, effectiveDate: body.receivedOn, amount: body.amount, currency: body.currency,
+          reference: body.reference, counterparty: body.counterparty, source: 'ledger', amountEur: body.amountEur };
+        if (body.replacesPaymentId) payments = payments.filter((item) => item.id !== body.replacesPaymentId);
+        payments.push(row); bookkeeping.set(id, row); evidenceLinks.set(id, invoice.id);
+      } else if (suffix.startsWith('/receipts/')) {
+        const id = suffix.split('/').at(-1), existing = bookkeeping.get(id);
+        Object.assign(existing, { amount: body.amount, effectiveDate: body.receivedOn, reference: body.reference });
+      } else if (suffix === '/payment-evidence') {
+        expect(body.documentId).toBe(invoice.id);
+        for (const id of body.transactionIds) { expect(bookkeeping.has(id)).toBe(true); evidenceLinks.set(id, body.documentId); }
       } else if (suffix === '/follow-through') {
         if ('waitingOn' in body) finance.waitingOn = body.waitingOn || undefined;
         if ('evidence' in body) finance.evidence = body.evidence;
@@ -104,13 +115,15 @@ test.describe('Sponsors Money', () => {
     const panel = page.locator('[data-finance-panel]');
     await expect(panel.locator('[data-finance-next-step="payment-follow-up"]')).toBeVisible();
     await expect(panel).toContainText('Invoice without number');
-    await panel.getByRole('button', { name: 'Record payment' }).click();
+    await panel.getByRole('button', { name: 'Record verified receipt' }).click();
     const dialog = page.locator('[data-finance-record-payment-dialog]');
     await dialog.locator('input[name="amount"]').fill('1000.00');
-    await dialog.locator('select[name="method"]').selectOption('bank-report');
-    await dialog.getByRole('button', { name: 'Record payment' }).click();
+    await dialog.locator('input[name="reference"]').fill('synthetic-bank:account:receipt-one');
+    await dialog.locator('input[name="counterparty"]').fill('Synthetic Money Sponsor');
+    await dialog.getByRole('button', { name: 'Record verified receipt' }).click();
     await expect(dialog).toBeHidden();
-    await expect(panel).toContainText('Accountant report');
+    await expect(panel).toContainText('Bookkeeping');
+    expect(bookkeeping.size).toBe(1); expect(evidenceLinks.get('verified-receipt-1')).toBe(invoice.id);
     await expect(panel).toContainText('€1,500.00');
 
     await panel.getByRole('button', { name: 'Set waiting on' }).click();
@@ -128,13 +141,41 @@ test.describe('Sponsors Money', () => {
     await evidence.getByRole('button', { name: 'Add evidence' }).click();
     await expect(panel.getByRole('link', { name: 'Invoice thread' })).toBeVisible();
 
-    await panel.locator('[data-finance-delete-payment]').click();
-    await page.locator('[data-sponsor-confirm-dialog] [data-confirm-accept]').click();
-    await expect(panel).not.toContainText('Accountant report');
+    await panel.getByRole('button', { name: 'Correct receipt', exact: true }).click();
+    await dialog.locator('input[name="amount"]').fill('950.00');
+    await dialog.getByRole('button', { name: 'Save correction' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(panel).toContainText('\u20ac1,550.00');
+    expect(bookkeeping.get('verified-receipt-1').amount).toBe('950.00');
+    expect(finance.amountDue).toBe('2500.00');
+    await panel.getByRole('button', { name: 'Attach invoice to bookkeeping' }).click();
+    await expect.poll(() => requests.some((entry) => entry.suffix === '/payment-evidence')).toBe(true);
+    expect(evidenceLinks.size).toBe(1);
+
+    await test.step('reported cash remains unverified until an actual receipt confirms it', async () => {
+      payments.push({ id: 'c'.repeat(32), source: 'recorded', effectiveDate: '2026-03-07', amount: '1550.00',
+        currency: 'EUR', method: 'sponsor-confirmation', reference: 'Sponsor says paid' });
+      finance.version += 1; finance.waitingOn = undefined;
+      await page.reload();
+      await expect(panel.locator('[data-finance-next-step="reconcile"]')).toBeVisible();
+      await expect(panel).toContainText('Reported, unverified: Sponsor confirmation');
+      await expect(panel).toContainText('\u20ac1,550.00');
+      await panel.getByRole('button', { name: 'Record verified receipt', exact: true }).click();
+      await dialog.locator('select[name="replacesPaymentId"]').selectOption('c'.repeat(32));
+      await dialog.locator('input[name="reference"]').fill('synthetic-bank:account:receipt-two');
+      await dialog.locator('input[name="counterparty"]').fill('Synthetic Money Sponsor');
+      await dialog.getByRole('button', { name: 'Record verified receipt' }).click();
+      await expect(dialog).toBeHidden();
+      await expect(panel).not.toContainText('Reported, unverified');
+      await expect(panel.locator('header h3').first()).toHaveText('Paid');
+      expect(bookkeeping.size).toBe(2); expect(evidenceLinks.size).toBe(2);
+    });
     expect(requests.map((entry) => `${entry.method} ${entry.suffix}`)).toEqual([
-      'POST /recorded-payments', 'PUT /follow-through', 'PUT /follow-through', `DELETE /recorded-payments/${'b'.repeat(32)}`,
+      'POST /receipts', 'PUT /follow-through', 'PUT /follow-through', 'PUT /receipts/verified-receipt-1',
+      'POST /payment-evidence', 'POST /receipts',
     ]);
-    expect(requests[0].body).toMatchObject({ amount: '1000.00', currency: 'EUR', method: 'bank-report' });
+    expect(requests[0].body).toMatchObject({ amount: '1000.00', currency: 'EUR', counterparty: 'Synthetic Money Sponsor', reference: 'synthetic-bank:account:receipt-one' });
+    expect(requests.at(-1).body.replacesPaymentId).toBe('c'.repeat(32));
     expect(requests[2].body.evidence).toEqual([{ kind: 'url', ref: 'https://mail.example.invalid/thread/1', label: 'Invoice thread' }]);
     await context.close();
   });

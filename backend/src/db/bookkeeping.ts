@@ -50,6 +50,7 @@ let testTransactionLock = Promise.resolve();
 async function transact(
   client: DynamoDBDocumentClient,
   input: ConstructorParameters<typeof TransactWriteCommand>[0],
+  reportCounterOnly = false,
 ) {
   const guarded = [...(input.TransactItems || [])];
   const protectedSources = new Set<string>();
@@ -58,6 +59,10 @@ async function transact(
     const pk = String(mutation?.Key?.PK || "");
     const match = pk.match(/^(DOCUMENT|BOOKKEEPING)#(.+)$/);
     if (!match) continue;
+    // A report reference pins existing immutable bytes. Only the two internal
+    // reference operations may change this counter on a finance-claimed PDF.
+    if (reportCounterOnly && match[1] === "DOCUMENT" && action.Update
+      && /^SET updatedAt = :now ADD reportRefCount :(one|minus)$/.test(action.Update.UpdateExpression || "")) continue;
     const claim = `SPONSOR_FINANCE_CLAIM#${match[1] === "DOCUMENT" ? "document" : "transaction"}#${match[2]}`;
     if (protectedSources.has(claim)) continue;
     protectedSources.add(claim);
@@ -553,15 +558,14 @@ export async function removePendingDocumentClaim(
   );
 }
 
-export async function createDocumentLink(
-  client: DynamoDBDocumentClient,
+export function documentLinkItem(
   input: { documentId: string; transactionId: string; coverageType: string },
+  now = new Date().toISOString(),
 ) {
   const id = createHash("sha256")
     .update(`link#${input.documentId}#${input.transactionId}#${input.coverageType}`)
     .digest("hex");
-  const now = new Date().toISOString();
-  const item = {
+  return {
     PK: key("link", id),
     SK: key("link", id),
     id,
@@ -571,6 +575,15 @@ export async function createDocumentLink(
     createdAt: now,
     updatedAt: now,
   };
+}
+
+export async function createDocumentLink(
+  client: DynamoDBDocumentClient,
+  input: { documentId: string; transactionId: string; coverageType: string },
+) {
+  const now = new Date().toISOString();
+  const item = documentLinkItem(input, now);
+  const id = item.id;
   try {
     await transact(
       client,
@@ -621,6 +634,7 @@ export async function addDocumentReportReference(
           { Update: { TableName: TABLE_BOOKKEEPING, Key: { PK: documentKey(documentId), SK: documentKey(documentId) }, UpdateExpression: "SET updatedAt = :now ADD reportRefCount :one", ConditionExpression: "#status = :active", ExpressionAttributeNames: { "#status": "status" }, ExpressionAttributeValues: { ":one": 1, ":active": "active", ":now": new Date().toISOString() } } },
         ],
       },
+      true,
     );
     return true;
   } catch (error) {
@@ -645,6 +659,7 @@ export async function removeDocumentReportReference(
         { Update: { TableName: TABLE_BOOKKEEPING, Key: { PK: documentKey(documentId), SK: documentKey(documentId) }, UpdateExpression: "SET updatedAt = :now ADD reportRefCount :minus", ConditionExpression: "reportRefCount > :zero", ExpressionAttributeValues: { ":minus": -1, ":zero": 0, ":now": new Date().toISOString() } } },
       ],
     },
+    true,
   );
 }
 

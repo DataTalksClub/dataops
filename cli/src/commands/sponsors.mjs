@@ -23,6 +23,9 @@ Usage
       [--task ID | --review-existing]  Link an existing deal Task, or confirm review before adding separate work
   dataops sponsors attach-invoice <deal-id> --file original.pdf [--apply]
       Attach an original issued invoice through verified private storage; no payment is created.
+  dataops sponsors attach-payment-evidence <deal-id> <transaction-id> [--apply]
+      Link the reviewed invoice to an existing allocated receipt for bookkeeping and reports.
+      New verified receipts include attached originals automatically; use this for late or repaired evidence.
   dataops sponsors receive-payment <deal-id> --data @receipt.json [--apply]
       Required: receivedOn, amount, currency, counterparty, reference (bank/account + unique transaction ID).
       Creates and links bookkeeping atomically. Optional: amountEur, category, replacesPaymentId.
@@ -277,6 +280,25 @@ export async function attachInvoice(args, io) {
   return result;
 }
 
+export async function attachPaymentEvidence(args, io) {
+  const id = positional(args, 0, "dataops sponsors attach-payment-evidence <deal-id> <transaction-id> [--apply]");
+  const transactionId = positional(args, 1, "dataops sponsors attach-payment-evidence <deal-id> <transaction-id> [--apply]");
+  const api = apiFor(args);
+  const [deal, projection] = await Promise.all([
+    api.get(`/api/sponsor-crm/deals/${enc(id)}`), api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
+  ]);
+  if (!projection.finance || !projection.invoice) throw new UsageError("Attach and review the correct invoice original first.");
+  if (!(projection.payments || []).some((payment) => payment.source === "ledger" && payment.id === transactionId))
+    throw new UsageError("Select a bookkeeping receipt already allocated to this deal.");
+  const body = { dealVersion: deal.version, expectedVersion: projection.finance.version,
+    documentId: projection.invoice.id, transactionIds: [transactionId] };
+  let result = { mode: args.apply ? "apply" : "dry-run", dealId: id, documentId: body.documentId, transactionIds: body.transactionIds };
+  if (args.apply) result = { ...result, ...await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/payment-evidence`, body,
+    { headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() } }) };
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
 export async function receivePayment(args, io) {
   const id = positional(args, 0, "dataops sponsors receive-payment <deal-id> --data @receipt.json [--apply]");
   const api = apiFor(args), data = jsonData(args);
@@ -308,4 +330,4 @@ export async function correctPayment(args, io) {
   return result;
 }
 
-export const commands = { list, show, create, update, messages, history, finance, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment };
+export const commands = { list, show, create, update, messages, history, finance, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence };

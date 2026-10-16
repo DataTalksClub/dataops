@@ -403,6 +403,8 @@ export function createSponsorFinance(context) {
         <span class="dk-mono">${escapeHtml(ledgerDate(payment.effectiveDate))}</span>
         <span class="dk-mono">${escapeHtml(formatAmount(payment.amount, payment.currency))}</span>
         <span class="dk-muted">${escapeHtml(source)}${payment.reference ? ` · ${escapeHtml(payment.reference)}` : ""}</span>
+        ${live && payment.source === "ledger" && projection.invoice ? html`<button
+          data-finance-attach-payment-evidence="${escapeHtml(payment.id)}">Attach invoice to bookkeeping</button>` : ""}
         ${live && payment.source === "ledger" ? html`<button data-finance-correct-receipt="${escapeHtml(payment.id)}">Correct receipt</button>` : ""}
         ${unlink}
       </li>`;
@@ -779,6 +781,15 @@ export function createSponsorFinance(context) {
           await reopenBookingDetail(booking);
         }, "Could not create the payment follow-up task"),
       );
+    panel.querySelectorAll("[data-finance-attach-payment-evidence]").forEach((button) =>
+      button.addEventListener("click", () => safe(async () => {
+        await financeMutation(booking, "/payment-evidence", "POST", {
+          expectedVersion: projection.finance.version, documentId: projection.invoice.id,
+          transactionIds: [button.dataset.financeAttachPaymentEvidence],
+        });
+        await reopenBookingDetail(booking);
+      }, "Could not attach the reviewed invoice to bookkeeping")),
+    );
     panel.querySelectorAll("[data-finance-correct-receipt]").forEach((button) =>
       button.addEventListener("click", () => openRecordPayment(booking, projection,
         projection.payments.find((payment) => payment.id === button.dataset.financeCorrectReceipt))),

@@ -17,6 +17,7 @@ import {
   recordPayment,
   receivePayment,
   correctReceipt,
+  attachPaymentEvidence,
   unlinkFinanceSource,
   updateFollowThrough,
   voidFinance,
@@ -146,6 +147,13 @@ export async function handleSponsorFinanceRoutes(
         issuedOn: String(body.issuedOn || ''),
         dueOn: String(body.dueOn || ''),
         ...(body.sentOn !== undefined ? { sentOn: String(body.sentOn) } : {}),
+      });
+      return json(200, { result, projection: await project() });
+    }
+    if (method === 'POST' && action === 'payment-evidence') {
+      const result = await attachPaymentEvidence(client, {
+        ...common, expectedVersion: Number(body.expectedVersion), documentId: String(body.documentId || ''),
+        transactionIds: body.transactionIds as string[],
       });
       return json(200, { result, projection: await project() });
     }

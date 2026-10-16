@@ -8,6 +8,7 @@ import {
   TransactWriteCommand,
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
+import { documentLinkItem } from '../db/bookkeeping';
 import { TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_USERS } from '../db/tableNames';
 import {
   CURRENCY,
@@ -842,6 +843,105 @@ export async function correctReceipt(
   });
 }
 
+/** Standard bookkeeping evidence, committed by the same trusted finance mutation.
+ * Generic document-link writes remain locked for claimed invoices. This path
+ * pins the existing finance claim, original bytes and finance link together.
+ */
+async function invoiceEvidenceActions(
+  client: DynamoDBDocumentClient,
+  state: FinanceState,
+  transactionIds: string[],
+  now: string,
+): Promise<any[]> {
+  if (!state.invoiceLinkId || !transactionIds.length) return [];
+  const documentId = state.invoiceLinkId.split('#').at(-1)!;
+  const document = await sourceItem(client, 'document', documentId);
+  if (!document) throw safeConflict();
+  const identity = invoiceIdentity(document);
+  let added = 0;
+  const links: any[] = [];
+  for (const transactionId of transactionIds) {
+    const item = documentLinkItem({ documentId, transactionId, coverageType: 'evidence' }, now);
+    const existing = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING,
+      Key: singleton(item.PK), ConsistentRead: true }))).Item;
+    if (existing) {
+      if (existing.documentId !== documentId || existing.transactionId !== transactionId || existing.coverageType !== 'evidence') throw safeConflict();
+      links.push({ ConditionCheck: { TableName: TABLE_BOOKKEEPING, Key: singleton(item.PK),
+        ConditionExpression: 'documentId = :doc AND transactionId = :tx AND coverageType = :coverage',
+        ExpressionAttributeValues: { ':doc': documentId, ':tx': transactionId, ':coverage': 'evidence' } } });
+    } else {
+      added++;
+      links.push({ Put: { TableName: TABLE_BOOKKEEPING, Item: item, ConditionExpression: 'attribute_not_exists(PK)' } });
+    }
+  }
+  const sourceGuard = identityCondition('document', document);
+  return [
+    { ConditionCheck: { TableName: TABLE_BOOKKEEPING, Key: singleton(claimKey('document', documentId)),
+      ConditionExpression: 'dealId = :deal AND linkId = :link AND sourceId = :source AND identityToken = :identity AND kind = :kind',
+      ExpressionAttributeValues: { ':deal': state.dealId, ':link': state.invoiceLinkId, ':source': documentId, ':identity': identity, ':kind': 'document' } } },
+    { ConditionCheck: { TableName: TABLE_SPONSOR_CRM, Key: singleton(state.invoiceLinkId),
+      ConditionExpression: 'dealId = :deal AND sourceId = :source AND identityToken = :identity AND kind = :kind',
+      ExpressionAttributeValues: { ':deal': state.dealId, ':source': documentId, ':identity': identity, ':kind': 'document' } } },
+    added ? { Update: { TableName: TABLE_BOOKKEEPING, Key: singleton(sourceKey('document', documentId)),
+      ...sourceGuard, UpdateExpression: 'SET updatedAt = :now ADD linkRefCount :count',
+      ExpressionAttributeValues: { ...sourceGuard.ExpressionAttributeValues, ':now': now, ':count': added } } }
+      : { ConditionCheck: { TableName: TABLE_BOOKKEEPING, Key: singleton(sourceKey('document', documentId)), ...sourceGuard } },
+    ...links,
+  ];
+}
+
+/** Attach the currently reviewed invoice to explicitly selected allocated receipts.
+ * This also handles originals recovered after a payment was already linked.
+ */
+export async function attachPaymentEvidence(
+  client: DynamoDBDocumentClient,
+  input: { actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string;
+    documentId: string; transactionIds: string[] },
+) {
+  if (!OPAQUE.test(input.documentId) || !Array.isArray(input.transactionIds) || !input.transactionIds.length
+    || input.transactionIds.length > PAYMENT_LINK_LIMIT || input.transactionIds.some((id) => typeof id !== 'string' || !OPAQUE.test(id))
+    || new Set(input.transactionIds).size !== input.transactionIds.length) {
+    throw Object.assign(new Error('Select the reviewed invoice and distinct allocated receipt IDs'), { statusCode: 400 });
+  }
+  const request = { documentId: input.documentId, transactionIds: [...input.transactionIds].sort() };
+  const replay = await replayMutation(client, { actorId: input.actorId, operation: 'attach-payment-evidence', dealId: input.dealId,
+    idempotencyKey: input.idempotencyKey, request });
+  if (replay) return replay;
+  const projection = await projectFinance(client, input.dealId, 'admin');
+  const state = await getFinanceState(client, input.dealId);
+  if (!state || state.version !== input.expectedVersion || state.voidedAt || projection.reconciliationStatus !== 'coherent'
+    || projection.invoice?.id !== input.documentId || request.transactionIds.some((id) => !projection.payments.some((payment) => payment.source === 'ledger' && payment.id === id))) throw safeConflict();
+  const now = nowIso();
+  const sourceChecks: any[] = [];
+  for (const transactionId of request.transactionIds) {
+    const source = await sourceItem(client, 'transaction', transactionId);
+    if (!source) throw safeConflict();
+    const identity = paymentIdentity(source), id = linkKey(input.dealId, 'transaction', transactionId);
+    sourceChecks.push(
+      { ConditionCheck: { TableName: TABLE_BOOKKEEPING, Key: singleton(sourceKey('transaction', transactionId)), ...identityCondition('transaction', source) } },
+      { ConditionCheck: { TableName: TABLE_BOOKKEEPING, Key: singleton(claimKey('transaction', transactionId)),
+        ConditionExpression: 'dealId = :deal AND linkId = :link AND identityToken = :identity',
+        ExpressionAttributeValues: { ':deal': input.dealId, ':link': id, ':identity': identity } } },
+      { ConditionCheck: { TableName: TABLE_SPONSOR_CRM, Key: singleton(id),
+        ConditionExpression: 'dealId = :deal AND sourceId = :source AND identityToken = :identity',
+        ExpressionAttributeValues: { ':deal': input.dealId, ':source': transactionId, ':identity': identity } } },
+    );
+  }
+  // At most 20 * (source + claim + finance link + evidence link) + 8 = 88
+  // actions, including permissions, original guards, version, receipt and audit.
+  return executeMutation(client, { actorId: input.actorId, operation: 'attach-payment-evidence', dealId: input.dealId,
+    idempotencyKey: input.idempotencyKey, request, financeVersion: state.version + 1,
+    recordId: state.invoiceLinkId!, sourceId: input.documentId, eventCode: 'payment-invoice-evidence-linked', details: request,
+    transactItems: [adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion), ...sourceChecks,
+      ...await invoiceEvidenceActions(client, state, request.transactionIds, now),
+      { Update: { TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
+        UpdateExpression: 'SET #version = :next, updatedAt = :now, actorId = :actor',
+        ConditionExpression: '#version = :prior AND invoiceLinkId = :invoice', ExpressionAttributeNames: { '#version': 'version' },
+        ExpressionAttributeValues: { ':next': state.version + 1, ':prior': state.version, ':invoice': state.invoiceLinkId, ':now': now, ':actor': input.actorId } } },
+    ],
+  });
+}
+
 export async function linkPayment(
   client: DynamoDBDocumentClient,
   input: {
@@ -931,7 +1031,7 @@ export async function linkPayment(
       },
     );
   }
-  if (existingTupleChecks.length + 8 > MAX_PAYMENT_LINK_TRANSACTION_ACTIONS) throw safeConflict();
+  if (existingTupleChecks.length + 12 > MAX_PAYMENT_LINK_TRANSACTION_ACTIONS) throw safeConflict();
   return executeMutation(client, {
     actorId: input.actorId, operation: prepared ? 'receive-payment' : 'link-payment', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
     request,
@@ -939,6 +1039,7 @@ export async function linkPayment(
     transactItems: [
       adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
       ...existingTupleChecks,
+      ...await invoiceEvidenceActions(client, state, [input.sourceId], now),
       prepared ? { Put: {
         TableName: TABLE_BOOKKEEPING, Item: { ...singleton(sourceKey('transaction', input.sourceId)), ...source },
         ConditionExpression: 'attribute_not_exists(PK)',

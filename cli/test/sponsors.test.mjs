@@ -4,7 +4,36 @@ import { run } from "../src/cli.mjs";
 import { mkdtemp, writeFile, unlink, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { attachInvoice, receivePayment, correctPayment, list } from "../src/commands/sponsors.mjs";
+import { attachInvoice, attachPaymentEvidence, receivePayment, correctPayment, list } from "../src/commands/sponsors.mjs";
+
+test("invoice evidence repair selects an already allocated receipt and previews the exact original", async () => {
+  const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, ...options });
+    return new Response(JSON.stringify(url.endsWith("/finance") ? {
+      finance: { version: 4 }, invoice: { id: "reviewed-original" }, payments: [{ id: "receipt", source: "ledger" }],
+    } : { version: 1 }));
+  };
+  const args = { _: ["deal", "receipt"], url: "https://portal.example.test", json: true, idempotencyKey: "reviewed-evidence-012345" };
+  try {
+    const preview = await attachPaymentEvidence(args, {});
+    assert.equal(preview.documentId, "reviewed-original");
+    assert.deepEqual(preview.transactionIds, ["receipt"]);
+    assert.ok(calls.every((call) => call.method === "GET"));
+    await attachPaymentEvidence({ ...args, apply: true }, {});
+    const mutation = calls.find((call) => call.method === "POST");
+    assert.ok(mutation.url.endsWith("/finance/payment-evidence"));
+    assert.deepEqual(JSON.parse(mutation.body), { dealVersion: 1, expectedVersion: 4, documentId: "reviewed-original", transactionIds: ["receipt"] });
+    const writes = calls.filter((call) => call.method !== "GET").length;
+    await assert.rejects(() => attachPaymentEvidence({ ...args, _: ["deal", "unrelated"], apply: true }, {}), /already allocated/);
+    assert.equal(calls.filter((call) => call.method !== "GET").length, writes);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
+  }
+});
 
 test("invoice originals upload privately and attach without creating or settling a payment", async () => {
   const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;

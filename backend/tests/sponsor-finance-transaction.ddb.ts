@@ -25,6 +25,7 @@ import {
   recordPayment,
   receivePayment,
   correctReceipt,
+  attachPaymentEvidence,
   unlinkFinanceSource,
   updateFollowThrough,
   voidFinance,
@@ -40,6 +41,7 @@ import {
 } from '../src/sponsorFinance/core';
 import {
   addDocumentReportReference,
+  documentLinkItem,
   createDocumentLink,
   deleteBookkeepingItem,
   deleteDocumentLink,
@@ -80,7 +82,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const invoice = {
       ...key('DOCUMENT', `invoice-${label}`), id: `invoice-${label}`,
       documentType: 'invoice', status: 'active', sha256: 'b'.repeat(64),
-      objectVersionId: `version-${label}`, verifiedByteSize: 800,
+      objectVersionId: `version-${label}`, verifiedByteSize: 800, byteSize: 800, s3Key: `documents/invoice-${label}`,
       createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
     };
     await put(client, TABLE_BOOKKEEPING, invoice);
@@ -915,19 +917,22 @@ describe('sponsor finance production DynamoDB transactions', () => {
     }))).Item);
 
     const reportAdd = await makeDocument('report-add');
-    await unchanged(reportAdd, () => addDocumentReportReference(client, String(reportAdd.id), 'report-add'));
+    assert.equal(await addDocumentReportReference(client, String(reportAdd.id), 'report-add'), true);
+    assert.equal(await addDocumentReportReference(client, String(reportAdd.id), 'report-add'), false);
+    const reportedDocument = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: reportAdd.PK, SK: reportAdd.SK } }))).Item!;
+    assert.equal(reportedDocument.reportRefCount, 1);
+    assert.equal(invoiceIdentity(reportedDocument), invoiceIdentity(reportAdd));
 
     const reportRemove = await makeDocument('report-remove', { reportRefCount: 1 });
     const reportGuard = `DOCUMENT_REPORT_REF#${reportRemove.id}#report-remove`;
     await put(client, TABLE_BOOKKEEPING, {
       PK: reportGuard, SK: reportGuard, documentId: reportRemove.id, reportId: 'report-remove',
     });
-    await unchanged(reportRemove, () => removeDocumentReportReference(
-      client, String(reportRemove.id), 'report-remove',
-    ));
-    assert.ok((await client.send(new GetCommand({
-      TableName: TABLE_BOOKKEEPING, Key: { PK: reportGuard, SK: reportGuard },
-    }))).Item);
+    await removeDocumentReportReference(client, String(reportRemove.id), 'report-remove');
+    const removedReportDocument = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: reportRemove.PK, SK: reportRemove.SK } }))).Item!;
+    assert.equal(removedReportDocument.reportRefCount, 0);
+    assert.equal(invoiceIdentity(removedReportDocument), invoiceIdentity(reportRemove));
+    assert.equal((await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: reportGuard, SK: reportGuard } }))).Item, undefined);
 
     const unique = 'guarded-ingestion-duplicate';
     const first = await putBookkeepingItem(client, 'document', {
@@ -962,7 +967,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     assert.equal(new Set(seen).size, seen.length);
   });
 
-  it('cancels every real 46-action payment transaction position without partial effects', async () => {
+  it('cancels every real 50-action payment transaction position without partial effects', async () => {
     const setup = await bootstrapPayable('link-cap', '20');
     let version = setup.version;
     for (let index = 0; index < 19; index++) {
@@ -984,6 +989,10 @@ describe('sponsor finance production DynamoDB transactions', () => {
         `existing payment ${index + 1} source identity`,
         `existing payment ${index + 1} reverse claim`,
       ]).flat(),
+      'invoice reverse claim identity',
+      'invoice finance link identity',
+      'invoice source identity and evidence counter',
+      'bookkeeping evidence tuple uniqueness',
       'prospective payment source identity',
       'prospective reverse claim uniqueness',
       'prospective sponsor-finance link uniqueness',
@@ -1125,6 +1134,15 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const capped = await projectFinance(client, setup.dealId, 'operator');
     assert.equal(capped.paymentLinkCount, 20);
     assert.equal(capped.paymentState, 'paid');
+    let repairActions = 0;
+    const measuredClient = { send: async (command: { constructor: { name: string }; input?: { TransactItems?: unknown[] } }) => {
+      if (command.constructor.name === 'TransactWriteCommand') repairActions = command.input?.TransactItems?.length || 0;
+      return client.send(command as never);
+    } } as DynamoDBDocumentClient;
+    await attachPaymentEvidence(measuredClient, { actorId: adminId, dealId: setup.dealId, dealVersion: 1,
+      expectedVersion: version, documentId: capped.invoice!.id, transactionIds: capped.payments.map((item) => item.id),
+      idempotencyKey: idem('twenty-evidence-tuples') });
+    assert.equal(repairActions, 88, 'the real maximum repair transaction is below the 100-action limit');
     const firstLinked = payment('link-cap-success-0', '1');
     const guardedEdits = await Promise.allSettled([
       updateBookkeepingTransaction(client, firstLinked.id, firstLinked.updatedAt, {
@@ -1334,6 +1352,10 @@ describe('sponsor finance production DynamoDB transactions', () => {
     assert.equal(source.amount, '40');
     assert.equal(source.amountEur, '39');
     assert.equal(source.statementRef, input.reference);
+    const evidence = documentLinkItem({ documentId: projection.invoice!.id, transactionId: sourceId, coverageType: 'evidence' });
+    assert.ok((await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: evidence.PK, SK: evidence.SK } }))).Item);
+    const original = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: key('DOCUMENT', projection.invoice!.id) }))).Item!;
+    assert.equal(original.linkRefCount, 1, 'receipt replay does not duplicate the evidence counter');
     await assert.rejects(() => updateBookkeepingTransaction(client, sourceId, String(source.updatedAt), { amount: '99' }));
     const other = await bootstrapPayable('duplicate-receipt', '100');
     await assert.rejects(() => receivePayment(client, { ...input, dealId: other.dealId, expectedVersion: other.version, idempotencyKey: idem('duplicate-receipt') }),
@@ -1394,6 +1416,75 @@ describe('sponsor finance production DynamoDB transactions', () => {
     } finally {
       globalThis.fetch = originalFetch;
       if (originalToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = originalToken;
+    }
+  });
+
+  it('repairs explicitly reviewed late invoice evidence atomically and includes the claimed PDF in report archives', async () => {
+    const seeded = await bootstrapPayable('late-evidence', '100');
+    // Simulate an already recorded receipt whose invoice was recovered later:
+    // the finance allocation remains intact while standard evidence is absent.
+    const invoiceId = `invoice-late-evidence`;
+    const versionWithoutInvoice = (await unlinkFinanceSource(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
+      expectedVersion: seeded.version, kind: 'document', sourceId: invoiceId, idempotencyKey: idem('late-evidence-unlink-original') })).financeVersion;
+    const receipt = await receivePayment(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
+      expectedVersion: versionWithoutInvoice, receivedOn: '2098-04-03', amount: '40', currency: 'EUR',
+      reference: 'synthetic-account:late-evidence', counterparty: 'Synthetic Sponsor', idempotencyKey: idem('late-evidence-receipt') });
+    const cash = (await projectFinance(client, seeded.dealId, 'admin')).payments[0];
+    const tuple = documentLinkItem({ documentId: invoiceId, transactionId: cash.id, coverageType: 'evidence' });
+    assert.equal((await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: tuple.PK, SK: tuple.SK } }))).Item, undefined,
+      'a receipt with no reviewed original honestly needs a document');
+    const original = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: key('DOCUMENT', invoiceId) }))).Item!;
+    const linked = await linkInvoice(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
+      expectedVersion: receipt.financeVersion, sourceId: invoiceId, identityToken: invoiceIdentity(original), idempotencyKey: idem('late-evidence-attach-original') });
+    const input = { actorId: adminId, dealId: seeded.dealId, dealVersion: 1, expectedVersion: linked.financeVersion,
+      documentId: invoiceId, transactionIds: [cash.id], idempotencyKey: idem('late-evidence-repair') };
+    await assert.rejects(() => attachPaymentEvidence(client, { ...input, dealVersion: 999, idempotencyKey: idem('late-evidence-repair-cancel') }));
+    assert.equal((await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: tuple.PK, SK: tuple.SK } }))).Item, undefined);
+    assert.equal((await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: key('DOCUMENT', invoiceId) }))).Item!.linkRefCount || 0, 0,
+      'a failed finance condition leaves both the evidence tuple and counter unchanged');
+    const repaired = await attachPaymentEvidence(client, input);
+    await attachPaymentEvidence(client, { ...input, expectedVersion: repaired.financeVersion });
+    const relinked = await attachPaymentEvidence(client, { ...input, expectedVersion: repaired.financeVersion, idempotencyKey: idem('late-evidence-already-linked') });
+    const doc = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: key('DOCUMENT', invoiceId) }))).Item!;
+    assert.equal(doc.linkRefCount, 1, 'existing tuple is reused without incrementing the reference counter');
+    assert.equal(invoiceIdentity(doc), invoiceIdentity(original));
+    assert.equal((await projectFinance(client, seeded.dealId, 'admin')).paid, '40');
+    await assert.rejects(() => attachPaymentEvidence(client, { ...input, expectedVersion: relinked.financeVersion,
+      transactionIds: ['not-allocated-to-this-deal'], idempotencyKey: idem('late-evidence-wrong-receipt') }));
+    const { handleBookkeepingReportRoutes } = await import('../src/routes/bookkeepingReports');
+    for (const accountId of ['statement-account-one', 'statement-account-two']) {
+      await put(client, TABLE_BOOKKEEPING, { ...key('ACCOUNT', accountId), id: accountId, kind: 'business', active: true });
+      const id = `statement-${accountId}`;
+      await put(client, TABLE_BOOKKEEPING, { ...key('DOCUMENT', id), id, documentType: 'bank-statement', status: 'active',
+        accountId, statementMonth: '2098-04', s3Key: `documents/${id}`, byteSize: 30, linkRefCount: 0, reportRefCount: 0 });
+    }
+    const snapshot = await handleBookkeepingReportRoutes('/api/bookkeeping/reports/snapshot', 'POST', { body: JSON.stringify({ month: '2098-04' }) }, client);
+    assert.equal(snapshot!.statusCode, 201, snapshot!.body);
+    const report = JSON.parse(snapshot!.body).report;
+    assert.ok(report.documentIds.includes(invoiceId)); assert.ok(report.transactionIds.includes(cash.id));
+    const storage = await import('../src/routes/bookkeepingShared');
+    const { Readable } = await import('stream');
+    const oldS3 = storage.s3, oldSigner = storage.signUrl, oldUploader = storage.uploadStream;
+    const oldBucket = process.env.BOOKKEEPING_DOCUMENTS_BUCKET, oldKms = process.env.BOOKKEEPING_DOCUMENTS_KMS_KEY;
+    let archiveBytes = Buffer.alloc(0);
+    process.env.BOOKKEEPING_DOCUMENTS_BUCKET = 'synthetic-private-bucket'; process.env.BOOKKEEPING_DOCUMENTS_KMS_KEY = 'synthetic-kms';
+    storage.setBookkeepingStorageForTests({ send: async () => ({ Body: Readable.from(Buffer.from('%PDF-synthetic-evidence')) }) } as never,
+      async () => 'https://private.example.test/signed-download');
+    storage.setBookkeepingArchiveUploaderForTests(async (params) => {
+      const chunks: Buffer[] = []; for await (const chunk of params!.Body as unknown as AsyncIterable<Buffer>) chunks.push(Buffer.from(chunk));
+      archiveBytes = Buffer.concat(chunks); return { VersionId: 'synthetic-archive-version' };
+    });
+    try {
+      const archive = await handleBookkeepingReportRoutes(`/api/bookkeeping/reports/${report.id}/archive`, 'POST', { body: '{}' }, client);
+      assert.equal(archive!.statusCode, 201, archive!.body);
+      assert.ok(archiveBytes.includes(Buffer.from(`documents/${invoiceId}.pdf`)), 'normal ZIP export includes the claimed original');
+      const after = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: key('DOCUMENT', invoiceId) }))).Item!;
+      assert.equal(after.reportRefCount, 1); assert.equal(invoiceIdentity(after), invoiceIdentity(original));
+      await assert.rejects(() => deleteBookkeepingItem(client, 'document', invoiceId), 'export counters do not unlock original content');
+    } finally {
+      storage.setBookkeepingStorageForTests(oldS3, oldSigner); storage.setBookkeepingArchiveUploaderForTests(oldUploader);
+      if (oldBucket === undefined) delete process.env.BOOKKEEPING_DOCUMENTS_BUCKET; else process.env.BOOKKEEPING_DOCUMENTS_BUCKET = oldBucket;
+      if (oldKms === undefined) delete process.env.BOOKKEEPING_DOCUMENTS_KMS_KEY; else process.env.BOOKKEEPING_DOCUMENTS_KMS_KEY = oldKms;
     }
   });
 

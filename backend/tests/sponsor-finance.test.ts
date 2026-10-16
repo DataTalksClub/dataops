@@ -30,7 +30,7 @@ describe('sponsor finance contracts', () => {
 
   it('keeps the 20-link contract within the current DynamoDB transaction limit', () => {
     assert.equal(PAYMENT_LINK_LIMIT, 20);
-    assert.equal(MAX_PAYMENT_LINK_TRANSACTION_ACTIONS, 46);
+    assert.equal(MAX_PAYMENT_LINK_TRANSACTION_ACTIONS, 50);
     assert.ok(MAX_PAYMENT_LINK_TRANSACTION_ACTIONS <= 100);
   });
 

@@ -6,7 +6,7 @@ export const DATE = /^\d{4}-\d{2}-\d{2}$/;
 export const OPAQUE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 export const IDEMPOTENCY = /^[A-Za-z0-9_-]{16,128}$/;
 export const PAYMENT_LINK_LIMIT = 20;
-export const MAX_PAYMENT_LINK_TRANSACTION_ACTIONS = 2 * (PAYMENT_LINK_LIMIT - 1) + 8;
+export const MAX_PAYMENT_LINK_TRANSACTION_ACTIONS = 2 * (PAYMENT_LINK_LIMIT - 1) + 12;
 
 export const canonicalJson = (value: unknown): string => {
   if (value === null || typeof value === 'boolean' || typeof value === 'string') return JSON.stringify(value);
