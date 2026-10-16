@@ -338,6 +338,14 @@ export function createTaskPanel(context) {
     taskPanelTitle.textContent = task
       ? taskDisplayParts(task, overviewDeps).parts.title
       : "Task";
+    // The disclosure's toggle event fires a task after the click, so a
+    // rebuild landing in between would read a stale open state: take it from
+    // the disclosure being replaced instead.
+    const previousMore = taskPanelBody.querySelector?.(".task-panel-more");
+    if (task && previousMore?.dataset.taskId === String(task.id)) {
+      if (previousMore.open) taskPanelMoreOpen.add(task.id);
+      else taskPanelMoreOpen.delete(task.id);
+    }
     taskPanelRebuilding = true;
     try {
       taskPanelBody.replaceChildren();
@@ -679,6 +687,7 @@ export function createTaskPanel(context) {
     // process notes and history fold into one disclosure below.
     const more = document.createElement("details");
     more.className = "task-panel-more";
+    more.dataset.taskId = String(task.id);
     // Rerenders after a mutation keep the disclosure as the operator left it.
     more.open = taskPanelMoreOpen.has(task.id);
     more.addEventListener("toggle", () => {

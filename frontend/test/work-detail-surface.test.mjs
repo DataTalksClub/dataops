@@ -1963,6 +1963,32 @@ describe("Work Detail surface boundary", () => {
     assert.ok(more.querySelector('[data-panel-field="artifact-url"]'));
   });
 
+  test("a rebuild before the disclosure's toggle event keeps it open", async () => {
+    const task = {
+      id: "task-more-race",
+      version: 1,
+      taskHistory: [{ action: "response-received", createdAt: "2026-08-01T10:00:00Z" }],
+      description: "Synthetic disclosure race",
+      status: "todo",
+      date: "2026-08-20",
+    };
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return {};
+      },
+    });
+    await hydrateTask(harness, task);
+    // The click opens the disclosure; its toggle event has not fired yet when
+    // a refreshed Task rebuilds the panel.
+    harness.taskPanelBody.querySelector(".task-panel-more").open = true;
+    await harness.api.hydrateTaskPanel(task.id, 1);
+    await nextTicks();
+    assert.equal(harness.taskPanelBody.querySelector(".task-panel-more").open, true);
+  });
+
   test("keeps evidence registration failures in the Task panel and recovers with retained fields", async () => {
     const task = {
       id: "task-evidence-failure",
