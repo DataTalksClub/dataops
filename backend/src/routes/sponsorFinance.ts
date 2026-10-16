@@ -177,6 +177,8 @@ export async function handleSponsorFinanceRoutes(
         ...common,
         expectedVersion: Number(body.expectedVersion),
         ...(body.date !== undefined ? { date: body.date } : {}),
+        ...(body.existingTaskId !== undefined ? { existingTaskId: body.existingTaskId } : {}),
+        ...(body.reviewedOpenTasks !== undefined ? { reviewedOpenTasks: body.reviewedOpenTasks } : {}),
       });
       return json(201, {
         task: result.task,

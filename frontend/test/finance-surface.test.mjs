@@ -1316,3 +1316,29 @@ test("open chase work is listed with its next follow-up and opens in the Tasks s
   await openButton.dispatch("click", {});
   assert.deepEqual(navigations, [{ path: "/tasks", params: { taskId: "task-chase-1" } }]);
 });
+
+
+test("existing sponsor work must be reviewed before adding a separate chase", async () => {
+  createHarness();
+  const surface = new FakeElement("section");
+  const message = new FakeElement("p");
+  const finance = createSponsorFinance({ surface, escapeHtml, humanizeOptionLabel, message,
+    request: async () => ({}), workApiUrl: (path) => path });
+  const projection = chaseProjection({ tasks: [], existingTasks: [
+    { id: "existing-1", version: 3, description: "Existing payment follow-up", date: "2026-10-16", status: "todo" },
+  ] });
+  const posts = [];
+  globalThis.fetch = async (url, options) => {
+    if (options?.method === "POST") posts.push(JSON.parse(options.body));
+    return { ok: true, status: 200, json: async () => projection };
+  };
+  await finance.loadFinance({ id: "deal-1", version: 3 });
+  assert.match(surface.querySelector('[data-booking-panel="finance"]').innerHTML, /Existing payment follow-up/);
+  const panel = surface.querySelector("[data-finance-panel]");
+  await panel.querySelector("[data-finance-chase-create]").dispatch("click", {});
+  assert.equal(posts.length, 0, "unreviewed duplicate creation is refused before a write");
+  panel.querySelector("[data-finance-chase-reviewed]").checked = true;
+  await panel.querySelector("[data-finance-chase-create]").dispatch("click", {});
+  assert.deepEqual(posts[0], { dealVersion: 3, expectedVersion: 4,
+    reviewedOpenTasks: [{ id: "existing-1", version: 3 }] });
+});

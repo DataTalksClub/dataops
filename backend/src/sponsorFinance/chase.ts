@@ -12,16 +12,13 @@
  */
 import { randomUUID } from 'crypto';
 import {
-  DeleteCommand,
-  GetCommand,
-  PutCommand,
+  ScanCommand,
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 
-import { usesLocalTransactionEmulation } from '../db/client';
 import { getCrmRecord } from '../db/sponsorCrm';
 import { getTask } from '../db/tasks';
-import { TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_TASKS, TABLE_USERS } from '../db/tableNames';
+import { TABLE_SPONSOR_CRM, TABLE_TASKS } from '../db/tableNames';
 import {
   berlinDate,
   financeKey,
@@ -31,7 +28,6 @@ import {
   adminCheck,
   dealCheck,
   executeMutation,
-  financeMutationTail,
   getFinanceState,
   projectFinance,
   replayMutation,
@@ -151,6 +147,7 @@ export async function openChaseTasks(client: DynamoDBDocumentClient, state: Fina
 export function chaseTaskView(task: Task): ChaseTaskView {
   return {
     id: task.id,
+    version: task.version,
     description: task.description,
     date: task.date,
     status: task.status as ChaseTaskView['status'],
@@ -167,56 +164,58 @@ export async function withChaseTasks(
 ): Promise<FinanceProjection> {
   if (!state) return projection;
   const open = await openChaseTasks(client, state);
-  if (open.length === 0) return projection;
-  return { ...projection, chase: { tasks: open.map(chaseTaskView) } };
+  const existing = (await relatedDealTasks(client, state.dealId)).filter((task) => !open.some((chase) => chase.id === task.id));
+  return { ...projection, chase: { tasks: open.map(chaseTaskView), existingTasks: existing.map(chaseTaskView) } };
 }
 
-interface ChasePlannedWrite {
-  tableName: string;
-  key: Record<string, unknown>;
-  holds: (current: Record<string, unknown> | undefined) => boolean;
-  /** The full row after the write. */
-  after: (current: Record<string, unknown> | undefined) => Record<string, unknown>;
+/** Current related work, read consistently before creating another follow-up. */
+export async function relatedDealTasks(client: DynamoDBDocumentClient, dealId: string): Promise<Task[]> {
+  const result: Task[] = [];
+  let key: Record<string, any> | undefined;
+  let evaluated = 0;
+  let pages = 0;
+  do {
+    const page = await client.send(new ScanCommand({
+      TableName: TABLE_TASKS, ConsistentRead: true, Limit: 200,
+      ...(key ? { ExclusiveStartKey: key } : {}),
+      ProjectionExpression: 'id, #version, description, #date, #status, subject, assigneeId, followUpAt',
+      ExpressionAttributeNames: { '#version': 'version', '#date': 'date', '#status': 'status' },
+    }));
+    evaluated += page.ScannedCount || 0;
+    if (evaluated > 5000 || ++pages > 50) throw Object.assign(new Error('Open task review exceeded its read limit'), { statusCode: 503 });
+    for (const item of page.Items || []) {
+      const task = item as Task;
+      if (task.subject?.type === 'sponsor-deal' && task.subject.id === dealId && OPEN_STATUSES.has(task.status)) result.push(task);
+    }
+    key = page.LastEvaluatedKey;
+  } while (key);
+  return result.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-/**
- * Dynalite has no TransactWriteItems: check every condition first, then apply
- * in order and undo on failure — the same local emulation the other modules
- * use. The conditions mirror the real transaction's ConditionExpressions.
- */
-async function emulateChaseTransaction(client: DynamoDBDocumentClient, writes: ChasePlannedWrite[]): Promise<void> {
-  const snapshots: Array<{ write: ChasePlannedWrite; current: Record<string, unknown> | undefined }> = [];
-  for (const write of writes) {
-    const current = (await client.send(new GetCommand({ TableName: write.tableName, Key: write.key, ConsistentRead: true }))).Item as Record<string, unknown> | undefined;
-    if (!write.holds(current)) throw safeConflict();
-    snapshots.push({ write, current });
+function reviewedTaskReferences(value: unknown): Array<{ id: string; version: number }> | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 80 || value.some((item) =>
+    !item || typeof item.id !== 'string' || !item.id || !Number.isSafeInteger(item.version) || item.version < 1,
+  ) || new Set(value.map((item) => item.id)).size !== value.length) {
+    throw Object.assign(new Error('reviewedOpenTasks must contain distinct Task ids and positive versions'), { statusCode: 400 });
   }
-  const applied: typeof snapshots = [];
-  try {
-    for (const snapshot of snapshots) {
-      await client.send(new PutCommand({ TableName: snapshot.write.tableName, Item: snapshot.write.after(snapshot.current) }));
-      applied.push(snapshot);
-    }
-  } catch (error) {
-    for (const { write, current } of applied.reverse()) {
-      if (current) await client.send(new PutCommand({ TableName: write.tableName, Item: current }));
-      else await client.send(new DeleteCommand({ TableName: write.tableName, Key: write.key }));
-    }
-    throw error;
-  }
+  return value.map(({ id, version }) => ({ id, version })).sort((a, b) => a.id.localeCompare(b.id));
 }
 
 export async function createChaseTask(
   client: DynamoDBDocumentClient,
   input: {
     actorId: string; dealId: string; dealVersion: number; expectedVersion: number;
-    idempotencyKey: string; date?: unknown; today?: string;
+    idempotencyKey: string; date?: unknown; today?: string; existingTaskId?: unknown; reviewedOpenTasks?: unknown;
   },
 ): Promise<{ task: Task; replayed: boolean }> {
+  const reviewed = reviewedTaskReferences(input.reviewedOpenTasks);
   const request = {
     dealVersion: input.dealVersion,
     expectedVersion: input.expectedVersion,
     ...(input.date !== undefined ? { date: String(input.date) } : {}),
+    ...(input.existingTaskId !== undefined ? { existingTaskId: input.existingTaskId } : {}),
+    ...(reviewed !== undefined ? { reviewedOpenTasks: reviewed } : {}),
   };
   const replay = await replayMutation(client, {
     actorId: input.actorId, operation: 'chase-task', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
@@ -240,9 +239,20 @@ export async function createChaseTask(
       { statusCode: 409, taskId: open[0].id },
     );
   }
+  const related = await relatedDealTasks(client, input.dealId);
+  const existing = input.existingTaskId === undefined ? undefined
+    : related.find((task) => task.id === input.existingTaskId);
+  if (input.existingTaskId !== undefined && (!existing || input.date !== undefined)) {
+    throw Object.assign(new Error('Select an open Task on this deal; its date is preserved'), { statusCode: 400 });
+  }
+  const references = related.map(({ id, version }) => ({ id, version }));
+  if (!existing && related.length && JSON.stringify(reviewed) !== JSON.stringify(references)) {
+    throw Object.assign(new Error('Review existing deal Tasks before creating a separate payment follow-up, or link one of them'), { statusCode: 409 });
+  }
+  if (references.length > 80) throw Object.assign(new Error('Too many open deal Tasks; consolidate before adding a follow-up'), { statusCode: 422 });
   const organization = await getCrmRecord(client, 'organization', String(deal.organizationId || ''));
   const today = input.today || berlinDate();
-  const taskId = randomUUID();
+  const taskId = existing?.id || randomUUID();
   const now = nowIso();
   const item: Record<string, unknown> = {
     PK: `TASK#${taskId}`,
@@ -273,20 +283,18 @@ export async function createChaseTask(
   };
   const nextVersion = state.version + 1;
   const financeRow = singleton(financeKey(input.dealId));
-  const tail = financeMutationTail({
-    actorId: input.actorId, operation: 'chase-task', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
-    request, financeVersion: nextVersion, recordId: taskId, eventCode: 'chase-task-created',
-  });
   const transaction = [
     adminCheck(input.actorId),
     dealCheck(input.dealId, input.dealVersion),
-    {
-      Put: {
-        TableName: TABLE_TASKS,
-        Item: item,
-        ConditionExpression: 'attribute_not_exists(PK)',
-      },
-    },
+    ...references.map(({ id, version }) => ({ ConditionCheck: {
+      TableName: TABLE_TASKS, Key: { PK: `TASK#${id}`, SK: `TASK#${id}` },
+      ConditionExpression: '#version = :version AND (#status = :todo OR #status = :waiting)',
+      ExpressionAttributeNames: { '#version': 'version', '#status': 'status' },
+      ExpressionAttributeValues: { ':version': version, ':todo': 'todo', ':waiting': 'waiting' },
+    } })),
+    ...(existing ? [] : [{ Put: {
+      TableName: TABLE_TASKS, Item: item, ConditionExpression: 'attribute_not_exists(PK)',
+    } }]),
     {
       Update: {
         TableName: TABLE_SPONSOR_CRM,
@@ -300,60 +308,10 @@ export async function createChaseTask(
       },
     },
   ];
-  if (usesLocalTransactionEmulation()) {
-    await emulateChaseTransaction(client, [
-      {
-        // adminCheck: the actor is still an enabled admin at write time.
-        tableName: TABLE_USERS,
-        key: { PK: `USER#${input.actorId}`, SK: `USER#${input.actorId}` },
-        holds: (current) => Boolean(current) && current!.role === 'admin' && current!.disabled !== true,
-        after: (current) => current!,
-      },
-      {
-        // dealCheck: the deal is still live at the version the caller read.
-        tableName: TABLE_SPONSOR_CRM,
-        key: { PK: `DEAL#${input.dealId}`, SK: `DEAL#${input.dealId}` },
-        holds: (current) => Boolean(current) && current!.version === input.dealVersion
-          && !current!.archivedAt && current!.active === true && current!.status !== 'lost',
-        after: (current) => current!,
-      },
-      {
-        tableName: TABLE_TASKS,
-        key: { PK: item.PK, SK: item.SK },
-        holds: (current) => !current,
-        after: () => item,
-      },
-      {
-        tableName: TABLE_SPONSOR_CRM,
-        key: financeRow,
-        holds: (current) => Boolean(current) && current!.version === state.version && !current!.voidedAt,
-        after: (current) => ({
-          ...current!,
-          chaseTaskIds: [...((current!.chaseTaskIds as string[]) || []), taskId],
-          updatedAt: now,
-          actorId: input.actorId,
-          version: nextVersion,
-        }),
-      },
-      {
-        tableName: TABLE_SPONSOR_CRM,
-        key: singleton(tail.key),
-        holds: (current) => !current,
-        after: () => tail.receipt,
-      },
-      {
-        tableName: TABLE_SPONSOR_CRM,
-        key: { PK: tail.history.PK, SK: tail.history.SK },
-        holds: () => true,
-        after: () => tail.history,
-      },
-    ]);
-    return { task: { ...item, PK: undefined, SK: undefined } as unknown as Task, replayed: false };
-  }
   await executeMutation(client, {
     actorId: input.actorId, operation: 'chase-task', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
     request,
-    financeVersion: nextVersion, recordId: taskId, eventCode: 'chase-task-created',
+    financeVersion: nextVersion, recordId: taskId, eventCode: existing ? 'chase-task-linked' : 'chase-task-created',
     transactItems: transaction,
   });
   const created = await getTask(client, taskId);

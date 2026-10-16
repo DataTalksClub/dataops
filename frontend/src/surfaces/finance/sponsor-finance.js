@@ -410,6 +410,7 @@ export function createSponsorFinance(context) {
         : "";
     const evidence = finance.evidence || [];
     const chaseTasks = projection.chase?.tasks || [];
+    const existingTasks = projection.chase?.existingTasks || [];
     const chaseable = projection.followUp?.code === "chase-payment";
     const chaseTaskRow = (task) => {
       const detail = [
@@ -441,13 +442,21 @@ export function createSponsorFinance(context) {
                 : ""
             }
           </header>
+          ${!chaseTasks.length && existingTasks.length ? html`
+            <p>Review the deal's open Tasks before adding another follow-up.</p>
+            <ul>${existingTasks.map((task) => html`<li>${escapeHtml(task.description)}
+              <button data-finance-chase-link="${escapeHtml(task.id)}">Use this Task for the payment follow-up</button>
+            </li>`).join("")}</ul>
+            <label><input type="checkbox" data-finance-chase-reviewed>
+              I reviewed these Tasks; a new payment follow-up is separate work.
+            </label>` : ""}
           ${
             chaseTasks.length
               ? html`<ul class="finance-chase-list">${chaseTasks.map(chaseTaskRow).join("")}</ul>`
               : html`<p class="dk-muted">
                   No chase yet. Creating one adds a Task to the regular task pool —
-                  it is worked there like any other Task, and resolving it records
-                  what was verified. One open chase per deal.
+                  it uses the regular Task lifecycle and proof requirements.
+                  Bank review and specific message approval remain required.
                 </p>`
           }
         </div>`
@@ -744,12 +753,26 @@ export function createSponsorFinance(context) {
       .querySelector("[data-finance-chase-create]")
       ?.addEventListener("click", () =>
         safe(async () => {
+          const existing = projection.chase?.existingTasks || [];
+          if (existing.length && !panel.querySelector("[data-finance-chase-reviewed]")?.checked) {
+            throw new Error("Review existing Tasks and link one, or confirm the new follow-up is separate work.");
+          }
           await financeMutation(booking, "/chase", "POST", {
             expectedVersion: projection.finance.version,
+            ...(existing.length ? { reviewedOpenTasks: existing.map(({ id, version }) => ({ id, version })) } : {}),
           });
           await reopenBookingDetail(booking);
         }, "Could not create the payment chase task"),
       );
+    panel.querySelectorAll("[data-finance-chase-link]").forEach((button) =>
+      button.addEventListener("click", () => safe(async () => {
+        await financeMutation(booking, "/chase", "POST", {
+          expectedVersion: projection.finance.version,
+          existingTaskId: button.dataset.financeChaseLink,
+        });
+        await reopenBookingDetail(booking);
+      }, "Could not link the existing follow-up")),
+    );
     panel.querySelectorAll("[data-finance-chase-open]").forEach((button) =>
       button.addEventListener("click", () =>
         navigateCanonicalWorkspace(

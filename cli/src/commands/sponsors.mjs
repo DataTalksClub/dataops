@@ -19,6 +19,7 @@ Usage
   dataops sponsors history <deal-id>                   A deal's change history
   dataops sponsors finance <deal-id> [history|candidates/invoices|candidates/payments]
   dataops sponsors chase <deal-id> [--date YYYY-MM-DD]  Create a main-pool payment follow-up
+      [--task ID | --review-existing]  Link an existing deal Task, or confirm review before adding separate work
   dataops sponsors link-payment <deal-id> <transaction-id> [--apply]
       Link a bookkeeping transaction to the deal as its payment. A payment the deal
       recorded before the row existed (same amount, within 14 days) is replaced by
@@ -203,15 +204,19 @@ export async function chase(args, io) {
     api.get(`/api/sponsor-crm/deals/${enc(id)}`),
     api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
   ]);
+  if (!finance.finance) throw new UsageError("Classify this deal's finance before creating or linking a payment follow-up.");
   const body = { dealVersion: deal.version, expectedVersion: finance.finance.version };
   const date = isoDate(args.date, "date");
   if (date) body.date = date;
+  if (args.task) body.existingTaskId = String(args.task);
+  if (args.reviewExisting) body.reviewedOpenTasks = (finance.chase?.existingTasks || [])
+    .map(({ id, version }) => ({ id, version })).sort((a, b) => a.id.localeCompare(b.id));
   const result = await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/chase`, body, {
     headers: { "Idempotency-Key": randomUUID() },
   });
   if (!args.json) {
     const task = result.task || {};
-    io.print(`Created payment chase Task ${task.id} for deal ${id} (due ${task.date}).`);
+    io.print(`${args.task ? "Linked existing" : "Created"} payment chase Task ${task.id} for deal ${id} (due ${task.date}).`);
     io.print(`Work it in the task pool: dataops tasks show ${task.id}`);
   }
   return result;

@@ -120,6 +120,7 @@ export type TimingState = 'not-applicable' | 'not-due' | 'overdue' | 'settled';
 /** An open payment chase Task as the finance projection shows it. */
 export type ChaseTaskView = {
   id: string;
+  version: number;
   description: string;
   date: string;
   status: 'todo' | 'waiting';
@@ -164,5 +165,5 @@ export type FinanceProjection = {
   paymentLinkCount: number;
   paymentLinkLimit: number;
   /** Open payment chase Tasks in the main task pool, attached at the route layer. */
-  chase?: { tasks: ChaseTaskView[] };
+  chase?: { tasks: ChaseTaskView[]; existingTasks: ChaseTaskView[] };
 };

@@ -129,3 +129,33 @@ test("sponsors chase creates the payment chase Task with an Idempotency-Key", as
     if (oldUrl === undefined) delete process.env.DATAOPS_URL; else process.env.DATAOPS_URL = oldUrl;
   }
 });
+
+
+test("sponsors chase explicitly links existing work or submits the reviewed task versions", async () => {
+  const originalFetch = globalThis.fetch;
+  const oldToken = process.env.DATAOPS_TOKEN;
+  const oldUrl = process.env.DATAOPS_URL;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  process.env.DATAOPS_URL = "https://portal.example.test";
+  const posts = [];
+  globalThis.fetch = async (url, options) => {
+    if (options.method === "POST") {
+      posts.push(JSON.parse(options.body));
+      return new Response(JSON.stringify({ task: { id: "task-existing" } }));
+    }
+    return new Response(JSON.stringify(String(url).endsWith("/finance")
+      ? { finance: { version: 4 }, chase: { existingTasks: [{ id: "task-existing", version: 3 }] } }
+      : { id: "deal-demo", version: 7 }));
+  };
+  try {
+    const io = { log() {}, error() {} };
+    assert.equal(await run(["sponsors", "chase", "deal-demo", "--task", "task-existing", "--json"], io), 0);
+    assert.deepEqual(posts[0], { dealVersion: 7, expectedVersion: 4, existingTaskId: "task-existing" });
+    assert.equal(await run(["sponsors", "chase", "deal-demo", "--review-existing", "--json"], io), 0);
+    assert.deepEqual(posts[1], { dealVersion: 7, expectedVersion: 4, reviewedOpenTasks: [{ id: "task-existing", version: 3 }] });
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
+    if (oldUrl === undefined) delete process.env.DATAOPS_URL; else process.env.DATAOPS_URL = oldUrl;
+  }
+});
