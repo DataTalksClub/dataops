@@ -18,6 +18,7 @@ import {
 
 import { dealProjectionContext } from './context';
 import { getCrmRecord } from '../db/sponsorCrm';
+import { validateTaskTags } from '../routes/taskValidation';
 import { getTask } from '../db/tasks';
 import { TABLE_SPONSOR_CRM, TABLE_TASKS } from '../db/tableNames';
 import {
@@ -52,6 +53,7 @@ const OPEN_STATUSES = new Set(['todo', 'waiting']);
 
 export const PAYMENT_FOLLOW_UP_SOURCE = 'sponsor-finance';
 export const PAYMENT_FOLLOW_UP_TAG = 'payment-follow-up';
+const isFinanceTask = (task: Task) => task.source === PAYMENT_FOLLOW_UP_SOURCE || task.tags?.includes(PAYMENT_FOLLOW_UP_TAG);
 
 /** The facts a payment follow-up decision is made from, derived with the canonical derivation code. */
 export type PaymentFollowUpDecision = {
@@ -145,7 +147,8 @@ export function paymentFollowUpTaskDescription(input: {
 /** Open payment follow-up Tasks recorded on the finance state, earliest first. */
 export async function openPaymentFollowUpTasks(client: DynamoDBDocumentClient, state: FinanceState): Promise<Task[]> {
   const found = await Promise.all((state.paymentFollowUpTaskIds || []).map((id) => getTask(client, id)));
-  return found
+  const tagged = (await relatedDealTasks(client, state.dealId)).filter(isFinanceTask);
+  return [...new Map([...found.filter((task): task is Task => Boolean(task)), ...tagged].map((task) => [task.id, task])).values()]
     .filter((task): task is Task => Boolean(task) && OPEN_STATUSES.has(String(task!.status)))
     .sort((left, right) => String(left.date).localeCompare(String(right.date)) || left.id.localeCompare(right.id));
 }
@@ -171,7 +174,7 @@ export async function withPaymentFollowUpTasks(
 ): Promise<FinanceProjection> {
   if (!state) {
     const tasks = await relatedDealTasks(client, projection.dealId);
-    return { ...projection, paymentFollowUp: { tasks: tasks.map(paymentFollowUpTaskView), existingTasks: [] } };
+    return { ...projection, paymentFollowUp: { tasks: tasks.filter(isFinanceTask).map(paymentFollowUpTaskView), existingTasks: tasks.filter((task) => !isFinanceTask(task)).map(paymentFollowUpTaskView) } };
   }
   const open = await openPaymentFollowUpTasks(client, state);
   const existing = (await relatedDealTasks(client, state.dealId)).filter((task) => !open.some((followUp) => followUp.id === task.id));
@@ -188,7 +191,7 @@ export async function relatedDealTasks(client: DynamoDBDocumentClient, dealId: s
     const page = await client.send(new ScanCommand({
       TableName: TABLE_TASKS, ConsistentRead: true, Limit: 200,
       ...(key ? { ExclusiveStartKey: key } : {}),
-      ProjectionExpression: 'id, #version, description, #date, #status, subject, assigneeId, followUpAt, #source',
+      ProjectionExpression: 'id, #version, description, #date, #status, subject, assigneeId, followUpAt, #source, tags',
       ExpressionAttributeNames: { '#version': 'version', '#date': 'date', '#status': 'status', '#source': 'source' },
     }));
     evaluated += page.ScannedCount || 0;
@@ -245,7 +248,7 @@ export async function createPaymentFollowUpTask(
     : { invoiceState: projection!.invoiceState, paymentState: projection!.paymentState, timingState: projection!.timingState, followUp: projection!.followUp, coherent: true };
   const blocker = paymentFollowUpBlocker(decision);
   if (blocker) throw Object.assign(new Error(blocker), { statusCode: 422 });
-  const open = state ? await openPaymentFollowUpTasks(client, state) : await relatedDealTasks(client, input.dealId);
+  const open = state ? await openPaymentFollowUpTasks(client, state) : (await relatedDealTasks(client, input.dealId)).filter(isFinanceTask);
   if (open.length > 0) {
     throw Object.assign(
       new Error('An open payment follow-up Task already exists for this deal'),
@@ -258,6 +261,8 @@ export async function createPaymentFollowUpTask(
   if (input.existingTaskId !== undefined && (!existing || input.date !== undefined)) {
     throw Object.assign(new Error('Select an open Task on this deal; its date is preserved'), { statusCode: 400 });
   }
+  const adoptedTags = !state && existing ? [...new Set([...(existing.tags || []), PAYMENT_FOLLOW_UP_TAG])] : undefined;
+  if (adoptedTags && validateTaskTags(adoptedTags)) throw Object.assign(new Error('Consolidate Task tags before linking finance work'), { statusCode: 422 });
   const references = related.map(({ id, version }) => ({ id, version }));
   if (!existing && related.length && JSON.stringify(reviewed) !== JSON.stringify(references)) {
     throw Object.assign(new Error('Review existing deal Tasks before creating a separate payment follow-up, or link one of them'), { statusCode: 409 });
@@ -301,12 +306,19 @@ export async function createPaymentFollowUpTask(
   const transaction = [
     adminCheck(input.actorId),
     dealCheck(input.dealId, input.dealVersion),
-    ...references.map(({ id, version }) => ({ ConditionCheck: {
+    ...references.filter(({ id }) => !adoptedTags || id !== existing?.id).map(({ id, version }) => ({ ConditionCheck: {
       TableName: TABLE_TASKS, Key: { PK: `TASK#${id}`, SK: `TASK#${id}` },
       ConditionExpression: '#version = :version AND (#status = :todo OR #status = :waiting)',
       ExpressionAttributeNames: { '#version': 'version', '#status': 'status' },
       ExpressionAttributeValues: { ':version': version, ':todo': 'todo', ':waiting': 'waiting' },
     } })),
+    ...(adoptedTags && existing ? [{ Update: {
+      TableName: TABLE_TASKS, Key: { PK: `TASK#${existing.id}`, SK: `TASK#${existing.id}` },
+      UpdateExpression: 'SET tags = :tags, #version = :next, updatedAt = :now',
+      ConditionExpression: '#version = :prior AND (#status = :todo OR #status = :waiting)',
+      ExpressionAttributeNames: { '#version': 'version', '#status': 'status' },
+      ExpressionAttributeValues: { ':tags': adoptedTags, ':next': existing.version + 1, ':prior': existing.version, ':now': now, ':todo': 'todo', ':waiting': 'waiting' },
+    } }] : []),
     ...(existing ? [] : [{ Put: {
       TableName: TABLE_TASKS, Item: item, ConditionExpression: 'attribute_not_exists(PK)',
     } }]),

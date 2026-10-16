@@ -233,6 +233,35 @@ describe('sponsor payment follow-ups', () => {
     assert.notEqual(next.body.task.id, first.body.task.id);
   });
 
+  it('reviews or adopts unrelated work before queueing unclassified finance without inventing an amount', async () => {
+    const organization = await createOrganizationAtomic(client, { displayName: 'Synthetic Unclassified Review' }, ADMIN);
+    const make = () => createDealAtomic(client, { organizationId: organization.item.id, status: 'agreed' }, ADMIN);
+    const first = await make();
+    const created = await invoke('POST', '/api/tasks', { description: 'Confirm billing details', date: day(2),
+      subject: { type: 'sponsor-deal', id: first.item.id } }, { 'x-user-id': ADMIN });
+    const task = created.body.task || created.body;
+    assert.deepEqual((await followUpView(first.item.id))!.tasks, []);
+    assert.equal((await followUpView(first.item.id))!.existingTasks[0].id, task.id);
+    assert.equal((await requestFollowUp(first.item.id, { dealVersion: 1, expectedVersion: 0 }, 'unclassified-needs-review')).status, 409);
+    const adopted = await requestFollowUp(first.item.id, { dealVersion: 1, expectedVersion: 0, existingTaskId: task.id }, 'unclassified-adopt');
+    assert.equal(adopted.status, 201, JSON.stringify(adopted.body));
+    assert.equal(adopted.body.task.id, task.id);
+    assert.equal(adopted.body.task.version, task.version + 1);
+    assert.equal(adopted.body.task.description, task.description);
+    assert.equal(adopted.body.task.date, task.date);
+    assert.equal((await followUpView(first.item.id))!.tasks[0].id, task.id);
+    assert.equal(await getFinanceState(client, first.item.id), null, 'linking work never invents invoice facts');
+    const second = await make();
+    const other = await invoke('POST', '/api/tasks', { description: 'Publish the event', date: day(1),
+      subject: { type: 'sponsor-deal', id: second.item.id } }, { 'x-user-id': ADMIN });
+    const related = other.body.task || other.body;
+    const separate = await requestFollowUp(second.item.id, { dealVersion: 1, expectedVersion: 0,
+      reviewedOpenTasks: [{ id: related.id, version: related.version }] }, 'unclassified-reviewed');
+    assert.equal(separate.status, 201, JSON.stringify(separate.body));
+    assert.notEqual(separate.body.task.id, related.id);
+    assert.equal((await followUpView(second.item.id))!.existingTasks[0].id, related.id);
+  });
+
   it('creates missing-invoice work with no dates and waits for a sent invoice due date', async () => {
     const bare = await bootstrapDeal({ issue: false });
     const notIssued = await requestFollowUp(bare.dealId, { dealVersion: 1, expectedVersion: bare.financeVersion }, 'blocked-not-issued');

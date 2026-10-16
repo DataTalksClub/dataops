@@ -245,6 +245,13 @@ export function createSponsorFinance(context) {
                     ? html`<button data-finance-payment-follow-up-create>Add next finance action to Tasks</button>` : ""}
                   ${(projection.paymentFollowUp?.tasks || []).map((task) => html`<button
                     data-finance-payment-follow-up-open="${escapeHtml(task.id)}">Open finance Task</button>`).join("")}
+                  ${(projection.paymentFollowUp?.existingTasks || []).map((task) => html`<p>
+                    ${escapeHtml(task.description)}
+                    <button data-finance-payment-follow-up-link="${escapeHtml(task.id)}">Use this Task for finance</button>
+                  </p>`).join("")}
+                  ${projection.paymentFollowUp?.existingTasks?.length ? html`<label>
+                    <input type="checkbox" data-finance-payment-follow-up-reviewed>
+                    I reviewed these Tasks; a new finance Task is separate work.</label>` : ""}
                   <button class="primary-button" data-finance-classify>
                     Classify
                   </button>
