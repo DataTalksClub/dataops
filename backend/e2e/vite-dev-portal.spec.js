@@ -463,11 +463,12 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     // portal), not from the mint response.
     const download = await page.evaluate(async ({ fileId }) => {
       const mint = await fetch(`/api/files/${fileId}/download`);
-      const link = await mint.json();
+      const mintText = await mint.text();
+      const link = JSON.parse(mintText);
       const response = await fetch(link.downloadUrl);
       return {
         mintStatus: mint.status,
-        mintBytes: (await mint.text()).length,
+        mintBytes: mintText.length,
         expiresIn: link.expiresIn,
         status: response.status,
         contentType: response.headers.get('content-type'),
