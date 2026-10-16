@@ -333,6 +333,43 @@ describe('API — CRUD for tasks', () => {
   // ── GET /api/tasks (list with filters) ─────────────────────────────
 
   describe('GET /api/tasks', () => {
+    it('lists every task without repeating large frozen definitions and preserves full detail', async () => {
+      const date = '2099-04-19';
+      const snapshot = {
+        description: 'Reviewed definition '.repeat(17_000),
+        date, templateOffsetDays: 0, templateTaskOrder: 0,
+      };
+      const created = [];
+      for (let index = 0; index < 20; index++) {
+        created.push(await createTask(await getClient(port), {
+          description: `Payload regression ${index}`, date,
+          templateDefinitionSnapshot: snapshot,
+          sourceDocIds: ['sop.synthetic.review'],
+          comment: 'Keep the actual task evidence',
+        }));
+      }
+      assert.ok(Buffer.byteLength(JSON.stringify(created)) > 6_291_456,
+        'fixture must reproduce the Lambda response-size failure');
+      const response = await handler({ httpMethod: 'GET', path: '/api/tasks',
+        queryStringParameters: { date } }, {});
+      assert.equal(response.statusCode, 200);
+      const tasks = JSON.parse(response.body).tasks;
+      assert.deepEqual(new Set(tasks.map((task: { id: string }) => task.id)),
+        new Set(created.map(task => task.id)), 'no rows silently dropped');
+      assert.ok(Buffer.byteLength(response.body) < 100_000);
+      for (const task of tasks) {
+        assert.equal(Object.hasOwn(task, 'templateDefinitionSnapshot'), false);
+        assert.deepEqual(task.taskHistory, []);
+        assert.deepEqual(task.sourceDocIds, ['sop.synthetic.review']);
+        assert.equal(task.comment, 'Keep the actual task evidence');
+      }
+      const detail = await handler({ httpMethod: 'GET', path: `/api/tasks/${created[0].id}` }, {});
+      assert.equal(detail.statusCode, 200);
+      assert.deepEqual(JSON.parse(detail.body).templateDefinitionSnapshot, snapshot);
+      assert.deepEqual((await getTask(await getClient(port), created[0].id))!.templateDefinitionSnapshot,
+        snapshot, 'listing must not alter persisted provenance');
+    });
+
     it('intersects date, range, card and status filters', async () => {
       const client = await getClient(port);
       const card = await createCard(client, { ...templateLink(), title: 'Combined filters', anchorDate: '2099-02-10' });

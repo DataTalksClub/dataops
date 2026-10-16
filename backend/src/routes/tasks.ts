@@ -308,7 +308,13 @@ export async function handleTaskRoutes(
         && (!ownerFilter || matchesOwnerFilter(task.assigneeId, ownerFilter, activeMemberIds))
         && matchesRequiresFilter(task.requires, requiresFilter)
       ));
-      const responseBody: Record<string, unknown> = { tasks: await projectTasks(directory, await attachSubjects(client, await attachPrerequisites(client, visible))) };
+      // Frozen Template definitions are detail-only provenance. Repeating
+      // them on every row can exceed Lambda's response limit even when each
+      // DynamoDB item is valid. History and operational fields remain here;
+      // GET /api/tasks/:id returns the complete stored snapshot.
+      const projected = await projectTasks(directory, await attachSubjects(client, await attachPrerequisites(client, visible)));
+      const listTasks = projected.map(({ templateDefinitionSnapshot: _snapshot, ...task }) => task);
+      const responseBody: Record<string, unknown> = { tasks: listTasks };
       const ownerReference = ownerFilterUserId(ownerFilter);
       // A concrete reference always answers with its honest availability,
       // including for a disabled or missing teammate, so a deep link never
