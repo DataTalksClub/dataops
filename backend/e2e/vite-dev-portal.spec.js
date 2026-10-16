@@ -458,15 +458,26 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
       return { status: response.status, body: await response.json() };
     }, { taskId: created.body.id, bytes: fileBytes });
     expect(upload.status).toBe(201);
+    // The download route mints a short-lived link; the bytes come from the
+    // storage hop (a scoped local-dev content route under the vite dev
+    // portal), not from the mint response.
     const download = await page.evaluate(async ({ fileId }) => {
-      const response = await fetch(`/api/files/${fileId}/download`);
+      const mint = await fetch(`/api/files/${fileId}/download`);
+      const link = await mint.json();
+      const response = await fetch(link.downloadUrl);
       return {
+        mintStatus: mint.status,
+        mintBytes: (await mint.text()).length,
+        expiresIn: link.expiresIn,
         status: response.status,
         contentType: response.headers.get('content-type'),
         disposition: response.headers.get('content-disposition'),
         bytes: Array.from(new Uint8Array(await response.arrayBuffer())),
       };
     }, { fileId: upload.body.file.id });
+    expect(download.mintStatus).toBe(200);
+    expect(download.expiresIn).toBe(300);
+    expect(download.mintBytes).toBeLessThan(200);
     expect(download.status).toBe(200);
     expect(download.contentType).toContain('application/octet-stream');
     expect(download.disposition).toContain('synthetic.bin');
