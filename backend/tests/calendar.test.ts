@@ -17,7 +17,9 @@ import {
   readHolidayGeneration,
   setHolidaySyncFailureForTests,
 } from "../src/db/calendarHolidays";
-import { buildNewsletterIssue, putCardlessNewsletterIssue } from "../src/db/newsletterIssues";
+import { buildNewsletterIssue, createIssueWrite, putCardlessNewsletterIssue } from "../src/db/newsletterIssues";
+import { PutCommand } from "@aws-sdk/lib-dynamodb";
+import { newsletterOverlayItem } from "../src/calendar/newsletterOverlay";
 const invoke = (
   method: string,
   pathName: string,
@@ -229,6 +231,25 @@ describe("operations calendar", () => {
       (await readHolidayGeneration(client))?.generationId,
       before?.generationId,
     );
+  });
+  it("shows a weekly issue with primary and secondary slots as one calendar item", async () => {
+    const issue = buildNewsletterIssue({
+      kind: "weekly",
+      publicationDate: "2027-04-12",
+      issueNumber: 402,
+      status: "planned",
+      slots: { primary: { ticked: true, sponsor: "Synthetic Alpha" }, secondary: { ticked: true } },
+      cardId: "calendar-one-item-card",
+    }, "calendar-one-item-test");
+    await client.send(new PutCommand(createIssueWrite(issue).item.Put as any));
+    const response = await invoke("GET", "/api/calendar-items/overlays", undefined, {}, { from: "2027-04-12", to: "2027-04-12" });
+    const items = parse(response).items.filter((i: any) => i.provider === "newsletter-issues-readonly");
+    assert.equal(items.length, 1);
+    assert.equal(items[0].label, "Weekly #402 · Synthetic Alpha + open");
+    assert.equal(items[0].isAvailableSlot, true);
+    const booked = newsletterOverlayItem({ ...issue, slots: { ...issue.slots, secondary: { ticked: true, sponsor: "Synthetic Beta" } } });
+    assert.equal(booked.label, "Weekly #402 · Synthetic Alpha + Synthetic Beta");
+    assert.equal(booked.isAvailableSlot, false);
   });
   it("projects newsletter records read-only and reopens changed dismissed alerts", async () => {
     await putCardlessNewsletterIssue(client, buildNewsletterIssue({

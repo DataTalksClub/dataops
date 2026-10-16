@@ -7,10 +7,10 @@ import { mountPeriodNav, periodNavMarkup } from "./period-nav.js";
 import { berlinDateTime, berlinTime, berlinTimestamp } from "./calendar-time.js";
 
 // Open time is either a free slot projected from Alexey's calendar or a
-// newsletter issue nobody has booked yet.
+// newsletter issue with a ticked slot nobody has booked yet; the server marks
+// both with isAvailableSlot.
 function isAvailableOverlay(overlay) {
-  return Boolean(overlay.isAvailableSlot)
-    || (overlay.provider === "newsletter-slots-readonly" && overlay.status === "open");
+  return Boolean(overlay.isAvailableSlot);
 }
 
 export function createPlanningSurface(context) {
