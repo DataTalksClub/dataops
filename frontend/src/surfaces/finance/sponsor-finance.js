@@ -6,6 +6,7 @@ import {
   WAITING_REASON_LABELS,
   createFinanceRecordForms,
   followUpSummary,
+  replaceablePayment,
 } from "./sponsor-finance-records.js";
 
 export function createSponsorFinance(context) {
@@ -315,7 +316,7 @@ export function createSponsorFinance(context) {
         ? html` <button data-finance-invoice>Link invoice PDF</button> `
         : "";
     const linkPaymentAction =
-      projection.invoice &&
+      finance.issuedOn &&
       coherent &&
       projection.paymentLinkCount < projection.paymentLinkLimit
         ? html` <button data-finance-payment>Link ledger payment</button> `
@@ -601,6 +602,8 @@ export function createSponsorFinance(context) {
         const index = Number(new FormData(form).get("candidate"));
         const candidate = candidateItems[index];
         if (!candidate) throw new Error("Select eligible evidence");
+        const replaced =
+          kind === "invoice" ? null : replaceablePayment(projection.payments, candidate);
         const body = {
           expectedVersion: projection.finance.version,
           sourceId: candidate.id,
@@ -611,6 +614,7 @@ export function createSponsorFinance(context) {
                 dueOn: form.elements.dueOn.value,
               }
             : {}),
+          ...(replaced ? { replacesPaymentId: replaced.id } : {}),
         };
         await financeMutation(
           booking,

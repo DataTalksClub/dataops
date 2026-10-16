@@ -5,7 +5,7 @@ import { formatAmount } from "../src/surfaces/finance/bookkeeping-format.js";
 
 import { createFinanceSurface } from "../src/surfaces/finance/index.js";
 import { createSponsorFinance } from "../src/surfaces/finance/sponsor-finance.js";
-import { followUpSummary } from "../src/surfaces/finance/sponsor-finance-records.js";
+import { followUpSummary, replaceablePayment } from "../src/surfaces/finance/sponsor-finance-records.js";
 import {
   copyToClipboard,
   formatFullCsv,
@@ -1191,4 +1191,14 @@ test("Money lists what to chase first with each fix, then outstanding and expect
   assert.doesNotMatch(markup, /dk-stat/);
   assert.equal(forecastBucketLabel("2026-11"), "November 2026");
   assert.equal(forecastBucketLabel("not-invoiced"), "Not invoiced yet");
+});
+
+test("a bookkeeping row replaces the payment recorded before it: same amount, within 14 days", () => {
+  const payments = [
+    { id: "ledger-1", source: "ledger", amount: "5950.00", effectiveDate: "2026-09-04" },
+    { id: "recorded-1", source: "recorded", amount: "5950", effectiveDate: "2026-09-04" },
+  ];
+  assert.equal(replaceablePayment(payments, { amount: "5950.00", effectiveDate: "2026-09-07" })?.id, "recorded-1");
+  assert.equal(replaceablePayment(payments, { amount: "5900.00", effectiveDate: "2026-09-04" }), undefined);
+  assert.equal(replaceablePayment(payments, { amount: "5950.00", effectiveDate: "2026-10-04" }), undefined);
 });

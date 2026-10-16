@@ -37,6 +37,21 @@ const reasonText = (reason) => WAITING_REASON_LABELS[reason] || "something";
  * `followUp` comes from the backend (deal projection or ledger row); it is
  * never computed here.
  */
+/**
+ * The payment a deal recorded before its bookkeeping row existed that this
+ * row confirms: same amount, at most 14 days apart. Linking the row replaces it.
+ */
+export function replaceablePayment(payments, candidate) {
+  const date = Date.parse(String(candidate?.effectiveDate || ""));
+  return (payments || []).find(
+    (payment) =>
+      payment.source === "recorded" &&
+      Number(payment.amount) === Number(candidate.amount) &&
+      Number.isFinite(date) &&
+      Math.abs(Date.parse(String(payment.effectiveDate)) - date) <= 14 * 86_400_000,
+  );
+}
+
 export function followUpSummary(followUp = {}) {
   const since = followUp.since ? ledgerDate(followUp.since) : "";
   switch (followUp.code) {
