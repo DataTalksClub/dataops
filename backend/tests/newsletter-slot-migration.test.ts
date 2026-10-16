@@ -11,7 +11,8 @@ import { createTemplate } from "../src/db/templates";
 import type { Template } from "../src/types";
 import { createTask, listTasksByCard, updateTask } from "../src/db/tasks";
 import { templateLink } from "./helpers/cardTemplate";
-import { TABLE_NEWSLETTER_SLOTS } from "../src/db/tableNames";
+import { TABLE_NEWSLETTER_SLOTS, TABLE_SPONSOR_CRM } from "../src/db/tableNames";
+import { createFile, getFile } from "../src/db/files";
 import { getNewsletterIssue, newsletterIssueId } from "../src/db/newsletterIssues";
 import { issueSourceKey } from "../scripts/import-newsletter-issues";
 
@@ -132,13 +133,16 @@ describe("newsletter slot to issue migration", () => {
     const doc = await createTask(client, { description: "[Trello] Create doc", date: "2026-08-19", cardId: old.id, templateTaskRef: "trello-doc", status: "done", link: "https://docs.example/sa" });
     const chase = await createTask(client, { description: "Chase payment", date: "2026-09-01", cardId: old.id });
     await createTask(client, { description: "Fill block", date: "2026-08-25", cardId: old.id, status: "skipped", skipReason: "No blocks" });
+    const invoice = await createTask(client, { description: "[Trello] Invoice", date: "2026-08-26", cardId: old.id, templateTaskRef: "trello-invoice", status: "done" });
+    const file = await createFile(client, { cardId: old.id, taskId: invoice.id, filename: "synthetic-invoice.pdf", category: "invoice" });
+    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { PK: "DELIVERABLE#synthetic-d", SK: "DELIVERABLE#synthetic-d", id: "synthetic-d", cardId: old.id } }));
     const sheetId = "SA-2026-08-26";
     await slotRow(sheetId, { publicationDate: "2026-08-26", status: "sent", cardId: old.id });
     const plan = [{
       slotIds: [newsletterIssueId(issueSourceKey(sheetId))],
       issue: { kind: "standalone", publicationDate: "2026-08-26", status: "sent", sourceType: "xlsx-import", sourceKey: issueSourceKey(sheetId),
         slots: { primary: { ticked: true, sponsor: "Sponsor C", sheetId } } },
-      card: { action: "retemplate", cardId: old.id, taskMap: { [doc.id]: "create-sponsorship-document" } },
+      card: { action: "retemplate", cardId: old.id, taskMap: { [doc.id]: "create-sponsorship-document", [invoice.id]: "create-invoice" } },
     }];
     const run = data(await invoke("POST", "/api/newsletter-issues/migrations/from-slots", { dryRun: false, plan }));
     assert.equal(run.results[0].outcome, "migrated", JSON.stringify(run));
@@ -157,6 +161,13 @@ describe("newsletter slot to issue migration", () => {
     assert.equal(tasks.find((task) => task.id === chase.id)?.status, "todo");
     assert.equal(tasks.some((task) => task.description === "Fill block"), false);
     assert.equal(await getCard(client, old.id), null);
+    const invoiceTask = tasks.find((task) => task.templateTaskRef === "create-invoice")!;
+    assert.equal(invoiceTask.status, "done");
+    const movedFile = (await getFile(client, file.id))!;
+    assert.equal(movedFile.cardId, card.id);
+    assert.equal(movedFile.taskId, invoiceTask.id);
+    const deliverable = (await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: "DELIVERABLE#synthetic-d", SK: "DELIVERABLE#synthetic-d" } }))).Item!;
+    assert.equal(deliverable.cardId, card.id);
     assert.ok(await slotGone(newsletterIssueId(issueSourceKey(sheetId))));
   });
 });

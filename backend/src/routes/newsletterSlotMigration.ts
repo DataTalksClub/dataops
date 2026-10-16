@@ -24,7 +24,7 @@
  * old slot rows are deleted. An issue row that already exists is skipped, so
  * a rerun finishes an interrupted migration.
  */
-import { DeleteCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DeleteCommand, GetCommand, PutCommand, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { cardBlockingReferences, deleteCardCascade } from '../db/cardDeletion';
@@ -36,14 +36,14 @@ import {
   newsletterIssueId,
   type NewsletterIssue,
 } from '../db/newsletterIssues';
-import { TABLE_NEWSLETTER_SLOTS } from '../db/tableNames';
+import { TABLE_FILES, TABLE_NEWSLETTER_SLOTS, TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { createTask, listTasksByCardConsistent, updateTask } from '../db/tasks';
 import { getTemplate } from '../db/templates';
 import { loadAssignmentPolicy } from '../db/workspaceSettings';
 import { resolveInteractiveActor } from '../identity/actor';
 import { templateTaskProjection } from '../templates/cardTemplateProjection';
 import type { Card, LambdaEvent, LambdaResponse, Task } from '../types';
-import { createIssueCard, issueTaskGroups, pushIssueToCard } from '../newsletter/issueCard';
+import { createIssueCard, issueTaskGroups, issueTemplate, pushIssueToCard } from '../newsletter/issueCard';
 
 type PlannedIssue = {
   slotIds: string[];
@@ -96,6 +96,86 @@ async function carryResolvedTask(client: DynamoDBDocumentClient, source: Task, t
   await updateTask(client, target.id, { expectedVersion: target.version, patch: patch as any });
 }
 
+type TaskFate = { kind: 'map'; ref: string } | { kind: 'drop' } | { kind: 'move' };
+
+/** Where each old Task goes: onto a new template Task, onto the new Card, or nowhere. */
+function retemplateFate(source: Task, taskMap: Record<string, string | null>, refs: Set<string>): TaskFate {
+  const ref = Object.hasOwn(taskMap, source.id)
+    ? taskMap[source.id]
+    : (source.templateTaskRef && refs.has(source.templateTaskRef) ? source.templateTaskRef : undefined);
+  if (ref === null) return { kind: 'drop' };
+  if (ref !== undefined) {
+    if (!refs.has(ref)) throw new Error(`Task ${source.id} maps to unknown ref ${ref}`);
+    return { kind: 'map', ref };
+  }
+  return source.status === 'skipped' ? { kind: 'drop' } : { kind: 'move' };
+}
+
+/**
+ * References a re-templated Card would leave behind. Files on a mapped Task
+ * follow it to its target, files on a moved Task stay with it, and sponsor
+ * deliverables follow the Card; a file on a dropped Task, or a calendar item
+ * or another issue pointing at the Card, blocks the change.
+ */
+async function retemplateBlockers(client: DynamoDBDocumentClient, oldCard: Card, taskMap: Record<string, string | null>, refs: Set<string>) {
+  const tasks = await listTasksByCardConsistent(client, oldCard.id);
+  const dropped = tasks.filter((task) => retemplateFate(task, taskMap, refs).kind === 'drop');
+  const blockers = await cardBlockingReferences(client, oldCard, dropped);
+  const files = await scanRows(client, TABLE_FILES, 'FILE#');
+  const droppedIds = new Set(dropped.map((task) => task.id));
+  return {
+    ...blockers,
+    files: files.filter((row) => typeof row.taskId === 'string' && droppedIds.has(row.taskId)).map((row) => String(row.id)),
+    sponsorDeliverables: [],
+  };
+}
+
+async function scanRows(client: DynamoDBDocumentClient, tableName: string, prefix: string) {
+  const rows: Record<string, unknown>[] = [];
+  let ExclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const page = await client.send(new ScanCommand({
+      TableName: tableName,
+      FilterExpression: 'begins_with(PK, :prefix)',
+      ExpressionAttributeValues: { ':prefix': prefix },
+      ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+    }));
+    rows.push(...((page.Items || []) as Record<string, unknown>[]));
+    ExclusiveStartKey = page.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return rows;
+}
+
+/** Point files and sponsor deliverables of the old Card at the new one. */
+async function repointReferences(client: DynamoDBDocumentClient, oldCard: Card, newCardId: string, taskTargets: Map<string, string>) {
+  const oldTaskIds = new Set((await listTasksByCardConsistent(client, oldCard.id)).map((task) => task.id));
+  const repointed: string[] = [];
+  for (const row of await scanRows(client, TABLE_FILES, 'FILE#')) {
+    const taskId = typeof row.taskId === 'string' ? row.taskId : null;
+    const target = taskId ? taskTargets.get(taskId) : undefined;
+    if (row.cardId !== oldCard.id && !target) continue;
+    if (taskId && oldTaskIds.has(taskId) && !target) continue; // dropped: blocked earlier
+    await client.send(new UpdateCommand({
+      TableName: TABLE_FILES,
+      Key: { PK: row.PK, SK: row.SK },
+      UpdateExpression: target ? 'SET cardId = :card, taskId = :task' : 'SET cardId = :card',
+      ExpressionAttributeValues: { ':card': newCardId, ...(target ? { ':task': target } : {}) },
+    }));
+    repointed.push(`file ${row.id}${target ? ` -> task ${target}` : ''}`);
+  }
+  for (const row of await scanRows(client, TABLE_SPONSOR_CRM, 'DELIVERABLE#')) {
+    if (row.cardId !== oldCard.id) continue;
+    await client.send(new UpdateCommand({
+      TableName: TABLE_SPONSOR_CRM,
+      Key: { PK: row.PK, SK: row.SK },
+      UpdateExpression: 'SET cardId = :card',
+      ExpressionAttributeValues: { ':card': newCardId },
+    }));
+    repointed.push(`deliverable ${row.id}`);
+  }
+  return repointed;
+}
+
 /** Replace a Card built from the wrong Template with the issue's new Card. */
 async function retemplateCard(
   client: DynamoDBDocumentClient,
@@ -106,34 +186,28 @@ async function retemplateCard(
 ) {
   const newTasks = await listTasksByCardConsistent(client, newCard.id);
   const byRef = new Map(newTasks.filter((task) => task.templateTaskRef).map((task) => [task.templateTaskRef!, task]));
+  const refs = new Set(byRef.keys());
   const carried: string[] = [];
   const moved: string[] = [];
   const dropped: string[] = [];
+  const taskTargets = new Map<string, string>();
   for (const source of await listTasksByCardConsistent(client, oldCard.id)) {
-    const ref = Object.hasOwn(taskMap, source.id)
-      ? taskMap[source.id]
-      : (source.templateTaskRef && byRef.has(source.templateTaskRef) ? source.templateTaskRef : undefined);
-    if (ref === null) {
+    const fate = retemplateFate(source, taskMap, refs);
+    if (fate.kind === 'drop') {
       dropped.push(`${source.id} (${source.status})`);
-      continue;
-    }
-    if (ref !== undefined) {
-      const target = byRef.get(ref);
-      if (!target) throw new Error(`Task ${source.id} maps to unknown ref ${ref}`);
+    } else if (fate.kind === 'map') {
+      const target = (await listTasksByCardConsistent(client, newCard.id)).find((task) => task.id === byRef.get(fate.ref)!.id)!;
+      taskTargets.set(source.id, target.id);
       if (['done', 'skipped'].includes(source.status) && target.status === 'todo') {
         await carryResolvedTask(client, source, target);
-        carried.push(`${source.id} -> ${ref} (${source.status})`);
+        carried.push(`${source.id} -> ${fate.ref} (${source.status})`);
       } else {
-        dropped.push(`${source.id} -> ${ref} (${source.status}, target ${target.status})`);
+        dropped.push(`${source.id} -> ${fate.ref} (${source.status}, target ${target.status})`);
       }
-      continue;
+    } else {
+      await updateTask(client, source.id, { expectedVersion: source.version, patch: { cardId: newCard.id } as any });
+      moved.push(`${source.id} (${source.status})`);
     }
-    if (source.status === 'skipped') {
-      dropped.push(`${source.id} (skipped)`);
-      continue;
-    }
-    await updateTask(client, source.id, { expectedVersion: source.version, patch: { cardId: newCard.id } as any });
-    moved.push(`${source.id} (${source.status})`);
   }
   const links = (oldCard.cardLinks || []).filter((link) => link.url);
   if (links.length) {
@@ -148,9 +222,10 @@ async function retemplateCard(
       return { cardLinks: next };
     });
   }
+  const repointed = await repointReferences(client, oldCard, newCard.id, taskTargets);
   const current = (await getCardConsistent(client, oldCard.id))!;
   await deleteCardCascade(client, oldCard.id, current.version, actorId);
-  return { carried, moved, dropped, movedLinks: links.map((link) => link.name), deletedCardId: oldCard.id };
+  return { carried, moved, dropped, repointed, movedLinks: links.map((link) => link.name), deletedCardId: oldCard.id };
 }
 
 /** Fold a secondary slot's Card into the kept Card's secondary-slot Tasks. */
@@ -215,7 +290,15 @@ async function migrateIssue(
   if (doomedCardId) {
     const doomed = await getCardConsistent(client, doomedCardId);
     if (!doomed) throw new Error(`Card ${doomedCardId} is missing`);
-    const blockers = await cardBlockingReferences(client, doomed, await listTasksByCardConsistent(client, doomed.id));
+    let blockers;
+    if (planned.card.action === 'retemplate') {
+      const template = await issueTemplate(client, { kind: planned.issue.kind });
+      if (!template) throw new Error(`No ${planned.issue.kind} Template`);
+      const refs = new Set((template.taskDefinitions || []).map((definition) => definition.refId));
+      blockers = await retemplateBlockers(client, doomed, planned.card.taskMap || {}, refs);
+    } else {
+      blockers = await cardBlockingReferences(client, doomed, await listTasksByCardConsistent(client, doomed.id));
+    }
     if (Object.values(blockers).some((ids) => ids.length > 0)) {
       throw new Error(`Card ${doomedCardId} is still referenced: ${JSON.stringify(blockers)}`);
     }
