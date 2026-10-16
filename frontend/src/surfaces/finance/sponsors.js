@@ -12,6 +12,32 @@ import { createCollectionLoader } from "../../core/collection-loader.js";
 import { sponsorRecordPath, sponsorsPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
 
+export async function readSponsorDirectory(api, collection) {
+  const items = new Map();
+  const cursors = new Set();
+  let cursor;
+  for (let page = 0; page < 100; page += 1) {
+    const query = new URLSearchParams({ limit: "100" });
+    if (cursor) query.set("cursor", cursor);
+    const result = await api(`/${collection}?${query}`);
+    if (!Array.isArray(result?.items) ||
+        (result.nextCursor != null && typeof result.nextCursor !== "string")) {
+      throw new Error(`Invalid sponsor ${collection} page`);
+    }
+    for (const item of result.items) {
+      if (!item || typeof item.id !== "string" || !item.id) {
+        throw new Error(`Invalid sponsor ${collection} record`);
+      }
+      items.set(item.id, item);
+    }
+    cursor = result.nextCursor;
+    if (!cursor) return { items: [...items.values()] };
+    if (cursors.has(cursor)) throw new Error(`Repeated sponsor ${collection} cursor`);
+    cursors.add(cursor);
+  }
+  throw new Error(`Sponsor ${collection} directory is incomplete; pagination limit reached`);
+}
+
 function focusFirstUsableControl(dialog) {
   const control = dialog.querySelector(
     [
@@ -399,9 +425,9 @@ export function createSponsorCrmSurface(context) {
       drawAlerts();
       const [organizationsResult, contactsResult, dealsResult, alertPage] =
         await Promise.all([
-          api("/organizations?limit=100"),
-          api("/contacts?limit=100"),
-          api("/deals?limit=100"),
+          readSponsorDirectory(api, "organizations"),
+          readSponsorDirectory(api, "contacts"),
+          readSponsorDirectory(api, "deals"),
           pendingAlertPage,
           ownerDirectory.load(),
         ]);
