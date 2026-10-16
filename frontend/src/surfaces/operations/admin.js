@@ -357,11 +357,23 @@ export function createAdminSurface(context) {
       menu.hidden = false;
       trigger.setAttribute("aria-expanded", "true");
       // The table clips overflow, so the menu is placed against the viewport
-      // under its trigger, end-aligned, and closes when the page moves.
+      // under its trigger, end-aligned, and closes when the page moves. A row
+      // too near the bottom opens it upward; where neither side has room it
+      // is held inside the viewport. It is placed before focus moves into
+      // it, or focusing an off-screen item would scroll the page and close it.
       const rect = trigger.getBoundingClientRect?.();
       if (rect) {
-        menu.style.top = `${Math.round(rect.bottom + 4)}px`;
-        menu.style.right = `${Math.max(8, Math.round(globalThis.innerWidth - rect.right))}px`;
+        const gap = 4;
+        const margin = 8;
+        const viewportHeight = globalThis.innerHeight || 0;
+        menu.style.right = `${Math.max(margin, Math.round(globalThis.innerWidth - rect.right))}px`;
+        menu.style.top = `${Math.round(rect.bottom + gap)}px`;
+        const height = menu.getBoundingClientRect?.().height || 0;
+        if (viewportHeight && rect.bottom + gap + height > viewportHeight - margin) {
+          const above = rect.top - gap - height;
+          const top = above >= margin ? above : Math.max(margin, viewportHeight - margin - height);
+          menu.style.top = `${Math.round(top)}px`;
+        }
       }
       document.addEventListener("pointerdown", onOutside, true);
       globalThis.addEventListener?.("scroll", close, true);

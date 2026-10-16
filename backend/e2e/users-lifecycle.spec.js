@@ -156,4 +156,34 @@ test.describe('Users: compact layout, and a person leaving', () => {
       data: { defaultAssigneeId: before.defaultAssigneeId, expectedVersion: now.version },
     }));
   });
+
+  // A row at the bottom of the screen opens its menu upward: the menu is
+  // placed against the viewport, and below the trigger it would fall off it.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 560 }, { name: '375', width: 375, height: 560 }]) {
+    test(`the row menu stays on screen for a row at the bottom at ${viewport.name}`, async ({ page, request }) => {
+      for (let index = 0; index < 6; index += 1) await createPerson(request, 'Synthetic Bottom Person');
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await openUsers(page);
+      const last = page.locator('.ops-user-row').last();
+      const trigger = last.locator('.ops-user-menu-trigger');
+      await trigger.evaluate((node) => node.scrollIntoView({ block: 'end' }));
+      // Let the scroll event land before opening: the menu closes on scroll.
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const triggerBox = await trigger.boundingBox();
+      await trigger.click();
+      const menu = page.getByRole('menu');
+      await expect(menu).toBeVisible();
+      const menuBox = await menu.boundingBox();
+      // The trigger really sits too low for the menu to open downward.
+      expect(triggerBox.y + triggerBox.height + menuBox.height).toBeGreaterThan(viewport.height);
+      expect(menuBox.y).toBeGreaterThanOrEqual(0);
+      expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(viewport.height);
+      expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(triggerBox.y);
+      expect(menuBox.x).toBeGreaterThanOrEqual(0);
+      expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(viewport.width);
+      await shot(page, `users-menu-bottom-${viewport.name}`);
+      await page.keyboard.press('Escape');
+      await expect(menu).toBeHidden();
+    });
+  }
 });
