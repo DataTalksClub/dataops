@@ -14,6 +14,7 @@ import * as notifications from "./commands/notifications.mjs";
 import * as people from "./commands/people.mjs";
 import * as podcast from "./commands/podcast.mjs";
 import * as raw from "./commands/raw.mjs";
+import * as reconcile from "./commands/reconcile.mjs";
 import * as recurring from "./commands/recurring.mjs";
 import * as resources from "./commands/resources.mjs";
 import * as sponsors from "./commands/sponsors.mjs";
@@ -90,6 +91,7 @@ export const FAMILIES = {
     },
   },
   bookkeeping: { group: "Finance", summary: bookkeeping.summary, help: bookkeeping.help, commands: bookkeeping.commands },
+  reconcile: { group: "Finance", summary: reconcile.summary, help: reconcile.help, commands: reconcile.commands },
   sponsors: { group: "Finance", summary: sponsors.summary, help: sponsors.help, commands: sponsors.commands },
   invoices: {
     group: "Finance",
