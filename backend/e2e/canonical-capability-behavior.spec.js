@@ -787,6 +787,9 @@ test.describe('canonical frontend capability behavior', () => {
     } });
     expect(retired.status()).toBe(404);
     await page.goto('/bookkeeping?view=package&month=2026-08');
+    // Create the package only once the page has loaded accounts and files;
+    // a load still in flight would otherwise repaint the review afterwards.
+    await expect(page.locator('[data-account] option')).toHaveCount(3);
     await page.getByLabel('Report month').fill('2026-08');
     await page.getByRole('button', { name: 'Create monthly package' }).click();
     const packageReview = page.getByRole('region', { name: 'Accountant package', exact: true });
