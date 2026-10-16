@@ -108,7 +108,7 @@ export function createAutomations(context) {
   const { request, workApiUrl } = context;
   const state = { loaded: false, loading: null, error: "", data: null, editing: "", editError: "" };
   const section = document.createElement("section");
-  section.className = "ops-section ops-recurring-section ops-automations-section";
+  section.className = "ops-section ops-automations-section";
   section.setAttribute("aria-label", "Automations");
 
   async function load() {
@@ -151,7 +151,7 @@ export function createAutomations(context) {
       return;
     }
     const list = document.createElement("ul");
-    list.className = "ops-recurring-list";
+    list.className = "automation-list";
     for (const group of groupByRun(automations)) {
       if (group.length === 1) list.append(renderItem(group[0], { shared: false }));
       else list.append(renderGroup(group));
@@ -178,7 +178,7 @@ export function createAutomations(context) {
       ["next", first.nextRunAt ? `Next ${berlinMoment(first.nextRunAt)}` : ""],
     ]));
     const parts = document.createElement("ul");
-    parts.className = "ops-recurring-list automation-group-parts";
+    parts.className = "automation-list automation-group-parts";
     for (const automation of group) parts.append(renderItem(automation, { shared: true }));
     item.append(header, parts);
     return item;
@@ -199,7 +199,7 @@ export function createAutomations(context) {
 
   function renderItem(automation, { shared }) {
     const item = document.createElement("li");
-    item.className = "ops-recurring-item automation-item";
+    item.className = "automation-item";
     item.dataset.automationId = automation.id;
     const outcome = !automation.lastRun ? "idle" : automation.lastRun.ok ? "ok" : "failed";
     item.classList.add(`is-${outcome}`);

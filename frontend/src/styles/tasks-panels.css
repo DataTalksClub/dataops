@@ -6,19 +6,21 @@
   padding: 0;
 }body[data-workspace-view="tasks"] .ops-recurring-surface {
   gap: 16px;
-}body[data-workspace-view="tasks"] .ops-recurring-section {
+}body[data-workspace-view="tasks"] .ops-recurring-section,
+body[data-workspace-view="tasks"] .ops-automations-section {
   border-radius: var(--task-panel-radius);
 }body[data-workspace-view="tasks"] .ops-recurring-item {
   min-height: 82px;
   padding: 14px 16px;
-}body[data-workspace-view="tasks"] .ops-recurring-item.automation-item {
+}body[data-workspace-view="tasks"] .automation-item {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   min-height: 0;
   padding: var(--dk-space-2) var(--dk-space-4);
-}body[data-workspace-view="tasks"] .automation-group-parts .ops-recurring-item.automation-item {
+}body[data-workspace-view="tasks"] .automation-group-parts .automation-item {
   padding-left: var(--dk-space-7);
-}body[data-workspace-view="tasks"] .ops-recurring-item:hover {
+}body[data-workspace-view="tasks"] .ops-recurring-item:hover,
+body[data-workspace-view="tasks"] .automation-item:hover {
   background: var(--dk-bg-hover);
 }body[data-workspace-view="tasks"] .recurring-row-actions .task-action-btn {
   min-height: 36px;
