@@ -65,6 +65,7 @@ describe('workspace default assignee', () => {
       newsletterCardLeadDays: 21,
       sponsorMaterialsReminderDays: [14, 10, 3],
       sponsorFollowUpDays: 7,
+      sponsorColdContactDays: { talking: 14, customer: 30, prospect: 30, dormant: 90 },
       version: 0,
     });
     assert.strictEqual(parsed(await invoke('GET', '/api/team-members', sessions[OPERATOR])).defaultAssigneeId, null);

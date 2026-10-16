@@ -20,7 +20,8 @@ import { resolveInteractiveActor, workAdminForbidden } from '../identity/actor';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 export const WORKSPACE_SETTINGS_PATH = '/api/workspace-settings';
-const EDITABLE = new Set(['newsletterCardLeadDays', 'sponsorMaterialsReminderDays', 'sponsorFollowUpDays']);
+const EDITABLE = new Set(['newsletterCardLeadDays', 'sponsorMaterialsReminderDays', 'sponsorFollowUpDays', 'sponsorColdContactDays']);
+const COLD_STAGES = ['talking', 'customer', 'prospect', 'dormant'] as const;
 
 const isDayCount = (value: unknown, max: number) => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= max;
 
@@ -87,6 +88,17 @@ export async function handleWorkspaceSettingsRoutes(
       return json(400, { error: `sponsorFollowUpDays must be a whole number of days from 1 to ${MAX_SPONSOR_SETTING_DAYS}` });
     }
     changes.sponsorFollowUpDays = Number(days);
+  }
+  if (Object.hasOwn(requested, 'sponsorColdContactDays')) {
+    const days = requested.sponsorColdContactDays;
+    if (
+      !days || typeof days !== 'object' || Array.isArray(days)
+      || COLD_STAGES.some((stage) => !Number.isInteger((days as Record<string, unknown>)[stage]) || Number((days as Record<string, unknown>)[stage]) < 1 || Number((days as Record<string, unknown>)[stage]) > MAX_SPONSOR_SETTING_DAYS)
+    ) {
+      return json(400, { error: `sponsorColdContactDays must name talking, customer, prospect and dormant, each a whole number of days from 1 to ${MAX_SPONSOR_SETTING_DAYS}` });
+    }
+    const record = days as Record<string, number>;
+    changes.sponsorColdContactDays = { talking: Number(record.talking), customer: Number(record.customer), prospect: Number(record.prospect), dormant: Number(record.dormant) };
   }
   try {
     return json(200, await updateWorkspaceSettings(client, {

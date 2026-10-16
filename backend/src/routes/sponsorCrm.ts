@@ -18,8 +18,9 @@ import {
   type CrmRecord,
 } from '../db/sponsorCrm';
 import { listOpenDealTasks } from '../db/taskSubjects';
-import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
+import { getWorkspaceSettings, resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { importCrmSnapshot } from '../sponsorCrm/importSnapshot';
+import { listColdEntries, remindColdEntries, touchTarget, TOUCH_CHANNELS } from '../sponsorCrm/coldContacts';
 import { dealMoneyFacts } from '../sponsorFinance/ledger';
 import {
   CHANNELS,
@@ -65,17 +66,22 @@ function validateList(event: LambdaEvent) {
   return '';
 }
 
+const validStamp = (value: unknown) => value === undefined || value === null || (typeof value === 'string' && realDate(value.slice(0, 10)) && !Number.isNaN(Date.parse(value)));
+
 function validateOrganization(body: Record<string, unknown>, partial = false) {
   if ((!partial && !text(body.displayName, 200)) || (body.displayName !== undefined && !text(body.displayName, 200))) return 'Invalid organization fields';
   if (body.notes !== undefined && typeof body.notes !== 'string') return 'Invalid organization fields';
   if (body.domain !== undefined && body.domain !== '' && !registrableDomain(String(body.domain))) return 'Invalid domain';
-  if (body.lastOutboundAt !== undefined && body.lastOutboundAt !== null && !realDate(String(body.lastOutboundAt).slice(0, 10)) && typeof body.lastOutboundAt !== 'string') return 'Invalid lastOutboundAt';
+  if (!validStamp(body.lastOutboundAt)) return 'Invalid lastOutboundAt';
+  if (!validStamp(body.lastInboundAt)) return 'Invalid lastInboundAt';
   return '';
 }
 
 function validateContact(body: Record<string, unknown>, partial = false) {
   if ((!partial && (!ID.test(String(body.organizationId || '')) || !text(body.name, 200))) || (body.name !== undefined && !text(body.name, 200))) return 'Invalid contact fields';
   if (body.emails !== undefined && (!Array.isArray(body.emails) || body.emails.length < 1 || body.emails.length > 10 || body.emails.some((email) => typeof email !== 'string' || !EMAIL.test(email) || email.length > 254))) return 'Invalid contact channels';
+  if (!validStamp(body.lastOutboundAt)) return 'Invalid lastOutboundAt';
+  if (!validStamp(body.lastInboundAt)) return 'Invalid lastInboundAt';
   return '';
 }
 
@@ -204,6 +210,10 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     if (!organization) return json(422, { error: 'Unknown person or company domain' });
     const sentAt = typeof body.sentAt === 'string' ? body.sentAt : new Date().toISOString();
     const stamp = body.direction === 'outbound' ? { lastOutboundAt: sentAt } : { lastInboundAt: sentAt };
+    if (contact && !contact.archivedAt) {
+      const fresh = await getCrmRecord(client, 'contact', contact.id);
+      if (fresh && !fresh.archivedAt) await updateContactAtomic(client, fresh, stamp, user);
+    }
     await updateOrganizationAtomic(client, organization, stamp, user, 'mail');
     const created = await createCrmRecord(client, 'message', {
       organizationId: organization.id,
@@ -228,6 +238,68 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     if (query) items = items.filter((item) => String(item.snippet || '').toLowerCase().includes(query) || String(item.threadId || '').toLowerCase().includes(query));
     items.sort((a, b) => String(b.sentAt || '').localeCompare(String(a.sentAt || '')));
     return json(200, { items: items.slice(0, 20), nextCursor: items.length > 20 ? '20' : null });
+  }
+
+  if (path === '/api/sponsor-crm/cold' && method === 'GET') {
+    const query = event.queryStringParameters || {};
+    const today = todayOf(event);
+    const days = query.days === undefined ? undefined : Number(query.days);
+    if (days !== undefined && (!Number.isInteger(days) || days < 1 || days > 365)) return json(400, { error: 'days must be a whole number of days from 1 to 365' });
+    const settings = await getWorkspaceSettings(client);
+    const [organizations, contacts] = await Promise.all([
+      listCrmRecords(client, 'organization'),
+      listCrmRecords(client, 'contact'),
+    ]);
+    const deals = (await organizationMoney(client, today)).filter((deal) => !deal.archivedAt);
+    return json(200, {
+      today,
+      thresholds: days !== undefined ? { overrideDays: days } : settings.sponsorColdContactDays,
+      items: listColdEntries({ organizations, contacts, deals, today, thresholds: settings.sponsorColdContactDays, ...(days !== undefined ? { overrideDays: days } : {}) }),
+    });
+  }
+
+  if (path === '/api/sponsor-crm/cold/remind' && method === 'POST') {
+    if (!body) return json(400, { error: 'Invalid JSON' });
+    const today = typeof body.today === 'string' && realDate(body.today) ? body.today : todayOf(event);
+    const days = body.days === undefined ? undefined : Number(body.days);
+    if (days !== undefined && (!Number.isInteger(days) || days < 1 || days > 365)) return json(400, { error: 'days must be a whole number of days from 1 to 365' });
+    const settings = await getWorkspaceSettings(client);
+    const [organizations, contacts] = await Promise.all([
+      listCrmRecords(client, 'organization'),
+      listCrmRecords(client, 'contact'),
+    ]);
+    const deals = (await organizationMoney(client, today)).filter((deal) => !deal.archivedAt);
+    const entries = listColdEntries({ organizations, contacts, deals, today, thresholds: settings.sponsorColdContactDays, ...(days !== undefined ? { overrideDays: days } : {}) });
+    try {
+      return json(201, { today, ...(await remindColdEntries(client, entries, { actorId: user, today })) });
+    } catch (error) {
+      recordRequestError(error);
+      return json(500, { error: 'Could not create cold-contact reminders' });
+    }
+  }
+
+  if (path === '/api/sponsor-crm/touches' && method === 'POST') {
+    if (!body) return json(400, { error: 'Invalid JSON' });
+    const targetType = String(body.targetType || body.kind || '');
+    const targetId = String(body.targetId || body.id || '');
+    const channel = String(body.channel || '');
+    if (!['organization', 'contact'].includes(targetType) || !ID.test(targetId)) return json(400, { error: 'targetType must be organization or contact with a record id in targetId' });
+    if (!TOUCH_CHANNELS.has(channel)) return json(400, { error: 'channel must be one of: email, call, meeting, linkedin, other' });
+    const touchedAt = typeof body.touchedAt === 'string' ? body.touchedAt : typeof body.date === 'string' ? body.date : new Date().toISOString();
+    if (!realDate(touchedAt.slice(0, 10)) || Number.isNaN(Date.parse(touchedAt))) return json(400, { error: 'touchedAt must be a date or datetime' });
+    if (typeof body.note === 'string' && body.note.length > 2000) return json(400, { error: 'note must be at most 2000 characters' });
+    try {
+      const result = await touchTarget(client, { targetType: targetType as 'organization' | 'contact', targetId }, {
+        actorId: user,
+        channel,
+        ...(typeof body.note === 'string' && body.note ? { note: body.note } : {}),
+        touchedAt,
+      });
+      return json(201, result);
+    } catch (error) {
+      recordRequestError(error);
+      return json((error as { statusCode?: number }).statusCode || 500, { error: (error as Error).message });
+    }
   }
 
   const lookupMatch = path.match(/^\/api\/sponsor-crm\/integrations\/newsletter\/deliverables\/([^/]+)$/);

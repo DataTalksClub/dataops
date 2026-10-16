@@ -13,6 +13,9 @@
  *   which the daily run alerts about missing materials and drafts a reminder.
  * - `sponsorFollowUpDays`: days after publication when the performance
  *   follow-up becomes due.
+ * - `sponsorColdContactDays`: days without inbound or outbound contact after
+ *   which an organization or contact of each relationship stage (`talking`,
+ *   `customer`, `prospect`, `dormant`) counts as going cold.
  */
 
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
@@ -31,6 +34,8 @@ export const DEFAULT_SPONSOR_MATERIALS_REMINDER_DAYS: readonly number[] = Object
 export const MAX_SPONSOR_MATERIALS_REMINDERS = 10;
 /** `sponsorFollowUpDays` until an admin sets it. */
 export const DEFAULT_SPONSOR_FOLLOW_UP_DAYS = 7;
+/** `sponsorColdContactDays` until an admin sets it: active talks go cold fast, past ties slowly. */
+export const DEFAULT_SPONSOR_COLD_CONTACT_DAYS = Object.freeze({ talking: 14, customer: 30, prospect: 30, dormant: 90 });
 /** Bound on every day count the sponsor settings hold. */
 export const MAX_SPONSOR_SETTING_DAYS = 365;
 
@@ -43,6 +48,8 @@ export interface WorkspaceSettings {
   sponsorMaterialsReminderDays: number[];
   /** Days after publication that the performance follow-up is due. */
   sponsorFollowUpDays: number;
+  /** Quiet days after which each relationship stage counts as going cold. */
+  sponsorColdContactDays: { talking: number; customer: number; prospect: number; dormant: number };
   /** 0 until the record is first written. */
   version: number;
   updatedAt?: string;
@@ -69,6 +76,7 @@ export async function getWorkspaceSettings(client: DynamoDBDocumentClient): Prom
       newsletterCardLeadDays: DEFAULT_NEWSLETTER_CARD_LEAD_DAYS,
       sponsorMaterialsReminderDays: [...DEFAULT_SPONSOR_MATERIALS_REMINDER_DAYS],
       sponsorFollowUpDays: DEFAULT_SPONSOR_FOLLOW_UP_DAYS,
+      sponsorColdContactDays: { ...DEFAULT_SPONSOR_COLD_CONTACT_DAYS },
       version: 0,
     };
   }
@@ -83,14 +91,25 @@ export async function getWorkspaceSettings(client: DynamoDBDocumentClient): Prom
     sponsorFollowUpDays: Number.isInteger(item.sponsorFollowUpDays)
       ? Number(item.sponsorFollowUpDays)
       : DEFAULT_SPONSOR_FOLLOW_UP_DAYS,
+    sponsorColdContactDays: normalizeColdContactDays(item.sponsorColdContactDays),
     version: Number(item.version) || 0,
     ...(typeof item.updatedAt === 'string' ? { updatedAt: item.updatedAt } : {}),
     ...(typeof item.updatedBy === 'string' ? { updatedBy: item.updatedBy } : {}),
   };
 }
 
+/** Stored day counts win per stage; anything else falls back to the default stage value. */
+function normalizeColdContactDays(value: unknown): { talking: number; customer: number; prospect: number; dormant: number } {
+  const record = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
+  const pick = (name: keyof typeof DEFAULT_SPONSOR_COLD_CONTACT_DAYS) =>
+    Number.isInteger(record[name]) && Number(record[name]) >= 1 && Number(record[name]) <= MAX_SPONSOR_SETTING_DAYS
+      ? Number(record[name])
+      : DEFAULT_SPONSOR_COLD_CONTACT_DAYS[name];
+  return { talking: pick('talking'), customer: pick('customer'), prospect: pick('prospect'), dormant: pick('dormant') };
+}
+
 export type WorkspaceSettingsChanges = Partial<Pick<WorkspaceSettings,
-  'defaultAssigneeId' | 'newsletterCardLeadDays' | 'sponsorMaterialsReminderDays' | 'sponsorFollowUpDays'>>;
+  'defaultAssigneeId' | 'newsletterCardLeadDays' | 'sponsorMaterialsReminderDays' | 'sponsorFollowUpDays' | 'sponsorColdContactDays'>>;
 
 /** Write `changes` over the current settings, if they are still at `expectedVersion`. */
 export async function updateWorkspaceSettings(
@@ -104,6 +123,7 @@ export async function updateWorkspaceSettings(
     newsletterCardLeadDays: current.newsletterCardLeadDays,
     sponsorMaterialsReminderDays: current.sponsorMaterialsReminderDays,
     sponsorFollowUpDays: current.sponsorFollowUpDays,
+    sponsorColdContactDays: current.sponsorColdContactDays,
     ...input.changes,
     version: input.expectedVersion + 1,
     updatedAt: new Date().toISOString(),
