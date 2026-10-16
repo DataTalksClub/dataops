@@ -726,21 +726,45 @@ describe("Tasks surface boundary", () => {
     assert.equal(requests.length, 0);
   });
 
-  test("a queue row names the unfinished prerequisite and disables its checkbox", async () => {
-    const dependent = canonicalTask({
-      id: "dependent",
-      description: "Publish podcast page",
-      date: "2026-08-12",
-      dependsOn: ["spotify", "transcript"],
-      prerequisites: [
-        { id: "spotify", description: "Verify Spotify episode", status: "done" },
-        { id: "transcript", description: "Review transcript", status: "todo" },
-      ],
-    });
+  test("leaves out tasks still waiting on a prerequisite, and counts only what is left", async () => {
+    const tasks = [
+      canonicalTask({ id: "transcript", cardId: "card-1", description: "Review transcript", date: "2026-08-11" }),
+      canonicalTask({
+        id: "page",
+        cardId: "card-1",
+        description: "Publish podcast page",
+        date: "2026-08-10",
+        dependsOn: ["spotify", "transcript"],
+        prerequisites: [
+          { id: "spotify", description: "Verify Spotify episode", status: "done" },
+          { id: "transcript", description: "Review transcript", status: "todo" },
+        ],
+      }),
+      canonicalTask({
+        id: "share",
+        cardId: "card-1",
+        description: "Ask the guest to share",
+        date: "2026-08-12",
+        dependsOn: ["skipped"],
+        prerequisites: [{ id: "skipped", description: "Optional step", status: "skipped" }],
+      }),
+      // The API projected its prerequisite as open, but the snapshot's own
+      // row for it says done: the fresher word wins.
+      canonicalTask({
+        id: "announce",
+        cardId: "card-1",
+        description: "Announce the episode",
+        date: "2026-08-12",
+        dependsOn: ["recorded"],
+        prerequisites: [{ id: "recorded", description: "Record the episode", status: "todo" }],
+      }),
+      canonicalTask({ id: "recorded", cardId: "card-1", description: "Record the episode", date: "2026-08-01", status: "done" }),
+      canonicalTask({ id: "adhoc", description: "Reply to the sponsor", date: "2026-08-12" }),
+    ];
     const { api, documentList, requests } = createHarness({
       taskRouteContext: {
         date: "",
-        tasks: [dependent],
+        tasks,
         cardId: "",
         filterCard: null,
         contextCardId: "",
@@ -750,22 +774,17 @@ describe("Tasks surface boundary", () => {
     });
 
     api.renderTasksSurface([], "queue");
-    const [input] = findAllByClass(documentList, "ops-queue-check-input");
-    const [label] = findAllByClass(documentList, "ops-queue-check");
-    assert.equal(input.disabled, true);
-    assert.equal(label.title, 'Complete or skip "Review transcript" first');
-    const [note] = findAllByClass(documentList, "ops-queue-note");
-    assert.equal(note.textContent, "after Review transcript");
-    assert.equal(note.dataset.note, "after");
-    assert.equal(
-      note.closest(".ops-queue-task").querySelector(".ops-queue-main").getAttribute("aria-describedby"),
-      note.id,
-    );
-    // The waiting row keeps quiet: no urgency, a dashed box, the date plain.
-    const [row] = findAllByClass(documentList, "ops-queue-row");
-    assert.equal(row.dataset.urgency, "blocked");
-    assert.equal(row.dataset.blocked, "true");
-    assert.notEqual(findAllByClass(documentList, "ops-queue-due")[0].dataset.due, "overdue");
+    const titles = findAllByClass(documentList, "ops-queue-row")
+      .filter((row) => !row.closest(".ops-queue-history"))
+      .map((row) => row.querySelector(".ops-queue-main strong").textContent);
+    assert.deepEqual(titles.sort(), [
+      "Announce the episode",
+      "Ask the guest to share",
+      "Reply to the sponsor",
+      "Review transcript",
+    ]);
+    assert.match(findAllByClass(documentList, "ops-queue-total")[0].textContent, /^4 open/);
+    assert.equal(findAllByClass(documentList, "ops-queue-note").some((note) => /^after /.test(note.textContent)), false);
     assert.equal(requests.length, 0);
   });
 

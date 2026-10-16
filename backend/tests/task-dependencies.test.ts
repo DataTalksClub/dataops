@@ -357,6 +357,36 @@ describe('Task dependencies', () => {
       assert.equal(unblocked.body.blocked, false);
       assert.equal(unblocked.body.prerequisites[0].status, 'done');
     });
+
+    it('filters a list by blocked state, so the queue never lists work nobody can do yet', async () => {
+      cardId = await newCard('Blocked filter');
+      const first = await makeTask('Edit the transcript');
+      const second = await makeTask('Publish the transcript page', { dependsOn: [first.id] });
+      const plain = await makeTask('Upload the registrant emails');
+      const ids = async (query: string) => {
+        const res = await call('GET', `/api/tasks?cardId=${cardId}${query}`);
+        assert.equal(res.status, 200, JSON.stringify(res.body));
+        return res.body.tasks.map((task: Json) => task.id).sort();
+      };
+
+      assert.deepEqual(await ids(''), [first.id, second.id, plain.id].sort());
+      assert.deepEqual(await ids('&blocked=false'), [first.id, plain.id].sort());
+      assert.deepEqual(await ids('&blocked=true'), [second.id]);
+      // The date lanes the queue loads narrow the same way.
+      const lane = await call('GET', '/api/tasks?date=2026-10-01&blocked=false');
+      assert.equal(lane.body.tasks.some((task: Json) => task.id === second.id), false);
+      assert.equal(lane.body.tasks.some((task: Json) => task.id === first.id), true);
+
+      // A skipped prerequisite resolves the edge as completing it does.
+      const skipped = await call('POST', `/api/tasks/${first.id}/actions/skip`, { expectedVersion: (await fresh(first.id)).version, reason: 'Not needed' });
+      assert.equal(skipped.status, 200, JSON.stringify(skipped.body));
+      assert.deepEqual(await ids('&blocked=false'), [first.id, second.id, plain.id].sort());
+      assert.deepEqual(await ids('&blocked=true'), []);
+
+      const invalid = await call('GET', `/api/tasks?cardId=${cardId}&blocked=maybe`);
+      assert.equal(invalid.status, 400);
+      assert.match(invalid.body.error, /blocked must be true or false/);
+    });
   });
 });
 

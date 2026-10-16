@@ -1,6 +1,6 @@
 import { cardKind } from "../../core/card-kind.js";
 import { personAvatar } from "../../core/identity.js";
-import { afterText, blockedReason, blockingPrerequisites } from "../../core/task-dependencies.js";
+import { blockingPrerequisites, prerequisiteResolved } from "../../core/task-dependencies.js";
 import { taskMaterials, taskTitleParts } from "../../core/task-display.js";
 import { formatDayLabel } from "../../core/dates.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
@@ -121,7 +121,10 @@ export function createTaskQueue(context) {
     const today = taskRouteContext.date || todayIsoDate();
     // The same task reaches this list through its lane query and its card's
     // checklist; deduplicate by id so the single queue never double-counts.
-    const tasks = dedupeQueueTasks(routeTasks(taskRouteContext));
+    // A task still waiting on a prerequisite is left out: nobody can do it
+    // yet. It stays on its card's checklist and joins the queue once every
+    // prerequisite is done or skipped.
+    const tasks = withoutWaitingOnPrerequisites(dedupeQueueTasks(routeTasks(taskRouteContext)));
     const cardsById = state.workSnapshot.cardsById || new Map();
     const anySourceLoaded = Boolean(
       state.workSnapshot.todayLoaded ||
@@ -230,6 +233,15 @@ export function createTaskQueue(context) {
       seen.add(task.id);
       return true;
     });
+  }
+
+  // The lanes arrive already filtered by the API; card checklists do not.
+  // A prerequisite's own row, when the snapshot has it, is the freshest word
+  // on its status.
+  function withoutWaitingOnPrerequisites(tasks) {
+    const statusById = new Map(tasks.map((task) => [task.id, task.status]));
+    return tasks.filter((task) => !blockingPrerequisites(task).some((entry) =>
+      !prerequisiteResolved(statusById.has(entry.id) ? statusById.get(entry.id) : entry.status)));
   }
 
   function allQueueTasks() {
@@ -588,8 +600,6 @@ export function createTaskQueue(context) {
       );
       return reasons;
     }
-    const blockedBy = blockedReason(task);
-    if (blockedBy) reasons.push(blockedBy);
     const proof = taskProofState(task);
     if (proof.ok) return reasons;
     for (const missing of proof.missing) {
@@ -604,9 +614,6 @@ export function createTaskQueue(context) {
   // Row-level urgency for the checkbox. Overdue and due-today are the
   // only states that change the box; everything else scans as plain work.
   function queueUrgency(task, today) {
-    // A task waiting on a prerequisite cannot be started, so its date is not
-    // urgent yet: the prerequisite carries the urgency instead.
-    if (blockingPrerequisites(task).length > 0) return "blocked";
     const due = String(task.date || "").slice(0, 10);
     if (isOpenWorkTask(task) && overdueDays(due, today) > 0) return "overdue";
     if (due && due === today) return "today";
@@ -733,8 +740,7 @@ export function createTaskQueue(context) {
     const cell = document.createElement("span");
     cell.className = "ops-queue-due dk-mono";
     const due = String(task.date || "").slice(0, 10);
-    const blocked = blockingPrerequisites(task).length > 0;
-    const debt = isOpenWorkTask(task) && !blocked ? overdueDays(due, today) : 0;
+    const debt = isOpenWorkTask(task) ? overdueDays(due, today) : 0;
     if (debt > 0) {
       cell.dataset.due = "overdue";
       cell.textContent = `${debt}d late`;
@@ -746,18 +752,13 @@ export function createTaskQueue(context) {
       cell.textContent = "—";
       return cell;
     }
-    if (blocked) {
-      cell.dataset.due = "later";
-      cell.textContent = formatDayLabel(task.date, today);
-      return cell;
-    }
     cell.dataset.due = due === today ? "today" : "later";
     cell.textContent =
       due === today ? "Today" : queueDueLabel(task.date, today);
     return cell;
   }
 
-  // The second line a row earns: what the task is waiting on or blocked by.
+  // The second line a row earns: what the task is waiting for.
   // Proof requirements stay in the task panel, and instructions live behind
   // the row's materials icon. The line is muted and one line tall; the full
   // text is its tooltip. A date inside a note is data: mono.
@@ -779,40 +780,8 @@ export function createTaskQueue(context) {
     return note;
   }
 
-  // "after <first blocker> +N": quiet, one line. The name opens the task
-  // it waits on; the tooltip names every blocker.
-  function taskAfterNote(task) {
-    const blocking = blockingPrerequisites(task);
-    if (blocking.length === 0) return null;
-    const note = queueNote("after", task);
-    note.append("after ");
-    const [first] = blocking;
-    if (first.status === "missing") {
-      note.append(first.description);
-    } else {
-      // A real link (inline text that wraps, opens in a new tab on demand);
-      // a plain click opens the blocker in place.
-      const link = document.createElement("a");
-      link.className = "ops-queue-after-link";
-      link.href = `/tasks?taskId=${encodeURIComponent(first.id)}`;
-      link.textContent = first.description;
-      link.addEventListener("click", (event) => {
-        if (event.metaKey || event.ctrlKey || event.shiftKey) return;
-        event.preventDefault();
-        event.stopPropagation();
-        openTaskPanel(first.id);
-      });
-      note.append(link);
-    }
-    if (blocking.length > 1) note.append(` +${blocking.length - 1}`);
-    note.title = afterText(blocking);
-    return note;
-  }
-
   function taskBlockerNote(task, today) {
     if (task.status === "done") return null;
-    const after = taskAfterNote(task);
-    if (after) return after;
     let note = null;
     if (task.waitingFor) {
       note = queueNote("waiting", task);
@@ -906,15 +875,13 @@ export function createTaskQueue(context) {
     }
     open.append(titleRow);
     cell.prepend(open);
-    // The second line sits beside the button, not in it: it can hold a
-    // link to the blocker, and a button cannot contain one.
+    // The second line sits beside the button, not in it, and describes it.
     const note = taskBlockerNote(task, today);
     if (note) {
       cell.append(note);
       describedBy.push(note.id);
     }
     if (describedBy.length) open.setAttribute("aria-describedby", describedBy.join(" "));
-    if (note?.dataset.note === "after") row.dataset.blocked = "true";
 
     // Instructions and other supporting material: one icon, never a line of
     // small text. Empty cells keep the grid column so rows stay aligned.

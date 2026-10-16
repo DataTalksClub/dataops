@@ -288,6 +288,15 @@ export async function handleTaskRoutes(
       requiresFilter[key] = parsed.ids;
     }
 
+    // `blocked=false` leaves out Tasks still waiting on an unresolved
+    // prerequisite (the work queue: nobody can do them yet); `blocked=true`
+    // keeps only those. It narrows a list, so it is not a primary filter.
+    const blockedParam = params.blocked;
+    if (blockedParam !== undefined && blockedParam !== 'true' && blockedParam !== 'false') {
+      return jsonResponse(400, { error: 'blocked must be true or false' });
+    }
+    const blockedFilter = blockedParam === undefined ? null : blockedParam === 'true';
+
     if (!date && !startDate && !endDate && !cardId && !status && !ownerFilter) {
       return jsonResponse(400, {
         error: 'At least one filter is required: owner, date, startDate+endDate, cardId, or status',
@@ -312,7 +321,9 @@ export async function handleTaskRoutes(
       // them on every row can exceed Lambda's response limit even when each
       // DynamoDB item is valid. History and operational fields remain here;
       // GET /api/tasks/:id returns the complete stored snapshot.
-      const projected = await projectTasks(directory, await attachSubjects(client, await attachPrerequisites(client, visible)));
+      const withPrerequisites = (await attachPrerequisites(client, visible))
+        .filter((task) => blockedFilter === null || Boolean(task.blocked) === blockedFilter);
+      const projected = await projectTasks(directory, await attachSubjects(client, withPrerequisites));
       const listTasks = projected.map(({ templateDefinitionSnapshot: _snapshot, ...task }) => task);
       const responseBody: Record<string, unknown> = { tasks: listTasks };
       const ownerReference = ownerFilterUserId(ownerFilter);

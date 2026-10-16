@@ -493,12 +493,15 @@ export function createWorkModel(context) {
   async function refreshOperationsWorkSnapshot(options = {}) {
     const today = todayIsoDate();
     const yesterday = addDaysIso(today, -1);
-    const todayUrl = workApiUrl("/api/tasks", { date: today });
+    // The lanes are work someone can do now: a Task still waiting on an
+    // unresolved prerequisite stays on its Card's checklist only.
+    const todayUrl = workApiUrl("/api/tasks", { date: today, blocked: "false" });
     const overdueUrl = workApiUrl("/api/tasks", {
       startDate: "1970-01-01",
       endDate: yesterday,
+      blocked: "false",
     });
-    const waitingUrl = workApiUrl("/api/tasks", { status: "waiting" });
+    const waitingUrl = workApiUrl("/api/tasks", { status: "waiting", blocked: "false" });
     if (!options.continueCards || !cardsLoader) {
       cardsLoader = createCollectionLoader({
         request,

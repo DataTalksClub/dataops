@@ -1,7 +1,8 @@
-// Task dependencies read quietly: a task waiting on a prerequisite has a
-// dashed box, a muted "after X" line whose name opens X, and no urgency
-// colour; the checklist never lists it above its prerequisite; the task
-// dialog shows "Waiting on" and "Unblocks" only when there are edges.
+// Task dependencies: on the card checklist a task waiting on a prerequisite
+// has a dashed box, a muted "after X" line and no urgency colour, and never
+// sits above its prerequisite; the task dialog shows "Waiting on" and
+// "Unblocks" only when there are edges. The work queue leaves waiting tasks
+// out: one appears there as soon as its prerequisites are done or skipped.
 const { test, expect } = require('@playwright/test');
 const { setupPageWithAuth } = require('./helpers/auth');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
@@ -57,29 +58,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => stopOwnedTestServer(server));
 
-test('queue: a waiting task is quiet and says what it is after', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await setupPageWithAuth(page);
-  await page.goto(`${server.baseURL}/tasks`);
-  const row = (name) => page.locator('.ops-queue-row').filter({ has: page.locator('.ops-queue-main', { hasText: name }) });
-  const waiting = row(SECOND);
-  await expect(waiting).toBeVisible({ timeout: 20000 });
-  await expect(waiting).toHaveAttribute('data-urgency', 'blocked');
-  await expect(waiting.locator('.ops-queue-due')).not.toHaveAttribute('data-due', 'overdue');
-  expect(await waiting.locator('.ops-queue-box').evaluate((node) => getComputedStyle(node).borderTopStyle)).toBe('dashed');
-  const note = waiting.locator('.ops-queue-note');
-  await expect(note).toHaveText(`after ${FIRST}`);
-  // The title's accessible name is the task alone; the note describes it.
-  const main = waiting.locator('.ops-queue-main');
-  await expect(main).toHaveAccessibleName(`Open task ${SECOND}`);
-  await expect(main).toHaveAccessibleDescription(`after ${FIRST}`);
-  // The overdue prerequisite keeps its urgency.
-  await expect(row(FIRST)).toHaveAttribute('data-urgency', 'overdue');
-
-  await note.getByRole('link', { name: FIRST }).click();
-  await expect(page.locator('#task-panel-title')).toContainText(FIRST);
-});
-
 test('card checklist: prerequisites first, after lines, no red on a waiting task', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await setupPageWithAuth(page);
@@ -114,4 +92,38 @@ test('task dialog: Waiting on and Unblocks only when there are edges', async ({ 
   await expect(panel).not.toContainText('Prerequisites');
   await panel.locator('.task-panel-more > summary').click();
   await expect(panel.locator('.task-panel-more .task-prerequisite-editor > summary')).toHaveText('Add a prerequisite');
+});
+
+// Last: it completes prerequisites, which the checklist and dialog tests
+// above rely on being open.
+test('queue: a waiting task stays out until its prerequisite is done', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await setupPageWithAuth(page);
+  await page.goto(`${server.baseURL}/tasks?assignee=all`);
+  const row = (name) => page.locator('.ops-queue-row').filter({ has: page.locator('.ops-queue-main', { hasText: name }) });
+  const openRows = page.locator('.ops-queue-list .ops-queue-row');
+  await expect(row(FIRST)).toBeVisible({ timeout: 20000 });
+  await expect(row(FIRST)).toHaveAttribute('data-urgency', 'overdue');
+  await expect(row(PLAIN)).toBeVisible();
+  await expect(row(SECOND)).toHaveCount(0);
+  await expect(row(THIRD)).toHaveCount(0);
+  await expect(page.locator('.ops-queue-note', { hasText: /^after / })).toHaveCount(0);
+  const total = page.locator('.ops-queue-total');
+  const before = await openRows.count();
+  await expect(total).toContainText(`${before} open`);
+
+  // Completed elsewhere (another tab, the CLI): the next background refresh
+  // brings the newly unblocked task in, still overdue, and the count follows.
+  const first = await api('GET', `/api/tasks/${ids.first}`);
+  await api('PUT', `/api/tasks/${ids.first}`, { status: 'done', expectedVersion: first.version });
+  await page.evaluate(() => window.__dataopsRefreshWork());
+  await expect(row(SECOND)).toBeVisible({ timeout: 20000 });
+  await expect(row(SECOND)).toHaveAttribute('data-urgency', 'overdue');
+  await expect(row(THIRD)).toHaveCount(0);
+  await expect(total).toContainText(`${before} open`);
+
+  // Ticked here: its own dependent joins the queue at once.
+  await row(SECOND).locator('.ops-queue-check').click();
+  await expect(row(THIRD)).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('.ops-queue-list').getByText(SECOND)).toHaveCount(0);
 });

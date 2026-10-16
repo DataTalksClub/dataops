@@ -17,6 +17,10 @@ unblocks its dependents just as a completed one does.
   dependency that crosses an optional-group boundary.
 - Task responses add `prerequisites: [{id, description, status}]` (status may be
   `missing`) and `blocked`. These are projections, never stored.
+- `GET /api/tasks?blocked=false` leaves out blocked Tasks (`blocked=true` keeps
+  only them). The work queue loads its lanes this way and drops blocked Tasks
+  from the Card checklists it merges, so a Task joins the queue once every
+  prerequisite is done or skipped. Card checklists still show blocked Tasks.
 
 ## Rules (enforced in `db/taskDependencies.ts`, below the routes)
 
