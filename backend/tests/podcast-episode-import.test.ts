@@ -187,4 +187,21 @@ describe("podcast episode import", () => {
     assert.equal(nameKey("Aleksandr Kim"), nameKey("Alexander Kim"));
     assert.notEqual(nameKey("Alexandra Kim"), nameKey("Alexander Kim"));
   });
+
+  it("plans no create the API would refuse: bad slugs and taken numbers are reported", () => {
+    const site = (slug: string, season: number, episode: number): WebsiteEpisode => ({
+      slug, season, episode, title: slug, short: null, guests: [{ name: slug }],
+      releaseDate: "2027-01-01", links: {}, anchorId: null,
+    });
+    const { episodes, report } = mergeSources({
+      website: [site("s31e01-kept", 31, 1), site("s31e02-page.md", 31, 2), site("s31e01-renumbered", 31, 1)],
+      schedule: [],
+      rss: [],
+      today: "2027-02-01",
+    });
+    assert.deepEqual(report.websiteInvalidSlugs, ["s31e02-page.md"]);
+    const plan = planWrites(episodes, [{ ...episodes[0], id: "kept", version: 1 }]);
+    assert.equal(plan.creates.length, 0);
+    assert.deepEqual(plan.conflicts, ["s31e01-renumbered is S31E1, already used by kept"]);
+  });
 });

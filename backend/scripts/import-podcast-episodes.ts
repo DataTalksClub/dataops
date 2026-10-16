@@ -39,6 +39,8 @@ type Links = Partial<Record<LinkKind, string>>;
 type Guest = { name: string; slug?: string };
 const STATUS_RANK = ["booked", "recorded", "edited", "scheduled", "published"];
 const MATCH_DAYS = 60;
+/** The API's websiteSlug rule. */
+const SLUG = /^[a-z0-9][a-z0-9-]{0,199}$/;
 const SAME_RECORDING_DAYS = 21;
 /** A Time table row's date and the episode recorded that week. */
 const WEEK_DAYS = 6;
@@ -210,8 +212,12 @@ export function mergeSources(input: {
   hosts?: string[];
 }) {
   const where = (row: PodcastScheduleRow) => `${row.sheet}!${row.row}`;
+  // The register only accepts URL-safe slugs: a "page.md.md" file is a
+  // website naming bug to fix there, not an episode to import.
+  const website = input.website.filter((site) => SLUG.test(site.slug));
   const report = {
-    website: input.website.length,
+    website: website.length,
+    websiteInvalidSlugs: input.website.filter((site) => !SLUG.test(site.slug)).map((site) => site.slug),
     scheduleRows: input.schedule.length,
     rssItems: input.rss.length,
     rssLinksFilled: 0,
@@ -227,7 +233,7 @@ export function mergeSources(input: {
     scheduleNotBooked: [] as string[],
     scheduleCancelled: [] as string[],
     scheduleAmbiguous: [] as string[],
-    publishedWithoutReleaseDate: input.website.filter((site) => !site.releaseDate).length,
+    publishedWithoutReleaseDate: website.filter((site) => !site.releaseDate).length,
   };
   /** Classify a schedule row that is not a booked recording; true when it is not one. */
   const unbooked = (row: PodcastScheduleRow) => {
@@ -237,7 +243,7 @@ export function mergeSources(input: {
     else return false;
     return true;
   };
-  const episodes: DesiredEpisode[] = input.website.map((site) => ({
+  const episodes: DesiredEpisode[] = website.map((site) => ({
     source: "website",
     season: site.season,
     episode: site.episode,
@@ -249,11 +255,11 @@ export function mergeSources(input: {
     websiteSlug: site.slug,
   }));
   const bySlug = new Map(episodes.map((episode) => [episode.websiteSlug!, episode]));
-  const sites = new Map(input.website.map((site) => [site.slug, site]));
+  const sites = new Map(website.map((site) => [site.slug, site]));
 
   // RSS: fill missing links, report numbering conflicts.
   const byAnchor = new Map(
-    input.website.filter((site) => site.anchorId).map((site) => [site.anchorId!, site]),
+    website.filter((site) => site.anchorId).map((site) => [site.anchorId!, site]),
   );
   for (const item of input.rss) {
     const split = Math.max(item.title.lastIndexOf(" - "), item.title.lastIndexOf(" \u2013 "));
@@ -261,7 +267,7 @@ export function mergeSources(input: {
     const head = split > 0 ? item.title.slice(0, split) : item.title;
     const site =
       (item.anchorId && byAnchor.get(item.anchorId)) ||
-      input.website.find(
+      website.find(
         (candidate) =>
           guests.length > 0 &&
           sameGuest(candidate.guests, guests) &&
@@ -471,10 +477,22 @@ export function planWrites(desired: DesiredEpisode[], existing: ExistingEpisode[
   const updates: Array<{ id: string; version: number; changes: Record<string, unknown> }> = [];
   const conflicts: string[] = [];
   const used = new Map<string, DesiredEpisode>();
+  const numbers = new Map(
+    existing
+      .filter((episode) => episode.season != null && episode.episode != null)
+      .map((episode) => [`S${episode.season}E${episode.episode}`, episode.id]),
+  );
   let unchanged = 0;
   for (const episode of desired) {
     const current = findExisting(episode, existing);
     if (!current) {
+      // The API refuses a second episode with the same number.
+      const number = episode.season != null && episode.episode != null ? `S${episode.season}E${episode.episode}` : "";
+      if (number && numbers.has(number)) {
+        conflicts.push(`${episode.websiteSlug || episode.scheduleSourceKey} is ${number}, already used by ${numbers.get(number)}`);
+        continue;
+      }
+      if (number) numbers.set(number, String(episode.websiteSlug));
       creates.push(episode);
       continue;
     }
