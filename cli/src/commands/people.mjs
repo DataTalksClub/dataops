@@ -9,6 +9,9 @@ export const teamHelp = `dataops team - who is on the team, with the ids work co
 
 Usage
   dataops team list
+  dataops team add-user --email <email> --name <name> [--role operator|admin]
+                                                      Add a person (admin). Only added people can sign in;
+                                                      they sign in with Google using this email.
   dataops team default-assignee                       Who gets new work nothing else assigns
   dataops team set-default-assignee <user-id|none>    Change it (admin); none leaves new work unassigned
   dataops team handover <user-id>                     The open work a person holds (admin)
@@ -32,7 +35,8 @@ Usage
   dataops users list
   dataops users show <user-id>
 
-Creating and editing accounts stays in the web Users page.
+Add accounts with \`dataops team add-user\` or the web Users page; editing
+accounts stays in the web Users page.
 `;
 
 export async function teamList(args, io) {
@@ -44,6 +48,18 @@ export async function teamList(args, io) {
     ["ACTIVE", (member) => (member.active ? "yes" : "no")],
     ["NAME", (member) => member.name],
   ], "No team members.");
+  return result;
+}
+
+export async function teamAddUser(args, io) {
+  const email = optionalString(args, "email");
+  const name = optionalString(args, "name");
+  const role = optionalString(args, "role") || "operator";
+  if (!email) throw new UsageError("--email is required: the Google account the person signs in with.");
+  if (!name) throw new UsageError("--name is required.");
+  if (role !== "operator" && role !== "admin") throw new UsageError("--role must be operator or admin.");
+  const result = await apiFor(args).post("/api/users", { email, name, role });
+  if (!args.json) io.print(`Added ${result.user.name} <${result.user.email}> as ${result.user.role} (${result.user.id}). They can sign in now.`);
   return result;
 }
 
@@ -169,6 +185,7 @@ export async function usersShow(args, io) {
 
 export const teamCommands = {
   list: teamList,
+  "add-user": teamAddUser,
   "default-assignee": teamDefaultAssignee,
   "set-default-assignee": teamSetDefaultAssignee,
   handover: teamHandover,

@@ -502,6 +502,43 @@ describe("team default assignee", () => {
   });
 });
 
+describe("team: adding a person", () => {
+  test("add-user creates the account sign-in requires", async () => {
+    const calls = fakePortal({
+      "POST /api/users": ({ body }) => ({ status: 201, body: { user: { id: "u-new", ...body } } }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["team", "add-user", "--email", "new@datatalks.club", "--name", "New Person"], io), 0);
+    assert.deepEqual(calls.at(-1).body, { email: "new@datatalks.club", name: "New Person", role: "operator" });
+    assert.match(io.text(), /Added New Person <new@datatalks.club> as operator \(u-new\)\. They can sign in now\./);
+
+    assert.equal(await run(["team", "add-user", "--email", "a@datatalks.club", "--name", "Ann", "--role", "admin"], captureIo()), 0);
+    assert.equal(calls.at(-1).body.role, "admin");
+  });
+
+  test("add-user needs an email, a name and a known role", async () => {
+    fakePortal({});
+    for (const [argv, message] of [
+      [["team", "add-user", "--name", "X"], /--email is required/],
+      [["team", "add-user", "--email", "x@datatalks.club"], /--name is required/],
+      [["team", "add-user", "--email", "x@datatalks.club", "--name", "X", "--role", "owner"], /--role must be operator or admin/],
+    ]) {
+      const io = captureIo();
+      assert.equal(await run(argv, io), 2);
+      assert.match(io.errors.join("\n"), message);
+    }
+  });
+
+  test("an email that already has an account is refused by the portal", async () => {
+    fakePortal({
+      "POST /api/users": { status: 409, body: { error: "A user with email a@datatalks.club already exists", code: "email_taken" } },
+    });
+    const io = captureIo();
+    assert.equal(await run(["team", "add-user", "--email", "a@datatalks.club", "--name", "Ann", "--json"], io), 5);
+    assert.equal(JSON.parse(io.errors[0]).error.code, "email_taken");
+  });
+});
+
 describe("team: a person leaving", () => {
   const work = (tasks, cards = 0, schedules = 0, sponsorRecords = 0) => ({ tasks, cards, schedules, sponsorRecords });
 
