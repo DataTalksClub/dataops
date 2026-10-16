@@ -18,6 +18,9 @@ Usage
   dataops sponsors update leads <id> --data '{"status":"ignored","version":N}' [--reason TEXT]
   dataops sponsors messages <organization-id>          Communications with an organization
   dataops sponsors history <deal-id>                   A deal's change history
+  dataops sponsors cold [--days N] [--remind]          Orgs/contacts with no contact for N days (defaults per relationship stage)
+  dataops sponsors touch <organization|contact> <id> --channel email [--note TEXT] [--date YYYY-MM-DD]
+      Log an outreach and update lastOutbound, so the contact stops counting as cold
   dataops sponsors finance <deal-id> [history|candidates/invoices|candidates/payments]
   dataops sponsors clear-proposal-classification <deal-id> --data @correction.json [--apply]
       Correct an unaccepted open quote imported as debt. Required: reason,evidence.
@@ -154,6 +157,59 @@ export async function finance(args, io) {
   const view = optionalString({ view: args._[1] }, "view");
   const result = await apiFor(args).get(`/api/sponsor-crm/deals/${enc(id)}/finance${view ? `/${view}` : ""}`);
   if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
+export async function cold(args, io) {
+  const api = apiFor(args);
+  const days = integer(args.days, "days");
+  if (days !== undefined && days > 365) throw new UsageError("--days must be a whole number of days from 1 to 365.");
+  const result = await api.get("/api/sponsor-crm/cold", { query: { ...(days !== undefined ? { days: String(days) } : {}) } });
+  let reminded;
+  if (args.remind) {
+    reminded = await api.post("/api/sponsor-crm/cold/remind", { ...(days !== undefined ? { days } : {}) });
+  }
+  const output = reminded ? { ...result, reminded } : result;
+  if (args.json) return output;
+  table(io, result.items || [], [
+    ["KIND", (item) => item.kind],
+    ["NAME", (item) => item.name],
+    ["REL", (item) => item.relationship],
+    ["QUIET", (item) => item.daysSince === null ? "never" : `${item.daysSince}d`],
+    ["LAST", (item) => String(item.lastInboundAt || item.lastOutboundAt || "—").slice(0, 10)],
+    ["LIMIT", (item) => `${item.threshold}d`],
+  ], "No cold contacts. Everyone has been talked to recently.");
+  if (reminded) {
+    for (const { organizationId, taskId } of reminded.created || []) {
+      io.print(`Reminder Task ${taskId} for ${organizationId}.`);
+    }
+    for (const organizationId of reminded.skipped || []) {
+      io.print(`Already reminded: ${organizationId} has an open cold-contact Task.`);
+    }
+  }
+  return output;
+}
+
+export async function touch(args, io) {
+  const usage = "dataops sponsors touch <organization|contact> <id> --channel email [--note TEXT] [--date YYYY-MM-DD]";
+  const kind = positional(args, 0, usage);
+  if (kind !== "organization" && kind !== "contact") throw new UsageError(`First argument must be "organization" or "contact". Usage: ${usage}`);
+  const id = positional(args, 1, usage);
+  const channel = optionalString(args, "channel");
+  if (!channel) throw new UsageError("--channel is required: email, call, meeting, linkedin or other.");
+  if (!["email", "call", "meeting", "linkedin", "other"].includes(channel)) {
+    throw new UsageError("--channel must be one of: email, call, meeting, linkedin, other.");
+  }
+  const note = optionalString(args, "note");
+  const date = isoDate(args.date, "date");
+  const result = await apiFor(args).post("/api/sponsor-crm/touches", {
+    targetType: kind,
+    targetId: id,
+    channel,
+    ...(note !== undefined ? { note } : {}),
+    ...(date !== undefined ? { touchedAt: date } : {}),
+  });
+  if (!args.json) io.print(`Logged ${channel} outreach to ${kind} ${id}.`);
   return result;
 }
 
@@ -386,4 +442,4 @@ export async function correctPayment(args, io) {
   return result;
 }
 
-export const commands = { list, show, create, update, messages, history, finance, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification };
+export const commands = { list, show, create, update, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification };
