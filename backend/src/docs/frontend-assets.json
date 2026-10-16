@@ -146,6 +146,7 @@
     "src/surfaces/work-detail/link-rows.js",
     "src/surfaces/work-detail/route-state.js",
     "src/surfaces/work-detail/task-actions.js",
+    "src/surfaces/work-detail/task-browser.js",
     "src/surfaces/work-detail/task-evidence.js",
     "src/dakit/dakit.css",
     "src/dakit/tokens.css",
