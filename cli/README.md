@@ -64,7 +64,7 @@ subcommands, flags, and examples.
 | `files`, `artifacts` | Task files and artifacts |
 | `sponsors` | CRM queue, records, messages, deal history and finance |
 | `invoices` | bookkeeping invoice drafts |
-| `bookkeeping` | `sync` transactions from the bookkeeping sheet (dry run unless `--apply`), `classify` missing Type/Category/Period from a provider's history |
+| `bookkeeping` | `sync` transactions from the bookkeeping sheet (dry run unless `--apply`), `classify` missing Type/Category/Period from a provider's history, `facts` reads unattached invoice PDFs for match suggestions |
 | `team`, `users` | the team directory (ids for `--assignee`/`--owner`) and the workspace default assignee; adding a person: `add-user` (admin; only added people can sign in); a person leaving: `handover`, `reassign`, `disable-user`, `enable-user`, `delete-user` (admin); accounts (admin) |
 | `api` | any other route: `dataops api GET /api/<route>` |
 | `login`, `logout`, `whoami`, `tokens` | credentials |

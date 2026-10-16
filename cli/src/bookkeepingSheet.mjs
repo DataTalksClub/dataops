@@ -374,38 +374,60 @@ function pairMoved(sheetRows, transactions) {
 /**
  * What a sync would do: create sheet rows DataOps lacks, update fields that
  * differ, and report transactions that no longer match a row (never deleted).
+ * A row matches its transaction by stored key, then by the same content in
+ * the same tab, then as a moved row (see pairMoved). A transaction a sponsor
+ * deal claimed as its payment is immutable: its differences are reported as
+ * locked, not written.
  */
 export function planSync(sheetRows, transactions) {
   const skipped = sheetRows.filter((row) => row.skip);
   const rows = sheetRows.filter((row) => row.record);
   const fromSheet = transactions.filter((item) => item.sourceType === SOURCE_TYPE);
   const byKey = new Map(fromSheet.map((item) => [item.sourceKey, item]));
-  const keys = new Set(rows.map((row) => row.sourceKey));
-  const updates = [];
-  let unchanged = 0;
-  const unmatched = [];
+  const used = new Set();
+  const pairs = [];
+  let unmatched = [];
   for (const row of rows) {
     const existing = byKey.get(row.sourceKey);
-    if (!existing) {
-      unmatched.push(row);
+    if (existing && !used.has(existing)) {
+      used.add(existing);
+      pairs.push([row, existing, SYNC_FIELDS]);
+    } else unmatched.push(row);
+  }
+  const sameContent = new Map();
+  for (const item of fromSheet.filter((entry) => !used.has(entry))) {
+    const key = JSON.stringify([tabOf(item.sourceKey), ...identity(item)]);
+    sameContent.set(key, [...(sameContent.get(key) || []), item]);
+  }
+  unmatched = unmatched.filter((row) => {
+    const existing = sameContent.get(JSON.stringify([row.tab, ...identity(row.record)]))?.shift();
+    if (!existing) return true;
+    used.add(existing);
+    pairs.push([row, existing, SYNC_FIELDS, { sourceKey: row.sourceKey }]);
+    return false;
+  });
+  const moved = pairMoved(unmatched, fromSheet.filter((item) => !used.has(item)));
+  for (const [row, existing] of moved.pairs) pairs.push([row, existing, [...IDENTITY_FIELDS, ...SYNC_FIELDS], { sourceKey: row.sourceKey }]);
+  const updates = [];
+  const locked = [];
+  let unchanged = 0;
+  for (const [row, existing, fields, extra = {}] of pairs) {
+    const changed = changes(row.record, existing, fields);
+    if (existing.sponsorDealId) {
+      if (Object.keys(changed).length) locked.push({ id: existing.id, tab: row.tab, row: row.row, sponsorDealId: existing.sponsorDealId, changes: changed });
+      else unchanged += 1;
       continue;
     }
-    const changed = changes(row.record, existing, SYNC_FIELDS);
+    if (extra.sourceKey && extra.sourceKey !== existing.sourceKey) changed.sourceKey = extra.sourceKey;
     if (Object.keys(changed).length) updates.push({ id: existing.id, tab: row.tab, row: row.row, changes: changed, before: pick(existing, Object.keys(changed)) });
     else unchanged += 1;
-  }
-  const stale = fromSheet.filter((item) => !keys.has(item.sourceKey));
-  const moved = pairMoved(unmatched, stale);
-  for (const [row, existing] of moved.pairs) {
-    const changed = { ...changes(row.record, existing, [...IDENTITY_FIELDS, ...SYNC_FIELDS]), sourceKey: row.sourceKey };
-    updates.push({ id: existing.id, tab: row.tab, row: row.row, changes: changed, before: pick(existing, Object.keys(changed)) });
   }
   const creates = moved.rows.map((row) => ({
     tab: row.tab,
     row: row.row,
     record: { ...row.record, sourceType: SOURCE_TYPE, sourceKey: row.sourceKey },
   }));
-  return { creates, updates, unchanged, orphans: moved.left.map((item) => summary(item)), skipped };
+  return { creates, updates, locked, unchanged, orphans: moved.left.map((item) => summary(item)), skipped };
 }
 
 const pick = (item, fields) => Object.fromEntries(fields.map((field) => [field, item[field] ?? null]));
@@ -424,6 +446,7 @@ export function planClassification(transactions, { since = "" } = {}) {
     history.set(key, [...(history.get(key) || []), item]);
   }
   const fills = [];
+  const locked = [];
   const unresolved = [];
   for (const item of transactions) {
     const missing = CLASSIFICATION.filter((field) => !collapse(item[field]));
@@ -435,8 +458,9 @@ export function planClassification(transactions, { since = "" } = {}) {
       const values = new Set(known.map((other) => canonical(field, other[field])).filter(Boolean));
       if (values.size === 1) changed[field] = [...values][0];
     }
-    if (Object.keys(changed).length) fills.push({ id: item.id, transactionDate: item.transactionDate, counterparty: item.counterparty, changes: changed });
-    else unresolved.push(summary(item));
+    if (!Object.keys(changed).length) unresolved.push(summary(item));
+    else if (item.sponsorDealId) locked.push({ ...summary(item), sponsorDealId: item.sponsorDealId, changes: changed });
+    else fills.push({ id: item.id, transactionDate: item.transactionDate, counterparty: item.counterparty, changes: changed });
   }
-  return { fills, unresolved };
+  return { fills, locked, unresolved };
 }

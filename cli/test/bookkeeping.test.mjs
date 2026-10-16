@@ -100,6 +100,15 @@ test("the plan adds missing rows, updates differing fields and never clears or d
   assert.deepEqual(byId["t-tool"], { amount: "99.00", sourceKey: tool.sourceKey });
   assert.deepEqual(plan.orphans.map((item) => item.id), ["t-gone"]);
   assert.deepEqual(plan.skipped.map((item) => item.row), [5]);
+  const later = sheet.planSync(rows, [
+    // Same content under an older key: matched, and the key moves to the content key.
+    { id: "t-old-key", sourceType: "spreadsheet", sourceKey: "sheet:2026:r2", ...cloud.record },
+    // A sponsor deal holds this payment: differences are reported, never written.
+    { id: "t-claimed", sourceType: "spreadsheet", sourceKey: "sheet:2026:r3", sponsorDealId: "deal-1", ...sponsor.record, description: "Old text" },
+  ]);
+  assert.deepEqual(later.updates.map((update) => [update.id, update.changes]), [["t-old-key", { sourceKey: cloud.sourceKey }]]);
+  assert.deepEqual(later.locked.map((entry) => [entry.id, entry.changes]), [["t-claimed", { description: "Sponsorship, part 1" }]]);
+  assert.deepEqual(later.creates.map((entry) => entry.row), [4]);
   const fresh = sheet.planSync(rows, []);
   assert.equal(fresh.creates.length, 3);
   assert.equal(fresh.creates[0].record.sourceType, "spreadsheet");
@@ -114,7 +123,9 @@ test("classification fills only from agreeing history of the same provider and d
     item("d", { counterparty: "Example Unknown" }),
     item("e", { counterparty: "Example Tool", entryType: "income" }),
     item("f", { counterparty: "Example Tool", transactionDate: "2024-01-01" }),
+    item("g", { counterparty: "Example Tool", sponsorDealId: "deal-1" }),
   ], { since: "2025-01-01" });
+  assert.deepEqual(plan.locked.map((entry) => entry.id), ["g"]);
   assert.deepEqual(plan.fills, [{ id: "c", transactionDate: "2026-09-01", counterparty: "Example Tool", changes: { subtype: "Subscription", category: "Work-related tools" } }]);
   assert.deepEqual(plan.unresolved.map((entry) => entry.id), ["d", "e"]);
 });
@@ -125,7 +136,7 @@ test("sync is a dry run until --apply, then creates and updates through the API"
   let io = captureIo();
   assert.equal(await run(["bookkeeping", "sync", dir], io), 0);
   assert.ok(calls.every((call) => call.method === "GET"), "a dry run writes nothing");
-  assert.match(io.text(), /dry-run: sheetRows 6, create 6, update 0, unchanged 0, orphans 0, skipped 2/);
+  assert.match(io.text(), /dry-run: sheetRows 6, create 6, update 0, locked 0, unchanged 0, orphans 0, skipped 2/);
 
   calls = fakePortal({
     "GET /api/bookkeeping/transactions": { items: [] },
@@ -175,4 +186,25 @@ test("classify --apply writes only the filled fields", async () => {
   assert.equal(await run(["bookkeeping", "classify", "--apply"], io), 0);
   assert.deepEqual(calls.find((call) => call.method === "PUT").body, { subtype: "Subscription", category: "AI Tools" });
   assert.match(io.text(), /applied: updated 1, failed 0/);
+});
+
+test("facts reads only unattached invoices and receipts that were not read yet", async () => {
+  const calls = fakePortal({
+    "GET /api/bookkeeping/documents": {
+      items: [
+        { id: "d-new", status: "active", documentType: "invoice", linkRefCount: 0 },
+        { id: "d-read", status: "active", documentType: "invoice", linkRefCount: 0, facts: { method: "deterministic-text" } },
+        { id: "d-attached", status: "active", documentType: "receipt", linkRefCount: 1 },
+        { id: "d-statement", status: "active", documentType: "bank-statement", linkRefCount: 0 },
+      ],
+    },
+    "POST /api/bookkeeping/documents/d-new/facts": { id: "d-new", facts: { method: "deterministic-stripe" } },
+  });
+  let io = captureIo();
+  assert.equal(await run(["bookkeeping", "facts"], io), 0);
+  assert.match(io.text(), /dry-run: 1 unattached/);
+  assert.equal(calls.filter((call) => call.method === "POST").length, 0);
+  io = captureIo();
+  assert.equal(await run(["bookkeeping", "facts", "--apply"], io), 0);
+  assert.match(io.text(), /applied: read 1 \(deterministic-stripe 1\), failed 0/);
 });
