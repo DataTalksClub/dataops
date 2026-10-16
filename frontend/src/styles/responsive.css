@@ -486,46 +486,6 @@ body[data-workspace-view="sponsors"] .library-view {
   .newsletter-slot-row .newsletter-slot-actions a {
     min-height: var(--dk-size-touch);
   }
-  .newsletter-overflow {
-    position: relative;
-    margin-left: auto;
-  }
-  .newsletter-overflow-trigger {
-    min-height: var(--dk-size-touch);
-    padding: 4px 12px !important;
-    font-size: 13px !important;
-    white-space: nowrap;
-  }
-  .newsletter-overflow-menu {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    z-index: 40;
-    display: grid;
-    min-width: 176px;
-    padding: 4px;
-    border: 1px solid var(--dk-border-default);
-    border-radius: var(--dk-radius-md);
-    background: var(--dk-bg-surface);
-    box-shadow: var(--dk-shadow-overlay);
-  }
-  .newsletter-overflow-menu[hidden] {
-    display: none;
-  }
-  .newsletter-overflow-item {
-    display: flex;
-    min-height: 40px;
-    align-items: center;
-    justify-content: flex-start;
-    border: 0;
-    background: none;
-    padding: 0 10px;
-    font-size: 13px;
-    font-weight: 600;
-    text-align: left;
-    white-space: nowrap;
-    color: var(--dk-text-body, inherit);
-  }
 
   /* ---- Per-item action rows: one compact line, never a wrapped stack ---- */
   .row-actions,

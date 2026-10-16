@@ -167,8 +167,7 @@ test.describe("production newsletter planner", () => {
     await page.getByRole("button", { name: "Save issue" }).click();
     await expect(page.getByRole("heading", { name: "Weekly #101" })).toBeVisible();
     await expect(page.locator('article[data-issue-id="issue-created"]')).toContainText("Primary: Synthetic Created Sponsor");
-    await page.getByRole("button", { name: /More actions for/ }).first().click();
-    await page.getByRole("menuitem", { name: "Edit details" }).click();
+    await page.locator("[data-slots] button[data-edit]").first().click();
     await expect(
       page.getByRole("heading", { name: "Weekly #99" }).last(),
     ).toBeVisible();
@@ -176,13 +175,11 @@ test.describe("production newsletter planner", () => {
       .locator(".newsletter-surface dialog")
       .screenshot({ path: ".tmp/newsletter-production-edit.png" });
     await page.getByRole("button", { name: "Cancel" }).click();
-    await page.getByRole("button", { name: /More actions for/ }).first().click();
-    await page.getByRole("menuitem", { name: "Edit details" }).click();
+    await page.locator("[data-slots] button[data-edit]").first().click();
     await page.locator("dialog [name=status]").selectOption("cancelled");
     await page.getByRole("button", { name: "Save issue" }).click();
     await expect(page.locator("[data-slots]")).toContainText("Cancelled");
-    await page.getByRole("button", { name: /More actions for/ }).first().click();
-    await page.getByRole("menuitem", { name: "Edit details" }).click();
+    await page.locator("[data-slots] button[data-edit]").first().click();
     conflict = true;
     await page.getByRole("button", { name: "Save issue" }).click();
     await expect(page.getByRole("alert")).toContainText("reload and retry");

@@ -84,25 +84,6 @@ export function createNewsletterPlanner(context) {
   }
 
 
-  function closeAllSlotOverflows(scope) {
-    scope.querySelectorAll(".newsletter-overflow-menu:not([hidden])").forEach((menu) => {
-      menu.hidden = true;
-      const trigger = menu
-        .closest(".newsletter-overflow")
-        .querySelector(".newsletter-overflow-trigger");
-      if (trigger) trigger.setAttribute("aria-expanded", "false");
-    });
-  }
-
-  function toggleSlotOverflow(trigger) {
-    const menu = trigger.parentElement.querySelector(".newsletter-overflow-menu");
-    if (!menu) return;
-    const willOpen = menu.hidden;
-    closeAllSlotOverflows(trigger.closest("[data-slots]") || trigger.closest(".newsletter-surface"));
-    menu.hidden = !willOpen;
-    trigger.setAttribute("aria-expanded", String(willOpen));
-  }
-
   function stageLabel(stage) {
     return {
       preparation: "Preparation",
@@ -277,29 +258,9 @@ export function createNewsletterPlanner(context) {
       const planningNote = item.planningNote
         ? `<small class="newsletter-slot-note">${escapeHtml(item.planningNote)}</small>`
         : "";
-      const campaignLink = item.publicUrl
-        ? `
-          <a href="${escapeHtml(item.publicUrl)}" target="_blank" rel="noreferrer">
-            Open campaign
-          </a>
-        `
-        : "";
       const issueId = escapeHtml(item.id);
       const actions = `
             ${issueCardMarkup(item)}
-            <div class="newsletter-overflow">
-              <button
-                type="button"
-                class="newsletter-overflow-trigger"
-                aria-haspopup="true"
-                aria-expanded="false"
-                aria-label="More actions for ${escapeHtml(item.label)}"
-              >More</button>
-              <div class="newsletter-overflow-menu" role="menu" hidden>
-                ${campaignLink ? campaignLink.replace('<a ', '<a class="newsletter-overflow-item" role="menuitem" ') : ""}
-                <button type="button" class="newsletter-overflow-item" role="menuitem" data-edit="${issueId}">Edit details</button>
-              </div>
-            </div>
           `;
       return `
         <article class="newsletter-slot-row" data-issue-id="${issueId}">
@@ -313,7 +274,8 @@ export function createNewsletterPlanner(context) {
           </div>
           <div class="newsletter-slot-main">
             <div class="newsletter-slot-title">
-              <h4>${escapeHtml(item.label)}</h4>
+              <h4><button type="button" class="newsletter-issue-edit" data-edit="${issueId}"
+                title="Edit issue details"><span>${escapeHtml(item.label)}</span></button></h4>
               <span class="planner-status ${plannerStatusClass(item.status)}">
                 ${escapeHtml(plannerLabel(item.status))}
               </span>
@@ -523,36 +485,13 @@ export function createNewsletterPlanner(context) {
       const issueId = target.closest("[data-edit]")?.dataset.edit;
       if (!issueId) {
         // The empty schedule repeats Add issue.
-        if (target.closest("[data-newsletter-add-first]")) {
-          openIssueDialog(null);
-          return;
-        }
-        const overflowTrigger = target.closest(".newsletter-overflow-trigger");
-        if (overflowTrigger) toggleSlotOverflow(overflowTrigger);
+        if (target.closest("[data-newsletter-add-first]")) openIssueDialog(null);
         return;
-      }
-      // An action chosen from inside the open overflow closes it first; the
-      // dialog opens on top either way.
-      if (target.classList?.contains?.("newsletter-overflow-item")) {
-        closeAllSlotOverflows(surface);
       }
       const item = items.find((value) => value.id === issueId);
       if (!item) return;
       openIssueDialog(item);
     };
-    surface.querySelector("[data-slots]").addEventListener("keydown", (event) => {
-      if (event.key !== "Escape") return;
-      const openMenu = surface.querySelector(".newsletter-overflow-menu:not([hidden])");
-      if (!openMenu) return;
-      closeAllSlotOverflows(surface);
-      const trigger = openMenu.closest(".newsletter-overflow").querySelector(".newsletter-overflow-trigger");
-      if (trigger) trigger.focus();
-    });
-    document.addEventListener("click", (event) => {
-      if (!surface.isConnected) return;
-      if (event.target.closest(".newsletter-overflow")) return;
-      closeAllSlotOverflows(surface);
-    });
     await load();
   }
 

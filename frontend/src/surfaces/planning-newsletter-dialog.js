@@ -20,7 +20,10 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
               <select name="status">${newsletterStatusOptions}</select>
             </label>
             ${issueSlotFieldsetsMarkup()}
-            <label class="planner-field-wide">Public campaign URL <input name="publicUrl" type="url"></label>
+            <div class="planner-field-wide newsletter-campaign-field">
+              <label>Public campaign URL <input name="publicUrl" type="url"></label>
+              <a data-campaign-link target="_blank" rel="noreferrer" hidden>Open campaign</a>
+            </div>
             <label class="planner-field-wide">Planning note <textarea name="planningNote" rows="4"></textarea></label>
           </div>
           <p class="planner-form-error" role="alert"></p>
@@ -55,6 +58,12 @@ export function setupNewsletterDialog(options) {
     }
     const titleEl = dialog.querySelector("[data-dialog-title]");
     if (titleEl) titleEl.textContent = item?.label || "Newsletter issue";
+    const campaignLink = dialog.querySelector("[data-campaign-link]");
+    if (campaignLink) {
+      campaignLink.hidden = !item?.publicUrl;
+      if (item?.publicUrl) campaignLink.href = item.publicUrl;
+      else campaignLink.removeAttribute?.("href");
+    }
     if (dialog.showModal) {
       dialog.showModal();
     }

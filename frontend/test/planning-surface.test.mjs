@@ -270,6 +270,7 @@ function createNewsletterDom() {
   form.setQuery('[role="alert"]', new TestElement("p"));
 
   dialog.setQuery("[data-dialog-title]", new TestElement("h2"));
+  dialog.setQuery("[data-campaign-link]", new TestElement("a"));
   const from = surface.setQuery("[data-from]", new TestElement("input"));
   const to = surface.setQuery("[data-to]", new TestElement("input"));
   const view = surface.setQuery("[data-view]", new TestElement("select"));
@@ -1145,7 +1146,7 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.alerts.innerHTML, /A slot needs a sponsor soon/);
     assert.match(dom.alerts.innerHTML, /Weekly #43 — 28 Aug/);
     const html = dom.slots.innerHTML;
-    assert.match(html, /<h4>Weekly #42<\/h4>/);
+    assert.match(html, /title="Edit issue details"><span>Weekly #42<\/span><\/button><\/h4>/);
     assert.match(html, /<strong>Primary:<\/strong> Example Sponsor/);
     assert.match(html, /<strong>Secondary:<\/strong> Second &lt;Sponsor&gt;/);
     assert.match(html, /<strong>Primary:<\/strong> sponsor TBD/);
@@ -1157,7 +1158,7 @@ describe("Planning surface production behavior", () => {
     assert.match(html, /Preparation ·\s+<span class="dk-mono">4\/6<\/span> open/);
     assert.match(html, /data-card-date-mismatch><span class="newsletter-card-chip__warning-label">Card dated <\/span>\s*20 Aug/);
     assert.match(html, /Card unavailable/);
-    assert.match(html, /Open campaign/);
+    assert.doesNotMatch(html, /Open campaign|More actions/, "the campaign link lives in the issue's details, not on the row");
     assert.doesNotMatch(html, /data-card-create|data-card-link|Create card|Link card/);
     const range = new URL(harness.requests[0].url).searchParams;
     assert.match(harness.requests[0].url, /\/api\/newsletter-issues\?/);
@@ -1366,7 +1367,7 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
   });
 
-  test("edits an issue in a details-only dialog with no composer", async () => {
+  test("the issue name opens a details-only dialog that links the campaign", async () => {
     const dom = createNewsletterDom();
     let issue = {
       id: "issue-edit",
@@ -1377,6 +1378,7 @@ describe("Planning surface production behavior", () => {
       label: "Weekly #16",
       status: "drafting",
       version: 3,
+      publicUrl: "https://example.com/campaign-16",
       slots: { primary: { ticked: true, sponsor: "Example" }, secondary: { ticked: false } },
     };
     let lastPutPayload = null;
@@ -1392,7 +1394,8 @@ describe("Planning surface production behavior", () => {
       },
     });
     await harness.surface.renderNewsletterSurface();
-    assert.doesNotMatch(dom.slots.innerHTML, /data-compose|Compose|data-preview|data-schedule/);
+    assert.doesNotMatch(dom.slots.innerHTML, /data-compose|Compose|data-preview|data-schedule|newsletter-overflow|More actions/);
+    assert.match(dom.slots.innerHTML, /<h4><button type="button" class="newsletter-issue-edit" data-edit="issue-edit"/);
 
     dom.slots.onclick({
       target: {
@@ -1401,6 +1404,9 @@ describe("Planning surface production behavior", () => {
     });
     assert.equal(dom.dialog.open, true);
     assert.equal(dom.dialog.querySelector("[data-dialog-title]").textContent, "Weekly #16");
+    const campaign = dom.dialog.querySelector("[data-campaign-link]");
+    assert.equal(campaign.hidden, false);
+    assert.equal(campaign.href, "https://example.com/campaign-16");
 
     dom.form.elements.status.value = "scheduled";
     await dom.surface.querySelector("[data-save]").onclick({ preventDefault() {} });

@@ -203,7 +203,7 @@ for (const viewport of VIEWPORTS) {
   }
 }
 
-test('newsletter at 375x667: issue cards fit the compaction budget and the overflow menu holds the moved actions', async ({ page }) => {
+test('newsletter at 375x667: issue cards fit the compaction budget and the issue name opens its details', async ({ page }) => {
   test.setTimeout(60_000);
   const viewport = VIEWPORTS[0];
   const route = ROUTES.find((candidate) => candidate.path === '/newsletter');
@@ -233,31 +233,12 @@ test('newsletter at 375x667: issue cards fit the compaction budget and the overf
   }
 
   const firstCard = page.locator('.newsletter-slot-row').first();
-  await expect(firstCard.getByRole('button', { name: 'Compose' })).toHaveCount(0);
-  const trigger = firstCard.locator('.newsletter-overflow-trigger');
-  const menu = firstCard.locator('.newsletter-overflow-menu');
-  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-  await expect(menu).toBeHidden();
-
-  await trigger.click();
-  await expect(menu).toBeVisible();
-  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  for (const movedAction of ['Edit details']) {
-    await expect(
-      menu.locator('.newsletter-overflow-item').filter({ hasText: movedAction }),
-    ).toBeVisible();
-  }
-
-  // A moved action still drives the issue dialog it opened inline before.
-  await menu.locator('button[data-edit]').click();
+  // The row carries no Compose button and no More menu; its name edits it.
+  await expect(firstCard.getByRole('button', { name: /Compose|More actions/ })).toHaveCount(0);
+  await firstCard.locator('button[data-edit]').click();
   await expect(page.locator('.newsletter-surface dialog')).toBeVisible();
   await page.keyboard.press('Escape');
-
-  // Escape closes the overflow menu and hands focus back to its trigger.
-  await trigger.click();
-  await expect(menu).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(menu).toBeHidden();
+  await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
 });
 
 test('bookkeeping at 375x667: no stat strip, period controls reflow, and the transactions fill the screen', async ({ page }) => {
