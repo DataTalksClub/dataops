@@ -121,6 +121,7 @@ const CANONICAL = {
   },
   category: {
     "work-related tools": "Work-related",
+    "course workshop": "Workshop",
   },
 };
 

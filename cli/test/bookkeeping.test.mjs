@@ -65,6 +65,13 @@ test("rows map to transactions with content keys that survive reordering", () =>
   assert.notEqual(twice[0].sourceKey, twice[1].sourceKey, "identical rows keep separate keys");
 });
 
+test("classification variants merge into one spelling", () => {
+  assert.equal(sheet.canonical("period", "One-time purchase"), "One-time");
+  assert.equal(sheet.canonical("category", " Work-related tools"), "Work-related");
+  assert.equal(sheet.canonical("category", "Course Workshop"), "Workshop");
+  assert.equal(sheet.canonical("category", "Course Module"), "Course Module", "other values keep their spelling");
+});
+
 test("old tabs and the headerless taxes tab map their own layouts", () => {
   const [lunch] = sheet.readTab("2024", sheet.parseCsv(OLD));
   assert.equal(lunch.record.amount, "63.00");
