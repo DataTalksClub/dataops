@@ -159,25 +159,44 @@ test.describe('Users: compact layout, and a person leaving', () => {
 
   // A row at the bottom of the screen opens its menu upward: the menu is
   // placed against the viewport, and below the trigger it would fall off it.
+  // The test adds no people: more rows would push other specs' rows below
+  // the fold. It brings the last row to the bottom edge instead.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 560 }, { name: '375', width: 375, height: 560 }]) {
-    test(`the row menu stays on screen for a row at the bottom at ${viewport.name}`, async ({ page, request }) => {
-      for (let index = 0; index < 6; index += 1) await createPerson(request, 'Synthetic Bottom Person');
+    test(`the row menu stays on screen for a row at the bottom at ${viewport.name}`, async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await openUsers(page);
-      const last = page.locator('.ops-user-row').last();
-      const trigger = last.locator('.ops-user-menu-trigger');
-      await trigger.evaluate((node) => node.scrollIntoView({ block: 'end' }));
-      // Let the scroll event land before opening: the menu closes on scroll.
-      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const trigger = page.locator('.ops-user-row').last().locator('.ops-user-menu-trigger');
+      const settle = () => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      // The list can repaint after it first shows and reset the scroll, so
+      // bring the row down until it stays there.
+      const bottomEdge = async () => {
+        await trigger.evaluate((node) => node.scrollIntoView({ block: 'end' }));
+        await settle();
+        await settle();
+        return trigger.evaluate((node) => node.getBoundingClientRect().bottom);
+      };
+      let height = viewport.height;
+      let bottom = 0;
+      await expect.poll(async () => {
+        bottom = await bottomEdge();
+        return bottom <= height + 1 && bottom === await trigger.evaluate((node) => node.getBoundingClientRect().bottom);
+      }).toBe(true);
+      if (bottom < height - 16) {
+        // Too few rows to scroll: end the viewport just under the last row.
+        height = Math.ceil(bottom) + 12;
+        await page.setViewportSize({ width: viewport.width, height });
+        await settle();
+      }
       const triggerBox = await trigger.boundingBox();
+      expect(triggerBox.y + triggerBox.height).toBeLessThanOrEqual(height + 1);
       await trigger.click();
       const menu = page.getByRole('menu');
       await expect(menu).toBeVisible();
       const menuBox = await menu.boundingBox();
       // The trigger really sits too low for the menu to open downward.
-      expect(triggerBox.y + triggerBox.height + menuBox.height).toBeGreaterThan(viewport.height);
+      expect(triggerBox.y + triggerBox.height + menuBox.height).toBeGreaterThan(height);
       expect(menuBox.y).toBeGreaterThanOrEqual(0);
-      expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(viewport.height);
+      expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(height);
       expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(triggerBox.y);
       expect(menuBox.x).toBeGreaterThanOrEqual(0);
       expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(viewport.width);
