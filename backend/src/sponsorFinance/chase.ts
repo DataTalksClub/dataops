@@ -12,6 +12,7 @@
  */
 import { randomUUID } from 'crypto';
 import {
+  DeleteCommand,
   GetCommand,
   PutCommand,
   type DynamoDBDocumentClient,
@@ -23,19 +24,16 @@ import { getTask } from '../db/tasks';
 import { TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_TASKS, TABLE_USERS } from '../db/tableNames';
 import {
   berlinDate,
-  displayMoney,
   financeKey,
   realDate,
-  scaledMoney,
-  sourceKey,
 } from './core';
-import { daysBetween, deriveFollowUp, deriveStates } from './followUp';
 import {
   adminCheck,
   dealCheck,
   executeMutation,
   financeMutationTail,
   getFinanceState,
+  projectFinance,
   replayMutation,
   safeConflict,
 } from './repository';
@@ -46,7 +44,6 @@ import type {
   FollowUp,
   InvoiceState,
   PaymentState,
-  RecordedPayment,
   TimingState,
 } from './types';
 import type { Task } from '../types';
@@ -84,57 +81,23 @@ export function chaseBlocker(decision: ChaseDecision): string | null {
   return 'The money is not in a state that needs chasing';
 }
 
-/**
- * Derive the chase decision from the stored finance state with plain reads.
- * This mirrors the portfolio ledger's per-deal coherence (sources present,
- * currency matching, total not over the amount due) and uses the same
- * `deriveStates`/`deriveFollowUp` code as every other view, so the decision
- * matches the ledger `chase` row that asked for the chase in the first place.
- * The deal projection remains the authoritative deep check (claim identities);
- * a mismatch surfaces there as `reconciliation-required` and the cron alert.
- */
+/** Use the same coherent transaction snapshot and claim checks as the finance view. */
 export async function deriveChaseDecision(
   client: DynamoDBDocumentClient,
   state: FinanceState,
   dealStatus: string,
   today: string,
 ): Promise<ChaseDecision> {
-  let coherent = true;
-  let total = 0n;
-  for (const linkId of state.paymentLinkIds) {
-    const sourceId = linkId.split('#').at(-1)!;
-    const found = await client.send(new GetCommand({
-      TableName: TABLE_BOOKKEEPING, Key: singleton(sourceKey('transaction', sourceId)),
-    }));
-    const source = found.Item as Record<string, unknown> | undefined;
-    if (!source || source.currency !== state.currency) { coherent = false; continue; }
-    try { total += scaledMoney(String(source.amount)); } catch { coherent = false; }
-  }
-  for (const id of state.recordedPaymentIds || []) {
-    const found = await client.send(new GetCommand({
-      TableName: TABLE_SPONSOR_CRM, Key: singleton(id),
-    }));
-    const record = found.Item as RecordedPayment | undefined;
-    if (!record || record.currency !== state.currency) { coherent = false; continue; }
-    try { total += scaledMoney(record.amount); } catch { coherent = false; }
-  }
-  const due = state.amountDue ? scaledMoney(state.amountDue) : undefined;
-  if (due !== undefined && total > due) coherent = false;
-  const states = deriveStates(state, total, due, coherent, today);
-  const followUp = deriveFollowUp({
-    dealStatus,
-    ...states,
-    requestBy: state.invoiceRequestedAt ? undefined : state.requestBy,
-    expectedInvoiceBy: state.expectedInvoiceBy,
-    dueOn: state.dueOn,
-    waitingOn: state.waitingOn,
-  }, today);
+  const projection = await projectFinance(client, state.dealId, 'admin', { dealStatus, today });
+  if (projection.finance?.version !== state.version) throw safeConflict();
   return {
-    ...states,
-    followUp,
-    coherent,
-    ...(due !== undefined && coherent ? { outstanding: displayMoney(due - total) } : {}),
-    ...(states.timingState === 'overdue' && state.dueOn ? { daysOverdue: daysBetween(state.dueOn, today) } : {}),
+    invoiceState: projection.invoiceState,
+    paymentState: projection.paymentState,
+    timingState: projection.timingState,
+    followUp: projection.followUp,
+    coherent: projection.reconciliationStatus === 'coherent',
+    ...(projection.outstanding !== undefined ? { outstanding: projection.outstanding } : {}),
+    ...(projection.daysOverdue !== undefined ? { daysOverdue: projection.daysOverdue } : {}),
   };
 }
 
@@ -237,7 +200,7 @@ async function emulateChaseTransaction(client: DynamoDBDocumentClient, writes: C
   } catch (error) {
     for (const { write, current } of applied.reverse()) {
       if (current) await client.send(new PutCommand({ TableName: write.tableName, Item: current }));
-      else await client.send(new PutCommand({ TableName: write.tableName, Item: write.key }));
+      else await client.send(new DeleteCommand({ TableName: write.tableName, Key: write.key }));
     }
     throw error;
   }

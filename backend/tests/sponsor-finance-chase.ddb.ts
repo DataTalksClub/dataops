@@ -1,30 +1,18 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { PutCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
-import { startLocal, stopLocal, createTables, TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_USERS } from '../scripts/local-dynamodb';
+import { createTables, TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_USERS } from '../scripts/local-dynamodb';
 import { invoiceIdentity } from '../src/sponsorFinance/core';
 import { getFinanceState } from '../src/sponsorFinance/repository';
 import { withChaseTasks } from '../src/sponsorFinance/chase';
 import { createDealAtomic, createOrganizationAtomic } from '../src/db/sponsorCrm';
 import type { FinanceProjection, LambdaEvent, LambdaResponse } from '../src/types';
 
-/**
- * Payment chasing end to end against the local database: the finance chase
- * endpoint creates ordinary Tasks in the main pool (with the deal subject),
- * refuses duplicates and replays retries, gates resolution on the
- * payment-verification proof, respects the existing task rules, and stays
- * consistent with the finance projection (paid and partially-paid states).
- *
- * Finance states are seeded as the sanitized fixture rows the classify/issue
- * mutations would store: those mutations are real DynamoDB transactions, and
- * the projection GET uses TransactGet, neither of which the local test
- * database implements. The chase creation decision itself uses plain reads
- * and the shared deriveStates/deriveFollowUp code, so it is exercised for
- * real here; `withChaseTasks` is checked at the module boundary where the
- * route would compose it.
- */
+// Run only through the real DynamoDB Local transaction gate. Production uses
+// the canonical finance projection's TransactGet and claim-identity checks;
+// tests must exercise those commands rather than weakening production for dynalite.
 describe('sponsor payment chasing', () => {
   let client: DynamoDBDocumentClient;
   const ADMIN = 'chase-admin-1';
@@ -133,7 +121,8 @@ describe('sponsor payment chasing', () => {
   }
 
   before(async () => {
-    client = await getClient(await startLocal());
+    if (!process.env.DYNAMODB_ENDPOINT?.startsWith('http://127.0.0.1:')) throw new Error('Run through the DynamoDB Local transaction gate');
+    client = await getClient();
     await createTables(client);
     process.env.IS_LOCAL = 'true';
     process.env.SPONSOR_FINANCE_ENABLED = 'true';
@@ -144,9 +133,28 @@ describe('sponsor payment chasing', () => {
   });
 
   after(async () => {
-    await stopLocal();
+    client.destroy();
     delete process.env.IS_LOCAL;
     delete process.env.SPONSOR_FINANCE_ENABLED;
+  });
+
+  it('rejects a chase when the canonical invoice claim identity is inconsistent', async () => {
+    const seeded = await bootstrapDeal();
+    const state = await getFinanceState(client, seeded.dealId);
+    const sourceId = state!.invoiceLinkId!.split('#').at(-1)!;
+    const key = `SPONSOR_FINANCE_CLAIM#document#${sourceId}`;
+    await client.send(new UpdateCommand({
+      TableName: TABLE_BOOKKEEPING, Key: { PK: key, SK: key },
+      UpdateExpression: 'SET identityToken = :bad',
+      ExpressionAttributeValues: { ':bad': 'stale-claim-identity' },
+    }));
+    const response = await chase(seeded.dealId,
+      { dealVersion: 1, expectedVersion: seeded.financeVersion }, 'inconsistent-claim');
+    assert.strictEqual(response.status, 422);
+    assert.match(response.body.error, /reconciled/);
+    const after = await getFinanceState(client, seeded.dealId);
+    assert.strictEqual(after!.version, seeded.financeVersion);
+    assert.deepStrictEqual(after!.chaseTaskIds, []);
   });
 
   it('refuses to chase money that is not an overdue issued invoice', async () => {
