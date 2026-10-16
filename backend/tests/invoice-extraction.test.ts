@@ -14,6 +14,28 @@ function pdf(text:string) {
   return Buffer.from(out);
 }
 const aws='Amazon Web Services\nVAT Invoice Number: EUINDE00-1234567\nAccount ID: 000000000001\nVAT Invoice Date: October 1, 2026\nTOTAL AMOUNT USD 120.50\nbilling period September 1 - September 30, 2026';
+test('issuer in a legal footer supplies provider without guessing refund amounts',()=>{
+  const parsed=extractInvoiceText('Your plans were canceled.\nUnused amounts are being refunded.\n© 2026 Example Cloud LLC');
+  assert.equal(parsed.fields.counterparty,'Example Cloud LLC');
+  assert.equal(parsed.fields.amount,undefined);
+  assert.equal(parsed.fields.paymentEvidence,undefined);
+});
+test('German invoice date and legal issuer before a footer address are extracted',()=>{
+  const parsed=extractInvoiceText('Rechnung\nRechnungsdatum: 13.10.2026\nExample Handel GmbH & Co. KG - Musterstraße 2 - 12345 Berlin\nSitz: Berlin - Registergericht Berlin');
+  assert.equal(parsed.fields.counterparty,'Example Handel GmbH & Co. KG');
+  assert.equal(parsed.fields.transactionDate,'2026-10-13');
+  assert.equal(extractInvoiceText('Rechnungsdatum: 31.02.2026').fields.transactionDate,undefined);
+});
+test('body prose and a customer VAT footer do not become company names',()=>{
+  const parsed=extractInvoiceText('Thank you for choosing our service\nVAT/GST Number DE000000000\nContact support for help');
+  assert.equal(parsed.fields.counterparty,undefined);
+  assert.equal(extractInvoiceText('Statement\nBill to\nCustomer Example LLC\nExample Street 1').fields.counterparty,undefined);
+});
+test('Stripe issuer skips page counters and recipient company-name fields',()=>{
+  const parsed=extractInvoiceText('Page 1 of 2\nInvoice\nInvoice number EXAMPLE-0001\nDate of issue October 3, 2026\nDate due October 3, 2026\nVAT/GST Number DE000000000\nCompany name Synthetic Customer\nExample Cloud, Inc. @example\n100 Example Street\nBill to\nCustomer Example LLC\n$5.00 USD due October 3, 2026');
+  assert.equal(parsed.fields.counterparty,'Example Cloud, Inc.');
+  assert.equal(parsed.fields.transactionDate,'2026-10-03');
+});
 test('real sanitized PDF text extraction and AWS evidence leave actual EUR absent',async()=>{const parsed=extractInvoiceText(await pdfText(pdf(aws)));assert.equal(parsed.extraction.method,'deterministic-aws');assert.equal(parsed.fields.amount,'120.50');assert.equal(parsed.fields.transactionDate,'2026-10-01');assert.equal(parsed.fields.accountContext,'000000000001');assert.equal(parsed.fields.amountEur,undefined);assert.ok(missingEvidence(parsed.fields).includes('paymentEvidence'));});
 test('Stripe receipt never treats EUR tax-display as bank payment',()=>{const p=extractInvoiceText('Receipt\nInvoice number ABCDEF00 \u0000 0001\nDate paid October 1, 2026\nExample Software\n$25.00 paid on October 1, 2026\nBill to\nSynthetic account\nVAT (€4.31)');assert.equal(p.extraction.method,'deterministic-stripe');assert.equal(p.fields.counterparty,'Example Software');assert.equal(p.fields.amountEur,undefined);assert.equal(p.fields.paidDate,'2026-10-01');});
 test('issuer lines that are VAT/GST identifiers are skipped for the vendor and the email subject supplies the description',()=>{
