@@ -29,6 +29,7 @@ export function moneyMarkup(ledger, escapeHtml) {
       <div class="money-follow-up-row__main">
         <span><strong>${escapeHtml(next.title)}</strong> · ${escapeHtml(dealName(row))}</span>
         ${next.detail ? html`<span class="dk-muted">${escapeHtml(next.detail)}</span>` : ""}
+        ${row.recordedPayments?.length ? html`<span class="dk-muted">Payment reported; verify receipt before chasing or marking paid.</span>` : ""}
       </div>
       ${amount
         ? html`<span class="dk-mono money-follow-up-row__amount">${escapeHtml(formatAmount(amount, row.currency))}</span>`
@@ -47,7 +48,7 @@ export function moneyMarkup(ledger, escapeHtml) {
   const urgent = ledger.followUps.filter((row) => row.followUp.code !== "classify");
   const unclassified = ledger.followUps.filter((row) => row.followUp.code === "classify");
   const unclassifiedMarkup = unclassified.length
-    ? html`<details class="money-unclassified" data-money-unclassified>
+    ? html`<details open class="money-unclassified" data-money-unclassified>
         <summary>
           ${escapeHtml(`${unclassified.length} agreed deal${unclassified.length === 1 ? " has" : "s have"} no money recorded`)}
         </summary>

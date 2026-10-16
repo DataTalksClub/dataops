@@ -51,6 +51,7 @@ export type FinanceState = {
   /** Payment follow-up Tasks created for this deal's money; open ones throttle re-creation. */
   paymentFollowUpTaskIds: string[];
   voidedAt?: string;
+  voidReason?: string;
   actorId: string;
   createdAt: string;
   updatedAt: string;
@@ -90,6 +91,8 @@ export type FinancePayment = {
   amount: string;
   currency: string;
   source: 'ledger' | 'recorded';
+  amountEur?: string;
+  category?: string;
   method?: RecordedPayment['method'];
   reference?: string;
 };
@@ -150,6 +153,7 @@ export type FinanceProjection = {
     waitingOn?: WaitingOn;
     evidence?: FinanceEvidence[];
     voidedAt?: string;
+  voidReason?: string;
   };
   invoiceState: InvoiceState;
   paymentState: PaymentState;

@@ -1,6 +1,99 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { run } from "../src/cli.mjs";
+import { mkdtemp, writeFile, unlink, rmdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { attachInvoice, receivePayment, correctPayment, list } from "../src/commands/sponsors.mjs";
+
+test("invoice originals upload privately and attach without creating or settling a payment", async () => {
+  const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  const directory = await mkdtemp(join(tmpdir(), "dataops-invoice-test-")), path = join(directory, "original.pdf");
+  await writeFile(path, "%PDF-1.7\nSynthetic original invoice\n%%EOF");
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, ...options });
+    let response = {};
+    if (url.endsWith("/finance")) response = { finance: { version: 2 } };
+    else if (url.endsWith("/deals/demo")) response = { version: 1 };
+    else if (url.endsWith("/documents/prepare")) response = { document: { id: "original" }, uploadUrl: "https://private.example.test/object", uploadHeaders: { "content-type": "application/pdf" } };
+    else if (url.endsWith("/complete")) response = { document: { id: "original" } };
+    else if (url.includes("/candidates/invoices")) response = { items: [{ id: "original", identityToken: "verified-content-identity" }] };
+    else if (url.endsWith("/finance/invoice")) response = { projection: { invoiceState: "issued" } };
+    return new Response(JSON.stringify(response));
+  };
+  const args = { _: ["demo"], file: path, url: "https://portal.example.test", json: true };
+  try {
+    await attachInvoice(args, {});
+    assert.equal(calls.filter((call) => call.method !== "GET").length, 0);
+    const result = await attachInvoice({ ...args, apply: true }, {});
+    assert.equal(result.documentId, "original");
+    assert.equal(calls.filter((call) => call.url.endsWith("/complete")).length, 1);
+    const upload = calls.find((call) => call.url === "https://private.example.test/object");
+    assert.ok(Buffer.isBuffer(upload.body)); assert.equal(upload.headers.Authorization, undefined);
+    const link = JSON.parse(calls.find((call) => call.url.endsWith("/finance/invoice")).body);
+    assert.equal(link.identityToken, "verified-content-identity");
+    assert.equal(link.sentOn, undefined); assert.equal(link.amount, undefined);
+    assert.ok(calls.every((call) => !call.url.includes("/receipts") && !call.url.includes("/transactions")));
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
+    await unlink(path); await rmdir(directory);
+  }
+});
+
+test("receipt commands preview actual amounts and apply through the verified receipt API", async () => {
+  const originalFetch = globalThis.fetch;
+  const oldToken = process.env.DATAOPS_TOKEN;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, ...options, body: options.body && JSON.parse(options.body) });
+    return new Response(JSON.stringify(options.method === "GET"
+      ? (url.endsWith("/finance") ? { finance: { version: 4, amountDue: "100", currency: "EUR" } } : { version: 2 })
+      : { projection: { paymentState: "partially-paid" } }));
+  };
+  const data = JSON.stringify({ receivedOn: "2026-10-01", amount: "95", currency: "EUR", counterparty: "Synthetic Sponsor", reference: "bank:account:txn-123", category: "Consulting" });
+  const args = { _: ["demo"], data, url: "https://portal.example.test", token: "test", json: true };
+  try {
+    await receivePayment(args, {});
+    assert.equal(calls.filter((call) => call.method !== "GET").length, 0);
+    await receivePayment({ ...args, apply: true, idempotencyKey: "receipt-test-stable-012345" }, {});
+    const create = calls.find((call) => call.method === "POST");
+    assert.ok(create.url.endsWith("/finance/receipts"));
+    assert.equal(create.body.amount, "95"); assert.equal(create.body.amountDue, undefined);
+    assert.equal(create.body.expectedVersion, 4); assert.equal(create.body.dealVersion, 2);
+    assert.equal(create.headers["Idempotency-Key"], "receipt-test-stable-012345");
+    await correctPayment({ ...args, _: ["demo", "tx-demo"], apply: true }, {});
+    assert.ok(calls.find((call) => call.method === "PUT").url.endsWith("/finance/receipts/tx-demo"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
+  }
+});
+
+test("sponsor listing exhausts pages and reports explicit truncation", async () => {
+  const originalFetch = globalThis.fetch;
+  const oldToken = process.env.DATAOPS_TOKEN;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  const values = Array.from({ length: 255 }, (_, index) => ({ id: `org-${index}` }));
+  globalThis.fetch = async (url) => {
+    const params = new URL(url).searchParams, start = Number(params.get("cursor") || 0), limit = Number(params.get("limit"));
+    const end = Math.min(start + limit, values.length);
+    return new Response(JSON.stringify({ items: values.slice(start, end), nextCursor: end < values.length ? String(end) : null }));
+  };
+  const args = { _: ["organizations"], url: "https://portal.example.test", token: "test", json: true };
+  try {
+    let result = await list(args, {});
+    assert.equal(result.items.length, 255); assert.equal(result.complete, true); assert.equal(result.nextCursor, null);
+    result = await list({ ...args, limit: "120" }, {});
+    assert.equal(result.items.length, 120); assert.equal(result.complete, false); assert.equal(result.nextCursor, "120");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
+  }
+});
 
 test("unsupported sponsor invoice operations explain the working commands without a request", async () => {
   const originalFetch = globalThis.fetch;

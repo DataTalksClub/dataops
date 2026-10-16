@@ -240,7 +240,9 @@ describe('sponsor finance contracts', () => {
       deriveFollowUp({ ...base, waitingOn: { party: 'sponsor', reason: 'billing-details', since: '2026-09-07' }, deliveredOn: '2026-08-24' }, today),
       { code: 'await-sponsor', party: 'sponsor', since: '2026-09-07', reason: 'billing-details' },
     );
-    const issued = { invoiceState: 'issued' as const, paymentState: 'unpaid' as const, dueOn: '2026-09-20' };
+    const issued = { sentOn: '2026-09-01', invoiceState: 'issued' as const, paymentState: 'unpaid' as const, dueOn: '2026-09-20' };
+    assert.deepEqual(deriveFollowUp({ ...issued, sentOn: undefined }, today), { code: 'send-invoice', party: 'us' });
+    assert.deepEqual(deriveFollowUp({ ...base, dealStatus: 'agreed' }, today), { code: 'send-invoice', party: 'us' });
     assert.deepEqual(deriveFollowUp(issued, today), { code: 'payment-follow-up', party: 'us', since: '2026-09-20', daysOverdue: 24 });
     assert.deepEqual(
       deriveFollowUp({ ...issued, waitingOn: { party: 'us', reason: 'payment-link', since: '2026-09-25' } }, today),

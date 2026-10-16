@@ -15,6 +15,8 @@ import {
   projectFinance,
   recordInvoiceRequest,
   recordPayment,
+  receivePayment,
+  correctReceipt,
   unlinkFinanceSource,
   updateFollowThrough,
   voidFinance,
@@ -147,6 +149,29 @@ export async function handleSponsorFinanceRoutes(
       });
       return json(200, { result, projection: await project() });
     }
+    const receipt = action.match(/^receipts\/([^/]+)$/);
+    if (method === 'PUT' && receipt) {
+      const result = await correctReceipt(client, {
+        ...common, expectedVersion: Number(body.expectedVersion), sourceId: receipt[1],
+        receivedOn: String(body.receivedOn || ''), amount: String(body.amount || ''),
+        currency: String(body.currency || ''), reference: String(body.reference || ''),
+        ...(body.amountEur !== undefined ? { amountEur: String(body.amountEur) } : {}),
+        ...(body.category !== undefined ? { category: String(body.category) } : {}),
+      });
+      return json(200, { result, projection: await project() });
+    }
+    if (method === 'POST' && action === 'receipts') {
+      const result = await receivePayment(client, {
+        ...common, expectedVersion: Number(body.expectedVersion),
+        receivedOn: String(body.receivedOn || ''), amount: String(body.amount || ''),
+        currency: String(body.currency || ''), reference: String(body.reference || ''),
+        counterparty: String(body.counterparty || ''),
+        ...(body.amountEur !== undefined ? { amountEur: String(body.amountEur) } : {}),
+        ...(body.category !== undefined ? { category: String(body.category) } : {}),
+        ...(body.replacesPaymentId ? { replacesPaymentId: String(body.replacesPaymentId) } : {}),
+      });
+      return json(200, { result, projection: await project() });
+    }
     if (method === 'POST' && action === 'recorded-payments') {
       const result = await recordPayment(client, {
         ...common,
@@ -186,7 +211,7 @@ export async function handleSponsorFinanceRoutes(
       });
     }
     if (method === 'POST' && action === 'void') {
-      const result = await voidFinance(client, { ...common, expectedVersion: Number(body.expectedVersion) });
+      const result = await voidFinance(client, { ...common, expectedVersion: Number(body.expectedVersion), reason: String(body.reason || '') });
       return json(200, { result, projection: await project() });
     }
     if (method === 'POST' && action === 'reconcile') {

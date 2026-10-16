@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import { UsageError } from "../errors.mjs";
 import { enc, integer, isoDate, jsonData, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
@@ -20,6 +21,13 @@ Usage
   dataops sponsors finance <deal-id> [history|candidates/invoices|candidates/payments]
   dataops sponsors follow-up <deal-id> [--date YYYY-MM-DD]  Create a main-pool payment follow-up
       [--task ID | --review-existing]  Link an existing deal Task, or confirm review before adding separate work
+  dataops sponsors attach-invoice <deal-id> --file original.pdf [--apply]
+      Attach an original issued invoice through verified private storage; no payment is created.
+  dataops sponsors receive-payment <deal-id> --data @receipt.json [--apply]
+      Required: receivedOn, amount, currency, counterparty, reference (bank/account + unique transaction ID).
+      Creates and links bookkeeping atomically. Link an existing ledger row instead of recreating it.
+  dataops sponsors correct-payment <deal-id> <transaction-id> --data @receipt.json [--apply]
+      Correct actual receipt amount/date/reference and optional amountEur; nominal invoice stays unchanged.
   dataops sponsors link-payment <deal-id> <transaction-id> [--apply]
       Link a bookkeeping transaction to the deal as its payment. A payment the deal
       recorded before the row existed (same amount, within 14 days) is replaced by
@@ -63,16 +71,17 @@ function label(item) {
 export async function list(args, io) {
   const kind = kindOf(args);
   const api = apiFor(args);
-  const max = integer(args.limit, "limit") ?? 200;
+  const max = integer(args.limit, "limit") ?? Infinity;
+  if (max <= 0) throw new UsageError("limit must be positive");
   const items = [];
   let cursor;
   let last;
   do {
-    last = await api.get(`/api/sponsor-crm/${kind}`, { query: { cursor } });
+    last = await api.get(`/api/sponsor-crm/${kind}`, { query: { cursor, limit: Math.min(100, max - items.length) } });
     items.push(...itemsOf(last));
     cursor = last?.nextCursor;
   } while (cursor && items.length < max);
-  const result = { kind, items: items.slice(0, max) };
+  const result = { kind, items: items.slice(0, max), nextCursor: cursor || null, complete: !cursor };
   if (args.json) return result;
   table(io, result.items, [
     ["ID", (item) => item.id],
@@ -204,8 +213,7 @@ export async function followUp(args, io) {
     api.get(`/api/sponsor-crm/deals/${enc(id)}`),
     api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
   ]);
-  if (!finance.finance) throw new UsageError("Classify this deal's finance before creating or linking a payment follow-up.");
-  const body = { dealVersion: deal.version, expectedVersion: finance.finance.version };
+  const body = { dealVersion: deal.version, expectedVersion: finance.finance?.version || 0 };
   const date = isoDate(args.date, "date");
   if (date) body.date = date;
   if (args.task) body.existingTaskId = String(args.task);
@@ -222,4 +230,76 @@ export async function followUp(args, io) {
   return result;
 }
 
-export const commands = { list, show, create, update, messages, history, finance, "follow-up": followUp, "link-payment": linkPayment };
+export async function attachInvoice(args, io) {
+  const id = positional(args, 0, "dataops sponsors attach-invoice <deal-id> --file invoice.pdf [--apply]");
+  if (!args.file) throw new UsageError("--file must name the original invoice PDF");
+  const bytes = await readFile(String(args.file));
+  if (!bytes.subarray(0, 5).equals(Buffer.from("%PDF-"))) throw new UsageError("The invoice must be a PDF");
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const api = apiFor(args);
+  const [deal, projection] = await Promise.all([
+    api.get(`/api/sponsor-crm/deals/${enc(id)}`), api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
+  ]);
+  if (!projection.finance) throw new UsageError("Classify the invoice amount and currency first.");
+  if (projection.invoice) throw new UsageError("An invoice original is already attached; review it before replacing evidence.");
+  const result = { mode: args.apply ? "apply" : "dry-run", dealId: id, sha256, byteSize: bytes.length };
+  if (args.apply) {
+    const idempotencyKey = `sponsor-invoice-${sha256}`;
+    let prepared = await api.post("/api/bookkeeping/documents/prepare", {
+      sha256, byteSize: bytes.length, documentType: "invoice", idempotencyKey, sourceRef: `sponsor-deal:${id}`,
+    });
+    if (prepared.uploadUrl) {
+      const upload = await fetch(prepared.uploadUrl, { method: "PUT", body: bytes, headers: prepared.uploadHeaders });
+      if (!upload.ok) throw new Error(`Invoice upload failed (${upload.status}); retry the same file`);
+      prepared = await api.post(`/api/bookkeeping/documents/${enc(prepared.document.id)}/complete`, { idempotencyKey });
+    }
+    let cursor, candidate;
+    do {
+      const page = await api.get(`/api/sponsor-crm/deals/${enc(id)}/finance/candidates/invoices`, { query: { limit: 50, cursor } });
+      candidate = (page.items || []).find((item) => item.id === prepared.document.id);
+      cursor = page.nextCursor;
+    } while (!candidate && cursor);
+    if (!candidate) throw new UsageError("Uploaded invoice is not an available candidate; check whether another deal already claims it.");
+    const linked = await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/invoice`, {
+      dealVersion: deal.version, expectedVersion: projection.finance.version,
+      sourceId: candidate.id, identityToken: candidate.identityToken,
+    }, { headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() } });
+    result.documentId = candidate.id;
+    result.invoiceState = linked.projection?.invoiceState;
+  }
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
+export async function receivePayment(args, io) {
+  const id = positional(args, 0, "dataops sponsors receive-payment <deal-id> --data @receipt.json [--apply]");
+  const api = apiFor(args), data = jsonData(args);
+  const [deal, projection] = await Promise.all([
+    api.get(`/api/sponsor-crm/deals/${enc(id)}`), api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
+  ]);
+  if (!projection.finance) throw new UsageError("Classify and issue the invoice before recording a receipt.");
+  const body = { ...data, dealVersion: deal.version, expectedVersion: projection.finance.version };
+  let result = { mode: args.apply ? "apply" : "dry-run", dealId: id, receipt: body };
+  if (args.apply) result = { ...result, ...await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/receipts`, body,
+    { headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() } }) };
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
+export async function correctPayment(args, io) {
+  const id = positional(args, 0, "dataops sponsors correct-payment <deal-id> <transaction-id> --data @receipt.json [--apply]");
+  const sourceId = positional(args, 1, "dataops sponsors correct-payment <deal-id> <transaction-id> --data @receipt.json [--apply]");
+  const api = apiFor(args), data = jsonData(args);
+  const [deal, projection] = await Promise.all([
+    api.get(`/api/sponsor-crm/deals/${enc(id)}`), api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
+  ]);
+  if (!projection.finance) throw new UsageError("No finance record exists.");
+  const body = { ...data, dealVersion: deal.version, expectedVersion: projection.finance.version };
+  let result = { mode: args.apply ? "apply" : "dry-run", dealId: id, transactionId: sourceId, correction: body };
+  if (args.apply) result = { ...result, ...await api.put(`/api/sponsor-crm/deals/${enc(id)}/finance/receipts/${enc(sourceId)}`, body,
+    { headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() } }) };
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
+export const commands = { list, show, create, update, messages, history, finance, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment };

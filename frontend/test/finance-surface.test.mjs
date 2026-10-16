@@ -5,7 +5,7 @@ import { formatAmount } from "../src/surfaces/finance/bookkeeping-format.js";
 
 import { createFinanceSurface } from "../src/surfaces/finance/index.js";
 import { createSponsorFinance } from "../src/surfaces/finance/sponsor-finance.js";
-import { followUpSummary, replaceablePayment } from "../src/surfaces/finance/sponsor-finance-records.js";
+import { createFinanceRecordForms, followUpSummary, replaceablePayment } from "../src/surfaces/finance/sponsor-finance-records.js";
 import {
   copyToClipboard,
   formatFullCsv,
@@ -19,6 +19,30 @@ const originalGlobals = {
   fetch: globalThis.fetch,
   FormData: globalThis.FormData,
 };
+
+test("the payment form books verified receipts and corrects actual cash without changing the invoice total", () => {
+  createHarness();
+  const surface = new FakeElement("section"), calls = [];
+  const forms = createFinanceRecordForms({ surface, financeMutation: async (...args) => calls.push(args), reopenBookingDetail: async () => {}, safe() {} });
+  const dialog = surface.children.find((child) => "financeRecordPaymentDialog" in child.dataset);
+  const form = dialog.querySelector("form");
+  form.elements.replacesPaymentId.closest = () => new FakeElement("label");
+  const projection = { finance: { version: 3, currency: "EUR", amountDue: "100" }, outstanding: "100", payments: [] };
+  const values = { receivedOn: "2026-10-02", amount: "95", reference: "bank:account:unique-txn", counterparty: "Synthetic Sponsor", amountEur: "95", category: "Consulting", replacesPaymentId: "" };
+  forms.openRecordPayment({ id: "deal" }, projection);
+  form.formEntries = Object.entries(values);
+  form.onsubmit({ preventDefault() {} });
+  assert.equal(calls[0][1], "/receipts");
+  assert.equal(calls[0][2], "POST");
+  assert.equal(calls[0][3].amount, "95");
+  assert.equal(calls[0][3].amountDue, undefined);
+  forms.openRecordPayment({ id: "deal" }, projection, { id: "receipt-one", source: "ledger", amount: "95", reference: values.reference });
+  form.formEntries = Object.entries({ ...values, amount: "94" });
+  form.onsubmit({ preventDefault() {} });
+  assert.equal(calls[1][1], "/receipts/receipt-one");
+  assert.equal(calls[1][2], "PUT");
+  assert.equal(calls[1][3].amount, "94");
+});
 
 afterEach(() => {
   for (const [name, value] of Object.entries(originalGlobals)) {
@@ -1142,7 +1166,7 @@ test("sponsor finance panel leads with the derived next step, the blocker, payme
 });
 
 test("follow-up summaries name the fix and who acts", () => {
-  assert.equal(followUpSummary({ code: "send-invoice", party: "us", since: "2026-10-01" }).title, "Send the invoice");
+  assert.equal(followUpSummary({ code: "send-invoice", party: "us", since: "2026-10-01" }).title, "Verify or send the invoice");
   assert.equal(followUpSummary({ code: "unblock", party: "us", reason: "payment-link" }).title, "Send the sponsor a payment link");
   assert.equal(followUpSummary({ code: "await-sponsor", party: "sponsor", reason: "billing-details" }).tone, "info");
   assert.equal(followUpSummary({ code: "reconcile", party: "us" }).tone, "danger");
@@ -1249,7 +1273,7 @@ test("an overdue invoice without a payment follow-up offers creating the follow-
   await sponsorFinance.loadFinance({ id: "deal-1", version: 3 });
   const markup = panel.innerHTML;
   assert.match(markup, /Payment follow-up/);
-  assert.match(markup, /data-finance-payment-follow-up-create>Follow up on the payment</);
+  assert.match(markup, /data-finance-payment-follow-up-create>Add next finance action to Tasks</);
   assert.match(markup, /regular task pool/);
   assert.doesNotMatch(markup, /chase/i);
 

@@ -56,7 +56,7 @@ export function followUpSummary(followUp = {}) {
   const since = followUp.since ? ledgerDate(followUp.since) : "";
   switch (followUp.code) {
     case "reconcile":
-      return { tone: "danger", title: "Reconcile the payment evidence", detail: "Linked bookkeeping rows no longer match this deal." };
+      return { tone: "danger", title: "Reconcile the payment evidence", detail: "Verify reported receipts and reconcile the linked bookkeeping rows before chasing." };
     case "unblock":
       return {
         tone: "warning",
@@ -70,7 +70,7 @@ export function followUpSummary(followUp = {}) {
         detail: `Overdue ${followUp.daysOverdue ?? ""} day${followUp.daysOverdue === 1 ? "" : "s"}${since ? `, due ${since}` : ""}.`,
       };
     case "send-invoice":
-      return { tone: "warning", title: "Send the invoice", detail: since ? `Invoiceable since ${since}.` : "The deal is invoiceable." };
+      return { tone: "warning", title: "Verify or send the invoice", detail: since ? `Invoiceable since ${since}.` : "The deal is invoiceable." };
     case "classify":
       return { tone: "warning", title: "Record what to invoice", detail: "The deal is agreed but its money is not classified." };
     case "await-sponsor":
@@ -147,10 +147,11 @@ export function createFinanceRecordForms({ surface, financeMutation, reopenBooki
     "financeRecordPaymentDialog",
     html`<form>
       <header>
-        <h3>Record payment</h3>
+        <h3>Record verified receipt</h3>
         <p>
-          Money received that bookkeeping has not caught up with yet. When the
-          bookkeeping row arrives, linking it replaces this payment.
+          Record verified money received. This creates and links its bookkeeping row.
+          Check existing bookkeeping payments first; link an existing row instead.
+          A short receipt leaves the balance open.
         </p>
       </header>
       <div class="dialog-fields">
@@ -159,23 +160,20 @@ export function createFinanceRecordForms({ surface, financeMutation, reopenBooki
           >Amount <span data-payment-currency></span>
           <input name="amount" inputmode="decimal" required
         /></label>
+        <label>Confirms a reported payment
+          <select name="replacesPaymentId"><option value="">New receipt</option></select>
+        </label>
         <label
-          >Source
-          <select name="method">
-            <option value="bank-report">Accountant report</option>
-            <option value="sponsor-confirmation">Sponsor confirmation</option>
-            <option value="processor">Payment processor</option>
-            <option value="other">Other</option>
-          </select></label
-        >
-        <label
-          >Reference <span class="dk-muted">(optional)</span>
-          <input name="reference" maxlength="200"
+          >Bank/account and unique transaction ID
+          <input name="reference" maxlength="200" required
         /></label>
+        <label>Counterparty <input name="counterparty" maxlength="300" required /></label>
+        <label>Category (optional) <input name="category" maxlength="300" /></label>
+        <label>Received value in EUR (optional) <input name="amountEur" inputmode="decimal" /></label>
         <p role="alert"></p>
       </div>
       <footer>
-        <button class="primary-button">Record payment</button
+        <button class="primary-button">Record verified receipt</button
         ><button type="button" data-cancel>Cancel</button>
       </footer>
     </form>`,
@@ -244,6 +242,24 @@ export function createFinanceRecordForms({ surface, financeMutation, reopenBooki
       </footer>
     </form>`,
   );
+  const voidDialog = formDialog("financeVoidDialog", html`<form>
+    <header><h3>Cancel invoice follow-through</h3><p>Keep the invoice original and record why no payment is expected.</p></header>
+    <div class="dialog-fields"><label>Cancellation reason <input name="reason" maxlength="500" required /></label><p role="alert"></p></div>
+    <footer><button class="primary-button">Cancel invoice follow-through</button><button type="button" data-cancel>Keep open</button></footer>
+  </form>`);
+  surface.append(voidDialog);
+  voidDialog.querySelector("[data-cancel]").addEventListener("click", () => voidDialog.close());
+  function openVoidFinance(booking, projection) {
+    const form = voidDialog.querySelector("form"); form.reset();
+    form.querySelector('[role="alert"]').textContent = "";
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      financeMutation(booking, "/void", "POST", { expectedVersion: projection.finance.version, reason: form.elements.reason.value.trim() })
+        .then(async () => { voidDialog.close(); await reopenBookingDetail(booking); })
+        .catch((error) => { form.querySelector('[role="alert"]').textContent = error.message; });
+    };
+    voidDialog.showModal();
+  }
   surface.append(invoiceDialog, paymentDialog, waitingDialog, evidenceDialog);
   const showFormError = (form, error) => {
     form.querySelector('[role="alert"]').textContent = error.message;
@@ -302,24 +318,42 @@ export function createFinanceRecordForms({ surface, financeMutation, reopenBooki
     };
     invoiceDialog.showModal();
   }
-  function openRecordPayment(booking, projection) {
+  function openRecordPayment(booking, projection, payment) {
     const form = paymentDialog.querySelector("form");
     form.reset();
     form.querySelector('[role="alert"]').textContent = "";
     const finance = projection.finance;
     form.querySelector("[data-payment-currency]").textContent = `(${finance.currency})`;
-    form.elements.receivedOn.value = todayIso();
-    form.elements.amount.value = projection.outstanding || "";
+    form.elements.receivedOn.value = payment?.effectiveDate || todayIso();
+    form.elements.amount.value = payment?.amount || projection.outstanding || "";
+    form.elements.reference.value = payment?.reference || "";
+    form.elements.amountEur.value = payment?.amountEur || "";
+    form.elements.category.value = payment?.category || "";
+    const reported = form.elements.replacesPaymentId;
+    reported.replaceChildren();
+    const empty = document.createElement("option");
+    empty.value = ""; empty.textContent = "New receipt"; reported.append(empty);
+    for (const item of projection.payments.filter((item) => item.source === "recorded")) {
+      const option = document.createElement("option");
+      option.value = item.id; option.textContent = `${item.effectiveDate}: ${item.amount} ${item.currency} reported`;
+      reported.append(option);
+    }
+    reported.closest("label").hidden = Boolean(payment);
+    form.elements.counterparty.value = booking.organizationName || booking.organization?.displayName || booking.title || "";
+    form.querySelector("h3").textContent = payment ? "Correct verified receipt" : "Record verified receipt";
+    form.querySelector("button.primary-button").textContent = payment ? "Save correction" : "Record verified receipt";
+    form.elements.counterparty.required = !payment;
     form.onsubmit = (event) => {
       event.preventDefault();
       const values = Object.fromEntries(new FormData(form));
-      financeMutation(booking, "/recorded-payments", "POST", {
+      financeMutation(booking, payment ? `/receipts/${encodeURIComponent(payment.id)}` : "/receipts", payment ? "PUT" : "POST", {
         expectedVersion: finance.version,
         receivedOn: values.receivedOn,
         amount: String(values.amount).trim(),
         currency: finance.currency,
-        method: values.method,
-        ...(values.reference.trim() ? { reference: values.reference.trim() } : {}),
+        category: values.category.trim(), reference: values.reference.trim(), counterparty: values.counterparty.trim(),
+        ...(!payment && values.replacesPaymentId ? { replacesPaymentId: values.replacesPaymentId } : {}),
+        ...(values.amountEur.trim() ? { amountEur: values.amountEur.trim() } : {}),
       })
         .then(async () => {
           paymentDialog.close();
@@ -396,5 +430,5 @@ export function createFinanceRecordForms({ surface, financeMutation, reopenBooki
     };
     evidenceDialog.showModal();
   }
-  return { openIssueInvoice, openRecordPayment, openWaitingOn, openAddEvidence };
+  return { openIssueInvoice, openRecordPayment, openWaitingOn, openAddEvidence, openVoidFinance };
 }

@@ -167,6 +167,7 @@ export function financeMutationTail(input: {
   eventCode: string;
   sourceId?: string;
   linkId?: string;
+  details?: Record<string, unknown>;
 }) {
   const at = nowIso();
   const requestDigest = digest(input.request);
@@ -195,6 +196,7 @@ export function financeMutationTail(input: {
     financeVersion: input.financeVersion,
     ...(input.sourceId ? { sourceId: input.sourceId } : {}),
     ...(input.linkId ? { linkId: input.linkId } : {}),
+    ...(input.details ? { details: input.details } : {}),
     createdAt: at,
   };
   return { key, requestDigest, receipt, history };
@@ -214,6 +216,7 @@ export async function executeMutation(
     eventCode: string;
     sourceId?: string;
     linkId?: string;
+    details?: Record<string, unknown>;
   },
 ): Promise<MutationResult> {
   if (!IDEMPOTENCY.test(input.idempotencyKey)) throw Object.assign(new Error('Invalid Idempotency-Key'), { statusCode: 400 });
@@ -536,7 +539,7 @@ export async function issueInvoice(
 }
 
 function paidTotal(projection: FinanceProjection): bigint {
-  return projection.payments.reduce((sum, item) => sum + scaledMoney(item.amount), 0n);
+  return projection.payments.filter((item) => item.source === 'ledger').reduce((sum, item) => sum + scaledMoney(item.amount), 0n);
 }
 
 export async function recordPayment(
@@ -566,7 +569,7 @@ export async function recordPayment(
     !state || state.version !== input.expectedVersion || state.voidedAt || state.invoiceRequirement !== 'required'
     || !state.issuedOn || state.currency !== input.currency || projection.reconciliationStatus !== 'coherent'
     || state.paymentLinkIds.length + state.recordedPaymentIds.length >= PAYMENT_LINK_LIMIT
-    || paidTotal(projection) + scaledMoney(input.amount) > scaledMoney(state.amountDue)
+    || projection.payments.reduce((sum, item) => sum + scaledMoney(item.amount), 0n) + scaledMoney(input.amount) > scaledMoney(state.amountDue)
   ) throw safeConflict();
   const paymentId = digest({ dealId: input.dealId, actorId: input.actorId, idempotencyKey: input.idempotencyKey }).slice(0, 32);
   const id = recordedPaymentKey(input.dealId, paymentId);
@@ -730,6 +733,114 @@ export async function updateFollowThrough(
   });
 }
 
+/** Verified cash creates its canonical ledger row and finance claim in one transaction.
+ * The statement reference is a global receipt identity: retries or a second deal
+ * cannot book the same receipt twice. Existing ledger receipts must be linked.
+ */
+export async function receivePayment(
+  client: DynamoDBDocumentClient,
+  input: {
+    actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string;
+    receivedOn: string; amount: string; currency: string; reference: string; counterparty: string; amountEur?: string; category?: string;
+    replacesPaymentId?: string;
+  },
+) {
+  try { scaledMoney(input.amount); if (input.amountEur !== undefined) scaledMoney(input.amountEur, true); } catch { throw Object.assign(new Error('Invalid received amount'), { statusCode: 400 }); }
+  if (!realDate(input.receivedOn) || !CURRENCY.test(input.currency)
+    || !boundedText(input.reference, 200) || !boundedText(input.counterparty, 300)
+    || (input.category !== undefined && input.category !== '' && !boundedText(input.category, 300))) {
+    throw Object.assign(new Error('Receipt date, amount, currency, counterparty and statement reference are required'), { statusCode: 400 });
+  }
+  const request = { ...input };
+  delete (request as Partial<typeof input>).idempotencyKey;
+  const replay = await replayMutation(client, {
+    actorId: input.actorId, operation: 'receive-payment', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
+  });
+  if (replay) return replay;
+  // Do not derive this identity from the deal or idempotency key: two independent
+  // requests for the same bank/processor receipt must collide globally.
+  const duplicates = await boundedBookkeepingScan(client, 'begins_with(PK, :prefix) AND (statementRef = :reference OR sourceKey = :reference)',
+    { ':prefix': 'BOOKKEEPING#', ':reference': input.reference.trim() });
+  if (!duplicates.complete) throw Object.assign(new Error('Receipt duplicate review is incomplete; retry'), { statusCode: 503 });
+  if (duplicates.items.length) throw Object.assign(new Error(`Receipt already exists in bookkeeping; link transaction ${duplicates.items[0].id}`), { statusCode: 422 });
+  const id = `receipt-${digest({ reference: input.reference.trim() }).slice(0, 40)}`;
+  const now = nowIso();
+  const source = {
+    id, transactionDate: input.receivedOn, paidDate: input.receivedOn,
+    amount: input.amount, currency: input.currency, counterparty: input.counterparty.trim(),
+    description: `Sponsor payment for deal ${input.dealId}`, statementRef: input.reference.trim(),
+    entryType: 'income', category: input.category || '', sourceType: 'sponsor-receipt', sourceKey: input.reference.trim(),
+    ...(input.amountEur !== undefined ? { amountEur: input.amountEur } : {}),
+    createdAt: now, updatedAt: now,
+  };
+  return linkPayment(client, {
+    actorId: input.actorId, dealId: input.dealId, dealVersion: input.dealVersion,
+    expectedVersion: input.expectedVersion, idempotencyKey: input.idempotencyKey,
+    sourceId: id, identityToken: paymentIdentity(source), replacesPaymentId: input.replacesPaymentId,
+  }, { source, request });
+}
+
+/** Correct the cash ledger without changing the invoice's nominal total. */
+export async function correctReceipt(
+  client: DynamoDBDocumentClient,
+  input: {
+    actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string;
+    sourceId: string; receivedOn: string; amount: string; currency: string; reference: string; amountEur?: string; category?: string;
+  },
+) {
+  try { scaledMoney(input.amount); if (input.amountEur !== undefined) scaledMoney(input.amountEur, true); }
+  catch { throw Object.assign(new Error('Invalid received amount'), { statusCode: 400 }); }
+  if (!OPAQUE.test(input.sourceId) || !realDate(input.receivedOn) || !CURRENCY.test(input.currency)
+    || !boundedText(input.reference, 200) || (input.category !== undefined && input.category !== '' && !boundedText(input.category, 300))) throw Object.assign(new Error('Receipt date, amount, currency and evidence reference are required'), { statusCode: 400 });
+  const { idempotencyKey: _key, ...request } = input;
+  const replay = await replayMutation(client, {
+    actorId: input.actorId, operation: 'correct-receipt', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
+  });
+  if (replay) return replay;
+  const projection = await projectFinance(client, input.dealId, 'admin');
+  const state = await getFinanceState(client, input.dealId);
+  const source = await sourceItem(client, 'transaction', input.sourceId);
+  const id = linkKey(input.dealId, 'transaction', input.sourceId);
+  if (!state || state.version !== input.expectedVersion || state.voidedAt || !source
+    || !state.paymentLinkIds.includes(id) || input.currency !== state.currency
+    || projection.reconciliationStatus !== 'coherent'
+    || paidTotal(projection) - scaledMoney(source.amount) + scaledMoney(input.amount) > scaledMoney(state.amountDue)) throw safeConflict();
+  if (source.sourceType === 'sponsor-receipt' && input.reference.trim() !== source.statementRef) {
+    throw Object.assign(new Error('The bank/account transaction identity is immutable; correct the amount or date using its original reference'), { statusCode: 400 });
+  }
+  const priorIdentity = paymentIdentity(source), now = nowIso();
+  const updated = { ...source, amount: input.amount, currency: input.currency, paidDate: input.receivedOn, transactionDate: input.receivedOn,
+    ...(input.category !== undefined ? { category: input.category } : {}),
+    statementRef: input.reference.trim(), ...(input.amountEur !== undefined ? { amountEur: input.amountEur } : {}), updatedAt: now };
+  if (input.amountEur === undefined && (source.amount !== input.amount || source.currency !== input.currency)) {
+    if (input.currency === 'EUR') updated.amountEur = input.amount;
+    else delete updated.amountEur;
+  }
+  const identity = paymentIdentity(updated);
+  return executeMutation(client, {
+    actorId: input.actorId, operation: 'correct-receipt', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
+    request, financeVersion: state.version + 1, recordId: id, sourceId: input.sourceId, linkId: id, eventCode: 'receipt-corrected',
+    details: { before: { amount: source.amount, currency: source.currency, receivedOn: source.paidDate || source.transactionDate, amountEur: source.amountEur || null }, after: { amount: input.amount, currency: input.currency, receivedOn: input.receivedOn, amountEur: updated.amountEur || null }, reference: input.reference },
+    transactItems: [adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
+      { Put: { TableName: TABLE_BOOKKEEPING, Item: { ...singleton(sourceKey('transaction', input.sourceId)), ...updated },
+        ...identityCondition('transaction', source) } },
+      { Update: { TableName: TABLE_BOOKKEEPING, Key: singleton(claimKey('transaction', input.sourceId)),
+        UpdateExpression: 'SET identityToken = :next',
+        ConditionExpression: 'dealId = :deal AND linkId = :link AND identityToken = :prior',
+        ExpressionAttributeValues: { ':next': identity, ':deal': input.dealId, ':link': id, ':prior': priorIdentity } } },
+      { Update: { TableName: TABLE_SPONSOR_CRM, Key: singleton(id),
+        UpdateExpression: 'SET identityToken = :next, financeVersion = :version',
+        ConditionExpression: 'identityToken = :prior AND sourceId = :source',
+        ExpressionAttributeValues: { ':next': identity, ':version': state.version + 1, ':prior': priorIdentity, ':source': input.sourceId } } },
+      { Update: { TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
+        UpdateExpression: 'SET #version = :next, updatedAt = :now, actorId = :actor',
+        ConditionExpression: '#version = :prior AND attribute_not_exists(voidedAt)',
+        ExpressionAttributeNames: { '#version': 'version' },
+        ExpressionAttributeValues: { ':next': state.version + 1, ':prior': state.version, ':now': now, ':actor': input.actorId } } },
+    ],
+  });
+}
+
 export async function linkPayment(
   client: DynamoDBDocumentClient,
   input: {
@@ -738,11 +849,12 @@ export async function linkPayment(
     /** A recorded (pre-ledger) payment this ledger row confirms; removed in the same transaction. */
     replacesPaymentId?: string;
   },
+  prepared?: { source: Record<string, unknown>; request: Record<string, unknown> },
 ) {
   if (!OPAQUE.test(input.sourceId) || (input.replacesPaymentId !== undefined && !/^[a-f0-9]{32}$/.test(input.replacesPaymentId))) {
     throw Object.assign(new Error('Invalid payment link'), { statusCode: 400 });
   }
-  const request = {
+  const request = prepared?.request || {
     dealVersion: input.dealVersion,
     expectedVersion: input.expectedVersion,
     sourceId: input.sourceId,
@@ -751,7 +863,7 @@ export async function linkPayment(
   };
   const replay = await replayMutation(client, {
     actorId: input.actorId,
-    operation: 'link-payment',
+    operation: prepared ? 'receive-payment' : 'link-payment',
     dealId: input.dealId,
     idempotencyKey: input.idempotencyKey,
     request,
@@ -759,7 +871,7 @@ export async function linkPayment(
   if (replay) return replay;
   const projection = await projectFinance(client, input.dealId, 'admin');
   const state = await getFinanceState(client, input.dealId);
-  const source = await sourceItem(client, 'transaction', input.sourceId);
+  const source = prepared?.source || await sourceItem(client, 'transaction', input.sourceId);
   if (
     !state || state.version !== input.expectedVersion || state.voidedAt || !state.issuedOn
     || state.paymentLinkIds.length + state.recordedPaymentIds.length >= PAYMENT_LINK_LIMIT || !source || paymentIdentity(source) !== input.identityToken
@@ -776,8 +888,7 @@ export async function linkPayment(
   if (lookalike) {
     throw Object.assign(new Error('A recorded payment looks like this bookkeeping row; link it as its replacement'), { statusCode: 409 });
   }
-  const replacedAmount = replaced ? scaledMoney(replaced.amount) : 0n;
-  if (paidTotal(projection) - replacedAmount + scaledMoney(source.amount) > scaledMoney(state.amountDue)) throw safeConflict();
+  if (paidTotal(projection) + scaledMoney(source.amount) > scaledMoney(state.amountDue)) throw safeConflict();
   const replacedKey = replaced ? recordedPaymentKey(input.dealId, replaced.id) : undefined;
   const nextRecorded = state.recordedPaymentIds.filter((item) => item !== replacedKey);
   const id = linkKey(input.dealId, 'transaction', input.sourceId);
@@ -821,18 +932,19 @@ export async function linkPayment(
   }
   if (existingTupleChecks.length + 8 > MAX_PAYMENT_LINK_TRANSACTION_ACTIONS) throw safeConflict();
   return executeMutation(client, {
-    actorId: input.actorId, operation: 'link-payment', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
+    actorId: input.actorId, operation: prepared ? 'receive-payment' : 'link-payment', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
     request,
     financeVersion: nextVersion, recordId: id, linkId: id, sourceId: input.sourceId, eventCode: 'payment-linked',
     transactItems: [
       adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
       ...existingTupleChecks,
-      {
-        ConditionCheck: {
-          TableName: TABLE_BOOKKEEPING, Key: singleton(sourceKey('transaction', input.sourceId)),
-          ...identityCondition('transaction', source),
-        },
-      },
+      prepared ? { Put: {
+        TableName: TABLE_BOOKKEEPING, Item: { ...singleton(sourceKey('transaction', input.sourceId)), ...source },
+        ConditionExpression: 'attribute_not_exists(PK)',
+      } } : { ConditionCheck: {
+        TableName: TABLE_BOOKKEEPING, Key: singleton(sourceKey('transaction', input.sourceId)),
+        ...identityCondition('transaction', source),
+      } },
       {
         Put: {
           TableName: TABLE_BOOKKEEPING,
@@ -936,9 +1048,10 @@ export async function unlinkFinanceSource(
 
 export async function voidFinance(
   client: DynamoDBDocumentClient,
-  input: { actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string },
+  input: { actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string; reason: string },
 ) {
-  const request = { dealVersion: input.dealVersion, expectedVersion: input.expectedVersion };
+  if (!boundedText(input.reason, 500)) throw Object.assign(new Error('A cancellation reason is required'), { statusCode: 400 });
+  const request = { reason: input.reason.trim(), dealVersion: input.dealVersion, expectedVersion: input.expectedVersion };
   const replay = await replayMutation(client, {
     actorId: input.actorId,
     operation: 'void',
@@ -949,23 +1062,23 @@ export async function voidFinance(
   if (replay) return replay;
   const state = await getFinanceState(client, input.dealId);
   if (
-    !state || state.version !== input.expectedVersion || state.invoiceLinkId || state.paymentLinkIds.length
+    !state || state.version !== input.expectedVersion || state.paymentLinkIds.length
     || state.recordedPaymentIds.length || state.voidedAt
   ) throw safeConflict();
   const now = nowIso();
   return executeMutation(client, {
     actorId: input.actorId, operation: 'void', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
     request,
-    financeVersion: state.version + 1, recordId: state.id, eventCode: 'finance-voided',
+    financeVersion: state.version + 1, recordId: state.id, eventCode: 'finance-voided', details: { reason: input.reason.trim() },
     transactItems: [
       adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
       {
         Update: {
           TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
-          UpdateExpression: 'SET voidedAt = :now, updatedAt = :now, actorId = :actor, #version = #version + :one',
-          ConditionExpression: '#version = :version AND size(paymentLinkIds) = :zero AND size(recordedPaymentIds) = :zero AND attribute_not_exists(invoiceLinkId) AND attribute_not_exists(voidedAt)',
+          UpdateExpression: 'SET voidedAt = :now, voidReason = :reason, updatedAt = :now, actorId = :actor, #version = #version + :one',
+          ConditionExpression: '#version = :version AND size(paymentLinkIds) = :zero AND size(recordedPaymentIds) = :zero AND attribute_not_exists(voidedAt)',
           ExpressionAttributeNames: { '#version': 'version' },
-          ExpressionAttributeValues: { ':now': now, ':actor': input.actorId, ':one': 1, ':zero': 0, ':version': state.version },
+          ExpressionAttributeValues: { ':reason': input.reason.trim(), ':now': now, ':actor': input.actorId, ':one': 1, ':zero': 0, ':version': state.version },
         },
       },
     ],
@@ -991,7 +1104,7 @@ export async function projectFinance(
         paymentState: coherentEmpty ? 'not-applicable' : 'reconciliation-required',
         timingState: 'not-applicable', payments: [],
         followUp: coherentEmpty
-          ? deriveFollowUp({ dealStatus: context.dealStatus, invoiceState: 'unclassified', paymentState: 'not-applicable' }, today)
+          ? deriveFollowUp({ dealStatus: context.dealStatus, deliveredOn: context.deliveredOn, invoiceState: 'unclassified', paymentState: 'not-applicable' }, today)
           : { code: 'reconcile', party: 'us' },
         reconciliationStatus: coherentEmpty ? 'coherent' : 'reconciliation-required',
         paymentLinkCount: 0, paymentLinkLimit: PAYMENT_LINK_LIMIT,
@@ -1059,6 +1172,9 @@ export async function projectFinance(
           amount,
           currency: String(source.currency),
           source: 'ledger',
+          ...(source.statementRef ? { reference: String(source.statementRef) } : {}),
+          ...(source.amountEur !== undefined ? { amountEur: String(source.amountEur) } : {}),
+          ...(source.category !== undefined ? { category: String(source.category) } : {}),
         });
       }
     }
@@ -1069,7 +1185,7 @@ export async function projectFinance(
         coherent = false;
         return;
       }
-      try { total += scaledMoney(record.amount); } catch { coherent = false; }
+      try { scaledMoney(record.amount); } catch { coherent = false; }
       payments.push({
         id: record.paymentId,
         effectiveDate: record.receivedOn,
@@ -1094,13 +1210,13 @@ export async function projectFinance(
     const visiblePayments = coherent
       ? payments.sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate) || a.id.localeCompare(b.id))
       : [];
-    const lastPaymentOn = visiblePayments.at(-1)?.effectiveDate;
+    const lastPaymentOn = visiblePayments.filter((item) => item.source === 'ledger').at(-1)?.effectiveDate;
     const followUp = deriveFollowUp({
       dealStatus: context.dealStatus ?? (booking ? String(booking.status) : undefined),
-      invoiceState, paymentState,
+      invoiceState, paymentState, reportedPayments: recordedIds.length > 0,
       requestBy: state.invoiceRequestedAt ? undefined : state.requestBy,
       expectedInvoiceBy: state.expectedInvoiceBy,
-      dueOn: state.dueOn, waitingOn: state.waitingOn, deliveredOn: context.deliveredOn,
+      dueOn: state.dueOn, sentOn: state.sentOn, waitingOn: state.waitingOn, deliveredOn: context.deliveredOn,
     }, today);
     return {
       enabled: true, classified: true, dealId, role,
@@ -1120,6 +1236,7 @@ export async function projectFinance(
         ...(state.waitingOn ? { waitingOn: state.waitingOn } : {}),
         ...(state.evidence?.length ? { evidence: state.evidence } : {}),
         ...(state.voidedAt ? { voidedAt: state.voidedAt } : {}),
+        ...(state.voidReason ? { voidReason: state.voidReason } : {}),
       },
       invoiceState, paymentState, timingState,
       ...(state.amountDue && coherent ? { outstanding: displayMoney(outstandingValue), paid: displayMoney(total) } : {}),
@@ -1296,5 +1413,6 @@ export async function listFinanceHistory(client: DynamoDBDocumentClient, dealId:
     financeVersion: Number(item.financeVersion),
     ...(typeof item.linkId === 'string' ? { linkId: item.linkId } : {}),
     ...(typeof item.sourceId === 'string' ? { sourceId: item.sourceId } : {}),
+    ...(item.details && typeof item.details === 'object' ? { details: item.details } : {}),
   }));
 }

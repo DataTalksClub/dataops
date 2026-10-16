@@ -5,7 +5,7 @@ import { PutCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk
 import { getClient } from '../src/db/client';
 import { createTables, TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_USERS } from '../scripts/local-dynamodb';
 import { invoiceIdentity } from '../src/sponsorFinance/core';
-import { getFinanceState } from '../src/sponsorFinance/repository';
+import { getFinanceState, receivePayment } from '../src/sponsorFinance/repository';
 import { withPaymentFollowUpTasks } from '../src/sponsorFinance/paymentFollowUp';
 import { createDealAtomic, createOrganizationAtomic } from '../src/db/sponsorCrm';
 import type { FinanceProjection, LambdaEvent, LambdaResponse } from '../src/types';
@@ -198,7 +198,7 @@ describe('sponsor payment follow-ups', () => {
     assert.strictEqual((await getFinanceState(client, seeded.dealId))!.paymentFollowUpTaskIds.length, 1);
   });
 
-  it('rejects a payment follow-up when the canonical invoice claim identity is inconsistent', async () => {
+  it('creates reconciliation work when the canonical invoice claim identity is inconsistent', async () => {
     const seeded = await bootstrapDeal();
     const state = await getFinanceState(client, seeded.dealId);
     const sourceId = state!.invoiceLinkId!.split('#').at(-1)!;
@@ -210,18 +210,34 @@ describe('sponsor payment follow-ups', () => {
     }));
     const response = await requestFollowUp(seeded.dealId,
       { dealVersion: 1, expectedVersion: seeded.financeVersion }, 'inconsistent-claim');
-    assert.strictEqual(response.status, 422);
-    assert.match(response.body.error, /reconciled/);
+    assert.strictEqual(response.status, 201);
+    assert.match(response.body.task.description, /Reconcile the payment evidence/);
     const after = await getFinanceState(client, seeded.dealId);
-    assert.strictEqual(after!.version, seeded.financeVersion);
-    assert.deepStrictEqual(after!.paymentFollowUpTaskIds, []);
+    assert.strictEqual(after!.version, seeded.financeVersion + 1);
+    assert.deepStrictEqual(after!.paymentFollowUpTaskIds, [response.body.task.id]);
   });
 
-  it('refuses to follow up on money that is not an overdue issued invoice', async () => {
+  it('queues unclassified agreed deals and does not let a completed Task hide the missing invoice', async () => {
+    const organization = await createOrganizationAtomic(client, { displayName: 'Synthetic Unclassified Sponsor' }, ADMIN);
+    const deal = await createDealAtomic(client, { organizationId: organization.item.id, status: 'agreed' }, ADMIN);
+    const first = await requestFollowUp(deal.item.id, { dealVersion: 1, expectedVersion: 0 }, 'unclassified-first');
+    assert.equal(first.status, 201, JSON.stringify(first.body));
+    assert.match(first.body.task.description, /Record invoice amount/);
+    const duplicate = await requestFollowUp(deal.item.id, { dealVersion: 1, expectedVersion: 0 }, 'unclassified-duplicate');
+    assert.equal(duplicate.status, 409);
+    const resolved = await invoke('PUT', `/api/tasks/${first.body.task.id}`, { status: 'done', expectedVersion: 1,
+      comment: 'Reviewed billing requirement; invoice details still need owner confirmation.' });
+    assert.equal(resolved.status, 200);
+    const next = await requestFollowUp(deal.item.id, { dealVersion: 1, expectedVersion: 0 }, 'unclassified-next');
+    assert.equal(next.status, 201, JSON.stringify(next.body));
+    assert.notEqual(next.body.task.id, first.body.task.id);
+  });
+
+  it('creates missing-invoice work with no dates and waits for a sent invoice due date', async () => {
     const bare = await bootstrapDeal({ issue: false });
     const notIssued = await requestFollowUp(bare.dealId, { dealVersion: 1, expectedVersion: bare.financeVersion }, 'blocked-not-issued');
-    assert.strictEqual(notIssued.status, 422, JSON.stringify(notIssued.body));
-    assert.match(notIssued.body.error, /invoice has not been issued/);
+    assert.strictEqual(notIssued.status, 201, JSON.stringify(notIssued.body));
+    assert.match(notIssued.body.task.description, /Verify or send the invoice/);
 
     const notOverdue = await bootstrapDeal({ dueIn: 7 });
     const response = await requestFollowUp(notOverdue.dealId, {
@@ -340,14 +356,16 @@ describe('sponsor payment follow-ups', () => {
   });
 
   it('stays consistent with the projection: settled money is not followed up, partial payments are', async () => {
-    const settled = await bootstrapDeal({ recordedAmount: '1000' });
+    const settled = await bootstrapDeal();
+    settled.financeVersion = (await receivePayment(client, { actorId: ADMIN, dealId: settled.dealId, dealVersion: 1, expectedVersion: settled.financeVersion, idempotencyKey: 'settled-receipt-0123456789', receivedOn: day(-1), amount: '1000', currency: 'EUR', reference: 'synthetic-account:settled-receipt', counterparty: 'Synthetic Sponsor' })).financeVersion;
     const settledFollowUp = await requestFollowUp(settled.dealId, {
       dealVersion: 1, expectedVersion: settled.financeVersion,
     }, 'blocked-paid');
     assert.strictEqual(settledFollowUp.status, 422);
     assert.match(settledFollowUp.body.error, /already settled/);
 
-    const partial = await bootstrapDeal({ recordedAmount: '400' });
+    const partial = await bootstrapDeal();
+    partial.financeVersion = (await receivePayment(client, { actorId: ADMIN, dealId: partial.dealId, dealVersion: 1, expectedVersion: partial.financeVersion, idempotencyKey: 'partial-receipt-0123456789', receivedOn: day(-1), amount: '400', currency: 'EUR', reference: 'synthetic-account:partial-receipt', counterparty: 'Synthetic Sponsor' })).financeVersion;
     const partialFollowUp = await requestFollowUp(partial.dealId, {
       dealVersion: 1, expectedVersion: partial.financeVersion,
     }, 'create-partial');

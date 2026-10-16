@@ -23,6 +23,8 @@ import {
   projectFinance,
   recordInvoiceRequest,
   recordPayment,
+  receivePayment,
+  correctReceipt,
   unlinkFinanceSource,
   updateFollowThrough,
   voidFinance,
@@ -752,7 +754,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
           });
           return {
             dealId: id,
-            invoke: (racingClient) => voidFinance(racingClient, {
+            invoke: (racingClient) => voidFinance(racingClient, { reason: "Synthetic cancellation test",
               actorId: adminId, dealId: id, dealVersion: 1,
               expectedVersion: classified.financeVersion,
               idempotencyKey: idem(`${label}-void`),
@@ -1230,12 +1232,12 @@ describe('sponsor finance production DynamoDB transactions', () => {
       receivedOn: '2026-10-01', amount: '1', currency: 'USD', method: 'processor',
     }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
     projection = await projectFinance(client, dealId, 'operator', { today: '2026-10-14' });
-    assert.equal(projection.paymentState, 'partially-paid');
-    assert.equal(projection.outstanding, '3000');
-    assert.equal(projection.paid, '2000');
-    assert.equal(projection.lastPaymentOn, '2026-09-30');
+    assert.equal(projection.paymentState, 'unpaid');
+    assert.equal(projection.outstanding, '5000');
+    assert.equal(projection.paid, '0');
+    assert.equal(projection.lastPaymentOn, undefined);
     assert.deepEqual(projection.payments.map((item) => [item.source, item.amount, item.method]), [['recorded', '2000', 'bank-report']]);
-    await assert.rejects(() => voidFinance(client, {
+    await assert.rejects(() => voidFinance(client, { reason: 'Synthetic cancellation test',
       ...base, expectedVersion: version, idempotencyKey: idem('evidence-void'),
     }));
 
@@ -1243,11 +1245,11 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const row = ledger.rows.find((item) => item.dealId === dealId)!;
     assert.equal(row.organizationName, 'Synthetic Evidence Sponsor');
     assert.equal(row.dealTitle, 'Synthetic workshop');
-    assert.equal(row.outstanding, '3000');
+    assert.equal(row.outstanding, '5000');
     assert.equal(row.deliveredOn, '2026-08-18');
     assert.deepEqual(row.recordedPayments, [{ id: projection.payments[0].id, amount: '2000', receivedOn: '2026-09-30' }],
       'the portfolio row carries the payment a bookkeeping row can still confirm');
-    assert.ok(ledger.followUps.some((item) => item.dealId === dealId && item.followUp.code === 'payment-follow-up'));
+    assert.ok(ledger.followUps.some((item) => item.dealId === dealId && item.followUp.code === 'reconcile'));
     const overdue = ledger.forecast.find((item) => item.bucket === 'overdue' && item.currency === 'EUR')!;
     assert.ok(overdue.dealIds.includes(dealId));
 
@@ -1281,9 +1283,9 @@ describe('sponsor finance production DynamoDB transactions', () => {
       receivedOn: '2026-10-10', amount: '3000', currency: 'EUR', method: 'sponsor-confirmation',
     })).financeVersion;
     projection = await projectFinance(client, dealId, 'operator', { today: '2026-10-14' });
-    assert.equal(projection.paymentState, 'paid');
-    assert.equal(projection.timingState, 'settled');
-    assert.deepEqual(projection.followUp, { code: 'none', party: 'none' });
+    assert.equal(projection.paymentState, 'partially-paid');
+    assert.equal(projection.timingState, 'overdue');
+    assert.equal(projection.followUp.code, 'reconcile');
     assert.deepEqual(projection.payments.map((item) => item.source), ['ledger', 'recorded']);
     assert.equal(projection.paymentLinkCount, 2);
 
@@ -1311,6 +1313,77 @@ describe('sponsor finance production DynamoDB transactions', () => {
       assert.ok(history.some((item) => item.eventCode === code), code);
     }
     assert.equal(JSON.stringify(history).includes('September report'), false);
+  });
+
+  it('books verified receipts atomically, deduplicates globally, and corrects cash without settling a short receipt', async () => {
+    const seeded = await bootstrapPayable('verified-receipt', '100');
+    const input = { actorId: adminId, dealId: seeded.dealId, dealVersion: 1, expectedVersion: seeded.version,
+      idempotencyKey: idem('verified-receipt'), receivedOn: '2026-10-01', amount: '40', currency: 'EUR',
+      reference: 'synthetic-bank:account-one:txn-verified', counterparty: 'Synthetic Sponsor', amountEur: '39' };
+    const recorded = await receivePayment(client, input);
+    assert.equal((await receivePayment(client, input)).recordId, recorded.recordId, 'same-key retry returns the committed receipt');
+    let projection = await projectFinance(client, seeded.dealId, 'admin');
+    assert.equal(projection.paymentState, 'partially-paid');
+    assert.equal(projection.outstanding, '60');
+    assert.equal(projection.finance!.amountDue, '100');
+    assert.equal(projection.payments[0].source, 'ledger');
+    const sourceId = projection.payments[0].id;
+    const sourceKey = key('BOOKKEEPING', sourceId);
+    const source = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: sourceKey }))).Item!;
+    assert.equal(source.amount, '40');
+    assert.equal(source.amountEur, '39');
+    assert.equal(source.statementRef, input.reference);
+    await assert.rejects(() => updateBookkeepingTransaction(client, sourceId, String(source.updatedAt), { amount: '99' }));
+    const other = await bootstrapPayable('duplicate-receipt', '100');
+    await assert.rejects(() => receivePayment(client, { ...input, dealId: other.dealId, expectedVersion: other.version, idempotencyKey: idem('duplicate-receipt') }),
+      (error: Error & { statusCode?: number }) => error.statusCode === 422);
+    const correctedInput = { ...input, sourceId, expectedVersion: recorded.financeVersion,
+      amount: '35', amountEur: '34', idempotencyKey: idem('correct-verified-receipt') };
+    const corrected = await correctReceipt(client, correctedInput);
+    assert.equal((await correctReceipt(client, correctedInput)).recordId, corrected.recordId);
+    projection = await projectFinance(client, seeded.dealId, 'admin');
+    assert.equal(projection.reconciliationStatus, 'coherent');
+    assert.equal(projection.outstanding, '65');
+    assert.equal(projection.paid, '35');
+    assert.equal(projection.finance!.amountDue, '100');
+    assert.equal(projection.payments[0].amountEur, '34');
+    const audit = (await listFinanceHistory(client, seeded.dealId)).find((row) => row.eventCode === 'receipt-corrected')!;
+    assert.deepEqual((audit.details as { before: { amount: string }; after: { amount: string } }).before.amount, '40');
+    await assert.rejects(() => correctReceipt(client, { ...correctedInput, amount: '36', idempotencyKey: idem('stale-correction') }));
+    assert.equal((await projectFinance(client, seeded.dealId, 'admin')).paid, '35');
+  });
+
+  it('requires a cancellation reason and keeps the original invoice when closing unpaid follow-through', async () => {
+    const seeded = await bootstrapPayable('cancel-invoice');
+    await assert.rejects(() => voidFinance(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
+      expectedVersion: seeded.version, idempotencyKey: idem('cancel-empty-reason'), reason: '' }));
+    await voidFinance(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
+      expectedVersion: seeded.version, idempotencyKey: idem('cancel-with-reason'), reason: 'Synthetic cancelled contract; no amount owed' });
+    const projection = await projectFinance(client, seeded.dealId, 'admin');
+    assert.equal(projection.invoiceState, 'voided');
+    assert.ok(projection.invoice);
+    assert.equal(projection.finance!.voidReason, 'Synthetic cancelled contract; no amount owed');
+    assert.equal(projection.followUp.code, 'none');
+  });
+
+  it('receipt concurrency and failed conditions never leave a ledger row without its finance claim', async () => {
+    const a = await bootstrapPayable('concurrent-receipt-a');
+    const b = await bootstrapPayable('concurrent-receipt-b');
+    const receipt = { actorId: adminId, dealVersion: 1, receivedOn: '2026-10-02', amount: '10', currency: 'EUR',
+      reference: 'synthetic-bank:account-one:txn-concurrent', counterparty: 'Synthetic Sponsor' };
+    const results = await Promise.allSettled([a, b].map((deal, index) => receivePayment(client, { ...receipt,
+      dealId: deal.dealId, expectedVersion: deal.version, idempotencyKey: idem(`concurrent-receipt-${index}`) })));
+    assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+    const projections = await Promise.all([a, b].map((deal) => projectFinance(client, deal.dealId, 'admin')));
+    assert.equal(projections.reduce((sum, projection) => sum + projection.payments.length, 0), 1);
+    assert.ok(projections.every((projection) => projection.reconciliationStatus === 'coherent'));
+    await assert.rejects(() => receivePayment(client, { ...receipt, dealId: a.dealId, expectedVersion: a.version,
+      dealVersion: 999, reference: 'synthetic-bank:failed-condition', idempotencyKey: idem('failed-receipt') }));
+    const rows = await client.send(new ScanCommand({ TableName: TABLE_BOOKKEEPING,
+      FilterExpression: 'statementRef = :ref', ExpressionAttributeValues: { ':ref': 'synthetic-bank:failed-condition' } }));
+    assert.equal(rows.Items?.length, 0);
+    await assert.rejects(() => receivePayment(client, { ...receipt, dealId: b.dealId, expectedVersion: b.version,
+      reference: '', idempotencyKey: idem('missing-receipt-evidence') }), (error: Error & { statusCode?: number }) => error.statusCode === 400);
   });
 
   it('fails closed at the real DynamoDB 5,000-evaluated-row discovery boundary', async () => {

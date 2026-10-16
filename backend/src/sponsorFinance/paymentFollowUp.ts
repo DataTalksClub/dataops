@@ -16,12 +16,14 @@ import {
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 
+import { dealProjectionContext } from './context';
 import { getCrmRecord } from '../db/sponsorCrm';
 import { getTask } from '../db/tasks';
 import { TABLE_SPONSOR_CRM, TABLE_TASKS } from '../db/tableNames';
 import {
   berlinDate,
   financeKey,
+  digest,
   realDate,
 } from './core';
 import {
@@ -68,7 +70,7 @@ export type PaymentFollowUpDecision = {
  * followed up — the same conditions that derive the `payment-follow-up` next step.
  */
 export function paymentFollowUpBlocker(decision: PaymentFollowUpDecision): string | null {
-  if (decision.followUp.code === 'payment-follow-up') return null;
+  if (['payment-follow-up', 'send-invoice', 'unblock', 'reconcile', 'classify'].includes(decision.followUp.code)) return null;
   if (decision.paymentState === 'paid') return 'Payment is already settled';
   if (!decision.coherent) return 'Payment evidence must be reconciled before following up';
   if (decision.followUp.code === 'unblock') return 'The sponsor is waiting on us; unblock first';
@@ -84,7 +86,7 @@ export async function derivePaymentFollowUpDecision(
   dealStatus: string,
   today: string,
 ): Promise<PaymentFollowUpDecision> {
-  const projection = await projectFinance(client, state.dealId, 'admin', { dealStatus, today });
+  const projection = await projectFinance(client, state.dealId, 'admin', { ...(await dealProjectionContext(client, state.dealId)), dealStatus, today });
   if (projection.finance?.version !== state.version) throw safeConflict();
   return {
     invoiceState: projection.invoiceState,
@@ -109,6 +111,7 @@ function paymentFollowUpDate(value: unknown, today: string): string {
 /** What the payment follow-up Task says: the sponsor, the deal, the invoice facts, and the verification rule. */
 export function paymentFollowUpTaskDescription(input: {
   organizationName: string;
+  action?: FollowUp['code'];
   dealTitle?: string;
   invoiceNumber?: string;
   amountDue?: string;
@@ -132,7 +135,11 @@ export function paymentFollowUpTaskDescription(input: {
       : `due ${input.dueOn}`);
   }
   const detail = facts.length ? ` ${facts.join(', ')}.` : '';
-  return `Follow up on the payment from ${subject}.${detail} Check the linked payment evidence and the ledger for anything already received before following up — record what you verified and the outcome before resolving this Task.`.slice(0, 500);
+  const action = input.action === 'classify' ? 'Record invoice amount, billing owner and invoice deadline for'
+    : input.action === 'send-invoice' ? 'Verify or send the invoice for'
+    : input.action === 'unblock' ? 'Resolve the invoice/payment blocker for'
+      : input.action === 'reconcile' ? 'Reconcile the payment evidence for' : 'Follow up on the payment from';
+  return `${action} ${subject}.${detail} Check the linked payment evidence and the ledger for anything already received before following up — record what you verified and the outcome before resolving this Task.`.slice(0, 500);
 }
 
 /** Open payment follow-up Tasks recorded on the finance state, earliest first. */
@@ -162,14 +169,17 @@ export async function withPaymentFollowUpTasks(
   projection: FinanceProjection,
   state: FinanceState | null,
 ): Promise<FinanceProjection> {
-  if (!state) return projection;
+  if (!state) {
+    const tasks = await relatedDealTasks(client, projection.dealId);
+    return { ...projection, paymentFollowUp: { tasks: tasks.map(paymentFollowUpTaskView), existingTasks: [] } };
+  }
   const open = await openPaymentFollowUpTasks(client, state);
   const existing = (await relatedDealTasks(client, state.dealId)).filter((task) => !open.some((followUp) => followUp.id === task.id));
   return { ...projection, paymentFollowUp: { tasks: open.map(paymentFollowUpTaskView), existingTasks: existing.map(paymentFollowUpTaskView) } };
 }
 
 /** Current related work, read consistently before creating another follow-up. */
-export async function relatedDealTasks(client: DynamoDBDocumentClient, dealId: string): Promise<Task[]> {
+export async function relatedDealTasks(client: DynamoDBDocumentClient, dealId: string, openOnly = true): Promise<Task[]> {
   const result: Task[] = [];
   let key: Record<string, any> | undefined;
   let evaluated = 0;
@@ -178,14 +188,14 @@ export async function relatedDealTasks(client: DynamoDBDocumentClient, dealId: s
     const page = await client.send(new ScanCommand({
       TableName: TABLE_TASKS, ConsistentRead: true, Limit: 200,
       ...(key ? { ExclusiveStartKey: key } : {}),
-      ProjectionExpression: 'id, #version, description, #date, #status, subject, assigneeId, followUpAt',
-      ExpressionAttributeNames: { '#version': 'version', '#date': 'date', '#status': 'status' },
+      ProjectionExpression: 'id, #version, description, #date, #status, subject, assigneeId, followUpAt, #source',
+      ExpressionAttributeNames: { '#version': 'version', '#date': 'date', '#status': 'status', '#source': 'source' },
     }));
     evaluated += page.ScannedCount || 0;
     if (evaluated > 5000 || ++pages > 50) throw Object.assign(new Error('Open task review exceeded its read limit'), { statusCode: 503 });
     for (const item of page.Items || []) {
       const task = item as Task;
-      if (task.subject?.type === 'sponsor-deal' && task.subject.id === dealId && OPEN_STATUSES.has(task.status)) result.push(task);
+      if (task.subject?.type === 'sponsor-deal' && task.subject.id === dealId && (!openOnly || OPEN_STATUSES.has(task.status))) result.push(task);
     }
     key = page.LastEvaluatedKey;
   } while (key);
@@ -226,13 +236,16 @@ export async function createPaymentFollowUpTask(
     return { task, replayed: true };
   }
   const state = await getFinanceState(client, input.dealId);
-  if (!state || state.version !== input.expectedVersion || state.voidedAt) throw safeConflict();
+  if (state ? state.version !== input.expectedVersion || state.voidedAt : input.expectedVersion !== 0) throw safeConflict();
   const deal = await getCrmRecord(client, 'deal', input.dealId);
   if (!deal || deal.archivedAt) throw safeConflict();
-  const decision = await derivePaymentFollowUpDecision(client, state, String(deal.status || ''), input.today || berlinDate());
+  const projection = state ? undefined : await projectFinance(client, input.dealId, 'admin', { ...(await dealProjectionContext(client, input.dealId)), today: input.today || berlinDate() });
+  const decision: PaymentFollowUpDecision = state
+    ? await derivePaymentFollowUpDecision(client, state, String(deal.status || ''), input.today || berlinDate())
+    : { invoiceState: projection!.invoiceState, paymentState: projection!.paymentState, timingState: projection!.timingState, followUp: projection!.followUp, coherent: true };
   const blocker = paymentFollowUpBlocker(decision);
   if (blocker) throw Object.assign(new Error(blocker), { statusCode: 422 });
-  const open = await openPaymentFollowUpTasks(client, state);
+  const open = state ? await openPaymentFollowUpTasks(client, state) : await relatedDealTasks(client, input.dealId);
   if (open.length > 0) {
     throw Object.assign(
       new Error('An open payment follow-up Task already exists for this deal'),
@@ -252,7 +265,8 @@ export async function createPaymentFollowUpTask(
   if (references.length > 80) throw Object.assign(new Error('Too many open deal Tasks; consolidate before adding a follow-up'), { statusCode: 422 });
   const organization = await getCrmRecord(client, 'organization', String(deal.organizationId || ''));
   const today = input.today || berlinDate();
-  const taskId = existing?.id || randomUUID();
+  const priorTaskIds = state ? [] : (await relatedDealTasks(client, input.dealId, false)).map((task) => task.id).sort();
+  const taskId = existing?.id || (state ? randomUUID() : `finance-${digest({ dealId: input.dealId, priorTaskIds }).slice(0, 32)}`);
   const now = nowIso();
   const item: Record<string, unknown> = {
     PK: `TASK#${taskId}`,
@@ -261,12 +275,13 @@ export async function createPaymentFollowUpTask(
     version: 1,
     description: paymentFollowUpTaskDescription({
       organizationName: String(organization?.displayName || 'Unknown sponsor'),
+      action: decision.followUp.code,
       ...(typeof deal.title === 'string' && deal.title ? { dealTitle: deal.title } : {}),
-      ...(state.invoiceNumber ? { invoiceNumber: state.invoiceNumber } : {}),
+      ...(state?.invoiceNumber ? { invoiceNumber: state.invoiceNumber } : {}),
       ...(decision.outstanding ? { outstanding: decision.outstanding } : {}),
-      ...(state.amountDue ? { amountDue: state.amountDue } : {}),
-      ...(state.currency ? { currency: state.currency } : {}),
-      ...(state.dueOn ? { dueOn: state.dueOn } : {}),
+      ...(state?.amountDue ? { amountDue: state.amountDue } : {}),
+      ...(state?.currency ? { currency: state.currency } : {}),
+      ...(state?.dueOn ? { dueOn: state.dueOn } : {}),
       ...(decision.daysOverdue !== undefined ? { daysOverdue: decision.daysOverdue } : {}),
     }),
     date: paymentFollowUpDate(input.date, today),
@@ -281,7 +296,7 @@ export async function createPaymentFollowUpTask(
     createdAt: now,
     updatedAt: now,
   };
-  const nextVersion = state.version + 1;
+  const nextVersion = state ? state.version + 1 : 0;
   const financeRow = singleton(financeKey(input.dealId));
   const transaction = [
     adminCheck(input.actorId),
@@ -295,7 +310,7 @@ export async function createPaymentFollowUpTask(
     ...(existing ? [] : [{ Put: {
       TableName: TABLE_TASKS, Item: item, ConditionExpression: 'attribute_not_exists(PK)',
     } }]),
-    {
+    state ? {
       Update: {
         TableName: TABLE_SPONSOR_CRM,
         Key: financeRow,
@@ -306,7 +321,7 @@ export async function createPaymentFollowUpTask(
           ':ids': [...(state.paymentFollowUpTaskIds || []), taskId], ':now': now, ':actor': input.actorId, ':one': 1, ':version': state.version,
         },
       },
-    },
+    } : { ConditionCheck: { TableName: TABLE_SPONSOR_CRM, Key: financeRow, ConditionExpression: 'attribute_not_exists(PK)' } },
   ];
   await executeMutation(client, {
     actorId: input.actorId, operation: 'payment-follow-up-task', dealId: input.dealId, idempotencyKey: input.idempotencyKey,

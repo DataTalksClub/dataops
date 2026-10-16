@@ -48,7 +48,7 @@ export async function evaluateSponsorFinanceAlerts(
     const projection = await projectFinance(client, String(deal.id), 'operator', {
       today, dealStatus: String(deal.status), ...(delivered ? { deliveredOn: delivered } : {}),
     });
-    if (!projection.classified && deal.status === 'agreed') {
+    if (!projection.classified && (deal.status === 'agreed' || delivered)) {
       conditions.push({ dealId: String(deal.id), rule: 'finance-unclassified', basisDate: today, version: Number(deal.version) });
       continue;
     }
@@ -61,8 +61,8 @@ export async function evaluateSponsorFinanceAlerts(
       conditions.push({ dealId: String(deal.id), rule: 'invoice-missing', basisDate: finance.expectedInvoiceBy, version: finance.version });
     }
     const invoiceFlagged = conditions.some((item) => item.dealId === String(deal.id));
-    if (!invoiceFlagged && projection.followUp.code === 'send-invoice' && delivered) {
-      conditions.push({ dealId: String(deal.id), rule: 'invoice-after-delivery', basisDate: delivered, version: finance.version });
+    if (!invoiceFlagged && projection.followUp.code === 'send-invoice') {
+      conditions.push({ dealId: String(deal.id), rule: delivered ? 'invoice-after-delivery' : 'invoice-missing', basisDate: delivered || String(deal.updatedAt || deal.createdAt || today).slice(0, 10), version: finance.version });
     }
     if (projection.followUp.code === 'unblock' && finance.waitingOn) {
       conditions.push({ dealId: String(deal.id), rule: 'finance-waiting-on-us', basisDate: finance.waitingOn.since, version: finance.version });
@@ -74,7 +74,7 @@ export async function evaluateSponsorFinanceAlerts(
     ) {
       conditions.push({ dealId: String(deal.id), rule: 'payment-overdue', basisDate: finance.dueOn, version: finance.version });
     }
-    if (projection.reconciliationStatus === 'reconciliation-required') {
+    if (projection.followUp.code === 'reconcile') {
       conditions.push({ dealId: String(deal.id), rule: 'finance-reconciliation-required', basisDate: today, version: finance.version });
     }
   }

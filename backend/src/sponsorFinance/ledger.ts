@@ -109,8 +109,8 @@ export async function financeLedger(
   };
 
   for (const deal of deals) {
-    if (deal.archivedAt || deal.active === false || deal.status === 'lost') continue;
     const state = states.get(deal.id);
+    if ((deal.archivedAt || deal.active === false || deal.status === 'lost') && !(state?.issuedOn && !state.voidedAt)) continue;
     const dealDeliverables = deliverables.filter((item) => item.dealId === deal.id && !item.archivedAt);
     const delivered = deliveredOn(dealDeliverables);
     const upcoming = dealDeliverables
@@ -129,7 +129,7 @@ export async function financeLedger(
     if (!state) {
       rows.push({
         ...base, invoiceState: 'unclassified', paymentState: 'not-applicable', timingState: 'not-applicable',
-        followUp: deriveFollowUp({ dealStatus: String(deal.status), invoiceState: 'unclassified', paymentState: 'not-applicable' }, today),
+        followUp: deriveFollowUp({ dealStatus: String(deal.status), invoiceState: 'unclassified', paymentState: 'not-applicable', deliveredOn: delivered }, today),
       });
       continue;
     }
@@ -153,18 +153,16 @@ export async function financeLedger(
       const record = recorded.get(id);
       if (!record || record.currency !== state.currency) { coherent = false; continue; }
       unconfirmed.push({ id: record.paymentId, amount: record.amount, receivedOn: record.receivedOn });
-      const amount = scaledMoney(record.amount);
-      paid += amount;
-      paymentDates.push(record.receivedOn);
-      if (record.receivedOn.slice(0, 4) === today.slice(0, 4)) yearPaid.push(amount);
+      scaledMoney(record.amount);
+      // A report awaits verification; it is visible but is not booked cash.
     }
     const due = state.amountDue ? scaledMoney(state.amountDue) : undefined;
     if (due !== undefined && paid > due) coherent = false;
     const states_ = deriveStates(state, paid, due, coherent, today);
     const followUp = deriveFollowUp({
-      dealStatus: String(deal.status), ...states_,
+      dealStatus: String(deal.status), ...states_, reportedPayments: unconfirmed.length > 0,
       requestBy: state.invoiceRequestedAt ? undefined : state.requestBy,
-      expectedInvoiceBy: state.expectedInvoiceBy, dueOn: state.dueOn, waitingOn: state.waitingOn, deliveredOn: delivered,
+      expectedInvoiceBy: state.expectedInvoiceBy, dueOn: state.dueOn, sentOn: state.sentOn, waitingOn: state.waitingOn, deliveredOn: delivered,
     }, today);
     const outstanding = due !== undefined && coherent ? due - paid : undefined;
     const row: LedgerRow = {

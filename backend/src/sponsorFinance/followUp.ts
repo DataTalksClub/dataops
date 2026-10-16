@@ -11,6 +11,8 @@ export type FollowUpInput = {
   requestBy?: string;
   expectedInvoiceBy?: string;
   dueOn?: string;
+  sentOn?: string;
+  reportedPayments?: boolean;
   waitingOn?: WaitingOn;
   /** Latest delivered (published) deliverable date, if any deliverable is delivered. */
   deliveredOn?: string;
@@ -23,13 +25,15 @@ export type FollowUpInput = {
 export function deriveFollowUp(input: FollowUpInput, today: string): FollowUp {
   const { invoiceState, paymentState, waitingOn } = input;
   if (invoiceState === 'unclassified') {
-    return input.dealStatus === 'agreed' ? { code: 'classify', party: 'us' } : { code: 'none', party: 'none' };
+    return input.dealStatus === 'agreed' || input.deliveredOn ? { code: 'classify', party: 'us' } : { code: 'none', party: 'none' };
   }
   if (invoiceState === 'voided' || invoiceState === 'not-required') return { code: 'none', party: 'none' };
+  if (input.reportedPayments) return { code: 'reconcile', party: 'us' };
   if (paymentState === 'reconciliation-required') return { code: 'reconcile', party: 'us' };
   if (paymentState === 'paid') return { code: 'none', party: 'none' };
   if (waitingOn?.party === 'us') return { code: 'unblock', party: 'us', since: waitingOn.since, reason: waitingOn.reason };
   if (invoiceState === 'issued') {
+    if (!input.sentOn) return { code: 'send-invoice', party: 'us' };
     if (input.dueOn && input.dueOn < today) {
       return { code: 'payment-follow-up', party: 'us', since: input.dueOn, daysOverdue: daysBetween(input.dueOn, today) };
     }
@@ -40,6 +44,7 @@ export function deriveFollowUp(input: FollowUpInput, today: string): FollowUp {
   const deadline = [input.requestBy, input.expectedInvoiceBy].filter(Boolean).sort()[0];
   if (input.deliveredOn && input.deliveredOn <= today) return { code: 'send-invoice', party: 'us', since: input.deliveredOn };
   if (deadline && deadline < today) return { code: 'send-invoice', party: 'us', since: deadline };
+  if (input.dealStatus === 'agreed' && !deadline) return { code: 'send-invoice', party: 'us' };
   return { code: 'invoice-later', party: 'none', ...(deadline ? { since: deadline } : {}) };
 }
 

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { before, after, describe, it } from 'node:test';
 import assert from 'node:assert';
 import { PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
+import { TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { handler } from '../src/handler';
 import { createTables } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
@@ -147,7 +147,7 @@ describe('sponsor CRM', () => {
       const financeItem = {
         PK: `SPONSOR_FINANCE#${deal.id}`, SK: `SPONSOR_FINANCE#${deal.id}`, id: deal.id, recordType: 'sponsor-finance',
         dealId: deal.id, version: 3, invoiceRequirement: 'required', amountDue: '1500', currency: 'EUR', taxMode: 'included',
-        invoiceNumber: 'SYN-1', issuedOn: '2026-05-01', dueOn: '2026-06-01', paymentLinkIds: [], recordedPaymentIds: [],
+        invoiceNumber: 'SYN-1', issuedOn: '2026-05-01', sentOn: '2026-05-01', dueOn: '2026-06-01', paymentLinkIds: [], recordedPaymentIds: [],
         actorId: 'admin-1', createdAt: '2026-05-01T00:00:00.000Z', updatedAt: '2026-05-01T00:00:00.000Z',
       };
       await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: financeItem }));
@@ -165,14 +165,15 @@ describe('sponsor CRM', () => {
       } }));
       await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { ...financeItem, version: 4, recordedPaymentIds: [paymentKey] } }));
       fetched = await at('2026-07-01');
-      assert.equal(fetched.money, 'paid');
-      assert.equal(fetched.finance.lastPaymentOn, '2026-06-20');
-      assert.equal(fetched.finance.outstanding, '0');
+      assert.equal(fetched.money, 'overdue');
+      assert.equal(fetched.finance.followUp.code, 'reconcile');
+      assert.equal(fetched.finance.lastPaymentOn, undefined);
+      assert.equal(fetched.finance.outstanding, '1500');
       await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'webinar', publishedAt: '2026-05-01T00:00:00Z', plannedPublicationDate: '2026-05-01', sourceKey: 'money-slot' });
       fetched = await at('2026-07-01');
       assert.equal(fetched.fulfillment, 'delivered');
       const org = data(await invoke('GET', `/api/sponsor-crm/organizations/${organization.id}?today=2026-07-01`));
-      assert.equal(org.relationship, 'customer');
+      assert.equal(org.relationship, 'talking', 'unverified reports do not establish a paying customer');
       assert.equal((await invoke('POST', '/api/sponsor-crm/invoices', { dealId: deal.id, amountEur: 1 })).statusCode, 404);
     } finally {
       if (previous === undefined) delete process.env.SPONSOR_FINANCE_ENABLED;
@@ -230,16 +231,18 @@ describe('sponsor CRM', () => {
       const financeItem = {
         PK: `SPONSOR_FINANCE#${finished.id}`, SK: `SPONSOR_FINANCE#${finished.id}`, id: finished.id, recordType: 'sponsor-finance',
         dealId: finished.id, version: 4, invoiceRequirement: 'required', amountDue: '900', currency: 'EUR', taxMode: 'included',
-        invoiceNumber: 'SYN-LIVE', issuedOn: '2026-05-01', dueOn: '2026-06-01', paymentLinkIds: [], recordedPaymentIds: [] as string[],
+        invoiceNumber: 'SYN-LIVE', issuedOn: '2026-05-01', sentOn: '2026-05-01', dueOn: '2026-06-01', paymentLinkIds: [], recordedPaymentIds: [] as string[],
         actorId: 'admin-1', createdAt: '2026-05-01T00:00:00.000Z', updatedAt: '2026-05-01T00:00:00.000Z',
       };
-      const paymentKey = `SPONSOR_FINANCE_PAYMENT#${finished.id}#${'b'.repeat(32)}`;
-      await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: {
-        PK: paymentKey, SK: paymentKey, id: paymentKey, recordType: 'sponsor-finance-payment', dealId: finished.id,
-        paymentId: 'b'.repeat(32), receivedOn: '2026-05-20', amount: '900', currency: 'EUR', method: 'bank-report',
-        actorId: 'admin-1', financeVersion: 4, createdAt: '2026-05-20T00:00:00.000Z',
+      const paymentId = 'verified-finished-payment';
+      await client.send(new PutCommand({ TableName: TABLE_BOOKKEEPING, Item: {
+        PK: `BOOKKEEPING#${paymentId}`, SK: `BOOKKEEPING#${paymentId}`, id: paymentId,
+        paidDate: '2026-05-20', transactionDate: '2026-05-20', amount: '900', currency: 'EUR',
+        createdAt: '2026-05-20T00:00:00.000Z', updatedAt: '2026-05-20T00:00:00.000Z',
       } }));
-      await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { ...financeItem, recordedPaymentIds: [paymentKey] } }));
+      await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: {
+        ...financeItem, paymentLinkIds: [`SPONSOR_FINANCE_LINK#${finished.id}#transaction#${paymentId}`],
+      } }));
       assert.equal(data(await invoke('GET', `/api/sponsor-crm/deals/${finished.id}?today=2026-07-01`)).money, 'paid');
 
       await evaluateSponsorBookingAlerts(client, '2026-07-01');

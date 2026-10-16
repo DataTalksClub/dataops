@@ -221,7 +221,7 @@ export function createSponsorFinance(context) {
       throw error;
     }
   };
-  const { openIssueInvoice, openRecordPayment, openWaitingOn, openAddEvidence } =
+  const { openIssueInvoice, openRecordPayment, openWaitingOn, openAddEvidence, openVoidFinance } =
     createFinanceRecordForms({
       surface,
       financeMutation,
@@ -241,6 +241,10 @@ export function createSponsorFinance(context) {
           ${
             admin
               ? html`
+                  ${projection.followUp?.party === "us" && !(projection.paymentFollowUp?.tasks || []).length
+                    ? html`<button data-finance-payment-follow-up-create>Add next finance action to Tasks</button>` : ""}
+                  ${(projection.paymentFollowUp?.tasks || []).map((task) => html`<button
+                    data-finance-payment-follow-up-open="${escapeHtml(task.id)}">Open finance Task</button>`).join("")}
                   <button class="primary-button" data-finance-classify>
                     Classify
                   </button>
@@ -307,7 +311,7 @@ export function createSponsorFinance(context) {
       coherent &&
       projection.paymentState !== "paid" &&
       projection.paymentLinkCount < projection.paymentLinkLimit
-        ? html` <button data-finance-record-payment>Record payment</button> `
+        ? html` <button data-finance-record-payment>Record verified receipt</button> `
         : "";
     const linkInvoiceAction =
       required &&
@@ -323,8 +327,8 @@ export function createSponsorFinance(context) {
         ? html` <button data-finance-payment>Link bookkeeping payment</button> `
         : "";
     const voidAction =
-      !projection.invoice && projection.paymentLinkCount === 0
-        ? html` <button data-finance-void>Void follow-through</button> `
+      projection.paymentLinkCount === 0
+        ? html` <button data-finance-void>Cancel invoice follow-through</button> `
         : "";
     const actions = live
       ? html`<div class="finance-actions">
@@ -368,7 +372,7 @@ export function createSponsorFinance(context) {
     const paymentRow = (payment) => {
       const source =
         payment.source === "recorded"
-          ? PAYMENT_SOURCE_LABELS[payment.method] || "Recorded"
+          ? `Reported, unverified: ${PAYMENT_SOURCE_LABELS[payment.method] || "payment"}`
           : "Bookkeeping";
       const unlink =
         live && payment.source === "recorded"
@@ -392,6 +396,7 @@ export function createSponsorFinance(context) {
         <span class="dk-mono">${escapeHtml(ledgerDate(payment.effectiveDate))}</span>
         <span class="dk-mono">${escapeHtml(formatAmount(payment.amount, payment.currency))}</span>
         <span class="dk-muted">${escapeHtml(source)}${payment.reference ? ` · ${escapeHtml(payment.reference)}` : ""}</span>
+        ${live && payment.source === "ledger" ? html`<button data-finance-correct-receipt="${escapeHtml(payment.id)}">Correct receipt</button>` : ""}
         ${unlink}
       </li>`;
     };
@@ -411,7 +416,7 @@ export function createSponsorFinance(context) {
     const evidence = finance.evidence || [];
     const paymentFollowUpTasks = projection.paymentFollowUp?.tasks || [];
     const existingTasks = projection.paymentFollowUp?.existingTasks || [];
-    const needsPaymentFollowUp = projection.followUp?.code === "payment-follow-up";
+    const needsPaymentFollowUp = ["payment-follow-up", "send-invoice", "unblock", "reconcile"].includes(projection.followUp?.code);
     const paymentFollowUpTaskRow = (task) => {
       const detail = [
         `Due ${ledgerDate(task.date)}`,
@@ -438,7 +443,7 @@ export function createSponsorFinance(context) {
             <h4>Payment follow-up</h4>
             ${
               live && needsPaymentFollowUp && !paymentFollowUpTasks.length
-                ? html`<button data-finance-payment-follow-up-create>Follow up on the payment</button>`
+                ? html`<button data-finance-payment-follow-up-create>Add next finance action to Tasks</button>`
                 : ""
             }
           </header>
@@ -533,7 +538,9 @@ export function createSponsorFinance(context) {
       ${invoiceFacts} ${invoiceMarkup} ${reconciliationWarning}
       <div class="finance-payments">
         <header class="crm-company-section-header"><h4>Payments</h4></header>
-        ${paymentMarkup}
+        ${projection.payments.some((payment) => payment.source === "recorded") ? html`<p>
+          Payment reported, awaiting verification. Outstanding is the amount not yet verified in bookkeeping.
+          Check these reports before chasing.</p>` : ""}${paymentMarkup}
       </div>
       ${paymentLimitWarning} ${paymentFollowUpSection} ${evidenceMarkup} ${actions}
     </section>`;
@@ -658,7 +665,7 @@ export function createSponsorFinance(context) {
         const replaced =
           kind === "invoice" ? null : replaceablePayment(projection.payments, candidate);
         const body = {
-          expectedVersion: projection.finance.version,
+          expectedVersion: projection.finance?.version || 0,
           sourceId: candidate.id,
           identityToken: candidate.identityToken,
           ...(kind === "invoice"
@@ -705,7 +712,7 @@ export function createSponsorFinance(context) {
       ?.addEventListener("click", () =>
         safe(async () => {
           await financeMutation(booking, "/follow-through", "PUT", {
-            expectedVersion: projection.finance.version,
+            expectedVersion: projection.finance?.version || 0,
             waitingOn: null,
           });
           await reopenBookingDetail(booking);
@@ -719,7 +726,7 @@ export function createSponsorFinance(context) {
         safe(async () => {
           const index = Number(button.dataset.financeEvidenceRemove);
           await financeMutation(booking, "/follow-through", "PUT", {
-            expectedVersion: projection.finance.version,
+            expectedVersion: projection.finance?.version || 0,
             evidence: (projection.finance.evidence || []).filter(
               (_, position) => position !== index,
             ),
@@ -758,16 +765,20 @@ export function createSponsorFinance(context) {
             throw new Error("Review existing Tasks and link one, or confirm the new follow-up is separate work.");
           }
           await financeMutation(booking, "/follow-up", "POST", {
-            expectedVersion: projection.finance.version,
+            expectedVersion: projection.finance?.version || 0,
             ...(existing.length ? { reviewedOpenTasks: existing.map(({ id, version }) => ({ id, version })) } : {}),
           });
           await reopenBookingDetail(booking);
         }, "Could not create the payment follow-up task"),
       );
+    panel.querySelectorAll("[data-finance-correct-receipt]").forEach((button) =>
+      button.addEventListener("click", () => openRecordPayment(booking, projection,
+        projection.payments.find((payment) => payment.id === button.dataset.financeCorrectReceipt))),
+    );
     panel.querySelectorAll("[data-finance-payment-follow-up-link]").forEach((button) =>
       button.addEventListener("click", () => safe(async () => {
         await financeMutation(booking, "/follow-up", "POST", {
-          expectedVersion: projection.finance.version,
+          expectedVersion: projection.finance?.version || 0,
           existingTaskId: button.dataset.financePaymentFollowUpLink,
         });
         await reopenBookingDetail(booking);
@@ -783,7 +794,7 @@ export function createSponsorFinance(context) {
       ?.addEventListener("click", () =>
         safe(async () => {
           await financeMutation(booking, "/request", "POST", {
-            expectedVersion: projection.finance.version,
+            expectedVersion: projection.finance?.version || 0,
           });
           await reopenBookingDetail(booking);
         }, "Could not record invoice request"),
@@ -874,22 +885,7 @@ export function createSponsorFinance(context) {
         }, "Could not unlink payment"),
       ),
     );
-    panel.querySelector("[data-finance-void]")?.addEventListener("click", () =>
-      safe(async () => {
-        if (
-          !(await confirmSponsorAction(
-            "Void finance follow-through?",
-            "This closes the booking's finance follow-through. It is available only while no invoice or payment evidence is linked.",
-            "Void finance",
-          ))
-        )
-          return;
-        await financeMutation(booking, "/void", "POST", {
-          expectedVersion: projection.finance.version,
-        });
-        await reopenBookingDetail(booking);
-      }, "Could not void finance follow-through"),
-    );
+    panel.querySelector("[data-finance-void]")?.addEventListener("click", () => openVoidFinance(booking, projection));
   }
 
   return {
