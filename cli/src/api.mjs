@@ -42,7 +42,7 @@ export function createClient({ url, token, fetchImpl = fetch }) {
   }
 
   async function call(method, route, body, options = {}) {
-    const headers = { Accept: "application/json" };
+    const headers = { Accept: "application/json", ...options.headers };
     if (token && !options.anonymous) headers.Authorization = `Bearer ${token}`;
     Object.assign(headers, options.headers);
     let payload;

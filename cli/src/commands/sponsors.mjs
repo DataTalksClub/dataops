@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { UsageError } from "../errors.mjs";
-import { enc, integer, jsonData, optionalString, positional, table } from "../format.mjs";
+import { enc, integer, isoDate, jsonData, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 
 export const summary = "Sponsor CRM: organizations, contacts, deals, deliverables, leads, finance";
@@ -18,6 +18,7 @@ Usage
   dataops sponsors messages <organization-id>          Communications with an organization
   dataops sponsors history <deal-id>                   A deal's change history
   dataops sponsors finance <deal-id> [history|candidates/invoices|candidates/payments]
+  dataops sponsors chase <deal-id> [--date YYYY-MM-DD]  Create a main-pool payment follow-up
   dataops sponsors link-payment <deal-id> <transaction-id> [--apply]
       Link a bookkeeping transaction to the deal as its payment. A payment the deal
       recorded before the row existed (same amount, within 14 days) is replaced by
@@ -190,4 +191,30 @@ export async function linkPayment(args, io) {
   return result;
 }
 
-export const commands = { list, show, create, update, messages, history, finance, "link-payment": linkPayment };
+/**
+ * Create the deal's payment chase Task in the main task pool. The Task is
+ * ordinary work from here on: `dataops tasks` owns waiting, follow-ups and
+ * resolution; this only writes the finance-side record once.
+ */
+export async function chase(args, io) {
+  const id = positional(args, 0, "dataops sponsors chase <deal-id> [--date YYYY-MM-DD]");
+  const api = apiFor(args);
+  const [deal, finance] = await Promise.all([
+    api.get(`/api/sponsor-crm/deals/${enc(id)}`),
+    api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
+  ]);
+  const body = { dealVersion: deal.version, expectedVersion: finance.finance.version };
+  const date = isoDate(args.date, "date");
+  if (date) body.date = date;
+  const result = await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/chase`, body, {
+    headers: { "Idempotency-Key": randomUUID() },
+  });
+  if (!args.json) {
+    const task = result.task || {};
+    io.print(`Created payment chase Task ${task.id} for deal ${id} (due ${task.date}).`);
+    io.print(`Work it in the task pool: dataops tasks show ${task.id}`);
+  }
+  return result;
+}
+
+export const commands = { list, show, create, update, messages, history, finance, chase, "link-payment": linkPayment };

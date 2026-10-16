@@ -95,3 +95,37 @@ test("sponsors link-payment links a transaction and replaces the payment recorde
     if (oldUrl === undefined) delete process.env.DATAOPS_URL; else process.env.DATAOPS_URL = oldUrl;
   }
 });
+
+test("sponsors chase creates the payment chase Task with an Idempotency-Key", async () => {
+  const originalFetch = globalThis.fetch;
+  const oldToken = process.env.DATAOPS_TOKEN;
+  const oldUrl = process.env.DATAOPS_URL;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  process.env.DATAOPS_URL = "https://portal.example.test";
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    const payload = options.body && JSON.parse(options.body);
+    calls.push({ url, method: options.method, body: payload, headers: options.headers });
+    if (String(url).endsWith("/finance")) {
+      return new Response(JSON.stringify({ dealId: "deal-demo", finance: { version: 4 } }));
+    }
+    return new Response(JSON.stringify({ id: "deal-demo", version: 7, status: "agreed" }));
+  };
+  const logs = [];
+  const io = { log: (value) => logs.push(String(value)), error() {} };
+  try {
+    assert.equal(await run(["sponsors", "chase", "deal-demo", "--date", "2026-10-20", "--json"], io), 0);
+    assert.equal(calls.length, 3);
+    assert.ok(calls[0].url.endsWith("/api/sponsor-crm/deals/deal-demo"));
+    assert.ok(calls[1].url.endsWith("/api/sponsor-crm/deals/deal-demo/finance"));
+    assert.ok(calls[2].url.endsWith("/api/sponsor-crm/deals/deal-demo/finance/chase"));
+    assert.equal(calls[2].method, "POST");
+    assert.deepEqual(calls[2].body, { dealVersion: 7, expectedVersion: 4, date: "2026-10-20" });
+    assert.match(calls[2].headers["Idempotency-Key"], /^[A-Za-z0-9_-]{16,128}$/);
+    assert.equal(calls[2].body.dealVersion, 7);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
+    if (oldUrl === undefined) delete process.env.DATAOPS_URL; else process.env.DATAOPS_URL = oldUrl;
+  }
+});
