@@ -1543,10 +1543,13 @@ Resources:
       TreatMissingData: breaching
       AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
 
-  RecurringCronErrorsAlarm:
+  # Every invocation of the backend function: HTTP requests, deploy-time
+  # seeding and the daily pass alike. The daily pass reports itself through
+  # the CronPass and CronFailure alarms below.
+  BackendErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmName: !Sub ${AWS::StackName}-recurring-cron-errors
+      AlarmName: !Sub ${AWS::StackName}-backend-errors
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions: [{Name: FunctionName, Value: !Ref BackendFunction}]
