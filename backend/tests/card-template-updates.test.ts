@@ -130,6 +130,28 @@ describe('Card Template update planning', () => {
     for (const task of writes) assert.equal(task.assigneeId, 'former-default', task.id);
   });
 
+  it('propagates a new browser requirement to the open Task the Template owns', () => {
+    const source = template(1);
+    const target = template(2);
+    target.taskDefinitions = target.taskDefinitions!.map((definition) => (
+      definition.refId === 'host' ? { ...definition, browserRequirement: 'headless' as const } : definition
+    ));
+    const card = cardFrom(source);
+    const tasks = tasksFrom(source);
+
+    const plan = buildCardTemplateUpdatePlan(card, tasks, target);
+    const hostUpdate = plan.taskUpdates.find((update) => update.taskRef === 'host');
+    assert.ok(hostUpdate, 'the classified definition is part of the plan');
+    assert.equal(hostUpdate.action, 'update');
+    assert.ok(hostUpdate.changedFields.includes('browserRequirement'));
+    const change = plan.preview.taskChanges
+      .find((task) => task.taskRef === 'host')!
+      .changes.find(({ field }) => field === 'browserRequirement');
+    assert.equal(change?.after, 'headless');
+    // The stored snapshot a refreshed projection would carry the claim too.
+    assert.equal(hostUpdate.target?.browserRequirement, 'headless');
+  });
+
   it('categorizes additions, removals, reordering, changes and completed retention', () => {
     const source = template(1);
     const target = {

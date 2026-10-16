@@ -258,6 +258,7 @@ function recurringTaskDefaults(config: RecurringConfig): Record<string, unknown>
     'instructionDocId',
     'instructionStepId',
     'requires',
+    'browserRequirement',
     'proofRequirement',
     'requiredLinkName',
     'requiresFile',

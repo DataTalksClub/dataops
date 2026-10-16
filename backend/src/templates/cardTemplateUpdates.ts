@@ -36,6 +36,7 @@ const TASK_FIELDS = [
   'instructionStepId',
   'phase',
   'requires',
+  'browserRequirement',
   'validation',
   'requiredLinkName',
   'requiresFile',

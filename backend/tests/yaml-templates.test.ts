@@ -103,6 +103,29 @@ describe('authored YAML template mapping', () => {
     assert.deepStrictEqual(restored, RUNTIME_TEMPLATE);
   });
 
+  it('maps the authored browser_requirement onto the runtime field and validates its values', () => {
+    const authored = templateToYaml(RUNTIME_TEMPLATE);
+    const task = (authored.tasks as Record<string, unknown>[])[0];
+    task.browser_requirement = 'headless';
+    assert.deepStrictEqual(validateAuthoredTemplate(authored), []);
+    const runtime = templateFromYaml(authored);
+    assert.strictEqual(
+      (runtime.taskDefinitions as Array<Record<string, unknown>>)[0].browserRequirement,
+      'headless',
+    );
+    assert.deepStrictEqual(templateToYaml(runtime), authored, 'mapping must round-trip losslessly');
+    assert.deepStrictEqual(templateFromYaml(templateToYaml(runtime)), runtime);
+
+    for (const invalid of ['unknown', true]) {
+      task.browser_requirement = invalid;
+      const issues = validateAuthoredTemplate(authored).map((issue) => issue.message);
+      assert.ok(
+        issues.some((message) => message.includes("browser_requirement must be 'required' or 'headless'")),
+        String(invalid),
+      );
+    }
+  });
+
   it('survives YAML serialization', () => {
     const text = yaml.dump(templateToYaml(RUNTIME_TEMPLATE), { lineWidth: 100, noRefs: true });
     const restored = templateFromYaml(yaml.load(text) as Record<string, unknown>);

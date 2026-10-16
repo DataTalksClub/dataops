@@ -17,6 +17,7 @@
 
 import { cardTitlePatternIssues } from '../cards/cardTitlePattern';
 import { requiresError } from '../resources/vocabulary';
+import { browserRequirementError } from '../browserRequirement';
 import { isTemplateIcon, TEMPLATE_ICONS } from './templateIcons';
 import { templateDependencyIssues } from './taskDependencyGraph';
 
@@ -53,6 +54,7 @@ const TASK_FIELDS = [
   ['instructionStepId', 'instruction_step_id'],
   ['phase', 'phase_id'],
   ['requires', 'requires'],
+  ['browserRequirement', 'browser_requirement'],
   ['dependsOn', 'depends_on'],
   ['validation', 'validation'],
   ['requiredLinkName', 'required_link'],
@@ -271,6 +273,11 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
 
     if (task.requires !== undefined) {
       const error = requiresError(task.requires);
+      if (error) fail(`task '${id}' ${error}`);
+    }
+
+    if (task.browser_requirement !== undefined) {
+      const error = browserRequirementError(task.browser_requirement, 'browser_requirement');
       if (error) fail(`task '${id}' ${error}`);
     }
 

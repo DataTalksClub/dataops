@@ -4,6 +4,7 @@ import { getArtifact, listArtifacts } from '../db/artifacts';
 import { getCard } from '../db/cards';
 import { listFilesByTask } from '../db/files';
 import { requiresError } from '../resources/vocabulary';
+import { browserRequirementError } from '../browserRequirement';
 import { extractTitleLinks, mergeMaterials, normalizeTaskMaterials } from '../taskMaterials';
 import type { ArtifactRef, Task, TaskHistoryAction, TaskHistoryEvent, TaskMaterial, TaskStatus } from '../types';
 
@@ -33,6 +34,7 @@ export const ALLOWED_UPDATE_FIELDS = [
   'instructionStepId',
   'phase',
   'requires',
+  'browserRequirement',
   'dependsOn',
   'validation',
   'link',
@@ -201,6 +203,10 @@ export function validateTaskDocContext(fields: Record<string, unknown>): string 
   }
   if (fields.requires !== undefined) {
     const error = requiresError(fields.requires);
+    if (error) return error;
+  }
+  if (fields.browserRequirement !== undefined) {
+    const error = browserRequirementError(fields.browserRequirement);
     if (error) return error;
   }
   if (fields.sourceDocIds !== undefined && !isStringArray(fields.sourceDocIds)) {

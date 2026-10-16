@@ -14,6 +14,7 @@ import { parseCronExpression } from '../cron/cronMatch';
 import { berlinDate } from '../sponsorFinance/core';
 import { getUser } from '../db/users';
 import { requiresError } from '../resources/vocabulary';
+import { browserRequirementError } from '../browserRequirement';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { recordRequestError } from '../requestErrorLog';
 
@@ -111,6 +112,11 @@ function validateRecurringData(body: Record<string, unknown>, isUpdate: boolean)
     if (error) return error;
   }
 
+  if (body.browserRequirement !== undefined) {
+    const error = browserRequirementError(body.browserRequirement);
+    if (error) return error;
+  }
+
   return null;
 }
 
@@ -203,7 +209,7 @@ async function handleCollection(
       };
     }
 
-    const allowedFields = ['description', 'cronExpression', 'assigneeId', 'enabled', 'requires', 'instructionDocId'];
+    const allowedFields = ['description', 'cronExpression', 'assigneeId', 'enabled', 'requires', 'instructionDocId', 'browserRequirement'];
     const data: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined && body[field] !== null) {
@@ -295,7 +301,7 @@ async function handleSingle(
       };
     }
 
-    const allowedFields = ['description', 'cronExpression', 'assigneeId', 'enabled', 'requires', 'instructionDocId'];
+    const allowedFields = ['description', 'cronExpression', 'assigneeId', 'enabled', 'requires', 'instructionDocId', 'browserRequirement'];
     const updates: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined) {

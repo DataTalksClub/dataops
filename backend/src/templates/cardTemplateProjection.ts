@@ -116,6 +116,7 @@ export function templateTaskDefinitionSnapshot(
     instructionStepId: definition.instructionStepId,
     phase: definition.phase,
     requires: definition.requires ? copy(definition.requires) : undefined,
+    browserRequirement: definition.browserRequirement,
     dependsOnRefs: definition.dependsOn?.length ? [...definition.dependsOn] : undefined,
     validation: definition.validation ? copy(definition.validation) : undefined,
     requiredLinkName: definition.requiredLinkName,

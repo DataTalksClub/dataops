@@ -300,6 +300,69 @@ describe('API -- Recurring', () => {
       }
     });
 
+    it('stores the browser requirement on create and rejects unknown values', async () => {
+      const created = await createRecurringConfig(client, {
+        description: 'Headless schedule',
+        cronExpression: '0 10 * * *',
+        browserRequirement: 'headless',
+      });
+      assert.strictEqual(created.browserRequirement, 'headless');
+
+      const viaApi = await invoke('POST', '/api/recurring', {
+        description: 'Browser-bound schedule',
+        cronExpression: '0 10 * * *',
+        browserRequirement: 'required',
+      });
+      assert.strictEqual(viaApi.statusCode, 201, viaApi.body);
+      assert.strictEqual(JSON.parse(viaApi.body).recurringConfig.browserRequirement, 'required');
+
+      for (const invalid of ['unknown', true]) {
+        const bad = await invoke('POST', '/api/recurring', {
+          description: 'Bad classification',
+          cronExpression: '0 10 * * *',
+          browserRequirement: invalid,
+        });
+        assert.strictEqual(bad.statusCode, 400, String(invalid));
+        assert.match(JSON.parse(bad.body).error, /browserRequirement must be/);
+      }
+    });
+
+    it('updates and clears the browser requirement, and generated Tasks inherit it', async () => {
+      await disableAllConfigs(client);
+      const created = await createRecurringConfig(client, {
+        description: 'Classified schedule',
+        cronExpression: '0 11 * * *',
+      });
+
+      const setRes = await invoke('PUT', `/api/recurring/${created.id}`, {
+        browserRequirement: 'headless',
+      });
+      assert.strictEqual(setRes.statusCode, 200, setRes.body);
+      assert.strictEqual(JSON.parse(setRes.body).recurringConfig.browserRequirement, 'headless');
+
+      const generateRes = await invoke('POST', '/api/recurring/generate', {
+        startDate: '2028-02-01',
+        endDate: '2028-02-01',
+      });
+      assert.strictEqual(generateRes.statusCode, 200, generateRes.body);
+      const generated = JSON.parse(generateRes.body).generated;
+      assert.ok(generated.length >= 1);
+      for (const task of generated) {
+        assert.strictEqual(task.browserRequirement, 'headless');
+      }
+
+      const clearRes = await invoke('PUT', `/api/recurring/${created.id}`, {
+        browserRequirement: null,
+      });
+      assert.strictEqual(clearRes.statusCode, 200, clearRes.body);
+      assert.strictEqual(JSON.parse(clearRes.body).recurringConfig.browserRequirement, undefined);
+
+      const bad = await invoke('PUT', `/api/recurring/${created.id}`, {
+        browserRequirement: 'sometimes',
+      });
+      assert.strictEqual(bad.statusCode, 400);
+    });
+
     it('updates description and enabled and returns 200', async () => {
       const created = await createRecurringConfig(client, {
         description: 'Old description',

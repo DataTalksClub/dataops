@@ -29,6 +29,8 @@ import { listFilesByTask } from '../db/files';
 import { getTemplate } from '../db/templates';
 import { matchesRequiresFilter, parseResourceList } from '../resources/vocabulary';
 import type { RequiresFilter } from '../resources/vocabulary';
+import { matchesBrowserRequirementFilter, parseBrowserRequirementFilter } from '../browserRequirement';
+import type { BrowserRequirementFilter } from '../browserRequirement';
 import type { LambdaEvent, LambdaResponse, Task, TaskHistoryEvent } from '../types';
 import { mergeMaterials } from '../taskMaterials';
 import {
@@ -149,6 +151,7 @@ export async function handleTaskRoutes(
     if (body.instructionStepId !== undefined) taskData.instructionStepId = body.instructionStepId;
     if (body.phase !== undefined) taskData.phase = body.phase;
     if (body.requires !== undefined) taskData.requires = body.requires;
+    if (body.browserRequirement !== undefined) taskData.browserRequirement = body.browserRequirement;
     if (body.dependsOn !== undefined) taskData.dependsOn = body.dependsOn;
     if (body.validation !== undefined) taskData.validation = body.validation;
     if (body.link !== undefined) taskData.link = body.link;
@@ -296,6 +299,16 @@ export async function handleTaskRoutes(
       return jsonResponse(400, { error: 'blocked must be true or false' });
     }
     const blockedFilter = blockedParam === undefined ? null : blockedParam === 'true';
+    // The browser filter narrows the same selection by execution requirement:
+    // `headless` keeps only Tasks explicitly classified as browser-free, so an
+    // unclassified Task is never offered as safe headless work. It only reads
+    // and filters; it never mutates status, dates, or ownership.
+    let browserFilter: BrowserRequirementFilter | undefined;
+    if (params.browser !== undefined) {
+      const parsed = parseBrowserRequirementFilter(params.browser);
+      if (!parsed.ok) return jsonResponse(400, { error: parsed.error });
+      browserFilter = parsed.filter;
+    }
 
     if (!date && !startDate && !endDate && !cardId && !status && !ownerFilter) {
       return jsonResponse(400, {
@@ -316,6 +329,7 @@ export async function handleTaskRoutes(
         && (!status || task.status === status)
         && (!ownerFilter || matchesOwnerFilter(task.assigneeId, ownerFilter, activeMemberIds))
         && matchesRequiresFilter(task.requires, requiresFilter)
+        && matchesBrowserRequirementFilter(task.browserRequirement, browserFilter)
       ));
       // Frozen Template definitions are detail-only provenance. Repeating
       // them on every row can exceed Lambda's response limit even when each

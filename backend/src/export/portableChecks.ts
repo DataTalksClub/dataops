@@ -35,6 +35,7 @@ export const VALID_NOTIFICATION_TYPES = new Set([
   'automation-failure',
 ]);
 const VALID_PROOF_REQUIREMENT_TYPES = new Set(['url', 'file', 'artifact', 'comment', 'external-status']);
+export const VALID_BROWSER_REQUIREMENTS = new Set(['required', 'headless']);
 export const VALID_ARTIFACT_TYPES = new Set(['podcast-doc', 'transcript', 'recording', 'report', 'invoice', 'event-page', 'assistant-output', 'external-link', 'other']);
 export const VALID_ARTIFACT_STATUSES = new Set(['draft', 'needs-review', 'approved', 'rejected', 'archived', 'superseded']);
 export const VALID_ARTIFACT_STORAGE_PROVIDERS = new Set(['s3', 'dropbox', 'google-drive', 'github', 'external-url', 'local-dev', 'unknown']);
@@ -380,6 +381,7 @@ export function validateTaskDefinitionDocContext(
     optionalBooleanField(record, 'isMilestone', errors, definitionContext);
     optionalBooleanField(record, 'requiresFile', errors, definitionContext);
     optionalStringArrayField(record, 'requires', errors, definitionContext);
+    optionalEnum(record, 'browserRequirement', VALID_BROWSER_REQUIREMENTS, errors, definitionContext);
     optionalStringArrayField(record, 'dependsOn', errors, definitionContext);
     optionalStringArrayField(record, 'tags', errors, definitionContext);
     optionalStringOrObjectField(record, 'validation', errors, definitionContext);

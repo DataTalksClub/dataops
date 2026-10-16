@@ -7,6 +7,13 @@
  */
 export type TaskStatus = 'todo' | 'waiting' | 'done' | 'skipped';
 export type ProofRequirementType = 'url' | 'file' | 'artifact' | 'comment' | 'external-status';
+/**
+ * Whether doing the work needs an interactive browser: `'required'`, or
+ * `'headless'` when the whole Task can finish without one. An absent value is
+ * an honest "not classified" and is never treated as headless-safe (see
+ * browserRequirement.ts).
+ */
+export type BrowserRequirement = 'required' | 'headless';
 export type NotificationType =
   | 'task-due'
   | 'task-overdue'
@@ -244,6 +251,8 @@ export interface Task {
   phase?: string;
   /** Required resource ids (see resources/vocabulary.ts) needed to do this Task. */
   requires?: string[];
+  /** Whether this Task needs an interactive browser; absent is not classified. */
+  browserRequirement?: BrowserRequirement;
   /**
    * Ids of prerequisite Tasks on the same Card. This Task cannot be completed
    * until every one of them is resolved: `done` or `skipped`.
@@ -417,6 +426,8 @@ export interface TaskDefinition {
   instructionStepId?: string;
   phase?: string;
   requires?: string[];
+  /** Whether this Task needs an interactive browser; absent is not classified. */
+  browserRequirement?: BrowserRequirement;
   /** `refId`s of the definitions that must be done before this one. */
   dependsOn?: string[];
   validation?: string | Record<string, unknown>;
@@ -461,6 +472,8 @@ export interface TemplateTaskDefinitionSnapshot {
   instructionStepId?: string;
   phase?: string;
   requires?: string[];
+  /** Whether this Task needs an interactive browser; absent is not classified. */
+  browserRequirement?: BrowserRequirement;
   /** Template refIds this Task depended on; the Task itself stores resolved ids in `dependsOn`. */
   dependsOnRefs?: string[];
   validation?: string | Record<string, unknown>;
@@ -526,6 +539,8 @@ export interface RecurringConfig {
   instructionDocId?: string;
   instructionStepId?: string;
   requires?: string[];
+  /** Whether this Task needs an interactive browser; absent is not classified. */
+  browserRequirement?: BrowserRequirement;
   proofRequirement?: ProofRequirement;
   requiredLinkName?: string;
   requiresFile?: boolean;

@@ -627,6 +627,159 @@ describe('API — CRUD for tasks', () => {
     });
   });
 
+  // ── Browser requirement ────────────────────────────────────────────
+
+  describe('browser requirement', () => {
+    const browserDate = '2098-06-01';
+
+    it('creates a Task carrying an explicit browser requirement and rejects unknown values', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST', path: '/api/tasks',
+        body: JSON.stringify({ description: 'Headless refresh', date: browserDate, browserRequirement: 'headless' }),
+      }, {});
+      assert.strictEqual(createRes.statusCode, 201, createRes.body);
+      const created = JSON.parse(createRes.body);
+      assert.strictEqual(created.browserRequirement, 'headless');
+      assert.strictEqual((await getTask(await getClient(port), created.id))!.browserRequirement, 'headless');
+
+      for (const invalid of ['unknown', true, 'none']) {
+        const bad = await handler({
+          httpMethod: 'POST', path: '/api/tasks',
+          body: JSON.stringify({ description: 'Bad classification', date: browserDate, browserRequirement: invalid }),
+        }, {});
+        assert.strictEqual(bad.statusCode, 400, String(invalid));
+        assert.match(JSON.parse(bad.body).error, /browserRequirement must be/);
+      }
+    });
+
+    it('creates a Task with no browser requirement and reads it back unclassified', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST', path: '/api/tasks',
+        body: JSON.stringify({ description: 'Not classified yet', date: browserDate }),
+      }, {});
+      const created = JSON.parse(createRes.body);
+      assert.strictEqual(created.browserRequirement, undefined);
+      const detail = await handler({ httpMethod: 'GET', path: `/api/tasks/${created.id}` }, {});
+      assert.strictEqual(JSON.parse(detail.body).browserRequirement, undefined);
+    });
+
+    it('updates and clears the classification as a versioned field write', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST', path: '/api/tasks',
+        body: JSON.stringify({ description: 'Classify me', date: browserDate }),
+      }, {});
+      const created = JSON.parse(createRes.body);
+
+      const setRes = await handler({
+        httpMethod: 'PUT', path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({ browserRequirement: 'required', expectedVersion: created.version }),
+      }, {});
+      assert.strictEqual(setRes.statusCode, 200, setRes.body);
+      const set = JSON.parse(setRes.body);
+      assert.strictEqual(set.browserRequirement, 'required');
+      assert.strictEqual(set.version, created.version + 1);
+
+      const clearRes = await handler({
+        httpMethod: 'PUT', path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({ browserRequirement: null, expectedVersion: set.version }),
+      }, {});
+      assert.strictEqual(clearRes.statusCode, 200, clearRes.body);
+      const cleared = JSON.parse(clearRes.body);
+      assert.strictEqual(cleared.browserRequirement, undefined);
+      assert.strictEqual(cleared.version, set.version + 1);
+    });
+
+    it('keeps unclassified Tasks out of headless mode and never mutates them by filtering', async () => {
+      const client = await getClient(port);
+      const filterDate = '2098-06-02';
+      const headless = await createTask(client, {
+        description: 'Headless only', date: filterDate, browserRequirement: 'headless',
+      });
+      const required = await createTask(client, {
+        description: 'Needs the browser', date: filterDate, browserRequirement: 'required',
+      });
+      const unclassified = await createTask(client, { description: 'Undecided work', date: filterDate });
+
+      const headlessList = await handler({
+        httpMethod: 'GET', path: '/api/tasks',
+        queryStringParameters: { date: filterDate, browser: 'headless' },
+      }, {});
+      assert.strictEqual(headlessList.statusCode, 200, headlessList.body);
+      assert.deepStrictEqual(
+        JSON.parse(headlessList.body).tasks.map((task: { id: string }) => task.id),
+        [headless.id],
+        'headless mode keeps only explicitly classified Tasks',
+      );
+
+      const requiredList = await handler({
+        httpMethod: 'GET', path: '/api/tasks',
+        queryStringParameters: { date: filterDate, browser: 'required' },
+      }, {});
+      assert.deepStrictEqual(
+        JSON.parse(requiredList.body).tasks.map((task: { id: string }) => task.id),
+        [required.id],
+      );
+
+      const unclassifiedList = await handler({
+        httpMethod: 'GET', path: '/api/tasks',
+        queryStringParameters: { date: filterDate, browser: 'unclassified' },
+      }, {});
+      assert.deepStrictEqual(
+        JSON.parse(unclassifiedList.body).tasks.map((task: { id: string }) => task.id),
+        [unclassified.id],
+      );
+
+      const unfiltered = await handler({
+        httpMethod: 'GET', path: '/api/tasks',
+        queryStringParameters: { date: filterDate },
+      }, {});
+      assert.strictEqual(JSON.parse(unfiltered.body).tasks.length, 3);
+
+      // Filtering is a read: status, due dates, and versions are untouched.
+      for (const task of [headless, required, unclassified]) {
+        const stored = await getTask(client, task.id);
+        assert.strictEqual(stored!.status, 'todo');
+        assert.strictEqual(stored!.date, filterDate);
+        assert.strictEqual(stored!.version, 1);
+      }
+    });
+
+    it('composes the browser filter with owner and status and validates its value', async () => {
+      const client = await getClient(port);
+      const mine = await createTask(client, {
+        description: 'My headless work', date: browserDate,
+        assigneeId: 'browser-operator', browserRequirement: 'headless',
+      });
+      await createTask(client, {
+        description: 'Their headless work', date: browserDate,
+        assigneeId: 'other-operator', browserRequirement: 'headless',
+      });
+      await createTask(client, {
+        description: 'My browser work', date: browserDate,
+        assigneeId: 'browser-operator', browserRequirement: 'required',
+      });
+
+      const composed = await handler({
+        httpMethod: 'GET', path: '/api/tasks',
+        queryStringParameters: { date: browserDate, owner: 'browser-operator', browser: 'headless', status: 'todo' },
+      }, {});
+      assert.strictEqual(composed.statusCode, 200, composed.body);
+      assert.deepStrictEqual(
+        JSON.parse(composed.body).tasks.map((task: { id: string }) => task.id),
+        [mine.id],
+      );
+
+      for (const browser of ['maybe', '']) {
+        const bad = await handler({
+          httpMethod: 'GET', path: '/api/tasks',
+          queryStringParameters: { date: browserDate, browser },
+        }, {});
+        assert.strictEqual(bad.statusCode, 400, browser);
+        assert.match(JSON.parse(bad.body).error, /browser must be one of/);
+      }
+    });
+  });
+
   // ── GET /api/tasks/:id ─────────────────────────────────────────────
 
   describe('GET /api/tasks/:id', () => {

@@ -16,6 +16,7 @@ import {
   VALID_ARTIFACT_STORAGE_PROVIDERS,
   VALID_ARTIFACT_TYPES,
   VALID_CARD_LIFECYCLE_AUDIT_ACTIONS,
+  VALID_BROWSER_REQUIREMENTS,
   VALID_INTAKE_DATA_CLASSES,
   VALID_INTAKE_PRIORITIES,
   VALID_INTAKE_SOURCES,
@@ -216,6 +217,7 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     optionalStringField(task, 'instruction_step_id', errors, context);
     optionalStringField(task, 'phase', errors, context);
     optionalStringArrayField(task, 'requires', errors, context);
+    optionalEnum(task, 'browser_requirement', VALID_BROWSER_REQUIREMENTS, errors, context);
     optionalStringArrayField(task, 'depends_on', errors, context);
     if (Array.isArray(task.depends_on)) {
       task.depends_on.forEach((taskId, dependencyIndex) => {
@@ -334,6 +336,7 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     optionalStringField(recurring, 'instruction_doc_id', errors, context);
     optionalStringField(recurring, 'instruction_step_id', errors, context);
     optionalStringArrayField(recurring, 'requires', errors, context);
+    optionalEnum(recurring, 'browser_requirement', VALID_BROWSER_REQUIREMENTS, errors, context);
     optionalProofRequirementField(recurring, 'proof_requirement', errors, context);
     optionalStringField(recurring, 'required_link_name', errors, context);
     optionalBooleanField(recurring, 'requires_file', errors, context);
