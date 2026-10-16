@@ -1147,6 +1147,11 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.alerts.innerHTML, /Weekly #43 — 28 Aug/);
     const html = dom.slots.innerHTML;
     assert.match(html, /title="Edit issue details"><span>Weekly #42<\/span><\/button><\/h4>/);
+    // Every row's date column: the date, then kind and distance from today.
+    assert.equal(html.match(/class="newsletter-relative-badge"/g).length, 3);
+    for (const [kind, distance] of [["Weekly", "in 8d"], ["Weekly", "in 2w"], ["Stand-alone", "in 13d"]]) {
+      assert.match(html, new RegExp(`newsletter-kind-badge">${kind}</small>\\s*<span class="newsletter-relative-badge">${distance}</span>`));
+    }
     assert.match(html, /<strong>Primary:<\/strong> Example Sponsor/);
     assert.match(html, /<strong>Secondary:<\/strong> Second &lt;Sponsor&gt;/);
     assert.match(html, /<strong>Primary:<\/strong> sponsor TBD/);

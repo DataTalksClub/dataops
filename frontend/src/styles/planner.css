@@ -499,30 +499,27 @@
 .newsletter-slot-main,
 .newsletter-slot-actions { min-width: 0; }.newsletter-slot-date { display: grid; gap: 2px; }.newsletter-slot-date time { color: var(--dk-text-heading); font-size: 13px; font-weight: 600; }.newsletter-slot-date small,
 .newsletter-slot-main > small { color: var(--dk-text-muted); font-size: 12px; }.newsletter-slot-title { display: flex; min-width: 0; align-items: center; gap: 8px; }.newsletter-slot-title h4:not([class*="dk-"]) { overflow: hidden; color: var(--dk-text-heading); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }.newsletter-slot-main p { margin-top: 2px; color: var(--dk-text-muted); font-size: 12px; }.newsletter-slot-main > small { display: block; overflow: hidden; margin-top: 3px; text-overflow: ellipsis; white-space: nowrap; }.planner-status { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 22px; border: 1px solid transparent; border-radius: var(--dk-radius-full); background: var(--dk-bg-muted); color: var(--dk-text-muted); padding: 1px 7px; font-size: 11px; font-weight: 600; }.planner-status.is-success { background: var(--dk-success-bg); color: var(--dk-success-text); }.planner-status.is-warning { background: var(--dk-warning-bg); color: var(--dk-warning-text); }.planner-status.is-info { background: var(--dk-info-bg); color: var(--dk-info-text); }.planner-status.is-danger { background: var(--dk-danger-bg); color: var(--dk-danger-text); }.newsletter-slot-actions { display: flex; align-items: center; gap: 10px; }.newsletter-slot-actions a { font-size: 12px; font-weight: 600; white-space: nowrap; }
+/* Line 2 of the date column, the same on every row: kind, then how far the
+   issue is from today. It never wraps. */
 .newsletter-date-meta {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
   margin-top: 3px;
+  white-space: nowrap;
 }
-.newsletter-campaign-badge {
+.newsletter-kind-badge {
   font-weight: 600;
   color: var(--dk-text-muted);
 }
 .newsletter-relative-badge {
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
   padding: 1px 5px;
   border-radius: var(--dk-radius-sm);
   background: var(--dk-bg-muted);
   color: var(--dk-accent-default);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-.newsletter-time-badge {
-  font-size: 11px;
-  color: var(--dk-text-muted);
 }
 .planner-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }.planner-field-wide { grid-column: 1 / -1; }.planner-form-grid input,
 .planner-form-grid select { min-height: 38px; }.planner-form-grid textarea { resize: vertical; }.planner-form-error { min-height: 0; color: var(--dk-danger-text); font-size: 12px; }.planner-form-error:not(:empty) { padding-bottom: 14px; }

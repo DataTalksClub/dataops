@@ -42,17 +42,18 @@ export function createNewsletterPlanner(context) {
         }).format(parsed);
   }
 
+  /**
+   * How far the issue is from today, on every row and in one short form:
+   * days under two weeks, then weeks under nine weeks, then months.
+   */
   function relativeDateBadge(isoDate, todayIso) {
-    if (!isoDate || !todayIso) return "";
-    const dTarget = new Date(`${isoDate.slice(0, 10)}T00:00:00Z`);
-    const dToday = new Date(`${todayIso.slice(0, 10)}T00:00:00Z`);
-    const diffDays = Math.round((dTarget - dToday) / 86400000);
-    if (diffDays === 0) return "Today";
-    if (diffDays === 1) return "Tomorrow";
-    if (diffDays === -1) return "Yesterday";
-    if (diffDays > 1 && diffDays <= 7) return `In ${diffDays} days`;
-    if (diffDays < -1 && diffDays >= -7) return `${Math.abs(diffDays)}d ago`;
-    return "";
+    const target = new Date(`${isoDate.slice(0, 10)}T00:00:00Z`);
+    const today = new Date(`${todayIso.slice(0, 10)}T00:00:00Z`);
+    const days = Math.round((target - today) / 86400000);
+    if (days === 0) return "today";
+    const span = Math.abs(days);
+    const amount = span < 14 ? `${span}d` : span < 63 ? `${Math.round(span / 7)}w` : `${Math.round(span / 30.44)}mo`;
+    return days > 0 ? `in ${amount}` : `${amount} ago`;
   }
 
   function newsletterAlertCopy(reasonCode) {
@@ -245,15 +246,11 @@ export function createNewsletterPlanner(context) {
           month: "short",
           timeZone: "UTC",
         });
-      const relBadge = relativeDateBadge(item.publicationDate, todayIsoDate());
-      const relMarkup = relBadge
-        ? `<span class="newsletter-relative-badge">${escapeHtml(relBadge)}</span>`
-        : "";
-      const kindBadge = item.kind === "standalone"
-        ? `<small>Stand-alone</small>`
-        : `<small class="newsletter-campaign-badge">Weekly</small>`;
-      const timeMarkup = item.publicationTime
-        ? `<span class="newsletter-time-badge">${escapeHtml(item.publicationTime)} Berlin</span>`
+      const relMarkup = `<span class="newsletter-relative-badge">${
+        escapeHtml(relativeDateBadge(item.publicationDate, todayIsoDate()))}</span>`;
+      const kindBadge = `<small class="newsletter-kind-badge">${item.kind === "standalone" ? "Stand-alone" : "Weekly"}</small>`;
+      const sendTime = item.publicationTime
+        ? ` title="Sends at ${escapeHtml(item.publicationTime)} Europe/Berlin"`
         : "";
       const planningNote = item.planningNote
         ? `<small class="newsletter-slot-note">${escapeHtml(item.planningNote)}</small>`
@@ -265,11 +262,10 @@ export function createNewsletterPlanner(context) {
       return `
         <article class="newsletter-slot-row" data-issue-id="${issueId}">
           <div class="newsletter-slot-date">
-            <time datetime="${escapeHtml(item.publicationDate)}">${publicationLabel}</time>
+            <time datetime="${escapeHtml(item.publicationDate)}"${sendTime}>${publicationLabel}</time>
             <div class="newsletter-date-meta">
               ${kindBadge}
               ${relMarkup}
-              ${timeMarkup}
             </div>
           </div>
           <div class="newsletter-slot-main">
