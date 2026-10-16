@@ -80,6 +80,8 @@ const ROUTE_FAMILIES: ReadonlyArray<readonly [ApiRouteFamily, string]> = [
   ['calendar_newsletter', '/api/calendar-items'],
   ['calendar_newsletter', '/api/newsletter-issues'],
   ['calendar_newsletter', '/api/podcast-episodes'],
+  ['calendar_newsletter', '/api/people'],
+  ['calendar_newsletter', '/api/books'],
   ['bookkeeping', '/api/bookkeeping'],
   ['recurring', '/api/cron'],
   ['sponsor_crm', '/api/sponsor-crm'],

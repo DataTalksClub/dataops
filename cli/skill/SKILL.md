@@ -169,6 +169,12 @@ verification Tasks makes it recorded, edited, scheduled and published. Use
 `dataops podcast update <episode-id> --status S` only to correct it or cancel it;
 `dataops podcast list --card <card-id>` finds the episode a Card belongs to.
 
+For website content: `dataops speakers list` (speaker/author profiles for
+`_people` pages; `--name/--slug/--bio/--photo-url/--github/--twitter/--linkedin/--website`)
+and `dataops books list` (Book of the Week entries for `_books` pages;
+`--title/--authors/--description/--start-date/--end-date/--cover-url/--link "Text=URL"`).
+The website script generates the pages from these registers plus the episode register.
+
 ## What is on my plate
 
 ```bash

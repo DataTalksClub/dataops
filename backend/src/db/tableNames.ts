@@ -30,6 +30,8 @@ const TABLE_NEWSLETTER_SLOTS = tableName('DATAOPS_NEWSLETTER_SLOTS_TABLE', 'News
 const TABLE_CALENDAR = tableName('DATAOPS_CALENDAR_TABLE', 'Calendar', 'calendar');
 const TABLE_PODCAST_EPISODES = tableName('DATAOPS_PODCAST_EPISODES_TABLE', 'PodcastEpisodes', 'podcast-episodes');
 const TABLE_SECRETS = tableName('DATAOPS_SECRETS_TABLE', 'Secrets', 'secrets');
+const TABLE_PEOPLE = tableName('DATAOPS_PEOPLE_TABLE', 'People', 'people');
+const TABLE_BOOKS = tableName('DATAOPS_BOOKS_TABLE', 'Books', 'books');
 
 const DATAOPS_TABLES = Object.freeze([
   TABLE_TASKS,
@@ -38,7 +40,6 @@ const DATAOPS_TABLES = Object.freeze([
   TABLE_USERS,
   TABLE_FILES,
   TABLE_ARTIFACTS,
-  TABLE_AUDIT_EVENTS,
   TABLE_INTAKE,
   TABLE_NOTIFICATIONS,
   TABLE_SESSIONS,
@@ -48,6 +49,8 @@ const DATAOPS_TABLES = Object.freeze([
   TABLE_CALENDAR,
   TABLE_PODCAST_EPISODES,
   TABLE_SECRETS,
+  TABLE_PEOPLE,
+  TABLE_BOOKS,
 ]);
 
 export {
@@ -67,5 +70,7 @@ export {
   TABLE_CALENDAR,
   TABLE_PODCAST_EPISODES,
   TABLE_SECRETS,
+  TABLE_PEOPLE,
+  TABLE_BOOKS,
   DATAOPS_TABLES,
 };

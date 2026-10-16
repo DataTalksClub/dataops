@@ -12,6 +12,8 @@ import * as kb from "./commands/kb.mjs";
 import * as newsletter from "./commands/newsletter.mjs";
 import * as notifications from "./commands/notifications.mjs";
 import * as people from "./commands/people.mjs";
+import * as books from "./commands/books.mjs";
+import * as speakers from "./commands/speakers.mjs";
 import * as podcast from "./commands/podcast.mjs";
 import * as raw from "./commands/raw.mjs";
 import * as reconcile from "./commands/reconcile.mjs";
@@ -76,6 +78,8 @@ export const FAMILIES = {
   kb: { group: "Knowledge", summary: kb.summary, help: kb.help, commands: kb.commands },
   newsletter: { group: "Planning", summary: newsletter.summary, help: newsletter.help, commands: newsletter.commands },
   podcast: { group: "Planning", summary: podcast.summary, help: podcast.help, commands: podcast.commands },
+  speakers: { group: "Planning", summary: speakers.summary, help: speakers.help, commands: speakers.commands },
+  books: { group: "Planning", summary: books.summary, help: books.help, commands: books.commands },
   calendar: {
     group: "Planning",
     summary: calendar.summary,

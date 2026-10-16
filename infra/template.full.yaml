@@ -273,6 +273,44 @@ Resources:
         - { Key: Project, Value: DataOps }
         - { Key: App, Value: DataOpsV1 }
         - { Key: DataClass, Value: PrivateExecutionState }
+  DataOpsPeopleTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-people
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      Tags:
+        - { Key: Project, Value: DataOps }
+        - { Key: App, Value: DataOpsV1 }
+        - { Key: DataClass, Value: PrivateExecutionState }
+  DataOpsBooksTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-books
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      Tags:
+        - { Key: Project, Value: DataOps }
+        - { Key: App, Value: DataOpsV1 }
+        - { Key: DataClass, Value: PrivateExecutionState }
   DataOpsSponsorCrmTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -1277,6 +1315,8 @@ Resources:
               - !Sub ${DataOpsCalendarTable.Arn}/index/*
               - !GetAtt DataOpsPodcastEpisodesTable.Arn
               - !Sub ${DataOpsPodcastEpisodesTable.Arn}/index/*
+              - !GetAtt DataOpsPeopleTable.Arn
+              - !GetAtt DataOpsBooksTable.Arn
         - Statement:
             Effect: Allow
             Action:
@@ -1379,6 +1419,8 @@ Resources:
           DATAOPS_PODCAST_EPISODES_TABLE: !Ref DataOpsPodcastEpisodesTable
           DATAOPS_SECRETS_TABLE: !Ref DataOpsSecretsTable
           DATAOPS_SECRETS_KMS_KEY: !Ref SecretsStoreKey
+          DATAOPS_PEOPLE_TABLE: !Ref DataOpsPeopleTable
+          DATAOPS_BOOKS_TABLE: !Ref DataOpsBooksTable
           SPONSOR_FINANCE_ENABLED: !Ref SponsorFinanceEnabled
           NEWSLETTER_OPEN_ALERT_LEAD_DAYS: !Ref NewsletterOpenAlertLeadDays
           NEWSLETTER_WORKFLOW_ALERT_LEAD_DAYS: !Ref NewsletterWorkflowAlertLeadDays

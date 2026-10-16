@@ -215,6 +215,26 @@ def test_podcast_episodes_table_is_retained_private_state_with_one_date_index():
     assert "!Sub ${DataOpsPodcastEpisodesTable.Arn}/index/*" in backend
 
 
+def test_people_and_books_tables_are_retained_private_state_without_indexes():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    backend = _resource_block(template, "BackendFunction")
+    for table, suffix, env in [
+        ("DataOpsPeopleTable", "people", "DATAOPS_PEOPLE_TABLE"),
+        ("DataOpsBooksTable", "books", "DATAOPS_BOOKS_TABLE"),
+    ]:
+        block = _resource_block(template, table)
+        assert f"TableName: !Sub ${{AWS::StackName}}-{suffix}" in block
+        assert "DeletionPolicy: Retain" in block
+        assert "UpdateReplacePolicy: Retain" in block
+        assert "BillingMode: PAY_PER_REQUEST" in block
+        assert "SSEEnabled: true" in block
+        assert "PointInTimeRecoveryEnabled: true" in block
+        assert "Value: PrivateExecutionState" in block
+        assert "IndexName:" not in block, "people/books lists scan; no GSI"
+        assert f"{env}: !Ref {table}" in backend
+        assert f"!GetAtt {table}.Arn" in backend
+
+
 def test_backend_schedules_are_explicit_identity_stable_resources_with_exact_behavior():
     template = _load_template()
     parameters = template["Parameters"]

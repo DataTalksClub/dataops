@@ -58,6 +58,8 @@ subcommands, flags, and examples.
 | `kb` | knowledge base: `search`, `related <task|card>`, `show`, `tree`, `ls`, `resolve`, `backlinks`, `history`, `write`, `publish` |
 | `newsletter` | issues and their sponsor slots: `list`, `show`, `create`, `update`, `delete`, `dismiss-alert` |
 | `podcast` | episodes: `list`, `show`, `create`, `update`, `create-card` |
+| `speakers` | website speaker/author profiles: `list`, `show`, `create`, `update` |
+| `books` | Book of the Week entries: `list`, `show`, `create`, `update` |
 | `calendar` | read-only events (Cards, podcast episodes, newsletter issues) and open slots |
 | `recurring` | schedules that generate Tasks |
 | `automations` | `list` every scheduled or triggered job with its last and next run; `set` the settings they read (admin) |
