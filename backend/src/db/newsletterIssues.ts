@@ -16,7 +16,7 @@ import { DeleteCommand, GetCommand, PutCommand, QueryCommand, ScanCommand, Updat
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_NEWSLETTER_SLOTS } from './tableNames';
 import { collectBoundedPages, type StoragePaginationLimits } from './boundedPagination';
-import { deleteAtVersion, putAtVersion, putNew, type PlannedWrite } from './plannedWrite';
+import { deleteAtVersion, putAtVersion, type PlannedWrite } from './plannedWrite';
 
 export type NewsletterIssueKind = 'weekly' | 'standalone';
 export type NewsletterSlotPosition = 'primary' | 'secondary';
@@ -31,6 +31,12 @@ export interface NewsletterSlot {
   documentUrl?: string;
 }
 
+/** A link the issue keeps before (or without) a Card: a draft, a doc, a campaign. */
+export interface NewsletterIssueLink {
+  name: string;
+  url: string;
+}
+
 export type NewsletterIssue = {
   id: string;
   kind: NewsletterIssueKind;
@@ -41,6 +47,7 @@ export type NewsletterIssue = {
   status: string;
   slots: Partial<Record<NewsletterSlotPosition, NewsletterSlot>>;
   cardId?: string;
+  links?: NewsletterIssueLink[];
   publicUrl?: string;
   planningNote?: string;
   sourceType?: string;
@@ -67,6 +74,9 @@ const stored = (issue: NewsletterIssue) => ({
   publicationKey: `${issue.publicationDate}#${issue.id}`,
   ...issue,
 });
+
+/** The table item for `issue`, keys included. */
+export const issueItem = (issue: NewsletterIssue) => ({ ...issueKey(issue.id), ...stored(issue) });
 
 /** A source-keyed issue (an import) always gets the same id. */
 export const newsletterIssueId = (sourceKey: string) =>
@@ -148,10 +158,6 @@ export function nextNewsletterIssue(existing: NewsletterIssue, changes: Partial<
   return next;
 }
 
-/** Transaction write creating `issue`. */
-export const createIssueWrite = (issue: NewsletterIssue): PlannedWrite =>
-  putNew(TABLE_NEWSLETTER_SLOTS, issueKey(issue.id), stored(issue));
-
 /** Transaction write replacing `previous` with `next`. */
 export const replaceIssueWrite = (previous: NewsletterIssue, next: NewsletterIssue): PlannedWrite =>
   putAtVersion(TABLE_NEWSLETTER_SLOTS, issueKey(previous.id), stored(next), previous.version);
@@ -177,18 +183,18 @@ export async function updateNewsletterIssue(
   return next;
 }
 
-/** Write an issue that has no Card (a cancelled week). */
-export async function putCardlessNewsletterIssue(client: DynamoDBDocumentClient, issue: NewsletterIssue) {
-  if (issue.status !== 'cancelled' || issue.cardId) throw new Error('Only a cancelled issue has no Card');
+/** Write a new issue; it has no Card yet. */
+export async function createNewsletterIssue(client: DynamoDBDocumentClient, issue: NewsletterIssue) {
+  if (issue.cardId) throw new Error('A new issue has no Card yet');
   await client.send(new PutCommand({
     TableName: TABLE_NEWSLETTER_SLOTS,
-    Item: { ...issueKey(issue.id), ...stored(issue) },
+    Item: issueItem(issue),
     ConditionExpression: 'attribute_not_exists(PK)',
   }));
   return issue;
 }
 
-/** Delete an issue that has no Card (a cancelled week). */
+/** Delete an issue that has no Card. */
 export async function deleteCardlessNewsletterIssue(client: DynamoDBDocumentClient, issue: NewsletterIssue) {
   if (issue.cardId) throw new Error('An issue with a Card is deleted together with its Card');
   await client.send(new DeleteCommand({

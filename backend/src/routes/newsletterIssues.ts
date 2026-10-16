@@ -1,12 +1,15 @@
 /**
  * /api/newsletter-issues: the newsletter planner.
  *
- * One row per email. Every issue that is not cancelled has exactly one Card,
- * created with the issue in one transaction; the Card cannot be unlinked,
- * relinked, or deleted on its own. Cancelling or deleting an issue deletes its
- * Card in the same transaction (the Card exists only to execute that issue);
- * when the Card has completed Tasks the caller must confirm with
- * `confirmCardDeletion`. Reinstating a cancelled issue creates a fresh Card.
+ * One row per email. An issue is planned (date, slots, sponsors, links)
+ * without a Card; its Card is created when it is due (the daily run, see
+ * `newsletter/cardSchedule.ts`) or on request (POST `/:id/card`), filled from
+ * the issue in the same transaction as the issue's next version, so an issue
+ * has at most one Card. The Card cannot be linked or relinked. Removing it
+ * (DELETE `/:id/card`) keeps the issue and moves the Card's links onto it,
+ * and is refused while the Card holds work unless confirmed. Cancelling or
+ * deleting an issue deletes its Card in the same transaction; when the Card
+ * has completed Tasks the caller must confirm with `confirmCardDeletion`.
  */
 import { createHash, randomUUID } from 'crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -14,6 +17,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { Card, LambdaEvent, LambdaResponse } from '../types';
 import {
   buildNewsletterIssue,
+  createNewsletterIssue,
   deleteCardlessNewsletterIssue,
   deleteIssueWrite,
   getNewsletterIssue,
@@ -22,13 +26,13 @@ import {
   listNewsletterIssuesByCardId,
   newsletterIssueId,
   nextNewsletterIssue,
-  putCardlessNewsletterIssue,
   putNewsletterAlertRecord,
   replaceIssueWrite,
   updateNewsletterAlertRecord,
   updateNewsletterIssue,
   type NewsletterIssue,
   type NewsletterIssueKind,
+  type NewsletterIssueLink,
   type NewsletterSlot,
   type NewsletterSlotPosition,
 } from '../db/newsletterIssues';
@@ -40,6 +44,9 @@ import {
   deleteCardCascade,
 } from '../db/cardDeletion';
 import { resolveInteractiveActor, type VerifiedActor } from '../identity/actor';
+import { berlinDate } from '../sponsorFinance/core';
+import { cardDueDate, createDueIssueCards, loadCardSchedule, needsCard, type CardSchedule } from '../newsletter/cardSchedule';
+import { removeIssueCard } from '../newsletter/cardRemoval';
 import { summarizeCard, type CardSummary } from '../cards/recordCardLink';
 import {
   createSlotDeliverable,
@@ -81,6 +88,7 @@ const UPDATABLE_FIELDS = [
   'slots',
   'publicUrl',
   'planningNote',
+  'links',
 ] as const;
 const CREATE_FIELDS = new Set<string>([...UPDATABLE_FIELDS, 'kind', 'sourceType', 'sourceKey']);
 const CONFIRMATIONS = ['confirmCardDeletion', 'confirmSlotRemoval'];
@@ -158,6 +166,13 @@ function validate(issue: Body): string {
     if (error) return error;
   }
   if (issue.publicUrl != null && !httpsUrl(issue.publicUrl)) return 'Invalid publicUrl';
+  if (issue.links != null) {
+    if (!Array.isArray(issue.links) || issue.links.length > 30) return 'Invalid links';
+    for (const link of issue.links as NewsletterIssueLink[]) {
+      if (!link || typeof link !== 'object' || Object.keys(link).some((name) => name !== 'name' && name !== 'url')) return 'Invalid links';
+      if (typeof link.name !== 'string' || !link.name.trim() || link.name.length > 200 || !httpsUrl(link.url)) return 'Invalid links';
+    }
+  }
   if (issue.planningNote != null && (typeof issue.planningNote !== 'string' || issue.planningNote.length > 1000)) {
     return 'Invalid planningNote';
   }
@@ -226,8 +241,8 @@ function alerts(items: NewsletterIssue[], today: string) {
   return out;
 }
 
-/** Alerts about each issue's Card: missing, drifted, or unfinished after sending. */
-function cardAlerts(items: NewsletterIssue[], cards: Map<string, Card | null>) {
+/** Alerts about each issue's Card: missing, overdue, drifted, or unfinished after sending. */
+function cardAlerts(items: NewsletterIssue[], cards: Map<string, Card | null>, schedule: CardSchedule, today: string) {
   const out: any[] = [];
   const add = (item: NewsletterIssue, reasonCode: string, severity: string) => out.push({
     reasonCode,
@@ -236,7 +251,13 @@ function cardAlerts(items: NewsletterIssue[], cards: Map<string, Card | null>) {
     fingerprint: `${item.id}#${reasonCode}#${item.publicationDate}`,
   });
   for (const item of items.filter((value) => value.status !== 'cancelled')) {
-    const card = item.cardId ? cards.get(item.cardId) : null;
+    if (!item.cardId) {
+      // The daily run had its chance: a Card due before today is missing.
+      const due = cardDueDate(item, schedule);
+      if (needsCard(item, today) && due !== null && due < today) add(item, 'card-not-created', 'warning');
+      continue;
+    }
+    const card = cards.get(item.cardId);
     if (!card) {
       add(item, 'card-unavailable', 'error');
       continue;
@@ -267,10 +288,17 @@ async function linkedCards(client: DynamoDBDocumentClient, items: NewsletterIssu
   return cards;
 }
 
+const today = () => berlinDate(new Date());
+
+/** When the issue's Card is due, for an issue that still needs one. */
+const dueDateOf = (issue: NewsletterIssue, schedule: CardSchedule) =>
+  needsCard(issue, today()) ? cardDueDate(issue, schedule) : null;
+
 async function withCardSummaries(
   client: DynamoDBDocumentClient,
   items: NewsletterIssue[],
   cards: Map<string, Card | null>,
+  schedule: CardSchedule,
 ) {
   const summaries = new Map<string, CardSummary>();
   for (const [id, card] of cards) if (card) summaries.set(id, await summarizeCard(client, card));
@@ -278,6 +306,7 @@ async function withCardSummaries(
     ...item,
     label: issueLabel(item),
     card: item.cardId ? summaries.get(item.cardId) || null : null,
+    cardDueDate: dueDateOf(item, schedule),
   }));
 }
 
@@ -316,7 +345,8 @@ async function listRoute(event: LambdaEvent, client: DynamoDBDocumentClient) {
   if (query.cardId !== undefined) {
     if (!ID.test(query.cardId)) return json(400, { error: 'Invalid cardId' });
     const linked = await listNewsletterIssuesByCardId(client, query.cardId);
-    return json(200, { items: await withCardSummaries(client, linked, await linkedCards(client, linked)) });
+    const schedule = await loadCardSchedule(client);
+    return json(200, { items: await withCardSummaries(client, linked, await linkedCards(client, linked), schedule) });
   }
   const from = query.from || new Date().toISOString().slice(0, 10);
   const to = query.to || '9999-12-31';
@@ -332,12 +362,14 @@ async function listRoute(event: LambdaEvent, client: DynamoDBDocumentClient) {
   if (query.booked === 'true') items = items.filter((item) => bookedSlots(item).length > 0);
   if (query.booked === 'false') items = items.filter(needsSponsor);
   const cards = await linkedCards(client, items);
+  const schedule = await loadCardSchedule(client);
+  const day = query.today || today();
   const current = [
-    ...alerts(items, query.today || new Date().toISOString().slice(0, 10)),
-    ...cardAlerts(items, cards),
+    ...alerts(items, day),
+    ...cardAlerts(items, cards, schedule, day),
   ];
   return json(200, {
-    items: await withCardSummaries(client, items, cards),
+    items: await withCardSummaries(client, items, cards, schedule),
     alerts: await recordAlerts(client, current),
   });
 }
@@ -409,28 +441,31 @@ async function createRoute(body: Body, event: LambdaEvent, client: DynamoDBDocum
     }
   }
   const issue = buildNewsletterIssue({ ...candidate, sourceType: body.sourceType || 'portal' } as any, id);
-  if (issue.status === 'cancelled') {
-    try {
-      return json(201, await putCardlessNewsletterIssue(client, issue));
-    } catch (failure) {
-      if ((failure as Error).name === 'ConditionalCheckFailedException') return json(409, { error: 'Issue already exists' });
-      throw failure;
-    }
-  }
   const resolved = await resolveInteractiveActor(client, event, 'work-write');
   if (!resolved.ok) return resolved.response;
   try {
-    const created = await createIssueCard(client, resolved.actor, issue);
-    if (!created.ok) return created.response;
-    return json(201, {
-      ...issue,
-      cardId: created.card.id,
-      label: issueLabel(issue),
-      card: await summarizeCard(client, created.card),
-    });
+    await createNewsletterIssue(client, issue);
   } catch (failure) {
-    if ((failure as Error).name === 'TransactionCanceledException') return json(409, { error: 'Issue already exists' });
+    if ((failure as Error).name === 'ConditionalCheckFailedException') return json(409, { error: 'Issue already exists' });
     throw failure;
+  }
+  return json(201, await issueView(client, await withDueCard(client, resolved.actor, issue)));
+}
+
+/**
+ * Create the issue's Card when it is already due, e.g. an issue added or
+ * moved within the lead time; the daily run would otherwise wait a day.
+ */
+async function withDueCard(client: DynamoDBDocumentClient, actor: VerifiedActor, issue: NewsletterIssue) {
+  if (!needsCard(issue, today())) return issue;
+  const due = cardDueDate(issue, await loadCardSchedule(client));
+  if (due === null || due > today()) return issue;
+  try {
+    const created = await createIssueCard(client, actor, issue);
+    return created.ok ? created.issue : issue;
+  } catch (failure) {
+    console.error('Newsletter issue card creation failed:', failure);
+    return issue;
   }
 }
 
@@ -471,30 +506,14 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
       : null;
     if (failure) return failure;
     if (!existing.cardId) await updateNewsletterIssue(client, existing, changes);
-    return json(200, { ...next, label: issueLabel(next), card: null });
-  }
-  if (reinstating) {
-    const next = nextNewsletterIssue(existing, changes);
-    try {
-      const created = await createIssueCard(client, actor, next, (cardId) => replaceIssueWrite(existing, { ...next, cardId }));
-      if (!created.ok) return created.response;
-      return json(200, {
-        ...next,
-        cardId: created.card.id,
-        label: issueLabel(next),
-        card: await summarizeCard(client, created.card),
-      });
-    } catch (failure) {
-      if ((failure as Error).name === 'TransactionCanceledException') return json(409, { error: 'Issue changed; reload and retry' });
-      throw failure;
-    }
+    return json(200, await issueView(client, next));
   }
 
   const draft = nextNewsletterIssue(existing, changes);
   const leaving = await completedTasksLeavingCard(client, existing, draft);
   if (leaving.length && body.confirmSlotRemoval !== true) {
     return json(409, {
-      error: `Unticking keeps ${leaving.length} completed Task${leaving.length === 1 ? '' : 's'} and skips the slot's open ones; confirm to continue`,
+      error: `Releasing the slot keeps ${leaving.length} completed Task${leaving.length === 1 ? '' : 's'} and skips its open ones; confirm to continue`,
       code: 'slot-has-completed-tasks',
       completedTasks: leaving.map((task) => ({ id: task.id, description: task.description })),
     });
@@ -518,13 +537,7 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
     console.error('Newsletter issue card sync failed:', failure);
     cardSync = 'failed';
   }
-  const card = next.cardId ? await getCard(client, next.cardId) : null;
-  return json(200, {
-    ...next,
-    label: issueLabel(next),
-    card: card ? await summarizeCard(client, card) : null,
-    cardSync,
-  });
+  return json(200, await issueView(client, await withDueCard(client, actor, next), { cardSync }));
 }
 
 async function deleteRoute(id: string, body: Body, event: LambdaEvent, client: DynamoDBDocumentClient) {
@@ -552,10 +565,60 @@ async function deleteRoute(id: string, body: Body, event: LambdaEvent, client: D
   return { statusCode: 204, headers: {}, body: '' };
 }
 
-/** The issue as the routes return it: label and Card summary attached. */
+/** The issue as the routes return it: label, Card summary and Card due date attached. */
 async function issueView(client: DynamoDBDocumentClient, issue: NewsletterIssue, extra: Body = {}) {
   const card = issue.cardId ? await getCard(client, issue.cardId) : null;
-  return { ...issue, label: issueLabel(issue), card: card ? await summarizeCard(client, card) : null, ...extra };
+  return {
+    ...issue,
+    label: issueLabel(issue),
+    card: card ? await summarizeCard(client, card) : null,
+    cardDueDate: dueDateOf(issue, await loadCardSchedule(client)),
+    ...extra,
+  };
+}
+
+/**
+ * POST creates the issue's Card now, whenever it is due; repeating it
+ * returns the Card the issue already has. DELETE removes the Card and keeps
+ * the issue (`dryRun` shows what would move and what keeps it).
+ */
+async function cardRoute(id: string, method: string, body: Body, event: LambdaEvent, client: DynamoDBDocumentClient) {
+  const existing = await getNewsletterIssue(client, id);
+  if (!existing) return json(404, { error: 'Not found' });
+  if (method === 'POST' && existing.cardId) return json(200, await issueView(client, existing));
+  if (body.version !== existing.version) return json(409, { error: 'Issue changed; reload and retry' });
+  const resolved = await resolveInteractiveActor(client, event, 'work-write');
+  if (!resolved.ok) return resolved.response;
+  if (method === 'POST') {
+    if (['cancelled', 'sent'].includes(existing.status)) {
+      return json(409, { error: `A ${existing.status} issue gets no Card` });
+    }
+    try {
+      const created = await createIssueCard(client, resolved.actor, existing);
+      if (!created.ok) return created.response;
+      return json(201, await issueView(client, created.issue));
+    } catch (failure) {
+      if ((failure as Error).name === 'TransactionCanceledException') return json(409, { error: 'Issue changed; reload and retry' });
+      throw failure;
+    }
+  }
+  const removed = await removeIssueCard(client, existing, resolved.actor.id || 'system', {
+    confirm: body.confirmCardDeletion === true,
+    dryRun: body.dryRun === true,
+  });
+  if (!removed.ok) {
+    return json(removed.status, {
+      error: removed.error,
+      ...(removed.code ? { code: removed.code } : {}),
+      ...(removed.plan ? { keep: removed.plan.keep, moves: removed.plan.moves } : {}),
+    });
+  }
+  const { next, ...plan } = removed.plan;
+  return json(200, {
+    ...plan,
+    removed: removed.removed,
+    issue: removed.removed ? await issueView(client, next) : await issueView(client, existing),
+  });
 }
 
 /**
@@ -682,6 +745,20 @@ export async function handleNewsletterIssueRoutes(
       return json(404, { error: 'Alert not found' });
     }
   }
+  if (path === '/api/newsletter-issues/create-due-cards') {
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    const body = parse(event) || {};
+    const resolved = await resolveInteractiveActor(client, event, 'work-write');
+    if (!resolved.ok) return resolved.response;
+    return json(200, await createDueIssueCards(client, today(), { dryRun: body.dryRun === true }));
+  }
+  const card = path.match(/^\/api\/newsletter-issues\/([^/]+)\/card$/);
+  if (card) {
+    if (method !== 'POST' && method !== 'DELETE') return json(405, { error: 'Method not allowed' });
+    const body = parse(event);
+    if (!body) return json(400, { error: 'Invalid JSON' });
+    return cardRoute(card[1], method, body, event, client);
+  }
   if (path === '/api/newsletter-issues/sponsor-options') {
     if (method !== 'GET') return json(405, { error: 'Method not allowed' });
     return json(200, { items: await sponsorOptions(client) });
@@ -700,8 +777,7 @@ export async function handleNewsletterIssueRoutes(
   if (method === 'GET') {
     const item = await getNewsletterIssue(client, id);
     if (!item) return json(404, { error: 'Not found' });
-    const card = item.cardId ? await getCard(client, item.cardId) : null;
-    return json(200, { ...item, label: issueLabel(item), card: card ? await summarizeCard(client, card) : null });
+    return json(200, await issueView(client, item));
   }
   const body = parse(event);
   if (!body) return json(400, { error: 'Invalid JSON' });

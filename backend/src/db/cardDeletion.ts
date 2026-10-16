@@ -44,8 +44,8 @@ import { listTasksByCard } from './tasks';
  *
  * A newsletter issue owns its Card: the Card exists only to execute that
  * issue, so it is deleted only together with the issue's own write (the issue
- * deleted or cancelled), passed as `ownerWrite`. Deleting it on its own is
- * refused.
+ * deleted, cancelled, or its Card removed), passed as `ownerWrite`. Deleting
+ * it on its own is refused.
  */
 
 type Dict = Record<string, unknown>;
@@ -188,7 +188,7 @@ async function cardBlockingReferences(
   client: DynamoDBDocumentClient,
   card: Card,
   tasks: Task[],
-  owner?: CardOwnerWrite,
+  owner?: Pick<CardOwnerWrite, 'newsletterIssueId'>,
 ): Promise<CardBlockingReferences> {
   const taskIds = new Set(tasks.map(({ id }) => id));
   const pointsHere = (row: Dict) => row.cardId === card.id
@@ -207,6 +207,13 @@ async function cardBlockingReferences(
     sponsorDeliverables: sponsorCrm.filter((row) => row.cardId === card.id).map((row) => String(row.id)),
     newsletterIssues: issues.map((issue) => issue.id).filter((id) => id !== owner?.newsletterIssueId),
   };
+}
+
+/** Artifacts linked to the Card or one of its Tasks. */
+async function listCardArtifacts(client: DynamoDBDocumentClient, card: Card, tasks: Task[]): Promise<Dict[]> {
+  const taskIds = new Set(tasks.map(({ id }) => id));
+  return (await scanAll(client, TABLE_ARTIFACTS, 'ARTIFACT#'))
+    .filter((row) => row.cardId === card.id || (typeof row.taskId === 'string' && taskIds.has(row.taskId)));
 }
 
 async function loadDeletionPlan(
@@ -460,6 +467,7 @@ export {
   CardDeletionTooLargeError,
   cardBlockingReferences,
   deleteCardCascade,
+  listCardArtifacts,
 };
 export type {
   CardBlockingReferences,

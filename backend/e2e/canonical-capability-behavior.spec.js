@@ -916,7 +916,7 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.getByRole('heading', { name: 'Calendar', exact: true, level: 1 })).toBeVisible();
     const id = unique('schedule');
     const sponsor = `Synthetic sponsor ${id}`;
-    // Every issue is created with its Card from the Template of its kind.
+    // An issue gets its Card when it is due; this one is in the past, so it has none.
     const templateFixture = await context.request.post('/__e2e__/template-fixtures', { data: {
       name: 'Synthetic stand-alone newsletter', type: 'newsletter-standalone', triggerType: 'manual', references: [],
       taskDefinitions: [{ refId: 'send', description: 'Send the synthetic stand-alone email', offsetDays: 0 }],
@@ -928,7 +928,7 @@ test.describe('canonical frontend capability behavior', () => {
     } });
     expect(slotResponse.status()).toBe(201);
     const slot = await json(slotResponse);
-    expect(slot.cardId).toBeTruthy();
+    expect(slot.cardId).toBeUndefined();
     const invalidSlot = await context.request.post('/api/newsletter-issues', { data: { kind: 'weekly', publicationDate: '2026-02-30', slots: {} } });
     expect(invalidSlot.status()).toBe(400);
     const changedSlot = await context.request.put(`/api/newsletter-issues/${slot.id}`, { data: { version: slot.version, status: 'scheduled' } });

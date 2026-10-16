@@ -17,7 +17,8 @@ import {
   readHolidayGeneration,
   setHolidaySyncFailureForTests,
 } from "../src/db/calendarHolidays";
-import { buildNewsletterIssue, createIssueWrite, putCardlessNewsletterIssue } from "../src/db/newsletterIssues";
+import { buildNewsletterIssue, issueItem, createNewsletterIssue } from "../src/db/newsletterIssues";
+import { TABLE_NEWSLETTER_SLOTS } from "../src/db/tableNames";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { newsletterOverlayItem } from "../src/calendar/newsletterOverlay";
 const invoke = (
@@ -241,7 +242,7 @@ describe("operations calendar", () => {
       slots: { primary: { sponsor: "Synthetic Alpha" }, secondary: {} },
       cardId: "calendar-one-item-card",
     }, "calendar-one-item-test");
-    await client.send(new PutCommand(createIssueWrite(issue).item.Put as any));
+    await client.send(new PutCommand({ TableName: TABLE_NEWSLETTER_SLOTS, Item: issueItem(issue) }));
     const response = await invoke("GET", "/api/calendar-items/overlays", undefined, {}, { from: "2027-04-12", to: "2027-04-12" });
     const items = parse(response).items.filter((i: any) => i.provider === "newsletter-issues-readonly");
     assert.equal(items.length, 1);
@@ -252,7 +253,7 @@ describe("operations calendar", () => {
     assert.equal(booked.isAvailableSlot, false);
   });
   it("projects newsletter records read-only and reopens changed dismissed alerts", async () => {
-    await putCardlessNewsletterIssue(client, buildNewsletterIssue({
+    await createNewsletterIssue(client, buildNewsletterIssue({
       kind: "weekly",
       publicationDate: "2027-04-05",
       issueNumber: 401,

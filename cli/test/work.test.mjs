@@ -481,7 +481,7 @@ describe("newsletter", () => {
     assert.equal(await run(["newsletter", "list", "--card", "c-1"], captureIo()), 0);
     assert.deepEqual(calls[0].query, { cardId: "c-1" });
     assert.equal(await run(["newsletter", "link-card", "i-1", "c-1"], captureIo()), 2);
-    assert.equal(await run(["newsletter", "create-card", "i-1"], captureIo()), 2);
+
   });
 });
 
@@ -719,5 +719,36 @@ describe("newsletter slots", () => {
     assert.equal(await run(["newsletter", "book", "i-1", "tertiary", "--deal", "deal-1"], captureIo()), 2);
     assert.equal(await run(["newsletter", "release", "i-1", "secondary", "--confirm"], captureIo()), 0);
     assert.deepEqual(calls.at(-1).body, { version: 3, confirmSlotRemoval: true });
+  });
+});
+
+describe("newsletter cards", () => {
+  const issue = { id: "i-9", version: 2, kind: "weekly", label: "Weekly #360", publicationDate: "2027-07-05", status: "planned", slots: {}, links: [{ name: "Draft", url: "https://docs.example.com/d" }] };
+
+  test("create-card, remove-card and due-cards send the issue version and the dry-run flag", async () => {
+    const calls = fakePortal({
+      "GET /api/newsletter-issues/i-9": issue,
+      "POST /api/newsletter-issues/i-9/card": () => ({ status: 201, body: { ...issue, cardId: "c-9", version: 3 } }),
+      "DELETE /api/newsletter-issues/i-9/card": ({ body }) => ({
+        status: 200,
+        body: { cardId: "c-9", removed: !body.dryRun, keep: [], moves: [{ from: 'card link "Newsletter Markdown"', to: 'issue link "Newsletter Markdown"', url: "https://docs.example.com/md" }] },
+      }),
+      "POST /api/newsletter-issues/create-due-cards": ({ body }) => ({ status: 200, body: { today: "2026-10-16", dryRun: Boolean(body.dryRun), due: [], created: [], failures: [] } }),
+      "PUT /api/newsletter-issues/i-9": ({ body }) => ({ status: 200, body: { ...issue, ...body } }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["newsletter", "create-card", "i-9"], io), 0);
+    assert.deepEqual(calls.at(-1).body, { version: 2 });
+    assert.match(io.text(), /Created Card c-9 for Weekly #360/);
+    const dry = captureIo();
+    assert.equal(await run(["newsletter", "remove-card", "i-9", "--dry-run"], dry), 0);
+    assert.deepEqual(calls.at(-1).body, { version: 2, dryRun: true });
+    assert.match(dry.text(), /Would remove Card c-9[\s\S]*moves card link "Newsletter Markdown" -> issue link "Newsletter Markdown"/);
+    assert.equal(await run(["newsletter", "remove-card", "i-9", "--confirm"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { version: 2, confirmCardDeletion: true });
+    assert.equal(await run(["newsletter", "due-cards", "--dry-run"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { dryRun: true });
+    assert.equal(await run(["newsletter", "update", "i-9", "--link", "Draft=none", "--link", "Notes=https://docs.example.com/n"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body.links, [{ name: "Notes", url: "https://docs.example.com/n" }]);
   });
 });

@@ -2,6 +2,7 @@ import "../dakit/collection.js";
 import { createPageHeader } from "./operations-overview.js";
 import { parseIsoDateValue } from "../core/workspace.js";
 import { createNewsletterPlanner } from "./planning-newsletter.js";
+import { cardDueLabel } from "./planning-newsletter-slots.js";
 import { setupDayScheduleDialog, setupCalendarSettingsDialog } from "./planning-calendar-dialogs.js";
 import { mountPeriodNav, periodNavMarkup } from "./period-nav.js";
 import { berlinDateTime, berlinTime, berlinTimestamp } from "./calendar-time.js";
@@ -507,11 +508,22 @@ export function createPlanningSurface(context) {
             const title = conflict
               ? `${category}: ${overlay.label} (conflicts with ${blockingHoliday.name})`
               : isAvailable ? `${category}: ${overlay.label}` : overlay.label;
+            // A newsletter issue links its Card once it exists, and until
+            // then says when the daily run creates it.
+            const issueCard = overlay.newsletter || {};
+            const cardDue = !issueCard.cardId && issueCard.cardDueDate
+              ? `<small class="calendar-overlay-card-due">${escapeHtml(cardDueLabel(issueCard.cardDueDate, todayIso))}</small>`
+              : "";
+            const cardLink = issueCard.cardId
+              ? `<a class="calendar-overlay-card" href="/cards?cardId=${encodeURIComponent(issueCard.cardId)}"
+                  title="${escapeHtml(`Open the card of ${overlay.label}`)}">Card</a>`
+              : "";
             return `
               <${tag} class="calendar-overlay ${isOwnerCalendar ? "is-owner-calendar" : "is-newsletter"}${slotClass}" ${hrefAttr}${openDayAttr} title="${escapeHtml(title)}">
                 <small>${conflict ? "Blocked" : escapeHtml(category)}</small>
                 <span>${escapeHtml(overlay.label)}</span>
-              </${tag}>
+                ${cardDue}
+              </${tag}>${cardLink}
             `;
           }).join("");
         if (dayOfWeek === 1) {

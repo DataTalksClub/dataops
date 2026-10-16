@@ -7,8 +7,8 @@ import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createCard, getCard } from '../src/db/cards';
 import { templateLink } from './helpers/cardTemplate';
 import { createFile } from '../src/db/files';
-import { buildNewsletterIssue, createIssueWrite, getNewsletterIssue } from '../src/db/newsletterIssues';
-import { TABLE_ARTIFACTS, TABLE_AUDIT_EVENTS, TABLE_NOTIFICATIONS } from '../src/db/tableNames';
+import { buildNewsletterIssue, issueItem, getNewsletterIssue } from '../src/db/newsletterIssues';
+import { TABLE_ARTIFACTS, TABLE_AUDIT_EVENTS, TABLE_NEWSLETTER_SLOTS, TABLE_NOTIFICATIONS } from '../src/db/tableNames';
 import { createTask, getTask } from '../src/db/tasks';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
@@ -55,7 +55,7 @@ describe('DELETE /api/cards/:id', () => {
     const issue = buildNewsletterIssue({
       kind: 'weekly', publicationDate: '2031-02-02', status: 'planned', slots: { primary: {} }, cardId,
     }, `issue-${cardId}`);
-    await client.send(new PutCommand(createIssueWrite(issue).item.Put as any));
+    await client.send(new PutCommand({ TableName: TABLE_NEWSLETTER_SLOTS, Item: issueItem(issue) }));
     return issue;
   }
 

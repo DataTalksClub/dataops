@@ -920,6 +920,40 @@ details.newsletter-filters .planner-filter-fields {
   align-items: center;
   gap: var(--dk-space-2);
 }
+/* An issue without a Card yet: when the daily run creates it, and a button
+   to create it now. */
+.newsletter-card-due {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  white-space: nowrap;
+}
+.newsletter-card-create {
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-primary);
+  padding: var(--dk-space-1) var(--dk-space-2);
+  font: inherit;
+  font-size: var(--dk-text-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.newsletter-card-create:hover { border-color: var(--dk-border-strong); }
+/* The calendar's newsletter item: its Card, or when the Card comes. */
+.calendar-overlay .calendar-overlay-card-due {
+  background: none;
+  color: var(--dk-text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.calendar-overlay-card {
+  display: inline-flex;
+  align-items: center;
+  margin-top: var(--dk-space-1);
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs);
+}
 .newsletter-card-chip {
   display: inline-flex;
   min-width: 0;

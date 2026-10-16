@@ -26,7 +26,7 @@ import {
 import { CardDeletionConflictError, deleteCardCascade } from '../src/db/cardDeletion';
 import { createCard, getCardConsistent } from '../src/db/cards';
 import { templateLink } from './helpers/cardTemplate';
-import { buildNewsletterIssue, createIssueWrite, deleteIssueWrite } from '../src/db/newsletterIssues';
+import { buildNewsletterIssue, issueItem, deleteIssueWrite } from '../src/db/newsletterIssues';
 import {
   TABLE_ARTIFACTS,
   TABLE_AUDIT_EVENTS,
@@ -174,7 +174,7 @@ test('admin Card deletion is one transaction on official DynamoDB Local', { time
   const issue = buildNewsletterIssue({
     kind: 'weekly', publicationDate: '2031-01-05', status: 'planned', slots: { primary: {} }, cardId: card.id,
   }, 'synthetic-issue');
-  await client.send(new PutCommand(createIssueWrite(issue).item.Put as any));
+  await client.send(new PutCommand({ TableName: TABLE_NEWSLETTER_SLOTS, Item: issueItem(issue) }));
   const owner = { newsletterIssueId: issue.id, write: deleteIssueWrite(issue) };
   await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: {
     PK: 'ARTIFACT#art-1', SK: 'ARTIFACT#art-1', id: 'art-1', cardId: card.id, taskId: first.id, title: 'Synthetic draft',

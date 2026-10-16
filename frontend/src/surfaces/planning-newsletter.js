@@ -4,7 +4,7 @@ import {
   setupNewsletterDialog,
 } from "./planning-newsletter-dialog.js";
 import { renderPageHeaderMarkup } from "./operations-overview.js";
-import { attachSlotControls, issueSlotsMarkup } from "./planning-newsletter-slots.js";
+import { attachSlotControls, cardDueLabel, issueSlotsMarkup } from "./planning-newsletter-slots.js";
 
 export function createNewsletterPlanner(context) {
   const {
@@ -61,6 +61,7 @@ export function createNewsletterPlanner(context) {
       "near-term-open-slot": "A slot needs a sponsor soon",
       "duplicate-active-issue": "Two issues share a date and number",
       "card-unavailable": "An issue's card is missing",
+      "card-not-created": "An issue's card was not created",
       "card-date-mismatch": "A card's date differs from its issue",
       "card-slot-tasks-mismatch": "A card's sponsor tasks differ from its slots",
       "sent-issue-card-incomplete": "A sent issue's card is unfinished",
@@ -74,7 +75,9 @@ export function createNewsletterPlanner(context) {
       "duplicate-active-issue":
         "Check the schedule sheet: one of them probably has the wrong date or number.",
       "card-unavailable":
-        "Every issue keeps one card. Reload; if it stays missing, cancel and reinstate the issue.",
+        "The issue points at a card that is gone. Reload; if it stays missing, remove the card and create it again.",
+      "card-not-created":
+        "The daily run should have made it. Use Create card now on the issue.",
       "card-date-mismatch":
         "The issue's date wins: save the issue to move its card.",
       "card-slot-tasks-mismatch":
@@ -99,7 +102,8 @@ export function createNewsletterPlanner(context) {
    * Tasks, and a warning when the Card's date drifted from the issue's (the
    * issue wins on the next save). The row already names the date, number and
    * sponsors, so the chip does not repeat the Card's title; it carries it as
-   * the link's name.
+   * the link's name. An issue without a Card yet says when the daily run
+   * creates it, with a button to create it now.
    */
   function issueCardMarkup(item) {
     if (item.card) {
@@ -120,10 +124,18 @@ export function createNewsletterPlanner(context) {
           </a>
         </div>`;
     }
-    if (item.status === "cancelled") return "";
-    return `
+    if (item.cardId) {
+      return `
       <div class="newsletter-slot-card">
         <span class="dk-badge dk-badge--danger">Card unavailable</span>
+      </div>`;
+    }
+    if (!item.cardDueDate) return "";
+    return `
+      <div class="newsletter-slot-card">
+        <span class="newsletter-card-due" data-card-due>${escapeHtml(cardDueLabel(item.cardDueDate, todayIsoDate()))}</span>
+        <button type="button" class="newsletter-card-create" data-create-card="${escapeHtml(item.id)}"
+          aria-label="${escapeHtml(`Create the card for ${item.label || "this issue"} now`)}">Create card now</button>
       </div>`;
   }
 
@@ -425,6 +437,21 @@ export function createNewsletterPlanner(context) {
       openIssueDialog(null);
     };
 
+    /** "Create card now": the Card normally comes from the daily run. */
+    async function createIssueCard(item, button) {
+      button.disabled = true;
+      try {
+        await api(`/${encodeURIComponent(item.id)}/card`, {
+          method: "POST",
+          body: JSON.stringify({ version: item.version }),
+        });
+        await load();
+      } catch (error) {
+        button.disabled = false;
+        status.textContent = `Could not create the card for ${item.label}: ${error.message}`;
+      }
+    }
+
     attachSlotControls(surface.querySelector("[data-slots]"), {
       findIssue: (id) => items.find((value) => value.id === id),
       request,
@@ -441,6 +468,12 @@ export function createNewsletterPlanner(context) {
         if (!context.navigateCanonicalWorkspace) return;
         event.preventDefault();
         context.navigateCanonicalWorkspace("/cards", { cardId: cardChip.dataset.openCard });
+        return;
+      }
+      const createCard = target.closest("[data-create-card]");
+      if (createCard) {
+        const item = items.find((value) => value.id === createCard.dataset.createCard);
+        if (item) createIssueCard(item, createCard);
         return;
       }
       const issueId = target.closest("[data-edit]")?.dataset.edit;

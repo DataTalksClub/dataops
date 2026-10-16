@@ -85,11 +85,19 @@ describe("newsletter issues", () => {
     assert.equal(response.statusCode, 201, response.body);
     return data(response);
   };
+  /** An issue plus its Card, made with "Create card now". */
+  const createWithCard = async (body: Record<string, unknown>) => {
+    const issue = await create(body);
+    assert.equal(issue.cardId, undefined, "a far-future issue starts without a Card");
+    const response = await invoke("POST", `/api/newsletter-issues/${issue.id}/card`, { version: issue.version });
+    assert.equal(response.statusCode, 201, response.body);
+    return data(response);
+  };
   const tasksOf = async (cardId: string) =>
     (await listTasksByCard(client, cardId)).map((task) => `${task.templateTaskRef}:${task.status}`).sort();
 
-  it("creates a weekly issue with its Card from the Template of its kind", async () => {
-    const issue = await create(weekly({ sourceKey: "issue-340" }));
+  it("creates a weekly issue, then its Card from the Template of its kind", async () => {
+    const issue = await createWithCard(weekly({ sourceKey: "issue-340" }));
     assert.equal(issue.label, "Weekly #340");
     assert.ok(issue.cardId);
     assert.equal(issue.card.id, issue.cardId);
@@ -111,8 +119,8 @@ describe("newsletter issues", () => {
     assert.deepEqual(reverse.items.map((item: any) => item.id), [issue.id]);
   });
 
-  it("creates a stand-alone issue from the stand-alone Template and a cancelled week without a Card", async () => {
-    const standalone = await create({
+  it("creates a stand-alone issue's Card from the stand-alone Template; a cancelled week has none", async () => {
+    const standalone = await createWithCard({
       kind: "standalone",
       publicationDate: "2027-03-03",
       slots: { primary: { sponsor: "Sponsor S" } },
@@ -154,7 +162,8 @@ describe("newsletter issues", () => {
     assert.equal(booking.statusCode, 400, "the booking lives on the deliverable, not the slot");
   });
 
-  it("creates the issue and its Card atomically", async () => {
+  it("creates the Card and the issue's next version atomically", async () => {
+    const issue = await create(weekly({ publicationDate: "2027-04-05", issueNumber: 345 }));
     const before = (await client.send(new ScanCommand({ TableName: TABLE_CARDS }))).Items!.length;
     const tasksBefore = (await client.send(new ScanCommand({ TableName: TABLE_TASKS }))).Items!.length;
     const originalSend = client.send.bind(client);
@@ -165,12 +174,12 @@ describe("newsletter issues", () => {
       return originalSend(command);
     };
     await assert.rejects(
-      handleNewsletterIssueRoutes("/api/newsletter-issues", "POST", {
+      handleNewsletterIssueRoutes(`/api/newsletter-issues/${issue.id}/card`, "POST", {
         httpMethod: "POST",
-        path: "/api/newsletter-issues",
+        path: `/api/newsletter-issues/${issue.id}/card`,
         headers: {},
         queryStringParameters: {},
-        body: JSON.stringify(weekly({ publicationDate: "2027-04-05", issueNumber: 345 })),
+        body: JSON.stringify({ version: issue.version }),
       }, client).finally(() => {
         (client as any).send = originalSend;
       }),
@@ -178,12 +187,13 @@ describe("newsletter issues", () => {
     );
     assert.equal((await client.send(new ScanCommand({ TableName: TABLE_CARDS }))).Items!.length, before);
     assert.equal((await client.send(new ScanCommand({ TableName: TABLE_TASKS }))).Items!.length, tasksBefore);
-    const listed = data(await invoke("GET", "/api/newsletter-issues", undefined, {}, { from: "2027-04-05", to: "2027-04-05" }));
-    assert.equal(listed.items.length, 0);
+    const stored = data(await invoke("GET", `/api/newsletter-issues/${issue.id}`));
+    assert.equal(stored.cardId, undefined);
+    assert.equal(stored.version, issue.version);
   });
 
   it("starts a Card with only the booked slots' Tasks", async () => {
-    const open = await create(weekly({ publicationDate: "2027-05-10", issueNumber: 351, slots: { primary: {}, secondary: {} } }));
+    const open = await createWithCard(weekly({ publicationDate: "2027-05-10", issueNumber: 351, slots: { primary: {}, secondary: {} } }));
     assert.deepEqual((await getCard(client, open.cardId))!.selectedOptionalGroups, []);
     assert.deepEqual(await tasksOf(open.cardId), ["schedule:todo", "write-issue:todo"]);
   });
@@ -196,7 +206,7 @@ describe("newsletter issues", () => {
     assert.ok(options.items.some((item: any) => item.dealId === deal.id && item.name === "Synthetic Org One"));
     assert.ok(options.items.some((item: any) => !item.dealId && item.organizationId === otherOrg.id));
 
-    let issue = await create(weekly({ publicationDate: "2027-05-03", issueNumber: 350 }));
+    let issue = await createWithCard(weekly({ publicationDate: "2027-05-03", issueNumber: 350 }));
     const slot = `/api/newsletter-issues/${issue.id}/slots/secondary`;
     let response = await invoke("PUT", slot, { version: issue.version, dealId: deal.id });
     assert.equal(response.statusCode, 200, response.body);
@@ -249,7 +259,7 @@ describe("newsletter issues", () => {
   it("links a newsletter deliverable to its issue, never to a Card", async () => {
     const org = (await createCrmRecord(client, "organization", { displayName: "Synthetic Org Three" } as any)).item;
     const deal = (await createCrmRecord(client, "deal", { organizationId: org.id, status: "open" } as any)).item;
-    const issue = await create(weekly({ publicationDate: "2027-05-24", issueNumber: 353 }));
+    const issue = await createWithCard(weekly({ publicationDate: "2027-05-24", issueNumber: 353 }));
     const post = (body: Record<string, unknown>) => invoke("POST", "/api/sponsor-crm/deliverables", { dealId: deal.id, ...body });
     assert.equal((await post({ channel: "main", cardId: issue.cardId })).statusCode, 400);
     assert.equal((await post({ channel: "workshop", newsletterIssueId: issue.id })).statusCode, 400);
@@ -268,7 +278,7 @@ describe("newsletter issues", () => {
   });
 
   it("moving the issue re-derives its open Tasks' due dates and leaves resolved ones alone", async () => {
-    let issue = await create(weekly({ publicationDate: "2027-06-28", issueNumber: 358 }));
+    let issue = await createWithCard(weekly({ publicationDate: "2027-06-28", issueNumber: 358 }));
     const tasks = await listTasksByCard(client, issue.cardId);
     const done = tasks.find((task) => task.templateTaskRef === "write-issue")!;
     await updateTask(client, done.id, { expectedVersion: done.version, patch: { status: "done" } });
@@ -284,7 +294,7 @@ describe("newsletter issues", () => {
   });
 
   it("pushes date and issue number to the Card and refuses kind changes and Card links", async () => {
-    let issue = await create(weekly({ publicationDate: "2027-06-07", issueNumber: 355 }));
+    let issue = await createWithCard(weekly({ publicationDate: "2027-06-07", issueNumber: 355 }));
     const moved = await invoke("PUT", `/api/newsletter-issues/${issue.id}`, {
       version: issue.version,
       publicationDate: "2027-06-14",
@@ -305,7 +315,7 @@ describe("newsletter issues", () => {
   });
 
   it("refuses to delete an issue's Card on its own", async () => {
-    const issue = await create(weekly({ publicationDate: "2027-06-21", issueNumber: 357 }));
+    const issue = await createWithCard(weekly({ publicationDate: "2027-06-21", issueNumber: 357 }));
     const card = (await getCard(client, issue.cardId))!;
     const response = await invoke("DELETE", `/api/cards/${card.id}`, { expectedVersion: card.version });
     assert.equal(response.statusCode, 409, response.body);
@@ -313,8 +323,8 @@ describe("newsletter issues", () => {
     assert.ok(await getCard(client, card.id));
   });
 
-  it("cancelling deletes the Card (confirming done work), reinstating creates a new one, deleting removes both", async () => {
-    let issue = await create(weekly({ publicationDate: "2027-07-05", issueNumber: 360 }));
+  it("cancelling deletes the Card (confirming done work), reinstating waits for the Card's due date, deleting removes both", async () => {
+    let issue = await createWithCard(weekly({ publicationDate: "2027-07-05", issueNumber: 360 }));
     const first = issue.cardId;
     const task = (await listTasksByCard(client, first))[0];
     await updateTask(client, task.id, { expectedVersion: task.version, patch: { status: "done" } });
@@ -336,8 +346,10 @@ describe("newsletter issues", () => {
     response = await invoke("PUT", `/api/newsletter-issues/${issue.id}`, { version: issue.version, status: "planned" });
     assert.equal(response.statusCode, 200, response.body);
     issue = data(response);
+    assert.equal(issue.cardId, undefined, "a far-future issue gets its Card when it is due");
+    response = await invoke("POST", `/api/newsletter-issues/${issue.id}/card`, { version: issue.version });
+    issue = data(response);
     assert.ok(issue.cardId && issue.cardId !== first);
-    assert.ok(await getCard(client, issue.cardId));
 
     response = await invoke("DELETE", `/api/newsletter-issues/${issue.id}`, { version: issue.version });
     assert.equal(response.statusCode, 204, response.body);
@@ -351,13 +363,14 @@ describe("newsletter issues", () => {
   it("lists with booking filters and alerts on open slots, duplicates and Card drift", async () => {
     const range = { from: "2027-09-01", to: "2027-09-30", today: "2027-09-01" };
     const open = await create(weekly({ publicationDate: "2027-09-06", issueNumber: 370, slots: { primary: {} } }));
-    const booked = await create(weekly({ publicationDate: "2027-09-13", issueNumber: 371 }));
+    const booked = await createWithCard(weekly({ publicationDate: "2027-09-13", issueNumber: 371 }));
     const duplicate = await create(weekly({ publicationDate: "2027-09-13", issueNumber: 371, slots: { primary: {} } }));
     let listed = data(await invoke("GET", "/api/newsletter-issues", undefined, {}, range));
     const reasons = (id: string) => listed.alerts.filter((alert: any) => alert.issueId === id).map((alert: any) => alert.reasonCode).sort();
-    assert.deepEqual(reasons(open.id), ["near-term-open-slot"]);
+    // On 1 Sep the daily run should already have made the Cards of mid-September issues.
+    assert.deepEqual(reasons(open.id), ["card-not-created", "near-term-open-slot"]);
     assert.deepEqual(reasons(booked.id), ["duplicate-active-issue"]);
-    assert.deepEqual(reasons(duplicate.id), ["duplicate-active-issue", "near-term-open-slot"]);
+    assert.deepEqual(reasons(duplicate.id), ["card-not-created", "duplicate-active-issue", "near-term-open-slot"]);
     const ids = async (query: Record<string, string>) =>
       data(await invoke("GET", "/api/newsletter-issues", undefined, {}, { ...range, ...query })).items.map((item: any) => item.id).sort();
     assert.deepEqual(await ids({ booked: "false" }), [open.id, duplicate.id].sort());
@@ -382,7 +395,7 @@ describe("newsletter issues", () => {
     assert.equal(sent.label, "Weekly #297 · VectorAI DB + Astronomer");
     assert.equal(sent.isAvailableSlot, false);
     assert.deepEqual(sent.newsletter, {
-      kind: "weekly", issueNumber: 297, booked: 2,
+      kind: "weekly", issueNumber: 297, booked: 2, cardId: null, cardDueDate: null,
       slots: [
         { position: "primary", sponsor: "VectorAI DB" },
         { position: "secondary", sponsor: "Astronomer" },

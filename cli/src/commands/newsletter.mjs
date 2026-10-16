@@ -11,8 +11,15 @@ slots, primary and secondary; a stand-alone issue has one. A slot is booked
 when it names a sponsor and open otherwise. Booking a slot for a sponsor from
 the Sponsors tab records a deliverable on their deal for the issue; booking
 adds the slot's sponsor Tasks to the issue's Card, releasing it skips the
-slot's open Tasks (done ones stay). Every issue that is not cancelled has one
-Card; cancelling or deleting the issue deletes it.
+slot's open Tasks (done ones stay).
+
+An issue is planned without a Card. The daily run creates its Card
+card-lead-days before the issue date (earlier if the Template has an earlier
+Task); create-card makes it now. The new Card is filled from the issue: its
+booked sponsors and its links. remove-card takes it away again and keeps the
+issue, moving the Card's links onto it; it refuses while the Card holds work
+(a done Task, comments, notes, files) unless --confirm. Cancelling or
+deleting the issue deletes its Card.
 
 Usage
   dataops newsletter list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--status S] [--kind K]
@@ -23,7 +30,13 @@ Usage
       [--time HH:MM] [--status S] [--note N] [--url URL]
                                   weekly by default, slots open, status planned
   dataops newsletter update <issue-id> [--date D] [--number N] [--time HH:MM] [--status S]
-      [--primary-doc URL|none] [--secondary-doc URL|none] [--note N] [--url URL] [--confirm]
+      [--primary-doc URL|none] [--secondary-doc URL|none] [--note N] [--url URL]
+      [--link "NAME=URL"|"NAME=none" ...] [--confirm]
+  dataops newsletter create-card <issue-id>    Create the issue's Card now
+  dataops newsletter remove-card <issue-id> [--dry-run] [--confirm]
+                                  Remove the Card, keep the issue; --dry-run shows what
+                                  would move to the issue and what keeps the Card
+  dataops newsletter due-cards [--dry-run]     Run the daily Card creation now
   dataops newsletter sponsors                  Who a slot can be booked for (deals, organizations)
   dataops newsletter book <issue-id> <primary|secondary> (--deal <deal-id> | --organization <org-id>)
                                   Books the slot (replacing a previous sponsor); an
@@ -62,6 +75,23 @@ function slotChanges(args, current = {}) {
   return slots;
 }
 
+/** `--link "Name=https://..."` adds or replaces a link by name; `Name=none` removes it. */
+function linkChanges(args, current = []) {
+  if (args.link === undefined) return undefined;
+  const links = [...current];
+  for (const value of Array.isArray(args.link) ? args.link : [args.link]) {
+    const text = String(value);
+    const at = text.indexOf("=");
+    if (at < 1) throw new UsageError(`--link takes NAME=URL, got "${text}".`);
+    const name = text.slice(0, at).trim();
+    const url = text.slice(at + 1).trim();
+    const index = links.findIndex((link) => link.name === name);
+    if (index >= 0) links.splice(index, 1);
+    if (url !== "none") links.push({ name, url });
+  }
+  return links;
+}
+
 function issueFields(args) {
   const body = {};
   const date = isoDate(optionalString(args, "date"), "date");
@@ -73,6 +103,12 @@ function issueFields(args) {
   if (args.number !== undefined) body.issueNumber = integer(args.number, "number");
   return body;
 }
+
+const cardText = (issue) => {
+  if (issue.card) return `${issue.card.openTaskCount}/${issue.card.taskCount} open`;
+  if (issue.cardId) return `${issue.cardId} (unavailable)`;
+  return issue.cardDueDate ? `due ${issue.cardDueDate}` : "";
+};
 
 const slotText = (issue) =>
   POSITIONS.filter((position) => issue.slots?.[position])
@@ -100,7 +136,7 @@ export async function list(args, io) {
     ["ISSUE", (issue) => issue.label || ""],
     ["STATUS", (issue) => issue.status],
     ["SLOTS", slotText],
-    ["CARD", (issue) => issue.card ? `${issue.card.openTaskCount}/${issue.card.taskCount} open` : issue.cardId || ""],
+    ["CARD", cardText],
   ], "No newsletter issues in range.");
   for (const alert of result.alerts || []) io.print(`alert ${alert.id}: ${alert.reasonCode} (${alert.issueId})`);
   return result;
@@ -113,6 +149,8 @@ export async function show(args, io) {
   fields(io, Object.entries(issue).filter(([, value]) => typeof value !== "object" || value === null));
   io.print(`slots: ${slotText(issue)}`);
   if (issue.card) io.print(`card: ${issue.card.id} ${issue.card.title} (${issue.card.openTaskCount}/${issue.card.taskCount} open)`);
+  else if (issue.cardDueDate) io.print(`card: none yet; the daily run creates it on ${issue.cardDueDate}`);
+  for (const link of issue.links || []) io.print(`link: ${link.name} ${link.url}`);
   return issue;
 }
 
@@ -137,6 +175,8 @@ export async function update(args, io) {
   const body = issueFields(args);
   const slots = slotChanges(args, current.slots);
   if (Object.keys(slots).length) body.slots = slots;
+  const links = linkChanges(args, current.links);
+  if (links !== undefined) body.links = links;
   if (!Object.keys(body).length) throw new UsageError("Nothing to change. See `dataops newsletter --help`.");
   if (args.confirm) Object.assign(body, { confirmCardDeletion: true, confirmSlotRemoval: true });
   const issue = await api.put(`/api/newsletter-issues/${enc(id)}`, { ...body, version: current.version });
@@ -191,6 +231,41 @@ export async function release(args, io) {
   return issue;
 }
 
+export async function createCard(args, io) {
+  const id = positional(args, 0, "dataops newsletter create-card <issue-id>");
+  const api = apiFor(args);
+  const current = await api.get(`/api/newsletter-issues/${enc(id)}`);
+  const issue = await api.post(`/api/newsletter-issues/${enc(id)}/card`, { version: current.version });
+  if (!args.json) io.print(`${current.cardId ? "Already has" : "Created"} Card ${issue.cardId} for ${issue.label} on ${issue.publicationDate}.`);
+  return issue;
+}
+
+export async function removeCard(args, io) {
+  const id = positional(args, 0, "dataops newsletter remove-card <issue-id> [--dry-run] [--confirm]");
+  const api = apiFor(args);
+  const current = await api.get(`/api/newsletter-issues/${enc(id)}`);
+  const result = await api.delete(`/api/newsletter-issues/${enc(id)}/card`, {
+    version: current.version,
+    ...(args.dryRun ? { dryRun: true } : {}),
+    ...(args.confirm ? { confirmCardDeletion: true } : {}),
+  });
+  if (args.json) return result;
+  io.print(`${result.removed ? "Removed" : "Would remove"} Card ${result.cardId} from ${current.label}.`);
+  for (const reason of result.keep || []) io.print(`keeps it: ${reason}`);
+  for (const move of result.moves || []) io.print(`moves ${move.from} -> ${move.to}`);
+  return result;
+}
+
+export async function dueCards(args, io) {
+  const result = await apiFor(args).post("/api/newsletter-issues/create-due-cards", args.dryRun ? { dryRun: true } : {});
+  if (args.json) return result;
+  const rows = result.dryRun ? result.due : result.created;
+  io.print(`${result.dryRun ? "Due" : "Created"}: ${rows.length} Card(s) for ${result.today}.`);
+  for (const row of rows) io.print(`  ${row.publicationDate} ${row.label}${row.cardId ? ` -> ${row.cardId}` : ""}`);
+  for (const failure of result.failures) io.print(`  failed: ${failure.label}: ${failure.error}`);
+  return result;
+}
+
 export async function remove(args, io) {
   const id = positional(args, 0, "dataops newsletter delete <issue-id> [--confirm]");
   const api = apiFor(args);
@@ -238,6 +313,9 @@ export const commands = {
   sponsors,
   book,
   release,
+  "create-card": createCard,
+  "remove-card": removeCard,
+  "due-cards": dueCards,
   "dismiss-alert": dismissAlert,
   "card-lead-days": cardLeadDays,
 };

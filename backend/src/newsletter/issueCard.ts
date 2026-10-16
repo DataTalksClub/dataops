@@ -1,37 +1,50 @@
 /**
  * The Card of a newsletter issue.
  *
- * Every issue that is not cancelled has exactly one Card, created from the
- * Template of its kind (weekly -> `newsletter`, stand-alone ->
- * `newsletter-standalone`) in the same transaction as the issue row. A weekly
- * Card starts with the slot task groups (`primary-slot`, `secondary-slot`) of
- * the slots that have a booked sponsor and no others. Booking a slot later
- * adds its group's Tasks; releasing it skips the group's open ones. A group
- * enabled on the Card itself stays until its slot is released. The issue owns
- * the shared facts (date, issue number, sponsors, title) and pushes them onto
- * the Card.
+ * An issue has at most one Card, created from the Template of its kind
+ * (weekly -> `newsletter`, stand-alone -> `newsletter-standalone`) when it is
+ * due (`cardSchedule.ts`) or on request, in the same transaction as the issue
+ * row's next version. The new Card is filled from the issue: sponsors booked
+ * in the Sponsors tab fill open slots, a weekly Card starts with the task
+ * groups (`primary-slot`, `secondary-slot`) of its booked slots and no
+ * others, and the issue's links fill the Card's link slots. Booking a slot
+ * later adds its group's Tasks; releasing it skips the group's open ones. A
+ * group enabled on the Card itself stays until its slot is released. The
+ * issue owns the shared facts (date, issue number, sponsors, title) and
+ * pushes them onto the Card.
  */
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getCardConsistent } from '../db/cards';
 import { applyCardTemplateUpdate } from '../db/cardTemplateUpdates';
-import { createIssueWrite, type NewsletterIssue, type NewsletterSlotPosition } from '../db/newsletterIssues';
-import type { PlannedWrite } from '../db/plannedWrite';
+import {
+  nextNewsletterIssue,
+  replaceIssueWrite,
+  type NewsletterIssue,
+  type NewsletterSlotPosition,
+} from '../db/newsletterIssues';
+import { getCrmRecord } from '../db/sponsorCrm';
 import { listTasksByCardConsistent, updateTask } from '../db/tasks';
 import { getTemplate, listTemplates } from '../db/templates';
 import type { VerifiedActor } from '../identity/actor';
 import { buildCardTemplateUpdatePlan } from '../templates/cardTemplateUpdates';
 import { dateFromTemplateOffset } from '../templates/cardTemplateProjection';
-import type { Card, Task, Template } from '../types';
-import { createCardFromInput, type CardCreation } from '../cards/createCard';
+import type { Card, CardLink, LambdaResponse, Task, Template } from '../types';
+import { createCardFromInput } from '../cards/createCard';
 import { newsletterIssueTitleValues, renderCardTitle } from '../cards/cardTitlePattern';
 import { pushFieldsToCard } from '../cards/recordCardLink';
+import { channelSlot, issueDeliverables } from './slotBooking';
 
 export const ISSUE_TEMPLATE_TYPE = { weekly: 'newsletter', standalone: 'newsletter-standalone' } as const;
 export const SLOT_POSITIONS = { weekly: ['primary', 'secondary'], standalone: ['primary'] } as const;
 export const SLOT_GROUP: Record<NewsletterSlotPosition, string> = {
   primary: 'primary-slot',
   secondary: 'secondary-slot',
+};
+/** The Card link a slot's sponsorship document fills. */
+export const SLOT_DOCUMENT_LINK: Record<NewsletterSlotPosition, string> = {
+  primary: 'Sponsorship document',
+  secondary: 'Secondary sponsorship document',
 };
 
 /** The slot task groups of a weekly issue's booked slots. */
@@ -83,18 +96,53 @@ export async function issueTemplate(client: DynamoDBDocumentClient, issue: Pick<
   return (await listTemplates(client)).find((template) => template.type === type) || null;
 }
 
+/** The issue with each open slot filled from its booking in the Sponsors tab. */
+export async function issueWithBookings(client: DynamoDBDocumentClient, issue: NewsletterIssue): Promise<NewsletterIssue> {
+  const slots = structuredClone(issue.slots);
+  for (const deliverable of await issueDeliverables(client, issue.id)) {
+    const position = channelSlot(issue.kind, deliverable.channel);
+    if (!position || slots[position]?.sponsor) continue;
+    const org = await getCrmRecord(client, 'organization', String(deliverable.organizationId));
+    if (org?.displayName) slots[position] = { ...(slots[position] || {}), sponsor: String(org.displayName) };
+  }
+  return { ...issue, slots };
+}
+
 /**
- * Create the issue's Card and write the issue in one transaction.
- * `issueWrite` receives the new Card's id and returns the issue row write
- * (a create, or a version-conditional replace when a cancelled issue is
- * reinstated).
+ * The Card's links: the Template's link slots, filled from the slots'
+ * sponsorship documents and the issue's links of the same name, then the
+ * issue's other links.
+ */
+export function issueCardLinks(template: Pick<Template, 'cardLinkDefinitions'>, issue: NewsletterIssue): CardLink[] {
+  const byName = new Map<string, string>();
+  for (const link of issue.links || []) if (!byName.has(link.name)) byName.set(link.name, link.url);
+  for (const position of SLOT_POSITIONS[issue.kind] as readonly NewsletterSlotPosition[]) {
+    const url = issue.slots[position]?.documentUrl;
+    if (url) byName.set(SLOT_DOCUMENT_LINK[position], url);
+  }
+  const names = new Set((template.cardLinkDefinitions || []).map((definition) => definition.name));
+  return [
+    ...(template.cardLinkDefinitions || []).map((definition) => ({ name: definition.name, url: byName.get(definition.name) || '' })),
+    ...(issue.links || []).filter((link) => !names.has(link.name)).map((link) => ({ name: link.name, url: link.url })),
+  ];
+}
+
+export type IssueCardCreation =
+  | { ok: true; card: Card; issue: NewsletterIssue }
+  | { ok: false; response: LambdaResponse };
+
+/**
+ * Create the issue's Card, filled from the issue, and write the issue's next
+ * version (its bookings filled in, `cardId` set) in the same transaction,
+ * conditional on the version read, so an issue never gets two Cards.
+ * `ownerId` sets the Card owner (the daily run passes the default assignee).
  */
 export async function createIssueCard(
   client: DynamoDBDocumentClient,
   actor: VerifiedActor,
   issue: NewsletterIssue,
-  issueWrite: (cardId: string) => PlannedWrite = (cardId) => createIssueWrite({ ...issue, cardId }),
-): Promise<CardCreation> {
+  options: { ownerId?: string | null } = {},
+): Promise<IssueCardCreation> {
   const template = await issueTemplate(client, issue);
   if (!template) {
     return {
@@ -106,23 +154,34 @@ export async function createIssueCard(
       },
     };
   }
-  const fields = issueCardFields(issue);
-  const title = (template.cardTitle && renderCardTitle(template.cardTitle, newsletterIssueTitleValues(issue)))
-    || issueLabel(issue);
-  return createCardFromInput(
+  const filled = await issueWithBookings(client, issue);
+  const fields = issueCardFields(filled);
+  const title = (template.cardTitle && renderCardTitle(template.cardTitle, newsletterIssueTitleValues(filled)))
+    || issueLabel(filled);
+  let next: NewsletterIssue | null = null;
+  const created = await createCardFromInput(
     client,
     actor,
     {
       title,
       anchorDate: fields.anchorDate,
       templateId: template.id,
-      ...(issue.kind === 'weekly' ? { optionalGroups: issueTaskGroups(issue) } : {}),
+      cardLinks: issueCardLinks(template, filled),
+      ...(filled.kind === 'weekly' ? { optionalGroups: issueTaskGroups(filled) } : {}),
       ...(fields.issueNumber ? { issueNumber: fields.issueNumber } : {}),
       ...(fields.sponsor ? { sponsor: fields.sponsor } : {}),
       ...(fields.secondarySponsors.length ? { secondarySponsors: fields.secondarySponsors } : {}),
+      ...(options.ownerId !== undefined ? { ownerId: options.ownerId } : {}),
     },
-    { companions: (card) => [issueWrite(card.id)] },
+    {
+      companions: (card) => {
+        next = nextNewsletterIssue(issue, { slots: filled.slots, cardId: card.id });
+        return [replaceIssueWrite(issue, next)];
+      },
+    },
   );
+  if (!created.ok) return created;
+  return { ok: true, card: created.card, issue: next! };
 }
 
 /** Push date, issue number, sponsors and title onto the issue's Card. */

@@ -18,6 +18,9 @@ export type CalendarOverlayItem = {
     issueNumber: number | null;
     slots: { position: string; sponsor: string | null }[];
     booked: number;
+    /** The issue's Card, or when the daily run creates it. */
+    cardId: string | null;
+    cardDueDate: string | null;
   };
 };
 

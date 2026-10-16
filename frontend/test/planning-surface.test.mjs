@@ -1222,6 +1222,7 @@ describe("Planning surface production behavior", () => {
             status: "planned",
             slots: { primary: {}, secondary: {} },
             card: null,
+            cardDueDate: "2026-08-20",
           }),
           {
             id: "issue-3",
@@ -1230,6 +1231,7 @@ describe("Planning surface production behavior", () => {
             publicationDate: "2026-08-26",
             status: "planned",
             slots: { primary: { sponsor: "Solo Sponsor" } },
+            cardId: "card-gone",
             card: null,
           },
         ],
@@ -1265,7 +1267,11 @@ describe("Planning surface production behavior", () => {
     assert.match(html, /data-card-date-mismatch><span class="newsletter-card-chip__warning-label">Card dated <\/span>\s*20 Aug/);
     assert.match(html, /Card unavailable/);
     assert.doesNotMatch(html, /Open campaign|More actions/, "the campaign link lives in the issue's details, not on the row");
-    assert.doesNotMatch(html, /data-card-create|data-card-link|Create card|Link card/);
+    // No Card yet: when the daily run makes it, and a button to make it now.
+    assert.match(html, /<span class="newsletter-card-due" data-card-due>Card in 7 days<\/span>/);
+    assert.match(html, /data-create-card="issue-2"\s+aria-label="Create the card for Weekly #43 now">Create card now<\/button>/);
+    assert.doesNotMatch(html, /data-create-card="issue-(1|3)"/);
+    assert.doesNotMatch(html, /data-card-link|Link card/);
     const range = new URL(harness.requests[0].url).searchParams;
     assert.match(harness.requests[0].url, /\/api\/newsletter-issues\?/);
     assert.equal(range.get("from"), "2026-08-01");
@@ -1317,6 +1323,33 @@ describe("Planning surface production behavior", () => {
     }
   });
 
+  test("Create card now posts the issue version and reloads the row with its card", async () => {
+    const dom = createNewsletterDom();
+    let issue = weeklyIssue({ id: "issue-5", version: 4, publicationDate: "2026-12-07", status: "planned", card: null, cardDueDate: "2026-11-16" });
+    const posts = [];
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      request: async (url, options = {}) => {
+        if (options.method === "POST") {
+          posts.push({ url: String(url), body: JSON.parse(options.body) });
+          issue = { ...issue, version: 5, cardId: "card-5", cardDueDate: null,
+            card: { id: "card-5", title: "7 Dec", stage: "preparation", status: "active", anchorDate: "2026-12-07", taskCount: 3, openTaskCount: 3 } };
+          return issue;
+        }
+        return { alerts: [], items: [issue] };
+      },
+    });
+    await harness.surface.renderNewsletterSurface();
+    assert.match(dom.slots.innerHTML, /Card in \d+ days/);
+    const button = { disabled: false, dataset: { createCard: "issue-5" } };
+    dom.slots.onclick({ target: { closest: (selector) => (selector === "[data-create-card]" ? button : null) } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.match(posts[0].url, /\/api\/newsletter-issues\/issue-5\/card$/);
+    assert.deepEqual(posts[0].body, { version: 4 });
+    assert.match(dom.slots.innerHTML, /href="\/cards\?cardId=card-5"/);
+    assert.doesNotMatch(dom.slots.innerHTML, /data-create-card/);
+  });
+
   test("supports Newsletter week grouping, filtering, create/edit, and slot fields", async () => {
     const dom = createNewsletterDom();
     const items = [
@@ -1348,7 +1381,7 @@ describe("Planning surface production behavior", () => {
     assert.equal(dom.dialog.open, true);
     assert.equal(dom.form.elements.kind.value, "weekly");
 
-    dom.slots.onclick({ target: { closest: () => ({ dataset: { edit: "issue-1" } }) } });
+    dom.slots.onclick({ target: { closest: (selector) => (selector === "[data-edit]" ? { dataset: { edit: "issue-1" } } : null) } });
     assert.equal(dom.form.elements.issueNumber.value, 7);
     assert.equal(dom.form.elements.version.value, 3);
     assert.equal(dom.form.elements.primaryDocumentUrl.value, "");

@@ -14,6 +14,7 @@ import { evaluateCommunicationSuggestions } from '../sponsorCommunications/sugge
 import { templateCardProjection } from '../templates/cardTemplateProjection';
 import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { recordAutomationRun } from '../automations/runs';
+import { createDueIssueCards, type DueCardRun } from '../newsletter/cardSchedule';
 
 export interface CronRunnerResult {
   created: string[];
@@ -28,6 +29,8 @@ export interface CronRunnerResult {
     skipped: number;
     failures: number;
   };
+  /** Newsletter issue Cards that came due today. */
+  newsletterCards: Pick<DueCardRun, 'created' | 'failures'>;
   failures: number;
 }
 
@@ -166,6 +169,37 @@ async function runCron(
     emitRecurringCronMetrics({ passes: 1, failures: recurringFailures });
   }
 
+  // Newsletter issue Cards come due a set number of days before the issue.
+  const newsletterCards: CronRunnerResult['newsletterCards'] = { created: [], failures: [] };
+  try {
+    const run = await createDueIssueCards(client, todayDate);
+    newsletterCards.created = run.created;
+    newsletterCards.failures = run.failures;
+    failures += run.failures.length;
+    for (const failure of run.failures) {
+      await createNotification(client, {
+        type: 'automation-failure',
+        message: `Newsletter Card for ${failure.label} was not created on ${todayDate}: ${failure.error}`,
+        dueAt: todayDate,
+      });
+    }
+  } catch (err: unknown) {
+    failures++;
+    newsletterCards.failures.push({ issueId: '', label: 'newsletter issues', error: (err as Error).message });
+    await createNotification(client, {
+      type: 'automation-failure',
+      message: `Newsletter Card creation failed for ${todayDate}: ${(err as Error).message}`,
+      dueAt: todayDate,
+    });
+  }
+  await recordAutomationRun(client, 'newsletter-cards', {
+    ok: newsletterCards.failures.length === 0,
+    summary: [
+      `${plural(newsletterCards.created.length, 'card')} created`,
+      ...(newsletterCards.failures.length ? [plural(newsletterCards.failures.length, 'failure')] : []),
+    ].join(', '),
+  }, today);
+
   for (const template of autoTemplates) {
     try {
       // 3. Check if today matches the cron schedule
@@ -275,6 +309,7 @@ async function runCron(
     skipped: skipped + recurringSkipped,
     templates: { created, skipped, recovered },
     recurring: { generated: recurringGenerated, skipped: recurringSkipped, failures: recurringFailures },
+    newsletterCards,
     failures,
   };
 }

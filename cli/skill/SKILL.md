@@ -149,8 +149,11 @@ Card is then named from the pattern.
 
 For a one-off Task: `dataops tasks create --description "..." --date 2026-11-02 [--card <card-id>]`.
 
-For a newsletter issue: `dataops newsletter list`. Every issue already has its Card
-(created with the issue from the newsletter Template of its kind). Book a slot for a
+For a newsletter issue: `dataops newsletter list`. An issue is planned without a Card;
+the daily run creates its Card `dataops newsletter card-lead-days` days before the issue
+date (CARD shows "due YYYY-MM-DD" until then), and `dataops newsletter create-card <issue-id>`
+creates it now. `remove-card <issue-id> --dry-run` shows what removing a Card would move to
+the issue and whether it holds work. Book a slot for a
 sponsor from the Sponsors tab with `dataops newsletter sponsors` (pick a deal or an
 organization) and `dataops newsletter book <issue-id> primary|secondary --deal <id>`;
 booking records a deliverable on the deal and adds the slot's Tasks to the Card.

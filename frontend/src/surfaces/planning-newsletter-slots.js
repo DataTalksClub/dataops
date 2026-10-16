@@ -54,6 +54,16 @@ export function issueSlotsMarkup(item, escapeHtml) {
       </ul>`;
 }
 
+/** "Card in 12 days" for an issue whose Card the daily run creates on `cardDueDate`. */
+export function cardDueLabel(cardDueDate, todayIso) {
+  if (!cardDueDate || !todayIso) return "";
+  const days = Math.round(
+    (Date.parse(`${cardDueDate}T00:00:00Z`) - Date.parse(`${String(todayIso).slice(0, 10)}T00:00:00Z`)) / 86400000,
+  );
+  if (days <= 0) return "Card due today";
+  return days === 1 ? "Card tomorrow" : `Card in ${days} days`;
+}
+
 let sponsorOptionsCache = null;
 
 /** Who a slot can be booked for, shared by every picker for a minute. */
