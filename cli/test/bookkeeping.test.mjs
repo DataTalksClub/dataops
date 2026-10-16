@@ -56,7 +56,7 @@ test("rows map to transactions with content keys that survive reordering", () =>
   assert.equal(sponsor.record.entryType, "income");
   assert.equal(sponsor.record.amount, "5000.00");
   assert.equal(tool.record.period, "Annually", "spelling variants collapse to one value");
-  assert.equal(tool.record.category, "Work-related tools", "stray whitespace is trimmed");
+  assert.equal(tool.record.category, "Work-related", "trimmed, and the old long spelling merges into the short one");
   assert.deepEqual(todo, { tab: "2026", row: 5, skip: "no amount" });
   const lines = CURRENT.split("\n");
   const reordered = sheet.readTab("2026", sheet.parseCsv([lines[0], lines[3], lines[1], lines[2]].join("\n")));
@@ -126,7 +126,7 @@ test("classification fills only from agreeing history of the same provider and d
     item("g", { counterparty: "Example Tool", sponsorDealId: "deal-1" }),
   ], { since: "2025-01-01" });
   assert.deepEqual(plan.locked.map((entry) => entry.id), ["g"]);
-  assert.deepEqual(plan.fills, [{ id: "c", transactionDate: "2026-09-01", counterparty: "Example Tool", changes: { subtype: "Subscription", category: "Work-related tools" } }]);
+  assert.deepEqual(plan.fills, [{ id: "c", transactionDate: "2026-09-01", counterparty: "Example Tool", changes: { subtype: "Subscription", category: "Work-related" } }]);
   assert.deepEqual(plan.unresolved.map((entry) => entry.id), ["d", "e"]);
 });
 

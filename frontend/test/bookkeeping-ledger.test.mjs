@@ -30,7 +30,7 @@ const rows = Object.freeze([
   { id: "c", transactionDate: "2026-08-30", counterparty: "Ride Co", description: "Taxi", amount: "12.50", currency: "EUR",
     entryType: "expense", statementRef: "Card - statement-2026-08-Ride.pdf" },
   { id: "d", transactionDate: "2026-09-01", counterparty: "Scheduler", description: "Pro plan", amount: "15", currency: "USD",
-    entryType: "expense", statementRef: "Northbank", subtype: "subscription ", category: "Work-related tools", period: "Monthly" },
+    entryType: "expense", statementRef: "Northbank", subtype: "subscription ", category: "Work-related", period: "Monthly" },
 ]);
 
 test("amounts split into a signed original-currency value and a signed EUR value", () => {

@@ -58,13 +58,13 @@ const mountScript = async () => {
     ["Cloudbase Hosting", "Cloud services", "USD", "Cloud purchase", "Infrastructure", "Monthly", "Northbank"],
     ["Wordsmith AI", "Assistant Pro subscription", "USD", "Subscription", "AI Tools", "Monthly", "Northbank"],
     ["Mailstream", "Newsletter platform plan", "EUR", "Subscription", "Newsletter platform", "Monthly", "Ledgerly"],
-    ["Office Suite Co", "Workspace seats", "EUR", "Subscription", "Work-related tools", "Monthly", "Ledgerly"],
+    ["Office Suite Co", "Workspace seats", "EUR", "Subscription", "Work-related", "Monthly", "Ledgerly"],
     ["Jane Example", "Podcast editing", "EUR", "Services", "Freelance & Contractors", "Monthly", "Northbank"],
     ["Ride Share GmbH", "Taxi to venue", "EUR", "", "", "", "Card - statement-2026-09-Ride.pdf"],
     ["Example Analytics Ltd", "Newsletter sponsorship (September 2026)", "EUR", "Sponsorship", "Newsletter", "One-time", "Northbank"],
     ["Data Vendor AG", "Workshop sponsorship, second installment with a long description that truncates", "EUR", "", "", "", "Northbank"],
     ["Hotel Example", "Conference stay", "EUR", "", "", "", "Northbank"],
-    ["Scheduling App", "Pro plan", "USD", "Subscription", "Work-related tools", "Monthly", "Northbank"],
+    ["Scheduling App", "Pro plan", "USD", "Subscription", "Work-related", "Monthly", "Northbank"],
   ];
   const entries = [];
   let n = 0;

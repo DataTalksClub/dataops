@@ -117,6 +117,10 @@ const CANONICAL = {
     yearly: "Annually",
     reccurent: "Recurrent",
     recurrent: "Recurrent",
+    "one-time purchase": "One-time",
+  },
+  category: {
+    "work-related tools": "Work-related",
   },
 };
 
