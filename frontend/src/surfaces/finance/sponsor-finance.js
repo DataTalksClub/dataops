@@ -499,6 +499,7 @@ export function createSponsorFinance(context) {
         >${escapeHtml(`${projection.invoiceState} ${projection.paymentState} ${projection.timingState} ${projection.reconciliationStatus}`)}</span
       >
       ${nextStep} ${waitingBanner}
+      ${finance.voidReason ? html`<p>Cancellation reason: ${escapeHtml(finance.voidReason)}</p>` : ""}
       <header>
         <div>
           <h3>${escapeHtml(humanizeOptionLabel(projection.paymentState))}</h3>

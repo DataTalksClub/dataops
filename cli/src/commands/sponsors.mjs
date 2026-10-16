@@ -19,15 +19,17 @@ Usage
   dataops sponsors messages <organization-id>          Communications with an organization
   dataops sponsors history <deal-id>                   A deal's change history
   dataops sponsors finance <deal-id> [history|candidates/invoices|candidates/payments]
-  dataops sponsors follow-up <deal-id> [--date YYYY-MM-DD]  Create a main-pool payment follow-up
+  dataops sponsors follow-up <deal-id> [--date YYYY-MM-DD]  Queue the next finance action (classification, invoice, verification or payment)
       [--task ID | --review-existing]  Link an existing deal Task, or confirm review before adding separate work
   dataops sponsors attach-invoice <deal-id> --file original.pdf [--apply]
       Attach an original issued invoice through verified private storage; no payment is created.
   dataops sponsors receive-payment <deal-id> --data @receipt.json [--apply]
       Required: receivedOn, amount, currency, counterparty, reference (bank/account + unique transaction ID).
-      Creates and links bookkeeping atomically. Link an existing ledger row instead of recreating it.
+      Creates and links bookkeeping atomically. Optional: amountEur, category, replacesPaymentId.
+      Link an existing ledger row instead of recreating it. Use --idempotency-key KEY for safe retries.
   dataops sponsors correct-payment <deal-id> <transaction-id> --data @receipt.json [--apply]
-      Correct actual receipt amount/date/reference and optional amountEur; nominal invoice stays unchanged.
+      Correct actual amount/date, optional amountEur/category; retain the original bank transaction reference.
+      The nominal invoice stays unchanged. Missing replacement FX value is cleared when foreign cash changes.
   dataops sponsors link-payment <deal-id> <transaction-id> [--apply]
       Link a bookkeeping transaction to the deal as its payment. A payment the deal
       recorded before the row existed (same amount, within 14 days) is replaced by
