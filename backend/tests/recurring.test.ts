@@ -169,6 +169,32 @@ describe('Recurring configs data layer', () => {
     assert.strictEqual(new Date(`${weekday!.nextRunDate}T00:00:00Z`).getUTCDay(), 4);
   });
 
+  it('a schedule recomputed after today\'s pass fired it walks from tomorrow', async () => {
+    await disableAllConfigs();
+
+    const created = await createRecurringConfig(client, {
+      description: 'Recompute after today',
+      cronExpression: '0 9 * * *',
+    });
+    const today = berlinDate();
+    await generateRecurringTasks(client, today, today);
+
+    // Resaving the same schedule must not offer today, which has already run.
+    const resaved = await updateRecurringConfig(client, created.id, { cronExpression: '0 9 * * *' });
+    assert.strictEqual(resaved!.nextRunDate, shiftIsoDate(today, 1));
+
+    // A schedule that has not fired today still walks from today.
+    const fresh = await createRecurringConfig(client, {
+      description: 'Recompute before today',
+      cronExpression: '0 9 * * 1',
+    });
+    const edited = await updateRecurringConfig(client, fresh.id, { cronExpression: '0 9 * * *' });
+    assert.strictEqual(edited!.nextRunDate, today);
+
+    await updateRecurringConfig(client, created.id, { enabled: false });
+    await updateRecurringConfig(client, fresh.id, { enabled: false });
+  });
+
   it('leaves the next run date alone when the schedule did not change', async () => {
     const created = await createRecurringConfig(client, {
       description: 'Stable next run',

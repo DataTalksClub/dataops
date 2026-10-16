@@ -49,6 +49,20 @@ function nextRunBase(startDate: string, endDate: string): string {
 }
 
 /**
+ * Where a recomputed next run is walked from: today, unless the schedule
+ * already fired for today, in which case today is done and the walk starts
+ * tomorrow. Noon UTC is the same Berlin civil date whatever the offset.
+ */
+async function recomputeFrom(client: DynamoDBDocumentClient, configId: string): Promise<Date> {
+  const today = berlinDate();
+  const ranToday = await client.send(new GetCommand({
+    TableName: TABLE_TASKS,
+    Key: recurringRunKey(configId, today),
+  }));
+  return new Date(`${ranToday.Item ? addDaysToIsoDate(today, 1) : today}T12:00:00Z`);
+}
+
+/**
  * Create a new recurring config. Generates a UUID, sets createdAt/updatedAt.
  */
 async function createRecurringConfig(client: DynamoDBDocumentClient, data: Record<string, unknown>): Promise<RecurringConfig> {
@@ -103,10 +117,10 @@ async function updateRecurringConfig(client: DynamoDBDocumentClient, id: string,
   // the daily pass skipped it.
   if (updates.nextRunDate === undefined) {
     if (updates.cronExpression !== undefined) {
-      fields.nextRunDate = nextOccurrenceDate(String(updates.cronExpression));
+      fields.nextRunDate = nextOccurrenceDate(String(updates.cronExpression), await recomputeFrom(client, id));
     } else if (updates.enabled === true) {
       const current = await getRecurringConfig(client, id);
-      if (current) fields.nextRunDate = nextOccurrenceDate(current.cronExpression);
+      if (current) fields.nextRunDate = nextOccurrenceDate(current.cronExpression, await recomputeFrom(client, id));
     }
   }
 
