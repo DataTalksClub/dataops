@@ -176,7 +176,8 @@ describe("Podcast surface", () => {
     assert.deepEqual(rows(documentList), ["booked-soon", "scheduled", "booked-late"]);
     assert.ok(findByText(documentList, "Upcoming", "h3"));
     assert.equal(documentList.querySelector(".dk-stat-strip"), null);
-    assert.ok(findByText(documentList, "Select an episode"));
+    assert.equal(documentList.querySelector(".dk-split").dataset.pane, "closed");
+    assert.equal(documentList.querySelector(".dk-split__detail"), null, "no placeholder pane");
 
     const tabs = documentList.querySelector('.podcast-status-filter[role="radiogroup"]');
     assert.equal(tabs.querySelector('[data-filter="upcoming"]').getAttribute("aria-checked"), "true");

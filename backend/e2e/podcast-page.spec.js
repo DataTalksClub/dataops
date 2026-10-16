@@ -282,11 +282,15 @@ test('seasons overview shows each season as status cells, the unnumbered lane an
   const lane = page.locator('.podcast-pipeline');
   await expect(lane.locator('.dk-split__item')).toHaveCount(1);
   await expect(lane.locator(`[data-episode-id="${stuck.id}"]`)).toContainText('Stuck');
-  const attention = page.getByRole('region', { name: 'Selected episode' });
-  await expect(attention.locator('.dk-split__title')).toHaveText('Needs a look');
-  await expect(attention).toContainText('Recorded 4 months after recording');
-  await expect(attention).toContainText('Season 25: no E1');
+  // Nothing open: no detail pane, the overview takes the whole width.
+  const detail = page.getByRole('region', { name: 'Selected episode' });
+  await expect(detail).toHaveCount(0);
+  const split = page.locator('.podcast-split');
+  const listBox = await page.locator('.podcast-split > .dk-split__list').boundingBox();
+  const splitBox = await split.boundingBox();
+  expect(listBox.width).toBeGreaterThan(splitBox.width - 4);
   await expect(page.locator('.dk-stat-strip')).toHaveCount(0);
+  await shoot(page, 'seasons');
 
   // Hover shows the summary; a click opens the episode in the detail pane.
   const cell = s25.locator(`[data-episode-id="${episodes.published.id}"]`);
@@ -299,9 +303,17 @@ test('seasons overview shows each season as status cells, the unnumbered lane an
   await page.mouse.move(0, 0);
   await cell.click();
   await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.published.id}$`));
-  await expect(attention.locator('.dk-split__title')).toHaveText('From notebook to service');
+  await expect(detail.locator('.dk-split__title')).toHaveText('From notebook to service');
   await expect(cell).toHaveAttribute('aria-current', 'true');
+  expect((await page.locator('.podcast-split > .dk-split__list').boundingBox()).width).toBeLessThan(splitBox.width - 200);
   await shoot(page, 'seasons-detail');
+
+  // Close puts the overview back at full width; the episode reopens from its cell.
+  await detail.getByRole('button', { name: 'Close episode' }).click();
+  await expect(page).toHaveURL(/\/podcast$/);
+  await expect(detail).toHaveCount(0);
+  await cell.click();
+  await expect(detail.locator('.dk-split__title')).toHaveText('From notebook to service');
 
   // Keyboard focus opens the same summary.
   await s24.locator(`[data-episode-id="${episodes.older.id}"]`).focus();

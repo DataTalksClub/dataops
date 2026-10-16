@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import {
-  attentionOf, buildSeasonGrid, countsLabel, episodeFlag, formatAge, numberingLabel, STALE_DAYS,
+  buildSeasonGrid, countsLabel, episodeFlag, formatAge, numberingLabel, STALE_DAYS,
 } from "../src/surfaces/podcast/seasons-model.js";
 import { createPodcastSurface } from "../src/surfaces/podcast/index.js";
 import { FakeDocument, FakeElement, findAllByClass, findByText, nextTicks } from "./support/fake-dom.mjs";
@@ -79,14 +79,6 @@ describe("seasons model", () => {
     assert.equal(grid.pipeline[2].flag, null);
     assert.deepEqual(grid.loose.map((item) => item.id), ["loose"]);
   });
-
-  test("attention lists flagged episodes longest first and seasons whose numbering is off", () => {
-    const { flagged, numbering } = attentionOf(buildSeasonGrid(REGISTER, TODAY));
-    assert.deepEqual(flagged.map((item) => item.episode.id), ["kim", "late"]);
-    assert.deepEqual(numbering.map((row) => [row.season, row.label, row.duplicates.map((item) => item.id)]), [
-      [3, "E4 twice · no E2, E3", ["s3e4a", "s3e4b"]],
-    ]);
-  });
 });
 
 function harness({ routeId = "", view = "" } = {}) {
@@ -123,7 +115,7 @@ function harness({ routeId = "", view = "" } = {}) {
 }
 
 describe("Podcast seasons view", () => {
-  test("is the default: cells per season, gaps, duplicates, the unnumbered lane and what needs a look", async () => {
+  test("is the default: cells per season, gaps, duplicates, and the unnumbered lane, full width", async () => {
     const { surface, documentList } = harness();
     surface.renderPodcastSurface();
     await nextTicks(4);
@@ -154,10 +146,9 @@ describe("Podcast seasons view", () => {
     assert.ok(findByText(lane.querySelector('[data-episode-id="late"]'), "Late"));
     assert.ok(findByText(documentList, "No season", "h3"));
 
-    const detail = documentList.querySelector(".dk-split__detail");
-    assert.ok(findByText(detail, "Needs a look", "h2"));
-    assert.ok(findByText(detail, "Recorded 4 months after recording"));
-    assert.ok(findByText(detail, "Season 3: E4 twice · no E2, E3"));
+    const split = documentList.querySelector(".dk-split");
+    assert.equal(split.dataset.pane, "closed");
+    assert.equal(documentList.querySelector(".dk-split__detail"), null, "no pane until an episode opens");
   });
 
   test("a cell opens the episode in place; Back and the List tab keep the view in the URL", async () => {
@@ -167,7 +158,13 @@ describe("Podcast seasons view", () => {
     await documentList.querySelector('.podcast-cell[data-episode-id="s3e4b"]').dispatch("click", { button: 0 });
     assert.deepEqual(calls.at(-1), ["navigate", "/podcast/s3e4b", {}, { render: false }]);
     assert.equal(documentList.querySelector('.podcast-cell[data-episode-id="s3e4b"]').getAttribute("aria-current"), "true");
+    assert.equal(documentList.querySelector(".dk-split").dataset.pane, "open");
     assert.ok(findByText(documentList.querySelector(".dk-split__detail"), "Synthetic s3e4b", "h2"));
+
+    await documentList.querySelector(".podcast-detail-close").dispatch("click");
+    assert.deepEqual(calls.at(-1), ["navigate", "/podcast", {}, { restoreFocus: { kind: "split-list" } }]);
+    assert.equal(documentList.querySelector(".dk-split__detail"), null);
+    await documentList.querySelector('.podcast-cell[data-episode-id="s3e4b"]').dispatch("click", { button: 0 });
 
     await documentList.querySelector('[data-podcast-view="list"]').dispatch("click", { button: 0 });
     assert.deepEqual(calls.at(-1), ["navigate", "/podcast/s3e4b", { view: "list" }, {}]);

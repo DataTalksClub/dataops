@@ -144,25 +144,3 @@ export function numberingLabel(row) {
   if (row.gaps.length) parts.push(`no ${row.gaps.map((n) => `E${n}`).join(", ")}`);
   return parts.join(" · ");
 }
-
-/**
- * What the overview asks someone to look at: flagged episodes (stale or
- * overdue, the longest first) and seasons whose numbering has holes or
- * collisions, newest season first.
- */
-export function attentionOf(grid) {
-  const flagged = [
-    ...grid.pipeline.filter((item) => item.flag),
-    ...grid.seasons.flatMap((row) => row.cells.filter((cell) => cell.kind === "episode" && cell.flag)),
-  ]
-    .map((item) => ({ episode: item.episode, flag: item.flag }))
-    .sort((a, b) => b.flag.days - a.flag.days);
-  const numbering = grid.seasons
-    .filter((row) => row.gaps.length || row.duplicates.length)
-    .map((row) => ({
-      season: row.season,
-      label: numberingLabel(row),
-      duplicates: row.cells.filter((cell) => cell.duplicate).map((cell) => cell.episode),
-    }));
-  return { flagged, numbering };
-}

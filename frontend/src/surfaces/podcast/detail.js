@@ -14,6 +14,7 @@ import {
 } from "./model.js";
 
 const NOTES_MAX = 2000;
+const CLOSE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 
 export function conflictMessage(error) {
   return `This episode changed since you opened it: ${error?.message || "version conflict"}. `
@@ -41,7 +42,18 @@ function detailHead(documentRef, episode, actions, editing) {
     edit.addEventListener("click", () => actions.edit(episode));
     head.append(edit);
   }
+  head.append(closeButton(documentRef, actions));
   return head;
+}
+
+// Desktop closes the pane with ×; a phone has Back instead.
+function closeButton(documentRef, actions) {
+  const close = element(documentRef, "button", "dk-icon-button dk-icon-button--sm podcast-detail-close");
+  close.type = "button";
+  close.setAttribute("aria-label", "Close episode");
+  close.innerHTML = CLOSE_ICON;
+  close.addEventListener("click", () => actions.back());
+  return close;
 }
 
 function statusSection(documentRef, episode, actions, messages) {
@@ -363,17 +375,12 @@ export function renderEpisodeDetail(pane, { documentRef, episode, editing, notic
     back.innerHTML = `${SPLIT_BACK_ICON}Episodes`;
     back.addEventListener("click", () => actions.back());
     head.append(back, element(documentRef, "h2", "dk-split__title", "Episode not found"));
+    head.append(closeButton(documentRef, actions));
     const retry = button(documentRef, "Retry", "secondary");
     retry.addEventListener("click", () => actions.reload(missingId));
     const holder = element(documentRef, "div", "dk-split__empty podcast-not-found");
     holder.append(emptyState(documentRef, "Episode not found", `No episode has the id ${missingId}. It may have been deleted.`, [retry]));
     pane.append(head, holder);
-    return;
-  }
-  if (!episode) {
-    const holder = element(documentRef, "div", "dk-split__empty");
-    holder.append(emptyState(documentRef, "Select an episode", "Choose an episode to see its guests, dates, links and Card."));
-    pane.append(holder);
     return;
   }
   pane.append(detailHead(documentRef, episode, actions, editing));

@@ -3,11 +3,11 @@
 // holds drawn as dashed gaps and the numbers two episodes claim marked as
 // duplicates. Above them, the in-flight episodes that have no number yet.
 // Hovering or focusing a cell shows the episode's summary; clicking opens it
-// in the detail pane. With nothing open, the detail lists what needs a look.
+// in the detail pane.
 import { attachHovercard } from "../../core/hovercard.js";
 import { element, emptyState, formatDate, icon, statusChip } from "./dom.js";
 import { episodeCode, episodeSummary, LINK_KINDS, matchesSearch, statusLabel } from "./model.js";
-import { attentionOf, countsLabel, GRID_STATUSES, numberingLabel } from "./seasons-model.js";
+import { countsLabel, GRID_STATUSES, numberingLabel } from "./seasons-model.js";
 
 const enc = encodeURIComponent;
 
@@ -188,62 +188,4 @@ export function renderSeasonsOverview(scroll, { documentRef, grid, query, select
     section.append(label, list);
     scroll.append(section);
   }
-}
-
-function attentionLink(documentRef, episode, text, onSelect) {
-  const link = element(documentRef, "a", "podcast-attention__link");
-  link.href = `/podcast/${enc(episode.id)}`;
-  link.dataset.episodeId = episode.id;
-  const code = episodeCode(episode);
-  if (code) link.append(element(documentRef, "span", "dk-mono podcast-row__code", code));
-  link.append(element(documentRef, "span", "", episodeSummary(episode)));
-  openOnClick(link, episode.id, onSelect);
-  const item = element(documentRef, "li", "podcast-attention__item");
-  item.append(link);
-  if (text) item.append(element(documentRef, "span", "podcast-attention__why", text));
-  return item;
-}
-
-/**
- * The detail pane while nothing is open: the stuck or late episodes and the
- * seasons whose numbering needs fixing. Falls back to "Select an episode".
- */
-export function renderAttention(pane, { documentRef, grid, onSelect }) {
-  const { flagged, numbering } = attentionOf(grid);
-  if (!flagged.length && !numbering.length) {
-    const holder = element(documentRef, "div", "dk-split__empty");
-    holder.append(emptyState(documentRef, "Select an episode", "Choose an episode to see its guests, dates, links and Card."));
-    pane.append(holder);
-    return;
-  }
-  const head = element(documentRef, "header", "dk-split__head");
-  head.append(element(documentRef, "h2", "dk-split__title", "Needs a look"));
-  const scroll = element(documentRef, "div", "dk-split__scroll podcast-attention");
-  if (flagged.length) {
-    const section = element(documentRef, "section", "podcast-section");
-    section.append(element(documentRef, "h3", "podcast-section__title", "Stuck or late"));
-    const list = element(documentRef, "ul", "podcast-attention__list");
-    for (const item of flagged) list.append(attentionLink(documentRef, item.episode, item.flag.text, onSelect));
-    section.append(list);
-    scroll.append(section);
-  }
-  if (numbering.length) {
-    const section = element(documentRef, "section", "podcast-section");
-    section.append(element(documentRef, "h3", "podcast-section__title", "Numbering"));
-    const list = element(documentRef, "ul", "podcast-attention__list");
-    for (const row of numbering) {
-      const item = element(documentRef, "li", "podcast-attention__item podcast-attention__season");
-      item.append(element(documentRef, "span", "podcast-attention__season-name", `Season ${row.season}: ${row.label}`));
-      if (row.duplicates.length) {
-        const holders = element(documentRef, "ul", "podcast-attention__list");
-        for (const episode of row.duplicates) holders.append(attentionLink(documentRef, episode, "", onSelect));
-        item.append(holders);
-      }
-      list.append(item);
-    }
-    section.append(list);
-    scroll.append(section);
-  }
-  scroll.append(element(documentRef, "p", "dk-hint", "Select an episode to see its guests, dates, links and Card."));
-  pane.append(head, scroll);
 }

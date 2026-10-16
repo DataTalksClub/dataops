@@ -9,7 +9,7 @@ import { openCreateEpisodeDialog } from "./create-dialog.js";
 import { renderEpisodeDetail } from "./detail.js";
 import { element, emptyState, formatDate, select, statusChip } from "./dom.js";
 import { renderSchedule } from "./schedule.js";
-import { renderAttention, renderSeasonsOverview } from "./seasons.js";
+import { renderSeasonsOverview } from "./seasons.js";
 import { buildSeasonGrid } from "./seasons-model.js";
 import {
   episodeCode, episodeKeyDate, episodeSummary, filterEpisodes, groupEpisodes,
@@ -456,30 +456,32 @@ export function createPodcastSurface(context) {
     // Each view keeps its own list width: the overview wants room for cells.
     split.dataset.dkSplit = view === "seasons" ? "podcast-seasons" : "podcast";
     split.dataset.view = routeId ? "detail" : "list";
+    // The list takes the page until an episode opens beside it.
+    split.dataset.pane = routeId ? "open" : "closed";
     const { pane: list, scroll } = renderList(selected?.id || "", view, grid);
-    const detail = element(documentRef, "section", "dk-split__detail podcast-detail-pane");
-    detail.setAttribute("aria-label", "Selected episode");
-    if (view === "seasons" && !routeId) {
-      renderAttention(detail, { documentRef, grid, onSelect: selectEpisode });
-    } else {
+    split.append(list);
+    let detail = null;
+    if (routeId) {
+      detail = element(documentRef, "section", "dk-split__detail podcast-detail-pane");
+      detail.setAttribute("aria-label", "Selected episode");
       renderEpisodeDetail(detail, {
         documentRef,
         episode: selected,
         editing: Boolean(selected && state.editingId === selected.id),
         notice: selected ? state.notice : null,
-        missingId: routeId && !selected ? routeId : "",
+        missingId: selected ? "" : routeId,
         actions,
       });
+      split.append(detail);
     }
     state.notice = null;
-    split.append(list, detail);
     root.append(split);
     documentList.replaceChildren(root);
     scroll.scrollTop = listScrollTop;
 
     const kit = getSplit();
     if (options.opened) kit?.show?.(split, "detail");
-    else if (options.focusDetail) {
+    else if (options.focusDetail && detail) {
       (detail.querySelector("[data-dk-autofocus]") || detail.querySelector(".dk-split__title"))?.focus?.({ preventScroll: true });
     }
     if (options.focusSearch) {
