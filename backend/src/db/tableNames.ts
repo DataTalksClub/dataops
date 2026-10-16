@@ -29,6 +29,7 @@ const TABLE_SPONSOR_CRM = tableName('DATAOPS_SPONSOR_CRM_TABLE', 'SponsorCrm', '
 const TABLE_NEWSLETTER_SLOTS = tableName('DATAOPS_NEWSLETTER_SLOTS_TABLE', 'NewsletterSlots', 'newsletter-slots');
 const TABLE_CALENDAR = tableName('DATAOPS_CALENDAR_TABLE', 'Calendar', 'calendar');
 const TABLE_PODCAST_EPISODES = tableName('DATAOPS_PODCAST_EPISODES_TABLE', 'PodcastEpisodes', 'podcast-episodes');
+const TABLE_SECRETS = tableName('DATAOPS_SECRETS_TABLE', 'Secrets', 'secrets');
 
 const DATAOPS_TABLES = Object.freeze([
   TABLE_TASKS,
@@ -46,6 +47,7 @@ const DATAOPS_TABLES = Object.freeze([
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
   TABLE_PODCAST_EPISODES,
+  TABLE_SECRETS,
 ]);
 
 export {
@@ -64,5 +66,6 @@ export {
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
   TABLE_PODCAST_EPISODES,
+  TABLE_SECRETS,
   DATAOPS_TABLES,
 };

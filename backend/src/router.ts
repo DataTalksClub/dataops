@@ -7,6 +7,7 @@ import { handleTemplateRoutes } from './routes/templates';
 import { handleRecurringRoutes } from './routes/recurring';
 import { handleAutomationRoutes } from './routes/automations';
 import { handleUserRoutes } from './routes/users';
+import { handleSecretRoutes } from './routes/secrets';
 import { handleFileRoutes } from './routes/files';
 import { handleArtifactRoutes } from './routes/artifacts';
 import { handleDocsRoutes, isDocsDomainEnabled, isDocsRoute } from './docs';
@@ -369,6 +370,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       const result = await handleUserRoutes(reqPath, method, event.body || null, event);
       if (result) return result;
    }
+
+    // ── Team secrets store (admin-only) ─────────────────────────
+
+    if (reqPath.startsWith('/api/secrets')) {
+      const result = await handleSecretRoutes(reqPath, method, event, client);
+      if (result) return result;
+    }
 
     // ── Notification routes ─────────────────────────────────────
 

@@ -44,6 +44,7 @@ import {
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
   TABLE_PODCAST_EPISODES,
+  TABLE_SECRETS,
 } from '../../scripts/local-dynamodb';
 
 const ALL_TABLES = [
@@ -62,6 +63,7 @@ const ALL_TABLES = [
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
   TABLE_PODCAST_EPISODES,
+  TABLE_SECRETS,
 ];
 
 type TestDatabase = {

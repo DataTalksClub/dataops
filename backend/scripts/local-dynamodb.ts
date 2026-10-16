@@ -28,6 +28,7 @@ import {
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
   TABLE_PODCAST_EPISODES,
+  TABLE_SECRETS,
 } from '../src/db/tableNames';
 
 const DATA_DIR = path.join(__dirname, '..', '.data');
@@ -325,6 +326,15 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
       BillingMode: 'PAY_PER_REQUEST' as const,
     },
     {
+      TableName: TABLE_SECRETS,
+      KeySchema: [
+        { AttributeName: 'PK', KeyType: 'HASH' as const },
+        { AttributeName: 'SK', KeyType: 'RANGE' as const },
+      ],
+      AttributeDefinitions: [{ AttributeName: 'PK', AttributeType: 'S' as const }, { AttributeName: 'SK', AttributeType: 'S' as const }],
+      BillingMode: 'PAY_PER_REQUEST' as const,
+    },
+    {
       TableName: TABLE_SESSIONS,
       KeySchema: [
         { AttributeName: 'PK', KeyType: 'HASH' as const },
@@ -367,6 +377,7 @@ async function deleteTables(client: DynamoDBDocumentClient): Promise<void> {
     TABLE_FILES,
     TABLE_ARTIFACTS,
       TABLE_AUDIT_EVENTS,
+    TABLE_SECRETS,
     TABLE_INTAKE,
     TABLE_NOTIFICATIONS,
     TABLE_SESSIONS,
@@ -418,4 +429,5 @@ export {
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
   TABLE_PODCAST_EPISODES,
+  TABLE_SECRETS,
 };
