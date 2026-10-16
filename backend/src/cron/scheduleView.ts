@@ -1,5 +1,5 @@
 import type { RecurringConfig } from '../types';
-import { nextMatchingDate, parseCronExpression } from './cronMatch';
+import { parseCronExpression } from './cronMatch';
 
 const WEEKDAY_NAMES = Object.freeze([
   'Sunday',

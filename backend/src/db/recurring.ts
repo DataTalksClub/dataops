@@ -11,7 +11,7 @@ import { readAllPages } from './readAllPages';
 import { TABLE_TASKS } from './tableNames';
 import { loadAssignmentPolicy } from './workspaceSettings';
 import { createTask } from './tasks';
-import { cronMatchesDate, nextMatchingDate } from '../cron/cronMatch';
+import { nextOccurrenceDate, parseCronExpression, recurringOccursOn } from '../cron/cronMatch';
 import { berlinDate } from '../sponsorFinance/core';
 import type { RecurringConfig, RecurringRun, RecurringRunOutcome, Task } from '../types';
 
@@ -63,7 +63,7 @@ async function createRecurringConfig(client: DynamoDBDocumentClient, data: Recor
     updatedAt: now,
     enabled: true,
     ...data,
-    nextRunDate: nextMatchingDate(String(data.cronExpression || '')),
+    nextRunDate: nextOccurrenceDate(String(data.cronExpression || '')),
   };
 
   await client.send(
@@ -103,10 +103,10 @@ async function updateRecurringConfig(client: DynamoDBDocumentClient, id: string,
   // the daily pass skipped it.
   if (updates.nextRunDate === undefined) {
     if (updates.cronExpression !== undefined) {
-      fields.nextRunDate = nextMatchingDate(String(updates.cronExpression));
+      fields.nextRunDate = nextOccurrenceDate(String(updates.cronExpression));
     } else if (updates.enabled === true) {
       const current = await getRecurringConfig(client, id);
-      if (current) fields.nextRunDate = nextMatchingDate(current.cronExpression);
+      if (current) fields.nextRunDate = nextOccurrenceDate(current.cronExpression);
     }
   }
 
@@ -355,15 +355,15 @@ async function generateRecurringTasks(
     let outcome: RecurringRunOutcome | null = null;
 
     try {
+      const cron = parseCronExpression(config.cronExpression);
       for (const dateStr of dates) {
-        const d = new Date(dateStr + 'T00:00:00Z');
-
-        const matches = cronMatchesDate(config.cronExpression, d);
-
-        if (!matches) continue;
+        // Weekend schedule dates occur on the following Monday, so a weekend
+        // pass creates nothing and Monday's pass creates the one Task.
+        if (!cron || !recurringOccursOn(cron, dateStr)) continue;
         firedDate = dateStr;
 
-        // Idempotency check
+        // Idempotency: one Task per schedule and occurrence date, however
+        // many passes or backfills reach that date.
         const exists = await recurringTaskExists(client, config.id, dateStr);
         if (exists) {
           skipped++;
@@ -408,7 +408,7 @@ async function generateRecurringTasks(
       // Noon UTC is the same Berlin civil date whatever the offset, so the walk
       // starts from the day after the range instead of replaying it.
       ...(outcome === 'succeeded'
-        ? { nextRunDate: nextMatchingDate(config.cronExpression, new Date(`${nextRunBase(startDate, endDate)}T12:00:00Z`)) }
+        ? { nextRunDate: nextOccurrenceDate(config.cronExpression, new Date(`${nextRunBase(startDate, endDate)}T12:00:00Z`)) }
         : {}),
     });
   }

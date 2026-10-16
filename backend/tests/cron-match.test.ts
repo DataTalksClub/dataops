@@ -5,8 +5,9 @@ import {
   cronFieldMatches,
   cronMatchesCivilDate,
   cronMatchesDate,
-  nextMatchingDate,
+  nextOccurrenceDate,
   parseCronExpression,
+  recurringOccursOn,
 } from '../src/cron/cronMatch';
 import { describeSchedule, nextRunLabel, recurringConfigView } from '../src/cron/scheduleView';
 
@@ -125,45 +126,99 @@ describe('cron matching', () => {
     });
   });
 
-  describe('nextMatchingDate', () => {
-    it('returns today when today matches', () => {
-      assert.strictEqual(nextMatchingDate('0 9 * * *', new Date('2028-01-15T12:00:00Z')), '2028-01-15');
+  describe('recurringOccursOn', () => {
+    it('moves a monthly 1st that lands on a Sunday to the Monday', () => {
+      const first = parseCronExpression('0 9 1 * *')!;
+      // 2026-11-01 is a Sunday.
+      assert.strictEqual(recurringOccursOn(first, '2026-10-31'), false);
+      assert.strictEqual(recurringOccursOn(first, '2026-11-01'), false);
+      assert.strictEqual(recurringOccursOn(first, '2026-11-02'), true);
+      assert.strictEqual(recurringOccursOn(first, '2026-11-03'), false);
+    });
+
+    it('moves a monthly 1st that lands on a Saturday to the Monday', () => {
+      const first = parseCronExpression('0 9 1 * *')!;
+      // 2026-08-01 is a Saturday.
+      assert.strictEqual(recurringOccursOn(first, '2026-08-01'), false);
+      assert.strictEqual(recurringOccursOn(first, '2026-08-02'), false);
+      assert.strictEqual(recurringOccursOn(first, '2026-08-03'), true);
+      // A weekday 1st stays where it is.
+      assert.strictEqual(recurringOccursOn(first, '2026-10-01'), true);
+    });
+
+    it('collapses a daily schedule\'s weekend into one Monday occurrence', () => {
+      const daily = parseCronExpression('0 9 * * *')!;
+      const week = ['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02', '2026-11-03'];
+      assert.deepStrictEqual(week.map((date) => recurringOccursOn(daily, date)), [true, false, false, true, true]);
+    });
+
+    it('moves weekly schedules set on a weekend day to Monday', () => {
+      for (const expression of ['0 9 * * 6', '0 9 * * 0', '0 9 * * 7']) {
+        const weekly = parseCronExpression(expression)!;
+        assert.strictEqual(recurringOccursOn(weekly, '2026-10-31'), false, expression);
+        assert.strictEqual(recurringOccursOn(weekly, '2026-11-01'), false, expression);
+        assert.strictEqual(recurringOccursOn(weekly, '2026-11-02'), true, expression);
+        assert.strictEqual(recurringOccursOn(weekly, '2026-11-03'), false, expression);
+      }
+    });
+  });
+
+  describe('nextOccurrenceDate', () => {
+    it('returns today when today is a weekday occurrence', () => {
+      assert.strictEqual(nextOccurrenceDate('0 9 * * *', new Date('2028-01-14T12:00:00Z')), '2028-01-14');
+    });
+
+    it('names the Monday for a schedule date on the weekend', () => {
+      // Sun 1 Nov 2026 moves to Mon 2 Nov.
+      assert.strictEqual(nextOccurrenceDate('0 9 1 * *', new Date('2026-10-16T12:00:00Z')), '2026-11-02');
+      // A daily schedule read on a Saturday next occurs on Monday.
+      assert.strictEqual(nextOccurrenceDate('0 9 * * *', new Date('2028-01-15T12:00:00Z')), '2028-01-17');
     });
 
     it('walks to the next matching weekday across a month boundary', () => {
-      assert.strictEqual(nextMatchingDate('0 9 * * 1', new Date('2026-02-28T12:00:00Z')), '2026-03-02');
+      assert.strictEqual(nextOccurrenceDate('0 9 * * 1', new Date('2026-02-28T12:00:00Z')), '2026-03-02');
     });
 
     it('walks across a year boundary', () => {
-      assert.strictEqual(nextMatchingDate('0 9 * * 1', new Date('2026-12-31T12:00:00Z')), '2027-01-04');
+      assert.strictEqual(nextOccurrenceDate('0 9 * * 1', new Date('2026-12-31T12:00:00Z')), '2027-01-04');
     });
 
-    it('keeps leap days reachable', () => {
-      assert.strictEqual(nextMatchingDate('0 9 29 2 *', new Date('2028-03-01T12:00:00Z')), '2032-02-29');
+    it('keeps leap days reachable, moved off the weekend', () => {
+      // 2032-02-29 is a Sunday.
+      assert.strictEqual(nextOccurrenceDate('0 9 29 2 *', new Date('2028-03-01T12:00:00Z')), '2032-03-01');
     });
 
     it('resolves the civil date through Europe/Berlin across a UTC midnight', () => {
-      // 22:30 UTC on 10-28 is already 10-29 in Berlin, so a UTC-based walk
-      // would name yesterday.
-      assert.strictEqual(nextMatchingDate('0 9 * * 0', new Date('2028-10-28T22:30:00.000Z')), '2028-10-29');
+      // 22:30 UTC on Thu 10-26 is already Fri 10-27 in Berlin, so a UTC-based
+      // walk would name yesterday.
+      assert.strictEqual(nextOccurrenceDate('0 9 * * *', new Date('2028-10-26T22:30:00.000Z')), '2028-10-27');
     });
 
-    it('resolves the civil date through Europe/Berlin on both sides of a DST switch', () => {
-      // Fall back: 2028-10-29T01:00Z turns 03:00 CEST into 02:00 CET.
-      assert.strictEqual(nextMatchingDate('0 9 * * *', new Date('2028-10-29T00:30:00.000Z')), '2028-10-29');
-      assert.strictEqual(nextMatchingDate('0 9 * * *', new Date('2028-10-29T01:30:00.000Z')), '2028-10-29');
+    it('lands on the Monday on both sides of a Berlin DST switch', () => {
+      // Fall back: 2028-10-29T01:00Z (Sunday) turns 03:00 CEST into 02:00 CET.
+      // Late Saturday CEST, both 02:30s of the switch night, and late Sunday CET
+      // all name Monday 10-30.
+      for (const instant of ['2028-10-28T21:30:00.000Z', '2028-10-29T00:30:00.000Z', '2028-10-29T01:30:00.000Z', '2028-10-29T22:30:00.000Z']) {
+        assert.strictEqual(nextOccurrenceDate('0 9 * * *', new Date(instant)), '2028-10-30', instant);
+      }
+      // 23:30Z on Sunday is already 00:30 CET Monday.
+      assert.strictEqual(nextOccurrenceDate('0 9 * * *', new Date('2028-10-29T23:30:00.000Z')), '2028-10-30');
+      // Friday 23:30Z is Saturday 01:30 CEST in Berlin: past Friday's occurrence.
+      assert.strictEqual(nextOccurrenceDate('0 9 * * *', new Date('2028-10-27T23:30:00.000Z')), '2028-10-30');
 
-      // Spring forward: 2028-03-26T01:00Z turns 02:00 CET into 03:00 CEST.
-      assert.strictEqual(nextMatchingDate('0 9 * * *', new Date('2028-03-26T00:30:00.000Z')), '2028-03-26');
-      assert.strictEqual(nextMatchingDate('0 9 * * *', new Date('2028-03-26T01:30:00.000Z')), '2028-03-26');
-
-      // A weekday walk starting on the switch day still lands on the right Monday.
-      assert.strictEqual(nextMatchingDate('0 9 * * 1', new Date('2028-10-29T01:30:00.000Z')), '2028-10-30');
+      // Spring forward: 2028-03-26T01:00Z (Sunday) turns 02:00 CET into 03:00 CEST.
+      for (const instant of ['2028-03-25T23:30:00.000Z', '2028-03-26T00:30:00.000Z', '2028-03-26T01:30:00.000Z', '2028-03-26T21:30:00.000Z']) {
+        assert.strictEqual(nextOccurrenceDate('0 9 * * *', new Date(instant)), '2028-03-27', instant);
+      }
+      // 22:30Z on Sunday is already 00:30 CEST Monday.
+      assert.strictEqual(nextOccurrenceDate('0 9 * * *', new Date('2028-03-26T22:30:00.000Z')), '2028-03-27');
+      // A Sunday schedule on the switch day itself moves to the Monday.
+      assert.strictEqual(nextOccurrenceDate('0 9 * * 0', new Date('2028-03-26T01:30:00.000Z')), '2028-03-27');
     });
 
     it('returns nothing for an expression that cannot match any date', () => {
-      assert.strictEqual(nextMatchingDate('0 9 30 2 *', new Date('2028-01-15T12:00:00Z')), '');
-      assert.strictEqual(nextMatchingDate('every wednesday', new Date('2028-01-15T12:00:00Z')), '');
+      assert.strictEqual(nextOccurrenceDate('0 9 30 2 *', new Date('2028-01-15T12:00:00Z')), '');
+      assert.strictEqual(nextOccurrenceDate('every wednesday', new Date('2028-01-15T12:00:00Z')), '');
     });
   });
 

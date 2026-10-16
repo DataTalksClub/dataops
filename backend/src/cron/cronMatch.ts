@@ -129,11 +129,35 @@ export function cronMatchesDate(expression: string, date: Date): boolean {
   return matchesDay(cron, date.getUTCDate(), date.getUTCMonth() + 1, date.getUTCDay());
 }
 
+function civilWeekday(civilDate: string): number {
+  const [year, month, day] = civilDate.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+}
+
 /**
- * First civil date on or after `fromDate`'s civil date in `timeZone` that the
- * schedule matches. Returns '' when the expression cannot match any date.
+ * True when a recurring schedule has an occurrence on a Berlin civil date.
+ *
+ * The team works weekdays and the calendar hides weekends, so a schedule date
+ * that falls on a Saturday or Sunday occurs on the following Monday instead.
+ * Saturdays and Sundays therefore never carry an occurrence, and a Monday
+ * carries one when the schedule matches that Monday or the weekend before it:
+ * a daily schedule's Saturday, Sunday and Monday collapse into one Monday
+ * occurrence, not three.
  */
-export function nextMatchingDate(
+export function recurringOccursOn(cron: CronExpression, civilDate: string): boolean {
+  const weekday = civilWeekday(civilDate);
+  if (weekday === 0 || weekday === 6) return false;
+  if (cronMatchesCivilDate(cron, civilDate)) return true;
+  return weekday === 1
+    && (cronMatchesCivilDate(cron, addCivilDays(civilDate, -1)) || cronMatchesCivilDate(cron, addCivilDays(civilDate, -2)));
+}
+
+/**
+ * First Berlin civil date on or after `fromDate`'s civil date in `timeZone`
+ * that a recurring schedule occurs on, weekend dates moved to Monday. Returns
+ * '' when the expression cannot match any date.
+ */
+export function nextOccurrenceDate(
   expression: string,
   fromDate: Date = new Date(),
   timeZone: string = BERLIN_TIME_ZONE,
@@ -141,8 +165,9 @@ export function nextMatchingDate(
   const cron = parseCronExpression(expression);
   if (!cron) return '';
   let civilDate = civilDateInZone(fromDate, timeZone);
-  for (let step = 0; step < MAX_SCHEDULE_SEARCH_DAYS; step += 1) {
-    if (cronMatchesCivilDate(cron, civilDate)) return civilDate;
+  // Two extra days let a final weekend match still reach its Monday.
+  for (let step = 0; step < MAX_SCHEDULE_SEARCH_DAYS + 2; step += 1) {
+    if (recurringOccursOn(cron, civilDate)) return civilDate;
     civilDate = addCivilDays(civilDate, 1);
   }
   return '';

@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, after, mock } from 'node:test';
 import assert from 'node:assert';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
@@ -17,13 +17,18 @@ import {
   listEnabledRecurringConfigs,
   generateRecurringTasks,
 } from '../src/db/recurring';
-import { nextMatchingDate } from '../src/cron/cronMatch';
+import { nextOccurrenceDate } from '../src/cron/cronMatch';
 import { berlinDate } from '../src/sponsorFinance/core';
-import { getTask } from '../src/db/tasks';
+import { getTask, listTasksByDateRange } from '../src/db/tasks';
+import { useFixedDate } from './helpers/fixed-date';
 
 describe('Recurring configs data layer', () => {
   let client: DynamoDBDocumentClient;
   let port: number;
+
+  // Wednesday 14 Oct 2026, noon in Berlin: "today" is a weekday whatever day
+  // the suite runs, so the weekend rule never shifts a today-based assertion.
+  useFixedDate(new Date('2026-10-14T10:00:00Z'));
 
   before(async () => {
     port = await startLocal();
@@ -94,7 +99,8 @@ describe('Recurring configs data layer', () => {
       cronExpression: '0 9 * * *',
     });
 
-    await new Promise((r) => setTimeout(r, 10));
+    // The suite's clock is fixed; move it on so the update is visibly later.
+    mock.timers.tick(1000);
 
     const updated = await updateRecurringConfig(client, created.id, {
       description: 'Updated',
@@ -159,7 +165,7 @@ describe('Recurring configs data layer', () => {
     const weekday = await updateRecurringConfig(client, created.id, {
       cronExpression: '0 9 * * 4',
     });
-    assert.strictEqual(weekday!.nextRunDate, nextMatchingDate('0 9 * * 4'));
+    assert.strictEqual(weekday!.nextRunDate, nextOccurrenceDate('0 9 * * 4'));
     assert.strictEqual(new Date(`${weekday!.nextRunDate}T00:00:00Z`).getUTCDay(), 4);
   });
 
@@ -192,7 +198,7 @@ describe('Recurring configs data layer', () => {
     assert.ok(afterFirst!.lastRunAt);
     assert.strictEqual(
       afterFirst!.nextRunDate,
-      nextMatchingDate('0 9 * * *', new Date(`${shiftIsoDate(today, 1)}T12:00:00Z`)),
+      nextOccurrenceDate('0 9 * * *', new Date(`${shiftIsoDate(today, 1)}T12:00:00Z`)),
     );
 
     // Idempotent replay still counts as a run, and the ledger row is replaced.
@@ -214,15 +220,16 @@ describe('Recurring configs data layer', () => {
     });
 
     const today = berlinDate();
+    // Sun, Mon and Tue before the fixed Wednesday: Sunday folds into Monday.
     const result = await generateRecurringTasks(client, shiftIsoDate(today, -3), shiftIsoDate(today, -1));
-    assert.strictEqual(result.generated.length, 3);
+    assert.strictEqual(result.generated.length, 2);
 
     const after = await getRecurringConfig(client, created.id);
     assert.strictEqual(after!.lastRunOutcome, 'succeeded');
     assert.ok(after!.nextRunDate >= today);
     assert.strictEqual(
       after!.nextRunDate,
-      nextMatchingDate('0 9 * * *', new Date(`${today}T12:00:00Z`)),
+      nextOccurrenceDate('0 9 * * *', new Date(`${today}T12:00:00Z`)),
     );
   });
 
@@ -242,7 +249,7 @@ describe('Recurring configs data layer', () => {
     const after = await getRecurringConfig(client, created.id);
     assert.strictEqual(
       after!.nextRunDate,
-      nextMatchingDate('0 9 * * *', new Date(`${today}T12:00:00Z`)),
+      nextOccurrenceDate('0 9 * * *', new Date(`${today}T12:00:00Z`)),
     );
   });
 
@@ -345,7 +352,7 @@ describe('Recurring configs data layer', () => {
     }
   }
 
-  it('generateRecurringTasks creates daily tasks for each day in range (cron: 0 9 * * *)', async () => {
+  it('generateRecurringTasks creates daily tasks for each weekday in range (cron: 0 9 * * *)', async () => {
     await disableAllConfigs();
 
     const config = await createRecurringConfig(client, {
@@ -353,13 +360,14 @@ describe('Recurring configs data layer', () => {
       cronExpression: '0 9 * * *',
     });
 
-    const result = await generateRecurringTasks(client, '2027-01-02', '2027-01-04');
+    // Fri 2027-01-01 to Tue 2027-01-05: the weekend folds into Monday.
+    const result = await generateRecurringTasks(client, '2027-01-01', '2027-01-05');
 
     assert.strictEqual(result.generated.length, 3);
     assert.strictEqual(result.skipped, 0);
 
     const dates = result.generated.map((t) => t.date).sort();
-    assert.deepStrictEqual(dates, ['2027-01-02', '2027-01-03', '2027-01-04']);
+    assert.deepStrictEqual(dates, ['2027-01-01', '2027-01-04', '2027-01-05']);
 
     for (const task of result.generated) {
       assert.strictEqual(task.source, 'recurring');
@@ -404,9 +412,10 @@ describe('Recurring configs data layer', () => {
 
     const result = await generateRecurringTasks(client, '2027-06-01', '2027-08-31');
 
+    // 2027-08-15 is a Sunday, so August's Task is created on Monday the 16th.
     assert.strictEqual(result.generated.length, 3);
     const dates = result.generated.map((t) => t.date).sort();
-    assert.deepStrictEqual(dates, ['2027-06-15', '2027-07-15', '2027-08-15']);
+    assert.deepStrictEqual(dates, ['2027-06-15', '2027-07-15', '2027-08-16']);
 
     await updateRecurringConfig(client, config.id, { enabled: false });
   });
@@ -484,7 +493,7 @@ describe('Recurring configs data layer', () => {
     const healthyConfig = await getRecurringConfig(client, healthy.id);
     assert.strictEqual(
       healthyConfig!.nextRunDate,
-      nextMatchingDate('0 9 * * *', new Date(`${shiftIsoDate(today, 1)}T12:00:00Z`)),
+      nextOccurrenceDate('0 9 * * *', new Date(`${shiftIsoDate(today, 1)}T12:00:00Z`)),
     );
 
     await updateRecurringConfig(client, failing.id, { enabled: false });
@@ -533,7 +542,7 @@ describe('Recurring configs data layer', () => {
       assigneeId: 'user-grace',
     });
 
-    const result = await generateRecurringTasks(client, '2027-05-02', '2027-05-02');
+    const result = await generateRecurringTasks(client, '2027-05-03', '2027-05-03');
     assert.strictEqual(result.generated.length, 1);
     assert.strictEqual((result.generated[0] as Record<string, unknown>).assigneeId, 'user-grace');
 
@@ -553,5 +562,91 @@ describe('Recurring configs data layer', () => {
     assert.strictEqual((result.generated[0] as Record<string, unknown>).assigneeId, undefined);
 
     await updateRecurringConfig(client, config.id, { enabled: false });
+  });
+
+  // ── Weekend rule ────────────────────────────────────────────────
+
+  async function tasksFor(configId: string): Promise<string[]> {
+    const tasks = await listTasksByDateRange(client, '2026-10-25', '2026-11-15');
+    return tasks.filter((task) => task.recurringConfigId === configId).map((task) => task.date as string).sort();
+  }
+
+  it('a monthly 1st on a Sunday is created once, by the Monday pass', async () => {
+    await disableAllConfigs();
+
+    const monthly = await createRecurringConfig(client, {
+      description: 'Prepare a bookkeeping report',
+      cronExpression: '0 9 1 * *',
+    });
+    assert.strictEqual(monthly.nextRunDate, '2026-11-02');
+
+    // The Saturday and Sunday passes create nothing and leave no ledger row.
+    for (const day of ['2026-10-31', '2026-11-01']) {
+      const pass = await generateRecurringTasks(client, day, day);
+      assert.strictEqual(pass.generated.length, 0, day);
+    }
+    assert.deepStrictEqual(await listRecurringRuns(client, monthly.id), []);
+    assert.strictEqual((await getRecurringConfig(client, monthly.id))!.nextRunDate, '2026-11-02');
+
+    const monday = await generateRecurringTasks(client, '2026-11-02', '2026-11-02');
+    assert.deepStrictEqual(monday.generated.map((task) => task.date), ['2026-11-02']);
+
+    // A rerun of Monday and a backfill over the weekend both find the Task.
+    const rerun = await generateRecurringTasks(client, '2026-11-02', '2026-11-02');
+    assert.strictEqual(rerun.generated.length, 0);
+    const backfill = await generateRecurringTasks(client, '2026-10-30', '2026-11-03');
+    assert.strictEqual(backfill.generated.length, 0);
+
+    assert.deepStrictEqual(await tasksFor(monthly.id), ['2026-11-02']);
+    const runs = await listRecurringRuns(client, monthly.id);
+    assert.deepStrictEqual(runs.map((run) => run.date), ['2026-11-02']);
+
+    await updateRecurringConfig(client, monthly.id, { enabled: false });
+  });
+
+  it('a daily schedule collapses its weekend into one Monday Task', async () => {
+    await disableAllConfigs();
+
+    const daily = await createRecurringConfig(client, {
+      description: 'Daily weekend collapse',
+      cronExpression: '0 9 * * *',
+    });
+
+    for (const day of ['2026-11-06', '2026-11-07', '2026-11-08', '2026-11-09', '2026-11-09']) {
+      await generateRecurringTasks(client, day, day);
+    }
+
+    assert.deepStrictEqual(await tasksFor(daily.id), ['2026-11-06', '2026-11-09']);
+
+    await updateRecurringConfig(client, daily.id, { enabled: false });
+  });
+
+  it('a missed Monday pass is not replayed by Tuesday and backfills exactly once', async () => {
+    await disableAllConfigs();
+
+    const monthly = await createRecurringConfig(client, {
+      description: 'Missed Monday monthly',
+      cronExpression: '0 9 1 * *',
+    });
+    const daily = await createRecurringConfig(client, {
+      description: 'Missed Monday daily',
+      cronExpression: '0 9 * * *',
+    });
+
+    // Sat, Sun, then Monday's pass never runs; Tuesday's does.
+    for (const day of ['2026-10-31', '2026-11-01', '2026-11-03']) {
+      await generateRecurringTasks(client, day, day);
+    }
+    assert.deepStrictEqual(await tasksFor(monthly.id), []);
+    assert.deepStrictEqual(await tasksFor(daily.id), ['2026-11-03']);
+
+    // Backfilling the gap twice creates Monday's Task once per schedule.
+    await generateRecurringTasks(client, '2026-10-31', '2026-11-03');
+    await generateRecurringTasks(client, '2026-10-31', '2026-11-03');
+    assert.deepStrictEqual(await tasksFor(monthly.id), ['2026-11-02']);
+    assert.deepStrictEqual(await tasksFor(daily.id), ['2026-11-02', '2026-11-03']);
+
+    await updateRecurringConfig(client, monthly.id, { enabled: false });
+    await updateRecurringConfig(client, daily.id, { enabled: false });
   });
 });

@@ -196,8 +196,8 @@ describe('Cron runner', () => {
   });
 
   it('reports the daily recurrent pass to CloudWatch as one embedded metric', async () => {
-    // 2031-06-15 is a Sunday, so a schedule on it is the only one that fires.
-    const passDay = new Date('2031-06-15T08:00:00Z');
+    // 2031-06-16 is a Monday: the Sunday schedule below occurs on it.
+    const passDay = new Date('2031-06-16T08:00:00Z');
 
     const cleanRuns = captureRecurringMetrics();
     try {
@@ -273,12 +273,18 @@ describe('Cron runner', () => {
     await updateRecurringConfig(client, recurring.id, { enabled: true });
     await updateTemplate(client, template.id, { triggerEnabled: true });
     const resumed = await runCron(client, saturday);
-    assert.strictEqual(resumed.recurring.generated.length, 1);
+    // The recurring Saturday schedule occurs on the following Monday.
+    assert.strictEqual(resumed.recurring.generated.length, 0);
     assert.strictEqual(resumed.templates.created.length, 1);
+    const monday = new Date('2029-01-08T09:00:00Z');
+    const mondayPass = await runCron(client, monday);
+    assert.strictEqual(mondayPass.recurring.generated.length, 1);
 
     const second = await runCron(client, saturday);
-    assert.strictEqual(second.recurring.skipped, 1);
     assert.strictEqual(second.templates.skipped, 1);
+    const secondMonday = await runCron(client, monday);
+    assert.strictEqual(secondMonday.recurring.generated.length, 0);
+    assert.strictEqual(secondMonday.recurring.skipped, 1);
 
     await updateRecurringConfig(client, recurring.id, { enabled: false });
   });

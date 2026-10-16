@@ -12,6 +12,7 @@ import {
   updateRecurringConfig,
 } from '../src/db/recurring';
 import { createTask } from '../src/db/tasks';
+import { nextOccurrenceDate } from '../src/cron/cronMatch';
 import { TABLE_TASKS } from '../src/db/tableNames';
 import type { LambdaResponse } from '../src/types';
 
@@ -282,7 +283,7 @@ describe('API -- Recurring', () => {
       assert.strictEqual(res.statusCode, 200);
       const { recurringConfig } = JSON.parse(res.body);
       assert.notStrictEqual(recurringConfig.nextRunDate, '2020-01-01');
-      assert.match(recurringConfig.nextRunDate, /^\d{4}-\d{2}-01$/);
+      assert.strictEqual(recurringConfig.nextRunDate, nextOccurrenceDate('0 9 1 * *'));
       assert.ok(recurringConfig.nextRunLabel);
     });
 
@@ -558,8 +559,8 @@ describe('API -- Recurring', () => {
       });
 
       const res = await invoke('POST', '/api/recurring/generate', {
-        startDate: '2028-01-02',
-        endDate: '2028-01-04',
+        startDate: '2028-01-03',
+        endDate: '2028-01-05',
       });
 
       assert.strictEqual(res.statusCode, 200);
@@ -576,8 +577,8 @@ describe('API -- Recurring', () => {
 
     it('is idempotent -- second call skips existing tasks', async () => {
       const res = await invoke('POST', '/api/recurring/generate', {
-        startDate: '2028-01-02',
-        endDate: '2028-01-04',
+        startDate: '2028-01-03',
+        endDate: '2028-01-05',
       });
 
       assert.strictEqual(res.statusCode, 200);
@@ -623,7 +624,8 @@ describe('API -- Recurring', () => {
       const body = JSON.parse(res.body);
       assert.strictEqual(body.generated.length, 3);
       const dates = body.generated.map((t: any) => t.date).sort();
-      assert.deepStrictEqual(dates, ['2028-06-15', '2028-07-15', '2028-08-15']);
+      // 2028-07-15 is a Saturday, so July's Task is created on Monday the 17th.
+      assert.deepStrictEqual(dates, ['2028-06-15', '2028-07-17', '2028-08-15']);
     });
 
     it('generated tasks inherit assigneeId from config', async () => {
@@ -749,8 +751,8 @@ describe('API -- Recurring', () => {
       });
 
       await invoke('POST', '/api/recurring/generate', {
-        startDate: '2028-09-02',
-        endDate: '2028-09-02',
+        startDate: '2028-09-04',
+        endDate: '2028-09-04',
       });
 
       const taskRes = await handler(
@@ -758,7 +760,7 @@ describe('API -- Recurring', () => {
           httpMethod: 'GET',
           path: '/api/tasks',
           body: null,
-          queryStringParameters: { date: '2028-09-02' },
+          queryStringParameters: { date: '2028-09-04' },
         },
         {}
       );

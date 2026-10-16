@@ -488,7 +488,7 @@ describe('Portal broker authentication', () => {
       {
         httpMethod: 'POST',
         path: '/api/recurring/generate',
-        body: JSON.stringify({ startDate: '2028-10-07', endDate: '2028-10-07' }),
+        body: JSON.stringify({ startDate: '2028-10-09', endDate: '2028-10-09' }),
         headers,
       },
       {},
