@@ -42,11 +42,13 @@ export function fakePortal(routes) {
         // leave non-JSON bodies as text
       }
     }
-    const call = { method, route, rawPath: parsed.pathname, query: Object.fromEntries(parsed.searchParams), body };
+    const call = { method, route, rawPath: parsed.pathname, query: Object.fromEntries(parsed.searchParams), body, headers: options.headers || {} };
     calls.push(call);
     const handler = routes[`${method} ${route}`];
     if (!handler) return new Response(JSON.stringify({ error: `no fake for ${method} ${route}` }), { status: 404 });
     const result = typeof handler === "function" ? await handler(call, calls) : handler;
+    // A handler may answer with its own Response to serve raw bytes.
+    if (result instanceof Response) return result;
     const wrapped = result && typeof result === "object" && "status" in result && "body" in result ? result : { status: 200, body: result };
     return new Response(wrapped.body === undefined ? "" : JSON.stringify(wrapped.body), { status: wrapped.status });
   };

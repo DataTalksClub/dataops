@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 
 import { UsageError } from "../errors.mjs";
@@ -18,6 +19,8 @@ Usage
   dataops files delete <file-id>
 
 Uploads need durable file storage on the server; a deployment without it answers 409.
+Downloads fetch a short-lived signed storage link and verify size and checksum
+before the output file is written.
 `;
 
 export const artifactsHelp = `dataops artifacts - artifacts (drafts, outputs) linked to Tasks and Cards
@@ -70,6 +73,50 @@ export async function filesUpload(args, io) {
   return result;
 }
 
+/**
+ * The download route hands back a short-lived signed URL (S3 in production, a
+ * scoped local link in dev). The object request must carry no portal
+ * Authorization header, and the signed query string must never surface in an
+ * error message, so this fetch is deliberately bare and its errors are
+ * URL-free.
+ */
+async function fetchObjectBytes(downloadUrl, baseUrl) {
+  let target;
+  try {
+    target = new URL(downloadUrl, baseUrl);
+  } catch {
+    throw new UsageError("The download link could not be resolved.");
+  }
+  if (target.protocol !== "https:" && target.protocol !== "http:") {
+    throw new UsageError("The download link uses an unsupported scheme.");
+  }
+  let response;
+  try {
+    response = await fetch(target, { headers: { Accept: "*/*" }, redirect: "error" });
+  } catch {
+    throw new Error("Could not reach file storage for the download link.");
+  }
+  if (!response.ok) {
+    throw new Error(`File storage refused the transfer (HTTP ${response.status}); the link may have expired. Retry the download.`);
+  }
+  return Buffer.from(await response.arrayBuffer());
+}
+
+/**
+ * Verify the transferred bytes against the file record before anything is
+ * written, so an expired, truncated, or tampered transfer never produces a
+ * corrupt output file.
+ */
+function verifyTransferredBytes(file, bytes) {
+  if (Number.isSafeInteger(file.sizeBytes) && file.sizeBytes !== bytes.length) {
+    throw new Error(`File storage returned ${bytes.length} bytes but ${file.sizeBytes} were expected.`);
+  }
+  const expected = typeof file.checksum === "string" && file.checksum.startsWith("sha256:") ? file.checksum.slice("sha256:".length) : "";
+  if (expected && createHash("sha256").update(bytes).digest("hex") !== expected) {
+    throw new Error("File storage returned content that does not match the stored checksum.");
+  }
+}
+
 export async function filesDownload(args, io) {
   const id = positional(args, 0, "dataops files download <file-id> [--output PATH]");
   const api = apiFor(args);
@@ -77,7 +124,10 @@ export async function filesDownload(args, io) {
   const file = meta.file || meta;
   const output = optionalString(args, "output") || file.filename;
   if (!output) throw new UsageError("--output is required: the file has no stored name.");
-  const { bytes } = await api.get(`/api/files/${enc(id)}/download`, { binary: true });
+  const link = await api.get(`/api/files/${enc(id)}/download`);
+  if (!link?.downloadUrl) throw new UsageError("The API did not return a download link for this file.");
+  const bytes = await fetchObjectBytes(link.downloadUrl, api.base);
+  verifyTransferredBytes(file, bytes);
   writeFileSync(output, bytes);
   const result = { id, path: output, bytes: bytes.length };
   if (!args.json) io.print(`Saved ${output} (${bytes.length} bytes).`);

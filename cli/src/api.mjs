@@ -65,13 +65,6 @@ export function createClient({ url, token, fetchImpl = fetch }) {
       } catch (error) {
         throw new NetworkError(address, error);
       }
-      if (options.binary && response.ok) {
-        return {
-          bytes: Buffer.from(await response.arrayBuffer()),
-          contentType: response.headers?.get?.("content-type") || "",
-          disposition: response.headers?.get?.("content-disposition") || "",
-        };
-      }
       // A missing seam is a 404 with no JSON error body; a real 404 from the
       // API still carries one, so only the former falls through to /api.
       const text = await response.text();
