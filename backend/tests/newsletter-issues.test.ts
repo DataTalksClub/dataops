@@ -227,6 +227,22 @@ describe("newsletter issues", () => {
     assert.deepEqual((await getCard(client, issue.cardId))!.selectedOptionalGroups, ["primary-slot"]);
   });
 
+  it("moving the issue re-derives its open Tasks' due dates and leaves resolved ones alone", async () => {
+    let issue = await create(weekly({ publicationDate: "2027-06-28", issueNumber: 358 }));
+    const tasks = await listTasksByCard(client, issue.cardId);
+    const done = tasks.find((task) => task.templateTaskRef === "write-issue")!;
+    await updateTask(client, done.id, { expectedVersion: done.version, patch: { status: "done" } });
+    const response = await invoke("PUT", `/api/newsletter-issues/${issue.id}`, { version: issue.version, publicationDate: "2027-07-05" });
+    assert.equal(response.statusCode, 200, response.body);
+    issue = data(response);
+    const dates = Object.fromEntries((await listTasksByCard(client, issue.cardId)).map((task) => [task.templateTaskRef, task.date]));
+    assert.equal(dates["write-issue"], "2027-06-25", "a done Task keeps its date");
+    assert.equal(dates.schedule, "2027-07-05");
+    assert.equal(dates["sponsor-document"], "2027-06-28");
+    const moved = (await listTasksByCard(client, issue.cardId)).find((task) => task.templateTaskRef === "schedule")!;
+    assert.equal(moved.templateDefinitionSnapshot?.date, "2027-07-05", "the Template snapshot moves with the Task");
+  });
+
   it("pushes date and issue number to the Card and refuses kind changes and Card links", async () => {
     let issue = await create(weekly({ publicationDate: "2027-06-07", issueNumber: 355 }));
     const moved = await invoke("PUT", `/api/newsletter-issues/${issue.id}`, {

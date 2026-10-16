@@ -48,6 +48,7 @@ import {
   issueLabel,
   issueTaskGroups,
   pushIssueToCard,
+  rescheduleOpenIssueTasks,
   SLOT_POSITIONS,
   syncIssueSlotTasks,
 } from '../newsletter/issueCard';
@@ -523,6 +524,7 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
   try {
     const slotTasks = await syncIssueSlotTasks(client, next, actor.id || 'system');
     await pushIssueToCard(client, next);
+    if (next.publicationDate !== existing.publicationDate) await rescheduleOpenIssueTasks(client, next);
     cardSync = slotTasks === 'synced' ? 'synced' : 'pushed';
   } catch (failure) {
     console.error('Newsletter issue card sync failed:', failure);

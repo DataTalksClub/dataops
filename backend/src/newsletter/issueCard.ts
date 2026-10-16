@@ -15,10 +15,11 @@ import { getCardConsistent } from '../db/cards';
 import { applyCardTemplateUpdate } from '../db/cardTemplateUpdates';
 import { createIssueWrite, type NewsletterIssue, type NewsletterSlotPosition } from '../db/newsletterIssues';
 import type { PlannedWrite } from '../db/plannedWrite';
-import { listTasksByCardConsistent } from '../db/tasks';
+import { listTasksByCardConsistent, updateTask } from '../db/tasks';
 import { getTemplate, listTemplates } from '../db/templates';
 import type { VerifiedActor } from '../identity/actor';
 import { buildCardTemplateUpdatePlan } from '../templates/cardTemplateUpdates';
+import { dateFromTemplateOffset } from '../templates/cardTemplateProjection';
 import type { Card, Task, Template } from '../types';
 import { createCardFromInput, type CardCreation } from '../cards/createCard';
 import { newsletterIssueTitleValues, renderCardTitle } from '../cards/cardTitlePattern';
@@ -154,4 +155,28 @@ export async function syncIssueSlotTasks(
   const plan = buildCardTemplateUpdatePlan(card, tasks, template, groups);
   await applyCardTemplateUpdate(client, card, tasks, template, plan.preview.previewToken, actorId, groups);
   return 'synced';
+}
+
+/**
+ * Re-derive the due dates of the Card's open Tasks from its anchor date and
+ * each Task's Template offset, after the issue moved to another day. Done and
+ * skipped Tasks keep their dates. Returns how many Tasks moved.
+ */
+export async function rescheduleOpenIssueTasks(client: DynamoDBDocumentClient, issue: NewsletterIssue): Promise<number> {
+  if (!issue.cardId) return 0;
+  let moved = 0;
+  for (const task of await listTasksByCardConsistent(client, issue.cardId)) {
+    if ((task.status !== 'todo' && task.status !== 'waiting') || typeof task.templateOffsetDays !== 'number') continue;
+    const date = dateFromTemplateOffset(issue.publicationDate, task.templateOffsetDays);
+    if (task.date === date) continue;
+    await updateTask(client, task.id, {
+      expectedVersion: task.version,
+      patch: {
+        date,
+        ...(task.templateDefinitionSnapshot ? { templateDefinitionSnapshot: { ...task.templateDefinitionSnapshot, date } } : {}),
+      },
+    });
+    moved += 1;
+  }
+  return moved;
 }
