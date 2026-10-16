@@ -4,7 +4,7 @@ import {
   BookkeepingItemLockedError,
   deleteBookkeepingItem,
   getBookkeepingItem,
-  listBookkeepingItems,
+  listTransactions,
   putBookkeepingItem,
   updateBookkeepingTransaction,
 } from "../db/bookkeeping";
@@ -121,7 +121,7 @@ export async function handleBookkeepingTransactionRoutes(
   if (match) {
     if (method === "GET" && !match[1])
       return json(200, {
-        items: await listBookkeepingItems(client, "bookkeeping"),
+        items: await listTransactions(client),
       });
     if (method === "GET" && match[1]) {
       const item = await getBookkeepingItem(client, "bookkeeping", match[1]);

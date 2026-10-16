@@ -215,6 +215,71 @@ export async function listBookkeepingItems(
   );
 }
 
+/**
+ * Every transaction, each one a sponsor deal has claimed as its payment
+ * carrying that deal's id. A claimed transaction is immutable: sponsor finance
+ * pins its amount, currency and updatedAt. Transactions and claims come from
+ * one scan of the table.
+ */
+export async function listTransactions(
+  client: DynamoDBDocumentClient,
+): Promise<BookkeepingItem[]> {
+  const transactions: BookkeepingItem[] = [];
+  const claims = new Map<string, string>();
+  let ExclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(
+      new ScanCommand({
+        TableName: TABLE_BOOKKEEPING,
+        FilterExpression: "begins_with(PK, :transaction) OR begins_with(PK, :claim)",
+        ExpressionAttributeValues: {
+          ":transaction": "BOOKKEEPING#",
+          ":claim": "SPONSOR_FINANCE_CLAIM#transaction#",
+        },
+        ExclusiveStartKey,
+      }),
+    );
+    for (const item of result.Items || []) {
+      if (String(item.PK).startsWith("SPONSOR_FINANCE_CLAIM#"))
+        claims.set(String(item.sourceId), String(item.dealId));
+      else transactions.push(clean(item as Record<string, unknown>)!);
+    }
+    ExclusiveStartKey = result.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return transactions
+    .map((item) => (claims.has(item.id) ? { ...item, sponsorDealId: claims.get(item.id) } : item))
+    .sort((a, b) =>
+      String(b.transactionDate || b.createdAt).localeCompare(String(a.transactionDate || a.createdAt)),
+    );
+}
+
+/** The sponsor deal that claimed a transaction as its payment, if any. */
+export async function transactionSponsorDeal(client: DynamoDBDocumentClient, id: string) {
+  const claim = `SPONSOR_FINANCE_CLAIM#transaction#${id}`;
+  const result = await client.send(
+    new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: claim, SK: claim } }),
+  );
+  return result.Item ? String(result.Item.dealId) : null;
+}
+
+/** Store what a document's text says (date, amount, provider) for matching. */
+export async function setDocumentFacts(
+  client: DynamoDBDocumentClient,
+  id: string,
+  facts: Record<string, unknown>,
+) {
+  await client.send(
+    new UpdateCommand({
+      TableName: TABLE_BOOKKEEPING,
+      Key: { PK: documentKey(id), SK: documentKey(id) },
+      UpdateExpression: "SET facts = :facts",
+      ConditionExpression: "attribute_exists(PK) AND #status = :active",
+      ExpressionAttributeNames: { "#status": "status" },
+      ExpressionAttributeValues: { ":facts": facts, ":active": "active" },
+    }),
+  );
+}
+
 export async function deleteBookkeepingItem(
   client: DynamoDBDocumentClient,
   kind: string,
