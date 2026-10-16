@@ -488,8 +488,7 @@ body[data-workspace-view="calendar"] .document-list {
     margin-inline: 0;
   }.finance-panel {
     padding: 14px;
-  }.newsletter-filters .planner-filter-fields,
-.calendar-controls .planner-filter-fields {
+  }.calendar-controls .planner-filter-fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }.calendar-controls {
     grid-template-columns: 1fr;
@@ -579,8 +578,7 @@ body[data-workspace-view="calendar"] .document-list {
   }
 }
 
-@media (max-width: 560px) {.newsletter-filters .planner-filter-fields,
-.calendar-controls .planner-filter-fields {
+@media (max-width: 560px) {.calendar-controls .planner-filter-fields {
     grid-template-columns: 1fr;
   }.newsletter-slot-row {
     grid-template-columns: 1fr;

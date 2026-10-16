@@ -214,8 +214,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
 .calendar-surface {
     display: flex;
     flex-direction: column;
-  }.newsletter-surface .newsletter-filters,
-.calendar-surface .calendar-controls {
+  }.calendar-surface .calendar-controls {
     order: 9;
   }
 }
@@ -226,8 +225,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
 .calendar-surface {
     display: flex;
     flex-direction: column;
-  }.newsletter-surface .newsletter-filters,
-.calendar-surface .calendar-controls {
+  }.calendar-surface .calendar-controls {
     order: 9;
   }
 }
@@ -238,8 +236,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
 .calendar-surface {
     display: flex;
     flex-direction: column;
-  }.newsletter-surface .newsletter-filters,
-.calendar-surface .calendar-controls {
+  }.calendar-surface .calendar-controls {
     order: 9;
   }
 }/* Page titles are the document H1 on every surface (SCOPE: one clear H1

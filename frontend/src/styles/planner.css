@@ -51,8 +51,7 @@
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.2;
-}.planner-heading > p:not([class*="dk-"]):last-child { max-width: 680px; margin-top: 6px; color: var(--dk-text-muted); }.planner-header > .primary-button { flex: 0 0 auto; margin-top: 4px; }.newsletter-filters,
-.calendar-controls {
+}.planner-heading > p:not([class*="dk-"]):last-child { max-width: 680px; margin-top: 6px; color: var(--dk-text-muted); }.planner-header > .primary-button { flex: 0 0 auto; margin-top: 4px; }.calendar-controls {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
@@ -846,46 +845,6 @@ a.calendar-day-timeline-title:hover {
 }
 .notion-callout.notion-callout-tip {
   background: var(--dk-success-bg);
-}
-
-
-
-
-
-
-
-
-details.newsletter-filters {
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-surface);
-  padding: 0;
-  overflow: hidden;
-}
-
-details.newsletter-filters summary.newsletter-filters-summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--dk-text-secondary);
-  cursor: pointer;
-  user-select: none;
-}
-
-details.newsletter-filters summary.newsletter-filters-summary:hover {
-  background: var(--dk-bg-muted);
-  color: var(--dk-text-primary);
-}
-
-details.newsletter-filters[open] summary.newsletter-filters-summary {
-  border-bottom: 1px solid var(--dk-border-default);
-}
-
-details.newsletter-filters .planner-filter-fields {
-  padding: 12px 14px;
 }
 
 /* Newsletter slot ↔ Card: the chip on each slot row and the link picker. */

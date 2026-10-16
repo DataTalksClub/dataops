@@ -174,34 +174,6 @@ export function createNewsletterPlanner(context) {
       </div>
       ${globalThis.dakitCollection.createButtonMarkup({ label: "Add issue", attributes: "data-newsletter-add" })}
       </div>
-      <details class="newsletter-filters" aria-label="Newsletter filters">
-        <summary class="newsletter-filters-summary">
-          <span class="newsletter-filters-title">Filter & group</span>
-        </summary>
-        <div class="planner-filter-fields">
-          <label>From <input data-from type="date"></label>
-          <label>To <input data-to type="date"></label>
-          <label>Group by
-            <select data-view>
-              <option value="month">Month</option>
-              <option value="week">Week</option>
-            </select>
-          </label>
-          <label>Status
-            <select data-status>
-              <option value="">Any status</option>
-              ${newsletterStatusOptions}
-            </select>
-          </label>
-          <label>Booking
-            <select data-booked>
-              <option value="">Any booking</option>
-              <option value="true">Sponsor booked</option>
-              <option value="false">Slot needs a sponsor</option>
-            </select>
-          </label>
-        </div>
-      </details>
       <p class="planner-load-state" role="status">Loading newsletter issues…</p>
       <div class="planner-alerts" data-alerts></div>
       <div class="newsletter-schedule" data-slots>Loading issues…</div>
@@ -219,20 +191,9 @@ export function createNewsletterPlanner(context) {
     let items = [];
     let currentView = "all";
     const now = todayIsoDate();
-    surface.querySelector("[data-from]").value = now.slice(0, 8) + "01";
-    surface.querySelector("[data-to]").value =
-      `${Number(now.slice(0, 4)) + 1}-12-31`;
-    const isoWeekKey = (date) => {
-        const day = new Date(`${date}T00:00:00Z`);
-        day.setUTCDate(day.getUTCDate() + 4 - (day.getUTCDay() || 7));
-        const yearStart = new Date(Date.UTC(day.getUTCFullYear(), 0, 1)),
-          week = Math.ceil(((day - yearStart) / 86400000 + 1) / 7);
-        return `${day.getUTCFullYear()} · week ${String(week).padStart(2, "0")}`;
-      },
-      groupKey = (item) =>
-      surface.querySelector("[data-view]").value === "month"
-        ? item.publicationDate.slice(0, 7)
-        : isoWeekKey(item.publicationDate);
+    // Issues from the start of this month through next year, by month.
+    const range = { from: now.slice(0, 8) + "01", to: `${Number(now.slice(0, 4)) + 1}-12-31` };
+    const groupKey = (item) => item.publicationDate.slice(0, 7);
 
     function newsletterAlertMarkup(alert) {
       const issue = (items || []).find((candidate) => candidate.id === alert.issueId);
@@ -298,13 +259,11 @@ export function createNewsletterPlanner(context) {
     }
 
     function newsletterPeriodMarkup(period, issues) {
-      const periodLabel = surface.querySelector("[data-view]").value === "month"
-        ? new Date(`${period}-01T00:00:00Z`).toLocaleDateString("en", {
-          month: "long",
-          year: "numeric",
-          timeZone: "UTC",
-        })
-        : period;
+      const periodLabel = new Date(`${period}-01T00:00:00Z`).toLocaleDateString("en", {
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      });
       return `
         <section class="newsletter-period">
           <header>
@@ -321,13 +280,7 @@ export function createNewsletterPlanner(context) {
     async function load() {
       status.textContent = "Loading newsletter issues…";
       try {
-        const query = new URLSearchParams({
-            from: surface.querySelector("[data-from]").value,
-            to: surface.querySelector("[data-to]").value,
-            status: surface.querySelector("[data-status]").value,
-            booked: surface.querySelector("[data-booked]").value,
-          }),
-          result = await api(`?${query}`);
+        const result = await api(`?${new URLSearchParams(range)}`);
         items = result.items || [];
 
         // Update stats summary bar
@@ -360,19 +313,15 @@ export function createNewsletterPlanner(context) {
           .map(newsletterAlertMarkup)
           .join("");
 
-        // Filter displayed items by current view tab (unless an explicit dropdown status is chosen)
         let displayedItems = items;
-        const explicitStatus = surface.querySelector("[data-status]").value;
-        if (!explicitStatus) {
-          if (currentView === "upcoming") {
-            displayedItems = items.filter((i) =>
-              ["planned", "drafting", "review", "scheduled"].includes(i.status)
-            );
-          } else if (currentView === "sent") {
-            displayedItems = items.filter((i) =>
-              ["sent", "cancelled"].includes(i.status)
-            );
-          }
+        if (currentView === "upcoming") {
+          displayedItems = items.filter((i) =>
+            ["planned", "drafting", "review", "scheduled"].includes(i.status)
+          );
+        } else if (currentView === "sent") {
+          displayedItems = items.filter((i) =>
+            ["sent", "cancelled"].includes(i.status)
+          );
         }
 
         const groups = {};
@@ -387,7 +336,7 @@ export function createNewsletterPlanner(context) {
           : `
             <div class="honest-state planner-empty">
               <strong>No newsletter issues</strong>
-              <p>Add the first issue or adjust the date, status, and booking filters.</p>
+              <p>Add the first issue.</p>
               ${globalThis.dakitCollection.createButtonMarkup({
                 label: "Add the first issue",
                 attributes: "data-newsletter-add-first",
@@ -409,9 +358,6 @@ export function createNewsletterPlanner(context) {
         `;
       }
     }
-    surface
-      .querySelectorAll(".newsletter-filters input,.newsletter-filters select")
-      .forEach((el) => (el.onchange = load));
     surface.querySelectorAll("[data-newsletter-view]").forEach((btn) => {
       btn.onclick = () => {
         currentView = btn.dataset.newsletterView;

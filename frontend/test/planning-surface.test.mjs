@@ -263,16 +263,6 @@ function createNewsletterDom() {
 
   dialog.setQuery("[data-dialog-title]", new TestElement("h2"));
   dialog.setQuery("[data-campaign-link]", new TestElement("a"));
-  const from = surface.setQuery("[data-from]", new TestElement("input"));
-  const to = surface.setQuery("[data-to]", new TestElement("input"));
-  const view = surface.setQuery("[data-view]", new TestElement("select"));
-  view.value = "month";
-  const filterStatus = surface.setQuery("[data-status]", new TestElement("select"));
-  filterStatus.value = "";
-  const booked = surface.setQuery("[data-booked]", new TestElement("select"));
-  booked.value = "";
-  const filters = [from, to, view, filterStatus, booked];
-  surface.setQueryAll(".newsletter-filters input,.newsletter-filters select", filters);
   surface.setQuery("[data-newsletter-add]", new TestElement("button"));
   surface.setQuery("[data-save]", new TestElement("button"));
 
@@ -287,17 +277,11 @@ function createNewsletterDom() {
 
   return {
     alerts,
-    booked,
     dialog,
-    filterStatus,
-    filters,
     form,
-    from,
     slots,
     status,
     surface,
-    to,
-    view,
     viewAll,
     viewButtons,
     viewSent,
@@ -1223,12 +1207,9 @@ describe("Planning surface production behavior", () => {
         options.method ? {} : { alerts: [], items },
     });
     await harness.surface.renderNewsletterSurface();
-    dom.view.value = "week";
-    await dom.view.onchange();
-    assert.match(dom.slots.innerHTML, /week/);
-    dom.filterStatus.value = "drafting";
-    await dom.filterStatus.onchange();
-    assert.equal(harness.requests.at(-1).url.includes("status=drafting"), true);
+    // One fixed view: issues by month, no filter bar.
+    assert.match(dom.slots.innerHTML, /<h3>August 2026<\/h3>/);
+    assert.doesNotMatch(dom.surface.innerHTML, /Filter &amp; group|Filter & group|data-booked|data-status/);
 
     dom.surface.querySelector("[data-newsletter-add]").onclick();
     assert.equal(dom.dialog.open, true);
@@ -1299,7 +1280,6 @@ describe("Planning surface production behavior", () => {
     assert.match(failureDom.slots.innerHTML, /Newsletter schedule unavailable/);
 
     loadSucceeded = true;
-    await failureDom.filterStatus.onchange();
     failureDom.dialog.showModal();
     failureDom.form.formEntries = [
       ["kind", "weekly"],
