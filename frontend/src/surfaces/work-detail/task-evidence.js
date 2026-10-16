@@ -272,8 +272,11 @@ export function createTaskEvidence(context) {
     for (const file of page.items) {
       const item = document.createElement("div");
       item.className = "task-file-item";
-      const name = document.createElement("span");
+      const name = document.createElement("button");
+      name.type = "button";
+      name.className = "quiet-button task-file-download";
       name.textContent = file.filename || file.id;
+      name.addEventListener("click", () => downloadTaskFile(file.id));
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "quiet-button task-file-remove";
@@ -485,6 +488,22 @@ export function createTaskEvidence(context) {
         message: `Could not remove file: ${err.message || "request failed"}`,
         retry: () => removeTaskFile(fileId, taskId, container),
       });
+    }
+  }
+
+  // Uploaded files live in private storage: the download route hands back a
+  // short-lived URL, opened in a new tab (same contract as artifacts).
+  async function downloadTaskFile(fileId) {
+    try {
+      const payload = await request(
+        workApiUrl(`/api/files/${encodeURIComponent(fileId)}/download`),
+      );
+      if (!payload?.downloadUrl) return;
+      // The link is absolute for S3 and API-relative for local-dev storage.
+      const target = new URL(payload.downloadUrl, window.location.origin).toString();
+      window.open(target, "_blank", "noopener");
+    } catch {
+      // The row stays; a failed download is retried by clicking again.
     }
   }
 

@@ -2575,6 +2575,102 @@ describe("Work Detail surface boundary", () => {
     }
   });
 
+  test("downloads a Task file through the minted short-lived link", async () => {
+    const task = {
+      id: "task-file-download",
+      version: 1,
+      status: "todo",
+      description: "Attach a proof",
+      taskHistory: [],
+    };
+    const opens = [];
+    const previousWindow = globalThis.window;
+    globalThis.window = {
+      location: { origin: "https://portal.test" },
+      open: (url) => opens.push(url),
+    };
+    try {
+      const harness = createHarness({
+        request: async (url) => {
+          if (url === `/api/tasks/${task.id}`) return task;
+          if (url === "/api/files/file-1/download") {
+            return {
+              downloadUrl:
+                "https://task-files.test/signed?X-Amz-Signature=secret",
+              expiresIn: 300,
+            };
+          }
+          if (url.startsWith("/api/files")) {
+            return { files: { items: [{ id: "file-1", filename: "proof.pdf" }] } };
+          }
+          if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+          return {};
+        },
+      });
+      await hydrateTask(harness, task);
+      await nextTicks(3);
+      const downloadButton = harness.taskPanelBody.querySelector(
+        ".task-file-download",
+      );
+      assert.ok(downloadButton, "the file row exposes a download control");
+      downloadButton.click();
+      await nextTicks(3);
+      assert.ok(
+        harness.requests.some(
+          (entry) => entry.url === "/api/files/file-1/download",
+        ),
+        "the download link is minted through the API",
+      );
+      assert.deepEqual(opens, [
+        "https://task-files.test/signed?X-Amz-Signature=secret",
+      ]);
+    } finally {
+      globalThis.window = previousWindow;
+    }
+  });
+
+  test("a failed Task file link mint leaves the row without opening anything", async () => {
+    const task = {
+      id: "task-file-download-failure",
+      version: 1,
+      status: "todo",
+      description: "Attach a proof that fails to open",
+      taskHistory: [],
+    };
+    const opens = [];
+    const previousWindow = globalThis.window;
+    globalThis.window = {
+      location: { origin: "https://portal.test" },
+      open: (url) => opens.push(url),
+    };
+    try {
+      const harness = createHarness({
+        request: async (url) => {
+          if (url === `/api/tasks/${task.id}`) return task;
+          if (url === "/api/files/file-1/download") {
+            throw new Error("link unavailable");
+          }
+          if (url.startsWith("/api/files")) {
+            return { files: { items: [{ id: "file-1", filename: "proof.pdf" }] } };
+          }
+          if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+          return {};
+        },
+      });
+      await hydrateTask(harness, task);
+      await nextTicks(3);
+      harness.taskPanelBody.querySelector(".task-file-download").click();
+      await nextTicks(3);
+      assert.deepEqual(opens, []);
+      assert.ok(
+        harness.taskPanelBody.querySelector(".task-file-download"),
+        "the row stays so the download can be retried",
+      );
+    } finally {
+      globalThis.window = previousWindow;
+    }
+  });
+
   test("loads every required-file page before enabling completion", async () => {
     const task = {
       id: "task-paged-files",
