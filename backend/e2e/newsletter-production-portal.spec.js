@@ -105,12 +105,11 @@ test.describe("production newsletter planner", () => {
         return route.fulfill({ json: item });
       }
       const url = new URL(request.url()),
-        status = url.searchParams.get("status");
+        from = url.searchParams.get("from") || "0000",
+        to = url.searchParams.get("to") || "9999";
       return route.fulfill({
         json: {
-          items: status
-            ? items.filter((item) => item.status === status)
-            : items,
+          items: items.filter((item) => item.publicationDate >= from && item.publicationDate <= to),
           alerts: [
             {
               reasonCode: "near-term-open-slot",
@@ -148,32 +147,16 @@ test.describe("production newsletter planner", () => {
     await page
       .locator(".newsletter-surface")
       .screenshot({ path: ".tmp/newsletter-production-populated-alert.png" });
-    await page.locator(".newsletter-filters summary").click();
-    await page.locator("select[data-view]").selectOption("week");
-    const weekSections = page.locator("[data-slots] > section");
-    await expect(weekSections).toHaveCount(1);
-    await expect(weekSections.locator("h3")).toHaveText("2026 · week 53");
-    await expect(weekSections).toContainText("Weekly #99");
-    await expect(weekSections).toContainText("Weekly #100");
-    await expect(page.getByText("2027 · week 01", { exact: true })).toHaveCount(
-      0,
-    );
-    await page.locator(".newsletter-surface").evaluate((surface) => {
-      surface.style.transform = "none";
-      surface.style.filter = "none";
-      surface.style.contain = "none";
-    });
-    await page.locator(".newsletter-surface").screenshot({
-      path: ".tmp/newsletter-production-week.png",
-      animations: "disabled",
-    });
-    await page.locator("select[data-view]").selectOption("month");
-    await page.locator("[data-status]").selectOption("sent");
-    await expect(page.getByText("No newsletter issues")).toBeVisible();
+    // Upcoming is the default view; Past is its own view, empty here.
+    await expect(page.locator(".newsletter-filters")).toHaveCount(0);
+    await expect(page.getByRole("radio", { name: "Upcoming" })).toHaveAttribute("aria-checked", "true");
+    await page.getByRole("radio", { name: "Past" }).click();
+    await expect(page.getByText("No past issues")).toBeVisible();
     await page
       .locator(".newsletter-surface")
       .screenshot({ path: ".tmp/newsletter-production-empty.png" });
-    await page.locator("[data-status]").selectOption("");
+    await page.getByRole("radio", { name: "Upcoming" }).click();
+    await expect(page.getByRole("heading", { name: "Weekly #99" })).toBeVisible();
     await page.getByRole("button", { name: "Add issue" }).click();
     await page.getByLabel("Publication date").fill("2027-01-08");
     await page.getByLabel("Issue number").fill("101");

@@ -161,16 +161,11 @@ export function createNewsletterPlanner(context) {
         className: "planner-header",
       })}
       <div class="newsletter-toolbar">
-      <div class="dk-tabs newsletter-views" role="radiogroup" data-newsletter-views aria-label="Filter newsletter issues">
-        <button type="button" data-newsletter-view="all" class="dk-tab"
-          role="radio"
-          aria-checked="true" tabindex="0">All issues <span class="dk-count" data-view-count hidden></span></button>
+      <div class="dk-tabs newsletter-views" role="radiogroup" data-newsletter-views aria-label="Newsletter issues">
         <button type="button" data-newsletter-view="upcoming" class="dk-tab"
-          role="radio"
-          aria-checked="false" tabindex="-1">Upcoming <span class="dk-count" data-view-count hidden></span></button>
-        <button type="button" data-newsletter-view="sent" class="dk-tab"
-          role="radio"
-          aria-checked="false" tabindex="-1">Sent &amp; archive <span class="dk-count" data-view-count hidden></span></button>
+          role="radio" aria-checked="true" tabindex="0">Upcoming</button>
+        <button type="button" data-newsletter-view="past" class="dk-tab"
+          role="radio" aria-checked="false" tabindex="-1">Past</button>
       </div>
       ${globalThis.dakitCollection.createButtonMarkup({ label: "Add issue", attributes: "data-newsletter-add" })}
       </div>
@@ -189,10 +184,16 @@ export function createNewsletterPlanner(context) {
           ...options,
         });
     let items = [];
-    let currentView = "all";
+    // Upcoming: today onward, soonest first. Past: everything before today,
+    // newest first. Both by month.
+    let currentView = "upcoming";
     const now = todayIsoDate();
-    // Issues from the start of this month through next year, by month.
-    const range = { from: now.slice(0, 8) + "01", to: `${Number(now.slice(0, 4)) + 1}-12-31` };
+    const yesterday = new Date(`${now}T00:00:00Z`);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const ranges = {
+      upcoming: { from: now },
+      past: { from: "2000-01-01", to: yesterday.toISOString().slice(0, 10) },
+    };
     const groupKey = (item) => item.publicationDate.slice(0, 7);
 
     function newsletterAlertMarkup(alert) {
@@ -258,6 +259,38 @@ export function createNewsletterPlanner(context) {
       `;
     }
 
+    /** A past issue, read-only: date, type, number, sponsors, and its card if it has one. */
+    function pastIssueMarkup(item) {
+      const publicationLabel = new Date(`${item.publicationDate}T00:00:00Z`)
+        .toLocaleDateString("en", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+      const kind = item.kind === "standalone" ? "Stand-alone" : "Weekly";
+      const sponsors = pastSponsorsMarkup(item);
+      return `
+        <article class="newsletter-slot-row is-past" data-issue-id="${escapeHtml(item.id)}">
+          <div class="newsletter-slot-date">
+            <time datetime="${escapeHtml(item.publicationDate)}">${publicationLabel}</time>
+            <div class="newsletter-date-meta"><small class="newsletter-kind-badge">${kind}</small></div>
+          </div>
+          <div class="newsletter-slot-main">
+            <div class="newsletter-slot-title">
+              <h4>${escapeHtml(item.label)}</h4>
+              ${item.status === "sent" ? "" : `<span class="planner-status ${plannerStatusClass(item.status)}">${escapeHtml(plannerLabel(item.status))}</span>`}
+            </div>
+            ${sponsors}
+          </div>
+          <div class="newsletter-slot-actions">${item.card ? issueCardMarkup(item) : ""}</div>
+        </article>
+      `;
+    }
+
+    function pastSponsorsMarkup(item) {
+      const names = Object.entries(item.slots || {})
+        .filter(([, slot]) => slot?.sponsor)
+        .map(([position, slot]) => `<span class="newsletter-past-sponsor"><strong>${
+          escapeHtml(item.kind === "standalone" ? "Sponsor" : position === "primary" ? "Primary" : "Secondary")}:</strong> ${escapeHtml(slot.sponsor)}</span>`);
+      return names.length ? `<p class="newsletter-past-sponsors">${names.join(" ")}</p>` : "";
+    }
+
     function newsletterPeriodMarkup(period, issues) {
       const periodLabel = new Date(`${period}-01T00:00:00Z`).toLocaleDateString("en", {
         month: "long",
@@ -271,7 +304,7 @@ export function createNewsletterPlanner(context) {
             <span class="planner-count">${issues.length} ${issues.length === 1 ? "issue" : "issues"}</span>
           </header>
           <div class="newsletter-slot-list">
-            ${issues.map(newsletterIssueMarkup).join("")}
+            ${issues.map(currentView === "past" ? pastIssueMarkup : newsletterIssueMarkup).join("")}
           </div>
         </section>
       `;
@@ -280,52 +313,23 @@ export function createNewsletterPlanner(context) {
     async function load() {
       status.textContent = "Loading newsletter issues…";
       try {
-        const result = await api(`?${new URLSearchParams(range)}`);
+        const view = currentView;
+        const result = await api(`?${new URLSearchParams(ranges[view])}`);
+        if (view !== currentView) return;
         items = result.items || [];
 
-        // Update stats summary bar
-        const totalCount = items.length;
-        const upcomingCount = items.filter((i) =>
-          ["planned", "drafting", "review", "scheduled"].includes(i.status)
-        ).length;
-        // Each filter segment carries its count. There is no stats strip
-        // restating them (dakit principle 4, no vanity metrics).
-        const sentCount = items.filter((i) =>
-          ["sent", "cancelled"].includes(i.status)
-        ).length;
-        const viewCounts = {
-          all: totalCount,
-          upcoming: upcomingCount,
-          sent: sentCount,
-        };
-        for (const [view, count] of Object.entries(viewCounts)) {
-          const badge = surface.querySelector(`[data-newsletter-view="${view}"] [data-view-count]`);
-          if (badge) {
-            badge.textContent = String(count);
-            badge.hidden = false;
-          }
-        }
-
-        const uniqueAlerts = [
-          ...new Map((result.alerts || []).map((alert) => [alert.reasonCode, alert])).values(),
-        ];
+        // Alerts are about what is still to come.
+        const uniqueAlerts = view === "upcoming"
+          ? [...new Map((result.alerts || []).map((alert) => [alert.reasonCode, alert])).values()]
+          : [];
         surface.querySelector("[data-alerts]").innerHTML = uniqueAlerts
           .map(newsletterAlertMarkup)
           .join("");
 
-        let displayedItems = items;
-        if (currentView === "upcoming") {
-          displayedItems = items.filter((i) =>
-            ["planned", "drafting", "review", "scheduled"].includes(i.status)
-          );
-        } else if (currentView === "sent") {
-          displayedItems = items.filter((i) =>
-            ["sent", "cancelled"].includes(i.status)
-          );
-        }
-
+        const displayedItems = items;
         const groups = {};
-        const sortedItems = [...displayedItems].sort((a, b) => a.publicationDate.localeCompare(b.publicationDate));
+        const direction = currentView === "past" ? -1 : 1;
+        const sortedItems = [...displayedItems].sort((a, b) => direction * a.publicationDate.localeCompare(b.publicationDate));
         for (const item of sortedItems) {
           (groups[groupKey(item)] ||= []).push(item);
         }
@@ -335,9 +339,9 @@ export function createNewsletterPlanner(context) {
               .join("")
           : `
             <div class="honest-state planner-empty">
-              <strong>No newsletter issues</strong>
-              <p>Add the first issue.</p>
-              ${globalThis.dakitCollection.createButtonMarkup({
+              <strong>${currentView === "past" ? "No past issues" : "No upcoming issues"}</strong>
+              <p>${currentView === "past" ? "Past issues come from the schedule sheet." : "Add the next issue."}</p>
+              ${currentView === "past" ? "" : globalThis.dakitCollection.createButtonMarkup({
                 label: "Add the first issue",
                 attributes: "data-newsletter-add-first",
                 className: "collection-empty-action",

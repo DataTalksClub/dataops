@@ -180,28 +180,6 @@ async function openProcessQualityFindings(page) {
   await expect(drilldown).toHaveJSProperty('open', true);
 }
 
-async function expandNewsletterFilters(page) {
-  const filters = page.locator('.newsletter-filters');
-  if (!(await filters.evaluate((element) => element.open))) {
-    await filters.locator('summary').click();
-  }
-}
-
-async function setNewsletterDateRange(page, from, to) {
-  const fromInput = page.locator('[data-from]');
-  const toInput = page.locator('[data-to]');
-  // The surface remounts with default filters while the SPA boots; a remount
-  // between the two fills silently reverts one of them. Keep applying until
-  // both values stick, then trigger the filtered load once.
-  await expect(async () => {
-    await expandNewsletterFilters(page);
-    await fromInput.fill(from);
-    await toInput.fill(to);
-    expect(await fromInput.inputValue()).toBe(from);
-    expect(await toInput.inputValue()).toBe(to);
-  }).toPass();
-  await fromInput.dispatchEvent('change');
-}
 
 async function expectStackedQualityEmptyState(page) {
   const state = page.locator('.ops-quality-list > .ops-honest-state');
@@ -911,12 +889,12 @@ test.describe('canonical frontend capability behavior', () => {
     test.setTimeout(90_000);
     const { context, page } = await portalPage(browser);
     await page.goto('/newsletter');
-    await expect(page.getByText('No newsletter issues')).toBeVisible();
+    await expect(page.getByText('No upcoming issues')).toBeVisible();
     await page.goto('/calendar');
     await expect(page.getByRole('heading', { name: 'Calendar', exact: true, level: 1 })).toBeVisible();
     const id = unique('schedule');
     const sponsor = `Synthetic sponsor ${id}`;
-    // An issue gets its Card when it is due; this one is in the past, so it has none.
+    // An issue gets its Card when it is due; by the server's clock this one is past, so it has none.
     const templateFixture = await context.request.post('/__e2e__/template-fixtures', { data: {
       name: 'Synthetic stand-alone newsletter', type: 'newsletter-standalone', triggerType: 'manual', references: [],
       taskDefinitions: [{ refId: 'send', description: 'Send the synthetic stand-alone email', offsetDays: 0 }],
@@ -954,8 +932,9 @@ test.describe('canonical frontend capability behavior', () => {
     await eventCard(`Holiday calendar ${id}`, '2030-12-25');
     expect((await context.request.post('/api/calendar-items', { data: { title: 'Standalone' } })).status()).toBe(405);
 
+    // The browser's today is 1 Sep 2026, so the issue is Upcoming and editable.
+    await page.clock.setFixedTime(new Date('2026-09-01T12:00:00Z'));
     await page.goto('/newsletter');
-    await setNewsletterDateRange(page, '2026-09-01', '2026-09-30');
     await expect(page.getByText(sponsor)).toBeVisible();
     const scheduledSlot = page.locator('[data-slots] article', { hasText: sponsor });
     await expect(scheduledSlot.locator('.planner-status.is-info')).toHaveText('Scheduled');
@@ -976,15 +955,12 @@ test.describe('canonical frontend capability behavior', () => {
     await page.keyboard.press('Escape');
     await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
     await page.reload();
-    await setNewsletterDateRange(page, '2026-09-01', '2026-09-30');
     await expect(page.getByText(`Server sponsor ${id}`)).toBeVisible();
     await setFaults(context.request, [{ method: 'GET', path: '/api/newsletter-issues', status: 503 }]);
-    await expandNewsletterFilters(page);
-    await page.locator('[data-status]').selectOption('planned');
+    await page.getByRole('radio', { name: 'Past' }).click();
     await expect(page.locator('.newsletter-surface [role="status"]')).toContainText('Could not load newsletter schedule');
     await clearFaults(context.request);
-    await expandNewsletterFilters(page);
-    await page.locator('[data-status]').selectOption('');
+    await page.getByRole('radio', { name: 'Upcoming' }).click();
     await expect(page.getByText(`Server sponsor ${id}`)).toBeVisible();
 
     await page.clock.setFixedTime(new Date('2026-09-03T12:00:00Z'));

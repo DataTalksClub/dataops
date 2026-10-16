@@ -127,15 +127,13 @@ test("Newsletter is a readable, responsive planning queue in light and dark them
   await expectNoPageOverflow(page, 820);
   await page.screenshot({ path: path.join(screenshots, "newsletter-820-dark.png"), animations: "disabled" });
   await page.setViewportSize({ width: 620, height: 844 });
-  expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(2);
+  await expect(surface.locator(".newsletter-filters")).toHaveCount(0);
   await expectNoPageOverflow(page, 620);
   await page.setViewportSize({ width: 420, height: 844 });
-  expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
   await expectNoPageOverflow(page, 420);
   await page.screenshot({ path: path.join(screenshots, "newsletter-420-dark.png"), animations: "disabled" });
 
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
   await useTheme(page, false);
   await expectNoPageOverflow(page, 390);
   await page.screenshot({ path: path.join(screenshots, "newsletter-390-light.png"), animations: "disabled" });

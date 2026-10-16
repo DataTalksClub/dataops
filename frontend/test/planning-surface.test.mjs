@@ -266,13 +266,11 @@ function createNewsletterDom() {
   surface.setQuery("[data-newsletter-add]", new TestElement("button"));
   surface.setQuery("[data-save]", new TestElement("button"));
 
-  const viewAll = new TestElement("button");
-  viewAll.dataset = { newsletterView: "all" };
   const viewUpcoming = new TestElement("button");
   viewUpcoming.dataset = { newsletterView: "upcoming" };
-  const viewSent = new TestElement("button");
-  viewSent.dataset = { newsletterView: "sent" };
-  const viewButtons = [viewAll, viewUpcoming, viewSent];
+  const viewPast = new TestElement("button");
+  viewPast.dataset = { newsletterView: "past" };
+  const viewButtons = [viewUpcoming, viewPast];
   surface.setQueryAll("[data-newsletter-view]", viewButtons);
 
   return {
@@ -282,9 +280,8 @@ function createNewsletterDom() {
     slots,
     status,
     surface,
-    viewAll,
     viewButtons,
-    viewSent,
+    viewPast,
     viewUpcoming,
   };
 }
@@ -1111,8 +1108,8 @@ describe("Planning surface production behavior", () => {
     assert.doesNotMatch(html, /data-card-link|Link card/);
     const range = new URL(harness.requests[0].url).searchParams;
     assert.match(harness.requests[0].url, /\/api\/newsletter-issues\?/);
-    assert.equal(range.get("from"), "2026-08-01");
-    assert.equal(range.get("to"), "2027-12-31");
+    assert.equal(range.get("from"), "2026-08-13");
+    assert.equal(range.get("to"), null, "Upcoming runs from today with no end");
   });
 
   test("removes a slot's sponsor from the row after confirming, and again when done tasks would stay", async () => {
@@ -1254,7 +1251,7 @@ describe("Planning surface production behavior", () => {
       request: async () => ({ alerts: [], items: [] }),
     });
     await emptyHarness.surface.renderNewsletterSurface();
-    assert.match(emptyDom.slots.innerHTML, /No newsletter issues/);
+    assert.match(emptyDom.slots.innerHTML, /No upcoming issues/);
     // The empty schedule repeats the create action as a secondary button.
     assert.match(emptyDom.slots.innerHTML, /dk-button--secondary[^"]*collection-empty-action"[^>]*data-newsletter-add-first[^>]*>[\s\S]*Add the first issue/);
     assert.doesNotMatch(emptyDom.slots.innerHTML, /data-dk-create/);
@@ -1294,44 +1291,46 @@ describe("Planning surface production behavior", () => {
     );
   });
 
-  test("filters by view tabs (All, Upcoming, Sent)", async () => {
+  test("shows Upcoming by default and Past as its own read-only view, newest first", async () => {
     const dom = createNewsletterDom();
-    const items = [
+    const upcoming = [
       weeklyIssue({ id: "issue-1", publicationDate: "2026-08-15", label: "Issue 10 Upcoming Planned", status: "planned" }),
-      weeklyIssue({ id: "issue-2", publicationDate: "2026-08-20", label: "Issue 11 Drafting", status: "drafting" }),
-      weeklyIssue({ id: "issue-3", publicationDate: "2026-08-25", label: "Issue 12 Scheduled", status: "scheduled" }),
-      weeklyIssue({ id: "issue-4", publicationDate: "2026-08-01", label: "Issue 9 Sent", status: "sent", publicUrl: "https://example.invalid/9" }),
-      weeklyIssue({ id: "issue-5", publicationDate: "2026-08-28", label: "Issue 13 In Review", status: "review" }),
+      weeklyIssue({ id: "issue-5", publicationDate: "2026-09-28", label: "Issue 13 In Review", status: "review" }),
     ];
+    const past = [
+      weeklyIssue({ id: "issue-3", publicationDate: "2026-06-01", label: "Issue 7 Sent", status: "sent",
+        slots: { primary: { sponsor: "Old <Sponsor>" }, secondary: { sponsor: "Second" } } }),
+      weeklyIssue({ id: "issue-4", publicationDate: "2026-08-01", label: "Issue 9 Sent", status: "sent",
+        cardId: "card-9", card: { id: "card-9", title: "1 Aug", stage: "done", status: "archived", anchorDate: "2026-08-01", taskCount: 5, openTaskCount: 0 } }),
+    ];
+    const urls = [];
     const harness = createPlanningHarness({
       newsletter: dom,
-      request: async () => ({ alerts: [], items }),
+      request: async (url) => {
+        urls.push(new URL(String(url)).searchParams);
+        return { alerts: [{ reasonCode: "card-unavailable", severity: "error", issueId: "issue-4" }], items: urls.at(-1).get("to") ? past : upcoming };
+      },
     });
     await harness.surface.renderNewsletterSurface();
+    assert.equal(urls[0].get("from"), "2026-08-13");
+    assert.equal(urls[0].get("to"), null);
+    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Planned/);
+    assert.doesNotMatch(dom.slots.innerHTML, /Issue 9 Sent/);
+    assert.match(dom.alerts.innerHTML, /card is missing/);
 
-    for (const label of ["Issue 10 Upcoming Planned", "Issue 11 Drafting", "Issue 12 Scheduled", "Issue 9 Sent", "Issue 13 In Review"]) {
-      assert.match(dom.slots.innerHTML, new RegExp(label));
-    }
-    // A sent issue's slots can no longer be changed.
-    // A sent issue's slots are read-only text.
-    assert.doesNotMatch(dom.slots.innerHTML, /data-slot-(book|release)="[a-z]+" data-issue-id="issue-4"/);
-    assert.match(dom.slots.innerHTML, /<span class="newsletter-slot__text"><strong>Primary:<\/strong> Example Sponsor<\/span>/);
+    dom.viewPast.onclick();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual([urls.at(-1).get("from"), urls.at(-1).get("to")], ["2000-01-01", "2026-08-12"]);
+    const html = dom.slots.innerHTML;
+    assert.ok(html.indexOf("August 2026") < html.indexOf("June 2026"), "newest month first");
+    assert.match(html, /<strong>Primary:<\/strong> Old &lt;Sponsor&gt;<\/span> <span class="newsletter-past-sponsor"><strong>Secondary:<\/strong> Second/);
+    assert.match(html, /href="\/cards\?cardId=card-9"/);
+    assert.doesNotMatch(html, /data-slot-book|data-slot-release|data-create-card|data-edit=/, "past rows are read-only");
+    assert.equal(dom.alerts.innerHTML, "", "past issues raise no alerts");
 
     dom.viewUpcoming.onclick();
     await new Promise((r) => setTimeout(r, 0));
-    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Planned/);
     assert.match(dom.slots.innerHTML, /Issue 13 In Review/);
-    assert.doesNotMatch(dom.slots.innerHTML, /Issue 9 Sent/);
-
-    dom.viewSent.onclick();
-    await new Promise((r) => setTimeout(r, 0));
-    assert.doesNotMatch(dom.slots.innerHTML, /Issue 10 Upcoming Planned/);
-    assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
-
-    dom.viewAll.onclick();
-    await new Promise((r) => setTimeout(r, 0));
-    assert.match(dom.slots.innerHTML, /Issue 10 Upcoming Planned/);
-    assert.match(dom.slots.innerHTML, /Issue 9 Sent/);
   });
 
   test("the issue name opens a details-only dialog that links the campaign", async () => {
