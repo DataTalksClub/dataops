@@ -9,8 +9,8 @@ export const help = `dataops recurring - schedules that generate Tasks on a cron
 
 Usage
   dataops recurring list
-  dataops recurring create --description D --cron "0 9 * * 1" [--assignee ID] [--doc DOC] [--paused]
-  dataops recurring edit <id> [--description D] [--cron C] [--assignee ID] [--doc DOC|none]
+  dataops recurring create --description D --cron "0 9 * * 1" [--assignee ID] [--doc DOC] [--paused] [--browser required|headless]
+  dataops recurring edit <id> [--description D] [--cron C] [--assignee ID] [--doc DOC|none] [--browser required|headless|none]
   dataops recurring pause <id> | resume <id> | delete <id>
   dataops recurring generate [--date YYYY-MM-DD] [--until YYYY-MM-DD]
 
@@ -18,6 +18,17 @@ Usage
 --doc names the process doc (an id, alias or path, as for \`dataops kb show\`)
 that every Task the schedule generates links; \`--doc none\` removes it.
 `;
+
+/** Classify the whole generated Task, independently of required accounts. */
+function browserRequirementBody(args) {
+  if (args.browser === undefined) return {};
+  const mode = String(args.browser).trim();
+  if (mode === "none") return { browserRequirement: null };
+  if (!["required", "headless"].includes(mode)) {
+    throw new Error("--browser must be required, headless, or none.");
+  }
+  return { browserRequirement: mode };
+}
 
 function configsFrom(payload) {
   if (Array.isArray(payload)) return payload;
@@ -102,6 +113,7 @@ export async function create(args, io) {
     enabled: args.paused ? false : true,
   };
   if (args.assignee) body.assigneeId = String(args.assignee);
+  Object.assign(body, browserRequirementBody(args));
   const api = client(args);
   if (args.doc !== undefined)
     body.instructionDocId = await processDocId(api, args.doc, { allowNone: false });
@@ -118,7 +130,7 @@ export async function edit(args, io) {
   const id = args._[0];
   if (!id)
     throw new Error(
-      "Usage: dataops recurring edit <id> [--description D] [--cron C] [--assignee ID] [--doc DOC|none]",
+      "Usage: dataops recurring edit <id> [--description D] [--cron C] [--assignee ID] [--doc DOC|none] [--browser required|headless|none]",
     );
   const api = client(args);
   const config = await findConfig(api, id);
@@ -127,11 +139,12 @@ export async function edit(args, io) {
     body.description = String(args.description);
   if (args.cron !== undefined) body.cronExpression = requireCron(args.cron);
   if (args.assignee !== undefined) body.assigneeId = String(args.assignee);
+  Object.assign(body, browserRequirementBody(args));
   if (args.doc !== undefined)
     body.instructionDocId = await processDocId(api, args.doc, { allowNone: true });
   if (Object.keys(body).length === 0) {
     throw new Error(
-      "Nothing to change. Pass --description, --cron, --assignee, or --doc.",
+      "Nothing to change. Pass --description, --cron, --assignee, --doc, or --browser.",
     );
   }
   const result = await api.put(

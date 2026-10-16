@@ -367,6 +367,111 @@ describe("recurring commands", () => {
       /five fields/,
     );
   });
+
+  test("sends the browser classification on create and edit, none clearing it", async () => {
+    saveProfile("https://portal.test", { token: "dops_abc", tokenId: "id-1" });
+    const recurring = await import("../src/commands/recurring.mjs");
+    const fetch = fakeFetch({
+      "/api/recurring/config-1": {
+        body: { recurringConfig: { id: "config-1", description: "Weekly", browserRequirement: "headless" } },
+      },
+      "/api/recurring": (options) =>
+        options.method === "POST"
+          ? { body: { recurringConfig: { id: "config-1", description: "New" } }, status: 201 }
+          : { body: { recurringConfigs: [{ id: "config-1", description: "Weekly", cronExpression: "0 9 * * 1" }] } },
+    });
+    globalThis.fetch = fetch;
+
+    const io = captureIo();
+    await recurring.create(
+      { url: "https://portal.test", description: "New", cron: "0 9 * * 1", browser: "headless", _: [] },
+      { print: io.log },
+    );
+    const created = fetch.calls.find((call) => call.url.endsWith("/api/recurring") && call.options.method === "POST");
+    assert.deepEqual(JSON.parse(created.options.body).browserRequirement, "headless");
+
+    await recurring.edit(
+      { url: "https://portal.test", _: ["config-1"], browser: "none" },
+      { print: io.log },
+    );
+    const edited = fetch.calls.find((call) => call.url.endsWith("/api/recurring/config-1"));
+    assert.equal(edited.options.method, "PUT");
+    assert.equal(JSON.parse(edited.options.body).browserRequirement, null);
+
+    await assert.rejects(
+      () =>
+        recurring.edit(
+          { url: "https://portal.test", _: ["config-1"], browser: "sometimes" },
+          { print: () => {} },
+        ),
+      /--browser must be required, headless, or none/,
+    );
+    globalThis.fetch = globalFetch;
+  });
+});
+
+describe("tasks commands", () => {
+  test("list sends the browser filter, marks each row, and rejects unknown modes", async () => {
+    saveProfile("https://portal.test", { token: "dops_abc", tokenId: "id-1" });
+    const fetch = fakeFetch({
+      "browser=headless": {
+        body: {
+          tasks: [
+            {
+              id: "task-headless",
+              description: "Headless work",
+              status: "todo",
+              date: "2026-08-12",
+              browserRequirement: "headless",
+            },
+            {
+              id: "task-unclear",
+              description: "Undecided work",
+              status: "todo",
+              date: "2026-08-12",
+            },
+          ],
+        },
+      },
+    });
+    globalThis.fetch = fetch;
+    const tasks = await import("../src/commands/tasks.mjs");
+
+    const io = captureIo();
+    const result = await tasks.list(
+      { url: "https://portal.test", _: [], status: "todo", browser: "headless" },
+      { print: io.log },
+    );
+    const listCall = fetch.calls.find((call) => call.url.includes("/api/tasks?"));
+    assert.ok(String(listCall.url).includes("browser=headless"), listCall.url);
+    // The server narrows; the table carries the honest BROWSER column, empty
+    // for work nobody classified.
+    assert.match(io.text(), /BROWSER/);
+    assert.match(io.text(), /headless/);
+    assert.match(io.text(), /task-unclear/);
+
+    await assert.rejects(
+      () =>
+        tasks.list(
+          { url: "https://portal.test", _: [], status: "todo", browser: "sometimes" },
+          { print: () => {} },
+        ),
+      /--browser must be required, headless, or unclassified/,
+    );
+    globalThis.fetch = globalFetch;
+  });
+
+  test("create and update send the classification, none clears it", async () => {
+    const tasks = await import("../src/commands/tasks.mjs");
+    const { browserQuery, browserMark, requiresQuery } = tasks;
+    assert.deepEqual(browserQuery({ browser: "headless" }), { browser: "headless" });
+    assert.deepEqual(browserQuery({}), {});
+    assert.deepEqual(browserMark("required"), "browser");
+    assert.equal(browserMark(undefined), "");
+    assert.throws(() => browserQuery({ browser: "sometimes" }), /--browser must be/);
+    // The resource pipeline is untouched by the browser filter.
+    assert.deepEqual(requiresQuery({ canDo: "all" }), {});
+  });
 });
 
 describe("command dispatch", () => {

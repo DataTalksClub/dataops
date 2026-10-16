@@ -79,6 +79,28 @@ and do not mark it waiting or done. A Task with no `requires` needs nothing
 beyond DataOps itself. If a Task obviously needs a resource it does not list,
 add it: `dataops tasks update <task-id> --requires youtube,luma`.
 
+## Browser requirement: headless machines
+
+`requires` names accounts; the separate `browserRequirement` classifies whether
+an interactive browser is needed at all. It is a human-made claim on the Task —
+`required` (a browser is needed somewhere) or `headless` (the whole Task can
+finish without one) — and it is never inferred from a service name: a Typefully
+or YouTube task may have a full API route. An unclassified Task (`show` prints
+"not classified") is unknown, not headless-safe.
+
+On a machine without a browser, list only work that is explicitly cleared:
+
+```bash
+dataops tasks list --mine --browser headless   # headless mode: classified Tasks only
+dataops tasks list --browser unclassified      # triage: classify these next
+```
+
+`--browser headless` keeps only Tasks classified `headless`; it filters the
+listing and never changes status, due dates, or ownership. Classify a Task you
+know: `dataops tasks update <task-id> --browser headless` (or `--browser none`
+to clear a wrong classification). Never guess `headless` from a Code view or a
+service name alone; classify it only when every step has a headless route.
+
 ## Workflow: "here is a task, do it"
 
 1. Find the work item if you were given words instead of an id:

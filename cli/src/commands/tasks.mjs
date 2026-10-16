@@ -15,10 +15,10 @@ Usage
   dataops tasks show <task-id>
   dataops tasks create --description D [--date YYYY-MM-DD] [--card ID] [--assignee ID|me]
       [--comment C] [--link URL] [--tags a,b] [--required-link-name NAME] [--instruction-doc DOC-ID]
-      [--requires youtube,luma] [--depends-on ID,ID]
+      [--requires youtube,luma] [--browser required|headless] [--depends-on ID,ID]
   dataops tasks update <task-id> [--description D] [--date D] [--comment C] [--link URL]
       [--external-status S] [--tags a,b] [--card ID|none] [--instruction-doc DOC-ID]
-      [--requires a,b|none] [--depends-on ID,ID|none]
+      [--requires a,b|none] [--browser required|headless|none] [--depends-on ID,ID|none]
   dataops tasks done <task-id> [--link URL] [--comment C] [--external-status S] [--file PATH]
   dataops tasks reopen <task-id>
   dataops tasks skip <task-id> --reason R        Resolve as not applicable (no proof needed)
@@ -53,6 +53,16 @@ Required resources (ids from \`dataops resources list\`)
                            it off.
                            A Task that needs something you lack is for someone else.
 
+Browser requirement (execution need, separate from accounts)
+  --browser M              Filter the list by whether a Task needs an interactive browser:
+                           required (browser needed somewhere), headless (the whole Task can
+                           finish without one), unclassified (not yet decided). --browser
+                           headless is the headless mode: only explicitly classified Tasks
+                           pass, so unclassified work is never offered as safe headless work.
+                           create/update takes required|headless, or none to clear. It is
+                           a human classification: no service name implies a browser.
+                           Filtering never changes status, due dates, or ownership.
+
 Proof
   done saves the proof and completes the Task in one versioned write. --link (alias
   --proof-url) fills the Task's link/required link; --comment and --external-status
@@ -64,8 +74,10 @@ Proof
 Examples
   dataops tasks list --mine
   dataops tasks list --can-do youtube,luma,gmail
+  dataops tasks list --browser headless            # safe work for a headless machine
   dataops tasks list --status todo --requires mailchimp
   dataops tasks list --card 542df0a6-... --json
+  dataops tasks create --description "Draft newsletter" --browser headless
   dataops tasks done b6fc790f-... --link https://example.com/published-post
   dataops tasks wait b6fc790f-... --for "Sponsor" --follow-up 2026-11-02 --channel email --note "Asked for logo"
 `;
@@ -98,6 +110,38 @@ export function requiresQuery(args, env = process.env) {
   }
   if (canDo !== undefined && String(canDo).trim() !== "all") query.canDo = csv(String(canDo)).join(",");
   return query;
+}
+
+/**
+ * The `browser` listing filter: the execution need, not the accounts. Only an
+ * explicit `headless` classification passes `--browser headless`, so a Task
+ * nobody classified is never offered as safe headless work.
+ */
+export function browserQuery(args) {
+  if (args.browser === undefined) return {};
+  const mode = String(args.browser).trim();
+  if (!["required", "headless", "unclassified"].includes(mode)) {
+    throw new UsageError("--browser must be required, headless, or unclassified.");
+  }
+  return { browser: mode };
+}
+
+/** The writable `browserRequirement` value from --browser (none clears it). */
+function browserRequirementField(args) {
+  if (args.browser === undefined) return {};
+  const mode = String(args.browser).trim();
+  if (mode === "none" || mode === "") return { browserRequirement: null };
+  if (!["required", "headless"].includes(mode)) {
+    throw new UsageError("--browser must be required, headless, or none.");
+  }
+  return { browserRequirement: mode };
+}
+
+/** The list column's short browser word: empty means not classified. */
+export function browserMark(value) {
+  if (value === "required") return "browser";
+  if (value === "headless") return "headless";
+  return "";
 }
 
 function isWaitingOrFollowUp(task) {
@@ -147,12 +191,13 @@ export async function list(args, io) {
   const status = optionalString(args, "status");
   const card = optionalString(args, "card");
   const resources = requiresQuery(args);
+  const browser = browserQuery(args);
 
   let tasks;
   let view;
   if (date || from || status || card) {
     view = "filter";
-    const query = { owner, cardId: card, status, date, startDate: from, endDate: to, ...resources };
+    const query = { owner, cardId: card, status, date, startDate: from, endDate: to, ...resources, ...browser };
     tasks = tasksOf(await api.get("/api/tasks", { query }));
   } else {
     const wanted = ["today", "overdue", "waiting"].filter((name) => args[name]);
@@ -163,7 +208,7 @@ export async function list(args, io) {
       overdue: { startDate: "1970-01-01", endDate: yesterday(day) },
       waiting: { status: "waiting" },
     };
-    const pages = await Promise.all(lanes.map((lane) => api.get("/api/tasks", { query: { ...queries[lane], owner, ...resources } })));
+    const pages = await Promise.all(lanes.map((lane) => api.get("/api/tasks", { query: { ...queries[lane], owner, ...resources, ...browser } })));
     tasks = orderQueue(pages.flatMap(tasksOf), day);
     if (view === "overdue") tasks = tasks.filter((task) => task.queueSegment === "overdue");
     if (view === "today") tasks = tasks.filter((task) => String(task.date || "").slice(0, 10) === day);
@@ -182,6 +227,7 @@ export async function list(args, io) {
       ...(view === "filter" ? [] : [["WHEN", (task) => task.queueSegment]]),
       ["ASSIGNEE", (task) => task.assignee?.name || ""],
       ["REQUIRES", (task) => (task.requires || []).join(",")],
+      ["BROWSER", (task) => browserMark(task.browserRequirement)],
       ["BLOCKED", (task) => (task.blocked ? "yes" : "")],
       ["DESCRIPTION", (task) => task.description],
     ],
@@ -213,6 +259,7 @@ export async function show(args, io) {
     ["assignee", task.assignee ? `${task.assignee.name} (${task.assignee.id})` : task.assigneeId],
     ["link", task.link],
     ["requires", task.requires?.length ? task.requires.join(", ") : ""],
+    ["browser", task.browserRequirement ? browserMark(task.browserRequirement) : "not classified"],
     ["depends on", prerequisiteLines(task)],
     ["blocked", task.blocked ? "yes - complete or skip the prerequisites first" : ""],
     ["required link", task.requiredLinkName],
@@ -267,6 +314,7 @@ function writableFields(args) {
     const requires = required(args, "requires", "requires");
     body.requires = requires === "none" ? [] : csv(requires);
   }
+  Object.assign(body, browserRequirementField(args));
   if (args.dependsOn !== undefined) {
     const dependsOn = required(args, "dependsOn", "depends-on");
     body.dependsOn = dependsOn === "none" ? [] : csv(dependsOn);
