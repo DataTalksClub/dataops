@@ -1,4 +1,5 @@
 import { UsageError } from "../errors.mjs";
+import { readFileSync } from "node:fs";
 import { enc, fields, integer, isoDate, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 
@@ -19,9 +20,18 @@ Usage
       [--recording-date YYYY-MM-DD] [--release-date YYYY-MM-DD] [--status S]
       [--youtube URL] [--spotify URL] [--apple URL] [--anchor URL] [--website URL]
       [--slug website-slug] [--card ID] [--notes TEXT]
+      [--short T] [--description T] [--intro T] [--topics "a,b"] [--duration PT..]
+      [--image-url URL] [--transcript-file F] [--clips-file F] [--resources-file F]
                                   --status defaults to booked; a title or a guest is required
   dataops podcast update <episode-id> [same flags as create]
                                   "none" clears a date, link, slug, card, notes or episode number
+                                  Page content (what the website page renders):
+      --short TEXT --description TEXT --intro TEXT --topics "a,b,c"
+      --duration PT1H2M3S --image-url https://...
+      --transcript-file transcript.json --clips-file clips.json
+      --resources-file resources.json
+                                  JSON files hold the website front-matter arrays;
+                                  "none" clears one
   dataops podcast create-card <episode-id>
                                   Create the episode Card from the podcast Template and link it
                                   (the episode needs a recording date)
@@ -49,7 +59,7 @@ Examples
   dataops podcast create-card 6f1c...
 `;
 
-const NULLABLE = new Set(["season", "episode", "recordingDate", "releaseDate", "websiteSlug", "cardId", "notes", "title"]);
+const NULLABLE = new Set(["season", "episode", "recordingDate", "releaseDate", "websiteSlug", "cardId", "notes", "title", "short", "description", "intro", "topics", "duration", "imageUrl", "transcript", "clips", "resources"]);
 
 /** "Jane Doe:jane-doe, Bob" -> [{ name: "Jane Doe", slug: "jane-doe" }, { name: "Bob" }] */
 export function parseGuests(value) {
@@ -67,8 +77,16 @@ export function parseGuests(value) {
 function nullable(args, flag, key, body, parse = (value) => value) {
   const value = optionalString(args, flag);
   if (value === undefined) return;
-  body[key] = value === "none" && NULLABLE.has(key) ? null : parse(value);
+  body[key] = value === "none" && NULLABLE.has(key) ? null : parse(value, flag);
 }
+
+const jsonFile = (value, flag) => {
+  try {
+    return JSON.parse(readFileSync(value, "utf8"));
+  } catch {
+    throw new UsageError(`--${flag} must be a readable JSON file.`);
+  }
+};
 
 function episodeBody(args) {
   const body = {};
@@ -80,6 +98,17 @@ function episodeBody(args) {
   nullable(args, "slug", "websiteSlug", body);
   nullable(args, "card", "cardId", body);
   nullable(args, "notes", "notes", body);
+  nullable(args, "short", "short", body);
+  nullable(args, "description", "description", body);
+  nullable(args, "intro", "intro", body);
+  nullable(args, "topics", "topics", body, (value) =>
+    value.split(",").map((topic) => topic.trim()).filter(Boolean),
+  );
+  nullable(args, "duration", "duration", body);
+  nullable(args, "imageUrl", "imageUrl", body);
+  nullable(args, "transcriptFile", "transcript", body, jsonFile);
+  nullable(args, "clipsFile", "clips", body, jsonFile);
+  nullable(args, "resourcesFile", "resources", body, jsonFile);
   const status = optionalString(args, "status");
   if (status !== undefined) {
     if (!STATUSES.includes(status)) throw new UsageError(`--status must be one of: ${STATUSES.join(", ")}.`);
@@ -216,6 +245,15 @@ export async function show(args, io) {
     ["releaseDate", episode.releaseDate],
     ...Object.entries(episode.links || {}),
     ["websiteSlug", episode.websiteSlug],
+    ["short", episode.short],
+    ["description", episode.description],
+    ["topics", (episode.topics || []).join(", ")],
+    ["duration", episode.duration],
+    ["image", episode.imageUrl],
+    ["intro", episode.intro ? `${episode.intro.length} chars` : ""],
+    ["page transcript", `${(episode.transcript || []).length} entries`],
+    ["clips", `${(episode.clips || []).length} clips`],
+    ["resources", `${(episode.resources || []).length} resources`],
     ["spotify schedule", scheduledAt(episode)],
     ["spotify", episode.readiness?.spotify],
     ["transcript", episode.readiness?.transcript],

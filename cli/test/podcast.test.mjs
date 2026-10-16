@@ -99,6 +99,80 @@ describe("podcast", () => {
     });
   });
 
+  test("update sends page content flags, topics and JSON files", async () => {
+    const calls = fakePortal({
+      "GET /api/podcast-episodes/ep-1": episode({}),
+      "PUT /api/podcast-episodes/ep-1": ({ body }) => episode({ ...body, version: 5 }),
+    });
+    const io = captureIo();
+    assert.equal(
+      await run(
+        [
+          "podcast", "update", "ep-1",
+          "--short", "Synthetic short",
+          "--description", "Synthetic description",
+          "--topics", "alpha, beta ",
+          "--duration", "PT1H2M3S",
+          "--image-url", "https://example.com/cover.jpg",
+        ],
+        io,
+      ),
+      0,
+    );
+    assert.deepEqual(calls.at(-1).body, {
+      short: "Synthetic short",
+      description: "Synthetic description",
+      topics: ["alpha", "beta"],
+      duration: "PT1H2M3S",
+      imageUrl: "https://example.com/cover.jpg",
+      version: 4,
+    });
+  });
+
+  test("update reads transcript, clips and resources from JSON files", async () => {
+    const dir = await import("node:os").then((os) => os.tmpdir());
+    const { writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const transcriptFile = join(dir, "synthetic-transcript.json");
+    writeFileSync(transcriptFile, JSON.stringify([{ header: "Intro" }]));
+    const calls = fakePortal({
+      "GET /api/podcast-episodes/ep-1": episode({}),
+      "PUT /api/podcast-episodes/ep-1": ({ body }) => episode({ ...body, version: 5 }),
+    });
+    assert.equal(
+      await run(["podcast", "update", "ep-1", "--transcript-file", transcriptFile, "--topics", "none"], captureIo()),
+      0,
+    );
+    assert.deepEqual(calls.at(-1).body, {
+      transcript: [{ header: "Intro" }],
+      topics: null,
+      version: 4,
+    });
+    assert.equal(
+      await run(["podcast", "update", "ep-1", "--transcript-file", join(dir, "missing.json")], captureIo()),
+      2,
+    );
+  });
+
+  test("show prints page content counts", async () => {
+    fakePortal({
+      "GET /api/podcast-episodes/ep-1": episode({
+        short: "Synthetic short",
+        topics: ["alpha"],
+        transcript: [{ header: "Intro" }, { line: "Hi" }],
+        clips: [{ name: "Intro", startOffset: 0, endOffset: 3 }],
+        resources: [{ name: "Tool", type: "tool" }],
+      }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["podcast", "show", "ep-1"], io), 0);
+    assert.match(io.text(), /short:\s+Synthetic short/);
+    assert.match(io.text(), /topics:\s+alpha/);
+    assert.match(io.text(), /page transcript:\s+2 entries/);
+    assert.match(io.text(), /clips:\s+1 clips/);
+    assert.match(io.text(), /resources:\s+1 resources/);
+  });
+
   test("update maps a version conflict to exit code 5", async () => {
     fakePortal({
       "GET /api/podcast-episodes/ep-1": episode({}),

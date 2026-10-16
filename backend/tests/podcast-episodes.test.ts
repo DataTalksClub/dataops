@@ -100,8 +100,49 @@ describe("podcast episodes", () => {
     await reject({ links: { youtube: "http://insecure.example" } }, /link/);
     await reject({ links: { myspace: "https://example.com" } }, /link/);
     await reject({ websiteSlug: "Not A Slug" }, /websiteSlug/);
+    await reject({ short: "   " }, /short/);
+    await reject({ description: "x".repeat(5001) }, /description/);
+    await reject({ topics: ["ok", "  "] }, /topics/);
+    await reject({ duration: "1 hour" }, /duration/);
+    await reject({ imageUrl: "http://insecure.example/cover.jpg" }, /imageUrl/);
+    await reject({ transcript: [{ header: "Hi", line: "both shapes" }] }, /transcript/);
+    await reject({ transcript: [{ line: "  " }] }, /transcript/);
+    await reject({ transcript: "not an array" }, /transcript/);
+    await reject({ clips: [{ name: "Clip" }] }, /clips/);
+    await reject({ resources: [{ name: "Tool" }] }, /resources/);
     await reject({ unexpected: true }, /Unknown field/);
     await reject({ version: 4 }, /system-owned/);
+  });
+
+  it("stores page content for the website page and keeps list items light", async () => {
+    const page = {
+      short: "Synthetic Short",
+      description: "A synthetic episode description.",
+      intro: "A synthetic episode intro.",
+      topics: ["synthetic", "systems"],
+      duration: "PT01H02M03S",
+      imageUrl: "https://example.com/cover.jpg",
+      transcript: [{ header: "Intro" }, { line: "Hello.", sec: 3, time: "0:03", who: "Ada Example" }],
+      clips: [{ name: "Intro", startOffset: 0, endOffset: 3 }],
+      resources: [{ name: "Synthetic Tool", type: "tool", url: "https://example.com/tool" }],
+    };
+    const created = data(await invoke("POST", "/api/podcast-episodes", { ...booked, ...page }));
+    assert.equal(created.version, 1);
+    const read = data(await invoke("GET", `/api/podcast-episodes/${created.id}`));
+    assert.deepEqual(read.transcript, page.transcript);
+    assert.deepEqual(read.clips, page.clips);
+    assert.deepEqual(read.resources, page.resources);
+    assert.deepEqual(read.topics, page.topics);
+    assert.equal(read.duration, page.duration);
+    const listed = data(await invoke("GET", "/api/podcast-episodes"));
+    const summarized = listed.items.find((item: any) => item.id === created.id);
+    assert.equal(summarized.short, "Synthetic Short");
+    assert.equal(summarized.description, "A synthetic episode description.");
+    for (const heavy of ["transcript", "clips", "resources", "intro"])
+      assert.ok(!(heavy in summarized), `${heavy} is not listed`);
+    const cleared = data(await invoke("PUT", `/api/podcast-episodes/${created.id}`, { version: 1, topics: null, transcript: null }));
+    assert.equal(cleared.topics, undefined);
+    assert.equal(cleared.transcript, undefined);
   });
 
   it("refuses duplicate website slugs, schedule rows, and episode numbers", async () => {

@@ -30,6 +30,32 @@ export const EPISODE_LINK_KINDS = [
 ] as const;
 
 export type PodcastGuest = { name: string; slug?: string };
+/**
+ * One page-content transcript row, mirroring the website `_podcast/*.md`
+ * front matter: either a `{ header }` section marker or a spoken `{ line }`
+ * with its optional timestamp and speaker.
+ */
+export type EpisodeTranscriptEntry = {
+  header?: string;
+  line?: string;
+  sec?: number;
+  time?: string;
+  who?: string;
+};
+/** A quotable clip (`quotableClips` on the website page); `url` is derived. */
+export type EpisodeClip = {
+  name: string;
+  startOffset: number;
+  endOffset: number;
+  url?: string;
+};
+/** A mentioned resource (`resources` on the website page). */
+export type EpisodeResource = {
+  name: string;
+  type: string;
+  url?: string;
+  context?: string;
+};
 export type PodcastEpisode = {
   id: string;
   season?: number | null;
@@ -46,6 +72,18 @@ export type PodcastEpisode = {
   notes?: string | null;
   /** Observed publication facts; readiness is derived from them on read. */
   publication?: PodcastPublication | null;
+  /** Website page content, sourced from the published `_podcast/*.md` page. */
+  short?: string | null;
+  description?: string | null;
+  intro?: string | null;
+  topics?: string[];
+  /** ISO-8601 duration (`PT01H03M37S`), as the website page records it. */
+  duration?: string | null;
+  /** Cover art URL; the website page references the downloaded file. */
+  imageUrl?: string | null;
+  transcript?: EpisodeTranscriptEntry[];
+  clips?: EpisodeClip[];
+  resources?: EpisodeResource[];
   version: number;
   createdAt: string;
   updatedAt: string;

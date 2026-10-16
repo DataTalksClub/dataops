@@ -57,6 +57,15 @@ const WRITABLE = new Set([
   "cardId",
   "notes",
   "publication",
+  "short",
+  "description",
+  "intro",
+  "topics",
+  "duration",
+  "imageUrl",
+  "transcript",
+  "clips",
+  "resources",
   "version",
 ]);
 const PODCAST_CARD_TYPES = recordTemplateTypes("podcast-episode");
@@ -126,6 +135,78 @@ function validate(body: Record<string, any>): string {
   if (body.cardId != null && !ID.test(String(body.cardId))) return "Invalid cardId";
   if (body.notes != null && (typeof body.notes !== "string" || body.notes.length > 2000))
     return "Invalid notes";
+  for (const name of ["short", "description", "intro", "duration", "imageUrl"] as const) {
+    if (body[name] === null || body[name] === undefined) continue;
+    if (typeof body[name] !== "string") return `Invalid ${name}`;
+  }
+  if (typeof body.short === "string" && (!body.short.trim() || body.short.length > 200))
+    return "Invalid short";
+  if (typeof body.description === "string" && (!body.description.trim() || body.description.length > 5000))
+    return "Invalid description";
+  if (typeof body.intro === "string" && (!body.intro.trim() || body.intro.length > 20000))
+    return "Invalid intro";
+  if (typeof body.duration === "string" && !/^PT(\d+H)?(\d+M)?(\d+(\.\d+)?S)?$/.test(body.duration))
+    return "Invalid duration";
+  if (typeof body.imageUrl === "string" && !httpsUrl(body.imageUrl)) return "Invalid imageUrl";
+  if (body.topics !== undefined && body.topics !== null) {
+    if (
+      !Array.isArray(body.topics) ||
+      body.topics.length > 30 ||
+      !body.topics.every(
+        (topic: any) => typeof topic === "string" && topic.trim().length > 0 && topic.length <= 80,
+      )
+    )
+      return "Invalid topics";
+  }
+  if (body.transcript !== undefined && body.transcript !== null) {
+    if (!Array.isArray(body.transcript) || body.transcript.length > 5000) return "Invalid transcript";
+    for (const entry of body.transcript) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return "Invalid transcript";
+      const keys = Object.keys(entry);
+      if (keys.some((name) => !["header", "line", "sec", "time", "who"].includes(name)))
+        return "Invalid transcript";
+      if (typeof entry.header === "string") {
+        if (!entry.header.trim() || entry.header.length > 500 || entry.line !== undefined)
+          return "Invalid transcript";
+      } else if (typeof entry.line === "string") {
+        if (!entry.line.trim() || entry.line.length > 10000) return "Invalid transcript";
+        if (entry.sec !== undefined && (!Number.isSafeInteger(entry.sec) || entry.sec < 0))
+          return "Invalid transcript";
+        if (entry.time !== undefined && (typeof entry.time !== "string" || entry.time.length > 32))
+          return "Invalid transcript";
+        if (entry.who !== undefined && (typeof entry.who !== "string" || entry.who.length > 200))
+          return "Invalid transcript";
+      } else return "Invalid transcript";
+    }
+  }
+  if (body.clips !== undefined && body.clips !== null) {
+    if (!Array.isArray(body.clips) || body.clips.length > 500) return "Invalid clips";
+    for (const clip of body.clips) {
+      if (!clip || typeof clip !== "object" || Array.isArray(clip)) return "Invalid clips";
+      if (Object.keys(clip).some((name) => !["name", "startOffset", "endOffset", "url"].includes(name)))
+        return "Invalid clips";
+      if (typeof clip.name !== "string" || !clip.name.trim() || clip.name.length > 300)
+        return "Invalid clips";
+      for (const name of ["startOffset", "endOffset"] as const)
+        if (!Number.isSafeInteger(clip[name]) || clip[name] < 0) return "Invalid clips";
+      if (clip.url !== undefined && !httpsUrl(clip.url)) return "Invalid clips";
+    }
+  }
+  if (body.resources !== undefined && body.resources !== null) {
+    if (!Array.isArray(body.resources) || body.resources.length > 500) return "Invalid resources";
+    for (const resource of body.resources) {
+      if (!resource || typeof resource !== "object" || Array.isArray(resource)) return "Invalid resources";
+      if (Object.keys(resource).some((name) => !["name", "type", "url", "context"].includes(name)))
+        return "Invalid resources";
+      if (typeof resource.name !== "string" || !resource.name.trim() || resource.name.length > 300)
+        return "Invalid resources";
+      if (typeof resource.type !== "string" || !resource.type.trim() || resource.type.length > 40)
+        return "Invalid resources";
+      if (resource.url !== undefined && !httpsUrl(resource.url)) return "Invalid resources";
+      if (resource.context !== undefined && (typeof resource.context !== "string" || resource.context.length > 2000))
+        return "Invalid resources";
+    }
+  }
   return "";
 }
 
@@ -197,6 +278,15 @@ async function derivedStatus(client: DynamoDBDocumentClient, episode: PodcastEpi
   return statusFromCard(episode.status, stageRefs, done);
 }
 
+/** List items stay light: full page content (transcript, clips, resources,
+ *  intro) is only served on the single-episode read the page generator uses. */
+const HEAVY_PAGE_CONTENT = ["transcript", "clips", "resources", "intro"] as const;
+const summarizeEpisode = (episode: PodcastEpisode): PodcastEpisode => {
+  const copy = { ...episode };
+  for (const name of HEAVY_PAGE_CONTENT) delete copy[name];
+  return copy;
+};
+
 /** The episode as every response shows it: status and readiness derived, never stored. */
 const presented = async (client: DynamoDBDocumentClient, episode: PodcastEpisode) => ({
   ...episode,
@@ -267,7 +357,7 @@ export async function handlePodcastEpisodeRoutes(
         (query.cardId === undefined || episode.cardId === query.cardId),
     );
     const enriched = [];
-    for (const episode of items) enriched.push(await withCard(client, episode));
+    for (const episode of items) enriched.push(await withCard(client, summarizeEpisode(episode)));
     return json(200, {
       items: enriched.filter((episode) => query.status === undefined || episode.status === query.status),
     });

@@ -57,6 +57,31 @@ describe("podcast episode import", () => {
     assert.equal(ada.episode, 1);
     assert.equal(ada.links!.website, "https://datatalks.club/podcast/s30e01-synthetic-systems.html");
     assert.equal(ada.links!.anchor, "https://anchor.fm/example/episodes/Synthetic-Systems---Ada-Example-e1abc01");
+    assert.equal(ada.short, "Synthetic Systems");
+    assert.equal(ada.description, "A synthetic fixture episode description.");
+    assert.equal(ada.intro, "A synthetic fixture episode intro.");
+    assert.deepEqual(ada.topics, ["synthetic systems"]);
+    assert.equal(ada.duration, "PT01H02M03S");
+    assert.deepEqual(ada.transcript, [
+      { header: "Fixture Introduction" },
+      { line: "Synthetic fixture line.", sec: 63, time: "1:03", who: "Ada Example" },
+    ]);
+    assert.deepEqual(ada.clips, [
+      {
+        name: "Fixture Introduction",
+        startOffset: 0,
+        endOffset: 63,
+        url: "https://www.youtube.com/watch?v=fixture0001&t=0",
+      },
+    ]);
+    assert.deepEqual(ada.resources, [
+      {
+        name: "Synthetic Tool",
+        type: "tool",
+        url: "https://example.com/synthetic",
+        context: "A synthetic fixture resource.",
+      },
+    ]);
 
     const grace = episodes.find((episode) => episode.websiteSlug === "s30e02-synthetic-data-stories")!;
     assert.equal(grace.releaseDate, undefined);
@@ -78,6 +103,15 @@ describe("podcast episode import", () => {
     assert.equal(report.scheduleUnmatchedHistory, 1);
     assert.deepEqual(report.scheduleNotBooked, ["Time table!21"]);
     assert.deepEqual(report.scheduleCancelled, ["Time table!22"]);
+    assert.equal(report.website, 2);
+    assert.equal(report.websiteWithShort, 2);
+    assert.equal(report.websiteWithDescription, 1);
+    assert.equal(report.websiteWithIntro, 1);
+    assert.equal(report.websiteWithTopics, 1);
+    assert.equal(report.websiteWithDuration, 1);
+    assert.equal(report.websiteWithTranscript, 1);
+    assert.equal(report.websiteWithClips, 1);
+    assert.equal(report.websiteWithResources, 1);
   });
 
   it("matches the register by slug, schedule key, then guest and date, so reruns create nothing", () => {
@@ -126,6 +160,13 @@ describe("podcast episode import", () => {
       releaseDate: "2027-02-05",
       links: {},
       anchorId: null,
+      description: null,
+      intro: null,
+      topics: [],
+      duration: null,
+      transcript: [],
+      clips: [],
+      resources: [],
     };
     const { episodes, report } = mergeSources({
       website: [sasha],
@@ -192,6 +233,8 @@ describe("podcast episode import", () => {
     const site = (slug: string, season: number, episode: number): WebsiteEpisode => ({
       slug, season, episode, title: slug, short: null, guests: [{ name: slug }],
       releaseDate: "2027-01-01", links: {}, anchorId: null,
+      description: null, intro: null, topics: [], duration: null,
+      transcript: [], clips: [], resources: [],
     });
     const { episodes, report } = mergeSources({
       website: [site("s31e01-kept", 31, 1), site("s31e02-page.md", 31, 2), site("s31e01-renumbered", 31, 1)],

@@ -56,6 +56,14 @@ export type WebsiteEpisode = {
   releaseDate: string | null;
   links: Links;
   anchorId: string | null;
+  /** Website page content for DataOps-backed page generation. */
+  description: string | null;
+  intro: string | null;
+  topics: string[];
+  duration: string | null;
+  transcript: Array<Record<string, unknown>>;
+  clips: Array<Record<string, unknown>>;
+  resources: Array<Record<string, unknown>>;
 };
 export type RssItem = {
   title: string;
@@ -77,12 +85,22 @@ export type DesiredEpisode = {
   links?: Links;
   websiteSlug?: string;
   scheduleSourceKey?: string;
+  /** Website page content, owned by the website source. */
+  short?: string | null;
+  description?: string | null;
+  intro?: string | null;
+  topics?: string[];
+  duration?: string | null;
+  transcript?: Array<Record<string, unknown>>;
+  clips?: Array<Record<string, unknown>>;
+  resources?: Array<Record<string, unknown>>;
 };
 export type ExistingEpisode = DesiredEpisode & {
   id: string;
   version: number;
   cardId?: string | null;
   notes?: string | null;
+  imageUrl?: string | null;
 };
 
 export const normalizeName = (value: string) =>
@@ -135,6 +153,21 @@ function frontMatter(file: string): Record<string, any> {
   }
 }
 
+/** Pass through only the keys the podcast-episodes API accepts. */
+const pick = (entry: unknown, keys: string[]): Record<string, unknown> | null => {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+  const out: Record<string, unknown> = {};
+  for (const key of keys) {
+    const value = (entry as Record<string, unknown>)[key];
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+};
+const cleanText = (value: unknown): string | null => {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text ? text : null;
+};
+
 export function readWebsiteEpisodes(repo: string): WebsiteEpisode[] {
   const people = new Map<string, string>();
   const peopleDir = path.join(repo, "_people");
@@ -158,12 +191,21 @@ export function readWebsiteEpisodes(repo: string): WebsiteEpisode[] {
         if (url) links[kind] = url;
       }
       links.website = `https://datatalks.club/podcast/${slug}.html`;
+      const transcript = (Array.isArray(meta.transcript) ? meta.transcript : [])
+        .map((entry) => pick(entry, ["header", "line", "sec", "time", "who"]))
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+      const clips = (Array.isArray(meta.quotableClips) ? meta.quotableClips : [])
+        .map((entry) => pick(entry, ["name", "startOffset", "endOffset", "url"]))
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+      const resources = (Array.isArray(meta.resources) ? meta.resources : [])
+        .map((entry) => pick(entry, ["name", "type", "url", "context"]))
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry));
       return {
         slug,
         season: Number.isSafeInteger(meta.season) ? meta.season : null,
         episode: Number.isSafeInteger(meta.episode) ? meta.episode : null,
         title: String(meta.title || meta.short || slug).trim(),
-        short: meta.short ? String(meta.short).trim() : null,
+        short: cleanText(meta.short),
         guests: (Array.isArray(meta.guests) ? meta.guests : []).map((guest: unknown) => {
           const guestSlug = String(guest);
           return { name: people.get(guestSlug) || guestSlug, slug: guestSlug };
@@ -171,6 +213,15 @@ export function readWebsiteEpisodes(repo: string): WebsiteEpisode[] {
         releaseDate: isoDate(meta.dateadded),
         links,
         anchorId: meta.ids?.anchor ? String(meta.ids.anchor) : anchorIdOf(links.anchor),
+        description: cleanText(meta.description),
+        intro: cleanText(meta.intro),
+        topics: (Array.isArray(meta.topics) ? meta.topics : [])
+          .map((topic: unknown) => String(topic ?? "").trim())
+          .filter(Boolean),
+        duration: cleanText(meta.duration),
+        transcript,
+        clips,
+        resources,
       };
     });
 }
@@ -234,6 +285,14 @@ export function mergeSources(input: {
     scheduleCancelled: [] as string[],
     scheduleAmbiguous: [] as string[],
     publishedWithoutReleaseDate: website.filter((site) => !site.releaseDate).length,
+    websiteWithShort: website.filter((site) => site.short).length,
+    websiteWithDescription: website.filter((site) => site.description).length,
+    websiteWithIntro: website.filter((site) => site.intro).length,
+    websiteWithTopics: website.filter((site) => site.topics.length).length,
+    websiteWithDuration: website.filter((site) => site.duration).length,
+    websiteWithTranscript: website.filter((site) => site.transcript.length).length,
+    websiteWithClips: website.filter((site) => site.clips.length).length,
+    websiteWithResources: website.filter((site) => site.resources.length).length,
   };
   /** Classify a schedule row that is not a booked recording; true when it is not one. */
   const unbooked = (row: PodcastScheduleRow) => {
@@ -253,6 +312,14 @@ export function mergeSources(input: {
     status: "published",
     links: { ...site.links },
     websiteSlug: site.slug,
+    ...(site.short ? { short: site.short } : {}),
+    ...(site.description ? { description: site.description } : {}),
+    ...(site.intro ? { intro: site.intro } : {}),
+    ...(site.topics.length ? { topics: site.topics } : {}),
+    ...(site.duration ? { duration: site.duration } : {}),
+    ...(site.transcript.length ? { transcript: site.transcript } : {}),
+    ...(site.clips.length ? { clips: site.clips } : {}),
+    ...(site.resources.length ? { resources: site.resources } : {}),
   }));
   const bySlug = new Map(episodes.map((episode) => [episode.websiteSlug!, episode]));
   const sites = new Map(website.map((site) => [site.slug, site]));
@@ -457,6 +524,8 @@ function changesFor(desired: DesiredEpisode, current: ExistingEpisode) {
     set("guests", desired.guests);
     set("releaseDate", desired.releaseDate);
     set("websiteSlug", desired.websiteSlug);
+    for (const name of ["short", "description", "intro", "topics", "duration", "transcript", "clips", "resources"] as const)
+      set(name, desired[name]);
   } else {
     if (!current.title) set("title", desired.title);
     if (!current.guests?.length) set("guests", desired.guests);
