@@ -112,6 +112,7 @@ export function createSponsorCrmSurface(context) {
       escapeHtml,
       humanizeOptionLabel,
       message,
+      navigateCanonicalWorkspace,
       request,
       surface,
       workApiUrl,

@@ -1202,3 +1202,117 @@ test("a bookkeeping row replaces the payment recorded before it: same amount, wi
   assert.equal(replaceablePayment(payments, { amount: "5900.00", effectiveDate: "2026-09-04" }), undefined);
   assert.equal(replaceablePayment(payments, { amount: "5950.00", effectiveDate: "2026-10-04" }), undefined);
 });
+
+const chaseProjection = (chase) => ({
+  enabled: true,
+  classified: true,
+  dealId: "deal-1",
+  role: "admin",
+  finance: {
+    version: 4,
+    invoiceRequirement: "required",
+    amountDue: "1000.00",
+    currency: "EUR",
+    taxMode: "included",
+    issuedOn: "2026-09-01",
+    dueOn: "2026-09-30",
+  },
+  invoiceState: "issued",
+  paymentState: "unpaid",
+  timingState: "overdue",
+  outstanding: "1000.00",
+  payments: [],
+  followUp: { code: "chase-payment", party: "us", since: "2026-09-30", daysOverdue: 14 },
+  reconciliationStatus: "coherent",
+  paymentLinkCount: 0,
+  paymentLinkLimit: 10,
+  ...(chase ? { chase } : {}),
+});
+
+test("an overdue invoice without a chase offers creating the chase Task in the main pool", async () => {
+  createHarness();
+  const surface = new FakeElement("section");
+  const panel = surface.querySelector('[data-booking-panel="finance"]');
+  const sponsorFinance = createSponsorFinance({
+    surface,
+    escapeHtml,
+    humanizeOptionLabel,
+    message: new FakeElement("p"),
+    request: async () => ({}),
+    workApiUrl: (path) => path,
+  });
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => chaseProjection(null),
+  });
+  await sponsorFinance.loadFinance({ id: "deal-1", version: 3 });
+  const markup = panel.innerHTML;
+  assert.match(markup, /Payment chase/);
+  assert.match(markup, /data-finance-chase-create/);
+  assert.match(markup, /regular task pool/);
+
+  // Clicking creates the chase through the finance endpoint and repaints.
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url: String(url), method: options?.method, body: options?.body && JSON.parse(options.body) });
+    return { ok: true, status: 200, json: async () => chaseProjection(null) };
+  };
+  const createButton = surface
+    .querySelector("[data-finance-panel]")
+    .querySelector("[data-finance-chase-create]");
+  await createButton.dispatch("click", {});
+  const chaseCall = requests.find((request) => request.url.endsWith("/finance/chase"));
+  assert.ok(chaseCall, "creates through the finance chase endpoint");
+  assert.equal(chaseCall.method, "POST");
+  assert.deepEqual(chaseCall.body, { dealVersion: 3, expectedVersion: 4 });
+});
+
+test("open chase work is listed with its next follow-up and opens in the Tasks surface", async () => {
+  createHarness();
+  const surface = new FakeElement("section");
+  const panel = surface.querySelector('[data-booking-panel="finance"]');
+  const navigations = [];
+  const sponsorFinance = createSponsorFinance({
+    surface,
+    escapeHtml,
+    humanizeOptionLabel,
+    message: new FakeElement("p"),
+    navigateCanonicalWorkspace: (path, params) => navigations.push({ path, params }),
+    request: async () => ({}),
+    workApiUrl: (path) => path,
+  });
+  // The open buttons bind through querySelectorAll, so seed the one the
+  // dispatch will use before the panel renders and binds.
+  const openButton = new FakeElement("button");
+  openButton.dataset.financeChaseOpen = "task-chase-1";
+  surface
+    .querySelector("[data-finance-panel]")
+    .setQueryAll("[data-finance-chase-open]", [openButton]);
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () =>
+      chaseProjection({
+        tasks: [
+          {
+            id: "task-chase-1",
+            description: "Chase payment from Synthetic Sponsor. 1000 EUR outstanding.",
+            date: "2026-10-16",
+            status: "waiting",
+            followUpAt: "2026-10-23",
+            assigneeId: "operator-1",
+          },
+        ],
+      }),
+  });
+  await sponsorFinance.loadFinance({ id: "deal-1", version: 3 });
+  const markup = panel.innerHTML;
+  assert.match(markup, /Chase payment from Synthetic Sponsor/);
+  assert.match(markup, /Next follow-up/);
+  assert.match(markup, /data-finance-chase-open="task-chase-1"/);
+  assert.doesNotMatch(markup, /data-finance-chase-create/);
+
+  await openButton.dispatch("click", {});
+  assert.deepEqual(navigations, [{ path: "/tasks", params: { taskId: "task-chase-1" } }]);
+});

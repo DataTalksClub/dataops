@@ -14,6 +14,7 @@ export function createSponsorFinance(context) {
     escapeHtml,
     humanizeOptionLabel,
     message,
+    navigateCanonicalWorkspace,
     request,
     surface,
     workApiUrl,
@@ -408,6 +409,49 @@ export function createSponsorFinance(context) {
           `
         : "";
     const evidence = finance.evidence || [];
+    const chaseTasks = projection.chase?.tasks || [];
+    const chaseable = projection.followUp?.code === "chase-payment";
+    const chaseTaskRow = (task) => {
+      const detail = [
+        `Due ${ledgerDate(task.date)}`,
+        task.status === "waiting" && task.followUpAt
+          ? `Next follow-up ${ledgerDate(task.followUpAt)}`
+          : "",
+      ].filter(Boolean).join(" · ");
+      return html`<li class="finance-chase-row" data-finance-chase-task="${escapeHtml(task.id)}">
+        <div>
+          <strong>${escapeHtml(task.description)}</strong>
+          <p class="dk-muted">${escapeHtml(detail)} · ${escapeHtml(task.status)}</p>
+        </div>
+        <button
+          class="dk-button dk-button--secondary dk-button--sm"
+          data-finance-chase-open="${escapeHtml(task.id)}"
+        >
+          Open in Tasks
+        </button>
+      </li>`;
+    };
+    const chaseSection = chaseable || chaseTasks.length
+      ? html`<div class="finance-chase" data-finance-chase>
+          <header class="crm-company-section-header">
+            <h4>Payment chase</h4>
+            ${
+              live && chaseable && !chaseTasks.length
+                ? html`<button data-finance-chase-create>Create payment chase task</button>`
+                : ""
+            }
+          </header>
+          ${
+            chaseTasks.length
+              ? html`<ul class="finance-chase-list">${chaseTasks.map(chaseTaskRow).join("")}</ul>`
+              : html`<p class="dk-muted">
+                  No chase yet. Creating one adds a Task to the regular task pool —
+                  it is worked there like any other Task, and resolving it records
+                  what was verified. One open chase per deal.
+                </p>`
+          }
+        </div>`
+      : "";
     const evidenceRow = (item, index) => {
       const link = /^https:\/\//.test(item.ref)
         ? html`<a href="${escapeHtml(item.ref)}" target="_blank" rel="noopener">${escapeHtml(item.label || item.ref)}</a>`
@@ -482,7 +526,7 @@ export function createSponsorFinance(context) {
         <header class="crm-company-section-header"><h4>Payments</h4></header>
         ${paymentMarkup}
       </div>
-      ${paymentLimitWarning} ${evidenceMarkup} ${actions}
+      ${paymentLimitWarning} ${chaseSection} ${evidenceMarkup} ${actions}
     </section>`;
   }
   async function loadFinance(booking) {
@@ -694,6 +738,24 @@ export function createSponsorFinance(context) {
           );
           await reopenBookingDetail(booking);
         }, "Could not remove recorded payment"),
+      ),
+    );
+    panel
+      .querySelector("[data-finance-chase-create]")
+      ?.addEventListener("click", () =>
+        safe(async () => {
+          await financeMutation(booking, "/chase", "POST", {
+            expectedVersion: projection.finance.version,
+          });
+          await reopenBookingDetail(booking);
+        }, "Could not create the payment chase task"),
+      );
+    panel.querySelectorAll("[data-finance-chase-open]").forEach((button) =>
+      button.addEventListener("click", () =>
+        navigateCanonicalWorkspace(
+          "/tasks",
+          { taskId: button.dataset.financeChaseOpen },
+        ),
       ),
     );
     panel
