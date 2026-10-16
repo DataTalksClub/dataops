@@ -233,7 +233,7 @@ test('newsletter at 375x667: issue cards fit the compaction budget and the overf
   }
 
   const firstCard = page.locator('.newsletter-slot-row').first();
-  await expect(firstCard.locator('.newsletter-slot-primary')).toHaveText('Compose');
+  await expect(firstCard.getByRole('button', { name: 'Compose' })).toHaveCount(0);
   const trigger = firstCard.locator('.newsletter-overflow-trigger');
   const menu = firstCard.locator('.newsletter-overflow-menu');
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -242,7 +242,7 @@ test('newsletter at 375x667: issue cards fit the compaction budget and the overf
   await trigger.click();
   await expect(menu).toBeVisible();
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  for (const movedAction of ['Preview', 'Schedule', 'Edit details']) {
+  for (const movedAction of ['Edit details']) {
     await expect(
       menu.locator('.newsletter-overflow-item').filter({ hasText: movedAction }),
     ).toBeVisible();

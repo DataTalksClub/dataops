@@ -17,115 +17,6 @@ export function createNewsletterPlanner(context) {
     workApiUrl,
   } = context;
 
-  function renderNewsletterMarkdown(text) {
-    const wrap = document.createElement("div");
-    wrap.className = "md";
-    let html = escapeHtml(text || "");
-    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-    html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-    html = html.replace(
-      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-      '<a href="$2" target="_blank" rel="noreferrer" style="color: var(--dk-primary); text-decoration: underline;">$1</a>',
-    );
-    const heading = html.match(/^(#{1,6})\s+(.*)$/);
-    wrap.innerHTML = heading
-      ? `<h${heading[1].length}>${heading[2]}</h${heading[1].length}>`
-      : html.replace(/\n/g, "<br>");
-    return wrap;
-  }
-
-  function attachInlineEditor(el, options) {
-    el.tabIndex = 0;
-    el.title = "Click to edit";
-    el.classList.add("inline-editable");
-
-    function enter() {
-      if (el.classList.contains("editing")) return;
-      el.classList.add("editing");
-      const original = options.getValue ? options.getValue() : el.textContent;
-      const editor = document.createElement(options.multiline ? "textarea" : "input");
-      if (!options.multiline) editor.type = "text";
-      editor.className = "inline-editor";
-      editor.value = original;
-      editor.placeholder = options.placeholder || "";
-      if (options.multiline) {
-        editor.rows = Math.max(2, (editor.value.match(/\n/g) || []).length + 1);
-        editor.style.resize = "none";
-        editor.style.overflow = "hidden";
-        editor.style.minHeight = `${Math.max(44, el.getBoundingClientRect().height)}px`;
-      }
-      el.replaceChildren(editor);
-      const autoGrow = () => {
-        if (!options.multiline) return;
-        editor.style.height = "auto";
-        const borderHeight = (editor.offsetHeight || 0) - (editor.clientHeight || 0);
-        editor.style.height = `${Math.max(44, (editor.scrollHeight || 0) + borderHeight)}px`;
-      };
-      autoGrow();
-      editor.addEventListener("input", autoGrow);
-      editor.focus();
-      if (options.selectionRange) {
-        editor.setSelectionRange(options.selectionRange.start, options.selectionRange.end);
-      }
-
-      let committed = false;
-      const doCommit = () => {
-        if (committed) return;
-        committed = true;
-        el.classList.remove("editing");
-        const val = editor.value;
-        if (val !== original && options.commit) options.commit(val);
-        if (options.restore) options.restore();
-      };
-      const doCancel = () => {
-        if (committed) return;
-        committed = true;
-        el.classList.remove("editing");
-        if (options.restore) options.restore();
-      };
-
-      editor.addEventListener("blur", doCommit);
-      editor.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          doCancel();
-        } else if (e.key === "Tab" && (e.shiftKey ? options.onOutdent : options.onIndent)) {
-          e.preventDefault();
-          const selection = { start: editor.selectionStart, end: editor.selectionEnd };
-          doCommit();
-          if (e.shiftKey) options.onOutdent(selection);
-          else options.onIndent(selection);
-        } else if (e.key === "Enter" && (!options.multiline || e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          doCommit();
-          options.onEnterNewBlock?.();
-        } else if (e.key === "/" && editor.value.trim() === "" && options.onSlash) {
-          e.preventDefault();
-          options.onSlash();
-        }
-      });
-    }
-
-    if (options.autoFocus) {
-      setTimeout(() => {
-        if (el.isConnected) enter();
-      }, 0);
-    }
-
-    el.addEventListener("click", (e) => {
-      if (e.target.closest("a, button, .notion-block-gutter, .inline-editor")) return;
-      e.preventDefault();
-      enter();
-    });
-    el.addEventListener("keydown", (e) => {
-      if (e.target === el && e.key === "Enter") {
-        e.preventDefault();
-        enter();
-      }
-    });
-  }
-
   function plannerLabel(value) {
     if (value === "review") return "In Review";
     const label = String(value || "").replaceAll("-", " ");
@@ -396,7 +287,6 @@ export function createNewsletterPlanner(context) {
       const issueId = escapeHtml(item.id);
       const actions = `
             ${issueCardMarkup(item)}
-            <button type="button" class="primary-button newsletter-slot-primary" data-compose="${issueId}">Compose</button>
             <div class="newsletter-overflow">
               <button
                 type="button"
@@ -407,8 +297,6 @@ export function createNewsletterPlanner(context) {
               >More</button>
               <div class="newsletter-overflow-menu" role="menu" hidden>
                 ${campaignLink ? campaignLink.replace('<a ', '<a class="newsletter-overflow-item" role="menuitem" ') : ""}
-                <button type="button" class="newsletter-overflow-item" role="menuitem" data-preview="${issueId}">Preview</button>
-                <button type="button" class="newsletter-overflow-item" role="menuitem" data-schedule="${issueId}">Schedule</button>
                 <button type="button" class="newsletter-overflow-item" role="menuitem" data-edit="${issueId}">Edit details</button>
               </div>
             </div>
@@ -569,17 +457,12 @@ export function createNewsletterPlanner(context) {
       surface,
       dialog,
       form,
-      context,
-      escapeHtml,
-      renderNewsletterMarkdown,
-      attachInlineEditor,
-      formatShortPlanningDate,
       api,
       load,
     });
 
     surface.querySelector("[data-newsletter-add]").onclick = () => {
-      openIssueDialog(null, "details");
+      openIssueDialog(null);
     };
 
     /**
@@ -637,18 +520,11 @@ export function createNewsletterPlanner(context) {
         context.navigateCanonicalWorkspace("/cards", { cardId: cardChip.dataset.openCard });
         return;
       }
-      const editBtn = target.closest("[data-edit]");
-      const composeBtn = target.closest("[data-compose]");
-      const previewBtn = target.closest("[data-preview]");
-      const scheduleBtn = target.closest("[data-schedule]");
-      const issueId = (editBtn || composeBtn || previewBtn || scheduleBtn)?.dataset.edit
-        || composeBtn?.dataset.compose
-        || previewBtn?.dataset.preview
-        || scheduleBtn?.dataset.schedule;
+      const issueId = target.closest("[data-edit]")?.dataset.edit;
       if (!issueId) {
         // The empty schedule repeats Add issue.
         if (target.closest("[data-newsletter-add-first]")) {
-          openIssueDialog(null, "details");
+          openIssueDialog(null);
           return;
         }
         const overflowTrigger = target.closest(".newsletter-overflow-trigger");
@@ -662,11 +538,7 @@ export function createNewsletterPlanner(context) {
       }
       const item = items.find((value) => value.id === issueId);
       if (!item) return;
-
-      if (composeBtn) openIssueDialog(item, "compose");
-      else if (previewBtn) openIssueDialog(item, "preview");
-      else if (scheduleBtn) openIssueDialog(item, "schedule");
-      else openIssueDialog(item, "details");
+      openIssueDialog(item);
     };
     surface.querySelector("[data-slots]").addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
