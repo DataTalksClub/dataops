@@ -383,6 +383,13 @@ describe("newsletter issues", () => {
     assert.deepEqual(reasons(booked.id), ["card-date-mismatch", "card-slot-tasks-mismatch", "duplicate-active-issue"]);
   });
 
+  it("does not nag about a sent issue's unfinished Card", async () => {
+    let issue = await createWithCard(weekly({ publicationDate: "2027-10-04", issueNumber: 380 }));
+    issue = data(await invoke("PUT", `/api/newsletter-issues/${issue.id}`, { version: issue.version, status: "sent" }));
+    const listed = data(await invoke("GET", "/api/newsletter-issues", undefined, {}, { from: "2027-10-04", to: "2027-10-04", today: "2027-10-05" }));
+    assert.deepEqual(listed.alerts.filter((alert: any) => alert.issueId === issue.id), []);
+  });
+
   it("projects one calendar item per issue with its slot state", () => {
     const base = {
       id: "i1", kind: "weekly" as const, publicationDate: "2026-10-05", issueNumber: 297, status: "sent",

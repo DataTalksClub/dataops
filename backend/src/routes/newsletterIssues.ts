@@ -241,7 +241,7 @@ function alerts(items: NewsletterIssue[], today: string) {
   return out;
 }
 
-/** Alerts about each issue's Card: missing, overdue, drifted, or unfinished after sending. */
+/** Alerts about each issue's Card: missing, overdue, or drifted from the issue. */
 function cardAlerts(items: NewsletterIssue[], cards: Map<string, Card | null>, schedule: CardSchedule, today: string) {
   const out: any[] = [];
   const add = (item: NewsletterIssue, reasonCode: string, severity: string) => out.push({
@@ -269,12 +269,6 @@ function cardAlerts(items: NewsletterIssue[], cards: Map<string, Card | null>, s
     const cardGroups = new Set(card.selectedOptionalGroups || []);
     if (item.kind === 'weekly' && issueTaskGroups(item).some((group) => !cardGroups.has(group))) {
       add(item, 'card-slot-tasks-mismatch', 'warning');
-    }
-    if (item.status === 'sent') {
-      const hasCampaign = (card.cardLinks || []).some(
-        (link) => /mailchimp|campaign/i.test(String(link.name)) && /^https:\/\//.test(String(link.url)),
-      );
-      if (!hasCampaign || card.stage !== 'done') add(item, 'sent-issue-card-incomplete', 'warning');
     }
   }
   return out;

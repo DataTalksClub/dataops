@@ -64,7 +64,6 @@ export function createNewsletterPlanner(context) {
       "card-not-created": "An issue's card was not created",
       "card-date-mismatch": "A card's date differs from its issue",
       "card-slot-tasks-mismatch": "A card's sponsor tasks differ from its slots",
-      "sent-issue-card-incomplete": "A sent issue's card is unfinished",
     }[reasonCode] || "Newsletter planning needs review";
   }
 
@@ -82,8 +81,6 @@ export function createNewsletterPlanner(context) {
         "The issue's date wins: save the issue to move its card.",
       "card-slot-tasks-mismatch":
         "Book the slot again, or turn on its task group on the card.",
-      "sent-issue-card-incomplete":
-        "Add the Mailchimp link to the card and resolve its remaining tasks.",
     }[reasonCode] || "Check the publication date and slots.";
   }
 
