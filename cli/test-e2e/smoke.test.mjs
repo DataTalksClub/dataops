@@ -206,7 +206,7 @@ describe("dataops CLI against a local backend", () => {
     assert.equal(cli("kb", "show", "no.such.doc").code, 4);
   });
 
-  test("a newsletter issue owns its Card", async () => {
+  test("a newsletter issue gets its Card on request and owns it", async () => {
     // The server creates weekly issue Cards from the Template of type "newsletter".
     const fixture = await fetch(`${baseUrl}/__e2e__/template-fixtures`, {
       method: "POST",
@@ -223,17 +223,23 @@ describe("dataops CLI against a local backend", () => {
       }),
     });
     assert.equal(fixture.status, 201);
-    const issue = cli("newsletter", "create", "--date", "2026-11-09", "--number", "401", "--json");
+    // Far ahead, the issue is planned without a Card until it is due.
+    const issue = cli("newsletter", "create", "--date", "2031-11-10", "--number", "401", "--json");
     assert.equal(issue.code, 0, issue.stderr);
-    assert.ok(issue.json.cardId);
-    const lookup = cli("newsletter", "list", "--card", issue.json.cardId, "--json");
+    assert.equal(issue.json.cardId, undefined);
+    assert.ok(issue.json.cardDueDate);
+    const created = cli("newsletter", "create-card", issue.json.id, "--json");
+    assert.equal(created.code, 0, created.stderr);
+    const cardId = created.json.cardId;
+    assert.ok(cardId);
+    const lookup = cli("newsletter", "list", "--card", cardId, "--json");
     assert.deepEqual(lookup.json.items.map((item) => item.id), [issue.json.id]);
 
     // The Card cannot be deleted on its own; deleting the issue deletes it.
-    assert.notEqual(cli("cards", "delete", issue.json.cardId, "--yes").code, 0);
+    assert.notEqual(cli("cards", "delete", cardId, "--yes").code, 0);
     const deleted = cli("newsletter", "delete", issue.json.id, "--confirm", "--json");
     assert.equal(deleted.code, 0, deleted.stderr);
-    assert.equal(cli("cards", "show", issue.json.cardId).code, 4);
+    assert.equal(cli("cards", "show", cardId).code, 4);
     assert.equal(cli("newsletter", "show", issue.json.id).code, 4);
   });
 
