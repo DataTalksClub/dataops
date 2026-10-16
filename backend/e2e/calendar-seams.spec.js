@@ -327,7 +327,7 @@ test("calendar grid is ready before the external overlay response", async ({ pag
   await page.route("**/api/calendar-items**", async (route) => {
     if (new URL(route.request().url()).pathname.endsWith("/overlays")) {
       await overlayReady;
-      return route.fulfill({ json: { items: [{ id: "alexey-slot:2026-06-30:midday", provider: "alexey-calendar",
+      return route.fulfill({ json: { items: [{ id: "owner-slot:2026-06-30:midday", provider: "owner-calendar",
         startDate: "2026-06-30", endDate: "2026-06-30", category: "Available slot", label: "12:30 Available",
         isAvailableSlot: true }] } });
     }
@@ -365,7 +365,7 @@ test("a disconnected calendar source is a toolbar warning that does not move the
   await page.clock.setFixedTime(new Date("2026-07-01T12:00:00Z"));
   await page.route("**/api/calendar-items**", (route) => route.fulfill({ json:
     new URL(route.request().url()).pathname.endsWith("/overlays")
-      ? { items: [], sources: { "alexey-calendar": { state: "not-configured", reason: "No broker credential." } } }
+      ? { items: [], sources: { "owner-calendar": { state: "not-configured", reason: "No broker credential." } } }
       : payload }));
   await page.route("**/api/**", (route) => new URL(route.request().url()).pathname.includes("/calendar-items")
     ? route.fallback() : route.fulfill({ json: { items: [] } }));

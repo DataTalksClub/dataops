@@ -215,7 +215,7 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-}.calendar-layer-chip.is-activities .chip-dot { background: var(--dk-success-text); }.calendar-layer-chip.is-public .chip-dot { background: var(--dk-danger-text); }.calendar-layer-chip.is-school .chip-dot { background: var(--dk-warning-text); }.calendar-layer-chip.is-overlay .chip-dot { background: var(--dk-info-text); }.calendar-layer-chip.is-alexey .chip-dot { background: var(--dk-text-heading); }.calendar-layer-chip.is-available .chip-dot { background: var(--dk-success-text); }.calendar-layer-chip:has(input:checked) {
+}.calendar-layer-chip.is-activities .chip-dot { background: var(--dk-success-text); }.calendar-layer-chip.is-public .chip-dot { background: var(--dk-danger-text); }.calendar-layer-chip.is-school .chip-dot { background: var(--dk-warning-text); }.calendar-layer-chip.is-overlay .chip-dot { background: var(--dk-info-text); }.calendar-layer-chip.is-owner-calendar .chip-dot { background: var(--dk-text-heading); }.calendar-layer-chip.is-available .chip-dot { background: var(--dk-success-text); }.calendar-layer-chip:has(input:checked) {
   background: var(--dk-bg-muted);
   border-color: var(--dk-border-strong);
   color: var(--dk-text-heading);
@@ -442,7 +442,7 @@
 .calendar-activity:not(.is-success):not(.is-warning):not(.is-danger),
 .calendar-overlay { background: var(--dk-info-bg); color: var(--dk-info-text); }
 /* Alexey's own calendar is the neutral layer beside the four toned ones. */
-.calendar-overlay.is-alexey { background: var(--dk-bg-muted); color: var(--dk-text-heading); }
+.calendar-overlay.is-owner-calendar { background: var(--dk-bg-muted); color: var(--dk-text-heading); }
 .calendar-overlay:hover { border-color: var(--dk-border-strong); }
 /* The tag inside a toned chip darkens the chip's own fill. */
 .calendar-holiday small,

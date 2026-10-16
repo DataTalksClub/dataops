@@ -73,7 +73,7 @@ export const DEFAULT_CALENDAR_OVERLAY_SETTINGS: CalendarOverlaySettings = {
   customKeywords: [],
 };
 
-const SETTINGS_PK = 'CONFIG#alexey-calendar';
+const SETTINGS_PK = 'CONFIG#owner-calendar';
 
 export async function getCalendarOverlaySettings(client: DynamoDBDocumentClient): Promise<CalendarOverlaySettings> {
   const result = await client.send(new GetCommand({

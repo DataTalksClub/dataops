@@ -7,7 +7,7 @@ import {
   getCalendarOverlaySettings,
 } from '../db/calendar';
 
-export interface AlexeyCalendarConfig {
+export interface OwnerCalendarConfig {
   client?: DynamoDBDocumentClient;
   brokerUrl?: string;
   brokerCredential?: string;
@@ -24,7 +24,7 @@ export interface DapierConnectionOption {
   title: string;
 }
 
-export interface AlexeyCalendarEventContext {
+export interface OwnerCalendarEventContext {
   transparency?: string;
   isAllDay?: boolean;
   startIso?: string;
@@ -94,10 +94,10 @@ export function determineSlotType(
   }
 }
 
-export function shouldFilterAlexeyCalendarEvent(
+export function shouldFilterOwnerCalendarEvent(
   summary: string | null | undefined,
   settings: Partial<CalendarOverlaySettings> = DEFAULT_CALENDAR_OVERLAY_SETTINGS,
-  context?: AlexeyCalendarEventContext
+  context?: OwnerCalendarEventContext
 ): boolean {
   const s = (summary || '').trim();
 
@@ -199,7 +199,7 @@ function adjustAllDayEndDate(start: string, end?: string): string {
 let secretClient = new SecretsManagerClient({});
 let fetcher: typeof fetch = fetch;
 
-export function setAlexeyCalendarProviderClientsForTests(value: { secrets?: SecretsManagerClient; fetch?: typeof fetch }) {
+export function setOwnerCalendarProviderClientsForTests(value: { secrets?: SecretsManagerClient; fetch?: typeof fetch }) {
   if (value.secrets) secretClient = value.secrets;
   fetcher = value.fetch || fetch;
 }
@@ -244,7 +244,7 @@ async function resolveDapierCredential(explicit?: string): Promise<string | unde
   return (await readDapierCredential(explicit)).credential;
 }
 
-export async function fetchDapierConnections(config?: AlexeyCalendarConfig): Promise<DapierConnectionOption[]> {
+export async function fetchDapierConnections(config?: OwnerCalendarConfig): Promise<DapierConnectionOption[]> {
   const brokerUrl = (config?.brokerUrl || DAPIER_BASE_URL).replace(/\/$/, '');
   const credential = await resolveDapierCredential(config?.brokerCredential);
 
@@ -274,9 +274,9 @@ export async function fetchDapierConnections(config?: AlexeyCalendarConfig): Pro
   }
 }
 
-export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOverlayProvider {
+export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOverlayProvider {
   return {
-    name: 'alexey-calendar',
+    name: 'owner-calendar',
     async project(from: string, to: string): Promise<CalendarOverlayProjection> {
       const blank = (connection: CalendarOverlayConnection): CalendarOverlayProjection => ({ items: [], connection });
       const connected = (items: CalendarOverlayItem[]): CalendarOverlayProjection => ({ items, connection: { state: 'connected' } });
@@ -374,13 +374,13 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
         const isAllDay = !!event.start?.date;
         const startIso = event.start?.dateTime || event.start?.date;
         const endIso = event.end?.dateTime || event.end?.date;
-        const context: AlexeyCalendarEventContext = {
+        const context: OwnerCalendarEventContext = {
           transparency: event.transparency,
           isAllDay,
           startIso,
           endIso,
         };
-        if (shouldFilterAlexeyCalendarEvent(event.summary, effectiveSettings, context)) continue;
+        if (shouldFilterOwnerCalendarEvent(event.summary, effectiveSettings, context)) continue;
 
         const summary = (event.summary || '').trim() || '(No title)';
         let startDate: string;
@@ -428,8 +428,8 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
           }
 
           result.push({
-            provider: 'alexey-calendar',
-            id: `alexey-calendar:${item.event.id}`,
+            provider: 'owner-calendar',
+            id: `owner-calendar:${item.event.id}`,
             startDate: item.startDate,
             endDate: item.endDate,
             label,
@@ -481,8 +481,8 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
 
         if (!hasMiddayConflict) {
           result.push({
-            provider: 'alexey-calendar',
-            id: `alexey-slot:${curDate}:midday`,
+            provider: 'owner-calendar',
+            id: `owner-slot:${curDate}:midday`,
             startDate: curDate,
             endDate: curDate,
             label: '12:30 Available',
@@ -505,8 +505,8 @@ export function alexeyCalendarOverlay(config?: AlexeyCalendarConfig): CalendarOv
 
           if (!hasEveningConflict) {
             result.push({
-              provider: 'alexey-calendar',
-              id: `alexey-slot:${curDate}:evening`,
+              provider: 'owner-calendar',
+              id: `owner-slot:${curDate}:evening`,
               startDate: curDate,
               endDate: curDate,
               label: '17:00 Available',

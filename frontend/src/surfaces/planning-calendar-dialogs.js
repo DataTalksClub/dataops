@@ -49,16 +49,16 @@ export function setupDayScheduleDialog(options) {
     const dayNewsletters = overlays.filter(
       (o) => o.category === "Newsletter" && o.startDate <= dateIso && o.endDate >= dateIso
     );
-    const alexeyItems = overlayItems.filter((o) => o.category === "Alexey");
+    const ownerCalendarItems = overlayItems.filter((o) => o.provider === "owner-calendar");
 
     // Operational Slot Availability
-    const blockers = alexeyItems.filter(
+    const blockers = ownerCalendarItems.filter(
       (e) => e.slot === "all-day" || /vacation|holiday|flight|conference|trip/i.test(e.label)
     );
-    const middayEvents = alexeyItems.filter((e) => e.slot === "midday");
+    const middayEvents = ownerCalendarItems.filter((e) => e.slot === "midday");
     const isMiddayAvailable = blockers.length === 0 && middayEvents.length === 0;
 
-    const eveningEvents = alexeyItems.filter((e) => e.slot === "evening");
+    const eveningEvents = ownerCalendarItems.filter((e) => e.slot === "evening");
     const isEveningAvailable = blockers.length === 0 && eveningEvents.length === 0;
 
     const blockerAlert = blockers.length > 0
@@ -145,7 +145,7 @@ export function setupDayScheduleDialog(options) {
       });
     }
 
-    for (const e of alexeyItems) {
+    for (const e of ownerCalendarItems) {
       let timeLabel = "All day";
       let sortTime = "00:00";
       let title = e.label;

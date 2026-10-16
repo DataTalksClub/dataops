@@ -372,7 +372,7 @@ describe("Planning surface production behavior", () => {
                 category: "Alexey",
                 endDate: "2026-08-13",
                 label: "12:25–13:30 Tejas at DataTalks.Club Podcast",
-                provider: "alexey-calendar",
+                provider: "owner-calendar",
                 startDate: "2026-08-13",
               },
             ],
@@ -425,7 +425,7 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /Newsletter 42/);
     // Alexey's personal events only feed slot availability; they are never items.
     assert.doesNotMatch(dom.grid.innerHTML, /Tejas at DataTalks\.Club Podcast/);
-    assert.doesNotMatch(dom.grid.innerHTML, /is-alexey/);
+    assert.doesNotMatch(dom.grid.innerHTML, /is-owner-calendar/);
     assert.match(dom.alerts.innerHTML, /Activity overlaps a public holiday/);
     assert.match(dom.grid.innerHTML, /calendar-week-heading/);
     assert.match(dom.grid.innerHTML, /calendar-week-number/);
@@ -471,7 +471,7 @@ describe("Planning surface production behavior", () => {
       request: async (url) => String(url).includes("/overlays")
         ? {
           items: [
-            { provider: "alexey-calendar", id: "alexey-slot:2026-08-12:midday", startDate: "2026-08-12", endDate: "2026-08-12",
+            { provider: "owner-calendar", id: "owner-slot:2026-08-12:midday", startDate: "2026-08-12", endDate: "2026-08-12",
               label: "12:30 Available", category: "Available slot", isAvailableSlot: true },
             { provider: "newsletter-issues-readonly", id: "slot-open", startDate: "2026-08-13", endDate: "2026-08-13",
               label: "Issue 99", status: "planned", isAvailableSlot: true, href: "/newsletter?slotId=slot-open" },
@@ -488,7 +488,7 @@ describe("Planning surface production behavior", () => {
     await harness.surface.renderCalendarSurface();
     await nextTicks();
     const html = dom.grid.innerHTML;
-    assert.match(html, /class="calendar-overlay is-alexey is-available-slot"\s+data-open-day="2026-08-12" title="Open event slot: 12:30 Available"/);
+    assert.match(html, /class="calendar-overlay is-owner-calendar is-available-slot"\s+data-open-day="2026-08-12" title="Open event slot: 12:30 Available"/);
     assert.match(html, /class="calendar-overlay is-newsletter is-available-slot is-holiday-conflict" href="\/newsletter\?slotId=slot-open" title="Free newsletter slot: Issue 99 \(conflicts with Example Holiday\)"/);
     assert.match(html, /<small>Blocked<\/small>/);
     assert.match(html, /class="calendar-overlay is-newsletter" href="\/newsletter\?slotId=slot-booked"/);
@@ -507,14 +507,14 @@ describe("Planning surface production behavior", () => {
       request: async (url) => String(url).includes("/overlays")
         ? {
           items: [
-            { provider: "alexey-calendar", id: "alexey-calendar:vacation", startDate: "2026-08-10", endDate: "2026-08-11",
+            { provider: "owner-calendar", id: "owner-calendar:vacation", startDate: "2026-08-10", endDate: "2026-08-11",
               label: "Vacation", category: "Alexey", slot: "all-day", isAvailableSlot: false },
-            { provider: "alexey-calendar", id: "alexey-calendar:flight", startDate: "2026-08-13", endDate: "2026-08-13",
+            { provider: "owner-calendar", id: "owner-calendar:flight", startDate: "2026-08-13", endDate: "2026-08-13",
               label: "Flight to Lisbon", category: "Alexey", slot: "all-day", isAvailableSlot: false },
-            { provider: "alexey-calendar", id: "alexey-slot:2026-08-12:midday", startDate: "2026-08-12", endDate: "2026-08-12",
+            { provider: "owner-calendar", id: "owner-slot:2026-08-12:midday", startDate: "2026-08-12", endDate: "2026-08-12",
               label: "12:30 Available", category: "Available slot", isAvailableSlot: true },
           ],
-          sources: { "alexey-calendar": { state: "connected" } },
+          sources: { "owner-calendar": { state: "connected" } },
         }
         : { items: [], holidays: [], alerts: [] },
     });
@@ -535,7 +535,7 @@ describe("Planning surface production behavior", () => {
     const harness = createPlanningHarness({
       calendar: dom,
       request: async (url) => String(url).includes("/overlays")
-        ? { items: [], sources: { "alexey-calendar": { state: "not-configured", reason } } }
+        ? { items: [], sources: { "owner-calendar": { state: "not-configured", reason } } }
         : { items: [], holidays: [], alerts: [] },
     });
     await harness.surface.renderCalendarSurface();
@@ -949,7 +949,8 @@ describe("Planning surface production behavior", () => {
           return {
             items: [
               {
-                id: "alexey-calendar:evt-morning",
+                provider: "owner-calendar",
+                id: "owner-calendar:evt-morning",
                 category: "Alexey",
                 label: "09:30–10:30 Team sync",
                 startDate: "2026-08-13",
@@ -958,7 +959,8 @@ describe("Planning surface production behavior", () => {
                 isSlotEvent: false,
               },
               {
-                id: "alexey-calendar:evt-podcast",
+                provider: "owner-calendar",
+                id: "owner-calendar:evt-podcast",
                 category: "Alexey",
                 label: "12:30–13:30 Podcast with Guest",
                 startDate: "2026-08-13",
@@ -967,7 +969,8 @@ describe("Planning surface production behavior", () => {
                 isSlotEvent: true,
               },
               {
-                id: "alexey-calendar:evt-call",
+                provider: "owner-calendar",
+                id: "owner-calendar:evt-call",
                 category: "Alexey",
                 label: "15:00–15:45 Partner discussion",
                 startDate: "2026-08-13",
@@ -982,7 +985,8 @@ describe("Planning surface production behavior", () => {
           return {
             items: [
               {
-                id: "alexey-calendar:evt-podcast",
+                provider: "owner-calendar",
+                id: "owner-calendar:evt-podcast",
                 category: "Alexey",
                 label: "12:30–13:30 Podcast with Guest",
                 startDate: "2026-08-13",

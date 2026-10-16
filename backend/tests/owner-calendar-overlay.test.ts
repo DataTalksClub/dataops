@@ -1,11 +1,11 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  alexeyCalendarOverlay,
+  ownerCalendarOverlay,
   determineSlotType,
-  setAlexeyCalendarProviderClientsForTests,
-  shouldFilterAlexeyCalendarEvent,
-} from '../src/calendar/alexeyCalendarOverlay';
+  setOwnerCalendarProviderClientsForTests,
+  shouldFilterOwnerCalendarEvent,
+} from '../src/calendar/ownerCalendarOverlay';
 import { resetCalendarOverlayProvidersForTests } from '../src/calendar/overlays';
 import { DEFAULT_CALENDAR_OVERLAY_SETTINGS } from '../src/db/calendar';
 
@@ -14,7 +14,7 @@ describe('Alexey calendar overlay and filtering', () => {
     resetCalendarOverlayProvidersForTests();
   });
 
-  describe('shouldFilterAlexeyCalendarEvent', () => {
+  describe('shouldFilterOwnerCalendarEvent', () => {
     it('filters out lunch placeholders and routine personal tasks per SOP and guidelines', () => {
       const filtered = [
         'Lunch',
@@ -50,7 +50,7 @@ describe('Alexey calendar overlay and filtering', () => {
 
       for (const title of filtered) {
         assert.equal(
-          shouldFilterAlexeyCalendarEvent(title),
+          shouldFilterOwnerCalendarEvent(title),
           true,
           `Expected "${title}" to be filtered out`,
         );
@@ -78,7 +78,7 @@ describe('Alexey calendar overlay and filtering', () => {
 
       for (const title of kept) {
         assert.equal(
-          shouldFilterAlexeyCalendarEvent(title),
+          shouldFilterOwnerCalendarEvent(title),
           false,
           `Expected "${title}" to be kept`,
         );
@@ -88,57 +88,57 @@ describe('Alexey calendar overlay and filtering', () => {
     it('respects configurable filter toggles and custom keywords', () => {
       // With filterLunch disabled, lunch is kept
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('Lunch', { filterLunch: false }),
+        shouldFilterOwnerCalendarEvent('Lunch', { filterLunch: false }),
         false,
       );
 
       // With filterRoutines disabled, morning no is kept
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('Morning no', { filterRoutines: false }),
+        shouldFilterOwnerCalendarEvent('Morning no', { filterRoutines: false }),
         false,
       );
 
       // With filterFitness disabled, Beat81 is kept
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('BEAT81 workout', { filterFitness: false }),
+        shouldFilterOwnerCalendarEvent('BEAT81 workout', { filterFitness: false }),
         false,
       );
 
       // With filterCampaigns disabled, campaign window is kept
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('Campaign window', { filterCampaigns: false }),
+        shouldFilterOwnerCalendarEvent('Campaign window', { filterCampaigns: false }),
         false,
       );
 
       // With filterBusy enabled, busy is filtered out
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('Busy', { filterBusy: true }),
+        shouldFilterOwnerCalendarEvent('Busy', { filterBusy: true }),
         true,
       );
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('Занято', { filterBusy: true }),
+        shouldFilterOwnerCalendarEvent('Занято', { filterBusy: true }),
         true,
       );
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('Busy', { filterBusy: false }),
+        shouldFilterOwnerCalendarEvent('Busy', { filterBusy: false }),
         false,
       );
 
       // Custom keywords
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('Visit dentist for checkup', {
+        shouldFilterOwnerCalendarEvent('Visit dentist for checkup', {
           customKeywords: ['dentist', 'haircut'],
         }),
         true,
       );
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('Quick Haircut appointment', {
+        shouldFilterOwnerCalendarEvent('Quick Haircut appointment', {
           customKeywords: ['dentist', 'haircut'],
         }),
         true,
       );
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('Team planning session', {
+        shouldFilterOwnerCalendarEvent('Team planning session', {
           customKeywords: ['dentist', 'haircut'],
         }),
         false,
@@ -146,44 +146,44 @@ describe('Alexey calendar overlay and filtering', () => {
 
       // DTC event placeholder blocks
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('DTC event block', { filterDtcPlaceholders: true }),
+        shouldFilterOwnerCalendarEvent('DTC event block', { filterDtcPlaceholders: true }),
         true,
       );
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('DataTalks.Club event', { filterDtcPlaceholders: true }),
+        shouldFilterOwnerCalendarEvent('DataTalks.Club event', { filterDtcPlaceholders: true }),
         true,
       );
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('DTC event', { filterDtcPlaceholders: true }),
+        shouldFilterOwnerCalendarEvent('DTC event', { filterDtcPlaceholders: true }),
         true,
       );
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('DTC event block', { filterDtcPlaceholders: false }),
+        shouldFilterOwnerCalendarEvent('DTC event block', { filterDtcPlaceholders: false }),
         false,
       );
 
       // Transparent events (free/non-blocking)
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('Stay at #402 Prenzlauer Berg', { filterTransparent: true }, { transparency: 'transparent' }),
+        shouldFilterOwnerCalendarEvent('Stay at #402 Prenzlauer Berg', { filterTransparent: true }, { transparency: 'transparent' }),
         true,
       );
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('Flight to Helsinki', { filterTransparent: true }, { transparency: 'transparent' }),
+        shouldFilterOwnerCalendarEvent('Flight to Helsinki', { filterTransparent: true }, { transparency: 'transparent' }),
         false,
       );
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('AI Conference Berlin', { filterTransparent: true }, { transparency: 'transparent' }),
+        shouldFilterOwnerCalendarEvent('AI Conference Berlin', { filterTransparent: true }, { transparency: 'transparent' }),
         false,
       );
       assert.equal(
-        shouldFilterAlexeyCalendarEvent('Stay at #402 Prenzlauer Berg', { filterTransparent: false }, { transparency: 'transparent' }),
+        shouldFilterOwnerCalendarEvent('Stay at #402 Prenzlauer Berg', { filterTransparent: false }, { transparency: 'transparent' }),
         false,
       );
 
       // Operational event slot filtering (Midday 11:30–14:00, Evening 16:30–18:30)
       // Morning event (10:00–11:00 Berlin time) outside operational event slots:
       assert.equal(
-        shouldFilterAlexeyCalendarEvent(
+        shouldFilterOwnerCalendarEvent(
           'Internal standup',
           { filterNonSlotHours: true },
           { startIso: '2026-10-13T10:00:00+02:00', endIso: '2026-10-13T11:00:00+02:00' },
@@ -192,7 +192,7 @@ describe('Alexey calendar overlay and filtering', () => {
       );
       // When filterNonSlotHours is false, morning event is kept:
       assert.equal(
-        shouldFilterAlexeyCalendarEvent(
+        shouldFilterOwnerCalendarEvent(
           'Internal standup',
           { filterNonSlotHours: false },
           { startIso: '2026-10-13T10:00:00+02:00', endIso: '2026-10-13T11:00:00+02:00' },
@@ -201,7 +201,7 @@ describe('Alexey calendar overlay and filtering', () => {
       );
       // Midday event (12:30–13:30 Berlin time) is kept:
       assert.equal(
-        shouldFilterAlexeyCalendarEvent(
+        shouldFilterOwnerCalendarEvent(
           'Lunch discussion',
           { filterNonSlotHours: true, filterLunch: false },
           { startIso: '2026-10-13T12:30:00+02:00', endIso: '2026-10-13T13:30:00+02:00' },
@@ -210,7 +210,7 @@ describe('Alexey calendar overlay and filtering', () => {
       );
       // Evening event (17:00–18:00 Berlin time) is kept:
       assert.equal(
-        shouldFilterAlexeyCalendarEvent(
+        shouldFilterOwnerCalendarEvent(
           'Evening podcast recording',
           { filterNonSlotHours: true },
           { startIso: '2026-10-13T17:00:00+02:00', endIso: '2026-10-13T18:00:00+02:00' },
@@ -219,7 +219,7 @@ describe('Alexey calendar overlay and filtering', () => {
       );
       // All-day blockers bypass slot window filtering:
       assert.equal(
-        shouldFilterAlexeyCalendarEvent(
+        shouldFilterOwnerCalendarEvent(
           'Vacation',
           { filterNonSlotHours: true },
           { isAllDay: true },
@@ -264,7 +264,7 @@ describe('Alexey calendar overlay and filtering', () => {
 
   describe('fetchDapierConnections and configurable provider', () => {
     it('discovers Dapier calendar connections using token', async () => {
-      const { fetchDapierConnections } = await import('../src/calendar/alexeyCalendarOverlay');
+      const { fetchDapierConnections } = await import('../src/calendar/ownerCalendarOverlay');
       const mockFetch: typeof fetch = async (input) => {
         if (String(input).endsWith('/api/agent/connections')) {
           return new Response(
@@ -288,7 +288,7 @@ describe('Alexey calendar overlay and filtering', () => {
         return new Response('Not found', { status: 404 });
       };
 
-      setAlexeyCalendarProviderClientsForTests({ fetch: mockFetch });
+      setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
       const conns = await fetchDapierConnections({ brokerCredential: 'token' });
       assert.equal(conns.length, 2);
       assert.equal(conns[0].connectionId, 'google-calendar');
@@ -333,8 +333,8 @@ describe('Alexey calendar overlay and filtering', () => {
         return new Response('Not found', { status: 404 });
       };
 
-      setAlexeyCalendarProviderClientsForTests({ fetch: mockFetch });
-      const provider = alexeyCalendarOverlay({
+      setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
+      const provider = ownerCalendarOverlay({
         brokerCredential: 'test-token',
         includeAll: true,
         settings: {
@@ -351,14 +351,14 @@ describe('Alexey calendar overlay and filtering', () => {
       const { items } = await provider.project('2026-10-01', '2026-10-31');
       assert.equal(requestedConnectionId, 'work-calendar');
       assert.equal(items.length, 1);
-      assert.equal(items[0].id, 'alexey-calendar:evt-custom-1');
+      assert.equal(items[0].id, 'owner-calendar:evt-custom-1');
       assert.equal(items[0].label, '12:00–13:00 Lunch');
     });
   });
 
-  describe('alexeyCalendarOverlay provider', () => {
+  describe('ownerCalendarOverlay provider', () => {
     it('returns empty list gracefully if no token or credentials are available', async () => {
-      setAlexeyCalendarProviderClientsForTests({
+      setOwnerCalendarProviderClientsForTests({
         secrets: {
           send: async () => {
             throw new Error('Secret not found');
@@ -366,7 +366,7 @@ describe('Alexey calendar overlay and filtering', () => {
         } as any,
       });
 
-      const provider = alexeyCalendarOverlay({ brokerCredential: '' });
+      const provider = ownerCalendarOverlay({ brokerCredential: '' });
       const { items, connection } = await provider.project('2026-10-01', '2026-10-31');
       assert.deepEqual(items, []);
       assert.equal(connection.state, 'not-configured');
@@ -374,14 +374,14 @@ describe('Alexey calendar overlay and filtering', () => {
     });
 
     it('names a missing secret permission as the reason the layer is not connected', async () => {
-      setAlexeyCalendarProviderClientsForTests({
+      setOwnerCalendarProviderClientsForTests({
         secrets: {
           send: async () => {
             throw Object.assign(new Error('denied'), { name: 'AccessDeniedException' });
           },
         } as any,
       });
-      const { connection } = await alexeyCalendarOverlay({ settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS }).project('2026-10-01', '2026-10-31');
+      const { connection } = await ownerCalendarOverlay({ settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS }).project('2026-10-01', '2026-10-31');
       assert.deepEqual(connection, {
         state: 'not-configured',
         reason: 'This environment is not allowed to read the calendar broker secret personal-scheduler/dapier-api-token.',
@@ -389,10 +389,10 @@ describe('Alexey calendar overlay and filtering', () => {
     });
 
     it('reports the broker refusal instead of an empty connected layer', async () => {
-      setAlexeyCalendarProviderClientsForTests({
+      setOwnerCalendarProviderClientsForTests({
         fetch: (async () => new Response('Unauthorized', { status: 401 })) as typeof fetch,
       });
-      const provider = alexeyCalendarOverlay({ brokerCredential: 'test-token', settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS });
+      const provider = ownerCalendarOverlay({ brokerCredential: 'test-token', settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS });
       const { items, connection } = await provider.project('2026-10-01', '2026-10-31');
       assert.deepEqual(items, []);
       assert.deepEqual(connection, { state: 'unavailable', reason: 'The calendar broker refused the token request (HTTP 401).' });
@@ -470,9 +470,9 @@ describe('Alexey calendar overlay and filtering', () => {
         return new Response('Not found', { status: 404 });
       };
 
-      setAlexeyCalendarProviderClientsForTests({ fetch: mockFetch });
+      setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
 
-      const provider = alexeyCalendarOverlay({
+      const provider = ownerCalendarOverlay({
         brokerUrl: 'https://dapier.dtcdev.click',
         brokerCredential: 'dap_synthetic_token',
         agent: 'personal-scheduler',
@@ -496,22 +496,22 @@ describe('Alexey calendar overlay and filtering', () => {
       assert.equal(items.length, 3);
 
       // Event 1: Podcast (timed)
-      assert.equal(items[0].id, 'alexey-calendar:evt-1');
+      assert.equal(items[0].id, 'owner-calendar:evt-1');
       assert.equal(items[0].startDate, '2026-10-13');
       assert.equal(items[0].endDate, '2026-10-13');
       assert.equal(items[0].label, '12:25–13:30 Tejas at DataTalks.Club Podcast');
       assert.equal(items[0].category, 'Alexey');
-      assert.equal(items[0].provider, 'alexey-calendar');
+      assert.equal(items[0].provider, 'owner-calendar');
       assert.equal(items[0].href, 'https://calendar.google.com/event?eid=evt1');
 
       // Event 2: "No" (unavailability block, kept!)
-      assert.equal(items[1].id, 'alexey-calendar:evt-3');
+      assert.equal(items[1].id, 'owner-calendar:evt-3');
       assert.equal(items[1].startDate, '2026-10-13');
       assert.equal(items[1].label, '14:00–18:00 No');
       assert.equal(items[1].category, 'Alexey');
 
       // Event 3: Flight (all-day adjusted end date)
-      assert.equal(items[2].id, 'alexey-calendar:evt-5');
+      assert.equal(items[2].id, 'owner-calendar:evt-5');
       assert.equal(items[2].startDate, '2026-10-17');
       assert.equal(items[2].endDate, '2026-10-17');
       assert.equal(items[2].label, 'Flight to Helsinki');
@@ -583,9 +583,9 @@ describe('Alexey calendar overlay and filtering', () => {
         return new Response('Not found', { status: 404 });
       };
 
-      setAlexeyCalendarProviderClientsForTests({ fetch: mockFetch });
+      setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
 
-      const provider = alexeyCalendarOverlay({
+      const provider = ownerCalendarOverlay({
         brokerCredential: 'synthetic-token',
       });
 
@@ -596,36 +596,36 @@ describe('Alexey calendar overlay and filtering', () => {
       // 1. Personal events (vacation, flight, meetings) are never projected as
       //    calendar items: every item is an open slot.
       assert.ok(items.length > 0);
-      assert.ok(items.every((i) => i.isAvailableSlot === true && i.id.startsWith('alexey-slot:')), JSON.stringify(items));
+      assert.ok(items.every((i) => i.isAvailableSlot === true && i.id.startsWith('owner-slot:')), JSON.stringify(items));
       assert.equal(items.some((i) => /Vacation|Flight|Partner sync|webinar recording/.test(i.label)), false);
 
       // 2. Monday Oct 12: midday has partner sync (busy) -> evening is free -> 17:00 Available projected
-      const monMidday = items.find((i) => i.id === 'alexey-slot:2026-10-12:midday');
+      const monMidday = items.find((i) => i.id === 'owner-slot:2026-10-12:midday');
       assert.equal(monMidday, undefined, 'Monday midday slot is busy');
-      const monEvening = items.find((i) => i.id === 'alexey-slot:2026-10-12:evening');
+      const monEvening = items.find((i) => i.id === 'owner-slot:2026-10-12:evening');
       assert.ok(monEvening, 'Monday evening slot should be available');
       assert.equal(monEvening.label, '17:00 Available');
       assert.equal(monEvening.isAvailableSlot, true);
 
       // 3. Tuesday Oct 13: personal lunch filtered -> midday is free -> 12:30 Available projected; evening is busy
-      const tueMidday = items.find((i) => i.id === 'alexey-slot:2026-10-13:midday');
+      const tueMidday = items.find((i) => i.id === 'owner-slot:2026-10-13:midday');
       assert.ok(tueMidday, 'Tuesday midday slot should be available');
       assert.equal(tueMidday.label, '12:30 Available');
       assert.equal(tueMidday.isAvailableSlot, true);
-      const tueEvening = items.find((i) => i.id === 'alexey-slot:2026-10-13:evening');
+      const tueEvening = items.find((i) => i.id === 'owner-slot:2026-10-13:evening');
       assert.equal(tueEvening, undefined, 'Tuesday evening slot is busy');
 
       // 4. Wednesday Oct 14: midday free -> 12:30 Available; evening is NOT offered on Wed per SOP
-      const wedMidday = items.find((i) => i.id === 'alexey-slot:2026-10-14:midday');
+      const wedMidday = items.find((i) => i.id === 'owner-slot:2026-10-14:midday');
       assert.ok(wedMidday, 'Wednesday midday slot should be available');
       assert.equal(wedMidday.label, '12:30 Available');
-      const wedEvening = items.find((i) => i.id === 'alexey-slot:2026-10-14:evening');
+      const wedEvening = items.find((i) => i.id === 'owner-slot:2026-10-14:evening');
       assert.equal(wedEvening, undefined, 'Evening slots are only offered Mon/Tue per SOP');
 
       // 5. Thursday Oct 15 & Friday Oct 16: Vacation blocker -> NO slots available
-      const thuMidday = items.find((i) => i.id === 'alexey-slot:2026-10-15:midday');
+      const thuMidday = items.find((i) => i.id === 'owner-slot:2026-10-15:midday');
       assert.equal(thuMidday, undefined, 'Thursday is blocked by vacation');
-      const friMidday = items.find((i) => i.id === 'alexey-slot:2026-10-16:midday');
+      const friMidday = items.find((i) => i.id === 'owner-slot:2026-10-16:midday');
       assert.equal(friMidday, undefined, 'Friday is blocked by vacation');
 
       // 6. Saturday Oct 17 & Sunday Oct 18: Weekend -> NO slots available per SOP
@@ -671,11 +671,11 @@ describe('Alexey calendar overlay and filtering', () => {
         return new Response('Not found', { status: 404 });
       };
 
-      setAlexeyCalendarProviderClientsForTests({ fetch: mockFetch });
+      setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
 
       // Without includeAll (the calendar grid): only open slots, never the events.
       // The 12:30 podcast takes the midday slot; the Tuesday evening slot stays open.
-      const defaultProvider = alexeyCalendarOverlay({
+      const defaultProvider = ownerCalendarOverlay({
         brokerCredential: 'token',
         includeAll: false,
         settings: {
@@ -691,19 +691,19 @@ describe('Alexey calendar overlay and filtering', () => {
         },
       });
       const { items: defaultItems } = await defaultProvider.project('2026-10-13', '2026-10-13');
-      assert.deepEqual(defaultItems.map((item) => item.id), ['alexey-slot:2026-10-13:evening']);
+      assert.deepEqual(defaultItems.map((item) => item.id), ['owner-slot:2026-10-13:evening']);
 
       // With includeAll: morning meeting is kept and tagged with slot: outside
-      const allProvider = alexeyCalendarOverlay({
+      const allProvider = ownerCalendarOverlay({
         brokerCredential: 'token',
         includeAll: true,
       });
       const { items: allItems } = await allProvider.project('2026-10-13', '2026-10-13');
       assert.equal(allItems.length, 2);
-      assert.equal(allItems[0].id, 'alexey-calendar:evt-morning');
+      assert.equal(allItems[0].id, 'owner-calendar:evt-morning');
       assert.equal(allItems[0].slot, 'outside');
       assert.equal(allItems[0].isSlotEvent, false);
-      assert.equal(allItems[1].id, 'alexey-calendar:evt-midday');
+      assert.equal(allItems[1].id, 'owner-calendar:evt-midday');
       assert.equal(allItems[1].slot, 'midday');
       assert.equal(allItems[1].isSlotEvent, true);
     });

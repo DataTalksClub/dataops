@@ -404,7 +404,7 @@ export function createPlanningSurface(context) {
           if (isAvailableOverlay(overlay)) return showAvailable;
           // Alexey's own events (vacations, flights, meetings) are never items on
           // the calendar: they only decide which event slots are open.
-          if (overlay.provider === "alexey-calendar") return false;
+          if (overlay.provider === "owner-calendar") return false;
           return showOverlay;
         }),
         leadingMonday = (() => {
@@ -490,10 +490,10 @@ export function createPlanningSurface(context) {
             </button>
           `).join(""),
           overlayMarkup = dayOverlays.map((overlay) => {
-            const isAlexey = overlay.provider === "alexey-calendar";
+            const isOwnerCalendar = overlay.provider === "owner-calendar";
             const isAvailable = isAvailableOverlay(overlay);
             const category = isAvailable
-              ? (isAlexey ? "Open event slot" : "Free newsletter slot")
+              ? (isOwnerCalendar ? "Open event slot" : "Free newsletter slot")
               : overlay.category || "Newsletter";
             const hrefAttr = overlay.href ? `href="${escapeHtml(overlay.href)}"` : "";
             const tag = overlay.href ? "a" : (isAvailable ? "button type=\"button\"" : "span");
@@ -504,7 +504,7 @@ export function createPlanningSurface(context) {
               ? `${category}: ${overlay.label} (conflicts with ${blockingHoliday.name})`
               : isAvailable ? `${category}: ${overlay.label}` : overlay.label;
             return `
-              <${tag} class="calendar-overlay ${isAlexey ? "is-alexey" : "is-newsletter"}${slotClass}" ${hrefAttr}${openDayAttr} title="${escapeHtml(title)}">
+              <${tag} class="calendar-overlay ${isOwnerCalendar ? "is-owner-calendar" : "is-newsletter"}${slotClass}" ${hrefAttr}${openDayAttr} title="${escapeHtml(title)}">
                 <small>${conflict ? "Blocked" : escapeHtml(category)}</small>
                 <span>${escapeHtml(overlay.label)}</span>
               </${tag}>
@@ -573,15 +573,15 @@ export function createPlanningSurface(context) {
     let planningStatus = "";
     // Open event slots come from Alexey's calendar. No slots only means "fully
     // booked" when that source is connected; otherwise say why on the chip.
-    function alexeyConnectionProblem() {
+    function ownerCalendarConnectionProblem() {
       if (overlaysFailed) return "Calendar overlays failed to load.";
-      const connection = overlaySources["alexey-calendar"];
+      const connection = overlaySources["owner-calendar"];
       if (!connection || connection.state === "connected") return "";
       return connection.reason || "The calendar source is not connected.";
     }
 
     function renderOverlayStatus() {
-      const problem = alexeyConnectionProblem(),
+      const problem = ownerCalendarConnectionProblem(),
         chip = surface.querySelector('[data-layer-chip="available"]'),
         showAvailable = surface.querySelector('[data-layer="available"]')?.checked ?? true;
       if (chip) {
