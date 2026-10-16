@@ -2335,13 +2335,17 @@ describe("Work Detail surface boundary", () => {
 
     await hydrateTask(harness, task);
     const section = harness.taskPanelBody.querySelector(".task-prerequisites");
-    assert.ok(section, "prerequisites section renders");
+    assert.ok(section, "the Waiting on section renders");
+    assert.match(section.textContent, /^Waiting on/);
     assert.match(section.textContent, /Verify Spotify episode/);
     assert.match(section.textContent, /Review transcript/);
-    const rows = section.querySelectorAll(".task-prerequisite-row");
+    const rows = section.querySelectorAll(".task-dependency-row");
     assert.deepEqual(rows.map((row) => row.dataset.status), ["done", "todo", "skipped"]);
     assert.match(rows[2].textContent, /Skipped/);
-    assert.ok(section.querySelector('[data-blocked="true"]'));
+    // Nothing waits on this task, so there is no Unblocks section.
+    assert.equal(harness.taskPanelBody.querySelector(".task-dependents"), null);
+    const why = harness.taskPanelBody.querySelector('[data-blocked="true"]');
+    assert.equal(why.textContent, "Waiting on 1 task above");
 
     const complete = findByText(harness.taskPanelBody, "Mark done", "button");
     assert.equal(complete.disabled, true);
@@ -2411,11 +2415,19 @@ describe("Work Detail surface boundary", () => {
     assert.equal(rows.length, 2);
     const [open, blocked] = rows;
     assert.equal(open.querySelector('input[type="checkbox"]').disabled, false);
-    assert.equal(open.querySelector(".card-checklist-blocked"), null);
+    assert.equal(open.querySelector(".card-checklist-after"), null);
+    assert.equal(open.classList.contains("is-blocked"), false);
     const box = blocked.querySelector('input[type="checkbox"]');
     assert.equal(box.disabled, true);
     assert.equal(box.title, 'Complete or skip "Verify Spotify episode" first');
-    assert.match(blocked.querySelector(".card-checklist-blocked").textContent, /Blocked by Verify Spotify episode/);
+    assert.equal(blocked.classList.contains("is-blocked"), true);
+    const after = blocked.querySelector(".card-checklist-after");
+    assert.equal(after.textContent, "after Verify Spotify episode");
+    assert.equal(box.getAttribute("aria-describedby"), after.id);
+    // The blocker's name links to it.
+    const link = after.querySelector(".card-checklist-after-link");
+    assert.equal(link.tagName, "A");
+    assert.equal(link.href, `/cards?cardId=${card.id}&taskId=${first.id}`);
     assert.deepEqual(harness.errors, []);
   });
 
@@ -2438,9 +2450,20 @@ describe("Work Detail surface boundary", () => {
       },
     });
     await hydrateTask(harness, subject);
-    const editor = harness.taskPanelBody.querySelector(".task-prerequisite-editor");
+    await nextTicks(3);
+    // No prerequisites: no Waiting on section, but the task can still gain
+    // one from the dialog's secondary disclosure.
+    assert.equal(harness.taskPanelBody.querySelector(".task-prerequisites"), null);
+    const editor = harness.taskPanelBody.querySelector(".task-panel-more .task-prerequisite-editor");
     assert.ok(editor, "an unblocked task with a card can still gain prerequisites");
-    assert.equal(harness.requests.some(({ url }) => url === `/api/tasks?cardId=${card.id}`), false, "tasks load only when the editor opens");
+    assert.equal(editor.querySelector("summary").textContent, "Add a prerequisite");
+    // Promote episode waits on this task, so the dialog says what it unblocks.
+    const unblocks = harness.taskPanelBody.querySelector(".task-dependents");
+    assert.ok(unblocks, "Unblocks lists the card's tasks that wait on this one");
+    assert.deepEqual(
+      unblocks.querySelectorAll(".task-dependency-name").map((name) => name.textContent),
+      ["Promote episode"],
+    );
 
     editor.open = true;
     await editor.dispatch("toggle");
@@ -2460,6 +2483,26 @@ describe("Work Detail surface boundary", () => {
     await nextTicks(3);
     const saved = harness.requests.find(({ url, options: o }) => url === "/api/tasks/page" && o?.method === "PUT");
     assert.deepEqual(jsonBody(saved), { dependsOn: ["spotify-id"], expectedVersion: 4 });
+  });
+
+  test("shows no dependency section on a task without edges", async () => {
+    const card = { id: "card-no-deps", version: 1, title: "Episode", status: "active", stage: "preparation", taskCount: 2, openTaskCount: 2, references: [] };
+    const subject = { id: "plain", cardId: card.id, version: 1, taskHistory: [], description: "Plain step", status: "todo", date: "2026-08-12" };
+    const other = { id: "other", cardId: card.id, version: 1, taskHistory: [], description: "Other step", status: "todo" };
+    const harness = createHarness({
+      cards: [card],
+      request: async (url) => {
+        if (url === "/api/tasks/plain") return subject;
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [subject, other] };
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return {};
+      },
+    });
+    await hydrateTask(harness, subject);
+    await nextTicks(3);
+    assert.equal(harness.taskPanelBody.querySelector(".task-dependency-section"), null);
+    assert.doesNotMatch(harness.taskPanelBody.textContent, /Prerequisites|Waiting on|Unblocks/);
   });
 
   test("offers no prerequisite editor on a completed or card-less Task", async () => {

@@ -1,5 +1,5 @@
 import { documentHref, opensInNewTab } from "../../core/links.js";
-import { blockedReason, blockedSummary } from "../../core/task-dependencies.js";
+import { afterText, blockedReason, blockingPrerequisites } from "../../core/task-dependencies.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { createCardActions } from "./card-actions.js";
 import { renderCardTemplateUpdate } from "./card-template-review.js";
@@ -680,6 +680,8 @@ export function createCardPanel(context) {
 
     const siblingTasks = detail.activeCardPanelData?.tasks || [];
     const blockedBy = blockedReason(task, siblingTasks);
+    const blocking = blockingPrerequisites(task, siblingTasks);
+    const isBlocked = blocking.length > 0;
 
     // A skipped Task is resolved without being done: a dash mark instead of
     // a checked box, a muted title that is not struck through, and its reason
@@ -755,15 +757,36 @@ export function createCardPanel(context) {
       body.append(note);
     }
 
+    // What it waits on: "after A and B", each name opening that task.
+    if (isBlocked) {
+      const after = document.createElement("small");
+      after.className = "card-checklist-after";
+      after.id = `card-checklist-after-${task.id}`;
+      after.title = afterText(blocking);
+      after.append("after ");
+      blocking.forEach((entry, index) => {
+        if (index > 0) after.append(index === blocking.length - 1 ? " and " : ", ");
+        if (entry.status === "missing") {
+          after.append(entry.description);
+          return;
+        }
+        const link = document.createElement("a");
+        link.className = "card-checklist-after-link";
+        link.href = `/cards?cardId=${encodeURIComponent(cardId)}&taskId=${encodeURIComponent(entry.id)}`;
+        link.textContent = entry.description;
+        link.addEventListener("click", (event) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+          event.preventDefault();
+          openTaskPanel(entry.id, { preserveCard: true, expectedCardId: cardId });
+        });
+        after.append(link);
+      });
+      body.append(after);
+      if (control.tagName === "INPUT") control.setAttribute("aria-describedby", after.id);
+    }
+
     const flags = document.createElement("div");
     flags.className = "card-checklist-flags";
-    if (blockedBy && !isWaiting) {
-      const blockedChip = document.createElement("span");
-      blockedChip.className = "card-checklist-blocked workflow-card-flag is-warning";
-      blockedChip.textContent = blockedSummary(task, siblingTasks);
-      blockedChip.title = blockedBy;
-      flags.append(blockedChip);
-    }
     if (!isDone && (missingLink || missingFile || missingArtifact)) {
       const missing = [];
       if (missingLink) missing.push(`${task.requiredLinkName} missing`);
@@ -779,7 +802,9 @@ export function createCardPanel(context) {
     const dateMeta = document.createElement("small");
     dateMeta.className = "card-checklist-date";
     const taskDateValue = String(task.date || "").slice(0, 10);
-    const isOverdue = !isDone && !isWaiting && taskDateValue && taskDateValue < today;
+    // A task still waiting on a prerequisite is not late yet: its
+    // prerequisite is, and that row carries the colour.
+    const isOverdue = !isDone && !isWaiting && !isBlocked && taskDateValue && taskDateValue < today;
     if (taskDateValue) {
       const dateChip = document.createElement("span");
       dateChip.className = `card-checklist-day${isOverdue ? " is-overdue" : ""}`;
@@ -796,6 +821,17 @@ export function createCardPanel(context) {
 
     row.classList.toggle("is-skipped", isSkipped);
     row.classList.toggle("is-done", isDone && !isSkipped);
+    row.classList.toggle("is-blocked", isBlocked);
+    row.dataset.taskId = task.id;
+    // Hovering a waiting row tints the rows it waits on.
+    if (isBlocked) {
+      const ids = new Set(blocking.map((entry) => entry.id));
+      const linked = () => [...(row.parentElement?.children || [])]
+        .filter((other) => ids.has(other.dataset?.taskId));
+      const tint = (on) => { for (const other of linked()) other.classList.toggle("is-linked", on); };
+      row.addEventListener("mouseenter", () => tint(true));
+      row.addEventListener("mouseleave", () => tint(false));
+    }
     row.append(control, body, dateMeta, owner);
     return row;
   }

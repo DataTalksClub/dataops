@@ -54,14 +54,6 @@ export function blockedReason(task, siblings = []) {
   return blocking.length ? `Complete or skip ${quoted(blocking)} first` : "";
 }
 
-// Short form for a row: the first blocker's name plus a count of the rest.
-export function blockedSummary(task, siblings = []) {
-  const blocking = blockingPrerequisites(task, siblings);
-  if (!blocking.length) return "";
-  const rest = blocking.length - 1;
-  return `Blocked by ${blocking[0].description}${rest ? ` +${rest} more` : ""}`;
-}
-
 // Whether `candidate` already waits on `task`, directly or through others.
 // Offering it as a prerequisite would close a cycle, so the editor greys it.
 export function waitsOnTask(candidate, task, siblings) {

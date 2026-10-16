@@ -1144,3 +1144,38 @@
     margin-top: 0;
   }
 }
+
+/* Dependencies in the checklist. A task waiting on a prerequisite has a
+   dashed, hollow box, a muted title and one quiet "after …" line naming what
+   it waits on; each name opens that task. Nothing about the normal waiting
+   state is coloured: it is the expected order of work, not a problem. */
+.card-checklist-item.is-blocked > input[type="checkbox"]:not(:checked) {
+  border-style: dashed;
+  background: var(--dk-bg-muted);
+}
+.card-checklist-item.is-blocked .card-checklist-label:not(:hover) {
+  color: var(--dk-text-muted);
+}
+.card-checklist-item.is-linked {
+  background: var(--dk-bg-hover);
+}
+.card-checklist-after {
+  display: block;
+  min-width: 0;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.card-checklist-after-link {
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--dk-border-strong);
+  text-underline-offset: 2px;
+}
+.card-checklist-after-link:hover,
+.card-checklist-after-link:focus-visible {
+  color: var(--dk-text-link);
+  text-decoration-color: currentColor;
+}

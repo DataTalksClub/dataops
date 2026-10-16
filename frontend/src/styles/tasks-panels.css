@@ -1320,36 +1320,97 @@ body[data-workspace-view="tasks"] .work-dialog-lead {
     padding: 0 var(--dk-space-3);
   }
 }
-/* Prerequisites: each task this one waits on, by name, with its status. */
-body[data-workspace-view="tasks"] .task-prerequisite-rows {
+/* Dependencies: "Waiting on" and "Unblocks", each only when it has an
+   entry. A row is a dot (green once resolved), the task's name (opens it)
+   and its due date or status. Quiet throughout: waiting is the normal order
+   of work, not a warning. */
+body[data-workspace-view="tasks"] .task-dependencies {
+  display: grid;
+  gap: var(--dk-space-4);
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .task-dependencies:empty {
+  display: none;
+}
+body[data-workspace-view="tasks"] .task-dependency-section {
+  position: relative;
   display: grid;
   gap: var(--dk-space-1);
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .task-dependency-rows {
+  display: grid;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-body[data-workspace-view="tasks"] .task-prerequisite-row {
-  display: flex;
+body[data-workspace-view="tasks"] .task-dependency-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: var(--dk-space-2);
+  padding-block: var(--dk-space-1);
+  font-size: var(--dk-text-md);
 }
-body[data-workspace-view="tasks"] .task-prerequisite-name {
+body[data-workspace-view="tasks"] .task-dependency-name {
   min-width: 0;
+  overflow: hidden;
   border: 0;
   background: none;
   color: var(--dk-text-primary);
   padding: 0;
+  font: inherit;
   text-align: left;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-body[data-workspace-view="tasks"] button.task-prerequisite-name {
+body[data-workspace-view="tasks"] button.task-dependency-name {
   cursor: pointer;
+}
+body[data-workspace-view="tasks"] button.task-dependency-name:hover,
+body[data-workspace-view="tasks"] button.task-dependency-name:focus-visible {
+  color: var(--dk-text-link);
   text-decoration: underline;
 }
-body[data-workspace-view="tasks"] .task-prerequisite-note {
-  margin: var(--dk-space-2) 0 0;
-  color: var(--dk-warning-text);
+body[data-workspace-view="tasks"] .task-dependency-row[data-status="done"] .task-dependency-name,
+body[data-workspace-view="tasks"] .task-dependency-row[data-status="skipped"] .task-dependency-name {
+  color: var(--dk-text-muted);
+}
+body[data-workspace-view="tasks"] .task-dependency-meta {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  white-space: nowrap;
+}
+body[data-workspace-view="tasks"] .task-actions-why {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+/* The editor's "Edit" sits on the section heading's line, at its right. */
+body[data-workspace-view="tasks"] .task-prerequisite-editor.is-inline > summary {
+  position: absolute;
+  top: 0;
+  right: 0;
+  list-style: none;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  font-weight: var(--dk-weight-medium);
+  cursor: pointer;
+}
+body[data-workspace-view="tasks"] .task-prerequisite-editor.is-inline > summary::-webkit-details-marker {
+  display: none;
+}
+body[data-workspace-view="tasks"] .task-prerequisite-editor > summary:hover {
+  color: var(--dk-text-link);
+  text-decoration: underline;
+}
+body[data-workspace-view="tasks"] .task-prerequisite-editor > summary {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  cursor: pointer;
+}
+body[data-workspace-view="tasks"] .task-prerequisite-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 body[data-workspace-view="tasks"] .task-prerequisite-empty {
   margin: 0;
@@ -1365,6 +1426,9 @@ body[data-workspace-view="tasks"] .task-prerequisite-option {
   align-items: center;
   gap: var(--dk-space-2);
 }
-body[data-workspace-view="tasks"] .task-prerequisite-option .task-status-badge {
+body[data-workspace-view="tasks"] .task-prerequisite-status {
   margin-left: auto;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  white-space: nowrap;
 }

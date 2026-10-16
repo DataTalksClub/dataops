@@ -3,8 +3,8 @@ import { isCanonicalWorkTask } from "../../core/workspace.js";
 import { displayCardDescription } from "./card-summary.js";
 import { renderTaskContext, renderTaskInstructions, taskDisplayParts } from "./task-overview.js";
 import { openSkipTaskDialog } from "./work-dialogs.js";
-import { blockedReason } from "../../core/task-dependencies.js";
-import { renderTaskPrerequisites } from "./task-prerequisites.js";
+import { blockedReason, blockingPrerequisites } from "../../core/task-dependencies.js";
+import { renderAddPrerequisite, renderTaskDependencies } from "./task-prerequisites.js";
 import { createTaskRequires } from "./task-requires.js";
 
 export function createTaskPanel(context) {
@@ -67,8 +67,9 @@ export function createTaskPanel(context) {
 
   const overviewDeps = {
     formatDate: (value) => formatTaskDateMeta(value, todayIsoDate()) || String(value || "").slice(0, 10),
-    isOverdue: (task) =>
-      !["done", "skipped"].includes(task.status) && Boolean(task.date) && String(task.date).slice(0, 10) < todayIsoDate(),
+    // A task still waiting on a prerequisite is not late yet; its prerequisite is.
+    isOverdue: (task) => !["done", "skipped"].includes(task.status) && blockingPrerequisites(task).length === 0
+      && Boolean(task.date) && String(task.date).slice(0, 10) < todayIsoDate(),
     navigateTaskToWorkflow: (task) => navigateTaskToWorkflow(task),
     fetchCard: (cardId) =>
       request(workApiUrl(`/api/cards/${encodeURIComponent(cardId)}`))
@@ -454,20 +455,26 @@ export function createTaskPanel(context) {
     const view = taskDisplayParts(task, overviewDeps);
     taskPanelBody.append(renderTaskContext(task, view, overviewDeps));
     taskPanelBody.append(renderTaskRequires(task, panelMutationBusy));
-    const prerequisites = renderTaskPrerequisites(task, {
+    const cardTasksAtHand = detail.activeCardPanelId === task.cardId
+      ? detail.activeCardPanelData?.tasks || []
+      : [];
+    let cardTasksRequest = null;
+    const dependencyOptions = {
       openTask: (taskId) => openTaskPanel(taskId),
       busy: panelMutationBusy,
-      loadCardTasks: async () => {
-        const open = detail.activeCardPanelData?.tasks;
-        if (open?.length && detail.activeCardPanelId === task.cardId) return open;
-        const payload = await request(
+      siblings: cardTasksAtHand,
+      loadCardTasks: () => {
+        if (cardTasksAtHand.length) return Promise.resolve(cardTasksAtHand);
+        cardTasksRequest ||= request(
           workApiUrl(`/api/tasks?cardId=${encodeURIComponent(task.cardId)}`),
-        );
-        return payload?.tasks || [];
+        ).then((payload) => payload?.tasks || []);
+        return cardTasksRequest;
       },
       onSave: (dependsOn) => saveTaskDependencies(task.id, dependsOn, task.version),
-    });
-    if (prerequisites) taskPanelBody.append(prerequisites);
+    };
+    if (task.cardId || task.dependsOn?.length) {
+      taskPanelBody.append(renderTaskDependencies(task, dependencyOptions).element);
+    }
     const proofSlot = document.createElement("div");
     proofSlot.className = "task-proof";
     // Required link field
@@ -621,7 +628,8 @@ export function createTaskPanel(context) {
       const complete = createTaskActionButton("Mark done", () =>
         updateTaskStatus(task.id, "done", task.version),
       );
-      complete.classList.add("is-primary");
+      // A blocked task's Mark done is not the next action, so it is not primary.
+      if (blockingPrerequisites(task).length === 0) complete.classList.add("is-primary");
 
       syncCompletionForFiles = () => {
         const {
@@ -644,6 +652,15 @@ export function createTaskPanel(context) {
         complete.title = reasons.join("; ");
       };
       syncCompletionForFiles();
+      // Why Mark done is off, in words beside it rather than in a tooltip.
+      const waitingOn = blockingPrerequisites(task).length;
+      if (waitingOn > 0) {
+        const why = document.createElement("span");
+        why.className = "task-actions-why";
+        why.dataset.blocked = "true";
+        why.textContent = `Waiting on ${waitingOn} ${waitingOn === 1 ? "task" : "tasks"} above`;
+        actions.append(why);
+      }
       actions.append(complete);
 
       const markWaiting = createTaskActionButton("Mark waiting", () =>
@@ -670,6 +687,8 @@ export function createTaskPanel(context) {
     const moreSummary = document.createElement("summary");
     moreSummary.textContent = "Attachments, notes and history";
     more.append(moreSummary);
+    const addPrerequisite = renderAddPrerequisite(task, dependencyOptions);
+    if (addPrerequisite) more.append(addPrerequisite);
     renderTaskFileSection(task, {
       onFilesSettled: syncCompletionForFiles,
       container: task.requiresFile ? proofSlot : more,

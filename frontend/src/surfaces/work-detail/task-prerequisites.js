@@ -1,82 +1,128 @@
 import {
-  blockingPrerequisites,
   nextDependsOn,
   prerequisiteChoices,
+  prerequisiteResolved,
   prerequisiteStatusLabel,
+  taskDependents,
   taskPrerequisites,
 } from "../../core/task-dependencies.js";
 
-// The task dialog's "Prerequisites" section: every task this one waits on,
-// by name, with its current status. A prerequisite that is not done is the
-// reason completion is disabled, so the section says so in words next to the
-// list instead of leaving a dead button.
-export function renderTaskPrerequisites(
+// The task dialog's dependency sections. "Waiting on" lists what this task
+// waits on and "Unblocks" what finishing it releases; each appears only when
+// it has an entry, so a task with no dependencies shows nothing here. A task
+// on a Card that may still change its prerequisites keeps the editor: an
+// "Edit" control on "Waiting on", or "Add a prerequisite" under the dialog's
+// "Attachments, notes and history" disclosure when it has none.
+export function renderTaskDependencies(
   task,
   { openTask, siblings = [], busy = false, loadCardTasks, onSave } = {},
 ) {
-  const prerequisites = taskPrerequisites(task, siblings);
-  // A completed Task keeps its prerequisites, and only a Task on a Card has any.
   const editable = Boolean(task.cardId && onSave && task.status !== "done");
-  if (prerequisites.length === 0 && !editable) return null;
-  const blocking = blockingPrerequisites(task, siblings);
+  const container = document.createElement("div");
+  container.className = "task-dependencies";
+
+  const render = (cardTasks) => {
+    const prerequisites = taskPrerequisites(task, cardTasks);
+    const dependents = taskDependents(task, cardTasks);
+    const byId = new Map(cardTasks.map((sibling) => [sibling?.id, sibling]));
+    const sections = [];
+    if (prerequisites.length > 0) {
+      const section = dependencySection("Waiting on", "task-prerequisites", prerequisites, { byId, openTask });
+      if (editable) {
+        const editor = renderPrerequisiteEditor(task, { busy, loadCardTasks, onSave, summary: "Edit" });
+        editor.classList.add("is-inline");
+        section.append(editor);
+      }
+      sections.push(section);
+    }
+    if (dependents.length > 0) {
+      sections.push(dependencySection("Unblocks", "task-dependents", dependents, { byId, openTask }));
+    }
+    container.replaceChildren(...sections);
+  };
+
+  render(siblings);
+  // The dialog may open without the card's tasks at hand (from the queue,
+  // say). They load once; "Unblocks" appears if anything waits on this task.
+  if (siblings.length === 0 && task.cardId && typeof loadCardTasks === "function") {
+    Promise.resolve()
+      .then(() => loadCardTasks())
+      .then((cardTasks) => {
+        if (Array.isArray(cardTasks) && cardTasks.length > 0) render(cardTasks);
+      })
+      .catch(() => {});
+  }
+  return { element: container, editable };
+}
+
+// "Add a prerequisite" for a task that has none: the same editor, offered
+// from the dialog's secondary disclosure instead of an empty section.
+export function renderAddPrerequisite(task, { busy = false, loadCardTasks, onSave } = {}) {
+  if (!task.cardId || !onSave || task.status === "done") return null;
+  if (taskPrerequisites(task).length > 0) return null;
+  return renderPrerequisiteEditor(task, { busy, loadCardTasks, onSave, summary: "Add a prerequisite" });
+}
+
+function dependencySection(title, className, entries, { byId, openTask }) {
   const section = document.createElement("section");
-  section.className = "task-prerequisites";
-  section.setAttribute("aria-label", "Prerequisites");
+  section.className = `task-dependency-section ${className}`;
+  section.setAttribute("aria-label", title);
   const label = document.createElement("div");
   label.className = "task-history-label";
-  label.textContent = "Prerequisites";
+  label.textContent = title;
   section.append(label);
 
   const list = document.createElement("ul");
-  list.className = "task-prerequisite-rows";
-  for (const entry of prerequisites) {
+  list.className = "task-dependency-rows";
+  for (const entry of entries) {
     const row = document.createElement("li");
-    row.className = "task-prerequisite-row";
-    row.dataset.prerequisiteId = entry.id;
+    row.className = "task-dependency-row";
+    row.dataset.taskId = entry.id;
     row.dataset.status = entry.status;
+    const resolved = prerequisiteResolved(entry.status);
+    const dot = document.createElement("span");
+    dot.className = `dk-dot ${resolved ? "dk-dot--success" : "dk-dot--neutral"}`;
+    dot.setAttribute("aria-hidden", "true");
     const name = document.createElement(entry.status === "missing" ? "span" : "button");
-    name.className = "task-prerequisite-name";
+    name.className = "task-dependency-name";
     name.textContent = entry.description;
     if (entry.status !== "missing") {
       name.type = "button";
-      name.title = "Open this task";
+      name.title = `Open “${entry.description}”`;
       name.addEventListener("click", () => openTask?.(entry.id));
     }
-    const status = document.createElement("span");
-    status.className = `task-status-badge ${entry.status}`;
-    status.textContent = prerequisiteStatusLabel(entry.status);
-    row.append(name, status);
+    // Resolved and broken entries say so; open ones show when they are due.
+    const date = String(byId.get(entry.id)?.date || "").slice(0, 10);
+    const meta = document.createElement("span");
+    meta.className = "task-dependency-meta";
+    if (resolved || entry.status === "missing" || !date) {
+      meta.textContent = prerequisiteStatusLabel(entry.status);
+    } else {
+      meta.classList.add("dk-mono");
+      meta.textContent = shortDate(date);
+      meta.title = prerequisiteStatusLabel(entry.status);
+    }
+    row.append(dot, name, meta);
     list.append(row);
   }
-  if (prerequisites.length === 0) {
-    const none = document.createElement("p");
-    none.className = "task-prerequisite-empty";
-    none.textContent = "This task does not wait for any other task.";
-    section.append(none);
-  }
   section.append(list);
-
-  if (blocking.length > 0) {
-    const note = document.createElement("p");
-    note.className = "task-prerequisite-note";
-    note.dataset.blocked = "true";
-    note.textContent = task.status === "todo" || task.status === "waiting"
-      ? "Blocked: this task can be completed once every prerequisite is done or skipped."
-      : "Blocked by an unfinished prerequisite.";
-    section.append(note);
-  }
-  if (editable) section.append(renderPrerequisiteEditor(task, { busy, loadCardTasks, onSave }));
   return section;
 }
 
-// "Edit prerequisites": the card's other tasks by name and status. They load
-// when the disclosure opens, so a task dialog costs no extra request until the
-// operator asks to change the list.
-function renderPrerequisiteEditor(task, { busy, loadCardTasks, onSave }) {
+function shortDate(iso) {
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(parsed);
+}
+
+// The editor: the card's other tasks by name and status. They load when the
+// disclosure opens, so the dialog costs no extra request until the operator
+// asks to change the list.
+function renderPrerequisiteEditor(task, { busy, loadCardTasks, onSave, summary: summaryText }) {
   const editor = document.createElement("details");
   editor.className = "task-prerequisite-editor";
   const summary = document.createElement("summary");
-  summary.textContent = "Edit prerequisites";
+  summary.textContent = summaryText;
   editor.append(summary);
   const body = document.createElement("div");
   body.className = "task-prerequisite-options";
@@ -111,7 +157,7 @@ function renderPrerequisiteEditor(task, { busy, loadCardTasks, onSave }) {
       name.className = "task-prerequisite-name";
       name.textContent = choice.description;
       const status = document.createElement("span");
-      status.className = `task-status-badge ${choice.status}`;
+      status.className = "task-prerequisite-status";
       status.textContent = prerequisiteStatusLabel(choice.status);
       option.append(box, name, status);
       return option;
