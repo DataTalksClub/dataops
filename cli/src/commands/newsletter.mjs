@@ -1,6 +1,7 @@
 import { UsageError } from "../errors.mjs";
 import { enc, fields, integer, isoDate, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
+import { fetchNewsletterTab, planNewsletterSync, readNewsletterCsv, sheetIssues } from "../newsletterSheet.mjs";
 
 export const summary = "Plan newsletter issues, their sponsor slots, and their Cards";
 
@@ -43,6 +44,18 @@ Usage
                                   organization without a live deal gets a new open deal
   dataops newsletter release <issue-id> <primary|secondary> [--confirm]
                                   Frees the slot; its deliverable is marked withdrawn
+  dataops newsletter sync --sheet <spreadsheet-id> [--apply]
+  dataops newsletter sync <newsletter.csv> [--apply]
+                                  Bring issues in line with the schedule sheet's Newsletter
+                                  tab, every row back to the start. Creates missing issues
+                                  (past ones get no Card); past issues take the sheet's date,
+                                  number and sponsors; upcoming ones only get what they lack,
+                                  differences are listed. Links a sponsor to its company in
+                                  the Sponsors tab when exactly one has that name. Never
+                                  deletes, never creates deals. Dry run unless --apply.
+                                  --sheet needs a Google token in DAPIER_ACCESS_TOKEN:
+                                    uv run dapier token exec drive <account> --agent admin-os -- \\
+                                      node <dataops>/cli/bin/dataops.mjs newsletter sync --sheet <id>
   dataops newsletter delete <issue-id> [--confirm]   Deletes the issue and its Card
   dataops newsletter dismiss-alert <alert-id>
   dataops newsletter card-lead-days [<days>]    Show, or set (admin), how many days before
@@ -266,6 +279,70 @@ export async function dueCards(args, io) {
   return result;
 }
 
+async function allPages(api, route) {
+  const items = [];
+  let cursor = "0";
+  while (cursor !== null && cursor !== undefined) {
+    const page = await api.get(route, { query: { limit: "100", cursor } });
+    items.push(...(page.items || []));
+    cursor = page.nextCursor;
+  }
+  return items;
+}
+
+export async function sync(args, io) {
+  let rows;
+  if (typeof args.sheet === "string" && args.sheet) {
+    const token = process.env.DAPIER_ACCESS_TOKEN;
+    if (!token) throw new UsageError("--sheet needs a Google access token in DAPIER_ACCESS_TOKEN: run the command under `dapier token exec drive <account>`.");
+    rows = await fetchNewsletterTab(args.sheet, token);
+  } else if (args._[0]) rows = readNewsletterCsv(args._[0]);
+  else throw new UsageError("Pass --sheet <spreadsheet-id> or a CSV export of the Newsletter tab.");
+  const api = apiFor(args);
+  const today = new Date().toISOString().slice(0, 10);
+  const { issues: sheet, skipped } = sheetIssues(rows, today);
+  const existing = (await api.get("/api/newsletter-issues", { query: { from: "2000-01-01" } })).items || [];
+  const plan = planNewsletterSync(sheet, existing, await allPages(api, "/api/sponsor-crm/organizations"), today);
+  const counts = {
+    sheetIssues: sheet.length,
+    create: plan.creates.length,
+    update: plan.updates.length,
+    unchanged: plan.unchanged,
+    differences: plan.conflicts.length,
+    skippedRows: skipped.length,
+    sponsorsLinked: plan.linked,
+  };
+  const result = { mode: args.apply ? "apply" : "dry-run", counts, plan, skipped, failures: [] };
+  if (args.apply) {
+    for (const item of plan.creates) {
+      try {
+        await api.post("/api/newsletter-issues", item.body);
+      } catch (error) {
+        result.failures.push({ sheetId: item.sheetId, error: error.message });
+      }
+    }
+    for (const item of plan.updates) {
+      try {
+        await api.put(`/api/newsletter-issues/${enc(item.id)}`, { ...item.changes, version: item.version });
+      } catch (error) {
+        result.failures.push({ id: item.id, error: error.message });
+      }
+    }
+  }
+  if (!args.json) {
+    if (!args.quiet) {
+      for (const item of plan.creates) io.print(`create  ${item.body.publicationDate}  ${item.sheetId}  ${item.body.status}`);
+      for (const item of plan.updates) io.print(`update  ${item.publicationDate}  ${item.label}  ${Object.keys(item.changes).join(", ")}`);
+      for (const item of plan.conflicts) io.print(`differs ${item.publicationDate}  ${item.label}  ${item.differences.join("; ")}`);
+      for (const item of skipped) io.print(`skip    row ${item.row}  ${item.reason}`);
+    }
+    io.print(`${result.mode}: ${Object.entries(counts).map(([name, value]) => `${name} ${value}`).join(", ")}`);
+    for (const failure of result.failures) io.print(`failed  ${failure.sheetId || failure.id}  ${failure.error}`);
+  }
+  if (result.failures.length) throw new Error(`${result.failures.length} issues could not be written; rerun to retry.`);
+  return result;
+}
+
 export async function remove(args, io) {
   const id = positional(args, 0, "dataops newsletter delete <issue-id> [--confirm]");
   const api = apiFor(args);
@@ -316,6 +393,7 @@ export const commands = {
   "create-card": createCard,
   "remove-card": removeCard,
   "due-cards": dueCards,
+  sync,
   "dismiss-alert": dismissAlert,
   "card-lead-days": cardLeadDays,
 };

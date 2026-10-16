@@ -5,6 +5,7 @@ import {
 } from "./planning-newsletter-dialog.js";
 import { renderPageHeaderMarkup } from "./operations-overview.js";
 import { attachSlotControls, cardDueLabel, issueSlotsMarkup } from "./planning-newsletter-slots.js";
+import { sponsorRecordPath } from "../core/sponsor-routes.js";
 
 export function createNewsletterPlanner(context) {
   const {
@@ -286,8 +287,14 @@ export function createNewsletterPlanner(context) {
     function pastSponsorsMarkup(item) {
       const names = Object.entries(item.slots || {})
         .filter(([, slot]) => slot?.sponsor)
-        .map(([position, slot]) => `<span class="newsletter-past-sponsor"><strong>${
-          escapeHtml(item.kind === "standalone" ? "Sponsor" : position === "primary" ? "Primary" : "Secondary")}:</strong> ${escapeHtml(slot.sponsor)}</span>`);
+        .map(([position, slot]) => {
+          // A sponsor matched to its company links to it in the Sponsors tab.
+          const name = slot.organizationId
+            ? `<a href="${escapeHtml(sponsorRecordPath("company", slot.organizationId))}">${escapeHtml(slot.sponsor)}</a>`
+            : escapeHtml(slot.sponsor);
+          return `<span class="newsletter-past-sponsor"><strong>${
+            escapeHtml(item.kind === "standalone" ? "Sponsor" : position === "primary" ? "Primary" : "Secondary")}:</strong> ${name}</span>`;
+        });
       return names.length ? `<p class="newsletter-past-sponsors">${names.join(" ")}</p>` : "";
     }
 

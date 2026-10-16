@@ -92,7 +92,7 @@ const UPDATABLE_FIELDS = [
 ] as const;
 const CREATE_FIELDS = new Set<string>([...UPDATABLE_FIELDS, 'kind', 'sourceType', 'sourceKey']);
 const CONFIRMATIONS = ['confirmCardDeletion', 'confirmSlotRemoval'];
-const SLOT_FIELDS = new Set(['sponsor', 'bookedByUserId', 'sheetId', 'documentUrl']);
+const SLOT_FIELDS = new Set(['sponsor', 'organizationId', 'bookedByUserId', 'sheetId', 'documentUrl']);
 
 type Body = Record<string, any>;
 
@@ -124,12 +124,16 @@ function slotError(position: string, slot: unknown): string {
   if (value.sponsor != null && (typeof value.sponsor !== 'string' || !value.sponsor.trim() || value.sponsor.length > 200)) {
     return `Invalid ${position} slot sponsor`;
   }
-  if (value.bookedByUserId != null && !ID.test(String(value.bookedByUserId))) return `Invalid ${position} slot bookedByUserId`;
+  for (const name of ['bookedByUserId', 'organizationId']) {
+    if (value[name] != null && !ID.test(String(value[name]))) return `Invalid ${position} slot ${name}`;
+  }
   if (value.sheetId != null && (typeof value.sheetId !== 'string' || !value.sheetId || value.sheetId.length > 100)) {
     return `Invalid ${position} slot sheetId`;
   }
   if (value.documentUrl != null && !httpsUrl(value.documentUrl)) return `Invalid ${position} slot documentUrl`;
-  if (!value.sponsor && value.bookedByUserId) return `Name the ${position} slot's sponsor before recording who booked it`;
+  if (!value.sponsor && (value.bookedByUserId || value.organizationId)) {
+    return `Name the ${position} slot's sponsor before recording who booked it`;
+  }
   return '';
 }
 
@@ -707,6 +711,7 @@ async function slotRoute(
     // The placement document belongs to the sponsor it was made for.
     ...(current.documentUrl && current.sponsor === sponsor.name ? { documentUrl: current.documentUrl } : {}),
     sponsor: sponsor.name,
+    organizationId: String(sponsor.deal.organizationId),
     bookedByUserId: actorId,
   };
   const written = await writeSlotChange(client, existing, { ...existing.slots, [slotPosition]: slot }, actorId, true);

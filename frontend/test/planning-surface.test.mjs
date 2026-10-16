@@ -1299,7 +1299,7 @@ describe("Planning surface production behavior", () => {
     ];
     const past = [
       weeklyIssue({ id: "issue-3", publicationDate: "2026-06-01", label: "Issue 7 Sent", status: "sent",
-        slots: { primary: { sponsor: "Old <Sponsor>" }, secondary: { sponsor: "Second" } } }),
+        slots: { primary: { sponsor: "Old <Sponsor>" }, secondary: { sponsor: "Second", organizationId: "org-2" } } }),
       weeklyIssue({ id: "issue-4", publicationDate: "2026-08-01", label: "Issue 9 Sent", status: "sent",
         cardId: "card-9", card: { id: "card-9", title: "1 Aug", stage: "done", status: "archived", anchorDate: "2026-08-01", taskCount: 5, openTaskCount: 0 } }),
     ];
@@ -1323,7 +1323,7 @@ describe("Planning surface production behavior", () => {
     assert.deepEqual([urls.at(-1).get("from"), urls.at(-1).get("to")], ["2000-01-01", "2026-08-12"]);
     const html = dom.slots.innerHTML;
     assert.ok(html.indexOf("August 2026") < html.indexOf("June 2026"), "newest month first");
-    assert.match(html, /<strong>Primary:<\/strong> Old &lt;Sponsor&gt;<\/span> <span class="newsletter-past-sponsor"><strong>Secondary:<\/strong> Second/);
+    assert.match(html, /<strong>Primary:<\/strong> Old &lt;Sponsor&gt;<\/span> <span class="newsletter-past-sponsor"><strong>Secondary:<\/strong> <a href="\/sponsors\/companies\/org-2">Second<\/a>/);
     assert.match(html, /href="\/cards\?cardId=card-9"/);
     assert.doesNotMatch(html, /data-slot-book|data-slot-release|data-create-card|data-edit=/, "past rows are read-only");
     assert.equal(dom.alerts.innerHTML, "", "past issues raise no alerts");

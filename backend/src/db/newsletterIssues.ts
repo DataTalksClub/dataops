@@ -24,6 +24,8 @@ export type NewsletterSlotPosition = 'primary' | 'secondary';
 export interface NewsletterSlot {
   /** The booked sponsor; an open slot has none. Booking adds the slot's Tasks to the Card. */
   sponsor?: string;
+  /** The sponsor's company in the Sponsors tab, when known. */
+  organizationId?: string;
   bookedByUserId?: string;
   /** Row ID in the schedule sheet, e.g. `NL-297-secondary`. */
   sheetId?: string;

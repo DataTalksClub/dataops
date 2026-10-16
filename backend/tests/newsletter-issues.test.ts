@@ -213,6 +213,7 @@ describe("newsletter issues", () => {
     issue = data(response);
     assert.equal(issue.cardSync, "synced");
     assert.equal(issue.slots.secondary.sponsor, "Synthetic Org One");
+    assert.equal(issue.slots.secondary.organizationId, org.id, "the slot links the sponsor's company");
     const firstBooking = await getCrmRecord(client, "deliverable", issue.deliverableId);
     assert.equal(firstBooking!.newsletterIssueId, issue.id);
     assert.equal(firstBooking!.channel, "secondary");

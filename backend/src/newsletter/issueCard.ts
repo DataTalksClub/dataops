@@ -103,7 +103,7 @@ export async function issueWithBookings(client: DynamoDBDocumentClient, issue: N
     const position = channelSlot(issue.kind, deliverable.channel);
     if (!position || slots[position]?.sponsor) continue;
     const org = await getCrmRecord(client, 'organization', String(deliverable.organizationId));
-    if (org?.displayName) slots[position] = { ...(slots[position] || {}), sponsor: String(org.displayName) };
+    if (org?.displayName) slots[position] = { ...(slots[position] || {}), sponsor: String(org.displayName), organizationId: org.id };
   }
   return { ...issue, slots };
 }
