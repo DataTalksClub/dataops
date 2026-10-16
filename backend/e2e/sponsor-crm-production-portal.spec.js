@@ -103,7 +103,7 @@ test.describe("production sponsor CRM portal", () => {
                 invoiceRequirement:
                   financeStage === "not-required" ? "not-required" : "required",
                 ...(financeStage === "voided"
-                  ? { voidedAt: "2026-07-30T12:00:00.000Z" }
+                  ? { voidedAt: "2026-07-30T12:00:00.000Z", voidReason: "Synthetic contract cancelled before payment" }
                   : {}),
               },
               invoiceState:
@@ -321,6 +321,7 @@ test.describe("production sponsor CRM portal", () => {
           financeStage = "requested";
           financeVersion++;
         } else if (pathname.endsWith("/void")) {
+          expect(route.request().postDataJSON().reason).toBe("Synthetic contract cancelled before payment");
           financeStage = "voided";
           financeVersion++;
         }
@@ -638,19 +639,23 @@ test.describe("production sponsor CRM portal", () => {
     await page
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-unlinked-recovery.png" });
-    await page.getByRole("button", { name: "Void follow-through" }).click();
-    await expect(confirmDialog).toBeVisible();
-    await confirmDialog.getByRole("button", { name: "Keep current record" }).click();
+    await page.getByRole("button", { name: "Cancel invoice follow-through" }).click();
+    const cancellation = page.locator("[data-finance-void-dialog]");
+    await expect(cancellation).toBeVisible();
+    await cancellation.getByRole("button", { name: "Keep open" }).click();
     await expect(page.locator("[data-finance-panel]")).toContainText(
       "requested",
     );
     await page
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-void-cancelled.png" });
-    await page.getByRole("button", { name: "Void follow-through" }).click();
-    await expect(confirmDialog).toBeVisible();
-    await confirmDialog.locator("[data-confirm-accept]").click();
+    await page.getByRole("button", { name: "Cancel invoice follow-through" }).click();
+    await expect(cancellation).toBeVisible();
+    await expect(cancellation.locator('[name="reason"]')).toHaveAttribute("required", "");
+    await cancellation.locator('[name="reason"]').fill("Synthetic contract cancelled before payment");
+    await cancellation.getByRole("button", { name: "Cancel invoice follow-through" }).click();
     await expect(page.locator("[data-finance-panel]")).toContainText("voided");
+    await expect(page.locator("[data-finance-panel]")).toContainText("Synthetic contract cancelled before payment");
     await page
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-voided.png" });
