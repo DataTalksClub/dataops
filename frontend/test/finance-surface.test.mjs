@@ -1012,7 +1012,7 @@ describe("Finance surface boundary", () => {
     const companies = document.surface.querySelector("[data-crm-orgs]");
     const leads = document.surface.querySelector("[data-crm-leads]");
     assert.match(pipeline.innerHTML, /Talking Co/);
-    assert.match(pipeline.innerHTML, /Open/);
+    assert.match(pipeline.innerHTML, /<h3>Opportunities<\/h3>/);
     assert.match(companies.innerHTML, /Talking Co/);
     assert.match(leads.innerHTML, /Queue Vendor/);
 

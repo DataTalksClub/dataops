@@ -29,6 +29,7 @@ test("board and filters agree on derived stages and keep read actions bound to d
   });
   const board = renderSponsorPipelineBoard({ deals, ...context });
   assert.equal((board.match(/data-pipeline-stage=/g) || []).length, 4);
+  assert.match(board, /<h3>Opportunities<\/h3>/);
   assert.match(board, /Synthetic &lt;Sponsor>/);
   assert.match(board, /€1,500/);
   assert.match(board, /Confirm the date · 2026-10-20/);
