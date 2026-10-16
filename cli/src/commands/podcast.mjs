@@ -31,10 +31,9 @@ Publication evidence is recorded with update flags; each observation is stamped 
   --spotify-schedule "2026-11-20T06:00:00+01:00" --timezone Europe/Berlin [--schedule-proof URL]
   --spotify-verified https://open.spotify.com/episode/...   public episode played
   --transcript-reviewed PROOF_URL                           review proof is required
-  --website-released PAGE_URL      only once the transcript and public Spotify are recorded
-  --website-observed PAGE_URL      a page already seen live: history, never authorisation
+  --website-released PAGE_URL      the released page
+  --website-observed PAGE_URL      a page already seen live
   "none" clears one of them. --release-date is the intended release, not Spotify evidence.
-Status scheduled needs --spotify-schedule evidence; published needs --spotify-verified.
 Unrecorded evidence shows as not-recorded, never as a definite no.
 --from/--to filter on the episode's release date, else its recording date.
 Writes send the episode's current version; a changed episode exits 5.
@@ -221,7 +220,6 @@ export async function show(args, io) {
     ["spotify", episode.readiness?.spotify],
     ["transcript", episode.readiness?.transcript],
     ["website", episode.readiness?.website],
-    ["release needs", episode.readiness?.websiteGate?.missing],
     ["cardId", episode.cardId],
     ["notes", episode.notes],
     ["version", episode.version],

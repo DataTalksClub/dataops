@@ -1,7 +1,7 @@
 // The publication schedule: every episode on its way out (Upcoming) or out
 // (Past) with when its audio is scheduled in its own timezone, whether the
 // Spotify episode is verified public, whether the transcript is reviewed, and
-// whether the website may go out, plus the Card that runs it and the proofs.
+// whether the website is out, plus the Card that runs it and the proofs.
 import { element, emptyState, formatDate, statusChip } from "./dom.js";
 import { episodeCode, episodeSummary } from "./model.js";
 import { formatPublicationTime, proofLinks, readinessOf, scheduleGroups } from "./publication-model.js";
@@ -68,9 +68,7 @@ function renderRow(documentRef, episode, actions) {
   link.append(element(documentRef, "span", "", episodeSummary(episode)));
   name.append(link, statusChip(documentRef, episode.status));
   const website = element(documentRef, "td");
-  const websiteChip = readinessChip(documentRef, "website", readiness.website);
-  if (readiness.websiteGate.missing.length) websiteChip.title = `Release needs: ${readiness.websiteGate.missing.join("; ")}`;
-  website.append(websiteChip);
+  website.append(readinessChip(documentRef, "website", readiness.website));
   const transcript = element(documentRef, "td");
   transcript.append(readinessChip(documentRef, "transcript", readiness.transcript));
   const proofs = element(documentRef, "td");

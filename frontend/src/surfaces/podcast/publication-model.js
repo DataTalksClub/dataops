@@ -21,16 +21,14 @@ export const TRANSCRIPT_LABELS = Object.freeze({
 
 export const WEBSITE_LABELS = Object.freeze({
   "not-recorded": "Not recorded",
-  ready: "Ready to release",
   released: "Released",
-  "observed-live": "Seen live (historical)",
+  "observed-live": "Seen live",
 });
 
 const NO_READINESS = Object.freeze({
   spotify: "not-recorded",
   transcript: "not-recorded",
   website: "not-recorded",
-  websiteGate: Object.freeze({ met: false, missing: Object.freeze([]) }),
   scheduledLocalDate: null,
 });
 
@@ -253,19 +251,4 @@ export function publicationFormValues(episode) {
     websiteUrl: publication.website?.proofUrl || "",
     websiteObservedUrl: publication.websiteObserved?.proofUrl || "",
   };
-}
-
-/**
- * Why a status cannot be entered yet, or "". Mirrors the API's gate: published
- * needs the verified public Spotify episode, scheduled needs Spotify
- * scheduling evidence. Scheduled audio and an intended date never count.
- */
-export function statusGateHint(status, publication) {
-  if (status === "published" && !publication?.spotify?.publicVerifiedAt) {
-    return "Record a verified public Spotify episode first.";
-  }
-  if (status === "scheduled" && !publication?.audioSchedule) {
-    return "Record the Spotify scheduling evidence first.";
-  }
-  return "";
 }

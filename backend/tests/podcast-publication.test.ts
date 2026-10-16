@@ -9,7 +9,6 @@ import {
   derivePublicationReadiness,
   localDate,
   normalizePublication,
-  statusGateError,
 } from "../src/podcast/publication";
 
 const invoke = (method: string, path: string, body?: unknown) =>
@@ -32,17 +31,13 @@ describe("podcast publication model", () => {
     assert.equal(localDate("2026-11-20T23:30:00Z", "America/New_York"), "2026-11-20");
   });
 
-  it("reports not-recorded, never a definite not-scheduled or blocked, without evidence", () => {
+  it("reports not-recorded, never a definite not-scheduled, without evidence", () => {
     for (const none of [null, undefined, {}]) {
       const readiness = derivePublicationReadiness(none, NOW);
       assert.equal(readiness.spotify, "not-recorded");
       assert.equal(readiness.transcript, "not-recorded");
       assert.equal(readiness.website, "not-recorded");
       assert.equal(readiness.scheduledLocalDate, null);
-      assert.deepEqual(readiness.websiteGate, {
-        met: false,
-        missing: ["Reviewed transcript with proof", "Verified public Spotify episode"],
-      });
     }
   });
 
@@ -53,24 +48,13 @@ describe("podcast publication model", () => {
     assert.equal(derivePublicationReadiness({ ...past, spotify: SPOTIFY }, NOW).spotify, "public");
   });
 
-  it("needs both a reviewed transcript with proof and a verified public episode", () => {
-    const scheduledAndReviewed = derivePublicationReadiness({ audioSchedule: SCHEDULE, transcript: TRANSCRIPT }, NOW);
-    assert.equal(scheduledAndReviewed.website, "not-recorded");
-    assert.deepEqual(scheduledAndReviewed.websiteGate.missing, ["Verified public Spotify episode"]);
-    assert.equal(derivePublicationReadiness({ spotify: SPOTIFY }, NOW).website, "not-recorded");
-    const noProof = { spotify: SPOTIFY, transcript: { reviewedAt: TRANSCRIPT.reviewedAt } } as any;
+  it("reads transcript and website from what was recorded, with no gate between them", () => {
+    const noProof = { transcript: { reviewedAt: TRANSCRIPT.reviewedAt } } as any;
     assert.equal(derivePublicationReadiness(noProof, NOW).transcript, "not-recorded");
-    assert.equal(derivePublicationReadiness(noProof, NOW).websiteGate.met, false);
-    const both = derivePublicationReadiness({ spotify: SPOTIFY, transcript: TRANSCRIPT }, NOW);
-    assert.equal(both.website, "ready");
-    assert.equal(both.websiteGate.met, true);
-    assert.equal(derivePublicationReadiness({ spotify: SPOTIFY, transcript: TRANSCRIPT, website: WEBSITE }, NOW).website, "released");
-  });
-
-  it("an observed live page is history: it neither authorises nor satisfies the gate", () => {
-    const readiness = derivePublicationReadiness({ websiteObserved: OBSERVED }, NOW);
-    assert.equal(readiness.website, "observed-live");
-    assert.equal(readiness.websiteGate.met, false);
+    assert.equal(derivePublicationReadiness({ transcript: TRANSCRIPT }, NOW).transcript, "reviewed");
+    assert.equal(derivePublicationReadiness({ spotify: SPOTIFY, transcript: TRANSCRIPT }, NOW).website, "not-recorded");
+    assert.equal(derivePublicationReadiness({ website: WEBSITE }, NOW).website, "released");
+    assert.equal(derivePublicationReadiness({ websiteObserved: OBSERVED }, NOW).website, "observed-live");
   });
 
   it("validates shapes, proofs and instants", () => {
@@ -94,26 +78,14 @@ describe("podcast publication model", () => {
     bad({ transcript: { ...TRANSCRIPT, proofUrl: "http://x.example" } }, /proofUrl/);
     bad({ websiteObserved: { observedAt: OBSERVED.observedAt } }, /proofUrl/);
     bad({ website: { releasedAt: WEBSITE.releasedAt } }, /proofUrl/);
-    bad({ website: WEBSITE }, /website needs: Reviewed transcript with proof; Verified public Spotify/);
-    bad({ spotify: SPOTIFY, website: WEBSITE }, /Reviewed transcript with proof/);
-    bad({ transcript: TRANSCRIPT, website: WEBSITE }, /Verified public Spotify/);
-    bad({ spotify: SPOTIFY, transcript: TRANSCRIPT, website: { ...WEBSITE, earlyReason: "x" } }, /Invalid website release/);
+    bad({ website: { ...WEBSITE, earlyReason: "x" } }, /Invalid website release/);
+    assert.equal(normalizePublication({ website: WEBSITE }, NOW).ok, true, "a release needs no other evidence first");
     const ok = normalizePublication({
       audioSchedule: { ...SCHEDULE, scheduledAt: "2026-11-21T06:00:00+01:00" },
       spotify: SPOTIFY, transcript: TRANSCRIPT, website: WEBSITE, websiteObserved: OBSERVED,
     }, NOW);
     assert.equal(ok.ok, true);
     assert.equal((ok as any).value.audioSchedule.scheduledAt, "2026-11-21T05:00:00.000Z");
-  });
-
-  it("gates entering scheduled and published on real evidence", () => {
-    assert.match(statusGateError("published", null), /verified public Spotify/);
-    assert.match(statusGateError("published", { audioSchedule: SCHEDULE }), /verified public Spotify/);
-    assert.match(statusGateError("published", { websiteObserved: OBSERVED }), /verified public Spotify/);
-    assert.equal(statusGateError("published", { spotify: SPOTIFY }), "");
-    assert.match(statusGateError("scheduled", { spotify: SPOTIFY }), /scheduling evidence/);
-    assert.equal(statusGateError("scheduled", { audioSchedule: SCHEDULE }), "");
-    assert.equal(statusGateError("edited", null), "");
   });
 });
 
@@ -161,34 +133,12 @@ describe("podcast publication API", () => {
     assert.equal(dated.readiness.spotify, "not-recorded", "an intended date alone claims nothing external");
   });
 
-  it("refuses to record a website release until the gate is met, with no override", async () => {
-    const episode = await create({ title: "Synthetic Gate Episode" });
-    const early = await put(episode, {
-      publication: { transcript: API_TRANSCRIPT, website: { ...API_WEBSITE, earlyReason: "override" } },
-    });
-    assert.equal(early.statusCode, 400);
-    const blocked = await put(episode, { publication: { transcript: API_TRANSCRIPT, website: API_WEBSITE } });
-    assert.equal(blocked.statusCode, 400, blocked.body);
-    assert.match(data(blocked).error, /Verified public Spotify/);
-
-    const reviewed = data(await put(episode, { publication: { audioSchedule: API_SCHEDULE, transcript: API_TRANSCRIPT } }));
-    assert.equal(reviewed.readiness.website, "not-recorded");
-    assert.deepEqual(reviewed.readiness.websiteGate.missing, ["Verified public Spotify episode"]);
-    assert.equal((await put(reviewed, { publication: { ...reviewed.publication, website: API_WEBSITE } })).statusCode, 400);
-
-    const verified = data(await put(reviewed, { publication: { ...reviewed.publication, spotify: API_SPOTIFY } }));
-    assert.equal(verified.readiness.website, "ready");
-    const released = data(await put(verified, { publication: { ...verified.publication, website: API_WEBSITE } }));
-    assert.equal(released.readiness.website, "released");
-  });
-
-  it("records an already-live page as a historical observation without authorising it", async () => {
+  it("records an already-live page", async () => {
     const episode = await create({ title: "Synthetic Observed Episode" });
     const observed = await put(episode, { publication: { websiteObserved: API_OBSERVED } });
     assert.equal(observed.statusCode, 200, observed.body);
     const body = data(observed);
     assert.equal(body.readiness.website, "observed-live");
-    assert.equal(body.readiness.websiteGate.met, false);
     assert.equal(body.readiness.spotify, "not-recorded");
     assert.equal(body.status, "edited", "observing history does not change status");
     const cleared = data(await put(body, { publication: null }));
@@ -196,33 +146,19 @@ describe("podcast publication API", () => {
     assert.equal(cleared.readiness.website, "not-recorded");
   });
 
-  it("gates every path into published and scheduled; historical statuses stay", async () => {
-    const refused = await invoke("POST", "/api/podcast-episodes", {
-      title: "Synthetic Premature", guests: [], status: "published",
-    });
-    assert.equal(refused.statusCode, 422, refused.body);
-    assert.match(data(refused).error, /verified public Spotify/);
-    assert.equal((await invoke("POST", "/api/podcast-episodes", { title: "Synthetic Premature", guests: [], status: "scheduled" })).statusCode, 422);
+  it("enters scheduled and published without publication evidence; the Card carries the proof", async () => {
+    const published = await invoke("POST", "/api/podcast-episodes", { title: "Synthetic Published", guests: [], status: "published" });
+    assert.equal(published.statusCode, 201, published.body);
+    const episode = await create({ title: "Synthetic Scheduled" });
+    const scheduled = await put(episode, { status: "scheduled" });
+    assert.equal(scheduled.statusCode, 200, scheduled.body);
+    assert.equal(data(scheduled).status, "scheduled");
 
-    const episode = await create({ title: "Synthetic Status Gate" });
-    assert.equal((await put(episode, { status: "published" })).statusCode, 422);
-    const scheduledOnly = data(await put(episode, { publication: { audioSchedule: API_SCHEDULE } }));
-    assert.equal((await put(scheduledOnly, { status: "published" })).statusCode, 422, "scheduled audio is not public");
-    const scheduledStatus = await put(scheduledOnly, { status: "scheduled" });
-    assert.equal(scheduledStatus.statusCode, 200, scheduledStatus.body);
-    const sameWrite = await put(data(scheduledStatus), { status: "published", publication: { audioSchedule: API_SCHEDULE, spotify: API_SPOTIFY } });
-    assert.equal(sameWrite.statusCode, 200, sameWrite.body);
-    assert.equal(data(sameWrite).status, "published");
-
-    // A record that was published before this gate existed keeps its status and
-    // can still be edited without evidence being invented.
     const historical = await createPodcastEpisode(client, {
       title: "Synthetic Historical", guests: [{ name: "Grace Sample" }], status: "published",
       releaseDate: "2024-01-01",
     });
     const shown = data(await invoke("GET", `/api/podcast-episodes/${historical.id}`));
-    assert.equal(shown.status, "published");
-    assert.equal(shown.readiness.spotify, "not-recorded");
     assert.equal(shown.readiness.website, "not-recorded");
     const edited = await put(shown, { notes: "Synthetic note" });
     assert.equal(edited.statusCode, 200, edited.body);

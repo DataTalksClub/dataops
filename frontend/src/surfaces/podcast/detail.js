@@ -6,7 +6,7 @@ import { SPLIT_BACK_ICON } from "../split-back-icon.js";
 import {
   button, element, emptyState, field, formatDate, icon, input, messageArea, select, statusChip,
 } from "./dom.js";
-import { buildPublication, samePublication, statusGateHint } from "./publication-model.js";
+import { buildPublication, samePublication } from "./publication-model.js";
 import { publicationFormFields, publicationSection } from "./publication-section.js";
 import {
   cardStageLabel, EPISODE_STATUSES, episodeCode, episodeTitle, guestNames, LINK_KINDS,
@@ -87,14 +87,7 @@ function statusSection(documentRef, episode, actions, messages) {
   choose.setAttribute("aria-label", "Set status");
   choose.addEventListener("change", () => {
     if (choose.value === episode.status) return;
-    const target = choose.value;
-    const gate = statusGateHint(target, episode.publication);
-    if (gate) {
-      choose.value = episode.status;
-      messages.show("error", `Cannot mark ${statusLabel(target).toLowerCase()}: ${gate}`);
-      return;
-    }
-    move(target, choose);
+    move(choose.value, choose);
   });
   controls.append(choose);
   row.append(controls);

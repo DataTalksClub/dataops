@@ -1,5 +1,5 @@
 // The publication block of an episode: what is scheduled, what is verified
-// public, and whether the website may go out. Read view for the detail pane
+// public, and whether the website is out. Read view for the detail pane
 // and the controls the edit form adds. Readiness comes from the API.
 import { element, field, formatDate, input } from "./dom.js";
 import {
@@ -13,7 +13,6 @@ const TONES = Object.freeze({
   "awaiting-public-check": "dk-badge dk-badge--warning",
   public: "dk-badge dk-badge--success",
   reviewed: "dk-badge dk-badge--success",
-  ready: "dk-badge dk-badge--info",
   released: "dk-badge dk-badge--success",
   "observed-live": "dk-badge dk-badge--warning",
 });
@@ -70,33 +69,6 @@ export function publicationSection(documentRef, episode) {
   row("Transcript", readinessChip(documentRef, "transcript", readiness.transcript), ...proof("transcript"));
   row("Website", readinessChip(documentRef, "website", readiness.website), ...proof("website"), ...proof("observed"));
   section.append(list);
-  const gate = readiness.websiteGate;
-  const released = readiness.website === "released";
-  if (readiness.website === "observed-live" && !gate.met) {
-    section.append(element(
-      documentRef,
-      "p",
-      "dk-hint podcast-historical",
-      "Seen live before the release gate was met. This records history; it does not authorise a release.",
-    ));
-  }
-  if (!released && !gate.met) {
-    const callout = element(documentRef, "div", "dk-callout dk-callout--warning podcast-blockers");
-    const body = element(documentRef, "div", "dk-callout__body");
-    const needs = gate.missing.length ? `${gate.missing.join("; ")}. ` : "";
-    body.append(
-      element(documentRef, "p", "dk-callout__title", "Website release needs evidence"),
-      element(
-        documentRef,
-        "p",
-        "",
-        `${needs}Scheduled audio does not count: the website needs a reviewed transcript with proof `
-          + "and a verified playable public Spotify episode.",
-      ),
-    );
-    callout.append(body);
-    section.append(callout);
-  }
   return section;
 }
 
@@ -157,8 +129,8 @@ export function publicationFormFields(documentRef, episode) {
     field(documentRef, "Public Spotify episode link", controls.spotifyUrl, "https://open.spotify.com/episode/…"),
     transcript.label,
     field(documentRef, "Transcript review proof link", controls.transcriptUrl, "Required to record the review."),
-    field(documentRef, "Website release link", controls.websiteUrl, "Needs a reviewed transcript with proof and a verified public Spotify episode."),
-    field(documentRef, "Website already live (historical)", controls.websiteObservedUrl, "Records a page you saw live. It does not authorise a release."),
+    field(documentRef, "Website release link", controls.websiteUrl),
+    field(documentRef, "Website already live (historical)", controls.websiteObservedUrl, "Records a page you saw live."),
   );
   return { fieldset, controls };
 }

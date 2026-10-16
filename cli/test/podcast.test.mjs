@@ -135,7 +135,7 @@ describe("podcast schedule", () => {
           episode({
             id: "ep-1",
             publication: { audioSchedule: { scheduledAt: "2026-11-20T05:00:00.000Z", timezone: "Europe/Berlin", observedAt: "2026-11-01T00:00:00.000Z" } },
-            readiness: { spotify: "awaiting-public-check", transcript: "not-recorded", website: "not-recorded", websiteGate: { met: false, missing: ["Verified public Spotify episode"] } },
+            readiness: { spotify: "awaiting-public-check", transcript: "not-recorded", website: "not-recorded" },
           }),
           episode({ id: "ep-2", status: "cancelled" }),
         ],
@@ -180,7 +180,7 @@ describe("podcast publication evidence flags", () => {
     assert.throws(() => publicationFromFlags({ spotifySchedule: "2026-11-20T06:00:00Z" }, null, NOW), /together/);
   });
 
-  test("update sends publication with the current version; the API's status gate surfaces", async () => {
+  test("update sends publication with the current version", async () => {
     const calls = fakePortal({
       "GET /api/podcast-episodes/ep-1": episode({ publication: { transcript: { reviewedAt: NOW, proofUrl: "https://example.com/review" } } }),
       "PUT /api/podcast-episodes/ep-1": episode({ version: 5 }),

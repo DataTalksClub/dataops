@@ -25,7 +25,6 @@ import { cardCanAdvance, statusFromCard } from "../podcast/cardStatus";
 import {
   derivePublicationReadiness,
   normalizePublication,
-  statusGateError,
 } from "../podcast/publication";
 import { resolveInteractiveActor } from "../identity/actor";
 import { podcastEpisodeTitleValues, recordTemplateTypes } from "../cards/cardTitlePattern";
@@ -193,7 +192,7 @@ async function derivedStatus(client: DynamoDBDocumentClient, episode: PodcastEpi
       .filter((task) => task.status === "done" && task.templateTaskRef)
       .map((task) => String(task.templateTaskRef)),
   );
-  return statusFromCard(episode.status, done, episode.publication);
+  return statusFromCard(episode.status, done);
 }
 
 /** The episode as every response shows it: status and readiness derived, never stored. */
@@ -285,8 +284,6 @@ export async function handlePodcastEpisodeRoutes(
     const candidate = { guests: [], ...body } as Record<string, any>;
     const error = validate(candidate) || applyPublication(candidate, true);
     if (error) return json(400, { error });
-    const gate = statusGateError(candidate.status, candidate.publication);
-    if (gate) return json(422, { error: gate });
     const episodes = await listPodcastEpisodes(client);
     const duplicate = duplicateOf(candidate, episodes, null);
     if (duplicate) return json(409, { error: duplicate });
@@ -322,11 +319,6 @@ export async function handlePodcastEpisodeRoutes(
       validate(merged) || applyPublication(merged, Object.hasOwn(changes, "publication"));
     if (error) return json(400, { error });
     if (Object.hasOwn(changes, "publication")) changes.publication = merged.publication;
-    // Only entering a status is gated; an existing historical status stays.
-    if (merged.status !== existing.status) {
-      const gate = statusGateError(merged.status, merged.publication);
-      if (gate) return json(422, { error: gate });
-    }
     const episodes = await listPodcastEpisodes(client);
     const duplicate = duplicateOf(merged, episodes, id);
     if (duplicate) return json(409, { error: duplicate });

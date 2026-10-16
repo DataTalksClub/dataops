@@ -252,7 +252,7 @@ describe("Podcast surface", () => {
     assert.deepEqual(calls.filter(([kind]) => kind === "navigate").at(-1), ["navigate", "/cards", { cardId: "card-1" }, {}]);
   });
 
-  test("Set status to published waits for real Spotify evidence", async () => {
+  test("an episode without a Card is set by hand, with no evidence gate", async () => {
     const bare = episode("bare", { status: "edited", version: 2, releaseDate: "2026-12-01" });
     const first = harness({ episodes: [bare], routeId: "bare" });
     first.surface.renderPodcastSurface();
@@ -261,10 +261,8 @@ describe("Podcast surface", () => {
     const choose = first.documentList.querySelector(".podcast-status-select");
     choose.value = "published";
     await choose.dispatch("change");
-    assert.equal(first.calls.some(([method]) => method === "PUT"), false);
-    assert.equal(choose.value, "edited");
-    assert.match(first.documentList.querySelector(".podcast-message").textContent, /verified public Spotify/);
-
+    await nextTicks(2);
+    assert.deepEqual(first.calls.find(([method]) => method === "PUT"), ["PUT", "/api/podcast-episodes/bare", { status: "published", version: 2 }]);
   });
 
   test("a version conflict keeps the form, names the conflict and reloads on request", async () => {

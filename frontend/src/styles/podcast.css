@@ -117,7 +117,6 @@ body[data-workspace-view="podcast"] .document-list {
 .podcast-publication__value { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-2); }
 .podcast-readiness { white-space: nowrap; }
 .podcast-proof { color: var(--dk-text-link); font-size: var(--dk-text-sm); overflow-wrap: anywhere; }
-.podcast-blockers { margin-top: var(--dk-space-3); }
 .podcast-form-publication { display: grid; gap: var(--dk-space-3); min-width: 0; margin: 0; padding: 0; border: 0; }
 .podcast-check { justify-self: start; }
 
@@ -133,7 +132,6 @@ body[data-workspace-view="podcast"] .document-list {
 .podcast-schedule__when { white-space: nowrap; }
 .podcast-schedule__spotify { min-width: 12rem; }
 .podcast-schedule__evidence { display: block; margin-top: var(--dk-space-1); color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
-.podcast-historical { margin: var(--dk-space-2) 0 0; }
 .podcast-schedule__proofs { display: grid; gap: var(--dk-space-1); }
 .podcast-schedule__card { display: inline-flex; white-space: nowrap; gap: var(--dk-space-2); color: var(--dk-text-link); text-decoration: none; }
 .podcast-schedule__card:hover { text-decoration: underline; }

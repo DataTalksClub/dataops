@@ -5,13 +5,8 @@
  * that stage; nobody marks it by hand. The Card never writes to the episode
  * (see recordCardLink.ts): the status is derived on every read from the
  * stored status and the Card's done Tasks, and the furthest stage wins.
- *
- * Scheduled and published keep their evidence gate (publication.ts): a
- * ticked scheduling or verification Task counts only once the episode
- * records that evidence; until then it shows that the audio is at least
- * edited. A cancelled episode stays cancelled.
+ * A cancelled episode stays cancelled.
  */
-import { statusGateError, type PodcastPublication } from './publication';
 
 /** The podcast Template Task whose completion means the episode reached a stage. */
 export const STAGE_TASK_REFS = Object.freeze({
@@ -33,17 +28,11 @@ export function cardCanAdvance(status: string): boolean {
  * The furthest of `stored` and the stages whose Task is done in `doneRefs`
  * (the `templateTaskRef`s of the Card's done Tasks).
  */
-export function statusFromCard(
-  stored: string,
-  doneRefs: ReadonlySet<string>,
-  publication: PodcastPublication | null | undefined,
-): string {
+export function statusFromCard(stored: string, doneRefs: ReadonlySet<string>): string {
   if (!cardCanAdvance(stored)) return stored;
   let furthest = ORDER.indexOf(stored as (typeof ORDER)[number]);
   for (const [stage, ref] of Object.entries(STAGE_TASK_REFS)) {
-    if (!doneRefs.has(ref)) continue;
-    const reached = statusGateError(stage, publication) ? 'edited' : stage;
-    furthest = Math.max(furthest, ORDER.indexOf(reached as (typeof ORDER)[number]));
+    if (doneRefs.has(ref)) furthest = Math.max(furthest, ORDER.indexOf(stage as (typeof ORDER)[number]));
   }
   return ORDER[furthest];
 }
