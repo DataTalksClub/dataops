@@ -116,7 +116,7 @@ function harness({ routeId = "", view = "" } = {}) {
 }
 
 describe("Podcast seasons view", () => {
-  test("is the default: cells per season, gaps, duplicates, and the unnumbered lane, full width", async () => {
+  test("is the default: cells per season, gaps, duplicates, and the Pipeline lane, full width", async () => {
     const { surface, documentList } = harness();
     surface.renderPodcastSurface();
     await nextTicks(4);
@@ -141,7 +141,7 @@ describe("Podcast seasons view", () => {
     assert.equal(recorded.dataset.flag, undefined, "recorded two weeks ago is not stuck");
 
     const lane = documentList.querySelector(".podcast-pipeline");
-    assert.ok(findByText(lane, "Not yet numbered", "h3"));
+    assert.ok(findByText(lane, "Pipeline", "h3"));
     assert.deepEqual(findAllByClass(lane, "dk-split__item").map((row) => row.dataset.episodeId), ["kim", "late", "booked"]);
     const stuck = findByText(lane.querySelector('[data-episode-id="kim"]'), "Stuck");
     assert.equal(stuck.title, "Stuck: recorded 4 months ago, still not edited");

@@ -262,7 +262,7 @@ test('schedule shows not-recorded without evidence, keeps plan apart from eviden
 
 // The API refuses a second episode with the same number, so duplicates are
 // covered by the unit tests; here the overview shows gaps.
-test('seasons overview shows each season as status cells, the unnumbered lane and gaps', async ({ page }) => {
+test('seasons overview shows each season as status cells, the Pipeline lane and gaps', async ({ page }) => {
   const stuck = await api('POST', '/api/podcast-episodes', {
     title: 'Synthetic stuck interview', guests: [{ name: 'Hal Stuck' }], status: 'recorded', recordingDate: isoDate(-120),
   });
@@ -280,6 +280,7 @@ test('seasons overview shows each season as status cells, the unnumbered lane an
   await expect(s24.locator('.podcast-season__head')).toHaveText(/^Season 24\s*1 published$/);
   await expect(s24.locator('.podcast-cell--gap')).toHaveCount(8);
   const lane = page.locator('.podcast-pipeline');
+  await expect(lane.locator('.podcast-group__label')).toHaveText('Pipeline');
   await expect(lane.locator('.dk-split__item')).toHaveCount(1);
   await expect(lane.locator(`[data-episode-id="${stuck.id}"]`)).toContainText('Stuck');
   await expect(lane.locator(`[data-episode-id="${stuck.id}"] .podcast-row__flag`))

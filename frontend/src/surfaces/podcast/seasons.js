@@ -1,7 +1,7 @@
 // The seasons overview: what the podcast has, season by season. Each season
 // is a row of numbered cells coloured by status, with the numbers nobody
 // holds drawn as dashed gaps and the numbers two episodes claim marked as
-// duplicates. Above them, the in-flight episodes that have no number yet.
+// duplicates. Above them, the Pipeline: in-flight episodes with no number yet.
 // Hovering or focusing a cell shows the episode's summary; clicking opens it
 // in the detail pane.
 import { attachHovercard } from "../../core/hovercard.js";
@@ -161,7 +161,7 @@ export function renderSeasonsOverview(scroll, { documentRef, grid, query, select
   if (pipeline.length) {
     const section = element(documentRef, "section", "podcast-group podcast-pipeline");
     section.dataset.group = "pipeline";
-    const label = element(documentRef, "h3", "podcast-group__label", "Not yet numbered");
+    const label = element(documentRef, "h3", "podcast-group__label", "Pipeline");
     label.id = "podcast-group-pipeline";
     const list = element(documentRef, "ul", "dk-split__items");
     list.setAttribute("aria-labelledby", label.id);
