@@ -134,6 +134,7 @@
     "src/surfaces/tasks/queue-materials.js",
     "src/surfaces/tasks/queue.js",
     "src/surfaces/tasks/quick-create.js",
+    "src/surfaces/tasks/browser-requirement.js",
     "src/surfaces/tasks/recurring.js",
     "src/surfaces/tasks/templates.js",
     "src/surfaces/work-detail/artifact-rows.js",
