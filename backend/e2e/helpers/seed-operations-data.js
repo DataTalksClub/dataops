@@ -111,6 +111,27 @@ async function seedOperationsData(baseURL) {
     }
   }
 
+  // A weekly issue is created with its Card from the newsletter Template; its
+  // ticked primary slot selects the Template's primary-slot group.
+  try {
+    const listed = await fetch(`${baseURL}/api/templates`).then((response) => response.json());
+    if (!(listed.templates || []).some((template) => template.type === 'newsletter')) {
+      const response = await posted('/__e2e__/template-fixtures', {
+        name: 'Synthetic weekly newsletter',
+        type: 'newsletter',
+        triggerType: 'manual',
+        references: [],
+        taskDefinitions: [
+          { refId: 'draft', description: 'Draft the synthetic issue', offsetDays: -3 },
+          { refId: 'sponsor-copy', description: 'Collect the sponsor copy', offsetDays: -5, optionalGroup: 'primary-slot' },
+        ],
+      });
+      if (response.status !== 201) result.failures.push(`newsletter template: HTTP ${response.status}`);
+    }
+  } catch (error) {
+    result.failures.push(`newsletter template: ${error.message}`);
+  }
+
   for (const [index, weeksAhead] of [0, 1, 2].entries()) {
     try {
       const response = await posted('/api/newsletter-issues', {

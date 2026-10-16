@@ -127,8 +127,9 @@ async function measureContentStart(page, contentSelector) {
 // 232px per card at 375x667: four full-size action buttons wrapped onto two
 // rows under the date and booking lines. The compact card carries one
 // primary button plus a "More" overflow, so half the baseline plus a small
-// margin for 44px touch targets is the hard budget.
-const NEWSLETTER_CARD_BUDGET_PX = 132;
+// margin for 44px touch targets is the hard budget. An issue card also
+// carries one line of slot ticks (primary, secondary), which adds a text line.
+const NEWSLETTER_CARD_BUDGET_PX = 140;
 const NEWSLETTER_CARD_BASELINE_PX = 232;
 
 for (const viewport of VIEWPORTS) {
