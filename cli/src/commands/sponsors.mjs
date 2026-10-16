@@ -252,7 +252,11 @@ export async function attachInvoice(args, io) {
     });
     if (prepared.uploadUrl) {
       const upload = await fetch(prepared.uploadUrl, { method: "PUT", body: bytes, headers: prepared.uploadHeaders });
-      if (!upload.ok) throw new Error(`Invoice upload failed (${upload.status}); retry the same file`);
+      if (!upload.ok) {
+        const failure = (await upload.text()).slice(0, 8192);
+        const code = failure.match(/<Code>([A-Za-z0-9_-]+)<\/Code>/)?.[1] || "UploadRejected";
+        throw new Error(`Invoice upload failed (${upload.status}, ${code}); retry the same file`);
+      }
       prepared = await api.post(`/api/bookkeeping/documents/${enc(prepared.document.id)}/complete`, { idempotencyKey });
     }
     let cursor, candidate;

@@ -2,6 +2,8 @@ import { after, before, describe, it } from "node:test";
 import assert from "node:assert";
 import { createHash } from "crypto";
 import { Readable } from "stream";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { UpdateCommand, type DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { handler } from "../src/handler";
 import { getClient } from "../src/db/client";
@@ -20,6 +22,7 @@ describe("atomic bookkeeping document API", () => {
   let client: DynamoDBDocumentClient;
   const deletedVersions: string[] = [];
   const signedInputs: Record<string, unknown>[] = [];
+  const signingOptions: Parameters<typeof getSignedUrl>[2][] = [];
   let verifiedDocumentId = "";
   let objectBytes = pdf;
   before(async () => {
@@ -45,8 +48,9 @@ describe("atomic bookkeeping document API", () => {
           return {};
         },
       } as any,
-      async (_client, command: any) => {
+      async (_client, command: any, options) => {
         signedInputs.push(command.input);
+        signingOptions.push(options);
         return "https://upload.invalid/signed";
       },
     );
@@ -70,6 +74,15 @@ describe("atomic bookkeeping document API", () => {
     assert.equal(signedInputs.at(-1)?.IfNoneMatch, "*");
     const winner = prepared.find((response) => response.statusCode === 201)!;
     const body = JSON.parse(winner.body);
+    const options = signingOptions.at(-1)!;
+    assert.ok(options.unhoistableHeaders?.has("x-amz-checksum-sha256"));
+    const signingClient = new S3Client({ region: "eu-west-1", credentials: { accessKeyId: "synthetic", secretAccessKey: "synthetic" } });
+    try {
+      const url = new URL(await getSignedUrl(signingClient, new PutObjectCommand(signedInputs.at(-1) as any), { ...options, expiresIn: 300 }));
+      assert.ok(url.searchParams.get("X-Amz-SignedHeaders")?.split(";").includes("x-amz-checksum-sha256"));
+      assert.equal(url.searchParams.has("x-amz-checksum-sha256"), false);
+      assert.equal(body.uploadHeaders["x-amz-checksum-sha256"], Buffer.from(sha256, "hex").toString("base64"));
+    } finally { signingClient.destroy(); }
     const requestId = prepared[0] === winner ? "concurrent-a" : "concurrent-b";
     const ownership = { idempotencyKey: `${requestId}-owner` };
     const completed = await Promise.all([

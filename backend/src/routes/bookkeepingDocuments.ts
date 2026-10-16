@@ -196,7 +196,12 @@ export async function handleBookkeepingDocumentRoutes(
       ServerSideEncryption: "aws:kms",
       SSEKMSKeyId: kmsKey,
     });
-    const uploadUrl = await signUrl(s3, command, { expiresIn: uploadSeconds });
+    const uploadUrl = await signUrl(s3, command, {
+      expiresIn: uploadSeconds,
+      // The upload contract requires this header. Hoisting it into the query
+      // leaves the same header unsigned and S3 rejects the actual PUT.
+      unhoistableHeaders: new Set(["x-amz-checksum-sha256"]),
+    });
     return json(prepared.outcome === "created" ? 201 : 200, {
       outcome: prepared.outcome,
       document: publicDocument(prepared.document!),
