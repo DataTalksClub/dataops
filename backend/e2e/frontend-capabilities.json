@@ -880,15 +880,15 @@
         {
           "id": "calendar.populated",
           "kind": "ready",
-          "description": "Persisted items render on deterministic dates.",
+          "description": "Event Cards and podcast episodes render on their dates.",
           "coverage": {
             "status": "runtime"
           }
         },
         {
-          "id": "calendar.create-edit-reload",
+          "id": "calendar.entity-links",
           "kind": "ready",
-          "description": "A synthetic item can be created, edited, and reloaded.",
+          "description": "Every item is an entity (an event Card or a podcast episode) and opens it; the calendar has no create or edit.",
           "coverage": {
             "status": "runtime"
           }
@@ -905,22 +905,6 @@
           "id": "calendar.week-date-navigation",
           "kind": "ready",
           "description": "Week and date navigation is deterministic at the Berlin clock boundary.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "calendar.validation",
-          "kind": "error",
-          "description": "Validation stays visible and preserves input.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "calendar.conflict",
-          "kind": "error",
-          "description": "A calendar conflict is honest and retryable.",
           "coverage": {
             "status": "runtime"
           }

@@ -4,7 +4,7 @@
  *   1. Website (`<repo>/_podcast/*.md` front matter, guests resolved through
  *      `_people/*.md`) is primary for published episodes. Season and episode
  *      numbers always come from the website.
- *   2. The schedule sheet (read by import-calendar.ts). "Extra podcast
+ *   2. The schedule sheet (read by podcast-schedule.ts). "Extra podcast
  *      slots" is the register: it adds recording dates to published episodes
  *      (matched by season/episode, else guest and date) and contributes
  *      upcoming episodes (booked / recorded). "Time table" is the weekly plan
@@ -31,7 +31,7 @@ import { readdirSync, readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
 
-import { readPodcastSchedule, type PodcastScheduleRow } from "./import-calendar";
+import { readPodcastSchedule, type PodcastScheduleRow } from "./podcast-schedule";
 
 const LINK_KINDS = ["youtube", "spotify", "apple", "anchor", "website"] as const;
 type LinkKind = (typeof LINK_KINDS)[number];

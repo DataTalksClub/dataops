@@ -58,7 +58,7 @@ subcommands, flags, and examples.
 | `kb` | knowledge base: `search`, `related <task|card>`, `show`, `tree`, `ls`, `resolve`, `backlinks`, `history`, `write`, `publish` |
 | `newsletter` | issues and their sponsor slots: `list`, `show`, `create`, `update`, `delete`, `dismiss-alert` |
 | `podcast` | episodes: `list`, `show`, `create`, `update`, `create-card` |
-| `calendar` | activities and operational slot scheduling |
+| `calendar` | read-only events (Cards, podcast episodes, newsletter issues) and open slots |
 | `recurring` | schedules that generate Tasks |
 | `automations` | `list` every scheduled or triggered job with its last and next run; `set` the settings they read (admin) |
 | `notifications` | `list`, `dismiss`, `dismiss-all` |

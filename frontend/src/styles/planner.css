@@ -4,31 +4,6 @@
   min-width: 0;
   gap: 12px;
 }
-.calendar-activity-dialog-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-}
-.calendar-activity-dialog-foot-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.calendar-delete-activity-btn {
-  background: transparent;
-  color: var(--dk-danger-text);
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-sm, 6px);
-  padding: 6px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 120ms ease;
-}
-.calendar-delete-activity-btn:hover {
-  background: var(--dk-danger-bg);
-}
 [data-calendar] {
   display: contents;
 }
@@ -160,7 +135,7 @@
   gap: 10px;
 }.calendar-view-picker select {
   min-width: 95px;
-}.calendar-header-main .calendar-add-button { margin-right: auto; }.calendar-controls-toggle { display: none; }.calendar-filter-section {
+}.calendar-controls-toggle { display: none; }.calendar-filter-section {
   display: inline-flex;
   align-items: center;
   gap: 8px;

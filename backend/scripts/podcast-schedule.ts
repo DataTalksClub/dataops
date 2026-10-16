@@ -1,30 +1,11 @@
-import ExcelJS from "exceljs";
-import { createHash } from "crypto";
-type ImportItem = {
-  activityType: string;
-  title: string;
-  status: string;
-  allDay: true;
-  startDate: string;
-  endDate: string;
-  timeZone: "Europe/Berlin";
-  sourceType: "schedule-xlsx";
-  sourceKey: string;
-};
-const ALLOWED_SHEETS = ["Time table", "Extra podcast slots"] as const;
 /**
- * The schedule sheet sometimes carries holiday reminders ("School Autumn
- * holidays (October 19 – Oct31)") in an activity column. They are not
- * activities: holidays come from the official holiday layers, so the importer
- * must not turn such a note into a webinar or podcast.
+ * Reads podcast recording rows from the private schedule workbook for
+ * import-podcast-episodes.ts. The workbook's other activities are not
+ * imported: the calendar shows only entities (cards, podcast episodes,
+ * newsletter issues).
  */
-export function isHolidayNotice(title: string) {
-  return /ferien|feiertag/i.test(title)
-    || (/\b(holidays?|vacation|break)\b/i.test(title)
-      && /\b(school|public|bank|autumn|fall|winter|spring|summer|easter|christmas)\b/i.test(title));
-}
-const TRUSTED_DATE_ADAPTER =
-  "schedule-v2:1900-dates:Time table:K,N,Q,U,V:weekly-shared-formulas";
+import ExcelJS from "exceljs";
+const ALLOWED_SHEETS = ["Time table", "Extra podcast slots"] as const;
 const iso = (value: any) => {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   if (typeof value === "number" && value > 1)
@@ -39,18 +20,6 @@ const text = (v: any) => {
   return String(
     v.text ?? (v.richText || []).map((x: any) => x.text).join("") ?? "",
   ).trim();
-};
-const status = (v: any) => {
-  const s = text(v).toLowerCase();
-  return s.includes("cancel")
-    ? "cancelled"
-    : s.includes("confirm")
-      ? "confirmed"
-      : s.includes("announce")
-        ? "announced"
-        : s.includes("publish")
-          ? "published"
-          : "tentative";
 };
 function validateTrustedDateFormulas(
   workbook: ExcelJS.Workbook,
@@ -199,134 +168,6 @@ function validateTrustedDateFormulas(
     if (!trusted.has(address)) throw new Error("Schedule formula anchor is missing");
   return trusted;
 }
-export async function inspectCalendarImport(
-  file: string,
-  today = new Date().toISOString().slice(0, 10),
-) {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(file);
-  const rows: ImportItem[] = [],
-    reasons: Record<string, number> = {},
-    coordinates: string[] = [],
-    rejectedCoordinates: { coordinate: string; reason: string }[] = [];
-  const reject = (reason: string, coordinate?: string) => {
-    reasons[reason] = (reasons[reason] || 0) + 1;
-    if (coordinate) rejectedCoordinates.push({ coordinate, reason });
-  };
-  const add = (
-    sheet: string,
-    row: number,
-    type: string,
-    cells: ExcelJS.Cell[],
-  ) => {
-    const coordinate = `${sheet}!${row}:${type}`;
-    const [dateCell, titleCell, stateCell, endCell] = cells,
-      isFormula = (cell: ExcelJS.Cell) =>
-        !!cell.value &&
-        typeof cell.value === "object" &&
-        ("formula" in cell.value || "sharedFormula" in cell.value),
-      dateValue = (cell?: ExcelJS.Cell) =>
-        cell && isFormula(cell) && trustedDateCells.has(cell.address)
-          ? (cell.value as any).result
-          : cell?.value;
-    if (
-      [titleCell, stateCell].some(isFormula) ||
-      [dateCell, endCell].filter(Boolean).some(
-        (cell) => isFormula(cell!) && !trustedDateCells.has(cell!.address),
-      )
-    )
-      return reject("formula-cell", coordinate);
-    if (cells.some((cell) => (cell as any)._column?.hidden))
-      return reject("hidden-column", coordinate);
-    const title = text(titleCell.value),
-      start = iso(dateValue(dateCell));
-    let end = iso(dateValue(endCell));
-    if (!start || start < today)
-      return reject("not-current-or-future", coordinate);
-    if (!title || title.length > 200)
-      return reject("missing-or-invalid-title", coordinate);
-    if (isHolidayNotice(title)) return reject("holiday-notice", coordinate);
-    if (!end) end = start;
-    if (end < start) return reject("invalid-range", coordinate);
-    const sourceKey = createHash("sha256")
-      .update(`schedule-v1:${sheet}:${row}:${type}`)
-      .digest("hex");
-    rows.push({
-      activityType: type,
-      title,
-      status: status(stateCell?.value),
-      allDay: true,
-      startDate: start,
-      endDate: end,
-      timeZone: "Europe/Berlin",
-      sourceType: "schedule-xlsx",
-      sourceKey,
-    });
-    coordinates.push(`${sheet}!${row}`);
-  };
-  const timetable = workbook.getWorksheet(ALLOWED_SHEETS[0]);
-  if (!timetable) throw new Error("Time table worksheet is required");
-  const trustedDateCells = validateTrustedDateFormulas(workbook, timetable);
-  if (timetable.state !== "visible")
-    reject("hidden-worksheet", "Time table!worksheet");
-  else
-    timetable.eachRow((row, n) => {
-      if (n === 1) return;
-      if (row.hidden) return reject("hidden-row", `Time table!${n}`);
-      add("Time table", n, "webinar", [
-        row.getCell(11),
-        row.getCell(12),
-        row.getCell(13),
-      ]);
-      add("Time table", n, "podcast-live", [
-        row.getCell(14),
-        row.getCell(15),
-        row.getCell(16),
-      ]);
-      add("Time table", n, "podcast-release", [
-        row.getCell(17),
-        row.getCell(18),
-        row.getCell(16),
-      ]);
-      add("Time table", n, "book-of-the-week", [
-        row.getCell(21),
-        row.getCell(23),
-        row.getCell(24),
-        row.getCell(22),
-      ]);
-    });
-  const extra = workbook.getWorksheet(ALLOWED_SHEETS[1]);
-  if (!extra) throw new Error("Extra podcast slots worksheet is required");
-  if (extra.state !== "visible")
-    reject("hidden-worksheet", "Extra podcast slots!worksheet");
-  else
-    extra.eachRow((row, n) => {
-      if (n === 1) return;
-      if (row.hidden)
-        return reject("hidden-row", `Extra podcast slots!${n}`);
-      const titleCell = text(row.getCell(7).value)
-        ? row.getCell(7)
-        : row.getCell(4);
-      add("Extra podcast slots", n, "podcast-live", [
-        row.getCell(1),
-        titleCell,
-        row.getCell(5),
-      ]);
-    });
-  return {
-    rows,
-    report: {
-      adapterSignature:
-        TRUSTED_DATE_ADAPTER,
-      allowedSheets: [...ALLOWED_SHEETS],
-      accepted: rows.length,
-      skipped: Object.values(reasons).reduce((a, b) => a + b, 0),
-      reasons,
-      coordinates,
-      rejectedCoordinates,
-    },
-  };
-}
 /** One podcast recording row of the schedule sheet. */
 export type PodcastScheduleRow = {
   sheet: (typeof ALLOWED_SHEETS)[number];
@@ -440,94 +281,4 @@ export async function readPodcastSchedule(file: string) {
     add("Extra podcast slots", n, row.hidden, [1, 4, 5, 6, 7, 8, 9].map((column) => row.getCell(column)));
   });
   return rows;
-}
-export async function writeCalendarImport(
-  rows: ImportItem[],
-  options: {
-    api: string;
-    token?: string;
-    confirm: string;
-    fetcher?: typeof fetch;
-  },
-) {
-  if (!options.api || options.confirm !== options.api)
-    throw new Error("Explicit target confirmation must equal API URL");
-  if (!options.token)
-    throw new Error("Import requires a session token");
-  const authorization = `Bearer ${options.token}`,
-    fetcher = options.fetcher || fetch,
-    api = options.api.replace(/\/$/, ""),
-    route = "/api/calendar-items";
-  let created = 0,
-    duplicates = 0;
-  const backoff = (attempt: number) =>
-    new Promise((resolve) => setTimeout(resolve, 50 * 2 ** attempt));
-  for (const row of rows) {
-    let response: Response | undefined;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        response = await fetcher(`${api}${route}`, {
-          method: "POST",
-          headers: {
-            authorization,
-            "content-type": "application/json",
-            "idempotency-key": row.sourceKey,
-          },
-          body: JSON.stringify(row),
-        });
-      } catch {
-        if (attempt === 2) throw new Error("Import network failure");
-        await backoff(attempt);
-        continue;
-      }
-      if (response.status !== 429 && response.status < 500) break;
-      if (attempt < 2) await backoff(attempt);
-    }
-    if (!response?.ok)
-      throw new Error(
-        `Import rejected for row key (${response?.status || "network"})`,
-      );
-    response.status === 201 ? created++ : duplicates++;
-  }
-  const byYear = new Map<string, ImportItem[]>();
-  for (const row of rows)
-    byYear.set(row.startDate.slice(0, 4), [
-      ...(byYear.get(row.startDate.slice(0, 4)) || []),
-      row,
-    ]);
-  for (const [year, expected] of byYear) {
-    const verify = await fetcher(
-      `${api}${route}?from=${year}-01-01&to=${year}-12-31`,
-      { headers: { authorization } },
-    );
-    if (!verify.ok) throw new Error("Import verification failed");
-    const body: any = await verify.json();
-    for (const row of expected)
-      if (!(body.items || []).some((i: any) => i.sourceKey === row.sourceKey))
-        throw new Error("Import verification missing row key");
-  }
-  return { accepted: rows.length, created, duplicates, verified: rows.length };
-}
-if (require.main === module) {
-  const file = process.argv[2],
-    write = process.argv.includes("--write");
-  inspectCalendarImport(file)
-    .then(async ({ rows, report }) => {
-      if (!write)
-        return console.log(JSON.stringify({ mode: "dry-run", ...report }));
-      console.log(
-        JSON.stringify({
-          mode: "write",
-          ...(await writeCalendarImport(rows, {
-            api: process.env.CALENDAR_IMPORT_API || "",
-            token: process.env.CALENDAR_IMPORT_TOKEN || "",
-            confirm: process.env.CALENDAR_IMPORT_CONFIRM || "",
-          })),
-        }),
-      );
-    })
-    .catch((e) => {
-      console.error(JSON.stringify({ error: e.message }));
-      process.exitCode = 1;
-    });
 }

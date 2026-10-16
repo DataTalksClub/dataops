@@ -258,8 +258,8 @@ test.describe("pre-refactor frontend module characterization", () => {
     await page.getByRole("button", { name: "Add issue" }).click();
     await expect(page.locator(".newsletter-surface dialog")).toBeVisible();
     await page.goto(`${baseURL}/calendar`);
-    await page.getByRole("button", { name: "Add activity" }).click();
-    await expect(page.locator(".calendar-surface dialog[data-activity-dialog]")).toBeVisible();
+    await expect(page.locator(".calendar-surface")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add activity" })).toHaveCount(0);
     await page.goto(`${baseURL}/bookkeeping?view=files`);
     await expect(page.locator(".bookkeeping-documents")).toContainText(
       /No private documents uploaded|Download/,

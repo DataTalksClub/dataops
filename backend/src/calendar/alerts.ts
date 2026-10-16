@@ -1,12 +1,25 @@
-import type { CalendarItem } from '../db/calendar';
+import type { CalendarEntry } from './entities';
 import type { HolidayOccurrence } from './holidays';
-export function calendarAlerts(items:CalendarItem[],holidays:HolidayOccurrence[]){
- const active=items.filter(i=>i.status!=='cancelled'), out:any[]=[];
- const add=(reasonCode:string,severity:string,ids:string[],basis:string)=>out.push({reasonCode,severity,affectedIds:ids,fingerprint:`${reasonCode}#${[...ids].sort().join(',')}#${basis}`});
- for(let i=0;i<active.length;i++) for(let j=i+1;j<active.length;j++){const timed=!active[i].allDay&&!active[j].allDay,overlap=timed?String(active[i].startsAt)<String(active[j].endsAt)&&String(active[j].startsAt)<String(active[i].endsAt):active[i].startKey<=active[j].endKey&&active[j].startKey<=active[i].endKey;if(overlap)add('activity-overlap','warning',[active[i].id,active[j].id],`${active[i].version}:${active[j].version}:${active[i].startKey}:${active[j].startKey}`);}
- for(const item of active){
-  if(!item.cardId&&!item.templateId) add('missing-workflow-context','info',[item.id],String(item.updatedAt));
-  if(['confirmed','announced','published'].includes(String(item.status))) for(const h of holidays) if(item.startKey.slice(0,10)<=h.endDate&&item.endKey.slice(0,10)>=h.startDate) add(h.kind==='berlin-public-holiday'?'public-holiday-overlap':'school-holiday-overlap','warning',[item.id],`${h.kind}:${h.startDate}:${h.endDate}`);
- }
- return out;
+
+/**
+ * Upcoming events that fall on a Berlin public or school holiday. Past events
+ * are history, so they raise nothing. The fingerprint carries the event's
+ * date, so moving the event raises the alert again.
+ */
+export function calendarAlerts(entries: CalendarEntry[], holidays: HolidayOccurrence[], today: string) {
+  const out: { reasonCode: string; severity: string; affectedIds: string[]; fingerprint: string }[] = [];
+  for (const entry of entries) {
+    if (entry.date < today) continue;
+    for (const holiday of holidays) {
+      if (entry.date < holiday.startDate || entry.date > holiday.endDate) continue;
+      const reasonCode = holiday.kind === 'berlin-public-holiday' ? 'public-holiday-overlap' : 'school-holiday-overlap';
+      out.push({
+        reasonCode,
+        severity: 'warning',
+        affectedIds: [entry.id],
+        fingerprint: `${reasonCode}#${entry.id}#${entry.date}:${holiday.kind}:${holiday.startDate}:${holiday.endDate}`,
+      });
+    }
+  }
+  return out;
 }

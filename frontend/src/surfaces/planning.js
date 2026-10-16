@@ -5,7 +5,20 @@ import { createNewsletterPlanner } from "./planning-newsletter.js";
 import { cardDueLabel } from "./planning-newsletter-slots.js";
 import { setupDayScheduleDialog, setupCalendarSettingsDialog } from "./planning-calendar-dialogs.js";
 import { mountPeriodNav, periodNavMarkup } from "./period-nav.js";
-import { berlinDateTime, berlinTime, berlinTimestamp } from "./calendar-time.js";
+
+// The calendar's event types: event Card Template types, then the podcast
+// episode dates. Newsletter issues come through the overlay.
+const EVENT_KINDS = [
+  ["webinar", "Webinar"],
+  ["workshop", "Workshop"],
+  ["course", "Course"],
+  ["book-of-the-week", "Book of the Week"],
+  ["maven-ll", "Maven Lightning Lesson"],
+  ["office-hours", "Office Hours"],
+  ["oss", "Open-Source Spotlight"],
+  ["podcast-recording", "Podcast recording"],
+  ["podcast-release", "Podcast release"],
+];
 
 // Open time is either a free slot projected from Alexey's calendar or a
 // newsletter issue with a slot nobody has booked yet; the server marks
@@ -52,25 +65,16 @@ export function createPlanningSurface(context) {
 
   function calendarAlertCopy(reasonCode) {
     return {
-      "public-holiday-overlap": "Activity overlaps a public holiday",
-      "school-holiday-overlap": "Activity overlaps a school holiday",
-      "school-free-day-overlap": "Activity overlaps a school-free day",
-      "activity-overlap": "Two activities overlap",
-      "missing-workflow-context": "Activity has no linked workflow",
+      "public-holiday-overlap": "Event falls on a public holiday",
+      "school-holiday-overlap": "Event falls in the school holidays",
     }[reasonCode] || "Calendar timing needs review";
   }
 
   async function renderCalendarSurface() {
     documentList.replaceChildren();
-    const activityTypes = ["podcast-live", "podcast-release", "webinar", "workshop", "book-of-the-week", "course", "cohort", "other"];
-    const activityTypeOptions = activityTypes
-      .map((value) => `
-        <option value="${value}">${plannerLabel(value)}</option>
-      `)
-      .join("");
-    const activityStatusOptions = ["tentative", "confirmed", "announced", "published", "cancelled"]
-      .map((value) => `
-        <option value="${value}">${plannerLabel(value)}</option>
+    const eventKindOptions = EVENT_KINDS
+      .map(([value, label]) => `
+        <option value="${value}">${label}</option>
       `)
       .join("");
     const surface = document.createElement("section");
@@ -110,10 +114,10 @@ export function createPlanningSurface(context) {
                 <option value="week">Week</option>
               </select>
             </label>
-            <label class="calendar-select-label" title="Filter by activity type">
-              <select data-type aria-label="Activity type">
-                <option value="">All activities</option>
-                ${activityTypeOptions}
+            <label class="calendar-select-label" title="Filter by event type">
+              <select data-type aria-label="Event type">
+                <option value="">All events</option>
+                ${eventKindOptions}
               </select>
             </label>
           </div>
@@ -167,42 +171,6 @@ export function createPlanningSurface(context) {
       <p class="dk-visually-hidden" role="status" aria-live="polite">Loading calendar…</p>
       <div class="planner-alerts" data-alerts></div>
       <div data-calendar></div>
-      <dialog class="dk-dialog" data-activity-dialog style="--dk-dialog-width: 620px">
-        <form>
-          <div class="dk-dialog__head"><div>
-            <h2>Calendar activity</h2>
-            <p>Add the timing and planning context operators need.</p>
-          </div></div>
-          <div class="dk-dialog__body">
-          <input name="id" type="hidden">
-          <input name="version" type="hidden">
-          <div class="planner-form-grid">
-            <label class="planner-field-wide">Title <input name="title" required maxlength="200"></label>
-            <label>Type
-              <select name="activityType">${activityTypeOptions}</select>
-            </label>
-            <label>Status
-              <select name="status">${activityStatusOptions}</select>
-            </label>
-            <label class="planner-field-wide calendar-all-day"><input name="allDay" type="checkbox" checked> All-day activity</label>
-            <label>Start date <input name="startDate" type="date" required></label>
-            <label>End date <input name="endDate" type="date" required></label>
-            <label data-time-field hidden>Start time (Berlin) <input name="startTime" type="time"></label>
-            <label data-time-field hidden>End time (Berlin) <input name="endTime" type="time"></label>
-            <label class="planner-field-wide">Card reference <input name="cardId" autocomplete="off"></label>
-            <label class="planner-field-wide">Planning notes <textarea name="notes" maxlength="2000" rows="4"></textarea></label>
-          </div>
-          <p class="planner-form-error" role="alert"></p>
-          </div>
-          <div class="dk-dialog__foot calendar-activity-dialog-foot">
-            <div class="calendar-activity-dialog-foot-actions">
-              <button class="primary-button">Save activity</button>
-              <button type="button" data-cancel>Cancel</button>
-            </div>
-            <button type="button" class="calendar-delete-activity-btn" data-delete-activity style="display: none;">Delete activity</button>
-          </div>
-        </form>
-      </dialog>
       <dialog class="dk-dialog calendar-settings-dialog" data-settings-dialog style="--dk-dialog-width: 520px">
         <form data-settings-form>
           <div class="dk-dialog__head"><div>
@@ -296,26 +264,10 @@ export function createPlanningSurface(context) {
           <p class="planner-load-state">Loading schedule…</p>
         </div>
         <div class="dk-dialog__foot calendar-day-dialog-foot">
-          <button class="primary-button" type="button" data-day-add-activity>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            <span>Add activity on this day</span>
-          </button>
           <button type="button" data-day-close-foot>Close</button>
         </div>
       </dialog>`;
-    // Add activity rides on the calendar's own toolbar, right after the
-    // period it adds into; the page header keeps only title and description.
-    const addActivity = globalThis.dakitCollection.createButton({
-      label: "Add activity",
-      onClick: () => openActivityDialog(),
-    });
-    addActivity.classList.add("calendar-add-button");
     const controlsToggle = surface.querySelector("[data-controls-toggle]");
-    surface.querySelector("[data-calendar-indicator]").before(addActivity);
     surface.prepend(createPageHeader({
       title: "Calendar",
       titleId: "calendar-surface-title",
@@ -326,9 +278,7 @@ export function createPlanningSurface(context) {
 
     const status = surface.querySelector('[role="status"]'),
       grid = surface.querySelector("[data-calendar]"),
-      alertsBox = surface.querySelector("[data-alerts]"),
-      dialog = surface.querySelector("dialog"),
-      form = dialog.querySelector("form");
+      alertsBox = surface.querySelector("[data-alerts]");
     let cursor = parseIsoDateValue(todayIsoDate()),
       items = [],
       holidays = [],
@@ -380,7 +330,7 @@ export function createPlanningSurface(context) {
         showOverlay = surface.querySelector('[data-layer="overlay"]')?.checked ?? true,
         showAvailable = surface.querySelector('[data-layer="available"]')?.checked ?? true,
         type = surface.querySelector("[data-type]").value,
-        visibleItems = showActivities ? items.filter((item) => !type || item.activityType === type) : [],
+        visibleItems = showActivities ? items.filter((item) => !type || item.kind === type) : [],
         periodLabel = isWeek
           ? `Week of ${new Date(`${from}T00:00:00Z`).toLocaleDateString("en", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}`
           : cursor.toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });
@@ -396,10 +346,7 @@ export function createPlanningSurface(context) {
         currentMondayIso = iso(monday(parseIsoDateValue(todayIso)));
       let weekMarkup = "",
         weekIsCurrent = false;
-      const itemsOn = (date) => visibleItems.filter((item) => (
-          (item.startKey || item.startDate || "").slice(0, 10) <= date
-          && (item.endKey || item.endDate || "").slice(0, 10) >= date
-        )),
+      const itemsOn = (date) => visibleItems.filter((item) => item.date === date),
         overlaysOn = (date) => overlays.filter((overlay) => {
           if (overlay.startDate > date || overlay.endDate < date) return false;
           // A past day has no open event slots. The server reads the owner's
@@ -483,16 +430,17 @@ export function createPlanningSurface(context) {
               </span>
             `;
           }).join(""),
+          // Every event is an entity (a Card or a podcast episode); the chip
+          // opens it.
           activityMarkup = dayItems.map((item) => `
-            <button
+            <a
               class="calendar-activity ${plannerStatusClass(item.status)}"
-              data-edit="${escapeHtml(item.id)}"
-              title="${escapeHtml(item.title)} (${escapeHtml(plannerLabel(item.activityType))})"
+              href="${escapeHtml(item.href)}"
+              title="${escapeHtml(item.title)} (${escapeHtml(item.kindLabel)})"
             >
-              <small>${escapeHtml(plannerLabel(item.activityType))}</small>
-              <span>${item.allDay === false && item.startsAt
-                ? `<b class="calendar-chip-time">${escapeHtml(berlinTime(item.startsAt))}</b> ` : ""}${escapeHtml(item.title)}</span>
-            </button>
+              <small>${escapeHtml(item.kindLabel)}</small>
+              <span>${escapeHtml(item.title)}</span>
+            </a>
           `).join(""),
           overlayMarkup = dayOverlays.map((overlay) => {
             const isOwnerCalendar = overlay.provider === "owner-calendar";
@@ -575,7 +523,7 @@ export function createPlanningSurface(context) {
         weekMarkup += `</div>`;
       }
       const emptyNotice = type && visibleItems.length === 0
-        ? `<div class="calendar-empty honest-state"><p>No matching activities</p></div>`
+        ? `<div class="calendar-empty honest-state"><p>No matching events</p></div>`
         : "";
       grid.innerHTML = `
         ${emptyNotice}
@@ -656,8 +604,7 @@ export function createPlanningSurface(context) {
             .map((id) => {
               const item = itemById.get(id);
               if (!item) return "";
-              const when = item.startKey ? item.startKey.slice(0, 10) : "";
-              return `${item.title}${when ? ` — ${formatShortPlanningDate(when)}` : ""}`;
+              return `${item.title} — ${formatShortPlanningDate(item.date)}`;
             })
             .filter(Boolean)
             .join(" · ");
@@ -708,7 +655,7 @@ export function createPlanningSurface(context) {
         grid.innerHTML = `
           <div class="honest-state planner-failure">
             <strong>Calendar unavailable</strong>
-            <p>Reopen Calendar to retry. No activities have been changed.</p>
+            <p>Reopen Calendar to retry.</p>
           </div>
         `;
       }
@@ -755,90 +702,17 @@ export function createPlanningSurface(context) {
         renderOverlayStatus();
       };
     });
-    const deleteBtn = dialog.querySelector("[data-delete-activity]");
-    function updateTimeFields() {
-      const allDay = form.elements.allDay.checked;
-      form.querySelectorAll("[data-time-field]").forEach((field) => { field.hidden = allDay; });
-      for (const name of ["startTime", "endTime"]) {
-        form.elements[name].disabled = allDay;
-        form.elements[name].required = !allDay;
-      }
-    }
-    form.elements.allDay.onchange = updateTimeFields;
-    let editingActivity = null;
-    function openActivityDialog(item = null, defaultDate = null) {
-      editingActivity = item;
-      form.reset();
-      form.querySelector('[role="alert"]').textContent = "";
-      if (item) {
-        Object.keys(item).forEach((key) => {
-          if (form.elements[key]) form.elements[key].value = item[key] || "";
-        });
-        form.elements.allDay.checked = item.allDay !== false;
-        if (item.allDay === false) {
-          const start = berlinDateTime(item.startsAt), end = berlinDateTime(item.endsAt);
-          form.elements.startDate.value = start.slice(0, 10);
-          form.elements.endDate.value = end.slice(0, 10);
-          form.elements.startTime.value = start.slice(11);
-          form.elements.endTime.value = end.slice(11);
-        }
-        if (deleteBtn?.style) deleteBtn.style.display = "";
-      } else {
-        form.elements.allDay.checked = true;
-        const date = defaultDate || iso(cursor);
-        form.elements.startDate.value = date;
-        form.elements.endDate.value = date;
-        if (deleteBtn?.style) deleteBtn.style.display = "none";
-      }
-      updateTimeFields();
-      dialog.showModal();
-    }
-
-    if (deleteBtn) {
-      deleteBtn.onclick = async () => {
-        const id = form.elements.id.value;
-        const version = form.elements.version.value;
-        if (!id) return;
-        form.querySelector('[role="alert"]').textContent = "";
-        try {
-          await api(`/${encodeURIComponent(id)}`, {
-            method: "DELETE",
-            body: JSON.stringify({ version: Number(version) || 1 }),
-          });
-          dialog.close();
-          load();
-        } catch (error) {
-          form.querySelector('[role="alert"]').textContent = `Could not delete activity: ${error.message}`;
-        }
-      };
-    }
-
-
     const daySchedule = setupDayScheduleDialog({
       surface,
       api,
       escapeHtml,
-      plannerLabel,
       todayIsoDate,
-      onAddActivity: (selectedDayIso) => openActivityDialog(null, selectedDayIso),
-      onEditActivity: (itemId) => {
-        const item = items.find((value) => value.id === itemId);
-        if (item) openActivityDialog(item);
-      },
       getCalendarState: () => ({ items, holidays, overlays }),
     });
 
     const openDayDialog = daySchedule.openDayDialog;
 
     grid.onclick = (event) => {
-      const editBtn = event.target.closest("[data-edit]");
-      if (editBtn) {
-        const item = items.find((value) => value.id === editBtn.dataset.edit);
-        if (item) {
-          openActivityDialog(item);
-          return;
-        }
-      }
       const openDayBtn = event.target.closest("[data-open-day]");
       if (openDayBtn) {
         openDayDialog(openDayBtn.dataset.openDay);
@@ -851,44 +725,12 @@ export function createPlanningSurface(context) {
         if (date) openDayDialog(date);
       }
     };
-    surface.querySelector("[data-cancel]").onclick = () => dialog.close();
     alertsBox.onclick = async (event) => {
       const fingerprint = event.target.closest("[data-dismiss]")?.dataset.dismiss;
       if (!fingerprint) return;
       await api(`/alerts/${fingerprint}/dismiss`, { method: "POST", body: "{}" });
       load();
     };
-    form.onsubmit = async (event) => {
-      event.preventDefault();
-      form.querySelector('[role="alert"]').textContent = "";
-      const value = Object.fromEntries([...new FormData(form)].filter(([, fieldValue]) => fieldValue !== "")), id = value.id;
-      delete value.id;
-      value.allDay = form.elements.allDay.checked;
-      value.timeZone = "Europe/Berlin";
-      if (value.version) value.version = Number(value.version);
-      try {
-        if (!value.allDay) {
-          // Preserve the item's original offset when an autumn hour repeats.
-          const unchangedTime = (timestamp, date, time) => timestamp
-            && berlinDateTime(timestamp) === `${date}T${time}`;
-          value.startsAt = unchangedTime(editingActivity?.startsAt, value.startDate, value.startTime)
-            ? editingActivity.startsAt : berlinTimestamp(value.startDate, value.startTime);
-          value.endsAt = unchangedTime(editingActivity?.endsAt, value.endDate, value.endTime)
-            ? editingActivity.endsAt : berlinTimestamp(value.endDate, value.endTime);
-          if (value.startsAt >= value.endsAt) throw new Error("End time must be after start time.");
-          delete value.startDate;
-          delete value.endDate;
-        }
-        delete value.startTime;
-        delete value.endTime;
-        await api(id ? `/${encodeURIComponent(id)}` : "", { method: id ? "PUT" : "POST", body: JSON.stringify(value) });
-        dialog.close();
-        load();
-      } catch (error) {
-        form.querySelector('[role="alert"]').textContent = `Could not save activity: ${error.message}`;
-      }
-    };
-
     setupCalendarSettingsDialog({
       surface,
       api,

@@ -128,7 +128,7 @@ describe('DELETE /api/cards/:id', () => {
     const body = JSON.parse(res.body);
     assert.strictEqual(body.code, 'card_has_references');
     assert.deepStrictEqual(body.references, {
-      files: [file.id], calendarItems: [], sponsorDeliverables: [], newsletterIssues: [],
+      files: [file.id], sponsorDeliverables: [], newsletterIssues: [],
     });
     assert.ok(await getCard(client, card.id));
   });

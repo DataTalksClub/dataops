@@ -80,11 +80,6 @@ export const FAMILIES = {
     help: calendar.help,
     commands: {
       list: calendar.list,
-      detail: calendar.detail,
-      get: calendar.detail,
-      create: calendar.create,
-      edit: calendar.edit,
-      delete: calendar.remove,
       day: calendar.day,
       schedule: calendar.day,
       slots: calendar.slots,

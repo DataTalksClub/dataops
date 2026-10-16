@@ -21,6 +21,8 @@ import { buildNewsletterIssue, issueItem, createNewsletterIssue } from "../src/d
 import { TABLE_NEWSLETTER_SLOTS } from "../src/db/tableNames";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { newsletterOverlayItem } from "../src/calendar/newsletterOverlay";
+import { createTemplate } from "../src/db/templates";
+import { createPodcastEpisode } from "../src/db/podcastEpisodes";
 const invoke = (
   method: string,
   pathName: string,
@@ -50,82 +52,59 @@ describe("operations calendar", () => {
   afterEach(() => {
     process.env.SKIP_AUTH = "true";
   });
-  it("does not leak before auth and supports indexed CRUD, versions and idempotency", async () => {
+  it("does not leak before auth and projects event cards and podcast episodes, each linked to its entity", async () => {
     process.env.SKIP_AUTH = "false";
     assert.equal(
-      (
-        await invoke(
-          "GET",
-          "/api/calendar-items",
-          undefined,
-          {},
-          { from: "2026-07-01", to: "2026-07-31" },
-        )
-      ).statusCode,
+      (await invoke("GET", "/api/calendar-items", undefined, {}, { from: "2030-05-01", to: "2030-05-31" })).statusCode,
       401,
     );
     const session = await createSession(client, "calendar-operator"),
-      auth = { authorization: `Bearer ${session.token}` },
-      valid = {
-        activityType: "webinar",
-        title: "Synthetic planning event",
-        status: "confirmed",
-        allDay: true,
-        startDate: "2026-07-20",
-        endDate: "2026-08-02",
-        sourceType: "synthetic",
-        sourceKey: "calendar-test-one",
-      };
-    let r = await invoke("POST", "/api/calendar-items", valid, auth);
-    assert.equal(r.statusCode, 201, r.body);
-    const created = parse(r).item;
-    assert.equal(
-      (await invoke("POST", "/api/calendar-items", valid, auth)).statusCode,
-      200,
-    );
-    r = await invoke("GET", "/api/calendar-items", undefined, auth, {
-      from: "2026-08-01",
-      to: "2026-08-31",
+      auth = { authorization: `Bearer ${session.token}` };
+    process.env.SKIP_AUTH = "true";
+    const webinar = await createTemplate(client, { name: "Webinar", type: "webinar", taskDefinitions: [] });
+    const newsletter = await createTemplate(client, { name: "Newsletter", type: "newsletter", taskDefinitions: [] });
+    const podcast = await createTemplate(client, { name: "Podcast", type: "podcast", taskDefinitions: [] });
+    const card = async (templateId: string, title: string, anchorDate: string, people?: string[]) =>
+      parse(await invoke("POST", "/api/cards", { templateId, title, anchorDate, ...(people ? { people } : {}) })).card;
+    const event = await card(webinar.id, "Synthetic GraphRAG talk", "2030-05-30", ["Ada Example"]);
+    await card(newsletter.id, "Synthetic weekly issue", "2030-05-10");
+    await card(podcast.id, "Synthetic podcast card", "2030-05-11");
+    const episode = await createPodcastEpisode(client, {
+      title: "Synthetic Episode", guests: [{ name: "Grace Sample" }], status: "booked",
+      recordingDate: "2030-05-11", releaseDate: "2030-05-25",
     });
-    assert.equal(parse(r).items.length, 1);
-    assert.ok(
-      parse(r).alerts.some(
-        (a: any) => a.reasonCode === "school-holiday-overlap",
-      ),
-    );
-    r = await invoke(
-      "PUT",
-      `/api/calendar-items/${created.id}`,
-      { version: created.version, title: "Updated synthetic event" },
-      auth,
-    );
+    await createPodcastEpisode(client, {
+      title: "Synthetic Cancelled", guests: [{ name: "Gone Guest" }], status: "cancelled", recordingDate: "2030-05-12",
+    });
+    process.env.SKIP_AUTH = "false";
+    const r = await invoke("GET", "/api/calendar-items", undefined, auth, { from: "2030-05-01", to: "2030-05-31" });
     assert.equal(r.statusCode, 200, r.body);
-    assert.equal(
-      (
-        await invoke(
-          "PUT",
-          `/api/calendar-items/${created.id}`,
-          { version: 1, title: "stale" },
-          auth,
-        )
-      ).statusCode,
-      409,
-    );
-    const updated = parse(r);
-    assert.equal(
-      (
-        await invoke(
-          "DELETE",
-          `/api/calendar-items/${created.id}`,
-          { version: updated.version },
-          auth,
-        )
-      ).statusCode,
-      204,
-    );
+    // Only the event Card and the episode's two dates: newsletter and podcast
+    // Cards show through their issue and episode, a cancelled episode not at all.
+    assert.deepEqual(parse(r).items, [
+      {
+        id: `podcast-recording:${episode.id}`, kind: "podcast-recording", kindLabel: "Podcast recording",
+        title: "Synthetic Episode · Grace Sample", date: "2030-05-11", status: "booked",
+        entity: { type: "podcast-episode", id: episode.id }, href: `/podcast?episodeId=${episode.id}`,
+      },
+      {
+        id: `podcast-release:${episode.id}`, kind: "podcast-release", kindLabel: "Podcast release",
+        title: "Synthetic Episode · Grace Sample", date: "2030-05-25", status: "booked",
+        entity: { type: "podcast-episode", id: episode.id }, href: `/podcast?episodeId=${episode.id}`,
+      },
+      {
+        id: `card:${event.id}`, kind: "webinar", kindLabel: "Webinar", title: "Synthetic GraphRAG talk · Ada Example",
+        date: "2030-05-30", status: "preparation", entity: { type: "card", id: event.id }, href: `/cards?cardId=${event.id}`,
+      },
+    ]);
+    // Ascension Day: the upcoming webinar is flagged.
+    assert.ok(parse(r).alerts.some((a: any) => a.reasonCode === "public-holiday-overlap" && a.affectedIds.includes(`card:${event.id}`)));
+    // The calendar stores nothing: there is no create, edit or delete.
+    assert.equal((await invoke("POST", "/api/calendar-items", { title: "Standalone" }, auth)).statusCode, 405);
+    assert.equal((await invoke("PUT", `/api/calendar-items/card:${event.id}`, {}, auth)).statusCode, 404);
     process.env.SKIP_AUTH = "true";
   });
-  it("validates range, UTC offsets, filters, and holiday year edges", async () => {
+  it("validates the range and holiday year edges", async () => {
     assert.equal(
       (
         await invoke(
@@ -135,20 +114,6 @@ describe("operations calendar", () => {
           {},
           { from: "2020-01-01", to: "2026-01-01" },
         )
-      ).statusCode,
-      400,
-    );
-    assert.equal(
-      (
-        await invoke("POST", "/api/calendar-items", {
-          activityType: "webinar",
-          title: "DST gap",
-          status: "tentative",
-          allDay: false,
-          startsAt: "2026-03-29T02:30:00",
-          endsAt: "2026-03-29T03:30:00",
-          timeZone: "Europe/Berlin",
-        })
       ).statusCode,
       400,
     );
@@ -280,64 +245,19 @@ describe("operations calendar", () => {
     response = await invoke("GET", "/api/calendar-items/overlays", undefined, {}, { from: "2020-01-01", to: "2020-01-31" });
     assert.deepEqual(Object.keys(parse(response).sources), ["newsletter-issues-readonly"]);
     assert.ok(!parse(response).items.some((i: any) => i.isAvailableSlot && i.provider === "owner-calendar"));
-    response = await invoke("POST", "/api/calendar-items", {
-      activityType: "webinar",
-      title: "Dismissible synthetic",
-      status: "tentative",
-      allDay: true,
-      startDate: "2027-04-05",
-      endDate: "2027-04-05",
-      timeZone: "Europe/Berlin",
-      sourceKey: "dismiss-test",
-    });
-    const item = parse(response).item;
-    response = await invoke(
-      "GET",
-      "/api/calendar-items",
-      undefined,
-      {},
-      { from: "2027-04-01", to: "2027-04-30" },
-    );
-    const alert = parse(response).alerts.find(
-      (a: any) =>
-        a.reasonCode === "missing-workflow-context" &&
-        a.affectedIds.includes(item.id),
-    );
-    assert.ok(alert);
-    await invoke(
-      "POST",
-      `/api/calendar-items/alerts/${encodeURIComponent(alert.fingerprint)}/dismiss`,
-    );
-    response = await invoke(
-      "GET",
-      "/api/calendar-items",
-      undefined,
-      {},
-      { from: "2027-04-01", to: "2027-04-30" },
-    );
-    assert.ok(
-      !parse(response).alerts.some(
-        (a: any) => a.fingerprint === alert.fingerprint,
-      ),
-    );
-    await invoke("PUT", `/api/calendar-items/${item.id}`, {
-      version: item.version,
-      title: "Dismissible synthetic changed",
-    });
-    response = await invoke(
-      "GET",
-      "/api/calendar-items",
-      undefined,
-      {},
-      { from: "2027-04-01", to: "2027-04-30" },
-    );
-    assert.ok(
-      parse(response).alerts.some(
-        (a: any) =>
-          a.reasonCode === "missing-workflow-context" &&
-          a.affectedIds.includes(item.id),
-      ),
-    );
+    const template = await createTemplate(client, { name: "Workshop", type: "workshop", taskDefinitions: [] });
+    // Whit Monday 2030, a Berlin public holiday.
+    const card = parse(await invoke("POST", "/api/cards", { templateId: template.id, title: "Dismissible synthetic", anchorDate: "2030-06-10" })).card;
+    const alerts = async () => parse(await invoke("GET", "/api/calendar-items", undefined, {}, { from: "2030-06-01", to: "2030-12-31" })).alerts
+      .filter((a: any) => a.affectedIds.includes(`card:${card.id}`));
+    const [alert] = await alerts();
+    assert.equal(alert.reasonCode, "public-holiday-overlap");
+    await invoke("POST", `/api/calendar-items/alerts/${encodeURIComponent(alert.fingerprint)}/dismiss`);
+    assert.deepEqual(await alerts(), []);
+    // Moving the card onto Christmas raises the alert again.
+    const moved = await invoke("PUT", `/api/cards/${card.id}`, { expectedVersion: card.version, anchorDate: "2030-12-25" });
+    assert.equal(moved.statusCode, 200, moved.body);
+    assert.equal((await alerts()).length, 1);
   });
   it("ships week/month UI, independent layers, accessible status, and API seam", async () => {
     const frontend = path.resolve(__dirname, "../../frontend"),

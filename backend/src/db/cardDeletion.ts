@@ -22,7 +22,6 @@ import type { PlannedWrite } from './plannedWrite';
 import {
   TABLE_ARTIFACTS,
   TABLE_AUDIT_EVENTS,
-  TABLE_CALENDAR,
   TABLE_CARDS,
   TABLE_FILES,
   TABLE_INTAKE,
@@ -37,8 +36,8 @@ import { listTasksByCard } from './tasks';
  * contains, clears the soft links other rows hold to them, deletes the derived
  * notifications about them, and records an audit event.
  *
- * Rows that carry evidence of their own (uploaded files, calendar items,
- * sponsor deliverables) are not silently rewritten: while any of them points
+ * Rows that carry evidence of their own (uploaded files, sponsor
+ * deliverables) are not silently rewritten: while any of them points
  * at the Card or its Tasks the deletion is refused and names them, so the
  * operator unlinks them deliberately first.
  *
@@ -79,7 +78,6 @@ interface CardDeletionResult {
 
 interface CardBlockingReferences {
   files: string[];
-  calendarItems: string[];
   sponsorDeliverables: string[];
   newsletterIssues: string[];
 }
@@ -94,7 +92,7 @@ class CardDeletionBlockedError extends Error {
   constructor(readonly cardId: string, readonly references: CardBlockingReferences) {
     super(references.newsletterIssues.length
       ? 'Card belongs to a newsletter issue; delete or cancel the issue instead'
-      : 'Card is still referenced by files, calendar items, or sponsor deliverables; unlink them first');
+      : 'Card is still referenced by files or sponsor deliverables; unlink them first');
     this.name = 'CardDeletionBlockedError';
   }
 }
@@ -193,17 +191,13 @@ async function cardBlockingReferences(
   const taskIds = new Set(tasks.map(({ id }) => id));
   const pointsHere = (row: Dict) => row.cardId === card.id
     || (typeof row.taskId === 'string' && taskIds.has(row.taskId));
-  const [files, calendar, sponsorCrm, issues] = await Promise.all([
+  const [files, sponsorCrm, issues] = await Promise.all([
     scanAll(client, TABLE_FILES, 'FILE#'),
-    scanAll(client, TABLE_CALENDAR, 'ITEM#'),
     scanAll(client, TABLE_SPONSOR_CRM, 'DELIVERABLE#'),
     listNewsletterIssuesByCardId(client, card.id),
   ]);
   return {
     files: files.filter(pointsHere).map((row) => String(row.id)),
-    calendarItems: calendar
-      .filter((row) => row.SK === 'META' && row.cardId === card.id)
-      .map((row) => String(row.id)),
     sponsorDeliverables: sponsorCrm.filter((row) => row.cardId === card.id).map((row) => String(row.id)),
     newsletterIssues: issues.map((issue) => issue.id).filter((id) => id !== owner?.newsletterIssueId),
   };

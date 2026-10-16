@@ -14,16 +14,16 @@ let server;
 
 const calendarPayload = {
   items: [
-    { id: "activity-webinar", activityType: "webinar", title: "Community webinar", status: "confirmed", allDay: true, startDate: "2026-08-12", endDate: "2026-08-12", startKey: "2026-08-12", endKey: "2026-08-12", version: 1 },
-    { id: "activity-podcast", activityType: "podcast-release", title: "Podcast release", status: "announced", allDay: true, startDate: "2026-08-14", endDate: "2026-08-14", startKey: "2026-08-14", endKey: "2026-08-14", version: 1 },
-    { id: "activity-workshop", activityType: "workshop", title: "Data workshop", status: "tentative", allDay: true, startDate: "2026-08-17", endDate: "2026-08-18", startKey: "2026-08-17", endKey: "2026-08-18", version: 1 },
+    { id: "card:card-webinar", kind: "webinar", kindLabel: "Webinar", title: "Community webinar · Ada Example", date: "2026-08-12", status: "announced", entity: { type: "card", id: "card-webinar" }, href: "/cards?cardId=card-webinar" },
+    { id: "podcast-release:episode-1", kind: "podcast-release", kindLabel: "Podcast release", title: "Podcast release · Grace Sample", date: "2026-08-14", status: "scheduled", entity: { type: "podcast-episode", id: "episode-1" }, href: "/podcast?episodeId=episode-1" },
+    { id: "card:card-workshop", kind: "workshop", kindLabel: "Workshop", title: "Data workshop", date: "2026-08-17", status: "preparation", entity: { type: "card", id: "card-workshop" }, href: "/cards?cardId=card-workshop" },
   ],
   holidays: [
     { kind: "berlin-school-holiday", name: "Summer holidays", startDate: "2026-08-10", endDate: "2026-08-21" },
   ],
   holidayMetadata: { stale: false, outOfHorizon: false },
   alerts: [
-    { reasonCode: "school-holiday-overlap", severity: "warning", fingerprint: "safe-calendar-warning" },
+    { reasonCode: "school-holiday-overlap", severity: "warning", fingerprint: "safe-calendar-warning", affectedIds: ["card:card-webinar"] },
   ],
 };
 
@@ -155,7 +155,7 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   const planningAlerts = surface.locator(".calendar-alert-summary");
   await expect(planningAlerts).not.toHaveAttribute("open", "");
   await planningAlerts.locator("summary").click();
-  await expect(planningAlerts.getByText("Activity overlaps a school holiday")).toBeVisible();
+  await expect(planningAlerts.getByText("Event falls in the school holidays")).toBeVisible();
   await expect(planningAlerts.getByRole("button", { name: "Dismiss" }).first()).toBeVisible();
   await planningAlerts.locator("summary").click();
   await expect(surface.getByText("school-holiday-overlap")).toHaveCount(0);

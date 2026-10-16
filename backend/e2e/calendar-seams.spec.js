@@ -14,16 +14,14 @@ const shots = path.resolve(
 const payload = {
   items: [
     {
-      id: "activity-1",
-      activityType: "webinar",
-      title: "Synthetic Webinar",
-      status: "confirmed",
-      allDay: true,
-      startDate: "2026-06-30",
-      endDate: "2026-06-30",
-      startKey: "2026-06-30",
-      endKey: "2026-06-30",
-      version: 1,
+      id: "card:card-1",
+      kind: "webinar",
+      kindLabel: "Webinar",
+      title: "Synthetic Webinar · Ada Example",
+      date: "2026-06-30",
+      status: "announced",
+      entity: { type: "card", id: "card-1" },
+      href: "/cards?cardId=card-1",
     },
   ],
   holidays: [
@@ -45,8 +43,8 @@ const payload = {
     {
       reasonCode: "public-holiday-overlap",
       severity: "warning",
-      affectedIds: ["activity-1"],
-      fingerprint: "public-holiday-overlap#activity-1#v1",
+      affectedIds: ["card:card-1"],
+      fingerprint: "public-holiday-overlap#card:card-1#2026-06-30",
     },
   ],
   timeZone: "Europe/Berlin",
@@ -101,8 +99,7 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   await page.clock.setFixedTime(new Date("2026-07-01T12:00:00Z"));
   await page.setViewportSize({ width: 1280, height: 800 });
   let dismissed = false,
-    failed = false,
-    changed = false;
+    failed = false;
   await page.route("**/api/calendar-items**", (route) => {
     const u = new URL(route.request().url()),
       method = route.request().method();
@@ -130,23 +127,8 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
       dismissed = true;
       return route.fulfill({ json: { dismissed: true } });
     }
-    if (method === "PUT") {
-      changed = true;
-      dismissed = false;
-      return route.fulfill({
-        json: { ...payload.items[0], version: 2, title: "Changed Webinar" },
-      });
-    }
     return route.fulfill({
-      json: {
-        ...payload,
-        alerts: dismissed
-          ? []
-          : payload.alerts.map((a) => ({
-              ...a,
-              fingerprint: changed ? a.fingerprint + "#v2" : a.fingerprint,
-            })),
-      },
+      json: { ...payload, alerts: dismissed ? [] : payload.alerts },
     });
   });
   await page.route("**/api/**", (route) => {
@@ -168,7 +150,10 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   await expect(page.locator(".iso-week").first()).toHaveText(/^\d+$/);
   const surface = page.locator(".calendar-surface");
   await expect(surface.getByRole("heading", { name: "Calendar", exact: true, level: 1 })).toBeVisible();
-  await expect(surface.locator(".calendar-controls").getByRole("button", { name: "Add activity", exact: true })).toBeVisible();
+  // Read-only: an event opens its Card; there is nothing to add or edit here.
+  await expect(surface.getByRole("button", { name: "Add activity", exact: true })).toHaveCount(0);
+  await expect(surface.locator(".calendar-activity").filter({ hasText: "Synthetic Webinar" }).first())
+    .toHaveAttribute("href", "/cards?cardId=card-1");
   await page.screenshot({ path: path.join(shots, "calendar-demo-1280x800.png") });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ path: path.join(shots, "calendar-demo-1440x900.png") });
@@ -185,25 +170,17 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   await expect(surface.getByText("Synthetic Newsletter")).toHaveCount(0);
   await expect(surface.locator(".calendar-alert-summary")).not.toHaveAttribute("open", "");
   await surface.locator(".calendar-alert-summary > summary").click();
+  await expect(surface.getByText("Event falls on a public holiday")).toBeVisible();
   await surface.getByRole("button", { name: "Dismiss" }).click();
-  await expect(surface.getByText("Activity overlaps a public holiday")).toHaveCount(0);
-  await surface.locator("select[data-view]").selectOption("month");
-  await surface.locator(".calendar-activity").filter({ hasText: "Synthetic Webinar" }).first().click();
-  await surface.getByLabel("Title").fill("Changed Webinar");
-  await surface.getByRole("button", { name: "Save activity" }).click();
-  await expect(surface.locator(".calendar-alert-summary > summary")).toHaveText("1 planning alert");
-  await surface.locator(".calendar-alert-summary > summary").click();
-  await expect(surface.getByText("Activity overlaps a public holiday")).toBeVisible();
-  await surface.locator("select[data-view]").selectOption("week");
-  await surface.locator("[data-type]").selectOption("other");
-  await expect(surface.getByText("No matching activities")).toBeVisible();
+  await expect(surface.getByText("Event falls on a public holiday")).toHaveCount(0);
+  await surface.locator("[data-type]").selectOption("course");
+  await expect(surface.getByText("No matching events")).toBeVisible();
   await surface.screenshot({
     path: path.join(shots, "production-empty-filter.png"),
   });
   failed = true;
   await surface.locator("[data-next]").click();
   await expect(surface.getByText("Calendar unavailable")).toBeVisible();
-  await expect(surface.getByText("Activity overlaps a public holiday")).toHaveCount(0);
   await surface.screenshot({ path: path.join(shots, "production-error.png") });
   failed = false;
   await page.setViewportSize({ width: 390, height: 844 });
@@ -223,40 +200,20 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   });
   await surface.screenshot({ path: path.join(shots, "production-mobile.png") });
 });
-test("production calendar renders cross-year ISO weeks and Berlin DST boundary dates", async ({
+test("production calendar renders cross-year ISO weeks and weekend events at the Berlin DST boundary", async ({
   page,
 }) => {
   await page.clock.setFixedTime(new Date("2026-12-31T12:00:00Z"));
-  let savedTimed;
-
+  const entry = (id, title, date) => ({ id: `card:${id}`, kind: "webinar", kindLabel: "Webinar", title, date,
+    status: "announced", entity: { type: "card", id }, href: `/cards?cardId=${id}` });
   await page.route("**/api/calendar-items**", (route) => {
     const u = new URL(route.request().url());
     if (u.pathname.endsWith("/overlays"))
       return route.fulfill({ json: { items: [] } });
-    if (route.request().method() === "PUT") {
-      savedTimed = route.request().postDataJSON();
-      return route.fulfill({ json: { ...savedTimed, id: "dst-edge", version: 2 } });
-    }
-    const isAutumn = /^2026-10-/.test(u.searchParams.get("from") || "");
     const isDst = /^2026-0[23]-/.test(u.searchParams.get("from") || "");
     return route.fulfill({
       json: {
-        items: isAutumn ? [{ id: "autumn-edge", activityType: "webinar", title: "Autumn repeated hour",
-          status: "confirmed", allDay: false, startsAt: "2026-10-25T00:30:00.000Z", endsAt: "2026-10-25T01:45:00.000Z",
-          startKey: "2026-10-25", endKey: "2026-10-25", version: 1 }] : isDst ? [{id:"dst-edge",activityType:"webinar",title:"DST-safe timed activity",status:"confirmed",allDay:false,startsAt:"2026-03-29T01:30:00.000Z",endsAt:"2026-03-29T02:30:00.000Z",startKey:"2026-03-29",endKey:"2026-03-29",version:1}] : [
-          {
-            id: "year-edge",
-            activityType: "other",
-            title: "Cross-year activity",
-            status: "confirmed",
-            allDay: true,
-            startDate: "2026-12-31",
-            endDate: "2027-01-01",
-            startKey: "2026-12-31",
-            endKey: "2027-01-01",
-            version: 1,
-          },
-        ],
+        items: isDst ? [entry("dst-edge", "DST Sunday webinar", "2026-03-29")] : [entry("year-edge", "New Year webinar", "2027-01-01")],
         holidays: [],
         holidayMetadata: {},
         alerts: [],
@@ -273,7 +230,7 @@ test("production calendar renders cross-year ISO weeks and Berlin DST boundary d
   const surface = page.locator(".calendar-surface");
   await expect(surface.locator("[role='status']")).toHaveText("");
   await surface.locator("select[data-view]").selectOption("week");
-  await expect(surface.getByText("Cross-year activity").first()).toBeVisible();
+  await expect(surface.getByText("New Year webinar").first()).toBeVisible();
   await expect(surface.locator('time[datetime="2027-01-01"]')).toBeVisible();
   await expect(surface.locator(".calendar-weeks > .calendar-week")).toHaveCount(1);
   await expect(surface.locator(".calendar-weeks > .calendar-week > section.calendar-day")).toHaveCount(5);
@@ -287,38 +244,11 @@ test("production calendar renders cross-year ISO weeks and Berlin DST boundary d
   await expect(surface.locator('time[datetime="2026-03-29"]')).toHaveCount(0);
   await surface.locator('[data-day="2026-03-27"] .calendar-weekend-note').click();
   const dayDialog = surface.locator("[data-day-dialog]");
-  await expect(dayDialog.getByText("DST-safe timed activity")).toBeVisible();
-  await dayDialog.locator('[data-edit="dst-edge"]').click();
-  await expect(surface.getByLabel("Start date")).toHaveValue("2026-03-29");
-  await expect(surface.getByLabel("End date")).toHaveValue("2026-03-29");
-  await expect(surface.getByLabel("Start time (Berlin)")).toHaveValue("03:30");
-  await expect(surface.getByLabel("End time (Berlin)")).toHaveValue("04:30");
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.screenshot({ path: path.join(shots, "calendar-demo-timed-editor-1280x800.png") });
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.screenshot({ path: path.join(shots, "calendar-demo-timed-editor-1440x900.png") });
-  await surface.getByLabel("Title", { exact: true }).fill("Edited timed activity");
-  await surface.getByRole("button", { name: "Save activity" }).click();
-  await expect.poll(() => savedTimed?.startsAt).toBe("2026-03-29T01:30:00.000Z");
-  expect(savedTimed.endsAt).toBe("2026-03-29T02:30:00.000Z");
-  expect(savedTimed.allDay).toBe(false);
-  expect(savedTimed).not.toHaveProperty("startDate");
-  expect(savedTimed).not.toHaveProperty("startTime");
+  await expect(dayDialog.getByRole("link", { name: "DST Sunday webinar" })).toHaveAttribute("href", "/cards?cardId=dst-edge");
   await surface.screenshot({
     path: path.join(shots, "production-dst-boundary.png"),
   });
-  await page.clock.setFixedTime(new Date("2026-10-25T12:00:00Z"));
-  await surface.locator("[data-today]").click();
-  await surface.locator('[data-day="2026-10-23"] .calendar-weekend-note').click();
-  await dayDialog.locator(".calendar-day-timeline-row", { hasText: "Autumn repeated hour" }).locator("[data-edit]").click();
-  await expect(surface.getByLabel("Start time (Berlin)")).toHaveValue("02:30");
-  await expect(surface.getByLabel("End time (Berlin)")).toHaveValue("02:45");
-  await surface.getByLabel("Title", { exact: true }).fill("Autumn title edit");
-  await surface.getByRole("button", { name: "Save activity" }).click();
-  await expect.poll(() => savedTimed?.startsAt).toBe("2026-10-25T00:30:00.000Z");
-  expect(savedTimed.endsAt).toBe("2026-10-25T01:45:00.000Z");
 });
-
 
 test("calendar grid is ready before the external overlay response", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-07-01T12:00:00Z"));
@@ -405,9 +335,6 @@ test("calendar header and toolbar keep the mobile grid within the top 30%", asyn
     await expect(surface.getByRole("heading", { name: "Calendar", exact: true, level: 1 })).toBeVisible();
     const top = await surface.locator(".calendar-grid").evaluate((node) => node.getBoundingClientRect().top);
     expect(top).toBeLessThanOrEqual(Math.round(viewport.height * 0.3) + 2);
-    await surface.locator(".calendar-controls").getByRole("button", { name: "Add activity", exact: true }).click();
-    await expect(surface.locator("dialog[open]")).toBeVisible();
-    await surface.getByRole("button", { name: "Cancel", exact: true }).click();
     await page.screenshot({ path: path.join(shots, `calendar-page-header-${viewport.width}x${viewport.height}.png`) });
   }
 });
@@ -422,8 +349,8 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
     const weekendItems = [
       { id: "saturday", title: "Cohort kickoff", date: "2026-11-07" },
       { id: "sunday", title: "Hackathon demo", date: "2026-11-08" },
-    ].map(({ id, title, date }) => ({ id, title, activityType: "webinar", status: "confirmed",
-      allDay: true, startDate: date, endDate: date, startKey: date, endKey: date, version: 1 }));
+    ].map(({ id, title, date }) => ({ id: `card:${id}`, kind: "webinar", kindLabel: "Webinar", title, date,
+      status: "announced", entity: { type: "card", id }, href: `/cards?cardId=${id}` }));
     await page.route("**/api/calendar-items**", (route) => route.fulfill({ json:
       new URL(route.request().url()).pathname.endsWith("/overlays") ? { items: [] } : {
         items: weekendItems, holidays: [{ kind: "berlin-public-holiday", name: "Midweek holiday",
@@ -481,7 +408,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
       await surface.locator(".calendar-layers").evaluate((node) => { node.scrollLeft = 0; });
     }
     await page.screenshot({ path: path.join(shots, `calendar-weekdays-${viewport.width}x${viewport.height}.png`) });
-    // The Friday note opens the weekend day, where its entries stay editable.
+    // The Friday note opens the weekend day, where each entry links to its Card.
     const note = surface.locator('[data-day="2026-11-06"] .calendar-weekend-note');
     await note.scrollIntoViewIfNeeded();
     const noteBox = await note.boundingBox();
@@ -490,9 +417,8 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
     await note.click();
     const dayDialog = surface.locator("[data-day-dialog]");
     await expect(dayDialog).toBeVisible();
-    await dayDialog.locator('[data-edit="saturday"]').click();
-    await expect(surface.getByLabel("Title", { exact: true })).toHaveValue("Cohort kickoff");
-    await surface.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dayDialog.getByRole("link", { name: "Cohort kickoff" })).toHaveAttribute("href", "/cards?cardId=saturday");
+    await dayDialog.locator("[data-day-close]").click();
     await controls.getByLabel("Calendar view", { exact: true }).selectOption("week");
     await expect(surface.locator(".calendar-week")).toHaveCount(1);
     await expectWeekdaysOnly();
@@ -527,8 +453,8 @@ test("open event slots show only from today and a past week never waits on the o
       } });
     }
     return route.fulfill({ json: { ...payload, alerts: [], holidays: [], items: [{
-      id: "past-webinar", activityType: "webinar", title: "Past webinar", status: "confirmed", allDay: true,
-      startDate: "2026-09-08", endDate: "2026-09-08", startKey: "2026-09-08", endKey: "2026-09-08", version: 1,
+      id: "card:past-webinar", kind: "webinar", kindLabel: "Webinar", title: "Past webinar", date: "2026-09-08",
+      status: "after-event", entity: { type: "card", id: "past-webinar" }, href: "/cards?cardId=past-webinar",
     }] } });
   });
   await page.route("**/api/**", (route) => new URL(route.request().url()).pathname.includes("/calendar-items")

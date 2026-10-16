@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { guestCellDate, type PodcastScheduleRow } from "../scripts/import-calendar";
+import { guestCellDate, type PodcastScheduleRow } from "../scripts/podcast-schedule";
 import {
   mergeSources,
   nameKey,

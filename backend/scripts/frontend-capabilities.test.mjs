@@ -72,7 +72,7 @@ const REQUIRED = {
   },
   calendar: {
     route: "/calendar",
-    states: ["empty", "populated", "create-edit-reload", "overlays-alerts", "week-date-navigation", "validation", "conflict", "failure"],
+    states: ["empty", "populated", "entity-links", "overlays-alerts", "week-date-navigation", "failure"],
   },
   "process-docs": {
     route: "/processes",

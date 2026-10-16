@@ -182,10 +182,6 @@ function createCalendarDom() {
   const status = surface.setQuery('[role="status"]', new TestElement("p"));
   const grid = surface.setQuery("[data-calendar]", new TestElement("div"));
   const alerts = surface.setQuery("[data-alerts]", new TestElement("div"));
-  const dialog = surface.setQuery("dialog", new TestElement("dialog"));
-  const form = dialog.setQuery("form", new TestElement("form"));
-  form.elements.allDay.checked = true;
-  form.setQuery('[role="alert"]', new TestElement("p"));
   const view = surface.setQuery("[data-view]", new TestElement("select"));
   view.value = "month";
   const type = surface.setQuery("[data-type]", new TestElement("select"));
@@ -199,7 +195,7 @@ function createCalendarDom() {
   });
   surface.setQueryAll("[data-layer]", layers);
   surface.setQuery("[data-calendar-indicator]", new TestElement("span"));
-  for (const selector of ["[data-prev]", "[data-today]", "[data-next]", "[data-cancel]", "[data-controls-toggle]"]) {
+  for (const selector of ["[data-prev]", "[data-today]", "[data-next]", "[data-controls-toggle]"]) {
     surface.setQuery(selector, new TestElement("button"));
   }
   const pickerToggle = surface.setQuery("[data-picker-toggle]", new TestElement("button"));
@@ -228,18 +224,14 @@ function createCalendarDom() {
   const dayBody = dayDialog.setQuery("[data-day-body]", new TestElement("div"));
   const dayClose = dayDialog.setQuery("[data-day-close]", new TestElement("button"));
   const dayCloseFoot = dayDialog.setQuery("[data-day-close-foot]", new TestElement("button"));
-  const dayAddActivity = dayDialog.setQuery("[data-day-add-activity]", new TestElement("button"));
   return {
     alerts,
-    dayAddActivity,
     dayBody,
     dayClose,
     dayCloseFoot,
     dayDialog,
     daySubtitle,
     dayTitle,
-    dialog,
-    form,
     grid,
     layers,
     pickerCurrentMonth,
@@ -350,6 +342,14 @@ function createPlanningHarness({
   return { documentList, requests, routeTitles, surface };
 }
 
+// A calendar entry as the API projects it from an entity.
+function calendarEntry({ id, title, date, kind = "webinar", kindLabel = "Webinar", status = "announced" }) {
+  return {
+    id: `card:${id}`, kind, kindLabel, title, date, status,
+    entity: { type: "card", id }, href: `/cards?cardId=${id}`,
+  };
+}
+
 describe("Planning surface production behavior", () => {
   test("renders Calendar activities, holiday layers, overlays, and alerts honestly", async () => {
     const dom = createCalendarDom();
@@ -397,12 +397,9 @@ describe("Planning surface production behavior", () => {
           ],
           items: [
             {
-              activityType: "podcast-live",
-              endKey: "2026-08-13",
-              id: "activity-1",
-              startKey: "2026-08-13",
-              status: "confirmed",
-              title: "Community podcast",
+              id: "podcast-recording:episode-1", kind: "podcast-recording", kindLabel: "Podcast recording",
+              title: "Community podcast · Ada Example", date: "2026-08-13", status: "booked",
+              entity: { type: "podcast-episode", id: "episode-1" }, href: "/podcast?episodeId=episode-1",
             },
           ],
         };
@@ -417,7 +414,10 @@ describe("Planning surface production behavior", () => {
     assert.deepEqual(harness.routeTitles, ["Calendar"]);
     assert.match(dom.status.textContent, /Holiday information may be out of date/);
     assert.match(dom.status.textContent, /outside the verified holiday window/);
-    assert.match(dom.grid.innerHTML, /Community podcast/);
+    // An event is its entity: the chip links to the episode it comes from.
+    assert.match(dom.grid.innerHTML, /<a\s+class="calendar-activity "\s+href="\/podcast\?episodeId=episode-1"\s+title="Community podcast · Ada Example \(Podcast recording\)"/);
+    assert.match(dom.grid.innerHTML, /<small>Podcast recording<\/small>/);
+    assert.doesNotMatch(dom.grid.innerHTML, /data-edit/);
     assert.match(dom.grid.innerHTML, /Example Holiday/);
     // The holiday marks its whole day cell, not just a chip inside it.
     assert.match(dom.grid.innerHTML, /class="calendar-day[^"]*has-public-holiday"[^>]*aria-label="Thursday, August 13, 2026, public holiday"/);
@@ -426,7 +426,7 @@ describe("Planning surface production behavior", () => {
     // Alexey's personal events only feed slot availability; they are never items.
     assert.doesNotMatch(dom.grid.innerHTML, /Tejas at DataTalks\.Club Podcast/);
     assert.doesNotMatch(dom.grid.innerHTML, /is-owner-calendar/);
-    assert.match(dom.alerts.innerHTML, /Activity overlaps a public holiday/);
+    assert.match(dom.alerts.innerHTML, /Event falls on a public holiday/);
     assert.match(dom.grid.innerHTML, /calendar-week-heading/);
     assert.match(dom.grid.innerHTML, /calendar-week-number/);
     assert.match(dom.grid.innerHTML, /<small class="iso-week">\d+<\/small>/);
@@ -444,8 +444,7 @@ describe("Planning surface production behavior", () => {
     const harness = createPlanningHarness({
       calendar: dom,
       request: async (url) => String(url).includes("/overlays") ? overlay : {
-        items: [{ id: "pending-overlay", title: "Ready planning activity", allDay: true,
-          startDate: "2026-08-13", endDate: "2026-08-13" }],
+        items: [calendarEntry({ id: "pending-overlay", title: "Ready planning activity", date: "2026-08-13" })],
         holidays: [], alerts: [],
       },
     });
@@ -559,8 +558,7 @@ describe("Planning surface production behavior", () => {
       today: "2026-10-14",
       request: async (url) => {
         if (!String(url).includes("/overlays")) {
-          return { items: [{ id: "past-webinar", title: "Past webinar", activityType: "webinar", allDay: true,
-            startDate: "2026-09-08", endDate: "2026-09-08" }], holidays: [], alerts: [] };
+          return { items: [calendarEntry({ id: "past-webinar", title: "Past webinar", date: "2026-09-08" })], holidays: [], alerts: [] };
         }
         return new Promise((resolve) => { finishOverlay = resolve; });
       },
@@ -713,8 +711,8 @@ describe("Planning surface production behavior", () => {
           alerts: [],
           holidays: [{ kind: "school-holiday", name: "Weekend school holiday", startDate: "2026-08-15", endDate: "2026-08-16" }],
           items: [
-            { id: "sat", activityType: "webinar", status: "confirmed", title: "Cohort kickoff", startKey: "2026-08-15", endKey: "2026-08-15" },
-            { id: "sun", activityType: "webinar", status: "confirmed", title: "Hackathon demo", startKey: "2026-08-16", endKey: "2026-08-16" },
+            calendarEntry({ id: "sat", title: "Cohort kickoff", date: "2026-08-15" }),
+            calendarEntry({ id: "sun", title: "Hackathon demo", date: "2026-08-16" }),
           ],
         };
       },
@@ -762,9 +760,9 @@ describe("Planning surface production behavior", () => {
           alerts: [],
           holidays: [],
           items: [
-            { id: "sat", activityType: "webinar", status: "confirmed", title: "Saturday stream", startKey: "2026-08-01", endKey: "2026-08-01" },
-            { id: "sun", activityType: "webinar", status: "confirmed", title: "Sunday demo", startKey: "2026-08-02", endKey: "2026-08-02" },
-            { id: "mid", activityType: "webinar", status: "confirmed", title: "Mid-month weekend", startKey: "2026-08-08", endKey: "2026-08-08" },
+            calendarEntry({ id: "sat", title: "Saturday stream", date: "2026-08-01" }),
+            calendarEntry({ id: "sun", title: "Sunday demo", date: "2026-08-02" }),
+            calendarEntry({ id: "mid", title: "Mid-month weekend", date: "2026-08-08" }),
           ],
         };
       },
@@ -784,22 +782,8 @@ describe("Planning surface production behavior", () => {
     assert.doesNotMatch(nextMonday, /calendar-weekend-note/);
   });
 
-  test("creates, edits, and dismisses Calendar data through canonical mutation contracts", async () => {
+  test("is read-only: no create or edit, events link to their entities, alerts dismiss", async () => {
     const dom = createCalendarDom();
-    let activities = [
-      {
-        activityType: "webinar",
-        endDate: "2026-08-13",
-        endKey: "2026-08-13",
-        id: "activity-1",
-        notes: "Review agenda",
-        startDate: "2026-08-13",
-        startKey: "2026-08-13",
-        status: "tentative",
-        title: "Community webinar",
-        version: 2,
-      },
-    ];
     const harness = createPlanningHarness({
       calendar: dom,
       request: async (url, options) => {
@@ -807,112 +791,40 @@ describe("Planning surface production behavior", () => {
         if (options.method) return {};
         if (value.pathname.endsWith("/overlays")) return { items: [] };
         return {
-          alerts: [
-            {
-              fingerprint: "calendar-alert",
-              reasonCode: "school-holiday-overlap",
-              severity: "warning",
-            },
-          ],
+          alerts: [{ fingerprint: "calendar-alert", reasonCode: "school-holiday-overlap", severity: "warning", affectedIds: ["card:card-1"] }],
           holidays: [],
-          items: activities,
+          items: [calendarEntry({ id: "card-1", title: "Community webinar · Ada Example", date: "2026-08-13" })],
         };
       },
     });
     await harness.surface.renderCalendarSurface();
     await nextTicks();
+    // No Add activity button and no activity dialog.
+    assert.deepEqual(dom.surface.querySelector("[data-calendar-indicator]").insertedBefore || [], []);
+    assert.doesNotMatch(dom.surface.innerHTML, /data-activity-dialog|Add activity|data-day-add-activity/);
+    assert.match(dom.grid.innerHTML, /href="\/cards\?cardId=card-1"/);
+    assert.match(dom.alerts.innerHTML, /Event falls in the school holidays/);
+    assert.match(dom.alerts.innerHTML, /Community webinar · Ada Example — /);
 
-    // Add activity sits in the calendar toolbar, ahead of the loading
-    // indicator and the layers toggle, as the page's one create action.
-    const [addActivity] = dom.surface.querySelector("[data-calendar-indicator]").insertedBefore;
-    assert.equal(addActivity.title, "Add activity (C)");
-    assert.equal(addActivity.getAttribute("aria-keyshortcuts"), "c");
-    addActivity.click();
-    assert.equal(dom.dialog.open, true);
-    assert.notEqual(dom.form.elements.startDate.value, "");
-    dom.surface.querySelector("[data-cancel]").onclick();
-    assert.equal(dom.dialog.open, false);
-
-    dom.grid.onclick({
-      target: {
-        closest: () => ({ dataset: { edit: "activity-1" } }),
-      },
-    });
-    assert.equal(dom.dialog.open, true);
-    assert.equal(dom.form.elements.title.value, "Community webinar");
-    assert.equal(dom.form.elements.version.value, 2);
-
-    dom.form.formEntries = [
-      ["id", "activity-1"],
-      ["version", "2"],
-      ["title", "Updated webinar"],
-      ["activityType", "webinar"],
-      ["status", "confirmed"],
-      ["startDate", "2026-08-13"],
-      ["endDate", "2026-08-13"],
-    ];
-    await dom.form.onsubmit({ preventDefault() {} });
+    await dom.alerts.onclick({ target: { closest: () => ({ dataset: { dismiss: "calendar-alert" } }) } });
     await nextTicks();
-    const update = harness.requests.find(
-      (entry) => entry.options.method === "PUT",
-    );
-    assert.match(update.url, /calendar-items\/activity-1$/);
-    assert.deepEqual(JSON.parse(update.options.body), {
-      activityType: "webinar",
-      allDay: true,
-      endDate: "2026-08-13",
-      startDate: "2026-08-13",
-      status: "confirmed",
-      timeZone: "Europe/Berlin",
-      title: "Updated webinar",
-      version: 2,
-    });
-
-    await dom.alerts.onclick({
-      target: {
-        closest: () => ({ dataset: { dismiss: "calendar-alert" } }),
-      },
-    });
-    await nextTicks();
-    assert.equal(
-      harness.requests.some(
-        (entry) =>
-          entry.options.method === "POST" &&
-          entry.url.endsWith("/alerts/calendar-alert/dismiss"),
-      ),
-      true,
-    );
-    activities = [];
+    assert.ok(harness.requests.some((entry) => entry.options.method === "POST" && entry.url.endsWith("/alerts/calendar-alert/dismiss")));
+    assert.equal(harness.requests.some((entry) => ["PUT", "DELETE"].includes(entry.options.method)), false);
   });
 
-  test("retains Calendar form input on mutation failure and renders load failure recovery", async () => {
+  test("renders load failure recovery", async () => {
     const dom = createCalendarDom();
     let failLoad = false;
-    const harness = createPlanningHarness({
+    createPlanningHarness({
       calendar: dom,
-      request: async (url, options) => {
+      request: async (url) => {
         const value = new URL(url);
-        if (options.method) throw new Error("Version conflict");
         if (value.pathname.endsWith("/overlays")) return { items: [] };
         if (failLoad) throw new Error("Calendar offline");
         return { alerts: [], holidays: [], items: [] };
       },
-    });
-    await harness.surface.renderCalendarSurface();
+    }).surface.renderCalendarSurface();
     await nextTicks();
-    dom.dialog.showModal();
-    dom.form.formEntries = [
-      ["title", "Retained activity"],
-      ["startDate", "2026-08-13"],
-      ["endDate", "2026-08-13"],
-    ];
-    await dom.form.onsubmit({ preventDefault() {} });
-    assert.equal(dom.dialog.open, true);
-    assert.equal(
-      dom.form.querySelector('[role="alert"]').textContent,
-      "Could not save activity: Version conflict",
-    );
-
     failLoad = true;
     await dom.view.onchange();
     await nextTicks();
@@ -1070,18 +982,7 @@ describe("Planning surface production behavior", () => {
           alerts: [],
           holidays: [],
           items: [
-            {
-              id: "activity-1",
-              title: "Community webinar",
-              activityType: "webinar",
-              status: "confirmed",
-              startDate: "2026-08-13",
-              endDate: "2026-08-13",
-              startKey: "2026-08-13",
-              endKey: "2026-08-13",
-              allDay: true,
-              version: 1,
-            },
+            calendarEntry({ id: "activity-1", title: "Community webinar", date: "2026-08-13" }),
           ],
         };
       },
@@ -1111,7 +1012,9 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.dayBody.innerHTML, /Podcast with Guest/);
     assert.match(dom.dayBody.innerHTML, /Team sync/);
     assert.match(dom.dayBody.innerHTML, /Partner discussion/);
-    assert.match(dom.dayBody.innerHTML, /Community webinar/);
+    // The event links to its Card in the same tab; owner-calendar events open Google in a new one.
+    assert.match(dom.dayBody.innerHTML, /<a class="calendar-day-timeline-title" href="\/cards\?cardId=activity-1">Community webinar<\/a>/);
+    assert.doesNotMatch(dom.dayBody.innerHTML, /data-edit|Edit<\/button>/);
 
     // Click close
     dom.dayClose.onclick();
@@ -1125,8 +1028,7 @@ describe("Planning surface production behavior", () => {
       today: "2026-08-14",
       request: async (url) => String(url).includes("/overlays") ? { items: [] } : {
         alerts: [], holidays: [],
-        items: [{ id: "past-webinar", title: "Past webinar", activityType: "webinar", status: "confirmed",
-          startDate: "2026-08-13", endDate: "2026-08-13", startKey: "2026-08-13", endKey: "2026-08-13", allDay: true, version: 1 }],
+        items: [calendarEntry({ id: "past-webinar", title: "Past webinar", date: "2026-08-13" })],
       },
     });
     await harness.surface.renderCalendarSurface();
@@ -1138,55 +1040,6 @@ describe("Planning surface production behavior", () => {
     assert.equal(harness.requests.length, before, "a past day makes no overlay request");
     assert.match(dom.dayBody.innerHTML, /Past webinar/);
     assert.doesNotMatch(dom.dayBody.innerHTML, /Event Slot|Available/);
-  });
-
-  // Timed activities are UTC instants; the day schedule shows Berlin time.
-  // Berlin clocks jump from 02:00 to 03:00 on 29 March 2026.
-  test("shows day schedule activity times in Berlin time across the DST change", async () => {
-    const dom = createCalendarDom();
-    const harness = createPlanningHarness({
-      calendar: dom,
-      today: "2026-03-27",
-      request: async (url) => {
-        const value = new URL(url);
-        if (value.pathname.endsWith("/overlays")) return { items: [] };
-        return {
-          alerts: [],
-          holidays: [],
-          items: [
-            {
-              id: "before-change", title: "Night sync", activityType: "webinar", status: "confirmed",
-              allDay: false, startsAt: "2026-03-29T00:30:00.000Z", endsAt: "2026-03-29T00:45:00.000Z",
-              startKey: "2026-03-29", endKey: "2026-03-29", timeZone: "Europe/Berlin",
-            },
-            {
-              id: "after-change", title: "DST test item", activityType: "webinar", status: "confirmed",
-              allDay: false, startsAt: "2026-03-29T01:30:00.000Z", endsAt: "2026-03-29T02:30:00.000Z",
-              startKey: "2026-03-29", endKey: "2026-03-29", timeZone: "Europe/Berlin",
-            },
-            {
-              id: "weekday", title: "Monday webinar", activityType: "webinar", status: "confirmed",
-              allDay: false, startsAt: "2026-03-30T15:00:00.000Z", endsAt: "2026-03-30T16:00:00.000Z",
-              startKey: "2026-03-30", endKey: "2026-03-30", timeZone: "Europe/Berlin",
-            },
-          ],
-        };
-      },
-    });
-    await harness.surface.renderCalendarSurface();
-    await nextTicks();
-    // Grid chip: 15:00 UTC is 17:00 in Berlin summer time.
-    assert.match(dom.grid.innerHTML, /calendar-chip-time">17:00<\/b> Monday webinar/);
-
-    await dom.grid.onclick({
-      target: { closest: (sel) => (sel === "[data-open-day]" ? { dataset: { openDay: "2026-03-29" } } : null) },
-    });
-    await nextTicks();
-    const body = dom.dayBody.innerHTML;
-    assert.match(body, /01:30–01:45<\/span>\s*<span class="calendar-day-timeline-title">Night sync/);
-    assert.match(body, /03:30–04:30<\/span>\s*<span class="calendar-day-timeline-title">DST test item/);
-    assert.doesNotMatch(body, /00:30|02:30/);
-    assert.ok(body.indexOf("Night sync") < body.indexOf("DST test item"));
   });
 
   const weeklyIssue = (overrides = {}) => ({

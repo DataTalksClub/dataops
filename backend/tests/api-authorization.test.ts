@@ -74,7 +74,6 @@ const AUTHENTICATED_ROUTES: RouteCase[] = [
   { method: 'GET', path: '/api/newsletter-issues' },
   { method: 'POST', path: '/api/newsletter-issues', body: {} },
   { method: 'GET', path: '/api/calendar-items' },
-  { method: 'POST', path: '/api/calendar-items', body: {} },
   { method: 'GET', path: '/api/podcast-episodes' },
   { method: 'POST', path: '/api/podcast-episodes', body: {} },
   { method: 'POST', path: '/api/cron/run', body: {} },

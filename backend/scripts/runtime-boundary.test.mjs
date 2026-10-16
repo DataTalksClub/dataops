@@ -30,11 +30,11 @@ test('runtime boundary rejects importer inputs in a SAM bundle manifest', () => 
       schemaVersion: 1,
       format: 'dataops-sam-esbuild',
       bundledOutputs: [],
-      inputs: ['backend/scripts/import-calendar.ts'],
+      inputs: ['backend/scripts/podcast-schedule.ts'],
     }));
     const result = verify(artifact);
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /import-calendar\.ts/);
+    assert.match(result.stderr, /podcast-schedule\.ts/);
   } finally {
     rmSync(artifact, { recursive: true, force: true });
   }

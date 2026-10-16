@@ -39,7 +39,7 @@ function fakeFetch(handler) {
 }
 
 describe("Calendar CLI commands", () => {
-  test("calendar list fetches activities, holidays, and alerts", async () => {
+  test("calendar list fetches events, holidays, and alerts", async () => {
     const io = captureIo();
     const requests = [];
 
@@ -51,22 +51,12 @@ describe("Calendar CLI commands", () => {
         JSON.stringify({
           items: [
             {
-              id: "act-1",
-              title: "Community webinar",
-              activityType: "webinar",
-              status: "confirmed",
-              startDate: "2026-08-13",
-              endDate: "2026-08-13",
-              allDay: true,
+              id: "card:card-1", kind: "webinar", kindLabel: "Webinar", title: "Community webinar · Ada Example",
+              date: "2026-08-13", status: "announced", entity: { type: "card", id: "card-1" }, href: "/cards?cardId=card-1",
             },
             {
-              id: "act-2",
-              title: "Live podcast",
-              activityType: "podcast-live",
-              status: "announced",
-              startsAt: "2026-08-15T10:30:00Z",
-              endsAt: "2026-08-15T11:30:00Z",
-              allDay: false,
+              id: "podcast-recording:ep-1", kind: "podcast-recording", kindLabel: "Podcast recording", title: "Live podcast · Grace Sample",
+              date: "2026-08-15", status: "booked", entity: { type: "podcast-episode", id: "ep-1" }, href: "/podcast?episodeId=ep-1",
             },
           ],
           holidays: [
@@ -94,8 +84,8 @@ describe("Calendar CLI commands", () => {
       io,
     );
     assert.equal(code, 0);
-    assert.match(io.text(), /Community webinar/);
-    assert.match(io.text(), /Live podcast/);
+    assert.match(io.text(), /2026-08-13\s+\[Webinar\]\s+\[announced\]\s+Community webinar · Ada Example  \(card card-1\)/);
+    assert.match(io.text(), /Live podcast · Grace Sample  \(podcast-episode ep-1\)/);
     assert.match(io.text(), /Summer Break/);
     assert.match(io.text(), /Active Alerts/);
     assert.match(io.text(), /fp-summer-123/);
@@ -107,7 +97,8 @@ describe("Calendar CLI commands", () => {
       return new Response(
         JSON.stringify({
           items: [
-            { id: "act-1", title: "Webinar", activityType: "webinar", allDay: true },
+            { id: "card:c1", kind: "webinar", kindLabel: "Webinar", title: "Webinar", date: "2026-08-03" },
+            { id: "podcast-release:e1", kind: "podcast-release", kindLabel: "Podcast release", title: "Release", date: "2026-08-04" },
           ],
           holidays: [],
           alerts: [],
@@ -117,174 +108,21 @@ describe("Calendar CLI commands", () => {
     };
 
     const code = await run(
-      ["calendar", "list", "--from", "2026-08-01", "--to", "2026-08-05", "--json"],
+      ["calendar", "list", "--from", "2026-08-01", "--to", "2026-08-05", "--type", "webinar", "--json"],
       io,
     );
     assert.equal(code, 0);
     const parsed = JSON.parse(io.text());
-    assert.equal(parsed.items[0].title, "Webinar");
+    assert.deepEqual(parsed.items.map((item) => item.title), ["Webinar"]);
   });
 
-  test("calendar detail shows full activity details", async () => {
-    const io = captureIo();
-    globalThis.fetch = async (url) => {
-      assert.match(String(url), /\/api\/calendar-items\/act-123$/);
-      return new Response(
-        JSON.stringify({
-          id: "act-123",
-          title: "Quarterly Planning Workshop",
-          activityType: "workshop",
-          status: "confirmed",
-          version: 3,
-          allDay: false,
-          startsAt: "2026-08-20T14:30:00Z",
-          endsAt: "2026-08-20T16:30:00Z",
-          url: "https://zoom.us/j/12345",
-          notes: "Bring draft objectives",
-          cardId: "card-456",
-          templateId: "tpl-789",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
-    };
-
-    const code = await run(["calendar", "detail", "act-123"], io);
-    assert.equal(code, 0);
-    assert.match(io.text(), /Quarterly Planning Workshop/);
-    assert.match(io.text(), /workshop/);
-    assert.match(io.text(), /confirmed/);
-    assert.match(io.text(), /card-456/);
-    assert.match(io.text(), /https:\/\/zoom\.us\/j\/12345/);
-  });
-
-  test("calendar create validates flags and posts canonical payload", async () => {
-    const io = captureIo();
-    let sentBody = null;
-
-    globalThis.fetch = async (url, options) => {
-      assert.match(String(url), /\/api\/calendar-items$/);
-      assert.equal(options.method, "POST");
-      sentBody = JSON.parse(options.body);
-      return new Response(
-        JSON.stringify({
-          id: "created-act-1",
-          ...sentBody,
-        }),
-        { status: 201, headers: { "Content-Type": "application/json" } },
-      );
-    };
-
-    const code = await run(
-      [
-        "calendar",
-        "create",
-        "--title",
-        "Hands-on LLM Workshop",
-        "--type",
-        "workshop",
-        "--date",
-        "2026-09-10",
-        "--status",
-        "confirmed",
-        "--link",
-        "https://datatalks.club/events",
-      ],
-      io,
-    );
-    assert.equal(code, 0);
-    assert.deepEqual(sentBody, {
-      title: "Hands-on LLM Workshop",
-      activityType: "workshop",
-      status: "confirmed",
-      allDay: true,
-      startDate: "2026-09-10",
-      endDate: "2026-09-10",
-      url: "https://datatalks.club/events",
-    });
-    assert.match(io.text(), /Created calendar activity "Hands-on LLM Workshop"/);
-  });
-
-  test("calendar edit fetches current version and merges updates", async () => {
-    const io = captureIo();
-    let putBody = null;
-
-    globalThis.fetch = async (url, options) => {
-      const u = String(url);
-      if (options.method === "GET") {
-        return new Response(
-          JSON.stringify({
-            id: "act-edit-1",
-            title: "Old Title",
-            activityType: "webinar",
-            status: "tentative",
-            version: 5,
-            allDay: true,
-            startDate: "2026-08-15",
-            endDate: "2026-08-15",
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-      if (options.method === "PUT") {
-        putBody = JSON.parse(options.body);
-        return new Response(
-          JSON.stringify({
-            id: "act-edit-1",
-            ...putBody,
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-      throw new Error(`Unexpected request: ${options.method} ${u}`);
-    };
-
-    const code = await run(
-      [
-        "calendar",
-        "edit",
-        "act-edit-1",
-        "--title",
-        "New Title",
-        "--status",
-        "announced",
-      ],
-      io,
-    );
-    assert.equal(code, 0);
-    assert.equal(putBody.version, 5);
-    assert.equal(putBody.title, "New Title");
-    assert.equal(putBody.status, "announced");
-    assert.equal(putBody.activityType, "webinar");
-    assert.match(io.text(), /Updated calendar activity "New Title"/);
-  });
-
-  test("calendar delete sends DELETE with existing version", async () => {
-    const io = captureIo();
-    let deleteBody = null;
-
-    globalThis.fetch = async (url, options) => {
-      const u = String(url);
-      if (options.method === "GET") {
-        return new Response(
-          JSON.stringify({
-            id: "act-del-1",
-            title: "To Be Deleted",
-            version: 2,
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-      if (options.method === "DELETE") {
-        deleteBody = JSON.parse(options.body);
-        return new Response(null, { status: 204 });
-      }
-      throw new Error(`Unexpected request: ${options.method} ${u}`);
-    };
-
-    const code = await run(["calendar", "delete", "act-del-1"], io);
-    assert.equal(code, 0);
-    assert.deepEqual(deleteBody, { version: 2 });
-    assert.match(io.text(), /Deleted calendar activity act-del-1/);
+  test("calendar has no create, edit or delete: events live on their Cards and episodes", async () => {
+    for (const subcommand of ["create", "edit", "delete", "detail"]) {
+      const io = captureIo();
+      globalThis.fetch = async () => { throw new Error("no request expected"); };
+      const code = await run(["calendar", subcommand, "x"], io);
+      assert.notEqual(code, 0, subcommand);
+    }
   });
 
   test("calendar day provides slot availability and full day schedule", async () => {
@@ -297,14 +135,14 @@ describe("Calendar CLI commands", () => {
           JSON.stringify({
             items: [
               {
-                category: "Alexey",
+                provider: "owner-calendar",
                 label: "09:30–10:30 Team sync",
                 startDate: "2026-08-13",
                 endDate: "2026-08-13",
                 slot: "outside",
               },
               {
-                category: "Alexey",
+                provider: "owner-calendar",
                 label: "12:30–13:30 Podcast with Guest",
                 startDate: "2026-08-13",
                 endDate: "2026-08-13",
@@ -319,13 +157,8 @@ describe("Calendar CLI commands", () => {
         JSON.stringify({
           items: [
             {
-              id: "act-webinar",
-              title: "MLOps live demonstration",
-              activityType: "webinar",
-              status: "confirmed",
-              startDate: "2026-08-13",
-              endDate: "2026-08-13",
-              allDay: true,
+              id: "card:card-webinar", kind: "webinar", kindLabel: "Webinar", title: "MLOps live demonstration",
+              date: "2026-08-13", status: "announced", entity: { type: "card", id: "card-webinar" }, href: "/cards?cardId=card-webinar",
             },
           ],
           holidays: [],
@@ -358,7 +191,7 @@ describe("Calendar CLI commands", () => {
           JSON.stringify({
             items: [
               {
-                category: "Alexey",
+                provider: "owner-calendar",
                 label: "Vacation in Italy",
                 startDate: "2026-08-13",
                 endDate: "2026-08-13",

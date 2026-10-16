@@ -1,14 +1,10 @@
-import { berlinTime } from "./calendar-time.js";
 
 export function setupDayScheduleDialog(options) {
   const {
     surface,
     api,
     escapeHtml,
-    plannerLabel,
     todayIsoDate,
-    onAddActivity,
-    onEditActivity,
     getCalendarState,
   } = options;
 
@@ -16,7 +12,6 @@ export function setupDayScheduleDialog(options) {
     dayTitle = dayDialog?.querySelector("[data-day-title]"),
     daySubtitle = dayDialog?.querySelector("[data-day-subtitle]"),
     dayBody = dayDialog?.querySelector("[data-day-body]"),
-    dayAddActivityBtn = dayDialog?.querySelector("[data-day-add-activity]"),
     dayCloseBtn = dayDialog?.querySelector("[data-day-close]"),
     dayCloseFootBtn = dayDialog?.querySelector("[data-day-close-foot]");
 
@@ -41,14 +36,12 @@ export function setupDayScheduleDialog(options) {
 
     const { items = [], holidays = [], overlays = [] } = getCalendarState();
 
-    const dayActivities = items.filter(
-      (i) => (i.startKey || i.startDate) <= dateIso && (i.endKey || i.endDate) >= dateIso
-    );
+    const dayEvents = items.filter((item) => item.date === dateIso);
     const dayHolidays = holidays.filter(
       (h) => h.startDate <= dateIso && h.endDate >= dateIso
     );
     const dayNewsletters = overlays.filter(
-      (o) => o.category === "Newsletter" && o.startDate <= dateIso && o.endDate >= dateIso
+      (o) => o.provider === "newsletter-issues-readonly" && o.startDate <= dateIso && o.endDate >= dateIso
     );
     const ownerCalendarItems = overlayItems.filter((o) => o.provider === "owner-calendar");
 
@@ -121,17 +114,16 @@ export function setupDayScheduleDialog(options) {
       });
     }
 
-    for (const a of dayActivities) {
-      const timeLabel = a.allDay
-        ? "All day"
-        : (a.startsAt ? `${berlinTime(a.startsAt)}–${a.endsAt ? berlinTime(a.endsAt) : ""}` : "All day");
+    // Events open their Card or episode in the portal.
+    for (const event of dayEvents) {
       timelineEntries.push({
-        time: timeLabel,
-        title: a.title,
-        sortTime: a.allDay ? "00:00" : (a.startsAt ? berlinTime(a.startsAt) : "00:00"),
+        time: "All day",
+        title: event.title,
+        sortTime: "00:00",
         tagClass: "is-activity",
-        tagLabel: plannerLabel(a.activityType || "activity"),
-        id: a.id,
+        tagLabel: event.kindLabel,
+        href: event.href,
+        internal: true,
       });
     }
 
@@ -143,6 +135,7 @@ export function setupDayScheduleDialog(options) {
         tagClass: "is-activity",
         tagLabel: "Newsletter",
         href: n.href,
+        internal: true,
       });
     }
 
@@ -190,17 +183,12 @@ export function setupDayScheduleDialog(options) {
                 <div class="calendar-day-timeline-main">
                   <span class="calendar-day-timeline-time">${escapeHtml(entry.time)}</span>
                   ${entry.href
-                    ? `<a class="calendar-day-timeline-title" href="${escapeHtml(entry.href)}" target="_blank" rel="noreferrer">${escapeHtml(entry.title)}</a>`
+                    ? `<a class="calendar-day-timeline-title" href="${escapeHtml(entry.href)}"${
+                      entry.internal ? "" : ' target="_blank" rel="noreferrer"'}>${escapeHtml(entry.title)}</a>`
                     : `<span class="calendar-day-timeline-title">${escapeHtml(entry.title)}</span>`}
                 </div>
                 <div class="calendar-day-timeline-tags">
                   <span class="calendar-slot-tag ${entry.tagClass}">${escapeHtml(entry.tagLabel)}</span>
-                  ${entry.id
-                    ? `<button type="button" class="calendar-mini-edit-btn"
-                        data-edit="${escapeHtml(entry.id)}"
-                        style="font-size: 11px; padding: 2px 7px; border: 1px solid var(--dk-border-default);
-                          border-radius: 4px; background: var(--dk-bg-muted); cursor: pointer;">Edit</button>`
-                    : ""}
                 </div>
               </div>
             `
@@ -269,22 +257,6 @@ export function setupDayScheduleDialog(options) {
 
   if (dayCloseBtn) dayCloseBtn.onclick = () => dayDialog.close();
   if (dayCloseFootBtn) dayCloseFootBtn.onclick = () => dayDialog.close();
-  if (dayAddActivityBtn) {
-    dayAddActivityBtn.onclick = () => {
-      dayDialog.close();
-      if (onAddActivity) onAddActivity(selectedDayIso);
-    };
-  }
-  if (dayBody) {
-    dayBody.onclick = (event) => {
-      const editBtn = event.target.closest("[data-edit]");
-      if (!editBtn) return;
-      const itemId = editBtn.dataset.edit;
-      dayDialog.close();
-      if (onEditActivity) onEditActivity(itemId);
-    };
-  }
-
   return {
     openDayDialog,
     clearCache: () => dayOverlayCache.clear(),

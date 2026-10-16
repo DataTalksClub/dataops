@@ -2,16 +2,17 @@ import { apiFor } from "../session.mjs";
 
 const client = apiFor;
 
-export const summary = "Calendar activities and operational slot scheduling";
+export const summary = "Calendar of events (Cards, podcast episodes, newsletter issues) and open slots";
 
-export const help = `dataops calendar - calendar activities and operational scheduling
+export const help = `dataops calendar - the calendar of events and operational scheduling
+
+The calendar is read-only: every entry is an event Card (by its anchor date) or
+a podcast episode (recording and release dates), and newsletter issues show as
+an overlay. Change an event on its Card or episode (dataops cards update
+<id> --date D, dataops podcast update).
 
 Usage
-  dataops calendar list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--type TYPE] [--status STATUS]
-  dataops calendar detail <id>
-  dataops calendar create --title T --type TYPE [--status STATUS] [--date DATE] [--starts-at ISO --ends-at ISO]
-  dataops calendar edit <id> [--title T] [--type TYPE] [--status STATUS] [--date DATE] [--version N]
-  dataops calendar delete <id> [--version N]
+  dataops calendar list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--type KIND]
   dataops calendar day <date>              Operational slot availability and the full day schedule
   dataops calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all]
   dataops calendar settings [--connection ID] [--filter-busy true|false] ...
@@ -55,34 +56,6 @@ function formatBerlinDay(dateIso) {
   });
 }
 
-function formatItemTiming(item) {
-  if (item.allDay) {
-    if (item.startDate === item.endDate || !item.endDate) {
-      return item.startDate || item.startKey || "All day";
-    }
-    return `${item.startDate || item.startKey}..${item.endDate || item.endKey}`;
-  }
-  if (item.startsAt && item.endsAt) {
-    const startBerlin = new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Berlin",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    }).format(new Date(item.startsAt));
-    const endBerlin = new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Berlin",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    }).format(new Date(item.endsAt));
-    return `${startBerlin}–${endBerlin}`;
-  }
-  return item.startKey || "Timed";
-}
-
 /**
  * List calendar activities, holidays, and alerts
  */
@@ -105,10 +78,9 @@ export async function list(args, io) {
   }
 
   const query = new URLSearchParams({ from, to });
-  if (args.type || args.activityType) query.set("activityType", args.type || args.activityType);
-  if (args.status) query.set("status", args.status);
-
   const result = await client(args).get(`/api/calendar-items?${query}`);
+  const kind = args.type || args.kind;
+  if (kind) result.items = (result.items || []).filter((item) => item.kind === kind);
   if (args.json) return result;
 
   const items = result.items || [];
@@ -116,14 +88,13 @@ export async function list(args, io) {
   const alerts = result.alerts || [];
 
   if (items.length === 0 && holidays.length === 0) {
-    io.print(`No calendar activities between ${from} and ${to}.`);
+    io.print(`No calendar events between ${from} and ${to}.`);
   } else {
-    io.print(`Calendar activities (${from} to ${to}):`);
+    io.print(`Calendar events (${from} to ${to}):`);
     for (const item of items) {
-      const timing = formatItemTiming(item);
-      const statusPill = `[${item.status || "tentative"}]`.padEnd(13);
-      const typePill = `[${item.activityType || "activity"}]`.padEnd(18);
-      io.print(`  ${timing.padEnd(23)} ${typePill} ${statusPill} ${item.title}  (${item.id})`);
+      const statusPill = `[${item.status}]`.padEnd(13);
+      const kindPill = `[${item.kindLabel}]`.padEnd(20);
+      io.print(`  ${item.date.padEnd(11)} ${kindPill} ${statusPill} ${item.title}  (${item.entity.type} ${item.entity.id})`);
     }
     if (holidays.length > 0) {
       io.print(`\nHolidays & School Breaks (${holidays.length}):`);
@@ -145,153 +116,6 @@ export async function list(args, io) {
 }
 
 /**
- * Get detailed information for a calendar activity
- */
-export async function detail(args, io) {
-  const id = args._[0] || args.id;
-  if (!id) throw new Error("Usage: dataops calendar detail <id>");
-
-  const item = await client(args).get(`/api/calendar-items/${encodeURIComponent(id)}`);
-  if (args.json) return item;
-
-  io.print(`Calendar Activity: ${item.title}`);
-  io.print(`  ID:            ${item.id}`);
-  io.print(`  Type:          ${item.activityType}`);
-  io.print(`  Status:        ${item.status}`);
-  io.print(`  Version:       ${item.version}`);
-  io.print(`  Timing:        ${formatItemTiming(item)} (${item.allDay ? "all-day" : "timed Europe/Berlin"})`);
-  if (item.url) io.print(`  URL:           ${item.url}`);
-  if (item.cardId) io.print(`  Card ID:       ${item.cardId}`);
-  if (item.templateId) io.print(`  Template ID:   ${item.templateId}`);
-  if (item.notes) io.print(`  Notes:         ${item.notes}`);
-
-  return item;
-}
-
-/**
- * Create a new calendar activity
- */
-export async function create(args, io) {
-  if (!args.title) throw new Error("--title is required.");
-  const activityType = args.type || args.activityType;
-  if (!activityType) throw new Error("--type is required (e.g. podcast-live, webinar, workshop).");
-
-  const body = {
-    title: String(args.title),
-    activityType: String(activityType),
-    status: args.status ? String(args.status) : "tentative",
-  };
-
-  if (args.startsAt && args.endsAt) {
-    body.allDay = false;
-    body.startsAt = String(args.startsAt);
-    body.endsAt = String(args.endsAt);
-    body.timeZone = "Europe/Berlin";
-  } else {
-    body.allDay = true;
-    const date = args.date || args.from || todayBerlin();
-    body.startDate = String(date);
-    body.endDate = String(args.to || args.endDate || date);
-  }
-
-  const eventUrl = args.link || args.eventUrl || (args.url && !args.url.includes("portal") ? args.url : undefined);
-  if (eventUrl) body.url = String(eventUrl);
-  if (args.notes) body.notes = String(args.notes);
-  if (args.cardId) body.cardId = String(args.cardId);
-  if (args.templateId) body.templateId = String(args.templateId);
-
-  const result = await client(args).post("/api/calendar-items", body);
-  if (args.json) return result;
-
-  io.print(`Created calendar activity "${result.title}" (${result.id})`);
-  io.print(`  Timing: ${formatItemTiming(result)}`);
-  io.print(`  Status: ${result.status} · Type: ${result.activityType}`);
-  return result;
-}
-
-/**
- * Edit an existing calendar activity
- */
-export async function edit(args, io) {
-  const id = args._[0] || args.id;
-  if (!id) throw new Error("Usage: dataops calendar edit <id> [options]");
-
-  const api = client(args);
-  const existing = await api.get(`/api/calendar-items/${encodeURIComponent(id)}`);
-
-  const body = {
-    version: args.version !== undefined ? Number(args.version) : existing.version,
-    title: args.title !== undefined ? String(args.title) : existing.title,
-    activityType: args.type || args.activityType || existing.activityType,
-    status: args.status !== undefined ? String(args.status) : existing.status,
-  };
-
-  if (args.startsAt && args.endsAt) {
-    body.allDay = false;
-    body.startsAt = String(args.startsAt);
-    body.endsAt = String(args.endsAt);
-    body.timeZone = "Europe/Berlin";
-  } else if (args.date || args.from || args.startDate) {
-    body.allDay = true;
-    const date = args.date || args.from || args.startDate;
-    body.startDate = String(date);
-    body.endDate = String(args.to || args.endDate || date);
-  } else {
-    body.allDay = existing.allDay;
-    if (existing.allDay) {
-      body.startDate = existing.startDate || existing.startKey;
-      body.endDate = existing.endDate || existing.endKey;
-    } else {
-      body.startsAt = existing.startsAt;
-      body.endsAt = existing.endsAt;
-      body.timeZone = existing.timeZone || "Europe/Berlin";
-    }
-  }
-
-  const updateUrl = args.link !== undefined ? args.link : args.eventUrl !== undefined ? args.eventUrl : (args.url && !args.url.includes("portal") ? args.url : undefined);
-  if (updateUrl !== undefined) body.url = updateUrl ? String(updateUrl) : null;
-  else if (existing.url) body.url = existing.url;
-
-  if (args.notes !== undefined) body.notes = args.notes ? String(args.notes) : null;
-  else if (existing.notes) body.notes = existing.notes;
-
-  if (args.cardId !== undefined) body.cardId = args.cardId ? String(args.cardId) : null;
-  else if (existing.cardId) body.cardId = existing.cardId;
-
-  if (args.templateId !== undefined) body.templateId = args.templateId ? String(args.templateId) : null;
-  else if (existing.templateId) body.templateId = existing.templateId;
-
-  const result = await api.put(`/api/calendar-items/${encodeURIComponent(id)}`, body);
-  if (args.json) return result;
-
-  io.print(`Updated calendar activity "${result.title}" (${result.id})`);
-  io.print(`  Timing: ${formatItemTiming(result)}`);
-  io.print(`  Status: ${result.status} · Type: ${result.activityType}`);
-  return result;
-}
-
-/**
- * Delete a calendar activity
- */
-export async function remove(args, io) {
-  const id = args._[0] || args.id;
-  if (!id) throw new Error("Usage: dataops calendar delete <id> [--version N]");
-
-  const api = client(args);
-  let version = args.version !== undefined ? Number(args.version) : undefined;
-  if (version === undefined) {
-    const existing = await api.get(`/api/calendar-items/${encodeURIComponent(id)}`);
-    version = existing.version;
-  }
-
-  await api.delete(`/api/calendar-items/${encodeURIComponent(id)}`, { version });
-  if (args.json) return { status: "deleted", id };
-
-  io.print(`Deleted calendar activity ${id}`);
-  return { status: "deleted", id };
-}
-
-/**
  * Day schedule view with operational slot availability and full day schedule
  */
 export async function day(args, io) {
@@ -307,21 +131,19 @@ export async function day(args, io) {
   ]);
 
   const overlayItems = overlayResult.items || [];
-  const activities = (calendarResult.items || []).filter(
-    (i) => (i.startKey || i.startDate) <= dateIso && (i.endKey || i.endDate) >= dateIso,
-  );
+  const events = (calendarResult.items || []).filter((item) => item.date === dateIso);
   const holidays = (calendarResult.holidays || []).filter(
     (h) => h.startDate <= dateIso && h.endDate >= dateIso,
   );
-  const alexeyItems = overlayItems.filter((o) => o.category === "Alexey");
+  const ownerCalendarItems = overlayItems.filter((o) => o.provider === "owner-calendar");
 
-  const blockers = alexeyItems.filter(
+  const blockers = ownerCalendarItems.filter(
     (e) => e.slot === "all-day" || /vacation|holiday|flight|conference|trip/i.test(e.label),
   );
-  const middayEvents = alexeyItems.filter((e) => e.slot === "midday");
+  const middayEvents = ownerCalendarItems.filter((e) => e.slot === "midday");
   const isMiddayAvailable = blockers.length === 0 && middayEvents.length === 0;
 
-  const eveningEvents = alexeyItems.filter((e) => e.slot === "evening");
+  const eveningEvents = ownerCalendarItems.filter((e) => e.slot === "evening");
   const isEveningAvailable = blockers.length === 0 && eveningEvents.length === 0;
 
   // Build unified timeline
@@ -340,21 +162,21 @@ export async function day(args, io) {
       tag: "All-day blocker",
     });
   }
-  for (const a of activities) {
+  for (const event of events) {
     timeline.push({
-      time: formatItemTiming(a),
-      title: a.title,
-      tag: `Activity: ${a.activityType || "event"}`,
+      time: "All day",
+      title: event.title,
+      tag: event.kindLabel,
     });
   }
   for (const o of overlayItems) {
-    if (o.category === "Newsletter") {
+    if (o.provider === "newsletter-issues-readonly") {
       timeline.push({
         time: "Scheduled",
         title: o.label,
         tag: "Newsletter",
       });
-    } else if (o.category === "Alexey" && o.slot !== "all-day") {
+    } else if (o.provider === "owner-calendar" && o.slot !== "all-day") {
       let time = "Timed";
       let title = o.label;
       const match = o.label.match(/^(\d{2}:\d{2}(?:–\d{2}:\d{2})?)\s+(.+)$/);

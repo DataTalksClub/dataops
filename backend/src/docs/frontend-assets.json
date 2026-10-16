@@ -110,7 +110,6 @@
     "src/surfaces/operations/device.js",
     "src/surfaces/operations/index.js",
     "src/surfaces/operations/user-lifecycle-dialog.js",
-    "src/surfaces/calendar-time.js",
     "src/surfaces/planning-calendar-dialogs.js",
     "src/surfaces/planning-newsletter.js",
     "src/surfaces/planning-newsletter-dialog.js",

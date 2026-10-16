@@ -7,7 +7,7 @@
  * links become the issue's links (a sponsorship document fills its slot's
  * document), and linked artifacts with a web address become issue links.
  * Real work keeps the Card: a Task done, or skipped by a person, Task
- * activity, comments or notes, uploaded files, calendar items, and records
+ * activity, comments or notes, uploaded files, and records
  * that point at the Card.
  */
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -73,7 +73,6 @@ export async function planIssueCardRemoval(
   if (typeof card.description === 'string' && card.description.trim()) keep.push('Card notes');
   const blocking = await cardBlockingReferences(client, card, tasks, { newsletterIssueId: issue.id });
   if (blocking.files.length) keep.push(plural(blocking.files.length, 'uploaded file'));
-  if (blocking.calendarItems.length) keep.push(plural(blocking.calendarItems.length, 'calendar item'));
   if (blocking.sponsorDeliverables.length) keep.push(plural(blocking.sponsorDeliverables.length, 'sponsor deliverable') + ' pointing at the Card');
   if (blocking.newsletterIssues.length) keep.push('another newsletter issue pointing at the Card');
 

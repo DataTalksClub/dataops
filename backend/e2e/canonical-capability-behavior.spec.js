@@ -936,21 +936,23 @@ test.describe('canonical frontend capability behavior', () => {
     const slotConflict = await context.request.put(`/api/newsletter-issues/${slot.id}`, { data: { version: slot.version, status: 'sent' } });
     expect(slotConflict.status()).toBe(409);
 
-    const calendarResponse = await context.request.post('/api/calendar-items', { data: {
-      activityType: 'webinar', title: `Synthetic calendar ${id}`, status: 'confirmed', allDay: true,
-      startDate: '2026-09-03', endDate: '2026-09-03', notes: 'Synthetic only',
+    // The calendar stores nothing: its events are Cards (and podcast
+    // episodes), so the synthetic event is a webinar Card.
+    const webinarTemplate = await context.request.post('/__e2e__/template-fixtures', { data: {
+      name: 'Synthetic webinar', type: 'webinar', triggerType: 'manual', references: [],
+      taskDefinitions: [{ refId: 'run', description: 'Run the synthetic webinar', offsetDays: 0 }],
     } });
-    expect(calendarResponse.status()).toBe(201);
-    const calendar = (await json(calendarResponse)).item || await json(calendarResponse);
-    const calendarItem = calendar.item || calendar;
-    const invalidCalendar = await context.request.post('/api/calendar-items', { data: {
-      activityType: 'invalid', title: 'Invalid', status: 'agreed', allDay: true, startDate: '2026-09-03', endDate: '2026-09-03',
-    } });
-    expect(invalidCalendar.status()).toBe(400);
-    const changedCalendar = await context.request.put(`/api/calendar-items/${calendarItem.id}`, { data: { version: calendarItem.version, title: `Updated calendar ${id}` } });
-    expect(changedCalendar.status()).toBe(200);
-    const calendarConflict = await context.request.put(`/api/calendar-items/${calendarItem.id}`, { data: { version: calendarItem.version, title: 'Stale update' } });
-    expect(calendarConflict.status()).toBe(409);
+    expect(webinarTemplate.status()).toBe(201);
+    const webinarTemplateId = (await json(webinarTemplate)).template.id;
+    const eventCard = async (title, anchorDate) => {
+      const response = await context.request.post('/api/cards', { data: { templateId: webinarTemplateId, title, anchorDate, people: ['Ada Example'] } });
+      expect(response.status()).toBe(201);
+      return (await json(response)).card;
+    };
+    const calendarCard = await eventCard(`Synthetic calendar ${id}`, '2026-09-03');
+    // Christmas Day 2030: an upcoming event on a public holiday raises an alert.
+    await eventCard(`Holiday calendar ${id}`, '2030-12-25');
+    expect((await context.request.post('/api/calendar-items', { data: { title: 'Standalone' } })).status()).toBe(405);
 
     await page.goto('/newsletter');
     await setNewsletterDateRange(page, '2026-09-01', '2026-09-30');
@@ -988,56 +990,34 @@ test.describe('canonical frontend capability behavior', () => {
     await page.clock.setFixedTime(new Date('2026-09-03T12:00:00Z'));
     await page.goto('/calendar');
     await page.locator('[data-today]').click();
-    await expect(page.locator('.calendar-surface .calendar-activity', { hasText: `Updated calendar ${id}` }).first()).toBeVisible();
-    const planningAlerts = page.locator('.calendar-surface .calendar-alert-summary');
-    await planningAlerts.locator('summary').click();
-    await expect(planningAlerts).toContainText(`Updated calendar ${id}`);
-    await expect(planningAlerts.getByRole('button', { name: 'Dismiss' }).first()).toBeVisible();
-    await planningAlerts.locator('summary').click();
-    const calendarDialog = page.locator('.calendar-surface [data-activity-dialog]');
-    await page.getByRole('button', { name: 'Add activity' }).click();
-    await calendarDialog.getByRole('button', { name: 'Save activity' }).click();
-    await expect(calendarDialog).toBeVisible();
-    expect(await calendarDialog.getByLabel('Title').evaluate((input) => input.validity.valid)).toBe(false);
-    await calendarDialog.getByRole('button', { name: 'Cancel' }).click();
-
-    // Only grid activity buttons open the editor; alerts and overlays echo
-    // item titles without carrying [data-edit].
-    await page.locator('.calendar-surface [data-edit]', { hasText: `Updated calendar ${id}` }).first().click();
-    const currentCalendarPayload = await json(await context.request.get(`/api/calendar-items/${calendarItem.id}`));
-    const currentCalendar = currentCalendarPayload.item || currentCalendarPayload;
-    expect((await context.request.put(`/api/calendar-items/${calendarItem.id}`, { data: {
-      version: currentCalendar.version, title: `Server calendar ${id}`,
-    } })).status()).toBe(200);
-    await calendarDialog.getByLabel('Title').fill(`Preserved local calendar ${id}`);
-    await calendarDialog.getByRole('button', { name: 'Save activity' }).click();
-    await expect(calendarDialog.getByRole('alert')).toContainText('Version conflict');
-    await expect(calendarDialog.getByLabel('Title')).toHaveValue(`Preserved local calendar ${id}`);
-    await calendarDialog.getByRole('button', { name: 'Cancel' }).click();
-    await page.reload();
-    await page.clock.setFixedTime(new Date('2026-09-03T12:00:00Z'));
-    await page.locator('[data-today]').click();
-    await page.locator('.calendar-surface [data-edit]', { hasText: `Server calendar ${id}` }).first().click();
-    await calendarDialog.getByLabel('Title').fill(`Browser calendar ${id}`);
-    const refreshedOverlayRequest = page.waitForRequest((request) =>
-      new URL(request.url()).pathname.endsWith('/calendar-items/overlays'));
-    await calendarDialog.getByRole('button', { name: 'Save activity' }).click();
-    await expect(page.locator('.calendar-surface .calendar-activity', { hasText: `Browser calendar ${id}` }).first()).toBeVisible();
-    // Owned activities render before optional overlays. Wait for this save's
-    // overlay request, rather than treating the visible grid as overlay-ready.
-    const refreshedOverlayResponse = await (await refreshedOverlayRequest).response();
-    expect(refreshedOverlayResponse.ok()).toBe(true);
+    const calendarEvent = page.locator('.calendar-surface .calendar-activity', { hasText: `Synthetic calendar ${id} · Ada Example` }).first();
+    await expect(calendarEvent).toBeVisible();
+    await expect(calendarEvent).toHaveAttribute('href', `/cards?cardId=${calendarCard.id}`);
     await expect(page.locator('[data-calendar]')).toContainText(`Stand-alone newsletter · Server sponsor ${id}`);
+    await expect(page.getByRole('button', { name: 'Add activity' })).toHaveCount(0);
+    await expect(page.locator('.calendar-surface [data-edit]')).toHaveCount(0);
     await setFaults(context.request, [{ method: 'GET', path: '/api/calendar-items', status: 503 }]);
     await page.locator('[data-next]').click();
     await expect(page.getByText('Calendar unavailable')).toBeVisible();
     await clearFaults(context.request);
     await page.locator('[data-today]').click();
-    await expect(page.locator('.calendar-surface .calendar-activity', { hasText: `Browser calendar ${id}` }).first()).toBeVisible();
+    await expect(calendarEvent).toBeVisible();
+    // Clicking an event opens its Card.
+    await calendarEvent.click();
+    await expect(page).toHaveURL(new RegExp(`/cards\\?cardId=${calendarCard.id}`));
+
+    await page.clock.setFixedTime(new Date('2030-12-20T12:00:00Z'));
+    await page.goto('/calendar');
+    const planningAlerts = page.locator('.calendar-surface .calendar-alert-summary');
+    await planningAlerts.locator('summary').click();
+    await expect(planningAlerts).toContainText(`Holiday calendar ${id} · Ada Example`);
+    await expect(planningAlerts).toContainText('Event falls on a public holiday');
+    await planningAlerts.getByRole('button', { name: 'Dismiss' }).first().click();
+    await expect(page.locator('.calendar-surface .calendar-alert-summary')).toHaveCount(0);
     await context.close();
     recordCapabilityEvidence(testInfo, [
       { route: '/newsletter', roleId: 'admin', stateIds: ['newsletter.empty', 'newsletter.populated', 'newsletter.create-edit-reload', 'newsletter.validation', 'newsletter.conflict', 'newsletter.failure'] },
-      { route: '/calendar', roleId: 'admin', stateIds: ['calendar.empty', 'calendar.populated', 'calendar.create-edit-reload', 'calendar.overlays-alerts', 'calendar.week-date-navigation', 'calendar.validation', 'calendar.conflict', 'calendar.failure'] },
+      { route: '/calendar', roleId: 'admin', stateIds: ['calendar.empty', 'calendar.populated', 'calendar.entity-links', 'calendar.overlays-alerts', 'calendar.week-date-navigation', 'calendar.failure'] },
     ]);
   });
 

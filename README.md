@@ -15,7 +15,8 @@ frontend, docs, search, and work APIs from one TypeScript Lambda.
 
 DataOps has no built-in assistant. Assistants run outside the portal and work
 through its API: they read and update cards, tasks, templates, newsletter
-slots, and calendar items, and attach their outputs as artifacts.
+issues and podcast episodes, read the calendar built from them, and attach
+their outputs as artifacts.
 
 ## Layout
 
