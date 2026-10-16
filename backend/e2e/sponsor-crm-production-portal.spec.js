@@ -549,13 +549,13 @@ test.describe("production sponsor CRM portal", () => {
       .getByRole("button", { name: "Link selected evidence" })
       .click();
     await expect(
-      page.getByRole("button", { name: "Link ledger payment", exact: true }),
+      page.getByRole("button", { name: "Link bookkeeping payment", exact: true }),
     ).toBeVisible();
     await page
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-issued-unpaid.png" });
     await page
-      .getByRole("button", { name: "Link ledger payment", exact: true })
+      .getByRole("button", { name: "Link bookkeeping payment", exact: true })
       .click();
     await page
       .locator("[data-finance-candidate-dialog]")
@@ -569,7 +569,7 @@ test.describe("production sponsor CRM portal", () => {
       .screenshot({ path: ".tmp/sponsor-finance-partial.png" });
     overpaymentCandidate = true;
     await page
-      .getByRole("button", { name: "Link ledger payment", exact: true })
+      .getByRole("button", { name: "Link bookkeeping payment", exact: true })
       .click();
     await expect(
       page
@@ -594,7 +594,7 @@ test.describe("production sponsor CRM portal", () => {
     });
     overpaymentCandidate = false;
     await page
-      .getByRole("button", { name: "Link ledger payment", exact: true })
+      .getByRole("button", { name: "Link bookkeeping payment", exact: true })
       .click();
     await page
       .locator("[data-finance-candidate-dialog]")
