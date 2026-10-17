@@ -1962,7 +1962,8 @@ describe("CRM directory controllers", () => {
     );
   });
 
-  test("company-scoped pipeline view keeps organization scope in the URL and reloads it", async () => {    const scopedRequest = (url, options = {}) => {
+  test("company-scoped pipeline view keeps organization scope in the URL and reloads it", async () => {
+    const scopedRequest = (url, options = {}) => {
       if (requestPath(url) === "/api/sponsor-crm/views") return { items: [], total: 0 };
       return directoryRequest(url, options);
     };
