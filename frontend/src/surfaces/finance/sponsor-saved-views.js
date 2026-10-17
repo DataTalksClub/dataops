@@ -319,7 +319,7 @@ export function isVersionConflict(error) {
 // update / manage controls. Rename and archive run from the manage list; the
 // integration hunk provides the dialogs around these data attributes.
 
-export function renderSavedViewBar({ entity, views, viewsError, selectedViewId, modified, escapeHtml }) {
+export function renderSavedViewBar({ entity, views, viewsError, selectedViewId, updateViewId, modified, escapeHtml }) {
   // A failed views fetch is an honest error with retry, never a silent
   // fallback to local definitions: builtins remain available from the API.
   if (viewsError) {
@@ -337,6 +337,7 @@ export function renderSavedViewBar({ entity, views, viewsError, selectedViewId, 
   }
   const personal = items.filter((view) => !isBuiltinView(view) && !view.archivedAt);
   const selected = items.find((view) => view.id === selectedViewId);
+  const updatable = items.find((view) => view.id === (updateViewId ?? selectedViewId));
   const group = (label, list) => list.length
     ? html`<optgroup label="${escapeHtml(label)}">${list
       .map((view) => html`<option value="${escapeHtml(view.id)}"${
@@ -345,13 +346,14 @@ export function renderSavedViewBar({ entity, views, viewsError, selectedViewId, 
     : "";
   return html`<div class="crm-views-bar" data-views-bar="${escapeHtml(entity)}">
     <label>View <select data-views-select>
+      ${!selected ? html`<option value="" disabled selected>Current filters</option>` : ""}
       ${group("Built-in", items.filter(isBuiltinView))}
       ${group("My views", personal)}
     </select></label>
     ${modified ? html`<span class="crm-views-modified">Modified</span>` : ""}
     <button type="button" data-views-save>Save current filters</button>
-    ${modified && selected && !isBuiltinView(selected)
-      ? html`<button type="button" data-views-update>Update “${escapeHtml(selected.name)}”</button>` : ""}
+    ${modified && updatable && !isBuiltinView(updatable)
+      ? html`<button type="button" data-views-update>Update “${escapeHtml(updatable.name)}”</button>` : ""}
     ${personal.length ? html`<button type="button" data-views-manage>Manage my views</button>` : ""}
   </div>`;
 }

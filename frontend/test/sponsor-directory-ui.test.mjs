@@ -523,6 +523,18 @@ test("saved view bar groups builtins and personal views with save/update afforda
   assert.match(bar, /Modified/);
   assert.match(bar, /data-views-save/);
   assert.match(bar, /data-views-update/);
+  assert.doesNotMatch(bar, /Current filters/);
+  const unpinned = renderSavedViewBar({
+    entity: "companies",
+    views,
+    selectedViewId: null,
+    updateViewId: "view-1",
+    modified: true,
+    escapeHtml,
+  });
+  assert.match(unpinned, /<option value="" disabled selected>Current filters<\/option>/);
+  assert.doesNotMatch(unpinned, /value="builtin:companies:active" selected/);
+  assert.match(unpinned, /data-views-update>Update “My patch”<\/button>/);
   const clean = renderSavedViewBar({
     entity: "companies", views, selectedViewId: "builtin:companies:active", modified: false, escapeHtml,
   });

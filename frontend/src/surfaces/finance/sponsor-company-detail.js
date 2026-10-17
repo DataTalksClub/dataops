@@ -173,5 +173,5 @@ export function createSponsorCompanyDetail({
     globalThis.dakitSplit?.show(split, "detail");
   }
 
-  return { reopenDealDetail, reopenCompanyDetail };
+  return { reopenDealDetail, reopenCompanyDetail, getSelectedDealId: () => record.getSelectedDealId() };
 }

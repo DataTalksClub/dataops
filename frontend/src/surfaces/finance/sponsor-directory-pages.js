@@ -1,16 +1,12 @@
 import { sponsorRecordPath, sponsorsPath } from "../../core/sponsor-routes.js";
-import { createSponsorPipelineLifecycle } from "./sponsor-pipeline-lifecycle.js";
+import { createSponsorPipelineLifecycle, wireSavedViewsDialog } from "./sponsor-pipeline-lifecycle.js";
 import {
-  archiveSavedView,
   defaultViewForEntity,
   fetchViews,
   isBuiltinView,
   renderSavedViewBar,
-  renderSavedViewManageList,
   resolveEffectiveFilters,
-  saveView,
   updateSavedView,
-  validateViewName,
 } from "./sponsor-saved-views.js";
 import {
   companyPickerOptions,
@@ -49,13 +45,6 @@ function sortForSave(sort) {
   }
   const field = typeof sort === "string" && sort ? sort : "name";
   return { field, direction: field === "lastTouch" ? "desc" : "asc" };
-}
-
-function newViewSourceKey() {
-  const random = globalThis.crypto?.randomUUID
-    ? globalThis.crypto.randomUUID()
-    : `${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
-  return `sponsors-ui-${random}`;
 }
 
 export function createSponsorDirectoryPages({
@@ -137,12 +126,28 @@ export function createSponsorDirectoryPages({
   let returnContext = null;
   let openRecordRef = null;
   const listPath = (fallbackView) => returnContext?.path || sponsorsPath(fallbackView);
+  function listScrollTarget(view) {
+    const inner = surface.querySelector("[data-crm-list-scroll]");
+    const layout = surface.querySelector(".crm-layout");
+    if (view === "pipeline" && inner && (!layout || !layout.hidden)) {
+      const overflowY = typeof globalThis.getComputedStyle === "function"
+        ? globalThis.getComputedStyle(inner).overflowY
+        : "auto";
+      if (overflowY === "auto" || overflowY === "scroll") return inner;
+    }
+    const main = surface.closest?.("#main-content, .dk-main")
+      || globalThis.document?.getElementById?.("main-content")
+      || globalThis.document?.querySelector?.(".dk-main")
+      || globalThis.document?.scrollingElement;
+    return main || inner || null;
+  }
   function captureReturnContext(kind, id, currentView) {
     navGeneration += 1;
-    const scroller = surface.querySelector("[data-crm-list-scroll]");
+    const resolvedView = currentView === "pipeline" || currentView === "companies" || currentView === "people" ? currentView : "pipeline";
+    const scroller = listScrollTarget(resolvedView);
     returnContext = {
-      view: currentView === "pipeline" || currentView === "companies" || currentView === "people" ? currentView : "pipeline",
-      path: sponsorsPath(currentView === "pipeline" || currentView === "companies" || currentView === "people" ? currentView : "pipeline"),
+      view: resolvedView,
+      path: sponsorsPath(resolvedView),
       params: { ...(listParamsByView[currentView] || {}) },
       scrollTop: scroller ? scroller.scrollTop : (globalThis.window?.scrollY || 0),
       focusSelector: kind === "deal" ? `[data-open-deal="${id}"]`
@@ -184,6 +189,39 @@ export function createSponsorDirectoryPages({
     const open = openGeneration;
     return () => nav === navGeneration && open === openGeneration && !isStale();
   }
+  // Per-invocation pipeline/directory list ownership predicates: captured at
+  // init/saved-view/load start, invalidated by any tab transition (including
+  // away-and-back or same-tab), record open, Back/close, workspace leave, or a
+  // newer same-tab filter/view/pagination user intent.
+  let pipelineIntent = 0;
+  const dirIntent = { companies: 0, people: 0 };
+  function notePipelineIntent() {
+    pipelineIntent += 1;
+  }
+  function noteDirectoryIntent(entity) {
+    if (entity in dirIntent) dirIntent[entity] += 1;
+  }
+  function captureSurfaceCurrent(view) {
+    const nav = navGeneration;
+    const open = openGeneration;
+    return () =>
+      nav === navGeneration &&
+      open === openGeneration &&
+      activeView() === view &&
+      !surface.classList.contains("has-booking-detail") &&
+      surface.isConnected &&
+      !isStale();
+  }
+  function capturePipelineCurrent() {
+    const isSurface = captureSurfaceCurrent("pipeline");
+    const intent = pipelineIntent;
+    return () => isSurface() && intent === pipelineIntent;
+  }
+  function captureDirectoryCurrent(entity) {
+    const isSurface = captureSurfaceCurrent(entity);
+    const intent = dirIntent[entity];
+    return () => isSurface() && intent === dirIntent[entity];
+  }
   // Every user CRM tab/list transition (including same-tab clicks) advances
   // the page-owned generation and drops the record ref, so in-flight saves
   // and stale record opens can never refresh/reopen over the newly shown
@@ -195,6 +233,9 @@ export function createSponsorDirectoryPages({
     if (suppressTransitionNote) return;
     navGeneration += 1;
     openGeneration += 1;
+    pipelineIntent += 1;
+    dirIntent.companies += 1;
+    dirIntent.people += 1;
     openRecordRef = null;
   }
   // Back restores the origin tab, then reloads the directory (records may
@@ -210,25 +251,38 @@ export function createSponsorDirectoryPages({
     // must never refresh or reopen over the restored list.
     navGeneration += 1;
     openGeneration += 1;
-    navigateCanonicalWorkspace(path, params, { render: false, history: "replace" });
-    showView(view, false);
-    if (view === "companies" || view === "people") {
-      await safe(() => directories[view].restorePage(), "Could not load directory");
-      if (!surface.isConnected) return true;
-    } else if (view === "pipeline") {
-      await safe(() => pipeline.load(false), "Could not load pipeline");
-      if (!surface.isConnected) return true;
-    }
     surface.classList.remove("has-booking-detail");
     const split = surface.querySelector("[data-crm-split]");
     if (split) {
       split.dataset.view = "list";
       globalThis.dakitSplit?.show(split, "list");
     }
-    const scroller = surface.querySelector("[data-crm-list-scroll]");
+    navigateCanonicalWorkspace(path, params, { render: false, history: "replace" });
+    showView(view, false);
+    const isCloseCurrent = view === "companies" || view === "people"
+      ? captureDirectoryCurrent(view)
+      : view === "pipeline"
+        ? capturePipelineCurrent()
+        : capturePageCurrent();
+    if (view === "companies" || view === "people") {
+      await safe(() => directories[view].restorePage(isCloseCurrent), "Could not load directory");
+      if (!surface.isConnected || !isCloseCurrent()) return true;
+    } else if (view === "pipeline") {
+      if (!pipeline.views) await safe(() => pipeline.ensureViews(isCloseCurrent), "Could not load saved views");
+      await safe(() => pipeline.load(false, { isCurrent: isCloseCurrent }), "Could not load pipeline");
+      if (!surface.isConnected || !isCloseCurrent()) return true;
+    }
+    const scroller = listScrollTarget(view);
     if (scroller) scroller.scrollTop = scrollTop || 0;
     else if (typeof globalThis.scrollTo === "function") globalThis.scrollTo(0, scrollTop || 0);
-    surface.querySelector(focusSelector)?.focus?.();
+    const focusEl = surface.querySelector(focusSelector);
+    if (focusEl && typeof focusEl.focus === "function") {
+      try {
+        focusEl.focus({ preventScroll: true });
+      } catch {
+        focusEl.focus();
+      }
+    }
     return true;
   }
 
@@ -244,6 +298,7 @@ export function createSponsorDirectoryPages({
       views: null,
       viewsError: null,
       selectedViewId: null,
+      baseViewId: null,
       modified: false,
       filters: {},
       sort: "name",
@@ -295,19 +350,24 @@ export function createSponsorDirectoryPages({
         views: state.views,
         viewsError: state.viewsError,
         selectedViewId: state.selectedViewId,
+        updateViewId: state.baseViewId,
         modified: state.modified,
         escapeHtml,
       });
     }
-    async function loadViews() {
+    async function loadViews(isCurrent = captureDirectoryCurrent(entity)) {
+      const isSurfaceCurrent = captureSurfaceCurrent(entity);
       try {
         const result = await fetchViews(api, entity, { paths: WORKSPACE_API });
+        if (!isSurfaceCurrent()) return;
         state.views = result.items || [];
         state.viewsError = null;
       } catch (error) {
+        if (!isSurfaceCurrent() || !isCurrent()) return;
         state.views = null;
         state.viewsError = `Saved views unavailable: ${error.message}`;
       }
+      if (!isSurfaceCurrent()) return;
       renderViews();
     }
     function effectiveFromControls() {
@@ -328,7 +388,7 @@ export function createSponsorDirectoryPages({
         entity,
         views: state.views,
         viewsError: state.viewsError,
-        selectedViewId: state.selectedViewId,
+        selectedViewId: state.baseViewId ?? state.selectedViewId,
         urlState,
       });
     }
@@ -336,9 +396,9 @@ export function createSponsorDirectoryPages({
     // lives there, never rebuilt per caller. Writes happen only for the
     // active tab and the navigation generation that issued the load, so a
     // delayed response can never replace a record URL (or another tab's).
-    function writeUrl(resolved, navToken) {
+    function writeUrl(resolved, isCurrent) {
       if (activeView() !== entity) return;
-      if (navToken !== navGeneration) return;
+      if (typeof isCurrent === "function" && !isCurrent()) return;
       const canonical = directoryUrl(entity, { viewId: resolved.viewId, filters: resolved.filters, sort: resolved.sort, limit: state.limit });
       const params = new URLSearchParams(canonical.split("?")[1] || "");
       if (state.cursor) params.set("cursor", state.cursor);
@@ -346,7 +406,8 @@ export function createSponsorDirectoryPages({
       rememberListParams(entity, plain);
       navigateCanonicalWorkspace(sponsorsPath(entity), plain, { render: false, history: "replace" });
     }
-    async function loadDirectory({ resetPage = true } = {}) {
+    async function loadDirectory({ resetPage = true, isCurrent = captureDirectoryCurrent(entity) } = {}) {
+      if (!isCurrent()) return;
       if (resetPage) {
         state.cursor = null;
         state.prev = [];
@@ -357,11 +418,7 @@ export function createSponsorDirectoryPages({
       // (another tab, an open record) never mutates hidden rows, shared
       // notices or the record URL. Applies to the 400 retry path too.
       const requestToken = ++state.requestToken;
-      const navToken = navGeneration;
-      const settled = () => requestToken === state.requestToken &&
-        navToken === navGeneration &&
-        activeView() === entity &&
-        surface.isConnected;
+      const settled = () => requestToken === state.requestToken && isCurrent();
       const resolved = effectiveFromControls();
       if (resolved.error) {
         if (!settled()) return;
@@ -403,14 +460,14 @@ export function createSponsorDirectoryPages({
         state.nextCursor = result.nextCursor || null;
         showMessage("");
         renderViews();
-        writeUrl(resolved, navToken);
+        writeUrl(resolved, settled);
         rowsEl.removeAttribute("aria-busy");
       } catch (error) {
         if (!settled()) return;
         if (Number(error?.status) === 400 && state.cursor) {
           state.cursor = null;
           state.prev = [];
-          await loadDirectory({ resetPage: true });
+          await loadDirectory({ resetPage: true, isCurrent });
           return;
         }
         rowsEl.innerHTML = renderDirectoryError({ message: error.message, escapeHtml });
@@ -424,21 +481,29 @@ export function createSponsorDirectoryPages({
     // when the page comes back empty but records remain (an archived row
     // vanished), fall back to the first page instead of stranding the
     // operator on an empty page.
-    async function restorePage() {
+    async function restorePage(isCurrent = captureDirectoryCurrent(entity)) {
+      if (!isCurrent()) return;
       if (!state.initialized) {
-        await refresh();
+        await refresh(isCurrent);
         return;
       }
-      await loadDirectory({ resetPage: false });
+      if (!state.views && !state.viewsError) {
+        await loadViews(isCurrent);
+        if (!isCurrent()) return;
+      }
+      await loadDirectory({ resetPage: false, isCurrent });
+      if (!isCurrent()) return;
       if (state.items.length === 0 && state.total > 0 && (state.cursor || state.prev.length)) {
         state.cursor = null;
         state.prev = [];
-        await loadDirectory({ resetPage: true });
+        await loadDirectory({ resetPage: true, isCurrent });
       }
     }
-    async function refresh() {
+    async function refresh(isCurrent = captureDirectoryCurrent(entity)) {
+      if (!isCurrent()) return;
       if (!state.initialized) {
-        await loadViews();
+        await loadViews(isCurrent);
+        if (!isCurrent()) return;
         const initial = directoryStateFromUrl(
           `${sponsorsPath(entity)}?${new URLSearchParams(listParamsByView[entity] || {}).toString()}`, entity);
         if (initial.error) {
@@ -453,11 +518,13 @@ export function createSponsorDirectoryPages({
           return;
         }
         state.initialized = true;
+        const initialViewId = initial.state.view || defaultViewForEntity(state.views || [], entity)?.id || null;
+        state.baseViewId = initialViewId;
         const resolved = resolveEffectiveFilters({
           entity,
           views: state.views,
           viewsError: state.viewsError,
-          selectedViewId: initial.state.view || defaultViewForEntity(state.views || [], entity)?.id || null,
+          selectedViewId: initialViewId,
           urlState: initial.state,
         });
         if (resolved.error) {
@@ -481,17 +548,24 @@ export function createSponsorDirectoryPages({
         // but never executes.
         state.limit = initial.state.limit || directoryDefaults(entity).limit;
         applyToControls({ ...resolved.filters }, resolved.sort);
-        if (entity === "people") await refillCompanyFilter();
+        if (entity === "people") {
+          await refillCompanyFilter("", isCurrent);
+          if (!isCurrent()) return;
+        }
         renderViews();
+      } else if (!state.views && !state.viewsError) {
+        await loadViews(isCurrent);
+        if (!isCurrent()) return;
       }
-      await loadDirectory({ resetPage: true });
+      await loadDirectory({ resetPage: true, isCurrent });
     }
-    async function refillCompanyFilter(search = "") {
+    async function refillCompanyFilter(search = "", isCurrent = captureDirectoryCurrent(entity)) {
       const select = root.querySelector('[data-dir-filter="company"]');
       if (!select) return;
       const selectedId = select.value || readControls().company || "";
       try {
         const options = await fetchCompanyOptions({ search });
+        if (!isCurrent()) return;
         select.innerHTML = companyPickerOptions({
           options,
           selectedId,
@@ -503,8 +577,10 @@ export function createSponsorDirectoryPages({
         // The filter stays usable from the URL; a failed picker is not fatal.
       }
     }
-    async function selectView(id) {
+    async function selectView(id, isCurrent = captureDirectoryCurrent(entity)) {
+      if (!isCurrent()) return;
       state.selectedViewId = id || null;
+      state.baseViewId = id || null;
       state.modified = false;
       const resolved = resolveEffectiveFilters({
         entity,
@@ -517,25 +593,40 @@ export function createSponsorDirectoryPages({
         state.sort = resolved.sort;
         applyToControls({ ...resolved.filters }, resolved.sort);
       }
-      await loadDirectory();
+      await loadDirectory({ isCurrent });
     }
     let filterTimer;
     const scheduleLoad = () => {
       clearTimeout(filterTimer);
-      filterTimer = setTimeout(() => safe(() => loadDirectory(), "Could not load directory"), 180);
+      noteDirectoryIntent(entity);
+      state.initialized = true;
+      const isCurrent = captureDirectoryCurrent(entity);
+      filterTimer = setTimeout(() => {
+        if (!isCurrent()) return;
+        safe(() => loadDirectory({ isCurrent }), "Could not load directory");
+      }, 180);
     };
     root.querySelector("[data-dir-search]").addEventListener("input", scheduleLoad);
     root.querySelectorAll("[data-dir-filter],[data-dir-sort]").forEach((input) =>
-      input.addEventListener("change", () => safe(() => loadDirectory(), "Could not load directory")));
+      input.addEventListener("change", () => {
+        noteDirectoryIntent(entity);
+        state.initialized = true;
+        const isCurrent = captureDirectoryCurrent(entity);
+        safe(() => loadDirectory({ isCurrent }), "Could not load directory");
+      }));
     pagesEl.addEventListener("click", (event) => {
       if (event.target.closest("[data-dir-next]") && state.nextCursor) {
+        noteDirectoryIntent(entity);
         state.prev.push(state.cursor);
         state.cursor = state.nextCursor;
-        safe(() => loadDirectory({ resetPage: false }), "Could not load directory");
+        const isCurrent = captureDirectoryCurrent(entity);
+        safe(() => loadDirectory({ resetPage: false, isCurrent }), "Could not load directory");
       }
       if (event.target.closest("[data-dir-prev]") && state.prev.length) {
+        noteDirectoryIntent(entity);
         state.cursor = state.prev.pop();
-        safe(() => loadDirectory({ resetPage: false }), "Could not load directory");
+        const isCurrent = captureDirectoryCurrent(entity);
+        safe(() => loadDirectory({ resetPage: false, isCurrent }), "Could not load directory");
       }
     });
     const pickerSearch = root.querySelector("[data-dir-company-search]");
@@ -543,14 +634,21 @@ export function createSponsorDirectoryPages({
       let pickerTimer;
       pickerSearch.addEventListener("input", () => {
         clearTimeout(pickerTimer);
-        pickerTimer = setTimeout(() => refillCompanyFilter(pickerSearch.value), 180);
+        const isCurrent = captureDirectoryCurrent(entity);
+        pickerTimer = setTimeout(() => {
+          if (!isCurrent()) return;
+          refillCompanyFilter(pickerSearch.value, isCurrent);
+        }, 180);
       });
     }
     viewsEl.addEventListener("click", (event) => {
       if (event.target.closest("[data-views-retry]")) {
+        noteDirectoryIntent(entity);
+        const isCurrent = captureDirectoryCurrent(entity);
         safe(async () => {
-          await loadViews();
-          await loadDirectory();
+          await loadViews(isCurrent);
+          if (!isCurrent()) return;
+          await loadDirectory({ isCurrent });
         }, "Could not load saved views");
         return;
       }
@@ -559,7 +657,9 @@ export function createSponsorDirectoryPages({
         return;
       }
       if (event.target.closest("[data-views-update]")) {
-        safe(() => updateCurrentView(), "Could not update saved view");
+        noteDirectoryIntent(entity);
+        const isCurrent = captureDirectoryCurrent(entity);
+        safe(() => updateCurrentView(isCurrent), "Could not update saved view");
         return;
       }
       if (event.target.closest("[data-views-manage]")) {
@@ -569,23 +669,37 @@ export function createSponsorDirectoryPages({
     viewsEl.addEventListener("change", (event) => {
       const select = event.target.closest("[data-views-select]");
       if (!select) return;
-      safe(() => selectView(select.value || null), "Could not apply saved view");
+      noteDirectoryIntent(entity);
+      state.initialized = true;
+      const isCurrent = captureDirectoryCurrent(entity);
+      safe(() => selectView(select.value || null, isCurrent), "Could not apply saved view");
     });
-    async function updateCurrentView() {
-      const current = state.views?.find((view) => view.id === state.selectedViewId && !isBuiltinView(view));
+    async function updateCurrentView(isCurrent = captureDirectoryCurrent(entity)) {
+      if (!isCurrent()) return;
+      const targetId = state.selectedViewId || state.baseViewId;
+      const current = state.views?.find((view) => view.id === targetId && !isBuiltinView(view));
       if (!current) throw new Error("Select one of your views to update it");
       const resolved = effectiveFromControls();
       if (resolved.error) throw new Error(resolved.error);
       const absolute = resolved.filters;
-      await updateSavedView(api, current.id, {
-        name: current.name,
-        filters: absolute,
-        sort: sortForSave(resolved.sort),
-        ...(current.columns ? { columns: current.columns } : {}),
-        version: current.version,
-      }, { paths: WORKSPACE_API });
-      await loadViews();
-      await selectView(current.id);
+      try {
+        await updateSavedView(api, current.id, {
+          name: current.name,
+          filters: absolute,
+          sort: sortForSave(resolved.sort),
+          ...(current.columns ? { columns: current.columns } : {}),
+          version: current.version,
+        }, { paths: WORKSPACE_API });
+      } catch (error) {
+        if (!isCurrent()) return;
+        throw error;
+      }
+      state.views = null;
+      state.viewsError = null;
+      if (!isCurrent()) return;
+      await loadViews(isCurrent);
+      if (!isCurrent()) return;
+      await selectView(current.id, isCurrent);
     }
     return {
       state, refresh, loadDirectory, restorePage, refillCompanyFilter, readControls,
@@ -597,113 +711,29 @@ export function createSponsorDirectoryPages({
     people: createDirectoryController("people"),
   };
 
-  // Saved-view save/manage dialog shared by both directories and pipeline.
-  let viewsDialogContext = null;
-  function openViewsDialog(entity, mode, preset) {
-    const dialog = surface.querySelector("[data-views-dialog]");
-    const form = dialog.querySelector("form");
-    const title = dialog.querySelector("[data-views-dialog-title]");
-    const saveFields = dialog.querySelector("[data-views-save-fields]");
-    const manage = dialog.querySelector("[data-views-manage]");
-    const confirm = dialog.querySelector("[data-views-confirm]");
-    const nameInput = form.elements.viewName;
-    form.reset();
-    viewsDialogContext = { entity, mode, viewId: preset?.id || null, version: preset?.version };
-    if (mode === "manage") {
-      title.textContent = "Manage my views";
-      saveFields.hidden = true;
-      confirm.hidden = true;
-      const views = entity === "pipeline" ? pipeline.views : directories[entity].state.views;
-      manage.innerHTML = renderSavedViewManageList({ views, escapeHtml });
-    } else {
-      title.textContent = mode === "rename" ? `Rename “${preset?.name || ""}”` : "Save view";
-      saveFields.hidden = false;
-      confirm.hidden = false;
-      confirm.textContent = mode === "rename" ? "Rename view" : "Save view";
-      if (preset) nameInput.value = preset.name || "";
-      manage.innerHTML = "";
-    }
-    openDialog(dialog);
-  }
-  surface.querySelector("[data-views-dialog] [data-views-manage]").addEventListener("click", (event) => {
-    const archiveId = event.target.closest("[data-views-archive]")?.dataset.viewsArchive;
-    const renameId = event.target.closest("[data-views-rename]")?.dataset.viewsRename;
-    if (!viewsDialogContext) return;
-    const { entity } = viewsDialogContext;
-    if (archiveId) {
-      safe(async () => {
-        await archiveSavedView(api, archiveId, { paths: WORKSPACE_API });
-        if (entity === "pipeline") {
-          pipeline.views = null;
-          pipeline.viewsError = null;
-          await pipeline.ensureViews();
-        } else {
-          await directories[entity].reloadViews();
-          await directories[entity].loadDirectory();
-        }
-        openViewsDialog(entity, "manage");
-      }, "Could not archive saved view");
-      return;
-    }
-    if (renameId) {
-      const views = entity === "pipeline" ? pipeline.views : directories[entity].state.views;
-      const preset = views?.find((view) => view.id === renameId);
-      if (preset) openViewsDialog(entity, "rename", preset);
-    }
+  // Saved-view save/manage dialog + pipeline URL/filter/saved-view lifecycle
+  // live in sponsor-pipeline-lifecycle.js.
+  let pipeline = null;
+  const openViewsDialog = wireSavedViewsDialog({
+    api,
+    surface,
+    escapeHtml,
+    safe,
+    openDialog,
+    getPipeline: () => pipeline,
+    directories,
+    capturePipelineCurrent,
+    captureDirectoryCurrent,
+    notePipelineIntent,
+    noteDirectoryIntent,
+    sortForSave,
+    workspaceApi: WORKSPACE_API,
   });
-  surface.querySelector("[data-views-confirm]").onclick = (event) => {
-    event.preventDefault();
-    if (!viewsDialogContext) return;
-    const { entity, mode, viewId, version } = viewsDialogContext;
-    const dialog = surface.querySelector("[data-views-dialog]");
-    const form = dialog.querySelector("form");
-    safe(async () => {
-      const name = form.elements.viewName.value || "";
-      const nameError = validateViewName(name);
-      if (nameError) throw new Error(nameError);
-      if (entity === "pipeline") {
-        const controls = pipeline.controlValues();
-        const filters = {};
-        if (controls.view && controls.view !== "actionable") filters.view = controls.view;
-        if (controls.stage) filters.stage = controls.stage;
-        if (controls.search) filters.search = controls.search;
-        if (controls.owner) filters.owner = controls.owner;
-        if (controls.nextActionFrom) filters.nextActionFrom = controls.nextActionFrom;
-        if (controls.nextActionBefore) filters.nextActionBefore = controls.nextActionBefore;
-        if (pipeline.getOrg()) filters.organizationId = pipeline.getOrg();
-        const sort = { field: controls.sort === "recent" ? "recent" : "next-action" };
-        const saved = mode === "rename"
-          ? await updateSavedView(api, viewId, { name, filters, sort, version }, { paths: WORKSPACE_API })
-          : await saveView(api, { entity, name, filters, sort, sourceKey: newViewSourceKey() }, { paths: WORKSPACE_API });
-        dialog.close();
-        pipeline.views = null;
-        pipeline.viewsError = null;
-        await pipeline.ensureViews();
-        await pipeline.applySavedView(saved.id);
-        return;
-      }
-      const controller = directories[entity];
-      const resolved = controller.state.lastResolved || { filters: {}, sort: "name" };
-      const saved = mode === "rename"
-        ? await updateSavedView(api, viewId, {
-          name, filters: { ...resolved.filters }, sort: sortForSave(resolved.sort), version,
-        }, { paths: WORKSPACE_API })
-        : await saveView(api, {
-          entity, name, filters: { ...resolved.filters },
-          sort: sortForSave(resolved.sort), sourceKey: newViewSourceKey(),
-        }, { paths: WORKSPACE_API });
-      dialog.close();
-      await controller.reloadViews();
-      await controller.selectView(saved.id);
-    }, "Could not save view");
-  };
-
-  // Pipeline URL/filter/saved-view lifecycle lives in
-  // sponsor-pipeline-lifecycle.js (same behavior, smaller module); the
-  // returned object keeps the directoryPages.pipeline contract.
-  const pipeline = createSponsorPipelineLifecycle({
+  pipeline = createSponsorPipelineLifecycle({
     api, surface, escapeHtml, safe, navigateCanonicalWorkspace, reloadPipeline,
-    rememberListParams, listParamsByView, activeView, openViewsDialog, showNotice,
+    rememberListParams, listParamsByView, activeView, capturePipelineCurrent,
+    captureSurfaceCurrent, notePipelineIntent,
+    openViewsDialog, showNotice,
     workspaceApi: WORKSPACE_API,
   });
 
@@ -714,8 +744,10 @@ export function createSponsorDirectoryPages({
   // Behavior (chooser, versions, precision-safe save) is F's editor.
   surface.addEventListener("click", (event) => {
     if (event.target.closest("[data-add-contact]")) {
+      const isCurrent = capturePageCurrent();
       safe(async () => {
         const options = await fetchCompanyOptions({ limit: 50 }).catch(() => []);
+        if (!isCurrent()) return;
         await openContactEditor({}, { companies: options });
       }, "Could not open contact editor");
       return;
@@ -879,6 +911,7 @@ export function createSponsorDirectoryPages({
     captureSaveContext,
     saveContextOwnsSurface,
     capturePageCurrent,
+    capturePipelineCurrent,
     noteTabTransition,
     listPath,
     captureReturnContext,

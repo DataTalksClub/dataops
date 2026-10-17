@@ -282,7 +282,9 @@ class FakeDocument {
 
 class FakeFormData {
   constructor(form) {
-    this.entries = form.formEntries || [];
+    this.entries = form.formEntries?.length
+      ? form.formEntries
+      : (form.elements || []).filter((el) => el.name).map((el) => [el.name, el.value]);
   }
 
   [Symbol.iterator]() {
@@ -334,7 +336,9 @@ function createHarness({ request, route = null, setupSurface, pipelineRows = [] 
         };
       }
       const path = requestPath(url);
-      if (path === "/api/sponsor-crm/pipeline") return { items: pipelineRows, counts: {}, total: pipelineRows.length, nextCursor: null };
+      if (path === "/api/sponsor-crm/pipeline" && pipelineRows !== null) {
+        return { items: pipelineRows, counts: {}, total: pipelineRows.length, nextCursor: null };
+      }
       const record = path.match(/^\/api\/sponsor-crm\/(deals|organizations)\/([^/]+)$/);
       if (request && record && (!options.method || options.method === "GET")) {
         const result = await request(`/api/sponsor-crm/${record[1]}`, options);
@@ -2028,4 +2032,829 @@ describe("CRM directory controllers", () => {
     assert.equal(reloadQueries[0].get("organizationId"), "org-9", "copied URL replays the company scope");
     assert.equal(reloadQueries[0].get("view"), "all", "copied URL replays the effective view");
   });
+
+  test("non-selected personal view rename preserves target filters/sort/columns and explicit update works after unpin", async () => {
+    const storedViews = [
+      ...directoryViews,
+      {
+        id: "view-rev-name",
+        entity: "companies",
+        name: "Reverse Z-A",
+        builtin: false,
+        filters: { active: "true", relationship: "talking" },
+        resolvedFilters: { active: "true", relationship: "talking" },
+        sort: { field: "name", direction: "desc" },
+        columns: ["displayName", "relationship"],
+        version: 4,
+      },
+      {
+        id: "view-touch-asc",
+        entity: "companies",
+        name: "Oldest touch",
+        builtin: false,
+        filters: { active: "true" },
+        resolvedFilters: { active: "true" },
+        sort: { field: "lastTouch", direction: "asc" },
+        version: 2,
+      },
+    ];
+    const puts = [];
+    const { document, finance } = createHarness({
+      route: dirRoute("companies", {}),
+      request: (url, options = {}) => {
+        const path = requestPath(url);
+        if (path === "/api/sponsor-crm/views") {
+          return { items: storedViews.map((v) => ({ ...v })), total: storedViews.length };
+        }
+        if (path.startsWith("/api/sponsor-crm/views/") && options.method === "PUT") {
+          const id = path.split("/").pop();
+          const body = JSON.parse(options.body);
+          puts.push({ id, body });
+          const idx = storedViews.findIndex((v) => v.id === id);
+          storedViews[idx] = {
+            ...storedViews[idx],
+            name: body.name,
+            filters: body.filters,
+            resolvedFilters: { active: "true", ...body.filters },
+            ...(body.sort ? { sort: body.sort } : {}),
+            ...(body.columns ? { columns: body.columns } : {}),
+            version: Number(body.version) + 1,
+          };
+          return storedViews[idx];
+        }
+        return directoryRequest(url, options);
+      },
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    const root = document.surface.querySelector('[data-dir-root="companies"]');
+    const viewsBar = root.querySelector("[data-dir-views]");
+    // Open Manage while Active builtin is selected, then rename non-selected view-rev-name.
+    await viewsBar.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-views-manage]" ? {} : null) },
+    });
+    const dialog = document.surface.querySelector("[data-views-dialog]");
+    const manageEl = document.surface.querySelector("[data-views-dialog] [data-views-manage]");
+    await manageEl.dispatch("click", {
+      target: {
+        closest: (sel) => (sel === "[data-views-rename]" ? { dataset: { viewsRename: "view-rev-name" } } : null),
+      },
+    });
+    dialog.querySelector("form").elements.viewName.value = "Renamed Reverse Z-A";
+    await document.surface.querySelector("[data-views-confirm]").dispatch("click", {});
+    await settle();
+    assert.equal(puts.length, 1);
+    assert.equal(puts[0].id, "view-rev-name");
+    assert.deepEqual(puts[0].body, {
+      name: "Renamed Reverse Z-A",
+      filters: { active: "true", relationship: "talking" },
+      sort: { field: "name", direction: "desc" },
+      columns: ["displayName", "relationship"],
+      version: 4,
+    });
+    // Select view-touch-asc, edit search to unpin selectedViewId -> null, then click Update.
+    await viewsBar.dispatch("change", {
+      target: { closest: (sel) => (sel === "[data-views-select]" ? { value: "view-touch-asc" } : null) },
+    });
+    await settle();
+    const search = root.querySelector("[data-dir-search]");
+    search.value = "acme";
+    await search.dispatch("input", {});
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.match(viewsBar.innerHTML, /<option value="" disabled selected>Current filters<\/option>/);
+    assert.match(viewsBar.innerHTML, /data-views-update>Update “Oldest touch”<\/button>/);
+    await viewsBar.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-views-update]" ? {} : null) },
+    });
+    await settle();
+    assert.equal(puts.length, 2);
+    assert.equal(puts[1].id, "view-touch-asc");
+    assert.deepEqual(puts[1].body, {
+      name: "Oldest touch",
+      filters: { active: "true", search: "acme" },
+      sort: { field: "lastTouch", direction: "asc" },
+      version: 2,
+    });
+  });
+
+  test("Back restores #main-content scroll owner on mobile/directory and [data-crm-list-scroll] on desktop pipeline with preventScroll focus", async () => {
+    const prevComputed = globalThis.getComputedStyle;
+    const mainScroller = { scrollTop: 340 };
+    const focusCalls = [];
+    let innerOverflowY = "visible";
+    try {
+      globalThis.getComputedStyle = () => ({ overflowY: innerOverflowY });
+      const { document, finance } = createHarness({
+        route: dirRoute("pipeline", {}),
+        pipelineRows: [{ id: "deal-1", organizationId: "org-acme", status: "open", productKind: "one-off" }],
+        request: (url, options = {}) => {
+          const path = requestPath(url);
+          if (path === "/api/sponsor-crm/views") return { items: [], total: 0 };
+          if (path === "/api/sponsor-crm/deals") {
+            return { items: [{ id: "deal-1", organizationId: "org-acme", status: "open", productKind: "one-off", version: 1 }] };
+          }
+          if (path === "/api/sponsor-crm/directory/companies/org-acme") {
+            return { id: "org-acme", displayName: "Acme Cloud", active: true, version: 1, updatedAt: "2026-10-12T00:00:00Z" };
+          }
+          if (path.includes("/activity/organization/org-acme")) {
+            return { targetType: "organization", targetId: "org-acme", items: [], total: 0, nextCursor: null, sources: {}, relatedWork: [], tasksScope: "open", reads: {} };
+          }
+          return directoryRequest(url, options);
+        },
+      });
+      document.getElementById = (id) => (id === "main-content" ? mainScroller : null);
+      await finance.renderSponsorCrmSurface();
+      await settle();
+      const innerScroller = document.surface.querySelector("[data-crm-list-scroll]");
+      innerScroller.scrollTop = 0;
+      const dealTrigger = document.surface.querySelector('[data-open-deal="deal-1"]');
+      dealTrigger.focus = (opts) => focusCalls.push(opts);
+      await document.surface.querySelector("[data-crm-bookings]").dispatch("click", {
+        target: { closest: (sel) => (sel === "[data-open-deal]" ? { dataset: { openDeal: "deal-1" } } : null) },
+      });
+      await settle();
+      mainScroller.scrollTop = 0;
+      const wired = document.surface.querySelector("[data-crm-detail]").querySelector("[data-crm-record]");
+      await wired.dispatch("click", {
+        target: { closest: (sel) => (sel === "[data-record-back]" ? {} : null) },
+      });
+      await settle();
+      assert.equal(mainScroller.scrollTop, 340, "mobile page-flow pipeline restores #main-content scrollTop");
+      assert.deepEqual(focusCalls.at(-1), { preventScroll: true }, "focus uses preventScroll so browser does not reset scroll");
+
+      // Desktop pipeline (>820px) where [data-crm-list-scroll] has overflowY: auto
+      innerOverflowY = "auto";
+      innerScroller.scrollTop = 515;
+      mainScroller.scrollTop = 10;
+      await document.surface.querySelector("[data-crm-bookings]").dispatch("click", {
+        target: { closest: (sel) => (sel === "[data-open-deal]" ? { dataset: { openDeal: "deal-1" } } : null) },
+      });
+      await settle();
+      innerScroller.scrollTop = 0;
+      await document.surface.querySelector("[data-crm-detail]").querySelector("[data-crm-record]").dispatch("click", {
+        target: { closest: (sel) => (sel === "[data-record-back]" ? {} : null) },
+      });
+      await settle();
+      assert.equal(innerScroller.scrollTop, 515, "desktop split pipeline restores [data-crm-list-scroll] scrollTop");
+    } finally {
+      globalThis.getComputedStyle = prevComputed;
+    }
+  });
+
+  test("delayed pipeline load/views/rejection across tab switch, record open, and away-and-back never overwrite newer state", async () => {
+    const gates = { pipeline: [], views: [] };
+    const { document, finance, navigations } = createHarness({
+      route: dirRoute("pipeline", { search: "slow" }),
+      pipelineRows: null,
+      request: (url, options = {}) => {
+        const path = requestPath(url);
+        const query = new URL(url, "http://dataops.test").searchParams;
+        if (path === "/api/sponsor-crm/views" && query.get("entity") === "pipeline") {
+          return { items: [], total: 0 };
+        }
+        if (path === "/api/sponsor-crm/pipeline") {
+          const search = query.get("search") || "";
+          if (search === "slow") {
+            return new Promise((resolve, reject) => {
+              gates.pipeline.push({ resolve, reject });
+            });
+          }
+          return {
+            items: [{ id: "deal-fresh", organizationId: "org-acme", organizationName: "Fresh Co", status: "agreed", stageGroup: "commitments" }],
+            funnel: { counts: { total: 1, agreed: 1 }, valuesEur: { total: 1000, agreed: 1000 }, nextActions: { total: 0 } },
+            nextCursor: null,
+          };
+        }
+        return directoryRequest(url, options);
+      },
+    });
+    const initialRender = finance.renderSponsorCrmSurface();
+    await settle();
+    assert.equal(gates.pipeline.length, 1, "initial slow pipeline load is in flight");
+    // Navigate away to Companies, then back to Pipeline with cleared search ("Fresh Co").
+    await openSponsorTab(document, "companies");
+    await settle();
+    document.surface.querySelector("[data-crm-search]").value = "";
+    await openSponsorTab(document, "pipeline");
+    await settle();
+    assert.match(document.surface.querySelector("[data-crm-bookings]").innerHTML, /Fresh Co/, "newer pipeline state renders");
+    // Now resolve/reject the stale first pipeline load from before away-and-back:
+    gates.pipeline[0].reject(new Error("stale pipeline network failure"));
+    await initialRender.catch(() => {});
+    await settle();
+    assert.match(document.surface.querySelector("[data-crm-bookings]").innerHTML, /Fresh Co/, "stale pipeline rejection is ignored");
+    assert.equal(document.surface.querySelector("[data-crm-message]").textContent, "", "stale rejection never writes an error banner");
+    const lastPipelineNav = navigations.filter((entry) => entry.path === "/sponsors/pipeline").at(-1);
+    assert.ok(!lastPipelineNav?.params?.search, "stale pipeline load never writes stale search back into URL");
+  });
+
+  test("delayed saved-view update settling after record open never reselects old filters or overwrites record URL", async () => {
+    const gates = {};
+    const { document, finance, navigations } = createHarness({
+      route: dirRoute("companies", {}),
+      request: (url, options = {}) => {
+        const path = requestPath(url);
+        if (path === "/api/sponsor-crm/views/view-acme" && options.method === "PUT") {
+          return new Promise((resolve) => {
+            gates.put = () => resolve({
+              id: "view-acme",
+              entity: "companies",
+              name: "Acme only",
+              filters: { active: "true", search: "north" },
+              resolvedFilters: { active: "true", search: "north" },
+              sort: { field: "name", direction: "asc" },
+              version: 2,
+            });
+          });
+        }
+        if (path === "/api/sponsor-crm/directory/companies/org-acme") {
+          return { id: "org-acme", displayName: "Acme Cloud", domain: "acme.example", active: true, version: 1, updatedAt: "2026-10-12T00:00:00Z" };
+        }
+        return directoryRequest(url, options);
+      },
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    const root = document.surface.querySelector('[data-dir-root="companies"]');
+    const viewsBar = root.querySelector("[data-dir-views]");
+    await viewsBar.dispatch("change", {
+      target: { closest: (sel) => (sel === "[data-views-select]" ? { value: "view-acme" } : null) },
+    });
+    await settle();
+    const search = root.querySelector("[data-dir-search]");
+    search.value = "north";
+    await search.dispatch("input", {});
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const updateClick = viewsBar.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-views-update]" ? {} : null) },
+    });
+    await settle();
+    assert.equal(typeof gates.put, "function", "view update PUT is in flight");
+    // Open company record before the view update PUT settles:
+    await document.surface.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-open-company]" ? { dataset: { openCompany: "org-acme" } } : null) },
+    });
+    await settle();
+    assert.equal(navigations.at(-1)?.path, "/sponsors/companies/org-acme", "record URL is active");
+    gates.put();
+    await updateClick;
+    await settle();
+    assert.equal(navigations.at(-1)?.path, "/sponsors/companies/org-acme", "late view update never overwrites record URL");
+    assert.equal(document.surface.classList.contains("has-booking-detail"), true, "record detail remains open");
+    // Switching from an open record to a list tab (Companies/People) clears has-booking-detail:
+    await document.surface.querySelector("[data-crm-nav]").dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-crm-nav-tab]" ? { dataset: { crmNavTab: "companies" } } : null) },
+    });
+    await settle();
+    assert.equal(document.surface.classList.contains("has-booking-detail"), false, "switching to Companies tab clears has-booking-detail");
+  });
+
+  test("same-tab manual filter edit supersedes deferred deep-link savedView init and in-flight view update", async () => {
+    const gates = {};
+    const { document, finance, navigations } = createHarness({
+      route: dirRoute("pipeline", { savedView: "view-early" }),
+      pipelineRows: null,
+      setupSurface(surface) {
+        surface.setQueryAll(
+          "[data-pipeline-view],[data-pipeline-sort],[data-pipeline-owner],[data-pipeline-from],[data-pipeline-to]",
+          [surface.querySelector("[data-pipeline-view]")],
+        );
+      },
+      request: (url, options = {}) => {
+        const path = requestPath(url);
+        const query = new URL(url, "http://dataops.test").searchParams;
+        if (path === "/api/sponsor-crm/views" && query.get("entity") === "pipeline") {
+          return new Promise((resolve) => {
+            gates.views = () => resolve({
+              items: [{
+                id: "view-early",
+                entity: "pipeline",
+                name: "Early pipeline",
+                filters: { view: "early", stage: "prospect" },
+                resolvedFilters: { view: "early", stage: "prospect" },
+                sort: { field: "next-action", direction: "asc" },
+                version: 1,
+              }],
+              total: 1,
+            });
+          });
+        }
+        if (path === "/api/sponsor-crm/pipeline") {
+          const view = query.get("view") || "actionable";
+          return {
+            items: [{
+              id: `deal-${view}`,
+              organizationId: "org-acme",
+              organizationName: view === "all" ? "All Deals Winner" : "Stale Early Deal",
+              status: "agreed",
+              stageGroup: "commitments",
+            }],
+            funnel: { counts: { total: 1, agreed: 1 }, valuesEur: { total: 1000, agreed: 1000 }, nextActions: { total: 0 } },
+            nextCursor: null,
+          };
+        }
+        return directoryRequest(url, options);
+      },
+    });
+    const boot = finance.renderSponsorCrmSurface();
+    await settle();
+    assert.equal(typeof gates.views, "function", "initial pipeline GET /views is in flight");
+    // Operator manually changes Show = All deals on the same tab before GET /views resolves:
+    const viewSelect = document.surface.querySelector("[data-pipeline-view]");
+    viewSelect.value = "all";
+    await viewSelect.dispatch("change", {});
+    await settle();
+    assert.match(document.surface.querySelector("[data-crm-bookings]").innerHTML, /All Deals Winner/);
+    // Now release the deferred initial GET /views from deep-link ?savedView=view-early:
+    gates.views();
+    await boot;
+    await settle();
+    assert.equal(viewSelect.value, "all", "manual Show=All deals control survives late savedView init");
+    assert.equal(document.surface.querySelector("[data-crm-status]").value, "", "stale savedView stage is never applied");
+    assert.match(document.surface.querySelector("[data-crm-bookings]").innerHTML, /All Deals Winner/, "rows stay on All deals");
+    const lastPipelineNav = navigations.filter((entry) => entry.path === "/sponsors/pipeline").at(-1);
+    assert.deepEqual(lastPipelineNav?.params, { view: "all" }, "URL keeps view=all without savedView=view-early");
+  });
+
+  test("stale saved-view rename does not close a newer dialog, same-tab filter edits supersede Back scroll/focus restore, and modified deal clicks do not open in-place", async () => {
+    const gates = {};
+    const { document, finance, navigations } = createHarness({
+      route: dirRoute("companies", {}),
+      request: (url, options = {}) => {
+        const path = requestPath(url);
+        if (path === "/api/sponsor-crm/views/view-acme" && options.method === "PUT") {
+          return new Promise((resolve) => {
+            gates.renamePut = () => resolve({
+              id: "view-acme",
+              entity: "companies",
+              name: "Acme renamed",
+              filters: { search: "acme" },
+              resolvedFilters: { active: "true", search: "acme" },
+              sort: { field: "name", direction: "asc" },
+              version: 2,
+            });
+          });
+        }
+        if (path === "/api/sponsor-crm/views" && options.method === "POST") {
+          const body = JSON.parse(options.body);
+          return {
+            id: "view-saved-b",
+            entity: body.entity,
+            name: body.name,
+            filters: body.filters,
+            resolvedFilters: { active: "true", ...body.filters },
+            sort: body.sort,
+            version: 1,
+          };
+        }
+        if (path === "/api/sponsor-crm/directory/companies/org-acme") {
+          return { id: "org-acme", displayName: "Acme Cloud", domain: "acme.example", active: true, version: 1, updatedAt: "2026-10-12T00:00:00Z" };
+        }
+        if (path === "/api/sponsor-crm/directory/companies" && gates.armBackRestore) {
+          gates.armBackRestore = false;
+          return new Promise((resolve) => {
+            gates.backRestore = () => resolve({ items: directoryOrgs, total: 2, nextCursor: null });
+          });
+        }
+        return directoryRequest(url, options);
+      },
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    const root = document.surface.querySelector('[data-dir-root="companies"]');
+    const viewsBar = root.querySelector("[data-dir-views]");
+    await viewsBar.dispatch("change", {
+      target: { closest: (sel) => (sel === "[data-views-select]" ? { value: "view-acme" } : null) },
+    });
+    await settle();
+    // 1. Open Manage then Rename dialog A and submit it (PUT in flight):
+    await viewsBar.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-views-manage]" ? {} : null) },
+    });
+    const dialog = document.surface.querySelector("[data-views-dialog]");
+    const manageEl = document.surface.querySelector("[data-views-dialog] [data-views-manage]");
+    await manageEl.dispatch("click", {
+      target: {
+        closest: (sel) => (sel === "[data-views-rename]" ? { dataset: { viewsRename: "view-acme" } } : null),
+      },
+    });
+    const form = dialog.querySelector("form");
+    form.elements.viewName.value = "Acme renamed";
+    const submitA = document.surface.querySelector("[data-views-confirm]").dispatch("click", {});
+    await settle();
+    assert.equal(typeof gates.renamePut, "function", "rename PUT A is in flight");
+    // Dismiss dialog A (Escape) and open Save view dialog B on the SAME tab while rename PUT A is still in flight:
+    dialog.close();
+    await viewsBar.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-views-save]" ? {} : null) },
+    });
+    assert.equal(dialog.open, true, "Save view dialog B is open");
+    assert.equal(dialog.querySelector("[data-views-dialog-title]").textContent, "Save view", "dialog B is in save mode");
+    form.elements.viewName.value = "Saved from B";
+    gates.renamePut();
+    await submitA;
+    await settle();
+    assert.equal(dialog.open, true, "late rename PUT A never closes newer dialog B");
+    assert.equal(form.elements.viewName.value, "Saved from B", "dialog B input stays intact");
+    await document.surface.querySelector("[data-views-confirm]").dispatch("click", {});
+    await settle();
+    assert.equal(dialog.open, false, "dialog B Remains usable and closes on its own confirm");
+
+    // 2. Modified click on genuine directory anchor [data-open-company] does not open in-place:
+    const pathsBefore = navigations.length;
+    await document.surface.dispatch("click", {
+      ctrlKey: true,
+      button: 0,
+      target: { closest: (sel) => (sel === "[data-open-company]" ? { dataset: { openCompany: "org-acme" } } : null) },
+    });
+    await settle();
+    assert.equal(navigations.length, pathsBefore, "modified click on company anchor leaves navigation untouched");
+
+    // 3. Open company record from scrollTop=420, then click Back while reload is gated; edit search before Back finishes:
+    const rowsHost = root.querySelector("[data-dir-rows]");
+    rowsHost.scrollTop = 420;
+    const rowButton = { dataset: { openCompany: "org-acme" }, focused: false, focus() { this.focused = true; } };
+    rowsHost.setQuery('[data-open-company="org-acme"]', rowButton);
+    await document.surface.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-open-company]" ? rowButton : null) },
+    });
+    await settle();
+    assert.equal(navigations.at(-1)?.path, "/sponsors/companies/org-acme");
+    gates.armBackRestore = true;
+    const wiredRecord = document.surface.querySelector("[data-crm-detail]").querySelector("[data-crm-record]");
+    const backClick = wiredRecord.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-record-back]" ? {} : null) },
+    });
+    await settle();
+    assert.equal(typeof gates.backRestore, "function", "Back restore reload is in flight");
+    // Operator edits search on the same Companies tab while Back restore is pending:
+    const search = root.querySelector("[data-dir-search]");
+    rowsHost.scrollTop = 0;
+    search.value = "north";
+    await search.dispatch("input", {});
+    gates.backRestore();
+    await backClick;
+    await settle();
+    assert.equal(rowsHost.scrollTop, 0, "stale Back restore does not overwrite scrollTop after same-tab search edit");
+    assert.equal(rowButton.focused, false, "stale Back restore does not steal focus after same-tab search edit");
+  });
+
+  test("Edit company pre-fills loaded company with version, saves via PUT, surfaces 409 conflicts, guards delayed saves across cancel/reopen and navigation, and resets for Add company", async () => {
+    const gates = {};
+    const orgPuts = [];
+    const orgPosts = [];
+    let acmeSummary = {
+      id: "org-acme",
+      displayName: "Acme Cloud",
+      domain: "acme.example",
+      notes: "Initial notes",
+      active: true,
+      version: 3,
+      updatedAt: "2026-10-12T00:00:00Z",
+    };
+    const { document, finance, navigations } = createHarness({
+      route: dirRoute("companies", {}),
+      request: (url, options = {}) => {
+        const path = requestPath(url);
+        if (path === "/api/sponsor-crm/directory/companies/org-acme") return { ...acmeSummary };
+        if (path === "/api/sponsor-crm/directory/companies/org-north") {
+          return { id: "org-north", displayName: "Northwind Data", domain: "northwind.example", active: true, version: 1, updatedAt: "2026-09-01T00:00:00Z" };
+        }
+        if (path.includes("/activity/organization/")) {
+          return { targetType: "organization", targetId: "org-acme", items: [], total: 0, nextCursor: null, sources: {}, relatedWork: [], tasksScope: "open", reads: {} };
+        }
+        if (path === "/api/sponsor-crm/organizations/org-acme" && options.method === "PUT") {
+          const body = JSON.parse(options.body);
+          orgPuts.push(body);
+          if (gates.conflictNext) {
+            gates.conflictNext = false;
+            const err = new Error("Record was changed; reload and retry");
+            err.status = 409;
+            throw err;
+          }
+          if (gates.delayRejectPut) {
+            gates.delayRejectPut = false;
+            return new Promise((_resolve, reject) => {
+              gates.releaseRejectPut = () => {
+                const err = new Error("Late stale Acme conflict");
+                err.status = 409;
+                reject(err);
+              };
+            });
+          }
+          if (gates.delayPut) {
+            gates.delayPut = false;
+            return new Promise((resolve) => {
+              gates.releasePut = () => {
+                acmeSummary = { ...acmeSummary, ...body, version: Number(body.version) + 1 };
+                resolve({ ...acmeSummary });
+              };
+            });
+          }
+          acmeSummary = { ...acmeSummary, ...body, version: Number(body.version) + 1 };
+          return { ...acmeSummary };
+        }
+        if (path === "/api/sponsor-crm/organizations" && options.method === "POST") {
+          const body = JSON.parse(options.body);
+          orgPosts.push(body);
+          return { id: "org-created", ...body, version: 1 };
+        }
+        return directoryRequest(url, options);
+      },
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    // Open Acme record:
+    await document.surface.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-open-company]" ? { dataset: { openCompany: "org-acme" } } : null) },
+    });
+    await settle();
+    const wiredRecord = () => document.surface.querySelector("[data-crm-detail]").querySelector("[data-crm-record]");
+    const renderedRecord = () => document.surface.querySelector("[data-crm-record]");
+    assert.match(renderedRecord().innerHTML, /data-edit-company/);
+    // Click Edit company:
+    await wiredRecord().dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-edit-company]" ? {} : null) },
+    });
+    await settle();
+    const orgDialog = document.surface.querySelector("[data-org-dialog]");
+    const orgForm = orgDialog.querySelector("form");
+    assert.equal(orgDialog.open, true);
+    assert.equal(orgForm.elements.organizationId.value, "org-acme");
+    assert.equal(orgForm.elements.version.value, "3");
+    assert.equal(orgForm.elements.displayName.value, "Acme Cloud");
+    assert.equal(orgForm.elements.domain.value, "acme.example");
+    assert.equal(orgForm.elements.notes.value, "Initial notes");
+
+    // 1. 409 Conflict keeps dialog open, surfaces alert, and preserves typed text:
+    gates.conflictNext = true;
+    orgForm.elements.displayName.value = "Acme Cloud Conflicted";
+    await document.surface.querySelector("[data-org-save]").dispatch("click", {});
+    await settle();
+    assert.equal(orgDialog.open, true, "dialog stays open on 409 conflict");
+    assert.match(orgDialog.querySelector('[role="alert"]').textContent, /Record was changed/);
+    assert.equal(orgForm.elements.displayName.value, "Acme Cloud Conflicted", "typed text preserved on conflict");
+
+    // 2. Successful PUT updates record in place and advances optimistic version to 4:
+    orgForm.elements.displayName.value = "Acme Cloud Renamed";
+    orgForm.elements.notes.value = "Updated notes";
+    await document.surface.querySelector("[data-org-save]").dispatch("click", {});
+    await settle();
+    assert.equal(orgDialog.open, false);
+    assert.equal(orgPuts.at(-1)?.version, 3);
+    assert.equal(orgPuts.at(-1)?.displayName, "Acme Cloud Renamed");
+    assert.match(renderedRecord().innerHTML, /Acme Cloud Renamed/);
+
+    // 3. Deferred rejection after Escape/cancel + opening Add company dialog never writes stale alert or clobbers typed text:
+    await wiredRecord().dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-edit-company]" ? {} : null) },
+    });
+    await settle();
+    assert.equal(orgDialog.querySelector('[role="alert"]').textContent, "", "reopen clears previous alert");
+    gates.delayRejectPut = true;
+    orgForm.elements.displayName.value = "Canceled Failing Acme";
+    const pendingRejectSave = document.surface.querySelector("[data-org-save]").dispatch("click", {});
+    await settle();
+    // User cancels dialog (Escape) and opens Add company dialog with fresh typed text:
+    orgDialog.close();
+    await orgDialog.dispatch("cancel", {});
+    await document.surface.querySelector("[data-add-org]").dispatch("click", {});
+    orgForm.elements.displayName.value = "Newer Dialog Typed Name";
+    gates.releaseRejectPut();
+    await pendingRejectSave;
+    await settle();
+    assert.equal(orgDialog.open, true, "newer dialog stays open after stale rejection");
+    assert.equal(orgDialog.querySelector('[role="alert"]').textContent, "", "stale rejection never writes alert into newer dialog");
+    assert.equal(orgForm.elements.displayName.value, "Newer Dialog Typed Name", "newer dialog typed text stays intact");
+
+    // 4. Deferred success after Escape/cancel + opening newer dialog never closes newer dialog or clobbers typed text:
+    orgDialog.close();
+    await orgDialog.dispatch("close", {});
+    await wiredRecord().dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-edit-company]" ? {} : null) },
+    });
+    await settle();
+    gates.delayPut = true;
+    orgForm.elements.displayName.value = "Canceled Succeeding Acme";
+    const pendingCanceledSuccess = document.surface.querySelector("[data-org-save]").dispatch("click", {});
+    await settle();
+    orgDialog.close();
+    await orgDialog.dispatch("close", {});
+    // Switch to People tab on the same record AND open Add company dialog:
+    await wiredRecord().dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-record-tab]" ? { dataset: { recordTab: "people" } } : null) },
+    });
+    await settle();
+    assert.match(renderedRecord().innerHTML, /data-record-panel="people"/);
+    await document.surface.querySelector("[data-add-org]").dispatch("click", {});
+    orgForm.elements.displayName.value = "Second Newer Dialog Text";
+    gates.releasePut();
+    await pendingCanceledSuccess;
+    await settle();
+    assert.equal(orgDialog.open, true, "newer dialog stays open after stale success");
+    assert.equal(orgForm.elements.displayName.value, "Second Newer Dialog Text", "newer dialog typed text preserved after stale success");
+    assert.match(renderedRecord().innerHTML, /data-record-panel="people"/, "canceled save never resets current record tab back to overview");
+
+    // 5. Delayed PUT settling after navigating to Northwind never clobbers Northwind:
+    orgDialog.close();
+    await orgDialog.dispatch("close", {});
+    await wiredRecord().dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-edit-company]" ? {} : null) },
+    });
+    await settle();
+    gates.delayPut = true;
+    orgForm.elements.displayName.value = "Late Stale Acme";
+    const pendingSave = document.surface.querySelector("[data-org-save]").dispatch("click", {});
+    await settle();
+    assert.equal(typeof gates.releasePut, "function", "delayed company PUT is in flight");
+    // Navigate to Northwind before Acme PUT settles:
+    await document.surface.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-open-company]" ? { dataset: { openCompany: "org-north" } } : null) },
+    });
+    await settle();
+    assert.equal(navigations.at(-1)?.path, "/sponsors/companies/org-north");
+    gates.releasePut();
+    await pendingSave;
+    await settle();
+    assert.equal(navigations.at(-1)?.path, "/sponsors/companies/org-north", "late company PUT never overwrites newer record URL");
+    assert.match(renderedRecord().innerHTML, /Northwind Data/, "late company PUT never paints over newer company record");
+
+    // 6. Clicking Add company resets edit fields and posts via POST /organizations:
+    await document.surface.querySelector("[data-add-org]").dispatch("click", {});
+    assert.equal(orgForm.elements.organizationId.value, "");
+    assert.equal(orgForm.elements.version.value, "");
+    orgForm.elements.displayName.value = "Brand New Sponsor";
+    orgForm.elements.domain.value = "brandnew.example";
+    await document.surface.querySelector("[data-org-save]").dispatch("click", {});
+    await settle();
+    assert.equal(orgPosts.length, 1);
+    assert.equal(orgPosts[0].displayName, "Brand New Sponsor");
+    assert.equal(orgPosts[0].version, undefined);
+  });
+
+  test("Deal and Contact editors guard deferred success (preserving canonical task POST) and rejection across Escape/cancel and newer dialog reopen", async () => {
+    const gates = {};
+    const taskPosts = [];
+    const pipelineDeals = [
+      { id: "deal-1", organizationId: "org-1", status: "open", productKind: "one-off", amountEur: 1200, version: 2 },
+      { id: "deal-2", organizationId: "org-1", status: "agreed", productKind: "bundle", amountEur: 3400, version: 1 },
+    ];
+    const { document, finance } = createHarness({
+      route: dirRoute("pipeline", {}),
+      pipelineRows: pipelineDeals,
+      request: (url, options = {}) => {
+        const path = requestPath(url);
+        if (path === "/api/sponsor-crm/organizations" && !options.method) return { items: [{ id: "org-1", displayName: "Acme Cloud" }] };
+        if (path === "/api/sponsor-crm/contacts" && !options.method) return { items: [] };
+        if (path === "/api/sponsor-crm/deals/deal-1" && options.method === "PUT") {
+          if (gates.rejectDeal) {
+            gates.rejectDeal = false;
+            return new Promise((_resolve, reject) => {
+              gates.releaseDealReject = () => {
+                const err = new Error("Stale deal-1 conflict");
+                err.status = 409;
+                reject(err);
+              };
+            });
+          }
+          if (gates.delayDeal) {
+            gates.delayDeal = false;
+            return new Promise((resolve) => {
+              gates.releaseDealSuccess = () => resolve({ ...pipelineDeals[0], ...JSON.parse(options.body), version: 3 });
+            });
+          }
+        }
+        if (path === "/api/tasks" && options.method === "POST") {
+          taskPosts.push(JSON.parse(options.body));
+          return { id: "task-created" };
+        }
+        if (path === "/api/sponsor-crm/contacts" && options.method === "POST") {
+          if (gates.rejectContact) {
+            gates.rejectContact = false;
+            return new Promise((_resolve, reject) => {
+              gates.releaseContactReject = () => reject(new Error("Stale contact validation error"));
+            });
+          }
+          if (gates.delayContact) {
+            gates.delayContact = false;
+            return new Promise((resolve) => {
+              gates.releaseContactSuccess = () => resolve({ id: "c-new", ...JSON.parse(options.body), version: 1 });
+            });
+          }
+        }
+        return directoryRequest(url, options);
+      },
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+
+    // Part A: Deal editor deferred rejection + deferred success (with taskDescription) across cancel + newer deal editor open:
+    const dealDialog = document.surface.querySelector("[data-deal-dialog]");
+    const dealForm = dealDialog.querySelector("form");
+    await document.surface.querySelector("[data-crm-bookings]").dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-edit-deal]" ? { dataset: { editDeal: "deal-1" } } : null) },
+    });
+    await settle();
+    assert.equal(dealDialog.open, true);
+    gates.rejectDeal = true;
+    dealForm.formEntries = [
+      ["dealId", "deal-1"], ["organizationId", "org-1"], ["status", "open"], ["productKind", "one-off"], ["version", "2"],
+    ];
+    const pendingDealReject = document.surface.querySelector("[data-deal-save]").dispatch("click", {});
+    await settle();
+    dealDialog.close();
+    await dealDialog.dispatch("cancel", {});
+    await document.surface.querySelector("[data-add-deal]").dispatch("click", {});
+    await settle();
+    dealForm.elements.historyNote.value = "Newer Deal Typed Note";
+    gates.releaseDealReject();
+    await pendingDealReject;
+    await settle();
+    assert.equal(dealDialog.open, true, "newer deal dialog stays open after stale deal rejection");
+    assert.equal(dealDialog.querySelector('[role="alert"]').textContent, "", "stale deal rejection never writes alert into newer deal dialog");
+    assert.equal(dealForm.elements.historyNote.value, "Newer Deal Typed Note", "newer deal dialog typed text stays intact");
+
+    // Deal deferred success with taskDescription preserves canonical /api/tasks POST while keeping newer deal dialog open:
+    dealDialog.close();
+    await dealDialog.dispatch("close", {});
+    await document.surface.querySelector("[data-crm-bookings]").dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-edit-deal]" ? { dataset: { editDeal: "deal-1" } } : null) },
+    });
+    await settle();
+    gates.delayDeal = true;
+    dealForm.formEntries = [
+      ["dealId", "deal-1"], ["organizationId", "org-1"], ["status", "agreed"], ["productKind", "one-off"],
+      ["version", "2"], ["taskDescription", "Follow up on contract"], ["taskDate", "2026-10-25"],
+    ];
+    const pendingDealSuccess = document.surface.querySelector("[data-deal-save]").dispatch("click", {});
+    await settle();
+    dealDialog.close();
+    await dealDialog.dispatch("close", {});
+    await document.surface.querySelector("[data-add-deal]").dispatch("click", {});
+    await settle();
+    dealForm.elements.historyNote.value = "Second Newer Deal Draft";
+    gates.releaseDealSuccess();
+    await pendingDealSuccess;
+    await settle();
+    assert.equal(taskPosts.length, 1, "submitted canonical task POST still executes on server");
+    assert.equal(taskPosts[0].description, "Follow up on contract");
+    assert.equal(dealDialog.open, true, "newer deal dialog stays open after stale deal success");
+    assert.equal(dealForm.elements.historyNote.value, "Second Newer Deal Draft", "newer deal dialog typed text preserved");
+
+    // Part B: Contact editor deferred rejection + deferred success across cancel + newer contact editor open:
+    dealDialog.close();
+    await dealDialog.dispatch("close", {});
+    const contactDialog = document.surface.querySelector("[data-contact-dialog]");
+    const contactForm = contactDialog.querySelector("form");
+    await document.surface.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-add-contact]" ? {} : null) },
+    });
+    await settle();
+    assert.equal(contactDialog.open, true);
+    gates.rejectContact = true;
+    contactForm.formEntries = [
+      ["organizationId", "org-1"], ["name", "Stale Contact"], ["email", "stale@acme.example"],
+    ];
+    const pendingContactReject = document.surface.querySelector("[data-contact-save]").dispatch("click", {});
+    await settle();
+    contactDialog.close();
+    await contactDialog.dispatch("cancel", {});
+    await document.surface.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-add-contact]" ? {} : null) },
+    });
+    await settle();
+    contactForm.elements.name.value = "Newer Contact Typed Name";
+    gates.releaseContactReject();
+    await pendingContactReject;
+    await settle();
+    assert.equal(contactDialog.open, true, "newer contact dialog stays open after stale contact rejection");
+    assert.equal(contactDialog.querySelector('[role="alert"]').textContent, "", "stale contact rejection never writes alert into newer contact dialog");
+    assert.equal(contactForm.elements.name.value, "Newer Contact Typed Name", "newer contact dialog typed text stays intact");
+
+    contactDialog.close();
+    await contactDialog.dispatch("close", {});
+    await document.surface.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-add-contact]" ? {} : null) },
+    });
+    await settle();
+    gates.delayContact = true;
+    contactForm.formEntries = [
+      ["organizationId", "org-1"], ["name", "Stale Succeeding Contact"], ["email", "ok@acme.example"],
+    ];
+    const pendingContactSuccess = document.surface.querySelector("[data-contact-save]").dispatch("click", {});
+    await settle();
+    contactDialog.close();
+    await contactDialog.dispatch("close", {});
+    await document.surface.dispatch("click", {
+      target: { closest: (sel) => (sel === "[data-add-contact]" ? {} : null) },
+    });
+    await settle();
+    contactForm.elements.name.value = "Second Newer Contact Draft";
+    gates.releaseContactSuccess();
+    await pendingContactSuccess;
+    await settle();
+    assert.equal(contactDialog.open, true, "newer contact dialog stays open after stale contact success");
+    assert.equal(contactForm.elements.name.value, "Second Newer Contact Draft", "newer contact dialog typed text preserved");
+  });
 });
+

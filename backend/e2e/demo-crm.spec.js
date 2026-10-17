@@ -168,7 +168,10 @@ test('converted leads stay complete after reload at desktop and mobile sizes', a
     await page.setViewportSize({ width, height });
     await page.reload();
     await expect(page.locator('[data-crm-message]')).toBeHidden();
-    await page.locator('[data-crm-nav-more] > summary').click();
+    const more = page.locator('[data-crm-nav-more]');
+    if ((await more.getAttribute('open')) === null) {
+      await more.locator('> summary').click();
+    }
     await page.locator('[data-crm-nav-tab="leads"]').click();
     // The Leads tab opens on New; converted leads sit under their own filter.
     await page.getByRole('radio', { name: 'Converted' }).click();

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createSponsorContactEditor } from "../src/surfaces/finance/sponsor-contacts.js";
+import { createSponsorContactEditor, createSponsorDialogGuard } from "../src/surfaces/finance/sponsor-contacts.js";
 import { escapeHtml, FakeNode, installFormData } from "./support/fake-record-dom.mjs";
 
 installFormData();
@@ -387,3 +387,159 @@ test("contact editing never exposes a send affordance", async () => {
   assert.doesNotMatch(source, /data-(draft-suggestion|review-draft|create-review|approve-message|suppress-address|cancel-attempt|reconcile-attempt|evaluate-communications)/);
   void escapeHtml;
 });
+
+test("deferred contact save and rejection across Escape/cancel and newer editor open never close, alert, or overwrite newer dialog", async () => {
+  let releaseReject, releaseSuccess;
+  let mode = "reject";
+  const errors = [];
+  const { form, dialog, editor, surface, saved } = editorHarness({
+    contacts: [ada, { ...ada, id: "p2", name: "Bob", emails: ["bob@acme.example"], version: 1 }],
+    companies: [{ id: "c1", displayName: "Acme" }],
+    routes: {
+      "PUT /contacts/p1": async ({ body }) => {
+        if (mode === "reject") {
+          await new Promise((resolve) => { releaseReject = resolve; });
+          throw new Error("Stale Ada conflict");
+        }
+        await new Promise((resolve) => { releaseSuccess = resolve; });
+        return { ...ada, ...body, version: 3 };
+      },
+    },
+    context: {
+      safe: async (action) => {
+        try {
+          await action();
+        } catch (error) {
+          errors.push(error.message);
+        }
+      },
+    },
+  });
+  const alert = dialog.setQuery('[role="alert"]', new FakeNode("p"));
+  // 1. Deferred rejection after cancel + reopen for Bob:
+  await editor.open({ id: "p1" });
+  form.formEntries = [
+    ["organizationId", "c1"], ["contactId", "p1"], ["version", "2"], ["name", "Ada Stale"],
+    ["email", "ada@acme.example"], ["role", "CTO"], ["linkedin", ""], ["telegram", ""],
+    ["notes", ""], ["lastContactedAt", "2026-10-09"],
+  ];
+  const pendingReject = surface.querySelector("[data-contact-save]").dispatch("click", {});
+  await Promise.resolve();
+  await Promise.resolve();
+  dialog.close();
+  await dialog.dispatch("cancel", {});
+  await editor.open({ id: "p2" });
+  form.elements.name.value = "Bob Typed Draft";
+  releaseReject();
+  await pendingReject;
+  assert.equal(dialog.open, true, "newer contact dialog stays open after stale rejection");
+  assert.equal(alert.textContent, "", "stale rejection never writes alert into newer contact dialog");
+  assert.deepEqual(errors, [], "stale rejection never surfaces global error");
+  assert.equal(form.elements.name.value, "Bob Typed Draft", "newer contact dialog typed text stays intact");
+  assert.deepEqual(saved, []);
+
+  // 2. Deferred success after cancel + reopen for Bob:
+  dialog.close();
+  await dialog.dispatch("close", {});
+  mode = "success";
+  await editor.open({ id: "p1" });
+  form.formEntries = [
+    ["organizationId", "c1"], ["contactId", "p1"], ["version", "2"], ["name", "Ada Stale Success"],
+    ["email", "ada@acme.example"], ["role", "CTO"], ["linkedin", ""], ["telegram", ""],
+    ["notes", ""], ["lastContactedAt", "2026-10-09"],
+  ];
+  const pendingSuccess = surface.querySelector("[data-contact-save]").dispatch("click", {});
+  await Promise.resolve();
+  await Promise.resolve();
+  dialog.close();
+  await dialog.dispatch("close", {});
+  await editor.open({ id: "p2" });
+  form.elements.name.value = "Bob Second Typed Draft";
+  releaseSuccess();
+  await pendingSuccess;
+  assert.equal(dialog.open, true, "newer contact dialog stays open after stale success");
+  assert.equal(form.elements.name.value, "Bob Second Typed Draft", "newer contact dialog typed text preserved after stale success");
+  assert.deepEqual(saved, [], "canceled contact save never invokes afterSave over newer dialog");
+});
+
+test("createSponsorDialogGuard preserves own-close continuation across queued native close events and guards immediate reopen", async () => {
+  const makeDialog = () => {
+    const dialog = new FakeNode("dialog");
+    dialog.setQuery('[role="alert"]', new FakeNode("p"));
+    const guard = createSponsorDialogGuard({
+      dialog,
+      openDialog: (d) => { d.open = true; },
+      stale: () => false,
+      captureSaveContext: () => ({}),
+      saveContextOwnsSurface: () => true,
+    });
+    guard.beginOpen();
+    guard.finishOpen();
+    return { dialog, guard };
+  };
+
+  // 1. Own successful close retains continuation after asynchronous native close event, and stays true after .done() when reopened later:
+  {
+    const { dialog, guard } = makeDialog();
+    const continuation = guard.beginSave().closeAndContinue();
+    assert.equal(continuation(), true, "continuation active immediately after closeAndContinue");
+    await dialog.dispatch("close", {});
+    assert.equal(continuation(), true, "continuation stays active after asynchronous native close event");
+    continuation.done();
+    guard.beginOpen();
+    guard.finishOpen();
+    assert.equal(continuation(), true, "settled continuation remains valid for already-rendered record when editor opens later");
+  }
+
+  // 2. Cancel + immediate reopen ignores old outcomes and queued close event does not invalidate newer invocation:
+  {
+    const { dialog, guard } = makeDialog();
+    const oldSave = guard.beginSave();
+    guard.cancel();
+    dialog.close();
+    guard.beginOpen();
+    guard.finishOpen();
+    const newerSave = guard.beginSave();
+    await dialog.dispatch("close", {});
+    assert.equal(oldSave.fail(new Error("old failure")), false);
+    assert.equal(oldSave.closeAndContinue(), null);
+    assert.equal(newerSave.fail(new Error("newer sentinel")), true);
+  }
+
+  // 3. Successful close + immediate reopen invalidates unsettled old continuation and queued close event cannot invalidate newer editor:
+  {
+    const { dialog, guard } = makeDialog();
+    const oldContinuation = guard.beginSave().closeAndContinue();
+    guard.beginOpen();
+    guard.finishOpen();
+    const newerSave = guard.beginSave();
+    await dialog.dispatch("close", {});
+    assert.equal(oldContinuation(), false);
+    assert.equal(newerSave.fail(new Error("newer sentinel")), true);
+  }
+
+  // 4. Pending editor open loses ownership after page navigation:
+  {
+    let pageGen = 0;
+    const dialog = new FakeNode("dialog");
+    dialog.setQuery('[role="alert"]', new FakeNode("p"));
+    const guard = createSponsorDialogGuard({
+      dialog,
+      openDialog: (d) => { d.open = true; },
+      stale: () => false,
+      capturePageCurrent: () => {
+        const g = pageGen;
+        return () => g === pageGen;
+      },
+      captureSaveContext: () => ({ generation: pageGen }),
+      saveContextOwnsSurface: (s) => s?.generation === pageGen,
+    });
+    const canOpen = guard.beginOpen();
+    assert.equal(canOpen(), true);
+    pageGen += 1;
+    assert.equal(canOpen(), false, "pending open invalidated after page navigation");
+  }
+});
+
+
+

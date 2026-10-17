@@ -1,4 +1,4 @@
-import { createSponsorContactEditor } from "./sponsor-contacts.js";
+import { createSponsorContactEditor, createSponsorDialogGuard } from "./sponsor-contacts.js";
 import { createSponsorPersonDetail } from "./sponsor-person-detail.js";
 import { createSponsorOwnerDirectory, populateSponsorDealForm } from "./sponsor-deal-form.js";
 import { createSponsorCommunications } from "./sponsor-communications.js";
@@ -281,11 +281,9 @@ export function createSponsorCrmSurface(context) {
       // Every user tab/list transition advances the page-owned generation so
       // in-flight saves and stale record opens never paint over the new tab.
       directoryPages.noteTabTransition();
-      if (view === "pipeline") {
-        surface.classList.remove("has-booking-detail");
-        // The board is the list pane; a phone shows it again.
-        surface.querySelector("[data-crm-split]").dataset.view = "list";
-      }
+      surface.classList.remove("has-booking-detail");
+      // Any list/page tab exits the record detail pane; a phone shows the list again.
+      surface.querySelector("[data-crm-split]").dataset.view = "list";
       surface.classList.toggle("is-pipeline", view === "pipeline");
       surface.querySelectorAll("[data-crm-nav-tab]").forEach((link) => {
         if (link.dataset.crmNavTab === view) link.setAttribute("aria-current", "page");
@@ -324,22 +322,26 @@ export function createSponsorCrmSurface(context) {
         : "Money";
       if (redraw) draw();
     }
-    const contactEditor = createSponsorContactEditor({ api, surface, getContacts: () => contacts,
-      getOrganizations: () => organizations, safe, openDialog,
+    const contactEditor = createSponsorContactEditor({
+      api,
+      surface,
+      getContacts: () => contacts,
+      getOrganizations: () => organizations,
+      safe,
+      openDialog,
+      stale,
+      capturePageCurrent: () => directoryPages.capturePageCurrent(),
       captureSaveContext: () => directoryPages.captureSaveContext(),
-      afterSave: async (organizationId, saveContext) => {
-        // Consume F's synchronous submit snapshot: a navigation that happened
-        // mid-save owns the surface; never refresh or reopen over it.
-        // Rechecked after every await (refresh, summary) before mutations.
-        // The save snapshot doubles as the F record-guard predicate.
-        if (saveContext && !directoryPages.saveContextOwnsSurface(saveContext)) return;
-        if (stale()) return;
+      saveContextOwnsSurface: (ctx) => directoryPages.saveContextOwnsSurface(ctx),
+      afterSave: async (
+        organizationId,
+        saveContext,
+        isPostCloseCurrent = () => !saveContext || directoryPages.saveContextOwnsSurface(saveContext),
+      ) => {
+        const isCurrent = () => isPostCloseCurrent() && !stale();
+        if (!isCurrent()) return;
         const record = saveContext?.record;
-        const isCurrent = () => !saveContext || directoryPages.saveContextOwnsSurface(saveContext);
         if (record) {
-          // Record-scoped contact save: refresh only the originating record,
-          // never the hidden directories behind it. A reassociation must not
-          // jump to the newly saved company.
           if (record.kind === "person") {
             await personDetail.openPerson(record.id, { isCurrent });
             return;
@@ -348,14 +350,13 @@ export function createSponsorCrmSurface(context) {
             ? record.id
             : deals.find((item) => item.id === record.id)?.organizationId || organizationId;
           await directoryPages.loadCompanySummary(companyId);
-          if (saveContext && !directoryPages.saveContextOwnsSurface(saveContext)) return;
+          if (!isCurrent()) return;
           await reopenCompanyDetail({ id: companyId }, null, { isCurrent });
           return;
         }
         await refresh();
-        if (saveContext && !directoryPages.saveContextOwnsSurface(saveContext)) return;
-        if (stale()) return;
-      } });
+      },
+    });
     const personDetail = createSponsorPersonDetail({
       api,
       surface,
@@ -365,7 +366,7 @@ export function createSponsorCrmSurface(context) {
       openCompanyRecord: (organizationId) => directoryPages.openRecord("company", organizationId, undefined, { keepContext: true }),
       openContactEditor: (target, options) => contactEditor.open(target, options),
     });
-    const { reopenDealDetail, reopenCompanyDetail } = createSponsorCompanyDetail({
+    const { reopenDealDetail, reopenCompanyDetail, getSelectedDealId } = createSponsorCompanyDetail({
       api,
       surface,
       escapeHtml,
@@ -387,6 +388,7 @@ export function createSponsorCrmSurface(context) {
       openTaskPanel,
       openCompanyRecord: (organizationId) => directoryPages.openRecord("company", organizationId),
       openContactEditor: (target, options) => contactEditor.open(target, options),
+      onEditCompany: (company) => openOrg(company),
       // Next-task owner beside due/description (same lookup pipeline uses;
       // Unassigned/Unavailable honest, raw IDs never rendered, no new reads).
       ownerName: (id) => ownerDirectory.name(id),
@@ -450,9 +452,17 @@ export function createSponsorCrmSurface(context) {
     }
 
 
-    const pipeline = createSponsorPipelineView({ api, surface, escapeHtml, humanSponsorDate,
-      ownerName: (id) => ownerDirectory.name(id), openTaskPanel, safe,
-      onChange: ({ cursor }) => directoryPages.pipeline.writeUrl(cursor) });
+    const pipeline = createSponsorPipelineView({
+      api,
+      surface,
+      escapeHtml,
+      humanSponsorDate,
+      ownerName: (id) => ownerDirectory.name(id),
+      openTaskPanel,
+      safe,
+      captureCurrent: () => directoryPages.capturePipelineCurrent(),
+      onChange: ({ cursor, isCurrent }) => directoryPages.pipeline.writeUrl(cursor, isCurrent),
+    });
     const runPipelineLoad = (reset = true, extra = {}) => directoryPages.pipeline.load(reset, extra);
     let pipelineUrlApplied = false;
     let directoryLoaded = false;
@@ -463,6 +473,7 @@ export function createSponsorCrmSurface(context) {
     }
 
     async function refresh({ coldRecord = false } = {}) {
+      const isRefreshCurrent = directoryPages.capturePageCurrent();
       directoryLoaded = false;
       message.textContent = "Loading sponsor CRM…";
       message.hidden = false;
@@ -475,20 +486,23 @@ export function createSponsorCrmSurface(context) {
         return;
       }
       if (currentView === "pipeline") {
+        const isPipelineCurrent = directoryPages.capturePipelineCurrent();
         await ownerDirectory.load();
+        if (!isPipelineCurrent()) return;
         ownerDirectory.fillFilter(surface.querySelector("[data-pipeline-owner]"));
         if (!pipelineUrlApplied) {
           pipelineUrlApplied = true;
-          await directoryPages.pipeline.initFromParams();
+          await directoryPages.pipeline.initFromParams(isPipelineCurrent);
         } else {
-          await runPipelineLoad(true);
+          await runPipelineLoad(true, { isCurrent: isPipelineCurrent });
         }
-        pipeline.draw();
+        if (!isPipelineCurrent()) return;
       }
       else if (currentView === "companies") await directoryPages.directories.companies.refresh();
       else if (currentView === "people") await directoryPages.directories.people.refresh();
       else if (currentView === "leads") await sponsorLeads.loadLeads();
       else if (currentView === "newsletters") await sponsorNewsletters.loadNewsletters();
+      if (!isRefreshCurrent()) return;
       // A notice raised mid-refresh (invalid URL enums, saved-view errors)
       // survives completion; only the loading text itself is cleared.
       if (message.textContent === "Loading sponsor CRM…") {
@@ -500,18 +514,49 @@ export function createSponsorCrmSurface(context) {
     function drawAlerts() {
       renderSponsorBookingAlerts({ surface, notificationState, escapeHtml });
     }
+    function bindDialogGuard(dialog) {
+      return createSponsorDialogGuard({
+        dialog,
+        openDialog,
+        stale,
+        capturePageCurrent: () => directoryPages.capturePageCurrent(),
+        captureSaveContext: () => directoryPages.captureSaveContext(),
+        saveContextOwnsSurface: (saveContext) =>
+          directoryPages.saveContextOwnsSurface(saveContext),
+      });
+    }
+    const dealDialogGuard = bindDialogGuard(surface.querySelector("[data-deal-dialog]"));
+    const orgDialogGuard = bindDialogGuard(surface.querySelector("[data-org-dialog]"));
     async function openDeal(item) {
+      const canOpen = dealDialogGuard.beginOpen();
       await Promise.all([ensureDirectory(), ownerDirectory.load()]);
-      const dialog = surface.querySelector("[data-deal-dialog]"),
-        form = dialog.querySelector("form");
-      populateSponsorDealForm(form, item, ownerDirectory, fillContacts);
-      openDialog(dialog);
+      if (!canOpen()) return;
+      populateSponsorDealForm(dealDialogGuard.dialog.querySelector("form"), item, ownerDirectory, fillContacts);
+      dealDialogGuard.finishOpen();
+    }
+    function openOrg(item = null) {
+      orgDialogGuard.beginOpen();
+      const form = orgDialogGuard.dialog.querySelector("form");
+      orgDialogGuard.finishOpen();
+      form.elements.organizationId.value = item?.id || "";
+      form.elements.version.value = item?.version != null ? String(item.version) : "";
+      form.elements.displayName.value = item?.displayName || "";
+      form.elements.domain.value = item?.domain || "";
+      form.elements.notes.value = item?.notes || "";
     }
     let searchTimer;
-    const schedulePipeline = () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => safe(() => runPipelineLoad(), "Could not load pipeline"), 180); };
+    const schedulePipeline = () => {
+      clearTimeout(searchTimer);
+      const isCurrent = directoryPages.capturePipelineCurrent();
+      searchTimer = setTimeout(() => {
+        if (!isCurrent()) return;
+        safe(() => runPipelineLoad(true, { isCurrent }), "Could not load pipeline");
+      }, 180);
+    };
     // A manual control edit unpins the selected saved view (the URL keeps
     // the effective filters, so the state stays shareable).
     function pipelineControlsChanged(reload) {
+      pipelineUrlApplied = true;
       directoryPages.pipeline.controlsChanged(reload);
     }
     surface.querySelectorAll("[data-pipeline-view],[data-pipeline-sort],[data-pipeline-owner],[data-pipeline-from],[data-pipeline-to]").forEach((input) =>
@@ -553,8 +598,7 @@ export function createSponsorCrmSurface(context) {
         directoryPages.openRecord("deal", dealId);
       }
     });
-    surface.querySelector("[data-add-org]").onclick = () =>
-      openDialog(surface.querySelector("[data-org-dialog]"));
+    surface.querySelector("[data-add-org]").onclick = () => openOrg(null);
     surface.querySelector("[data-add-deal]").onclick = () => openDeal(null);
     // Record links are real anchors: plain clicks open in place, modified
     // clicks open the canonical URL in a new tab. Already-handled clicks
@@ -619,7 +663,11 @@ export function createSponsorCrmSurface(context) {
     };
     for (const dialog of surface.querySelectorAll("dialog")) {
       const cancel = dialog.querySelector('[value="cancel"],[data-cancel]');
-      if (cancel) cancel.onclick = () => dialog.close();
+      if (cancel) cancel.onclick = () => {
+        if (dialog === orgDialogGuard.dialog) orgDialogGuard.cancel();
+        if (dialog === dealDialogGuard.dialog) dealDialogGuard.cancel();
+        dialog.close();
+      };
     }
     const reviewDialog = surface.querySelector(
       "[data-communication-review-dialog]",
@@ -643,41 +691,29 @@ export function createSponsorCrmSurface(context) {
         if (sponsorCommunications.selectedBookingId)
           await loadCommunications(sponsorCommunications.selectedBookingId);
       }, "Could not refresh communication suggestions");
+    function activeDealRecipientOptions() {
+      const deal = deals.find((item) => item.id === sponsorCommunications.selectedBookingId);
+      const recipients = contacts
+        .filter((item) => item.organizationId === deal?.organizationId && item.active !== false && !item.archivedAt)
+        .flatMap((item) => (item.emails || []).map((email) => ({ contactId: item.id, name: item.name, email })));
+      const options = recipients
+        .map(
+          (item) =>
+            html`<option value="${escapeHtml(item.email)}" data-contact-id="${escapeHtml(item.contactId)}">
+              ${escapeHtml(item.name || "Sponsor contact")} · ${escapeHtml(item.email)}
+            </option>`,
+        )
+        .join("");
+      return { recipients, options };
+    }
     surface.addEventListener("click", (event) => {
       if (!event.target.closest("[data-crm-communications]")) return;
       if (event.target.closest("[data-suppress-address]")) {
-        const deal = deals.find(
-          (item) => item.id === sponsorCommunications.selectedBookingId,
-        );
-        const recipients = contacts
-          .filter(
-            (item) =>
-              item.organizationId === deal?.organizationId &&
-              item.active !== false &&
-              !item.archivedAt,
-          )
-          .flatMap((item) =>
-            (item.emails || []).map((email) => ({
-              contactId: item.id,
-              name: item.name,
-              email,
-            })),
-          );
+        const { options } = activeDealRecipientOptions();
         const dialog = surface.querySelector("[data-suppression-dialog]");
         const form = dialog.querySelector("form");
         form.reset();
-        form.elements.recipient.innerHTML = recipients
-          .map(
-            (item) =>
-              html`<option
-                value="${escapeHtml(item.email)}"
-                data-contact-id="${escapeHtml(item.contactId)}"
-              >
-                ${escapeHtml(item.name || "Sponsor contact")} ·
-                ${escapeHtml(item.email)}
-              </option>`,
-          )
-          .join("");
+        form.elements.recipient.innerHTML = options;
         openDialog(dialog);
         return;
       }
@@ -693,53 +729,21 @@ export function createSponsorCrmSurface(context) {
         );
         return;
       }
-      const suggestionId = event.target.closest("[data-draft-suggestion]")
-        ?.dataset.draftSuggestion;
+      const suggestionId = event.target.closest("[data-draft-suggestion]")?.dataset.draftSuggestion;
       if (suggestionId) {
-        const suggestion = sponsorCommunications.communicationItems.find(
-          (item) => item.id === suggestionId,
-        );
-        const deal = deals.find(
-          (item) => item.id === sponsorCommunications.selectedBookingId,
-        );
-        const recipients = contacts
-          .filter(
-            (item) =>
-              item.organizationId === deal?.organizationId &&
-              item.active !== false &&
-              !item.archivedAt,
-          )
-          .flatMap((item) =>
-            (item.emails || []).map((email) => ({
-              contactId: item.id,
-              name: item.name,
-              email,
-            })),
-          );
+        const suggestion = sponsorCommunications.communicationItems.find((item) => item.id === suggestionId);
+        const { recipients, options } = activeDealRecipientOptions();
         if (!suggestion || !recipients.length) {
           message.hidden = false;
           message.textContent =
             "At least one active contact address in this sponsor organization is required before drafting.";
           return;
         }
-        const dialog = surface.querySelector(
-          "[data-communication-draft-dialog]",
-        );
+        const dialog = surface.querySelector("[data-communication-draft-dialog]");
         const form = dialog.querySelector("form");
         form.reset();
         form.elements.suggestionId.value = suggestionId;
-        form.elements.recipient.innerHTML = recipients
-          .map(
-            (item) =>
-              html`<option
-                value="${escapeHtml(item.email)}"
-                data-contact-id="${escapeHtml(item.contactId)}"
-              >
-                ${escapeHtml(item.name || "Sponsor contact")} ·
-                ${escapeHtml(item.email)}
-              </option>`,
-          )
-          .join("");
+        form.elements.recipient.innerHTML = options;
         surface.querySelector("[data-create-review]").textContent =
           sponsorCommunications.communicationPermissions.canApprove
             ? "Save and review exact message"
@@ -750,36 +754,55 @@ export function createSponsorCrmSurface(context) {
     });
     surface.querySelector("[data-org-save]").onclick = (event) => {
       event.preventDefault();
-      const dialog = surface.querySelector("[data-org-dialog]"),
-        form = dialog.querySelector("form");
+      const guard = orgDialogGuard.beginSave();
+      if (!guard) return;
+      const form = orgDialogGuard.dialog.querySelector("form");
+      const submitHadDetail = surface.classList.contains("has-booking-detail");
       safe(async () => {
-        const data = Object.fromEntries(new FormData(form));
-        await api("/organizations", { method: "POST", body: JSON.stringify(data) });
-        dialog.close();
-        await refresh();
+        const raw = Object.fromEntries(new FormData(form));
+        const id = (raw.organizationId || "").trim();
+        const payload = {
+          displayName: raw.displayName ?? "", domain: raw.domain ?? "", notes: raw.notes ?? "",
+          ...(id && raw.version !== undefined && raw.version !== "" ? { version: Number(raw.version) } : {}),
+        };
+        let saved;
+        try {
+          saved = await api(id ? `/organizations/${encodeURIComponent(id)}` : "/organizations", {
+            method: id ? "PUT" : "POST", body: JSON.stringify(payload),
+          });
+        } catch (error) {
+          if (guard.fail(error, "Could not save sponsor")) throw error;
+          return;
+        }
+        const isPostCloseCurrent = guard.closeAndContinue();
+        if (!isPostCloseCurrent) return;
+        try {
+          if (id && submitHadDetail) {
+            await directoryPages.loadCompanySummary(saved.id);
+            if (!isPostCloseCurrent()) return;
+            await reopenCompanyDetail(saved, getSelectedDealId(), {
+              isCurrent: isPostCloseCurrent,
+            });
+            return;
+          }
+          await refresh();
+        } finally {
+          isPostCloseCurrent.done();
+        }
       }, "Could not save sponsor");
     };
     surface.querySelector("[data-deal-save]").onclick = (event) => {
       event.preventDefault();
-      const dialog = surface.querySelector("[data-deal-dialog]"),
-        form = dialog.querySelector("form");
-      // Origin capture: a save from A must never refresh/reopen over a newer
-      // record B or a navigation that happened while the save was in flight.
-      // Captured synchronously at submit via the one page-owned context API
-      // (shared with F's contact-submit hook); stale() alone is not enough.
-      const saveContext = directoryPages.captureSaveContext();
+      const guard = dealDialogGuard.beginSave();
+      if (!guard) return;
+      const form = dealDialogGuard.dialog.querySelector("form");
       const submitHadDetail = surface.classList.contains("has-booking-detail");
       safe(async () => {
-        const raw = Object.fromEntries(
-          [...new FormData(form)].filter(([, value]) => value !== ""),
-        );
+        const raw = Object.fromEntries([...new FormData(form)].filter(([, value]) => value !== ""));
         const id = raw.dealId;
         const payload = {
-          organizationId: raw.organizationId,
-          primaryContactId: raw.primaryContactId || undefined,
-          status: raw.status,
-          productKind: raw.productKind,
-          historyNote: raw.historyNote,
+          organizationId: raw.organizationId, primaryContactId: raw.primaryContactId || undefined,
+          status: raw.status, productKind: raw.productKind, historyNote: raw.historyNote,
         };
         if (raw.version) payload.version = Number(raw.version);
         if (raw.amountEur) payload.amountEur = Number(raw.amountEur);
@@ -791,41 +814,40 @@ export function createSponsorCrmSurface(context) {
             materialDeadline: raw.materialDeadline,
           };
         }
-        const saved = await api(`/deals${id ? `/${id}` : ""}`, {
-          method: id ? "PUT" : "POST",
-          body: JSON.stringify(payload),
-        });
-        // The deal's next step is a Task about the deal, so it lands in the
-        // Tasks queue with everything else.
-        if (raw.taskDescription) {
-          await request(workApiUrl("/api/tasks"), {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              description: raw.taskDescription,
-              date: raw.taskDate || new Date().toISOString().slice(0, 10),
-              ...(raw.taskAssignee ? { assigneeId: raw.taskAssignee } : {}),
-              subject: { type: "sponsor-deal", id: saved.id },
-            }),
-          });
-        }
-        dialog.close();
-        // A newer record open or any navigation/re-render during the save
-        // owns the surface now: never refresh or reopen over it. Rechecked
-        // after the deal/task POSTs and after every later await (refresh,
-        // the company summary) before any surface mutation or reopen.
-        if (!directoryPages.saveContextOwnsSurface(saveContext)) return;
-        // A save from inside an open record refreshes that org+deal with the
-        // saved object (fresh version, no stale data): the origin Back
-        // context is preserved (no new open) and no unrelated list reloads.
-        if (submitHadDetail) {
-          await directoryPages.loadCompanySummary(saved.organizationId);
-          if (!directoryPages.saveContextOwnsSurface(saveContext)) return;
-          deals = [...deals.filter((value) => value.id !== saved.id), saved];
-          await reopenDealDetail(saved, { isCurrent: () => directoryPages.saveContextOwnsSurface(saveContext) });
+        let saved;
+        try {
+          saved = await api(`/deals${id ? `/${id}` : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(payload) });
+          if (raw.taskDescription) {
+            await request(workApiUrl("/api/tasks"), {
+              method: "POST", headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                description: raw.taskDescription,
+                date: raw.taskDate || new Date().toISOString().slice(0, 10),
+                ...(raw.taskAssignee ? { assigneeId: raw.taskAssignee } : {}),
+                subject: { type: "sponsor-deal", id: saved.id },
+              }),
+            });
+          }
+        } catch (error) {
+          if (guard.fail(error, "Could not save deal")) throw error;
           return;
         }
-        await refresh();
+        const isPostCloseCurrent = guard.closeAndContinue();
+        if (!isPostCloseCurrent) return;
+        try {
+          if (submitHadDetail) {
+            await directoryPages.loadCompanySummary(saved.organizationId);
+            if (!isPostCloseCurrent()) return;
+            deals = [...deals.filter((value) => value.id !== saved.id), saved];
+            await reopenDealDetail(saved, {
+              isCurrent: isPostCloseCurrent,
+            });
+            return;
+          }
+          await refresh();
+        } finally {
+          isPostCloseCurrent.done();
+        }
       }, "Could not save deal");
     };
     surface.querySelector("[data-save-suppression]").onclick = (event) => {

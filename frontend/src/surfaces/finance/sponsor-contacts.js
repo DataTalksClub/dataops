@@ -36,10 +36,134 @@ function escapeHtml(value) {
  * with the dialog kept open. lastContactedAt keeps full stored precision:
  * the date input only replaces the value when the user changes that date.
  */
-export function createSponsorContactEditor({ api, surface, getContacts, getOrganizations, safe, openDialog, afterSave, captureSaveContext }) {
+export function createSponsorDialogGuard({
+  dialog,
+  openDialog,
+  stale = () => false,
+  capturePageCurrent,
+  captureSaveContext,
+  saveContextOwnsSurface,
+}) {
+  let token = 0;
+  let state = "closed";
+  let activePostSave = null;
+  const ownsSurface = (saveContext) =>
+    typeof saveContextOwnsSurface === "function"
+      ? saveContextOwnsSurface(saveContext)
+      : true;
+  const invalidatePostSave = () => {
+    if (activePostSave && !activePostSave.settled) {
+      activePostSave.superseded = true;
+    }
+  };
+  const onCancel = () => {
+    invalidatePostSave();
+    token += 1;
+    state = "cancelled";
+  };
+  const onClose = () => {
+    if (state !== "open" || dialog.open === true) return;
+    onCancel();
+  };
+  dialog.addEventListener?.("close", onClose);
+  dialog.addEventListener?.("cancel", onCancel);
+  dialog.querySelector?.('[value="cancel"],[data-cancel]')?.addEventListener?.("click", onCancel);
+  return {
+    dialog,
+    cancel: onCancel,
+    beginOpen() {
+      invalidatePostSave();
+      const openToken = ++token;
+      const isPageCurrent =
+        typeof capturePageCurrent === "function"
+          ? capturePageCurrent()
+          : typeof captureSaveContext === "function" &&
+              typeof saveContextOwnsSurface === "function"
+            ? (() => {
+                const openContext = captureSaveContext();
+                return () => saveContextOwnsSurface(openContext);
+              })()
+            : () => true;
+      state = "opening";
+      return () =>
+        (state === "opening" || state === "open") &&
+        token === openToken &&
+        isPageCurrent() &&
+        !stale();
+    },
+    finishOpen() {
+      const alert = dialog.querySelector?.('[role="alert"]');
+      if (alert) alert.textContent = "";
+      state = "open";
+      openDialog(dialog);
+      dialog.open = true;
+    },
+    beginSave() {
+      if (state === "cancelled") return null;
+      state = "open";
+      const submitToken = token;
+      const saveContext =
+        typeof captureSaveContext === "function" ? captureSaveContext() : undefined;
+      dialog.open = true;
+      const isCurrent = () =>
+        state === "open" &&
+        token === submitToken &&
+        dialog.open !== false &&
+        ownsSurface(saveContext);
+      return {
+        saveContext,
+        isCurrent,
+        fail(error, fallback) {
+          if (!isCurrent()) return false;
+          const alert = dialog.querySelector?.('[role="alert"]');
+          if (alert) alert.textContent = error?.message || fallback;
+          return true;
+        },
+        closeAndContinue() {
+          if (!isCurrent()) return null;
+          state = "closed-by-save";
+          token += 1;
+          dialog.close();
+          const postSave = { superseded: false, settled: false };
+          activePostSave = postSave;
+          const isPostCloseCurrent = () =>
+            !postSave.superseded &&
+            (state === "closed-by-save" || postSave.settled) &&
+            ownsSurface(saveContext);
+          isPostCloseCurrent.done = () => {
+            postSave.settled = true;
+          };
+          return isPostCloseCurrent;
+        },
+      };
+    },
+  };
+}
+
+export function createSponsorContactEditor({
+  api,
+  surface,
+  getContacts,
+  getOrganizations,
+  safe,
+  openDialog,
+  afterSave,
+  stale,
+  capturePageCurrent,
+  captureSaveContext,
+  saveContextOwnsSurface,
+}) {
   const dialog = surface.querySelector("[data-contact-dialog]");
   const form = dialog.querySelector("form");
   let originalLastContactedAt = "";
+  const dialogGuard = createSponsorDialogGuard({
+    dialog,
+    openDialog,
+    stale,
+    capturePageCurrent,
+    captureSaveContext,
+    saveContextOwnsSurface,
+  });
 
   function companies(includeInactive = false) {
     if (typeof getOrganizations !== "function") return [];
@@ -152,6 +276,7 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
   }
 
   async function open(target = {}, options = {}) {
+    const canOpen = dialogGuard.beginOpen();
     let contact = null;
     let presetOrganizationId = "";
     if (target && typeof target === "object" && !Array.isArray(target)) {
@@ -164,9 +289,11 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
         presetOrganizationId = target.organizationId;
       }
     }
+    if (!canOpen()) return contact;
     if (contact?.organizationId) presetOrganizationId = contact.organizationId;
     await fillForm(contact, presetOrganizationId, options.companies || []);
-    openDialog(dialog);
+    if (!canOpen()) return contact;
+    dialogGuard.finishOpen();
     return contact;
   }
 
@@ -183,7 +310,8 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
     // runs only after the async contact API settles, by which time the user
     // may have navigated elsewhere. The captured snapshot travels as the
     // second afterSave argument so E can check it across awaits.
-    const saveContext = typeof captureSaveContext === "function" ? captureSaveContext() : undefined;
+    const guard = dialogGuard.beginSave();
+    if (!guard) return;
     await safe(async () => {
       const raw = Object.fromEntries(new FormData(form));
       const id = raw.contactId;
@@ -209,12 +337,23 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
         primary: form.elements.primary.checked,
         ...(id ? { version: Number(raw.version) } : {}),
       };
-      const saved = await api(`/contacts${id ? `/${encodeURIComponent(id)}` : ""}`, {
-        method: id ? "PUT" : "POST",
-        body: JSON.stringify(payload),
-      });
-      dialog.close();
-      await afterSave(saved.organizationId || organizationId, saveContext);
+      let saved;
+      try {
+        saved = await api(`/contacts${id ? `/${encodeURIComponent(id)}` : ""}`, {
+          method: id ? "PUT" : "POST",
+          body: JSON.stringify(payload),
+        });
+      } catch (error) {
+        if (guard.fail(error, "Could not save contact")) throw error;
+        return;
+      }
+      const isPostCloseCurrent = guard.closeAndContinue();
+      if (!isPostCloseCurrent) return;
+      try {
+        await afterSave(saved.organizationId || organizationId, guard.saveContext, isPostCloseCurrent);
+      } finally {
+        isPostCloseCurrent.done();
+      }
     }, "Could not save contact");
   };
 

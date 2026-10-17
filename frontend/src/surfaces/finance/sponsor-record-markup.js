@@ -104,7 +104,7 @@ export function archiveDisclosureMarkup(archive, context = {}) {
 
 export function recordHeaderMarkup(company, options = {}, context = {}) {
   const escape = esc(context);
-  const { selectedDeal = null, returnLabel = "Back", canArchive = false } = options;
+  const { selectedDeal = null, returnLabel = "Back", canArchive = false, canEdit = false } = options;
   const primary = company?.primaryPerson;
   const showPrimary = primary !== undefined
     || (company != null && Object.prototype.hasOwnProperty.call(company, "primaryPerson"));
@@ -124,6 +124,7 @@ export function recordHeaderMarkup(company, options = {}, context = {}) {
         ${showPrimary && company?.lastTouch ? " · " : ""}${company?.lastTouch ? html`Last touch ${escape(formatBerlinDate(company.lastTouch))}` : ""}
       </p>
     </div>
+    ${canEdit ? html`<button type="button" data-edit-company>Edit company</button>` : ""}
     ${canArchive ? (archived
       ? html`<button type="button" data-restore-company>Restore</button>`
       : html`<button type="button" data-archive-company>Archive</button>`) : ""}
@@ -142,8 +143,8 @@ export function recordTabsMarkup(active, context = {}) {
 }
 
 export function recordShellMarkup(company, options = {}, context = {}) {
-  const { selectedDeal = null, returnLabel = "Back", activeTab = "overview" } = options;
-  return html`${recordHeaderMarkup(company, { selectedDeal, returnLabel }, context)}
+  const { selectedDeal = null, returnLabel = "Back", activeTab = "overview", canArchive = false, canEdit = false } = options;
+  return html`${recordHeaderMarkup(company, { selectedDeal, returnLabel, canArchive, canEdit }, context)}
     ${recordTabsMarkup(activeTab, context)}
     ${RECORD_TABS.map(
       ([id]) => html`<section role="tabpanel" id="record-panel-${id}" aria-labelledby="record-tab-${id}"

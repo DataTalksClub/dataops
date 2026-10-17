@@ -149,7 +149,8 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = (value)
           <h3>Sponsor company</h3>
         </header>
         <div class="dialog-fields">
-          <label>Name <input name="displayName" required /></label
+          <input name="organizationId" type="hidden" /><input name="version" type="hidden" /><label
+            >Name <input name="displayName" required /></label
           ><label>Domain <input name="domain" placeholder="example.com" /></label
           ><label>Operator notes <textarea name="notes"></textarea></label>
           <p role="alert"></p>

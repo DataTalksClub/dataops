@@ -67,7 +67,7 @@ export function pipelineControlsFromFilters(filters = {}, sort = 'next-action') 
   };
 }
 
-export function createSponsorPipelineView({ api, surface, escapeHtml, humanSponsorDate, ownerName, openTaskPanel, safe, onChange }) {
+export function createSponsorPipelineView({ api, surface, escapeHtml, humanSponsorDate, ownerName, openTaskPanel, safe, onChange, captureCurrent }) {
   let result = { items: [], counts: {}, total: 0 }, cursor = '', generation = 0;
   const previous = [];
   const root = surface.querySelector('[data-crm-bookings]');
@@ -83,11 +83,14 @@ export function createSponsorPipelineView({ api, surface, escapeHtml, humanSpons
       <button data-pipeline-next ${result.nextCursor ? '' : 'disabled'}>Next</button></nav>`;
   }
   async function load(reset = true, options = {}) {
+    const isCurrent = options.isCurrent || (typeof captureCurrent === 'function' ? captureCurrent() : () => true);
+    if (!isCurrent()) return;
     if (reset) { cursor = ''; previous.length = 0; surface.querySelector('[data-crm-list-scroll]').scrollTop = 0; }
     // A deep-linked cursor (refresh/back) starts a fresh page stack: Next
     // works from there, Previous needs in-session paging.
     if (options.cursor !== undefined) { cursor = options.cursor || ''; previous.length = 0; }
     const token = ++generation;
+    const settled = () => token === generation && surface.isConnected && isCurrent();
     root.setAttribute('aria-busy', 'true');
     const query = new URLSearchParams({ limit: '30', view: surface.querySelector('[data-pipeline-view]').value, sort: surface.querySelector('[data-pipeline-sort]').value });
     for (const [key, selector] of [['search', '[data-crm-search]'], ['stage', '[data-crm-status]'], ['owner', '[data-pipeline-owner]'],
@@ -98,7 +101,7 @@ export function createSponsorPipelineView({ api, surface, escapeHtml, humanSpons
     if (cursor) query.set('cursor', cursor);
     try {
       const page = await api(`/pipeline?${query}`);
-      if (token !== generation || !surface.isConnected) return;
+      if (!settled()) return;
       result = page;
       surface.querySelector('[data-crm-nav-tab="money"]').hidden = !page.financeEnabled;
       draw();
@@ -108,7 +111,11 @@ export function createSponsorPipelineView({ api, surface, escapeHtml, humanSpons
         hasPrev: previous.length > 0,
         hasNext: !!result.nextCursor,
         total: result.total,
+        isCurrent: settled,
       });
+    } catch (error) {
+      if (!settled()) return;
+      throw error;
     } finally { if (token === generation) root.removeAttribute('aria-busy'); }
   }
   root.addEventListener('click', (event) => {

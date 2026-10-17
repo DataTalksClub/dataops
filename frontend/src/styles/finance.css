@@ -1181,14 +1181,15 @@ body[data-workspace-view="sponsors"] .document-list {
   display: none;
 }
 
-/* Pipeline progress spans the surface; opening a record replaces the board. */
-.sponsor-crm-surface.is-pipeline > .crm-layout {
+/* Pipeline progress and open records span the surface; opening a record replaces the list/board. */
+.sponsor-crm-surface.is-pipeline > .crm-layout,
+.sponsor-crm-surface.has-booking-detail > .crm-layout {
   grid-template-columns: minmax(0, 1fr);
 }
 .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-detail-pane {
   display: none;
 }
-.sponsor-crm-surface.is-pipeline.has-booking-detail .crm-master {
+.sponsor-crm-surface.has-booking-detail .crm-master {
   display: none;
 }
 /* The open record replaced the board, so Back is how to reach it again.
@@ -1420,8 +1421,21 @@ closes on every tab switch (see setView), so it never covers list content. */
    is untouched. The surface gap compacts so primary content starts within
    the first screen. The record detail keeps its own inner scroller. */
 @media (max-width: 820px) {
+  .dk-main.page-shell:has(.sponsor-crm-surface.is-pipeline:not(.has-booking-detail)),
+  #library-view:has(.sponsor-crm-surface.is-pipeline:not(.has-booking-detail)),
+  #document-list:has(.sponsor-crm-surface.is-pipeline:not(.has-booking-detail)),
+  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) {
+    flex: none;
+    min-height: auto;
+  }
   .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) { gap: 8px; }
-  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) > .crm-layout { display: block; overflow: visible; order: 3; }
+  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) > .crm-layout {
+    display: block;
+    flex: none;
+    min-height: 0;
+    overflow: visible;
+    order: 3;
+  }
   .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-master { display: block; overflow: visible; }
   .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-master [data-crm-list-scroll] { overflow: visible; }
   /* Content-first on narrow screens: the attention list follows the tab

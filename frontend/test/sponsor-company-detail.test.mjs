@@ -133,3 +133,28 @@ test("migration projects the B archive read-only without send hooks", async () =
   const rendered = surface.querySelector("[data-crm-record]");
   assert.match(rendered.innerHTML, /Acme/);
 });
+
+test("record header renders Edit company when onEditCompany is provided and passes the loaded company with version", async () => {
+  const editedCompanies = [];
+  const { surface, detail } = migrationHarness({
+    organization,
+    context: {
+      onEditCompany: (company) => editedCompanies.push(company),
+    },
+    routes: {
+      "GET /directory/companies/c1": { ...organization, notes: "Existing notes", version: 7 },
+      "GET /activity/organization/c1?limit=3": preview,
+    },
+  });
+  await detail.reopenCompanyDetail(organization, { id: "d1" });
+  const wired = surface.querySelector("[data-crm-detail]").querySelector("[data-crm-record]");
+  const rendered = surface.querySelector("[data-crm-record]");
+  assert.match(rendered.innerHTML, /data-edit-company[^>]*>Edit company<\/button>/);
+  assert.equal(detail.getSelectedDealId(), "d1");
+  await wired.dispatch("click", { closestPatch: { "[data-edit-company]": new FakeNode("button") } });
+  assert.equal(editedCompanies.length, 1);
+  assert.equal(editedCompanies[0].id, "c1");
+  assert.equal(editedCompanies[0].version, 7);
+  assert.equal(editedCompanies[0].notes, "Existing notes");
+});
+

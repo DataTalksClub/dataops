@@ -197,6 +197,7 @@ export function createSponsorRecord(context) {
     return {
       selectedDeal: record?.selectedDeal || null,
       returnLabel: record?.returnLabel || "Back",
+      canEdit: typeof context.onEditCompany === "function",
       // E asked for Archive/Restore in the record header (old per-row list
       // Archive goes away with integration); the buttons render only when
       // the migration wires the handlers.
@@ -696,6 +697,17 @@ export function createSponsorRecord(context) {
           if (!current(mine) || record?.companyId !== companyId) return;
           await context.onAddDeal(companyId);
         }, "Could not open the deal editor");
+        return;
+      }
+      const editCompany = event.target.closest("[data-edit-company]");
+      if (editCompany && typeof context.onEditCompany === "function") {
+        const mine = token;
+        const company = record?.company;
+        if (!company?.id) return;
+        await fail(async () => {
+          if (!current(mine) || record?.companyId !== company.id) return;
+          await context.onEditCompany(company);
+        }, "Could not open the company editor");
         return;
       }
       const archive = event.target.closest("[data-archive-company]");
