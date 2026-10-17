@@ -456,6 +456,31 @@ async function hasApprovedArtifactProof(
   return false;
 }
 
+function findCardLinkUrl(cardLinks: unknown, name: string): string | null {
+  if (!Array.isArray(cardLinks)) return null;
+  for (const link of cardLinks) {
+    if (
+      link
+      && typeof link === 'object'
+      && (link as Record<string, unknown>).name === name
+      && isNonEmptyString((link as Record<string, unknown>).url)
+    ) {
+      return String((link as Record<string, unknown>).url).trim();
+    }
+  }
+  return null;
+}
+
+export async function resolveCardLinkForTask(
+  client: DynamoDBDocumentClient,
+  cardId: unknown,
+  requiredLinkName: unknown,
+): Promise<string | null> {
+  if (!isNonEmptyString(cardId) || !isNonEmptyString(requiredLinkName)) return null;
+  const card = await getCard(client, String(cardId).trim());
+  return findCardLinkUrl(card?.cardLinks, String(requiredLinkName).trim());
+}
+
 export async function validateRequiredCardLinks(
   client: DynamoDBDocumentClient,
   taskData: Record<string, unknown>
@@ -469,9 +494,12 @@ export async function validateRequiredCardLinks(
   }
 
   const card = await getCard(client, cardId);
+  const taskProvidedName = isNonEmptyString(taskData.requiredLinkName) ? String(taskData.requiredLinkName).trim() : null;
+  const taskProvidedUrl = isNonEmptyString(taskData.link) ? String(taskData.link).trim() : null;
   for (const name of requiredNames) {
     if (skipClosureSuppresses(taskData, 'cardLink', name)) continue;
-    if (!cardHasLink(card?.cardLinks, name)) {
+    const satisfiedByTask = taskProvidedName === name && Boolean(taskProvidedUrl);
+    if (!satisfiedByTask && !cardHasLink(card?.cardLinks, name)) {
       return `Cannot mark task as done: required card link '${name}' is not filled`;
     }
   }

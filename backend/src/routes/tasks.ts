@@ -51,6 +51,7 @@ import {
   isNonEmptyString,
   isTaskStatus,
   makeTaskHistoryEvent,
+  resolveCardLinkForTask,
   skipClosureSuppresses,
   trimmedString,
   validateActionChannel,
@@ -361,6 +362,14 @@ export async function handleTaskRoutes(
       }
     }
     if (taskData.status === 'done') {
+      if (
+        isNonEmptyString(taskData.requiredLinkName)
+        && !isNonEmptyString(taskData.link)
+        && isNonEmptyString(taskData.cardId)
+      ) {
+        const cardLinkUrl = await resolveCardLinkForTask(client, taskData.cardId, taskData.requiredLinkName);
+        if (cardLinkUrl) taskData.link = cardLinkUrl;
+      }
       const cardLinkError = await validateRequiredCardLinks(client, taskData);
       if (cardLinkError) {
         return jsonResponse(400, { error: cardLinkError });
@@ -848,6 +857,18 @@ export async function handleTaskRoutes(
       if (
         effectiveRequiredLinkName
         && !effectiveLink
+        && isNonEmptyString(taskData.cardId)
+      ) {
+        const cardLinkUrl = await resolveCardLinkForTask(client, taskData.cardId, effectiveRequiredLinkName);
+        if (cardLinkUrl) {
+          updates.link = cardLinkUrl;
+          taskData.link = cardLinkUrl;
+        }
+      }
+      const resolvedLink = (updates.link !== undefined ? updates.link : existing.link) as string | undefined;
+      if (
+        effectiveRequiredLinkName
+        && !resolvedLink
         && !skipClosureSuppresses(taskData, 'requiredLink', effectiveRequiredLinkName)
       ) {
         return jsonResponse(400, { error: `Cannot mark task as done: required link '${effectiveRequiredLinkName}' is not filled` });
@@ -1082,6 +1103,18 @@ export async function handleTaskRoutes(
       if (
         effectiveRequiredLinkName
         && !effectiveLink
+        && isNonEmptyString(taskData.cardId)
+      ) {
+        const cardLinkUrl = await resolveCardLinkForTask(client, taskData.cardId, effectiveRequiredLinkName);
+        if (cardLinkUrl) {
+          updates.link = cardLinkUrl;
+          taskData.link = cardLinkUrl;
+        }
+      }
+      const resolvedLink = (updates.link !== undefined ? updates.link : existing.link) as string | undefined;
+      if (
+        effectiveRequiredLinkName
+        && !resolvedLink
         && !skipClosureSuppresses(taskData, 'requiredLink', effectiveRequiredLinkName)
       ) {
         return jsonResponse(400, { error: `Cannot mark task as done: required link '${effectiveRequiredLinkName}' is not filled` });

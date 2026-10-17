@@ -144,6 +144,15 @@ function appendAuditRef(refs: AuditEventRef[] | undefined, event: CardTemplateUp
   }];
 }
 
+function stripLegacyTemplateDescription(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/\s*Migration provenance:[\s\S]*$/, '')
+    .replace(/(?:^|\n)\s*Overview docs:\s*[\s\S]*$/i, '')
+    .replace(/(?:^|\n)\s*Links:\s*(?:[-*]\s*[^\n]*:\s*TODO\b[\s\S]*)$/i, '')
+    .trim();
+}
+
 function appliedCard(
   card: Card,
   template: Template,
@@ -153,6 +162,11 @@ function appliedCard(
 ): Card {
   const next = structuredClone(card) as Card & Dict;
   for (const field of ['tags', 'sourceDocIds', 'references', 'cardLinks']) delete next[field];
+  if (typeof next.description === 'string') {
+    const cleaned = stripLegacyTemplateDescription(next.description);
+    if (cleaned) next.description = cleaned;
+    else delete next.description;
+  }
   next.tags = structuredClone(plan.targetCardSnapshot.tags);
   next.sourceDocIds = structuredClone(plan.targetCardSnapshot.sourceDocIds);
   next.references = structuredClone(plan.targetCardSnapshot.references);

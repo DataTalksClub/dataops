@@ -2162,6 +2162,84 @@ describe('API — CRUD for tasks', () => {
       const body = JSON.parse(res.body);
       assert.strictEqual(body.status, 'done');
     });
+
+    it('writes task link to Card cardLinks when completing a task and also accepts a pre-filled Card link', async () => {
+      const cardRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/cards',
+        body: JSON.stringify({
+          title: 'Podcast episode link sync',
+          anchorDate: '2026-07-20',
+          templateId: EMPTY_TEMPLATE_ID,
+          cardLinks: [
+            { name: 'Podcast document', url: '' },
+            { name: 'Luma', url: 'https://lu.ma/pre-filled' },
+          ],
+        }),
+      }, {});
+      assert.strictEqual(cardRes.statusCode, 201, cardRes.body);
+      const card = JSON.parse(cardRes.body).card;
+
+      const docTaskRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Create the podcast document',
+          date: '2026-07-10',
+          cardId: card.id,
+          requiredLinkName: 'Podcast document',
+          proofRequirement: { type: 'url', label: 'Podcast document', required: true },
+          validation: { requiredCardLinks: ['Podcast document'] },
+        }),
+      }, {});
+      assert.strictEqual(docTaskRes.statusCode, 201, docTaskRes.body);
+      const docTask = JSON.parse(docTaskRes.body);
+
+      const doneDocRes = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${docTask.id}`,
+        body: JSON.stringify({
+          status: 'done',
+          link: 'https://docs.example/podcast-doc',
+          expectedVersion: docTask.version,
+        }),
+      }, {});
+      assert.strictEqual(doneDocRes.statusCode, 200, doneDocRes.body);
+      assert.strictEqual(JSON.parse(doneDocRes.body).link, 'https://docs.example/podcast-doc');
+
+      const updatedCardRes = await handler({ httpMethod: 'GET', path: `/api/cards/${card.id}` }, {});
+      const updatedCard = JSON.parse(updatedCardRes.body).card;
+      assert.deepStrictEqual(
+        updatedCard.cardLinks.find((entry: { name: string }) => entry.name === 'Podcast document'),
+        { name: 'Podcast document', url: 'https://docs.example/podcast-doc' },
+      );
+
+      const lumaTaskRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Create Luma event',
+          date: '2026-07-11',
+          cardId: card.id,
+          requiredLinkName: 'Luma',
+          proofRequirement: { type: 'url', label: 'Luma', required: true },
+          validation: { requiredCardLinks: ['Luma'] },
+        }),
+      }, {});
+      assert.strictEqual(lumaTaskRes.statusCode, 201, lumaTaskRes.body);
+      const lumaTask = JSON.parse(lumaTaskRes.body);
+
+      const doneLumaRes = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${lumaTask.id}`,
+        body: JSON.stringify({
+          status: 'done',
+          expectedVersion: lumaTask.version,
+        }),
+      }, {});
+      assert.strictEqual(doneLumaRes.statusCode, 200, doneLumaRes.body);
+      assert.strictEqual(JSON.parse(doneLumaRes.body).link, 'https://lu.ma/pre-filled');
+    });
   });
 
   describe('proofRequirement validation', () => {

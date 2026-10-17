@@ -80,6 +80,7 @@ interface CardAggregateTrigger {
   triggerTaskId: string;
   triggerKind: string;
   stageHint?: Card['stage'] | null;
+  cardLinkUpdate?: { name: string; url: string } | null;
 }
 
 class TaskCardTransactionConflictError extends Error {
@@ -202,6 +203,16 @@ function cardDeltas(mutation: TaskCardMutation): Map<string, { taskCount: number
   return deltas;
 }
 
+function taskCardLinkUpdate(mutation: TaskCardMutation, cardId: string): { name: string; url: string } | null {
+  if (mutation.kind === 'delete') return null;
+  const { afterTask } = mutation;
+  if (taskCardId(afterTask) !== cardId || afterTask.status !== 'done') return null;
+  const name = typeof afterTask.requiredLinkName === 'string' ? afterTask.requiredLinkName.trim() : '';
+  const url = typeof afterTask.link === 'string' ? afterTask.link.trim() : '';
+  if (!name || !url) return null;
+  return { name, url };
+}
+
 function stageHint(mutation: TaskCardMutation, cardId: string): Card['stage'] | null {
   if (mutation.kind !== 'update') return null;
   const { beforeTask, afterTask } = mutation;
@@ -239,6 +250,15 @@ function applyCardAggregateDelta(
   next.openTaskCount = openTaskCount;
   next.version = card.version + 1;
   next.updatedAt = now;
+
+  if (trigger.cardLinkUpdate) {
+    const { name, url } = trigger.cardLinkUpdate;
+    const existingLinks = Array.isArray(next.cardLinks) ? next.cardLinks : [];
+    const matched = existingLinks.some((entry) => entry.name === name);
+    next.cardLinks = matched
+      ? existingLinks.map((entry) => (entry.name === name ? { ...entry, url } : entry))
+      : [...existingLinks, { name, url }];
+  }
 
   const actorId = trigger.actorId || 'system:task-lifecycle';
   const shouldComplete = taskCount > 0 && openTaskCount === 0;
@@ -566,6 +586,7 @@ async function executeTaskCardTransaction(
       triggerTaskId: triggerTask.id,
       triggerKind: mutation.triggerKind || `task-${mutation.kind}`,
       stageHint: stageHint(mutation, cardId),
+      cardLinkUpdate: taskCardLinkUpdate(mutation, cardId),
     }, now);
     cardsAfter.set(cardId, next.card);
     if (next.auditEvent) auditEvents.push(next.auditEvent);
