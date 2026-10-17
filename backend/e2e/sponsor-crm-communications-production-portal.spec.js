@@ -250,7 +250,10 @@ test.describe('production sponsor CRM communications portal', () => {
             json: {
               config: {
                 configured: true,
-                enabled: true,
+                // Sending is disabled for the operator role: the archived
+                // history and the read-only exact preview must stay available
+                // while nothing can be queued or sent from here.
+                enabled: role === 'admin',
                 generation: 1,
                 hmacActiveVersion: 'v1',
                 hmacAcceptedVersions: ['v1'],
