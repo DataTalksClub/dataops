@@ -88,6 +88,9 @@ export function berlinToday(now = new Date()) {
 
 /** Civil date (YYYY-MM-DD) in `tz` for `now` (default: this instant). */
 export function todayIn(tz, now = new Date()) {
+  if (process.env.DATAOPS_TODAY && /^\d{4}-\d{2}-\d{2}$/.test(process.env.DATAOPS_TODAY)) {
+    return process.env.DATAOPS_TODAY;
+  }
   return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
