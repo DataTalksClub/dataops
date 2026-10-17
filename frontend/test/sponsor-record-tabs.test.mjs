@@ -742,8 +742,7 @@ test("deals list edits through the loaded object with its version", async () => 
   assert.match(panels.deals.innerHTML, /data-edit-deal="d1"/);
   await host.dispatch("click", { closestPatch: { "[data-edit-deal]": { dataset: { editDeal: "d1" } } } });
   assert.deepEqual(edited, [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off", version: 4 }], "editor receives the actual loaded deal, no refetch");
-  const plain = recordHarness({
-    routes: {
+  const plain = recordHarness({    routes: {
       "GET /directory/companies/c1": company,
       "GET /activity/organization/c1?limit=3": preview,
       "GET /deals?organizationId=c1&limit=50": { items: deals, nextCursor: null },
@@ -753,6 +752,35 @@ test("deals list edits through the loaded object with its version", async () => 
   await plain.record.openCompany("c1");
   await plain.record.switchTab("deals");
   assert.doesNotMatch(plainPanels.deals.innerHTML, /data-edit-deal/, "no edit affordance without an editor callback");
+});
+
+test("rejected deal editor surfaces feedback instead of unhandled rejection", async () => {
+  const failures = [];
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": {
+        items: [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off", version: 2 }],
+        nextCursor: null,
+      },
+    },
+    context: {
+      onEditDeal: async () => { throw new Error("directory read failed"); },
+      safe: async (action, label) => {
+        try {
+          await action();
+        } catch (error) {
+          failures.push(`${label}: ${error.message}`);
+        }
+      },
+    },
+  });
+  seedPanels(host);
+  await record.openCompany("c1");
+  await record.switchTab("deals");
+  await host.dispatch("click", { closestPatch: { "[data-edit-deal]": { dataset: { editDeal: "d1" } } } });
+  assert.deepEqual(failures, ["Could not open the deal editor: directory read failed"]);
 });
 
 test("add deal preassociates the loaded company and respects generation", async () => {

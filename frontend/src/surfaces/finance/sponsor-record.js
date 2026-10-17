@@ -930,9 +930,16 @@ export function createSponsorRecord(context) {
       const editDeal = event.target.closest("[data-edit-deal]");
       if (editDeal && typeof context.onEditDeal === "function") {
         // The actual loaded deal object (with its optimistic version) goes
-        // to the editor — never a re-fetched or global-list fallback.
+        // to the editor — never a re-fetched or global-list fallback. The
+        // open is awaited through fail like Add deal: a rejecting editor
+        // surfaces operator feedback instead of an unhandled rejection.
+        const mine = token;
         const deal = (record?.deals || []).find((item) => item.id === editDeal.dataset.editDeal);
-        if (deal) context.onEditDeal(deal);
+        if (!deal) return;
+        await fail(async () => {
+          if (mine !== token || !record) return;
+          await context.onEditDeal(deal);
+        }, "Could not open the deal editor");
         return;
       }
       if (event.target.closest("[data-add-deal]") && typeof context.onAddDeal === "function") {
