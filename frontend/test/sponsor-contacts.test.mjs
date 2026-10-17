@@ -276,7 +276,7 @@ test("chooser lookup failure degrades to the cached current entry", async () => 
   assert.equal(picker.value, "c1");
 });
 
-test("failed lookup surfaces an honest notice with working retry", async () => {
+test("failed lookup surfaces an honest notice; reopening retries", async () => {
   const priorDocument = globalThis.document;
   globalThis.document = { createElement: (tag) => new FakeNode(tag) };
   try {
@@ -296,33 +296,47 @@ test("failed lookup surfaces an honest notice with working retry", async () => {
     await editor.open({ id: "p1" });
     const hinted = (picker.afterSiblings || []).find((node) => node.tagName === "P");
     assert.ok(hinted, "chooser-unavailable notice shown instead of implying complete alternatives");
-    assert.match(hinted.textContent, /current company only/i);
-    const retry = hinted.children.find((node) => node.tagName === "BUTTON");
-    assert.ok(retry, "retry control offered");
-    await retry.dispatch("click", {});
-    assert.equal(attempts, 2, "retry performs one more bounded fetch, not a directory scan");
-    assert.match(picker.innerHTML, /Northwind/, "retry populates real alternatives");
-    assert.equal(picker.afterSiblings.filter((node) => node.tagName === "P").length, 0, "notice clears after success");
-    assert.equal(form.elements.organizationId.value, "c1", "current association preserved across retry");
+    assert.match(hinted.textContent, /cached and current choices only|current company only/i);
+    assert.equal(hinted.children.filter((node) => node.tagName === "BUTTON").length, 0, "no async retry controller inside the notice");
+    assert.equal(form.elements.organizationId.value, "c1", "save still works with the current association");
+    await editor.open({ id: "p1" });
+    assert.match(picker.innerHTML, /Northwind/, "reopen retries the bounded lookup and offers real alternatives");
+    assert.equal((picker.afterSiblings || []).filter((node) => node.tagName === "P").length, 0, "notice clears after success");
   } finally {
     if (priorDocument === undefined) delete globalThis.document;
     else globalThis.document = priorDocument;
   }
 });
 
-test("archived cached companies stay out unless currently associated", async () => {
+test("archived and inactive cached companies stay out unless currently associated", async () => {
   const { form, editor } = editorHarness({
     contacts: [{ ...ada, organizationId: "c1" }],
     companies: [
       { id: "c1", displayName: "Acme" },
       { id: "dead", displayName: "Gone Co", archivedAt: "2026-01-01T00:00:00Z" },
+      { id: "quiet", displayName: "Quiet Inc", active: false },
     ],
   });
   const picker = new FakeNode("select");
   form.setQuery("[data-contact-org-picker]", picker);
   await editor.open({ id: "p1" });
-  assert.doesNotMatch(picker.innerHTML, /Gone Co/, "inactive alternatives excluded");
+  assert.doesNotMatch(picker.innerHTML, /Gone Co|Quiet Inc/, "inactive alternatives excluded");
   assert.match(picker.innerHTML, /Acme/, "current association retained");
+});
+
+test("inactive current association is retained with its real name", async () => {
+  const { form, editor } = editorHarness({
+    contacts: [{ ...ada, organizationId: "quiet" }],
+    companies: [
+      { id: "c1", displayName: "Acme" },
+      { id: "quiet", displayName: "Quiet Inc", active: false },
+    ],
+  });
+  const picker = new FakeNode("select");
+  form.setQuery("[data-contact-org-picker]", picker);
+  await editor.open({ id: "p1" });
+  assert.match(picker.innerHTML, /Quiet Inc/, "inactive current association keeps its real name");
+  assert.equal(picker.value, "quiet");
 });
 
 test("new contacts preset the org with the chooser visible; blank opens the chooser", async () => {

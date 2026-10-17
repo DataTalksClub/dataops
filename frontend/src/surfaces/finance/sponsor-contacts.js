@@ -31,8 +31,8 @@ function escapeHtml(value) {
  * labeled fallback when the current association is unknown); the hidden
  * organizationId follows the picker and carries the submitted value. A
  * failed bounded lookup keeps the cached entries and surfaces an honest
- * chooser-unavailable notice with a retry control instead of implying
- * complete alternatives. Optimistic versions are passed through untouched; a 409 surfaces as a save error
+ * chooser-unavailable hint (reopening the editor retries); explicit
+ * associations are never silently rewritten. Optimistic versions are passed through untouched; a 409 surfaces as a save error
  * with the dialog kept open. lastContactedAt keeps full stored precision:
  * the date input only replaces the value when the user changes that date.
  */
@@ -41,32 +41,32 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
   const form = dialog.querySelector("form");
   let originalLastContactedAt = "";
 
-  function companies() {
-    if (typeof getOrganizations === "function") {
-      try {
-        return getOrganizations().filter((item) => !item.archivedAt);
-      } catch {
-        return [];
-      }
+  function companies(includeInactive = false) {
+    if (typeof getOrganizations !== "function") return [];
+    try {
+      const all = getOrganizations();
+      return includeInactive ? all : all.filter((item) => !item.archivedAt && item.active !== false);
+    } catch {
+      return [];
     }
-    return [];
   }
 
-  // Args of the last picker fill, so the retry control refreshes the same scope.
-  let pickerScope = { presetOrganizationId: "", provided: [] };
   let orgNotice = null;
 
-  async function companyChoices(presetOrganizationId, provided = [], { force = false } = {}) {
+  async function companyChoices(presetOrganizationId, provided = []) {
     const list = [...provided, ...companies()].filter(
       (item, index, all) => item && item.id && all.findIndex((other) => other.id === item.id) === index,
     );
-    // An unknown current association stays honest and selectable: never
-    // silently drop it from the chooser, never invent a display name for it.
+    // An unknown or inactive current association stays honest and selectable:
+    // never silently drop it from the chooser, never invent a display name
+    // for it. Inactive alternatives are filtered out; the current one is
+    // retained with its real name when known.
     if (presetOrganizationId && !list.some((item) => item.id === presetOrganizationId)) {
-      list.unshift({ id: presetOrganizationId, displayName: `Current company (${presetOrganizationId})` });
+      const known = [...provided, ...companies(true)].find((item) => item && item.id === presetOrganizationId);
+      list.unshift({ id: presetOrganizationId, displayName: (known && known.displayName) || `Current company (${presetOrganizationId})` });
     }
     let limited = false;
-    if (provided.length === 0 && (force || list.length < 2)) {
+    if (provided.length === 0 && list.length < 2) {
       // Cold opens (person record without a loaded directory) would offer
       // only the current org: fetch one bounded active-companies page so the
       // chooser offers real alternatives. Never a whole-directory load.
@@ -90,27 +90,19 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
       return;
     }
     if (!limited) {
-      orgNotice?.hint.remove();
+      orgNotice?.remove();
       orgNotice = null;
       return;
     }
+    // Honest text hint only: reopening the editor retries the bounded
+    // lookup. No async retry controller, no selection resets.
     if (!orgNotice) {
       const hint = document.createElement("p");
       hint.setAttribute("data-contact-org-hint", "");
-      hint.textContent = "Company list unavailable — showing the current company only. ";
-      const retry = document.createElement("button");
-      retry.type = "button";
-      retry.setAttribute("data-contact-org-retry", "");
-      retry.textContent = "Reload companies";
-      retry.addEventListener("click", async (event) => {
-        event.preventDefault();
-        const refreshed = await companyChoices(pickerScope.presetOrganizationId, pickerScope.provided, { force: true });
-        paintCompanyPicker(picker, pickerScope.presetOrganizationId, refreshed);
-      });
-      hint.appendChild(retry);
       picker.after(hint);
-      orgNotice = { hint, retry };
+      orgNotice = hint;
     }
+    orgNotice.textContent = "Company list unavailable — showing cached and current choices only. Reopen the editor to retry.";
   }
 
   function paintCompanyPicker(picker, presetOrganizationId, { list, limited }) {
@@ -131,7 +123,6 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
       if (hidden) hidden.value = presetOrganizationId || "";
       return Promise.resolve();
     }
-    pickerScope = { presetOrganizationId, provided };
     if (!picker.dataset.wiredOrg) {
       picker.dataset.wiredOrg = "true";
       picker.addEventListener("change", () => {
