@@ -21,6 +21,31 @@ import { deleteAtVersion, putAtVersion, type PlannedWrite } from './plannedWrite
 export type NewsletterIssueKind = 'weekly' | 'standalone';
 export type NewsletterSlotPosition = 'primary' | 'secondary';
 
+export interface NewsletterIssueStats {
+  deliveries?: number;
+  opens?: number;
+  clicks?: number;
+  uniqueClicks?: number;
+  openRate?: number;
+  clickRate?: number;
+  recordedAt: string;
+}
+
+export interface NewsletterSlotStats {
+  clicks?: number;
+  uniqueClicks?: number;
+  clickRate?: number;
+  linkedinImpressions?: number;
+  linkedinClicks?: number;
+  linkedinCtr?: number;
+  linkedinPostUrl?: string;
+  xImpressions?: number;
+  xClicks?: number;
+  xCtr?: number;
+  xPostUrl?: string;
+  recordedAt: string;
+}
+
 export interface NewsletterSlot {
   /** The booked sponsor; an open slot has none. Booking adds the slot's Tasks to the Card. */
   sponsor?: string;
@@ -31,6 +56,8 @@ export interface NewsletterSlot {
   sheetId?: string;
   /** The sponsor's placement document. */
   documentUrl?: string;
+  /** Performance metrics for this slot's placement and sponsored social posts. */
+  stats?: NewsletterSlotStats;
 }
 
 /** A link the issue keeps before (or without) a Card: a draft, a doc, a campaign. */
@@ -48,6 +75,7 @@ export type NewsletterIssue = {
   issueNumber?: number;
   status: string;
   slots: Partial<Record<NewsletterSlotPosition, NewsletterSlot>>;
+  stats?: NewsletterIssueStats;
   cardId?: string;
   links?: NewsletterIssueLink[];
   publicUrl?: string;

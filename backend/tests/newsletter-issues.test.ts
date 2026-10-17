@@ -414,6 +414,148 @@ describe("newsletter issues", () => {
     assert.equal(open.isAvailableSlot, true);
   });
 
+  it("records, updates, validates, and reports issue and slot performance stats", async () => {
+    let issue = await create(weekly({
+      publicationDate: "2026-10-05",
+      issueNumber: 297,
+      status: "sent",
+      slots: {
+        primary: {
+          sponsor: "VectorAI DB",
+          stats: {
+            clicks: 831,
+            uniqueClicks: 651,
+            clickRate: 2.38,
+            linkedinImpressions: 8080,
+            linkedinClicks: 109,
+            linkedinCtr: 1.35,
+            linkedinPostUrl: "https://www.linkedin.com/feed/update/urn:li:activity:7446932215609192448/",
+            xImpressions: 2916,
+            xClicks: 0,
+            xCtr: 0,
+            xPostUrl: "https://x.com/DataTalksClub/status/2041170969592254836",
+          },
+        },
+        secondary: {
+          sponsor: "Astronomer",
+          stats: {
+            clicks: 273,
+            uniqueClicks: 185,
+            clickRate: 0.78,
+            linkedinImpressions: 2639,
+            linkedinClicks: 49,
+            linkedinCtr: 1.86,
+            linkedinPostUrl: "https://www.linkedin.com/feed/update/urn:li:activity:7447329446212612098/",
+            xImpressions: 1295,
+            xClicks: 7,
+            xCtr: 0.54,
+            xPostUrl: "https://x.com/DataTalksClub/status/2041566603948195932",
+          },
+        },
+      },
+      stats: {
+        deliveries: 99714,
+        opens: 34886,
+        clicks: 831,
+        uniqueClicks: 651,
+        openRate: 34.99,
+        clickRate: 2.38,
+      },
+    }));
+    assert.equal(issue.stats.deliveries, 99714);
+    assert.equal(issue.stats.opens, 34886);
+    assert.equal(issue.stats.openRate, 34.99);
+    assert.ok(issue.stats.recordedAt, "recordedAt is stamped automatically");
+    assert.equal(issue.slots.primary.stats.clicks, 831);
+    assert.equal(issue.slots.primary.stats.linkedinImpressions, 8080);
+    assert.ok(issue.slots.primary.stats.recordedAt);
+    assert.equal(issue.slots.secondary.stats.clicks, 273);
+    assert.equal(issue.slots.secondary.stats.xClicks, 7);
+
+    // Updating one slot's stats preserves the other slot and updates recordedAt when metrics change
+    const updated = await invoke("PUT", `/api/newsletter-issues/${issue.id}`, {
+      version: issue.version,
+      slots: {
+        primary: {
+          ...issue.slots.primary,
+          stats: {
+            ...issue.slots.primary.stats,
+            xClicks: 12,
+            xCtr: 0.41,
+          },
+        },
+      },
+    });
+    assert.equal(updated.statusCode, 200, updated.body);
+    issue = data(updated);
+    assert.equal(issue.slots.primary.stats.xClicks, 12);
+    assert.equal(issue.slots.secondary.stats.clicks, 273);
+
+    // Report endpoint for a single slot omits "/ 0 clicks" when clicks are 0, and includes it when > 0
+    const secondaryReport = data(
+      await invoke("GET", `/api/newsletter-issues/${issue.id}/report`, undefined, {}, { slot: "secondary" }),
+    );
+    assert.equal(secondaryReport.report.sponsor, "Astronomer");
+    assert.equal(secondaryReport.report.slot, "secondary");
+    assert.equal(secondaryReport.report.newsletter.deliveries, 99714);
+    assert.equal(secondaryReport.report.newsletter.views, 34886);
+    assert.equal(secondaryReport.report.newsletter.clicks, 273);
+    assert.match(secondaryReport.report.message, /- 34,886 views \/ 273 clicks in the newsletter/);
+    assert.match(secondaryReport.report.message, /- 2,639 views \/ 49 clicks in LinkedIn/);
+    assert.match(secondaryReport.report.message, /- 1,295 views \/ 7 clicks in Twitter/);
+    assert.match(secondaryReport.report.message, /So 38,820 views and 329 clicks in total/);
+
+    // Reset xClicks to 0 on primary to verify zero-click social formatting rule
+    issue = data(
+      await invoke("PUT", `/api/newsletter-issues/${issue.id}`, {
+        version: issue.version,
+        slots: {
+          primary: {
+            ...issue.slots.primary,
+            stats: { ...issue.slots.primary.stats, xClicks: 0, xCtr: 0 },
+          },
+        },
+      }),
+    );
+    const primaryReport = data(
+      await invoke("GET", `/api/newsletter-issues/${issue.id}/report`, undefined, {}, { slot: "primary" }),
+    );
+    assert.match(primaryReport.report.message, /- 2,916 views in Twitter\n/);
+    assert.doesNotMatch(primaryReport.report.message, /2,916 views \/ 0 clicks/);
+
+    // Sponsor-wide report aggregates placements for the requested sponsor
+    const sponsorReport = data(
+      await invoke("GET", "/api/newsletter-issues/report", undefined, {}, { sponsor: "Astronomer" }),
+    );
+    assert.equal(sponsorReport.items.length, 1);
+    assert.equal(sponsorReport.items[0].slot, "secondary");
+    assert.equal(sponsorReport.items[0].sponsor, "Astronomer");
+
+    // Validation errors on malformed stats
+    const badCases: [Record<string, unknown>, RegExp][] = [
+      [{ stats: { deliveries: -1 } }, /Invalid stats deliveries/],
+      [{ stats: { openRate: 120 } }, /Invalid stats openRate/],
+      [{ stats: { bogus: 1 } }, /Unknown stats field: bogus/],
+      [{ slots: { primary: { sponsor: "VectorAI DB", stats: { clicks: -5 } } } }, /Invalid primary slot stats clicks/],
+      [{ slots: { primary: { sponsor: "VectorAI DB", stats: { clickRate: 200 } } } }, /Invalid primary slot stats clickRate/],
+      [{ slots: { primary: { sponsor: "VectorAI DB", stats: { linkedinPostUrl: "http://linkedin.com/x" } } } }, /Invalid primary slot stats linkedinPostUrl/],
+      [{ slots: { primary: { sponsor: "VectorAI DB", stats: { unknownMetric: 1 } } } }, /Unknown primary slot stats field: unknownMetric/],
+    ];
+    for (const [patch, pattern] of badCases) {
+      const bad = await invoke("PUT", `/api/newsletter-issues/${issue.id}`, { version: issue.version, ...patch });
+      assert.equal(bad.statusCode, 400, `${JSON.stringify(patch)} -> ${bad.body}`);
+      assert.match(data(bad).error, pattern);
+    }
+
+    // Clearing issue stats with null removes the stats object
+    const cleared = await invoke("PUT", `/api/newsletter-issues/${issue.id}`, {
+      version: issue.version,
+      stats: null,
+    });
+    assert.equal(cleared.statusCode, 200, cleared.body);
+    assert.equal(data(cleared).stats, undefined);
+  });
+
   it("requires an authenticated writer", async () => {
     process.env.SKIP_AUTH = "false";
     const range = { from: "2027-01-01", to: "2027-12-31" };

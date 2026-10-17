@@ -33,8 +33,10 @@ import {
   type NewsletterIssue,
   type NewsletterIssueKind,
   type NewsletterIssueLink,
+  type NewsletterIssueStats,
   type NewsletterSlot,
   type NewsletterSlotPosition,
+  type NewsletterSlotStats,
 } from '../db/newsletterIssues';
 import { getCard, getCardConsistent } from '../db/cards';
 import { listTasksByCardConsistent } from '../db/tasks';
@@ -67,6 +69,10 @@ import {
   SLOT_POSITIONS,
   syncIssueSlotTasks,
 } from '../newsletter/issueCard';
+import {
+  buildIssueStatsReports,
+  filterSponsorStatsReports,
+} from '../newsletter/statsReport';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
   statusCode,
@@ -86,13 +92,28 @@ const UPDATABLE_FIELDS = [
   'issueNumber',
   'status',
   'slots',
+  'stats',
   'publicUrl',
   'planningNote',
   'links',
 ] as const;
 const CREATE_FIELDS = new Set<string>([...UPDATABLE_FIELDS, 'kind', 'sourceType', 'sourceKey']);
 const CONFIRMATIONS = ['confirmCardDeletion', 'confirmSlotRemoval'];
-const SLOT_FIELDS = new Set(['sponsor', 'organizationId', 'bookedByUserId', 'sheetId', 'documentUrl']);
+const SLOT_FIELDS = new Set(['sponsor', 'organizationId', 'bookedByUserId', 'sheetId', 'documentUrl', 'stats']);
+const ISSUE_STATS_COUNTS = new Set(['deliveries', 'opens', 'clicks', 'uniqueClicks']);
+const ISSUE_STATS_RATES = new Set(['openRate', 'clickRate']);
+const ISSUE_STATS_FIELDS = new Set([...ISSUE_STATS_COUNTS, ...ISSUE_STATS_RATES, 'recordedAt']);
+const SLOT_STATS_COUNTS = new Set([
+  'clicks',
+  'uniqueClicks',
+  'linkedinImpressions',
+  'linkedinClicks',
+  'xImpressions',
+  'xClicks',
+]);
+const SLOT_STATS_RATES = new Set(['clickRate', 'linkedinCtr', 'xCtr']);
+const SLOT_STATS_URLS = new Set(['linkedinPostUrl', 'xPostUrl']);
+const SLOT_STATS_FIELDS = new Set([...SLOT_STATS_COUNTS, ...SLOT_STATS_RATES, ...SLOT_STATS_URLS, 'recordedAt']);
 
 type Body = Record<string, any>;
 
@@ -116,6 +137,50 @@ const httpsUrl = (value: unknown) => {
   }
 };
 
+const nonNegativeInt = (value: unknown) =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+const percentageRate = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
+
+const isoTimestamp = (value: unknown) =>
+  typeof value === 'string' && value.trim().length > 0 && value.length <= 64 && !Number.isNaN(Date.parse(value));
+
+function issueStatsError(stats: unknown): string {
+  if (stats === undefined) return '';
+  if (!stats || typeof stats !== 'object' || Array.isArray(stats)) return 'Invalid stats';
+  const value = stats as Record<string, unknown>;
+  const unknown = Object.keys(value).find((name) => !ISSUE_STATS_FIELDS.has(name));
+  if (unknown) return `Unknown stats field: ${unknown}`;
+  for (const name of ISSUE_STATS_COUNTS) {
+    if (value[name] != null && !nonNegativeInt(value[name])) return `Invalid stats ${name}`;
+  }
+  for (const name of ISSUE_STATS_RATES) {
+    if (value[name] != null && !percentageRate(value[name])) return `Invalid stats ${name}`;
+  }
+  if (value.recordedAt != null && !isoTimestamp(value.recordedAt)) return 'Invalid stats recordedAt';
+  return '';
+}
+
+function slotStatsError(position: string, stats: unknown): string {
+  if (stats === undefined) return '';
+  if (!stats || typeof stats !== 'object' || Array.isArray(stats)) return `Invalid ${position} slot stats`;
+  const value = stats as Record<string, unknown>;
+  const unknown = Object.keys(value).find((name) => !SLOT_STATS_FIELDS.has(name));
+  if (unknown) return `Unknown ${position} slot stats field: ${unknown}`;
+  for (const name of SLOT_STATS_COUNTS) {
+    if (value[name] != null && !nonNegativeInt(value[name])) return `Invalid ${position} slot stats ${name}`;
+  }
+  for (const name of SLOT_STATS_RATES) {
+    if (value[name] != null && !percentageRate(value[name])) return `Invalid ${position} slot stats ${name}`;
+  }
+  for (const name of SLOT_STATS_URLS) {
+    if (value[name] != null && !httpsUrl(value[name])) return `Invalid ${position} slot stats ${name}`;
+  }
+  if (value.recordedAt != null && !isoTimestamp(value.recordedAt)) return `Invalid ${position} slot stats recordedAt`;
+  return '';
+}
+
 function slotError(position: string, slot: unknown): string {
   if (!slot || typeof slot !== 'object' || Array.isArray(slot)) return `Invalid ${position} slot`;
   const value = slot as Record<string, unknown>;
@@ -134,6 +199,8 @@ function slotError(position: string, slot: unknown): string {
   if (!value.sponsor && (value.bookedByUserId || value.organizationId)) {
     return `Name the ${position} slot's sponsor before recording who booked it`;
   }
+  const statsErr = slotStatsError(position, value.stats);
+  if (statsErr) return statsErr;
   return '';
 }
 
@@ -169,6 +236,8 @@ function validate(issue: Body): string {
     const error = slotError(position, issue.slots[position]);
     if (error) return error;
   }
+  const statsErr = issueStatsError(issue.stats);
+  if (statsErr) return statsErr;
   if (issue.publicUrl != null && !httpsUrl(issue.publicUrl)) return 'Invalid publicUrl';
   if (issue.links != null) {
     if (!Array.isArray(issue.links) || issue.links.length > 30) return 'Invalid links';
@@ -186,12 +255,58 @@ function validate(issue: Body): string {
   return '';
 }
 
+function statsWithoutTimestamp(stats: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!stats || typeof stats !== 'object') return {};
+  const copy: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(stats)) {
+    if (key === 'recordedAt' || value === null || value === undefined || value === '') continue;
+    copy[key] = value;
+  }
+  return copy;
+}
+
+function normalizedStatsObject<T extends NewsletterIssueStats | NewsletterSlotStats>(
+  stats: unknown,
+  previous?: T,
+): T | undefined {
+  if (stats === null || stats === undefined) return undefined;
+  if (typeof stats !== 'object' || Array.isArray(stats)) return stats as T;
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(stats as Record<string, unknown>)) {
+    if (value === null || value === undefined || value === '') continue;
+    cleaned[key] = typeof value === 'string' ? value.trim() : value;
+  }
+  const metricKeys = Object.keys(cleaned).filter((key) => key !== 'recordedAt');
+  if (metricKeys.length === 0) return undefined;
+  if (!cleaned.recordedAt) {
+    const prevMetrics = statsWithoutTimestamp(previous as Record<string, unknown> | undefined);
+    const nextMetrics = statsWithoutTimestamp(cleaned);
+    const unchanged = previous?.recordedAt && JSON.stringify(prevMetrics) === JSON.stringify(nextMetrics);
+    cleaned.recordedAt = unchanged ? previous.recordedAt : new Date().toISOString();
+  }
+  return cleaned as T;
+}
+
 /** Every slot of the kind is present (open when empty); strings are trimmed. */
-function normalizedSlots(kind: NewsletterIssueKind, slots: Body | undefined): NewsletterIssue['slots'] {
+function normalizedSlots(
+  kind: NewsletterIssueKind,
+  slots: Body | undefined,
+  previousSlots?: NewsletterIssue['slots'],
+): NewsletterIssue['slots'] {
   const out: NewsletterIssue['slots'] = {};
   for (const position of SLOT_POSITIONS[kind] as readonly NewsletterSlotPosition[]) {
-    const slot = { ...(slots?.[position] || {}) } as NewsletterSlot;
+    const rawSlot = slots?.[position];
+    if (!rawSlot || typeof rawSlot !== 'object' || Array.isArray(rawSlot)) {
+      out[position] = (rawSlot ?? {}) as NewsletterSlot;
+      continue;
+    }
+    const slot = { ...rawSlot } as NewsletterSlot;
     if (typeof slot.sponsor === 'string') slot.sponsor = slot.sponsor.trim();
+    if ('stats' in slot) {
+      const normalized = normalizedStatsObject<NewsletterSlotStats>(slot.stats, previousSlots?.[position]?.stats);
+      if (normalized === undefined) delete slot.stats;
+      else slot.stats = normalized;
+    }
     for (const name of Object.keys(slot) as (keyof NewsletterSlot)[]) {
       if (slot[name] === null || slot[name] === '') delete slot[name];
     }
@@ -420,23 +535,26 @@ async function createRoute(body: Body, event: LambdaEvent, client: DynamoDBDocum
     const extra = Object.keys(body.slots).find((position) => !(SLOT_POSITIONS[kind] as readonly string[]).includes(position));
     if (extra) return json(400, { error: `A ${kind} issue has no ${extra} slot` });
   }
-  const candidate: Body = {
-    ...body,
-    slots: KINDS.has(kind) ? normalizedSlots(kind, body.slots) : body.slots,
-    status: body.status || 'planned',
-  };
-  const error = validate(candidate);
-  if (error) return json(400, { error });
   const sourceKey = typeof body.sourceKey === 'string' && body.sourceKey ? body.sourceKey : '';
   const id = sourceKey ? newsletterIssueId(sourceKey) : randomUUID();
-  if (sourceKey) {
-    const existing = await getNewsletterIssue(client, id);
-    if (existing) {
-      const same = Object.keys(candidate).every(
-        (name) => JSON.stringify((existing as Body)[name]) === JSON.stringify(candidate[name]),
-      );
-      return same ? json(200, existing) : json(409, { error: 'Source key already used' });
-    }
+  const existing = sourceKey ? await getNewsletterIssue(client, id) : null;
+  const candidate: Body = {
+    ...body,
+    slots: KINDS.has(kind) ? normalizedSlots(kind, body.slots, existing?.slots) : body.slots,
+    status: body.status || 'planned',
+  };
+  if ('stats' in candidate) {
+    const normalized = normalizedStatsObject<NewsletterIssueStats>(candidate.stats, existing?.stats);
+    if (normalized === undefined) delete candidate.stats;
+    else candidate.stats = normalized;
+  }
+  const error = validate(candidate);
+  if (error) return json(400, { error });
+  if (existing) {
+    const same = Object.keys(candidate).every(
+      (name) => JSON.stringify((existing as Body)[name]) === JSON.stringify(candidate[name]),
+    );
+    return same ? json(200, existing) : json(409, { error: 'Source key already used' });
   }
   const issue = buildNewsletterIssue({ ...candidate, sourceType: body.sourceType || 'portal' } as any, id);
   const resolved = await resolveInteractiveActor(client, event, 'work-write');
@@ -486,7 +604,10 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
     const extra = Object.keys(changes.slots).find((position) => !(SLOT_POSITIONS[existing.kind] as readonly string[]).includes(position));
     if (extra) return json(400, { error: `A ${existing.kind} issue has no ${extra} slot` });
     // A slot omitted from the change keeps its current state.
-    changes.slots = normalizedSlots(existing.kind, { ...existing.slots, ...changes.slots });
+    changes.slots = normalizedSlots(existing.kind, { ...existing.slots, ...changes.slots }, existing.slots);
+  }
+  if ('stats' in changes) {
+    changes.stats = normalizedStatsObject<NewsletterIssueStats>(changes.stats, existing.stats);
   }
   const merged = { ...existing, ...changes };
   const error = validate(merged);
@@ -708,8 +829,9 @@ async function slotRoute(
   const deliverable = await createSlotDeliverable(client, existing, slotPosition, sponsor.deal, actorId);
   const slot = {
     ...(current.sheetId ? { sheetId: current.sheetId } : {}),
-    // The placement document belongs to the sponsor it was made for.
+    // The placement document and stats belong to the sponsor they were recorded for.
     ...(current.documentUrl && current.sponsor === sponsor.name ? { documentUrl: current.documentUrl } : {}),
+    ...(current.stats && current.sponsor === sponsor.name ? { stats: current.stats } : {}),
     sponsor: sponsor.name,
     organizationId: String(sponsor.deal.organizationId),
     bookedByUserId: actorId,
@@ -726,6 +848,49 @@ async function slotRoute(
     dealId: sponsor.deal.id,
     withdrawnDeliverables: withdrawn,
   }));
+}
+
+async function sponsorReportRoute(event: LambdaEvent, client: DynamoDBDocumentClient) {
+  const query = event.queryStringParameters || {};
+  const sponsor = typeof query.sponsor === 'string' ? query.sponsor.trim() : '';
+  const organizationId = typeof query.organizationId === 'string' ? query.organizationId.trim() : '';
+  if (!sponsor && !organizationId) return json(400, { error: 'Provide a sponsor or organizationId query parameter' });
+  const from = query.from || '0000-01-01';
+  const to = query.to || '9999-12-31';
+  if ((query.from && !realDate(from)) || (query.to && !realDate(to)) || from > to) {
+    return json(400, { error: 'Invalid range' });
+  }
+  const slot = typeof query.slot === 'string' && query.slot ? (query.slot as NewsletterSlotPosition) : undefined;
+  if (slot && !['primary', 'secondary'].includes(slot)) return json(400, { error: 'Invalid slot' });
+  const contactName = typeof query.contactName === 'string' ? query.contactName : undefined;
+  const items = await listNewsletterIssues(client, from, to);
+  const reports = filterSponsorStatsReports(items, { sponsor, organizationId, slot, contactName });
+  return json(200, {
+    sponsor: sponsor || null,
+    organizationId: organizationId || null,
+    items: reports,
+  });
+}
+
+async function issueReportRoute(id: string, event: LambdaEvent, client: DynamoDBDocumentClient) {
+  const item = await getNewsletterIssue(client, id);
+  if (!item) return json(404, { error: 'Not found' });
+  const query = event.queryStringParameters || {};
+  const validPositions = SLOT_POSITIONS[item.kind] as readonly NewsletterSlotPosition[];
+  const slot = typeof query.slot === 'string' && query.slot ? (query.slot as NewsletterSlotPosition) : undefined;
+  if (slot !== undefined && !validPositions.includes(slot)) {
+    return json(400, { error: `A ${item.kind} issue has no ${slot} slot` });
+  }
+  const contactName = typeof query.contactName === 'string' ? query.contactName : undefined;
+  const reports = buildIssueStatsReports(item, { slot, contactName });
+  return json(200, {
+    issueId: item.id,
+    label: issueLabel(item),
+    publicationDate: item.publicationDate,
+    issueStats: item.stats || null,
+    report: reports[0] || null,
+    reports,
+  });
 }
 
 export async function handleNewsletterIssueRoutes(
@@ -750,6 +915,15 @@ export async function handleNewsletterIssueRoutes(
     const resolved = await resolveInteractiveActor(client, event, 'work-write');
     if (!resolved.ok) return resolved.response;
     return json(200, await createDueIssueCards(client, today(), { dryRun: body.dryRun === true }));
+  }
+  if (path === '/api/newsletter-issues/report') {
+    if (method !== 'GET') return json(405, { error: 'Method not allowed' });
+    return sponsorReportRoute(event, client);
+  }
+  const issueReport = path.match(/^\/api\/newsletter-issues\/([^/]+)\/report$/);
+  if (issueReport) {
+    if (method !== 'GET') return json(405, { error: 'Method not allowed' });
+    return issueReportRoute(issueReport[1], event, client);
   }
   const card = path.match(/^\/api\/newsletter-issues\/([^/]+)\/card$/);
   if (card) {
