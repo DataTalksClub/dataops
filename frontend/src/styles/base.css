@@ -53,7 +53,7 @@ textarea:not([class*="dk-"]):focus-visible,
 [tabindex]:not([class*="dk-"]):not(.dk-sidebar *, .dk-menu *):focus-visible {
   outline: 3px solid var(--dk-focus-ring);
   outline-offset: 2px;
-}input:not([class*="dk-"], .dk-search input),
+}input:not([class*="dk-"], .dk-search input, [type="checkbox"], [type="radio"]),
 select:not([class*="dk-"]),
 textarea:not([class*="dk-"]) {
   border: 1px solid var(--dk-border-default);

@@ -856,29 +856,25 @@ export function hasTaskFileEvidence(task) {
   return Array.isArray(task.fileRefs) && task.fileRefs.length > 0;
 }
 
-export function taskProofState(task) {
+export function cardLinkUrlForTask(card, task) {
+  const required = String(task?.requiredLinkName || "").trim();
+  if (!required) return String(task?.link || "").trim();
+  const direct = String(task?.link || "").trim();
+  if (direct || !Array.isArray(card?.cardLinks)) return direct;
+  const needle = required.toLowerCase();
+  const match = card.cardLinks.find(
+    (entry) => entry && typeof entry === "object" && String(entry.name || entry.label || "").trim().toLowerCase() === needle,
+  );
+  return String(match?.url || "").trim();
+}
+
+export function taskProofState(task, card = null) {
   const missing = [];
-  if (task?.requiredLinkName && !task.link) missing.push(task.requiredLinkName);
-  if (task?.requiresFile && !hasTaskFileEvidence(task))
-    missing.push("required file");
-  if (
-    taskRequiresApprovedArtifact(task) &&
-    !hasApprovedArtifactEvidence(task, [])
-  ) {
-    missing.push("approved artifact");
-  }
-  if (missing.length > 0) {
-    return {
-      ok: false,
-      label: `Missing proof: ${missing.join(", ")}`,
-      missing,
-    };
-  }
-  if (
-    task?.requiredLinkName ||
-    task?.requiresFile ||
-    taskRequiresApprovedArtifact(task)
-  ) {
+  if (task?.requiredLinkName && !cardLinkUrlForTask(card, task)) missing.push(task.requiredLinkName);
+  if (task?.requiresFile && !hasTaskFileEvidence(task)) missing.push("required file");
+  if (taskRequiresApprovedArtifact(task) && !hasApprovedArtifactEvidence(task, [])) missing.push("approved artifact");
+  if (missing.length > 0) return { ok: false, label: `Missing proof: ${missing.join(", ")}`, missing };
+  if (task?.requiredLinkName || task?.requiresFile || taskRequiresApprovedArtifact(task)) {
     return { ok: true, label: "Proof ready", missing: [] };
   }
   return { ok: true, label: "No proof required", missing: [] };
@@ -886,10 +882,7 @@ export function taskProofState(task) {
 
 export function missingCardLinks(card) {
   if (!Array.isArray(card?.cardLinks)) return [];
-  return card.cardLinks.filter(
-    (link) =>
-      link && typeof link === "object" && !String(link.url || "").trim(),
-  );
+  return card.cardLinks.filter((link) => link && typeof link === "object" && !String(link.url || "").trim());
 }
 
 export function summarizeCardProgress(card, tasks, today) {
@@ -900,47 +893,26 @@ export function summarizeCardProgress(card, tasks, today) {
   const overdue = taskList.filter((task) => isTaskOverdue(task, today)).length;
   const waiting = taskList.filter(isWaitingOrFollowUpTask).length;
   const missingLinks =
-    taskList.filter(
-      (task) => isOpenWorkTask(task) && task.requiredLinkName && !task.link,
-    ).length + missingCardLinks(card).length;
-  const missingFiles = taskList.filter(
-    (task) =>
-      isOpenWorkTask(task) && task.requiresFile && !hasTaskFileEvidence(task),
-  ).length;
+    taskList.filter((task) => isOpenWorkTask(task) && task.requiredLinkName && !cardLinkUrlForTask(card, task)).length +
+    missingCardLinks(card).length;
+  const missingFiles = taskList.filter((task) => isOpenWorkTask(task) && task.requiresFile && !hasTaskFileEvidence(task)).length;
   const missingProof =
-    taskList.filter((task) => isOpenWorkTask(task) && !taskProofState(task).ok)
-      .length + missingCardLinks(card).length;
+    taskList.filter((task) => isOpenWorkTask(task) && !taskProofState(task, card).ok).length + missingCardLinks(card).length;
   const nextDueTask = nextDueOpenTask(taskList, today);
   let risk = "low";
   if (overdue > 0) risk = "high";
-  else if (
-    waiting > 0 ||
-    missingProof > 0 ||
-    (open > 0 && card.anchorDate && isBeforeIsoDate(card.anchorDate, today))
-  ) {
+  else if (waiting > 0 || missingProof > 0 || (open > 0 && card.anchorDate && isBeforeIsoDate(card.anchorDate, today))) {
     risk = "medium";
   }
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
   const parts = total > 0 ? [`${done}/${total} tasks`] : ["No tasks loaded"];
   if (overdue > 0) parts.push(`${overdue} overdue`);
   if (waiting > 0) parts.push(`${waiting} waiting`);
-  if (missingLinks > 0)
-    parts.push(`${missingLinks} missing link${missingLinks === 1 ? "" : "s"}`);
-  if (missingFiles > 0)
-    parts.push(`${missingFiles} missing file${missingFiles === 1 ? "" : "s"}`);
+  if (missingLinks > 0) parts.push(`${missingLinks} missing link${missingLinks === 1 ? "" : "s"}`);
+  if (missingFiles > 0) parts.push(`${missingFiles} missing file${missingFiles === 1 ? "" : "s"}`);
   if (missingProof > 0) parts.push(`${missingProof} missing proof`);
   return {
-    total,
-    done,
-    open,
-    overdue,
-    waiting,
-    missingLinks,
-    missingFiles,
-    missingProof,
-    nextDueTask,
-    percent,
-    risk,
+    total, done, open, overdue, waiting, missingLinks, missingFiles, missingProof, nextDueTask, percent, risk,
     label: parts.join(" - "),
   };
 }
@@ -949,12 +921,8 @@ export function nextDueOpenTask(tasks, today) {
   // "Next" is never a task still blocked by a prerequisite.
   const openTasks = dedupeWorkTasks(tasks).filter((task, _, all) => isOpenWorkTask(task) && !taskIsBlocked(task, all));
   openTasks.sort((left, right) => {
-    const byDate = compareIsoDate(
-      taskDate(left) || left.followUpAt || today,
-      taskDate(right) || right.followUpAt || today,
-    );
-    if (byDate !== 0) return byDate;
-    return workTaskTitle(left).localeCompare(workTaskTitle(right));
+    const byDate = compareIsoDate(taskDate(left) || left.followUpAt || today, taskDate(right) || right.followUpAt || today);
+    return byDate !== 0 ? byDate : workTaskTitle(left).localeCompare(workTaskTitle(right));
   });
   return openTasks[0] || null;
 }
@@ -973,23 +941,9 @@ export function sortCardChecklistTasks(tasks, today) {
 export function workflowTaskGroups(tasks, today) {
   const sorted = sortCardChecklistTasks(tasks, today);
   return [
-    {
-      title: "Active",
-      empty: "No active tasks.",
-      tasks: sorted.filter(
-        (task) => isOpenWorkTask(task) && !isWaitingOrFollowUpTask(task),
-      ),
-    },
-    {
-      title: "Waiting / follow-up",
-      empty: "No waiting tasks.",
-      tasks: sorted.filter((task) => isWaitingOrFollowUpTask(task)),
-    },
-    {
-      title: "Done / history",
-      empty: "No completed tasks yet.",
-      tasks: sorted.filter(isResolvedWorkTask),
-    },
+    { title: "Active", empty: "No active tasks.", tasks: sorted.filter((task) => isOpenWorkTask(task) && !isWaitingOrFollowUpTask(task)) },
+    { title: "Waiting / follow-up", empty: "No waiting tasks.", tasks: sorted.filter((task) => isWaitingOrFollowUpTask(task)) },
+    { title: "Done / history", empty: "No completed tasks yet.", tasks: sorted.filter(isResolvedWorkTask) },
   ];
 }
 

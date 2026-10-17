@@ -1,5 +1,6 @@
 import { renderIcon } from "../../core/icons.js";
 import { opensInNewTab } from "../../core/links.js";
+import { taskTitleParts } from "../../core/task-display.js";
 import { escapeHtml } from "../document-editor/inline-markdown.js";
 import { attachSlotControls, issueSlotsMarkup } from "../planning-newsletter-slots.js";
 
@@ -146,11 +147,14 @@ export function renderCardNewsletterIssue(
   return section;
 }
 
-// Migration provenance is import bookkeeping, not operator content — keep it
-// out of the rendered Card detail without touching the stored description.
+// Migration provenance and legacy Overview docs / Links TODO boilerplate are
+// import bookkeeping, not operator content — keep them out of the rendered
+// Card detail since links and process references are structured fields.
 export function displayCardDescription(value) {
   return String(value ?? "")
     .replace(/\s*Migration provenance:[\s\S]*$/, "")
+    .replace(/(?:^|\n)\s*Overview docs:\s*[\s\S]*$/i, "")
+    .replace(/(?:^|\n)\s*Links:\s*(?:-|\n\s*-)[\s\S]*$/i, "")
     .trim();
 }
 
@@ -420,9 +424,13 @@ export function createCardSummary(context) {
     nextLabel.textContent = "Next up";
     const nextValue = document.createElement("strong");
     const nextDate = String(progress.nextDueTask.date || "").slice(0, 10);
+    const nextTitle = taskTitleParts(
+      workTaskTitle(progress.nextDueTask),
+      progress.nextDueTask?.tags,
+    ).title;
     const nextText = nextDate
-      ? `${workTaskTitle(progress.nextDueTask)} · ${formatCardAnchorLabel(nextDate, today)}`
-      : workTaskTitle(progress.nextDueTask);
+      ? `${nextTitle} · ${formatCardAnchorLabel(nextDate, today)}`
+      : nextTitle;
     appendBreakableText(nextValue, nextText);
     nextValue.title = nextText;
     nextRow.append(nextLabel, nextValue);

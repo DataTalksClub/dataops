@@ -1,5 +1,5 @@
 import { documentHref, opensInNewTab } from "../../core/links.js";
-import { isCanonicalWorkTask, isTaskOverdue } from "../../core/workspace.js";
+import { cardLinkUrlForTask, isCanonicalWorkTask, isTaskOverdue } from "../../core/workspace.js";
 import { displayCardDescription } from "./card-summary.js";
 import { renderTaskContext, renderTaskInstructions, taskDisplayParts } from "./task-overview.js";
 import { openSkipTaskDialog } from "./work-dialogs.js";
@@ -460,9 +460,16 @@ export function createTaskPanel(context) {
     if (task.cardId || task.dependsOn?.length) {
       taskPanelBody.append(renderTaskDependencies(task, dependencyOptions).element);
     }
+    const parentCard = task.cardId ? resolveCard(task.cardId) : null;
     const proofSlot = document.createElement("div");
     proofSlot.className = "task-proof";
-    // Required link field
+
+    const stateSection = document.createElement("section");
+    stateSection.className = "task-state-section";
+    stateSection.setAttribute("aria-label", "Current state and actions");
+
+    // Required link field sits right above the completion actions so the
+    // operator can paste the link and mark the task done in one place.
     if (task.requiredLinkName) {
       const wrap = document.createElement("div");
       wrap.className = "task-required-link";
@@ -471,7 +478,7 @@ export function createTaskPanel(context) {
       const input = document.createElement("input");
       input.type = "url";
       input.dataset.panelField = "required-link";
-      const savedLink = task.link || "";
+      const savedLink = cardLinkUrlForTask(parentCard, task);
       input.value =
         detail.activeTaskPanelDraft?.kind === "link"
           ? detail.activeTaskPanelDraft.payload.link
@@ -500,12 +507,8 @@ export function createTaskPanel(context) {
       });
       label.append(input);
       wrap.append(label);
-      proofSlot.append(wrap);
+      stateSection.append(wrap);
     }
-
-    const stateSection = document.createElement("section");
-    stateSection.className = "task-state-section";
-    stateSection.setAttribute("aria-label", "Current state and actions");
 
     // Waiting/follow-up info
     if (status === "waiting") {
@@ -607,7 +610,7 @@ export function createTaskPanel(context) {
       actions.append(followDetails, skipButton());
     } else if (status === "todo") {
       const completionProofState = () => {
-        const missingLink = task.requiredLinkName && !task.link;
+        const missingLink = task.requiredLinkName && !cardLinkUrlForTask(parentCard, task);
         const missingFile =
           task.requiresFile && !detail.activeTaskPanelTask?._hasFiles;
         const missingArtifact =

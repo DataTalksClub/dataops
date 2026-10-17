@@ -569,18 +569,18 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3:not([class*="dk-"]) 
   background: var(--dk-bg-hover);
   color: var(--dk-text-primary);
 }body[data-workspace-view="tasks"] .workflow-modal-panel .task-panel-body {
-  padding: 20px 24px 28px;
+  padding: 16px 20px 24px;
   overflow-y: auto;
 }body[data-workspace-view="tasks"] .workflow-modal-layout {
-  gap: 20px;
+  gap: 16px;
 }body[data-workspace-view="tasks"] .workflow-modal-main {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 12px;
 }body[data-workspace-view="tasks"] .workflow-detail-summary {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -668,18 +668,19 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3:not([class*="dk-"]) 
   padding: 3px 10px;
   color: var(--dk-success-text);
 }body[data-workspace-view="tasks"] .workflow-next-task {
-  display: flex;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: baseline;
   gap: 10px;
   padding: 10px 14px;
   margin: 0;
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
+  border: none;
+  border-radius: var(--dk-radius-sm);
   background: var(--dk-bg-muted);
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.4;
   text-align: left;
 }body[data-workspace-view="tasks"] .workflow-next-task > span:first-child {
   display: inline-flex;
@@ -688,11 +689,11 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3:not([class*="dk-"]) 
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--dk-accent-default);
+  color: var(--dk-text-muted);
   padding: 2px 6px;
   border-radius: var(--dk-radius-sm);
-  background: var(--dk-accent-soft);
-  border: 1px solid var(--dk-border-default);
+  background: transparent;
+  border: none;
   flex-shrink: 0;
   margin-top: 1px;
 }body[data-workspace-view="tasks"] .workflow-next-task strong {
@@ -756,13 +757,13 @@ body[data-workspace-view="tasks"] .entity-route-mismatch h3:not([class*="dk-"]) 
 }body[data-workspace-view="tasks"] .workflow-detail-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   border: none;
   border-radius: 0;
   background: transparent;
   padding: 0;
   border-top: 1px solid var(--dk-border-default);
-  padding-top: 18px;
+  padding-top: 12px;
 }body[data-workspace-view="tasks"] .workflow-detail-section > .task-history-label,
 body[data-workspace-view="tasks"] .card-checklist-header > .task-history-label {
   display: flex;

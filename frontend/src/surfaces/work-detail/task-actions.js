@@ -385,10 +385,20 @@ export function createTaskActions(context) {
       card = payload?.card || payload;
     }
     if (!routeIsFresh(routeToken)) return;
-    // The Card behind the Task dialog shows what the change did to it
-    // (completed into the Archive, or back on the board).
-    if (card && detail.activeTaskPanelId === taskId && detail.activeCardPanelId === card.id) {
-      await hydrateCardPanel(card.id, routeToken);
+    // The Card behind the Task dialog (or the Card panel itself when completed
+    // from the checklist) shows what the change did to it (such as filling a
+    // Card link, completing into the Archive, or returning to the board).
+    if (card && detail.activeCardPanelId === card.id) {
+      if (detail.activeTaskPanelId === taskId) {
+        await hydrateCardPanel(card.id, routeToken);
+      } else if (detail.activeCardPanelData) {
+        state.workSnapshot?.cardsById?.set(card.id, card);
+        detail.activeCardPanelData = {
+          ...detail.activeCardPanelData,
+          card,
+        };
+        renderCardPanel({ preserveDrafts: true });
+      }
     }
     // A reopened Task restores a done Card to the board; a parked Card stays
     // parked, so only the board case names a restored stage.
@@ -408,14 +418,14 @@ export function createTaskActions(context) {
     );
   }
 
-  async function updateTaskStatus(taskId, status, explicitVersion) {
+  async function updateTaskStatus(taskId, status, explicitVersion, extraPayload = {}) {
     const intent = {
       taskId,
       kind: "status",
       label: `Set status to ${status}`,
       method: "PUT",
       path: `/api/tasks/${encodeURIComponent(taskId)}`,
-      payload: { status },
+      payload: { status, ...extraPayload },
       pendingMessage: `Setting task status to ${status}…`,
       successMessage: `Task is now ${status} in the refreshed Task.`,
       errorPrefix: "Could not update task",

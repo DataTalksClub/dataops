@@ -1,6 +1,7 @@
 import { documentHref, opensInNewTab } from "../../core/links.js";
 import { afterText, blockedReason, blockingPrerequisites } from "../../core/task-dependencies.js";
-import { isCanonicalWorkTask } from "../../core/workspace.js";
+import { taskTitleParts } from "../../core/task-display.js";
+import { cardLinkUrlForTask, isCanonicalWorkTask } from "../../core/workspace.js";
 import { createCardActions } from "./card-actions.js";
 import { renderCardTemplateUpdate } from "./card-template-review.js";
 import {
@@ -63,6 +64,7 @@ export function createCardPanel(context) {
   } = context;
   // Link rows whose editor is open, so an unsaved edit survives a rerender.
   const openLinkEditors = new Set();
+  const openTaskLinkPrompts = new Set();
 
   // A Card opens as a dialog over the page showing (`?card=`), which stays
   // as it was underneath. On the Cards pages, and outside any workspace page,
@@ -681,7 +683,9 @@ export function createCardPanel(context) {
       ? detail.activeTaskPanelDraft.payload?.status
       : null;
 
-    const missingLink = !isDone && task.requiredLinkName && !task.link;
+    const activeCard = detail.activeCardPanelData?.card || null;
+    const resolvedTaskLink = cardLinkUrlForTask(activeCard, task);
+    const missingLink = !isDone && Boolean(task.requiredLinkName) && !resolvedTaskLink;
     const missingFile =
       !isDone && task.requiresFile && !hasTaskFileEvidence(task);
     const missingArtifact =
@@ -693,6 +697,18 @@ export function createCardPanel(context) {
     const blockedBy = blockedReason(task, siblingTasks);
     const blocking = blockingPrerequisites(task, siblingTasks);
     const isBlocked = blocking.length > 0;
+    const cleanTitle = taskTitleParts(workTaskTitle(task), task?.tags).title;
+    const mutationBusy =
+      detail.activeTaskMutationBusy ||
+      detail.activeCardMutationBusy ||
+      detail.activeCardTemplateBusy;
+    const canInlineCompleteWithLink =
+      !isDone &&
+      !isWaiting &&
+      !isBlocked &&
+      missingLink &&
+      !missingFile &&
+      !missingArtifact;
 
     // A skipped Task is resolved without being done: a dash mark instead of
     // a checked box, a muted title that is not struck through, and its reason
@@ -709,16 +725,14 @@ export function createCardPanel(context) {
       checkbox.type = "checkbox";
       checkbox.setAttribute(
         "aria-label",
-        `${isDone ? "Reopen" : "Complete"} ${workTaskTitle(task)}`,
+        `${isDone ? "Reopen" : "Complete"} ${cleanTitle}`,
       );
       // Preserve the native checkbox state while the change handler is awaiting
       // the server. The pending rerender must not make Playwright/keyboard users
       // observe an unchecked replacement after they just checked it.
       checkbox.checked = pendingStatus ? pendingStatus === "done" : isDone;
       checkbox.disabled =
-        detail.activeTaskMutationBusy ||
-        detail.activeCardMutationBusy ||
-        detail.activeCardTemplateBusy ||
+        mutationBusy ||
         isWaiting || Boolean(blockedBy) ||
         missingLink || missingFile || missingArtifact;
       if (checkbox.disabled && !isDone) {
@@ -742,7 +756,7 @@ export function createCardPanel(context) {
     label.type = "button";
     label.className = `card-checklist-label${isSkipped ? " is-skipped" : isDone ? " is-done" : ""}`;
     label.dataset.taskId = task.id;
-    appendBreakableText(label, workTaskTitle(task));
+    appendBreakableText(label, cleanTitle);
     label.addEventListener("click", () => openTaskPanel(task.id));
     body.append(label);
 
@@ -772,14 +786,15 @@ export function createCardPanel(context) {
       after.append("after ");
       blocking.forEach((entry, index) => {
         if (index > 0) after.append(index === blocking.length - 1 ? " and " : ", ");
+        const entryTitle = taskTitleParts(entry.description || "", []).title;
         if (entry.status === "missing") {
-          after.append(entry.description);
+          after.append(entryTitle);
           return;
         }
         const link = document.createElement("a");
         link.className = "card-checklist-after-link";
         link.href = `/cards?cardId=${encodeURIComponent(cardId)}&taskId=${encodeURIComponent(entry.id)}`;
-        link.textContent = entry.description;
+        link.textContent = entryTitle;
         link.addEventListener("click", (event) => {
           if (event.metaKey || event.ctrlKey || event.shiftKey) return;
           event.preventDefault();
@@ -791,19 +806,88 @@ export function createCardPanel(context) {
       if (control.tagName === "INPUT") control.setAttribute("aria-describedby", after.id);
     }
 
-    const flags = document.createElement("div");
-    flags.className = "card-checklist-flags";
-    if (!isDone && (missingLink || missingFile || missingArtifact)) {
+    if (canInlineCompleteWithLink) {
+      const promptKey = `${cardId}\u0000${task.id}`;
+      const isEditingLink = openTaskLinkPrompts.has(promptKey);
+      if (isEditingLink) {
+        const editor = document.createElement("div");
+        editor.className = "card-checklist-link-editor";
+        const input = document.createElement("input");
+        input.type = "url";
+        input.className = "dk-input card-checklist-link-input";
+        input.placeholder = `${task.requiredLinkName} URL (https://…)`;
+        input.setAttribute("aria-label", `${task.requiredLinkName} link`);
+        input.dataset.cardDraftKey = `task-link:${task.id}`;
+        input.disabled = mutationBusy;
+        const submit = document.createElement("button");
+        submit.type = "button";
+        submit.className = "dk-button dk-button--primary dk-button--sm card-checklist-link-save";
+        submit.textContent = "Complete";
+        submit.disabled = mutationBusy;
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "dk-button dk-button--sm card-checklist-link-cancel";
+        cancel.textContent = "Cancel";
+        const commit = async () => {
+          const nextUrl = input.value.trim();
+          if (!nextUrl) {
+            input.focus();
+            return;
+          }
+          openTaskLinkPrompts.delete(promptKey);
+          await updateTaskStatus(task.id, "done", task.version, { link: nextUrl });
+        };
+        submit.addEventListener("click", commit);
+        cancel.addEventListener("click", () => {
+          openTaskLinkPrompts.delete(promptKey);
+          renderCardPanel({ preserveDrafts: true });
+        });
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            openTaskLinkPrompts.delete(promptKey);
+            renderCardPanel({ preserveDrafts: true });
+          }
+        });
+        editor.append(input, submit, cancel);
+        body.append(editor);
+      } else if (task.requiredLinkName !== "Completion proof") {
+        const trigger = document.createElement("button");
+        trigger.type = "button";
+        trigger.className = "card-checklist-link-trigger";
+        trigger.disabled = mutationBusy;
+        trigger.textContent = `+ Provide ${task.requiredLinkName}`;
+        trigger.addEventListener("click", () => {
+          openTaskLinkPrompts.add(promptKey);
+          renderCardPanel({ preserveDrafts: true });
+          const input = cardPanelBody.querySelector(
+            `[data-card-draft-key="task-link:${task.id}"]`,
+          );
+          input?.focus?.();
+        });
+        body.append(trigger);
+      }
+    } else if (!isDone && !isBlocked && !isWaiting && (missingFile || missingArtifact)) {
+      const flags = document.createElement("div");
+      flags.className = "card-checklist-flags";
       const missing = [];
-      if (missingLink) missing.push(`${task.requiredLinkName} missing`);
-      if (missingFile) missing.push("file missing");
-      if (missingArtifact) missing.push("artifact review missing");
-      const badge = document.createElement("span");
-      badge.className = "card-checklist-evidence workflow-card-flag is-danger";
-      badge.textContent = missing.join("; ");
-      flags.append(badge);
+      if (missingLink && task.requiredLinkName !== "Completion proof") {
+        missing.push(`Needs ${task.requiredLinkName}`);
+      }
+      if (missingFile) missing.push("Needs file");
+      if (missingArtifact) missing.push("Needs artifact");
+      if (missing.length > 0) {
+        const badge = document.createElement("span");
+        badge.className = "card-checklist-evidence workflow-card-flag";
+        badge.textContent = missing.join(" · ");
+        flags.append(badge);
+        body.append(flags);
+      }
     }
-    if (flags.children.length) body.append(flags);
 
     const dateMeta = document.createElement("small");
     dateMeta.className = "card-checklist-date";

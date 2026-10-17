@@ -998,9 +998,9 @@
   align-items: start;
   column-gap: var(--dk-space-3);
   min-width: 0;
-  min-height: 36px;
+  min-height: 32px;
   border-radius: var(--dk-radius-md);
-  padding: var(--dk-space-2);
+  padding: var(--dk-space-1) var(--dk-space-2);
 }
 .card-checklist-item:hover {
   background: var(--dk-bg-hover);
@@ -1009,11 +1009,16 @@
 .card-checklist-skip {
   appearance: none;
   -webkit-appearance: none;
+  box-sizing: border-box;
   display: grid;
+  flex: none;
   place-content: center;
   width: 16px;
   height: 16px;
+  min-width: 16px;
+  min-height: 16px;
   margin: 2px 0 0;
+  padding: 0;
   border: 1px solid var(--dk-border-strong);
   border-radius: var(--dk-radius-sm);
   background: var(--dk-bg-surface);
@@ -1031,6 +1036,7 @@
 }
 .card-checklist-item > input[type="checkbox"]:disabled:not(:checked) {
   cursor: not-allowed;
+  border-color: var(--dk-border-default);
   background: var(--dk-bg-muted);
 }
 .card-checklist-skip {
@@ -1089,6 +1095,35 @@
 }
 .card-checklist-note-kind {
   font-weight: var(--dk-weight-semibold);
+}
+.card-checklist-link-trigger {
+  justify-self: start;
+  margin-top: var(--dk-space-1);
+  border: 0;
+  background: transparent;
+  color: var(--dk-text-link);
+  padding: 0;
+  font-size: var(--dk-text-xs);
+  font-weight: var(--dk-weight-medium);
+  line-height: 16px;
+  cursor: pointer;
+}
+.card-checklist-link-trigger:hover:not(:disabled) {
+  color: var(--dk-text-link-hover);
+  text-decoration: underline;
+}
+.card-checklist-link-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-2);
+  margin-top: var(--dk-space-1);
+  min-width: 0;
+}
+.card-checklist-link-input {
+  flex: 1 1 180px;
+  min-width: 0;
+  min-height: var(--dk-size-control-sm);
 }
 .card-checklist-flags {
   display: flex;

@@ -1678,11 +1678,11 @@ describe("Work Detail surface boundary", () => {
     assert.equal(harness.cardPanelBody.querySelector(".card-checklist-percent").textContent, "67%");
   });
 
-  test("renders description link dumps as subheadings with real anchors", async () => {
-    const card = {
-      id: "card-desc-links",
+  test("strips legacy Overview docs and Links TODO boilerplate while rendering real description anchors", async () => {
+    const boilerplateOnly = {
+      id: "card-desc-boilerplate",
       version: 1,
-      title: "Link Card",
+      title: "Boilerplate Card",
       status: "active",
       stage: "preparation",
       taskCount: 0,
@@ -1693,17 +1693,39 @@ describe("Work Detail surface boundary", () => {
         '[Newsletter](https://docs.google.com/document/d/XYZ789/edit "") ' +
         "Links:- Sponsorship document: TODO - X link: TODO",
     };
+    const card = {
+      id: "card-desc-links",
+      version: 1,
+      title: "Link Card",
+      status: "active",
+      stage: "preparation",
+      taskCount: 0,
+      openTaskCount: 0,
+      references: [],
+      description:
+        'Session notes:- [Process documents](https://docs.google.com/document/d/ABC123/edit "") - ' +
+        '[Newsletter](https://docs.google.com/document/d/XYZ789/edit "")',
+    };
     const harness = createHarness({
-      cards: [card],
+      cards: [boilerplateOnly, card],
       request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${boilerplateOnly.id}` && !requestOptions.method)
+          return boilerplateOnly;
         if (url === `/api/cards/${card.id}` && !requestOptions.method)
           return card;
-        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [] };
-        if (url === `/api/artifacts?cardId=${card.id}`)
+        if (url.startsWith("/api/tasks?cardId=")) return { tasks: [] };
+        if (url.startsWith("/api/artifacts?cardId="))
           return { artifacts: [] };
         return {};
       },
     });
+
+    harness.api.prepareCardPanel(boilerplateOnly.id);
+    await harness.api.hydrateCardPanel(boilerplateOnly.id, 1);
+    assert.equal(
+      harness.cardPanelBody.querySelector(".workflow-description-section"),
+      null,
+    );
 
     harness.api.prepareCardPanel(card.id);
     await harness.api.hydrateCardPanel(card.id, 1);
@@ -1725,10 +1747,109 @@ describe("Work Detail surface boundary", () => {
     );
     assert.deepEqual(
       subtitles.map((subtitle) => subtitle.textContent),
-      ["Overview docs:", "Links:"],
+      ["Session notes:"],
     );
     assert.ok(
       !harness.cardPanelBody.textContent.includes("[Process documents]("),
+    );
+    assert.deepEqual(harness.errors, []);
+  });
+
+  test("completes a task requiring a link directly from the Card checklist and updates Card links", async () => {
+    let card = {
+      id: "card-inline-link",
+      version: 1,
+      title: "Podcast episode",
+      status: "active",
+      stage: "preparation",
+      taskCount: 2,
+      openTaskCount: 2,
+      cardLinks: [
+        { name: "Podcast document", url: "" },
+        { name: "Luma", url: "https://luma.com/existing-event" },
+      ],
+      references: [],
+    };
+    let tasks = [
+      {
+        id: "t-create-doc",
+        cardId: card.id,
+        version: 1,
+        taskHistory: [],
+        description: "[Podcast] Create the podcast document",
+        status: "todo",
+        requiredLinkName: "Podcast document",
+      },
+      {
+        id: "t-luma",
+        cardId: card.id,
+        version: 1,
+        taskHistory: [],
+        description: "[Podcast] Create the Luma event",
+        status: "todo",
+        requiredLinkName: "Luma",
+      },
+    ];
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method) return { card };
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks };
+        if (url === `/api/artifacts?cardId=${card.id}`) return { artifacts: [] };
+        if (url === `/api/tasks/t-create-doc` && requestOptions.method === "PUT") {
+          const body = JSON.parse(requestOptions.body);
+          const updated = {
+            ...tasks[0],
+            status: body.status,
+            link: body.link,
+            version: 2,
+          };
+          tasks = [updated, tasks[1]];
+          card = {
+            ...card,
+            version: 2,
+            openTaskCount: 1,
+            cardLinks: [
+              { name: "Podcast document", url: body.link },
+              { name: "Luma", url: "https://luma.com/existing-event" },
+            ],
+          };
+          return updated;
+        }
+        return {};
+      },
+    });
+
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+
+    const rows = [...harness.cardPanelBody.querySelectorAll(".card-checklist-item")];
+    // Bracket prefixes are stripped in the Card checklist labels.
+    assert.deepEqual(
+      rows.map((row) => row.querySelector(".card-checklist-label").textContent),
+      ["Create the podcast document", "Create the Luma event"],
+    );
+    // "Luma" is already filled on card.cardLinks, so its checkbox is enabled!
+    assert.equal(rows[1].querySelector('input[type="checkbox"]').disabled, false);
+    // "Podcast document" is not filled yet, so its row offers the inline link prompt.
+    assert.equal(rows[0].querySelector('input[type="checkbox"]').disabled, true);
+    const trigger = rows[0].querySelector(".card-checklist-link-trigger");
+    assert.equal(trigger.textContent, "+ Provide Podcast document");
+    await trigger.click();
+
+    const input = harness.cardPanelBody.querySelector(".card-checklist-link-input");
+    assert.ok(input);
+    input.value = "https://docs.google.com/document/d/pod-123/edit";
+    await harness.cardPanelBody.querySelector(".card-checklist-link-save").click();
+    await nextTicks(4);
+
+    // Completing the task updates the Card's Links section with the provided URL.
+    const docLinkRow = [...harness.cardPanelBody.querySelectorAll(".link-row")]
+      .find((row) => row.dataset.linkName === "Podcast document");
+    assert.equal(docLinkRow.classList.contains("is-missing"), false);
+    assert.equal(
+      docLinkRow.querySelector(".link-row__link").href,
+      "https://docs.google.com/document/d/pod-123/edit",
     );
     assert.deepEqual(harness.errors, []);
   });
