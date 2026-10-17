@@ -237,18 +237,32 @@ test("Back closes through E integration and tabs are keyboard reachable", async 
   assert.equal(record.getSelectedDealId(), null, "Back destroys the record state");
 });
 
-test("overview omits the primary section when D sends no primaryPerson", async () => {
+test("overview shows effective dates and links to People without faking contacts", async () => {
+  const payload = {
+    ...preview,
+    relatedWork: [
+      { taskId: "t1", status: "waiting", date: "2026-10-20", effectiveDate: "2026-10-25", deferred: true, deferredUntil: "2026-10-25", eligible: true, description: "Follow up after pause", scope: "direct" },
+    ],
+  };
   const { host, record } = recordHarness({
     routes: {
       "GET /directory/companies/c1": { id: "c1", displayName: "Acme", notes: "Warm." },
-      "GET /activity/organization/c1?limit=3": preview,
+      "GET /activity/organization/c1?limit=3": payload,
+      "GET /directory/people?company=c1&limit=30": { items: [{ id: "p1", name: "Ada" }], total: 1, nextCursor: null },
     },
   });
   const panels = seedPanels(host);
   await record.openCompany("c1");
-  assert.doesNotMatch(panels.overview.innerHTML, /Primary person|No primary person yet/, "no fake no-contact claim");
-  assert.doesNotMatch(host.querySelector("[data-record-header]").innerHTML, /No primary person yet/);
-  assert.match(panels.overview.innerHTML, /Warm\./);
+  const overview = panels.overview.innerHTML;
+  assert.match(overview, /25 Oct/, "effective date drives the due moment");
+  assert.match(overview, /deferred/, "deferred wakeup is labeled");
+  assert.match(overview, /originally 20 Oct/, "original date is distinct optional context only");
+  assert.doesNotMatch(overview, /No primary person yet/, "no fake no-contact claim");
+  const viewPeople = host.querySelector("[data-record-overview]") || panels.overview;
+  assert.match(panels.overview.innerHTML, /data-goto-people/, "absent primary offers View People");
+  await host.dispatch("click", { closestPatch: { "[data-goto-people]": new FakeNode("button") } });
+  assert.match(panels.people.innerHTML, /Ada/, "View People opens the bounded People tab");
+  void viewPeople;
 });
 
 test("record shell is accessible and honest states escape content", () => {  const shell = recordShellMarkup({ displayName: "<Acme>" }, { returnLabel: "Companies" }, context);

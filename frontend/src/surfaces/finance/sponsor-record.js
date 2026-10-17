@@ -203,30 +203,48 @@ export function recordShellMarkup(company, options = {}, context = {}) {
     ).join("")}`;
 }
 
+/**
+ * Next-action rendering driven by D canonical rows: the displayed due
+ * moment is ALWAYS the effective date; the original date appears only as
+ * distinct optional context, so a waiting/follow-up/snoozed task never
+ * presents its old original date as the next action due.
+ */
+export function nextTaskMarkup(nextTask, context = {}) {
+  const escape = esc(context);
+  if (!nextTask) return html`<p>No open task. Nothing is due for this company.</p>`;
+  const due = nextTask.effectiveDate || nextTask.date;
+  const wakeup = nextTask.deferredUntil || (nextTask.deferred ? nextTask.effectiveDate : "");
+  const original = nextTask.date && nextTask.date !== due ? nextTask.date : "";
+  const deferredNote = nextTask.deferred
+    ? html` · deferred${wakeup && wakeup !== due ? html` until ${escape(formatBerlinDate(wakeup))}` : ""}`
+    : "";
+  const duePart = due ? html` · ${escape(formatBerlinDate(due))}` : "";
+  const originalPart = original
+    ? html` <small>(originally ${escape(formatBerlinDate(original))})</small>`
+    : "";
+  const taskButton = nextTask.taskId
+    ? html`<button type="button" data-open-task="${escape(nextTask.taskId)}">Open task</button>`
+    : "";
+  return html`<p><strong>${escape(nextTask.description || "Open task")}</strong>${duePart}${deferredNote}${originalPart}</p>
+    ${taskButton}`;
+}
+
 export function overviewMarkup({ company, primaryPerson, nextTask, recent }, context = {}) {
   const escape = esc(context);
-  // D's final summary may omit primaryPerson (pure org Get + notes/stamps):
-  // an absent key omits the section instead of faking a no-contact claim.
-  const showPrimary = primaryPerson !== undefined
-    || (company != null && Object.prototype.hasOwnProperty.call(company, "primaryPerson"));
+  // An absent primaryPerson (cheap D summary) renders a View People action,
+  // never a no-contact claim.
   const person = primaryPerson !== undefined ? primaryPerson : company?.primaryPerson;
   return html`<div class="crm-record-overview">
     <section aria-label="Next action">
       <h3>Next action</h3>
-      ${nextTask
-        ? html`<p><strong>${escape(nextTask.description || "Open task")}</strong>
-            ${nextTask.date ? html` · ${escape(formatBerlinDate(nextTask.date))}` : ""}</p>
-          ${nextTask.taskId ? html`<button type="button" data-open-task="${escape(nextTask.taskId)}">Open task</button>` : ""}`
-        : html`<p>No open task. Nothing is due for this company.</p>`}
+      ${nextTaskMarkup(nextTask, context)}
     </section>
-    ${showPrimary
-      ? html`<section aria-label="Primary person">
+    <section aria-label="Primary person">
       <h3>Primary person</h3>
       ${person
         ? html`<p>${escape(person.name || "Unnamed")}${person.email ? html` · ${escape(person.email)}` : ""}</p>`
-        : html`<p>No primary person yet.</p>`}
-    </section>`
-      : ""}
+        : html`<p><button type="button" data-goto-people>View People</button></p>`}
+    </section>
     ${company?.notes
       ? html`<section aria-label="Company summary">
           <h3>Company summary</h3>
@@ -728,6 +746,10 @@ export function createSponsorRecord(context) {
       const tab = event.target.closest("[data-record-tab]");
       if (tab) {
         await fail(() => switchTab(tab.dataset.recordTab), "Could not open section");
+        return;
+      }
+      if (event.target.closest("[data-goto-people]")) {
+        await fail(() => switchTab("people"), "Could not open section");
         return;
       }
       const retry = event.target.closest("[data-record-retry]");
