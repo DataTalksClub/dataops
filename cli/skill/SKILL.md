@@ -178,10 +178,38 @@ The website script generates the pages from these registers plus the episode reg
 ## What is on my plate
 
 ```bash
-dataops tasks list --mine          # the web queue: overdue, follow-ups due, today, waiting
+dataops tasks list --mine --queue   # the starting point: your open queue
 dataops tasks list --overdue --json
 dataops notifications list
 ```
+
+Dates take `+7d`, `tomorrow`, or a weekday (`mon` is the next Monday,
+Europe/Berlin) everywhere: `tasks create --date +3d`, `tasks wait --follow-up fri`.
+
+Park something without losing it: `dataops tasks snooze <task-id> --until +7d --reason "..."`.
+It leaves today/overdue until then and returns on its own; `tasks unsnooze` brings it back now.
+
+Leave a trace: `dataops tasks note <task-id> "context"` appends to the Task's
+notes log (timestamp + you); `tasks show` prints the whole log, and
+`tasks update --comment` appends instead of overwriting.
+
+Schedule a check-in: `dataops tasks followup --about <task|card|sponsor-deal id> --on +7d --description "check X" --note "context"`.
+It links to its subject, is assigned to you, and shows in that day's queue.
+
+## How to resume someone else's queue
+
+Follow-ups live in DataOps, not in any agent's memory, so any agent can pick
+up any queue:
+
+1. Look at their queue: `dataops tasks list --owner <agent-id> --queue --json`.
+   (`--mine` is shorthand for `--owner me`.)
+2. Take it over: `dataops tasks handover --from <agent-id> --to <agent-id>`
+   for the whole open queue, or `dataops tasks handover <task-id> --to <agent-id>`
+   for one Task. Handing over is administration (like `tasks assign`): a
+   non-admin gets a forbidden error and nothing moves.
+3. Work from your own queue from then on: `dataops tasks list --mine --queue`.
+   Read each Task's notes log (`tasks show`) for the context so far, and keep
+   appending to it as you go.
 
 ## Anything else
 

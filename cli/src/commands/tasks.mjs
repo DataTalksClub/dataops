@@ -34,6 +34,8 @@ Usage
   dataops tasks unsnooze <task-id>                       Back in the queue now
   dataops tasks unblock <task-id> --note NOTE [--unblocked]   (default: response received)
   dataops tasks note <task-id> "text"                 Append to the notes log
+  dataops tasks handover <task-id> --to <agent>        Hand one Task over (admin)
+  dataops tasks handover --from <agent> --to <agent>   Hand every open Task over (admin)
   dataops tasks assign <task-id> <user-id|me>
   dataops tasks delete <task-id>                                (admin)
 
@@ -44,6 +46,9 @@ List views (default: --queue)
   --card ID    Every Task of a Card
   --owner me|team|unassigned|<user-id>, or --mine for --owner me
   --as-of YYYY-MM-DD   Treat this date as today (default: the local date)
+
+The starting point for any agent is \`dataops tasks list --mine --queue\`:
+your open work in urgency order (overdue, follow-ups due, today, waiting).
 
 Dates (Europe/Berlin)
   Every date flag also takes +7d (days ahead), tomorrow, or a weekday name
@@ -574,6 +579,49 @@ export async function assign(args, io) {
   return report(io, args, await api.put(`/api/tasks/${enc(id)}`, { assigneeId, expectedVersion }), "Assigned");
 }
 
+/**
+ * Hand work to another agent. One Task (`handover <id> --to <agent>`) or a
+ * whole queue (`handover --from <agent> --to <agent>`, every open Task).
+ * Reassigning is administration, like `assign`: the portal refuses it for
+ * non-admins, and the bulk form surfaces that refusal instead of reporting
+ * an empty move.
+ */
+export async function handover(args, io) {
+  const to = optionalString(args, "to");
+  if (!to) throw new UsageError("--to is required: the agent who takes over.");
+  const api = apiFor(args);
+  const toId = await resolveAssignee(api, to);
+  const id = args._[0] === undefined ? undefined : String(args._[0]);
+  if (id !== undefined) {
+    const { expectedVersion } = await currentVersion(api, id, args);
+    return report(io, args, await api.put(`/api/tasks/${enc(id)}`, { assigneeId: toId, expectedVersion }), "Handed over");
+  }
+  const from = optionalString(args, "from");
+  if (!from) {
+    throw new UsageError("Give a Task or --from: `dataops tasks handover <task-id> --to <agent>` or `dataops tasks handover --from <agent> --to <agent>`.");
+  }
+  const fromId = await resolveAssignee(api, from);
+  const open = tasksOf(await api.get("/api/tasks", { query: { owner: fromId } })).filter((task) => OPEN.has(task.status));
+  let moved = 0;
+  const remaining = [];
+  let firstError = null;
+  for (const task of open) {
+    try {
+      await api.put(`/api/tasks/${enc(task.id)}`, { assigneeId: toId, expectedVersion: task.version });
+      moved += 1;
+    } catch (error) {
+      remaining.push(task.id);
+      firstError = firstError || error;
+    }
+  }
+  if (moved === 0 && remaining.length > 0 && firstError) throw firstError;
+  const result = { from: fromId, to: toId, moved, remaining };
+  if (args.json) return result;
+  io.print(`Handed over ${moved} open Task(s) from ${fromId} to ${toId}.`);
+  if (remaining.length) io.print(`Still open: ${remaining.length} Task(s) changed meanwhile; run it again.`);
+  return result;
+}
+
 export async function remove(args, io) {
   const id = positional(args, 0, "dataops tasks delete <task-id>");
   const api = apiFor(args);
@@ -601,5 +649,6 @@ export const commands = {
   skip,
   unskip,
   assign,
+  handover,
   delete: remove,
 };
