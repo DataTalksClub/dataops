@@ -63,6 +63,23 @@ test("migration mounts the record shell and preserves back behavior", async () =
   assert.deepEqual(closed, [true], "record Back calls E closeRecord (no competing lifecycle)");
 });
 
+test("reopenDealDetail forwards the isCurrent predicate to the record open", async () => {
+  const { host, detail } = migrationHarness({
+    organization,
+    routes: {
+      "GET /directory/companies/c1": organization,
+      "GET /activity/organization/c1?limit=3": preview,
+    },
+  });
+  let current = false;
+  await detail.reopenDealDetail({ id: "d9", organizationId: "c1" }, { isCurrent: () => current });
+  assert.match(host.innerHTML, /Loading company/, "stale deal open paints nothing");
+  assert.doesNotMatch(host.innerHTML, /Acme/);
+  current = true;
+  await detail.reopenDealDetail({ id: "d9", organizationId: "c1" }, { isCurrent: () => current });
+  assert.match(host.innerHTML, /Acme/, "live deal open renders");
+});
+
 test("migration archives and restores through the record header", async () => {
   const archived = { ...organization, archivedAt: "2026-10-17T00:00:00Z", active: false, version: 4 };
   const restored = { ...organization, version: 5 };

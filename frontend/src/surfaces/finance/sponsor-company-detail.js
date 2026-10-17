@@ -145,8 +145,8 @@ export function createSponsorCompanyDetail({
     return detail.querySelector("[data-crm-record]");
   }
 
-  async function reopenDealDetail(deal) {
-    await reopenCompanyDetail({ id: deal.organizationId }, deal);
+  async function reopenDealDetail(deal, { isCurrent = null } = {}) {
+    await reopenCompanyDetail({ id: deal.organizationId }, deal, { isCurrent });
   }
 
   async function reopenCompanyDetail(organization, highlightedDeal = null, { isCurrent = null } = {}) {

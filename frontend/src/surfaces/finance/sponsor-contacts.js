@@ -7,6 +7,15 @@ function normalizeEmails(value) {
     .filter(Boolean);
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 /**
  * Reusable sponsor contact editor (F-owned behavior, E-owned form markup).
  *
@@ -40,9 +49,7 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
     return [];
   }
 
-  function fillCompanyPicker(presetOrganizationId, provided = []) {
-    const picker = form.querySelector("[data-contact-org-picker]");
-    const hidden = form.elements.organizationId;
+  async function companyChoices(presetOrganizationId, provided = []) {
     const list = [...provided, ...companies()].filter(
       (item, index, all) => item && item.id && all.findIndex((other) => other.id === item.id) === index,
     );
@@ -51,9 +58,29 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
     if (presetOrganizationId && !list.some((item) => item.id === presetOrganizationId)) {
       list.unshift({ id: presetOrganizationId, displayName: `Current company (${presetOrganizationId})` });
     }
+    if (provided.length === 0 && list.length < 2) {
+      // Cold opens (person record without a loaded directory) would offer
+      // only the current org: fetch one bounded active-companies page so the
+      // chooser offers real alternatives. Never a whole-directory load, and
+      // failures degrade to whatever is already cached.
+      try {
+        const page = await api("/directory/companies?limit=50");
+        for (const item of page.items || []) {
+          if (item && item.id && !list.some((other) => other.id === item.id)) list.push(item);
+        }
+      } catch {
+        // Keep the cached entries; the chooser stays usable.
+      }
+    }
+    return list;
+  }
+
+  function fillCompanyPicker(presetOrganizationId, list = []) {
+    const picker = form.querySelector("[data-contact-org-picker]");
+    const hidden = form.elements.organizationId;
     if (picker) {
       picker.innerHTML = `<option value="">Select a company</option>` + list
-        .map((item) => `<option value="${item.id}">${item.displayName || item.id}</option>`)
+        .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.displayName || item.id)}</option>`)
         .join("");
       const row = picker.closest("label");
       if (row) row.hidden = false;
@@ -69,7 +96,7 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
     if (hidden) hidden.value = presetOrganizationId || "";
   }
 
-  function fillForm(contact, presetOrganizationId = "") {
+  async function fillForm(contact, presetOrganizationId = "", providedCompanies = []) {
     form.reset();
     originalLastContactedAt = String(contact?.lastContactedAt || "");
     for (const name of ["name", "role", "notes", "linkedin", "telegram", "organizationId", "version"]) {
@@ -82,7 +109,7 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
       form.elements.lastContactedAt.dataset.original = originalLastContactedAt;
     }
     if (form.elements.primary) form.elements.primary.checked = Boolean(contact?.primary);
-    fillCompanyPicker(contact?.organizationId || presetOrganizationId);
+    fillCompanyPicker(contact?.organizationId || presetOrganizationId, await companyChoices(contact?.organizationId || presetOrganizationId, providedCompanies));
   }
 
   async function open(target = {}, options = {}) {
@@ -99,16 +126,15 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
       }
     }
     if (contact?.organizationId) presetOrganizationId = contact.organizationId;
-    fillForm(contact, presetOrganizationId);
-    if (options.companies) fillCompanyPicker(presetOrganizationId, options.companies);
+    await fillForm(contact, presetOrganizationId, options.companies || []);
     openDialog(dialog);
     return contact;
   }
 
-  surface.addEventListener("click", (event) => {
+  surface.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-edit-contact]");
     if (!button) return;
-    safe(() => open({ id: button.dataset.editContact }), "Could not open contact");
+    await safe(() => open({ id: button.dataset.editContact }), "Could not open contact");
   });
 
   surface.querySelector("[data-contact-save]").onclick = async (event) => {

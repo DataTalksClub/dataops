@@ -78,7 +78,7 @@ test("unknown contacts load exactly by ID without a directory read", async () =>
   const dialog = surface.setQuery("[data-contact-dialog]", new FakeNode("dialog"));
   dialog.setQuery("form", new FakeNode("form"));
   const solo = createSponsorContactEditor({
-    api, surface, getContacts: () => [], safe: async (action) => action(),
+    api, surface, getContacts: () => [], getOrganizations: () => [{ id: "c1", displayName: "Acme" }, { id: "c2", displayName: "Beta" }], safe: async (action) => action(),
     openDialog: () => {}, afterSave: async () => {},
   });
   const returned = await solo.open({ id: "p9" });
@@ -88,7 +88,7 @@ test("unknown contacts load exactly by ID without a directory read", async () =>
 });
 
 test("unchanged dates preserve full stored precision on save", async () => {
-  const { form, calls, saved, editor, surface } = editorHarness({
+  const { form, calls, saved, captured, editor, surface } = editorHarness({
     contacts: [ada],
     routes: { "PUT /contacts/p1": (({ body }) => ({ ...ada, ...body, version: 3 })) },
   });
@@ -103,7 +103,7 @@ test("unchanged dates preserve full stored precision on save", async () => {
   const put = calls.find(({ method }) => method === "PUT");
   assert.equal(put.body.lastContactedAt, "2026-10-09T14:35:22Z", "untouched date keeps full precision");
   assert.equal(saved[0][0], "c1");
-  assert.deepEqual(saved[0][1], { view: "people", at: 0 }, "afterSave receives the synchronously captured context");
+  assert.strictEqual(saved[0][1], captured[0], "same captured context object reaches afterSave");
 });
 
 test("save context is captured before the request settles and passed through", async () => {
@@ -230,6 +230,50 @@ test("unknown current association stays honest and selectable", async () => {
   assert.match(picker.innerHTML, /value="cx"/, "unknown org kept as a labeled option");
   assert.match(picker.innerHTML, /Current company \(cx\)/, "no invented display name");
   assert.equal(picker.value, "cx");
+});
+
+test("chooser escapes option values and labels", async () => {
+  const { form, editor } = editorHarness({ contacts: [ada] });
+  const picker = new FakeNode("select");
+  form.setQuery("[data-contact-org-picker]", picker);
+  await editor.open({ id: "p1" }, { companies: [{ id: 'x"onmouseover="y', displayName: "<b>Bold</b>" }] });
+  assert.doesNotMatch(picker.innerHTML, /<b>Bold<\/b>/);
+  assert.match(picker.innerHTML, /&lt;b&gt;Bold&lt;\/b&gt;/);
+  assert.doesNotMatch(picker.innerHTML, /x"onmouseover/);
+  assert.match(picker.innerHTML, /x&quot;onmouseover/);
+});
+
+test("cold open fetches one bounded company page for real alternatives", async () => {
+  const fetched = [];
+  const { form, editor } = editorHarness({
+    contacts: [{ ...ada, organizationId: "c1" }],
+    companies: [],
+    routes: {
+      "GET /directory/companies?limit=50": (({ }) => {
+        fetched.push(true);
+        return { items: [{ id: "c1", displayName: "Acme" }, { id: "c9", displayName: "Northwind" }], nextCursor: "more" };
+      }),
+    },
+  });
+  const picker = new FakeNode("select");
+  form.setQuery("[data-contact-org-picker]", picker);
+  await editor.open({ id: "p1" });
+  assert.equal(fetched.length, 1, "exactly one bounded lookup, never a directory scan");
+  assert.match(picker.innerHTML, /Northwind/, "cold editor offers a real alternative");
+  assert.equal(picker.value, "c1", "current stays preselected");
+});
+
+test("chooser lookup failure degrades to the cached current entry", async () => {
+  const { form, editor } = editorHarness({
+    contacts: [{ ...ada, organizationId: "c1" }],
+    companies: [],
+    routes: { "GET /directory/companies?limit=50": (() => { throw new Error("down"); }) },
+  });
+  const picker = new FakeNode("select");
+  form.setQuery("[data-contact-org-picker]", picker);
+  await editor.open({ id: "p1" });
+  assert.match(picker.innerHTML, /Current company \(c1\)/, "chooser stays usable on lookup failure");
+  assert.equal(picker.value, "c1");
 });
 
 test("new contacts preset the org with the chooser visible; blank opens the chooser", async () => {
