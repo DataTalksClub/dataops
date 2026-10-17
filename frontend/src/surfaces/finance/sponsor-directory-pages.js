@@ -17,6 +17,7 @@ import {
   directoryDefaults,
   directoryQueryFromState,
   directoryStateFromUrl,
+  directoryUrl,
   renderCompanyRow,
   renderDirectoryEmpty,
   renderDirectoryError,
@@ -70,7 +71,12 @@ export function createSponsorDirectoryPages({
   openContactEditor,
   reloadPipeline,
   showView,
+  getCurrentView,
 }) {
+  const activeView = () => (typeof getCurrentView === "function" ? getCurrentView() : null);
+  // Navigation generation: record opens bump it so a delayed list response
+  // can never overwrite rows or the URL of the record the operator opened.
+  let navGeneration = 0;
   const messageEl = () => surface.querySelector("[data-crm-message]");
   function showNotice(text) {
     const message = messageEl();
@@ -120,6 +126,7 @@ export function createSponsorDirectoryPages({
   let returnContext = null;
   const listPath = (fallbackView) => returnContext?.path || sponsorsPath(fallbackView);
   function captureReturnContext(kind, id, currentView) {
+    navGeneration += 1;
     const scroller = surface.querySelector("[data-crm-list-scroll]");
     returnContext = {
       view: currentView === "pipeline" || currentView === "companies" || currentView === "people" ? currentView : "pipeline",
@@ -142,10 +149,10 @@ export function createSponsorDirectoryPages({
     navigateCanonicalWorkspace(path, params, { render: false, history: "replace" });
     showView(view, false);
     if (view === "companies" || view === "people") {
-      await safe(() => directories[view].refresh(), "Could not load directory");
+      await safe(() => directories[view].restorePage(), "Could not load directory");
       if (!surface.isConnected) return true;
     } else if (view === "pipeline") {
-      await safe(() => pipeline.load(true), "Could not load pipeline");
+      await safe(() => pipeline.load(false), "Could not load pipeline");
       if (!surface.isConnected) return true;
     }
     surface.classList.remove("has-booking-detail");
@@ -183,6 +190,7 @@ export function createSponsorDirectoryPages({
       total: 0,
       nextCursor: null,
       lastResolved: null,
+      requestToken: 0,
       initialized: false,
     };
     const controls = () => ({
@@ -237,31 +245,52 @@ export function createSponsorDirectoryPages({
     function effectiveFromControls() {
       const collected = readControls();
       const { sort, ...urlFilters } = collected;
+      // The sort control carries the field only: an unchanged field keeps the
+      // resolved direction (reverse combos survive filter edits), while an
+      // explicitly changed field deliberately takes its field default.
+      const stateField = typeof state.sort === "object" ? state.sort.field : state.sort;
+      const stateDir = typeof state.sort === "object" ? state.sort.direction : undefined;
+      const urlState = { ...urlFilters };
+      if (sort) {
+        urlState.sort = sort;
+        if (sort !== stateField || !stateDir) urlState.dir = sort === "lastTouch" ? "desc" : "asc";
+        else urlState.dir = stateDir;
+      }
       return resolveEffectiveFilters({
         entity,
         views: state.views,
         viewsError: state.viewsError,
         selectedViewId: state.selectedViewId,
-        urlState: { ...urlFilters, ...(sort ? { sort } : {}) },
+        urlState,
       });
     }
-    function writeUrl(resolved) {
-      const params = {};
-      if (resolved.viewId) params.view = resolved.viewId;
-      const absolute = resolved.filters;
-      for (const [key, value] of Object.entries(absolute)) params[key] = String(value);
-      if (resolved.sort && resolved.sort !== "name") params.sort = resolved.sort;
-      if (state.cursor) params.cursor = state.cursor;
-      rememberListParams(entity, params);
-      navigateCanonicalWorkspace(sponsorsPath(entity), params, { render: false, history: "replace" });
+    // One canonical serializer (directoryUrl): field + direction mapping
+    // lives there, never rebuilt per caller. Writes happen only for the
+    // active tab and the navigation generation that issued the load, so a
+    // delayed response can never replace a record URL (or another tab's).
+    function writeUrl(resolved, navToken) {
+      if (activeView() !== entity) return;
+      if (navToken !== navGeneration) return;
+      const canonical = directoryUrl(entity, { viewId: resolved.viewId, filters: resolved.filters, sort: resolved.sort });
+      const params = new URLSearchParams(canonical.split("?")[1] || "");
+      if (state.cursor) params.set("cursor", state.cursor);
+      const plain = Object.fromEntries(params.entries());
+      rememberListParams(entity, plain);
+      navigateCanonicalWorkspace(sponsorsPath(entity), plain, { render: false, history: "replace" });
     }
     async function loadDirectory({ resetPage = true } = {}) {
       if (resetPage) {
         state.cursor = null;
         state.prev = [];
       }
+      // Request generation: an older success/error never overwrites newer
+      // rows, status or URL (deferred search/filter/page races).
+      const requestToken = ++state.requestToken;
+      const navToken = navGeneration;
+      const settled = () => requestToken === state.requestToken && surface.isConnected;
       const resolved = effectiveFromControls();
       if (resolved.error) {
+        if (!settled()) return;
         rowsEl.innerHTML = renderDirectoryError({ message: resolved.error, escapeHtml });
         statusEl.textContent = "";
         pagesEl.innerHTML = "";
@@ -282,7 +311,7 @@ export function createSponsorDirectoryPages({
       const queryString = new URLSearchParams(query).toString();
       try {
         const result = await api(`${directoryPath}?${queryString}`);
-        if (!surface.isConnected) return;
+        if (!settled()) return;
         state.items = result.items || [];
         state.total = Number(result.total || 0);
         rememberCompanyNames(state.items);
@@ -299,10 +328,10 @@ export function createSponsorDirectoryPages({
         state.nextCursor = result.nextCursor || null;
         showMessage("");
         renderViews();
-        writeUrl(resolved);
+        writeUrl(resolved, navToken);
         rowsEl.removeAttribute("aria-busy");
       } catch (error) {
-        if (!surface.isConnected) return;
+        if (!settled()) return;
         if (Number(error?.status) === 400 && state.cursor) {
           state.cursor = null;
           state.prev = [];
@@ -316,12 +345,36 @@ export function createSponsorDirectoryPages({
         rowsEl.removeAttribute("aria-busy");
       }
     }
+    // Back-page restore: reload the preserved cursor without resetting it;
+    // when the page comes back empty but records remain (an archived row
+    // vanished), fall back to the first page instead of stranding the
+    // operator on an empty page.
+    async function restorePage() {
+      if (!state.initialized) {
+        await refresh();
+        return;
+      }
+      await loadDirectory({ resetPage: false });
+      if (state.items.length === 0 && state.total > 0 && (state.cursor || state.prev.length)) {
+        state.cursor = null;
+        state.prev = [];
+        await loadDirectory({ resetPage: true });
+      }
+    }
     async function refresh() {
       if (!state.initialized) {
         state.initialized = true;
         await loadViews();
         const initial = directoryStateFromUrl(
           `${sponsorsPath(entity)}?${new URLSearchParams(listParamsByView[entity] || {}).toString()}`, entity);
+        if (initial.error) {
+          renderViews();
+          rowsEl.innerHTML = renderDirectoryError({ message: initial.error, escapeHtml });
+          statusEl.textContent = "";
+          pagesEl.innerHTML = "";
+          showMessage("");
+          return;
+        }
         const resolved = resolveEffectiveFilters({
           entity,
           views: state.views,
@@ -440,7 +493,7 @@ export function createSponsorDirectoryPages({
       await selectView(current.id);
     }
     return {
-      state, refresh, loadDirectory, refillCompanyFilter, readControls,
+      state, refresh, loadDirectory, restorePage, refillCompanyFilter, readControls,
       applyToControls, selectView, reloadViews: loadViews, root,
     };
   }
@@ -648,12 +701,16 @@ export function createSponsorDirectoryPages({
     // controlsChanged + load so the URL stays canonical.
     async initFromParams() {
       const p = listParamsByView.pipeline;
+      // Invalid view/sort values fall back to control defaults instead of
+      // jamming the selects: the API would 400 an invented enum honestly.
+      const view = PIPELINE_VIEW_IDS.includes(p.view) ? p.view : undefined;
+      const sort = p.sort === "recent" ? "recent" : "next-action";
       pipeline.applyControls({
-        view: p.view,
+        view,
         stage: p.stage || "",
         search: p.search || "",
         owner: p.owner || "",
-        sort: p.sort === "recent" ? "recent" : "next-action",
+        sort,
       });
       await pipeline.ensureViews();
       if (p.savedView) await pipeline.applySavedView(p.savedView);

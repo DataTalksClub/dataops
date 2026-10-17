@@ -262,6 +262,17 @@ test("resolved builtin windows stay selected across refresh but freeze in copied
   assert.match(lost.error, /not available/);
 });
 
+test("a bare dir without sort applies to the base field", () => {
+  const withView = resolveEffectiveFilters({
+    entity: "companies", views,
+    selectedViewId: "view-2",
+    urlState: { active: "true", lastTouchAfter: "2026-09-17", dir: "desc" },
+  });
+  assert.deepEqual(withView.sort, { field: "lastTouch", direction: "desc" });
+  assert.equal(withView.viewId, "view-2");
+  assert.equal(withView.modified, false);
+});
+
 test("a view without server resolvedFilters fails honestly instead of guessing", () => {
   const unresolved = resolveEffectiveFilters({
     entity: "companies",

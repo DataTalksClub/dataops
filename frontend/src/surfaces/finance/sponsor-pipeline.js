@@ -53,13 +53,14 @@ export function renderSponsorPipelineList({ items, ...context }) {
 // endpoint receives them, and sponsors.js owns URL read/write around load().
 // Effective saved-view filters onto control values. organizationId has no
 // control: it rides as an extra API param through load() instead.
-export function pipelineControlsFromFilters(filters = {}, sort = 'next') {
+export function pipelineControlsFromFilters(filters = {}, sort = 'next-action') {
+  const field = sort && typeof sort === "object" ? sort.field : sort;
   return {
     view: filters.view || 'actionable',
     stage: filters.stage || '',
     search: filters.search || '',
     owner: filters.owner || '',
-    sort: sort === 'recent' ? 'recent' : 'next-action',
+    sort: field === 'recent' ? 'recent' : 'next-action',
     ...(filters.organizationId ? { organizationId: filters.organizationId } : {}),
   };
 }

@@ -276,6 +276,7 @@ export function createSponsorCrmSurface(context) {
       openContactEditor: (target, options) => contactEditor.open(target, options),
       reloadPipeline: (reset, extra) => pipeline.load(reset, extra),
       showView: (view, redraw) => setView(view, redraw),
+      getCurrentView: () => currentView,
     });
     directoryPages.seedListParams(
       sponsorsRoute?.sponsorsTab,
@@ -605,6 +606,8 @@ export function createSponsorCrmSurface(context) {
           if (current()) return;
           navigateCanonicalWorkspace(sponsorRecordPath(kind, id), {}, { render: false });
         } catch (error) {
+          // A stale opener's rejection must never paint over a newer record.
+          if (current()) return;
           surface.classList.add("has-booking-detail");
           const split = surface.querySelector("[data-crm-split]");
           if (split) {
