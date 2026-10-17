@@ -6,7 +6,7 @@ import {
   formatBerlinDateTime,
   wireActivityPanel,
 } from "./sponsor-activity.js";
-import { emptyMarkup, errorMarkup, loadingMarkup } from "./sponsor-record.js";
+import { emptyMarkup, errorMarkup, loadingMarkup } from "./sponsor-record-markup.js";
 
 /**
  * Person record: identity + Overview/Activity tabs with progressive

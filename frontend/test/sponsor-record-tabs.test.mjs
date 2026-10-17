@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { createArchiveLoader, createSponsorRecord } from "../src/surfaces/finance/sponsor-record.js";
 import {
   archiveDisclosureMarkup,
-  createArchiveLoader,
-  createSponsorRecord,
   dealsListMarkup,
   emptyMarkup,
   errorMarkup,
@@ -13,7 +12,7 @@ import {
   peopleListMarkup,
   recordShellMarkup,
   recordTabsMarkup,
-} from "../src/surfaces/finance/sponsor-record.js";
+} from "../src/surfaces/finance/sponsor-record-markup.js";
 import { createApiStub, escapeHtml, FakeNode, httpError } from "./support/fake-record-dom.mjs";
 
 const context = { escapeHtml };
