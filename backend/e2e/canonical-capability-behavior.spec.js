@@ -800,10 +800,10 @@ test.describe('canonical frontend capability behavior', () => {
     const page = await admin.newPage();
     await page.goto('/sponsors');
     await expect(page.locator('[data-crm-message]')).toBeHidden();
-    await expect(page.locator('[data-crm-bookings]')).toContainText('No deals in this stage');
-    await page.locator('[data-crm-view="companies"]').click();
-    await expect(page.getByText('No sponsors found')).toBeVisible();
-    await page.locator('[data-crm-view="pipeline"]').click();
+    await expect(page.locator('[data-crm-bookings]')).toContainText('No matching deals');
+    await page.locator('[data-crm-nav-tab="companies"]').click();
+    await expect(page.locator('[data-dir-empty]')).toContainText('No companies');
+    await page.locator('[data-crm-nav-tab="pipeline"]').click();
     const id = unique('sponsor');
     const organizationResponse = await admin.request.post('/api/sponsor-crm/organizations', { data: {
       displayName: `Synthetic Sponsor ${id}`, notes: 'Synthetic private note', sourceKey: `${id}-org`,
@@ -846,11 +846,25 @@ test.describe('canonical frontend capability behavior', () => {
 
     await page.goto(`/sponsors/deals/${updatedBooking.id}`);
     await expect(page.locator('[data-crm-detail]')).toContainText(`Synthetic Sponsor ${id}`);
-    await expect(page.locator('[data-crm-detail] .status-label').first()).toHaveText('Agreed');
-    await expect(page.locator('[data-crm-detail]')).not.toContainText('Synthetic private note');
+    // Deal selection resolves on the Deals tab; the header deal status and
+    // the archive host stay empty until then.
+    await page.locator('[data-record-tab="deals"]').click();
+    await expect(page.locator('[data-crm-detail] [data-status="agreed"]').first()).toHaveText('Agreed');
+    // Final record design surfaces the D company summary (notes included) in
+    // the Overview Company summary section; finance stays classified/denied
+    // for operators (proven above), not note-redacted.
+    await expect(page.locator('[data-crm-detail] [aria-label="Company summary"]')).toContainText('Synthetic private note');
     await page.reload();
     await expect(page.locator('[data-crm-detail]')).toContainText(`Synthetic Sponsor ${id}`);
+    // Version conflict stays API-enforced (stale PUT above returns 409) AND
+    // UI-covered below. The record Deals Edit entry was briefly absent from
+    // the final UI (dealsListMarkup Select-only); F restored it via
+    // 2a435a4a (cherry 84a564ca: data-edit-deal + loaded-object callback), so
+    // this edit/conflict dialog flow is live again.
     await page.goto(`/sponsors/deals/${updatedBooking.id}`);
+    // The restored Edit entry lives in the Deals tab panel.
+    await page.locator('[data-record-tab="deals"]').click();
+    await expect(page.locator('[data-record-panel="deals"]')).not.toContainText('Loading deals');
     await page.locator(`[data-edit-deal="${updatedBooking.id}"]:visible`).first().click();
     const latestBooking = await json(await admin.request.get(`/api/sponsor-crm/deals/${updatedBooking.id}`));
     expect((await admin.request.put(`/api/sponsor-crm/deals/${updatedBooking.id}`, { data: {
@@ -862,22 +876,23 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('[data-crm-message]')).toContainText('Record was changed; reload and retry');
     await expect(bookingDialog).toBeVisible();
     await bookingDialog.getByRole('button', { name: 'Cancel' }).click();
-    await setFaults(admin.request, [{ method: 'GET', path: '/api/sponsor-crm/organizations', status: 503, remaining: 10 }]);
+    await setFaults(admin.request, [{ method: 'GET', path: '/api/sponsor-crm/pipeline', status: 503, remaining: 10 }]);
     await page.goto('/sponsors');
     await expect(page.locator('[data-crm-message]')).toContainText('Synthetic route failure (503)');
-    await expect(page.locator('[data-crm-message]')).toContainText('Reopen Sponsors to retry');
+    await expect(page.locator('[data-crm-message]')).toContainText('Reopen CRM to retry');
     await clearFaults(admin.request);
     await page.reload();
     await expect(page.locator('[data-crm-message]')).toBeAttached();
     await expect(page.locator('[data-crm-message]')).toBeHidden();
-    await page.locator('[data-crm-view="companies"]').click();
-    await expect(page.locator('.crm-directory-row').filter({ hasText: `Synthetic Sponsor ${id}` })).toBeVisible();
+    await page.locator('[data-crm-nav-tab="companies"]').click();
+    await expect(page.locator('[data-dir-company]').filter({ hasText: `Synthetic Sponsor ${id}` })).toBeVisible();
     const operatorPage = await operator.newPage();
     await operatorPage.goto(`/sponsors/deals/${operatorBooking.id}`);
     await expect(operatorPage.locator('[data-crm-detail]')).toContainText(`Synthetic Operator Sponsor ${id}`);
+    await operatorPage.locator('[data-record-tab="finance"]').click();
     await expect(operatorPage.locator('[data-finance-panel]')).toContainText('This deal has not been classified');
     await expect(operatorPage.locator('[data-finance-panel] [data-finance-classify]')).toHaveCount(0);
-    await expect(operatorPage.locator('[data-crm-detail]')).not.toContainText('Operator-private synthetic note');
+    await expect(operatorPage.locator('[data-crm-detail] [aria-label="Company summary"]')).toContainText('Operator-private synthetic note');
     await admin.close();
     await operator.close();
     recordCapabilityEvidence(testInfo, [
