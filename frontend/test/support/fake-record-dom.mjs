@@ -69,6 +69,18 @@ export class FakeNode {
     this.attributes.delete(String(name));
   }
 
+  append(...values) {
+    for (const value of values) {
+      if (typeof value === "string") this.textContent += value;
+      else this.children.push(value);
+    }
+  }
+
+  appendChild(value) {
+    this.children.push(value);
+    return value;
+  }
+
   setQuery(selector, element) {
     this.queries.set(selector, element);
     return element;

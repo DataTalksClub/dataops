@@ -563,15 +563,22 @@ export function createSponsorFinance(context) {
       ${paymentLimitWarning} ${paymentFollowUpSection} ${evidenceMarkup} ${actions}
     </section>`;
   }
-  async function loadFinance(booking) {
+  async function loadFinance(booking, { isCurrent } = {}) {
+    // Optional per-invocation guard (F record integration): checked after
+    // the projection fetch and before every paint/bind, so a deferred
+    // response never renders into a record that has navigated away.
+    // Callers without a predicate keep the legacy always-current behavior.
+    const live = () => typeof isCurrent !== "function" || isCurrent() !== false;
     currentFinanceBooking = booking;
     const detail = surface.querySelector('[data-booking-panel="finance"]');
     if (!detail) return;
     try {
       const projection = await financeApi(booking.id);
+      if (!live()) return;
       detail.innerHTML = financeMarkup(projection);
       bindFinanceActions(booking, projection);
     } catch (error) {
+      if (!live()) return;
       if (error.status !== 404)
         detail.innerHTML = html`<div class="honest-state">
           <strong>Finance is unavailable</strong>

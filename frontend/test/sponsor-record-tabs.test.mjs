@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { createArchiveLoader, createSponsorRecord } from "../src/surfaces/finance/sponsor-record.js";
+import { createSponsorFinance } from "../src/surfaces/finance/sponsor-finance.js";
 import {
   archiveDisclosureMarkup,
   dealsListMarkup,
@@ -905,6 +906,51 @@ test("navigation during the finance fetch adds no controller paint after resolve
   const financeHtml = financePanel.innerHTML;
   assert.match(financePanel.querySelector('[data-booking-panel="finance"]').innerHTML, /canonical finance content/, "injected implementation owns its own paint");
   assert.doesNotMatch(financeHtml, /No deal selected|Archive unavailable|Unavailable/, "controller adds no post-resolve paint, error, or empty claims");
+});
+
+test("canonical finance renderer honors the invocation predicate", async () => {
+  globalThis.document = { createElement: (tag) => new FakeNode(tag) };
+  const surface = new FakeNode("section");
+  const panel = surface.setQuery('[data-booking-panel="finance"]', new FakeNode("div"));
+  const message = new FakeNode("p");
+  const humanizeOptionLabel = (value) => value;
+  let release;
+  let gate = new Promise((resolve) => { release = resolve; });
+  let status = 200;
+  let payload = { classified: false, role: "operator" };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    await gate;
+    return { ok: status === 200, status, async json() { return payload; } };
+  };
+  try {
+    const finance = createSponsorFinance({
+      surface, escapeHtml, humanizeOptionLabel, message,
+      openTaskPanel: () => {}, request: async () => ({}), workApiUrl: (path) => path,
+    });
+    let current = true;
+    const pending = finance.loadFinance({ id: "d1" }, { isCurrent: () => current });
+    current = false;
+    release();
+    await pending;
+    assert.equal(panel.innerHTML, "", "stale success paints nothing");
+    current = true;
+    gate = new Promise((resolve) => { release = resolve; });
+    const fresh = finance.loadFinance({ id: "d1" }, { isCurrent: () => current });
+    release();
+    await fresh;
+    assert.match(panel.innerHTML, /Finance is not classified/, "live render paints the real projection");
+    status = 503;
+    payload = { error: "boom" };
+    gate = new Promise((resolve) => { release = resolve; });
+    const failing = finance.loadFinance({ id: "d1" }, { isCurrent: () => current });
+    current = false;
+    release();
+    await failing;
+    assert.doesNotMatch(panel.innerHTML, /unavailable/i, "stale rejection paints no error");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 test("failed explicit selections never fall back to unrelated finance", async () => {

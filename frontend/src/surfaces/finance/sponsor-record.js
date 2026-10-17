@@ -537,8 +537,8 @@ export function createSponsorRecord(context) {
   async function loadFinanceTab(mine) {
     const target = panel("finance");
     if (!target || !record) return;
-    // Stale first: return immediately on a dead generation, before
-    // inspecting or painting the current record.
+    // Stale first: return immediately on !current(mine) before inspecting
+    // or painting the current record.
     if (!current(mine)) return;
     if (!record.selectedDeal) {
       // Selection is deal-driven; without the Deals tab there may be no
@@ -563,7 +563,12 @@ export function createSponsorRecord(context) {
     // of forking finance rendering.
     target.innerHTML = html`<div data-booking-panel="finance">${loadingMarkup("Loading finance", context)}</div>`;
     try {
-      await loadFinance(deal);
+      // Thread the invocation predicate into the canonical renderer so its
+      // own post-fetch paint/bind is guarded too; the record-level guard
+      // below still governs the per-deal cache mark.
+      await loadFinance(deal, {
+        isCurrent: () => current(mine) && record?.selectedDeal?.id === deal.id,
+      });
       if (!current(mine)) return;
       record.loaded.add(cacheKey);
     } catch (error) {
