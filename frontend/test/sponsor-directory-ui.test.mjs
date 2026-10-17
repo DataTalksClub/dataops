@@ -473,3 +473,21 @@ test("berlin days resolve against the Berlin calendar day", () => {
   assert.deepEqual(resolveRelativeFilters({ active: "true", lastTouchAfter: { daysAgo: 1 } }, "2026-10-17"),
     { active: "true", lastTouchAfter: "2026-10-16" });
 });
+
+// --- Archive mapping for F's Activity disclosure ---
+
+test("communications history maps onto the read-only archive shape", async () => {
+  const { mapArchiveItems } = await import("../src/surfaces/finance/sponsor-directory-pages.js");
+  const items = mapArchiveItems([
+    { id: "c-1", recordType: "sponsor-send-attempt", status: "sent", createdAt: "2026-10-01T00:00:00Z" },
+    { id: "c-2", recordType: "communication-suggestion", communicationType: "follow_up", safeReason: "Due date near",
+      createdAt: "2026-10-02T00:00:00Z" },
+  ]);
+  assert.deepEqual(items[0], {
+    id: "c-1", kind: "sponsor-send-attempt", label: "sent", preview: "sent",
+    detail: "sent · Recorded 2026-10-01T00:00:00Z", createdAt: "2026-10-01T00:00:00Z",
+  });
+  assert.equal(items[1].label, "follow_up");
+  assert.equal(items[1].preview, "Due date near");
+  assert.deepEqual(mapArchiveItems([]), []);
+});

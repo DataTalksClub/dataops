@@ -358,9 +358,9 @@ async function settle() {
 }
 
 async function openSponsorTab(document, view) {
-  await document.surface.querySelector("[data-crm-views]").dispatch("click", {
+  await document.surface.querySelector("[data-crm-nav]").dispatch("click", {
     preventDefault() {},
-    target: { closest: (selector) => selector === "[data-crm-view]" ? { dataset: { crmView: view } } : null },
+    target: { closest: (selector) => selector === "[data-crm-nav-tab]" ? { dataset: { crmNavTab: view } } : null },
   });
   await settle();
 }
@@ -1013,6 +1013,36 @@ describe("Finance surface boundary", () => {
               },
             ],
           };
+        if (path === "/api/sponsor-crm/views") {
+          const entity = new URL(url, "http://dataops.test").searchParams.get("entity");
+          return {
+            items: [
+              { id: `builtin:${entity}:active`, entity, name: "Active", builtin: true,
+                filters: { active: "true" }, sort: { field: "name", direction: "asc" } },
+            ],
+            total: 1,
+          };
+        }
+        if (path === "/api/sponsor-crm/directory/companies")
+          return {
+            items: [
+              {
+                id: "org-1",
+                displayName: "Talking Co",
+                domain: "talking.example",
+                relationship: "talking",
+                active: true,
+                primaryPerson: null,
+                lastTouch: null,
+                openDealCount: 1,
+                version: 1,
+                updatedAt: "2026-10-17T00:00:00Z",
+              },
+            ],
+            total: 1,
+            nextCursor: null,
+          };
+        if (path === "/api/sponsor-crm/directory/people") return { items: [], total: 0, nextCursor: null };
         if (path === "/api/sponsor-crm/leads") return { items: [lead] };
         if (path === "/api/sponsor-crm/leads/lead-convert" && options.method === "PATCH") {
           lead = { ...lead, status: "converted", version: 2 };
@@ -1027,7 +1057,10 @@ describe("Finance surface boundary", () => {
     assert.doesNotMatch(document.surface.innerHTML, /data-crm-queue|data-crm-view="queue"/);
     assert.match(document.surface.innerHTML, /data-crm-bookings/);
     const pipeline = document.surface.querySelector("[data-crm-bookings]");
-    const companies = document.surface.querySelector("[data-crm-orgs]");
+    const companiesRoot = document.surface.querySelector('[data-dir-root="companies"]');
+    const companies = companiesRoot.querySelector("[data-dir-rows]");
+    const peopleRoot = document.surface.querySelector('[data-dir-root="people"]');
+    const people = peopleRoot.querySelector("[data-dir-rows]");
     const leads = document.surface.querySelector("[data-crm-leads]");
     assert.match(pipeline.innerHTML, /Talking Co/);
     assert.match(pipeline.innerHTML, /Opportunities & history/);
@@ -1035,15 +1068,19 @@ describe("Finance surface boundary", () => {
     assert.equal(leads.innerHTML, "", "leads stay unloaded until opened");
     await openSponsorTab(document, "companies");
     assert.match(companies.innerHTML, /Talking Co/);
+    assert.match(companies.innerHTML, /talking\.example/);
+    assert.match(companies.innerHTML, /1 open deal/);
+    await openSponsorTab(document, "people");
+    assert.match(people.innerHTML, /No people yet/);
     await openSponsorTab(document, "leads");
     assert.match(leads.innerHTML, /Queue Vendor/);
 
-    await document.surface.querySelector("[data-crm-views]").dispatch("click", {
+    await document.surface.querySelector("[data-crm-nav]").dispatch("click", {
       preventDefault() {},
       target: {
         closest: (selector) =>
-          selector === "[data-crm-view]"
-            ? { dataset: { crmView: "pipeline" } }
+          selector === "[data-crm-nav-tab]"
+            ? { dataset: { crmNavTab: "pipeline" } }
             : null,
       },
     });
