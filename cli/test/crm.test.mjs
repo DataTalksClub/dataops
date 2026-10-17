@@ -135,6 +135,28 @@ describe("CLI crm workspace", () => {
     }
   });
 
+  for (const view of ["early", "overdue", "reply"]) {
+    test(`pipeline ${view} flags and saved-view date filters have canonical query parity`, async () => {
+      const io = captureIo();
+      const filters = { view, nextActionFrom: "2026-10-15", nextActionBefore: "2026-10-17" };
+      const { calls, restore } = fake({
+        "GET /api/sponsor-crm/views/v-filter": { status: 200, body: { entity: "pipeline", resolvedFilters: filters } },
+        "GET /api/sponsor-crm/pipeline": { status: 200, body: { items: [] } },
+      });
+      try {
+        assert.equal(await run(["crm", "pipeline", "list", "--saved-view", "v-filter", "--json"], io), EXIT.ok);
+        const savedQuery = calls[1].query;
+        assert.equal(await run(["crm", "pipeline", "list", "--view", view,
+          "--next-action-from", "2026-10-15", "--next-action-before", "2026-10-17", "--json"], io), EXIT.ok);
+        assert.deepEqual(calls[2].query, savedQuery);
+        assert.equal(await run(["crm", "pipeline", "list", "--saved-view", "v-filter",
+          "--next-action-from", "2026-10-16", "--json"], io), EXIT.ok);
+        assert.deepEqual(calls[4].query, { ...filters, nextActionFrom: "2026-10-16" });
+        assert.ok(calls.every((call) => call.method === "GET"));
+      } finally { restore(); }
+    });
+  }
+
   test("archive wraps the existing communications endpoint read-only", async () => {
     const io = captureIo();
     const { calls, restore } = fake({

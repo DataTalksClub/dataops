@@ -5,19 +5,13 @@ import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { collectBoundedPages } from '../db/boundedPagination';
 import { berlinDaysBefore, berlinToday } from './berlin';
 import { realDate } from '../sponsorCrm/model';
+import { PIPELINE_VIEWS, PIPELINE_STAGES, pipelineDateRangeError } from '../sponsorCrm/pipeline';
 import { DIRECTORY_RELATIONSHIPS } from './directory';
 import { clean, workspaceErrorOf } from './reads';
 
 export const VIEW_ENTITIES = ['companies', 'people', 'pipeline'] as const;
 export type ViewEntity = (typeof VIEW_ENTITIES)[number];
 
-/**
- * A-owned pipeline enums, confirmed against the live route at 7fdcda84
- * (`validateList` + view/stage/sort checks in `routes/sponsorCrm.ts`): stored
- * verbatim, interpreted by A. No translator alias.
- */
-const PIPELINE_VIEWS = ['actionable', 'active', 'closed', 'all', 'unscheduled'] as const;
-const PIPELINE_STAGES = ['open', 'agreed', 'invoiced', 'running', 'closed', 'lost'] as const;
 const PIPELINE_SORTS = ['next-action', 'recent'] as const;
 
 /**
@@ -95,13 +89,13 @@ function validatePeopleFilters(filters: Filters): string {
 }
 
 function validatePipelineFilters(filters: Filters): string {
-  const allowed = ['view', 'stage', 'search', 'organizationId', 'owner'];
+  const allowed = ['view', 'stage', 'search', 'organizationId', 'owner', 'nextActionFrom', 'nextActionBefore'];
   const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
   for (const key of Object.keys(filters)) if (!allowed.includes(key)) return `Unknown pipeline filter: ${key}`;
-  if (filters.view !== undefined && !(PIPELINE_VIEWS as readonly string[]).includes(String(filters.view))) {
-    return 'view must be actionable, active, closed, all or unscheduled';
+  if (filters.view !== undefined && (typeof filters.view !== 'string' || !(PIPELINE_VIEWS as readonly string[]).includes(filters.view))) {
+    return `view must be one of: ${PIPELINE_VIEWS.join(', ')}`;
   }
-  if (filters.stage !== undefined && !(PIPELINE_STAGES as readonly string[]).includes(String(filters.stage))) {
+  if (filters.stage !== undefined && (typeof filters.stage !== 'string' || !(PIPELINE_STAGES as readonly string[]).includes(filters.stage))) {
     return 'stage must be open, agreed, invoiced, running, closed or lost';
   }
   if (filters.search !== undefined && (typeof filters.search !== 'string' || !filters.search || filters.search.length > 200)) {
@@ -113,7 +107,7 @@ function validatePipelineFilters(filters: Filters): string {
   if (filters.owner !== undefined && (typeof filters.owner !== 'string' || !filters.owner || filters.owner.length > 200)) {
     return 'Invalid owner filter';
   }
-  return '';
+  return pipelineDateRangeError(filters);
 }
 
 function validateSort(entity: ViewEntity, sort: unknown): string {
@@ -167,6 +161,9 @@ const BUILTINS: Builtin[] = [
   { id: 'builtin:people:archived', entity: 'people', name: 'Archived', filters: { active: 'false' }, sort: { field: 'name', direction: 'asc' } },
   { id: 'builtin:pipeline:attention', entity: 'pipeline', name: 'Needs attention', filters: { view: 'actionable' }, sort: { field: 'next-action' } },
   { id: 'builtin:pipeline:active', entity: 'pipeline', name: 'Active', filters: { view: 'active' }, sort: { field: 'next-action' } },
+  { id: 'builtin:pipeline:early', entity: 'pipeline', name: 'Early prospects', filters: { view: 'early' }, sort: { field: 'next-action' } },
+  { id: 'builtin:pipeline:overdue', entity: 'pipeline', name: 'Overdue', filters: { view: 'overdue' }, sort: { field: 'next-action' } },
+  { id: 'builtin:pipeline:reply', entity: 'pipeline', name: 'Needs reply (inferred)', filters: { view: 'reply' }, sort: { field: 'next-action' } },
   { id: 'builtin:pipeline:unscheduled', entity: 'pipeline', name: 'Unscheduled', filters: { view: 'unscheduled' }, sort: { field: 'next-action' } },
   { id: 'builtin:pipeline:closed', entity: 'pipeline', name: 'Closed', filters: { view: 'closed' }, sort: { field: 'recent' } },
   { id: 'builtin:pipeline:all', entity: 'pipeline', name: 'All', filters: { view: 'all' }, sort: { field: 'next-action' } },

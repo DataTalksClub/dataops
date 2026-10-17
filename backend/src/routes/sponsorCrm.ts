@@ -1,6 +1,6 @@
 import { berlinDate } from '../sponsorFinance/core';
 import { isIndividualTuition } from '../tuition/classification';
-import { sponsorPipeline, PIPELINE_STAGES } from '../sponsorCrm/pipeline';
+import { sponsorPipeline, PIPELINE_STAGES, PIPELINE_VIEWS, pipelineDateRangeError } from '../sponsorCrm/pipeline';
 import { getNewsletterIssue } from '../db/newsletterIssues';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse, Task } from '../types';
@@ -202,9 +202,11 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     const query = event.queryStringParameters || {};
     const error = validateList(event);
     if (error) return json(400, { error });
-    if (query.view && !['actionable', 'active', 'closed', 'all', 'unscheduled'].includes(query.view)) return json(400, { error: 'Invalid pipeline view' });
+    if (query.view && !(PIPELINE_VIEWS as readonly string[]).includes(query.view)) return json(400, { error: 'Invalid pipeline view' });
     if (query.stage && !(PIPELINE_STAGES as readonly string[]).includes(query.stage)) return json(400, { error: 'Invalid pipeline stage' });
     if (query.sort && !['next-action', 'recent'].includes(query.sort)) return json(400, { error: 'Invalid pipeline sort' });
+    const rangeError = pipelineDateRangeError(query);
+    if (rangeError) return json(400, { error: rangeError });
     return json(200, await sponsorPipeline(client, query, today));
   }
 

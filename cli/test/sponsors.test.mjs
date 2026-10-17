@@ -350,3 +350,29 @@ test('pipeline CLI requests one bounded page with the same filters as the web', 
     assert.equal(urls[1].searchParams.get('organizationId'), 'org');
   } finally { globalThis.fetch = oldFetch; if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken; }
 });
+
+for (const view of ['early', 'overdue', 'reply']) {
+  test(`sponsors pipeline ${view} forwards the canonical inclusive date range in one GET`, async () => {
+    const oldFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
+    process.env.DATAOPS_TOKEN = 'synthetic-token';
+    const calls = [];
+    globalThis.fetch = async (url, options) => {
+      calls.push({ url: new URL(url), method: options.method });
+      return new Response(JSON.stringify({ items: [], total: 0, nextCursor: null }));
+    };
+    try {
+      const { run } = await import('../src/cli.mjs');
+      const { captureIo } = await import('./helpers.mjs');
+      assert.equal(await run(['sponsors', 'pipeline', '--view', view, '--next-action-from', '2026-10-15',
+        '--next-action-before', '2026-10-17', '--json', '--url', 'https://example.test'], captureIo()), 0);
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].method, 'GET');
+      assert.equal(calls[0].url.searchParams.get('view'), view);
+      assert.equal(calls[0].url.searchParams.get('nextActionFrom'), '2026-10-15');
+      assert.equal(calls[0].url.searchParams.get('nextActionBefore'), '2026-10-17');
+    } finally {
+      globalThis.fetch = oldFetch;
+      if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
+    }
+  });
+}

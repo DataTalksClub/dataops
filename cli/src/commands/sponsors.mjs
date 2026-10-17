@@ -11,8 +11,9 @@ const KINDS = ["organizations", "contacts", "deals", "deliverables", "leads", "n
 export const help = `dataops sponsors - the sponsor CRM (the web Finance > Sponsors views)
 
 Usage
-  dataops sponsors pipeline [--view actionable|active|all|closed|unscheduled] [--stage open|agreed|invoiced|running|closed|lost]
+  dataops sponsors pipeline [--view actionable|active|all|closed|unscheduled|early|overdue|reply] [--stage open|agreed|invoiced|running|closed|lost]
       [--search TEXT] [--company ID] [--owner ID] [--sort next-action|recent] [--limit N] [--cursor N]
+      [--next-action-from YYYY-MM-DD] [--next-action-before YYYY-MM-DD]  Inclusive bounds
   dataops sponsors contact <list|add|update> [ID] --company ID [--data @person.json]
       Fields: name, role, emails, linkedin, telegram, primary, notes, lastContactedAt.
   dataops sponsors list <kind> [--limit N]             kind: ${KINDS.join(", ")}
@@ -117,6 +118,7 @@ export async function pipeline(args, io) {
   const result = await apiFor(args).get('/api/sponsor-crm/pipeline', { query: {
     view: args.view || 'actionable', stage: args.stage, search: args.search,
     organizationId: args.company, owner: args.owner, sort: args.sort || 'next-action',
+    nextActionFrom: args.nextActionFrom, nextActionBefore: args.nextActionBefore,
     limit: integer(args.limit, 'limit') ?? 30, cursor: args.cursor,
   } });
   if (!args.json) {

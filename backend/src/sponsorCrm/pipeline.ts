@@ -4,10 +4,25 @@ import { listCrmRecords, type CrmRecord } from '../db/sponsorCrm';
 import { listOpenDealTasks } from '../db/taskSubjects';
 import { financeEnabled } from '../sponsorFinance/repository';
 import { dealMoneyFacts } from '../sponsorFinance/ledger';
-import { deriveFulfillment, deriveMoney } from './model';
+import { deriveFulfillment, deriveMoney, realDate } from './model';
 
 export const PIPELINE_STAGES = ['open', 'agreed', 'invoiced', 'running', 'closed', 'lost'] as const;
 export type PipelineStage = typeof PIPELINE_STAGES[number];
+export const PIPELINE_VIEWS = ['actionable', 'active', 'closed', 'all', 'unscheduled', 'early', 'overdue', 'reply'] as const;
+
+/** Absolute inclusive bounds, shared by direct queries and saved-view writes. */
+export function pipelineDateRangeError(query: Record<string, unknown>): string {
+  for (const key of ['nextActionFrom', 'nextActionBefore']) {
+    const value = query[key];
+    if (value !== undefined && !(typeof value === 'string' && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && realDate(value))) {
+      return `${key} must be a valid YYYY-MM-DD date`;
+    }
+  }
+  if (typeof query.nextActionFrom === 'string' && typeof query.nextActionBefore === 'string'
+    && query.nextActionFrom > query.nextActionBefore) return 'nextActionFrom must not exceed nextActionBefore';
+  return '';
+}
+
 const latest = (...values: unknown[]) => values.filter((value): value is string => typeof value === 'string' && Boolean(value)).sort().at(-1) || null;
 
 export function needsInboundReview(inbound: unknown, outbound: unknown, today: string): boolean {
@@ -82,9 +97,25 @@ export async function sponsorPipeline(client: DynamoDBDocumentClient, query: Rec
     && (!search || [row.organizationName, row.title, row.primaryContact?.name, row.primaryContact?.email, row.nextTask?.description].some((value) => String(value || '').toLowerCase().includes(search))));
   const counts = Object.fromEntries(PIPELINE_STAGES.map((stage) => [stage, searched.filter((row) => row.stage === stage).length]));
   const view = query.view || 'actionable';
-  const filtered = searched.filter((row) => (!query.stage || row.stage === query.stage)
-    && (view === 'all' || (view === 'actionable' ? row.actionable : view === 'active' ? !['closed', 'lost'].includes(row.stage) : view === 'unscheduled' ? row.unscheduled && !['closed', 'lost'].includes(row.stage) : ['closed', 'lost'].includes(row.stage)))
-    && (!query.owner || row.nextTask?.assigneeId === query.owner));
+  const filtered = searched.filter((row) => {
+    if (query.stage && row.stage !== query.stage) return false;
+    if (query.owner && row.nextTask?.assigneeId !== query.owner) return false;
+    const date = row.nextTask?.date;
+    if (query.nextActionFrom && (!date || date < query.nextActionFrom)) return false;
+    if (query.nextActionBefore && (!date || date > query.nextActionBefore)) return false;
+    const active = !['closed', 'lost'].includes(row.stage);
+    switch (view) {
+      case 'all': return true;
+      case 'actionable': return row.actionable;
+      case 'active': return active;
+      case 'unscheduled': return active && row.unscheduled;
+      case 'early': return row.stage === 'open';
+      case 'overdue': return active && Boolean(date && date < today && !row.nextTask?.deferred);
+      case 'reply': return active && row.replyReview;
+      case 'closed': return !active;
+      default: return false;
+    }
+  });
   filtered.sort((a, b) => query.sort === 'recent'
     ? String(b.updatedAt).localeCompare(String(a.updatedAt)) || a.id.localeCompare(b.id)
     : Number(['open', 'closed', 'lost'].includes(a.stage)) - Number(['open', 'closed', 'lost'].includes(b.stage))

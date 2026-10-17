@@ -13,8 +13,9 @@ Usage
   dataops crm people list [--search Q] [--company ID] [--primary true|false]
       [--unlinked true|false] [--active true|false|all] [--sort name|lastTouch]
       [--direction asc|desc] [--saved-view ID] [--limit N] [--cursor C]
-  dataops crm pipeline list [--saved-view ID] [--view actionable|active|unscheduled|closed|all]
+  dataops crm pipeline list [--saved-view ID] [--view actionable|active|unscheduled|closed|all|early|overdue|reply]
       [--stage STAGE] [--owner ID] [--search Q] [--sort next-action|recent] [--limit N] [--cursor C]
+      [--next-action-from YYYY-MM-DD] [--next-action-before YYYY-MM-DD]  Inclusive bounds
       Read-only pipeline rows through the canonical pipeline endpoint
   dataops crm archive <deal-id>             Read-only post-send archive for a deal (drafts/attempts)
   dataops crm person show <id>
@@ -59,6 +60,7 @@ function queryArgs(args) {
     ["company", "company"], ["primary", "primary"], ["unlinked", "unlinked"],
     ["sort", "sort"], ["direction", "direction"], ["types", "types"],
     ["view", "view"], ["stage", "stage"], ["owner", "owner"],
+    ["nextActionFrom", "nextActionFrom"], ["nextActionBefore", "nextActionBefore"],
     ["lastTouchAfter", "lastTouchAfter"], ["lastTouchBefore", "lastTouchBefore"],
   ]) {
     const value = optionalString(args, option);
