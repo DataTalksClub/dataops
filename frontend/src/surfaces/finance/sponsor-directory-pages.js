@@ -1,5 +1,4 @@
 import { sponsorRecordPath, sponsorsPath } from "../../core/sponsor-routes.js";
-import { html } from "./shared.js";
 import { pipelineControlsFromFilters } from "./sponsor-pipeline.js";
 import {
   archiveSavedView,
