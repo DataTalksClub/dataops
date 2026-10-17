@@ -7,6 +7,7 @@ import { handleTemplateRoutes } from './routes/templates';
 import { handleRecurringRoutes } from './routes/recurring';
 import { handleAutomationRoutes } from './routes/automations';
 import { handleUserRoutes } from './routes/users';
+import { handleCompanyRoutes } from './routes/company';
 import { handleSecretRoutes } from './routes/secrets';
 import { handleFileRoutes } from './routes/files';
 import { handleArtifactRoutes } from './routes/artifacts';
@@ -379,6 +380,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/secrets')) {
       const result = await handleSecretRoutes(reqPath, method, event, client);
+      if (result) return result;
+    }
+
+    // ── Company/vendor details (admin-only) ─────────────────────
+
+    if (reqPath === '/api/company' || reqPath.startsWith('/api/company/')) {
+      const result = await handleCompanyRoutes(reqPath, method, event, client);
       if (result) return result;
     }
 
