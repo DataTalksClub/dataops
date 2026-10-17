@@ -369,6 +369,12 @@ export async function createView(
   }
 }
 
+
+function isConditionalConflict(error: unknown): boolean {
+  const name = (error as Error)?.name || '';
+  return name === 'ConditionalCheckFailedException' || name === 'TransactionConditionalCheckFailedException';
+}
+
 export async function updateView(
   client: DynamoDBDocumentClient,
   ownerId: string,
@@ -410,8 +416,10 @@ export async function updateView(
       }),
     );
     return { status: 200, body: publicView(next as StoredView) };
-  } catch {
-    return { status: 409, body: { error: 'Conflicting update; reload and retry' } };
+  } catch (error) {
+    // 409 only for a lost version race; outages and storage failures are 5xx.
+    if (isConditionalConflict(error)) return { status: 409, body: { error: 'Conflicting update; reload and retry' } };
+    return { status: 500, body: { error: (error as Error).message } };
   }
 }
 
@@ -442,7 +450,9 @@ export async function archiveView(
       }),
     );
     return { status: 200, body: publicView(next as StoredView) };
-  } catch {
-    return { status: 409, body: { error: 'Conflicting update; reload and retry' } };
+  } catch (error) {
+    // 409 only for a lost version race; outages and storage failures are 5xx.
+    if (isConditionalConflict(error)) return { status: 409, body: { error: 'Conflicting update; reload and retry' } };
+    return { status: 500, body: { error: (error as Error).message } };
   }
 }

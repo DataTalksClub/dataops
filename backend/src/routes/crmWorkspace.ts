@@ -102,8 +102,18 @@ export async function handleCrmWorkspaceRoutes(
     if (companyDir[1]) {
       const decoded = pathId(companyDir[1]);
       if ('error' in decoded) return json(400, { error: decoded.error });
-      const result = await getCompanySummary(client, decoded.id, query);
-      return json(result.status, result.body);
+      const user = actor(event) || (await resolveDefaultAssigneeId(client)) || '';
+      try {
+        const result = await getCompanySummary(client, decoded.id, query, user);
+        return json(result.status, result.body);
+      } catch (error) {
+        const statusCode = (error as { statusCode?: number }).statusCode;
+        if (statusCode) {
+          const err = error as { message: string; code?: string; source?: string };
+          return json(statusCode, { error: err.message, ...(err.code ? { code: err.code } : {}), ...(err.source ? { source: err.source } : {}) });
+        }
+        throw error;
+      }
     }
     const applied = await withSavedView('companies', query);
     if ('status' in applied) return json(applied.status, applied.body);

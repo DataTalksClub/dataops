@@ -1,9 +1,12 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { getCrmRecord, listCrmRecords, type CrmRecord } from '../db/sponsorCrm';
+import { getCrmRecord, listCrmRecords, scanCrmPrefix, type CrmRecord } from '../db/sponsorCrm';
 import { dealMoneyFacts } from '../sponsorFinance/ledger';
+import { financeActor, financeEnabled, projectFinance } from '../sponsorFinance/repository';
+import { dealProjectionContext } from '../sponsorFinance/context';
 import { deriveMoney, realDate, relationshipTag } from '../sponsorCrm/model';
 import { lastTouchOf } from '../sponsorCrm/coldContacts';
 import { berlinToday } from './berlin';
+import { sourceTooLarge } from './reads';
 import { cursorBinding, decodeCursor, encodeCursor, pageLimit } from './cursor';
 
 export const DIRECTORY_RELATIONSHIPS = ['customer', 'talking', 'dormant', 'prospect'] as const;
@@ -220,6 +223,10 @@ async function companyContext(
     const orgId = String(deal.organizationId || '');
     dealsByOrg.set(orgId, [...(dealsByOrg.get(orgId) || []), { ...deal, money: deriveMoney(facts.get(deal.id)) }]);
   }
+  return { dealsByOrg, primaryByOrg: primaryIndex(contacts), today, organizations };
+}
+
+function primaryIndex(contacts: CrmRecord[]): Map<string, CrmRecord> {
   const primaryByOrg = new Map<string, CrmRecord>();
   for (const contact of contacts) {
     // Defensive: ordinary archive clears primary, but never surface an archived person as primary.
@@ -228,7 +235,7 @@ async function companyContext(
       primaryByOrg.set(String(contact.organizationId), contact);
     }
   }
-  return { dealsByOrg, primaryByOrg, today, organizations };
+  return primaryByOrg;
 }
 
 function applyCompanyDirection(items: CompanyItem[], filters: CompanyFilters): void {
@@ -290,16 +297,76 @@ export async function listCompanies(
  * the list (no added scans beyond the request's shared snapshot), plus the
  * existing operator notes summary. Never nested deals/finance/mail/contacts.
  */
+/**
+ * Per-deal money for ONE organization's summary without the global ledger.
+ * Deals without a finance state resolve to 'none' with zero finance reads
+ * (exact: the ledger agrees); state-bearing deals use the finance subsystem's
+ * own per-deal projection (same states F's finance tab shows), so no unrelated
+ * bookkeeping row is ever fetched. Returns null when the caller lacks finance
+ * permissions — the caller then falls back to the global path for parity with
+ * the list, which applies no role check.
+ */
+const MAX_SUMMARY_DEALS = 100;
+
+async function scopedDealMoney(
+  client: DynamoDBDocumentClient,
+  orgDeals: CrmRecord[],
+  userId: string,
+  today: string,
+): Promise<Map<string, string> | null> {
+  if (!financeEnabled()) return new Map();
+  let role: 'admin' | 'operator';
+  try {
+    role = (await financeActor(client, userId)).role;
+  } catch {
+    return null;
+  }
+  if (orgDeals.length > MAX_SUMMARY_DEALS) throw sourceTooLarge('summary deals');
+  // Finance states are snapshot-served (zero new reads); only this org's deals
+  // are projected, each through its own scoped reads.
+  const stated = new Set<string>();
+  for (const item of await scanCrmPrefix(client, 'SPONSOR_FINANCE')) {
+    if (item.recordType === 'sponsor-finance' && typeof item.dealId === 'string') stated.add(item.dealId);
+  }
+  const money = new Map<string, string>();
+  for (const deal of orgDeals) {
+    if (!stated.has(deal.id)) continue;
+    const projection = await projectFinance(client, deal.id, role, await dealProjectionContext(client, deal.id));
+    money.set(deal.id, deriveMoney({
+      invoiceState: projection.invoiceState,
+      paymentState: projection.paymentState,
+      timingState: projection.timingState,
+      followUp: { code: 'none', party: 'none' },
+    }));
+  }
+  return money;
+}
+
 export async function getCompanySummary(
   client: DynamoDBDocumentClient,
   id: string,
   query: Record<string, string | undefined>,
+  userId: string,
 ): Promise<{ status: number; body: unknown }> {
   const org = await getCrmRecord(client, 'organization', id);
   if (!org) return { status: 404, body: { error: 'Not found' } };
   const today = resolveToday(query);
   if ('error' in today) return { status: 400, body: { error: today.error } };
-  const ctx = await companyContext(client, today.today);
+  const [contacts, deals] = await Promise.all([
+    listCrmRecords(client, 'contact'),
+    listCrmRecords(client, 'deal'),
+  ]);
+  const orgDeals = deals.filter((deal) => String(deal.organizationId) === id);
+  let ctx: CompanyContext;
+  const scoped = await scopedDealMoney(client, orgDeals, userId, today.today);
+  if (scoped) {
+    const dealsByOrg = new Map<string, CrmRecord[]>();
+    dealsByOrg.set(id, orgDeals.map((deal) => ({ ...deal, money: scoped.get(deal.id) ?? deriveMoney(undefined) })));
+    ctx = { dealsByOrg, primaryByOrg: primaryIndex(contacts), today: today.today };
+  } else {
+    // Parity fallback (same cost as the list): no role-gated reads skipped.
+    ctx = await companyContext(client, today.today);
+  }
   return {
     status: 200,
     body: {

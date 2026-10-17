@@ -165,6 +165,32 @@ describe("CLI crm workspace", () => {
     }
   });
 
+  test("activity human output follows effective/deferred dates, not raw dates", async () => {
+    const io = captureIo();
+    const { restore } = fake({
+      "GET /api/sponsor-crm/activity/organization/o1": {
+        status: 200,
+        body: {
+          items: [], total: 0, nextCursor: null, tasksScope: "open",
+          relatedWork: [{
+            taskId: "t1", status: "waiting", date: "2026-01-06", description: "Future follow-up",
+            effectiveDate: "2099-01-01", eligible: false, deferred: true, deferredUntil: "2099-01-01T00:00:00Z",
+            subjectHref: "/sponsors/companies/o1", scope: "direct",
+          }],
+        },
+      },
+    });
+    try {
+      const code = await run(["crm", "activity", "organization", "o1"], io);
+      assert.equal(code, EXIT.ok);
+      assert.match(io.text(), /2099-01-01/);
+      assert.match(io.text(), /deferred/);
+      assert.doesNotMatch(io.text(), /Open waiting 2026-01-06/);
+    } finally {
+      restore();
+    }
+  });
+
   test("unknown crm verbs are usage errors", async () => {
     const io = captureIo();
     const code = await run(["crm", "companies", "frobnicate"], io);

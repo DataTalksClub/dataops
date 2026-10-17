@@ -186,6 +186,27 @@ describe('crm workspace views and notes', () => {
     assert.equal((await invoke('GET', `/api/sponsor-crm/directory/companies?view=${created.id}`, undefined, as(ALICE))).statusCode, 422);
   });
 
+  it('maps view write failures by cause: conflict 409, outage 500', async () => {
+    const { updateView, archiveView } = await import('../src/crmWorkspace/views.js');
+    const { GetCommand } = await import('@aws-sdk/lib-dynamodb');
+    const stored = {
+      PK: 'SAVEDVIEW#alice', SK: 'v1', id: 'v1', ownerId: 'alice', entity: 'companies',
+      name: 'V', filters: {}, version: 1, createdAt: '2026-10-17T00:00:00Z', updatedAt: '2026-10-17T00:00:00Z',
+    };
+    const fakeWith = (putError: unknown) => ({
+      send: async (command: any) => {
+        if (command instanceof GetCommand) return { Item: { ...stored } };
+        throw putError;
+      },
+    }) as any;
+    const outage = fakeWith(new Error('storage down'));
+    assert.equal((await updateView(outage, 'alice', 'v1', { name: 'V2', filters: {}, version: 1 })).status, 500);
+    assert.equal((await archiveView(outage, 'alice', 'v1')).status, 500);
+    const conflict = fakeWith(Object.assign(new Error('condition'), { name: 'ConditionalCheckFailedException' }));
+    assert.equal((await updateView(conflict, 'alice', 'v1', { name: 'V2', filters: {}, version: 1 })).status, 409);
+    assert.equal((await archiveView(conflict, 'alice', 'v1')).status, 409);
+  });
+
   it('isolates views per owner and versions concurrent updates', async () => {
     const created = data(await invoke('POST', '/api/sponsor-crm/views', {
       entity: 'companies', name: 'Alice view', filters: { active: 'true' }, sort: { field: 'name', direction: 'asc' },

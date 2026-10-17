@@ -158,6 +158,46 @@ describe('crm workspace directory', () => {
     assert.ok(hist.items.some((item: any) => item.id === org.id), 'archived stays honest historical access');
   });
 
+  it('fetches no unrelated bookkeeping for summaries with finance enabled', async () => {
+    const { getCompanySummary } = await import('../src/crmWorkspace/directory.js');
+    const { TABLE_BOOKKEEPING } = await import('../src/db/tableNames.js');
+    const suffix = String(seedCount++);
+    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
+      displayName: `Ledger Org ${suffix}`, domain: `ledger-${suffix}.example`, sourceKey: `ws-ledger-org-${suffix}`,
+    }));
+    const contact = data(await invoke('POST', '/api/sponsor-crm/contacts', {
+      organizationId: org.id, name: 'Led Ledger', emails: [`led-${suffix}@example.invalid`],
+      primary: true, sourceKey: `ws-ledger-contact-${suffix}`,
+    }));
+    data(await invoke('POST', '/api/sponsor-crm/deals', {
+      organizationId: org.id, primaryContactId: contact.id, status: 'open', sourceKey: `ws-ledger-deal-${suffix}`,
+    }));
+    const previous = process.env.SPONSOR_FINANCE_ENABLED;
+    process.env.SPONSOR_FINANCE_ENABLED = 'true';
+    let bookkeepingSends = 0;
+    const counting = {
+      send: (command: any, options?: any) => {
+        const input = command?.input || {};
+        if (input.TableName === TABLE_BOOKKEEPING || (input.RequestItems && TABLE_BOOKKEEPING in input.RequestItems)) {
+          bookkeepingSends += 1;
+        }
+        return (client as any).send(command, options);
+      },
+    } as any;
+    try {
+      const result = await getCompanySummary(counting, org.id, { today: '2026-10-17' }, GRACE_USER_ID);
+      assert.equal(result.status, 200);
+      const row = result.body as any;
+      assert.equal(row.relationship, 'talking');
+      assert.equal(row.openDealCount, 1);
+      assert.equal(bookkeepingSends, 0, 'stateless summary must not touch bookkeeping even with finance on');
+    } finally {
+      if (previous === undefined) delete process.env.SPONSOR_FINANCE_ENABLED;
+      else process.env.SPONSOR_FINANCE_ENABLED = previous;
+    }
+    void contact;
+  });
+
   it('filters companies by search, relationship, active and touch windows', async () => {
     const { orgA, orgB } = await seed(String(seedCount++));
     const search = data(await invoke('GET', '/api/sponsor-crm/directory/companies?search=acme&today=2026-10-17'));

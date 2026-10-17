@@ -183,8 +183,18 @@ export async function activity(args, io) {
     ["SOURCE", (item) => item.source || ""],
     ["TEXT", (item) => String(item.text || "").slice(0, 80)],
   ], "No activity.");
+  if ((result.relatedWork || []).length) {
+    table(io, result.relatedWork, [
+      ["DUE", (item) => String(item.effectiveDate || item.date || "").slice(0, 10)],
+      ["STATUS", (item) => `${item.status || ""}${item.deferred ? " deferred" : ""}`],
+      ["NEXT ACTION", (item) => item.description || ""],
+    ]);
+  }
   for (const work of result.relatedWork || []) {
-    io.print(`Open ${work.status} ${work.date}: ${work.description} [${work.scope}]`);
+    // Human output follows effective/deferred dates, never the raw original date.
+    const when = work.effectiveDate || work.date || "";
+    const deferred = work.deferred ? ` (deferred${work.deferredUntil ? ` until ${String(work.deferredUntil).slice(0, 10)}` : ""})` : "";
+    io.print(`Open ${work.status} ${when}: ${work.description}${deferred} [${work.scope}]`);
   }
   if (result.nextCursor) io.print(`More: --cursor ${result.nextCursor} (total ${result.total}).`);
   return result;
