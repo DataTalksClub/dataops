@@ -468,6 +468,13 @@ export function deriveScopedWorkState(snapshot, options = {}) {
   const waitingNotDueVisible = waitingVisible.filter(
     (task) => !isFollowUpDueTask(task, today),
   );
+  // Subtract known deferred members while retaining totals for unseen pages.
+  const attentionCount = (value, rawTasks, visibleTasks) => {
+    if (!Number.isFinite(Number(value))) return visibleTasks.length;
+    const excluded = dedupeWorkTasks(tasksFromWorkPayload(rawTasks || [])).filter(
+      (task) => !isTaskActionable(task, today) || hasTaskFollowUp(task)).length;
+    return Math.max(visibleTasks.length, Number(value) - excluded);
+  };
   const allKnownVisible = selectedOwnerId ? scope(allTasks) : allTasks;
   const missingProofVisible = allKnownVisible.filter(
     (task) => isOpenWorkTask(task) && !taskProofState(task).ok,
@@ -486,16 +493,11 @@ export function deriveScopedWorkState(snapshot, options = {}) {
       missingProof: loaded.tasks ? missingProofVisible : [],
     },
     counts: {
-      today: scopedOperatorId
-        ? todayVisible.length
-        : Number.isFinite(Number(work.todayTaskCount))
-          ? Number(work.todayTaskCount)
-          : todayVisible.length,
+      today: scopedOperatorId ? todayVisible.length
+        : attentionCount(work.todayTaskCount, work.todayTasks, todayVisible),
       overdue: selectedOwnerId
         ? overdueVisible.length
-        : Number.isFinite(Number(work.overdueTaskCount))
-          ? Number(work.overdueTaskCount)
-          : overdueVisible.length,
+        : attentionCount(work.overdueTaskCount, work.overdueTasks, overdueVisible),
       waiting: selectedOwnerId
         ? waitingVisible.length
         : Number.isFinite(Number(work.waitingTaskCount))

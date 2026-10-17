@@ -46,3 +46,14 @@ test("raw overdue payloads cannot put deferred tasks back into attention lanes",
   assert.deepEqual(state.tasks.followUps, []);
   assert.deepEqual(state.tasks.waiting.map((item) => item.id), ["waiting"]);
 });
+
+
+test("known deferred members are removed from raw counts without losing unseen-page totals", () => {
+  const waiting = task();
+  const active = task({ id: "active", status: "todo", followUpAt: null });
+  const state = deriveScopedWorkState({ loaded: true, overdueTasks: [waiting], overdueTaskCount: 1 }, { today });
+  assert.equal(state.counts.overdue, 0);
+  const paginated = deriveScopedWorkState({ loaded: true, overdueTasks: [waiting, active], overdueTaskCount: 100 }, { today });
+  assert.equal(paginated.counts.overdue, 99);
+  assert.deepEqual(paginated.tasks.overdue.map((item) => item.id), ["active"]);
+});
