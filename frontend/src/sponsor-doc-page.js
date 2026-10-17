@@ -1,4 +1,3 @@
-import "./dakit/shell.js";
 import { createSponsorDocPage } from "./surfaces/operations/sponsor-docs.js";
 
 async function request(path, options = {}) {

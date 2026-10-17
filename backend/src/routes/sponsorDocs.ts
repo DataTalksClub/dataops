@@ -116,9 +116,7 @@ export function isAnonymousSponsorDocAsset(method: string, path: string): boolea
     path === '/src/sponsor-doc-page.js'
     || path === '/src/surfaces/operations/sponsor-docs.js'
     || path === '/src/styles/sponsor-docs.css'
-    || path === '/src/dakit/dakit.css'
-    || path === '/src/dakit/device-code.js'
-    || path.startsWith('/src/dakit/fonts/')
+    || path.startsWith('/src/dakit/')
   );
 }
 
