@@ -92,7 +92,7 @@ describe('crm workspace directory', () => {
     assert.equal(row.notes, 'Operator summary paragraph.');
     assert.deepEqual(row.primaryPerson, { id: personA.id, name: 'Ada Synthetic', email: 'ada@acme.example' });
     assert.equal(row.openDealCount, 1);
-    for (const forbidden of ['money', 'finance', 'fulfillment', 'deliverables', 'deals', 'snippet']) {
+    for (const forbidden of ['money', 'finance', 'fulfillment', 'deliverables', 'deals', 'snippet', 'relationship']) {
       assert.equal(row[forbidden], undefined, `summary must not carry ${forbidden}`);
     }
     void deal;
@@ -158,9 +158,10 @@ describe('crm workspace directory', () => {
     assert.ok(hist.items.some((item: any) => item.id === org.id), 'archived stays honest historical access');
   });
 
-  it('fetches no unrelated bookkeeping for summaries with finance enabled', async () => {
+  it('reads zero finance/bookkeeping rows on summaries with finance enabled', async () => {
     const { getCompanySummary } = await import('../src/crmWorkspace/directory.js');
-    const { TABLE_BOOKKEEPING } = await import('../src/db/tableNames.js');
+    const { TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM } = await import('../src/db/tableNames.js');
+    const { PutCommand } = await import('@aws-sdk/lib-dynamodb');
     const suffix = String(seedCount++);
     const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
       displayName: `Ledger Org ${suffix}`, domain: `ledger-${suffix}.example`, sourceKey: `ws-ledger-org-${suffix}`,
@@ -169,28 +170,53 @@ describe('crm workspace directory', () => {
       organizationId: org.id, name: 'Led Ledger', emails: [`led-${suffix}@example.invalid`],
       primary: true, sourceKey: `ws-ledger-contact-${suffix}`,
     }));
-    data(await invoke('POST', '/api/sponsor-crm/deals', {
+    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', {
       organizationId: org.id, primaryContactId: contact.id, status: 'open', sourceKey: `ws-ledger-deal-${suffix}`,
     }));
+    // Real finance-state rows: the target deal's own state plus an unrelated
+    // portfolio org's state with linked bookkeeping claims a global ledger
+    // would BatchGet. The summary must read none of them.
+    const other = data(await invoke('POST', '/api/sponsor-crm/organizations', {
+      displayName: `Other Org ${suffix}`, domain: `other-${suffix}.example`, sourceKey: `ws-ledger-other-${suffix}`,
+    }));
+    const putState = (pk: string, dealId: string, linkId: string) => client.send(new PutCommand({
+      TableName: TABLE_SPONSOR_CRM,
+      Item: {
+        PK: pk, SK: pk, id: `state-${dealId}`, recordType: 'sponsor-finance', dealId,
+        currency: 'EUR', amountDue: '100', invoiceRequirement: 'required', issuedOn: '2026-09-01',
+        paymentLinkIds: [linkId], recordedPaymentIds: [], version: 1,
+        createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
+      },
+    }));
+    await putState(`SPONSOR_FINANCE#${deal.id}`, deal.id, `tx#unrelated-receipt-${suffix}`);
+    await putState(`SPONSOR_FINANCE#other-${suffix}`, `other-deal-${suffix}`, `tx#other-receipt-${suffix}`);
     const previous = process.env.SPONSOR_FINANCE_ENABLED;
     process.env.SPONSOR_FINANCE_ENABLED = 'true';
-    let bookkeepingSends = 0;
+    let financeSends = 0;
     const counting = {
       send: (command: any, options?: any) => {
         const input = command?.input || {};
-        if (input.TableName === TABLE_BOOKKEEPING || (input.RequestItems && TABLE_BOOKKEEPING in input.RequestItems)) {
-          bookkeepingSends += 1;
-        }
+        const tables = [
+          ...(input.TableName ? [input.TableName] : []),
+          ...Object.keys(input.RequestItems || {}),
+          ...((input.TransactItems || []).map((item: any) => item?.Get?.TableName).filter(Boolean)),
+        ];
+        if (tables.includes(TABLE_BOOKKEEPING)) financeSends += 1;
         return (client as any).send(command, options);
       },
     } as any;
     try {
-      const result = await getCompanySummary(counting, org.id, { today: '2026-10-17' }, GRACE_USER_ID);
+      const result = await getCompanySummary(counting, org.id, {});
       assert.equal(result.status, 200);
       const row = result.body as any;
-      assert.equal(row.relationship, 'talking');
+      assert.equal(row.id, org.id);
       assert.equal(row.openDealCount, 1);
-      assert.equal(bookkeepingSends, 0, 'stateless summary must not touch bookkeeping even with finance on');
+      assert.deepEqual(row.primaryPerson, { id: contact.id, name: 'Led Ledger', email: `led-${suffix}@example.invalid` });
+      assert.ok(!('relationship' in row), 'finance-derived facts are omitted, not synthesized');
+      assert.equal(financeSends, 0, 'summary must not fetch bookkeeping even with finance-state deals present');
+      const otherSummary = await getCompanySummary(counting, other.id, {});
+      assert.equal(otherSummary.status, 200);
+      assert.equal(financeSends, 0);
     } finally {
       if (previous === undefined) delete process.env.SPONSOR_FINANCE_ENABLED;
       else process.env.SPONSOR_FINANCE_ENABLED = previous;

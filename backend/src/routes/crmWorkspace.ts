@@ -102,9 +102,8 @@ export async function handleCrmWorkspaceRoutes(
     if (companyDir[1]) {
       const decoded = pathId(companyDir[1]);
       if ('error' in decoded) return json(400, { error: decoded.error });
-      const user = actor(event) || (await resolveDefaultAssigneeId(client)) || '';
       try {
-        const result = await getCompanySummary(client, decoded.id, query, user);
+        const result = await getCompanySummary(client, decoded.id, query);
         return json(result.status, result.body);
       } catch (error) {
         const statusCode = (error as { statusCode?: number }).statusCode;
