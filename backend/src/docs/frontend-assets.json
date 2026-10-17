@@ -101,6 +101,7 @@
     "src/surfaces/finance/sponsor-person-detail.js",
     "src/surfaces/finance/sponsor-pipeline.js",
     "src/surfaces/finance/sponsor-record.js",
+    "src/surfaces/finance/sponsor-record-markup.js",
     "src/surfaces/finance/sponsor-saved-views.js",
     "src/surfaces/finance/sponsors.js",
     "src/surfaces/knowledge/catalog.js",
