@@ -25,7 +25,7 @@ const {
 } = require('./helpers/docs-content-root');
 
 const OUT_DIR = process.env.DATAOPS_SCREENSHOT_DIR
-  || '/home/alexey/tmp/agent-reports/crm-startup';
+  || path.join(require('node:os').tmpdir(), 'crm-startup');
 const FIXTURE_DOC = [
   '---',
   'id: ref.synthetic.startup-fixture-schedule',
@@ -253,7 +253,7 @@ test.describe('crm cold-start contention', () => {
     await expect(page.locator('.ops-surface-recurring')).toBeVisible();
 
     // Back to CRM without losing the surface: rows render, filters survive.
-    await page.getByRole('link', { name: 'Sponsors', exact: true }).click();
+    await page.getByRole('link', { name: 'CRM', exact: true }).click();
     await expect(page.locator('.crm-funnel-table tbody tr').first()).toBeVisible();
     await expect(page).toHaveURL(/\/sponsors\/pipeline/);
 
@@ -284,7 +284,7 @@ test.describe('crm cold-start contention', () => {
     await page.goto(`${servers.healthy.baseURL}/sponsors/pipeline`, { waitUntil: 'commit' });
     await expect(page.locator('.crm-funnel-table tbody tr').first()).toBeVisible();
     await page.getByRole('link', { name: 'Queue', exact: true }).click();
-    await page.getByRole('link', { name: 'Sponsors', exact: true }).click();
+    await page.getByRole('link', { name: 'CRM', exact: true }).click();
     await expect(page.locator('.crm-funnel-table tbody tr').first()).toBeVisible();
     await expect(page).toHaveURL(/\/sponsors\/pipeline/);
     // Back/forward still re-render through the committed routes.

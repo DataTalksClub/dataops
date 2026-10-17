@@ -38,6 +38,7 @@ let baseURL;
 const VISIBLE_ROUTE_HEADINGS = {
   Newsletter: "Newsletter planner",
   Calendar: "Calendar",
+  Sponsors: "CRM",
 };
 
 async function expectVisibleRouteHeading(page, routeTitle) {

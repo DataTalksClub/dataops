@@ -95,6 +95,7 @@ const VISIBLE_ROUTE_HEADINGS = {
   'Work Queue': 'Work Queue',
   Newsletter: 'Newsletter planner',
   Calendar: 'Calendar',
+  Sponsors: 'CRM',
 };
 
 async function expectVisibleRouteHeading(page, routeTitle) {
