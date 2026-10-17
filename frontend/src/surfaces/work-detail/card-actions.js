@@ -62,11 +62,9 @@ export function createCardActions(context) {
         ? { status: "parked" }
         : intent.kind === "resume"
           ? { status: "active" }
-          : intent.kind === "reference"
-            ? { references: intent.payload.references }
-            : intent.kind === "card-link"
-              ? { cardLinks: intent.payload.cardLinks }
-              : {};
+          : intent.kind === "card-link"
+            ? { cardLinks: intent.payload.cardLinks }
+            : {};
     return Object.entries(expected).every(([field, value]) =>
       sameValue(card[field], value),
     );
@@ -359,44 +357,6 @@ export function createCardActions(context) {
     }).ready;
   }
 
-  async function addCardReference(cardId, currentRefs, name, url) {
-    if (!url) {
-      detail.activeCardPanelDraft = {
-        cardId,
-        kind: "reference",
-        label: "Add reference",
-        form: { name, url },
-        payload: { references: currentRefs || [] },
-      };
-      detail.activeCardPanelFeedback = {
-        owner: "card",
-        phase: "error",
-        message: "URL is required.",
-        focusSelector: ".card-ref-url",
-      };
-      renderCardPanel();
-      return;
-    }
-    const ref = { name: name || url, url };
-    const updatedRefs = [...(currentRefs || []), ref];
-    await submitCardIntent(
-      {
-        cardId,
-        kind: "reference",
-        label: `Add reference ${ref.name}`,
-        payload: { references: updatedRefs },
-        buildPayload: (currentCard) => ({
-          references: [...(currentCard?.references || []), ref],
-        }),
-        form: { name, url },
-        pendingMessage: "Adding the Card reference…",
-        successMessage: "Card reference is saved in the refreshed Card.",
-        errorPrefix: "Could not add link",
-      },
-      detail.activeCardPanelData?.card?.version,
-    );
-  }
-
   async function updateCardStage(cardId, stage) {
     await submitCardIntent(
       {
@@ -497,7 +457,6 @@ export function createCardActions(context) {
   }
 
   return {
-    addCardReference,
     applyCardTemplateUpdate,
     deleteCardPanel,
     discardCardIntent,

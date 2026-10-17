@@ -46,6 +46,7 @@ export function createCardPanel(context) {
     discardTaskIntent,
     reviewLatestTask,
     request,
+    resolveDocReference = () => null,
     settledPayload,
     state,
     summarizeCardProgress,
@@ -493,15 +494,41 @@ export function createCardPanel(context) {
       main.append(checklistSection);
     }
 
-    const refsSection = document.createElement("div");
-    refsSection.className =
-      "task-history workflow-detail-section workflow-references-section";
-    const refsLabel = document.createElement("div");
-    refsLabel.className = "task-history-label";
-    refsLabel.textContent = "Process references";
-    refsSection.append(refsLabel);
     const refsList = document.createElement("div");
     refsList.className = "task-history-list";
+    const seenRefs = new Set();
+    const appendReferenceItem = (refName, refUrl, isProcessDoc = false) => {
+      if (!refUrl && !refName) return;
+      const docPath = refUrl ? localDocPathFromHref(refUrl) : "";
+      const href = docPath ? documentHref(docPath) : refUrl ? String(refUrl) : "";
+      const dedupeKey = href || `label:${refName}`;
+      if (seenRefs.has(dedupeKey)) return;
+      seenRefs.add(dedupeKey);
+      const item = document.createElement("div");
+      item.className = "task-history-event";
+      if (href) {
+        const link = document.createElement("a");
+        link.href = href;
+        if (docPath || isProcessDoc) link.className = "task-instruction-doc-link";
+        appendBreakableText(link, refName || refUrl);
+        opensInNewTab(link);
+        item.append(link);
+      } else {
+        appendBreakableText(item, refName);
+      }
+      refsList.append(item);
+    };
+    const sourceDocIds = Array.isArray(card.sourceDocIds) ? card.sourceDocIds : [];
+    for (const docId of sourceDocIds) {
+      if (!docId) continue;
+      const doc = resolveDocReference(docId);
+      const docUrl = doc?.path || (localDocPathFromHref(docId) ? docId : "");
+      const docLabel =
+        doc?.title ||
+        String(docId).split(".").pop()?.replace(/[-_]+/g, " ") ||
+        String(docId);
+      appendReferenceItem(docLabel, docUrl, true);
+    }
     const existingRefs = Array.isArray(card.references)
       ? card.references
       : [];
@@ -510,78 +537,18 @@ export function createCardPanel(context) {
       const refName =
         typeof ref === "string" ? ref : ref.name || ref.title || refUrl;
       if (!refUrl) continue;
-      const item = document.createElement("div");
-      item.className = "task-history-event";
-      // Process docs and outside references both open in a new tab so the
-      // Card stays open.
-      const docPath = localDocPathFromHref(refUrl);
-      const link = document.createElement("a");
-      link.href = docPath ? documentHref(docPath) : String(refUrl);
-      if (docPath) link.className = "task-instruction-doc-link";
-      appendBreakableText(link, refName);
-      opensInNewTab(link);
-      item.append(link);
-      refsList.append(item);
+      appendReferenceItem(refName, refUrl, false);
     }
-    refsSection.append(refsList);
-    if (!refsList.children.length) {
-      const empty = document.createElement("div");
-      empty.className = "task-history-event";
-      empty.textContent = "No process docs linked.";
-      refsList.append(empty);
+    if (refsList.children.length > 0) {
+      const refsSection = document.createElement("div");
+      refsSection.className =
+        "task-history workflow-detail-section workflow-references-section";
+      const refsLabel = document.createElement("div");
+      refsLabel.className = "task-history-label";
+      refsLabel.textContent = "Process references";
+      refsSection.append(refsLabel, refsList);
+      main.append(refsSection);
     }
-
-    const addRow = document.createElement("div");
-    addRow.className = "task-follow-up-row";
-    const nameInput = document.createElement("input");
-    nameInput.type = "text";
-    nameInput.placeholder = "Label (e.g. Podcast doc)";
-    nameInput.className = "card-ref-name";
-    nameInput.dataset.cardDraftKey = "new-reference-name";
-    if (detail.activeCardPanelDraft?.kind === "reference") {
-      nameInput.value = detail.activeCardPanelDraft.form?.name || "";
-    }
-    const urlInput = document.createElement("input");
-    urlInput.type = "url";
-    urlInput.placeholder = "https://...";
-    urlInput.className = "card-ref-url";
-    urlInput.dataset.cardDraftKey = "new-reference-url";
-    if (detail.activeCardPanelDraft?.kind === "reference") {
-      urlInput.value = detail.activeCardPanelDraft.form?.url || "";
-    }
-    const addBtn = document.createElement("button");
-    addBtn.type = "button";
-    addBtn.className = "task-action-btn";
-    addBtn.textContent = "Add";
-    nameInput.disabled =
-      detail.activeCardMutationBusy ||
-      detail.activeTaskMutationBusy ||
-      detail.activeCardTemplateBusy;
-    urlInput.disabled =
-      detail.activeCardMutationBusy ||
-      detail.activeTaskMutationBusy ||
-      detail.activeCardTemplateBusy;
-    addBtn.disabled =
-      detail.activeCardMutationBusy ||
-      detail.activeTaskMutationBusy ||
-      detail.activeCardTemplateBusy;
-    addBtn.addEventListener("click", () =>
-      addCardReference(
-        card.id,
-        existingRefs,
-        nameInput.value.trim(),
-        urlInput.value.trim(),
-      ),
-    );
-    addRow.append(nameInput, urlInput, addBtn);
-    const referenceForm = document.createElement("details");
-    referenceForm.className = "card-add-details";
-    referenceForm.open = detail.activeCardPanelDraft?.kind === "reference" || Boolean(capturedDrafts?.get("new-reference-name") || capturedDrafts?.get("new-reference-url"));
-    const referenceToggle = document.createElement("summary");
-    referenceToggle.textContent = "+ Add process reference";
-    referenceForm.append(referenceToggle, addRow);
-    refsSection.append(referenceForm);
-    main.append(refsSection);
     if (preserveDrafts) restoreCardPanelDrafts(capturedDrafts);
     if (feedbackClaimedFocus && detail.activeCardPanelFeedback?.focusSelector) {
       const focusTarget = main.querySelector(
@@ -962,7 +929,6 @@ export function createCardPanel(context) {
   }
 
   const {
-    addCardReference,
     applyCardTemplateUpdate,
     deleteCardPanel,
     discardCardIntent,

@@ -1938,7 +1938,7 @@ describe("Work Detail surface boundary", () => {
     const refs = harness.cardPanelBody.querySelector(
       ".workflow-references-section",
     );
-    assert.ok(!refs.textContent.includes("Sponsor proof document"));
+    assert.equal(refs, null);
     assert.deepEqual(harness.errors, []);
   });
 
@@ -1947,6 +1947,7 @@ describe("Work Detail surface boundary", () => {
       id: "card-doc",
       version: 1,
       title: "Podcast with Ada",
+      sourceDocIds: ["process.podcast.overview"],
       references: [
         { name: "Guest prep", url: "content/process/podcast/guest-prep.md" },
         { name: "Show notes", url: "https://docs.google.com/document/d/notes/edit" },
@@ -1963,10 +1964,15 @@ describe("Work Detail surface boundary", () => {
     };
     const harness = createHarness({
       cards: [card],
-      resolveDocReference: (id) =>
-        id === task.instructionDocId
-          ? { id, title: "Guest prep", path: "content/process/podcast/guest-prep.md" }
-          : null,
+      resolveDocReference: (id) => {
+        if (id === task.instructionDocId) {
+          return { id, title: "Guest prep", path: "content/process/podcast/guest-prep.md" };
+        }
+        if (id === "process.podcast.overview") {
+          return { id, title: "Podcast overview", path: "content/process/podcast/overview.md" };
+        }
+        return null;
+      },
       request: async (url, requestOptions = {}) => {
         if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
         if (url === `/api/cards/${card.id}`) return card;
@@ -1995,10 +2001,12 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(
       references.map((link) => [link.href, link.target, link.rel]),
       [
+        ["/process/podcast/overview.md", "_blank", "noopener noreferrer"],
         ["/process/podcast/guest-prep.md", "_blank", "noopener noreferrer"],
         ["https://docs.google.com/document/d/notes/edit", "_blank", "noopener noreferrer"],
       ],
     );
+    assert.equal(harness.cardPanelBody.querySelector(".card-ref-name"), null);
     assert.deepEqual(harness.errors, []);
   });
 
@@ -3766,8 +3774,6 @@ describe("Work Detail surface boundary", () => {
     await findByText(harness.cardPanelBody, "Add", "button").click();
     harness.cardPanelBody.querySelector(".link-row__input").value =
       "https://example.test/draft";
-    harness.cardPanelBody.querySelector(".card-ref-name").value =
-      "Typed reference";
     await findByText(
       harness.cardPanelBody,
       "Apply reviewed update",
@@ -3781,10 +3787,6 @@ describe("Work Detail surface boundary", () => {
       harness.cardPanelBody.querySelector(".link-row__input").value,
       "https://example.test/draft",
     );
-    assert.equal(
-      harness.cardPanelBody.querySelector(".card-ref-name").value,
-      "Typed reference",
-    );
     assert.equal(previewLoads, 1);
     await findByText(
       harness.cardPanelBody,
@@ -3796,10 +3798,6 @@ describe("Work Detail surface boundary", () => {
     assert.equal(
       harness.cardPanelBody.querySelector(".link-row__input").value,
       "https://example.test/draft",
-    );
-    assert.equal(
-      harness.cardPanelBody.querySelector(".card-ref-name").value,
-      "Typed reference",
     );
   });
 
@@ -3921,7 +3919,7 @@ describe("Work Detail surface boundary", () => {
     assert.equal(loading.getAttribute("role"), "status");
   });
 
-  test("registers Card references and registers plus approves external artifacts", async () => {
+  test("omits empty Process references on Cards and registers plus approves external artifacts", async () => {
     const card = {
       id: "card-refs",
       title: "Conference launch",
@@ -3938,27 +3936,18 @@ describe("Work Detail surface boundary", () => {
         if (url === "/api/artifacts?cardId=card-refs") {
           return { artifacts: [] };
         }
-        if (url === "/api/cards/card-refs" && requestOptions.method === "PUT") {
-          return { ...card, ...JSON.parse(requestOptions.body) };
-        }
         return {};
       },
     });
     harness.api.prepareCardPanel(card.id);
     await harness.api.hydrateCardPanel(card.id, 1);
 
-    const name = harness.cardPanelBody.querySelector(".card-ref-name");
-    const url = harness.cardPanelBody.querySelector(".card-ref-url");
-    name.value = "Internal launch process";
-    url.value = "/docs/launch";
-    await findByText(harness.cardPanelBody, "Add", "button").click();
-    const referenceRequest = harness.requests.find(
-      (entry) =>
-        entry.url === "/api/cards/card-refs" && entry.options.method === "PUT",
+    assert.equal(
+      harness.cardPanelBody.querySelector(".workflow-references-section"),
+      null,
     );
-    assert.deepEqual(jsonBody(referenceRequest), {
-      references: [{ name: "Internal launch process", url: "/docs/launch" }],
-    });
+    assert.equal(harness.cardPanelBody.querySelector(".card-ref-name"), null);
+    assert.equal(harness.cardPanelBody.querySelector(".card-ref-url"), null);
 
     const artifact = harness.api.renderArtifactList({
       ownerType: "task",

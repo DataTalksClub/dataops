@@ -382,6 +382,17 @@ export function createTemplatesSurface(context) {
     // and the heading; repeating them here just made the foot longer.
     appendDefinition(definition, "Type", humanize(selected.type));
     appendDefinition(definition, "Source", selected.sourcePath || "Authored workflow template");
+    const overviewDocs = [
+      ...(Array.isArray(selected.sourceDocIds) ? selected.sourceDocIds : []),
+      ...(Array.isArray(selected.references)
+        ? selected.references.map((ref) =>
+          typeof ref === "string" ? ref : ref?.name || ref?.title || ref?.url || "",
+        )
+        : []),
+    ].filter(Boolean);
+    if (overviewDocs.length > 0) {
+      appendDefinition(definition, "Process docs", overviewDocs.join(", "));
+    }
     appendDefinition(
       definition,
       "Revision",
