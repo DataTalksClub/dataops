@@ -1,5 +1,5 @@
 import { documentHref, opensInNewTab } from "../../core/links.js";
-import { isCanonicalWorkTask } from "../../core/workspace.js";
+import { isCanonicalWorkTask, isTaskOverdue } from "../../core/workspace.js";
 import { displayCardDescription } from "./card-summary.js";
 import { renderTaskContext, renderTaskInstructions, taskDisplayParts } from "./task-overview.js";
 import { openSkipTaskDialog } from "./work-dialogs.js";
@@ -74,8 +74,7 @@ export function createTaskPanel(context) {
   const overviewDeps = {
     formatDate: (value) => formatTaskDateMeta(value, todayIsoDate()) || String(value || "").slice(0, 10),
     // A task still waiting on a prerequisite is not late yet; its prerequisite is.
-    isOverdue: (task) => !["done", "skipped"].includes(task.status) && blockingPrerequisites(task).length === 0
-      && Boolean(task.date) && String(task.date).slice(0, 10) < todayIsoDate(),
+    isOverdue: (task) => isTaskOverdue(task, todayIsoDate()) && blockingPrerequisites(task).length === 0,
     navigateTaskToWorkflow: (task) => navigateTaskToWorkflow(task),
     openSubject: (subject) => navigateCanonicalWorkspace(subject.href),
     fetchCard: (cardId) =>
@@ -423,6 +422,9 @@ export function createTaskPanel(context) {
       taskPanelBody.append(routeContext);
     }
 
+    const view = taskDisplayParts(task, overviewDeps);
+    taskPanelBody.append(renderTaskContext(task, view, overviewDeps));
+
     const actor = getCurrentOperator();
     const assignee = task.assigneeId
       ? state.workSnapshot.usersById?.get(task.assigneeId)
@@ -431,20 +433,13 @@ export function createTaskPanel(context) {
       const delegation = document.createElement("section");
       delegation.className = "task-delegation-notice";
       const heading = document.createElement("strong");
-      heading.textContent = `Working on ${assignee.name || "a teammate"}’s task`;
+      heading.textContent = `Assigned to ${assignee.name || "a teammate"}.`;
       const description = document.createElement("p");
-      description.textContent = `You remain signed in as ${actor.name || "yourself"}. ${assignee.name || "Your teammate"} stays assigned.`;
+      description.textContent = `You’re acting as ${actor.name || "yourself"}.`;
       delegation.append(heading, description);
       taskPanelBody.append(delegation);
     }
 
-    // Context first: the card (with its template icon and kind), status,
-    // due date and owner. Then what to do and how; attachments, process
-    // notes and history fold away underneath.
-    const view = taskDisplayParts(task, overviewDeps);
-    taskPanelBody.append(renderTaskContext(task, view, overviewDeps));
-    taskPanelBody.append(renderTaskRequires(task, panelMutationBusy));
-    taskPanelBody.append(renderTaskBrowser(task, panelMutationBusy));
     const cardTasksAtHand = detail.activeCardPanelId === task.cardId
       ? detail.activeCardPanelData?.tasks || []
       : [];
@@ -508,10 +503,14 @@ export function createTaskPanel(context) {
       proofSlot.append(wrap);
     }
 
+    const stateSection = document.createElement("section");
+    stateSection.className = "task-state-section";
+    stateSection.setAttribute("aria-label", "Current state and actions");
+
     // Waiting/follow-up info
     if (status === "waiting") {
       const waiting = document.createElement("div");
-      waiting.className = "task-detail-meta";
+      waiting.className = "task-detail-meta task-waiting-summary";
       if (task.waitingFor) {
         const row = document.createElement("div");
         row.append(
@@ -528,7 +527,7 @@ export function createTaskPanel(context) {
         );
         waiting.append(row);
       }
-      taskPanelBody.append(waiting);
+      stateSection.append(waiting);
     }
 
     // Actions
@@ -581,10 +580,15 @@ export function createTaskPanel(context) {
       response.classList.add("is-primary");
       actions.append(response);
 
+      const followDetails = document.createElement("details");
+      followDetails.className = "task-follow-up-disclosure";
+      const followSummary = document.createElement("summary");
+      followSummary.textContent = "Record a follow-up";
+      followDetails.append(followSummary);
       const followRow = document.createElement("div");
       followRow.className = "task-follow-up-row";
       const nextLabel = document.createElement("label");
-      nextLabel.textContent = "Next";
+      nextLabel.textContent = "Next follow-up";
       const nextInput = document.createElement("input");
       nextInput.type = "date";
       nextInput.dataset.panelField = "follow-up-next";
@@ -599,7 +603,8 @@ export function createTaskPanel(context) {
         recordTaskFollowUpSent(task.id, nextInput.value),
       );
       followRow.append(followUp);
-      actions.append(followRow, skipButton());
+      followDetails.append(followRow);
+      actions.append(followDetails, skipButton());
     } else if (status === "todo") {
       const completionProofState = () => {
         const missingLink = task.requiredLinkName && !task.link;
@@ -664,8 +669,15 @@ export function createTaskPanel(context) {
     for (const button of actions.querySelectorAll("button")) {
       if (panelMutationBusy) button.disabled = true;
     }
-    taskPanelBody.append(actions);
-    taskPanelBody.append(renderTaskInstructions(task, view, overviewDeps));
+    stateSection.append(actions);
+    taskPanelBody.append(stateSection);
+    const setup = document.createElement("section");
+    setup.className = "task-setup";
+    setup.setAttribute("aria-label", "Task setup");
+    setup.append(renderTaskRequires(task, panelMutationBusy), renderTaskBrowser(task, panelMutationBusy));
+    taskPanelBody.append(setup);
+    const instructions = renderTaskInstructions(task, view, overviewDeps);
+    if (instructions) taskPanelBody.append(instructions);
 
     // Proof the task asks for sits in the open; optional attachments,
     // process notes and history fold into one disclosure below.
@@ -705,7 +717,7 @@ export function createTaskPanel(context) {
       commentBody.className = "task-history-event";
       commentBody.textContent = commentText;
       comment.append(commentLabel, commentBody);
-      taskPanelBody.append(comment);
+      more.append(comment);
     }
 
     // Canonical Tasks always return structured transition history.

@@ -1,0 +1,83 @@
+const { test, expect } = require('@playwright/test');
+const path = require('node:path');
+const { loginAndSetupPage } = require('./helpers/auth');
+const { createDocsCacheRoot } = require('./helpers/docs-content-root');
+const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
+let server, task, card;
+async function api(method, route, body) {
+  const response = await fetch(`${server.baseURL}${route}`, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  expect(response.ok, `${method} ${route}: ${response.status} ${await response.clone().text()}`).toBeTruthy();
+  return response.status === 204 ? null : response.json();
+}
+test.beforeAll(async () => {
+  server = await startOwnedTestServer({ environment: { DTC_CACHE_ROOT: createDocsCacheRoot('task-dialog-layout') } });
+  const { template } = await api('POST', '/__e2e__/template-fixtures', { name: 'Synthetic newsletter', type: 'synthetic-newsletter', sourcePath: 'workflow-templates/synthetic-newsletter.yaml', taskDefinitions: [] });
+  ({ card } = await api('POST', '/api/cards', { title: 'Newsletter sponsor · Example Company', anchorDate: '2026-10-20', stage: 'announced', templateId: template.id }));
+  task = await api('POST', '/api/tasks', { description: 'Prepare the sponsor invoice', date: '2026-10-20', cardId: card.id, status: 'waiting', waitingFor: 'Example Company: legal billing details requested in the existing thread', followUpAt: '2026-10-20T09:00:00Z', comment: 'Synthetic waiting fixture', requiresFile: true, assigneeId: '00000000-0000-0000-0000-000000000004' });
+  task = await api('PUT', `/api/tasks/${task.id}`, { requires: ['finom'], browserRequirement: 'headless', expectedVersion: task.version });
+});
+test.afterAll(async () => stopOwnedTestServer(server));
+for (const variant of [{ name: 'dark-desktop', width: 1280, height: 1000, theme: 'dark' }, { name: 'light-desktop', width: 1280, height: 1000, theme: 'light' }, { name: 'mobile', width: 390, height: 844, theme: 'dark' }]) {
+  test(`task work sheet ${variant.name}`, async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.setViewportSize({width: variant.width, height: variant.height});
+    await loginAndSetupPage(page, { get: route => page.request.get(`${server.baseURL}${route}`) });
+    await page.goto(`${server.baseURL}/tasks?assignee=all`);
+    const queueTask = page.locator('.ops-queue-row', { hasText: 'Prepare the sponsor invoice' });
+    await expect(queueTask).toBeVisible();
+    await queueTask.locator('.ops-queue-title-row').click();
+    await page.evaluate(theme => document.documentElement.setAttribute('data-theme', theme), variant.theme);
+    const panel = page.locator('#task-panel');
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText('Example Company: legal billing details');
+    await expect(panel.locator('.task-delegation-notice')).toContainText('Assigned to Orin');
+    await expect(panel.locator('.task-context')).not.toContainText('Due');
+    const context = panel.locator('.task-context');
+    const action = panel.locator('.task-state-section');
+    const setup = panel.locator('.task-setup');
+    expect((await context.boundingBox()).y).toBeLessThan((await action.boundingBox()).y);
+    expect((await action.boundingBox()).y).toBeLessThan((await setup.boundingBox()).y);
+    await expect(panel.getByRole('button', { name: 'Response received', exact: true })).toBeVisible();
+    await expect(panel.locator('[data-panel-field="follow-up-next"]')).toBeHidden();
+    await page.screenshot({ path: path.resolve(__dirname, '../../.tmp/screenshots/task-dialog', `${variant.name}.png`), fullPage: true });
+    await panel.locator('.task-follow-up-disclosure > summary').focus();
+    await page.keyboard.press('Enter');
+    await expect(panel.getByLabel('Next follow-up')).toBeVisible();
+    await panel.getByLabel('Next follow-up').fill('2026-10-23');
+    await panel.getByRole('button', { name: 'Follow-up sent', exact: true }).click();
+    await expect(panel).toContainText('23 Oct');
+    await panel.locator('.task-requires-edit').click();
+    await expect(panel.locator('.task-requires-editor')).toBeAttached();
+    await panel.locator('.task-requires-actions').getByRole('button', { name: 'Cancel' }).click();
+    await panel.locator('.task-browser-edit').click();
+    await expect(panel.locator('.task-browser-editor')).toBeAttached();
+    await panel.locator('.task-browser-actions').getByRole('button', { name: 'Cancel' }).click();
+    await panel.locator('.task-panel-more > summary').click();
+    await expect(panel.locator('.task-history').filter({ hasText: 'History' }).last()).toBeVisible();
+    expect(await panel.evaluate(node => node.scrollWidth <= node.clientWidth)).toBeTruthy();
+    await panel.locator('#task-panel-close').click();
+    await expect(panel).toBeHidden();
+    expect(errors).toEqual([]);
+  });
+}
+test('open and completed work keep their detail and evidence accessible', async ({ page }) => {
+  await loginAndSetupPage(page, { get: route => page.request.get(`${server.baseURL}${route}`) });
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.goto(`${server.baseURL}/cards?cardId=${card.id}&taskId=${task.id}`);
+  const panel = page.locator('#task-panel');
+  await expect(panel).toBeVisible();
+  await panel.getByRole('button', { name: 'Response received', exact: true }).click();
+  await expect(panel.getByRole('button', { name: 'Mark done', exact: true })).toBeVisible();
+  await expect(panel.locator('input[type="file"]')).toBeEnabled();
+  await panel.locator('input[type="file"]').setInputFiles({ name: 'synthetic-invoice.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic invoice evidence') });
+  await expect(panel).toContainText('synthetic-invoice.txt');
+  await page.screenshot({ path: path.resolve(__dirname, '../../.tmp/screenshots/task-dialog/open-desktop.png'), fullPage: true });
+  const uploaded = await api('GET', `/api/tasks/${task.id}`);
+  await api('PUT', `/api/tasks/${task.id}`, { status: 'done', expectedVersion: uploaded.version });
+  await page.reload();
+  await expect(panel.locator('.task-context')).toContainText('done');
+  await panel.locator('.task-panel-more > summary').click();
+  await expect(panel.locator('.task-history').filter({ hasText: 'History' }).last()).toContainText('Task completed');
+  await page.screenshot({ path: path.resolve(__dirname, '../../.tmp/screenshots/task-dialog/completed-desktop.png'), fullPage: true });
+});

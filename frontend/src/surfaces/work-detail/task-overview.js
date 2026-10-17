@@ -90,7 +90,7 @@ export function renderTaskContext(task, view, deps) {
   // The raw status word; the badge style capitalizes it.
   status.textContent = task.status;
   chips.append(status);
-  if (task.date) chips.append(chip(`Due ${deps.formatDate(task.date)}`, deps.isOverdue(task) ? "is-overdue" : ""));
+  if (task.date && task.status !== "waiting") chips.append(chip(`Due ${deps.formatDate(task.date)}`, deps.isOverdue(task) ? "is-overdue" : ""));
   chips.append(chip(task.assigneeId ? deps.resolveAssigneeLabel(task.assigneeId) : "Unassigned"));
   if (parts.tag) chips.append(chip(parts.tag, "is-tag"));
   context.append(chips);
@@ -108,13 +108,7 @@ export function renderTaskInstructions(task, view, deps) {
   label.textContent = "How to do it";
   section.append(label);
   const materials = taskMaterials(task, { resolveDoc: deps.resolveDocReference });
-  if (materials.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "task-instructions-empty";
-    empty.textContent = "No instructions are linked to this task yet.";
-    section.append(empty);
-    return section;
-  }
+  if (materials.length === 0) return null;
   const list = document.createElement("ul");
   list.className = "artifact-rows task-instruction-rows";
   for (const material of materials) {

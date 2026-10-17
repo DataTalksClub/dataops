@@ -1122,7 +1122,7 @@ body[data-workspace-view="tasks"] .work-dialog-lead {
   overflow-wrap: anywhere;
 }
 /* Task dialog: context first (the card with its template icon and kind,
-   then status, due date and owner as chips), the actions, "How to do it",
+   then status, due date and owner), the actions, "How to do it",
    any proof the task requires, and one disclosure for attachments, process
    notes and history. */
 .task-context {
@@ -1511,4 +1511,208 @@ body[data-workspace-view="tasks"] .task-prerequisite-status {
   color: var(--dk-text-muted);
   font-size: var(--dk-text-sm);
   white-space: nowrap;
+}
+
+/* Task work sheet: context, current action, then supporting detail.
+   Scope these treatments to the Task dialog, leaving Card and form panels alone. */
+#task-panel .task-panel-header {
+  align-items: start;
+  min-height: 0;
+  background: var(--dk-bg-surface);
+  padding: var(--dk-space-6);
+  border-bottom: 1px solid var(--dk-border-default);
+}
+#task-panel .task-panel-header strong {
+  font-size: var(--dk-text-xl);
+  font-weight: var(--dk-weight-semibold);
+  line-height: 1.2;
+}
+#task-panel .task-panel-body {
+  gap: var(--dk-space-6);
+  padding: var(--dk-space-6);
+}
+#task-panel .task-context { gap: var(--dk-space-3); }
+#task-panel .task-context-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+#task-panel .task-context-card-icon {
+  background: transparent;
+  color: var(--dk-text-muted);
+}
+#task-panel .task-context-card-text strong { white-space: normal; }
+#task-panel .task-context-card:hover .task-context-card-text strong {
+  color: var(--dk-text-link);
+  text-decoration: underline;
+}
+#task-panel .task-context-chip,
+#task-panel .task-context .task-status-badge {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: var(--dk-text-xs);
+  font-weight: var(--dk-weight-regular);
+  line-height: 1.5;
+}
+#task-panel .task-context-chips { gap: var(--dk-space-2) var(--dk-space-4); }
+#task-panel .task-delegation-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dk-space-1);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs);
+}
+#task-panel .task-delegation-notice strong { font-weight: var(--dk-weight-regular); }
+#task-panel .task-state-section {
+  display: grid;
+  gap: var(--dk-space-4);
+  border-block: 1px solid var(--dk-border-default);
+  padding-block: var(--dk-space-5);
+}
+#task-panel .task-waiting-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--dk-space-3);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: var(--dk-text-sm);
+  line-height: 1.5;
+}
+#task-panel .task-action-group {
+  gap: var(--dk-space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+#task-panel .task-follow-up-disclosure { min-width: 0; }
+#task-panel .task-follow-up-disclosure > summary {
+  display: list-item;
+  padding: var(--dk-space-2) 0;
+  color: var(--dk-text-link);
+  font-size: var(--dk-text-sm);
+  cursor: pointer;
+}
+#task-panel .task-follow-up-disclosure[open] {
+  flex-basis: 100%;
+  order: 1;
+}
+#task-panel .task-follow-up-disclosure .task-follow-up-row {
+  display: flex;
+  gap: var(--dk-space-3);
+  padding-top: var(--dk-space-2);
+}
+#task-panel .task-follow-up-row > label { flex: 0 1 auto; }
+#task-panel .task-setup {
+  display: grid;
+  gap: var(--dk-space-3);
+}
+#task-panel .task-setup > section,
+#task-panel .task-setup > div {
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--dk-space-3);
+}
+#task-panel .task-setup .task-history-label {
+  color: var(--dk-text-muted);
+  font-weight: var(--dk-weight-regular);
+}
+#task-panel .task-setup .is-editing {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+#task-panel .task-instruction-rows {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+#task-panel .task-instruction-rows .artifact-row { padding-inline: 0; }
+#task-panel .task-instruction-rows .artifact-row-icon { background: transparent; }
+#task-panel .task-required-link {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+#task-panel .task-file-drop-zone {
+  gap: var(--dk-space-2);
+  padding: var(--dk-space-3);
+  border-style: solid;
+  background: transparent;
+  text-align: left;
+}
+#task-panel .task-file-drop-hint {
+  margin: 0;
+  font-size: var(--dk-text-xs);
+}
+#task-panel .task-file-drop-zone input { min-width: 0; max-width: 100%; }
+#task-panel .task-panel-more > summary { display: list-item; }
+#task-panel .task-history-event {
+  border: 0;
+  border-top: 1px solid var(--dk-border-default);
+  border-radius: 0;
+  background: transparent;
+  padding: var(--dk-space-3) 0;
+}
+@media (max-width: 820px) {
+  #task-panel .task-panel-header,
+  #task-panel .task-panel-body { padding: var(--dk-space-4); }
+  #task-panel .task-waiting-summary { grid-template-columns: 1fr; }
+  #task-panel .task-context-card { gap: var(--dk-space-2); }
+  #task-panel .task-context-card-open { font-size: var(--dk-text-xs); }
+  #task-panel .task-follow-up-disclosure > summary { min-height: var(--dk-size-touch); }
+}
+
+#task-panel .task-context-card-text strong,
+#task-panel .task-browser-value,
+#task-panel .task-setup .task-history-label,
+#task-panel .task-history-label,
+#task-panel .task-instructions-empty,
+#task-panel .task-instruction-rows .artifact-row-label,
+#task-panel .task-waiting-summary,
+#task-panel .task-action-group button,
+#task-panel .task-follow-up-disclosure > summary {
+  font-size: var(--dk-text-body);
+  line-height: var(--dk-leading-normal);
+}
+#task-panel .task-context-chip,
+#task-panel .task-context-card-text > span,
+#task-panel .task-context .task-status-badge { font-size: var(--dk-text-sm); }
+#task-panel #task-panel-close {
+  flex: none;
+  align-self: start;
+  box-sizing: border-box;
+  width: var(--dk-size-control-md);
+  height: var(--dk-size-control-md);
+  min-width: var(--dk-size-control-md);
+  min-height: var(--dk-size-control-md);
+  border-radius: var(--dk-radius-md);
+}
+@media (max-width: 820px), (pointer: coarse) {
+  #task-panel #task-panel-close {
+    width: var(--dk-size-touch);
+    height: var(--dk-size-touch);
+    min-width: var(--dk-size-touch);
+    min-height: var(--dk-size-touch);
+  }
+}
+#task-panel .task-modal-panel {
+  height: auto;
+  max-height: calc(100dvh - 32px);
+}
+@media (max-width: 820px) {
+  #task-panel .task-modal-panel {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
 }
