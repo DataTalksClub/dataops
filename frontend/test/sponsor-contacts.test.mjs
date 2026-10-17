@@ -6,7 +6,7 @@ import { escapeHtml, FakeNode, installFormData } from "./support/fake-record-dom
 
 installFormData();
 
-function editorHarness({ contacts = [], companies = [], routes = {} } = {}) {
+function editorHarness({ contacts = [], companies = [], routes = {}, context: extra = {} } = {}) {
   const calls = [];
   const api = async (path, options = {}) => {
     calls.push({ path, method: options.method || "GET", body: options.body ? JSON.parse(options.body) : undefined });
@@ -20,6 +20,7 @@ function editorHarness({ contacts = [], companies = [], routes = {} } = {}) {
   const form = dialog.setQuery("form", new FakeNode("form"));
   const opened = [];
   const saved = [];
+  const captured = [];
   const editor = createSponsorContactEditor({
     api,
     surface,
@@ -27,9 +28,15 @@ function editorHarness({ contacts = [], companies = [], routes = {} } = {}) {
     getOrganizations: () => companies,
     safe: async (action) => action(),
     openDialog: () => opened.push(true),
-    afterSave: async (organizationId) => saved.push(organizationId),
+    afterSave: async (organizationId, saveContext) => saved.push([organizationId, saveContext]),
+    captureSaveContext: () => {
+      const snapshot = { view: "people", at: calls.length };
+      captured.push(snapshot);
+      return snapshot;
+    },
+    ...extra,
   });
-  return { api, surface, dialog, form, calls, opened, saved, editor };
+  return { api, surface, dialog, form, calls, opened, saved, captured, editor };
 }
 
 const ada = {
@@ -95,7 +102,64 @@ test("unchanged dates preserve full stored precision on save", async () => {
   await surface.querySelector("[data-contact-save]").dispatch("click", {});
   const put = calls.find(({ method }) => method === "PUT");
   assert.equal(put.body.lastContactedAt, "2026-10-09T14:35:22Z", "untouched date keeps full precision");
-  assert.deepEqual(saved, ["c1"]);
+  assert.equal(saved[0][0], "c1");
+  assert.deepEqual(saved[0][1], { view: "people", at: 0 }, "afterSave receives the synchronously captured context");
+});
+
+test("save context is captured before the request settles and passed through", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const { form, editor, surface, saved, captured } = editorHarness({
+    contacts: [ada],
+    routes: {
+      "PUT /contacts/p1": async ({ body }) => {
+        await gate;
+        return { ...ada, ...body, version: 3 };
+      },
+    },
+  });
+  await editor.open({ id: "p1" });
+  form.formEntries = [
+    ["organizationId", "c1"], ["contactId", "p1"], ["version", "2"], ["name", "Ada"],
+    ["email", "ada@acme.example"], ["role", ""], ["linkedin", ""], ["telegram", ""],
+    ["notes", ""], ["lastContactedAt", "2026-10-09"],
+  ];
+  const pending = surface.querySelector("[data-contact-save]").dispatch("click", {});
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(captured.length, 1, "context captured synchronously at submit, before the API settles");
+  release();
+  await pending;
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0][0], "c1");
+  assert.equal(saved[0][1], captured[0], "exact same context object reaches afterSave");
+});
+
+test("failed save keeps the typed form and never calls afterSave", async () => {
+  const errors = [];
+  const { form, editor, surface, saved } = editorHarness({
+    contacts: [ada],
+    routes: { "PUT /contacts/p1": async () => { throw new Error("version conflict"); } },
+    context: {
+      safe: async (action) => {
+        try {
+          await action();
+        } catch (error) {
+          errors.push(error.message);
+        }
+      },
+    },
+  });
+  await editor.open({ id: "p1" });
+  form.formEntries = [
+    ["organizationId", "c1"], ["contactId", "p1"], ["version", "2"], ["name", "Ada Changed"],
+    ["email", "ada@acme.example"], ["role", "CTO"], ["linkedin", ""], ["telegram", ""],
+    ["notes", ""], ["lastContactedAt", "2026-10-09"],
+  ];
+  await surface.querySelector("[data-contact-save]").dispatch("click", {});
+  assert.deepEqual(saved, [], "no afterSave on rejection");
+  assert.deepEqual(errors, ["version conflict"], "operator sees the failure");
+  assert.equal(Object.fromEntries(form.formEntries).name, "Ada Changed", "typed draft retained for retry");
 });
 
 test("changed dates send the new day and cleared dates send null", async () => {

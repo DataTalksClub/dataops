@@ -23,7 +23,7 @@ function normalizeEmails(value) {
  * with the dialog kept open. lastContactedAt keeps full stored precision:
  * the date input only replaces the value when the user changes that date.
  */
-export function createSponsorContactEditor({ api, surface, getContacts, getOrganizations, safe, openDialog, afterSave }) {
+export function createSponsorContactEditor({ api, surface, getContacts, getOrganizations, safe, openDialog, afterSave, captureSaveContext }) {
   const dialog = surface.querySelector("[data-contact-dialog]");
   const form = dialog.querySelector("form");
   let originalLastContactedAt = "";
@@ -102,6 +102,11 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
   surface.querySelector("[data-contact-save]").onclick = async (event) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
+    // Capture the navigation context synchronously at submit: E's afterSave
+    // runs only after the async contact API settles, by which time the user
+    // may have navigated elsewhere. The captured snapshot travels as the
+    // second afterSave argument so E can check it across awaits.
+    const saveContext = typeof captureSaveContext === "function" ? captureSaveContext() : undefined;
     await safe(async () => {
       const raw = Object.fromEntries(new FormData(form));
       const id = raw.contactId;
@@ -132,7 +137,7 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
         body: JSON.stringify(payload),
       });
       dialog.close();
-      await afterSave(saved.organizationId || organizationId);
+      await afterSave(saved.organizationId || organizationId, saveContext);
     }, "Could not save contact");
   };
 
