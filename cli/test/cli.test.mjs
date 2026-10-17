@@ -595,3 +595,146 @@ describe("command dispatch", () => {
     assert.match(io.text(), /dataops recurring list/);
   });
 });
+
+describe("sponsor-docs commands", () => {
+  test("creates a sponsor doc for a card, prints the shareable link with code, and supports export/email/submit", async () => {
+    saveProfile("https://ops.dtcdev.click", { token: "dops_abc", tokenId: "id-1" });
+    const sent = [];
+    const fetch = fakeFetch({
+      "/api/sponsor-docs": (options) => {
+        if (options.method === "POST") {
+          const parsed = JSON.parse(options.body);
+          sent.push(parsed);
+          return {
+            status: 201,
+            body: {
+              doc: {
+                id: "doc-123",
+                cardId: parsed.cardId,
+                template: parsed.template || "newsletter-main",
+                title: "2026-11-15 - Acme AI",
+                sponsorName: "Acme AI",
+                publicationDate: "2026-11-15",
+                linkType: "Sponsorship document",
+                status: "draft",
+                docUrl: "https://internal.lambda-url.eu-west-1.on.aws/sponsor-docs/doc-123",
+                shareUrl: "https://internal.lambda-url.eu-west-1.on.aws/sponsor-docs/doc-123?code=BCDF-GHJK-MNPR-STVW",
+                accessCode: "BCDF-GHJK-MNPR-STVW",
+                emailDraft: {
+                  subject: "DataTalks.Club Newsletter Content Brief (2026-11-15) - Acme AI",
+                  body: "Link: https://internal.lambda-url.eu-west-1.on.aws/sponsor-docs/doc-123?code=BCDF-GHJK-MNPR-STVW\nAccess code: BCDF-GHJK-MNPR-STVW",
+                },
+                version: 1,
+              },
+              card: {
+                id: parsed.cardId,
+                title: "2026-11-15 - Acme AI",
+              },
+            },
+          };
+        }
+        return {
+          body: {
+            docs: [
+              {
+                id: "doc-123",
+                cardId: "card-1",
+                template: "newsletter-main",
+                title: "2026-11-15 - Acme AI",
+                sponsorName: "Acme AI",
+                publicationDate: "2026-11-15",
+                status: "submitted",
+                lastEditedAt: "2026-11-01T12:00:00.000Z",
+                lastEditedBy: "sponsor",
+                docUrl: "https://ops.dtcdev.click/sponsor-docs/doc-123",
+              },
+            ],
+          },
+        };
+      },
+      "/api/sponsor-docs/doc-123/export": {
+        body: {
+          id: "doc-123",
+          markdown: "# 2026-11-15 - Acme AI\n\n## Title\n\nAcme Launch\n",
+        },
+      },
+      "/api/sponsor-docs/doc-123": (options) => {
+        if (options.method === "PUT") {
+          const parsed = JSON.parse(options.body);
+          sent.push(parsed);
+          return {
+            body: {
+              doc: {
+                id: "doc-123",
+                cardId: "card-1",
+                template: "newsletter-main",
+                status: parsed.status || "draft",
+                version: 2,
+                docUrl: "https://ops.dtcdev.click/sponsor-docs/doc-123",
+              },
+            },
+          };
+        }
+        return {
+          body: {
+            doc: {
+              id: "doc-123",
+              cardId: "card-1",
+              template: "newsletter-main",
+              title: "2026-11-15 - Acme AI",
+              status: "submitted",
+              docUrl: "https://ops.dtcdev.click/sponsor-docs/doc-123",
+              shareUrl: "https://ops.dtcdev.click/sponsor-docs/doc-123?code=BCDF-GHJK-MNPR-STVW",
+              accessCode: "BCDF-GHJK-MNPR-STVW",
+              emailDraft: {
+                subject: "DataTalks.Club Newsletter Content Brief (2026-11-15) - Acme AI",
+                body: "Open https://ops.dtcdev.click/sponsor-docs/doc-123?code=BCDF-GHJK-MNPR-STVW",
+              },
+              templateDefinition: {
+                label: "Sponsored Newsletter — Main Slot",
+                fields: [{ key: "headline", label: "Title" }],
+              },
+              content: { headline: "Acme Launch" },
+              version: 2,
+            },
+          },
+        };
+      },
+    });
+    globalThis.fetch = fetch;
+
+    const ioCreate = captureIo();
+    assert.equal(
+      await run(["sponsor-docs", "create", "card-1", "--email", "--url", "https://ops.dtcdev.click"], ioCreate),
+      0,
+    );
+    assert.equal(sent[0].cardId, "card-1");
+    assert.match(
+      ioCreate.text(),
+      /Shareable link \(with code\): https:\/\/ops\.dtcdev\.click\/sponsor-docs\/doc-123\?code=BCDF-GHJK-MNPR-STVW/,
+    );
+    assert.match(
+      ioCreate.text(),
+      /Card link \(Sponsorship document\): https:\/\/ops\.dtcdev\.click\/sponsor-docs\/doc-123/,
+    );
+    assert.doesNotMatch(ioCreate.text(), /internal\.lambda-url/);
+
+    const ioSubmit = captureIo();
+    assert.equal(
+      await run(["sponsor-docs", "submit", "doc-123", "--url", "https://ops.dtcdev.click"], ioSubmit),
+      0,
+    );
+    assert.equal(sent[1].status, "submitted");
+    assert.match(ioSubmit.text(), /Updated sponsor doc doc-123 \[submitted\]/);
+
+    const ioExport = captureIo();
+    assert.equal(
+      await run(["sponsor-docs", "export", "doc-123", "--url", "https://ops.dtcdev.click"], ioExport),
+      0,
+    );
+    assert.match(ioExport.text(), /Acme Launch/);
+
+    globalThis.fetch = globalFetch;
+  });
+});
+

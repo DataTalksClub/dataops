@@ -1,6 +1,7 @@
 import { UsageError } from "../errors.mjs";
 import { enc, fields, integer, isoDate, list as csv, optionalString, positional, required, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
+import { create as createSponsorDoc } from "./sponsorDocs.mjs";
 import { findTemplate } from "./templates.mjs";
 
 export const summary = "List, inspect, create (from a Template), and move Cards";
@@ -20,6 +21,8 @@ Usage
       [--tags a,b]
   dataops cards stage <card-id> <preparation|announced|after-event>
   dataops cards link <card-id> <link-name> <url>  Fill a Card link (e.g. a template's required link)
+  dataops cards sponsor-doc <card-id> [--template T] [--slot primary|secondary] [--sponsor NAME]
+                                                Create a portal sponsor doc and link it on the Card
   dataops cards park <card-id> | resume <card-id>
   dataops cards delete <card-id> --yes          Delete the Card and all its Tasks (admin)
   dataops cards template-update <card-id> [--optional-groups a,b|none] [--apply]
@@ -106,6 +109,10 @@ export async function show(args, io) {
   ]);
   for (const link of card.cardLinks || []) {
     io.print(`link: ${link.name || link.label} = ${link.url || "(not filled)"}`);
+  }
+  for (const doc of card.sponsorDocs || []) {
+    const edited = doc.lastEditedAt ? `, last edited ${doc.lastEditedAt} by ${doc.lastEditedBy || "staff"}` : "";
+    io.print(`sponsor doc: ${doc.id} [${doc.status}] (${doc.template}${edited})`);
   }
   io.print("");
   table(
@@ -257,6 +264,7 @@ export const commands = {
   update,
   stage,
   link,
+  "sponsor-doc": createSponsorDoc,
   park,
   resume,
   delete: remove,

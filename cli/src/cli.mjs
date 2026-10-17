@@ -23,6 +23,7 @@ import * as recurring from "./commands/recurring.mjs";
 import * as resources from "./commands/resources.mjs";
 import * as secrets from "./commands/secrets.mjs";
 import * as sponsors from "./commands/sponsors.mjs";
+import * as sponsorDocs from "./commands/sponsorDocs.mjs";
 import * as crm from "./commands/crm.mjs";
 import * as tasks from "./commands/tasks.mjs";
 import * as templates from "./commands/templates.mjs";
@@ -78,6 +79,7 @@ export const FAMILIES = {
   notifications: { group: "Work", summary: notifications.summary, help: notifications.help, commands: notifications.commands },
   files: { group: "Work", summary: files.filesSummary, help: files.filesHelp, commands: files.filesCommands },
   artifacts: { group: "Work", summary: files.artifactsSummary, help: files.artifactsHelp, commands: files.artifactsCommands },
+  "sponsor-docs": { group: "Work", summary: sponsorDocs.summary, help: sponsorDocs.help, commands: sponsorDocs.commands },
   kb: { group: "Knowledge", summary: kb.summary, help: kb.help, commands: kb.commands },
   newsletter: { group: "Planning", summary: newsletter.summary, help: newsletter.help, commands: newsletter.commands },
   podcast: { group: "Planning", summary: podcast.summary, help: podcast.help, commands: podcast.commands },
