@@ -3,6 +3,7 @@ import { getCrmRecord, listCrmRecords } from '../db/sponsorCrm';
 import { listTasksByStatus } from '../db/tasks';
 import type { Task } from '../types';
 import { berlinToday } from './berlin';
+import { pipelineTaskDate, pipelineTaskDeferred } from '../sponsorCrm/pipeline';
 import { realDate } from '../sponsorCrm/model';
 import { cursorBinding, decodeCursor, encodeCursor, pageLimit } from './cursor';
 import { queryTargetNotes } from './notes';
@@ -51,23 +52,15 @@ type RelatedWork = {
   scope: 'direct' | 'related-company';
 };
 
-// Mirror of sponsorCrm/pipeline.ts pipelineTaskDate/pipelineTaskDeferred on
-// origin/main — this worktree predates them. Same formulas; replaced by import
-// on rebase, never forked.
+// Eligibility reuses A's exact queue semantics (imported, never forked):
+// waiting/followUp → followUpAt else date; deferred = snoozedUntil>today |
+// notBeforeAt>now | waiting-ish with future effective date.
 function taskEffectiveDate(task: Task): string {
-  return String(
-    task.status === 'waiting' || task.waitingFor || task.followUpAt ? task.followUpAt || '' : task.date || '',
-  ).slice(0, 10);
+  return pipelineTaskDate(task);
 }
 
 function taskDeferred(task: Task, today: string, now: number): boolean {
-  return (
-    String(task.snoozedUntil || '').slice(0, 10) > today ||
-    Boolean(task.notBeforeAt && Date.parse(task.notBeforeAt) > now) ||
-    Boolean(
-      (task.status === 'waiting' || task.waitingFor || task.followUpAt) && taskEffectiveDate(task) > today,
-    )
-  );
+  return pipelineTaskDeferred(task, today, now);
 }
 
 /** Latest honest wakeup signal present, if any. */
