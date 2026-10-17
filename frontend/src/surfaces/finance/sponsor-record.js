@@ -510,6 +510,8 @@ export function createSponsorRecord(context) {
     const host = target.querySelector("[data-record-archive-host]");
     if (!host || host.dataset.wiredArchive) return;
     host.dataset.wiredArchive = "true";
+    // The native details toggle event does NOT bubble (verified by probe:
+    // bubble 0, capture 1), so the host listener must use the capture phase.
     // Listeners live on the persistent host: paintArchive replaces the
     // disclosure node on every state change, so node-level listeners
     // would be lost after the first render.
@@ -524,7 +526,7 @@ export function createSponsorRecord(context) {
         await loader.open();
         paintArchive(target, loader);
       }, "Could not load the archive");
-    });
+    }, true);
     host.addEventListener("click", async (event) => {
       const review = event.target.closest("[data-archive-review]");
       if (!review || typeof context.onReviewDraft !== "function") return;
@@ -569,10 +571,12 @@ export function createSponsorRecord(context) {
   }
 
   /**
-   * Resolve the selected deal without ever switching finance to an unrelated
-   * fallback (source-review finding 2): a deep-linked deal that is absent
-   * from the loaded page is fetched independently by ID and kept only when
-   * it belongs to this company; otherwise the selection is cleared.
+   * Resolve the selected deal with an explicit failure memory (review
+   * finding 1): a deep-linked deal that is absent from the loaded page is
+   * fetched independently by ID. When that fetch fails (missing, wrong
+   * company, unreadable), the requested ID is preserved as an error and
+   * finance is NEVER pointed at an unrelated first-page fallback. The page
+   * fallback applies only when no deal was originally requested.
    */
   async function resolveSelection(mine) {
     if (!record) return;
@@ -580,6 +584,7 @@ export function createSponsorRecord(context) {
       const onPage = (record.deals || []).find((deal) => deal.id === record.selectedDealId);
       if (onPage) {
         record.selectedDeal = onPage;
+        record.selectionError = null;
         return;
       }
       try {
@@ -587,26 +592,31 @@ export function createSponsorRecord(context) {
         if (mine !== undefined && mine !== token) return;
         if (deal && deal.organizationId === record.companyId) {
           record.selectedDeal = deal;
+          record.selectionError = null;
           return;
         }
-      } catch {
-        // Unknown or unreadable deal below: fall through to the page fallback.
+        record.selectionError = `Deal ${record.selectedDealId} does not belong to this company.`;
+      } catch (error) {
+        if (mine !== undefined && mine !== token) return;
+        record.selectionError = error?.status === 404
+          ? `Deal ${record.selectedDealId} was not found.`
+          : `Deal ${record.selectedDealId} could not be loaded: ${error?.message || "unknown error"}.`;
       }
       if (mine !== undefined && mine !== token) return;
-      record.selectedDealId = null;
       record.selectedDeal = null;
+      return;
     }
-    if (!record.selectedDeal) {
-      const fallback = (record.deals || []).find((deal) => deal.status !== "lost") || (record.deals || [])[0] || null;
-      record.selectedDealId = fallback?.id || null;
-      record.selectedDeal = fallback;
-    }
+    record.selectionError = null;
+    const fallback = (record.deals || []).find((deal) => deal.status !== "lost") || (record.deals || [])[0] || null;
+    record.selectedDealId = fallback?.id || null;
+    record.selectedDeal = fallback;
   }
 
   function paintDeals(target) {
     if (!record) return;
     const canAdd = typeof context.onAddDeal === "function";
     target.innerHTML = dealsListMarkup({ deals: record.deals, selectedDealId: record.selectedDealId, canAdd }, context)
+      + (record.selectionError ? errorMarkup(record.selectionError, context) : "")
       + (!record.dealsLoaded && record.cursors.deals
         ? html`<button type="button" data-deals-more>Show more deals</button>`
         : "");
@@ -631,7 +641,13 @@ export function createSponsorRecord(context) {
       // selection yet — resolve it cheaply here without a full load.
       await loadDeals(mine);
       if ((mine !== undefined && mine !== token) || !record?.selectedDeal) {
-        if (record && !record.selectedDeal) target.innerHTML = emptyMarkup("No deal selected", "Select a deal to load finance.", context);
+        if (!record) return;
+        // A failed explicit selection is an error, never a fallback deal's
+        // finance: errorMarkup carries the record-retry hook which
+        // re-attempts the independent fetch.
+        target.innerHTML = record.selectionError
+          ? errorMarkup(record.selectionError, context)
+          : emptyMarkup("No deal selected", "Select a deal to load finance.", context);
         return;
       }
     }
@@ -670,6 +686,7 @@ export function createSponsorRecord(context) {
     if (!deal) return;
     record.selectedDealId = deal.id;
     record.selectedDeal = deal;
+    record.selectionError = null;
     record.loaded.delete(`finance:${record.selectedDealId}`);
     for (const key of [...record.loaded]) {
       if (key.startsWith("finance:")) record.loaded.delete(key);

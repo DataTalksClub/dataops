@@ -324,6 +324,7 @@ test("activity tab exposes the archive lazily per selected deal", async () => {
   await record.switchTab("deals");
   await record.switchTab("activity");
   assert.match(archiveHost.innerHTML, /data-record-archive/);
+  assert.ok(archiveHost.listenerOptions("toggle").includes(true), "toggle listener uses capture (details toggle does not bubble)");
   assert.doesNotMatch(archiveHost.innerHTML, /No deal selected/, "deal selection re-resolves the archive");
   const disclosure = archiveHost.querySelector("[data-record-archive]");
   disclosure.open = true;
@@ -402,23 +403,33 @@ test("deals page beyond fifty and resolve off-page selections by ID", async () =
   assert.equal(calls.filter(({ path }) => path.startsWith("/deals?")).length, 2, "no duplicate pages");
 });
 
-test("a deep link to another company's deal never hijacks finance", async () => {
-  const financed = [];
-  const { host, record } = recordHarness({
-    routes: {
-      "GET /directory/companies/c1": company,
-      "GET /activity/organization/c1?limit=3": preview,
-      "GET /deals?organizationId=c1&limit=50": { items: [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off" }], nextCursor: null },
-      "GET /deals/stray": { id: "stray", organizationId: "other", status: "open", productKind: "package" },
-    },
-    context: { loadFinance: async (deal) => financed.push(deal.id) },
-  });
-  seedPanels(host);
-  await record.openCompany("c1", { dealId: "stray" });
-  await record.switchTab("deals");
-  assert.equal(record.getSelectedDealId(), "d1", "foreign selection clears to the page fallback");
-  await record.switchTab("finance");
-  assert.deepEqual(financed, ["d1"]);
+test("failed explicit selections never fall back to unrelated finance", async () => {
+  const page = [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off" }];
+  for (const [name, dealId, byId, message] of [
+    ["missing", "gone", httpError(404, "Not found"), /not found/i],
+    ["wrong-company", "stray", { id: "stray", organizationId: "other", status: "open", productKind: "package" }, /does not belong/],
+    ["unreadable", "flaky", httpError(503, "boom"), /could not be loaded/i],
+  ]) {
+    const financed = [];
+    const { host, record } = recordHarness({
+      routes: {
+        "GET /directory/companies/c1": company,
+        "GET /activity/organization/c1?limit=3": preview,
+        "GET /deals?organizationId=c1&limit=50": { items: page, nextCursor: null },
+        [`GET /deals/${dealId}`]: byId,
+      },
+      context: { loadFinance: async (deal) => financed.push(deal.id) },
+    });
+    const panels = seedPanels(host);
+    await record.openCompany("c1", { dealId });
+    await record.switchTab("deals");
+    assert.equal(record.getSelectedDealId(), dealId, `${name}: the requested ID is preserved, never replaced`);
+    assert.equal(record.getCompany().id, "c1");
+    assert.match(panels.deals.innerHTML, message, `${name}: the failure is explicit`);
+    await record.switchTab("finance");
+    assert.deepEqual(financed, [], `${name}: no unrelated finance loads`);
+    assert.match(panels.finance.innerHTML, message, `${name}: finance shows the error, not a fallback deal`);
+  }
 });
 
 test("the next task follows D eligibility ordering, never a deferred row", async () => {

@@ -84,8 +84,8 @@ export class FakeNode {
     return this.closestMap.get(selector) || null;
   }
 
-  addEventListener(type, listener) {
-    this.listeners.set(type, [...(this.listeners.get(type) || []), listener]);
+  addEventListener(type, listener, options) {
+    this.listeners.set(type, [...(this.listeners.get(type) || []), { fn: listener, options }]);
   }
 
   async dispatch(type, event = {}) {
@@ -96,7 +96,11 @@ export class FakeNode {
     }
     const normalized = { preventDefault() {}, target, currentTarget: this, ...event, target };
     if (type === "click" && typeof this.onclick === "function") await this.onclick(normalized);
-    for (const listener of this.listeners.get(type) || []) await listener(normalized);
+    for (const { fn } of this.listeners.get(type) || []) await fn(normalized);
+  }
+
+  listenerOptions(type) {
+    return (this.listeners.get(type) || []).map(({ options }) => options);
   }
 
   focus() {

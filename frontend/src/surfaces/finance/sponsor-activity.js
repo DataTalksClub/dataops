@@ -217,6 +217,9 @@ export function createActivityLoader({ api, targetType, targetId, limit = DEFAUL
 
   async function loadMore() {
     if (!state.nextCursor) return state;
+    // Single-flight (review finding 3): a repeat click while the page is in
+    // flight must not fetch the same cursor twice and append duplicates.
+    if (state.status === "loading-more") return state;
     const mine = generation;
     const cursor = state.nextCursor;
     state.status = "loading-more";
@@ -278,6 +281,7 @@ export function wireActivityPanel(root, loader, context = {}) {
   const form = root.querySelector("[data-activity-note-form]");
   const status = root.querySelector("[data-activity-note-status]");
   let noteKey = "";
+  let notePending = false;
 
   function paint() {
     const { state } = loader;
@@ -336,10 +340,14 @@ export function wireActivityPanel(root, loader, context = {}) {
 
   form?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    // Single-flight submit (review finding 3): ignore repeats while a save
+    // is pending so one draft produces one note.
+    if (notePending) return;
     const body = form.elements?.body?.value ?? "";
     // Own try/catch/status/draft handling (source-review finding 3): the real
     // surface `safe` swallows errors, so the note status must be settled here
     // instead of relying on the wrapper's catch.
+    notePending = true;
     try {
       // Reuse the key across retries of the same draft so a retry is an
       // idempotent replay; mint a fresh key only after a saved note.
@@ -347,7 +355,10 @@ export function wireActivityPanel(root, loader, context = {}) {
       if (status) status.textContent = "Saving note…";
       const saved = await loader.addNote({ body, sourceKey: noteKey });
       noteKey = "";
-      if (form.elements?.body) form.elements.body.value = "";
+      // Preserve edits typed during the slow save: clear only the text that
+      // was actually sent; a changed draft keeps its text (with a fresh key
+      // minted on the next submit, so the retry can never 409).
+      if (form.elements?.body && form.elements.body.value === body) form.elements.body.value = "";
       if (status) status.textContent = "Note saved.";
       await loader.load();
       paint();
@@ -355,6 +366,8 @@ export function wireActivityPanel(root, loader, context = {}) {
     } catch (error) {
       if (status) status.textContent = "Note was not saved. Retry to send the same note.";
       await fail(async () => { throw error; }, "Could not save note");
+    } finally {
+      notePending = false;
     }
   });
 

@@ -286,6 +286,61 @@ test("note status is owned locally even when the wrapper swallows errors", async
   assert.equal(form.elements.body.value, "", "saved draft clears");
 });
 
+test("concurrent same-cursor paging is single-flight", async () => {
+  let fetches = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const api = async (path) => {
+    if (path.includes("cursor=")) {
+      fetches += 1;
+      await gate;
+      return activityPayload([{ ts: "2026-10-08T00:00:00Z", source: "note", id: "n2", actor: null, text: "Two", provenance: {} }], { total: 2 });
+    }
+    return activityPayload([{ ts: "2026-10-09T00:00:00Z", source: "note", id: "n1", actor: null, text: "One", provenance: {} }], { nextCursor: "c2", total: 2 });
+  };
+  const loader = createActivityLoader({ api, targetType: "organization", targetId: "c1" });
+  await loader.load();
+  const first = loader.loadMore();
+  const second = loader.loadMore();
+  release();
+  await Promise.all([first, second]);
+  assert.equal(fetches, 1, "one fetch for two concurrent pager clicks");
+  assert.deepEqual(loader.state.items.map((item) => item.id), ["n1", "n2"], "no duplicate appends");
+});
+
+test("note submits are single-flight and preserve mid-save edits", async () => {
+  const calls = [];
+  let release;
+  let gate = new Promise((resolve) => { release = resolve; });
+  const api = async (path, options = {}) => {
+    if (path.startsWith("/notes/")) {
+      calls.push(JSON.parse(options.body));
+      await gate;
+      return { id: "n1", body: "First" };
+    }
+    return activityPayload();
+  };
+  const root = new FakeNode("div");
+  root.setQuery("[data-activity-list]", new FakeNode("div"));
+  root.setQuery("[data-activity-pager]", new FakeNode("div"));
+  root.setQuery("[data-activity-related]", new FakeNode("div"));
+  root.setQuery("[data-activity-note-status]", new FakeNode("p"));
+  const form = root.setQuery("[data-activity-note-form]", new FakeNode("form"));
+  form.elements.body.value = "First";
+  const loader = createActivityLoader({ api, targetType: "deal", targetId: "d1" });
+  const wired = wireActivityPanel(root, loader, { ...context, safe: async (action) => action(), generateKey: () => "k" });
+  await wired.refresh();
+  const first = form.dispatch("submit", {});
+  const second = form.dispatch("submit", {});
+  // The draft changes while the save is in flight.
+  form.elements.body.value = "First plus more";
+  release();
+  await Promise.all([first, second]);
+  assert.equal(calls.length, 1, "one POST for two rapid submits");
+  assert.equal(calls[0].sourceKey, "k");
+  assert.equal(form.elements.body.value, "First plus more", "mid-save edits are retained, not clobbered");
+});
+
 test("wired panel surfaces load failures with retry", async () => {
   let fail = true;
   const api = async () => {
