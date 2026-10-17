@@ -205,15 +205,15 @@ test.describe('issue 201 queue urgency cues', () => {
     const fixtures = await createAttentionFixtures(context.request);
     const expected = [
       {
+        task: fixtures.followUp,
+        timing: '2d late',
+        proof: false,
+        waiting: 'Waiting for Synthetic reply',
+      },
+      {
         task: fixtures.overdue,
         timing: '1d late',
         proof: false,
-      },
-      {
-        task: fixtures.followUp,
-        timing: 'Tomorrow',
-        proof: false,
-        waiting: 'Waiting for Synthetic reply',
       },
       {
         task: fixtures.today,

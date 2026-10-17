@@ -143,6 +143,13 @@ test.describe('card dialog over the current page', () => {
 
   test('Calendar: an event Card opens over the calendar and Escape returns to it', async ({ page, request }) => {
     const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const calendarWorkday = (isoDate) => {
+      const d = new Date(`${isoDate}T00:00:00Z`);
+      const day = d.getUTCDay();
+      if (day === 0) d.setUTCDate(d.getUTCDate() - 2);
+      else if (day === 6) d.setUTCDate(d.getUTCDate() - 1);
+      return d.toISOString().slice(0, 10);
+    };
     const { template } = await json(await request.post(at('/__e2e__/template-fixtures'), {
       data: {
         name: `Synthetic modal webinar ${unique}`,
@@ -152,7 +159,7 @@ test.describe('card dialog over the current page', () => {
       },
     }), 201);
     const { card } = await json(await request.post(at('/api/cards'), {
-      data: { title: `Synthetic calendar webinar ${unique}`, anchorDate: today, stage: 'announced', templateId: template.id },
+      data: { title: `Synthetic calendar webinar ${unique}`, anchorDate: calendarWorkday(today), stage: 'announced', templateId: template.id },
     }), 201);
     await page.goto(at('/calendar'));
     const event = page.locator('.calendar-surface a[href="/cards?cardId=' + card.id + '"]').first();
