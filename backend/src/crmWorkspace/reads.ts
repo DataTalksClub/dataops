@@ -1,25 +1,32 @@
-import { QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { PutCommand, QueryCommand, ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_SPONSOR_CRM } from '../db/tableNames';
-import { scanCrmPrefix } from '../db/sponsorCrm';
-import { StoragePaginationError, type StoragePaginationLimits } from '../db/boundedPagination';
+import { collectBoundedPages, StoragePaginationError, type StoragePaginationLimits } from '../db/boundedPagination';
 
 /**
- * Bounded direct reads for CRM kinds the per-request snapshot does not cover
- * (`MESSAGE#`, `NOTE#`, `SAVEDVIEW#`). Snapshot-covered kinds keep using
- * `listCrmRecords`; these helpers scan their own prefix with explicit limits
- * and fail loudly instead of truncating silently.
+ * Owned bounded reads. Nothing here scans a whole kind and filters in memory:
+ * notes and views live under target-/owner-keyed PKs and are read by Query;
+ * messages (an existing kind this package must not rekey) are read by an
+ * owned Scan with a server-side FilterExpression. Every bound fails loudly
+ * instead of truncating silently.
  */
-export const WORKSPACE_SCAN_LIMITS: StoragePaginationLimits = {
-  maxPages: 50,
-  maxItems: 2_000,
-  maxBytes: 8 * 1024 * 1024,
-  deadlineMs: 10_000,
-};
 
-/** History events per booking are small; the cap is a guardrail, never a trim. */
+/** History events per booking: a guardrail, never a trim. */
 export const MAX_HISTORY_EVENTS = 500;
 /** Deal-history events across one organization's deals. */
 export const MAX_ORG_DEAL_HISTORY = 1_000;
+/** Notes per record target. */
+export const MAX_TARGET_NOTES = 500;
+/** Message scan bounds: server-side filter, so scanned >> matched is normal. */
+export const MAX_MESSAGE_SCANNED = 20_000;
+export const MAX_MESSAGE_MATCHED = 1_000;
+const READ_DEADLINE_MS = 10_000;
+
+export const HISTORY_LIMITS: StoragePaginationLimits = {
+  maxPages: 50,
+  maxItems: MAX_HISTORY_EVENTS,
+  maxBytes: 4 * 1024 * 1024,
+  deadlineMs: READ_DEADLINE_MS,
+};
 
 export function sourceTooLarge(source: string) {
   return Object.assign(new Error(`${source} exceeds the workspace read bound; narrow the scope and retry`), {
@@ -34,7 +41,7 @@ export function workspaceErrorOf(error: unknown, source: string): Error & { stat
   return error as Error & { statusCode?: number };
 }
 
-const clean = (item: Record<string, unknown>): Record<string, unknown> => {
+export const clean = (item: Record<string, unknown>): Record<string, unknown> => {
   const { PK, SK, ...record } = item;
   void PK;
   void SK;
@@ -42,57 +49,104 @@ const clean = (item: Record<string, unknown>): Record<string, unknown> => {
 };
 
 /**
- * All raw items under one PK prefix, newest SK first where the SK sorts that
- * way. Bounded: throws `workspace_source_too_large` past the limits.
- */
-export async function scanPrefixNewest(
-  client: DynamoDBDocumentClient,
-  prefix: string,
-  source: string,
-): Promise<{ items: Record<string, unknown>[]; itemsRead: number }> {
-  let items: Record<string, unknown>[];
-  try {
-    items = await scanCrmPrefix(client, prefix, WORKSPACE_SCAN_LIMITS);
-  } catch (error) {
-    throw workspaceErrorOf(error, source);
-  }
-  return { items, itemsRead: items.length };
-}
-
-export async function listKindRecords(
-  client: DynamoDBDocumentClient,
-  kind: string,
-  source: string,
-): Promise<{ items: Record<string, unknown>[]; itemsRead: number }> {
-  const { items, itemsRead } = await scanPrefixNewest(client, `${kind.toUpperCase()}#`, source);
-  return { items: items.map(clean), itemsRead };
-}
-
-/**
  * Owned paginated history read: Query by PK (HISTORY#booking) instead of the
- * shared single-page Scan helper, which this package must not modify. Returns
- * oldest-first (SK order); callers sort for display. Throws
- * `workspace_source_too_large` past MAX_HISTORY_EVENTS while pages remain.
+ * shared single-page Scan helper, which this package must not modify. Oldest
+ * first (SK order); callers sort for display. The bound applies to every page
+ * including the last: one event past MAX_HISTORY_EVENTS fails, never trims.
  */
 export async function queryHistoryEvents(
   client: DynamoDBDocumentClient,
   bookingId: string,
   source: string,
 ): Promise<{ items: Record<string, unknown>[]; itemsRead: number }> {
+  let items: Record<string, unknown>[];
+  try {
+    items = await collectBoundedPages<Record<string, unknown>>({
+      limits: HISTORY_LIMITS,
+      loadPage: async (ExclusiveStartKey, abortSignal) =>
+        client.send(
+          new QueryCommand({
+            TableName: TABLE_SPONSOR_CRM,
+            KeyConditionExpression: 'PK = :pk',
+            ExpressionAttributeValues: { ':pk': `HISTORY#${bookingId}` },
+            ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+          }),
+          { abortSignal },
+        ),
+    });
+  } catch (error) {
+    throw workspaceErrorOf(error, source);
+  }
+  return { items: items.map(clean), itemsRead: items.length };
+}
+
+export type MessageScanTarget =
+  | { targetType: 'organization' | 'deal'; targetId: string }
+  | { targetType: 'contact'; targetId: string; organizationId: string; emails: string[] };
+
+export type ScanLimits = { maxScanned: number; maxMatched: number; deadlineMs: number; pageSize: number };
+const DEFAULT_SCAN_LIMITS: ScanLimits = {
+  maxScanned: MAX_MESSAGE_SCANNED,
+  maxMatched: MAX_MESSAGE_MATCHED,
+  deadlineMs: READ_DEADLINE_MS,
+  pageSize: 200,
+};
+
+/**
+ * Messages for one record, filtered server-side (never "scan the table, keep
+ * one org"). Reports both scanned (rows evaluated) and matched (rows kept) so
+ * responses count evidence truthfully. Bounds fail loudly; `limits` override
+ * exists for tests to prove the bound against real storage.
+ */
+export async function scanTargetMessages(
+  client: DynamoDBDocumentClient,
+  target: MessageScanTarget,
+  source: string,
+  limits: ScanLimits = DEFAULT_SCAN_LIMITS,
+): Promise<{ items: Record<string, unknown>[]; scanned: number; matched: number }> {
+  const values: Record<string, unknown> = { ':pfx': 'MESSAGE#' };
+  let targetFilter: string;
+  if (target.targetType === 'contact') {
+    // Provably linked person mail only: explicit contact link, or an address
+    // the contact owns at the same organization. No company-wide inheritance.
+    const ors = ['contactId = :cid'];
+    values[':cid'] = target.targetId;
+    target.emails.slice(0, 10).forEach((address, index) => {
+      ors.push(`(organizationId = :org AND personEmail = :em${index})`);
+      values[`:em${index}`] = address;
+    });
+    values[':org'] = target.organizationId;
+    targetFilter = `(${ors.join(' OR ')})`;
+  } else if (target.targetType === 'deal') {
+    values[':id'] = target.targetId;
+    targetFilter = 'dealId = :id';
+  } else {
+    values[':id'] = target.targetId;
+    targetFilter = 'organizationId = :id';
+  }
   const items: Record<string, unknown>[] = [];
+  let scanned = 0;
   let ExclusiveStartKey: Record<string, unknown> | undefined;
+  const startedAt = Date.now();
   for (;;) {
+    if (Date.now() - startedAt > limits.deadlineMs) throw sourceTooLarge(source);
     const result = await client.send(
-      new QueryCommand({
+      new ScanCommand({
         TableName: TABLE_SPONSOR_CRM,
-        KeyConditionExpression: 'PK = :pk',
-        ExpressionAttributeValues: { ':pk': `HISTORY#${bookingId}` },
+        ConsistentRead: true,
+        FilterExpression: `begins_with(PK, :pfx) AND ${targetFilter}`,
+        ExpressionAttributeValues: values,
+        Limit: limits.pageSize,
         ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
       }),
     );
-    for (const item of result.Items || []) items.push(clean(item as Record<string, unknown>));
-    if (!result.LastEvaluatedKey) return { items, itemsRead: items.length };
-    if (items.length >= MAX_HISTORY_EVENTS) throw sourceTooLarge(source);
+    scanned += typeof result.ScannedCount === 'number' ? result.ScannedCount : (result.Items || []).length;
+    if (scanned > limits.maxScanned) throw sourceTooLarge(source);
+    for (const item of result.Items || []) {
+      items.push(clean(item as Record<string, unknown>));
+      if (items.length > limits.maxMatched) throw sourceTooLarge(source);
+    }
+    if (!result.LastEvaluatedKey) return { items, scanned, matched: items.length };
     ExclusiveStartKey = result.LastEvaluatedKey as Record<string, unknown>;
   }
 }

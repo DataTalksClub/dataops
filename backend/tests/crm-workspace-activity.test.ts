@@ -4,6 +4,8 @@ import { before, after, describe, it } from 'node:test';
 import assert from 'node:assert';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { handler } from '../src/handler';
+import { appendBookingHistory } from '../src/db/sponsorCrm';
+import { scanTargetMessages } from '../src/crmWorkspace/reads';
 import { createTables } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
@@ -49,12 +51,12 @@ describe('crm workspace activity', () => {
     // Provably linked person mail.
     await invoke('POST', '/api/sponsor-crm/messages', {
       personEmail: `amy-${suffix}@activity-${suffix}.example`, direction: 'inbound',
-      threadId: `thread-amy-${suffix}`, snippet: 'Amy confirms the slot', sentAt: '2026-10-05T10:00:00Z',
+      threadId: `thread-amy-${suffix}`, snippet: `Amy confirms the slot ${suffix}`, sentAt: '2026-10-05T10:00:00Z',
     });
     // Company mail with no contact link: org timeline only, never the person's.
     await invoke('POST', '/api/sponsor-crm/messages', {
       personEmail: `boss-${suffix}@activity-${suffix}.example`, direction: 'inbound',
-      threadId: `thread-boss-${suffix}`, snippet: 'Front desk auto-reply', sentAt: '2026-10-06T10:00:00Z',
+      threadId: `thread-boss-${suffix}`, snippet: `Front desk auto-reply ${suffix}`, sentAt: '2026-10-06T10:00:00Z',
     });
     // A touch for the contact files one touch message plus history rows.
     await invoke('POST', '/api/sponsor-crm/touches', {
@@ -101,11 +103,28 @@ describe('crm workspace activity', () => {
     assert.ok(!body.relatedWork.some((work: any) => work.taskId === other.id));
     assert.ok(body.relatedWork.every((work: any) => work.href.startsWith('/sponsors/')));
     assert.equal(body.total, body.items.length);
-    assert.ok(body.reads.directScans.some((scan: any) => scan.kind === 'message'));
-    assert.ok(body.reads.directScans.some((scan: any) => scan.kind === 'note'));
+    assert.ok(body.reads.queries.some((scan: any) => scan.kind === 'message'));
+    assert.ok(body.reads.queries.some((scan: any) => scan.kind === 'note'));
     assert.ok(body.reads.historyReads.length >= 1);
     assert.ok(body.reads.snapshot.includes('ORGANIZATION#'));
     void contact;
+  });
+
+  it('prefilters messages per target and counts scanned vs matched truthfully', async () => {
+    const firstSuffix = String(seedCount++);
+    const secondSuffix = String(seedCount++);
+    const first = await seed(firstSuffix);
+    const second = await seed(secondSuffix);
+    const body = data(await invoke('GET', `/api/sponsor-crm/activity/organization/${first.org.id}`));
+    const texts = body.items.map((item: any) => item.text);
+    // Second org's mail never leaks into the first org's feed.
+    assert.ok(!texts.some((text: string) => text.includes(secondSuffix)), 'second org mail never leaks into the first feed');
+    const messageQuery = body.reads.queries.find((scan: any) => scan.kind === 'message');
+    assert.ok(messageQuery);
+    assert.ok(messageQuery.scanned >= messageQuery.matched, 'scanned counts rows evaluated, matched rows kept');
+    assert.equal(messageQuery.matched, body.sources.touch + body.sources.mail);
+    assert.ok(messageQuery.scanned > messageQuery.matched, 'unrelated org mail is evaluated but not kept');
+    void second;
   });
 
   it('scopes person mail to provably linked messages and labels org work related-company', async () => {
@@ -123,6 +142,34 @@ describe('crm workspace activity', () => {
     const dealBody = data(await invoke('GET', `/api/sponsor-crm/activity/contact/${contact.id}?types=mail`));
     assert.ok(dealBody.items.every((item: any) => item.provenance.link === 'direct'));
     void org;
+  });
+
+  it('fails loudly past the history bound instead of trimming', async () => {
+    const { deal } = await seed(String(seedCount++));
+    for (let index = 0; index < 501; index++) {
+      await appendBookingHistory(client, deal.id, { actorId: 'workspace-seeder', action: 'updated', note: `bulk ${index}` });
+    }
+    const res = await invoke('GET', `/api/sponsor-crm/activity/deal/${deal.id}`);
+    assert.equal(res.statusCode, 500);
+    assert.equal(data(res).code, 'workspace_source_too_large');
+  });
+
+  it('fails loudly past the message match bound on real storage', async () => {
+    const { org } = await seed(String(seedCount++));
+    const full = await scanTargetMessages(client, { targetType: 'organization', targetId: org.id }, 'messages');
+    assert.ok(full.matched >= 1);
+    let thrown: unknown = null;
+    try {
+      await scanTargetMessages(client, { targetType: 'organization', targetId: org.id }, 'messages', {
+        maxScanned: 1_000_000,
+        maxMatched: 0,
+        deadlineMs: 10_000,
+        pageSize: 200,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    assert.equal((thrown as { code?: string } | null)?.code, 'workspace_source_too_large');
   });
 
   it('filters types, binds cursors and stays available for archived records', async () => {

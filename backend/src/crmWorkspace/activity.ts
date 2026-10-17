@@ -3,7 +3,15 @@ import { getCrmRecord, listCrmRecords } from '../db/sponsorCrm';
 import { listTasksByStatus } from '../db/tasks';
 import type { Task } from '../types';
 import { cursorBinding, decodeCursor, encodeCursor, pageLimit } from './cursor';
-import { listKindRecords, queryHistoryEvents, MAX_ORG_DEAL_HISTORY, sourceTooLarge, workspaceErrorOf } from './reads';
+import { queryTargetNotes } from './notes';
+import {
+  queryHistoryEvents,
+  scanTargetMessages,
+  MAX_ORG_DEAL_HISTORY,
+  sourceTooLarge,
+  workspaceErrorOf,
+  type MessageScanTarget,
+} from './reads';
 
 export const ACTIVITY_TARGETS = ['organization', 'contact', 'deal'] as const;
 export type ActivityTarget = (typeof ACTIVITY_TARGETS)[number];
@@ -83,16 +91,15 @@ export async function readActivity(
 
   const items: TimelineItem[] = [];
   const sources: Record<string, number> = { note: 0, touch: 0, mail: 0, history: 0, 'deal-history': 0 };
-  const directScans: Array<{ kind: string; itemsRead: number }> = [];
+  const queries: Array<{ kind: string; scanned: number; matched: number }> = [];
   const historyReads: Array<{ booking: string; itemsRead: number }> = [];
   const relatedWork: RelatedWork[] = [];
 
   try {
     if (wanted.has('note')) {
-      const { items: notes, itemsRead } = await listKindRecords(client, 'note', 'notes');
-      directScans.push({ kind: 'note', itemsRead });
+      const { items: notes, scanned, matched } = await queryTargetNotes(client, target, id);
+      queries.push({ kind: 'note', scanned, matched });
       for (const note of notes) {
-        if (note.targetType !== target || String(note.targetId) !== id) continue;
         const body = String(note.body || '');
         items.push({
           ts: String(note.createdAt || ''),
@@ -108,28 +115,20 @@ export async function readActivity(
     }
 
     if (wanted.has('touch') || wanted.has('mail')) {
-      // MESSAGE# is outside SNAPSHOT_PREFIXES: an owned bounded scan, disclosed below.
-      const { items: messages, itemsRead } = await listKindRecords(client, 'message', 'messages');
-      directScans.push({ kind: 'message', itemsRead });
-      const emails = target === 'contact' && Array.isArray(record.emails)
-        ? new Set(record.emails.map((address) => String(address).toLowerCase()))
-        : null;
-      for (const message of messages) {
-        let linked: 'direct' | null = null;
-        if (target === 'organization' && String(message.organizationId) === id) linked = 'direct';
-        else if (target === 'deal' && String(message.dealId || '') === id) linked = 'direct';
-        else if (target === 'contact') {
-          // Provably linked person mail only: explicit contact link or an email
-          // address the contact owns. Company-wide mail stays on the org timeline.
-          if (String(message.contactId || '') === id) linked = 'direct';
-          else if (
-            emails && typeof message.personEmail === 'string' && emails.has(message.personEmail.toLowerCase()) &&
-            String(message.organizationId || '') === String(record.organizationId || '')
-          ) {
-            linked = 'direct';
+      // MESSAGE# is an existing kind this package must not rekey: an owned
+      // Scan with a server-side target filter, reporting scanned vs matched.
+      const scanTarget: MessageScanTarget =
+        target === 'contact'
+          ? {
+            targetType: 'contact',
+            targetId: id,
+            organizationId: String(record.organizationId || ''),
+            emails: Array.isArray(record.emails) ? record.emails.map((address) => String(address).toLowerCase()) : [],
           }
-        }
-        if (!linked) continue;
+          : { targetType: target, targetId: id };
+      const { items: messages, scanned, matched } = await scanTargetMessages(client, scanTarget, 'messages');
+      queries.push({ kind: 'message', scanned, matched });
+      for (const message of messages) {
         const isTouch = message.sourceType === 'touch';
         if (isTouch && !wanted.has('touch')) continue;
         if (!isTouch && !wanted.has('mail')) continue;
@@ -259,7 +258,7 @@ export async function readActivity(
       tasksScope: 'open',
       reads: {
         snapshot: ['ORGANIZATION#', 'CONTACT#', 'DEAL#', 'DELIVERABLE#'],
-        directScans,
+        queries,
         historyReads,
       },
     },

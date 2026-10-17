@@ -53,6 +53,12 @@ describe('crm workspace views and notes', () => {
     }
     assert.ok(body.items.every((item: any) => item.builtin === true));
     assert.equal(body.total, body.items.length);
+    const pipeline = data(await invoke('GET', '/api/sponsor-crm/views?entity=pipeline', undefined, as(ALICE)));
+    const attention = pipeline.items.find((item: any) => item.id === 'builtin:pipeline:attention');
+    assert.deepEqual(attention.filters, { view: 'actionable' });
+    // Exact A route values, no translator alias.
+    assert.deepEqual(attention.sort, { field: 'next-action' });
+    assert.deepEqual(pipeline.items.find((item: any) => item.id === 'builtin:pipeline:closed').sort, { field: 'recent' });
     assert.equal((await invoke('PUT', '/api/sponsor-crm/views/builtin:companies:active', { version: 1 }, as(ALICE))).statusCode, 404);
     assert.equal((await invoke('DELETE', '/api/sponsor-crm/views/builtin:companies:active', undefined, as(ALICE))).statusCode, 404);
     assert.equal((await invoke('GET', '/api/sponsor-crm/views?entity=bogus', undefined, as(ALICE))).statusCode, 400);
@@ -107,11 +113,14 @@ describe('crm workspace views and notes', () => {
     assert.equal(legacyScope.statusCode, 400);
     const badSort = await invoke('POST', '/api/sponsor-crm/views', { entity: 'pipeline', name: 'X', filters: { view: 'actionable' }, sort: { field: 'dueDate', direction: 'asc' } }, as(ALICE));
     assert.equal(badSort.statusCode, 400);
+    // A's live route takes next-action|recent verbatim: no translator alias.
+    const legacyNext = await invoke('POST', '/api/sponsor-crm/views', { entity: 'pipeline', name: 'X', filters: { view: 'actionable' }, sort: { field: 'next' } }, as(ALICE));
+    assert.equal(legacyNext.statusCode, 400);
     const good = data(await invoke('POST', '/api/sponsor-crm/views', {
-      entity: 'pipeline', name: 'My attention', filters: { view: 'actionable', stage: 'open' }, sort: { field: 'next' },
+      entity: 'pipeline', name: 'My attention', filters: { view: 'actionable', stage: 'open' }, sort: { field: 'next-action' },
     }, as(ALICE)));
     assert.equal(good.entity, 'pipeline');
-    assert.deepEqual(good.sort, { field: 'next' });
+    assert.deepEqual(good.sort, { field: 'next-action' });
     const badStage = await invoke('POST', '/api/sponsor-crm/views', { entity: 'pipeline', name: 'X', filters: { view: 'nope' } }, as(ALICE));
     assert.equal(badStage.statusCode, 400);
     const longName = await invoke('POST', '/api/sponsor-crm/views', { entity: 'people', name: 'x'.repeat(121), filters: {} }, as(ALICE));
@@ -144,6 +153,38 @@ describe('crm workspace views and notes', () => {
     const shown = data(await invoke('GET', '/api/sponsor-crm/views?entity=companies&includeArchived=true', undefined, as(ALICE)));
     assert.ok(shown.items.some((item: any) => item.id === created.id && item.archivedAt));
     assert.equal((await invoke('PUT', `/api/sponsor-crm/views/${created.id}`, { name: 'Edit archived', filters: {}, version: 3 }, as(ALICE))).statusCode, 422);
+  });
+
+  it('scopes note idempotency keys by author and target', async () => {
+    const suffix = String(seedCount++);
+    const orgA = await seedOrg(`ca-${suffix}`);
+    const orgB = await seedOrg(`cb-${suffix}`);
+    const aliceNote = data(await invoke('POST', `/api/sponsor-crm/notes/organization/${orgA.id}`, { body: 'Same key text.', sourceKey: 'shared-key' }, as(ALICE)));
+    // Same key, different author: a different note, not a collision.
+    const bobNote = data(await invoke('POST', `/api/sponsor-crm/notes/organization/${orgA.id}`, { body: 'Same key text.', sourceKey: 'shared-key' }, as(BOB)));
+    assert.ok(bobNote.id !== aliceNote.id);
+    // Same author and key, different target: a different note.
+    const otherTarget = data(await invoke('POST', `/api/sponsor-crm/notes/organization/${orgB.id}`, { body: 'Same key text.', sourceKey: 'shared-key' }, as(ALICE)));
+    assert.ok(otherTarget.id !== aliceNote.id);
+    // Same author, target, key and body: the same note.
+    const replay = data(await invoke('POST', `/api/sponsor-crm/notes/organization/${orgA.id}`, { body: 'Same key text.', sourceKey: 'shared-key' }, as(ALICE)));
+    assert.equal(replay.id, aliceNote.id);
+    // Same scope, different body: conflict.
+    assert.equal((await invoke('POST', `/api/sponsor-crm/notes/organization/${orgA.id}`, { body: 'Changed text.', sourceKey: 'shared-key' }, as(ALICE))).statusCode, 409);
+  });
+
+  it('rejects notes for deals under an archived organization', async () => {
+    const suffix = String(seedCount++);
+    const org = await seedOrg(`po-${suffix}`);
+    const contact = data(await invoke('POST', '/api/sponsor-crm/contacts', {
+      organizationId: org.id, name: 'Pat Parent', emails: [`pat-${suffix}@example.invalid`], sourceKey: `ws-po-contact-${suffix}`,
+    }));
+    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', {
+      organizationId: org.id, primaryContactId: contact.id, status: 'open', sourceKey: `ws-po-deal-${suffix}`,
+    }));
+    await invoke('DELETE', `/api/sponsor-crm/organizations/${org.id}`);
+    assert.equal((await invoke('POST', `/api/sponsor-crm/notes/deal/${deal.id}`, { body: 'late note' }, as(ALICE))).statusCode, 422);
+    assert.equal((await invoke('POST', `/api/sponsor-crm/notes/contact/${contact.id}`, { body: 'late note' }, as(ALICE))).statusCode, 422);
   });
 
   it('appends notes idempotently without touching record summaries', async () => {
