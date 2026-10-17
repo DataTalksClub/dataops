@@ -1412,3 +1412,23 @@ closes on every tab switch (see setView), so it never covers list content. */
   .crm-dir-filters label { font-size: var(--dk-text-sm); }
   .crm-dir-filters select, .crm-dir-filters input[type="search"] { max-width: 190px; }
 }
+/* Narrow viewports (dakit shows one split pane at a time at <=820px): the
+   pipeline list chrome (list head, filter disclosure, funnel controls,
+   saved views) wraps tall enough to squeeze the inner list scroller to
+   zero height, leaving rows unpainted and unreachable by ordinary click.
+   The list flows with the page scroll instead; the desktop inner scroller
+   is untouched. The surface gap compacts so primary content starts within
+   the first screen. The record detail keeps its own inner scroller. */
+@media (max-width: 820px) {
+  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) { gap: 8px; }
+  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) > .crm-layout { display: block; overflow: visible; order: 3; }
+  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-master { display: block; overflow: visible; }
+  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-master [data-crm-list-scroll] { overflow: visible; }
+  /* Content-first on narrow screens: the attention list follows the tab
+     nav while the scope helper and stage totals ride below it, so primary
+     content starts within the first screen and every control stays
+     reachable by ordinary page scroll. Desktop order is untouched. */
+  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) > .crm-alerts { order: 2; }
+  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) > .crm-funnel-scope { order: 4; }
+  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) > [data-crm-pipeline] { order: 5; }
+}

@@ -134,6 +134,9 @@ async function routeSponsors(page) {
     if (pathname.endsWith("/leads")) return route.fulfill({ json: { items: [] } });
     if (pathname.endsWith("/messages")) return route.fulfill({ json: { items: [] } });
     if (pathname.endsWith("/deals")) return route.fulfill({ json: { items: [booking] } });
+    // The record open reads the bounded singular deal (real D route); the
+    // list mock above is not a substitute for it.
+    if (pathname.endsWith(`/deals/${booking.id}`)) return route.fulfill({ json: booking });
     // Bounded directories, saved views and lazy record reads serve the new
     // CRM lists/record tabs from the same fixtures (D API shapes).
     if (pathname === "/api/sponsor-crm/pipeline") return route.fulfill({ json: {
@@ -340,7 +343,13 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await expect(page.locator('[data-crm-nav-tab="queue"]')).toHaveCount(0);
     await expect(page.locator("[data-crm-pipeline]")).toContainText("Agreed");
     await expect(page.locator("[data-crm-pipeline]")).not.toContainText("Inquiry");
+    // Alerts load lazily on native expand; the folded line then names the
+    // waiting review. Refold before the design screenshots.
+    await page.locator("[data-crm-alert-summary]").click();
+    await expect(page.locator(".crm-alerts")).toHaveAttribute("open", "");
     await expect(page.locator("[data-crm-alerts]")).toContainText("Due 3 Sept");
+    await page.locator("[data-crm-alert-summary]").click();
+    await expect(page.locator(".crm-alerts")).not.toHaveAttribute("open", "");
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-pipeline-light.png") });
     await page.locator('[data-crm-bookings] [data-open-deal]').first().click();
     await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
@@ -379,17 +388,27 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await expect(page.locator("[data-crm-alerts]")).toContainText("Due 3 Sept");
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-desktop-dark.png") });
 
-    // The read-only exact preview opens from the archive disclosure.
+    // The read-only exact preview opens from the archive disclosure. It is
+    // already open from the history proof above: re-clicking its summary
+    // would fold it shut, so only expand when it is actually closed.
     await page.locator('[data-record-tab="activity"]').click();
     const reviewArchive = page.locator("[data-record-archive-host]");
-    await reviewArchive.locator("[data-record-archive] > summary").click();
+    const reviewDisclosure = reviewArchive.locator("[data-record-archive]");
+    if ((await reviewDisclosure.getAttribute("open")) === null) {
+      await reviewDisclosure.locator("> summary").click();
+    }
+    await expect(reviewDisclosure).toHaveAttribute("open", "");
     await page.getByRole("button", { name: "Review exact draft" }).click();
     const review = page.locator("[data-communication-review-dialog]");
-    await expect(review).toContainText("Approval queues exactly this one-recipient plain-text message");
+    await expect(review).toContainText("nothing here approves, queues, or sends");
     await expect(review.getByRole("heading", { name: "Materials for the September newsletter" })).toBeVisible();
     await review.getByRole("button", { name: "Reject / close" }).click();
     await expect(review).not.toBeVisible();
 
+    // Finance mutations act on the finance surface: return to its real
+    // visible tab first (the review closed back onto Activity).
+    await page.locator('[data-record-tab="finance"]').click();
+    await expect(page.locator("[data-finance-panel]")).toBeVisible();
     await page.getByRole("button", { name: "Unlink invoice" }).click();
     const confirm = page.locator("[data-sponsor-confirm-dialog]");
     await expect(confirm).toContainText("The file stays in Bookkeeping");

@@ -337,6 +337,10 @@ test.describe("production sponsor CRM portal", () => {
       return route.fulfill({ json: { items: [] } });
     if (pathname.endsWith("/deals"))
       return route.fulfill({ json: { items: [booking] } });
+    // The record open reads the bounded singular deal (real D route); the
+    // list mock above is not a substitute for it.
+    if (pathname.endsWith(`/deals/${booking.id}`))
+      return route.fulfill({ json: booking });
     // Bounded directories, saved views and lazy record reads serve the new
     // CRM lists/record tabs from the same fixtures (D API shapes).
     if (pathname === "/api/sponsor-crm/pipeline")
@@ -439,7 +443,7 @@ test.describe("production sponsor CRM portal", () => {
         )
           return route.fulfill({
             status: 400,
-            json: { error: "Synthetic communication pagination mismatch" },
+            json: { error: "Synthetic communication mismatch" },
           });
         communicationResponses++;
         return route.fulfill({
@@ -455,6 +459,9 @@ test.describe("production sponsor CRM portal", () => {
               role: "operator",
               canApprove: false,
             },
+            // Page one carries the reviewable draft plus a suggestion the
+            // archive projection filters out; page two carries the delivery
+            // attempt. The lazy archive reads exactly these bounded pages.
             items: cursor
               ? [
                   {
@@ -473,6 +480,14 @@ test.describe("production sponsor CRM portal", () => {
                     eligible: true,
                     safeReason:
                       "Booking confirmed; reviewed communication is available.",
+                  },
+                  {
+                    id: "draft-example",
+                    recordType: "communication-draft-version",
+                    communicationId: "communication-example",
+                    version: 2,
+                    reviewable: true,
+                    safeReason: "Reviewed payment request, version 2.",
                   },
                 ],
             nextCursor: cursor ? null : "finance-history-page-2",
@@ -569,27 +584,38 @@ test.describe("production sponsor CRM portal", () => {
     };
     await expect(page.locator("[data-record-title]")).toContainText("Synthetic Sponsor");
     await expect(page.locator('[data-record-tabs][role="tablist"]')).toBeVisible();
-    // Finance evidence loads only when its tab opens.
+    // Finance evidence loads only when its tab opens; the communication
+    // history stays lazy: nothing reads it until the archive disclosure
+    // does, one bounded 50-page at a time.
     await page.locator('[data-record-tab="finance"]').click();
+    await expect(page.locator("[data-finance-panel]")).toBeVisible();
+    expect(communicationRequests).toEqual([]);
     const statusMessage = page.locator("[data-crm-message]");
-    await expect.poll(() => communicationRequests.length).toBe(2);
+    // The Activity tab keeps the timeline filterable; the archive disclosure
+    // loads the preserved drafts/attempts lazily and read-only: exactly one
+    // 50-page on open, the older page on demand.
+    await page.locator('[data-record-tab="activity"]').click();
+    const archiveHost = page.locator("[data-record-archive-host]");
+    await archiveHost.locator("[data-record-archive] > summary").click();
+    await expect(archiveHost).toContainText("Archived draft v2");
+    expect(communicationRequests).toEqual([{ limit: "50", cursor: null }]);
+    await archiveHost.getByRole("button", { name: /older/i }).click();
+    await expect(archiveHost).toContainText("Delivery delivered");
     expect(communicationRequests).toEqual([
       { limit: "50", cursor: null },
       { limit: "50", cursor: "finance-history-page-2" },
     ]);
     expect(communicationResponses).toBe(2);
-    // The Activity tab keeps the timeline filterable; the archive disclosure
-    // loads the preserved drafts/attempts lazily and read-only.
-    await page.locator('[data-record-tab="activity"]').click();
-    const archiveHost = page.locator("[data-record-archive-host]");
-    await archiveHost.locator("[data-record-archive] > summary").click();
-    await expect(archiveHost).toContainText("Archived draft v2");
-    await expect(archiveHost).toContainText("Delivery delivered");
     // A clean, loaded CRM states nothing: the ready status stays hidden.
     await expect(statusMessage).toBeHidden();
     await page
       .locator("[data-crm-detail]")
       .screenshot({ path: ".tmp/sponsor-crm-production-history.png" });
+    // Back to the real visible Finance tab: the panel screenshots and the
+    // classification/mutation flow below act on the finance surface, not on
+    // the Activity tab left behind by the archive proof.
+    await page.locator('[data-record-tab="finance"]').click();
+    await expect(page.locator("[data-finance-panel]")).toBeVisible();
     await page
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-unclassified.png" });
@@ -826,6 +852,10 @@ test.describe("production sponsor CRM portal", () => {
     await page.locator('[data-record-tab="activity"]').click();
     const operatorArchive = page.locator("[data-record-archive-host]");
     await operatorArchive.locator("[data-record-archive] > summary").click();
+    // A reopened record starts a fresh bounded archive page; the older
+    // delivery arrives on demand, same as the first pass.
+    await expect(operatorArchive).toContainText("Archived draft v2");
+    await operatorArchive.getByRole("button", { name: /older/i }).click();
     await expect(operatorArchive).toContainText("Delivery delivered");
     await page.screenshot({
       path: ".tmp/sponsor-finance-operator-read-only.png",

@@ -30,13 +30,26 @@ test.beforeAll(async () => {
   for (let index = 1; index <= 24; index += 1) docs[`content/processes/split-${index}.md`] = processDoc(index);
   server = await startOwnedTestServer({ environment: { DTC_CACHE_ROOT: createDocsCacheRoot('list-detail-split', docs) } });
   await seedOperationsData(server.baseURL);
+  let firstDealId = null;
   for (let index = 1; index <= 20; index += 1) {
     const organization = await post('/api/sponsor-crm/organizations', { displayName: `Split Sponsor ${index}`, domain: `split-${index}.example` });
-    await post('/api/sponsor-crm/deals', {
+    const created = await post('/api/sponsor-crm/deals', {
       organizationId: (organization.organization || organization).id,
       status: 'open',
       productKind: 'one-off',
       amountEur: 1000 + index,
+    });
+    if (index === 1) firstDealId = (created.deal || created).id;
+  }
+  // The default pipeline view is Needs attention: seed one eligible next
+  // step (due inside the Berlin 7-day window) so the board has a bounded
+  // row to open without changing the default-view contract.
+  if (firstDealId) {
+    const due = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+    await post('/api/tasks', {
+      description: 'Split sponsor follow-up',
+      date: due,
+      subject: { type: 'sponsor-deal', id: firstDealId },
     });
   }
 });
@@ -55,7 +68,13 @@ test('/sponsors: opening a pipeline deal replaces the board with its detail', as
   }));
   await page.route('**/api/notifications*', (route) => route.fulfill({ json: { notifications: { items: alerts } } }));
   await page.goto(`${server.baseURL}/sponsors`);
+  // Hundreds of alerts fold into one line: native expand loads the page
+  // and names the waiting count, then refolding keeps the board in place.
+  await page.locator('[data-crm-alert-summary]').click();
+  await expect(page.locator('.crm-alerts')).toHaveAttribute('open', '');
+  await expect(page.locator('[data-crm-alerts] article.crm-card')).toHaveCount(300);
   await expect(page.locator('[data-crm-alert-summary]')).toHaveText('300 sponsor alerts');
+  await page.locator('[data-crm-alert-summary]').click();
   await expect(page.locator('.crm-alerts')).not.toHaveAttribute('open', '');
   await expect(page.locator('[data-crm-bookings] tbody tr').first()).toBeInViewport();
   await expect(page).toHaveURL(/\/sponsors\/pipeline$/);
