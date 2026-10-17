@@ -8,6 +8,7 @@ import {
   dealsListMarkup,
   emptyMarkup,
   errorMarkup,
+  nextTaskMarkup,
   overviewMarkup,
   peopleListMarkup,
   recordShellMarkup,
@@ -277,6 +278,33 @@ test("overview error states unknown instead of claiming empty", async () => {
   assert.match(panels.overview.innerHTML, /unavailable/i);
   assert.doesNotMatch(panels.overview.innerHTML, /No open task|No recent activity|No task due now/);
   assert.match(panels.overview.innerHTML, /Warm intro/, "verified company summary stays");
+});
+
+test("next task names a readable owner, never a raw ID", () => {
+  const owners = { op1: "Ada Owner" };
+  const ownerName = (id) => owners[id] || "";
+  const assigned = nextTaskMarkup(
+    { description: "Call", date: "2026-10-20", assigneeId: "op1", taskId: "t1" },
+    undefined,
+    { ...context, ownerName },
+  );
+  assert.match(assigned, /Ada Owner/);
+  assert.doesNotMatch(assigned, /op1/);
+  const unknown = nextTaskMarkup(
+    { description: "Call", date: "2026-10-20", assigneeId: "ghost", taskId: "t1" },
+    undefined,
+    { ...context, ownerName },
+  );
+  assert.match(unknown, /Unavailable assignee/);
+  assert.doesNotMatch(unknown, /ghost/);
+  const unassigned = nextTaskMarkup({ description: "Call", date: "2026-10-20", taskId: "t1" }, undefined, context);
+  assert.match(unassigned, /Unassigned/);
+  const throwing = nextTaskMarkup(
+    { description: "Call", date: "2026-10-20", assigneeId: "op1", taskId: "t1" },
+    undefined,
+    { ...context, ownerName: () => { throw new Error("down"); } },
+  );
+  assert.match(throwing, /Unavailable assignee/);
 });
 
 test("record shell is accessible and honest states escape content", () => {  const shell = recordShellMarkup({ displayName: "<Acme>" }, { returnLabel: "Companies" }, context);

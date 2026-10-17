@@ -20,7 +20,8 @@ import { createSponsorRecord } from "./sponsor-record.js";
  * (required: a loud error names it when absent); the old navigate/listPath/
  * split/scroll Back lifecycle is removed, not duplicated. New optional ctx
  * (E one-line hunks): openTaskPanel, openContactEditor (from the sponsors.js
- * editor instance), loadArchive/onReviewDraft overrides, onRecordChanged
+ * editor instance), ownerName (E ownerDirectory.name), loadArchive/onReviewDraft
+ * overrides, onRecordChanged
  * (called with the updated org after a successful archive/restore so E can
  * refresh its directory context).
  * Until E passes openContactEditor, person edit affordances stay hidden.
@@ -41,6 +42,7 @@ export function createSponsorCompanyDetail({
   openTaskPanel,
   openCompanyRecord,
   openContactEditor,
+  ownerName,
   loadArchive,
   onReviewDraft,
   onEditCompany,
@@ -67,6 +69,7 @@ export function createSponsorCompanyDetail({
       await reopenCompanyDetail({ id: organizationId });
     }),
     openContactEditor,
+    ownerName,
     loadArchive: loadArchive || defaultLoadArchive,
     onReviewDraft: onReviewDraft || onReviewDraftDefault,
     onArchiveCompany,

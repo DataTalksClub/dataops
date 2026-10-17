@@ -225,10 +225,24 @@ export function nextTaskMarkup(nextTask, emptyMessage, context = {}) {
   const originalPart = original
     ? html` <small>(originally ${escape(formatBerlinDate(original))})</small>`
     : "";
+  // Readable owner via the injected ownerName(id) lookup (E's existing
+  // ownerDirectory.name in pipeline use). Never a raw ID: a missing lookup
+  // reads Unassigned, an unknown ID reads Unavailable assignee.
+  let ownerNote = " · Unassigned";
+  if (nextTask.assigneeId) {
+    let name = "";
+    try {
+      name = typeof context.ownerName === "function" ? context.ownerName(nextTask.assigneeId) : "";
+    } catch {
+      name = "";
+    }
+    ownerNote = name ? ` · ${name}` : " · Unavailable assignee";
+  }
+  const ownerPart = html`<span>${escape(ownerNote)}</span>`;
   const taskButton = nextTask.taskId
     ? html`<button type="button" data-open-task="${escape(nextTask.taskId)}">Open task</button>`
     : "";
-  return html`<p><strong>${escape(nextTask.description || "Open task")}</strong>${duePart}${deferredNote}${originalPart}</p>
+  return html`<p><strong>${escape(nextTask.description || "Open task")}</strong>${duePart}${ownerPart}${deferredNote}${originalPart}</p>
     ${taskButton}`;
 }
 
