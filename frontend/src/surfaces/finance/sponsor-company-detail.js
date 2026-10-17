@@ -16,11 +16,14 @@ import { createSponsorRecord } from "./sponsor-record.js";
  *
  * E owns the surrounding integration (routes, mount, list refresh, final
  * Back restoration): this module mounts into the existing [data-crm-detail]
- * pane and replicates the previous Back/scroll/split behavior with the
- * origin view label (Companies/Pipeline/CRM). New optional ctx (E one-line
- * hunks): openTaskPanel, openContactEditor (from the sponsors.js editor
- * instance), loadArchive/onReviewDraft overrides. Until E passes
- * openContactEditor, person edit affordances stay hidden.
+ * pane. Back is E's directoryPages.closeRecord, injected as `closeRecord`
+ * (required: a loud error names it when absent); the old navigate/listPath/
+ * split/scroll Back lifecycle is removed, not duplicated. New optional ctx
+ * (E one-line hunks): openTaskPanel, openContactEditor (from the sponsors.js
+ * editor instance), loadArchive/onReviewDraft overrides, onRecordChanged
+ * (called with the updated org after a successful archive/restore so E can
+ * refresh its directory context).
+ * Until E passes openContactEditor, person edit affordances stay hidden.
  */
 export function createSponsorCompanyDetail({
   api,
@@ -28,17 +31,12 @@ export function createSponsorCompanyDetail({
   escapeHtml,
   humanizeOptionLabel,
   humanSponsorDate,
-  navigateCanonicalWorkspace,
-  listPath,
-  getOrganizations,
-  getContacts,
-  getDeals,
+  closeRecord,
+  onRecordChanged,
   sponsorCommunications,
   draw,
   openDeal,
-  openDialog,
   loadFinance,
-  loadCommunications,
   safe,
   openTaskPanel,
   openCompanyRecord,
@@ -55,7 +53,14 @@ export function createSponsorCompanyDetail({
     humanizeOptionLabel,
     humanSponsorDate,
     safe,
-    closeRecord: () => {},
+    // E's directoryPages.closeRecord owns Back (focus/scroll/filter
+    // restoration). No local navigate/listPath/split fallback lives here.
+    closeRecord: (...args) => {
+      if (typeof closeRecord !== "function") {
+        throw new Error("createSponsorCompanyDetail requires E closeRecord (directoryPages.closeRecord)");
+      }
+      return closeRecord(...args);
+    },
     loadFinance,
     openTaskPanel,
     openCompanyRecord: openCompanyRecord || (async (organizationId) => {
@@ -113,17 +118,19 @@ export function createSponsorCompanyDetail({
   async function onArchiveCompany() {
     const company = record.getCompany();
     if (!company) return;
-    await api(`/organizations/${encodeURIComponent(company.id)}`, { method: "DELETE" });
+    const updated = await api(`/organizations/${encodeURIComponent(company.id)}`, { method: "DELETE" });
+    if (typeof onRecordChanged === "function") await onRecordChanged(updated);
     await reopenCompanyDetail({ id: company.id }, record.getSelectedDealId());
   }
 
   async function onRestoreCompany() {
     const company = record.getCompany();
     if (!company) return;
-    await api(`/organizations/${encodeURIComponent(company.id)}`, {
+    const updated = await api(`/organizations/${encodeURIComponent(company.id)}`, {
       method: "PUT",
       body: JSON.stringify({ archivedAt: null, active: true, version: company.version }),
     });
+    if (typeof onRecordChanged === "function") await onRecordChanged(updated);
     await reopenCompanyDetail({ id: company.id }, record.getSelectedDealId());
   }
 
@@ -137,49 +144,24 @@ export function createSponsorCompanyDetail({
     await reopenCompanyDetail({ id: deal.organizationId }, deal);
   }
 
-  // E owns final Back restoration; the label only names the origin view.
-  // Never hardcode a destination name here.
-  function originLabel() {
-    try {
-      const path = typeof listPath === "function" ? listPath() : "";
-      if (String(path).includes("/companies")) return "Companies";
-      if (String(path).includes("/pipeline")) return "Pipeline";
-    } catch {
-      // fall through to the workspace label
-    }
-    return "CRM";
-  }
-
   async function reopenCompanyDetail(organization, highlightedDeal = null) {
     const split = surface.querySelector("[data-crm-split]");
-    const listScroller = surface.querySelector("[data-crm-list-scroll]");
-    const listScrollTop = listScroller?.scrollTop || 0;
     surface.classList.add("has-booking-detail");
     // The queue marks this company as the selected row; on a phone the split
     // shows the detail pane.
     surface.dataset.selectedCompany = organization.id;
     if (split) split.dataset.view = "detail";
     draw();
-    if (listScroller) listScroller.scrollTop = listScrollTop;
     const host = mount();
-    // closeRecord replicates the previous Back: keep the list DOM, its
-    // selected row and its reading position while removing the record from
-    // the URL. E's integration will take over mount/Back/list-refresh.
+    // Back is E's injected closeRecord (focus/scroll/filter restoration).
+    // No local navigate/listPath/split/scroll lifecycle lives here.
     record.wire(host);
-    const closeRecord = () => {
-      record.destroy();
-      navigateCanonicalWorkspace(listPath(), {}, { render: false });
-      surface.classList.remove("has-booking-detail");
-      if (listScroller) listScroller.scrollTop = listScrollTop;
-      globalThis.dakitSplit?.show(split, "list");
-    };
-    record.closeWith(closeRecord);
     const dealId = typeof highlightedDeal === "string"
       ? highlightedDeal
       : highlightedDeal?.id || null;
     await record.openCompany(organization.id, {
       dealId,
-      returnLabel: originLabel(),
+      returnLabel: "CRM",
     });
     if (sponsorCommunications) sponsorCommunications.selectedBookingId = dealId;
     globalThis.dakitSplit?.show(split, "detail");

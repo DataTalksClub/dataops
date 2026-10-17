@@ -14,7 +14,8 @@ function migrationHarness({ organization, routes = {}, context: extra = {} } = {
   const split = surface.setQuery("[data-crm-split]", new FakeNode("div"));
   const scroller = surface.setQuery("[data-crm-list-scroll]", new FakeNode("div"));
   scroller.scrollTop = 42;
-  const navigated = [];
+  const closed = [];
+  const changed = [];
   const drawn = [];
   const opened = [];
   const detail = createSponsorCompanyDetail({
@@ -23,11 +24,8 @@ function migrationHarness({ organization, routes = {}, context: extra = {} } = {
     escapeHtml,
     humanizeOptionLabel: (value) => value,
     humanSponsorDate: (value) => value,
-    navigateCanonicalWorkspace: (path, options) => navigated.push([path, options]),
-    listPath: () => "/sponsors/companies",
-    getOrganizations: () => [organization],
-    getContacts: () => [],
-    getDeals: () => [],
+    closeRecord: () => closed.push(true),
+    onRecordChanged: (updated) => changed.push(updated),
     sponsorCommunications: null,
     draw: () => drawn.push(true),
     openDeal: (deal) => opened.push(deal),
@@ -37,7 +35,7 @@ function migrationHarness({ organization, routes = {}, context: extra = {} } = {
     safe: async (action) => action(),
     ...extra,
   });
-  return { api, surface, calls, navigated, drawn, opened, detail, organization };
+  return { api, surface, calls, closed, changed, drawn, opened, detail, organization };
 }
 
 const organization = { id: "c1", displayName: "Acme", domain: "acme.example", version: 3 };
@@ -48,7 +46,7 @@ const preview = {
 };
 
 test("migration mounts the record shell and preserves back behavior", async () => {
-  const { surface, navigated, detail } = migrationHarness({
+  const { surface, closed, detail } = migrationHarness({
     organization,
     routes: {
       "GET /directory/companies/c1": organization,
@@ -60,17 +58,16 @@ test("migration mounts the record shell and preserves back behavior", async () =
   const rendered = surface.querySelector("[data-crm-record]");
   assert.match(rendered.innerHTML, /Acme/);
   assert.match(rendered.innerHTML, /role="tablist"/);
-  assert.match(rendered.innerHTML, /Companies/, "back names the origin view, never a hardcoded destination");
+  assert.match(rendered.innerHTML, /CRM/, "back names the workspace");
   await wired.dispatch("click", { closestPatch: { "[data-record-back]": new FakeNode("button") } });
-  assert.deepEqual(navigated.map(([path]) => path), ["/sponsors/companies"]);
-  assert.equal(surface.querySelector("[data-crm-list-scroll]").scrollTop, 42, "list position restored");
+  assert.deepEqual(closed, [true], "record Back calls E closeRecord (no competing lifecycle)");
 });
 
 test("migration archives and restores through the record header", async () => {
   const archived = { ...organization, archivedAt: "2026-10-17T00:00:00Z", active: false, version: 4 };
   const restored = { ...organization, version: 5 };
   let current = { ...organization };
-  const { surface, calls, detail } = migrationHarness({
+  const { surface, calls, changed, detail } = migrationHarness({
     organization,
     routes: {
       "GET /directory/companies/c1": () => current,
@@ -84,6 +81,8 @@ test("migration archives and restores through the record header", async () => {
   const rendered = surface.querySelector("[data-crm-record]");
   await wired.dispatch("click", { closestPatch: { "[data-archive-company]": new FakeNode("button") } });
   assert.ok(calls.some(({ method, path }) => method === "DELETE" && path === "/organizations/c1"));
+  assert.deepEqual(changed.map((item) => item.id), ["c1"], "E onRecordChanged fires with the updated org");
+  assert.equal(changed[0].version, 4);
   assert.match(rendered.innerHTML, /data-restore-company/, "archived header offers restore");
   await wired.dispatch("click", { closestPatch: { "[data-restore-company]": new FakeNode("button") } });
   const put = calls.find(({ method }) => method === "PUT");
