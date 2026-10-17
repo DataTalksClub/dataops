@@ -71,13 +71,65 @@ export function list(value) {
   return String(value).split(",").map((item) => item.trim()).filter(Boolean);
 }
 
-export function isoDate(value, flag) {
-  if (value === undefined) return undefined;
-  const text = String(value);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00Z`))) {
-    throw new UsageError(`--${flag} must be a date like 2026-01-31.`);
+const WEEKDAY_INDEX = {
+  mon: 0, monday: 0,
+  tue: 1, tues: 1, tuesday: 1,
+  wed: 2, weds: 2, wednesday: 2,
+  thu: 3, thur: 3, thurs: 3, thursday: 3,
+  fri: 4, friday: 4,
+  sat: 5, saturday: 5,
+  sun: 6, sunday: 6,
+};
+
+/** Civil date (YYYY-MM-DD) in Europe/Berlin for `now` (default: this instant). */
+export function berlinToday(now = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
+/** Add `days` to a YYYY-MM-DD civil date. */
+export function addDays(day, days) {
+  const date = new Date(`${day}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Resolve a relative date word against `today` (YYYY-MM-DD, Europe/Berlin):
+ * `+Nd`/`+N` days ahead, `today`/`tomorrow`/`yesterday`, or a weekday name
+ * (`mon` -> the next Monday, strictly after today). Returns undefined when the
+ * word is not relative.
+ */
+export function relativeDate(value, today) {
+  const text = String(value).trim().toLowerCase();
+  const plus = /^\+(\d+)\s*d(ays?)?$/.exec(text) || /^\+(\d+)$/.exec(text);
+  if (plus) return addDays(today, Number(plus[1]));
+  if (text === "today") return today;
+  if (text === "tomorrow") return addDays(today, 1);
+  if (text === "yesterday") return addDays(today, -1);
+  if (Object.hasOwn(WEEKDAY_INDEX, text)) {
+    const todayDate = new Date(`${today}T00:00:00Z`);
+    const todayIndex = (todayDate.getUTCDay() + 6) % 7;
+    const delta = ((WEEKDAY_INDEX[text] - todayIndex + 7) % 7) || 7;
+    return addDays(today, delta);
   }
-  return text;
+  return undefined;
+}
+
+function isCalendarDate(text) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return false;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return date.getUTCFullYear() === Number(match[1]) && date.getUTCMonth() === Number(match[2]) - 1 && date.getUTCDate() === Number(match[3]);
+}
+
+export function isoDate(value, flag, options = {}) {
+  if (value === undefined) return undefined;
+  const text = String(value).trim();
+  if (isCalendarDate(text)) return text;
+  const today = options.today || process.env.DATAOPS_TODAY || berlinToday();
+  const resolved = isCalendarDate(today) ? relativeDate(text, today) : undefined;
+  if (resolved) return resolved;
+  throw new UsageError(`--${flag} must be a date like 2026-01-31, +7d, tomorrow, or a weekday like mon.`);
 }
 
 export function integer(value, flag) {

@@ -39,6 +39,11 @@ List views (default: --queue)
   --owner me|team|unassigned|<user-id>, or --mine for --owner me
   --as-of YYYY-MM-DD   Treat this date as today (default: the local date)
 
+Dates (Europe/Berlin)
+  Every date flag also takes +7d (days ahead), tomorrow, or a weekday name
+  (mon is the next Monday, strictly after today): --date, --from, --to,
+  --as-of, create --date, wait --follow-up, followed-up --next.
+
 Dependencies
   --depends-on ID,ID       Prerequisite Tasks on the same Card; the Task cannot be completed
                            until every one is done or skipped.

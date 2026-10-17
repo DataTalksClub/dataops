@@ -33,6 +33,7 @@ import { matchesBrowserRequirementFilter, parseBrowserRequirementFilter } from '
 import type { BrowserRequirementFilter } from '../browserRequirement';
 import type { LambdaEvent, LambdaResponse, Task, TaskHistoryEvent } from '../types';
 import { mergeMaterials } from '../taskMaterials';
+import { resolveTaskDate } from '../relativeDates';
 import {
   ALLOWED_UPDATE_FIELDS,
   INVALID_STATUS_ERROR,
@@ -75,6 +76,21 @@ import {
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 const SUBJECT_WITH_CARD_ERROR = 'A Task belongs to a Card or has a subject, not both';
+const RELATIVE_DATE_ERROR =
+  'must be a date like 2026-01-31, +7d, tomorrow, or a weekday like mon (Europe/Berlin)';
+
+/**
+ * Accept an absolute date or a relative word (`+7d`, `tomorrow`, `mon`)
+ * resolved against the Europe/Berlin today. Timestamps stay untouched for
+ * the follow-up fields that accept them; anything else is rejected.
+ */
+function resolveDateInput(value: unknown, fieldName: string): { date: string } | { error: string } {
+  if (typeof value !== 'string') return { error: `${fieldName} ${RELATIVE_DATE_ERROR}` };
+  const resolved = resolveTaskDate(value);
+  if (resolved) return { date: resolved };
+  if (!Number.isNaN(Date.parse(value.trim()))) return { date: value.trim() };
+  return { error: `${fieldName} ${RELATIVE_DATE_ERROR}` };
+}
 
 function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
   return {
@@ -137,12 +153,20 @@ export async function handleTaskRoutes(
 
     const taskData: Record<string, unknown> = {};
     if (body.description) taskData.description = body.description;
-    if (body.date) taskData.date = body.date;
+    if (body.date) {
+      const resolved = resolveDateInput(body.date, 'date');
+      if ('error' in resolved) return jsonResponse(400, { error: resolved.error });
+      taskData.date = resolved.date;
+    }
     if (body.comment !== undefined) taskData.comment = body.comment;
     if (body.cardId !== undefined) taskData.cardId = body.cardId;
     if (body.subject !== undefined) taskData.subject = body.subject;
     if (body.waitingFor !== undefined) taskData.waitingFor = body.waitingFor;
-    if (body.followUpAt !== undefined) taskData.followUpAt = body.followUpAt;
+    if (body.followUpAt !== undefined) {
+      const resolved = resolveDateInput(body.followUpAt, 'followUpAt');
+      if ('error' in resolved) return jsonResponse(400, { error: resolved.error });
+      taskData.followUpAt = resolved.date;
+    }
     if (body.followUpChannel !== undefined) taskData.followUpChannel = body.followUpChannel;
     if (body.proofRequirement !== undefined) taskData.proofRequirement = body.proofRequirement;
     if (body.externalStatus !== undefined) taskData.externalStatus = body.externalStatus;
@@ -263,7 +287,16 @@ export async function handleTaskRoutes(
     if (!listActor.ok) return listActor.response;
 
     const params = event.queryStringParameters || {};
-    const { date, startDate, endDate, cardId, status } = params;
+    const { cardId, status } = params;
+    let { date, startDate, endDate } = params;
+    for (const [field, value] of [['date', date], ['startDate', startDate], ['endDate', endDate]] as const) {
+      if (value === undefined) continue;
+      const resolved = resolveDateInput(value, field);
+      if ('error' in resolved) return jsonResponse(400, { error: resolved.error });
+      if (field === 'date') date = resolved.date;
+      if (field === 'startDate') startDate = resolved.date;
+      if (field === 'endDate') endDate = resolved.date;
+    }
 
     if (status && !isTaskStatus(status)) {
       return jsonResponse(400, { error: INVALID_STATUS_ERROR });
@@ -481,7 +514,12 @@ export async function handleTaskRoutes(
         return jsonResponse(400, { error: 'Completed tasks must be reopened before marking waiting' });
       }
       const waitingFor = trimmedString(body.waitingFor);
-      const followUpAt = trimmedString(body.followUpAt);
+      const rawFollowUpAt = trimmedString(body.followUpAt);
+      const resolvedFollowUpAt = rawFollowUpAt ? resolveDateInput(rawFollowUpAt, 'followUpAt') : null;
+      if (resolvedFollowUpAt && 'error' in resolvedFollowUpAt) {
+        return jsonResponse(400, { error: resolvedFollowUpAt.error });
+      }
+      const followUpAt = resolvedFollowUpAt && 'date' in resolvedFollowUpAt ? resolvedFollowUpAt.date : rawFollowUpAt;
       const channel = trimmedString(body.channel);
       const note = trimmedString(body.note);
       const noteError = validateActionNote(note);
@@ -523,7 +561,12 @@ export async function handleTaskRoutes(
       }
       const channel = trimmedString(body.channel);
       const note = trimmedString(body.note);
-      const nextFollowUpAt = trimmedString(body.nextFollowUpAt || body.followUpAt);
+      const rawNextFollowUpAt = trimmedString(body.nextFollowUpAt || body.followUpAt);
+      const resolvedNext = rawNextFollowUpAt ? resolveDateInput(rawNextFollowUpAt, 'nextFollowUpAt') : null;
+      if (resolvedNext && 'error' in resolvedNext) {
+        return jsonResponse(400, { error: resolvedNext.error });
+      }
+      const nextFollowUpAt = resolvedNext && 'date' in resolvedNext ? resolvedNext.date : rawNextFollowUpAt;
       const noteError = validateActionNote(note);
       const channelError = validateActionChannel(channel);
       const dateError = validateDateOrTimestampValue(nextFollowUpAt, 'nextFollowUpAt');
@@ -704,6 +747,13 @@ export async function handleTaskRoutes(
 
     if (Object.keys(updates).length === 0) {
       return jsonResponse(400, { error: 'No valid fields to update' });
+    }
+    for (const field of ['date', 'followUpAt'] as const) {
+      if (updates[field] !== undefined && updates[field] !== null) {
+        const resolved = resolveDateInput(updates[field], field);
+        if ('error' in resolved) return jsonResponse(400, { error: resolved.error });
+        updates[field] = resolved.date;
+      }
     }
     if (updates.status !== undefined && !isTaskStatus(updates.status)) {
       return jsonResponse(400, { error: INVALID_STATUS_ERROR });

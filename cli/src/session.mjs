@@ -1,6 +1,7 @@
 import { createClient } from "./api.mjs";
 import { resolveProfile } from "./config.mjs";
 import { AuthError } from "./errors.mjs";
+import { berlinToday } from "./format.mjs";
 
 /** An authenticated client for the selected portal, or a clear sign-in error. */
 export function apiFor(args) {
@@ -13,7 +14,10 @@ export function apiFor(args) {
   return createClient(profile);
 }
 
-/** The local calendar date, as the web app computes "today". */
+/** The agent's calendar date in Europe/Berlin, as the web queue computes "today". */
 export function today() {
-  return new Date().toLocaleDateString("en-CA");
+  if (process.env.DATAOPS_TODAY && /^\d{4}-\d{2}-\d{2}$/.test(process.env.DATAOPS_TODAY)) {
+    return process.env.DATAOPS_TODAY;
+  }
+  return berlinToday();
 }
