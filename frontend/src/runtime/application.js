@@ -39,6 +39,7 @@ import { createOperatingModelSurface } from "../surfaces/operating-model.js";
 import { createApiClient, resolveApiBase } from "../shell/api.js";
 import { createFeedbackShell } from "../shell/feedback.js";
 import { createNavigationShell } from "../shell/navigation.js";
+import { createStartupOrchestration } from "../shell/startup-orchestration.js";
 import { cardLinkTarget } from "../core/links.js";
 import { initializeAppShell } from "../shell/bootstrap.js";
 import { queryAppDom } from "../shell/dom-bindings.js";
@@ -371,13 +372,17 @@ const {
   workApiUrl,
   workflowPriority,
 });
+const startupOrchestration = createStartupOrchestration({
+  refreshOperationsWorkSnapshot,
+  refreshOperationsRecurringSnapshot,
+  refreshOperationsQualitySnapshot,
+});
 const {
   refreshUsersSurface,
   renderAdminSurface,
   renderAdminSurfaceView,
   renderUsersSurfaceView,
-} = createAdminSurface({
-  apiUrl,
+} = createAdminSurface({  apiUrl,
   currentOperatorIdFromPayload,
   documentList,
   getActiveWorkspaceView: () => workspaceState.activeWorkspaceView,
@@ -634,9 +639,14 @@ knowledgeSurface = createKnowledgeSurface({
   renderedView,
   refreshChangesPanel: (...args) => refreshChangesPanel(...args),
   refreshKnowledgeStatus: (...args) => refreshKnowledgeStatus(...args),
-  refreshOperationsQualitySnapshot,
-  refreshOperationsRecurringSnapshot,
-  refreshOperationsWorkSnapshot,
+  refreshOperationsQualitySnapshot: (...args) =>
+    startupOrchestration.refreshOperationsQualitySnapshot(...args),
+  refreshOperationsRecurringSnapshot: (...args) =>
+    startupOrchestration.refreshOperationsRecurringSnapshot(...args),
+  refreshOperationsWorkSnapshot: (...args) =>
+    startupOrchestration.refreshOperationsWorkSnapshot(...args),
+  dispatchBootstrapSnapshots: (...args) =>
+    startupOrchestration.dispatchBootstrapSnapshots(...args),
   renameCurrentDoc: (...args) => renameCurrentDoc(...args),
   deleteCurrentDoc: (...args) => deleteCurrentDoc(...args),
   renderDocsAvailabilityState,
@@ -771,6 +781,8 @@ navigationShell = createNavigationShell({
   docPathFromLocation,
   documentList,
   documentRef: document,
+  ensureSharedSnapshots: (...args) =>
+    startupOrchestration.ensureSharedSnapshots(...args),
   folderExists,
   folderPathFromLocation,
   getDocsAvailability: () => workspaceState.docsSnapshot,
@@ -867,11 +879,13 @@ bindApplicationEvents({
 
 
 initializeAppShell({
+  initialRoute: parseWorkspaceLocation(),
   loadDocuments,
   navigationShell,
   refreshChangesPanel,
   refreshKnowledgeStatus,
-  refreshOperationsWorkSnapshot,
+  refreshOperationsWorkSnapshot: (...args) =>
+    startupOrchestration.refreshOperationsWorkSnapshot(...args),
   refreshUsersSurface,
   showLibrary,
   updateSaveState,

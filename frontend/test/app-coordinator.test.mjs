@@ -338,7 +338,7 @@ describe("app shell coordinator characterization", () => {
       "showLibrary({ updateUrl: false });",
       "refreshChangesPanel();",
       "updateSaveState();",
-      "const documentsReady = loadDocuments();",
+      "const documentsReady = loadDocuments(initialRoute);",
       "navigationShell.initializeRouting(documentsReady);",
       "refreshKnowledgeStatus();",
     ]);

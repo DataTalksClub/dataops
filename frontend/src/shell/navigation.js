@@ -9,6 +9,7 @@ export function createNavigationShell(context) {
     closeWorkBellPanel,
     documentList,
     documentRef,
+    ensureSharedSnapshots,
     folderExists,
     folderPathFromLocation,
     getDocsAvailability,
@@ -227,6 +228,12 @@ export function createNavigationShell(context) {
     restoreDocumentFilters(route.params);
     setView("library");
     documentList.replaceChildren();
+    // A route that reads the shared snapshots starts them on first commit
+    // (single-flight inside the startup orchestration); a clean self-loading
+    // route leaves them deferred. The route paints its honest loading state
+    // in refreshDocuments below, and the background gate repaints it when
+    // the data lands.
+    ensureSharedSnapshots?.(route);
     refreshDocuments();
     if (!preserveComposer) closeSidebar();
 

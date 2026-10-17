@@ -8,6 +8,7 @@ export function createKnowledgeCatalog(context, services) {
   const {
     apiUrl,
     cleanPath,
+    dispatchBootstrapSnapshots,
     knowledgeState,
     refreshOperationsQualitySnapshot,
     refreshOperationsRecurringSnapshot,
@@ -20,18 +21,26 @@ export function createKnowledgeCatalog(context, services) {
   const { populateFilterOptions } = services;
   let catalogRequestId = 0;
 
-  async function loadDocuments() {
+  async function loadDocuments(initialRoute) {
     const requestId = ++catalogRequestId;
     setDocsAvailability(emptyOperationsDocsSnapshot());
 
-    // Work APIs are independent of the knowledge docs API. Start their
-    // bootstrap requests before awaiting docs so tasks and
-    // recurring work remain operational during a docs outage.
-    // They land whenever they land, so they repaint through the background
-    // gate rather than under an operator who already started working.
-    refreshOperationsWorkSnapshot({ background: true });
-    refreshOperationsRecurringSnapshot({ background: true });
-    refreshOperationsQualitySnapshot({ background: true });
+    if (initialRoute === undefined) {
+      // An explicit refresh (document editor, history, changes): keep the
+      // historical behavior of refreshing the shared snapshots alongside
+      // the docs catalog.
+      refreshOperationsWorkSnapshot({ background: true });
+      refreshOperationsRecurringSnapshot({ background: true });
+      refreshOperationsQualitySnapshot({ background: true });
+    } else {
+      // The bootstrap call: the startup orchestration defers the shared
+      // snapshots on self-loading routes (CRM and friends fetch their own
+      // data) and starts them immediately everywhere else, still in the
+      // background so tasks and recurring work stay operational during a
+      // docs outage. The docs catalog below always loads: docs availability
+      // must never depend on routing.
+      dispatchBootstrapSnapshots(initialRoute);
+    }
 
     try {
       const payload = await request(apiUrl("/docs"));

@@ -35,6 +35,7 @@
     "src/shell/navigation.js",
     "src/shell/notifications.js",
     "src/shell/preferences.js",
+    "src/shell/startup-orchestration.js",
     "src/styles/base.css",
     "src/styles/chrome.css",
     "src/styles/finance.css",

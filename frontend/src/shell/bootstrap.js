@@ -1,4 +1,5 @@
 export function initializeAppShell({
+  initialRoute,
   loadDocuments,
   navigationShell,
   refreshChangesPanel,
@@ -12,7 +13,7 @@ export function initializeAppShell({
   showLibrary({ updateUrl: false });
   refreshChangesPanel();
   updateSaveState();
-  const documentsReady = loadDocuments();
+  const documentsReady = loadDocuments(initialRoute);
   navigationShell.initializeRouting(documentsReady);
   refreshKnowledgeStatus();
 
