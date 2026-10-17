@@ -1379,6 +1379,88 @@ describe("Planning surface production behavior", () => {
     assert.equal(lastPutPayload.status, "scheduled");
     assert.equal(lastPutPayload.version, 3);
   });
+
+  test("renders Mailchimp and per-slot stats on Past and Upcoming rows and edits them in the dialog", async () => {
+    const dom = createNewsletterDom();
+    let issue = weeklyIssue({
+      id: "issue-stats",
+      publicationDate: "2026-08-25",
+      issueNumber: 297,
+      label: "Weekly #297",
+      status: "sent",
+      version: 2,
+      stats: {
+        deliveries: 99714,
+        opens: 34886,
+        openRate: 34.99,
+        clicks: 831,
+        uniqueClicks: 651,
+        clickRate: 2.38,
+      },
+      slots: {
+        primary: {
+          sponsor: "VectorAI DB",
+          stats: {
+            clicks: 831,
+            uniqueClicks: 651,
+            clickRate: 2.38,
+            linkedinImpressions: 8080,
+            linkedinClicks: 109,
+            linkedinCtr: 1.35,
+            linkedinPostUrl: "https://www.linkedin.com/feed/update/urn:li:activity:7446932215609192448/",
+            xImpressions: 2916,
+            xClicks: 0,
+            xCtr: 0,
+            xPostUrl: "https://x.com/DataTalksClub/status/2041170969592254836",
+          },
+        },
+        secondary: {
+          sponsor: "Astronomer",
+          stats: {
+            clicks: 273,
+            uniqueClicks: 185,
+            clickRate: 0.78,
+            linkedinImpressions: 2639,
+            linkedinClicks: 49,
+            linkedinCtr: 1.86,
+          },
+        },
+      },
+    });
+    let savedBody = null;
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      request: async (_url, options) => {
+        if (options?.method === "PUT") {
+          savedBody = JSON.parse(options.body);
+          issue = { ...issue, ...savedBody };
+          return issue;
+        }
+        return { alerts: [], items: [issue] };
+      },
+    });
+    await harness.surface.renderNewsletterSurface();
+    const html = dom.slots.innerHTML;
+    assert.match(html, /<strong>Mailchimp:<\/strong> 99,714 deliveries · 34,886 opens \(34\.99%\) · 831 clicks \(651 unique, 2\.38% CTR\)/);
+    assert.match(html, /<strong>Primary \(VectorAI DB\) stats:<\/strong> Newsletter 831 clicks \(651 unique, 2\.38% CTR\) · <a href="https:\/\/www\.linkedin\.com\/feed\/update\/urn:li:activity:7446932215609192448\/"[^>]*>LinkedIn<\/a>: 8,080 views \/ 109 clicks \(1\.35% CTR\) · <a href="https:\/\/x\.com\/DataTalksClub\/status\/2041170969592254836"[^>]*>X<\/a>: 2,916 views \/ 0 clicks \(0% CTR\)/);
+    assert.match(html, /<strong>Secondary \(Astronomer\) stats:<\/strong> Newsletter 273 clicks \(185 unique, 0\.78% CTR\) · LinkedIn: 2,639 views \/ 49 clicks \(1\.86% CTR\)/);
+
+    dom.slots.onclick({
+      target: {
+        closest: (selector) => (selector === "[data-edit]" ? { dataset: { edit: "issue-stats" } } : null),
+      },
+    });
+    assert.equal(dom.form.elements.statsDeliveries.value, 99714);
+    assert.equal(dom.form.elements.primaryLinkedinImpressions.value, 8080);
+    assert.equal(dom.form.elements.secondaryClicks.value, 273);
+
+    dom.form.elements.primaryXClicks.value = "11";
+    dom.form.elements.primaryXCtr.value = "0.38";
+    await dom.surface.querySelector("[data-save]").onclick({ preventDefault() {} });
+    assert.equal(savedBody.slots.primary.stats.xClicks, 11);
+    assert.equal(savedBody.slots.primary.stats.xCtr, 0.38);
+    assert.equal(savedBody.stats.deliveries, 99714);
+  });
 });
 
 function expectCalendarRange(request, from, to) {

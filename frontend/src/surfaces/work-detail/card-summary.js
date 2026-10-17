@@ -2,7 +2,7 @@ import { renderIcon } from "../../core/icons.js";
 import { opensInNewTab } from "../../core/links.js";
 import { taskTitleParts } from "../../core/task-display.js";
 import { escapeHtml } from "../document-editor/inline-markdown.js";
-import { attachSlotControls, issueSlotsMarkup } from "../planning-newsletter-slots.js";
+import { attachSlotControls, issueSlotsMarkup, issueStatsSummaryMarkup } from "../planning-newsletter-slots.js";
 
 // The compact summary head of the Card detail modal: stage control, date and
 // flag chips on one row, the progress bar, the next-up line, and the clamped
@@ -129,7 +129,7 @@ export function renderCardNewsletterIssue(
       }
       section.append(row);
       const slots = document.createElement("div");
-      slots.innerHTML = issueSlotsMarkup(issue, escapeHtml);
+      slots.innerHTML = `${issueSlotsMarkup(issue, escapeHtml)}${issueStatsSummaryMarkup(issue, escapeHtml)}`;
       section.append(...slots.children);
     }
   };

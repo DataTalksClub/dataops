@@ -4,7 +4,7 @@ import {
   setupNewsletterDialog,
 } from "./planning-newsletter-dialog.js";
 import { renderPageHeaderMarkup } from "./operations-overview.js";
-import { attachSlotControls, cardDueLabel, issueSlotsMarkup } from "./planning-newsletter-slots.js";
+import { attachSlotControls, cardDueLabel, issueSlotsMarkup, issueStatsSummaryMarkup } from "./planning-newsletter-slots.js";
 import { sponsorRecordPath } from "../core/sponsor-routes.js";
 
 export function createNewsletterPlanner(context) {
@@ -251,6 +251,7 @@ export function createNewsletterPlanner(context) {
               </span>
             </div>
             ${issueSlotsMarkup(item, escapeHtml)}
+            ${issueStatsSummaryMarkup(item, escapeHtml)}
             ${planningNote}
           </div>
           <div class="newsletter-slot-actions">
@@ -260,12 +261,13 @@ export function createNewsletterPlanner(context) {
       `;
     }
 
-    /** A past issue, read-only: date, type, number, sponsors, and its card if it has one. */
+    /** A past issue, read-only: date, type, number, sponsors, stats, and its card if it has one. */
     function pastIssueMarkup(item) {
       const publicationLabel = new Date(`${item.publicationDate}T00:00:00Z`)
         .toLocaleDateString("en", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
       const kind = item.kind === "standalone" ? "Stand-alone" : "Weekly";
       const sponsors = pastSponsorsMarkup(item);
+      const statsMarkup = issueStatsSummaryMarkup(item, escapeHtml);
       return `
         <article class="newsletter-slot-row is-past" data-issue-id="${escapeHtml(item.id)}">
           <div class="newsletter-slot-date">
@@ -278,6 +280,7 @@ export function createNewsletterPlanner(context) {
               ${item.status === "sent" ? "" : `<span class="planner-status ${plannerStatusClass(item.status)}">${escapeHtml(plannerLabel(item.status))}</span>`}
             </div>
             ${sponsors}
+            ${statsMarkup}
           </div>
           <div class="newsletter-slot-actions">${item.card ? issueCardMarkup(item) : ""}</div>
         </article>

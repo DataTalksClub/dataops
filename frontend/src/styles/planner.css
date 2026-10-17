@@ -1089,3 +1089,19 @@ a.calendar-day-timeline-title:hover {
 .newsletter-campaign-field > a[hidden] {
   display: none;
 }
+.newsletter-issue-stats {
+  display: grid;
+  gap: 2px;
+  margin-top: var(--dk-space-1);
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs, 12px);
+  line-height: 1.4;
+}
+.newsletter-stats-line strong {
+  color: var(--dk-text-body, var(--dk-text-heading));
+  font-weight: 600;
+}
+.newsletter-stats-line a {
+  color: var(--dk-accent-default, inherit);
+  text-decoration: underline;
+}

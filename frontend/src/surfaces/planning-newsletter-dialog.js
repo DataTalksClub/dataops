@@ -89,6 +89,8 @@ export function setupNewsletterDialog(options) {
       if (value.kind === "standalone") delete value.issueNumber;
       if (id) delete value.kind;
       value.slots = slotForm.values(value.kind || currentEditingItem?.kind || "weekly");
+      const issueStats = slotForm.issueStats();
+      if (issueStats !== undefined) value.stats = issueStats;
 
       if (typeof value.planningNote === "string" && value.planningNote.length > 900) {
         value.planningNote = `${value.planningNote.slice(0, 890)}…`;
