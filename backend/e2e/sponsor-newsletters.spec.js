@@ -62,17 +62,18 @@ test.describe("sponsor newsletter catalog", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${server.baseURL}/sponsors`);
     await expect(page.locator("[data-crm-message]")).toBeHidden({ timeout: 20_000 });
-    await expect(page.locator("[data-crm-view='newsletters']")).toBeVisible();
+    await page.locator("[data-crm-nav-more] > summary").click();
+    await expect(page.locator("[data-crm-nav-tab='newsletters']")).toBeVisible();
     await expect(page.locator(".crm-newsletters")).toBeHidden();
 
-    await page.locator("[data-crm-view='newsletters']").click();
+    await page.locator("[data-crm-nav-tab='newsletters']").click();
     await expect(page.locator(".crm-newsletters")).toBeVisible();
     await expect(page.locator(".crm-layout")).toBeHidden();
     await expect(page.locator(".crm-leads")).toBeHidden();
     await page.setViewportSize({ width: 390, height: 844 });
-    const newslettersTab = page.locator("[data-crm-view='newsletters']");
+    const newslettersTab = page.locator("[data-crm-nav-tab='newsletters']");
     await newslettersTab.scrollIntoViewIfNeeded();
-    await expect(newslettersTab).toHaveText("Newsletters");
+    await expect(newslettersTab).toHaveText("Newsletter sources");
     await expect(page.locator(".crm-newsletters")).toBeVisible();
     await page.setViewportSize({ width: 1440, height: 900 });
     const weekly = page.locator(".crm-newsletter-row").filter({ hasText: "Data Engineering Weekly" });
@@ -146,12 +147,12 @@ test.describe("sponsor newsletter catalog", () => {
 
     await page.goto(`${server.baseURL}/sponsors`);
     await expect(page).toHaveURL(/\/sponsors\/pipeline$/);
-    const tabs = { pipeline: "[data-crm-bookings]", companies: "[data-crm-companies-section]", leads: ".crm-leads", newsletters: ".crm-newsletters" };
+    const tabs = { pipeline: "[data-crm-bookings]", companies: "[data-dir-root='companies']", leads: ".crm-leads", newsletters: ".crm-newsletters" };
     for (const [tab, visible] of Object.entries(tabs)) {
       await page.goto(`${server.baseURL}/sponsors/${tab}`);
       await expect(page.locator("[data-crm-message]")).toBeHidden({ timeout: 20_000 });
-      await expect(page).toHaveURL(new RegExp(`/sponsors/${tab}$`));
-      await expect(page.locator(`[data-crm-view='${tab}']`)).toHaveAttribute("aria-current", "page");
+      await expect(page).toHaveURL(new RegExp(`/sponsors/${tab}(?:\\?|$)`));
+      await expect(page.locator(`[data-crm-nav-tab='${tab}']`)).toHaveAttribute("aria-current", "page");
       await expect(page.locator(visible).first()).toBeVisible();
       await expect(page.locator("#sponsors-nav-button")).toHaveAttribute("aria-current", "page");
       if (SCREENSHOTS) await page.screenshot({ path: `${SCREENSHOTS}/sponsors-${tab}.png` });
@@ -160,14 +161,15 @@ test.describe("sponsor newsletter catalog", () => {
     // Tabs push history in place; Back and Forward restore them.
     await page.goto(`${server.baseURL}/sponsors/pipeline`);
     await expect(page.locator("[data-crm-message]")).toBeHidden({ timeout: 20_000 });
-    await page.locator("[data-crm-view='leads']").click();
+    await page.locator("[data-crm-nav-more] > summary").click();
+    await page.locator("[data-crm-nav-tab='leads']").click();
     await expect(page).toHaveURL(/\/sponsors\/leads$/);
-    await page.locator("[data-crm-view='newsletters']").click();
+    await page.locator("[data-crm-nav-tab='newsletters']").click();
     await expect(page).toHaveURL(/\/sponsors\/newsletters$/);
     await page.goBack();
     await expect(page).toHaveURL(/\/sponsors\/leads$/);
     await expect(page.locator(".crm-leads")).toBeVisible();
-    await expect(page.locator("[data-crm-view='leads']")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("[data-crm-nav-tab='leads']")).toHaveAttribute("aria-current", "page");
     await page.goForward();
     await expect(page.locator(".crm-newsletters")).toBeVisible();
 

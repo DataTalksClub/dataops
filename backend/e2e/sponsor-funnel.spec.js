@@ -27,7 +27,7 @@ test('funnel stays bounded, loads details on demand and edits a company person',
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/sponsors/pipeline');
   await expect(page.locator('.crm-funnel-table tbody tr')).toHaveCount(30);
-  expect(requests.filter((url) => !url.includes('/pipeline?'))).toEqual([]);
+  expect(requests.filter((url) => !url.includes('/pipeline?') && !url.includes('/views?entity='))).toEqual([]);
   await expect(page.locator('[data-crm-message]')).toBeHidden();
   await expect(page.locator('[data-pipeline-status="open"]')).toContainText('61');
   await expect(page.locator('[data-crm-bookings]')).toContainText('person@synthetic.example.test');
@@ -47,8 +47,9 @@ test('funnel stays bounded, loads details on demand and edits a company person',
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({ path: screenshot('dataops-sponsor-pipeline-after-local-mobile.png'), fullPage: true });
   await page.locator('[data-open-deal]').first().click();
-  await expect(page.locator('.crm-contact-person')).toContainText('Synthetic Person');
-  await page.getByRole('button', { name: 'Edit contact', exact: true }).click();
+  await page.getByRole('tab', { name: 'People' }).click();
+  await expect(page.locator('.crm-directory-row')).toContainText('Synthetic Person');
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
   const dialog = page.locator('[data-contact-dialog]');
   await dialog.locator('[name="role"]').fill('Head of partnerships');
   await dialog.locator('[name="linkedin"]').fill('https://www.linkedin.com/in/synthetic-person');
@@ -57,8 +58,8 @@ test('funnel stays bounded, loads details on demand and edits a company person',
   await dialog.locator('[name="lastContactedAt"]').fill('2026-10-17');
   await dialog.getByRole('button', { name: 'Save contact' }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.locator('.crm-contact-person')).toContainText('Head of partnerships');
-  await expect(page.locator('.crm-contact-person')).toContainText('@synthetic_person');
+  await page.getByRole('tab', { name: 'People' }).click();
+  await expect(page.locator('.crm-directory-row')).toContainText('Head of partnerships');
   const record = await (await fetch(`${server.baseURL}/api/sponsor-crm/contacts/${contact.id}`)).json();
   expect(record.notes).toBe('Synthetic contact note');
   expect(record.primary).toBe(true);

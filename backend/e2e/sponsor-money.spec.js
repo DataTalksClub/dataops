@@ -107,7 +107,7 @@ test.describe('Sponsors Money', () => {
 
     const page = await context.newPage();
     await page.goto('/sponsors/money');
-    await expect(page.locator('[data-crm-view="money"]')).toBeVisible();
+    await expect(page.locator('[data-crm-money]')).toBeVisible();
     const followUp = page.locator('.money-follow-up-row').filter({ hasText: 'Synthetic Money Sponsor' });
     await expect(followUp).toContainText('Follow up on the payment');
     await expect(followUp).toContainText('€2,500.00');
@@ -116,6 +116,7 @@ test.describe('Sponsors Money', () => {
 
     await followUp.getByRole('button', { name: 'Open deal' }).click();
     await expect(page).toHaveURL(new RegExp(`/sponsors/deals/${deal.id}$`));
+    await page.getByRole('tab', { name: 'Finance' }).click();
     const panel = page.locator('[data-finance-panel]');
     await expect(panel.locator('[data-finance-next-step="payment-follow-up"]')).toBeVisible();
     await expect(panel).toContainText('Invoice without number');
@@ -179,6 +180,7 @@ test.describe('Sponsors Money', () => {
         currency: 'EUR', method: 'sponsor-confirmation', reference: 'Sponsor says paid' });
       finance.version += 1; finance.waitingOn = undefined;
       await page.reload();
+      await page.getByRole('tab', { name: 'Finance' }).click();
       await expect(panel.locator('[data-finance-next-step="reconcile"]')).toBeVisible();
       await expect(panel).toContainText('Reported, unverified: Sponsor confirmation');
       await expect(panel).toContainText('\u20ac1,550.00');
