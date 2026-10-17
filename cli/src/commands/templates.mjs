@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import yaml from "js-yaml";
 
 import { ApiError } from "../api.mjs";
 import { ConflictError, UsageError } from "../errors.mjs";
@@ -79,7 +78,20 @@ function stripServerOwned(definition) {
   return clean;
 }
 
-function definitionFile(args) {
+/** js-yaml is loaded lazily so the CLI keeps working in checkouts without
+ * installed dependencies (e.g. the knowledge publish job) for every command
+ * that never parses a YAML file. Only YAML `--file` inputs trigger the load. */
+async function loadYaml() {
+  try {
+    return (await import("js-yaml")).default;
+  } catch {
+    throw new UsageError(
+      "YAML template files need the js-yaml package: pass a JSON file to --file instead, or run with dependencies installed.",
+    );
+  }
+}
+
+async function definitionFile(args) {
   const fromFile = optionalString(args, "fromFile");
   const file = optionalString(args, "file");
   if (fromFile !== undefined && file !== undefined) {
@@ -95,7 +107,13 @@ function definitionFile(args) {
   }
   const isYaml = path === "-" || /\.ya?ml$/i.test(path);
   try {
-    const parsed = isYaml ? yaml.load(text, { schema: yaml.JSON_SCHEMA }) : JSON.parse(text);
+    let parsed;
+    if (isYaml) {
+      const yaml = await loadYaml();
+      parsed = yaml.load(text, { schema: yaml.JSON_SCHEMA });
+    } else {
+      parsed = JSON.parse(text);
+    }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       throw new UsageError(`--file ${path} must hold a template definition object.`);
     }
@@ -195,7 +213,7 @@ export async function show(args, io) {
 }
 
 export async function create(args, io) {
-  const fileDefinition = definitionFile(args);
+  const fileDefinition = await definitionFile(args);
   if (fileDefinition === undefined) {
     throw new UsageError("dataops templates create --file <definition.yaml|json> [--dry-run]");
   }
@@ -243,7 +261,7 @@ function patchedTaskDefinitions(template, args) {
 export async function update(args, io) {
   const ref = positional(args, 0, "dataops templates update <id|type|name> (--from-file ... | --task ...)");
   const api = apiFor(args);
-  const fileDefinition = definitionFile(args);
+  const fileDefinition = await definitionFile(args);
   const template = await findTemplate(api, ref);
   const { expectedVersion, revision } = versionPair(args, template, fileDefinition);
   let definition;
