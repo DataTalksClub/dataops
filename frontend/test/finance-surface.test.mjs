@@ -888,6 +888,8 @@ describe("Finance surface boundary", () => {
         if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
         if (path.includes("/messages")) return { items: [] };
+        if (path.endsWith("/directory/companies/org-1"))
+          return { id: "org-1", displayName: "Safe Sponsor", active: true, lastTouch: null, version: 3, updatedAt: "2026-08-20T00:00:00Z" };
         if (path.includes("/activity/organization/org-1"))
           return {
             targetType: "organization",

@@ -226,7 +226,7 @@ test("selecting a view applies its stored filters and keeps its id", () => {
     entity: "companies", views, selectedViewId: "view-1", urlState: {},
   });
   assert.deepEqual(resolved.filters, { active: "true", relationship: "talking" });
-  assert.equal(resolved.sort, "name");
+  assert.deepEqual(resolved.sort, { field: "name", direction: "asc" });
   assert.equal(resolved.viewId, "view-1");
   assert.equal(resolved.modified, false);
 });
@@ -270,6 +270,32 @@ test("a view without server resolvedFilters fails honestly instead of guessing",
     urlState: {},
   });
   assert.match(unresolved.error, /could not be resolved/);
+});
+
+test("reverse-direction sorts survive end to end: view, URL, query, save", () => {
+  const reverse = [
+    ...SERVER_VIEWS,
+    { id: "view-rev", entity: "companies", name: "Reverse", builtin: false,
+      filters: { active: "true" }, resolvedFilters: { active: "true" },
+      sort: { field: "name", direction: "desc" }, version: 1 },
+  ];
+  const resolved = resolveEffectiveFilters({
+    entity: "companies", views: reverse, selectedViewId: "view-rev", urlState: {},
+  });
+  assert.deepEqual(resolved.sort, { field: "name", direction: "desc" });
+  assert.equal(resolved.viewId, "view-rev");
+  const url = directoryUrl("companies", { viewId: resolved.viewId, filters: resolved.filters, sort: resolved.sort });
+  assert.doesNotMatch(url, /sort=name/);
+  assert.match(url, /dir=desc/);
+  const back = directoryStateFromUrl(url, "companies");
+  assert.equal(back.error, undefined);
+  assert.equal(back.state.sort, undefined);
+  assert.equal(back.state.dir, "desc");
+  const again = resolveEffectiveFilters({ entity: "companies", views: reverse, selectedViewId: "view-rev", urlState: back.state });
+  assert.equal(again.viewId, "view-rev");
+  assert.equal(again.modified, false);
+  assert.deepEqual(directoryQueryFromState("companies", { ...resolved.filters, sort: resolved.sort }),
+    { active: "true", sort: "name", direction: "desc", limit: "30" });
 });
 
 test("default with no selection is the Active builtin behavior", () => {
