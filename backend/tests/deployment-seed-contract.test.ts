@@ -40,3 +40,21 @@ test('deploy seed gate rejects malformed counts and incomplete reconciliation', 
   assert.equal(accepted({ ...response(24), statusCode: 500 }), false);
   assert.equal(accepted({ statusCode: 200, body: 'not JSON' }), false);
 });
+
+test('deploy seed step logs only template created, total, unchanged, and updated counts after validation', () => {
+  const summaryFilter = workflow.match(/fi\s+jq -c '([^']+)' "\$seed_response"\s+echo "Authored workflow templates projected\."/)?.[1];
+  assert.ok(summaryFilter, 'deployment must log a compact counts-only summary after validation');
+  const sample = {
+    statusCode: 200,
+    headers: { 'x-internal': 'do-not-log' },
+    body: JSON.stringify({
+      templates: { created: 0, total: 30, unchanged: 30, updated: 0 },
+    }),
+  };
+  const result = spawnSync('jq', ['-c', summaryFilter!], { input: JSON.stringify(sample), encoding: 'utf8' });
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0);
+  assert.deepEqual(JSON.parse(result.stdout.trim()), {
+    templates: { created: 0, total: 30, unchanged: 30, updated: 0 },
+  });
+});

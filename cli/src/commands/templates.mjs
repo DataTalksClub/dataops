@@ -128,8 +128,6 @@ function versionPair(args, template, fileDefinition) {
   // Precedence: explicit flags, then the file's own pair (a saved GET
   // response carries the revision it was read at), then a fresh fetch. Only
   // a fresh fetch covers the fetch-to-submit window the server CAS guards.
-  // The server requires both values: rows pre-dating template editing have
-  // no revision and must be migrated by a deploy seed first.
   const fileVersion = Number.isInteger(fileDefinition?.version) && fileDefinition.version >= 1
     ? fileDefinition.version
     : undefined;
@@ -142,7 +140,7 @@ function versionPair(args, template, fileDefinition) {
     throw new UsageError("No usable version; re-run with --expected-version N.");
   }
   if (typeof revision !== "string" || revision.length === 0) {
-    throw new UsageError("No usable revision; re-run with --revision R (pre-editing rows need a deploy seed migration first).");
+    throw new UsageError("No usable revision; re-run with --revision R.");
   }
   return { expectedVersion, revision };
 }

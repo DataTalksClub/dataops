@@ -216,7 +216,7 @@ function runtimeTypes(templates: Template[]): Map<string, Template[]> {
   return byType;
 }
 
-/** A row the seed may reconcile without migration: full canonical shape. */
+/** A Git-origin row the seed may reconcile: full canonical shape. */
 function isCanonicalGitRow(template: Template): boolean {
   return template.origin === 'git'
     && typeof template.revision === 'string'
@@ -226,14 +226,13 @@ function isCanonicalGitRow(template: Template): boolean {
 }
 
 /**
- * Reconcile Git definitions into their DynamoDB projection, migrating
- * pre-canonical rows exactly once.
+ * Reconcile Git definitions into their DynamoDB projection.
  *
  * Classification is pure and runs before any write. Canonical `git` rows
- * follow the normal update path; pre-canonical Git-provenance rows are
- * rewritten into canonical shape; explicit `custom` rows colliding with an
- * authored type fail loudly; anything else is unclassified and fails
- * loudly. No silent adoption, no silent deletion, no per-row fallbacks.
+ * follow the normal update path; malformed `git` rows, explicit `custom`
+ * rows colliding with an authored type, and any unclassified rows fail
+ * closed before writes. No silent adoption, no silent deletion, no per-row
+ * fallbacks.
  */
 export async function reconcileAuthoredTemplates(
   client: DynamoDBDocumentClient,
@@ -253,21 +252,17 @@ export async function reconcileAuthoredTemplates(
     throw new Error(`Duplicate runtime workflow template types: ${duplicateRuntimeTypes.join(', ')}`);
   }
 
-  // Classification preflight: every stored row must be canonical-git,
-  // pre-canonical Git-provenance, explicit-custom, or it stops the seed.
-  // Live table contents are unobserved locally, so nothing is guessed.
+  // Classification preflight: every stored row must be canonical-git or
+  // explicit-custom, or it stops the seed before any write.
   for (const template of existing) {
     const type = String(template.type || '');
     const origin = template.origin;
     if (origin === 'git') {
-      if (type && !authoredTypes.has(type)) {
-        throw new Error(`Runtime workflow template types are absent from Git: ${type}`);
+      if (!type || !authoredTypes.has(type)) {
+        throw new Error(`Runtime workflow template types are absent from Git: ${type || '(missing)'}`);
       }
-      continue;
-    }
-    if (!origin && (template.sourcePath || template.sourceRevision)) {
-      if (type && !authoredTypes.has(type)) {
-        throw new Error(`Runtime workflow template types are absent from Git: ${type}`);
+      if (!isCanonicalGitRow(template)) {
+        throw new Error(`Malformed canonical Git workflow template ${template.id}: missing revision, pinned, or base`);
       }
       continue;
     }
@@ -277,11 +272,10 @@ export async function reconcileAuthoredTemplates(
       }
       continue;
     }
-    if (!type) continue;
-    throw new Error(`Unclassified runtime workflow template ${template.id}: missing origin and Git provenance`);
+    throw new Error(`Unclassified runtime workflow template ${template.id}: missing or invalid canonical origin`);
   }
 
-  // Legacy rows predate the TEMPLATE_TYPE# guards; claim them before any create.
+  // Claim or verify TEMPLATE_TYPE# guards before any create.
   // A guard owned by another row is a real duplicate the seed must not silently merge.
   for (const template of existing) {
     if (template.type) await ensureTypeGuard(client, template.type, template.id);
@@ -321,12 +315,7 @@ export async function reconcileAuthoredTemplates(
       throw new Error(`collides with custom template: ${definition.type}`);
     }
     if (!isCanonicalGitRow(current)) {
-      // One-time migration: rewrite the pre-canonical Git row into full
-      // canonical shape (assigning `revision` when absent) in a single
-      // conditional write.
-      await replaceSeedTemplate(client, current.id, fields, current.version);
-      result.updated += 1;
-      continue;
+      throw new Error(`Malformed canonical Git workflow template ${current.id}: missing revision, pinned, or base`);
     }
     const pinned = current.pinned === true && isDict(current.base);
     if (!pinned) {

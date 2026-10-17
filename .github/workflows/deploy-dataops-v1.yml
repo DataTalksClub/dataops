@@ -276,6 +276,7 @@ jobs:
             ' "$seed_response" >&2 || true
             exit 1
           fi
+          jq -c '(.body | fromjson) | {templates: {created: .templates.created, total: .templates.total, unchanged: .templates.unchanged, updated: .templates.updated}}' "$seed_response"
           echo "Authored workflow templates projected."
 
       - name: Smoke test deployed single-origin backend

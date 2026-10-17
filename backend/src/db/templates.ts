@@ -467,8 +467,8 @@ async function updateTemplate(client: DynamoDBDocumentClient, id: string, update
 
 /**
  * Every runtime mutation proves the row's canonical identity in the same
- * conditional write that changes it. Pre-canonical rows fail closed with
- * zero writes; only the deploy seed migrates them, exactly once.
+ * conditional write that changes it. Non-canonical rows lacking a matching
+ * `(expectedVersion, revision)` pair fail closed with zero writes.
  */
 function checkWritePair(
   current: Record<string, unknown>,
@@ -620,8 +620,8 @@ async function createTemplateWithGuard(
 }
 
 /**
- * Create an API-custom template. The `type` must be unused across both
- * seeded and legacy rows (strongly-consistent scan) before the guard claim
+ * Create an API-custom template. The `type` must be unused across all
+ * existing rows (strongly-consistent scan) before the guard claim
  * serializes concurrent creators.
  */
 async function createCustomTemplate(
@@ -635,8 +635,8 @@ async function createCustomTemplate(
   if (existing.some((template) => template.type === type)) {
     throw new TemplateDuplicateTypeError(type);
   }
-  // Claim guards for unguarded legacy rows before claiming the new type, so
-  // a legacy row can never race this creation into a duplicate effective type.
+  // Claim guards for any unguarded existing rows before claiming the new type,
+  // so an unguarded row can never race this creation into a duplicate effective type.
   for (const row of existing) {
     if (row.type) await ensureTypeGuard(client, row.type, row.id);
   }
@@ -695,16 +695,15 @@ async function replaceSeedTemplate(
   const raw = await rawTemplate(client, id);
   if (!raw) throw new TemplateVersionConflictError();
   if (raw.version !== expectedVersion) throw new TemplateVersionConflictError();
+  if (typeof raw.revision !== 'string' || raw.revision.length === 0) {
+    throw new TemplateRevisionConflictError();
+  }
   const item = effectiveItemFromDefinition(raw, fields, {
     origin: 'git',
     pinned: false,
     base: { ...definitionFieldsOf(fields) },
     baseSourceRevision: (fields.sourceRevision as string | undefined) ?? null,
   });
-  // Seed migration assigns the revision when the persisted row predates it.
-  if (typeof item.revision !== 'string' || item.revision.length === 0) {
-    item.revision = crypto.randomUUID();
-  }
   await conditionalPutTemplate(client, item, expectedVersion);
   return cleanItem(item) as Template;
 }
@@ -741,11 +740,10 @@ async function templateInUse(client: DynamoDBDocumentClient, id: string): Promis
 }
 
 /**
- * Delete an unused custom template and release its `type` atomically. The
- * row is removed as found: minting identity on a row about to be deleted
- * would force every legacy delete through a revision the caller never saw.
- * A caller that omits `revision` for an identified row, or names one for a
- * row that never had it, fails closed.
+ * Delete an unused custom template and release its `type` atomically.
+ * Only canonical `origin === 'custom'` templates with a matching
+ * `(expectedVersion, revision)` pair and zero referencing Cards may be
+ * deleted; Git-origin or unclassified rows fail closed.
  */
 async function deleteCustomTemplate(
   client: DynamoDBDocumentClient,
@@ -757,10 +755,7 @@ async function deleteCustomTemplate(
   if (!raw) return null;
   const current = raw;
   checkWritePair(current, expectedVersion, revision);
-  const origin = current.origin === 'git' || current.origin === 'custom'
-    ? current.origin
-    : (current.sourcePath || current.sourceRevision ? 'git' : 'custom');
-  if (origin === 'git') {
+  if (current.origin !== 'custom') {
     throw new TemplateEditForbiddenError('cannot-delete-git-template');
   }
   // Read the fence counter before the in-use scan: a Card created after this

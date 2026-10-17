@@ -6,7 +6,13 @@ import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { handler } from '../src/handler';
 import { useTestDatabase, truncateTestTables } from './helpers/db';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { createTemplate, createCardFromTemplate, deleteCustomTemplate } from '../src/db/templates';
+import {
+  createTemplate,
+  createCardFromTemplate,
+  deleteCustomTemplate,
+  replaceSeedTemplate,
+  TemplateRevisionConflictError,
+} from '../src/db/templates';
 import { getTemplateIdByType, invalidateTemplateTypeMap } from '../src/cards/createCard';
 import { createUserWithId } from '../src/db/users';
 import { TABLE_TEMPLATES } from '../src/db/tableNames';
@@ -281,7 +287,7 @@ describe('Templates runtime editing', () => {
     assert.equal(bodyOf(await get(`/api/templates/${template.id}`)).template.version, 1);
   });
 
-  it('fails closed on unmigrated rows without writing', async () => {
+  it('fails closed on unmigrated rows without writing and refuses deleting a row with revision but missing canonical origin', async () => {
     const id = await putRawTemplate({
       name: 'Unmigrated', type: 'unmigrated-row', triggerType: 'manual',
       taskDefinitions: [{ refId: 'a', description: 'A', offsetDays: 0 }],
@@ -299,10 +305,29 @@ describe('Templates runtime editing', () => {
       assert.equal(bodyOf(response).code, 'template_version_conflict');
     }
     assert.deepStrictEqual(bodyOf(await get(`/api/templates/${id}`)).template, before);
+
+    // A raw row with a valid version+revision pair but missing canonical origin
+    // (and no sourcePath/sourceRevision) must fail closed on DELETE rather than
+    // falling back to custom.
+    const rawWithRevId = await putRawTemplate({
+      name: 'Missing Origin With Revision',
+      type: 'missing-origin-rev',
+      triggerType: 'manual',
+      revision: 'rev-present-1',
+      taskDefinitions: [{ refId: 'a', description: 'A', offsetDays: 0 }],
+    });
+    const beforeRawWithRev = bodyOf(await get(`/api/templates/${rawWithRevId}`)).template;
+    const deleteRes = await call('DELETE', `/api/templates/${rawWithRevId}`, {
+      expectedVersion: 1,
+      revision: 'rev-present-1',
+    });
+    assert.equal(deleteRes.statusCode, 409, deleteRes.body);
+    assert.equal(bodyOf(deleteRes).code, 'cannot-delete-git-template');
+    assert.deepStrictEqual(bodyOf(await get(`/api/templates/${rawWithRevId}`)).template, beforeRawWithRev);
   });
 
-  it('migrates pre-canonical Git rows on seed, then canonical writes succeed', async () => {
-    const id = await putRawTemplate({
+  it('fails closed before writing on legacy Git-provenance rows lacking canonical origin', async () => {
+    const legacyId = await putRawTemplate({
       name: 'Name premig-row', type: 'premig-row', triggerType: 'manual',
       taskDefinitions: [
         { refId: 'a', description: 'Task A', offsetDays: 0 },
@@ -310,37 +335,101 @@ describe('Templates runtime editing', () => {
       ],
       sourcePath: 'workflow-templates/premig-row.yaml', sourceRevision: 'rev-1',
     });
-    const report = await reconcileAuthoredTemplates(client, [authored('premig-row', TWO_TASKS, 'rev-1')]);
-    assert.deepStrictEqual(report, { total: 1, created: 0, updated: 1, unchanged: 0 });
-    const migrated = bodyOf(await get(`/api/templates/${id}`)).template;
-    assert.equal(migrated.id, id);
-    assert.equal(migrated.origin, 'git');
-    assert.equal(migrated.pinned, false);
-    assert.ok(typeof migrated.revision === 'string' && migrated.revision.length > 0);
-    assert.equal(migrated.baseSourceRevision, 'rev-1');
-    assert.deepStrictEqual(migrated.base.taskDefinitions.map((task: { refId: string }) => task.refId), ['a', 'b']);
-    assert.equal(migrated.version, 2);
-
-    // The second identical seed is a no-op that keeps the assigned revision.
-    const same = await reconcileAuthoredTemplates(client, [authored('premig-row', TWO_TASKS, 'rev-1')]);
-    assert.deepStrictEqual(same, { total: 1, created: 0, updated: 0, unchanged: 1 });
-    assert.equal(bodyOf(await get(`/api/templates/${id}`)).template.revision, migrated.revision);
-
-    const pinned = await call('PUT', `/api/templates/${id}`, {
-      expectedVersion: 2, revision: migrated.revision,
-      definition: {
-        ...validCustomDefinition('premig-row'),
-        taskDefinitions: [{ refId: 'only', description: 'Only', offsetDays: 2 }],
-      },
-    });
-    assert.equal(pinned.statusCode, 200, pinned.body);
-    const reset = await call('POST', `/api/templates/${id}/reset`, { expectedVersion: 3, revision: migrated.revision });
-    assert.equal(reset.statusCode, 200, reset.body);
-    assert.equal(bodyOf(reset).applied, true);
-    assert.deepStrictEqual(
-      bodyOf(reset).template.taskDefinitions.map((task: { refId: string }) => task.refId),
-      ['a', 'b'],
+    const beforeLegacy = bodyOf(await get(`/api/templates/${legacyId}`)).template;
+    await assert.rejects(
+      reconcileAuthoredTemplates(client, [
+        authored('fresh-before-fail', TWO_TASKS, 'rev-1'),
+        authored('premig-row', TWO_TASKS, 'rev-1'),
+      ]),
+      new RegExp(`Unclassified runtime workflow template ${legacyId}: missing or invalid canonical origin`),
     );
+    const listed = bodyOf(await get('/api/templates')).templates;
+    assert.deepStrictEqual(listed.map((t: { id: string }) => t.id), [legacyId]);
+    assert.deepStrictEqual(bodyOf(await get(`/api/templates/${legacyId}`)).template, beforeLegacy);
+    for (const guardType of ['premig-row', 'fresh-before-fail']) {
+      const guard = await client.send(new GetCommand({
+        TableName: TABLE_TEMPLATES, Key: { PK: `TEMPLATE_TYPE#${guardType}`, SK: `TEMPLATE_TYPE#${guardType}` },
+      }));
+      assert.equal(guard.Item, undefined);
+    }
+  });
+
+  for (const [label, fields] of [
+    ['missing revision', { origin: 'git', pinned: false, base: { name: 'X' } }],
+    ['missing boolean pinned', { origin: 'git', revision: 'rev-ok', base: { name: 'X' } }],
+    ['missing base map', { origin: 'git', revision: 'rev-ok', pinned: false }],
+  ] as const) {
+    it(`fails closed before writing on malformed canonical Git row (${label})`, async () => {
+      const type = `malformed-${label.replace(/\s+/g, '-')}`;
+      const otherType = `other-before-${label.replace(/\s+/g, '-')}`;
+      const id = await putRawTemplate({
+        name: `Name ${type}`, type, triggerType: 'manual',
+        taskDefinitions: [{ refId: 'a', description: 'Task A', offsetDays: 0 }],
+        sourcePath: `workflow-templates/${type}.yaml`, sourceRevision: 'rev-1',
+        ...fields,
+      });
+      const before = bodyOf(await get(`/api/templates/${id}`)).template;
+      await assert.rejects(
+        reconcileAuthoredTemplates(client, [
+          authored(otherType, TWO_TASKS, 'rev-1'),
+          authored(type, TWO_TASKS, 'rev-1'),
+        ]),
+        new RegExp(`Malformed canonical Git workflow template ${id}: missing revision, pinned, or base`),
+      );
+      const listed = bodyOf(await get('/api/templates')).templates;
+      assert.deepStrictEqual(listed.map((t: { id: string }) => t.id), [id]);
+      assert.deepStrictEqual(bodyOf(await get(`/api/templates/${id}`)).template, before);
+      for (const guardType of [type, otherType]) {
+        const guard = await client.send(new GetCommand({
+          TableName: TABLE_TEMPLATES, Key: { PK: `TEMPLATE_TYPE#${guardType}`, SK: `TEMPLATE_TYPE#${guardType}` },
+        }));
+        assert.equal(guard.Item, undefined);
+      }
+    });
+  }
+
+  it('replaceSeedTemplate fails closed with zero writes when existing revision is missing or empty', async () => {
+    for (const [label, extra] of [
+      ['missing', {}],
+      ['empty', { revision: '' }],
+    ] as const) {
+      const id = await putRawTemplate({
+        name: `Legacy ${label}`, type: `replace-seed-${label}`, triggerType: 'manual',
+        taskDefinitions: [{ refId: 'a', description: 'Task A', offsetDays: 0 }],
+        sourcePath: `workflow-templates/replace-seed-${label}.yaml`, sourceRevision: 'rev-1',
+        ...extra,
+      });
+      const beforeRaw = (await client.send(new GetCommand({
+        TableName: TABLE_TEMPLATES, Key: { PK: `TEMPLATE#${id}`, SK: `TEMPLATE#${id}` }, ConsistentRead: true,
+      }))).Item;
+      await assert.rejects(
+        replaceSeedTemplate(client, id, authored(`replace-seed-${label}`, TWO_TASKS, 'rev-2'), 1),
+        (error: unknown) => error instanceof TemplateRevisionConflictError,
+      );
+      const afterRaw = (await client.send(new GetCommand({
+        TableName: TABLE_TEMPLATES, Key: { PK: `TEMPLATE#${id}`, SK: `TEMPLATE#${id}` }, ConsistentRead: true,
+      }))).Item;
+      assert.deepStrictEqual(afterRaw, beforeRaw);
+      assert.equal(afterRaw?.version, 1);
+      assert.equal(afterRaw?.revision, extra.revision);
+    }
+  });
+
+  it('replaceSeedTemplate preserves canonical revision on valid Git replacement', async () => {
+    const seeded = await seedGit('replace-seed-canonical', [{ id: 'a', name: 'Task A', schedule: { offset_days: 0 } }], 'rev-1');
+    const replaced = await replaceSeedTemplate(
+      client,
+      seeded.id,
+      authored('replace-seed-canonical', TWO_TASKS, 'rev-2'),
+      1,
+    );
+    assert.equal(replaced.id, seeded.id);
+    assert.equal(replaced.version, 2);
+    assert.equal(replaced.revision, seeded.revision);
+    assert.equal(replaced.origin, 'git');
+    assert.equal(replaced.pinned, false);
+    assert.equal(replaced.baseSourceRevision, 'rev-2');
+    assert.deepStrictEqual(replaced.taskDefinitions.map((task: { refId: string }) => task.refId), ['a', 'b']);
   });
 
   it('preserves pins across seeds and keeps custom rows', async () => {
@@ -407,14 +496,37 @@ describe('Templates runtime editing', () => {
     assert.equal(intact.version, 1);
   });
 
-  it('fails closed loudly on unclassified rows', async () => {
+  it('fails closed loudly on unclassified typed rows', async () => {
     await seedGit('pin-kept', TWO_TASKS, 'rev-git-2');
-    // Unclassified rows (no origin, no Git provenance) fail loudly, never silently adopted.
-    await putRawTemplate({ name: 'Mystery', type: 'mystery-type' });
+    // Unclassified rows (no canonical origin) fail loudly before any write.
+    const mysteryId = await putRawTemplate({ name: 'Mystery', type: 'mystery-type' });
     await assert.rejects(
-      reconcileAuthoredTemplates(client, [authored('pin-kept', TWO_TASKS, 'rev-git-2')]),
-      /Unclassified runtime workflow template/,
+      reconcileAuthoredTemplates(client, [
+        authored('fresh-unwritten', TWO_TASKS, 'rev-git-2'),
+        authored('pin-kept', TWO_TASKS, 'rev-git-2'),
+      ]),
+      new RegExp(`Unclassified runtime workflow template ${mysteryId}: missing or invalid canonical origin`),
     );
+    assert.equal(
+      bodyOf(await get('/api/templates')).templates.some((t: { type?: string }) => t.type === 'fresh-unwritten'),
+      false,
+    );
+  });
+
+  it('fails closed loudly on unclassified untyped rows before writing', async () => {
+    const untypedId = await putRawTemplate({ name: 'Untyped mystery' });
+    const before = bodyOf(await get(`/api/templates/${untypedId}`)).template;
+    await assert.rejects(
+      reconcileAuthoredTemplates(client, [authored('fresh-unwritten', TWO_TASKS, 'rev-git-1')]),
+      new RegExp(`Unclassified runtime workflow template ${untypedId}: missing or invalid canonical origin`),
+    );
+    const listed = bodyOf(await get('/api/templates')).templates;
+    assert.deepStrictEqual(listed.map((t: { id: string }) => t.id), [untypedId]);
+    assert.deepStrictEqual(bodyOf(await get(`/api/templates/${untypedId}`)).template, before);
+    const guard = await client.send(new GetCommand({
+      TableName: TABLE_TEMPLATES, Key: { PK: 'TEMPLATE_TYPE#fresh-unwritten', SK: 'TEMPLATE_TYPE#fresh-unwritten' },
+    }));
+    assert.equal(guard.Item, undefined);
   });
 
   it('resets a pinned Git template to its base and reports idempotent resets', async () => {
