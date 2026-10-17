@@ -234,6 +234,58 @@ test("wired panel pager, retry and task buttons behave", async () => {
   assert.deepEqual(opened, ["t1"]);
 });
 
+test("a stale filter response never overwrites the newer page", async () => {
+  let releaseFirst;
+  const first = new Promise((resolve) => { releaseFirst = resolve; });
+  let calls = 0;
+  const api = async (path) => {
+    calls += 1;
+    if (calls === 1) {
+      await first;
+      return activityPayload([{ ts: "2026-10-01T00:00:00Z", source: "note", id: "old", actor: null, text: "Old", provenance: {} }]);
+    }
+    return activityPayload([{ ts: "2026-10-09T00:00:00Z", source: "note", id: "new", actor: null, text: "New", provenance: {} }], { total: 1 });
+  };
+  const loader = createActivityLoader({ api, targetType: "organization", targetId: "c1" });
+  const pending = loader.load({ types: [] });
+  await loader.load({ types: ["note"] });
+  releaseFirst();
+  await pending;
+  assert.deepEqual(loader.state.items.map((item) => item.id), ["new"], "deferred first response is discarded");
+  assert.deepEqual(loader.state.types, ["note"]);
+});
+
+test("note status is owned locally even when the wrapper swallows errors", async () => {
+  const root = new FakeNode("div");
+  root.setQuery("[data-activity-list]", new FakeNode("div"));
+  root.setQuery("[data-activity-pager]", new FakeNode("div"));
+  root.setQuery("[data-activity-related]", new FakeNode("div"));
+  root.setQuery("[data-activity-note-status]", new FakeNode("p"));
+  const form = root.setQuery("[data-activity-note-form]", new FakeNode("form"));
+  form.elements.body.value = "Draft";
+  let fail = true;
+  const api = async (path, options = {}) => {
+    if (path.startsWith("/notes/")) {
+      if (fail) throw new Error("network down");
+      return { id: "n1", body: "Draft" };
+    }
+    return activityPayload();
+  };
+  const loader = createActivityLoader({ api, targetType: "deal", targetId: "d1" });
+  // Swallowing wrapper: resolves without rethrowing.
+  const swallowing = async () => {};
+  const wired = wireActivityPanel(root, loader, { ...context, safe: swallowing, generateKey: () => "k" });
+  await wired.refresh();
+  await form.dispatch("submit", {});
+  const status = root.querySelector("[data-activity-note-status]");
+  assert.match(status.textContent, /not saved/, "status settles without the wrapper's catch");
+  assert.equal(form.elements.body.value, "Draft", "failed draft is preserved");
+  fail = false;
+  await form.dispatch("submit", {});
+  assert.match(status.textContent, /saved/);
+  assert.equal(form.elements.body.value, "", "saved draft clears");
+});
+
 test("wired panel surfaces load failures with retry", async () => {
   let fail = true;
   const api = async () => {

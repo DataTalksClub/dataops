@@ -726,6 +726,7 @@ describe("Finance surface boundary", () => {
       status: "agreed",
       version: 3,
     };
+    const seenPaths = [];
     const { document, finance } = createHarness({
       route: {
         view: "sponsors",
@@ -736,6 +737,7 @@ describe("Finance surface boundary", () => {
       },
       request: async (url) => {
         const path = requestPath(url);
+        seenPaths.push(path);
         if (path.endsWith("/organizations"))
           return { items: [{ id: "org-1", displayName: "Safe Sponsor", relationship: "talking" }] };
         if (path.endsWith("/contacts"))
@@ -753,11 +755,24 @@ describe("Finance surface boundary", () => {
         if (path.endsWith("/leads")) return { items: [] };
         if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
-        if (path.includes("/messages")) return { items: [
-          { direction: "inbound", sentAt: "2026-01-12T23:30:00Z", snippet: "Synthetic <reply>" },
-          { direction: "outbound", sentAt: "2026-01-12T23:45:00Z", snippet: "Synthetic response" },
-        ] };
-        if (path.includes("/communications"))
+        if (path.endsWith("/directory/companies/org-1"))
+          return { id: "org-1", displayName: "Safe Sponsor", relationship: "talking", notes: "", version: 3 };
+        if (path.includes("/activity/organization/org-1"))
+          return {
+            targetType: "organization",
+            targetId: "org-1",
+            items: [
+              { ts: "2026-01-12T23:30:00Z", source: "mail", id: "m1", actor: null, text: "Synthetic <reply> from the sponsor", provenance: { direction: "inbound", link: "direct" } },
+              { ts: "2026-01-12T23:45:00Z", source: "touch", id: "t1", actor: "operator-1", text: "Synthetic response logged", provenance: {} },
+            ],
+            total: 2,
+            nextCursor: null,
+            sources: { mail: 1, touch: 1 },
+            relatedWork: [],
+            tasksScope: "open",
+            reads: {},
+          };
+        if (path.includes("/deals/booking-1/communications"))
           return {
             items: [
               {
@@ -773,7 +788,7 @@ describe("Finance surface boundary", () => {
                 recordType: "communication-draft-version",
                 version: 4,
                 reviewState: "awaiting_review",
-                reviewable: true,
+                reviewable: false,
                 subject: "DO NOT RENDER DRAFT SUBJECT",
               },
               {
@@ -783,6 +798,7 @@ describe("Finance surface boundary", () => {
                 providerPayload: "DO NOT RENDER PROVIDER PAYLOAD",
               },
             ],
+            nextCursor: null,
             config: { enabled: true },
             permissions: {
               role: "operator",
@@ -801,30 +817,48 @@ describe("Finance surface boundary", () => {
     });
 
     await finance.renderSponsorCrmSurface();
-    const companyDetail = document.surface.querySelector("[data-crm-detail]").innerHTML;
-    assert.doesNotMatch(companyDetail, /class="booking-kind"/);
-    assert.match(companyDetail, /data-status="agreed">\s*Agreed/);
-    assert.match(companyDetail, /Incoming/);
-    assert.match(companyDetail, /Outgoing/);
-    assert.match(companyDetail, /13 Jan 2026, 00:30 CET/);
-    assert.match(companyDetail, /Synthetic &lt;reply&gt;/);
-    await document.surface.querySelector("[data-mail-search]").dispatch("input", {
-      target: { value: "Synthetic" },
-    });
     await settle();
-    const searchedMail = document.surface.querySelector("[data-mail-threads]").innerHTML;
-    assert.match(searchedMail, /Incoming/);
-    assert.match(searchedMail, /13 Jan 2026, 00:30 CET/);
-    assert.match(searchedMail, /Synthetic &lt;reply&gt;/);
-
-    const communications = document.surface.querySelector(
-      "[data-crm-communications]",
-    ).innerHTML;
-    assert.match(communications, /Materials deadline needs operator review/);
-    assert.match(communications, /Draft saved\. Awaiting administrator review/);
-    assert.match(communications, /never resent automatically/);
-    assert.doesNotMatch(communications, /Review exact draft/);
-    assert.doesNotMatch(communications, /DO NOT RENDER/);
+    // Record opens progressively: identity header + tabs, no eager mail,
+    // communications or finance loads.
+    const record = document.surface.querySelector("[data-crm-record]").innerHTML;
+    assert.doesNotMatch(record, /class="booking-kind"/);
+    assert.match(record, /data-status="talking">\s*Talking/);
+    assert.match(record, /role="tablist"/);
+    assert.match(record, /data-record-tab="finance"/);
+    assert.ok(!seenPaths.some((path) => path.includes("/messages")), "no eager filed-mail load");
+    assert.ok(!seenPaths.some((path) => path.includes("/deals/booking-1/communications")), "no eager communications load");
+    assert.ok(!seenPaths.some((path) => path.endsWith("/history")), "no eager history load");
+    assert.ok(!seenPaths.some((path) => path.includes("organizationId=org-1")), "no eager deals load");
+    // Overview shows the bounded activity preview with escaped snippets and
+    // no private payloads or full bodies.
+    const overview = document.surface.querySelector("[data-crm-record]").querySelector('[data-record-panel="overview"]').innerHTML;
+    assert.match(overview, /Synthetic &lt;reply&gt; from the sponsor/);
+    assert.doesNotMatch(overview, /DO NOT RENDER/);
+    // The Activity tab keeps the timeline filterable; the archive disclosure
+    // loads the preserved drafts/attempts lazily and read-only.
+    const wired = document.surface.querySelector("[data-crm-detail]").querySelector("[data-crm-record]");
+    const tabTarget = (name) => ({ closest: (selector) => selector === "[data-record-tab]" ? { dataset: { recordTab: name } } : null });
+    await wired.dispatch("click", { target: tabTarget("deals") });
+    await settle();
+    assert.match(
+      document.surface.querySelector("[data-crm-record]").querySelector("[data-record-header]").innerHTML,
+      /data-status="agreed">\s*Agreed/,
+      "selecting the deep-linked deal chips its status in the header",
+    );
+    await wired.dispatch("click", { target: tabTarget("activity") });
+    await settle();
+    const panel = document.surface.querySelector("[data-crm-record]").querySelector('[data-record-panel="activity"]');
+    assert.match(panel.innerHTML, /Show/);
+    const archiveHost = panel.querySelector("[data-record-archive-host]");
+    const disclosure = archiveHost.querySelector("[data-record-archive]");
+    disclosure.open = true;
+    await archiveHost.dispatch("toggle", { target: { open: true, closest: (selector) => selector === "[data-record-archive]" ? disclosure : null } });
+    await settle();
+    assert.match(archiveHost.innerHTML, /Archived draft v4/);
+    assert.match(archiveHost.innerHTML, /Delivery outcome_unknown/);
+    assert.doesNotMatch(archiveHost.innerHTML, /Review exact draft/, "operators keep the read-only archive without exact-preview entry");
+    assert.doesNotMatch(archiveHost.innerHTML, /DO NOT RENDER/);
+    assert.doesNotMatch(archiveHost.innerHTML, /data-approve-message|data-cancel-attempt|data-suppress-address|data-create-review|data-draft-suggestion/);
   });
 
   test("keeps exact sponsor review immutable and revokes it before navigation", async () => {
@@ -854,6 +888,18 @@ describe("Finance surface boundary", () => {
         if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
         if (path.includes("/messages")) return { items: [] };
+        if (path.includes("/activity/organization/org-1"))
+          return {
+            targetType: "organization",
+            targetId: "org-1",
+            items: [],
+            total: 0,
+            nextCursor: null,
+            sources: {},
+            relatedWork: [],
+            tasksScope: "open",
+            reads: {},
+          };
         if (path.includes("/deals/booking-1/communications"))
           return {
             items: [
@@ -899,22 +945,31 @@ describe("Finance surface boundary", () => {
     });
 
     await finance.renderSponsorCrmSurface();
-    const communicationRoot = document.surface.querySelector(
-      "[data-crm-communications]",
-    );
-    assert.match(communicationRoot.innerHTML, /Review exact draft/);
+    await settle();
+    // The archived draft is reachable through the record Activity tab; the
+    // exact preview itself stays immutable and read-only.
+    const wired = document.surface.querySelector("[data-crm-detail]").querySelector("[data-crm-record]");
+    const tabTarget = (name) => ({ closest: (selector) => selector === "[data-record-tab]" ? { dataset: { recordTab: name } } : null });
+    await wired.dispatch("click", { target: tabTarget("deals") });
+    await settle();
+    await wired.dispatch("click", { target: tabTarget("activity") });
+    await settle();
+    const panel = document.surface.querySelector("[data-crm-record]").querySelector('[data-record-panel="activity"]');
+    const archiveHost = panel.querySelector("[data-record-archive-host]");
+    const disclosure = archiveHost.querySelector("[data-record-archive]");
+    disclosure.open = true;
+    await archiveHost.dispatch("toggle", { target: { open: true, closest: (selector) => selector === "[data-record-archive]" ? disclosure : null } });
+    await settle();
+    assert.match(archiveHost.innerHTML, /Review exact draft/);
 
-    const reviewButton = new FakeElement("button");
-    reviewButton.dataset.reviewDraft = "message-1";
-    reviewButton.dataset.draftVersion = "7";
+    const reviewButton = { dataset: { archiveReview: "message-1", archiveVersion: "7" } };
     const target = {
       closest(selector) {
-        if (selector === "[data-crm-communications]") return communicationRoot;
-        if (selector === "[data-review-draft]") return reviewButton;
+        if (selector === "[data-archive-review]") return reviewButton;
         return null;
       },
     };
-    await document.surface.dispatch("click", { target });
+    await archiveHost.dispatch("click", { target });
     await settle();
 
     const dialog = document.surface.querySelector(

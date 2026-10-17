@@ -1,10 +1,25 @@
-import { SPLIT_BACK_ICON } from "../split-back-icon.js";
 import { html } from "./shared.js";
+import { createSponsorRecord } from "./sponsor-record.js";
 
 /**
- * Company page for the Sponsors surface: people, deals, filed mail, finance,
- * communications, and history. Extracted from sponsors.js so the surface
- * factory stays under the 1,000-line module contract.
+ * Company/deal record entry point (F-owned). Delegates rendering to the
+ * progressive-disclosure record shell (sponsor-record.js): stable identity
+ * header, accessible lazy tabs (Overview / People / Activity / Deals /
+ * Finance), per-deal finance/archive caches, Back with list restoration.
+ *
+ * Old behavior removed here (no eager loads): the previous pane fetched
+ * deal history + org messages + finance + communications on every open and
+ * rendered all sections at once. Tabs now fetch only on open; People uses
+ * the D paged directory; Activity uses the D unified timeline; Finance
+ * reuses the canonical loader through its own hook; the archive disclosure
+ * reads B-preserved communications (read-only).
+ *
+ * E owns the surrounding integration (routes, mount, list refresh): this
+ * module mounts into the existing [data-crm-detail] pane and replicates the
+ * previous Back/scroll/split behavior. New optional ctx (E one-line hunks):
+ * openTaskPanel, openContactEditor (from the sponsors.js editor instance),
+ * loadArchive override. Until E passes openContactEditor, person edit
+ * affordances stay hidden and Add contact uses the legacy dialog preset.
  */
 export function createSponsorCompanyDetail({
   api,
@@ -24,336 +39,136 @@ export function createSponsorCompanyDetail({
   loadFinance,
   loadCommunications,
   safe,
+  openTaskPanel,
+  openCompanyRecord,
+  openContactEditor,
+  loadArchive,
+  onReviewDraft,
+  onEditCompany,
+  onAddDeal,
 }) {
-  function historyDateTime(value) {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "Date unavailable";
-    return new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Berlin",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZoneName: "short",
-    }).format(date);
+  const record = createSponsorRecord({
+    api,
+    surface,
+    escapeHtml,
+    humanizeOptionLabel,
+    humanSponsorDate,
+    safe,
+    closeRecord: () => {},
+    loadFinance,
+    openTaskPanel,
+    openCompanyRecord: openCompanyRecord || (async (organizationId) => {
+      await reopenCompanyDetail({ id: organizationId });
+    }),
+    openContactEditor,
+    loadArchive: loadArchive || defaultLoadArchive,
+    onReviewDraft: onReviewDraft || onReviewDraftDefault,
+    onArchiveCompany,
+    onRestoreCompany,
+    onAddDeal: onAddDeal || ((organizationId) => openDeal({ organizationId, status: "open" })),
+    onEditCompany,
+  });
+
+  async function defaultLoadArchive(dealId) {
+    // B-preserved read path (GET deals/:id/communications, body-free),
+    // projected to the archive shape E confirmed. Read-only: no
+    // draft/approve/cancel/reconcile affordances are produced or consumed.
+    const items = [];
+    let cursor = "";
+    for (let page = 0; page < 20; page += 1) {
+      const query = new URLSearchParams({ limit: "50" });
+      if (cursor) query.set("cursor", cursor);
+      const result = await api(`/deals/${encodeURIComponent(dealId)}/communications?${query}`);
+      for (const item of result.items || []) {
+        if (item.recordType !== "communication-draft-version" && item.recordType !== "sponsor-send-attempt") continue;
+        items.push({
+          id: String(item.communicationId || item.id),
+          kind: item.recordType,
+          label: item.recordType === "communication-draft-version"
+            ? `Archived draft v${item.version ?? "?"}`
+            : `Delivery ${item.derivedStatus || item.status || "record"}`,
+          preview: item.safeReason || item.derivedStatus || item.status || "",
+          detail: typeof item.snippet === "string" ? item.snippet : undefined,
+          createdAt: item.createdAt || item.updatedAt || null,
+          version: item.version,
+          reviewable: Boolean(item.reviewable),
+        });
+      }
+      cursor = result.nextCursor || "";
+      if (!cursor) break;
+    }
+    return { items, total: items.length, hasMore: Boolean(cursor) };
   }
 
-  function mailThreadMarkup(item) {
-    const direction = { inbound: "Incoming", outbound: "Outgoing" }[item.direction]
-      || humanizeOptionLabel(item.direction);
-    return html`<li>
-      <strong>${escapeHtml(direction)}</strong>
-      ${item.sentAt ? html` · ${escapeHtml(historyDateTime(item.sentAt))}` : ""}
-      ${item.snippet ? html`<p>${escapeHtml(item.snippet)}</p>` : ""}
-    </li>`;
+  async function onReviewDraftDefault(communicationId, version) {
+    // Read-only exact preview through B's preserved review flow (no sends,
+    // no composer). The dialog and its revoke/immutability behavior are
+    // E-owned sponsors.js/layout territory; the record only opens it.
+    if (typeof sponsorCommunications?.showExactReview !== "function") return;
+    await sponsorCommunications.showExactReview(communicationId, Number(version));
+    surface.querySelector("[data-communication-review-dialog]")?.querySelector("[data-review-close]")?.focus?.();
+  }
+
+  async function onArchiveCompany() {
+    const company = record.getCompany();
+    if (!company) return;
+    await api(`/organizations/${encodeURIComponent(company.id)}`, { method: "DELETE" });
+    await reopenCompanyDetail({ id: company.id }, record.getSelectedDealId());
+  }
+
+  async function onRestoreCompany() {
+    const company = record.getCompany();
+    if (!company) return;
+    await api(`/organizations/${encodeURIComponent(company.id)}`, {
+      method: "PUT",
+      body: JSON.stringify({ archivedAt: null, active: true, version: company.version }),
+    });
+    await reopenCompanyDetail({ id: company.id }, record.getSelectedDealId());
+  }
+
+  function mount() {
+    const detail = surface.querySelector("[data-crm-detail]");
+    detail.innerHTML = html`<div data-crm-record></div>`;
+    return detail.querySelector("[data-crm-record]");
   }
 
   async function reopenDealDetail(deal) {
-    const organization =
-      getOrganizations().find((item) => item.id === deal.organizationId) ||
-      (await api(`/organizations/${deal.organizationId}`));
-    await reopenCompanyDetail(organization, deal);
+    await reopenCompanyDetail({ id: deal.organizationId }, deal);
   }
 
-  async function reopenCompanyDetail(organization, highlightedDeal) {
-    const orgDeals = getDeals().filter(
-      (item) => item.organizationId === organization.id,
-    );
-    const orgContacts = getContacts().filter(
-      (item) => item.organizationId === organization.id && !item.archivedAt,
-    );
-    const deal =
-      highlightedDeal ||
-      orgDeals.find((item) => item.status !== "lost") ||
-      orgDeals[0];
-    if (deal) sponsorCommunications.selectedBookingId = deal.id;
+  async function reopenCompanyDetail(organization, highlightedDeal = null) {
+    const split = surface.querySelector("[data-crm-split]");
     const listScroller = surface.querySelector("[data-crm-list-scroll]");
     const listScrollTop = listScroller?.scrollTop || 0;
     surface.classList.add("has-booking-detail");
     // The queue marks this company as the selected row; on a phone the split
     // shows the detail pane.
     surface.dataset.selectedCompany = organization.id;
-    const split = surface.querySelector("[data-crm-split]");
-    split.dataset.view = "detail";
+    if (split) split.dataset.view = "detail";
     draw();
     if (listScroller) listScroller.scrollTop = listScrollTop;
-    const history = deal ? await api(`/deals/${deal.id}/history`) : { items: [] };
-    const mail = await api(`/organizations/${organization.id}/messages`);
-    const historyMarkup = (history.items || []).length
-      ? history.items
-          .map(
-            (item) => html`
-              <div>
-                <strong>
-                  ${escapeHtml(humanizeOptionLabel(item.oldStatus || "created"))}
-                  → ${escapeHtml(humanizeOptionLabel(item.newStatus))}
-                </strong>
-                <small>Recorded ${escapeHtml(historyDateTime(item.createdAt))}</small>
-                ${item.note ? html`<p>${escapeHtml(item.note)}</p>` : ""}
-              </div>
-            `,
-          )
-          .join("")
-      : html`
-          <div class="honest-state">
-            <strong>No status changes yet</strong>
-            <p>Changes to the deal status will appear here.</p>
-          </div>
-        `;
-    const people = orgContacts.length
-      ? orgContacts
-          .map(
-            (item) => html`<li class="crm-contact-person">
-              <strong>${escapeHtml(item.name)}</strong>${item.primary ? ' · Primary contact' : ''}
-              ${item.role ? html`<p>${escapeHtml(item.role)}</p>` : ''}
-              <p>${escapeHtml((item.emails || []).join(' · '))}</p>
-              ${item.linkedin ? html`<p>LinkedIn: ${escapeHtml(item.linkedin)}</p>` : ''}
-              ${item.telegram ? html`<p>Telegram: ${escapeHtml(item.telegram)}</p>` : ''}
-              ${item.notes ? html`<p>${escapeHtml(item.notes)}</p>` : ''}
-              <small>Last contacted: ${escapeHtml(humanSponsorDate(
-                [item.lastContactedAt, item.lastInboundAt, item.lastOutboundAt].filter(Boolean).sort().at(-1),
-              ) || 'Never')}</small>
-              <button type="button" data-edit-contact="${escapeHtml(item.id)}">Edit contact</button>
-            </li>`,
-          )
-          .join("")
-      : html`<li>No people yet.</li>`;
-    const dealCards = orgDeals.length
-      ? orgDeals
-          .map((item) => {
-            const task = item.openTasks?.[0];
-            const next = task
-              ? `${task.description} · ${humanSponsorDate(task.date)}`
-              : item.status === "lost" ? "" : "No open task";
-            const current = deal?.id === item.id ? 'aria-current="true"' : "";
-            return html`<article class="crm-card crm-company-deal" ${current}>
-              <div class="crm-deal-card-header">
-                <strong>
-                  ${escapeHtml(({ "one-off": "One-off", package: "Package", course: "Course" }[item.productKind] || "Deal"))}
-                </strong>
-                <span class="status-label" data-status="${escapeHtml(item.status)}">
-                  ${escapeHtml(humanizeOptionLabel(item.status))}
-                </span>
-              </div>
-              <p class="crm-deal-meta">
-                ${[
-                  item.money && item.money !== "none" ? humanizeOptionLabel(item.money) : "",
-                  item.fulfillment && item.fulfillment !== "none" ? humanizeOptionLabel(item.fulfillment) : "",
-                  next,
-                ].filter(Boolean).map((value) => escapeHtml(value)).join(" · ")}
-              </p>
-              <div class="row-actions">
-                <button data-edit-deal="${escapeHtml(item.id)}">Edit deal</button>
-              </div>
-            </article>`;
-          })
-          .join("")
-      : html`<div class="honest-state">
-          <strong>No deals</strong>
-          <p>Add a deal for this company.</p>
-        </div>`;
-    const threads = (mail.items || []).length
-      ? (mail.items || [])
-          .map(mailThreadMarkup)
-          .join("")
-      : html`<li class="crm-mail-empty">
-          <strong>No filed mail yet</strong>
-          <p>Threads linked to this company will appear here.</p>
-        </li>`;
-    const domainChip = organization.domain
-      ? html`<span class="status-label" data-status="domain">${escapeHtml(organization.domain)}</span>`
-      : "";
-    const dealChip = deal
-      ? html`<span class="status-label" data-status="${escapeHtml(deal.status)}">
-          ${escapeHtml(humanizeOptionLabel(deal.status))}
-        </span>`
-      : "";
-    surface.querySelector("[data-crm-detail]").innerHTML = html`<header
-        class="dk-split__head"
-      >
-        <button type="button" class="dk-split__back" data-close-booking aria-label="Back to Sponsors">
-          ${SPLIT_BACK_ICON}Sponsors
-        </button>
-        <div class="booking-detail-title">
-          <h2 class="dk-split__title" tabindex="-1">${escapeHtml(organization.displayName || "Unknown sponsor")}</h2>
-          <p>${domainChip}${dealChip}</p>
-        </div>
-        <button
-          data-edit-deal="${deal ? escapeHtml(deal.id) : ""}"
-          ${deal ? "" : "hidden"}
-        >
-          Edit deal
-        </button>
-      </header>
-      <article class="dk-split__scroll dk-split__scroll--flush crm-booking-detail">
-      <nav class="booking-section-nav dk-split__sticky" aria-label="Company detail sections">
-        <button
-          class="is-active"
-          aria-pressed="true"
-          data-booking-section-link="overview"
-        >
-          Overview
-        </button>
-        <button aria-pressed="false" data-booking-section-link="finance">
-          Finance
-        </button>
-        <button
-          aria-pressed="false"
-          data-booking-section-link="communications"
-        >
-          Communications
-        </button>
-        <button aria-pressed="false" data-booking-section-link="history">
-          History
-        </button>
-      </nav>
-      <div class="booking-detail-sections">
-        <section
-          id="booking-overview"
-          class="booking-detail-section"
-          data-booking-panel="overview"
-        >
-          <header><h3>Overview</h3></header>
-          <header class="crm-company-section-header">
-            <h4>People</h4>
-            <button data-contact-org="${escapeHtml(organization.id)}">Add contact</button>
-          </header>
-          <ul>${people}</ul>
-          <header class="crm-company-section-header">
-            <h4>Deals</h4>
-            <button data-add-deal-org="${escapeHtml(organization.id)}">Add deal</button>
-          </header>
-          ${dealCards}
-          <header class="crm-company-section-header"><h4>Mail</h4></header>
-          <label class="crm-mail-search">
-            Search filed threads <input data-mail-search type="search" placeholder="Search this company’s mail" />
-          </label>
-          <ul data-mail-threads>${threads}</ul>
-        </section>
-        <section
-          id="booking-finance"
-          class="booking-detail-section"
-          data-booking-panel="finance"
-        >
-          <div class="honest-state">
-            <strong>
-              ${deal
-                ? "Loading finance…"
-                : "Select a deal to load finance."}
-            </strong>
-          </div>
-        </section>
-        <section
-          id="booking-communications"
-          class="booking-detail-section"
-          data-booking-panel="communications"
-          aria-labelledby="crm-communications-heading"
-        >
-          <header>
-            <h3 id="crm-communications-heading">Communications</h3>
-            <p>Suggestions never draft, approve, or send automatically.</p>
-          </header>
-          <div data-crm-communications>
-            <div class="honest-state">
-              <strong>
-                ${deal
-                  ? "Loading communications…"
-                  : "Select a deal to load communications."}
-              </strong>
-            </div>
-          </div>
-        </section>
-        <section
-          id="booking-history"
-          class="booking-detail-section"
-          data-booking-panel="history"
-        >
-          <header><h3>History</h3></header>
-          <div class="crm-history">${historyMarkup}</div>
-        </section>
-      </div>
-    </article>`;
-    surface.querySelector("[data-close-booking]").addEventListener("click", () => {
-      // Keep the list DOM, its selected row and its reading position while
-      // removing the record from the URL. Rebuilding the whole Sponsors
-      // surface would restore focus before its asynchronous list exists.
+    const host = mount();
+    // closeRecord replicates the previous Back: keep the list DOM, its
+    // selected row and its reading position while removing the record from
+    // the URL. E's integration will take over mount/Back/list-refresh.
+    record.wire(host);
+    const closeRecord = () => {
+      record.destroy();
       navigateCanonicalWorkspace(listPath(), {}, { render: false });
       surface.classList.remove("has-booking-detail");
       if (listScroller) listScroller.scrollTop = listScrollTop;
       globalThis.dakitSplit?.show(split, "list");
+    };
+    record.closeWith(closeRecord);
+    const dealId = typeof highlightedDeal === "string"
+      ? highlightedDeal
+      : highlightedDeal?.id || null;
+    await record.openCompany(organization.id, {
+      dealId,
+      returnLabel: "Sponsors",
     });
+    if (sponsorCommunications) sponsorCommunications.selectedBookingId = dealId;
     globalThis.dakitSplit?.show(split, "detail");
-    surface
-      .querySelector("[data-crm-detail] [data-edit-deal]")
-      ?.addEventListener("click", (event) => {
-        const id = event.currentTarget.dataset.editDeal;
-        const item = getDeals().find((value) => value.id === id);
-        if (item) openDeal(item);
-      });
-    surface
-      .querySelector("[data-add-deal-org]")
-      ?.addEventListener("click", (event) => {
-        openDeal({
-          organizationId: event.currentTarget.dataset.addDealOrg,
-          status: "open",
-        });
-      });
-    surface
-      .querySelector("[data-contact-org]")
-      ?.addEventListener("click", (event) => {
-        const form = surface.querySelector("[data-contact-dialog] form");
-        form.reset();
-        form.elements.organizationId.value =
-          event.currentTarget.dataset.contactOrg;
-        openDialog(surface.querySelector("[data-contact-dialog]"));
-      });
-    surface.querySelectorAll("[data-booking-section-link]").forEach((button) =>
-      button.addEventListener("click", () => {
-        surface.querySelectorAll("[data-booking-section-link]").forEach((item) => {
-          const active = item === button;
-          item.classList.toggle("is-active", active);
-          item.setAttribute("aria-pressed", String(active));
-        });
-        surface
-          .querySelector(
-            `[data-booking-panel="${button.dataset.bookingSectionLink}"]`,
-          )
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }),
-    );
-    surface
-      .querySelector("[data-mail-search]")
-      ?.addEventListener("input", (event) => {
-        safe(async () => {
-          const query = new URLSearchParams();
-          if (event.target.value) query.set("q", event.target.value);
-          const result = await api(
-            `/organizations/${organization.id}/messages?${query}`,
-          );
-          surface.querySelector("[data-mail-threads]").innerHTML = (
-            result.items || []
-          ).length
-            ? result.items
-                .map(mailThreadMarkup)
-                .join("")
-            : html`<li class="crm-mail-empty">No matching filed threads.</li>`;
-        }, "Could not search mail");
-      });
-    if (deal) {
-      await loadFinance(deal);
-      try {
-        await loadCommunications(deal.id);
-      } catch (error) {
-        const root = surface.querySelector("[data-crm-communications]");
-        if (root) {
-          root.innerHTML = html`<div class="honest-state">
-            <strong>Communications unavailable</strong>
-            <p>${escapeHtml(error.message)}</p>
-          </div>`;
-        }
-      }
-    }
   }
 
   return { reopenDealDetail, reopenCompanyDetail };

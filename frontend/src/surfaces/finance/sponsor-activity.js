@@ -181,6 +181,10 @@ export function createActivityLoader({ api, targetType, targetId, limit = DEFAUL
     status: "idle",
     error: "",
   };
+  // Generation guard (source-review finding 1): every load/loadMore captures
+  // the generation; a response that resolves after a newer request started is
+  // discarded instead of rendering old items/cursor under a new filter.
+  let generation = 0;
 
   function query({ cursor = null } = {}) {
     const params = new URLSearchParams({ limit: String(limit) });
@@ -190,11 +194,13 @@ export function createActivityLoader({ api, targetType, targetId, limit = DEFAUL
   }
 
   async function load({ types = state.types } = {}) {
+    const mine = ++generation;
     state.types = [...types];
     state.status = "loading";
     state.error = "";
     try {
       const result = await api(query());
+      if (mine !== generation) return state;
       state.items = result.items || [];
       state.relatedWork = result.relatedWork || [];
       state.sources = result.sources || {};
@@ -202,6 +208,7 @@ export function createActivityLoader({ api, targetType, targetId, limit = DEFAUL
       state.nextCursor = result.nextCursor ?? null;
       state.status = "ready";
     } catch (error) {
+      if (mine !== generation) return state;
       state.status = "error";
       state.error = error?.message || "Could not load activity";
     }
@@ -210,14 +217,18 @@ export function createActivityLoader({ api, targetType, targetId, limit = DEFAUL
 
   async function loadMore() {
     if (!state.nextCursor) return state;
+    const mine = generation;
+    const cursor = state.nextCursor;
     state.status = "loading-more";
     try {
-      const result = await api(query({ cursor: state.nextCursor }));
+      const result = await api(query({ cursor }));
+      if (mine !== generation) return state;
       state.items = [...state.items, ...(result.items || [])];
       state.nextCursor = result.nextCursor ?? null;
       state.total = typeof result.total === "number" ? result.total : state.total;
       state.status = "ready";
     } catch (error) {
+      if (mine !== generation) return state;
       // A bound-cursor rejection (400) means the filter changed under the
       // page: surface it and let the caller reload from the first page.
       state.status = "error";
@@ -326,7 +337,10 @@ export function wireActivityPanel(root, loader, context = {}) {
   form?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const body = form.elements?.body?.value ?? "";
-    await fail(async () => {
+    // Own try/catch/status/draft handling (source-review finding 3): the real
+    // surface `safe` swallows errors, so the note status must be settled here
+    // instead of relying on the wrapper's catch.
+    try {
       // Reuse the key across retries of the same draft so a retry is an
       // idempotent replay; mint a fresh key only after a saved note.
       if (!noteKey) noteKey = typeof generateKey === "function" ? generateKey() : defaultKey();
@@ -337,10 +351,11 @@ export function wireActivityPanel(root, loader, context = {}) {
       if (status) status.textContent = "Note saved.";
       await loader.load();
       paint();
-      return saved;
-    }, "Could not save note").catch(() => {
+      await fail(async () => saved, "Could not save note");
+    } catch (error) {
       if (status) status.textContent = "Note was not saved. Retry to send the same note.";
-    });
+      await fail(async () => { throw error; }, "Could not save note");
+    }
   });
 
   return { paint, refresh };

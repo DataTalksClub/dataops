@@ -58,7 +58,7 @@ function recordHarness({ routes, context: extra = {} } = {}) {
     surface,
     escapeHtml,
     closeRecord: () => closed.push(true),
-    loadFinance: async (deal, panel) => financed.push([deal.id, panel]),
+    loadFinance: async (deal) => financed.push(deal.id),
     ...extra,
   });
   record.wire(host);
@@ -193,12 +193,13 @@ test("deals tab selects the deal and finance loads lazily per deal", async () =>
   assert.equal(record.getSelectedDealId(), "d1");
   assert.match(panels.deals.innerHTML, /aria-current="true"/);
   await record.switchTab("finance");
-  assert.deepEqual(financed.map(([id]) => id), ["d1"]);
+  assert.deepEqual(financed, ["d1"], "canonical loadFinance runs once per selected deal");
+  assert.match(panels.finance.innerHTML, /data-booking-panel="finance"/, "finance tab hosts the canonical hook");
   assert.equal(calls.filter(({ path }) => path.startsWith("/deals")).length, 1);
   // Revisiting without a deal change never refetches finance.
   await record.switchTab("overview");
   await record.switchTab("finance");
-  assert.deepEqual(financed.map(([id]) => id), ["d1"]);
+  assert.deepEqual(financed, ["d1"]);
 });
 
 test("finance without deals stays an honest empty state", async () => {
@@ -226,13 +227,14 @@ test("Back closes through E integration and tabs are keyboard reachable", async 
   });
   seedPanels(host);
   await record.openCompany("c1");
-  await host.dispatch("click", { closestPatch: { "[data-record-back]": new FakeNode("button") } });
-  assert.deepEqual(closed, [true]);
   const tabButton = new FakeNode("button");
   tabButton.dataset.recordTab = "overview";
   await host.dispatch("keydown", { key: "ArrowRight", closestPatch: { '[role="tab"]': tabButton } });
   assert.ok(host.querySelector('[data-record-tab="people"]').focused, "ArrowRight moves focus to the next tab");
   assert.match(host.querySelector('[data-record-panel="people"]').innerHTML, /No people yet/, "keyboard activation loads the tab");
+  await host.dispatch("click", { closestPatch: { "[data-record-back]": new FakeNode("button") } });
+  assert.deepEqual(closed, [true]);
+  assert.equal(record.getSelectedDealId(), null, "Back destroys the record state");
 });
 
 test("record shell is accessible and honest states escape content", () => {  const shell = recordShellMarkup({ displayName: "<Acme>" }, { returnLabel: "Companies" }, context);
@@ -325,18 +327,187 @@ test("activity tab exposes the archive lazily per selected deal", async () => {
   assert.doesNotMatch(archiveHost.innerHTML, /No deal selected/, "deal selection re-resolves the archive");
   const disclosure = archiveHost.querySelector("[data-record-archive]");
   disclosure.open = true;
-  await disclosure.dispatch("toggle", {});
+  await archiveHost.dispatch("toggle", { closestPatch: { "[data-record-archive]": disclosure } });
   assert.deepEqual(archives, ["d1"]);
   assert.match(archiveHost.innerHTML, /No archived messages/);
   disclosure.open = false;
-  await disclosure.dispatch("toggle", {});
+  await archiveHost.dispatch("toggle", { closestPatch: { "[data-record-archive]": disclosure } });
   disclosure.open = true;
-  await disclosure.dispatch("toggle", {});
+  await archiveHost.dispatch("toggle", { closestPatch: { "[data-record-archive]": disclosure } });
   assert.deepEqual(archives, ["d1"], "reopening never refetches a loaded archive");
   await host.dispatch("click", { closestPatch: { "[data-select-deal]": { dataset: { selectDeal: "d2" } } } });
   assert.equal(record.getSelectedDealId(), "d2");
   assert.deepEqual(archives, ["d1"], "selecting another deal does not eager-load its archive");
   disclosure.open = true;
-  await disclosure.dispatch("toggle", {});
+  await archiveHost.dispatch("toggle", { closestPatch: { "[data-record-archive]": disclosure } });
   assert.deepEqual(archives, ["d1", "d2"], "the new deal archives lazily on open");
+});
+
+test("reviewable archive drafts open the exact preview read-only", async () => {
+  const reviewed = [];
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": { items: [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off" }], nextCursor: null },
+    },
+    context: {
+      loadArchive: async () => ({
+        items: [{ id: "m1", kind: "communication-draft-version", label: "Archived draft v2", preview: "Old draft", version: 2, reviewable: true, createdAt: "2026-10-01T00:00:00Z" }],
+        total: 1,
+      }),
+      onReviewDraft: async (id, version) => reviewed.push([id, version]),
+    },
+  });
+  const panels = seedPanels(host);
+  await record.openCompany("c1");
+  await record.switchTab("deals");
+  await record.switchTab("activity");
+  const archiveHost = panels.activity.querySelector("[data-record-archive-host]");
+  const disclosure = archiveHost.querySelector("[data-record-archive]");
+  disclosure.open = true;
+  await archiveHost.dispatch("toggle", { closestPatch: { "[data-record-archive]": disclosure } });
+  assert.match(archiveHost.innerHTML, /Review exact draft/);
+  assert.doesNotMatch(archiveHost.innerHTML, /data-approve|data-cancel|data-suppress/);
+  await archiveHost.dispatch("click", { closestPatch: { "[data-archive-review]": { dataset: { archiveReview: "m1", archiveVersion: "2" } } } });
+  assert.deepEqual(reviewed, [["m1", 2]]);
+});
+
+test("deals page beyond fifty and resolve off-page selections by ID", async () => {
+  const page1 = Array.from({ length: 50 }, (_, index) => ({ id: `d${index}`, organizationId: "c1", status: "open", productKind: "one-off" }));
+  const { host, calls, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": { items: page1, nextCursor: "page-2" },
+      "GET /deals?organizationId=c1&limit=50&cursor=page-2": {
+        items: [{ id: "d50", organizationId: "c1", status: "agreed", productKind: "package" }],
+        nextCursor: null,
+      },
+      "GET /deals/deep": { id: "deep", organizationId: "c1", status: "open", productKind: "package" },
+      "GET /deals/stray": { id: "stray", organizationId: "other", status: "open", productKind: "package" },
+    },
+  });
+  const panels = seedPanels(host);
+  await record.openCompany("c1", { dealId: "deep" });
+  await record.switchTab("deals");
+  assert.equal(calls.filter(({ path }) => path === "/deals?organizationId=c1&limit=50").length, 1);
+  assert.equal(record.getSelectedDealId(), "deep", "off-page deal resolves by ID and is kept");
+  assert.deepEqual(calls.filter(({ path }) => path === "/deals/deep").length, 1);
+  assert.match(panels.deals.innerHTML, /Show more deals/);
+  await host.dispatch("click", { closestPatch: { "[data-deals-more]": new FakeNode("button") } });
+  assert.equal(record.getSelectedDealId(), "deep", "paging never replaces the selection");
+  assert.match(panels.deals.innerHTML, /d50/);
+  assert.doesNotMatch(panels.deals.innerHTML, /Show more deals/, "cursor exhaustion hides the pager");
+  assert.equal(calls.filter(({ path }) => path.startsWith("/deals?")).length, 2, "no duplicate pages");
+});
+
+test("a deep link to another company's deal never hijacks finance", async () => {
+  const financed = [];
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": { items: [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off" }], nextCursor: null },
+      "GET /deals/stray": { id: "stray", organizationId: "other", status: "open", productKind: "package" },
+    },
+    context: { loadFinance: async (deal) => financed.push(deal.id) },
+  });
+  seedPanels(host);
+  await record.openCompany("c1", { dealId: "stray" });
+  await record.switchTab("deals");
+  assert.equal(record.getSelectedDealId(), "d1", "foreign selection clears to the page fallback");
+  await record.switchTab("finance");
+  assert.deepEqual(financed, ["d1"]);
+});
+
+test("the next task follows D eligibility ordering, never a deferred row", async () => {
+  const deferredOnly = {
+    ...preview,
+    relatedWork: [{ taskId: "w1", status: "waiting", date: "2026-10-20", description: "Awaiting reply", scope: "direct", eligible: false, deferred: true, effectiveDate: "2026-10-25" }],
+  };
+  const mixed = {
+    ...preview,
+    relatedWork: [
+      { taskId: "w1", status: "waiting", date: "2026-10-20", description: "Awaiting reply", scope: "direct", eligible: false, deferred: true, effectiveDate: "2026-10-25" },
+      { taskId: "t1", status: "todo", date: "2026-10-22", description: "Call back", scope: "direct", eligible: true, deferred: false, effectiveDate: "2026-10-22" },
+    ],
+  };
+  for (const [name, payload, expected] of [["deferred-only", deferredOnly, null], ["mixed", mixed, "t1"]]) {
+    const { host, record } = recordHarness({
+      routes: {
+        "GET /directory/companies/c1": company,
+        "GET /activity/organization/c1?limit=3": payload,
+      },
+    });
+    const panels = seedPanels(host);
+    await record.openCompany("c1");
+    const next = panels.overview.innerHTML;
+    if (expected) assert.match(next, /Call back/, `${name}: the eligible todo wins`);
+    else assert.match(next, /No open task/, `${name}: deferred work never masquerades as due`);
+    void record;
+  }
+});
+
+test("destroy invalidates pending loads", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": async () => { await gate; return company; },
+    },
+  });
+  const pending = record.openCompany("c1");
+  record.destroy();
+  release();
+  await pending;
+  assert.match(host.innerHTML, /Loading company/, "pending open leaves only its loading state");
+  assert.doesNotMatch(host.innerHTML, /Acme/, "no record renders after destroy");
+  assert.equal(record.getCompany(), null);
+});
+
+test("company identity comes only from the D projection, never a snapshot", async () => {
+  const viaD = { ...company, displayName: "Acme Live", version: 4 };
+  const { host, calls, record } = recordHarness({
+    routes: { "GET /directory/companies/c1": viaD },
+  });
+  seedPanels(host);
+  await record.openCompany("c1");
+  assert.match(host.innerHTML, /Acme Live/);
+  assert.ok(!calls.some(({ path }) => path === "/directory/people?company=c1&limit=30"), "overview never forces collections");
+  const missing = recordHarness({ routes: { "GET /directory/companies/gone": httpError(404, "missing") } });
+  seedPanels(missing.host);
+  await missing.record.openCompany("gone");
+  assert.match(missing.host.innerHTML, /Company not found/);
+});
+
+test("archive and restore actions render only when wired", async () => {
+  const archived = [];
+  const restored = [];
+  const withHandlers = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": { ...company, archivedAt: "2026-10-01T00:00:00Z" },
+      "GET /activity/organization/c1?limit=3": preview,
+    },
+    context: {
+      onArchiveCompany: async () => archived.push(true),
+      onRestoreCompany: async () => restored.push(true),
+    },
+  });
+  seedPanels(withHandlers.host);
+  await withHandlers.record.openCompany("c1");
+  assert.match(withHandlers.host.innerHTML, /data-restore-company/);
+  assert.match(withHandlers.host.innerHTML, /Archived/);
+  await withHandlers.host.dispatch("click", { closestPatch: { "[data-restore-company]": new FakeNode("button") } });
+  assert.deepEqual(restored, [true]);
+  const plain = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+    },
+  });
+  seedPanels(plain.host);
+  await plain.record.openCompany("c1");
+  assert.doesNotMatch(plain.host.innerHTML, /data-archive-company/);
+  assert.doesNotMatch(plain.host.innerHTML, /data-restore-company/);
 });

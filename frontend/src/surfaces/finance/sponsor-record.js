@@ -106,6 +106,7 @@ export function archiveDisclosureMarkup(archive, context = {}) {
   }
   if (archive?.status === "ready") {
     const items = archive.items || [];
+    const canReview = typeof context?.onReviewDraft === "function";
     return html`<details data-record-archive open>
       <summary>Archived drafts and delivery history${count ? html` (${escape(String(count))})` : ""}</summary>
       ${items.length
@@ -117,6 +118,9 @@ export function archiveDisclosureMarkup(archive, context = {}) {
               </div>
               ${item.preview ? html`<p>${escape(item.preview)}</p>` : ""}
               ${item.detail ? html`<details><summary>Full text</summary><p>${escape(item.detail)}</p></details>` : ""}
+              ${canReview && item.reviewable
+                ? html`<button type="button" data-archive-review="${escape(item.id)}" data-archive-version="${escape(String(item.version ?? ""))}">Review exact draft</button>`
+                : ""}
             </li>`).join("")}
           </ul>`
         : html`<div class="honest-state">
@@ -152,8 +156,9 @@ export function createArchiveLoader({ loadArchive, dealId }) {
 
 export function recordHeaderMarkup(company, options = {}, context = {}) {
   const escape = esc(context);
-  const { selectedDeal = null, returnLabel = "Back" } = options;
+  const { selectedDeal = null, returnLabel = "Back", canArchive = false } = options;
   const primary = company?.primaryPerson;
+  const archived = Boolean(company?.archivedAt) || company?.active === false;
   return html`<header class="dk-split__head">
     <button type="button" class="dk-split__back" data-record-back>${escape(returnLabel)}</button>
     <div class="booking-detail-title">
@@ -161,6 +166,7 @@ export function recordHeaderMarkup(company, options = {}, context = {}) {
       <p>
         ${company?.domain ? html`<span class="status-label" data-status="domain">${escape(company.domain)}</span>` : ""}
         ${company?.relationship ? html`<span class="status-label" data-status="${escape(company.relationship)}">${escape(humanize(company.relationship, context))}</span>` : ""}
+        ${archived ? html`<span class="status-label" data-status="archived">Archived</span>` : ""}
         ${selectedDeal ? html`<span class="status-label" data-status="${escape(selectedDeal.status)}">${escape(humanize(selectedDeal.status, context))}</span>` : ""}
       </p>
       <p class="crm-record-sub">
@@ -168,6 +174,9 @@ export function recordHeaderMarkup(company, options = {}, context = {}) {
         ${company?.lastTouch ? html` · Last touch ${escape(formatBerlinDate(company.lastTouch))}` : ""}
       </p>
     </div>
+    ${canArchive ? (archived
+      ? html`<button type="button" data-restore-company>Restore</button>`
+      : html`<button type="button" data-archive-company>Archive</button>`) : ""}
   </header>`;
 }
 
@@ -260,9 +269,12 @@ export function peopleListMarkup({ items, total, canEdit }, context = {}) {
     ${canEdit ? html`<button type="button" data-add-person>Add person</button>` : ""}`;
 }
 
-export function dealsListMarkup({ deals, selectedDealId }, context = {}) {
+export function dealsListMarkup({ deals, selectedDealId, canAdd = false }, context = {}) {
   const escape = esc(context);
-  if (!deals?.length) return emptyMarkup("No deals", "Add a deal for this company.", context);
+  if (!deals?.length) {
+    return emptyMarkup("No deals", "Add a deal for this company.", context)
+      + (canAdd ? html`<button type="button" data-add-deal>Add deal</button>` : "");
+  }
   return html`<ul class="crm-directory-list">
     ${deals
       .map((deal) => {
@@ -277,13 +289,14 @@ export function dealsListMarkup({ deals, selectedDealId }, context = {}) {
             <span class="status-label" data-status="${escape(deal.status)}">${escape(humanize(deal.status, context))}</span>
           </div>
           <p class="crm-deal-meta">${[next].filter(Boolean).map((value) => escape(value)).join(" · ")}</p>
-          <div class="row-actions">
+    <div class="row-actions">
             <button type="button" data-select-deal="${escape(deal.id)}"${current ? " disabled" : ""}>${current ? "Selected" : "Select deal"}</button>
           </div>
         </article></li>`;
       })
       .join("")}
-  </ul>`;
+  </ul>
+  ${canAdd ? html`<button type="button" data-add-deal>Add deal</button>` : ""}`;
 }
 
 /**
@@ -300,6 +313,11 @@ export function createSponsorRecord(context) {
   const canEditPerson = typeof context.openContactEditor === "function";
   let record = null;
   let token = 0;
+  let closer = (...args) => closeRecord(...args);
+
+  function closeWith(next) {
+    if (typeof next === "function") closer = next;
+  }
 
   function root() {
     return surface.querySelector("[data-crm-record]");
@@ -323,15 +341,23 @@ export function createSponsorRecord(context) {
     if (record) record.activeTab = active;
   }
 
+  function headerOptions() {
+    return {
+      selectedDeal: record?.selectedDeal || null,
+      returnLabel: record?.returnLabel || "Back",
+      // E asked for Archive/Restore in the record header (old per-row list
+      // Archive goes away with integration); the buttons render only when
+      // the migration wires the handlers.
+      canArchive: typeof context.onArchiveCompany === "function" || typeof context.onRestoreCompany === "function",
+    };
+  }
+
   function paintHeader() {
     const host = root();
     if (!host || !record) return;
     const header = host.querySelector("[data-record-header]");
     if (header) {
-      header.innerHTML = recordHeaderMarkup(record.company, {
-        selectedDeal: record.selectedDeal,
-        returnLabel: record.returnLabel,
-      }, context);
+      header.innerHTML = recordHeaderMarkup(record.company, headerOptions(), context);
     }
   }
 
@@ -342,9 +368,14 @@ export function createSponsorRecord(context) {
     record = {
       companyId, company: null, deals: [], selectedDealId: dealId,
       selectedDeal: null, activeTab: "overview", returnLabel,
-      loaded: new Set(), cursors: {}, preview: { items: [], relatedWork: [] },
+      loaded: new Set(), cursors: {}, people: [], dealsLoaded: false,
+      preview: { items: [], relatedWork: [] },
     };
     host.innerHTML = loadingMarkup("Loading company", context);
+    // The company summary is D's cheap projection (GET
+    // /directory/companies/:id): direct lookup + notes, no finance/mail/deal
+    // bodies. No snapshot fallback and no legacy single-record enrichment —
+    // a missing D route is an honest error, never a silent downgrade.
     let company;
     try {
       company = await api(`/directory/companies/${encodeURIComponent(companyId)}`);
@@ -357,7 +388,7 @@ export function createSponsorRecord(context) {
     }
     if (mine !== token) return record;
     record.company = company || {};
-    host.innerHTML = html`<div data-record-header>${recordHeaderMarkup(record.company, { returnLabel }, context)}</div>
+    host.innerHTML = html`<div data-record-header>${recordHeaderMarkup(record.company, headerOptions(), context)}</div>
       ${recordTabsMarkup("overview", context)}
       ${RECORD_TABS.map(
         ([id]) => html`<section role="tabpanel" id="record-panel-${id}" aria-labelledby="record-tab-${id}"
@@ -389,7 +420,12 @@ export function createSponsorRecord(context) {
     target.innerHTML = overviewMarkup({
       company: record.company,
       primaryPerson: record.company.primaryPerson || null,
-      nextTask: loader.state.relatedWork[0] || null,
+      // Canonical next task (D rev 4): relatedWork is ordered eligible by
+      // effectiveDate, so [0] is the next eligible action. Rows without an
+      // eligibility flag (older shapes) count as eligible; explicit
+      // deferred rows stay visible as labeled related work instead of
+      // masquerading as the due task.
+      nextTask: loader.state.relatedWork.find((task) => task.eligible !== false) || null,
       recent: loader.state.items.slice(0, 3),
     }, context);
     record.loaded.add("overview");
@@ -401,10 +437,11 @@ export function createSponsorRecord(context) {
     target.innerHTML = loadingMarkup("Loading people", context);
     try {
       const query = new URLSearchParams({ company: record.companyId, limit: "30" });
-      if (record.cursors.people) query.set("cursor", record.cursors.people);
+      const append = Boolean(record.cursors.people);
+      if (append) query.set("cursor", record.cursors.people);
       const result = await api(`/directory/people?${query}`);
       if (mine !== undefined && mine !== token) return;
-      const items = [...(record.people || []), ...(result.items || [])];
+      const items = append ? [...(record.people || []), ...(result.items || [])] : (result.items || []);
       record.people = items;
       record.cursors.people = result.nextCursor ?? null;
       target.innerHTML = peopleListMarkup({ items, total: result.total, canEdit: canEditPerson }, context)
@@ -471,11 +508,14 @@ export function createSponsorRecord(context) {
 
   function wireArchive(target) {
     const host = target.querySelector("[data-record-archive-host]");
-    const disclosure = host?.querySelector("[data-record-archive]");
-    if (!disclosure || disclosure.dataset.wiredArchive) return;
-    disclosure.dataset.wiredArchive = "true";
-    disclosure?.addEventListener("toggle", async () => {
-      if (!disclosure.open) return;
+    if (!host || host.dataset.wiredArchive) return;
+    host.dataset.wiredArchive = "true";
+    // Listeners live on the persistent host: paintArchive replaces the
+    // disclosure node on every state change, so node-level listeners
+    // would be lost after the first render.
+    host.addEventListener("toggle", async (event) => {
+      const disclosure = event.target.closest("[data-record-archive]");
+      if (!disclosure || !disclosure.open) return;
       const loader = archiveLoaderFor();
       if (!loader || loader.state.status !== "idle") return;
       paintArchive(target, loader);
@@ -485,6 +525,15 @@ export function createSponsorRecord(context) {
         paintArchive(target, loader);
       }, "Could not load the archive");
     });
+    host.addEventListener("click", async (event) => {
+      const review = event.target.closest("[data-archive-review]");
+      if (!review || typeof context.onReviewDraft !== "function") return;
+      const fail = typeof context.safe === "function" ? context.safe : async (action) => action();
+      await fail(
+        () => context.onReviewDraft(review.dataset.archiveReview, Number(review.dataset.archiveVersion)),
+        "Could not open the exact preview",
+      );
+    });
   }
 
   async function loadDeals(mine) {
@@ -492,18 +541,20 @@ export function createSponsorRecord(context) {
     if (!target || !record) return;
     target.innerHTML = loadingMarkup("Loading deals", context);
     try {
-      const query = new URLSearchParams({ organizationId: record.companyId, limit: "50" });
-      const result = await api(`/deals?${query}`);
-      if (mine !== undefined && mine !== token) return;
-      record.deals = result.items || [];
-      if (!record.selectedDealId || !record.deals.some((deal) => deal.id === record.selectedDealId)) {
-        const fallback = record.deals.find((deal) => deal.status !== "lost") || record.deals[0] || null;
-        record.selectedDealId = fallback?.id || null;
+      if (!record.dealsLoaded) {
+        const query = new URLSearchParams({ organizationId: record.companyId, limit: "50" });
+        const append = Boolean(record.cursors.deals);
+        if (append) query.set("cursor", record.cursors.deals);
+        const result = await api(`/deals?${query}`);
+        if (mine !== undefined && mine !== token) return;
+        record.deals = append ? [...(record.deals || []), ...(result.items || [])] : (result.items || []);
+        record.cursors.deals = result.nextCursor ?? null;
+        if (!record.cursors.deals) record.dealsLoaded = true;
       }
-      record.selectedDeal = record.deals.find((deal) => deal.id === record.selectedDealId) || null;
-      target.innerHTML = dealsListMarkup({ deals: record.deals, selectedDealId: record.selectedDealId }, context);
+      await resolveSelection(mine);
+      if (mine !== undefined && mine !== token) return;
+      paintDeals(target);
       record.loaded.add("deals");
-      paintHeader();
       if (record.loaded.has("activity") && typeof context.loadArchive === "function") {
         const activityPanel = panel("activity");
         if (activityPanel) {
@@ -515,6 +566,61 @@ export function createSponsorRecord(context) {
       if (mine !== undefined && mine !== token) return;
       target.innerHTML = errorMarkup(error?.message, context);
     }
+  }
+
+  /**
+   * Resolve the selected deal without ever switching finance to an unrelated
+   * fallback (source-review finding 2): a deep-linked deal that is absent
+   * from the loaded page is fetched independently by ID and kept only when
+   * it belongs to this company; otherwise the selection is cleared.
+   */
+  async function resolveSelection(mine) {
+    if (!record) return;
+    if (record.selectedDealId) {
+      const onPage = (record.deals || []).find((deal) => deal.id === record.selectedDealId);
+      if (onPage) {
+        record.selectedDeal = onPage;
+        return;
+      }
+      try {
+        const deal = await api(`/deals/${encodeURIComponent(record.selectedDealId)}`);
+        if (mine !== undefined && mine !== token) return;
+        if (deal && deal.organizationId === record.companyId) {
+          record.selectedDeal = deal;
+          return;
+        }
+      } catch {
+        // Unknown or unreadable deal below: fall through to the page fallback.
+      }
+      if (mine !== undefined && mine !== token) return;
+      record.selectedDealId = null;
+      record.selectedDeal = null;
+    }
+    if (!record.selectedDeal) {
+      const fallback = (record.deals || []).find((deal) => deal.status !== "lost") || (record.deals || [])[0] || null;
+      record.selectedDealId = fallback?.id || null;
+      record.selectedDeal = fallback;
+    }
+  }
+
+  function paintDeals(target) {
+    if (!record) return;
+    const canAdd = typeof context.onAddDeal === "function";
+    target.innerHTML = dealsListMarkup({ deals: record.deals, selectedDealId: record.selectedDealId, canAdd }, context)
+      + (!record.dealsLoaded && record.cursors.deals
+        ? html`<button type="button" data-deals-more>Show more deals</button>`
+        : "");
+    paintHeader();
+  }
+
+  /**
+   * Invalidate every pending load (source-review finding 5): Back/destroy
+   * must never let a stale response render into a closed record or
+   * overwrite a newer selection/finance panel.
+   */
+  function destroy() {
+    token += 1;
+    record = null;
   }
 
   async function loadFinanceTab(mine) {
@@ -532,9 +638,12 @@ export function createSponsorRecord(context) {
     const deal = record.selectedDeal;
     const cacheKey = `finance:${deal.id}`;
     if (record.loaded.has(cacheKey)) return;
-    target.innerHTML = loadingMarkup("Loading finance", context);
+    // The canonical finance component renders into its own
+    // [data-booking-panel="finance"] hook; the tab hosts that hook instead
+    // of forking finance rendering.
+    target.innerHTML = html`<div data-booking-panel="finance">${loadingMarkup("Loading finance", context)}</div>`;
     try {
-      await loadFinance(deal, target);
+      await loadFinance(deal);
       if (mine !== undefined && mine !== token) return;
       record.loaded.add(cacheKey);
     } catch (error) {
@@ -587,7 +696,8 @@ export function createSponsorRecord(context) {
     host.addEventListener("click", async (event) => {
       const back = event.target.closest("[data-record-back]");
       if (back) {
-        closeRecord();
+        destroy();
+        closer();
         return;
       }
       const tab = event.target.closest("[data-record-tab]");
@@ -614,9 +724,32 @@ export function createSponsorRecord(context) {
         await fail(() => loadPeople(token), "Could not load more people");
         return;
       }
+      const moreDeals = event.target.closest("[data-deals-more]");
+      if (moreDeals) {
+        await fail(async () => {
+          if (!record) return;
+          record.loaded.delete("deals");
+          await switchTab("deals");
+        }, "Could not load more deals");
+        return;
+      }
       const pick = event.target.closest("[data-select-deal]");
       if (pick) {
         selectDeal(pick.dataset.selectDeal);
+        return;
+      }
+      if (event.target.closest("[data-add-deal]") && typeof context.onAddDeal === "function") {
+        context.onAddDeal();
+        return;
+      }
+      const archive = event.target.closest("[data-archive-company]");
+      if (archive && typeof context.onArchiveCompany === "function") {
+        await fail(() => context.onArchiveCompany(), "Could not archive company");
+        return;
+      }
+      const restore = event.target.closest("[data-restore-company]");
+      if (restore && typeof context.onRestoreCompany === "function") {
+        await fail(() => context.onRestoreCompany(), "Could not restore company");
         return;
       }
       const openTask = event.target.closest("[data-open-task]");
@@ -663,5 +796,9 @@ export function createSponsorRecord(context) {
     return record?.selectedDealId || null;
   }
 
-  return { openCompany, switchTab, selectDeal, getSelectedDealId, wire };
+  function getCompany() {
+    return record?.company || null;
+  }
+
+  return { openCompany, switchTab, selectDeal, getSelectedDealId, getCompany, destroy, closeWith, wire };
 }

@@ -23,6 +23,18 @@ export class FakeNode {
     this.queries = new Map();
     this.queryLists = new Map();
     this.closestMap = new Map();
+    const classes = new Set();
+    this.classList = {
+      add: (...names) => names.forEach((name) => classes.add(name)),
+      remove: (...names) => names.forEach((name) => classes.delete(name)),
+      toggle: (name, force) => {
+        const next = force === undefined ? !classes.has(name) : Boolean(force);
+        if (next) classes.add(name);
+        else classes.delete(name);
+        return next;
+      },
+      contains: (name) => classes.has(name),
+    };
     if (this.tagName === "FORM") {
       const named = new Map();
       this.elements = new Proxy([], {
@@ -34,8 +46,14 @@ export class FakeNode {
           return named.get(property);
         },
       });
+      this.namedElements = named;
       this.formEntries = [];
     }
+  }
+
+  reset() {
+    this.formEntries = [];
+    for (const element of this.namedElements?.values() || []) element.value = "";
   }
 
   setQuery(selector, element) {
@@ -77,6 +95,7 @@ export class FakeNode {
       target.setClosest(selector, element);
     }
     const normalized = { preventDefault() {}, target, currentTarget: this, ...event, target };
+    if (type === "click" && typeof this.onclick === "function") await this.onclick(normalized);
     for (const listener of this.listeners.get(type) || []) await listener(normalized);
   }
 
@@ -86,6 +105,18 @@ export class FakeNode {
 
   click() {
     this.clicked = true;
+  }
+
+  reportValidity() {
+    return true;
+  }
+
+  showModal() {
+    this.open = true;
+  }
+
+  close() {
+    this.open = false;
   }
 
   reset() {
@@ -124,4 +155,23 @@ export function httpError(status, message) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+export class FakeFormData {
+  constructor(form) {
+    this.entries = form.formEntries || [];
+  }
+
+  [Symbol.iterator]() {
+    return this.entries[Symbol.iterator]();
+  }
+
+  get(name) {
+    return this.entries.find(([key]) => key === name)?.[1] ?? null;
+  }
+}
+
+/** Install the form-data fake once per test file (mirrors the finance harness). */
+export function installFormData() {
+  globalThis.FormData = FakeFormData;
 }
