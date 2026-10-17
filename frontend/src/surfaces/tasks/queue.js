@@ -1,3 +1,5 @@
+import { createQueueHistory } from "./queue-history.js";
+import { isTaskDeferred, taskAttentionDate } from "../../core/task-attention.js";
 import { cardKind } from "../../core/card-kind.js";
 import { personAvatar } from "../../core/identity.js";
 import { blockingPrerequisites, prerequisiteResolved } from "../../core/task-dependencies.js";
@@ -10,12 +12,7 @@ import { renderQueueMaterials } from "./queue-materials.js";
 import { renderIcon } from "../../core/icons.js";
 import { renderResourceMarks, resourceLabel } from "../../core/resources.js";
 
-// One queue, not one section per state. Every open task the snapshot knows
-// about lands in the same list, sorted by urgency. The list is a checklist
-// read as a table: a completion mark, the task, where it came from (its card
-// or ad hoc), when it is due, and whose it is. Nothing else earns a line.
 const QUEUE_VISIBLE_LIMIT = 25;
-const HISTORY_VISIBLE_LIMIT = 12;
 
 export function createTaskQueue(context) {
   const {
@@ -57,6 +54,10 @@ export function createTaskQueue(context) {
   } = createQueueAssigneeFilter(context);
   // The filtered open tasks in queue order: "Show all" continues this list.
   let visibleOpenTasks = [];
+  // Kept only in this page's queue instance: a reload starts with clean active work.
+  const completedThisSession = new Map();
+  let previousQueueOrder = [];
+  const queueHistory = createQueueHistory({ request, workApiUrl, openTaskPanel, cleanTaskTitle, queueDueLabel });
 
   // "all", "none" (needs nothing outside DataOps), or one resource id.
   let activeResourceFilter = "all";
@@ -155,6 +156,7 @@ export function createTaskQueue(context) {
     );
     for (const [id, count] of ordered) option(id, `${resourceLabel(id, resourcesById)} (${count})`);
     option("none", `Nothing external (${unneeded})`);
+    select.value = activeResourceFilter;
     if (activeResourceFilter !== "all" && activeResourceFilter !== "none" && !counts.has(activeResourceFilter)) {
       activeResourceFilter = "all";
       select.value = "all";
@@ -176,6 +178,12 @@ export function createTaskQueue(context) {
     // yet. It stays on its card's checklist and joins the queue once every
     // prerequisite is done or skipped.
     const tasks = withoutWaitingOnPrerequisites(dedupeQueueTasks(routeTasks(taskRouteContext)));
+    for (const task of tasks) {
+      const retained = completedThisSession.get(task.id);
+      if (!retained || task.version <= retained.version) continue;
+      if (task.status === "done") completedThisSession.set(task.id, task);
+      else completedThisSession.delete(task.id);
+    }
     const cardsById = state.workSnapshot.cardsById || new Map();
     const anySourceLoaded = Boolean(
       state.workSnapshot.todayLoaded ||
@@ -184,7 +192,19 @@ export function createTaskQueue(context) {
         Object.keys(state.workSnapshot.cardTasks || {}).length,
     );
 
-    const allOpenTasks = orderOpenTasks(tasks, today);
+    const allOpenTasks = orderOpenTasks(tasks.filter((task) => !completedThisSession.has(task.id) && !isTaskDeferred(task, today)), today);
+    for (const [id, task] of completedThisSession) {
+      // Do not leak a completion into a different card/day route.
+      if (taskRouteContext.cardId && task.cardId !== taskRouteContext.cardId) continue;
+      if (taskRouteContext.date && task.date !== taskRouteContext.date) continue;
+      allOpenTasks.push({ task });
+    }
+    if (completedThisSession.size) {
+      const positions = new Map(previousQueueOrder.map((id, index) => [id, index]));
+      allOpenTasks.sort((left, right) =>
+        (positions.get(left.task.id) ?? Infinity) - (positions.get(right.task.id) ?? Infinity));
+    }
+    previousQueueOrder = allOpenTasks.map(({ task }) => task.id);
     const doneTasks = tasks
       .filter((task) => isCanonicalWorkTask(task) && task.status === "done")
       .sort((left, right) =>
@@ -227,8 +247,11 @@ export function createTaskQueue(context) {
       const target = assigneeTarget(assigneeFilter);
       const scope = assigneeScope(assigneeFilter);
       const assigneeOpen = allOpenTasks.filter((entry) => taskMatchesAssignee(entry.task, target));
-      const resourceFilter = renderResourceFilter(assigneeOpen, () => populateBoard());
-      const browserFilter = renderBrowserFilter(assigneeOpen, () => populateBoard());
+      const filterCandidates = dedupeQueueTasks([
+        ...tasks, ...completedThisSession.values(), ...queueHistory.tasks(),
+      ]).filter((task) => taskMatchesAssignee(task, target)).map((task) => ({ task }));
+      const resourceFilter = renderResourceFilter(filterCandidates, () => populateBoard());
+      const browserFilter = renderBrowserFilter(filterCandidates, () => populateBoard());
       const visibleOpen = assigneeOpen.filter(
         (entry) =>
           taskMatchesResource(entry.task, activeResourceFilter) &&
@@ -236,12 +259,16 @@ export function createTaskQueue(context) {
       );
       visibleOpenTasks = visibleOpen;
 
-      const visibleDone = doneTasks.filter((task) =>
+      const visibleDone = dedupeQueueTasks([
+        ...completedThisSession.values(), ...queueHistory.tasks(), ...doneTasks,
+      ]).filter((task) =>
+        (!taskRouteContext.cardId || task.cardId === taskRouteContext.cardId) &&
+        (!taskRouteContext.date || task.date === taskRouteContext.date) &&
         taskMatchesAssignee(task, target) &&
         taskMatchesResource(task, activeResourceFilter) &&
         taskMatchesBrowser(task, activeBrowserFilter));
 
-      if (allOpenTasks.length > 0 || doneTasks.length > 0) {
+      if (anySourceLoaded) {
         // Who and what: the assignee filter, the required-resource filter, and
         // the browser-need filter share one toolbar row with the create actions.
         filters.prepend(
@@ -250,7 +277,8 @@ export function createTaskQueue(context) {
         );
 
         if (visibleOpen.length > 0) {
-          board.append(renderQueueTotalLine(visibleOpen.length, scope));
+          board.append(renderQueueTotalLine(visibleOpen.filter(({ task }) => task.status !== "done").length, scope,
+            visibleOpen.filter(({ task }) => task.status === "done").length));
           board.append(renderQueueRows(visibleOpen, today, cardsById));
           const expander = renderQueueExpander(visibleOpen.length);
           if (expander) board.append(expander);
@@ -279,10 +307,23 @@ export function createTaskQueue(context) {
           board.append(emptyMsg);
         }
 
-        if (visibleDone.length > 0) {
-          board.append(renderQueueHistory(visibleDone, today));
-        }
       }
+      const deferred = tasks.filter((task) =>
+        isTaskDeferred(task, today) && taskMatchesAssignee(task, target) &&
+        taskMatchesResource(task, activeResourceFilter) && taskMatchesBrowser(task, activeBrowserFilter));
+      if (deferred.length) {
+        const waiting = document.createElement("details");
+        waiting.className = "ops-queue-history ops-queue-waiting";
+        const summary = document.createElement("summary");
+        summary.textContent = `Waiting & snoozed (${deferred.length})`;
+        waiting.append(summary);
+        const list = document.createElement("div");
+        list.className = "ops-queue-list";
+        for (const task of deferred) list.append(renderWorkQueueRow(task, today, cardsById));
+        waiting.append(list);
+        board.append(waiting);
+      }
+      board.append(queueHistory.render(visibleDone, today, populateBoard));
     }
 
     populateBoard();
@@ -377,7 +418,7 @@ export function createTaskQueue(context) {
 
   // How much of the scoped work is on screen. The scope rides in the same
   // sentence as the count, so "25 of 40" always says whose 40.
-  function renderQueueTotalLine(count, scope) {
+  function renderQueueTotalLine(count, scope, completed = 0) {
     const total = document.createElement("p");
     total.className = "ops-queue-total";
     const whose = scope ? ` ${scope.phrase}` : "";
@@ -385,6 +426,7 @@ export function createTaskQueue(context) {
       count > QUEUE_VISIBLE_LIMIT
         ? `Showing ${QUEUE_VISIBLE_LIMIT} of ${count} open${whose}, most urgent first`
         : `${count} open${whose}, most urgent first`;
+    if (completed) total.textContent += ` · ${completed} completed this session`;
     const copy = total.textContent;
     total.textContent = "";
     for (const part of copy.split(/(\d+)/)) {
@@ -406,9 +448,6 @@ export function createTaskQueue(context) {
     return rows;
   }
 
-  // The columns, named once. Without headings the eye reads the card title
-  // column as the task title and the whole thing stays confusing, which is
-  // the problem the table layout exists to fix.
   function renderQueueHeader() {
     const header = document.createElement("div");
     header.className = "ops-queue-head";
@@ -444,48 +483,6 @@ export function createTaskQueue(context) {
     });
     expander.append(more);
     return expander;
-  }
-
-  function renderQueueHistory(doneTasks, today) {
-    const details = document.createElement("details");
-    details.className = "ops-queue-history";
-    const summary = document.createElement("summary");
-    const label = document.createElement("span");
-    label.textContent = "Recently completed";
-    const count = document.createElement("span");
-    count.className = "dk-mono";
-    count.dataset.queueCount = "known";
-    count.textContent = String(doneTasks.length);
-    count.setAttribute(
-      "aria-label",
-      `${doneTasks.length} recently completed tasks`,
-    );
-    summary.append(label, count);
-    details.append(summary);
-    const rows = document.createElement("div");
-    rows.className = "ops-queue-history-list";
-    for (const task of doneTasks.slice(0, HISTORY_VISIBLE_LIMIT))
-      rows.append(renderQueueHistoryRow(task, today));
-    details.append(rows);
-    return details;
-  }
-
-  function renderQueueHistoryRow(task, today) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "ops-queue-history-row";
-    button.dataset.taskId = task.id;
-    button.setAttribute("aria-label", `Open task ${cleanTaskTitle(task)}`);
-    button.addEventListener("click", () => openTaskPanel(task.id));
-    const title = document.createElement("strong");
-    title.textContent = cleanTaskTitle(task);
-    const meta = document.createElement("span");
-    const completed = String(task.completedAt || task.date || "").slice(0, 10);
-    meta.textContent = completed
-      ? `Done · ${queueDueLabel(completed, today)}`
-      : "Done";
-    button.append(title, meta);
-    return button;
   }
 
   function renderTaskRouteContext(taskRouteContext) {
@@ -593,9 +590,6 @@ export function createTaskQueue(context) {
     );
   }
 
-  // One in-flight toggle per task. The toggle outlives neither its render
-  // nor its response: a double activation cannot send two competing versions,
-  // and a rerender mid-flight still renders the pending task as busy.
   const queuePendingToggles = new Set();
 
   function findQueueTask(taskId) {
@@ -625,19 +619,27 @@ export function createTaskQueue(context) {
     return updated;
   }
 
-  // The checkbox is the real thing: checking it marks the task done through
-  // the same versioned PUT the panels use, then the refreshed snapshot moves
-  // the row into history. A failed toggle restores the box and says why, so
-  // the queue never silently swallows the operator's tick.
   async function toggleQueueTask(task, input) {
     if (queuePendingToggles.has(task.id)) return;
     queuePendingToggles.add(task.id);
     input.disabled = true;
     input.checked = true;
     try {
-      await putQueueTaskStatus(task.id, "done", task.version);
-      await refreshOperationsWorkSnapshot({ rerender: true });
+      const updated = await putQueueTaskStatus(task.id, "done", task.version);
+      completedThisSession.set(task.id, updated);
+      queueHistory.invalidate();
       queuePendingToggles.delete(task.id);
+      if (input.isConnected) {
+        input.closest(".ops-queue-row")?.setAttribute("data-completed", "true");
+        input.disabled = false;
+        input.setAttribute("aria-label", `Reopen ${cleanTaskTitle(task)}`);
+      }
+      try {
+        await refreshOperationsWorkSnapshot({ rerender: true });
+      } catch (err) {
+        // The write succeeded. A failed refresh must not claim it was undone.
+        input.title = `Task completed; queue refresh failed: ${err?.message || "request failed"}`;
+      }
       showUndoToast("Task marked done.", () => reopenQueueTask(task.id));
     } catch (err) {
       queuePendingToggles.delete(task.id);
@@ -650,10 +652,14 @@ export function createTaskQueue(context) {
   }
 
   async function reopenQueueTask(taskId) {
-    const current = findQueueTask(taskId);
+    const candidates = [findQueueTask(taskId), completedThisSession.get(taskId)].filter(Boolean);
+    const current = candidates.sort((a, b) => b.version - a.version)[0];
     if (!current || !Number.isInteger(current.version)) return;
     try {
       await putQueueTaskStatus(taskId, "todo", current.version);
+      completedThisSession.delete(taskId);
+      queueHistory.remove(taskId);
+      queueHistory.invalidate();
     } finally {
       await refreshOperationsWorkSnapshot({ rerender: true });
     }
@@ -684,7 +690,7 @@ export function createTaskQueue(context) {
   // Row-level urgency for the checkbox. Overdue and due-today are the
   // only states that change the box; everything else scans as plain work.
   function queueUrgency(task, today) {
-    const due = String(task.date || "").slice(0, 10);
+    const due = String(taskAttentionDate(task) || "").slice(0, 10);
     if (isOpenWorkTask(task) && overdueDays(due, today) > 0) return "overdue";
     if (due && due === today) return "today";
     return "later";
@@ -697,7 +703,10 @@ export function createTaskQueue(context) {
     input.type = "checkbox";
     input.className = "ops-queue-check-input";
     input.setAttribute("aria-label", `Mark ${cleanTaskTitle(task)} as done`);
-    const blockers = queueToggleBlockers(task);
+    const completed = completedThisSession.has(task.id);
+    input.checked = completed;
+    if (completed) input.setAttribute("aria-label", `Reopen ${cleanTaskTitle(task)}`);
+    const blockers = completed ? [] : queueToggleBlockers(task);
     if (blockers.length > 0) {
       input.disabled = true;
       // The tooltip lives on the label: the visible box is its child, and a
@@ -708,7 +717,17 @@ export function createTaskQueue(context) {
         input.disabled = true;
         input.checked = true;
       }
-      input.addEventListener("change", () => toggleQueueTask(task, input));
+      input.addEventListener("change", async () => {
+        if (!completedThisSession.has(task.id)) return toggleQueueTask(task, input);
+        input.disabled = true;
+        try { await reopenQueueTask(task.id); }
+        catch (err) {
+          input.title = `Could not reopen task: ${err?.message || "request failed"}`;
+        } finally {
+          input.disabled = false;
+          input.checked = completedThisSession.has(task.id);
+        }
+      });
     }
     const box = document.createElement("span");
     box.className = "ops-queue-box";
@@ -765,9 +784,6 @@ export function createTaskQueue(context) {
     return { label: source, kind: "other", icon: "card", type: "", title: source };
   }
 
-  // Ownership reads as a face, not a sentence. The avatar carries the
-  // teammate's photo, or their initials; the full name stays available as the accessible
-  // label so the queue never hides who owns the work behind two letters.
   function taskOwnerCell(task) {
     const cell = document.createElement("span");
     cell.className = "ops-queue-owner";
@@ -797,7 +813,7 @@ export function createTaskQueue(context) {
   function taskDueCell(task, today) {
     const cell = document.createElement("span");
     cell.className = "ops-queue-due dk-mono";
-    const due = String(task.date || "").slice(0, 10);
+    const due = String(taskAttentionDate(task) || "").slice(0, 10);
     const debt = isOpenWorkTask(task) ? overdueDays(due, today) : 0;
     if (debt > 0) {
       cell.dataset.due = "overdue";
@@ -805,14 +821,14 @@ export function createTaskQueue(context) {
       cell.title = `${debt} day${debt === 1 ? "" : "s"} past due`;
       return cell;
     }
-    if (!task.date) {
+    if (!due) {
       cell.dataset.due = "none";
       cell.textContent = "—";
       return cell;
     }
     cell.dataset.due = due === today ? "today" : "later";
     cell.textContent =
-      due === today ? "Today" : queueDueLabel(task.date, today);
+      due === today ? "Today" : queueDueLabel(due, today);
     return cell;
   }
 
@@ -870,6 +886,7 @@ export function createTaskQueue(context) {
     const row = document.createElement("div");
     row.className = "ops-queue-row";
     row.dataset.taskId = task.id;
+    row.dataset.completed = task.status === "done" ? "true" : "false";
     row.dataset.source = origin.kind;
     // Urgency rides the row so the checkbox can carry it: overdue and
     // due-today rows read as such before any text is parsed. Purely visual —

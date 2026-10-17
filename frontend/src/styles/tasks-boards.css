@@ -1238,3 +1238,12 @@ body[data-workspace-view="tasks"] .ops-queue-browser-filter .dk-select {
   width: 16px;
   height: 16px;
 }
+
+/* A completion stays in its place until this page is reloaded. */
+body[data-workspace-view="tasks"] .ops-queue-row[data-completed="true"] .ops-queue-title-row > strong {
+  text-decoration: line-through;
+  color: var(--dk-text-muted);
+}
+body[data-workspace-view="tasks"] .ops-queue-row[data-completed="true"] .ops-queue-due {
+  color: var(--dk-text-muted);
+}

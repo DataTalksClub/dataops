@@ -400,6 +400,7 @@ describe("Tasks surface boundary", () => {
         description: "Done",
         status: "done",
         date: "2026-08-12",
+        cardId: "missing-card",
       }),
     ];
     const { api, documentList, navigations, openedTasks } = createHarness({
@@ -478,9 +479,9 @@ describe("Tasks surface boundary", () => {
     assert.deepEqual(queueDueCells(documentList), [
       { label: "1d late", due: "overdue" },
       { label: "1d late", due: "overdue" },
-      { label: "—", due: "none" },
       { label: "Today", due: "today" },
-      { label: "—", due: "none" },
+      { label: "Today", due: "today" },
+      { label: "14 Aug", due: "later" },
     ]);
     // Whose it is: initials for a named owner, a dash for nobody's.
     assert.deepEqual(queueOwners(documentList), ["GM", "A", null, null, null]);
@@ -500,13 +501,13 @@ describe("Tasks surface boundary", () => {
       const main = note.closest(".ops-queue-task").querySelector(".ops-queue-main");
       assert.equal(main.getAttribute("aria-describedby"), note.id);
     }
-    assert.match(board.textContent, /5 open, most urgent first/);
-    const history = documentList.querySelector(".ops-queue-history");
+    assert.match(board.textContent, /4 open, most urgent first/);
+    const history = findAllByClass(documentList, "ops-queue-history").find((entry) => !entry.className.includes("ops-queue-waiting"));
     assert.equal(history.tagName, "DETAILS");
-    assert.match(history.textContent, /Recently completed/);
+    assert.match(history.textContent, /Completed history/);
     assert.equal(
       history.querySelector("[data-queue-count]").textContent,
-      "1",
+      "View",
     );
     await history.querySelector(".ops-queue-history-row").dispatch("click");
     assert.deepEqual(openedTasks, ["done"]);
@@ -628,6 +629,77 @@ describe("Tasks surface boundary", () => {
       expectedVersion: 2,
     });
     assert.deepEqual(refreshed, [{ rerender: true }, { rerender: true }]);
+  });
+
+  test("completed queue rows stay in place until a fresh page, and history fetches persisted tasks", async () => {
+    const first = canonicalTask({ id: "retain-first", description: "First", date: "2026-08-12" });
+    const second = canonicalTask({ id: "retain-second", description: "Second", date: "2026-08-12" });
+    const saved = { ...first, status: "done", version: 2 };
+    const harness = createHarness({
+      workSnapshot: { todayTasks: [first, second] },
+      request: async (url) => url.includes("?status=done") ? { tasks: [saved] } : saved,
+    });
+    harness.api.renderTasksSurface([], "queue");
+    await findAllByClass(harness.documentList, "ops-queue-check-input")[0].dispatch("change");
+    harness.setTaskRouteContext({ date: "", tasks: [second], cardId: "", contextCardId: "", failures: [] });
+    harness.api.renderTasksSurface([], "queue");
+    assert.deepEqual(queueRowTitles(harness.documentList), ["First", "Second"]);
+    const [retained] = findAllByClass(harness.documentList, "ops-queue-row");
+    assert.equal(retained.dataset.completed, "true");
+    assert.equal(retained.querySelector("input").checked, true);
+    assert.equal(retained.querySelector("input").getAttribute("aria-label"), "Reopen First");
+
+    // A new page instance starts without in-memory completion rows.
+    const reloaded = createHarness({
+      workSnapshot: { todayTasks: [second] },
+      request: async () => ({ tasks: [saved] }),
+    });
+    reloaded.api.renderTasksSurface([], "queue");
+    assert.deepEqual(queueRowTitles(reloaded.documentList), ["Second"]);
+    const history = reloaded.documentList.querySelector(".ops-queue-history");
+    history.open = true;
+    await history.dispatch("toggle");
+    await nextTicks();
+    assert.equal(reloaded.requests[0].url, "/api/tasks?status=done");
+    const historyRow = reloaded.documentList.querySelector(".ops-queue-history-row");
+    assert.match(historyRow.textContent, /First/);
+    await historyRow.dispatch("click");
+    assert.deepEqual(reloaded.openedTasks, ["retain-first"]);
+  });
+
+  test("a newer task reopened from its panel replaces a retained completion", async () => {
+    const task = canonicalTask({ id: "panel-reopened", description: "Reopen elsewhere", date: "2026-08-12" });
+    const harness = createHarness({
+      workSnapshot: { todayTasks: [task] },
+      request: async () => ({ ...task, status: "done", version: 2 }),
+    });
+    harness.api.renderTasksSurface([], "queue");
+    await harness.documentList.querySelector(".ops-queue-check-input").dispatch("change");
+    harness.setTaskRouteContext({ date: "", tasks: [{ ...task, version: 3 }], cardId: "", contextCardId: "", failures: [] });
+    harness.api.renderTasksSurface([], "queue");
+    assert.equal(harness.documentList.querySelector(".ops-queue-row").dataset.completed, "false");
+    assert.equal(harness.documentList.querySelector(".ops-queue-check-input").checked, false);
+  });
+
+  test("out-of-order completions keep baseline positions and selected resource", async () => {
+    const tasks = ["A", "B", "C", "D"].map((id) => canonicalTask({
+      id, description: id, date: "2026-08-12", requires: ["mail"],
+    }));
+    const harness = createHarness({
+      workSnapshot: { todayTasks: tasks },
+      request: async (url) => ({ ...tasks.find((task) => url.endsWith(`/${task.id}`)), status: "done", version: 2 }),
+    });
+    harness.api.renderTasksSurface([], "queue");
+    const select = harness.documentList.querySelector(".ops-queue-resource-filter").querySelector("select");
+    select.value = "mail";
+    await select.dispatch("change");
+    await findAllByClass(harness.documentList, "ops-queue-check-input")[1].dispatch("change");
+    harness.api.renderTasksSurface([], "queue");
+    await findAllByClass(harness.documentList, "ops-queue-check-input")[0].dispatch("change");
+    harness.api.renderTasksSurface([], "queue");
+    assert.deepEqual(queueRowTitles(harness.documentList), ["A", "B", "C", "D"]);
+    assert.equal(harness.documentList.querySelector(".ops-queue-resource-filter").querySelector("select").value, "mail");
+    assert.match(harness.documentList.querySelector(".ops-queue-total").textContent, /2 open.*2 completed this session/);
   });
 
   test("a queue row reads Where, Task, Due, Who and has no skip control", () => {
