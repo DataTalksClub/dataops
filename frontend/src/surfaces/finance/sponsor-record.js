@@ -158,7 +158,7 @@ export function createArchiveLoader({ loadArchive, dealId, limit = 50 }) {
   if (typeof loadArchive !== "function") throw new Error("createArchiveLoader requires loadArchive (E-wired B read path)");
   const state = { status: "idle", items: [], nextCursor: null, total: null, error: "" };
   async function open() {
-    if (state.status === "loading" || state.status === "ready") return state;
+    if (state.status === "loading" || state.status === "loading-more" || state.status === "ready") return state;
     state.status = "loading";
     state.error = "";
     state.items = [];
@@ -195,10 +195,10 @@ export function createArchiveLoader({ loadArchive, dealId, limit = 50 }) {
   async function retry() {
     // Resume the failed page: a set cursor always continues the
     // continuation, even when the visible row count is zero (an empty first
-    // page with a cursor is valid after recordType projection). Only a
-    // cursorless state restarts from the first page.
+    // page with a cursor is valid after recordType projection). Never reset
+    // an in-flight request: only idle/error states may start a new fetch.
     if (state.nextCursor) return loadMore();
-    state.status = "idle";
+    if (state.status !== "idle" && state.status !== "error") return state;
     return open();
   }
   return { state, open, loadMore, retry };

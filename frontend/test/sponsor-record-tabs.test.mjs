@@ -484,6 +484,29 @@ test("archive retry after a failed continuation resumes its own cursor", async (
   assert.deepEqual(seen, ["", "page-2", "page-2"], "retry resumes the failed cursor, never restarts page one");
 });
 
+test("concurrent cursorless retries single-flight the refetch", async () => {
+  let calls = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const loader = createArchiveLoader({
+    loadArchive: async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("first open fails");
+      await gate;
+      return { items: [{ id: "m1", label: "Archived draft v1" }], nextCursor: null, total: null };
+    },
+    dealId: "d1",
+  });
+  await loader.open();
+  assert.equal(loader.state.status, "error");
+  const first = loader.retry();
+  const second = loader.retry();
+  release();
+  await Promise.all([first, second]);
+  assert.equal(calls, 2, "one initial fetch + one refetch, no duplicate retry");
+  assert.equal(loader.state.status, "ready");
+});
+
 test("archive retry resumes the failed page and keeps visible rows", async () => {
   let attempts = 0;
   const loader = createArchiveLoader({
