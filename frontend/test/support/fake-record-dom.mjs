@@ -72,13 +72,51 @@ export class FakeNode {
   append(...values) {
     for (const value of values) {
       if (typeof value === "string") this.textContent += value;
-      else this.children.push(value);
+      else {
+        value.parentNode = this;
+        this.children.push(value);
+      }
     }
   }
 
   appendChild(value) {
+    value.parentNode = this;
     this.children.push(value);
     return value;
+  }
+
+  insertBefore(value, reference) {
+    value.parentNode = this;
+    const index = this.children.indexOf(reference);
+    if (index < 0) this.children.push(value);
+    else this.children.splice(index, 0, value);
+    return value;
+  }
+
+  after(...values) {
+    const nodes = values.filter((value) => typeof value !== "string");
+    if (!this.parentNode) {
+      for (const node of nodes) node.afterParent = this;
+      this.afterSiblings = [...(this.afterSiblings || []), ...nodes];
+      return;
+    }
+    for (const node of nodes) {
+      node.parentNode = this.parentNode;
+      node.afterParent = null;
+    }
+    const index = this.parentNode.children.indexOf(this);
+    this.parentNode.children.splice(index < 0 ? this.parentNode.children.length : index + 1, 0, ...nodes);
+  }
+
+  remove() {
+    if (this.parentNode) {
+      this.parentNode.children = this.parentNode.children.filter((child) => child !== this);
+      this.parentNode = null;
+    }
+    if (this.afterParent?.afterSiblings) {
+      this.afterParent.afterSiblings = this.afterParent.afterSiblings.filter((child) => child !== this);
+      this.afterParent = null;
+    }
   }
 
   setQuery(selector, element) {

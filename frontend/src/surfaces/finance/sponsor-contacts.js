@@ -26,10 +26,13 @@ function escapeHtml(value) {
  *
  * Company association stays explicit and changeable on edit as well as
  * create: the dialog's [data-contact-org-picker] select is always usable
- * (populated here from the provided companies or getOrganizations(), with
- * an honest labeled fallback when the current association is unknown);
- * the hidden organizationId follows the picker and carries the submitted
- * value. Optimistic versions are passed through untouched; a 409 surfaces as a save error
+ * (populated here from the provided companies or getOrganizations(), plus
+ * one bounded active-companies page when the cache is thin, with an honest
+ * labeled fallback when the current association is unknown); the hidden
+ * organizationId follows the picker and carries the submitted value. A
+ * failed bounded lookup keeps the cached entries and surfaces an honest
+ * chooser-unavailable notice with a retry control instead of implying
+ * complete alternatives. Optimistic versions are passed through untouched; a 409 surfaces as a save error
  * with the dialog kept open. lastContactedAt keeps full stored precision:
  * the date input only replaces the value when the user changes that date.
  */
@@ -49,7 +52,11 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
     return [];
   }
 
-  async function companyChoices(presetOrganizationId, provided = []) {
+  // Args of the last picker fill, so the retry control refreshes the same scope.
+  let pickerScope = { presetOrganizationId: "", provided: [] };
+  let orgNotice = null;
+
+  async function companyChoices(presetOrganizationId, provided = [], { force = false } = {}) {
     const list = [...provided, ...companies()].filter(
       (item, index, all) => item && item.id && all.findIndex((other) => other.id === item.id) === index,
     );
@@ -58,42 +65,83 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
     if (presetOrganizationId && !list.some((item) => item.id === presetOrganizationId)) {
       list.unshift({ id: presetOrganizationId, displayName: `Current company (${presetOrganizationId})` });
     }
-    if (provided.length === 0 && list.length < 2) {
+    let limited = false;
+    if (provided.length === 0 && (force || list.length < 2)) {
       // Cold opens (person record without a loaded directory) would offer
       // only the current org: fetch one bounded active-companies page so the
-      // chooser offers real alternatives. Never a whole-directory load, and
-      // failures degrade to whatever is already cached.
+      // chooser offers real alternatives. Never a whole-directory load.
+      // Active-only; archived companies stay out unless already associated.
       try {
-        const page = await api("/directory/companies?limit=50");
+        const page = await api("/directory/companies?limit=50&active=true");
         for (const item of page.items || []) {
           if (item && item.id && !list.some((other) => other.id === item.id)) list.push(item);
         }
       } catch {
-        // Keep the cached entries; the chooser stays usable.
+        // Keep the cached entries; the chooser stays usable and the notice
+        // below says so honestly instead of implying complete alternatives.
+        limited = true;
       }
     }
-    return list;
+    return { list, limited };
   }
 
-  function fillCompanyPicker(presetOrganizationId, list = []) {
+  function setOrgNotice(picker, limited) {
+    if (typeof document === "undefined" || typeof document.createElement !== "function" || !picker?.after) {
+      return;
+    }
+    if (!limited) {
+      orgNotice?.hint.remove();
+      orgNotice = null;
+      return;
+    }
+    if (!orgNotice) {
+      const hint = document.createElement("p");
+      hint.setAttribute("data-contact-org-hint", "");
+      hint.textContent = "Company list unavailable — showing the current company only. ";
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.setAttribute("data-contact-org-retry", "");
+      retry.textContent = "Reload companies";
+      retry.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const refreshed = await companyChoices(pickerScope.presetOrganizationId, pickerScope.provided, { force: true });
+        paintCompanyPicker(picker, pickerScope.presetOrganizationId, refreshed);
+      });
+      hint.appendChild(retry);
+      picker.after(hint);
+      orgNotice = { hint, retry };
+    }
+  }
+
+  function paintCompanyPicker(picker, presetOrganizationId, { list, limited }) {
+    picker.innerHTML = `<option value="">Select a company</option>` + list
+      .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.displayName || item.id)}</option>`)
+      .join("");
+    const row = picker.closest("label");
+    if (row) row.hidden = false;
+    picker.value = presetOrganizationId || "";
+    picker.disabled = false;
+    setOrgNotice(picker, limited);
+  }
+
+  function fillCompanyPicker(presetOrganizationId, provided = []) {
     const picker = form.querySelector("[data-contact-org-picker]");
     const hidden = form.elements.organizationId;
-    if (picker) {
-      picker.innerHTML = `<option value="">Select a company</option>` + list
-        .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.displayName || item.id)}</option>`)
-        .join("");
-      const row = picker.closest("label");
-      if (row) row.hidden = false;
-      picker.value = presetOrganizationId || "";
-      picker.disabled = false;
-      if (!picker.dataset.wiredOrg) {
-        picker.dataset.wiredOrg = "true";
-        picker.addEventListener("change", () => {
-          if (hidden) hidden.value = picker.value || "";
-        });
-      }
+    if (!picker) {
+      if (hidden) hidden.value = presetOrganizationId || "";
+      return Promise.resolve();
     }
-    if (hidden) hidden.value = presetOrganizationId || "";
+    pickerScope = { presetOrganizationId, provided };
+    if (!picker.dataset.wiredOrg) {
+      picker.dataset.wiredOrg = "true";
+      picker.addEventListener("change", () => {
+        if (hidden) hidden.value = picker.value || "";
+      });
+    }
+    return companyChoices(presetOrganizationId, provided).then(({ list, limited }) => {
+      paintCompanyPicker(picker, presetOrganizationId, { list, limited });
+      if (hidden) hidden.value = picker.value || presetOrganizationId || "";
+    });
   }
 
   async function fillForm(contact, presetOrganizationId = "", providedCompanies = []) {
@@ -109,7 +157,7 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
       form.elements.lastContactedAt.dataset.original = originalLastContactedAt;
     }
     if (form.elements.primary) form.elements.primary.checked = Boolean(contact?.primary);
-    fillCompanyPicker(contact?.organizationId || presetOrganizationId, await companyChoices(contact?.organizationId || presetOrganizationId, providedCompanies));
+    await fillCompanyPicker(contact?.organizationId || presetOrganizationId, providedCompanies);
   }
 
   async function open(target = {}, options = {}) {

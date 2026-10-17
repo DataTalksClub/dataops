@@ -249,7 +249,7 @@ test("cold open fetches one bounded company page for real alternatives", async (
     contacts: [{ ...ada, organizationId: "c1" }],
     companies: [],
     routes: {
-      "GET /directory/companies?limit=50": (({ }) => {
+      "GET /directory/companies?limit=50&active=true": (({ }) => {
         fetched.push(true);
         return { items: [{ id: "c1", displayName: "Acme" }, { id: "c9", displayName: "Northwind" }], nextCursor: "more" };
       }),
@@ -267,13 +267,62 @@ test("chooser lookup failure degrades to the cached current entry", async () => 
   const { form, editor } = editorHarness({
     contacts: [{ ...ada, organizationId: "c1" }],
     companies: [],
-    routes: { "GET /directory/companies?limit=50": (() => { throw new Error("down"); }) },
+    routes: { "GET /directory/companies?limit=50&active=true": (() => { throw new Error("down"); }) },
   });
   const picker = new FakeNode("select");
   form.setQuery("[data-contact-org-picker]", picker);
   await editor.open({ id: "p1" });
   assert.match(picker.innerHTML, /Current company \(c1\)/, "chooser stays usable on lookup failure");
   assert.equal(picker.value, "c1");
+});
+
+test("failed lookup surfaces an honest notice with working retry", async () => {
+  const priorDocument = globalThis.document;
+  globalThis.document = { createElement: (tag) => new FakeNode(tag) };
+  try {
+    let attempts = 0;
+    const { form, editor } = editorHarness({
+      contacts: [{ ...ada, organizationId: "c1" }],
+      routes: {
+        "GET /directory/companies?limit=50&active=true": () => {
+          attempts += 1;
+          if (attempts === 1) throw new Error("directory down");
+          return { items: [{ id: "c1", displayName: "Acme" }, { id: "c9", displayName: "Northwind" }] };
+        },
+      },
+    });
+    const picker = new FakeNode("select");
+    form.setQuery("[data-contact-org-picker]", picker);
+    await editor.open({ id: "p1" });
+    const hinted = (picker.afterSiblings || []).find((node) => node.tagName === "P");
+    assert.ok(hinted, "chooser-unavailable notice shown instead of implying complete alternatives");
+    assert.match(hinted.textContent, /current company only/i);
+    const retry = hinted.children.find((node) => node.tagName === "BUTTON");
+    assert.ok(retry, "retry control offered");
+    await retry.dispatch("click", {});
+    assert.equal(attempts, 2, "retry performs one more bounded fetch, not a directory scan");
+    assert.match(picker.innerHTML, /Northwind/, "retry populates real alternatives");
+    assert.equal(picker.afterSiblings.filter((node) => node.tagName === "P").length, 0, "notice clears after success");
+    assert.equal(form.elements.organizationId.value, "c1", "current association preserved across retry");
+  } finally {
+    if (priorDocument === undefined) delete globalThis.document;
+    else globalThis.document = priorDocument;
+  }
+});
+
+test("archived cached companies stay out unless currently associated", async () => {
+  const { form, editor } = editorHarness({
+    contacts: [{ ...ada, organizationId: "c1" }],
+    companies: [
+      { id: "c1", displayName: "Acme" },
+      { id: "dead", displayName: "Gone Co", archivedAt: "2026-01-01T00:00:00Z" },
+    ],
+  });
+  const picker = new FakeNode("select");
+  form.setQuery("[data-contact-org-picker]", picker);
+  await editor.open({ id: "p1" });
+  assert.doesNotMatch(picker.innerHTML, /Gone Co/, "inactive alternatives excluded");
+  assert.match(picker.innerHTML, /Acme/, "current association retained");
 });
 
 test("new contacts preset the org with the chooser visible; blank opens the chooser", async () => {
