@@ -149,6 +149,25 @@ export function createSponsorDirectoryPages({
         : `[data-open-person="${id}"]`,
     };
   }
+  // One page-owned save context for BOTH deal-save and F's contact-submit
+  // hook: captured synchronously at submit, checked across every await. A
+  // newer record open, Back/close, same-tab record->list or an actual
+  // navigation invalidates it. stale() only covers render/surface/CRM — it
+  // is NOT a selected-record guard.
+  function captureSaveContext() {
+    return {
+      nav: navGeneration,
+      open: openGeneration,
+      view: typeof getCurrentView === "function" ? getCurrentView() : null,
+      detail: surface.classList.contains("has-booking-detail"),
+    };
+  }
+  function saveContextOwnsSurface(saveContext) {
+    return Boolean(saveContext) &&
+      saveContext.nav === navGeneration &&
+      saveContext.open === openGeneration &&
+      !isStale();
+  }
   // Back restores the origin tab, then reloads the directory (records may
   // have archived/restored/edited behind it), and only then restores scroll
   // position and focus — refreshing first would replace the nodes out from
@@ -157,6 +176,10 @@ export function createSponsorDirectoryPages({
     if (!returnContext) return false;
     const { view, path, params, scrollTop, focusSelector } = returnContext;
     returnContext = null;
+    // Back/close invalidates in-flight saves: a save that settles after this
+    // must never refresh or reopen over the restored list.
+    navGeneration += 1;
+    openGeneration += 1;
     navigateCanonicalWorkspace(path, params, { render: false, history: "replace" });
     showView(view, false);
     if (view === "companies" || view === "people") {
@@ -406,12 +429,23 @@ export function createSponsorDirectoryPages({
           selectedViewId: initial.state.view || defaultViewForEntity(state.views || [], entity)?.id || null,
           urlState: initial.state,
         });
-        if (!resolved.error) {
-          state.selectedViewId = resolved.viewId;
-          state.modified = resolved.modified;
-          state.sort = resolved.sort;
-          applyToControls({ ...resolved.filters }, resolved.sort);
+        if (resolved.error) {
+          // Honest resolver failure (missing view, unresolved builtin,
+          // views failure): render it and stay invalid. initialized stays
+          // false so a later restorePage retries init instead of silently
+          // loading defaults; only an explicit corrected query clears it.
+          state.initialized = false;
+          renderViews();
+          rowsEl.innerHTML = renderDirectoryError({ message: resolved.error, escapeHtml });
+          statusEl.textContent = "";
+          pagesEl.innerHTML = "";
+          showMessage("");
+          return;
         }
+        state.selectedViewId = resolved.viewId;
+        state.modified = resolved.modified;
+        state.sort = resolved.sort;
+        applyToControls({ ...resolved.filters }, resolved.sort);
         if (entity === "people") await refillCompanyFilter();
         renderViews();
       }
@@ -670,6 +704,7 @@ export function createSponsorDirectoryPages({
       if (controls.stage) params.stage = controls.stage;
       if (controls.search) params.search = controls.search;
       if (controls.owner) params.owner = controls.owner;
+      if (pipeline.org) params.organizationId = pipeline.org;
       if (controls.sort && controls.sort !== "next-action") params.sort = controls.sort;
       // Inclusive absolute bounds, labeled From/Through in the UI. Invalid or
       // reversed ranges 400 honestly at the API and surface via safe().
@@ -750,6 +785,7 @@ export function createSponsorDirectoryPages({
         sort: p.sort === "recent" ? "recent" : "next-action",
         nextActionFrom: p.nextActionFrom || "",
         nextActionBefore: p.nextActionBefore || "",
+        organizationId: p.organizationId || "",
       });
       if (invalid.length) {
         showNotice(`Ignored invalid pipeline URL: ${invalid.join(", ")}. Showing defaults.`);
@@ -942,6 +978,8 @@ export function createSponsorDirectoryPages({
     openRecord,
     getOpenPersonId,
     closeRecord,
+    captureSaveContext,
+    saveContextOwnsSurface,
     listPath,
     captureReturnContext,
   };

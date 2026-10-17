@@ -323,12 +323,16 @@ export function createSponsorCrmSurface(context) {
     }
     const contactEditor = createSponsorContactEditor({ api, surface, getContacts: () => contacts,
       getOrganizations: () => organizations, safe, openDialog,
-      afterSave: async (organizationId) => {
-        // Guarded like deal-save: a navigation that happened mid-save owns
-        // the surface; never refresh or reopen over it.
+      captureSaveContext: () => directoryPages.captureSaveContext(),
+      afterSave: async (organizationId, saveContext) => {
+        // Consume F's synchronous submit snapshot: a navigation that happened
+        // mid-save owns the surface; never refresh or reopen over it.
+        // Rechecked after every await (refresh, summary) before mutations.
+        if (saveContext && !directoryPages.saveContextOwnsSurface(saveContext)) return;
         if (stale()) return;
         const openPersonId = directoryPages.getOpenPersonId();
         await refresh();
+        if (saveContext && !directoryPages.saveContextOwnsSurface(saveContext)) return;
         if (stale()) return;
         if (openPersonId) {
           await personDetail.openPerson(openPersonId);
@@ -336,6 +340,7 @@ export function createSponsorCrmSurface(context) {
         }
         if (surface.classList.contains("has-booking-detail")) {
           await directoryPages.loadCompanySummary(organizationId);
+          if (saveContext && !directoryPages.saveContextOwnsSurface(saveContext)) return;
           await reopenCompanyDetail({ id: organizationId });
         }
       } });
@@ -745,8 +750,9 @@ export function createSponsorCrmSurface(context) {
         form = dialog.querySelector("form");
       // Origin capture: a save from A must never refresh/reopen over a newer
       // record B or a navigation that happened while the save was in flight.
-      const submitOpenGeneration = openGeneration;
-      const submitView = currentView;
+      // Captured synchronously at submit via the one page-owned context API
+      // (shared with F's contact-submit hook); stale() alone is not enough.
+      const saveContext = directoryPages.captureSaveContext();
       const submitHadDetail = surface.classList.contains("has-booking-detail");
       safe(async () => {
         const raw = Object.fromEntries(
@@ -790,17 +796,21 @@ export function createSponsorCrmSurface(context) {
         }
         dialog.close();
         // A newer record open or any navigation/re-render during the save
-        // owns the surface now: never refresh or reopen over it.
-        if (submitOpenGeneration !== openGeneration || submitView !== currentView || stale()) return;
-        await refresh();
-        // A save from inside an open record reopens that org+deal with the
-        // saved object (fresh version, no stale data); a save from a list
-        // only needed the refresh above.
+        // owns the surface now: never refresh or reopen over it. Rechecked
+        // after the deal/task POSTs and after every later await (refresh,
+        // the company summary) before any surface mutation or reopen.
+        if (!directoryPages.saveContextOwnsSurface(saveContext)) return;
+        // A save from inside an open record refreshes that org+deal with the
+        // saved object (fresh version, no stale data): the origin Back
+        // context is preserved (no new open) and no unrelated list reloads.
         if (submitHadDetail) {
           await directoryPages.loadCompanySummary(saved.organizationId);
+          if (!directoryPages.saveContextOwnsSurface(saveContext)) return;
           deals = [...deals.filter((value) => value.id !== saved.id), saved];
           await reopenDealDetail(saved);
+          return;
         }
+        await refresh();
       }, "Could not save deal");
     };
     surface.querySelector("[data-save-suppression]").onclick = (event) => {

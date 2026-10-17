@@ -311,6 +311,7 @@ function createHarness({ request, route = null, setupSurface, pipelineRows = [] 
   const documentList = new FakeElement("main");
   const document = new FakeDocument(setupSurface);
   const requests = [];
+  const navigations = [];
   const routeTitles = [];
   globalThis.document = document;
   globalThis.FormData = FakeFormData;
@@ -320,7 +321,7 @@ function createHarness({ request, route = null, setupSurface, pipelineRows = [] 
     getPendingLegacyRoute: () => route,
     humanizeOptionLabel,
     isWorkspaceRouteFresh: () => true,
-    navigateCanonicalWorkspace() {},
+    navigateCanonicalWorkspace: (path, params) => navigations.push({ path, params: { ...(params || {}) } }),
     request: async (url, options = {}) => {
       requests.push({ url, options });
       if (requestPath(url) === "/api/team-members") {
@@ -345,7 +346,7 @@ function createHarness({ request, route = null, setupSurface, pipelineRows = [] 
     viewportWidth: () => 1280,
     workApiUrl: (path) => path,
   });
-  return { document, documentList, finance, requests, routeTitles };
+  return { document, documentList, finance, requests, navigations, routeTitles };
 }
 
 function requestPath(url) {
@@ -1075,7 +1076,7 @@ describe("Finance surface boundary", () => {
           return {
             items: [
               { id: `builtin:${entity}:active`, entity, name: "Active", builtin: true,
-                filters: { active: "true" }, sort: { field: "name", direction: "asc" } },
+                filters: { active: "true" }, resolvedFilters: { active: "true" }, sort: { field: "name", direction: "asc" } },
             ],
             total: 1,
           };
@@ -1510,6 +1511,8 @@ describe("CRM directory controllers", () => {
     { id: "builtin:companies:stale", entity: "companies", name: "No recent contact", builtin: true,
       filters: { active: "true", lastTouchBefore: { daysAgo: 30 } },
       resolvedFilters: { active: "true", lastTouchBefore: "2026-09-17" }, sort: { field: "lastTouch", direction: "desc" } },
+    { id: "view-acme", entity: "companies", name: "Acme only",
+      filters: { search: "acme" }, resolvedFilters: { active: "true", search: "acme" }, sort: { field: "name", direction: "asc" } },
   ];
   function directoryRequest(url, options = {}) {
     const path = requestPath(url);
@@ -1543,7 +1546,7 @@ describe("CRM directory controllers", () => {
     document.surface.querySelector('[data-dir-root="companies"]').querySelector("[data-dir-rows]");
 
   test("reverse-direction URL executes with direction and survives reload", async () => {
-    const { document, finance, requests } = createHarness({
+    const { document, finance, requests, navigations } = createHarness({
       route: dirRoute("companies", { sort: "lastTouch", dir: "asc" }),
       request: directoryRequest,
     });
@@ -1553,6 +1556,20 @@ describe("CRM directory controllers", () => {
     assert.equal(calls.length, 1);
     assert.equal(new URL(calls[0].url, "http://dataops.test").searchParams.get("direction"), "asc");
     assert.match(dirRows(document).innerHTML, /Northwind Data.*Acme Cloud/s, "lastTouch asc orders oldest first");
+    const canonical = navigations.find((entry) => entry.path === "/sponsors/companies");
+    assert.ok(canonical, "list write canonically replaces the URL");
+    assert.equal(canonical.params.sort, "lastTouch");
+    assert.equal(canonical.params.dir, "asc");
+    const reloaded = createHarness({
+      route: dirRoute("companies", canonical.params),
+      request: directoryRequest,
+    });
+    await reloaded.finance.renderSponsorCrmSurface();
+    await settle();
+    const reloadCalls = reloaded.requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/directory/companies");
+    assert.equal(reloadCalls.length, 1);
+    assert.equal(new URL(reloadCalls[0].url, "http://dataops.test").searchParams.get("direction"), "asc");
+    assert.match(dirRows(reloaded.document).innerHTML, /Northwind Data.*Acme Cloud/s, "reload replays the reverse direction");
   });
 
   test("invalid sort URL surfaces an honest error and issues no silent default load", async () => {
@@ -1612,22 +1629,26 @@ describe("CRM directory controllers", () => {
     assert.ok(!pipelineCalls.join("").includes("nope"), "invented sort never reaches the API");
   });
 
-  test("clearing a saved search deletes the filter instead of restoring base", async () => {
-    const { document, finance, requests } = createHarness({
+  test("selecting a saved view then clearing its search deletes the filter and unpins the view", async () => {
+    const { document, finance, requests, navigations } = createHarness({
       route: dirRoute("companies", {}),
       request: directoryRequest,
     });
     await finance.renderSponsorCrmSurface();
     await settle();
     const root = document.surface.querySelector('[data-dir-root="companies"]');
-    const search = root.querySelector("[data-dir-search]");
-    search.value = "acme";
-    await search.dispatch("input", {});
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    const viewsBar = root.querySelector("[data-dir-views]");
+    await viewsBar.dispatch("change", {
+      target: { closest: (selector) => selector === "[data-views-select]" ? { value: "view-acme" } : null },
+    });
+    await settle();
     let queries = requests
       .filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/directory/companies")
       .map((entry) => new URL(entry.url, "http://dataops.test").search);
-    assert.ok(queries.at(-1).includes("search=acme"), "search applies");
+    assert.ok(queries.at(-1).includes("search=acme"), `saved view search applies: ${queries.at(-1)}`);
+    assert.match(dirRows(document).innerHTML, /Acme Cloud/, "saved view filters rows");
+    assert.doesNotMatch(dirRows(document).innerHTML, /Northwind Data/);
+    const search = root.querySelector("[data-dir-search]");
     search.value = "";
     await search.dispatch("input", {});
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -1635,6 +1656,9 @@ describe("CRM directory controllers", () => {
       .filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/directory/companies")
       .map((entry) => new URL(entry.url, "http://dataops.test").search);
     assert.ok(!queries.at(-1).includes("search="), `cleared search disappears from query: ${queries.at(-1)}`);
+    const canonical = navigations.filter((entry) => entry.path === "/sponsors/companies").at(-1);
+    assert.ok(canonical && !("search" in canonical.params) && !("view" in canonical.params),
+      `cleared filter unpins the view and stays out of the URL: ${JSON.stringify(canonical?.params)}`);
     assert.match(dirRows(document).innerHTML, /Acme Cloud/, "all rows return after clearing");
   });
 
@@ -1670,5 +1694,207 @@ describe("CRM directory controllers", () => {
       "late rejection never replaces newer rows with an error",
     );
     assert.doesNotMatch(dirRows(document).innerHTML, /Could not load this directory/);
+  });
+
+  test("initial missing saved view stays honest and issues no silent default load", async () => {
+    const { document, finance, requests } = createHarness({
+      route: dirRoute("companies", { view: "missing-view" }),
+      request: directoryRequest,
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    assert.match(
+      dirRows(document).innerHTML,
+      /not available|Could not load this directory/,
+      "missing view renders an honest resolver error",
+    );
+    assert.equal(
+      requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/directory/companies").length,
+      0,
+      "no default query fires behind an unresolved view",
+    );
+  });
+
+  test("in-flight list response never paints over an opened record", async () => {
+    const gates = {};
+    const { document, finance, requests } = createHarness({
+      route: dirRoute("companies", {}),
+      request: (url, options = {}) => {
+        const path = requestPath(url);
+        const query = new URL(url, "http://dataops.test").searchParams;
+        if (path === "/api/sponsor-crm/directory/companies" && query.get("search") === "north") {
+          return new Promise((resolve) => { gates.north = () => resolve({ items: [directoryOrgs[1]], total: 1, nextCursor: null }); });
+        }
+        if (path === "/api/sponsor-crm/directory/companies/org-acme") {
+          return { id: "org-acme", displayName: "Acme Cloud", domain: "acme.example", active: true, version: 1, updatedAt: "2026-10-12T00:00:00Z" };
+        }
+        return directoryRequest(url, options);
+      },
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    const root = document.surface.querySelector('[data-dir-root="companies"]');
+    const search = root.querySelector("[data-dir-search]");
+    search.value = "north";
+    await search.dispatch("input", {});
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await document.surface.dispatch("click", {
+      target: {
+        closest: (selector) => {
+          if (selector === "[data-open-company]") return { dataset: { openCompany: "org-acme" } };
+          return null;
+        },
+      },
+    });
+    await settle();
+    gates.north();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.match(
+      dirRows(document).innerHTML,
+      /Acme Cloud/,
+      "pre-search rows survive the late list response after the record open",
+    );
+    assert.doesNotMatch(
+      dirRows(document).innerHTML,
+      /Could not load this directory/,
+      "late response never paints rows or errors over the record",
+    );
+  });
+
+  test("deal save settling after a newer record open never refreshes or reopens", async () => {
+    const gates = {};
+    const pipelineDeals = [
+      { id: "deal-a", organizationId: "org-1", status: "open", productKind: "one-off" },
+      { id: "deal-b", organizationId: "org-1", status: "agreed", productKind: "package" },
+    ];
+    const { document, finance, requests } = createHarness({
+      route: dirRoute("pipeline", {}),
+      pipelineRows: pipelineDeals,
+      request: (url, options = {}) => {
+        const path = requestPath(url);
+        if (path === "/api/sponsor-crm/directory/companies/org-1") {
+          return { id: "org-1", displayName: "Acme Cloud", domain: "acme.example", active: true, version: 2, updatedAt: "2026-10-12T00:00:00Z" };
+        }
+        if (path === "/api/sponsor-crm/deals" && options.method === "POST") {
+          return new Promise((resolve) => { gates.save = () => resolve({ id: "deal-a", organizationId: "org-1", status: "agreed", productKind: "one-off", version: 4 }); });
+        }
+        if (path === "/api/sponsor-crm/deals") return { items: pipelineDeals, total: pipelineDeals.length };
+        return directoryRequest(url, options);
+      },
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    const pipelineCalls = () => requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/pipeline").length;
+    assert.equal(pipelineCalls(), 1, "pipeline loads once before the save");
+    const form = document.surface.querySelector("[data-deal-dialog]").querySelector("form");
+    form.formEntries = [
+      ["organizationId", "org-1"], ["status", "agreed"], ["productKind", "one-off"], ["version", "3"],
+    ];
+    await document.surface.querySelector("[data-deal-save]").dispatch("click", {});
+    await settle();
+    assert.equal(
+      requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/deals" && entry.options.method === "POST").length,
+      1,
+      "deal POST fires",
+    );
+    await document.surface.querySelector("[data-crm-bookings]").dispatch("click", {
+      target: {
+        closest: (selector) => selector === "[data-open-deal]" ? { dataset: { openDeal: "deal-b" } } : null,
+      },
+    });
+    await settle();
+    const dealDetailCalls = () => requests.filter((entry) => requestPath(entry.url).startsWith("/api/sponsor-crm/deals/")).length;
+    const detailCallsBeforeSettle = dealDetailCalls();
+    assert.ok(detailCallsBeforeSettle >= 1, "record B open fetches its deal");
+    gates.save();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(pipelineCalls(), 1, "late save never refreshes the pipeline over record B");
+    assert.equal(
+      dealDetailCalls(),
+      detailCallsBeforeSettle,
+      "late save never reopens a deal detail",
+    );
+  });
+
+  test("deal save settling after navigation to Tasks never refreshes or reopens", async () => {
+    const gates = {};
+    const pipelineDeals = [
+      { id: "deal-a", organizationId: "org-1", status: "open", productKind: "one-off" },
+    ];
+    const route = dirRoute("pipeline", {});
+    const { document, finance, requests } = createHarness({
+      route,
+      pipelineRows: pipelineDeals,
+      request: (url, options = {}) => {
+        const path = requestPath(url);
+        if (path === "/api/sponsor-crm/deals" && options.method === "POST") {
+          return new Promise((resolve) => { gates.save = () => resolve({ id: "deal-a", organizationId: "org-1", status: "agreed", productKind: "one-off", version: 4 }); });
+        }
+        return directoryRequest(url, options);
+      },
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    const pipelineCalls = () => requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/pipeline").length;
+    assert.equal(pipelineCalls(), 1);
+    const form = document.surface.querySelector("[data-deal-dialog]").querySelector("form");
+    form.formEntries = [
+      ["organizationId", "org-1"], ["status", "agreed"], ["productKind", "one-off"], ["version", "3"],
+    ];
+    await document.surface.querySelector("[data-deal-save]").dispatch("click", {});
+    await settle();
+    route.view = "tasks";
+    route.path = "/tasks";
+    gates.save();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(pipelineCalls(), 1, "late save never refreshes after leaving for Tasks");
+    assert.equal(
+      requests.filter((entry) => requestPath(entry.url).startsWith("/api/sponsor-crm/deals/")).length,
+      0,
+      "late save never reopens a deal detail after leaving for Tasks",
+    );
+  });
+
+  test("company-scoped pipeline view keeps organization scope in the URL and reloads it", async () => {    const scopedRequest = (url, options = {}) => {
+      if (requestPath(url) === "/api/sponsor-crm/views") return { items: [], total: 0 };
+      return directoryRequest(url, options);
+    };
+    const first = createHarness({
+      route: dirRoute("pipeline", { organizationId: "org-9" }),
+      request: scopedRequest,
+      setupSurface: (surface) => {
+        surface.setQueryAll(
+          "[data-pipeline-view],[data-pipeline-sort],[data-pipeline-owner],[data-pipeline-from],[data-pipeline-to]",
+          [surface.querySelector("[data-pipeline-view]")],
+        );
+      },
+    });
+    await first.finance.renderSponsorCrmSurface();
+    await settle();
+    const firstQueries = first.requests
+      .filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/pipeline")
+      .map((entry) => new URL(entry.url, "http://dataops.test").searchParams);
+    assert.equal(firstQueries.length, 1, "pipeline loads once from the URL");
+    assert.equal(firstQueries[0].get("organizationId"), "org-9", "company scope reaches the API on first paint");
+    const viewSelect = first.document.surface.querySelector("[data-pipeline-view]");
+    viewSelect.value = "all";
+    await viewSelect.dispatch("change", {});
+    await settle();
+    const canonical = first.navigations.filter((entry) => entry.path === "/sponsors/pipeline").at(-1);
+    assert.ok(canonical, "manual edit writes the canonical URL");
+    assert.equal(canonical.params.organizationId, "org-9", "manual edit keeps the company scope in the URL");
+    assert.equal(canonical.params.view, "all", "manual edit keeps the effective view in the URL");
+    const reloaded = createHarness({
+      route: dirRoute("pipeline", canonical.params),
+      request: scopedRequest,
+    });
+    await reloaded.finance.renderSponsorCrmSurface();
+    await settle();
+    const reloadQueries = reloaded.requests
+      .filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/pipeline")
+      .map((entry) => new URL(entry.url, "http://dataops.test").searchParams);
+    assert.equal(reloadQueries.length, 1);
+    assert.equal(reloadQueries[0].get("organizationId"), "org-9", "copied URL replays the company scope");
+    assert.equal(reloadQueries[0].get("view"), "all", "copied URL replays the effective view");
   });
 });

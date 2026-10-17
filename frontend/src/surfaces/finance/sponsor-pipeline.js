@@ -72,7 +72,7 @@ export function createSponsorPipelineView({ api, surface, escapeHtml, humanSpons
   const previous = [];
   const root = surface.querySelector('[data-crm-bookings]');
   function draw() {
-    surface.querySelector('[data-crm-pipeline]').setAttribute('aria-label', 'Stage totals across all matching companies; includes closed and lost');
+    surface.querySelector('[data-crm-pipeline]').setAttribute('aria-label', 'Stage totals reflect search and company; owner, date, view and stage filter the list below');
     surface.querySelector('[data-crm-pipeline]').innerHTML = renderSponsorPipelineFilters({
       counts: result.counts, selected: surface.querySelector('[data-crm-status]').value, escapeHtml,
     });

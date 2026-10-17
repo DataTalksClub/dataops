@@ -958,7 +958,67 @@ body[data-workspace-view="sponsors"] .document-list {
   display: block;
   margin-top: var(--dk-space-1);
   color: var(--dk-text-muted);
-}.surface-dialog {
+}
+/* Shared Activity chrome (F markup, E-owned layout): filter tools and the
+   note form keep spacing on desktop and narrow canvases; loaded record and
+   person tabs get the same list rhythm as the rest of the detail pane. */
+.crm-activity-panel {
+  display: grid;
+  gap: 12px;
+}
+.crm-activity-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: end;
+}
+.crm-activity-tools label {
+  display: grid;
+  gap: 4px;
+}
+.crm-activity-list {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.crm-activity-item {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid var(--dk-border-default);
+  padding-bottom: 12px;
+}
+.crm-activity-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.crm-activity-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.crm-activity-provenance {
+  margin: 0;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+[data-activity-note-form] {
+  display: grid;
+  gap: 8px;
+}
+[data-activity-note-form] label {
+  display: grid;
+  gap: 4px;
+}
+/* Long exact-preview hashes wrap instead of clipping the review dialog. */
+[data-review-status] {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.surface-dialog {
   width: min(520px, calc(100vw - 32px));
   max-height: calc(100vh - 48px);
   margin: 24px auto;

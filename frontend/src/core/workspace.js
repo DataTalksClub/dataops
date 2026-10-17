@@ -46,7 +46,7 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   // survives navigation, refresh and back/forward through canonical URLs.
   "/sponsors": { view: "sponsors", tasksSection: "queue", params: [], canonicalPath: "/sponsors/pipeline" },
   "/sponsors/pipeline": { view: "sponsors", tasksSection: "queue", sponsorsTab: "pipeline",
-    params: ["view", "stage", "search", "owner", "sort", "cursor", "savedView", "nextActionFrom", "nextActionBefore"] },
+    params: ["view", "stage", "search", "owner", "organizationId", "sort", "cursor", "savedView", "nextActionFrom", "nextActionBefore"] },
   "/sponsors/companies": { view: "sponsors", tasksSection: "queue", sponsorsTab: "companies",
     params: ["view", "search", "relationship", "active", "lastTouchAfter", "lastTouchBefore", "sort", "dir", "limit", "cursor"] },
   "/sponsors/people": { view: "sponsors", tasksSection: "queue", sponsorsTab: "people",
