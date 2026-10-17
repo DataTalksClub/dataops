@@ -13,7 +13,6 @@ import { berlinDate } from '../sponsorFinance/core';
 import { evaluateCommunicationSuggestions } from '../sponsorCommunications/suggestions';
 import { reconcileAbandonedSponsorPayloads } from '../sponsorCommunications/repositoryMaintenance';
 import { templateCardProjection } from '../templates/cardTemplateProjection';
-import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { recordAutomationRun } from '../automations/runs';
 import { createDueIssueCards, type DueCardRun } from '../newsletter/cardSchedule';
 
@@ -126,21 +125,6 @@ async function ensureAutomaticCard(
   }
 
   const { card } = await createCardFromTemplate(client, cardData, template, anchorDate);
-
-  // Notify the workspace default assignee when one is set.
-  const notificationData: Record<string, unknown> = {
-    type: 'stage-change',
-    message: `${template.name} card auto-created for ${formatAnchorDate(anchorDate)}`,
-    cardId: card.id,
-    templateId: template.id,
-    dueAt: anchorDate,
-  };
-  const defaultAssigneeId = await resolveDefaultAssigneeId(client);
-  if (defaultAssigneeId) {
-    notificationData.userId = defaultAssigneeId;
-  }
-  await createNotification(client, notificationData);
-
   return { created: card, recovered: 0 };
 }
 
@@ -207,21 +191,6 @@ async function runCron(
     failures += recurringFailures;
     for (const task of recurringResult.generated) {
       recurringGenerated.push(task.id);
-      const notificationData: Record<string, unknown> = {
-        type: 'recurring-due',
-        message: `Recurring task generated: ${task.description} for ${task.date}`,
-        taskId: task.id,
-        recurringConfigId: task.recurringConfigId,
-        dueAt: task.date,
-        metadata: {
-          generatedDate: task.date,
-          recurringConfigId: task.recurringConfigId,
-        },
-      };
-      if (task.assigneeId) {
-        notificationData.userId = task.assigneeId;
-      }
-      await createNotification(client, notificationData);
     }
   } catch (err: unknown) {
     failures++;

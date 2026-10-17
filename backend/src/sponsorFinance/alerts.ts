@@ -41,6 +41,25 @@ export async function evaluateSponsorFinanceAlerts(
     deliverables.push(...(page.Items || []));
     cursor = page.LastEvaluatedKey;
   } while (cursor);
+  const organizations: Record<string, unknown>[] = [];
+  cursor = undefined;
+  do {
+    const page: ScanCommandOutput = await client.send(new ScanCommand({
+      TableName: TABLE_SPONSOR_CRM,
+      FilterExpression: 'begins_with(PK, :prefix)',
+      ExpressionAttributeValues: { ':prefix': 'ORGANIZATION#' },
+      ExclusiveStartKey: cursor,
+    }));
+    organizations.push(...(page.Items || []));
+    cursor = page.LastEvaluatedKey;
+  } while (cursor);
+  const orgNames = new Map<string, string>(
+    organizations.map((org) => [String(org.id), String(org.displayName || org.name || 'Sponsor')]),
+  );
+  const dealMap = new Map<string, Record<string, unknown>>(
+    deals.map((deal) => [String(deal.id), deal]),
+  );
+  const cutoff60d = new Date(Date.parse(today) - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const conditions: Condition[] = [];
   for (const deal of deals) {
     if (deal.archivedAt || deal.active !== true || deal.status === 'lost') {
@@ -51,34 +70,39 @@ export async function evaluateSponsorFinanceAlerts(
     const projection = await projectFinance(client, String(deal.id), 'operator', {
       today, dealStatus: String(deal.status), ...(delivered ? { deliveredOn: delivered } : {}),
     });
+    const pushCondition = (rule: string, basisDate: string, version: number) => {
+      if (basisDate >= cutoff60d) {
+        conditions.push({ dealId: String(deal.id), rule, basisDate, version });
+      }
+    };
     if (!projection.classified && (deal.status === 'agreed' || delivered)) {
-      conditions.push({ dealId: String(deal.id), rule: 'finance-unclassified', basisDate: today, version: Number(deal.version) });
+      pushCondition('finance-unclassified', today, Number(deal.version));
       continue;
     }
     const finance = projection.finance;
     if (!finance || finance.invoiceRequirement !== 'required' || finance.voidedAt) continue;
     if (!finance.invoiceRequestedAt && finance.requestBy && finance.requestBy < today) {
-      conditions.push({ dealId: String(deal.id), rule: 'invoice-request-overdue', basisDate: finance.requestBy, version: finance.version });
+      pushCondition('invoice-request-overdue', finance.requestBy, finance.version);
     }
     if (finance.invoiceRequestedAt && projection.invoiceState !== 'issued' && finance.expectedInvoiceBy && finance.expectedInvoiceBy < today) {
-      conditions.push({ dealId: String(deal.id), rule: 'invoice-missing', basisDate: finance.expectedInvoiceBy, version: finance.version });
+      pushCondition('invoice-missing', finance.expectedInvoiceBy, finance.version);
     }
     const invoiceFlagged = conditions.some((item) => item.dealId === String(deal.id));
     if (!invoiceFlagged && projection.followUp.code === 'send-invoice') {
-      conditions.push({ dealId: String(deal.id), rule: delivered ? 'invoice-after-delivery' : 'invoice-missing', basisDate: delivered || String(deal.updatedAt || deal.createdAt || today).slice(0, 10), version: finance.version });
+      pushCondition(delivered ? 'invoice-after-delivery' : 'invoice-missing', delivered || String(deal.updatedAt || deal.createdAt || today).slice(0, 10), finance.version);
     }
     if (projection.followUp.code === 'unblock' && finance.waitingOn) {
-      conditions.push({ dealId: String(deal.id), rule: 'finance-waiting-on-us', basisDate: finance.waitingOn.since, version: finance.version });
+      pushCondition('finance-waiting-on-us', finance.waitingOn.since, finance.version);
     }
     if (
       finance.dueOn
       && finance.dueOn < today
       && ['unpaid', 'partially-paid'].includes(projection.paymentState)
     ) {
-      conditions.push({ dealId: String(deal.id), rule: 'payment-overdue', basisDate: finance.dueOn, version: finance.version });
+      pushCondition('payment-overdue', finance.dueOn, finance.version);
     }
     if (projection.followUp.code === 'reconcile') {
-      conditions.push({ dealId: String(deal.id), rule: 'finance-reconciliation-required', basisDate: today, version: finance.version });
+      pushCondition('finance-reconciliation-required', today, finance.version);
     }
   }
   const wanted = new Map(conditions.map((condition) => {
@@ -122,13 +146,26 @@ export async function evaluateSponsorFinanceAlerts(
       }
       continue;
     }
+    const deal = dealMap.get(condition.dealId);
+    const orgName = (deal && orgNames.get(String(deal.organizationId))) || deal?.title || 'Sponsor';
+    const ruleLabels: Record<string, string> = {
+      'finance-unclassified': 'finance details unclassified',
+      'invoice-request-overdue': 'invoice request overdue',
+      'invoice-missing': 'invoice missing',
+      'invoice-after-delivery': 'invoice needed after delivery',
+      'finance-waiting-on-us': 'blocked waiting on us',
+      'payment-overdue': 'payment overdue',
+      'finance-reconciliation-required': 'reconciliation required',
+    };
+    const actionLabel = ruleLabels[condition.rule] || 'finance follow-through needed';
+    const message = `${orgName}: ${actionLabel}`;
     const id = `sponsor-finance-${condition.fingerprint}`;
     try {
       await client.send(new PutCommand({
         TableName: TABLE_NOTIFICATIONS,
         Item: {
           PK: `NOTIFICATION#${id}`, SK: `NOTIFICATION#${id}`, id,
-          type: 'sponsor-finance', message: 'Sponsor finance follow-through needs attention.',
+          type: 'sponsor-finance', message,
           dueAt: condition.basisDate, dismissed: false, createdAt: new Date().toISOString(),
           metadata: {
             financeDealId: condition.dealId,

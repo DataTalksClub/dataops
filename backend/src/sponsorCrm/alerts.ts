@@ -18,13 +18,13 @@ export async function sponsorReminderTiming(client: DynamoDBDocumentClient): Pro
 
 type Rule = { code: string; dueDate: string; message: string; dealId: string; organizationId: string; deliverableId?: string };
 
-function rulesForDeal(deal: Record<string, unknown>, today: string): Rule[] {
+function rulesForDeal(deal: Record<string, unknown>, today: string, orgName: string): Rule[] {
   const rules: Rule[] = [];
   if (deal.status === 'agreed' && !deal.primaryContactId) {
     rules.push({
       code: 'agreed-missing-primary-contact',
       dueDate: today,
-      message: 'Agreed sponsor deal needs a primary contact',
+      message: `${orgName}: agreed deal needs a primary contact`,
       dealId: String(deal.id),
       organizationId: String(deal.organizationId || ''),
     });
@@ -37,6 +37,7 @@ function rulesForDeliverable(
   deal: Record<string, unknown>,
   today: string,
   timing: SponsorReminderTiming,
+  orgName: string,
 ): Rule[] {
   const rules: Rule[] = [];
   const publication = String(deliverable.plannedPublicationDate || '');
@@ -51,18 +52,18 @@ function rulesForDeliverable(
   if (deal.status === 'agreed' && publication && !hasMaterials && !published) {
     const days = dayDiff(today, publication);
     if (timing.materialsReminderDays.includes(days)) {
-      rules.push({ ...base, code: `materials-missing-${days}d`, dueDate: publication, message: `Sponsor deliverable materials are missing ${days} days before publication` });
+      rules.push({ ...base, code: `materials-missing-${days}d`, dueDate: publication, message: `${orgName}: materials missing ${days}d before publication` });
     }
   }
   if (deadline && deadline < today && !hasMaterials) {
-    rules.push({ ...base, code: 'materials-deadline-overdue', dueDate: deadline, message: 'Sponsor deliverable material deadline is overdue' });
+    rules.push({ ...base, code: 'materials-deadline-overdue', dueDate: deadline, message: `${orgName}: material deadline is overdue` });
   }
   const workflow = NEWSLETTER_CHANNELS.has(String(deliverable.channel)) ? deliverable.newsletterIssueId : deliverable.cardId;
   if ((deliverable.scheduleEntryId || published) && (!workflow || !deliverable.requiredLinkUrl)) {
-    rules.push({ ...base, code: 'newsletter-workflow-incomplete', dueDate: publication || today, message: 'Sponsor deliverable is missing its newsletter workflow or required link' });
+    rules.push({ ...base, code: 'newsletter-workflow-incomplete', dueDate: publication || today, message: `${orgName}: missing newsletter workflow or link` });
   }
   if (published && dayDiff(published, today) >= timing.followUpDays) {
-    rules.push({ ...base, code: 'performance-follow-up-due', dueDate: published, message: 'Sponsor deliverable performance follow-up is due' });
+    rules.push({ ...base, code: 'performance-follow-up-due', dueDate: published, message: `${orgName}: performance follow-up is due` });
   }
   return rules;
 }
@@ -73,6 +74,8 @@ export async function evaluateSponsorBookingAlerts(client: DynamoDBDocumentClien
     listCrmRecords(client, 'deal'),
     listCrmRecords(client, 'deliverable'),
   ]);
+  const orgNames = new Map(organizations.map((org) => [org.id, String(org.displayName || org.name || 'Sponsor')]));
+  const cutoff60d = new Date(Date.parse(today) - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const facts = await dealMoneyFacts(client, today, { organizations, deals, deliverables });
   const timing = await sponsorReminderTiming(client);
   const deliverablesByDeal = new Map<string, typeof deliverables>();
@@ -90,11 +93,13 @@ export async function evaluateSponsorBookingAlerts(client: DynamoDBDocumentClien
     const dealDeliverables = deliverablesByDeal.get(deal.id) || [];
     const live = (deal.status === 'open' || deal.status === 'agreed') && !dealIsComplete(deal, facts.get(deal.id), dealDeliverables);
     if (!live) continue;
-    rules.push(...rulesForDeal(deal, today));
-    for (const deliverable of dealDeliverables) rules.push(...rulesForDeliverable(deliverable, deal, today, timing));
+    const orgName = orgNames.get(String(deal.organizationId)) || 'Sponsor';
+    rules.push(...rulesForDeal(deal, today, orgName));
+    for (const deliverable of dealDeliverables) rules.push(...rulesForDeliverable(deliverable, deal, today, timing, orgName));
   }
   for (const rule of rules) {
-    const fingerprint = `${rule.deliverableId || rule.dealId}#${rule.code}#${rule.dueDate}`;
+    if (rule.dueDate && rule.dueDate < cutoff60d) continue;
+    const fingerprint = `${rule.deliverableId || rule.dealId}#${rule.code}`;
     active.add(fingerprint);
     const found = existing.find((item) => !item.dismissed && (item.metadata as { sponsorAlertFingerprint?: string })?.sponsorAlertFingerprint === fingerprint);
     if (!found) {

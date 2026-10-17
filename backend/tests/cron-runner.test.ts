@@ -470,7 +470,7 @@ describe('Cron runner', () => {
     assert.strictEqual(cardsAfter.length, countBefore);
   });
 
-  it('creates a notification when card is auto-created', async () => {
+  it('does not create routine notification noise when card is auto-created', async () => {
     // Create a new template to get a fresh card
     const template = await createTemplate(client, {
       name: 'Social Media Weekly',
@@ -489,17 +489,13 @@ describe('Cron runner', () => {
 
     assert.strictEqual(result.created.length, 1);
 
-    // Check notification was created
+    // Verify no routine notification was created
     const notifications = await listUndismissedNotifications(client);
     const notification = notifications.find(
       (n) => n.cardId === result.created[0]
     );
 
-    assert.ok(notification, 'Notification should exist');
-    assert.ok(notification.message.includes('Social Media Weekly'));
-    assert.ok(notification.message.includes('Mar 13')); // March 6 + 7 = March 13
-    assert.strictEqual(notification.templateId, template.id);
-    assert.strictEqual(notification.dismissed, false);
+    assert.strictEqual(notification, undefined, 'Routine card auto-creation should not generate notification noise');
   });
 
   it('skips templates without automatic trigger', async () => {

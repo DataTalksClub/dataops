@@ -234,16 +234,21 @@ export function createNotificationsShell({
       main.className = "dk-notif-item__main";
       const link = documentRef.createElement("a");
       link.className = "dk-notif-item__link";
-      link.href = notification.taskId
+      const targetHref = notification.taskId
         ? `/tasks?taskId=${encodeURIComponentImpl(notification.taskId)}`
-        : "/tasks";
+        : (notification.metadata?.href || (notification.cardId ? `/cards/${encodeURIComponentImpl(notification.cardId)}` : "/tasks"));
+      link.href = targetHref;
       link.textContent = notificationDisplayMessage(notification);
       link.addEventListener("click", async (event) => {
         event.preventDefault();
         await dismissWorkNotification(notification, dismiss);
         if (dismissErrors.has(notification.id)) return;
         closeWorkBellPanel();
-        if (notification.taskId) openTaskPanel(notification.taskId);
+        if (notification.taskId) {
+          openTaskPanel(notification.taskId);
+        } else if (targetHref && targetHref !== "/tasks") {
+          window.location.href = targetHref;
+        }
       });
       const meta = documentRef.createElement("p");
       meta.className = "dk-notif-item__desc";
