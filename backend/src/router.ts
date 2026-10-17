@@ -20,6 +20,7 @@ import { handleCronRoutes } from './routes/cron';
 import { handleBookkeepingRoutes } from './routes/bookkeeping';
 import { handleReconcileRoutes } from './routes/reconcile';
 import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
+import { handleCrmWorkspaceRoutes } from './routes/crmWorkspace';
 import { handleSponsorLeadIntake, handleSponsorLeadRoutes } from './routes/sponsorLeads';
 import { handleSponsorNewsletterRoutes } from './routes/sponsorNewsletters';
 import { handleSponsorFinanceRoutes } from './routes/sponsorFinance';
@@ -485,6 +486,10 @@ async function handleSponsorRoute(
 ): Promise<LambdaResponse> {
   if (reqPath === '/api/sponsor-crm/leads' || reqPath.startsWith('/api/sponsor-crm/leads/')) {
     return await handleSponsorLeadRoutes(reqPath, method, event, client);
+  }
+  if (/^\/api\/sponsor-crm\/(directory|views|activity|notes)(\/|$)/.test(reqPath)) {
+    const workspace = await handleCrmWorkspaceRoutes(reqPath, method, event, client);
+    if (workspace) return workspace;
   }
   if (reqPath === '/api/sponsor-crm/newsletters' || reqPath.startsWith('/api/sponsor-crm/newsletters/')) {
     return await handleSponsorNewsletterRoutes(reqPath, method, event, client);
