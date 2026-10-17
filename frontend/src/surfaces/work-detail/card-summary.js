@@ -147,6 +147,65 @@ export function renderCardNewsletterIssue(
   return section;
 }
 
+export function renderCardSponsorDocsSection(card) {
+  const docs = Array.isArray(card?.sponsorDocs) ? card.sponsorDocs : [];
+  if (!docs.length) return null;
+  const section = document.createElement("div");
+  section.className = "task-history workflow-detail-section card-sponsor-docs-section";
+  section.dataset.cardSponsorDocs = "";
+
+  const heading = document.createElement("div");
+  heading.className = "task-history-label";
+  heading.textContent = docs.length === 1 ? "Sponsorship document" : "Sponsorship documents";
+  section.append(heading);
+
+  const list = document.createElement("div");
+  list.className = "task-history-list";
+  for (const doc of docs) {
+    const item = document.createElement("div");
+    item.className = "task-history-event card-sponsor-doc-row";
+    item.dataset.sponsorDocId = doc.id;
+
+    const topRow = document.createElement("div");
+    topRow.className = "card-newsletter-slot__row";
+
+    const openLink = document.createElement("a");
+    openLink.href = `/sponsor-docs/${encodeURIComponent(doc.id)}`;
+    openLink.textContent = doc.title || doc.sponsorName || "Sponsor document";
+    opensInNewTab(openLink);
+
+    const statusBadge = document.createElement("span");
+    const isSubmitted = doc.status === "submitted";
+    statusBadge.className = isSubmitted ? "dk-badge dk-badge--success" : "dk-badge";
+    statusBadge.dataset.sponsorDocStatus = doc.status;
+    statusBadge.textContent = isSubmitted ? "Submitted / Ready" : "Draft";
+
+    const exportLink = document.createElement("a");
+    exportLink.href = `/work/api/sponsor-docs/${encodeURIComponent(doc.id)}/export?format=markdown`;
+    exportLink.className = "task-instruction-doc-link";
+    exportLink.textContent = "Markdown export";
+    opensInNewTab(exportLink);
+
+    topRow.append(openLink, statusBadge, exportLink);
+
+    const metaLine = document.createElement("small");
+    metaLine.className = "card-checklist-note";
+    metaLine.dataset.sponsorDocEdited = "";
+    const editedTime = doc.lastEditedAt
+      ? String(doc.lastEditedAt).slice(0, 16).replace("T", " ")
+      : "";
+    const editedBy = doc.lastEditedBy || "staff";
+    metaLine.textContent = editedTime
+      ? `${doc.template} · Last edited ${editedTime} by ${editedBy}`
+      : `${doc.template} · Not edited yet`;
+
+    item.append(topRow, metaLine);
+    list.append(item);
+  }
+  section.append(list);
+  return section;
+}
+
 // Migration provenance and legacy Overview docs / Links TODO boilerplate are
 // import bookkeeping, not operator content — keep them out of the rendered
 // Card detail since links and process references are structured fields.
@@ -362,6 +421,15 @@ export function createCardSummary(context) {
     const chip = document.createElement("small");
     chip.className = `workflow-card-flag is-${flag.tone}`;
     chip.textContent = `${flag.count} ${flag.label}`;
+    flagRow.append(chip);
+  }
+  const sponsorDocs = Array.isArray(card.sponsorDocs) ? card.sponsorDocs : [];
+  for (const sdoc of sponsorDocs) {
+    const chip = document.createElement("small");
+    const isSubmitted = sdoc.status === "submitted";
+    chip.className = `workflow-card-flag is-${isSubmitted ? "success" : "info"}`;
+    chip.dataset.cardSponsorDocStatus = sdoc.status;
+    chip.textContent = isSubmitted ? "Sponsor doc: Submitted / Ready" : "Sponsor doc: Draft";
     flagRow.append(chip);
   }
   summaryTop.append(countRow);

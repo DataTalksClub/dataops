@@ -180,6 +180,10 @@
     "src/device.html",
     "src/device-page.js",
     "src/cli-sessions.js",
-    "src/styles/device.css"
+    "src/styles/device.css",
+    "src/sponsor-doc.html",
+    "src/sponsor-doc-page.js",
+    "src/surfaces/operations/sponsor-docs.js",
+    "src/styles/sponsor-docs.css"
   ]
 }

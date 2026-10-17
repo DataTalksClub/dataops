@@ -13,6 +13,7 @@ import {
   appendBreakableText,
   createCardSummary,
   renderCardNewsletterIssue,
+  renderCardSponsorDocsSection,
   renderCardTemplateLink,
 } from "./card-summary.js";
 import { renderLinkRow, renderLinkList } from "./link-rows.js";
@@ -387,6 +388,8 @@ export function createCardPanel(context) {
     );
     main.append(meta);
     main.append(renderCardNewsletterIssue({ request, workApiUrl, reload: reloadCardIntent }, card));
+    const sponsorDocsSection = renderCardSponsorDocsSection(card);
+    if (sponsorDocsSection) main.append(sponsorDocsSection);
     const templateUpdate = renderCardTemplateUpdate(card, data, {
       detail,
       reloadCardTemplateUpdate,
