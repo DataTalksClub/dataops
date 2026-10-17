@@ -44,8 +44,10 @@ export async function mountTuitionAgreements(root, context, initialId) {
     return html`<details><summary>Original records &amp; finance evidence (${items.length})</summary>${items.map((source) => {
       const record = source.record || source;
       const facts = [record.title, record.amountDue && `${record.amountDue} ${record.currency || ''}`,
-        record.invoiceNumber, record.dueOn, record.note, record.notes].filter(Boolean);
-      const label = { DEAL: 'Original agreement', ORGANIZATION: 'Billing party', CONTACT: 'Billing contact', HISTORY: 'Agreement history' }[source.sourceKind]
+        record.invoiceNumber, record.dueOn, record.note, record.notes, record.trigger,
+        ...(Array.isArray(record.sourceRefs) ? record.sourceRefs : [])].filter(Boolean);
+      const label = { DEAL: 'Original agreement', ORGANIZATION: 'Billing party', CONTACT: 'Billing contact',
+        HISTORY: 'Agreement history', STATUS_REVIEW: 'Billing classification review' }[source.sourceKind]
         || 'Original finance evidence';
       return html`<article><strong>${e(label)}</strong><p>${e(facts.join(' · ') || 'Original evidence retained with this agreement.')}</p></article>`;
     }).join('')}</details>`;

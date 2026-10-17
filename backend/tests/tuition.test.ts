@@ -72,3 +72,19 @@ it('clears monetary fields explicitly and retains archived sources as historical
   assert.equal(JSON.parse(listed.body).items.some((item: any) => item.id === 'rehomed-fixture'), false);
   assert.equal((await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: original.PK, SK: original.SK } }))).Item?.title, original.title);
 });
+
+import { TABLE_BOOKKEEPING } from '../src/db/tableNames';
+it('keeps migrated source review evidence and existing billing Tasks through an ordinary notes edit', async () => {
+  const created = await call('POST', '/api/tuition', { studentName: 'Migrated Fixture', title: 'Installment', trigger: 'Verified condition', status: 'settled' });
+  await client.send(new PutCommand({ TableName: TABLE_BOOKKEEPING, Item: { PK: 'TUITION', SK: created.body.id, ...created.body, taskIds: ['retained-task'] } }));
+  const source = { PK: `TUITION#${created.body.id}`, SK: 'SOURCE_REVIEW', sourceKind: 'STATUS_REVIEW', sourceHash: 'synthetic-preimage-proof',
+    record: { status: 'settled', trigger: 'Verified condition', sourceRefs: ['synthetic-reviewed-source'], actorId: 'synthetic-reviewer' } };
+  await client.send(new PutCommand({ TableName: TABLE_BOOKKEEPING, Item: source }));
+  const before = (await call('GET', `/api/tuition/${created.body.id}`)).body.evidence;
+  const updated = await call('PUT', `/api/tuition/${created.body.id}`, { version: 1, notes: 'Ordinary notes update', reviewEvidence: ['forged-client-source'] });
+  assert.equal(updated.status, 200); assert.deepEqual(updated.body.taskIds, ['retained-task']);
+  const after = (await call('GET', `/api/tuition/${created.body.id}`)).body;
+  assert.equal(after.notes, 'Ordinary notes update'); assert.equal(after.status, 'settled');
+  assert.deepEqual(after.evidence, before); assert.deepEqual(after.evidence[0].record.sourceRefs, ['synthetic-reviewed-source']);
+  assert.equal(after.reviewEvidence, undefined);
+});
