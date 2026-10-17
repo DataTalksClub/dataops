@@ -61,6 +61,8 @@ export function pipelineControlsFromFilters(filters = {}, sort = 'next-action') 
     search: filters.search || '',
     owner: filters.owner || '',
     sort: field === 'recent' ? 'recent' : 'next-action',
+    nextActionFrom: filters.nextActionFrom || '',
+    nextActionBefore: filters.nextActionBefore || '',
     ...(filters.organizationId ? { organizationId: filters.organizationId } : {}),
   };
 }
@@ -88,7 +90,8 @@ export function createSponsorPipelineView({ api, surface, escapeHtml, humanSpons
     const token = ++generation;
     root.setAttribute('aria-busy', 'true');
     const query = new URLSearchParams({ limit: '30', view: surface.querySelector('[data-pipeline-view]').value, sort: surface.querySelector('[data-pipeline-sort]').value });
-    for (const [key, selector] of [['search', '[data-crm-search]'], ['stage', '[data-crm-status]'], ['owner', '[data-pipeline-owner]']]) {
+    for (const [key, selector] of [['search', '[data-crm-search]'], ['stage', '[data-crm-status]'], ['owner', '[data-pipeline-owner]'],
+        ['nextActionFrom', '[data-pipeline-from]'], ['nextActionBefore', '[data-pipeline-to]']]) {
       const value = surface.querySelector(selector).value; if (value) query.set(key, value);
     }
     if (options.organizationId) query.set('organizationId', options.organizationId);

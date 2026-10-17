@@ -33,7 +33,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = (value)
       Loading sponsor CRM…
     </p>
     ${renderCrmNav(crmNavModel(initialTab), { escapeHtml })}
-    <p class="crm-funnel-scope">All matching deals by stage · includes closed and lost</p>
+    <p class="crm-funnel-scope">Stage totals reflect search only; owner, date, view and stage filter the list below</p>
     <nav class="crm-pipeline" data-crm-pipeline aria-label="Deal pipeline"></nav>
     <details class="crm-alerts">
       <summary data-crm-alert-summary>Alerts</summary>
@@ -76,8 +76,12 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = (value)
         <div class="crm-funnel-controls">
           <label>Show <select data-pipeline-view>
             <option value="actionable">Needs action this week</option><option value="active">Active deals</option>
+            <option value="early">Early prospects</option><option value="overdue">Overdue</option>
+            <option value="reply">Needs reply</option>
             <option value="unscheduled">Missing next step / date</option><option value="all">All deals</option><option value="closed">Closed / lost</option></select></label>
           <label>Sort <select data-pipeline-sort><option value="next-action">Next action</option><option value="recent">Recently updated</option></select></label>
+          <label>Next action from <input data-pipeline-from type="date" /></label>
+          <label>Through <input data-pipeline-to type="date" /></label>
         </div>
         <div data-pipeline-views></div>
         <div class="dk-split__scroll" data-crm-list-scroll>

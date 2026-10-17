@@ -21,8 +21,8 @@ export const VIEW_ENTITIES = Object.freeze(["companies", "people", "pipeline"]);
 // Pipeline saved views (D contract: stored + validated here, interpreted by
 // the pipeline projection). On the pipeline tab `view` is the API filter, so
 // the selected saved-view id travels as `savedView` in URLs.
-export const PIPELINE_VIEW_FILTER_KEYS = Object.freeze(["view", "stage", "search", "organizationId", "owner"]);
-const PIPELINE_VIEWS = Object.freeze(["actionable", "active", "all", "closed", "unscheduled"]);
+export const PIPELINE_VIEW_FILTER_KEYS = Object.freeze(["view", "stage", "search", "organizationId", "owner", "nextActionFrom", "nextActionBefore"]);
+const PIPELINE_VIEWS = Object.freeze(["actionable", "active", "early", "overdue", "reply", "unscheduled", "all", "closed"]);
 const PIPELINE_STAGES = Object.freeze(["open", "agreed", "invoiced", "running", "closed", "lost"]);
 const PIPELINE_SORTS = Object.freeze(["next-action", "recent"]);
 
@@ -119,7 +119,7 @@ export function validatePipelineViewFilters(filters) {
     if (!PIPELINE_VIEW_FILTER_KEYS.includes(key)) return `Unknown pipeline filter: ${key}`;
   }
   if (filters.view !== undefined && !PIPELINE_VIEWS.includes(String(filters.view))) {
-    return "view must be actionable, active, all, closed or unscheduled";
+    return "view must be actionable, active, early, overdue, reply, unscheduled, all or closed";
   }
   if (filters.stage !== undefined && !PIPELINE_STAGES.includes(String(filters.stage))) {
     return "stage must be open, agreed, invoiced, running, closed or lost";
@@ -135,6 +135,16 @@ export function validatePipelineViewFilters(filters) {
   if (filters.owner !== undefined &&
       (typeof filters.owner !== "string" || !filters.owner || filters.owner.length > 200)) {
     return "Invalid owner filter";
+  }
+  const DAY = /^\d{4}-\d{2}-\d{2}$/;
+  for (const key of ["nextActionFrom", "nextActionBefore"]) {
+    if (filters[key] !== undefined && (typeof filters[key] !== "string" || !DAY.test(filters[key]))) {
+      return `Invalid ${key} filter: YYYY-MM-DD`;
+    }
+  }
+  if (typeof filters.nextActionFrom === "string" && typeof filters.nextActionBefore === "string" &&
+      filters.nextActionFrom > filters.nextActionBefore) {
+    return "nextActionFrom must not exceed nextActionBefore";
   }
   return "";
 }

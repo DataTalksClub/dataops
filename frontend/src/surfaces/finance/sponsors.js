@@ -493,7 +493,7 @@ export function createSponsorCrmSurface(context) {
     function pipelineControlsChanged(reload) {
       directoryPages.pipeline.controlsChanged(reload);
     }
-    surface.querySelectorAll("[data-pipeline-view],[data-pipeline-sort],[data-pipeline-owner]").forEach((input) =>
+    surface.querySelectorAll("[data-pipeline-view],[data-pipeline-sort],[data-pipeline-owner],[data-pipeline-from],[data-pipeline-to]").forEach((input) =>
       input.addEventListener("change", () => pipelineControlsChanged(() => safe(() => runPipelineLoad(), "Could not load pipeline"))),
     );
     alertsSection.addEventListener("toggle", () => {

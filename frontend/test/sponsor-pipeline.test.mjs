@@ -100,11 +100,18 @@ test('newer inbound stays the visible attention reason while a task is deferred'
 test("saved-view sorts map onto pipeline controls without changing the list endpoint vocabulary", () => {
   assert.deepEqual(
     pipelineControlsFromFilters({ view: "closed", stage: "lost", search: "acme", owner: "op-1" }, "recent"),
-    { view: "closed", stage: "lost", search: "acme", owner: "op-1", sort: "recent" },
+    { view: "closed", stage: "lost", search: "acme", owner: "op-1", sort: "recent",
+      nextActionFrom: "", nextActionBefore: "" },
   );
   assert.deepEqual(pipelineControlsFromFilters({}, "next-action"), {
     view: "actionable", stage: "", search: "", owner: "", sort: "next-action",
+    nextActionFrom: "", nextActionBefore: "",
   });
   const scoped = pipelineControlsFromFilters({ organizationId: "org-1" }, "next-action");
   assert.equal(scoped.organizationId, "org-1");
+  assert.deepEqual(
+    pipelineControlsFromFilters({ view: "overdue", nextActionFrom: "2026-10-01", nextActionBefore: "2026-10-17" }, "next-action"),
+    { view: "overdue", stage: "", search: "", owner: "", sort: "next-action",
+      nextActionFrom: "2026-10-01", nextActionBefore: "2026-10-17" },
+  );
 });

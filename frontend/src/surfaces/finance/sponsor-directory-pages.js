@@ -58,7 +58,7 @@ function newViewSourceKey() {
   return `sponsors-ui-${random}`;
 }
 
-const PIPELINE_VIEW_IDS = ["actionable", "active", "unscheduled", "all", "closed"];
+const PIPELINE_VIEW_IDS = ["actionable", "active", "early", "overdue", "reply", "unscheduled", "all", "closed"];
 
 export function createSponsorDirectoryPages({
   api,
@@ -586,6 +586,8 @@ export function createSponsorDirectoryPages({
         if (controls.stage) filters.stage = controls.stage;
         if (controls.search) filters.search = controls.search;
         if (controls.owner) filters.owner = controls.owner;
+        if (controls.nextActionFrom) filters.nextActionFrom = controls.nextActionFrom;
+        if (controls.nextActionBefore) filters.nextActionBefore = controls.nextActionBefore;
         if (pipeline.getOrg()) filters.organizationId = pipeline.getOrg();
         const sort = { field: controls.sort === "recent" ? "recent" : "next-action" };
         const saved = mode === "rename"
@@ -632,9 +634,11 @@ export function createSponsorDirectoryPages({
         search: surface.querySelector("[data-crm-search]").value,
         owner: surface.querySelector("[data-pipeline-owner]").value,
         sort: surface.querySelector("[data-pipeline-sort]").value,
+        nextActionFrom: surface.querySelector("[data-pipeline-from]").value,
+        nextActionBefore: surface.querySelector("[data-pipeline-to]").value,
       };
     },
-    applyControls({ view, stage, search, owner, sort, organizationId } = {}) {
+    applyControls({ view, stage, search, owner, sort, nextActionFrom, nextActionBefore, organizationId } = {}) {
       if (view !== undefined && PIPELINE_VIEW_IDS.includes(view)) {
         surface.querySelector("[data-pipeline-view]").value = view;
       }
@@ -642,6 +646,8 @@ export function createSponsorDirectoryPages({
       if (search !== undefined) surface.querySelector("[data-crm-search]").value = search;
       if (owner !== undefined) surface.querySelector("[data-pipeline-owner]").value = owner;
       if (sort !== undefined) surface.querySelector("[data-pipeline-sort]").value = sort === "recent" ? "recent" : "next-action";
+      if (nextActionFrom !== undefined) surface.querySelector("[data-pipeline-from]").value = nextActionFrom;
+      if (nextActionBefore !== undefined) surface.querySelector("[data-pipeline-to]").value = nextActionBefore;
       pipeline.org = organizationId || null;
     },
     writeUrl(cursor) {
@@ -652,6 +658,10 @@ export function createSponsorDirectoryPages({
       if (controls.search) params.search = controls.search;
       if (controls.owner) params.owner = controls.owner;
       if (controls.sort && controls.sort !== "next-action") params.sort = controls.sort;
+      // Inclusive absolute bounds, labeled From/Through in the UI. Invalid or
+      // reversed ranges 400 honestly at the API and surface via safe().
+      if (controls.nextActionFrom) params.nextActionFrom = controls.nextActionFrom;
+      if (controls.nextActionBefore) params.nextActionBefore = controls.nextActionBefore;
       if (pipeline.savedViewId) params.savedView = pipeline.savedViewId;
       if (cursor) params.cursor = cursor;
       rememberListParams("pipeline", params);
@@ -725,6 +735,8 @@ export function createSponsorDirectoryPages({
         search: p.search || "",
         owner: p.owner || "",
         sort: p.sort === "recent" ? "recent" : "next-action",
+        nextActionFrom: p.nextActionFrom || "",
+        nextActionBefore: p.nextActionBefore || "",
       });
       if (invalid.length) {
         showNotice(`Ignored invalid pipeline URL: ${invalid.join(", ")}. Showing defaults.`);

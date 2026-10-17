@@ -530,3 +530,22 @@ test("stored relative windows still validate, but never resolve client-side", ()
     /daysAgo/,
   );
 });
+
+test("pipeline date bounds validate as inclusive absolute days, reversed rejected", () => {
+  assert.equal(
+    validateViewFilters("pipeline", { view: "overdue", nextActionFrom: "2026-10-01", nextActionBefore: "2026-10-17" }),
+    "",
+  );
+  assert.match(
+    validateViewFilters("pipeline", { nextActionFrom: "next friday" }),
+    /YYYY-MM-DD/,
+  );
+  assert.match(
+    validateViewFilters("pipeline", { nextActionFrom: "2026-10-18", nextActionBefore: "2026-10-17" }),
+    /must not exceed/,
+  );
+  assert.match(
+    validateViewFilters("pipeline", { view: "bogus" }),
+    /actionable, active, early, overdue, reply/,
+  );
+});
