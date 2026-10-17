@@ -267,6 +267,7 @@ export function createSponsorCrmSurface(context) {
         contacts = [...contacts.filter((value) => value.id !== contact.id), contact];
       },
       reloadPipeline: (reset, extra) => pipeline.load(reset, extra),
+      showView: (view, redraw) => setView(view, redraw),
     });
     directoryPages.seedListParams(
       sponsorsRoute?.sponsorsTab,

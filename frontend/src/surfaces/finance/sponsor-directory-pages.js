@@ -84,6 +84,7 @@ export function createSponsorDirectoryPages({
   getContacts,
   mergeContact,
   reloadPipeline,
+  showView,
 }) {
   const messageEl = () => surface.querySelector("[data-crm-message]");
   function showNotice(text) {
@@ -128,6 +129,7 @@ export function createSponsorDirectoryPages({
   function captureReturnContext(kind, id, currentView) {
     const scroller = surface.querySelector("[data-crm-list-scroll]");
     returnContext = {
+      view: currentView === "pipeline" || currentView === "companies" || currentView === "people" ? currentView : "pipeline",
       path: sponsorsPath(currentView === "pipeline" || currentView === "companies" || currentView === "people" ? currentView : "pipeline"),
       params: { ...(listParamsByView[currentView] || {}) },
       scrollTop: scroller ? scroller.scrollTop : (globalThis.window?.scrollY || 0),
@@ -138,9 +140,13 @@ export function createSponsorDirectoryPages({
   }
   function closeRecord() {
     if (!returnContext) return;
-    const { path, params, scrollTop, focusSelector } = returnContext;
+    const { view, path, params, scrollTop, focusSelector } = returnContext;
     returnContext = null;
     navigateCanonicalWorkspace(path, params, { render: false, history: "replace" });
+    showView(view, false);
+    if ((view === "companies" || view === "people") && !directories[view].state.initialized) {
+      safe(() => directories[view].refresh(), "Could not load directory");
+    }
     surface.classList.remove("has-booking-detail");
     const split = surface.querySelector("[data-crm-split]");
     if (split) {
@@ -264,6 +270,7 @@ export function createSponsorDirectoryPages({
       state.sort = resolved.sort;
       state.lastResolved = { filters: resolved.filters, sort: resolved.sort };
       showMessage("Loading…");
+      rowsEl.setAttribute("aria-busy", "true");
       const query = directoryQueryFromState(entity, {
         ...resolveViewFiltersForQuery(resolved.filters),
         sort: resolved.sort,
@@ -290,6 +297,7 @@ export function createSponsorDirectoryPages({
         showMessage("");
         renderViews();
         writeUrl(resolved);
+        rowsEl.removeAttribute("aria-busy");
       } catch (error) {
         if (!surface.isConnected) return;
         if (Number(error?.status) === 400 && state.cursor) {
@@ -302,6 +310,7 @@ export function createSponsorDirectoryPages({
         statusEl.textContent = "";
         pagesEl.innerHTML = "";
         showMessage("");
+        rowsEl.removeAttribute("aria-busy");
       }
     }
     async function refresh() {
