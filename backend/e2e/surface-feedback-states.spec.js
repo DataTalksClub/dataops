@@ -85,9 +85,11 @@ test.describe('issue 204 owning-surface feedback', () => {
       await route.continue();
     });
     await page.goto(`${baseURL}/tasks`);
-    const queueSummary = page.locator('[data-summary-id="tasks-queue"]');
-    await expect(queueSummary).toHaveAttribute('data-summary-state', 'loading');
+    const queueBoard = page.locator('.ops-queue-board');
+    await expect(queueBoard).toHaveAttribute('data-load-state', 'loading');
+    await expect(page.locator('.ops-queue-skeleton')).toBeVisible();
     releaseTasks();
+    const queueSummary = page.locator('[data-summary-id="tasks-queue"]');
     await expect(queueSummary).toHaveAttribute('data-summary-state', 'empty');
     await expect(queueSummary).toContainText('No tasks are open in this queue.');
     await expectNoHorizontalOverflow(page);

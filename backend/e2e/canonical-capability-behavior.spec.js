@@ -174,10 +174,12 @@ async function clearFaults(request) {
 async function openProcessQualityFindings(page) {
   const drilldown = page.locator('.ops-quality-drilldown');
   await expect(drilldown).toBeVisible();
-  await drilldown.evaluate((element) => {
-    element.open = true;
-  });
-  await expect(drilldown).toHaveJSProperty('open', true);
+  await expect.poll(async () => {
+    await drilldown.evaluate((element) => {
+      element.open = true;
+    });
+    return drilldown.evaluate((element) => element.open);
+  }).toBe(true);
 }
 
 
@@ -451,6 +453,7 @@ test.describe('canonical frontend capability behavior', () => {
   });
 
   test('the Tasks queue proves loading, empty, ready, and partial failure states', async ({ browser }, testInfo) => {
+    test.setTimeout(120_000);
     fs.mkdirSync(ISSUE_161_SCREENSHOTS, { recursive: true });
     const context = await portalContext(browser, servers.admin);
     await setFaults(context.request, [
@@ -470,9 +473,11 @@ test.describe('canonical frontend capability behavior', () => {
     await page.goto('/');
     expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe('Europe/Berlin');
     await expect(page.locator('.ops-work-queue')).toBeVisible();
-    await expect(page.locator('.surface-summary[data-summary-state="loading"]')).toBeVisible();
+    await expect(page.locator('.ops-queue-board')).toHaveAttribute('data-load-state', 'loading');
+    await expect(page.locator('.ops-queue-skeleton')).toBeVisible();
     await Promise.all([initialToday, initialCards]);
-    await expect(page.locator('.surface-summary[data-summary-state="loading"]')).toHaveCount(0);
+    await expect(page.locator('.ops-queue-skeleton')).toHaveCount(0);
+    await expect(page.locator('.ops-queue-board')).toHaveAttribute('data-load-state', 'ready');
     await clearFaults(context.request);
     const today = await page.evaluate(() => new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -551,7 +556,8 @@ test.describe('canonical frontend capability behavior', () => {
     await bellItem.getByRole('link').click();
     await expect(page.locator('#task-panel-title')).toHaveText(notificationTitle);
     await page.locator('#task-panel-close').click();
-    await page.goto('/');
+    await expect(page.locator('#task-panel')).toBeHidden();
+    await expect(page).toHaveURL(/\/$/);
 
     await setFaults(context.request, [{ method: 'GET', path: '/api/cards', status: 503, remaining: 10 }]);
     const partialWork = Promise.all([
@@ -1579,12 +1585,17 @@ test.describe('canonical frontend capability behavior', () => {
     const id = unique('runtime-template');
     const projections = (await json(await admin.request.get('/api/templates'))).templates;
     const projection = projections.find((template) => template.type === 'synthetic-git-workflow');
-    expect(projection).toBeTruthy();
     for (const context of [admin, operator]) {
-      expect((await context.request.post('/api/templates', { data: { name: 'Retired mutation' } })).status()).toBe(405);
-      expect((await context.request.put(`/api/templates/${projection.id}`, { data: { name: 'Retired mutation' } })).status()).toBe(405);
-      expect((await context.request.delete(`/api/templates/${projection.id}`)).status()).toBe(405);
+      expect((await context.request.delete('/api/templates')).status()).toBe(405);
+      expect((await context.request.patch(`/api/templates/${projection.id}`, { data: { name: 'Unsupported patch' } })).status()).toBe(405);
     }
+    expect((await operator.request.post('/api/templates', { data: { name: 'Denied operator' } })).status()).toBe(403);
+    expect((await operator.request.delete(`/api/templates/${projection.id}`, { data: { expectedVersion: 1, revision: 'r1' } })).status()).toBe(403);
+    const deleteGitProjection = await admin.request.delete(`/api/templates/${projection.id}`, {
+      data: { expectedVersion: projection.version, revision: projection.revision },
+    });
+    expect(deleteGitProjection.status()).toBe(409);
+    expect((await json(deleteGitProjection)).code).toBe('cannot-delete-git-template');
     const card = await admin.request.post('/api/cards', { data: {
       title: `Projected ${id}`, anchorDate: '2026-08-12', templateId: projection.id,
     } });

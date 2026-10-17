@@ -125,5 +125,8 @@ test('queue: a waiting task stays out until its prerequisite is done', async ({ 
   // Ticked here: its own dependent joins the queue at once.
   await row(SECOND).locator('.ops-queue-check').click();
   await expect(row(THIRD)).toBeVisible({ timeout: 20000 });
+  await expect(row(SECOND)).toHaveAttribute('data-completed', 'true');
+  await page.reload();
+  await expect(row(THIRD)).toBeVisible({ timeout: 20000 });
   await expect(page.locator('.ops-queue-list').getByText(SECOND)).toHaveCount(0);
 });

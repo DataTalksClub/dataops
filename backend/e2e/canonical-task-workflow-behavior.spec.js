@@ -114,7 +114,7 @@ function observeBrowserErrors(page) {
   return errors;
 }
 
-function isExpectedReloadAbort(entry, cardId) {
+function isExpectedReloadAbort(entry, cardId, taskId) {
   if (entry.kind !== 'requestfailed') return false;
   if (entry.method !== 'GET') return false;
   if (entry.failure !== 'net::ERR_ABORTED') return false;
@@ -122,6 +122,7 @@ function isExpectedReloadAbort(entry, cardId) {
   const url = new URL(entry.url);
   const exactReloadReads = new Set([
     `/api/cards/${encodeURIComponent(cardId)}`,
+    ...(taskId ? [`/api/tasks/${encodeURIComponent(taskId)}`] : []),
     '/api/notifications?limit=100',
   ]);
   if (exactReloadReads.has(`${url.pathname}${url.search}`)) return true;
@@ -132,6 +133,8 @@ function isExpectedReloadAbort(entry, cardId) {
   if (url.pathname === '/api/cards' && url.search === '?limit=100') return true;
   if (url.pathname === '/api/users') return true;
   if (url.pathname === '/api/resources') return true;
+  if (url.pathname === '/api/templates') return true;
+  if (url.pathname === '/api/me') return true;
   return false;
 }
 
@@ -150,7 +153,7 @@ function expectNoUnexpectedBrowserErrors(entries, conflictTaskId, cardId, marker
     if (entry.kind === 'console') {
       return true;
     }
-    if (index >= reloadStart && isExpectedReloadAbort(entry, cardId)) {
+    if (index >= reloadStart && isExpectedReloadAbort(entry, cardId, conflictTaskId)) {
       return false;
     }
     return true;
@@ -272,7 +275,6 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await expect(page.locator('.ops-work-queue')).toBeVisible();
     await expect(page.locator('[data-summary-id="tasks-queue"]')).toContainText('No tasks are open in this queue.');
     await expect(page.locator('.ops-queue-row')).toHaveCount(0);
-    await expect(page.locator('.ops-queue-board')).toHaveCount(0);
     await expect(page.locator('.ops-queue-group')).toHaveCount(0);
 
     await page.goto('/');

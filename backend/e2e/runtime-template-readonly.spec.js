@@ -9,15 +9,17 @@ test.describe('Git-authored runtime templates', () => {
     const template = templates.find((item) => item.type === 'synthetic-git-workflow');
     expect(template).toBeTruthy();
 
-    for (const [method, path, data] of [
-      ['post', '/api/templates', { name: 'Must not persist' }],
-      ['put', `/api/templates/${template.id}`, { name: 'Must not persist' }],
-      ['delete', `/api/templates/${template.id}`, {}],
-    ]) {
-      const response = await request[method](path, { data });
-      expect(response.status()).toBe(405);
-      expect((await response.json()).authority).toBe('git-authored-workflow-templates');
-    }
+    const patchResponse = await request.patch(`/api/templates/${template.id}`, { data: { name: 'Must not persist' } });
+    expect(patchResponse.status()).toBe(405);
+
+    const collectionDelete = await request.delete('/api/templates');
+    expect(collectionDelete.status()).toBe(405);
+
+    const deleteResponse = await request.delete(`/api/templates/${template.id}`, {
+      data: { expectedVersion: template.version, revision: template.revision },
+    });
+    expect(deleteResponse.status()).toBe(409);
+    expect((await deleteResponse.json()).code).toBe('cannot-delete-git-template');
 
     await page.goto(`/templates?templateId=${encodeURIComponent(template.id)}`);
     await expect(page.getByRole('heading', { name: /Synthetic Git-authored workflow/ })).toBeVisible();
