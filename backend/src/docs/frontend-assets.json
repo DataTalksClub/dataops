@@ -145,6 +145,7 @@
     "src/surfaces/tasks/queue-assignee.js",
     "src/surfaces/tasks/queue-materials.js",
     "src/surfaces/tasks/queue.js",
+    "src/surfaces/tasks/queue-skeleton.js",
     "src/surfaces/tasks/queue-history.js",
     "src/surfaces/tasks/process-doc-picker.js",
     "src/surfaces/tasks/quick-create.js",
