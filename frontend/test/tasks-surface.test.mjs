@@ -702,6 +702,28 @@ describe("Tasks surface boundary", () => {
     assert.match(harness.documentList.querySelector(".ops-queue-total").textContent, /2 open.*2 completed this session/);
   });
 
+  test("queue chronology uses next action dates across states and waiting wakeups", (t) => {
+    t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-08-12T12:00:00Z") });
+    const tasks = [
+      { id: "future-wait", description: "Wait until 20 Aug", status: "waiting", date: "2026-07-01", followUpAt: "2026-08-20" },
+      { id: "later-wait", description: "Wait until 23 Aug", status: "waiting", date: "2026-07-01", followUpAt: "2026-08-23" },
+      { id: "tomorrow", description: "Tomorrow", date: "2026-08-13" },
+      { id: "late-followup", description: "Older deadline, newer follow-up", status: "waiting", date: "2026-06-01", followUpAt: "2026-08-11" },
+      { id: "overdue", description: "Overdue ordinary task", date: "2026-08-10" },
+      { id: "today", description: "Today", date: "2026-08-12" },
+      { id: "undated", description: "Undated" },
+      { id: "snoozed", description: "Snoozed past follow-up", status: "waiting", date: "2026-06-01", followUpAt: "2026-08-14", snoozedUntil: "2026-08-26" },
+      { id: "scheduled", description: "Scheduled after civil midnight", date: "2026-08-12", notBeforeAt: "2026-08-19T23:30:00Z" },
+    ].map(canonicalTask);
+    const { api, documentList } = createHarness({ workSnapshot: { todayTasks: tasks } });
+    api.renderTasksSurface([], "queue");
+    const active = documentList.querySelector(".ops-queue-list");
+    assert.deepEqual(queueRowTitles(active), ["Overdue ordinary task", "Older deadline, newer follow-up", "Today", "Tomorrow", "Undated"]);
+    const deferred = documentList.querySelector(".ops-queue-waiting");
+    assert.deepEqual(queueRowTitles(deferred), ["Wait until 20 Aug", "Scheduled after civil midnight", "Wait until 23 Aug", "Snoozed past follow-up"]);
+    assert.deepEqual(queueDueCells(deferred).map(({ label }) => label), ["20 Aug", "20 Aug", "23 Aug", "26 Aug"]);
+  });
+
   test("a queue row reads Where, Task, Due, Who and has no skip control", () => {
     const task = canonicalTask({ id: "skippable", description: "Not for this event", date: "2026-08-12" });
     const { api, documentList } = createHarness({

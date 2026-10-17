@@ -22,9 +22,6 @@ export function createTaskQueue(context) {
     getTaskRouteContext,
     isFollowUpDueTask,
     isOpenWorkTask,
-    isTaskDueToday,
-    isTaskOverdue,
-    isWaitingOrFollowUpTask,
     navigateCanonicalWorkspace,
     openCardPanel,
     openTaskPanel,
@@ -310,7 +307,9 @@ export function createTaskQueue(context) {
       }
       const deferred = tasks.filter((task) =>
         isTaskDeferred(task, today) && taskMatchesAssignee(task, target) &&
-        taskMatchesResource(task, activeResourceFilter) && taskMatchesBrowser(task, activeBrowserFilter));
+        taskMatchesResource(task, activeResourceFilter) && taskMatchesBrowser(task, activeBrowserFilter))
+        .sort((left, right) => deferredWakeup(left).localeCompare(deferredWakeup(right)) ||
+          workTaskTitle(left).localeCompare(workTaskTitle(right)) || left.id.localeCompare(right.id));
       if (deferred.length) {
         const waiting = document.createElement("details");
         waiting.className = "ops-queue-history ops-queue-waiting";
@@ -367,45 +366,33 @@ export function createTaskQueue(context) {
     ]);
   }
 
-  // Urgency order: overdue, follow-ups due, then the day's work, then
-  // waiting and the rest. Each open task lives in exactly one segment —
-  // the first it qualifies for — so an overdue proof-blocked task is
-  // counted once, in Overdue, with its "Proof needed" line.
-  function orderOpenTasks(tasks, today) {
-    const placed = new Set();
-    const segment = (predicate) => {
-      const members = tasks.filter(
-        (task) => !placed.has(task.id) && predicate(task),
-      );
-      for (const task of members) placed.add(task.id);
-      return members;
-    };
-    const segments = [
-      segment((task) => isTaskOverdue(task, today)),
-      segment((task) => isFollowUpDueTask(task, today)),
-      segment((task) => isTaskDueToday(task, today)),
-      segment(
-        (task) =>
-          isWaitingOrFollowUpTask(task) && !isFollowUpDueTask(task, today),
-      ),
-      segment((task) => isOpenWorkTask(task)),
-    ];
-    // sortWorkTasks caps at its own page size; the one queue must not drop
-    // work behind that cap, so segments sort by the same leading facts the
-    // lanes used (due date, then title) and the cap moves to the render
-    // layer where "Show all" can lift it.
-    return segments.flatMap((members) =>
-      members.length === 0
-        ? []
-        : members
-            .slice()
-            .sort(
-              (left, right) =>
-                compareIsoDate(taskDate(left) || "", taskDate(right) || "") ||
-                workTaskTitle(left).localeCompare(workTaskTitle(right)),
-            )
-            .map((task) => ({ task })),
-    );
+  // All states share one chronology: a waiting follow-up is due on its
+  // follow-up day, while ordinary work uses its deadline. Undated work is last.
+  function orderOpenTasks(tasks) {
+    return tasks.filter(isOpenWorkTask).slice().sort((left, right) =>
+      (taskAttentionDate(left) || "9999-12-31").localeCompare(taskAttentionDate(right) || "9999-12-31") ||
+      workTaskTitle(left).localeCompare(workTaskTitle(right)) || left.id.localeCompare(right.id),
+    ).map((task) => ({ task }));
+  }
+
+  // Compare exact timestamps in Berlin alongside civil-day wakeups at midnight.
+  function queueMoment(value) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return `${value}T00:00:00`;
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+    }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+  }
+
+  // Every deferral must have elapsed before work is actionable again.
+  function deferredWakeup(task) {
+    return [task.followUpAt, task.snoozedUntil, task.notBeforeAt]
+      .filter((date) => date && Number.isFinite(Date.parse(date))).map(queueMoment).sort().at(-1) || "";
+  }
+
+  function queueAttentionDay(task, today) {
+    return isTaskDeferred(task, today) ? deferredWakeup(task).slice(0, 10) : taskAttentionDate(task);
   }
 
   function renderUnavailableState() {
@@ -690,7 +677,7 @@ export function createTaskQueue(context) {
   // Row-level urgency for the checkbox. Overdue and due-today are the
   // only states that change the box; everything else scans as plain work.
   function queueUrgency(task, today) {
-    const due = String(taskAttentionDate(task) || "").slice(0, 10);
+    const due = String(queueAttentionDay(task, today) || "").slice(0, 10);
     if (isOpenWorkTask(task) && overdueDays(due, today) > 0) return "overdue";
     if (due && due === today) return "today";
     return "later";
@@ -813,7 +800,7 @@ export function createTaskQueue(context) {
   function taskDueCell(task, today) {
     const cell = document.createElement("span");
     cell.className = "ops-queue-due dk-mono";
-    const due = String(taskAttentionDate(task) || "").slice(0, 10);
+    const due = String(queueAttentionDay(task, today) || "").slice(0, 10);
     const debt = isOpenWorkTask(task) ? overdueDays(due, today) : 0;
     if (debt > 0) {
       cell.dataset.due = "overdue";
