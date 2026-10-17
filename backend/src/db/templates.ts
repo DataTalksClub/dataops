@@ -217,7 +217,7 @@ async function readTransactTarget(
 
 /**
  * Totally-ordered template-identity writes. Production uses a real
- * `TransactWriteCommand`; local dynalite (which runs the whole backend unit
+ * `TransactWriteCommand`; the local Dynalite emulator (which runs the whole
  * suite with transaction emulation enabled) serializes on the same
  * process-wide lock the card-creation emulation uses and evaluates exactly
  * the conditions this module emits. Anything else fails loudly instead of
