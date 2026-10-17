@@ -1,8 +1,9 @@
 import "../../dakit/collection.js";
-import { SPONSORS_TABS, sponsorsPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
 import { leadsSectionMarkup } from "./sponsor-leads.js";
 import { renderPageHeaderMarkup } from "../operations-overview.js";
+import { directoryDefaults, directorySectionMarkup } from "./sponsor-directory.js";
+import { crmNavModel, renderCrmNav } from "./sponsor-navigation.js";
 
 const DEAL_STATUSES = ["open", "agreed", "lost"];
 const PRODUCT_KINDS = ["one-off", "package", "course"];
@@ -16,7 +17,7 @@ function options(values, humanize) {
     .join("");
 }
 
-export function sponsorSurfaceMarkup(humanizeOptionLabel) {
+export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = (value) => String(value ?? ""), initialTab = "pipeline" } = {}) {
   const dealStatusOptions = options(DEAL_STATUSES, humanizeOptionLabel);
   const productOptions = options(PRODUCT_KINDS, (kind) => ({ "one-off": "One-off", package: "Package", course: "Course" })[kind]);
   const channelOptions = options(CHANNELS, humanizeOptionLabel);
@@ -31,11 +32,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
     <p data-crm-message class="surface-status" role="status">
       Loading sponsor CRM…
     </p>
-    <nav class="dk-tabs crm-views" data-crm-views aria-label="Sponsors views">
-      ${SPONSORS_TABS.map(
-        ([id, label]) => html`<a class="dk-tab" href="${sponsorsPath(id)}" data-crm-view="${id}"${id === "money" ? " hidden" : ""}>${label}</a>`,
-      ).join("")}
-    </nav>
+    ${renderCrmNav(crmNavModel(initialTab), { escapeHtml })}
     <p class="crm-funnel-scope">All matching deals by stage · includes closed and lost</p>
     <nav class="crm-pipeline" data-crm-pipeline aria-label="Deal pipeline"></nav>
     <details class="crm-alerts">
@@ -82,6 +79,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
             <option value="unscheduled">Missing next step / date</option><option value="all">All deals</option><option value="closed">Closed / lost</option></select></label>
           <label>Sort <select data-pipeline-sort><option value="next-action">Next action</option><option value="recent">Recently updated</option></select></label>
         </div>
+        <div data-pipeline-views></div>
         <div class="dk-split__scroll" data-crm-list-scroll>
           <div data-crm-bookings class="crm-booking-list">Loading pipeline…</div>
         </div>
@@ -99,23 +97,16 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
         </div>
       </section>
     </div>
-    <section class="crm-directory" data-crm-companies-section hidden aria-labelledby="crm-sponsors-heading">
-      <header class="section-header">
-        <div class="dk-collection-header__lead">
-          <h3 id="crm-sponsors-heading">Companies</h3>
-          ${globalThis.dakitCollection.createButtonMarkup({ label: "Add sponsor", attributes: "data-add-org" })}
-        </div>
-        <label
-          >Show
-          <select data-crm-active>
-            <option value="true">Active</option>
-            <option value="false">Archived</option>
-            <option value="">All</option>
-          </select></label
-        >
-      </header>
-      <div data-crm-orgs>Loading sponsors…</div>
-    </section>
+    ${directorySectionMarkup("companies", {
+      state: directoryDefaults("companies"),
+      escapeHtml,
+      createHtml: globalThis.dakitCollection.createButtonMarkup({ label: "Add sponsor", attributes: "data-add-org" }),
+    })}
+    ${directorySectionMarkup("people", {
+      state: directoryDefaults("people"),
+      escapeHtml,
+      createHtml: globalThis.dakitCollection.createButtonMarkup({ label: "Add person", attributes: "data-add-contact" }),
+    })}
     <section class="crm-newsletters" hidden aria-labelledby="crm-newsletters-heading">
       <header class="section-header">
         <div>
@@ -171,7 +162,9 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
           <h3>Contact</h3>
         </header>
         <div class="dialog-fields">
-          <input name="organizationId" type="hidden" /><input name="contactId" type="hidden" /><input name="version" type="hidden" /><label
+          <input name="organizationId" type="hidden" /><input name="contactId" type="hidden" /><input name="version" type="hidden" /><label data-contact-org-picker-wrap
+            >Company <select data-contact-org-picker aria-label="Company"></select></label
+          ><label
             >Name <input name="name" required /></label
           ><label>Email <input name="email" type="email" multiple required /></label
           ><label>Role <input name="role" /></label
@@ -417,10 +410,29 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
         </footer>
       </form>
     </dialog>
+    <dialog class="surface-dialog" data-views-dialog>
+      <form method="dialog">
+        <header>
+          <h3 data-views-dialog-title>Save view</h3>
+        </header>
+        <div class="dialog-fields">
+          <div data-views-save-fields>
+            <label>Name <input name="viewName" maxlength="120" required /></label>
+          </div>
+          <div data-views-manage></div>
+          <p role="alert"></p>
+        </div>
+        <footer>
+          <button class="primary-button" data-views-confirm>Save view</button
+          ><button value="cancel">Cancel</button>
+        </footer>
+      </form>
+    </dialog>
     <dialog
       class="surface-dialog confirm-action-dialog"
       data-sponsor-confirm-dialog
     >
+      <!-- Wired by record flows (F): archive/restore confirmations. -->
       <form method="dialog">
         <header>
           <h3 data-confirm-title></h3>
