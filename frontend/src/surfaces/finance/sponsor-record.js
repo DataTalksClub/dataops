@@ -389,8 +389,15 @@ export function createSponsorRecord(context) {
   }
 
   function paintTabs(active) {
+    // Update the existing buttons in place: replacing the tablist markup
+    // here would nest a new tablist inside the current one.
     const tabs = root()?.querySelector("[data-record-tabs]");
-    if (tabs) tabs.innerHTML = recordTabsMarkup(active, context);
+    if (!tabs) return;
+    for (const button of tabs.querySelectorAll('[role="tab"]')) {
+      const selected = button.dataset?.recordTab === active;
+      button.setAttribute("aria-selected", String(selected));
+      button.setAttribute("tabindex", selected ? "0" : "-1");
+    }
   }
 
   function showTab(active) {

@@ -139,7 +139,12 @@ export function createSponsorPersonDetail(context) {
   const fail = typeof context.safe === "function" ? context.safe : async (action) => action();
   const canEdit = typeof context.openContactEditor === "function";
   let person = null;
+  let currentPersonId = null;
   let activeTab = "overview";
+  let activityLoader = null;
+  let activityPanelCtl = null;
+  let activityWired = false;
+  let activityLoading = false;
   let activityLoaded = false;
   let token = 0;
 
@@ -152,8 +157,15 @@ export function createSponsorPersonDetail(context) {
   }
 
   function paintTabs() {
+    // Update the existing buttons in place: replacing the tablist markup
+    // here would nest a new tablist inside the current one.
     const tabs = root()?.querySelector("[data-person-tabs]");
-    if (tabs) tabs.innerHTML = personTabsMarkup(activeTab, context);
+    if (!tabs) return;
+    for (const button of tabs.querySelectorAll('[role="tab"]')) {
+      const selected = button.dataset?.personTab === activeTab;
+      button.setAttribute("aria-selected", String(selected));
+      button.setAttribute("tabindex", selected ? "0" : "-1");
+    }
   }
 
   function showTab(name) {
@@ -170,7 +182,12 @@ export function createSponsorPersonDetail(context) {
     const host = root();
     if (!host) throw new Error("createSponsorPersonDetail: missing [data-crm-person] mount (E integration)");
     person = null;
+    currentPersonId = personId;
     activeTab = "overview";
+    activityLoader = null;
+    activityPanelCtl = null;
+    activityWired = false;
+    activityLoading = false;
     activityLoaded = false;
     host.innerHTML = loadingMarkup("Loading person", context);
     let record;
@@ -192,6 +209,9 @@ export function createSponsorPersonDetail(context) {
         if (mine !== token) return null;
         companyName = company?.displayName || null;
       } catch {
+        // Guard after catch as well: a stale rejected company request must
+        // never repaint the record of the person switched to meanwhile.
+        if (mine !== token) return null;
         // The company link degrades to plain text; the person stays usable.
         companyName = null;
       }
@@ -206,14 +226,26 @@ export function createSponsorPersonDetail(context) {
   async function loadActivity(mine) {
     const target = panel("activity");
     if (!target || !person) return;
-    const loader = createActivityLoader({ api, targetType: "contact", targetId: person.id });
-    target.innerHTML = activityPanelMarkup({ targetType: "contact", collapsibleFilters: true });
-    const wired = wireActivityPanel(target, loader, context);
-    wired.paint();
-    await loader.load();
+    // One loader + one wiring per person: rapid Activity clicks reuse them
+    // instead of duplicating fetches and listeners.
+    if (!activityLoader) {
+      activityLoader = createActivityLoader({ api, targetType: "contact", targetId: person.id });
+    }
+    if (!activityWired) {
+      target.innerHTML = activityPanelMarkup({ targetType: "contact", collapsibleFilters: true });
+      activityPanelCtl = wireActivityPanel(target, activityLoader, context);
+      activityWired = true;
+    }
+    // Single-flight: a second click while the first page is in flight is a
+    // no-op; a settled error reloads through switchTab retry semantics.
+    if (activityLoaded || activityLoading) return;
+    activityLoading = true;
+    activityPanelCtl.paint();
+    await activityLoader.load();
+    activityLoading = false;
     if (mine !== undefined && mine !== token) return;
-    wired.paint();
-    activityLoaded = true;
+    activityPanelCtl.paint();
+    if (activityLoader.state.status === "ready") activityLoaded = true;
   }
 
   async function switchTab(name) {
@@ -227,6 +259,11 @@ export function createSponsorPersonDetail(context) {
   function destroy() {
     token += 1;
     person = null;
+    currentPersonId = null;
+    activityLoader = null;
+    activityPanelCtl = null;
+    activityWired = false;
+    activityLoading = false;
     activityLoaded = false;
   }
 
@@ -240,6 +277,12 @@ export function createSponsorPersonDetail(context) {
       const tab = event.target.closest("[data-person-tab]");
       if (tab) {
         await fail(() => switchTab(tab.dataset.personTab), "Could not open section");
+        return;
+      }
+      // Person-load failures render data-record-retry: retry the same
+      // person from scratch (fresh generation, no duplicate loaders).
+      if (event.target.closest("[data-record-retry]") && currentPersonId) {
+        await fail(() => openPerson(currentPersonId), "Could not load person");
         return;
       }
       if (event.target.closest("[data-edit-person]") && canEdit && person) {

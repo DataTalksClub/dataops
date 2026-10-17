@@ -473,6 +473,31 @@ test("deals page beyond fifty and resolve off-page selections by ID", async () =
   assert.equal(calls.filter(({ path }) => path.startsWith("/deals?")).length, 2, "no duplicate pages");
 });
 
+test("tab switching updates buttons in place without nesting tablists", async () => {
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /directory/people?company=c1&limit=30": { items: [], total: 0, nextCursor: null },
+    },
+  });
+  seedPanels(host);
+  const tabs = host.setQuery("[data-record-tabs]", new FakeNode("div"));
+  const buttons = ["overview", "people", "activity", "deals", "finance"].map((id) => {
+    const button = new FakeNode("button");
+    button.dataset.recordTab = id;
+    return button;
+  });
+  tabs.setQueryAll("[role=tab]", buttons);
+  tabs.setQueryAll('[role="tab"]', buttons);
+  await record.openCompany("c1");
+  await record.switchTab("people");
+  const peopleButton = buttons[1];
+  assert.equal(peopleButton.getAttribute("aria-selected"), "true");
+  assert.equal(buttons[0].getAttribute("aria-selected"), "false");
+  assert.doesNotMatch(tabs.innerHTML, /data-record-tabs/, "no nested tablist markup");
+});
+
 test("failed explicit selections never fall back to unrelated finance", async () => {
   const page = [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off" }];
   for (const [name, dealId, byId, message] of [

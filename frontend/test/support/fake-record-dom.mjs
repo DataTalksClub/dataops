@@ -8,6 +8,7 @@ export class FakeNode {
   constructor(tagName = "div") {
     this.tagName = String(tagName).toUpperCase();
     this.dataset = {};
+    this.attributes = new Map();
     this.style = {};
     this.children = [];
     this.innerHTML = "";
@@ -54,6 +55,18 @@ export class FakeNode {
   reset() {
     this.formEntries = [];
     for (const element of this.namedElements?.values() || []) element.value = "";
+  }
+
+  setAttribute(name, value) {
+    this.attributes.set(String(name), String(value));
+  }
+
+  getAttribute(name) {
+    return this.attributes.has(String(name)) ? this.attributes.get(String(name)) : null;
+  }
+
+  removeAttribute(name) {
+    this.attributes.delete(String(name));
   }
 
   setQuery(selector, element) {

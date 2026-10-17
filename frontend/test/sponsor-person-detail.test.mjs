@@ -157,6 +157,83 @@ test("stale activity responses never render into a switched person", async () =>
   assert.doesNotMatch(listHtml, /Stale/);
 });
 
+test("rapid activity clicks fetch once and share one wiring", async () => {
+  let fetches = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const api = async (path) => {
+    if (path === "/contacts/p1") return person;
+    if (path.startsWith("/activity/")) {
+      fetches += 1;
+      await gate;
+      return { targetType: "contact", targetId: "p1", items: [], total: 0, nextCursor: null, sources: {}, relatedWork: [], tasksScope: "open", reads: {} };
+    }
+    throw new Error(`Unexpected: ${path}`);
+  };
+  const surface = new FakeNode("section");
+  const host = surface.setQuery("[data-crm-person]", new FakeNode("article"));
+  host.setQuery('[data-person-panel="overview"]', new FakeNode("section"));
+  host.setQuery('[data-person-panel="activity"]', new FakeNode("section"));
+  const detail = createSponsorPersonDetail({ api, surface, escapeHtml, closeRecord: () => {} });
+  detail.wire(host);
+  await detail.openPerson("p1");
+  const first = detail.switchTab("activity");
+  const second = detail.switchTab("activity");
+  release();
+  await Promise.all([first, second]);
+  assert.equal(fetches, 1, "one bounded fetch for two rapid tab clicks");
+});
+
+test("person load failure retries the same person without duplicate state", async () => {
+  let attempts = 0;
+  const api = async (path) => {
+    if (path === "/contacts/p1") {
+      attempts += 1;
+      if (attempts === 1) throw httpError(503, "unavailable");
+      return person;
+    }
+    if (path === "/directory/companies/c1") return { id: "c1", displayName: "Acme Co" };
+    if (path.startsWith("/activity/")) {
+      return { targetType: "contact", targetId: "p1", items: [], total: 0, nextCursor: null, sources: {}, relatedWork: [], tasksScope: "open", reads: {} };
+    }
+    throw new Error(`Unexpected: ${path}`);
+  };
+  const surface = new FakeNode("section");
+  const host = surface.setQuery("[data-crm-person]", new FakeNode("article"));
+  host.setQuery('[data-person-panel="overview"]', new FakeNode("section"));
+  host.setQuery('[data-person-panel="activity"]', new FakeNode("section"));
+  const detail = createSponsorPersonDetail({ api, surface, escapeHtml, closeRecord: () => {}, openCompanyRecord: () => {} });
+  detail.wire(host);
+  await detail.openPerson("p1");
+  assert.match(host.innerHTML, /unavailable/i);
+  await host.dispatch("click", { closestPatch: { "[data-record-retry]": new FakeNode("button") } });
+  assert.equal(attempts, 2, "retry refetches the same person once");
+  assert.match(host.innerHTML, /Ada &lt;Lovelace&gt;/);
+});
+
+test("tab switching updates buttons in place without nesting tablists", async () => {
+  const { host, detail } = personHarness({
+    routes: {
+      "GET /contacts/p1": person,
+      "GET /directory/companies/c1": { id: "c1", displayName: "Acme Co" },
+      "GET /activity/contact/p1?limit=30": { targetType: "contact", targetId: "p1", items: [], total: 0, nextCursor: null, sources: {}, relatedWork: [], tasksScope: "open", reads: {} },
+    },
+  });
+  seedPersonPanels(host);
+  const tabs = host.setQuery("[data-person-tabs]", new FakeNode("div"));
+  const overviewButton = new FakeNode("button");
+  overviewButton.dataset.personTab = "overview";
+  const activityButton = new FakeNode("button");
+  activityButton.dataset.personTab = "activity";
+  tabs.setQueryAll('[role="tab"]', [overviewButton, activityButton]);
+  await detail.openPerson("p1");
+  await detail.switchTab("activity");
+  assert.equal(overviewButton.getAttribute("aria-selected"), "false");
+  assert.equal(activityButton.getAttribute("aria-selected"), "true");
+  assert.equal(activityButton.getAttribute("tabindex"), "0");
+  assert.doesNotMatch(tabs.innerHTML, /data-person-tabs/, "no nested tablist markup");
+});
+
 test("missing people degrade honestly", async () => {
   const { host, detail } = personHarness({
     routes: { "GET /contacts/gone": httpError(404, "Not found") },
