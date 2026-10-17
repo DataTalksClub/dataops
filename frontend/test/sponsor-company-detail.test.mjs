@@ -64,13 +64,14 @@ test("migration mounts the record shell and preserves back behavior", async () =
 });
 
 test("reopenDealDetail forwards the isCurrent predicate to the record open", async () => {
-  const { host, detail } = migrationHarness({
+  const { surface, detail } = migrationHarness({
     organization,
     routes: {
       "GET /directory/companies/c1": organization,
       "GET /activity/organization/c1?limit=3": preview,
     },
   });
+  const host = surface.querySelector("[data-crm-record]");
   let current = false;
   await detail.reopenDealDetail({ id: "d9", organizationId: "c1" }, { isCurrent: () => current });
   assert.match(host.innerHTML, /Loading company/, "stale deal open paints nothing");
