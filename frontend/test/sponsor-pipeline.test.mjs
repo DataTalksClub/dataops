@@ -80,3 +80,19 @@ test("sponsor forms obtain their default and explicit assignee from the safe tea
   assert.match(select.innerHTML, /value="explicit" selected/);
   assert.deepEqual(urls, ["/api/team-members"]);
 });
+
+test('newer inbound stays the visible attention reason while a task is deferred', () => {
+  const markup = renderSponsorPipelineList({
+    items: [{ id: 'deal', organizationName: 'Synthetic', stage: 'agreed', replyReview: true, inboundAt: '2026-10-17',
+      nextTask: { id: 'task', description: 'Wait for material', deferred: true, date: '2026-11-01' } }],
+    escapeHtml, humanSponsorDate: (value) => value, ownerName: () => 'Owner',
+  });
+  assert.match(markup, /Review newer inbound \(inferred\)/);
+  assert.match(markup, /Inbound 2026-10-17/);
+  assert.match(markup, /Deferred task: Wait for material/);
+  const noInbound = renderSponsorPipelineList({ items: [{ id: 'deal', organizationName: 'Synthetic', stage: 'agreed',
+    nextTask: { id: 'task', description: 'Wait for material', deferred: true } }],
+    escapeHtml, humanSponsorDate: (value) => value, ownerName: () => 'Owner' });
+  assert.match(noInbound, /Deferred: Wait for material/);
+  assert.match(noInbound, /data-pipeline-task="task"/);
+});

@@ -14,6 +14,11 @@ export function renderSponsorPipelineFilters({ counts = {}, selected = '', escap
 
 function row(item, { escapeHtml: e, humanSponsorDate: date, ownerName }) {
   const contact = item.primaryContact;
+  const task = item.nextTask;
+  const review = item.replyReview && (!task || task.deferred);
+  const action = review ? 'Review newer inbound (inferred)' : task ? `${task.deferred ? 'Deferred: ' : ''}${task.description}` : 'No open task';
+  const when = review ? `Inbound ${date(item.inboundAt)}` : task?.date ? date(task.date) : '';
+  const deferred = review && task?.deferred ? `Deferred task: ${task.description}` : '';
   const amount = item.amountEur != null ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(item.amountEur) : '—';
   return html`<tr>
     <td><button class="crm-row-link" data-open-deal="${e(item.id)}">${e(item.organizationName)}</button>
@@ -21,8 +26,9 @@ function row(item, { escapeHtml: e, humanSponsorDate: date, ownerName }) {
       <small>${contact ? e([contact.name, contact.email].filter(Boolean).join(' · ')) : 'No primary contact'}</small>
       <small class="crm-phone-stage">${e(item.stage)}</small></td>
     <td>${e(SPONSOR_PIPELINE_STAGES.find(({ id }) => id === item.stage)?.label || item.stage)}</td>
-    <td>${e(item.nextTask?.description || (item.replyReview ? 'Review newer inbound' : 'No open task'))}
-      <small>${e(item.nextTask?.date ? date(item.nextTask.date) : item.replyReview ? `Inbound ${date(item.inboundAt)}` : '')}</small></td>
+    <td>${task && !review
+      ? html`<button class="crm-row-link" data-pipeline-task="${e(task.id)}">${e(action)}</button>` : e(action)}
+      <small>${e(when)}</small>${deferred ? html`<small>${e(deferred)}</small>` : ''}</td>
     <td>${e(ownerName(item.nextTask?.assigneeId))}</td>
     <td>${e(item.lastContacted ? date(item.lastContacted) : 'Never')}</td>
     <td>${e(amount)}</td>
@@ -40,7 +46,7 @@ export function renderSponsorPipelineList({ items, ...context }) {
     || '<div class="honest-state"><strong>No matching deals</strong><p>Choose Active or All to explore the rest of the funnel.</p></div>';
 }
 
-export function createSponsorPipelineView({ api, surface, escapeHtml, humanSponsorDate, ownerName, safe }) {
+export function createSponsorPipelineView({ api, surface, escapeHtml, humanSponsorDate, ownerName, openTaskPanel, safe }) {
   let result = { items: [], counts: {}, total: 0 }, cursor = '', generation = 0;
   const previous = [];
   const root = surface.querySelector('[data-crm-bookings]');
@@ -73,6 +79,8 @@ export function createSponsorPipelineView({ api, surface, escapeHtml, humanSpons
     } finally { if (token === generation) root.removeAttribute('aria-busy'); }
   }
   root.addEventListener('click', (event) => {
+    const taskId = event.target.closest('[data-pipeline-task]')?.dataset.pipelineTask;
+    if (taskId) openTaskPanel(taskId);
     if (event.target.closest('[data-pipeline-next]') && result.nextCursor) {
       previous.push(cursor); cursor = result.nextCursor; safe(() => load(false), 'Could not load pipeline');
     }

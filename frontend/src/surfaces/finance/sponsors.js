@@ -364,7 +364,7 @@ export function createSponsorCrmSurface(context) {
     }
 
     const pipeline = createSponsorPipelineView({ api, surface, escapeHtml, humanSponsorDate,
-      ownerName: (id) => ownerDirectory.name(id), safe });
+      ownerName: (id) => ownerDirectory.name(id), openTaskPanel, safe });
     let directoryLoaded = false;
     async function ensureDirectory() {
       if (directoryLoaded) return;
@@ -392,9 +392,9 @@ export function createSponsorCrmSurface(context) {
       message.textContent = "Loading sponsor CRM…";
       message.hidden = false;
       if (currentView === "pipeline") {
-        await ownerDirectory.load();
+        await Promise.all([pipeline.load(), ownerDirectory.load()]);
         ownerDirectory.fillFilter(surface.querySelector("[data-pipeline-owner]"));
-        await pipeline.load();
+        pipeline.draw();
       }
       else if (currentView === "companies") { await ensureDirectory(); draw(); }
       else if (currentView === "leads") await sponsorLeads.loadLeads();

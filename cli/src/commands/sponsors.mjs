@@ -121,7 +121,7 @@ export async function pipeline(args, io) {
   } });
   if (!args.json) {
     table(io, result.items, [['COMPANY', (item) => item.organizationName], ['STAGE', (item) => item.stage],
-      ['CONTACT', (item) => item.primaryContact?.name || ''], ['NEXT', (item) => item.nextTask?.description || (item.replyReview ? 'Review newer inbound' : '')],
+      ['CONTACT', (item) => item.primaryContact?.name || ''], ['NEXT', (item) => item.replyReview && (!item.nextTask || item.nextTask.deferred) ? 'Review newer inbound (inferred)' : item.nextTask ? `${item.nextTask.deferred ? 'Deferred: ' : ''}${item.nextTask.description}` : ''],
       ['DUE', (item) => item.nextTask?.date || '']], 'No matching deals.');
     io.print(`${result.total} matches.${result.nextCursor ? ` Next: --cursor ${result.nextCursor}` : ''}`);
   }
