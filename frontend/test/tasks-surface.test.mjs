@@ -3257,9 +3257,13 @@ describe("Tasks surface boundary", () => {
     loading.api.renderTasksSurface([], "queue");
     const loadingSummary =
       loading.documentList.querySelector(".surface-summary");
-    assert.equal(loadingSummary.dataset.summaryState, "loading");
-    assert.equal(loadingSummary.dataset.summaryId, "tasks-queue");
-    assert.match(loadingSummary.textContent, /Loading tasks from the work API/);
+    assert.equal(loadingSummary, null, "loading banner is not shown during normal loading");
+    const loadingBoard = loading.documentList.querySelector(".ops-queue-board");
+    assert.equal(loadingBoard.dataset.loadState, "loading");
+    const skeleton = loadingBoard.querySelector(".ops-queue-skeleton");
+    assert.ok(skeleton, "queue skeleton is rendered while loading");
+    assert.equal(skeleton.getAttribute("aria-busy"), "true");
+    assert.equal(loadingBoard.querySelector(".ops-empty"), null, "unavailable state is not rendered while loading");
 
     const refreshes = [];
     const failed = createHarness({

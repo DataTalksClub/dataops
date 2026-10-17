@@ -139,7 +139,7 @@ export function createTasksSurface(context) {
     }
     const summary = renderTasksSummary(activeSection, model, documents);
     // A fully loaded surface states nothing: its own content is the evidence.
-    if (summary && summary.dataset.summaryState !== "ready") wrap.append(summary);
+    if (summary && summary.dataset.summaryState !== "ready" && summary.dataset.summaryState !== "loading") wrap.append(summary);
     const runtimeStatus = renderOperationsRuntimeState(model.runtime);
     if (runtimeStatus && activeSection === "workflows") {
       wrap.append(runtimeStatus);
@@ -213,7 +213,7 @@ export function createTasksSurface(context) {
         retryLabel: "Retry loading tasks",
         onRetry: retryWork,
       });
-      return summary.dataset.summaryState === "ready" ? null : summary;
+      return summary.dataset.summaryState === "ready" || summary.dataset.summaryState === "loading" ? null : summary;
     }
     if (view === "workflows") {
       // The board renders from the snapshot, so the summary counts the same
@@ -244,7 +244,7 @@ export function createTasksSurface(context) {
         retryLabel: "Retry loading cards",
         onRetry: retryWork,
       });
-      return summary.dataset.summaryState === "empty" ? null : summary;
+      return summary.dataset.summaryState === "empty" || summary.dataset.summaryState === "loading" || summary.dataset.summaryState === "ready" ? null : summary;
     }
     if (view === "recurring") {
       const recurring = model.recurring;
@@ -273,7 +273,7 @@ export function createTasksSurface(context) {
           if (isWorkspaceRouteFresh(routeToken)) renderTasksSurface(documents, view);
         },
       });
-      return summary.dataset.summaryState === "empty" ? null : summary;
+      return summary.dataset.summaryState === "empty" || summary.dataset.summaryState === "loading" || summary.dataset.summaryState === "ready" ? null : summary;
     }
     if (view === "templates") {
       const routeToken = getActiveWorkspaceRouteToken();
@@ -281,7 +281,7 @@ export function createTasksSurface(context) {
       const count = runtimeState.loaded
         ? runtimeState.templates.length
         : model.templates.length;
-      return renderDataSummary({
+      const summary = renderDataSummary({
         id: "tasks-templates",
         label: "Templates",
         loaded: runtimeState.loaded,
@@ -300,6 +300,7 @@ export function createTasksSurface(context) {
           if (isWorkspaceRouteFresh(routeToken)) renderTasksSurface(documents, view);
         },
       });
+      return summary.dataset.summaryState === "ready" || summary.dataset.summaryState === "loading" ? null : summary;
     }
     // Other sections render their own state; Tasks does not speak for
     // surfaces it does not own.

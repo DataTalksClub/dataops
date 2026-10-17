@@ -81,6 +81,11 @@ export function createCardsSurface(context) {
       const sourceComplete =
         state.workSnapshot.cardsComplete === true;
       const loaded = Boolean(state.workSnapshot.cardsLoaded);
+      const errors = (model?.stats?.workErrors || state.workSnapshot.errors || []).filter(Boolean);
+      if (!loaded && errors.length === 0) {
+        section.append(renderCardsSkeleton());
+        return section;
+      }
       // The honest state is the board's one empty statement; empty stage
       // columns would only restate it per column.
       section.append(
@@ -526,6 +531,44 @@ export function createCardsSurface(context) {
       card.append(flagRow);
     }
     return card;
+  }
+
+  function renderCardsSkeleton() {
+    const skeleton = document.createElement("div");
+    skeleton.className = "ops-cards-skeleton";
+    skeleton.setAttribute("role", "status");
+    skeleton.setAttribute("aria-label", "Loading cards");
+    skeleton.setAttribute("aria-busy", "true");
+
+    const columns = document.createElement("div");
+    columns.className = "ops-cards-skeleton-columns";
+
+    for (let c = 0; c < 3; c++) {
+      const col = document.createElement("div");
+      col.className = "ops-cards-skeleton-col";
+      col.setAttribute("aria-hidden", "true");
+
+      const colHeader = document.createElement("div");
+      colHeader.className = "ops-cards-skeleton-col-header dk-skeleton";
+      col.append(colHeader);
+
+      for (let i = 0; i < 2; i++) {
+        const card = document.createElement("div");
+        card.className = "ops-cards-skeleton-card";
+
+        const title = document.createElement("div");
+        title.className = "ops-cards-skeleton-title dk-skeleton";
+
+        const desc = document.createElement("div");
+        desc.className = "ops-cards-skeleton-desc dk-skeleton";
+
+        card.append(title, desc);
+        col.append(card);
+      }
+      columns.append(col);
+    }
+    skeleton.append(columns);
+    return skeleton;
   }
 
   return { renderWorkflowsSurface };

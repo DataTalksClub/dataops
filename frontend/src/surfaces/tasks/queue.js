@@ -11,6 +11,7 @@ import { createCardHovercards } from "./card-hovercard.js";
 import { renderQueueMaterials } from "./queue-materials.js";
 import { renderIcon } from "../../core/icons.js";
 import { renderResourceMarks, resourceLabel } from "../../core/resources.js";
+import { renderQueueSkeleton, renderQueueUnavailableState } from "./queue-skeleton.js";
 
 const QUEUE_VISIBLE_LIMIT = 25;
 
@@ -19,12 +20,15 @@ export function createTaskQueue(context) {
     compareIsoDate,
     formatTaskDateMeta,
     getActiveWorkspaceRoute,
+    getActiveWorkspaceRouteToken,
     getTaskRouteContext,
     isFollowUpDueTask,
     isOpenWorkTask,
+    isWorkspaceRouteFresh,
     navigateCanonicalWorkspace,
     openCardPanel,
     openTaskPanel,
+    refreshDocuments,
     refreshOperationsWorkSnapshot,
     request,
     resolveAssigneeLabel,
@@ -166,7 +170,7 @@ export function createTaskQueue(context) {
     return label;
   }
 
-  function renderWorkQueueSurface() {
+  function renderWorkQueueSurface(model) {
     const taskRouteContext = getTaskRouteContext();
     const today = taskRouteContext.date || todayIsoDate();
     // The same task reaches this list through its lane query and its card's
@@ -183,10 +187,12 @@ export function createTaskQueue(context) {
     }
     const cardsById = state.workSnapshot.cardsById || new Map();
     const anySourceLoaded = Boolean(
-      state.workSnapshot.todayLoaded ||
+      model?.stats?.liveLoaded !== false && (
+        state.workSnapshot.todayLoaded ||
         state.workSnapshot.overdueLoaded ||
         state.workSnapshot.waitingLoaded ||
-        Object.keys(state.workSnapshot.cardTasks || {}).length,
+        Object.keys(state.workSnapshot.cardTasks || {}).length
+      ),
     );
 
     const allOpenTasks = orderOpenTasks(tasks.filter((task) => !completedThisSession.has(task.id) && !isTaskDeferred(task, today)), today);
@@ -220,9 +226,16 @@ export function createTaskQueue(context) {
       section.append(renderTaskRouteContext(taskRouteContext));
     }
 
+    const workErrors = (model?.stats?.workErrors || state?.workSnapshot?.errors || []).filter(Boolean);
+    const retryWork = async () => {
+      const routeToken = getActiveWorkspaceRouteToken?.();
+      await refreshOperationsWorkSnapshot?.({ rerender: false });
+      if (!routeToken || !isWorkspaceRouteFresh || isWorkspaceRouteFresh(routeToken)) refreshDocuments?.();
+    };
+
     const board = document.createElement("div");
     board.className = "ops-queue-board";
-    board.dataset.loadState = anySourceLoaded ? "ready" : "unavailable";
+    board.dataset.loadState = anySourceLoaded ? "ready" : workErrors.length > 0 ? "unavailable" : "loading";
 
     // The create actions sit in the toolbar directly above the rows, after
     // the filters, never in the page header's corner.
@@ -236,7 +249,11 @@ export function createTaskQueue(context) {
       filters.append(...createActions);
       section.prepend(filters);
       if (!anySourceLoaded) {
-        board.append(renderUnavailableState());
+        if (workErrors.length === 0) {
+          board.append(renderQueueSkeleton());
+        } else {
+          board.append(renderQueueUnavailableState(retryWork));
+        }
         return;
       }
 
@@ -393,14 +410,6 @@ export function createTaskQueue(context) {
 
   function queueAttentionDay(task, today) {
     return isTaskDeferred(task, today) ? deferredWakeup(task).slice(0, 10) : taskAttentionDate(task);
-  }
-
-  function renderUnavailableState() {
-    const empty = document.createElement("p");
-    empty.className = "ops-empty";
-    empty.dataset.state = "unavailable";
-    empty.textContent = "Live work data unavailable.";
-    return empty;
   }
 
   // How much of the scoped work is on screen. The scope rides in the same

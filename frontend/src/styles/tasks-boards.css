@@ -91,6 +91,62 @@ body[data-workspace-view="tasks"] .operations-home .ops-empty {
   background: var(--dk-bg-surface);
 }body[data-workspace-view="tasks"] .ops-queue-board[data-load-state="unavailable"] {
   padding: var(--dk-space-4) var(--dk-space-4);
+}body[data-workspace-view="tasks"] .ops-queue-skeleton {
+  display: flex;
+  flex-direction: column;
+}body[data-workspace-view="tasks"] .ops-queue-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--dk-space-3);
+  padding: var(--dk-space-3) var(--dk-space-4);
+  border-bottom: 1px solid var(--dk-border-default);
+}body[data-workspace-view="tasks"] .ops-queue-skeleton-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--dk-radius-sm);
+  flex-shrink: 0;
+}body[data-workspace-view="tasks"] .ops-queue-skeleton-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dk-space-2);
+  flex: 1;
+}body[data-workspace-view="tasks"] .ops-queue-skeleton-title {
+  width: 40%;
+  height: 14px;
+}body[data-workspace-view="tasks"] .ops-queue-skeleton-meta {
+  width: 25%;
+  height: 12px;
+}body[data-workspace-view="tasks"] .ops-cards-skeleton {
+  width: 100%;
+  padding: var(--dk-space-4) 0;
+}body[data-workspace-view="tasks"] .ops-cards-skeleton-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--dk-space-4);
+}body[data-workspace-view="tasks"] .ops-cards-skeleton-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dk-space-3);
+  padding: var(--dk-space-3);
+  background: var(--dk-bg-muted);
+  border-radius: var(--task-panel-radius);
+}body[data-workspace-view="tasks"] .ops-cards-skeleton-col-header {
+  height: 20px;
+  width: 60%;
+}body[data-workspace-view="tasks"] .ops-cards-skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dk-space-2);
+  padding: var(--dk-space-3);
+  background: var(--dk-bg-surface);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--task-panel-radius);
+}body[data-workspace-view="tasks"] .ops-cards-skeleton-title {
+  height: 16px;
+  width: 80%;
+}body[data-workspace-view="tasks"] .ops-cards-skeleton-desc {
+  height: 12px;
+  width: 50%;
 }/* The count line is a quiet caption on the board's own surface, not a second
 gray bar: the column heading below stays the one gray band, so the top of the
 board reads as one summary followed by one header rather than two headers. */body[data-workspace-view="tasks"] .ops-queue-total {

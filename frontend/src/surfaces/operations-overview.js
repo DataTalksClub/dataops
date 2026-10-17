@@ -399,7 +399,7 @@ export function createOperationsOverview(context) {
     const errors = Array.isArray(runtime?.errors)
       ? runtime.errors.filter(Boolean)
       : [];
-    if (runtime?.connected && errors.length === 0) return null;
+    if (errors.length === 0) return null;
 
     const section = document.createElement("section");
     section.className = "ops-runtime-state";
