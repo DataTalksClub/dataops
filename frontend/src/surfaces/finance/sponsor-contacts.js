@@ -56,7 +56,7 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
   async function companyChoices(presetOrganizationId, provided = []) {
     const list = [...provided, ...companies()].filter(
       (item, index, all) => item && item.id && all.findIndex((other) => other.id === item.id) === index,
-    );
+    ).filter((item) => item.id === presetOrganizationId || (!item.archivedAt && item.active !== false));
     // An unknown or inactive current association stays honest and selectable:
     // never silently drop it from the chooser, never invent a display name
     // for it. Inactive alternatives are filtered out; the current one is

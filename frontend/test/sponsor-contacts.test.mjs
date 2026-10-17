@@ -339,6 +339,22 @@ test("inactive current association is retained with its real name", async () => 
   assert.equal(picker.value, "quiet");
 });
 
+test("explicit provided companies are filtered for inactive alternatives", async () => {
+  const { form, editor } = editorHarness({ contacts: [{ ...ada, organizationId: "c1" }] });
+  const picker = new FakeNode("select");
+  form.setQuery("[data-contact-org-picker]", picker);
+  await editor.open({ id: "p1" }, {
+    companies: [
+      { id: "c1", displayName: "Acme" },
+      { id: "dead", displayName: "Gone Co", archivedAt: "2026-01-01T00:00:00Z" },
+      { id: "quiet", displayName: "Quiet Inc", active: false },
+    ],
+  });
+  assert.doesNotMatch(picker.innerHTML, /Gone Co|Quiet Inc/, "provided inactive alternatives filtered");
+  assert.match(picker.innerHTML, /Acme/, "current association retained");
+  assert.equal(picker.value, "c1");
+});
+
 test("new contacts preset the org with the chooser visible; blank opens the chooser", async () => {
   const companies = [{ id: "c1", displayName: "Acme" }, { id: "c2", displayName: "Beta" }];
   const { form, editor } = editorHarness({ companies });
