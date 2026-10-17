@@ -85,7 +85,9 @@ export function createSponsorDirectoryPages({
     const query = new URLSearchParams({ active: "true", limit: String(limit), sort: "name" });
     if (search) query.set("search", search);
     const result = await api(`${WORKSPACE_API.companies}?${query}`);
-    const options = (result.items || []).map((item) => ({ id: item.id, name: item.displayName }));
+    // Both shapes: directory pickers read .name, the contact editor reads
+    // .displayName (F contract).
+    const options = (result.items || []).map((item) => ({ id: item.id, name: item.displayName, displayName: item.displayName }));
     rememberCompanyNames(result.items);
     return options;
   }
@@ -117,7 +119,7 @@ export function createSponsorDirectoryPages({
     };
   }
   function closeRecord() {
-    if (!returnContext) return;
+    if (!returnContext) return false;
     const { view, path, params, scrollTop, focusSelector } = returnContext;
     returnContext = null;
     navigateCanonicalWorkspace(path, params, { render: false, history: "replace" });
@@ -137,6 +139,7 @@ export function createSponsorDirectoryPages({
     if (scroller) scroller.scrollTop = scrollTop || 0;
     else if (typeof globalThis.scrollTo === "function") globalThis.scrollTo(0, scrollTop || 0);
     surface.querySelector(focusSelector)?.focus?.();
+    return true;
   }
 
   function createDirectoryController(entity) {
