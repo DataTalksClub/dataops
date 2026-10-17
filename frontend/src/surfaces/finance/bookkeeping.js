@@ -1,3 +1,4 @@
+import { createTuitionLoader } from "./tuition.js";
 import { mountBookkeepingNavigation } from "./bookkeeping-navigation.js";
 import { bookkeepingSurfaceMarkup } from "./bookkeeping-markup.js";
 import {
@@ -94,6 +95,7 @@ export function createBookkeepingSurface(context) {
     let view = SECONDARY_VIEWS.includes(initial.get("view")) ? initial.get("view") : "";
     let defaultLens = "";
     let invoicesMounted = false;
+    const loadTuition = createTuitionLoader(surface.querySelector("[data-tuition]"), context, initial.get("agreement"));
     let vocab = {};
     const suggestions = suggestionLoader({ load: (id) => api(`/transactions/${encodeURIComponent(id)}/suggestions`),
       holder: (id) => (selectedId === id ? detail.querySelector("[data-suggestions]") : null),
@@ -114,8 +116,7 @@ export function createBookkeepingSurface(context) {
         ...options,
       });
     let setupAccountsReady = false;
-    // The status line is a transient toast: it clears itself shortly after
-    // each message so a confirmation never lingers over the table.
+    // Clear transient confirmations after six seconds.
     let statusTimer = null;
     if (typeof MutationObserver === "function")
       new MutationObserver(() => {
@@ -137,13 +138,13 @@ export function createBookkeepingSurface(context) {
       link.click();
     }
 
-    // ---- URL state ---------------------------------------------------------
     function syncUrl() {
       if (!historyRef?.replaceState || !locationRef) return;
       const params = new URLSearchParams();
       // The default month (latest with transactions) stays out of the URL.
       const values = { month: lens === defaultLens ? "" : lens, ...filters, tx: selectedId, view };
       for (const name of LEDGER_PARAMS) if (values[name]) params.set(name, values[name]);
+      if (view === "tuition" && initial.get("agreement")) params.set("agreement", initial.get("agreement"));
       const query = params.toString();
       const next = `${locationRef.pathname || "/bookkeeping"}${query ? `?${query}` : ""}`;
       if (`${locationRef.pathname}${locationRef.search}` !== next)
@@ -166,8 +167,6 @@ export function createBookkeepingSurface(context) {
       lens = month;
       renderAll();
     }
-
-    // ---- main view ---------------------------------------------------------
     function renderAll() {
       navigation.refresh();
       renderView();
@@ -186,6 +185,7 @@ export function createBookkeepingSurface(context) {
       surface.querySelectorAll("[data-secondary]").forEach((section) => {
         section.hidden = section.dataset.secondary !== view;
       });
+      if (view === "tuition") loadTuition();
       if (view === "invoices" && !invoicesMounted) {
         invoicesMounted = true;
         mountInvoiceReview(surface.querySelector("[data-invoice-review]"), context);

@@ -57,17 +57,17 @@ export function renderTaskContext(task, view, deps) {
     context.append(cardRow);
   }
 
-  // A Task outside any Card names the sponsor deal or company it is about,
-  // in the same row a Card would take.
+  // Work outside a Card names its sponsor relationship or tuition agreement.
   if (task.subject?.href) {
-    const type = task.subject.type === "sponsor-company" ? "Sponsor" : "Sponsor deal";
+    const type = task.subject.type === "tuition-agreement" ? "Tuition agreement"
+      : task.subject.type === "sponsor-company" ? "Sponsor" : "Sponsor deal";
     const subjectRow = document.createElement("button");
     subjectRow.type = "button";
     subjectRow.className = "task-context-card";
     subjectRow.title = `Open the ${type.toLowerCase()}`;
     const icon = document.createElement("span");
     icon.className = "task-context-card-icon";
-    icon.append(renderIcon("megaphone", { size: 16 }));
+    icon.append(renderIcon(task.subject.type === "tuition-agreement" ? "receipt" : "megaphone", { size: 16 }));
     const text = document.createElement("span");
     text.className = "task-context-card-text";
     const name = document.createElement("strong");
@@ -77,7 +77,8 @@ export function renderTaskContext(task, view, deps) {
     text.append(name, meta);
     const open = document.createElement("span");
     open.className = "task-context-card-open";
-    open.textContent = task.subject.type === "sponsor-company" ? "Open company" : "Open deal";
+    open.textContent = task.subject.type === "tuition-agreement" ? "Open agreement"
+      : task.subject.type === "sponsor-company" ? "Open company" : "Open deal";
     subjectRow.append(icon, text, open);
     subjectRow.addEventListener("click", () => deps.openSubject(task.subject));
     context.append(subjectRow);

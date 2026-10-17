@@ -1,3 +1,4 @@
+import * as tuition from "./commands/tuition.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -99,6 +100,7 @@ export const FAMILIES = {
   bookkeeping: { group: "Finance", summary: bookkeeping.summary, help: bookkeeping.help, commands: bookkeeping.commands },
   company: { group: "Finance", summary: company.summary, help: company.help, commands: company.commands },
   reconcile: { group: "Finance", summary: reconcile.summary, help: reconcile.help, commands: reconcile.commands },
+  tuition: { group: "Finance", summary: tuition.summary, help: tuition.help, commands: tuition.commands },
   sponsors: { group: "Finance", summary: sponsors.summary, help: sponsors.help, commands: sponsors.commands },
   invoices: {
     group: "Finance",

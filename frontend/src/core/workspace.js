@@ -39,7 +39,7 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/bookkeeping": {
     view: "bookkeeping",
     tasksSection: "queue",
-    params: ["month", "q", "account", "dir", "category", "needs", "tx", "view"],
+    params: ["month", "q", "account", "dir", "category", "needs", "tx", "view", "agreement"],
   },
   // Bare /sponsors opens the default tab; every tab and record is a path.
   "/sponsors": { view: "sponsors", tasksSection: "queue", params: [], canonicalPath: "/sponsors/pipeline" },

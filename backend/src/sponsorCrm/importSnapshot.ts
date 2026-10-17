@@ -1,3 +1,4 @@
+import { isIndividualTuition } from '../tuition/classification';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   createContactAtomic,
@@ -90,6 +91,7 @@ export async function importCrmSnapshot(client: DynamoDBDocumentClient, snapshot
   const companies = snapshot.companies || [];
   const people = snapshot.people || [];
   const deals = snapshot.deals || [];
+  if (deals.some((deal) => isIndividualTuition(deal))) throw Object.assign(new Error('Import individual tuition through /api/tuition, not sponsor CRM'), { statusCode: 422 });
   const activity = snapshot.activity || [];
   const leads = snapshot.leads || [];
   const newsletters = snapshot.newsletters || [];

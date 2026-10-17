@@ -1,17 +1,19 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import type { Task, TaskSubject, TaskSubjectType } from '../types';
+import { getTuitionAgreement } from './tuition';
 import { getCrmRecord } from './sponsorCrm';
 import { listTasksByStatus } from './tasks';
 
 /**
- * A Task's subject: the sponsor deal or company the work is about, for a Task
+ * A Task's subject: the sponsor relationship or tuition agreement, for a Task
  * that belongs to no Card. A Task has a Card or a subject, never both.
  */
 
 const SUBJECT_KINDS: Record<TaskSubjectType, string> = {
   'sponsor-deal': 'deal',
   'sponsor-company': 'organization',
+  'tuition-agreement': 'tuition',
 };
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
@@ -22,13 +24,14 @@ function isSubjectType(value: unknown): value is TaskSubjectType {
 }
 
 function subjectHref(subject: TaskSubject): string {
+  if (subject.type === 'tuition-agreement') return `/bookkeeping?view=tuition&agreement=${encodeURIComponent(subject.id)}`;
   const family = subject.type === 'sponsor-deal' ? 'deals' : 'companies';
   return `/sponsors/${family}/${encodeURIComponent(subject.id)}`;
 }
 
 /**
- * Normalize a client-supplied subject to its stored shape, or say what is
- * wrong. The referenced deal or company must exist and not be archived.
+ * Normalize a subject to its stored shape. The referenced record must exist
+ * and be active where the domain supports archiving.
  */
 export async function parseTaskSubject(
   client: DynamoDBDocumentClient,
@@ -42,8 +45,8 @@ export async function parseTaskSubject(
     return { error: `subject.type must be one of: ${Object.keys(SUBJECT_KINDS).join(', ')}`, statusCode: 400 };
   }
   if (typeof id !== 'string' || !ID.test(id)) return { error: 'subject.id must be a record id', statusCode: 400 };
-  const record = await getCrmRecord(client, SUBJECT_KINDS[type], id);
-  if (!record || record.archivedAt) return { error: `subject ${type} ${id} not found`, statusCode: 404 };
+  const record = type === 'tuition-agreement' ? await getTuitionAgreement(client, id) : await getCrmRecord(client, SUBJECT_KINDS[type], id);
+  if (!record || ('archivedAt' in record && record.archivedAt)) return { error: `subject ${type} ${id} not found`, statusCode: 404 };
   return { subject: { type, id } };
 }
 
@@ -63,7 +66,10 @@ export async function attachSubjects<T extends Task>(client: DynamoDBDocumentCli
     const subject = task.subject;
     if (!subject || !isSubjectType(subject.type)) return task;
     let label = '';
-    if (subject.type === 'sponsor-company') {
+    if (subject.type === 'tuition-agreement') {
+      const agreement = await getTuitionAgreement(client, subject.id);
+      label = agreement ? `${agreement.studentName} · ${agreement.title}` : 'Tuition agreement';
+    } else if (subject.type === 'sponsor-company') {
       label = await companyName(subject.id);
     } else {
       const deal = await load('deal', subject.id);

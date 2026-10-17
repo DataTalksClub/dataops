@@ -1,3 +1,4 @@
+import { handleTuitionRoutes } from './routes/tuition';
 import { timingSafeEqual } from 'crypto';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -304,6 +305,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     if (reqPath.startsWith('/api/reconcile')) {
       return await handleReconcileRoutes(reqPath, method, event, client);
     }
+    if (reqPath === '/api/tuition' || reqPath.startsWith('/api/tuition/')) return await handleTuitionRoutes(reqPath, method, event, client);
     if (reqPath.startsWith('/api/sponsor-crm')) {
       const sponsorRoute = () => handleSponsorRoute(reqPath, method, event, client);
       // A read-only request scans the CRM table once, not once per kind.

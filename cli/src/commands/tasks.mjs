@@ -14,11 +14,11 @@ Usage
   dataops tasks list [view] [filters]
   dataops tasks show <task-id>
   dataops tasks create --description D [--date YYYY-MM-DD] [--card ID] [--assignee ID|me]
-      [--subject-type sponsor-deal|sponsor-company --subject-id ID]
+      [--subject-type sponsor-deal|sponsor-company|tuition-agreement --subject-id ID]
       [--comment C] [--link URL] [--tags a,b] [--required-link-name NAME] [--instruction-doc DOC-ID]
       [--requires youtube,luma] [--browser required|headless] [--depends-on ID,ID]
   dataops tasks update <task-id> [--description D] [--date D] [--comment C] [--link URL]
-      [--subject-type sponsor-deal|sponsor-company --subject-id ID | --clear-subject]
+      [--subject-type sponsor-deal|sponsor-company|tuition-agreement --subject-id ID | --clear-subject]
       [--at "2026-10-23 19:00" --tz Europe/Berlin | --at +7d | --at none]
       [--external-status S] [--tags a,b] [--card ID|none] [--instruction-doc DOC-ID]
       [--requires a,b|none] [--browser required|headless|none] [--depends-on ID,ID|none]
@@ -363,7 +363,7 @@ function writableFields(args) {
   } else if (args.subjectType !== undefined || args.subjectId !== undefined) {
     const type = required(args, "subjectType", "subject-type");
     const id = required(args, "subjectId", "subject-id");
-    if (!["sponsor-deal", "sponsor-company"].includes(type)) throw new UsageError("--subject-type must be sponsor-deal or sponsor-company.");
+    if (!["sponsor-deal", "sponsor-company", "tuition-agreement"].includes(type)) throw new UsageError("--subject-type must be sponsor-deal, sponsor-company or tuition-agreement.");
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id)) throw new UsageError("--subject-id must be a record id.");
     if (args.card && args.card !== "none") throw new UsageError("A Task has a Card or a subject, not both.");
     body.subject = { type, id };

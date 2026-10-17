@@ -232,7 +232,7 @@ export interface TaskNote {
   createdAt: string;
 }
 
-export type TaskSubjectType = 'sponsor-deal' | 'sponsor-company';
+export type TaskSubjectType = 'sponsor-deal' | 'sponsor-company' | 'tuition-agreement';
 
 export interface TaskSubject {
   type: TaskSubjectType;

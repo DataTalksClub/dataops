@@ -735,15 +735,15 @@ export function createTaskQueue(context) {
   // hand-made ad hoc work. The column heading already says where, so a card
   // cell carries the card's name, not "Card · name".
   function taskOrigin(task, cardsById) {
-    // A Task outside any Card can be about a sponsor deal or company; the
-    // cell names the company and opens the record.
+    // Work outside a Card opens its sponsor relationship or tuition agreement.
     if (task.subject?.href) {
-      const type = task.subject.type === "sponsor-company" ? "Sponsor" : "Sponsor deal";
+      const type = task.subject.type === "tuition-agreement" ? "Tuition agreement"
+        : task.subject.type === "sponsor-company" ? "Sponsor" : "Sponsor deal";
       const label = task.subject.label || type;
       return {
         label,
-        kind: "sponsor",
-        icon: "megaphone",
+        kind: task.subject.type === "tuition-agreement" ? "tuition" : "sponsor",
+        icon: task.subject.type === "tuition-agreement" ? "receipt" : "megaphone",
         type,
         title: `${label} · ${type}`,
         href: task.subject.href,

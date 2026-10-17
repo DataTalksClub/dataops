@@ -59,6 +59,7 @@ export function bookkeepingSurfaceMarkup() {
             <hr class="bk-more__rule" />
             <button type="button" class="dk-menu__item" role="menuitem" data-view-link="files">Files &amp; statements <span class="bk-more__meta" data-files-meta></span></button>
             <button type="button" class="dk-menu__item" role="menuitem" data-view-link="package">Accountant package &amp; VAT</button>
+            <button type="button" class="dk-menu__item" role="menuitem" data-view-link="tuition">Tuition agreements &amp; installments</button>
             <button type="button" class="dk-menu__item" role="menuitem" data-view-link="invoices">Forwarded invoices <span class="bk-more__meta" data-invoices-meta></span></button>
           </div>
         </details>
@@ -145,6 +146,10 @@ export function bookkeepingSurfaceMarkup() {
     <section class="bookkeeping-section invoice-review-section bk-secondary" data-secondary="invoices" hidden>
       ${backLink}
       <div aria-labelledby="invoice-review-heading" data-invoice-review></div>
+    </section>
+    <section class="bookkeeping-section bk-secondary" data-secondary="tuition" hidden>
+      ${backLink}
+      <div data-tuition></div>
     </section>
     <dialog class="surface-dialog bookkeeping-entry-dialog">
       <form method="dialog" novalidate>

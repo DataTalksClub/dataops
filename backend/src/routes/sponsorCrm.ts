@@ -1,4 +1,5 @@
 import { berlinDate } from '../sponsorFinance/core';
+import { isIndividualTuition } from '../tuition/classification';
 import { sponsorPipeline, PIPELINE_STAGES } from '../sponsorCrm/pipeline';
 import { getNewsletterIssue } from '../db/newsletterIssues';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -96,6 +97,7 @@ function validateContact(body: Record<string, unknown>, partial = false) {
 }
 
 function validateDeal(body: Record<string, unknown>, partial = false, existing?: CrmRecord) {
+  if (isIndividualTuition({ ...existing, ...body })) return 'Individual tuition belongs in /api/tuition (Bookkeeping), not sponsor CRM';
   if (!partial && !ID.test(String(body.organizationId || ''))) return 'Invalid organizationId';
   const status = String((body.status ?? existing?.status) || '');
   if ((!partial || body.status !== undefined) && !DEAL_STATUSES.has(status)) return 'Invalid status';
