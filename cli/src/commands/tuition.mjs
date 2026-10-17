@@ -6,6 +6,7 @@ dataops tuition show ID
 dataops tuition add --data @agreement.json
 dataops tuition update ID --data @agreement.json
 Fields: studentName,title,trigger,status,amount,currency,dueOn,notes.
+Clear amount and currency together with {"amount":null,"currency":null}.
 Do not invent dates for conditional installments or book a student obligation and a platform payout as two revenues.`;
 async function list(args, io) {
   const result = await apiFor(args).get('/api/tuition', { query: { search: args.search, status: args.status, limit: integer(args.limit, 'limit') ?? 30, cursor: args.cursor } });

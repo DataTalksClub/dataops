@@ -52,3 +52,23 @@ it('rejects individual tuition in CRM before references or imports create any sp
     deals: [{ organizationDomain: 'synthetic-org', status: 'open', title: 'Deferred course tuition installment' }] }, 'actor'), /api\/tuition/);
   assert.equal(touchedStorage, false);
 });
+
+import { PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
+import { getCrmRecord, listCrmRecords, scanCrmPrefix, withCrmReadSnapshot } from '../src/db/sponsorCrm';
+it('clears monetary fields explicitly and retains archived sources as historical CRM evidence', async () => {
+  const created = await call('POST', '/api/tuition', { studentName: 'Clear Fixture', title: 'Installment', trigger: 'Contract condition', status: 'conditional', amount: '100', currency: 'EUR' });
+  const cleared = await call('PUT', `/api/tuition/${created.body.id}`, { version: 1, amount: null, currency: null });
+  assert.equal(cleared.status, 200); assert.equal(cleared.body.amount, undefined); assert.equal(cleared.body.currency, undefined);
+  assert.equal((await call('PUT', `/api/tuition/${created.body.id}`, { version: 2, amount: '100' })).status, 400);
+  const original = { PK: 'DEAL#rehomed-fixture', SK: 'DEAL#rehomed-fixture', id: 'rehomed-fixture', version: 2,
+    createdAt: '2026-01-01', updatedAt: '2026-10-17', title: 'Original tuition record',
+    archivedAt: '2026-10-17', rehomedTo: { type: 'tuition-agreement', id: created.body.id } };
+  await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: original }));
+  assert.equal((await getCrmRecord(client, 'deal', 'rehomed-fixture'))?.archivedAt, '2026-10-17');
+  assert.equal((await listCrmRecords(client, 'deal')).some((item) => item.id === 'rehomed-fixture'), true);
+  assert.equal((await withCrmReadSnapshot(() => scanCrmPrefix(client, 'DEAL#'))).some((item) => item.id === 'rehomed-fixture'), true);
+  const listed = await handleSponsorCrmRoutes('/api/sponsor-crm/deals', 'GET', { httpMethod: 'GET', path: '/api/sponsor-crm/deals', headers: {}, body: null, queryStringParameters: { active: 'true' } }, client);
+  assert.equal(JSON.parse(listed.body).items.some((item: any) => item.id === 'rehomed-fixture'), false);
+  assert.equal((await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: original.PK, SK: original.SK } }))).Item?.title, original.title);
+});

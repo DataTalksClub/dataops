@@ -139,12 +139,11 @@ export function createBookkeepingSurface(context) {
     }
 
     function syncUrl() {
-      if (!historyRef?.replaceState || !locationRef) return;
+      if (view === "tuition" || !historyRef?.replaceState || !locationRef) return;
       const params = new URLSearchParams();
       // The default month (latest with transactions) stays out of the URL.
       const values = { month: lens === defaultLens ? "" : lens, ...filters, tx: selectedId, view };
       for (const name of LEDGER_PARAMS) if (values[name]) params.set(name, values[name]);
-      if (view === "tuition" && initial.get("agreement")) params.set("agreement", initial.get("agreement"));
       const query = params.toString();
       const next = `${locationRef.pathname || "/bookkeeping"}${query ? `?${query}` : ""}`;
       if (`${locationRef.pathname}${locationRef.search}` !== next)

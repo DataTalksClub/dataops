@@ -43,7 +43,7 @@ import { recordRequestError } from '../requestErrorLog';
 const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-const parse = (event: LambdaEvent) => { try { return event.body ? JSON.parse(String(event.body)) as Record<string, unknown> : null; } catch { return null; } };
+const parse = (event: LambdaEvent) => { try { const value = event.body ? JSON.parse(String(event.body)) : null; return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null; } catch { return null; } };
 const actor = (event: LambdaEvent) => Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === 'x-user-id')?.[1] || '';
 const text = (value: unknown, max = 500) => typeof value === 'string' && value.trim() && value.length <= max;
 const page = (items: unknown[], event: LambdaEvent) => {
@@ -196,6 +196,7 @@ async function organizationMoney(client: DynamoDBDocumentClient, today: string) 
 export async function handleSponsorCrmRoutes(path: string, method: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const defaultAssigneeId = await resolveDefaultAssigneeId(client);
   const body = parse(event), user = actor(event) || defaultAssigneeId || '', today = todayOf(event);
+  if (body && 'rehomedTo' in body) return json(400, { error: 'Archival provenance is read-only' });
 
   if (path === '/api/sponsor-crm/pipeline' && method === 'GET') {
     const query = event.queryStringParameters || {};

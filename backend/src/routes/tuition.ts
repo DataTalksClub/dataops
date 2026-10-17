@@ -33,11 +33,15 @@ export async function handleTuitionRoutes(path: string, method: string, event: L
     if (id && !existing) return json(404, { error: 'Tuition agreement not found' });
     if (existing && body.version !== existing.version) return json(409, { error: 'Agreement changed; reload and retry' });
     const value: Record<string, unknown> = { ...existing, ...body };
+    if (value.amount === null) delete value.amount;
+    if (value.currency === null) delete value.currency;
+    if (Boolean(value.amount) !== Boolean(value.currency)) return json(400, { error: 'Amount and currency must be set or cleared together' });
     for (const field of ['studentName', 'title', 'trigger']) if (typeof value[field] !== 'string' || !String(value[field]).trim() || String(value[field]).length > 1000) return json(400, { error: `${field} is required` });
     if (!['conditional', 'due', 'invoiced', 'settled', 'cancelled'].includes(String(value.status))) return json(400, { error: 'Invalid tuition status' });
     if (value.dueOn != null && !realDate(value.dueOn)) return json(400, { error: 'Invalid dueOn' });
     if (value.amount != null && (typeof value.amount !== 'string' || !/^\d+(\.\d{1,2})?$/.test(value.amount) || Number(value.amount) <= 0)) return json(400, { error: 'Invalid amount' });
     if (value.currency != null && !/^[A-Z]{3}$/.test(String(value.currency))) return json(400, { error: 'Invalid currency' });
+    if (value.notes === null) delete value.notes;
     if (value.notes != null && (typeof value.notes !== 'string' || value.notes.length > 5000)) return json(400, { error: 'Invalid notes' });
     const allowed = ['studentName', 'title', 'trigger', 'status', 'dueOn', 'amount', 'currency', 'notes'];
     const fields = Object.fromEntries(allowed.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]));
