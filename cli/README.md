@@ -51,7 +51,7 @@ subcommands, flags, and examples.
 
 | Family | What it covers |
 | --- | --- |
-| `tasks` | the work queue (`list` defaults to the web queue; `--requires`, `--exclude-requires`, `--can-do` filter by required resources), `show`, `create`, `update` (`--depends-on` sets prerequisite Tasks; blocked Tasks cannot be completed), `done` with proof, `reopen`, `wait` / `followed-up` / `unblock`, `assign`, `delete` |
+| `tasks` | the work queue (`list --mine --queue` is the starting point; `--requires`, `--exclude-requires`, `--can-do` filter by required resources), `show` (with the notes log), `create`, `update` (`--depends-on` sets prerequisite Tasks; blocked Tasks cannot be completed), `done` with proof, `reopen`, `wait` / `followed-up` / `followup` / `snooze` / `unsnooze` / `unblock`, `note`, `handover`, `assign`, `delete` |
 | `resources` | `list` the resource ids a Task can require (youtube, luma, mailchimp, ...) |
 | `cards` | `list`, `show` (with Tasks), `create --template`, `update`, `stage`, `link`, `park` / `resume`, `template-update` |
 | `templates` | `list`, `show` (read-only; authored in Git) |
