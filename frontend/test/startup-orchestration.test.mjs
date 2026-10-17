@@ -3,9 +3,9 @@ import { describe, test } from "node:test";
 
 import { parseWorkspaceLocation } from "../src/core/workspace.js";
 import {
+  SELF_LOADING_VIEWS,
   createStartupOrchestration,
   isStartupDeferredRoute,
-  startupDeferredViews,
 } from "../src/shell/startup-orchestration.js";
 import { createKnowledgeCatalog } from "../src/surfaces/knowledge/catalog.js";
 import { initializeAppShell } from "../src/shell/bootstrap.js";
@@ -46,10 +46,10 @@ function createRefreshSpies() {
 describe("startup route classification", () => {
   test("defers every self-loading view and nothing else", () => {
     assert.deepEqual(
-      [...startupDeferredViews()].sort(),
+      [...SELF_LOADING_VIEWS].sort(),
       ["bookkeeping", "calendar", "newsletter", "podcast", "sponsors", "users"],
     );
-    for (const view of startupDeferredViews()) {
+    for (const view of SELF_LOADING_VIEWS) {
       assert.equal(isStartupDeferredRoute({ view }), true, view);
     }
     for (const path of ["/tasks", "/cards", "/templates", "/recurring", "/processes", "/admin"]) {
@@ -82,6 +82,25 @@ describe("startup route classification", () => {
       isStartupDeferredRoute({ ...routeFor("/sponsors/pipeline"), modalTaskId: "task-1" }),
       false,
     );
+  });
+
+  test("the repaint gate consumes the same canonical set", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { default: path } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const repoRoot = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../..",
+    );
+    const composition = readFileSync(
+      path.join(repoRoot, "frontend/src/runtime/surface-composition.js"),
+      "utf8",
+    );
+    assert.match(
+      composition,
+      /import \{ SELF_LOADING_VIEWS \} from "\.\.\/shell\/startup-orchestration\.js";/,
+    );
+    assert.doesNotMatch(composition, /const SELF_LOADING_VIEWS = new Set/);
   });
 });
 
@@ -297,7 +316,7 @@ describe("navigation snapshot ensure", () => {
       docPathFromLocation: () => "",
       documentList,
       documentRef: document,
-      ...(ensureSharedSnapshots ? { ensureSharedSnapshots } : {}),
+      ensureSharedSnapshots,
       folderExists: () => false,
       folderPathFromLocation: () => "",
       getDocsAvailability: () => emptyOperationsDocsSnapshot(),
@@ -366,12 +385,5 @@ describe("navigation snapshot ensure", () => {
     assert.equal(route.view, "sponsors");
     assert.equal(ensured.length, 1);
     assert.equal(ensured[0].view, "sponsors");
-  });
-
-  test("an omitted ensure hook keeps older navigation contexts working", async () => {
-    const harness = createShellHarness(undefined);
-    harness.location.pathname = "/tasks";
-    const { route } = harness.shell.navigateCanonicalWorkspace("/tasks");
-    assert.equal(route.view, "tasks");
   });
 });

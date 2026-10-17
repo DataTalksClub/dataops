@@ -3,33 +3,24 @@
 // Cold-loading a self-loading surface (CRM, Bookkeeping, Calendar,
 // Newsletter, Podcast, Users) needs none of the shared work, recurring, or
 // process-quality snapshots: those surfaces fetch and own their data, and a
-// snapshot landing mid-session must not repaint them (see the background
-// render gate in runtime/surface-composition.js). Firing the whole snapshot
-// fanout anyway — tasks, cards plus per-card task paging, users, templates,
-// resources, recurring, quality — only contends with the surface the operator
-// actually asked for: on a synthetic cold CRM load the pipeline endpoint
-// answers in ~290ms while first useful rows land at ~1200ms behind 25
-// unrelated requests (see ~/tmp/agent-reports/crm-startup/cold-crm-*.json;
-// local synthetic figures, never production claims).
+// snapshot landing mid-session must not repaint them. Firing the whole
+// snapshot fanout anyway only contends with the surface the operator actually
+// asked for, delaying its first useful content behind requests it never reads.
 //
 // So the bootstrap defers those three snapshots on self-loading routes and
 // starts each of them at most once, the first time a surface that reads the
-// shared snapshots is committed (Tasks/Cards/Templates/Recurring, Docs,
-// Admin, the operating model, or a Card/Task dialog over any route) or the
-// operator explicitly refreshes. There are no timers, no sleeps, no caches,
-// and no auth handling here: deferral is driven only by the committed route,
-// and every explicit refresh still refetches.
+// shared snapshots commits or the operator explicitly refreshes. There are no
+// timers, no sleeps, no caches, and no auth handling here: deferral is driven
+// only by the committed route, and every explicit refresh still refetches.
 
-// Views that fetch and own their data. Mirrors SELF_LOADING_VIEWS in
-// runtime/surface-composition.js, which owns the repaint side of the same
-// contract; keep the two sets identical.
-const STARTUP_DEFERRED_VIEWS = Object.freeze(
+// Views that fetch and own their data. Canonical for both the startup
+// dispatch below and the background repaint gate in
+// runtime/surface-composition.js, which imports this set: a view added here is
+// deferred at bootstrap and shielded from snapshot repaints together, so the
+// two can never drift apart.
+export const SELF_LOADING_VIEWS = Object.freeze(
   new Set(["bookkeeping", "calendar", "newsletter", "podcast", "sponsors", "users"]),
 );
-
-export function startupDeferredViews() {
-  return STARTUP_DEFERRED_VIEWS;
-}
 
 // Whether committing this route needs none of the shared snapshots yet. An
 // unknown or invalid route, a document/folder address, and any Card/Task
@@ -37,7 +28,7 @@ export function startupDeferredViews() {
 // self-loading workspace route defers.
 export function isStartupDeferredRoute(route) {
   if (!route || route.invalid || typeof route.view !== "string") return false;
-  if (!STARTUP_DEFERRED_VIEWS.has(route.view)) return false;
+  if (!SELF_LOADING_VIEWS.has(route.view)) return false;
   return !route.modalCardId && !route.modalTaskId;
 }
 

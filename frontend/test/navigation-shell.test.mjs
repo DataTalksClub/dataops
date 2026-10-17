@@ -103,6 +103,7 @@ function createNavigationHarness(options = {}) {
     docPathFromLocation: () => options.docPath || "",
     documentList,
     documentRef: document,
+    ensureSharedSnapshots: (...args) => calls.push(["ensure-snapshots", ...args]),
     folderExists: (path) => path === "known-folder",
     folderPathFromLocation: () => options.folderPath || "",
     getDocsAvailability: () =>

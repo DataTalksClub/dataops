@@ -233,7 +233,7 @@ export function createNavigationShell(context) {
     // route leaves them deferred. The route paints its honest loading state
     // in refreshDocuments below, and the background gate repaints it when
     // the data lands.
-    ensureSharedSnapshots?.(route);
+    ensureSharedSnapshots(route);
     refreshDocuments();
     if (!preserveComposer) closeSidebar();
 

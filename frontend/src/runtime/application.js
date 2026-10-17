@@ -382,7 +382,8 @@ const {
   renderAdminSurface,
   renderAdminSurfaceView,
   renderUsersSurfaceView,
-} = createAdminSurface({  apiUrl,
+} = createAdminSurface({
+  apiUrl,
   currentOperatorIdFromPayload,
   documentList,
   getActiveWorkspaceView: () => workspaceState.activeWorkspaceView,

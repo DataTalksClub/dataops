@@ -1,3 +1,5 @@
+import { SELF_LOADING_VIEWS } from "../shell/startup-orchestration.js";
+
 export function createSurfaceBridge() {
   let knowledgeSurface;
   let documentEditorSurface;
@@ -178,9 +180,8 @@ export function createSurfaceComposition(context) {
   // (work, recurring, quality, docs catalog) never feed them, so a snapshot
   // landing must not repaint them: the repaint would rebuild the page under
   // the operator, refetch it, and drop the tab or filter they had chosen.
-  const SELF_LOADING_VIEWS = new Set([
-    "bookkeeping", "calendar", "newsletter", "podcast", "sponsors", "users",
-  ]);
+  // The set itself is canonical in shell/startup-orchestration.js, shared
+  // with the startup dispatch.
 
   // Whether what is on screen renders from the shared snapshots, so a
   // background snapshot refresh has something to repaint.
