@@ -276,6 +276,16 @@ export async function handleTaskRoutes(
         return jsonResponse(400, { error: proofError });
       }
     }
+    // The notes log starts with the creation comment, so it is never lost
+    // to a later overwrite.
+    if (isNonEmptyString(taskData.comment)) {
+      taskData.notesLog = [{
+        id: crypto.randomUUID(),
+        text: String(taskData.comment).trim(),
+        ...(actor.id ? { authorId: actor.id } : {}),
+        createdAt: new Date().toISOString(),
+      }];
+    }
 
     const task = await createTask(client, taskData);
     return jsonResponse(201, await projectWithPrerequisites(client, task));
@@ -501,6 +511,35 @@ export async function handleTaskRoutes(
         historyEvents: [historyEvent],
         actorId,
         triggerKind: 'task-unskipped',
+      });
+      return jsonResponse(200, await projectWithPrerequisites(client, updated));
+    }
+
+    // Notes append from any status, including skipped and done: context is
+    // never a lifecycle change.
+    if (taskAction.action === 'add-note') {
+      const note = trimmedString(body.note);
+      const noteError = validateActionNote(note);
+      if (noteError) return jsonResponse(400, { error: noteError });
+
+      const entry = {
+        id: crypto.randomUUID(),
+        text: note,
+        ...(actorId ? { authorId: actorId } : {}),
+        createdAt: now,
+      };
+      const historyEvent = makeTaskHistoryEvent('noted', existing, {
+        actorId,
+        note,
+        createdAt: now,
+      });
+      const updated = await updateTask(client, existing.id, {
+        currentTask: existing,
+        expectedVersion,
+        patch: { notesLog: [...(existing.notesLog || []), entry] },
+        historyEvents: [historyEvent],
+        actorId,
+        triggerKind: 'task-noted',
       });
       return jsonResponse(200, await projectWithPrerequisites(client, updated));
     }
@@ -985,6 +1024,27 @@ export async function handleTaskRoutes(
       }));
       updates.completedAt = null;
       updates.completedBy = null;
+    }
+
+    // `comment` appends to the notes log instead of overwriting it: the
+    // pre-existing comment becomes the first log entry, so no note is lost.
+    if (updates.comment !== undefined && isNonEmptyString(updates.comment)) {
+      const log = [...(existing.notesLog || [])];
+      if (log.length === 0 && isNonEmptyString(existing.comment)) {
+        log.push({
+          id: crypto.randomUUID(),
+          text: String(existing.comment).trim(),
+          ...(isNonEmptyString(existing.createdBy) ? { authorId: String(existing.createdBy).trim() } : {}),
+          createdAt: existing.updatedAt,
+        });
+      }
+      log.push({
+        id: crypto.randomUUID(),
+        text: String(updates.comment).trim(),
+        ...(actor.id ? { authorId: actor.id } : {}),
+        createdAt: new Date().toISOString(),
+      });
+      updates.notesLog = log;
     }
 
     const updated = await updateTask(client, id, {

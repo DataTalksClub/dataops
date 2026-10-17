@@ -195,6 +195,7 @@ export type TaskHistoryAction =
   | 'wait-resolved'
   | 'snoozed'
   | 'unsnoozed'
+  | 'noted'
   | 'completed'
   | 'reopened'
   | 'skipped'
@@ -222,6 +223,14 @@ export interface TaskMaterial {
   label?: string;
 }
 
+/** One entry of a Task's append-only notes log: who wrote what, when. */
+export interface TaskNote {
+  id: string;
+  text: string;
+  authorId?: string;
+  createdAt: string;
+}
+
 export type TaskSubjectType = 'sponsor-deal' | 'sponsor-company';
 
 export interface TaskSubject {
@@ -238,6 +247,8 @@ export interface Task {
   status: TaskStatus;
   source?: string;
   comment?: string | null;
+  /** Append-only notes: every note ever added, oldest first. `comment` stays the latest. */
+  notesLog?: TaskNote[];
   waitingFor?: string;
   followUpAt?: string;
   followUpChannel?: string;

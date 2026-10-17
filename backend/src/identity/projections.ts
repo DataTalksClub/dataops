@@ -53,6 +53,10 @@ function taskActorIds(task: Task): string[] {
   if (createdBy) ids.push(createdBy);
   const completedBy = nonEmpty(task.completedBy);
   if (completedBy) ids.push(completedBy);
+  for (const note of task.notesLog || []) {
+    const authorId = nonEmpty(note.authorId);
+    if (authorId) ids.push(authorId);
+  }
   return ids;
 }
 

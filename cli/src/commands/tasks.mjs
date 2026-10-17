@@ -21,6 +21,7 @@ Usage
       [--subject-type sponsor-deal|sponsor-company --subject-id ID | --clear-subject]
       [--external-status S] [--tags a,b] [--card ID|none] [--instruction-doc DOC-ID]
       [--requires a,b|none] [--browser required|headless|none] [--depends-on ID,ID|none]
+      --comment appends to the notes log (the old comment becomes its first entry)
   dataops tasks done <task-id> [--link URL] [--comment C] [--external-status S] [--file PATH]
   dataops tasks reopen <task-id>
   dataops tasks skip <task-id> --reason R        Resolve as not applicable (no proof needed)
@@ -32,6 +33,7 @@ Usage
   dataops tasks snooze <task-id> --until +7d --reason R   Hide from today/overdue until then
   dataops tasks unsnooze <task-id>                       Back in the queue now
   dataops tasks unblock <task-id> --note NOTE [--unblocked]   (default: response received)
+  dataops tasks note <task-id> "text"                 Append to the notes log
   dataops tasks assign <task-id> <user-id|me>
   dataops tasks delete <task-id>                                (admin)
 
@@ -297,6 +299,16 @@ export async function show(args, io) {
     ["template", task.templateId],
     ["version", task.version],
   ]);
+  const log = Array.isArray(task.notesLog) ? task.notesLog : [];
+  if (log.length) {
+    const names = new Map((task.historyActors || []).map((actor) => [actor.id, actor.name]));
+    io.print("");
+    io.print("notes log:");
+    for (const entry of log) {
+      const who = (entry.authorId && names.get(entry.authorId)) || entry.authorId || "unknown";
+      io.print(`  ${entry.createdAt} ${who}: ${entry.text}`);
+    }
+  }
   io.print("");
   io.print(`Docs for this Task: dataops kb related ${task.id}`);
   return task;
@@ -526,6 +538,15 @@ export async function unsnooze(args, io) {
   return action(args, io, "unsnooze", {}, "Unsnoozed");
 }
 
+export async function note(args, io) {
+  const id = positional(args, 0, `dataops tasks note <task-id> "text"`);
+  const text = positional(args, 1, `dataops tasks note <task-id> "text"`);
+  if (!text.trim()) throw new UsageError(`Usage: dataops tasks note <task-id> "text"`);
+  const api = apiFor(args);
+  const { expectedVersion } = await currentVersion(api, id, args);
+  return report(io, args, await api.post(`/api/tasks/${enc(id)}/actions/add-note`, { note: text, expectedVersion }), "Noted");
+}
+
 export async function unblock(args, io) {
   positional(args, 0, "dataops tasks unblock <task-id> --note N [--unblocked]");
   return action(args, io, args.unblocked ? "unblocked" : "response-received", {
@@ -575,6 +596,7 @@ export const commands = {
   followup,
   snooze,
   unsnooze,
+  note,
   unblock,
   skip,
   unskip,
