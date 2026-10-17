@@ -562,17 +562,19 @@ export function createSponsorRecord(context) {
     // [data-booking-panel="finance"] hook; the tab hosts that hook instead
     // of forking finance rendering.
     target.innerHTML = html`<div data-booking-panel="finance">${loadingMarkup("Loading finance", context)}</div>`;
+    // One captured per-invocation predicate for BOTH the renderer and the
+    // cache mark: if the selection moves A→B mid-request, the renderer
+    // skips AND the cache stays unmarked, so returning to A refetches
+    // instead of wrongly skipping its never-painted render.
+    const isCurrent = () => current(mine) && record?.selectedDeal?.id === deal.id;
     try {
       // Thread the invocation predicate into the canonical renderer so its
-      // own post-fetch paint/bind is guarded too; the record-level guard
-      // below still governs the per-deal cache mark.
-      await loadFinance(deal, {
-        isCurrent: () => current(mine) && record?.selectedDeal?.id === deal.id,
-      });
-      if (!current(mine)) return;
+      // own post-fetch paint/bind is guarded too.
+      await loadFinance(deal, { isCurrent });
+      if (!isCurrent()) return;
       record.loaded.add(cacheKey);
     } catch (error) {
-      if (!current(mine)) return;
+      if (!isCurrent()) return;
       target.innerHTML = errorMarkup(error?.message, context);
     }
   }

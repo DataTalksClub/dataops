@@ -909,7 +909,6 @@ test("navigation during the finance fetch adds no controller paint after resolve
 });
 
 test("canonical finance renderer honors the invocation predicate", async () => {
-  globalThis.document = { createElement: (tag) => new FakeNode(tag) };
   const surface = new FakeNode("section");
   const panel = surface.setQuery('[data-booking-panel="finance"]', new FakeNode("div"));
   const message = new FakeNode("p");
@@ -923,6 +922,8 @@ test("canonical finance renderer honors the invocation predicate", async () => {
     await gate;
     return { ok: status === 200, status, async json() { return payload; } };
   };
+  const priorDocument = globalThis.document;
+  globalThis.document = { createElement: (tag) => new FakeNode(tag) };
   try {
     const finance = createSponsorFinance({
       surface, escapeHtml, humanizeOptionLabel, message,
@@ -950,7 +951,62 @@ test("canonical finance renderer honors the invocation predicate", async () => {
     assert.doesNotMatch(panel.innerHTML, /unavailable/i, "stale rejection paints no error");
   } finally {
     globalThis.fetch = realFetch;
+    if (priorDocument === undefined) delete globalThis.document;
+    else globalThis.document = priorDocument;
   }
+});
+
+test("selection change mid-finance leaves no cache mark, so returning refetches", async () => {
+  const seen = [];
+  let releaseA;
+  const gateA = new Promise((resolve) => { releaseA = resolve; });
+  let first = true;
+  const api = { calls: 0 };
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": {
+        items: [
+          { id: "d1", organizationId: "c1", status: "open", productKind: "one-off" },
+          { id: "d2", organizationId: "c1", status: "open", productKind: "one-off" },
+        ],
+        nextCursor: null,
+      },
+    },
+    context: {
+      loadFinance: async (deal, { isCurrent } = {}) => {
+        if (first && deal.id === "d1") {
+          first = false;
+          await gateA;
+        }
+        api.calls += 1;
+        seen.push([deal.id, isCurrent ? isCurrent() : "no-predicate"]);
+      },
+      openContactEditor: () => {},
+    },
+  });
+  seedPanels(host);
+  await record.openCompany("c1", { dealId: "d1", isCurrent: () => true });
+  await record.switchTab("deals");
+  const pendingA = record.switchTab("finance");
+  record.selectDeal("d2");
+  releaseA();
+  await pendingA;
+  assert.deepEqual(
+    seen.filter(([id]) => id === "d1"),
+    [["d1", false]],
+    "stale predicate reports false inside the renderer",
+  );
+  record.selectDeal("d1");
+  for (let i = 0; i < 50 && seen.filter(([id]) => id === "d1").length < 2; i += 1) {
+    await new Promise((resolve) => { setImmediate(resolve); });
+  }
+  assert.deepEqual(
+    seen.filter(([id]) => id === "d1"),
+    [["d1", false], ["d1", true]],
+    "returning to A refetches: no stale cache mark",
+  );
 });
 
 test("failed explicit selections never fall back to unrelated finance", async () => {
