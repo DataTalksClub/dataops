@@ -27,6 +27,8 @@ Usage
   dataops tasks unskip <task-id>                 Back to todo
   dataops tasks wait <task-id> --for WHO --follow-up YYYY-MM-DD --channel CHANNEL --note NOTE
   dataops tasks followed-up <task-id> --channel CHANNEL --note NOTE [--next YYYY-MM-DD]
+  dataops tasks followup --about <task|card|sponsor-deal id> --on +7d --description "check X" [--note "context"]
+      Linked to its subject, assigned to you, due that day
   dataops tasks snooze <task-id> --until +7d --reason R   Hide from today/overdue until then
   dataops tasks unsnooze <task-id>                       Back in the queue now
   dataops tasks unblock <task-id> --note NOTE [--unblocked]   (default: response received)
@@ -470,6 +472,47 @@ export async function followedUp(args, io) {
   }, "Recorded follow-up on");
 }
 
+/**
+ * Where a follow-up Task belongs: the same Card or subject as the Task it is
+ * about, the Card it names, or a sponsor deal otherwise (the API 404s when
+ * the deal does not exist).
+ */
+async function resolveAbout(api, about) {
+  try {
+    const task = await api.get(`/api/tasks/${enc(about)}`);
+    if (task?.cardId) return { cardId: task.cardId, label: `task ${about}` };
+    if (task?.subject?.type && task?.subject?.id) {
+      return { subject: { type: task.subject.type, id: task.subject.id }, label: `task ${about}` };
+    }
+    if (task?.id) return { label: `task ${about}` };
+  } catch (error) {
+    if (error?.status !== 404) throw error;
+  }
+  try {
+    const card = await api.get(`/api/cards/${enc(about)}`);
+    const id = card?.card?.id || card?.id;
+    if (id) return { cardId: id, label: `card ${about}` };
+  } catch (error) {
+    if (error?.status !== 404) throw error;
+  }
+  return { subject: { type: "sponsor-deal", id: about }, label: `sponsor deal ${about}` };
+}
+
+export async function followup(args, io) {
+  const about = required(args, "about", "about");
+  const on = isoDate(required(args, "on", "on"), "on");
+  const description = required(args, "description", "description");
+  const note = optionalString(args, "note");
+  const api = apiFor(args);
+  const { cardId, subject, label } = await resolveAbout(api, about);
+  const body = { description, date: on, ...(cardId ? { cardId } : {}), ...(subject ? { subject } : {}), ...(note ? { comment: note } : {}) };
+  if (args.assignee !== undefined) body.assigneeId = await resolveAssignee(api, String(args.assignee));
+  const task = await api.post("/api/tasks", body);
+  if (args.json) return task;
+  io.print(`Created follow-up Task ${task.id} about ${label} - ${task.description} (due ${task.date}).`);
+  return task;
+}
+
 export async function snooze(args, io) {
   positional(args, 0, "dataops tasks snooze <task-id> --until +7d --reason R");
   return action(args, io, "snooze", {
@@ -529,6 +572,7 @@ export const commands = {
   reopen,
   wait,
   "followed-up": followedUp,
+  followup,
   snooze,
   unsnooze,
   unblock,
