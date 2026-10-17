@@ -35,10 +35,6 @@ function activeOf(record: CrmRecord): boolean {
   return !record.archivedAt;
 }
 
-/** Rehomed tuition rows stay archived evidence, never CRM views (no deletes). */
-export function isKept(record: CrmRecord): boolean {
-  return record.recordDisposition !== 'rehomed';
-}
 
 function emailOf(contact: CrmRecord): string | undefined {
   const emails = Array.isArray(contact.emails) ? contact.emails.map(String) : [];
@@ -221,14 +217,13 @@ async function companyContext(
   const facts = await dealMoneyFacts(client, today, { organizations, deals, deliverables });
   const dealsByOrg = new Map<string, CrmRecord[]>();
   for (const deal of deals) {
-    if (!isKept(deal)) continue;
     const orgId = String(deal.organizationId || '');
     dealsByOrg.set(orgId, [...(dealsByOrg.get(orgId) || []), { ...deal, money: deriveMoney(facts.get(deal.id)) }]);
   }
   const primaryByOrg = new Map<string, CrmRecord>();
   for (const contact of contacts) {
     // Defensive: ordinary archive clears primary, but never surface an archived person as primary.
-    if (contact.archivedAt || !isKept(contact)) continue;
+    if (contact.archivedAt) continue;
     if (contact.primary && contact.organizationId && !primaryByOrg.has(String(contact.organizationId))) {
       primaryByOrg.set(String(contact.organizationId), contact);
     }
@@ -279,7 +274,6 @@ export async function listCompanies(
   const q = (filters.search || '').toLowerCase();
   const items: CompanyItem[] = [];
   for (const org of ctx.organizations) {
-    if (!isKept(org)) continue;
     if (filters.active !== 'all' && activeOf(org) !== (filters.active === 'true')) continue;
     if (q && ![org.displayName, org.domain].some((value) => String(value || '').toLowerCase().includes(q))) continue;
     const row = companyRow(org, ctx);
@@ -302,7 +296,7 @@ export async function getCompanySummary(
   query: Record<string, string | undefined>,
 ): Promise<{ status: number; body: unknown }> {
   const org = await getCrmRecord(client, 'organization', id);
-  if (!org || !isKept(org)) return { status: 404, body: { error: 'Not found' } };
+  if (!org) return { status: 404, body: { error: 'Not found' } };
   const today = resolveToday(query);
   if ('error' in today) return { status: 400, body: { error: today.error } };
   const ctx = await companyContext(client, today.today);
@@ -340,7 +334,6 @@ export async function listPeople(
   const q = (filters.search || '').toLowerCase();
   const items: PersonItem[] = [];
   for (const contact of contacts) {
-    if (!isKept(contact)) continue;
     if (filters.active !== 'all' && activeOf(contact) !== (filters.active === 'true')) continue;
     if (filters.company && String(contact.organizationId || '') !== filters.company) continue;
     if (filters.primary && String(!!contact.primary) !== filters.primary) continue;

@@ -134,22 +134,23 @@ describe('crm workspace directory', () => {
     }
   });
 
-  it('hides rehomed tuition rows from every directory', async () => {
+  it('applies no special migration guards: provenance rows filter normally', async () => {
+    // A removed all permanent rehomed-read guards: rows with rehomedTo provenance
+    // are ordinary rows; archivedAt/active:false are the only visibility filters.
     const suffix = String(seedCount++);
     const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
-      displayName: `Tuition Org ${suffix}`, domain: `tuition-${suffix}.example`,
-      recordDisposition: 'rehomed', sourceKey: `ws-tuition-org-${suffix}`,
-    }));
-    const contact = data(await invoke('POST', '/api/sponsor-crm/contacts', {
-      organizationId: org.id, name: 'Tuition Person', emails: [`tuition-${suffix}@example.invalid`],
-      recordDisposition: 'rehomed', sourceKey: `ws-tuition-contact-${suffix}`,
+      displayName: `Provenance Org ${suffix}`, domain: `prov-${suffix}.example`,
+      rehomedTo: { type: 'tuition-agreement', id: 'tuition-1' }, sourceKey: `ws-prov-org-${suffix}`,
     }));
     const companies = data(await invoke('GET', '/api/sponsor-crm/directory/companies?active=all'));
-    assert.ok(!companies.items.some((item: any) => item.id === org.id));
-    const people = data(await invoke('GET', '/api/sponsor-crm/directory/people?active=all'));
-    assert.ok(!people.items.some((item: any) => item.id === contact.id));
-    assert.equal((await invoke('GET', `/api/sponsor-crm/directory/companies/${org.id}`)).statusCode, 404);
-    assert.equal((await invoke('GET', `/api/sponsor-crm/activity/organization/${org.id}`)).statusCode, 404);
+    assert.ok(companies.items.some((item: any) => item.id === org.id), 'no special-case exclusion');
+    assert.equal((await invoke('GET', `/api/sponsor-crm/directory/companies/${org.id}`)).statusCode, 200);
+    assert.equal((await invoke('GET', `/api/sponsor-crm/activity/organization/${org.id}`)).statusCode, 200);
+    await invoke('DELETE', `/api/sponsor-crm/organizations/${org.id}`);
+    const def = data(await invoke('GET', '/api/sponsor-crm/directory/companies'));
+    assert.ok(!def.items.some((item: any) => item.id === org.id), 'archived hidden by default');
+    const hist = data(await invoke('GET', '/api/sponsor-crm/directory/companies?active=all'));
+    assert.ok(hist.items.some((item: any) => item.id === org.id), 'archived stays honest historical access');
   });
 
   it('filters companies by search, relationship, active and touch windows', async () => {

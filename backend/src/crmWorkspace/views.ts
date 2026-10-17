@@ -243,23 +243,23 @@ const withResolved = (view: Builtin | StoredView, today: string, builtin: boolea
   resolvedToday: today,
 });
 
-/** A builtin or caller-owned personal view with server-resolved filters, or null. */
+/** A builtin or caller-owned personal view with server-resolved filters.
+ * Returns null only when confirmed absent; archived personal views report
+ * `{archived: true}` so callers can answer 422 instead of a lying 404.
+ * Storage/bound failures propagate (callers answer 5xx) — never swallowed. */
 export async function resolveView(
   client: DynamoDBDocumentClient,
   ownerId: string,
   id: string,
   today: string,
-): Promise<{ view: Record<string, unknown>; entity: ViewEntity } | null> {
+  opts?: { allowArchived?: boolean },
+): Promise<{ view: Record<string, unknown>; entity: ViewEntity } | { archived: true } | null> {
   const builtin = BUILTINS.find((view) => view.id === id);
   if (builtin) return { view: withResolved(builtin, today, true), entity: builtin.entity };
-  let personal: StoredView[];
-  try {
-    personal = await queryPersonalViews(client, ownerId);
-  } catch {
-    return null;
-  }
-  const stored = personal.find((view) => view.id === id && !view.archivedAt);
+  const personal = await queryPersonalViews(client, ownerId);
+  const stored = personal.find((view) => view.id === id);
   if (!stored) return null;
+  if (stored.archivedAt && !opts?.allowArchived) return { archived: true };
   return { view: withResolved(stored, today, false), entity: stored.entity as ViewEntity };
 }
 
@@ -304,8 +304,17 @@ export async function getViewOne(
 ): Promise<{ status: number; body: unknown }> {
   const resolvedToday = resolveTodayForViews(query);
   if ('error' in resolvedToday) return { status: 400, body: { error: resolvedToday.error } };
-  const resolved = await resolveView(client, ownerId, id, resolvedToday.today);
+  let resolved: Awaited<ReturnType<typeof resolveView>>;
+  try {
+    resolved = await resolveView(client, ownerId, id, resolvedToday.today, { allowArchived: true });
+  } catch (error) {
+    const err = workspaceErrorOf(error, 'saved views');
+    return { status: (err as { statusCode?: number }).statusCode || 500, body: { error: err.message, ...('code' in err ? { code: (err as { code?: string }).code } : {}) } };
+  }
+  // Metadata read (allowArchived): archived personal views are shown with their
+  // stamp, not hidden. Storage failures already answered 5xx above.
   if (!resolved) return { status: 404, body: { error: 'Not found' } };
+  if ('archived' in resolved) return { status: 404, body: { error: 'Not found' } };
   return { status: 200, body: resolved.view };
 }
 

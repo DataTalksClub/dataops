@@ -153,6 +153,39 @@ describe('crm workspace views and notes', () => {
     assert.equal(longName.statusCode, 400);
   });
 
+  it('fails loudly on storage outage instead of reporting views missing', async () => {
+    const { resolveView, getViewOne } = await import('../src/crmWorkspace/views.js');
+    const { StoragePaginationError } = await import('../src/db/boundedPagination.js');
+    const outage = { send: async () => { throw new Error('storage down'); } } as any;
+    // resolveView propagates (the bounded collector wraps it, but never resolves
+    // to null, which routes would misreport as 404 View not found).
+    let thrown: unknown = null;
+    try {
+      await resolveView(outage, 'alice', 'whatever', '2026-10-17');
+    } catch (error) {
+      thrown = error;
+    }
+    assert.ok(thrown instanceof Error);
+    const mapped = await getViewOne(outage, 'alice', 'whatever', {});
+    assert.equal(mapped.status, 500);
+    // Bound failures keep their workspace code through the same mapping.
+    const bounded = { send: async () => { throw new StoragePaginationError('storage-pagination-item-limit'); } } as any;
+    const failed = await getViewOne(bounded, 'alice', 'whatever', {});
+    assert.equal(failed.status, 500);
+    assert.equal((failed.body as any).code, 'workspace_source_too_large');
+  });
+
+  it('answers archived personal views honestly on execution', async () => {
+    const created = data(await invoke('POST', '/api/sponsor-crm/views', {
+      entity: 'companies', name: 'Soon archived', filters: { active: 'true' },
+    }, as(ALICE)));
+    await invoke('DELETE', `/api/sponsor-crm/views/${created.id}`, undefined, as(ALICE));
+    // Metadata read still shows it; execution refuses with 422, never a lying 404.
+    const shown = data(await invoke('GET', `/api/sponsor-crm/views/${created.id}`, undefined, as(ALICE)));
+    assert.ok(shown.archivedAt);
+    assert.equal((await invoke('GET', `/api/sponsor-crm/directory/companies?view=${created.id}`, undefined, as(ALICE))).statusCode, 422);
+  });
+
   it('isolates views per owner and versions concurrent updates', async () => {
     const created = data(await invoke('POST', '/api/sponsor-crm/views', {
       entity: 'companies', name: 'Alice view', filters: { active: 'true' }, sort: { field: 'name', direction: 'asc' },

@@ -106,10 +106,7 @@ export async function scanTargetMessages(
   source: string,
   limits: ScanLimits = DEFAULT_SCAN_LIMITS,
 ): Promise<{ items: Record<string, unknown>[]; scanned: number; matched: number }> {
-  const values: Record<string, unknown> = { ':pfx': 'MESSAGE#', ':kept': 'rehomed' };
-  // Rehomed tuition rows stay archived evidence, never CRM views (A owns the
-  // shared-helper exclusion post-rebase; this owned Scan states its own).
-  const kept = '(attribute_not_exists(recordDisposition) OR recordDisposition <> :kept)';
+  const values: Record<string, unknown> = { ':pfx': 'MESSAGE#' };
   let targetFilter: string;
   if (target.targetType === 'contact') {
     // Provably linked person mail only: explicit contact link, or an address
@@ -144,7 +141,7 @@ export async function scanTargetMessages(
           new ScanCommand({
             TableName: TABLE_SPONSOR_CRM,
             ConsistentRead: true,
-            FilterExpression: `begins_with(PK, :pfx) AND ${kept} AND ${targetFilter}`,
+            FilterExpression: `begins_with(PK, :pfx) AND ${targetFilter}`,
             ExpressionAttributeValues: values,
             Limit: limits.pageSize,
             ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),

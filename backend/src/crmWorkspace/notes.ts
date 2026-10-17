@@ -5,7 +5,6 @@ import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { collectBoundedPages } from '../db/boundedPagination';
 import { cursorBinding, decodeCursor, encodeCursor, pageLimit } from './cursor';
 import { clean, MAX_TARGET_NOTES, workspaceErrorOf } from './reads';
-import { isKept } from './directory';
 
 export const NOTE_TARGETS = ['organization', 'contact', 'deal'] as const;
 export type NoteTarget = (typeof NOTE_TARGETS)[number];
@@ -38,10 +37,7 @@ const publicNote = (note: Record<string, unknown>) => ({
  */
 async function resolveTarget(client: DynamoDBDocumentClient, target: NoteTarget, id: string) {
   const record = await getCrmRecord(client, KIND_OF[target], id);
-  // Rehomed tuition rows stay archived evidence, never CRM views.
-  if (!record || !isKept(record)) {
-    return { status: 404 as const, body: { error: 'Not found' } };
-  }
+  if (!record) return { status: 404 as const, body: { error: 'Not found' } };
   if (target === 'contact') {
     if (record.archivedAt) return { status: 404 as const, body: { error: 'Not found' } };
     const org = await getCrmRecord(client, 'organization', String(record.organizationId));
@@ -163,7 +159,7 @@ export async function listNotes(
   query: Record<string, string | undefined>,
 ): Promise<{ status: number; body: unknown }> {
   const record = await getCrmRecord(client, KIND_OF[target], id);
-  if (!record || !isKept(record) || (target === 'contact' && record.archivedAt)) {
+  if (!record || (target === 'contact' && record.archivedAt)) {
     return { status: 404, body: { error: 'Not found' } };
   }
   const limit = pageLimit(query.limit);

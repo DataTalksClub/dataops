@@ -7,7 +7,6 @@ import { pipelineTaskDate, pipelineTaskDeferred } from '../sponsorCrm/pipeline';
 import { realDate } from '../sponsorCrm/model';
 import { cursorBinding, decodeCursor, encodeCursor, pageLimit } from './cursor';
 import { queryTargetNotes } from './notes';
-import { isKept } from './directory';
 import {
   queryHistoryEvents,
   scanTargetMessages,
@@ -104,8 +103,7 @@ export async function readActivity(
 ): Promise<{ status: number; body: unknown }> {
   const kind = target === 'organization' ? 'organization' : target;
   const record = await getCrmRecord(client, kind, id);
-  // Rehomed tuition rows stay archived evidence, never CRM views.
-  if (!record || record.recordDisposition === 'rehomed') return { status: 404, body: { error: 'Not found' } };
+  if (!record) return { status: 404, body: { error: 'Not found' } };
 
   const types = query.types === undefined
     ? [...ACTIVITY_TYPES]
@@ -213,9 +211,7 @@ export async function readActivity(
     }
 
     if (wanted.has('deal-history') && target === 'organization') {
-      const deals = (await listCrmRecords(client, 'deal')).filter(
-        (deal) => isKept(deal) && String(deal.organizationId) === id,
-      );
+      const deals = (await listCrmRecords(client, 'deal')).filter((deal) => String(deal.organizationId) === id);
       let read = 0;
       for (const deal of deals) {
         const { items: events, itemsRead } = await queryHistoryEvents(client, deal.id, 'deal history');

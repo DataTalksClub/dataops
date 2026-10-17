@@ -3,6 +3,7 @@ import type { LambdaEvent, LambdaResponse } from '../types';
 import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { listCompanies, listPeople, getCompanySummary, resolveToday } from '../crmWorkspace/directory';
 import { archiveView, createView, getViewOne, listViews, resolveView, updateView } from '../crmWorkspace/views';
+import { workspaceErrorOf } from '../crmWorkspace/reads';
 import { createNote, listNotes, type NoteTarget } from '../crmWorkspace/notes';
 import { readActivity, type ActivityTarget } from '../crmWorkspace/activity';
 
@@ -65,8 +66,15 @@ export async function handleCrmWorkspaceRoutes(
     if ('error' in today) return { status: 400, body: { error: today.error } };
     const user = actor(event) || (await resolveDefaultAssigneeId(client)) || '';
     if (!user) return { status: 401, body: { error: 'Unauthorized' } };
-    const resolved = await resolveView(client, user, base.view, today.today);
+    let resolved: Awaited<ReturnType<typeof resolveView>>;
+    try {
+      resolved = await resolveView(client, user, base.view, today.today);
+    } catch (error) {
+      const err = workspaceErrorOf(error, 'saved views');
+      return { status: (err as { statusCode?: number }).statusCode || 500, body: { error: err.message, ...('code' in err ? { code: (err as { code?: string }).code } : {}) } };
+    }
     if (!resolved) return { status: 404, body: { error: 'View not found' } };
+    if ('archived' in resolved) return { status: 422, body: { error: 'View is archived' } };
     if (resolved.entity !== entity) return { status: 400, body: { error: 'View entity mismatch' } };
     const stored = (resolved.view.resolvedFilters || {}) as Record<string, unknown>;
     const baseFilters = Object.fromEntries(
