@@ -108,9 +108,6 @@ jobs:
       SPONSOR_COMMUNICATION_SEND_ENABLED: ${{ vars.SPONSOR_COMMUNICATION_SEND_ENABLED }}
       SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN: ${{ vars.SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN }}
       SPONSOR_COMMUNICATION_HMAC_SECRET_ARN: ${{ vars.SPONSOR_COMMUNICATION_HMAC_SECRET_ARN }}
-      SPONSOR_SES_IDENTITY_ARN: ${{ vars.SPONSOR_SES_IDENTITY_ARN }}
-      SPONSOR_SES_FROM_ADDRESS: ${{ vars.SPONSOR_SES_FROM_ADDRESS }}
-      SPONSOR_SES_CONFIGURATION_SET_NAME: ${{ vars.SPONSOR_SES_CONFIGURATION_SET_NAME }}
 
     steps:
       - name: Check out repository
@@ -201,9 +198,6 @@ jobs:
           : "${EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX:=transfer/}"
           : "${SPONSOR_FINANCE_ENABLED:=false}"
           : "${SPONSOR_COMMUNICATION_SEND_ENABLED:=false}"
-          : "${SPONSOR_SES_IDENTITY_ARN:=arn:aws:ses:eu-west-1:000000000000:identity/example.invalid}"
-          : "${SPONSOR_SES_FROM_ADDRESS:=no-reply@example.invalid}"
-          : "${SPONSOR_SES_CONFIGURATION_SET_NAME:=dataops-sponsor-reviewed-send-disabled}"
           if [ "$SPONSOR_COMMUNICATION_SEND_ENABLED" = "true" ] && { [ -z "$SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN" ] || [ -z "$SPONSOR_COMMUNICATION_HMAC_SECRET_ARN" ]; }; then
             echo "Sponsor reviewed sending cannot be enabled without separate template and HMAC secret ARNs" >&2
             exit 1
@@ -237,9 +231,6 @@ jobs:
               "ParameterKey=SponsorCommunicationSendEnabled,ParameterValue=$SPONSOR_COMMUNICATION_SEND_ENABLED" \
               "ParameterKey=SponsorCommunicationTemplateSecretArn,ParameterValue=$SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN" \
               "ParameterKey=SponsorCommunicationHmacSecretArn,ParameterValue=$SPONSOR_COMMUNICATION_HMAC_SECRET_ARN" \
-              "ParameterKey=SponsorSesIdentityArn,ParameterValue=$SPONSOR_SES_IDENTITY_ARN" \
-              "ParameterKey=SponsorSesFromAddress,ParameterValue=$SPONSOR_SES_FROM_ADDRESS" \
-              "ParameterKey=SponsorSesConfigurationSetName,ParameterValue=$SPONSOR_SES_CONFIGURATION_SET_NAME"
 
       - name: Project authored workflow templates
         run: |

@@ -795,7 +795,7 @@ def test_deploy_workflow_keeps_production_auth_out_of_checks_and_scoped_to_deplo
     assert "1kjv61esdjs3003s8u42sgr3hf" not in workflow
 
 
-def test_sponsor_communication_table_indexes_ttl_stream_and_default_off_contract():
+def test_sponsor_communication_table_indexes_ttl_and_default_off_contract():
     template = TEMPLATE.read_text(encoding="utf-8")
     table = _resource_block(template, "DataOpsSponsorCrmTable")
     parameter = template.split("  SponsorCommunicationSendEnabled:", 1)[1].split(
@@ -806,7 +806,8 @@ def test_sponsor_communication_table_indexes_ttl_stream_and_default_off_contract
     assert "SSESpecification: { SSEEnabled: true }" in table
     assert "PointInTimeRecoveryEnabled: true" in table
     assert "TimeToLiveSpecification:\n        Enabled: true\n        AttributeName: expiresAt" in table
-    assert "StreamViewType: NEW_AND_OLD_IMAGES" in table
+    # Nothing consumes the sponsor CRM stream since the send worker is gone.
+    assert "StreamSpecification" not in table
     for index in (
         "GSI-Communication",
         "GSI-SponsorSendDue",
@@ -818,36 +819,14 @@ def test_sponsor_communication_table_indexes_ttl_stream_and_default_off_contract
     assert "SponsorSendRequiresPrivateConfiguration" in template
 
 
-def test_sponsor_communication_backend_and_worker_capabilities_are_separated():
+def test_sponsor_communication_backend_has_no_send_capability():
     template = TEMPLATE.read_text(encoding="utf-8")
     backend = _resource_block(template, "BackendFunction")
-    worker = _resource_block(template, "SponsorSendWorkerFunction")
-    event_handler = _resource_block(template, "SponsorSesEventFunction")
     archive = _resource_block(template, "SponsorPrivateArchiveFunction")
 
     assert "SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN: !Ref SponsorCommunicationTemplateSecretArn" in backend
     assert "SPONSOR_COMMUNICATION_HMAC_SECRET_ARN: !Ref SponsorCommunicationHmacSecretArn" in backend
     assert "ses:" not in backend
-
-    assert "Handler: dist/sponsor-send-worker-handler.handler" in worker
-    assert "Action: ses:SendEmail" in worker
-    assert "Resource: !Ref SponsorSesIdentityArn" in worker
-    assert "ses:FromAddress: !Ref SponsorSesFromAddress" in worker
-    assert "ses:ConfigurationSet: !Ref SponsorSesConfigurationSet" in worker
-    assert "SendRawEmail" not in worker
-    assert "SendBulkEmail" not in worker
-    assert "ses:*" not in worker
-    assert "SponsorCommunicationTemplateSecretArn" not in worker
-    assert "SponsorCommunicationHmacSecretArn" in worker
-    assert "DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable" in worker
-    assert "GSI-SponsorSendDue" in worker
-    assert "dynamodb:Scan" not in worker
-
-    assert "Handler: dist/sponsor-ses-event-handler.handler" in event_handler
-    assert "ses:" not in event_handler
-    assert "SponsorCommunicationTemplateSecretArn" not in event_handler
-    assert "SponsorCommunicationHmacSecretArn" in event_handler
-    assert "DataOpsUsersTable" not in event_handler
 
     assert "Handler: dist/sponsor-private-archive-handler.handler" in archive
     assert "dynamodb:Scan" in archive
@@ -858,43 +837,32 @@ def test_sponsor_communication_backend_and_worker_capabilities_are_separated():
     assert "DataOpsExportArchiveBucket" not in archive
 
 
-def test_sponsor_ses_events_are_transformed_before_lambda_and_failures_are_encrypted():
+def test_sponsor_send_infrastructure_is_gone():
     template = TEMPLATE.read_text(encoding="utf-8")
-    rule = _resource_block(template, "SponsorSesEventRule")
-    queue = _resource_block(template, "SponsorCommunicationFailureQueue")
-    destination = _resource_block(template, "SponsorSesEventDestination")
-
-    assert "InputTransformer:" in rule
-    assert "InputPathsMap:" in rule
-    assert "InputTemplate:" in rule
-    # EventBridge InputTransformer JSONPaths only accept dot notation. The
-    # SES configuration-set tag contains a colon, so project the stack-owned
-    # configuration-set name directly into the strict envelope instead.
-    assert "['" not in rule
-    assert '${SponsorSesConfigurationSet}' in rule
-    assert '$.detail.mail.tags.configuration-set-generation[0]' in rule
-    assert '$.detail.mail.tags.config-generation[0]' in rule
-    for field in (
-        "eventId", "eventTime", "eventType", "messageId", "awsAccount", "awsRegion",
-        "configurationSet", "configurationSetGeneration", "attemptCorrelation",
-        "communicationId", "configGeneration",
+    for gone in (
+        "SponsorSendWorkerFunction",
+        "SponsorSesEventFunction",
+        "SponsorSesEventRule",
+        "SponsorSesEventInvokePermission",
+        "SponsorSesConfigurationSet",
+        "SponsorSesEventDestination",
+        "SponsorCommunicationFailureQueue",
+        "SponsorSesIdentityArn",
+        "SponsorSesFromAddress",
+        "SponsorSesConfigurationSetName",
+        "SponsorSendWorkerFunctionName",
+        "SponsorSesEventFunctionName",
+        "SponsorCommunicationFailureQueueArn",
+        "sponsor-send-worker-handler",
+        "sponsor-ses-event-handler",
+        "ses:SendEmail",
+        "ses:FromAddress",
+        "ses:ConfigurationSet",
+        "sponsor-send-recovery",
+        "QueuedSponsorSend",
     ):
-        assert field in rule
-    for private_field in ("recipient", "subject", "body", "headers", "diagnostic"):
-        assert private_field not in rule.lower()
-    # A rule-level DLQ receives the failed EventBridge source event, which may
-    # contain SES recipient/diagnostic fields. Only the Lambda async failure
-    # destination may retain the already-transformed strict envelope.
-    assert "DeadLetterConfig" not in rule
-    event_handler = _resource_block(template, "SponsorSesEventFunction")
-    assert "EventInvokeConfig:" in event_handler
-    assert "Destination: !GetAtt SponsorCommunicationFailureQueue.Arn" in event_handler
-    assert "events.amazonaws.com" not in template[
-        template.index("SponsorCommunicationFailureQueue:"):template.index("SponsorCommunicationPrivateArchiveKey:")
-    ]
-    assert "KmsMasterKeyId: alias/aws/sqs" in queue
-    assert "MessageRetentionPeriod: 1209600" in queue
-    assert "MatchingEventTypes: [SEND, DELIVERY, DELIVERY_DELAY, REJECT, RENDERING_FAILURE, BOUNCE, COMPLAINT]" in destination
+        assert gone not in template, gone
+    assert "SponsorCommunicationSendingEnabled" not in template
 
 
 def test_sponsor_private_archive_is_isolated_retained_and_kms_encrypted():
