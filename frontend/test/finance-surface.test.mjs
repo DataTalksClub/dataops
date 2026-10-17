@@ -1699,8 +1699,31 @@ describe("CRM directory controllers", () => {
     assert.doesNotMatch(dirRows(document).innerHTML, /Could not load this directory/);
   });
 
-  test("initial missing saved view stays honest and issues no silent default load", async () => {
-    const { document, finance, requests } = createHarness({
+  test("URL page size executes in the API query and survives reload", async () => {
+    const { document, finance, requests, navigations } = createHarness({
+      route: dirRoute("companies", { limit: "2" }),
+      request: directoryRequest,
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    const calls = requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/directory/companies");
+    assert.equal(calls.length, 1);
+    assert.equal(new URL(calls[0].url, "http://dataops.test").searchParams.get("limit"), "2");
+    const canonical = navigations.find((entry) => entry.path === "/sponsors/companies");
+    assert.ok(canonical, "list write canonically replaces the URL");
+    assert.equal(canonical.params.limit, "2", "non-default page size stays in the URL");
+    const reloaded = createHarness({
+      route: dirRoute("companies", canonical.params),
+      request: directoryRequest,
+    });
+    await reloaded.finance.renderSponsorCrmSurface();
+    await settle();
+    const reloadCalls = reloaded.requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/directory/companies");
+    assert.equal(reloadCalls.length, 1);
+    assert.equal(new URL(reloadCalls[0].url, "http://dataops.test").searchParams.get("limit"), "2");
+  });
+
+  test("initial missing saved view stays honest and issues no silent default load", async () => {    const { document, finance, requests } = createHarness({
       route: dirRoute("companies", { view: "missing-view" }),
       request: directoryRequest,
     });

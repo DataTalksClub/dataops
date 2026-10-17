@@ -330,7 +330,7 @@ export function createSponsorDirectoryPages({
     function writeUrl(resolved, navToken) {
       if (activeView() !== entity) return;
       if (navToken !== navGeneration) return;
-      const canonical = directoryUrl(entity, { viewId: resolved.viewId, filters: resolved.filters, sort: resolved.sort });
+      const canonical = directoryUrl(entity, { viewId: resolved.viewId, filters: resolved.filters, sort: resolved.sort, limit: state.limit });
       const params = new URLSearchParams(canonical.split("?")[1] || "");
       if (state.cursor) params.set("cursor", state.cursor);
       const plain = Object.fromEntries(params.entries());
@@ -371,6 +371,7 @@ export function createSponsorDirectoryPages({
       const query = directoryQueryFromState(entity, {
         ...resolved.filters,
         sort: resolved.sort,
+        limit: state.limit,
         ...(state.cursor ? { cursor: state.cursor } : {}),
       });
       const queryString = new URLSearchParams(query).toString();
@@ -466,6 +467,10 @@ export function createSponsorDirectoryPages({
         state.selectedViewId = resolved.viewId;
         state.modified = resolved.modified;
         state.sort = resolved.sort;
+        // The validated URL page size survives into state (and back into the
+        // canonical URL via writeUrl); without this the limit param parses
+        // but never executes.
+        state.limit = initial.state.limit || directoryDefaults(entity).limit;
         applyToControls({ ...resolved.filters }, resolved.sort);
         if (entity === "people") await refillCompanyFilter();
         renderViews();
