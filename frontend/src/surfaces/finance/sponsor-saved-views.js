@@ -1,5 +1,18 @@
 import { html } from "./shared.js";
-import { DIRECTORY_FILTER_KEYS, validateDirectoryState } from "./sponsor-directory.js";
+import {
+  DIRECTORY_FILTER_KEYS,
+  berlinTodayString,
+  resolveRelativeDay,
+  resolveRelativeFilters,
+  validateDirectoryState,
+} from "./sponsor-directory.js";
+
+// Re-exported from the single canonical resolver in sponsor-directory.js
+// (review correction: no duplicated client date math). resolveViewFiltersForQuery
+// stays as the view-execution entry point; resolveEffectiveFilters already
+// prefers server resolvedFilters, so this client fallback disappears once D
+// ships resolvedFilters on every view.
+export { berlinTodayString, resolveRelativeDay };
 
 // Package E persisted saved views: personal views stored server-side through
 // the D workspace API, builtins as shared immutable definitions. No
@@ -106,31 +119,11 @@ export function validateViewSort(entity, sort) {
   return "";
 }
 
-// Berlin calendar day, the contract's "today" for touch windows and {daysAgo}
-// resolution. No other timezone is used for calendar logic.
-export function berlinTodayString(now = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(now);
-}
-
-export function resolveRelativeDay(value, today = berlinTodayString()) {
-  if (typeof value === "string") return value;
-  if (!isRelativeDay(value)) throw new Error("Invalid relative day: expected {daysAgo: 1..730}");
-  const midnight = Date.parse(`${today}T00:00:00Z`);
-  if (Number.isNaN(midnight)) throw new Error("Invalid today date");
-  return new Date(midnight - value.daysAgo * 86400000).toISOString().slice(0, 10);
-}
-
-// Resolves a stored view's filters to absolute directory filters at query
-// time. {daysAgo} windows float with Berlin today; absolute dates pass
-// through untouched.
+// View-execution entry point: thin wrapper over the single canonical
+// resolver in sponsor-directory.js. Deleted with the client fallback once D
+// ships resolvedFilters on every view.
 export function resolveViewFiltersForQuery(filters, today = berlinTodayString()) {
-  const resolved = {};
-  for (const [key, value] of Object.entries(filters || {})) {
-    resolved[key] = (key === "lastTouchAfter" || key === "lastTouchBefore") && typeof value !== "string"
-      ? resolveRelativeDay(value, today)
-      : value;
-  }
-  return resolved;
+  return resolveRelativeFilters(filters, today);
 }
 
 // Combines the selected view (builtin or personal, server-provided) with

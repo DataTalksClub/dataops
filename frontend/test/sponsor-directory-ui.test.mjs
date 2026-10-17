@@ -25,7 +25,7 @@ import {
   renderDirectoryPagination,
   renderDirectoryStatus,
   renderPersonRow,
-  resolveFiltersForUrl,
+  resolveRelativeFilters,
   validateDirectoryState,
 } from "../src/surfaces/finance/sponsor-directory.js";
 import {
@@ -64,6 +64,13 @@ test("primary navigation is Pipeline, Companies, People with canonical list path
   assert.equal(crmDirectoryPath("people"), "/sponsors/people");
   assert.equal(crmPersonPath("person-1"), "/sponsors/people/person-1");
   assert.throws(() => crmDirectoryPath("unknown"), /Unknown CRM tab/);
+});
+
+test("registered tabs reuse the canonical sponsor-routes helpers", async () => {
+  const routes = await import("../src/core/sponsor-routes.js");
+  for (const tab of ["pipeline", "companies", "leads", "newsletters", "money"]) {
+    assert.equal(crmDirectoryPath(tab), routes.sponsorsPath(tab), tab);
+  }
 });
 
 test("every existing canonical URL stays reachable and maps to a tab", () => {
@@ -301,7 +308,9 @@ test("company rows show identity, relationship, primary person, last touch and o
   assert.match(markup, /ada@acme\.example/);
   assert.match(markup, /2026-10-09/);
   assert.match(markup, /2 open deals/);
-  assert.match(markup, /data-open-company="org-1"/);
+  assert.match(markup, /<a href="\/sponsors\/companies\/org-1" data-open-company="org-1">Acme<\/a>/);
+  assert.doesNotMatch(markup, /<button/);
+  assert.doesNotMatch(markup, /data-href/);
   for (const leak of ["mail", "notes", "finance", "invoice"]) {
     assert.doesNotMatch(markup, new RegExp(leak, "i"), `row leaks ${leak}`);
   }
@@ -336,7 +345,8 @@ test("person rows never invent a company and surface role plus preferred email",
   assert.match(unlinked, /Unlinked/);
   assert.match(unlinked, /No role recorded/);
   assert.match(unlinked, /No email/);
-  assert.match(unlinked, /data-open-person="p-2"/);
+  assert.match(unlinked, /<a href="\/sponsors\/people\/p-2" data-open-person="p-2">Bo<\/a>/);
+  assert.doesNotMatch(unlinked, /<button/);
 });
 
 // --- Empty, error, paging and filter markup ---
@@ -360,19 +370,39 @@ test("status counts and paging disable honestly at the bounds", () => {
   assert.doesNotMatch(first, /data-dir-next disabled/);
 });
 
-test("filter toolbars expose exactly the entity's API filters", () => {
+test("filter toolbars are one compact row with secondary fields collapsed", () => {
   const companies = renderDirectoryFilters("companies", { relationship: "talking" }, { escapeHtml });
   assert.match(companies, /data-dir-search/);
+  assert.match(companies, /<details class="crm-dir-more-filters">/);
   assert.match(companies, /data-dir-filter="relationship"/);
   assert.match(companies, /data-dir-filter="lastTouchAfter"/);
+  // Search, Show and Sort stay outside the disclosure.
+  const primary = companies.slice(0, companies.indexOf("<details"));
+  assert.match(primary, /data-dir-search/);
+  assert.match(primary, /data-dir-filter="active"/);
+  assert.match(primary, /data-dir-sort/);
   assert.doesNotMatch(companies, /data-dir-filter="company"/);
+});
+
+test("people company scoping is a searchable name picker, never an id input", () => {
   const people = renderDirectoryFilters("people", { primary: "true" },
     { escapeHtml, companyOptions: [{ id: "org-1", name: "Acme" }] });
-  assert.match(people, /data-dir-filter="company"/);
-  assert.match(people, /value="org-1"/);
-  assert.match(people, /data-dir-filter="primary"/);
+  assert.match(people, /data-dir-company-search/);
+  assert.match(people, /<select data-dir-filter="company" aria-label="Company">/);
+  assert.match(people, /value="org-1">Acme/);
+  assert.doesNotMatch(people, /placeholder="Company id"/);
+  assert.match(people, /Primary contact <select data-dir-filter="primary">/);
+  assert.doesNotMatch(people, /Role <select/);
   assert.match(people, /data-dir-filter="unlinked"/);
   assert.doesNotMatch(people, /data-dir-filter="relationship"/);
+  // A selected company off the current options page still shows its name.
+  const offPage = renderDirectoryFilters("people", { company: "org-9" },
+    { escapeHtml, companyOptions: [{ id: "org-1", name: "Acme" }], selectedCompanyName: "Faraway Inc" });
+  assert.match(offPage, /<option value="org-9" selected>Faraway Inc<\/option>/);
+  // Without a known name the id is shown honestly as an id, never invented.
+  const unknown = renderDirectoryFilters("people", { company: "org-9" }, { escapeHtml, companyOptions: [] });
+  assert.match(unknown, /<option value="org-9" selected>Company org-9<\/option>/);
+  assert.doesNotMatch(unknown, /Company id/);
 });
 
 // --- Saved views client: persisted personal views, immutable builtins ---
@@ -446,6 +476,6 @@ test("berlin days resolve against the Berlin calendar day", () => {
   assert.equal(resolveRelativeDay({ daysAgo: 30 }, "2026-10-17"), "2026-09-17");
   assert.equal(resolveRelativeDay("2026-01-05", "2026-10-17"), "2026-01-05");
   assert.throws(() => resolveRelativeDay({ daysAgo: 0 }, "2026-10-17"), /daysAgo/);
-  assert.deepEqual(resolveFiltersForUrl({ active: "true", lastTouchAfter: { daysAgo: 1 } }, "2026-10-17"),
+  assert.deepEqual(resolveRelativeFilters({ active: "true", lastTouchAfter: { daysAgo: 1 } }, "2026-10-17"),
     { active: "true", lastTouchAfter: "2026-10-16" });
 });

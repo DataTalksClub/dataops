@@ -150,7 +150,7 @@ export function firstPage(state) {
 export function directoryUrl(entity, { viewId, filters, sort, limit } = {}) {
   const params = new URLSearchParams();
   if (viewId) params.set("view", viewId);
-  const absolute = resolveFiltersForUrl(filters);
+  const absolute = resolveRelativeFilters(filters);
   for (const key of DIRECTORY_FILTER_KEYS[entity] || []) {
     if (absolute?.[key] !== undefined) params.set(key, String(absolute[key]));
   }
@@ -161,25 +161,16 @@ export function directoryUrl(entity, { viewId, filters, sort, limit } = {}) {
 }
 
 // Absolute dates pass through; {daysAgo} windows resolve against Berlin
-// today. Local to avoid a module cycle with sponsor-saved-views.js.
-export function resolveFiltersForUrl(filters, today = berlinTodayForUrl()) {
-  if (!filters) return filters;
-  const resolved = {};
-  for (const [key, value] of Object.entries(filters)) {
-    if ((key === "lastTouchAfter" || key === "lastTouchBefore") && typeof value !== "string") {
-      resolved[key] = resolveRelativeDayForUrl(value, today);
-    } else {
-      resolved[key] = value;
-    }
-  }
-  return resolved;
-}
-
-function berlinTodayForUrl(now = new Date()) {
+// today. SINGLE canonical client resolver (review correction): nothing else
+// in E modules reimplements Berlin-day math.
+// INTEGRATION-TODO(D resolvedFilters): once every view carries server
+// resolvedFilters, resolveEffectiveFilters already prefers them and this
+// client fallback (plus its re-export in sponsor-saved-views.js) is deleted.
+export function berlinTodayString(now = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(now);
 }
 
-function resolveRelativeDayForUrl(value, today) {
+export function resolveRelativeDay(value, today = berlinTodayString()) {
   if (typeof value === "string") return value;
   const daysAgo = value?.daysAgo;
   if (!Number.isInteger(daysAgo) || daysAgo < 1 || daysAgo > 730) {
@@ -190,6 +181,17 @@ function resolveRelativeDayForUrl(value, today) {
   return new Date(midnight - daysAgo * 86400000).toISOString().slice(0, 10);
 }
 
+export function resolveRelativeFilters(filters, today = berlinTodayString()) {
+  if (!filters) return filters;
+  const resolved = {};
+  for (const [key, value] of Object.entries(filters)) {
+    resolved[key] = (key === "lastTouchAfter" || key === "lastTouchBefore") && typeof value !== "string"
+      ? resolveRelativeDay(value, today)
+      : value;
+  }
+  return resolved;
+}
+
 function humanTouch(value, humanDate) {
   if (!value) return "No recorded contact";
   return humanDate ? humanDate(value) : String(value).slice(0, 10);
@@ -197,14 +199,17 @@ function humanTouch(value, humanDate) {
 
 // Compact company row: identity, relationship, primary person, last touch,
 // open deals. No note paragraphs, no deal lists, no mail or finance — those
-// live in the record. One Open action so narrow screens never clip actions.
+// live in the record. The name is a real canonical link (modifier-click and
+// open-in-new-tab keep working; the integration hunk handles plain clicks via
+// the data-open-company hook), so there is no separate Open button to clip on
+// narrow screens.
 export function renderCompanyRow(item, { escapeHtml, humanDate, recordPath }) {
   const primary = item.primaryPerson;
   const openDeals = Number(item.openDealCount || 0);
-  const open = `/sponsors/companies/${encodeURIComponent(item.id)}`;
+  const href = recordPath ? recordPath("company", item.id) : `/sponsors/companies/${encodeURIComponent(item.id)}`;
   return html`<article class="crm-directory-row crm-dir-row" data-dir-company="${escapeHtml(item.id)}">
     <div class="crm-dir-identity">
-      <strong>${escapeHtml(item.displayName || "Unnamed company")}</strong>
+      <strong><a href="${escapeHtml(href)}" data-open-company="${escapeHtml(item.id)}">${escapeHtml(item.displayName || "Unnamed company")}</a></strong>
       ${item.domain ? html`<span class="crm-dir-domain">${escapeHtml(item.domain)}</span>` : ""}
       <p>${escapeHtml(relationshipLabel(item.relationship))}${item.active === false ? " · Archived" : ""}</p>
     </div>
@@ -216,20 +221,18 @@ export function renderCompanyRow(item, { escapeHtml, humanDate, recordPath }) {
       <span>${escapeHtml(humanTouch(item.lastTouch, humanDate))}</span>
       <span>${openDeals === 1 ? "1 open deal" : `${openDeals} open deals`}</span>
     </div>
-    <div class="row-actions">
-      <button type="button" data-open-company="${escapeHtml(item.id)}" data-href="${escapeHtml(recordPath ? recordPath("company", item.id) : open)}">Open</button>
-    </div>
   </article>`;
 }
 
 // Compact person row: name, company (or an honest Unlinked), role,
-// preferred email, primary flag, last touch. Never invents a company.
+// preferred email, primary flag, last touch. Never invents a company. Same
+// real-link pattern as company rows: no Open button.
 export function renderPersonRow(item, { escapeHtml, humanDate, recordPath }) {
   const email = Array.isArray(item.emails) && item.emails.length ? item.emails[0] : "";
-  const open = recordPath ? recordPath("person", item.id) : `/sponsors/people/${encodeURIComponent(item.id)}`;
+  const href = recordPath ? recordPath("person", item.id) : `/sponsors/people/${encodeURIComponent(item.id)}`;
   return html`<article class="crm-directory-row crm-dir-row" data-dir-person="${escapeHtml(item.id)}">
     <div class="crm-dir-identity">
-      <strong>${escapeHtml(item.name || "Unnamed person")}</strong>
+      <strong><a href="${escapeHtml(href)}" data-open-person="${escapeHtml(item.id)}">${escapeHtml(item.name || "Unnamed person")}</a></strong>
       ${item.primary ? html`<span class="crm-dir-badge">Primary</span>` : ""}
       <p>${item.companyName ? escapeHtml(item.companyName) : "Unlinked"}${item.active === false ? " · Archived" : ""}</p>
     </div>
@@ -239,9 +242,6 @@ export function renderPersonRow(item, { escapeHtml, humanDate, recordPath }) {
     </div>
     <div class="crm-dir-meta">
       <span>${escapeHtml(humanTouch(item.lastTouch, humanDate))}</span>
-    </div>
-    <div class="row-actions">
-      <button type="button" data-open-person="${escapeHtml(item.id)}" data-href="${escapeHtml(open)}">Open</button>
     </div>
   </article>`;
 }
@@ -286,14 +286,19 @@ export function renderDirectoryPagination({ hasPrev, hasNext }) {
   </div>`;
 }
 
-// Filter toolbar: search plus the entity's API-exact filters and stable sort.
-// People company scoping renders a select when options are provided, otherwise
-// a plain id input so the filter stays expressible from the URL either way.
-export function renderDirectoryFilters(entity, state, { escapeHtml, companyOptions = [] } = {}) {
+// Filter toolbar: one compact primary row (search, Show, Sort) plus a
+// collapsed disclosure for secondary fields, so the first record is visible
+// without scrolling past six full-height controls. Every control maps to an
+// API-exact filter key. The People company control is a searchable
+// name picker over a bounded D companies search (never a raw id input): the
+// selected organization id stays in the URL while the visible option shows
+// its name, including a selected company that fell off the current options
+// page via selectedCompanyName.
+export function renderDirectoryFilters(entity, state, { escapeHtml, companyOptions = [], selectedCompanyName = "" } = {}) {
   const value = state || {};
   const option = (id, label, selected) =>
     html`<option value="${escapeHtml(id)}"${selected ? " selected" : ""}>${escapeHtml(label)}</option>`;
-  const activeSelect = html`<label>Show <select data-dir-filter="active">
+  const showSelect = html`<label>Show <select data-dir-filter="active">
     ${option("true", "Active", (value.active || "true") === "true")}
     ${option("false", "Archived", value.active === "false")}
     ${option("all", "All", value.active === "all")}
@@ -301,40 +306,52 @@ export function renderDirectoryFilters(entity, state, { escapeHtml, companyOptio
   const sortSelect = html`<label>Sort <select data-dir-sort>
     ${DIRECTORY_SORTS.map((entry) => option(entry.id, entry.label, (value.sort || "name") === entry.id)).join("")}
   </select></label>`;
+  const more = (controls) => html`<details class="crm-dir-more-filters">
+    <summary>More filters</summary>
+    <div class="crm-dir-more-filters__body">${controls}</div>
+  </details>`;
   if (entity === "companies") {
+    const searchLabel = "Search companies";
     return html`<div class="crm-dir-filters">
-      <label>Search companies <input data-dir-search type="search" placeholder="Company or domain" value="${escapeHtml(value.search || "")}" /></label>
-      <label>Relationship <select data-dir-filter="relationship">
-        ${option("", "Any", !value.relationship)}
-        ${DIRECTORY_RELATIONSHIPS.map((entry) => option(entry.id, entry.label, value.relationship === entry.id)).join("")}
-      </select></label>
-      ${activeSelect}
-      <label>Contacted after <input data-dir-filter="lastTouchAfter" type="date" value="${escapeHtml(value.lastTouchAfter || "")}" /></label>
-      <label>Contacted before <input data-dir-filter="lastTouchBefore" type="date" value="${escapeHtml(value.lastTouchBefore || "")}" /></label>
+      <label>${searchLabel} <input data-dir-search type="search" placeholder="Company or domain" value="${escapeHtml(value.search || "")}" /></label>
+      ${showSelect}
       ${sortSelect}
+      ${more(html`<label>Relationship <select data-dir-filter="relationship">
+          ${option("", "Any", !value.relationship)}
+          ${DIRECTORY_RELATIONSHIPS.map((entry) => option(entry.id, entry.label, value.relationship === entry.id)).join("")}
+        </select></label>
+        <label>Contacted after <input data-dir-filter="lastTouchAfter" type="date" value="${escapeHtml(value.lastTouchAfter || "")}" /></label>
+        <label>Contacted before <input data-dir-filter="lastTouchBefore" type="date" value="${escapeHtml(value.lastTouchBefore || "")}" /></label>`)}
     </div>`;
   }
-  const companyControl = companyOptions.length
-    ? html`<label>Company <select data-dir-filter="company">
-        ${option("", "Any company", !value.company)}
-        ${companyOptions.map((entry) => option(entry.id, entry.name, value.company === entry.id)).join("")}
-      </select></label>`
-    : html`<label>Company <input data-dir-filter="company" placeholder="Company id" value="${escapeHtml(value.company || "")}" /></label>`;
+  const selectedId = value.company || "";
+  const knownIds = new Set(companyOptions.map((entry) => entry.id));
+  const offPage = selectedId && !knownIds.has(selectedId)
+    ? option(selectedId, selectedCompanyName || `Company ${selectedId}`, true)
+    : "";
+  const companyPicker = html`<div class="crm-dir-company-picker">
+    <label>Company <input data-dir-company-search type="search" placeholder="Search companies" autocomplete="off" /></label>
+    <select data-dir-filter="company" aria-label="Company">
+      ${option("", "Any company", !selectedId)}
+      ${companyOptions.map((entry) => option(entry.id, entry.name, selectedId === entry.id)).join("")}
+      ${offPage}
+    </select>
+  </div>`;
   return html`<div class="crm-dir-filters">
     <label>Search people <input data-dir-search type="search" placeholder="Name, email or company" value="${escapeHtml(value.search || "")}" /></label>
-    ${companyControl}
-    <label>Role <select data-dir-filter="primary">
-      ${option("", "Any", !value.primary)}
-      ${option("true", "Primary only", value.primary === "true")}
-      ${option("false", "Not primary", value.primary === "false")}
-    </select></label>
-    <label>Link <select data-dir-filter="unlinked">
-      ${option("", "Linked and unlinked", !value.unlinked)}
-      ${option("false", "Linked only", value.unlinked === "false")}
-      ${option("true", "Unlinked only", value.unlinked === "true")}
-    </select></label>
-    ${activeSelect}
+    ${showSelect}
     ${sortSelect}
+    ${more(html`${companyPicker}
+      <label>Primary contact <select data-dir-filter="primary">
+        ${option("", "Any contact", !value.primary)}
+        ${option("true", "Primary only", value.primary === "true")}
+        ${option("false", "Not primary", value.primary === "false")}
+      </select></label>
+      <label>Link <select data-dir-filter="unlinked">
+        ${option("", "Linked and unlinked", !value.unlinked)}
+        ${option("false", "Linked only", value.unlinked === "false")}
+        ${option("true", "Unlinked only", value.unlinked === "true")}
+      </select></label>`)}
   </div>`;
 }
 
