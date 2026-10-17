@@ -1,47 +1,32 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { groupSponsorPipelineDeals, renderSponsorPipelineBoard, renderSponsorPipelineFilters, sponsorPipelineStage } from "../src/surfaces/finance/sponsor-pipeline.js";
+import { renderSponsorPipelineList, renderSponsorPipelineFilters } from "../src/surfaces/finance/sponsor-pipeline.js";
 
 const escapeHtml = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
-const context = { escapeHtml, organizationName: () => "Synthetic <Sponsor>", humanSponsorDate: (value) => value };
 
-test("pipeline derives progress with delivered precedence and excludes lost deals", () => {
-  assert.equal(sponsorPipelineStage({ status: "open", money: "none" }), "open");
-  assert.equal(sponsorPipelineStage({ status: "agreed", money: "none" }), "agreed");
-  for (const money of ["invoiced", "partial", "paid", "overdue"]) {
-    assert.equal(sponsorPipelineStage({ status: "agreed", money }), "invoiced");
-  }
-  assert.equal(sponsorPipelineStage({ status: "agreed", money: "paid", fulfillment: "delivered" }), "delivered");
-  assert.equal(sponsorPipelineStage({ status: "lost", money: "paid", fulfillment: "delivered" }), null);
+test("funnel renders compact rows grouped by commitments and opportunities, with escaped primary people and actions", () => {
+  const items = [
+    { id: "open", organizationName: "Synthetic <Sponsor>", stage: "open", primaryContact: { name: "Test Person", email: "test@example.test" }, nextTask: { description: "Confirm the date", date: "2026-10-20" }, amountEur: 1500 },
+    { id: "agreed", organizationName: "Agreed Sponsor", stage: "agreed", primaryContact: null, replyNeeded: true },
+  ];
+  const before = structuredClone(items);
+  const markup = renderSponsorPipelineList({ items, escapeHtml, humanSponsorDate: (value) => value, ownerName: () => "Synthetic owner" });
+  assert.match(markup, /Active commitments/);
+  assert.match(markup, /Opportunities & history/);
+  assert.match(markup, /Synthetic &lt;Sponsor>/);
+  assert.match(markup, /Test Person · test@example.test/);
+  assert.match(markup, /Confirm the date/);
+  assert.match(markup, /Reply needed/);
+  assert.match(markup, /data-open-deal="agreed"/);
+  assert.doesNotMatch(markup, /crm-pipeline-card/);
+  assert.deepEqual(items, before);
 });
 
-test("board and filters agree on derived stages and keep read actions bound to deal IDs", () => {
-  const deals = [
-    { id: "open", organizationId: "org", status: "open", productKind: "one-off", amountEur: 1500, openTasks: [{ id: "t1", description: "Confirm the date", date: "2026-10-20", status: "todo" }] },
-    { id: "bill", organizationId: "org", status: "agreed", money: "invoiced", productKind: "package", deliverables: [{ plannedPublicationDate: "2026-10-22" }] },
-    { id: "done", organizationId: "org", status: "agreed", money: "paid", fulfillment: "delivered" },
-    { id: "lost", organizationId: "org", status: "lost" },
-  ];
-  const snapshot = structuredClone(deals);
-  const grouped = groupSponsorPipelineDeals(deals);
-  assert.deepEqual(Object.fromEntries(Object.entries(grouped).map(([key, values]) => [key, values.map(({ id }) => id)])), {
-    open: ["open"], agreed: [], invoiced: ["bill"], delivered: ["done"],
-  });
-  const board = renderSponsorPipelineBoard({ deals, ...context });
-  assert.equal((board.match(/data-pipeline-stage=/g) || []).length, 4);
-  assert.match(board, /<h3>Opportunities<\/h3>/);
-  assert.match(board, /Synthetic &lt;Sponsor>/);
-  assert.match(board, /€1,500/);
-  assert.match(board, /Confirm the date · 2026-10-20/);
-  assert.match(board, /No open task/);
-  assert.match(board, /Publishes 2026-10-22/);
-  assert.match(board, /data-open-deal="bill"/);
-  assert.doesNotMatch(board, /data-open-deal="lost"/);
-  assert.match(board, /No deals in this stage/);
-  const filters = renderSponsorPipelineFilters({ deals, selected: "invoiced", escapeHtml });
-  assert.match(filters, /All deals <strong>3<\/strong>/);
-  assert.match(filters, /data-pipeline-status="invoiced"\s+aria-pressed="true"/);
-  assert.deepEqual(deals, snapshot, "rendering never mutates deal status or records");
+test("funnel totals are server-wide rather than page counts and include closed/lost", () => {
+  const markup = renderSponsorPipelineFilters({ counts: { open: 1000, agreed: 3, lost: 5 }, selected: "agreed", escapeHtml });
+  assert.match(markup, /Opportunities <strong>1000/);
+  assert.match(markup, /Lost <strong>5/);
+  assert.match(markup, /data-pipeline-status="agreed" aria-pressed="true"/);
 });
 
 test("Sponsors creates ride on their collections, never the page header", async () => {

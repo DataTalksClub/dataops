@@ -1,3 +1,4 @@
+import { createSponsorContactEditor } from "./sponsor-contacts.js";
 import { createSponsorOwnerDirectory, populateSponsorDealForm } from "./sponsor-deal-form.js";
 import { createSponsorCommunications } from "./sponsor-communications.js";
 import { createSponsorFinance } from "./sponsor-finance.js";
@@ -7,7 +8,7 @@ import { createSponsorMoney } from "./sponsor-money.js";
 import { renderSponsorBookingAlerts } from "./sponsor-alerts.js";
 import { createSponsorCompanyDetail } from "./sponsor-company-detail.js";
 import { sponsorSurfaceMarkup } from "./sponsor-layout.js";
-import { SPONSOR_PIPELINE_STAGES, renderSponsorPipelineBoard, renderSponsorPipelineFilters, sponsorPipelineStage } from "./sponsor-pipeline.js";
+import { SPONSOR_PIPELINE_STAGES, createSponsorPipelineView } from "./sponsor-pipeline.js";
 import { createCollectionLoader } from "../../core/collection-loader.js";
 import { sponsorRecordPath, sponsorsPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
@@ -106,7 +107,7 @@ export function createSponsorCrmSurface(context) {
       alertsOpen = alertsSection.open;
     });
     documentList.append(surface);
-    surface.querySelector("[data-crm-bookings]").classList.add("crm-pipeline-board");
+    surface.querySelector("[data-crm-bookings]").classList.add("crm-funnel");
     surface.querySelector("[data-crm-status]").innerHTML = html`<option value="">All stages</option>${
       SPONSOR_PIPELINE_STAGES.map(({ id, label }) => html`<option value="${id}">${label}</option>`).join("")
     }`;
@@ -267,10 +268,7 @@ export function createSponsorCrmSurface(context) {
       if (view === "companies") {
         companies.insertBefore(filters, surface.querySelector("[data-crm-orgs]"));
       } else if (view === "pipeline") {
-        surface.querySelector(".crm-master").insertBefore(
-          filters,
-          surface.querySelector("[data-crm-list-scroll]"),
-        );
+        surface.querySelector(".crm-filter-disclosure").append(filters);
       }
       // Inside the list pane the filters are its tool band.
       filters.classList.toggle("dk-split__tools", view !== "companies");
@@ -283,6 +281,12 @@ export function createSponsorCrmSurface(context) {
       // Pipeline fills the content area; the other views scroll the page.
       surface.classList.toggle("dk-fill", !surface.querySelector(".crm-layout").hidden);
       surface.querySelector("[data-crm-pipeline]").hidden = view !== "pipeline";
+      surface.querySelector(".crm-funnel-scope").hidden = view !== "pipeline";
+      surface.querySelector(".crm-funnel-controls").hidden = view !== "pipeline";
+      surface.querySelector(".crm-filter-disclosure").hidden = view !== "pipeline";
+      if (view === "pipeline" && !filters.closest?.(".crm-filter-disclosure")) {
+        surface.querySelector(".crm-filter-disclosure").append(filters);
+      }
       const heading = surface.querySelector("[data-crm-list-heading]");
       heading.textContent =
         view === "pipeline" ? "Pipeline"
@@ -323,44 +327,6 @@ export function createSponsorCrmSurface(context) {
       }
     });
 
-    function drawPipeline(shownIds) {
-      surface.querySelector("[data-crm-pipeline]").innerHTML = renderSponsorPipelineFilters({
-        deals: deals.filter((item) => shownIds.has(item.organizationId)),
-        selected: surface.querySelector("[data-crm-status]").value,
-        escapeHtml,
-      });
-    }
-    function drawUpcoming(shownIds) {
-      if (surface.classList.contains("has-booking-detail")) return;
-      const upcomingRoot = surface.querySelector("[data-crm-upcoming]");
-      if (!upcomingRoot) return;
-      const upcoming = deals
-        .filter(
-          (item) =>
-            shownIds.has(item.organizationId) &&
-            item.openTasks?.length &&
-            item.status !== "lost",
-        )
-        .sort((left, right) =>
-          String(left.openTasks[0].date).localeCompare(String(right.openTasks[0].date)),
-        )
-        .slice(0, 6);
-      upcomingRoot.innerHTML = upcoming.length
-        ? html`<h3>Next tasks</h3>
-            <ul class="crm-upcoming-list">
-              ${upcoming
-                .map(
-                  (item) => html`<li>
-                    <button type="button" data-open-deal="${escapeHtml(item.id)}">
-                      <strong>${escapeHtml(organizationName(item.organizationId))}</strong>
-                      <span>${escapeHtml(humanSponsorDate(item.openTasks[0].date))}</span>
-                    </button>
-                  </li>`,
-                )
-                .join("")}
-            </ul>`
-        : "";
-    }
     function draw() {
       const search = surface.querySelector("[data-crm-search]").value.toLowerCase(),
         active = surface.querySelector("[data-crm-active]").value,
@@ -394,53 +360,45 @@ export function createSponsorCrmSurface(context) {
             <strong>No sponsors found</strong>
             <p>Adjust filters or add the first sponsor.</p>
           </div>`;
-      const shownIds = new Set(shown.map((item) => item.id));
-      drawPipeline(shownIds);
-      const visible = deals
-        .filter(
-          (item) =>
-            shownIds.has(item.organizationId) &&
-            sponsorPipelineStage(item) !== null &&
-            (!status || sponsorPipelineStage(item) === status),
-        )
-        .slice()
-        .sort((left, right) =>
-          String(left.openTasks?.[0]?.date || "9999").localeCompare(String(right.openTasks?.[0]?.date || "9999")),
-        );
-      surface.querySelector("[data-booking-count]").textContent =
-        `${visible.length} ${visible.length === 1 ? "deal" : "deals"}`;
-      surface.querySelector("[data-crm-bookings]").innerHTML = renderSponsorPipelineBoard({
-        deals: visible,
-        organizationName,
-        escapeHtml,
-        humanSponsorDate,
-      });
-      drawUpcoming(shownIds);
+      if (currentView === "pipeline") pipeline.draw();
+    }
+
+    const pipeline = createSponsorPipelineView({ api, surface, escapeHtml, humanSponsorDate,
+      ownerName: (id) => ownerDirectory.name(id), safe });
+    let directoryLoaded = false;
+    async function ensureDirectory() {
+      if (directoryLoaded) return;
+      const [orgs, people] = await Promise.all([readSponsorDirectory(api, "organizations"), readSponsorDirectory(api, "contacts")]);
+      organizations = orgs.items; contacts = people.items; directoryLoaded = true; orgOptions();
+    }
+    async function loadCompany(organizationId) {
+      const [organization, people, bookings] = await Promise.all([
+        api(`/organizations/${organizationId}`),
+        readSponsorDirectory((path) => api(
+          `${path}&organizationId=${encodeURIComponent(organizationId)}`,
+        ), "contacts"),
+        readSponsorDirectory((path) => api(
+          `${path}&organizationId=${encodeURIComponent(organizationId)}`,
+        ), "deals"),
+      ]);
+      organizations = [...organizations.filter((item) => item.id !== organizationId), organization];
+      contacts = [...contacts.filter((item) => item.organizationId !== organizationId), ...people.items];
+      deals = [...deals.filter((item) => item.organizationId !== organizationId), ...bookings.items];
+      return organization;
     }
 
     async function refresh() {
+      directoryLoaded = false;
       message.textContent = "Loading sponsor CRM…";
       message.hidden = false;
-      const pendingAlertPage = notificationLoader.load();
-      notificationState = notificationLoader.getSnapshot();
-      drawAlerts();
-      const [organizationsResult, contactsResult, dealsResult, alertPage] =
-        await Promise.all([
-          readSponsorDirectory(api, "organizations"),
-          readSponsorDirectory(api, "contacts"),
-          readSponsorDirectory(api, "deals"),
-          pendingAlertPage,
-          ownerDirectory.load(),
-        ]);
-      organizations = organizationsResult.items || [];
-      contacts = contactsResult.items || [];
-      deals = dealsResult.items || [];
-      if (currentView !== "money") moneyTab.hidden = !deals.some((deal) => deal.finance);
-      notificationState = alertPage;
-      drawAlerts();
-      orgOptions();
-      draw();
-      await Promise.all([sponsorLeads.loadLeads(), sponsorNewsletters.loadNewsletters()]);
+      if (currentView === "pipeline") {
+        await ownerDirectory.load();
+        ownerDirectory.fillFilter(surface.querySelector("[data-pipeline-owner]"));
+        await pipeline.load();
+      }
+      else if (currentView === "companies") { await ensureDirectory(); draw(); }
+      else if (currentView === "leads") await sponsorLeads.loadLeads();
+      else if (currentView === "newsletters") await sponsorNewsletters.loadNewsletters();
       message.textContent = "";
       message.hidden = true;
     }
@@ -448,14 +406,27 @@ export function createSponsorCrmSurface(context) {
     function drawAlerts() {
       renderSponsorBookingAlerts({ surface, notificationState, escapeHtml });
     }
-    function openDeal(item) {
+    async function openDeal(item) {
+      await Promise.all([ensureDirectory(), ownerDirectory.load()]);
       const dialog = surface.querySelector("[data-deal-dialog]"),
         form = dialog.querySelector("form");
       populateSponsorDealForm(form, item, ownerDirectory, fillContacts);
       openDialog(dialog);
     }
+    let searchTimer;
+    const schedulePipeline = () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => safe(() => pipeline.load(), "Could not load pipeline"), 180); };
+    surface.querySelectorAll("[data-pipeline-view],[data-pipeline-sort],[data-pipeline-owner]").forEach((input) =>
+      input.addEventListener("change", () => safe(() => pipeline.load(), "Could not load pipeline")),
+    );
+    alertsSection.addEventListener("toggle", () => {
+      if (alertsSection.open) safe(async () => {
+        notificationState = await notificationLoader.load(); drawAlerts();
+      }, "Could not load alerts");
+    });
     surface.querySelectorAll("[data-crm-search],[data-crm-active],[data-crm-status]").forEach((input) =>
-      input.addEventListener("input", draw),
+      input.addEventListener("input", () => {
+        if (currentView === "pipeline") schedulePipeline(); else draw();
+      }),
     );
     surface.querySelector("[data-crm-views]").addEventListener("click", (event) => {
       const button = event.target.closest("[data-crm-view]");
@@ -465,6 +436,7 @@ export function createSponsorCrmSurface(context) {
       const view = button.dataset.crmView;
       if (view === "newsletters") sponsorNewsletters.showList();
       setView(view);
+      safe(refresh, "Could not load view");
       recordRoute(sponsorsPath(view));
     });
     surface.querySelector("[data-crm-pipeline]").addEventListener("click", (event) => {
@@ -472,7 +444,9 @@ export function createSponsorCrmSurface(context) {
       if (!button) return;
       surface.querySelector("[data-crm-status]").value =
         button.getAttribute("data-pipeline-status") || "";
+      surface.querySelector("[data-pipeline-view]").value = "all";
       setView("pipeline");
+      safe(() => pipeline.load(), "Could not load pipeline");
       recordRoute(sponsorsPath("pipeline"));
     });
     function showRecord({ dealId, companyId } = {}) {
@@ -498,9 +472,17 @@ export function createSponsorCrmSurface(context) {
     }
     // An in-place open records the record path; an unknown record renders it.
     function openRecord(kind, id) {
-      const shown = showRecord(kind === "deal" ? { dealId: id } : { companyId: id });
-      navigateCanonicalWorkspace(sponsorRecordPath(kind, id), {}, shown ? { render: false } : {});
+      safe(async () => {
+        if (kind === "deal") {
+          const item = await api(`/deals/${encodeURIComponent(id)}`);
+          await loadCompany(item.organizationId);
+          deals = [...deals.filter((value) => value.id !== id), item];
+        } else await loadCompany(id);
+        showRecord(kind === "deal" ? { dealId: id } : { companyId: id });
+        navigateCanonicalWorkspace(sponsorRecordPath(kind, id), {}, { render: false });
+      }, "Could not open record");
     }
+
     surface.querySelector("[data-crm-detail]").addEventListener("click", (event) => {
       if (surface.classList.contains("has-booking-detail")) return;
       const dealId = event.target.closest("[data-open-deal]")?.dataset.openDeal;
@@ -748,21 +730,8 @@ export function createSponsorCrmSurface(context) {
         await refresh();
       }, "Could not save sponsor");
     };
-    surface.querySelector("[data-contact-save]").onclick = (event) => {
-      event.preventDefault();
-      const dialog = surface.querySelector("[data-contact-dialog]"),
-        form = dialog.querySelector("form");
-      safe(async () => {
-        const data = Object.fromEntries(new FormData(form));
-        if (!data.name || !data.email) throw new Error("Name and email are required");
-        data.emails = [data.email];
-        delete data.email;
-        data.primary = form.elements.primary.checked;
-        await api("/contacts", { method: "POST", body: JSON.stringify(data) });
-        dialog.close();
-        await refresh();
-      }, "Could not save contact");
-    };
+    createSponsorContactEditor({ api, surface, getContacts: () => contacts, safe, openDialog,
+      afterSave: async (organizationId) => { await refresh(); await reopenCompanyDetail(await loadCompany(organizationId)); } });
     surface.querySelector("[data-deal-save]").onclick = (event) => {
       event.preventDefault();
       const dialog = surface.querySelector("[data-deal-dialog]"),
@@ -876,10 +845,11 @@ export function createSponsorCrmSurface(context) {
             deals = [deal, ...deals];
             draw();
           }
+          await loadCompany(deal.organizationId);
           await reopenDealDetail(deal);
         }],
         [requestedCompanyId, "company", "[data-crm-detail]", "pipeline", async (id) => reopenCompanyDetail(
-          organizations.find((item) => item.id === id) || await api(`/organizations/${encodeURIComponent(id)}`),
+          await loadCompany(id),
         )],
         [requestedLeadId, "lead", "[data-crm-leads]", "leads", (id) => sponsorLeads.focusLead(id)],
       ].find(([id]) => id);

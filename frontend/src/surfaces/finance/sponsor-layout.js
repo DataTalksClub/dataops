@@ -36,6 +36,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
         ([id, label]) => html`<a class="dk-tab" href="${sponsorsPath(id)}" data-crm-view="${id}"${id === "money" ? " hidden" : ""}>${label}</a>`,
       ).join("")}
     </nav>
+    <p class="crm-funnel-scope">All matching deals by stage · includes closed and lost</p>
     <nav class="crm-pipeline" data-crm-pipeline aria-label="Deal pipeline"></nav>
     <details class="crm-alerts">
       <summary data-crm-alert-summary>Alerts</summary>
@@ -56,20 +57,30 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
               d="M20 12a8 8 0 1 1-2.34-5.66 M20 4v4h-4"/></svg></button>
           </div>
         </header>
+        <details class="crm-filter-disclosure"><summary>Search &amp; filters</summary>
         <div class="crm-filters dk-split__tools">
           <label
             >Search sponsors
             <input
               data-crm-search
               type="search"
-              placeholder="Sponsor name" /></label
-          ><label class="visually-hidden"
-            >Deal status
+              placeholder="Company, person, next action" /></label
+          ><label
+            >Stage
             <select data-crm-status>
               <option value="">All statuses</option>
               ${dealStatusOptions}
             </select></label
           >
+        </div>
+          <label class="crm-owner-filter">Next action owner
+            <select data-pipeline-owner><option value="">All owners</option></select></label>
+        </details>
+        <div class="crm-funnel-controls">
+          <label>Show <select data-pipeline-view>
+            <option value="actionable">Needs action this week</option><option value="active">Active deals</option>
+            <option value="unscheduled">Missing next step / date</option><option value="all">All deals</option><option value="closed">Closed / lost</option></select></label>
+          <label>Sort <select data-pipeline-sort><option value="next-action">Next action</option><option value="recent">Recently updated</option></select></label>
         </div>
         <div class="dk-split__scroll" data-crm-list-scroll>
           <div data-crm-bookings class="crm-booking-list">Loading pipeline…</div>
@@ -160,10 +171,14 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
           <h3>Contact</h3>
         </header>
         <div class="dialog-fields">
-          <input name="organizationId" type="hidden" /><label
+          <input name="organizationId" type="hidden" /><input name="contactId" type="hidden" /><input name="version" type="hidden" /><label
             >Name <input name="name" required /></label
-          ><label>Email <input name="email" type="email" required /></label
+          ><label>Email <input name="email" type="email" multiple required /></label
           ><label>Role <input name="role" /></label
+          ><label>LinkedIn <input name="linkedin" type="url" placeholder="https://www.linkedin.com/in/…" /></label
+          ><label>Telegram <input name="telegram" placeholder="@handle" /></label
+          ><label>Notes <textarea name="notes"></textarea></label
+          ><label>Last contacted <input name="lastContactedAt" type="date" /></label
           ><label class="checkbox-label"
             ><input name="primary" type="checkbox" />
             <span>Primary contact</span></label

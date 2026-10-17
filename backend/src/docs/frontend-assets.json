@@ -84,6 +84,7 @@
     "src/surfaces/finance/sponsor-alerts.js",
     "src/surfaces/finance/sponsor-communications.js",
     "src/surfaces/finance/sponsor-company-detail.js",
+    "src/surfaces/finance/sponsor-contacts.js",
     "src/surfaces/finance/sponsor-finance.js",
     "src/surfaces/finance/sponsor-finance-records.js",
     "src/surfaces/finance/sponsor-deal-form.js",

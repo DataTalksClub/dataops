@@ -24,6 +24,11 @@ export function createSponsorOwnerDirectory({ request, workApiUrl, escapeHtml })
         member.id === directory.defaultAssigneeId && member.active
       ) ? directory.defaultAssigneeId : "";
     },
+    fillFilter(select) {
+      select.innerHTML = '<option value="">All owners</option>' + sponsorOwnerOptions(teamMembers, '', escapeHtml)
+        .replace('<option value="">Select an assignee</option>', '');
+    },
+    name(id) { return teamMembers.find((member) => member.id === id)?.name || (id ? "Unavailable assignee" : "Unassigned"); },
     fill(select, currentOwner) {
       select.innerHTML = sponsorOwnerOptions(teamMembers, currentOwner || defaultAssigneeId, escapeHtml);
     },

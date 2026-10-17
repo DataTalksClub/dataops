@@ -104,9 +104,17 @@ export function createSponsorCompanyDetail({
     const people = orgContacts.length
       ? orgContacts
           .map(
-            (item) => html`<li>
-              ${escapeHtml(item.name)}
-              ${item.emails?.[0] ? html` · ${escapeHtml(item.emails[0])}` : ""}
+            (item) => html`<li class="crm-contact-person">
+              <strong>${escapeHtml(item.name)}</strong>${item.primary ? ' · Primary contact' : ''}
+              ${item.role ? html`<p>${escapeHtml(item.role)}</p>` : ''}
+              <p>${escapeHtml((item.emails || []).join(' · '))}</p>
+              ${item.linkedin ? html`<p>LinkedIn: ${escapeHtml(item.linkedin)}</p>` : ''}
+              ${item.telegram ? html`<p>Telegram: ${escapeHtml(item.telegram)}</p>` : ''}
+              ${item.notes ? html`<p>${escapeHtml(item.notes)}</p>` : ''}
+              <small>Last contacted: ${escapeHtml(humanSponsorDate(
+                [item.lastContactedAt, item.lastInboundAt, item.lastOutboundAt].filter(Boolean).sort().at(-1),
+              ) || 'Never')}</small>
+              <button type="button" data-edit-contact="${escapeHtml(item.id)}">Edit contact</button>
             </li>`,
           )
           .join("")

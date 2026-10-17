@@ -1,3 +1,4 @@
+import { sponsorPipeline, PIPELINE_STAGES } from '../sponsorCrm/pipeline';
 import { getNewsletterIssue } from '../db/newsletterIssues';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse, Task } from '../types';
@@ -80,6 +81,14 @@ function validateOrganization(body: Record<string, unknown>, partial = false) {
 function validateContact(body: Record<string, unknown>, partial = false) {
   if ((!partial && (!ID.test(String(body.organizationId || '')) || !text(body.name, 200))) || (body.name !== undefined && !text(body.name, 200))) return 'Invalid contact fields';
   if (body.emails !== undefined && (!Array.isArray(body.emails) || body.emails.length < 1 || body.emails.length > 10 || body.emails.some((email) => typeof email !== 'string' || !EMAIL.test(email) || email.length > 254))) return 'Invalid contact channels';
+  if (body.organizationId !== undefined && !ID.test(String(body.organizationId))) return 'Invalid organizationId';
+  for (const field of ['role', 'notes', 'telegram']) if (body[field] !== undefined && (typeof body[field] !== 'string' || String(body[field]).length > (field === 'notes' ? 2000 : 200))) return `Invalid ${field}`;
+  if (body.primary !== undefined && typeof body.primary !== 'boolean') return 'Invalid primary flag';
+  if (body.linkedin !== undefined && body.linkedin !== '') {
+    try { const url = new URL(String(body.linkedin)); if (url.protocol !== 'https:' || !['linkedin.com', 'www.linkedin.com'].includes(url.hostname)) return 'Invalid LinkedIn URL'; }
+    catch { return 'Invalid LinkedIn URL'; }
+  }
+  if (!validStamp(body.lastContactedAt)) return 'Invalid lastContactedAt';
   if (!validStamp(body.lastOutboundAt)) return 'Invalid lastOutboundAt';
   if (!validStamp(body.lastInboundAt)) return 'Invalid lastInboundAt';
   return '';
@@ -184,6 +193,16 @@ async function organizationMoney(client: DynamoDBDocumentClient, today: string) 
 export async function handleSponsorCrmRoutes(path: string, method: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const defaultAssigneeId = await resolveDefaultAssigneeId(client);
   const body = parse(event), user = actor(event) || defaultAssigneeId || '', today = todayOf(event);
+
+  if (path === '/api/sponsor-crm/pipeline' && method === 'GET') {
+    const query = event.queryStringParameters || {};
+    const error = validateList(event);
+    if (error) return json(400, { error });
+    if (query.view && !['actionable', 'active', 'closed', 'all', 'unscheduled'].includes(query.view)) return json(400, { error: 'Invalid pipeline view' });
+    if (query.stage && !(PIPELINE_STAGES as readonly string[]).includes(query.stage)) return json(400, { error: 'Invalid pipeline stage' });
+    if (query.sort && !['next-action', 'recent'].includes(query.sort)) return json(400, { error: 'Invalid pipeline sort' });
+    return json(200, await sponsorPipeline(client, query, today));
+  }
 
   if (path === '/api/sponsor-crm/imports' && method === 'POST') {
     if (!body) return json(400, { error: 'Invalid JSON' });

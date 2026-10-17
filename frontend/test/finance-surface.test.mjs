@@ -307,7 +307,7 @@ function humanizeOptionLabel(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function createHarness({ request, route = null, setupSurface } = {}) {
+function createHarness({ request, route = null, setupSurface, pipelineRows = [] } = {}) {
   const documentList = new FakeElement("main");
   const document = new FakeDocument(setupSurface);
   const requests = [];
@@ -329,6 +329,13 @@ function createHarness({ request, route = null, setupSurface } = {}) {
           defaultAssigneeId: "operator-1",
         };
       }
+      const path = requestPath(url);
+      if (path === "/api/sponsor-crm/pipeline") return { items: pipelineRows, counts: {}, total: pipelineRows.length, nextCursor: null };
+      const record = path.match(/^\/api\/sponsor-crm\/(deals|organizations)\/([^/]+)$/);
+      if (request && record && (!options.method || options.method === "GET")) {
+        const result = await request(`/api/sponsor-crm/${record[1]}`, options);
+        return result.items.find((item) => item.id === record[2]);
+      }
       if (request) return request(url, options);
       return {};
     },
@@ -348,6 +355,14 @@ function requestPath(url) {
 async function settle() {
   await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setImmediate(resolve));
+}
+
+async function openSponsorTab(document, view) {
+  await document.surface.querySelector("[data-crm-views]").dispatch("click", {
+    preventDefault() {},
+    target: { closest: (selector) => selector === "[data-crm-view]" ? { dataset: { crmView: view } } : null },
+  });
+  await settle();
 }
 
 describe("Finance surface boundary", () => {
@@ -466,6 +481,7 @@ describe("Finance surface boundary", () => {
         },
       },
     });
+    await settle();
     assert.equal(sponsorControl.focused, true);
   });
 
@@ -523,6 +539,10 @@ describe("Finance surface boundary", () => {
     });
 
     await finance.renderSponsorCrmSurface();
+    const alertsPanel = document.surface.querySelector(".crm-alerts");
+    alertsPanel.open = true;
+    await alertsPanel.dispatch("toggle");
+    await settle();
     const alerts = document.surface.querySelector("[data-crm-alerts]");
     assert.doesNotMatch(alerts.innerHTML, /No active sponsor alerts/);
     assert.match(alerts.innerHTML, /Sponsor alerts are unavailable:/);
@@ -621,6 +641,7 @@ describe("Finance surface boundary", () => {
     });
 
     await finance.renderSponsorCrmSurface();
+    await openSponsorTab(document, "leads");
     const leads = document.surface.querySelector("[data-crm-leads]");
     // The booking queue still renders while the review queue fails on its own.
     assert.match(leads.innerHTML, /Could not load potential leads\./);
@@ -965,6 +986,7 @@ describe("Finance surface boundary", () => {
       newsletter: { name: "Digest" },
     };
     const { document, finance, requests } = createHarness({
+      pipelineRows: [{ id: "deal-1", organizationId: "org-1", organizationName: "Talking Co", stage: "open" }],
       request: async (url, options = {}) => {
         const path = requestPath(url);
         if (path === "/api/notifications")
@@ -1008,8 +1030,12 @@ describe("Finance surface boundary", () => {
     const companies = document.surface.querySelector("[data-crm-orgs]");
     const leads = document.surface.querySelector("[data-crm-leads]");
     assert.match(pipeline.innerHTML, /Talking Co/);
-    assert.match(pipeline.innerHTML, /<h3>Opportunities<\/h3>/);
+    assert.match(pipeline.innerHTML, /Opportunities & history/);
+    assert.equal(companies.innerHTML, "", "directory stays unloaded until opened");
+    assert.equal(leads.innerHTML, "", "leads stay unloaded until opened");
+    await openSponsorTab(document, "companies");
     assert.match(companies.innerHTML, /Talking Co/);
+    await openSponsorTab(document, "leads");
     assert.match(leads.innerHTML, /Queue Vendor/);
 
     await document.surface.querySelector("[data-crm-views]").dispatch("click", {
