@@ -114,7 +114,8 @@ async function handleTemplateRoutes(
       if (method === 'GET') {
         const read = await resolveInteractiveActor(client, event, 'work-read');
         if (!read.ok) return read.response;
-        return json(200, { templates: await listTemplates(client) });
+        const templates = await listTemplates(client);
+        return json(200, { templates: templates.map(({ base: _, ...t }) => t) });
       }
       if (method === 'POST') {
         const create = await resolveInteractiveActor(client, event, 'work-write');

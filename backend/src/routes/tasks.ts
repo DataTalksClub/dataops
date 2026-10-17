@@ -515,6 +515,10 @@ export async function handleTaskRoutes(
     }
 
     // Pick a query source, then intersect every supplied filter above.
+    if (status && (startDate || endDate)) {
+      return await ownerListResponse(await listTasksByStatus(client, status, { startDate, endDate }));
+    }
+
     if (date) {
       return await ownerListResponse(await listTasksByDate(client, date));
     }

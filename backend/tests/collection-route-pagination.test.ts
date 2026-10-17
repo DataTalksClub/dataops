@@ -1,6 +1,6 @@
 import assert from 'node:assert';
 import { after, before, beforeEach, describe, it } from 'node:test';
-import { ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { route } from '../src/router';
@@ -363,13 +363,14 @@ describe('collection route pagination rejection envelopes', () => {
   });
 
   it('fails a Cards response loudly when the bounded Task join reaches its ceiling', async () => {
+    await createCard(client, cardData('card-001'));
     let taskPages = 0;
     const boundedTaskClient = new Proxy(client, {
       get(target, property, receiver) {
         if (property !== 'send') return Reflect.get(target, property, receiver);
         return async (command: unknown) => {
           if (
-            command instanceof ScanCommand
+            (command instanceof ScanCommand || command instanceof QueryCommand)
             && command.input.TableName === TABLE_TASKS
           ) {
             taskPages += 1;

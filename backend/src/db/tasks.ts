@@ -508,13 +508,26 @@ async function listTasksByOwner(
 /**
  * List tasks by status using GSI-Status.
  */
-function listTasksByStatus(client: DynamoDBDocumentClient, status: string): Promise<Task[]> {
+function listTasksByStatus(
+  client: DynamoDBDocumentClient,
+  status: string,
+  options?: { startDate?: string; endDate?: string },
+): Promise<Task[]> {
+  const hasRange = Boolean(options?.startDate && options?.endDate);
   return readAllTaskPages(client, (exclusiveStartKey) => new QueryCommand({
     TableName: TABLE_TASKS,
     IndexName: 'GSI-Status',
-    KeyConditionExpression: '#s = :status',
-    ExpressionAttributeNames: { '#s': 'status' },
-    ExpressionAttributeValues: { ':status': status },
+    KeyConditionExpression: hasRange
+      ? '#s = :status AND #d BETWEEN :start AND :end'
+      : '#s = :status',
+    ExpressionAttributeNames: {
+      '#s': 'status',
+      ...(hasRange ? { '#d': 'date' } : {}),
+    },
+    ExpressionAttributeValues: {
+      ':status': status,
+      ...(hasRange ? { ':start': options!.startDate, ':end': options!.endDate } : {}),
+    },
     ExclusiveStartKey: exclusiveStartKey,
   }));
 }

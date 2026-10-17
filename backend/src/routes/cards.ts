@@ -429,17 +429,13 @@ async function handleCollection(
       throw error;
     }
 
-    // The bounded-complete Task read is intentionally sequential with Cards:
-    // if it reaches its ceiling, the API fails instead of projecting an
-    // apparently complete board with orphan-looking relationships.
-    const allTasks = await listAllTasks(client);
-
+    // Query tasks for the cards on this page using GSI-Card instead of scanning the full table
+    const perCardTasks = await Promise.all(
+      cardPage.items.map((card) => listTasksByCard(client, card.id)),
+    );
     const tasksByCardId = new Map<string, Task[]>();
-    for (const task of allTasks) {
-      if (typeof task.cardId !== 'string' || task.cardId.length === 0) continue;
-      const tasks = tasksByCardId.get(task.cardId) || [];
-      tasks.push(task);
-      tasksByCardId.set(task.cardId, tasks);
+    for (let index = 0; index < cardPage.items.length; index++) {
+      tasksByCardId.set(cardPage.items[index].id, perCardTasks[index]);
     }
 
     const templateIdByType = await getTemplateIdByType(client);

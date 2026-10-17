@@ -499,6 +499,7 @@ export function createWorkModel(context) {
     // unresolved prerequisite stays on its Card's checklist only.
     const todayUrl = workApiUrl("/api/tasks", { date: today, blocked: "false" });
     const overdueUrl = workApiUrl("/api/tasks", {
+      status: "todo",
       startDate: "1970-01-01",
       endDate: yesterday,
       blocked: "false",
