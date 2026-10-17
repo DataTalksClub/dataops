@@ -99,6 +99,7 @@
     "src/surfaces/finance/sponsor-navigation.js",
     "src/surfaces/finance/sponsor-newsletters.js",
     "src/surfaces/finance/sponsor-person-detail.js",
+    "src/surfaces/finance/sponsor-pipeline-lifecycle.js",
     "src/surfaces/finance/sponsor-pipeline.js",
     "src/surfaces/finance/sponsor-record.js",
     "src/surfaces/finance/sponsor-record-markup.js",

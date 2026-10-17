@@ -278,6 +278,9 @@ export function createSponsorCrmSurface(context) {
     // below: it receives them directly instead of lazy closures.
     function setView(view, redraw = true) {
       currentView = view;
+      // Every user tab/list transition advances the page-owned generation so
+      // in-flight saves and stale record opens never paint over the new tab.
+      directoryPages.noteTabTransition();
       if (view === "pipeline") {
         surface.classList.remove("has-booking-detail");
         // The board is the list pane; a phone shows it again.
@@ -330,19 +333,26 @@ export function createSponsorCrmSurface(context) {
         // Rechecked after every await (refresh, summary) before mutations.
         if (saveContext && !directoryPages.saveContextOwnsSurface(saveContext)) return;
         if (stale()) return;
-        const openPersonId = directoryPages.getOpenPersonId();
+        const record = saveContext?.record;
+        if (record) {
+          // Record-scoped contact save: refresh only the originating record,
+          // never the hidden directories behind it. A reassociation must not
+          // jump to the newly saved company.
+          if (record.kind === "person") {
+            await personDetail.openPerson(record.id);
+            return;
+          }
+          const companyId = record.kind === "company"
+            ? record.id
+            : deals.find((item) => item.id === record.id)?.organizationId || organizationId;
+          await directoryPages.loadCompanySummary(companyId);
+          if (saveContext && !directoryPages.saveContextOwnsSurface(saveContext)) return;
+          await reopenCompanyDetail({ id: companyId });
+          return;
+        }
         await refresh();
         if (saveContext && !directoryPages.saveContextOwnsSurface(saveContext)) return;
         if (stale()) return;
-        if (openPersonId) {
-          await personDetail.openPerson(openPersonId);
-          return;
-        }
-        if (surface.classList.contains("has-booking-detail")) {
-          await directoryPages.loadCompanySummary(organizationId);
-          if (saveContext && !directoryPages.saveContextOwnsSurface(saveContext)) return;
-          await reopenCompanyDetail({ id: organizationId });
-        }
       } });
     const personDetail = createSponsorPersonDetail({
       api,

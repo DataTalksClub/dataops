@@ -227,8 +227,11 @@ class FakeElement {
 
   remove() {}
 
-  reset() {
-    this.formEntries = [];
+  reportValidity() {
+    return true;
+  }
+
+  reset() {    this.formEntries = [];
     if (!this.elements) return;
     for (const element of this.elements) element.value = "";
   }
@@ -1852,6 +1855,110 @@ describe("CRM directory controllers", () => {
       requests.filter((entry) => requestPath(entry.url).startsWith("/api/sponsor-crm/deals/")).length,
       0,
       "late save never reopens a deal detail after leaving for Tasks",
+    );
+  });
+
+    test("deal save settling after a tab click never refreshes or reopens", async () => {
+    const gates = {};
+    const pipelineDeals = [
+      { id: "deal-a", organizationId: "org-1", status: "open", productKind: "one-off" },
+    ];
+    const { document, finance, requests } = createHarness({
+      route: dirRoute("pipeline", {}),
+      pipelineRows: pipelineDeals,
+      request: (url, options = {}) => {
+        const path = requestPath(url);
+        if (path === "/api/sponsor-crm/views") return { items: [], total: 0 };
+        if (path === "/api/sponsor-crm/deals" && options.method === "POST") {
+          return new Promise((resolve) => { gates.save = () => resolve({ id: "deal-a", organizationId: "org-1", status: "agreed", productKind: "one-off", version: 4 }); });
+        }
+        return directoryRequest(url, options);
+      },
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    const pipelineCalls = () => requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/pipeline").length;
+    const directoryCalls = () => requests.filter((entry) => requestPath(entry.url).startsWith("/api/sponsor-crm/directory/")).length;
+    assert.equal(pipelineCalls(), 1);
+    const form = document.surface.querySelector("[data-deal-dialog]").querySelector("form");
+    form.formEntries = [
+      ["organizationId", "org-1"], ["status", "agreed"], ["productKind", "one-off"], ["version", "3"],
+    ];
+    await document.surface.querySelector("[data-deal-save]").dispatch("click", {});
+    await settle();
+    await openSponsorTab(document, "companies");
+    await settle();
+    const companiesAfterNav = dirRows(document).innerHTML;
+    assert.match(companiesAfterNav, /Acme Cloud/, "tab click loads the companies list");
+    gates.save();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(pipelineCalls(), 1, "late save never refreshes the pipeline over the new tab");
+    assert.equal(directoryCalls(), 1, "late save issues no list reload after the tab click");
+    assert.equal(
+      dirRows(document).innerHTML,
+      companiesAfterNav,
+      "late save never repaints rows over the new tab",
+    );
+  });
+
+  test("person-record contact reassociation refreshes only that person, never the new company", async () => {
+    const gates = {};
+    const person = { id: "p1", organizationId: "org-1", name: "Ada", emails: ["ada@acme.example"], role: "CTO", version: 5 };
+    const { document, finance, requests } = createHarness({
+      route: dirRoute("people", {}),
+      request: (url, options = {}) => {
+        const path = requestPath(url);
+        if (path === "/api/sponsor-crm/views") {
+          return { items: [{ id: "builtin:people:active", entity: "people", name: "Active", builtin: true,
+            filters: { active: "true" }, resolvedFilters: { active: "true" }, sort: { field: "name", direction: "asc" } }], total: 1 };
+        }
+        if (path === "/api/sponsor-crm/directory/people") {
+          return { items: [{ ...person, companyName: "Acme Cloud", lastTouch: null }], total: 1, nextCursor: null };
+        }
+        if (path === "/api/sponsor-crm/contacts/p1" && (!options.method || options.method === "GET")) return { ...person };
+        if (path === "/api/sponsor-crm/directory/companies/org-1") {
+          return { id: "org-1", displayName: "Acme Cloud", domain: "acme.example", active: true, version: 1, updatedAt: "2026-10-12T00:00:00Z" };
+        }
+        if (path === "/api/sponsor-crm/contacts/p1" && options.method === "PUT") {
+          return new Promise((resolve) => { gates.save = () => resolve({ ...person, organizationId: "org-new", version: 6 }); });
+        }
+        return directoryRequest(url, options);
+      },
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    await document.surface.dispatch("click", {
+      target: {
+        closest: (selector) => selector === "[data-open-person]" ? { dataset: { openPerson: "p1" } } : null,
+      },
+    });
+    await settle();
+    const personGets = () => requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/contacts/p1" && (!entry.options?.method || entry.options.method === "GET")).length;
+    const peopleLists = () => requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/directory/people").length;
+    assert.equal(personGets(), 1, "person record opens");
+    const contactForm = document.surface.querySelector("[data-contact-dialog]").querySelector("form");
+    contactForm.formEntries = [
+      ["organizationId", "org-new"], ["contactId", "p1"], ["version", "5"],
+      ["name", "Ada"], ["email", "ada@acme.example"], ["role", "CTO"],
+    ];
+    // The save handler awaits the deferred PUT: fire the click without
+    // awaiting, settle until the gate is hit, release, then await submission.
+    const submission = document.surface.querySelector("[data-contact-save]").dispatch("click", {});
+    await settle();
+    assert.equal(typeof gates.save, "function", "contact PUT fires");
+    const peopleBefore = peopleLists();
+    gates.save();
+    await submission;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(personGets(), 2, "record save refreshes only the originating person");
+    assert.equal(
+      peopleLists(),
+      peopleBefore,
+      "record save never prefetches the hidden People directory",
+    );
+    assert.ok(
+      !requests.some((entry) => requestPath(entry.url) === "/api/sponsor-crm/directory/companies/org-new"),
+      "reassociation does not jump to the newly saved company",
     );
   });
 
