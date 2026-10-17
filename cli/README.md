@@ -54,7 +54,7 @@ subcommands, flags, and examples.
 | `tasks` | the work queue (`list --mine --queue` is the starting point; `--requires`, `--exclude-requires`, `--can-do` filter by required resources), `show` (with the notes log), `create`, `update` (`--depends-on` sets prerequisite Tasks; blocked Tasks cannot be completed), `done` with proof, `reopen`, `wait` / `followed-up` / `followup` / `snooze` / `unsnooze` / `unblock`, `note`, `handover`, `assign`, `delete` |
 | `resources` | `list` the resource ids a Task can require (youtube, luma, mailchimp, ...) |
 | `cards` | `list`, `show` (with Tasks), `create --template`, `update`, `stage`, `link`, `park` / `resume`, `template-update` |
-| `templates` | `list`, `show` (read-only; authored in Git) |
+| `templates` | `list`, `show`, `create`, `update`, `reset`, `delete` (see Template editing below) |
 | `kb` | knowledge base: `search`, `related <task|card>`, `show`, `tree`, `ls`, `resolve`, `backlinks`, `history`, `write`, `publish` |
 | `newsletter` | issues and their sponsor slots: `list`, `show`, `create`, `update`, `delete`, `dismiss-alert` |
 | `podcast` | episodes: `list`, `show`, `create`, `update`, `create-card` |
@@ -74,6 +74,32 @@ subcommands, flags, and examples.
 | `secrets` | team secrets store (admin): `list`, `get` (`--field`, `--out`), `set` (`--field KEY=VALUE`, bare `--field KEY` reads stdin, `--from-file`), `delete`; values encrypted at rest, every access audited |
 | `login`, `logout`, `whoami`, `tokens` | credentials |
 | `agent-guide` | the workflow guide for agents ([skill/SKILL.md](skill/SKILL.md)) |
+
+## Template editing
+
+`templates list` and `show` read the effective definition. Git stays the
+canonical default: `update` pins a whole validated definition over the Git
+base, and a deploy seed advances the base without touching a pin. Cards
+already created keep their stored snapshots until the existing Card
+template-update preview/apply moves them.
+
+- `templates create --file def.yaml` (admin) creates a custom template.
+- `templates update <id|type> --task <ref> --offset-days <n>`
+  (or `--from-file def.yaml`) pins the whole definition; `reset`
+  restores the Git base.
+- `PUT /api/templates/:id` takes `{ expectedVersion, revision,
+  definition }`; `POST /api/templates/:id/reset` and `DELETE
+  /api/templates/:id` take `{ expectedVersion, revision }`. The pair is
+  required: a stale pair fails with 409 and the current template.
+- An exported file carrying its own `version`/`revision` supplies the pair
+  (explicit `--expected-version`/`--revision` flags win over the file; the
+  file wins over a fresh fetch), so offline edits apply against the
+  revision they were read at.
+- `?dryRun=true` previews `create`, `update`, and `reset` without writing;
+  `delete` has no dry run. Only unused custom templates can be deleted
+  (`template-in-use` otherwise); Git templates are pinned, reset, or left
+  alone. Creating and deleting require an admin; pinning and reset allow
+  any active operator or admin.
 
 ## Output and exit codes
 
