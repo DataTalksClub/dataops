@@ -306,6 +306,75 @@ test("a stale person open never paints or focuses after tab navigation", async (
   assert.match(host.innerHTML, /Bo</, "newer open still succeeds");
 });
 
+test("person contact rejection shows error with working retry, no paint", async () => {
+  let attempts = 0;
+  const surface = new FakeNode("section");
+  const host = surface.setQuery("[data-crm-person]", new FakeNode("article"));
+  const api = async (path) => {
+    if (path === "/contacts/p1") {
+      attempts += 1;
+      if (attempts === 1) throw httpError(503, "workspace unavailable");
+      return person;
+    }
+    if (path === "/directory/companies/c1") return { id: "c1", displayName: "Acme Co" };
+    throw new Error(`Unexpected: ${path}`);
+  };
+  const detail = createSponsorPersonDetail({ api, surface, escapeHtml, closeRecord: () => {}, openCompanyRecord: () => {} });
+  detail.wire(host);
+  await detail.openPerson("p1", { isCurrent: () => true });
+  assert.match(host.innerHTML, /unavailable/i);
+  assert.doesNotMatch(host.innerHTML, /Ada/);
+  await host.dispatch("click", { closestPatch: { "[data-record-retry]": new FakeNode("button") } });
+  assert.equal(attempts, 2);
+  assert.match(host.innerHTML, /Ada &lt;Lovelace&gt;/, "retry recovers the same person");
+});
+
+test("deferred company lookup never paints into the newer person", async () => {
+  let releaseCompany;
+  const gate = new Promise((resolve) => { releaseCompany = resolve; });
+  const api = async (path) => {
+    if (path === "/contacts/p1") return person;
+    if (path === "/contacts/p2") return { ...person, id: "p2", name: "Bo", organizationId: "c9" };
+    if (path === "/directory/companies/c1") {
+      await gate;
+      return { id: "c1", displayName: "Acme Co" };
+    }
+    if (path === "/directory/companies/c9") return { id: "c9", displayName: "Beta Inc" };
+    throw new Error(`Unexpected: ${path}`);
+  };
+  const surface = new FakeNode("section");
+  const host = surface.setQuery("[data-crm-person]", new FakeNode("article"));
+  host.setQuery('[data-person-panel="overview"]', new FakeNode("section"));
+  host.setQuery('[data-person-panel="activity"]', new FakeNode("section"));
+  const detail = createSponsorPersonDetail({ api, surface, escapeHtml, closeRecord: () => {}, openCompanyRecord: () => {} });
+  detail.wire(host);
+  const pendingA = detail.openPerson("p1", { isCurrent: () => true });
+  await detail.openPerson("p2", { isCurrent: () => true });
+  releaseCompany();
+  await pendingA;
+  assert.match(host.innerHTML, /Beta Inc/, "only the newer person's company renders");
+  assert.doesNotMatch(host.innerHTML, /Acme Co/, "stale company lookup paints nothing");
+});
+
+test("a fresh unguarded open is not poisoned by an older false guard", async () => {
+  const surface = new FakeNode("section");
+  const host = surface.setQuery("[data-crm-person]", new FakeNode("article"));
+  host.setQuery('[data-person-panel="overview"]', new FakeNode("section"));
+  host.setQuery('[data-person-panel="activity"]', new FakeNode("section"));
+  const api = async (path) => {
+    if (path === "/contacts/p1") return person;
+    if (path === "/contacts/p2") return { ...person, id: "p2", name: "Bo", organizationId: "" };
+    throw new Error(`Unexpected: ${path}`);
+  };
+  let current = false;
+  const detail = createSponsorPersonDetail({ api, surface, escapeHtml, closeRecord: () => {} });
+  detail.wire(host);
+  await detail.openPerson("p1", { isCurrent: () => current });
+  assert.match(host.innerHTML, /Loading person/, "false guard renders nothing");
+  await detail.openPerson("p2");
+  assert.match(host.innerHTML, /Bo</, "unguarded newer open succeeds");
+});
+
 test("missing people degrade honestly", async () => {
   const { host, detail } = personHarness({
     routes: { "GET /contacts/gone": httpError(404, "Not found") },

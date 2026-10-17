@@ -871,6 +871,35 @@ test("stale finance tab returns before inspecting or painting the record", async
   assert.doesNotMatch(financeHtml, /data-booking-panel|No deal selected|Unavailable/, "stale tab paints nothing at all");
 });
 
+test("navigation during the finance fetch paints nothing after resolve", async () => {
+  const loaded = [];
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let current = true;
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": { items: [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off" }], nextCursor: null },
+    },
+    context: {
+      loadFinance: async (deal) => { await gate; loaded.push(deal.id); },
+      openContactEditor: () => {},
+    },
+  });
+  seedPanels(host);
+  await record.openCompany("c1", { dealId: "d1", isCurrent: () => current });
+  await record.switchTab("deals");
+  const pending = record.switchTab("finance");
+  current = false;
+  release();
+  await pending;
+  assert.deepEqual(loaded, ["d1"], "in-flight canonical fetch is not cancellable");
+  const financeHtml = host.querySelector('[data-record-panel="finance"]').innerHTML;
+  assert.match(financeHtml, /Loading finance/, "loading paint stays as-is");
+  assert.doesNotMatch(financeHtml, /No deal selected|Archive unavailable|Unavailable/, "no post-resolve paint, error, or empty claims");
+});
+
 test("failed explicit selections never fall back to unrelated finance", async () => {
   const page = [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off" }];
   for (const [name, dealId, byId, message] of [
