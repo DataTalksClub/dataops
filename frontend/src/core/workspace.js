@@ -1,6 +1,7 @@
 import { cardParamOf, concreteRoutePath, matchRoutePath, MODAL_TASK_PARAM, routeParamNames } from "./route-patterns.js";
 import { formatDayLabel } from "./dates.js";
 import { orderAfterPrerequisites, taskIsBlocked } from "./task-dependencies.js";
+import { isTaskActionable, isTaskDeferred, hasTaskFollowUp } from "./task-attention.js";
 
 export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
   "operating-model": "/operating-model",
@@ -418,11 +419,11 @@ export function deriveScopedWorkState(snapshot, options = {}) {
   const todayTasks = dedupeWorkTasks([
     ...tasksFromWorkPayload(work.todayTasks || []),
     ...laneTasks.filter((task) => isTaskDueToday(task, today)),
-  ]);
+  ]).filter((task) => isTaskActionable(task, today) && !hasTaskFollowUp(task));
   const overdueTasks = dedupeWorkTasks([
     ...tasksFromWorkPayload(work.overdueTasks || []),
     ...laneTasks.filter((task) => isTaskOverdue(task, today)),
-  ]);
+  ]).filter((task) => isTaskActionable(task, today) && !hasTaskFollowUp(task));
   const waitingTasks = dedupeWorkTasks([
     ...tasksFromWorkPayload(work.waitingTasks || []),
     ...laneTasks.filter(isWaitingOrFollowUpTask),
@@ -671,12 +672,12 @@ export function isResolvedWorkTask(task) {
 }
 
 export function isTaskDueToday(task, today) {
-  return isOpenWorkTask(task) && taskDate(task) === today;
+  return isOpenWorkTask(task) && !hasTaskFollowUp(task) && !isTaskDeferred(task, today) && taskDate(task) === today;
 }
 
 export function isTaskOverdue(task, today) {
   const date = taskDate(task);
-  return isOpenWorkTask(task) && Boolean(date) && isBeforeIsoDate(date, today);
+  return isOpenWorkTask(task) && !hasTaskFollowUp(task) && !isTaskDeferred(task, today) && Boolean(date) && isBeforeIsoDate(date, today);
 }
 
 export function isWaitingOrFollowUpTask(task) {
@@ -687,7 +688,7 @@ export function isWaitingOrFollowUpTask(task) {
 }
 
 export function isFollowUpDueTask(task, today = todayIsoDate()) {
-  if (!isWaitingOrFollowUpTask(task)) return false;
+  if (!isWaitingOrFollowUpTask(task) || isTaskDeferred(task, today)) return false;
   const followUpAt = String(task.followUpAt || "").slice(0, 10);
   return Boolean(followUpAt) && !isBeforeIsoDate(today, followUpAt);
 }
