@@ -175,6 +175,15 @@ export function createSponsorDirectoryPages({
       saveContext.detail === surface.classList.contains("has-booking-detail") &&
       !isStale();
   }
+  // Per-invocation page predicate for F record/finance guards: captured at
+  // the open/save call, false after any later tab/list transition, record
+  // open, Back/close or workspace navigation. Never recaptured after the
+  // response — the predicate closes over the invoking generation.
+  function capturePageCurrent() {
+    const nav = navGeneration;
+    const open = openGeneration;
+    return () => nav === navGeneration && open === openGeneration && !isStale();
+  }
   // Every user CRM tab/list transition (including same-tab clicks) advances
   // the page-owned generation and drops the record ref, so in-flight saves
   // and stale record opens can never refresh/reopen over the newly shown
@@ -773,14 +782,16 @@ export function createSponsorDirectoryPages({
       currentPersonId = null;
       openRecordRef = { kind: "deal", id: dealId };
       setRecordTab("pipeline");
-      safe(() => reopenDealDetail(deal), "Could not open deal");
+      // isCurrent threads through reopenDealDetail once F forwards it;
+      // passing it now is forward-compatible and ignored until then.
+      safe(() => reopenDealDetail(deal, { isCurrent: capturePageCurrent() }), "Could not open deal");
       return true;
     }
     if (organization) {
       currentPersonId = null;
       openRecordRef = { kind: "company", id: companyId };
       setRecordTab("companies");
-      safe(() => reopenCompanyDetail(organization), "Could not open company");
+      safe(() => reopenCompanyDetail(organization, null, { isCurrent: capturePageCurrent() }), "Could not open company");
       return true;
     }
     if (personId) {
@@ -798,7 +809,7 @@ export function createSponsorDirectoryPages({
         detail.innerHTML = `<div data-crm-person></div>`;
         const host = detail.querySelector("[data-crm-person]");
         personDetail.wire(host);
-        await personDetail.openPerson(personId);
+        await personDetail.openPerson(personId, { isCurrent: capturePageCurrent() });
       }, "Could not open person");
       return true;
     }
@@ -867,6 +878,7 @@ export function createSponsorDirectoryPages({
     closeRecord,
     captureSaveContext,
     saveContextOwnsSurface,
+    capturePageCurrent,
     noteTabTransition,
     listPath,
     captureReturnContext,

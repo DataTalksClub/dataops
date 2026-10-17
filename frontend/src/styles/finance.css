@@ -965,6 +965,7 @@ body[data-workspace-view="sponsors"] .document-list {
 .crm-activity-panel {
   display: grid;
   gap: 12px;
+  padding: 12px;
 }
 .crm-activity-tools {
   display: flex;
@@ -975,6 +976,24 @@ body[data-workspace-view="sponsors"] .document-list {
 .crm-activity-tools label {
   display: grid;
   gap: 4px;
+}
+/* Loaded record/person overview keeps headings and channel rows off the
+   frame; the channel list carries no UA list indent. */
+[data-person-panel="overview"] .crm-record-overview,
+[data-record-panel="overview"] .crm-record-overview {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+[data-person-panel="overview"] .crm-record-overview h3,
+[data-record-panel="overview"] .crm-record-overview h3 {
+  margin: 0;
+}
+[data-person-panel] .crm-directory-list,
+[data-record-panel] .crm-directory-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .crm-activity-list {
   display: grid;
@@ -1002,12 +1021,16 @@ body[data-workspace-view="sponsors"] .document-list {
 }
 .crm-activity-provenance {
   margin: 0;
+  overflow-wrap: anywhere;
   color: var(--dk-text-muted);
   font-size: var(--dk-text-sm);
 }
 [data-activity-note-form] {
   display: grid;
   gap: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--dk-border-default);
+  padding-top: 12px;
 }
 [data-activity-note-form] label {
   display: grid;
@@ -1168,8 +1191,11 @@ body[data-workspace-view="sponsors"] .document-list {
 .sponsor-crm-surface.is-pipeline.has-booking-detail .crm-master {
   display: none;
 }
-/* The open record replaced the board, so Back is how to reach it again. */
-.sponsor-crm-surface.is-pipeline.has-booking-detail .dk-split__back {
+/* The open record replaced the board, so Back is how to reach it again.
+   Visible and usable on wide canvases too: the detail sits beside the
+   list, but only Back restores the origin page/scroll/focus, and only an
+   ordinary clickable control proves it. */
+.sponsor-crm-surface.has-booking-detail .dk-split__back {
   display: inline-flex;
 }
 .crm-funnel { padding: var(--dk-space-4); }

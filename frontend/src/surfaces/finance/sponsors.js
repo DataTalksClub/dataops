@@ -331,15 +331,17 @@ export function createSponsorCrmSurface(context) {
         // Consume F's synchronous submit snapshot: a navigation that happened
         // mid-save owns the surface; never refresh or reopen over it.
         // Rechecked after every await (refresh, summary) before mutations.
+        // The save snapshot doubles as the F record-guard predicate.
         if (saveContext && !directoryPages.saveContextOwnsSurface(saveContext)) return;
         if (stale()) return;
         const record = saveContext?.record;
+        const isCurrent = () => !saveContext || directoryPages.saveContextOwnsSurface(saveContext);
         if (record) {
           // Record-scoped contact save: refresh only the originating record,
           // never the hidden directories behind it. A reassociation must not
           // jump to the newly saved company.
           if (record.kind === "person") {
-            await personDetail.openPerson(record.id);
+            await personDetail.openPerson(record.id, { isCurrent });
             return;
           }
           const companyId = record.kind === "company"
@@ -347,7 +349,7 @@ export function createSponsorCrmSurface(context) {
             : deals.find((item) => item.id === record.id)?.organizationId || organizationId;
           await directoryPages.loadCompanySummary(companyId);
           if (saveContext && !directoryPages.saveContextOwnsSurface(saveContext)) return;
-          await reopenCompanyDetail({ id: companyId });
+          await reopenCompanyDetail({ id: companyId }, null, { isCurrent });
           return;
         }
         await refresh();
@@ -430,13 +432,16 @@ export function createSponsorCrmSurface(context) {
       Object.fromEntries((sponsorsRoute?.params || new URLSearchParams()).entries()),
     );
     sponsorFinance.setReopenBookingDetail(async (booking) => {
+      // Per-invocation page predicate for the injected finance/record paint:
+      // navigation during the load must not paint over the newer surface.
+      const isCurrent = directoryPages.capturePageCurrent();
       if (
         surface.classList.contains("has-booking-detail") &&
         surface.querySelector('[data-booking-panel="finance"]')
       ) {
-        await loadFinance(booking);
+        await loadFinance(booking, { isCurrent });
       } else {
-        await reopenDealDetail(booking);
+        await reopenDealDetail(booking, { isCurrent });
       }
     });
 
@@ -817,7 +822,7 @@ export function createSponsorCrmSurface(context) {
           await directoryPages.loadCompanySummary(saved.organizationId);
           if (!directoryPages.saveContextOwnsSurface(saveContext)) return;
           deals = [...deals.filter((value) => value.id !== saved.id), saved];
-          await reopenDealDetail(saved);
+          await reopenDealDetail(saved, { isCurrent: () => directoryPages.saveContextOwnsSurface(saveContext) });
           return;
         }
         await refresh();
