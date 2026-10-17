@@ -23,6 +23,7 @@ import * as recurring from "./commands/recurring.mjs";
 import * as resources from "./commands/resources.mjs";
 import * as secrets from "./commands/secrets.mjs";
 import * as sponsors from "./commands/sponsors.mjs";
+import * as crm from "./commands/crm.mjs";
 import * as tasks from "./commands/tasks.mjs";
 import * as templates from "./commands/templates.mjs";
 import { EXIT, UsageError, errorPayload, exitCodeFor, hintFor } from "./errors.mjs";
@@ -102,6 +103,7 @@ export const FAMILIES = {
   reconcile: { group: "Finance", summary: reconcile.summary, help: reconcile.help, commands: reconcile.commands },
   tuition: { group: "Finance", summary: tuition.summary, help: tuition.help, commands: tuition.commands },
   sponsors: { group: "Finance", summary: sponsors.summary, help: sponsors.help, commands: sponsors.commands },
+  crm: { group: "Finance", summary: crm.summary, help: crm.help, commands: crm.commands },
   invoices: {
     group: "Finance",
     summary: invoices.summary,
