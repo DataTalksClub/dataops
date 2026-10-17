@@ -11,7 +11,8 @@ export const summary = "List, inspect, create, complete, skip, and follow up Tas
 export const help = `dataops tasks - Tasks are the checklist items inside Cards
 
 Usage
-  dataops tasks list [view] [filters]
+  dataops tasks list [view] [filters] [--batches]
+  dataops tasks batches [view] [filters]
   dataops tasks show <task-id>
   dataops tasks create --description D [--date YYYY-MM-DD] [--card ID] [--assignee ID|me]
       [--subject-type sponsor-deal|sponsor-company|tuition-agreement --subject-id ID]
@@ -45,6 +46,8 @@ List views (default: --queue)
   --today      Due today          --overdue    Open and past due     --waiting   Waiting on someone
   --status S   todo|waiting|done|skipped       --date D    One day     --from D --to D   A range
   --card ID    Every Task of a Card
+  --batches    Group Tasks due on the same day for the same Card/subject into one sitting
+               (also \`dataops tasks batches [view] [filters]\`)
   --owner me|team|unassigned|<member>, or --mine for --owner me
   --assignee <member>   Same filter as --owner (use one of them)
   --as-of YYYY-MM-DD   Treat this date as today (default: the local date)
@@ -228,6 +231,201 @@ function yesterday(day) {
   return date.toISOString().slice(0, 10);
 }
 
+function batchScopeKey(task) {
+  if (task.cardId) return `card:${task.cardId}`;
+  if (task.subject?.type && task.subject?.id) return `subject:${task.subject.type}:${task.subject.id}`;
+  return "standalone";
+}
+
+function taskPrerequisiteIds(task) {
+  if (Array.isArray(task.dependsOn) && task.dependsOn.length) return task.dependsOn.map(String);
+  if (Array.isArray(task.prerequisites) && task.prerequisites.length) {
+    return task.prerequisites.map((entry) => String(entry.id));
+  }
+  return [];
+}
+
+/**
+ * Topologically order tasks within a single sitting/batch so prerequisites in
+ * the same batch precede their dependents, preserving input order on ties.
+ */
+function orderBatchTasks(batchTasks) {
+  const byId = new Map(batchTasks.map((task, idx) => [task.id, { task, idx }]));
+  const inDegree = new Map();
+  const dependents = new Map();
+
+  for (const { task } of byId.values()) {
+    const inBatchDeps = taskPrerequisiteIds(task).filter((depId) => byId.has(depId) && depId !== task.id);
+    const uniqueDeps = [...new Set(inBatchDeps)];
+    inDegree.set(task.id, uniqueDeps.length);
+    for (const depId of uniqueDeps) {
+      if (!dependents.has(depId)) dependents.set(depId, []);
+      dependents.get(depId).push(task.id);
+    }
+  }
+
+  const ready = batchTasks
+    .filter((task) => (inDegree.get(task.id) || 0) === 0)
+    .map((task) => task.id);
+  const ordered = [];
+  const visited = new Set();
+
+  while (ready.length > 0) {
+    ready.sort((a, b) => byId.get(a).idx - byId.get(b).idx);
+    const currentId = ready.shift();
+    if (visited.has(currentId)) continue;
+    visited.add(currentId);
+    ordered.push(byId.get(currentId).task);
+    for (const nextId of dependents.get(currentId) || []) {
+      const nextDegree = (inDegree.get(nextId) || 0) - 1;
+      inDegree.set(nextId, nextDegree);
+      if (nextDegree === 0) ready.push(nextId);
+    }
+  }
+
+  for (const task of batchTasks) {
+    if (!visited.has(task.id)) ordered.push(task);
+  }
+  return ordered;
+}
+
+/**
+ * Group tasks that share a due date and Card/subject into same-day sittings
+ * (batches), ordered topologically by `dependsOn` within each sitting.
+ */
+export function groupTaskBatches(tasks, day, nowIso = new Date().toISOString()) {
+  const groups = new Map();
+  for (const task of tasks) {
+    if (!task) continue;
+    const due = String(task.date || "").slice(0, 10) || "unscheduled";
+    const scope = batchScopeKey(task);
+    const key = `${due}:${scope}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        date: due,
+        scope,
+        cardId: task.cardId || null,
+        subject: task.subject || null,
+        rawTasks: [],
+      });
+    }
+    groups.get(key).rawTasks.push(task);
+  }
+
+  const batches = [];
+  for (const group of groups.values()) {
+    const ordered = orderBatchTasks(group.rawTasks);
+    const byId = new Map(ordered.map((task) => [task.id, task]));
+    const stateById = new Map();
+
+    for (const task of ordered) {
+      if (task.status === "done" || task.status === "skipped") {
+        stateById.set(task.id, task.status);
+        continue;
+      }
+      if (task.status === "waiting") {
+        stateById.set(task.id, "waiting");
+        continue;
+      }
+      if (!task.blocked) {
+        stateById.set(task.id, "ready");
+        continue;
+      }
+      const prereqs = Array.isArray(task.prerequisites) && task.prerequisites.length
+        ? task.prerequisites
+        : taskPrerequisiteIds(task).map((id) => ({
+            id,
+            status: byId.get(id)?.status || "unknown",
+          }));
+      const unresolved = prereqs.filter((entry) => entry.status !== "done" && entry.status !== "skipped");
+      const allUnresolvedInBatchActionable =
+        unresolved.length > 0 &&
+        unresolved.every((entry) => {
+          const state = stateById.get(entry.id);
+          return state === "ready" || state === "chained";
+        });
+      stateById.set(task.id, allUnresolvedInBatchActionable ? "chained" : "blocked");
+    }
+
+    const annotatedTasks = ordered.map((task, idx) => ({
+      ...task,
+      batchStep: idx + 1,
+      batchState: stateById.get(task.id) || task.status,
+    }));
+
+    const counts = { ready: 0, chained: 0, blocked: 0, waiting: 0, done: 0, skipped: 0 };
+    const reqSet = new Set();
+    let anyBrowserRequired = false;
+    let allHeadless = annotatedTasks.length > 0;
+    let bestSegmentIdx = SEGMENT_ORDER.length;
+
+    for (const task of annotatedTasks) {
+      if (counts[task.batchState] !== undefined) counts[task.batchState] += 1;
+      for (const req of task.requires || []) reqSet.add(req);
+      if (task.browserRequirement === "required") anyBrowserRequired = true;
+      if (task.browserRequirement !== "headless") allHeadless = false;
+      const seg = task.queueSegment || queueSegment(task, day, nowIso);
+      const segIdx = SEGMENT_ORDER.indexOf(seg);
+      if (segIdx !== -1 && segIdx < bestSegmentIdx) bestSegmentIdx = segIdx;
+    }
+
+    const browserRequirement = anyBrowserRequired ? "required" : allHeadless ? "headless" : null;
+    batches.push({
+      key: group.key,
+      date: group.date,
+      scope: group.scope,
+      cardId: group.cardId,
+      subject: group.subject,
+      queueSegment: bestSegmentIdx < SEGMENT_ORDER.length ? SEGMENT_ORDER[bestSegmentIdx] : "",
+      total: annotatedTasks.length,
+      ready: counts.ready,
+      chained: counts.chained,
+      actionable: counts.ready + counts.chained,
+      blocked: counts.blocked,
+      waiting: counts.waiting,
+      requires: [...reqSet].sort(),
+      browserRequirement,
+      tasks: annotatedTasks,
+    });
+  }
+
+  return batches;
+}
+
+function printTaskBatches(io, batchList, view) {
+  if (!batchList.length) {
+    io.print("No Tasks match.");
+    return;
+  }
+  table(
+    io,
+    batchList,
+    [
+      ["DUE", (b) => b.date],
+      ...(view === "filter" ? [] : [["WHEN", (b) => b.queueSegment]]),
+      ["SCOPE", (b) => b.scope],
+      ["STEPS", (b) => String(b.total)],
+      ["ACTIONABLE", (b) => `${b.actionable}/${b.total}`],
+      ["REQUIRES", (b) => b.requires.join(",")],
+      ["BROWSER", (b) => browserMark(b.browserRequirement)],
+      ["FIRST STEP", (b) => b.tasks[0]?.description || ""],
+    ],
+    "No Tasks match.",
+  );
+  for (const batch of batchList) {
+    io.print("");
+    io.print(
+      `Batch ${batch.date}  ${batch.scope}  (${batch.total} step${batch.total === 1 ? "" : "s"}, ${batch.actionable} actionable${batch.blocked ? `, ${batch.blocked} blocked` : ""}${batch.waiting ? `, ${batch.waiting} waiting` : ""})`,
+    );
+    for (const task of batch.tasks) {
+      io.print(
+        `  ${task.batchStep}. [${task.batchState}] ${task.id}  ${task.description}`,
+      );
+    }
+  }
+}
+
 export async function list(args, io) {
   const api = apiFor(args);
   const owner = ownerOf(args);
@@ -266,6 +464,21 @@ export async function list(args, io) {
     if (view === "waiting") tasks = tasks.filter(isWaitingOrFollowUp);
   }
 
+  if (args.batches) {
+    const batchList = groupTaskBatches(tasks, day, nowIso);
+    const batchResult = {
+      view,
+      today: day,
+      owner: owner || null,
+      ...(resources.canDo !== undefined ? { canDo: csv(resources.canDo) } : {}),
+      batches: batchList,
+      tasks,
+    };
+    if (args.json) return batchResult;
+    printTaskBatches(io, batchList, view);
+    return batchResult;
+  }
+
   const result = { view, today: day, owner: owner || null, ...(resources.canDo !== undefined ? { canDo: csv(resources.canDo) } : {}), tasks };
   if (args.json) return result;
   table(
@@ -285,6 +498,10 @@ export async function list(args, io) {
     "No Tasks match.",
   );
   return result;
+}
+
+export async function batches(args, io) {
+  return list({ ...args, batches: true }, io);
 }
 
 async function getTask(api, id) {
@@ -681,6 +898,7 @@ export async function remove(args, io) {
 
 export const commands = {
   list,
+  batches,
   show,
   create,
   update,

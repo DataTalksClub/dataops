@@ -472,6 +472,108 @@ describe("tasks commands", () => {
     // The resource pipeline is untouched by the browser filter.
     assert.deepEqual(requiresQuery({ canDo: "all" }), {});
   });
+
+  test("batches groups same-day Card tasks in dependency order and distinguishes chained vs externally blocked steps", async () => {
+    saveProfile("https://portal.test", { token: "dops_abc", tokenId: "id-1" });
+    const fetch = fakeFetch({
+      "cardId=card-webinar": {
+        body: {
+          tasks: [
+            {
+              id: "task-meetup",
+              cardId: "card-webinar",
+              description: "Create events on Meetup",
+              status: "todo",
+              date: "2026-10-18",
+              blocked: true,
+              dependsOn: ["task-luma"],
+              prerequisites: [{ id: "task-luma", description: "Create events on Luma", status: "todo" }],
+              requires: ["meetup"],
+              browserRequirement: "required",
+            },
+            {
+              id: "task-banner",
+              cardId: "card-webinar",
+              description: "Create a banner",
+              status: "todo",
+              date: "2026-10-18",
+              blocked: false,
+              dependsOn: [],
+              prerequisites: [],
+              requires: ["banner-generator"],
+              browserRequirement: "headless",
+            },
+            {
+              id: "task-luma",
+              cardId: "card-webinar",
+              description: "Create events on Luma",
+              status: "todo",
+              date: "2026-10-18",
+              blocked: true,
+              dependsOn: ["task-banner"],
+              prerequisites: [{ id: "task-banner", description: "Create a banner", status: "todo" }],
+              requires: ["luma", "youtube"],
+              browserRequirement: "required",
+            },
+            {
+              id: "task-post",
+              cardId: "card-webinar",
+              description: "Recheck the video edit",
+              status: "todo",
+              date: "2026-11-11",
+              blocked: true,
+              dependsOn: ["task-trim-missing"],
+              prerequisites: [{ id: "task-trim-missing", description: "Remove beginning", status: "waiting" }],
+              requires: ["youtube"],
+              browserRequirement: "required",
+            },
+          ],
+        },
+      },
+    });
+    globalThis.fetch = fetch;
+    const tasks = await import("../src/commands/tasks.mjs");
+
+    const io = captureIo();
+    const result = await tasks.batches(
+      { url: "https://portal.test", _: [], card: "card-webinar", asOf: "2026-10-17" },
+      { print: io.log },
+    );
+
+    assert.equal(result.batches.length, 2);
+    const setupBatch = result.batches[0];
+    assert.equal(setupBatch.date, "2026-10-18");
+    assert.equal(setupBatch.scope, "card:card-webinar");
+    assert.equal(setupBatch.total, 3);
+    assert.equal(setupBatch.ready, 1);
+    assert.equal(setupBatch.chained, 2);
+    assert.equal(setupBatch.actionable, 3);
+    assert.equal(setupBatch.blocked, 0);
+    assert.deepEqual(
+      setupBatch.tasks.map((t) => [t.id, t.batchStep, t.batchState]),
+      [
+        ["task-banner", 1, "ready"],
+        ["task-luma", 2, "chained"],
+        ["task-meetup", 3, "chained"],
+      ],
+    );
+    assert.deepEqual(setupBatch.requires, ["banner-generator", "luma", "meetup", "youtube"]);
+    assert.equal(setupBatch.browserRequirement, "required");
+
+    const postBatch = result.batches[1];
+    assert.equal(postBatch.date, "2026-11-11");
+    assert.equal(postBatch.total, 1);
+    assert.equal(postBatch.actionable, 0);
+    assert.equal(postBatch.blocked, 1);
+    assert.equal(postBatch.tasks[0].batchState, "blocked");
+
+    assert.match(io.text(), /ACTIONABLE/);
+    assert.match(io.text(), /3\/3/);
+    assert.match(io.text(), /1\. \[ready\] task-banner/);
+    assert.match(io.text(), /2\. \[chained\] task-luma/);
+    assert.match(io.text(), /3\. \[chained\] task-meetup/);
+    globalThis.fetch = globalFetch;
+  });
 });
 
 describe("command dispatch", () => {
