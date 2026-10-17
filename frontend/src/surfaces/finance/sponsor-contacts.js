@@ -15,11 +15,12 @@ function normalizeEmails(value) {
  * full directory load), or { organizationId } for a new contact preset to a
  * company. {} opens a blank create with the company chooser visible.
  *
- * Company association stays explicit: the dialog's hidden organizationId
- * always carries the associated company; E's [data-contact-org-picker]
- * select (populated here from the provided companies or
- * getOrganizations()) offers the choice when no org is preset. Optimistic
- * versions are passed through untouched; a 409 surfaces as a save error
+ * Company association stays explicit and changeable on edit as well as
+ * create: the dialog's [data-contact-org-picker] select is always usable
+ * (populated here from the provided companies or getOrganizations(), with
+ * an honest labeled fallback when the current association is unknown);
+ * the hidden organizationId follows the picker and carries the submitted
+ * value. Optimistic versions are passed through untouched; a 409 surfaces as a save error
  * with the dialog kept open. lastContactedAt keeps full stored precision:
  * the date input only replaces the value when the user changes that date.
  */
@@ -45,14 +46,25 @@ export function createSponsorContactEditor({ api, surface, getContacts, getOrgan
     const list = [...provided, ...companies()].filter(
       (item, index, all) => item && item.id && all.findIndex((other) => other.id === item.id) === index,
     );
+    // An unknown current association stays honest and selectable: never
+    // silently drop it from the chooser, never invent a display name for it.
+    if (presetOrganizationId && !list.some((item) => item.id === presetOrganizationId)) {
+      list.unshift({ id: presetOrganizationId, displayName: `Current company (${presetOrganizationId})` });
+    }
     if (picker) {
       picker.innerHTML = `<option value="">Select a company</option>` + list
         .map((item) => `<option value="${item.id}">${item.displayName || item.id}</option>`)
         .join("");
       const row = picker.closest("label");
-      if (row) row.hidden = Boolean(presetOrganizationId);
+      if (row) row.hidden = false;
       picker.value = presetOrganizationId || "";
-      picker.disabled = Boolean(presetOrganizationId);
+      picker.disabled = false;
+      if (!picker.dataset.wiredOrg) {
+        picker.dataset.wiredOrg = "true";
+        picker.addEventListener("change", () => {
+          if (hidden) hidden.value = picker.value || "";
+        });
+      }
     }
     if (hidden) hidden.value = presetOrganizationId || "";
   }

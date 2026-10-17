@@ -181,7 +181,58 @@ test("changed dates send the new day and cleared dates send null", async () => {
   assert.deepEqual(seen, ["2026-10-10", null]);
 });
 
-test("new contacts preset the org and hide the picker; blank opens the chooser", async () => {
+test("company chooser stays usable on edit and follows into the hidden field", async () => {
+  const companies = [{ id: "c1", displayName: "Acme" }, { id: "c2", displayName: "Northwind" }];
+  const { form, editor } = editorHarness({ contacts: [ada], companies });
+  const picker = new FakeNode("select");
+  form.setQuery("[data-contact-org-picker]", picker);
+  await editor.open({ id: "p1" });
+  assert.equal(picker.disabled, false, "chooser usable while editing");
+  assert.equal(picker.value, "c1", "current company preselected");
+  assert.equal(form.elements.organizationId.value, "c1");
+  picker.value = "c2";
+  await picker.dispatch("change", {});
+  assert.equal(form.elements.organizationId.value, "c2", "hidden field follows the chooser");
+});
+
+test("reassociation submits the selected org with version intact", async () => {
+  const puts = [];
+  const { form, editor, saved, surface, captured } = editorHarness({
+    contacts: [ada],
+    companies: [{ id: "c1", displayName: "Acme" }, { id: "c2", displayName: "Northwind" }],
+    routes: { "PUT /contacts/p1": (({ body }) => { puts.push(body); return { ...ada, ...body, version: 3 }; }) },
+  });
+  const picker = new FakeNode("select");
+  form.setQuery("[data-contact-org-picker]", picker);
+  await editor.open({ id: "p1" });
+  picker.value = "c2";
+  await picker.dispatch("change", {});
+  form.formEntries = [
+    ["organizationId", "c2"], ["contactId", "p1"], ["version", "2"], ["name", "Ada"],
+    ["email", "ada@acme.example"], ["role", ""], ["linkedin", ""], ["telegram", ""],
+    ["notes", ""], ["lastContactedAt", ""],
+  ];
+  await surface.querySelector("[data-contact-save]").dispatch("click", {});
+  assert.equal(puts[0].organizationId, "c2", "selected org submitted");
+  assert.equal(puts[0].version, 2, "optimistic version preserved, no silent overwrite");
+  assert.deepEqual(saved, [["c2", captured[0]]]);
+  assert.equal(captured[0].view, "people");
+});
+
+test("unknown current association stays honest and selectable", async () => {
+  const { form, editor } = editorHarness({
+    contacts: [{ ...ada, organizationId: "cx" }],
+    companies: [{ id: "c1", displayName: "Acme" }],
+  });
+  const picker = new FakeNode("select");
+  form.setQuery("[data-contact-org-picker]", picker);
+  await editor.open({ id: "p1" });
+  assert.match(picker.innerHTML, /value="cx"/, "unknown org kept as a labeled option");
+  assert.match(picker.innerHTML, /Current company \(cx\)/, "no invented display name");
+  assert.equal(picker.value, "cx");
+});
+
+test("new contacts preset the org with the chooser visible; blank opens the chooser", async () => {
   const companies = [{ id: "c1", displayName: "Acme" }, { id: "c2", displayName: "Beta" }];
   const { form, editor } = editorHarness({ companies });
   const picker = new FakeNode("select");
@@ -189,7 +240,7 @@ test("new contacts preset the org and hide the picker; blank opens the chooser",
   await editor.open({ organizationId: "c1" });
   assert.equal(form.elements.organizationId.value, "c1");
   assert.equal(picker.value, "c1");
-  assert.equal(picker.disabled, true);
+  assert.equal(picker.disabled, false, "chooser stays usable even with a preset");
   await editor.open({});
   assert.equal(picker.disabled, false);
   assert.match(picker.innerHTML, /Acme/);
