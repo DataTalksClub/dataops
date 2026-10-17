@@ -16,11 +16,15 @@ import {
   WorkspaceSettingsConflictError,
   type WorkspaceSettingsChanges,
 } from '../db/workspaceSettings';
+import {
+  MAX_PODCAST_EPISODES_PER_SEASON,
+  validCadence,
+} from '../podcast/releaseSlots';
 import { resolveInteractiveActor, workAdminForbidden } from '../identity/actor';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 export const WORKSPACE_SETTINGS_PATH = '/api/workspace-settings';
-const EDITABLE = new Set(['newsletterCardLeadDays', 'sponsorMaterialsReminderDays', 'sponsorFollowUpDays', 'sponsorColdContactDays']);
+const EDITABLE = new Set(['newsletterCardLeadDays', 'sponsorMaterialsReminderDays', 'sponsorFollowUpDays', 'sponsorColdContactDays', 'podcastReleaseCadence', 'podcastEpisodesPerSeason']);
 const COLD_STAGES = ['talking', 'customer', 'prospect', 'dormant'] as const;
 
 const isDayCount = (value: unknown, max: number) => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= max;
@@ -99,6 +103,20 @@ export async function handleWorkspaceSettingsRoutes(
     }
     const record = days as Record<string, number>;
     changes.sponsorColdContactDays = { talking: Number(record.talking), customer: Number(record.customer), prospect: Number(record.prospect), dormant: Number(record.dormant) };
+  }
+  if (Object.hasOwn(requested, 'podcastReleaseCadence')) {
+    const cadence = requested.podcastReleaseCadence;
+    if (!validCadence(cadence)) {
+      return json(400, { error: 'podcastReleaseCadence must name weekday 1-7, time HH:MM, and timezone (for example { weekday: 5, time: "19:00", timezone: "Europe/Berlin" })' });
+    }
+    changes.podcastReleaseCadence = { weekday: cadence.weekday, time: cadence.time, timezone: cadence.timezone };
+  }
+  if (Object.hasOwn(requested, 'podcastEpisodesPerSeason')) {
+    const perSeason = requested.podcastEpisodesPerSeason;
+    if (!Number.isInteger(perSeason) || Number(perSeason) < 1 || Number(perSeason) > MAX_PODCAST_EPISODES_PER_SEASON) {
+      return json(400, { error: `podcastEpisodesPerSeason must be a whole number from 1 to ${MAX_PODCAST_EPISODES_PER_SEASON}` });
+    }
+    changes.podcastEpisodesPerSeason = Number(perSeason);
   }
   try {
     return json(200, await updateWorkspaceSettings(client, {

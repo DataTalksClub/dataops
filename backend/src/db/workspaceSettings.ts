@@ -16,6 +16,10 @@
  * - `sponsorColdContactDays`: days without inbound or outbound contact after
  *   which an organization or contact of each relationship stage (`talking`,
  *   `customer`, `prospect`, `dormant`) counts as going cold.
+ * - `podcastReleaseCadence`: the weekly podcast release moment (weekday, wall
+ *   time, timezone). Friday 19:00 Europe/Berlin until an admin changes it.
+ * - `podcastEpisodesPerSeason`: episodes in a season before the number rolls
+ *   to episode 1 of the next season. 9 until an admin changes it.
  */
 
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
@@ -23,6 +27,14 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { TABLE_USERS } from './tableNames';
 import { getFormerUser, getUser } from './users';
+import {
+  DEFAULT_PODCAST_EPISODES_PER_SEASON,
+  DEFAULT_PODCAST_RELEASE_CADENCE,
+  MAX_PODCAST_EPISODES_PER_SEASON,
+  normalizeCadence,
+  normalizeEpisodesPerSeason,
+  type PodcastReleaseCadence,
+} from '../podcast/releaseSlots';
 
 const SETTINGS_KEY = { PK: 'SETTINGS#workspace', SK: 'SETTINGS#workspace' } as const;
 
@@ -50,6 +62,10 @@ export interface WorkspaceSettings {
   sponsorFollowUpDays: number;
   /** Quiet days after which each relationship stage counts as going cold. */
   sponsorColdContactDays: { talking: number; customer: number; prospect: number; dormant: number };
+  /** Weekly podcast release moment; Friday 19:00 Europe/Berlin until set. */
+  podcastReleaseCadence: PodcastReleaseCadence;
+  /** Episodes per season before the number rolls to the next season. */
+  podcastEpisodesPerSeason: number;
   /** 0 until the record is first written. */
   version: number;
   updatedAt?: string;
@@ -77,6 +93,8 @@ export async function getWorkspaceSettings(client: DynamoDBDocumentClient): Prom
       sponsorMaterialsReminderDays: [...DEFAULT_SPONSOR_MATERIALS_REMINDER_DAYS],
       sponsorFollowUpDays: DEFAULT_SPONSOR_FOLLOW_UP_DAYS,
       sponsorColdContactDays: { ...DEFAULT_SPONSOR_COLD_CONTACT_DAYS },
+      podcastReleaseCadence: { ...DEFAULT_PODCAST_RELEASE_CADENCE },
+      podcastEpisodesPerSeason: DEFAULT_PODCAST_EPISODES_PER_SEASON,
       version: 0,
     };
   }
@@ -92,6 +110,8 @@ export async function getWorkspaceSettings(client: DynamoDBDocumentClient): Prom
       ? Number(item.sponsorFollowUpDays)
       : DEFAULT_SPONSOR_FOLLOW_UP_DAYS,
     sponsorColdContactDays: normalizeColdContactDays(item.sponsorColdContactDays),
+    podcastReleaseCadence: normalizeCadence(item.podcastReleaseCadence),
+    podcastEpisodesPerSeason: normalizeEpisodesPerSeason(item.podcastEpisodesPerSeason),
     version: Number(item.version) || 0,
     ...(typeof item.updatedAt === 'string' ? { updatedAt: item.updatedAt } : {}),
     ...(typeof item.updatedBy === 'string' ? { updatedBy: item.updatedBy } : {}),
@@ -109,7 +129,7 @@ function normalizeColdContactDays(value: unknown): { talking: number; customer: 
 }
 
 export type WorkspaceSettingsChanges = Partial<Pick<WorkspaceSettings,
-  'defaultAssigneeId' | 'newsletterCardLeadDays' | 'sponsorMaterialsReminderDays' | 'sponsorFollowUpDays' | 'sponsorColdContactDays'>>;
+  'defaultAssigneeId' | 'newsletterCardLeadDays' | 'sponsorMaterialsReminderDays' | 'sponsorFollowUpDays' | 'sponsorColdContactDays' | 'podcastReleaseCadence' | 'podcastEpisodesPerSeason'>>;
 
 /** Write `changes` over the current settings, if they are still at `expectedVersion`. */
 export async function updateWorkspaceSettings(
@@ -124,6 +144,8 @@ export async function updateWorkspaceSettings(
     sponsorMaterialsReminderDays: current.sponsorMaterialsReminderDays,
     sponsorFollowUpDays: current.sponsorFollowUpDays,
     sponsorColdContactDays: current.sponsorColdContactDays,
+    podcastReleaseCadence: current.podcastReleaseCadence,
+    podcastEpisodesPerSeason: current.podcastEpisodesPerSeason,
     ...input.changes,
     version: input.expectedVersion + 1,
     updatedAt: new Date().toISOString(),

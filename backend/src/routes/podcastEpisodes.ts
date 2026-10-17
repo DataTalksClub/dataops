@@ -26,6 +26,11 @@ import {
   derivePublicationReadiness,
   normalizePublication,
 } from "../podcast/publication";
+import {
+  MAX_NEXT_SLOT_COUNT,
+  nextReleaseSlots,
+} from "../podcast/releaseSlots";
+import { getWorkspaceSettings } from "../db/workspaceSettings";
 import { resolveInteractiveActor } from "../identity/actor";
 import { podcastEpisodeTitleValues, recordTemplateTypes } from "../cards/cardTitlePattern";
 import {
@@ -345,6 +350,20 @@ export async function handlePodcastEpisodeRoutes(
   if (cardRoute) {
     if (method !== "POST") return json(405, { error: "Method not allowed" });
     return createEpisodeCard(id, event, client, resolved.actor);
+  }
+
+  if (method === "GET" && id === "next-slot") {
+    const query = event.queryStringParameters || {};
+    const count = query.count === undefined ? 4 : Number(query.count);
+    if (!Number.isInteger(count) || count < 1 || count > MAX_NEXT_SLOT_COUNT)
+      return json(400, { error: `Invalid count: name 1 to ${MAX_NEXT_SLOT_COUNT}` });
+    const settings = await getWorkspaceSettings(client);
+    return json(200, nextReleaseSlots({
+      episodes: await listPodcastEpisodes(client),
+      cadence: settings.podcastReleaseCadence,
+      episodesPerSeason: settings.podcastEpisodesPerSeason,
+      count,
+    }));
   }
 
   if (method === "GET" && !id) {
