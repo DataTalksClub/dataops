@@ -453,7 +453,7 @@ describe("work model production behavior", () => {
             },
           };
         }
-        if (value.pathname === "/api/tasks" && value.searchParams.has("cardId")) {
+        if (value.pathname === "/api/tasks" && value.searchParams.has("cardIds")) {
           return { items: [{ cardId: "card-1", id: "card-task" }] };
         }
         if (value.pathname === "/api/tasks" && value.searchParams.get("status") === "waiting") {
@@ -481,7 +481,61 @@ describe("work model production behavior", () => {
     assert.equal(harness.calls.accountRefreshes.length, 1);
     assert.equal(harness.calls.refreshDocuments, 1);
     assert.equal(harness.calls.workBell, 1);
-    assert.equal(requests.some((url) => url.includes("cardId=card-1")), true);
+    assert.equal(requests.some((url) => url.includes("cardIds=card-1")), true);
+  });
+
+  test("loads every active card checklist with one batched request", async () => {
+    const requests = [];
+    const harness = createWorkModelHarness({
+      request: async (url) => {
+        requests.push(String(url));
+        const value = new URL(url);
+        if (value.pathname === "/api/me") {
+          return { user: { id: "alexey" } };
+        }
+        if (value.pathname === "/api/users") {
+          return { items: [{ id: "alexey", name: "Alexey" }] };
+        }
+        if (value.pathname === "/api/cards") {
+          return {
+            cards: {
+              items: [
+                canonicalCard({ id: "card-1", title: "One" }),
+                canonicalCard({ id: "card-2", title: "Two" }),
+                canonicalCard({ id: "card-3", title: "Three", status: "done" }),
+              ],
+            },
+          };
+        }
+        if (value.pathname === "/api/tasks" && value.searchParams.has("cardIds")) {
+          assert.deepEqual(value.searchParams.get("cardIds").split(","), ["card-1", "card-2"]);
+          return {
+            items: [
+              { cardId: "card-1", id: "task-1" },
+              { cardId: "card-2", id: "task-2" },
+            ],
+          };
+        }
+        if (value.pathname === "/api/tasks") {
+          return { items: [] };
+        }
+        return {};
+      },
+      workSnapshot: {},
+    });
+    await harness.model.refreshOperationsWorkSnapshot({ rerender: true });
+    const cardRequests = requests.filter((url) => url.includes("/api/tasks?cardIds="));
+    assert.equal(cardRequests.length, 1);
+    assert.equal(requests.some((url) => url.includes("/api/tasks?cardId=")), false);
+    assert.deepEqual(
+      harness.state.workSnapshot.cardTasks["card-1"].map((task) => task.id),
+      ["task-1"],
+    );
+    assert.deepEqual(
+      harness.state.workSnapshot.cardTasks["card-2"].map((task) => task.id),
+      ["task-2"],
+    );
+    assert.equal(harness.state.workSnapshot.cardTasksComplete, true);
   });
 
   test("keeps retained Cards visible without treating them as current when a reload fails", async () => {
@@ -504,7 +558,7 @@ describe("work model production behavior", () => {
             },
           };
         }
-        if (value.pathname === "/api/tasks" && value.searchParams.has("cardId")) {
+        if (value.pathname === "/api/tasks" && value.searchParams.has("cardIds")) {
           return { items: [{ cardId: "card-1", id: "card-task" }] };
         }
         if (value.pathname === "/api/tasks") {

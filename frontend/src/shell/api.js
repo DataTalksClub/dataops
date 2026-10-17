@@ -14,7 +14,30 @@ export function createApiClient({ apiBase, fetchImpl, storage }) {
     return new URL(path, apiBase);
   }
 
+  // Identical GETs fired by parallel snapshot jobs share one flight: the
+  // request fires once and every caller awaits the same promise. Mutations
+  // and blob downloads never coalesce.
+  const inflightGets = new Map();
+
   async function request(url, options = {}) {
+    const method = String(options.method || "GET").toUpperCase();
+    const coalesceKey =
+      method === "GET" && options.responseType !== "blob"
+        ? `GET ${String(url)}`
+        : null;
+    if (coalesceKey && inflightGets.has(coalesceKey)) {
+      return inflightGets.get(coalesceKey);
+    }
+    const flight = fetchJson(url, options).finally(() => {
+      if (coalesceKey && inflightGets.get(coalesceKey) === flight) {
+        inflightGets.delete(coalesceKey);
+      }
+    });
+    if (coalesceKey) inflightGets.set(coalesceKey, flight);
+    return flight;
+  }
+
+  async function fetchJson(url, options = {}) {
     const token = (() => {
       try {
         return storage.getItem("dataops_token");

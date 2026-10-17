@@ -632,22 +632,40 @@ export function createWorkModel(context) {
 
     const activeCards = snapshot.cards.filter(isActiveWorkCard);
 
+    // Card checklists arrive in one batched request per chunk of Cards, not
+    // one request per Card: a snapshot with 20 active Cards costs 1 round
+    // trip here instead of 20.
+    const cardIdChunks = [];
+    for (let index = 0; index < activeCards.length; index += 100) {
+      cardIdChunks.push(activeCards.slice(index, index + 100).map((card) => card.id));
+    }
     const cardTaskResults = await Promise.allSettled(
-      activeCards.map((card) =>
-        request(workApiUrl("/api/tasks", { cardId: card.id })),
+      cardIdChunks.map((ids) =>
+        request(workApiUrl("/api/tasks", { cardIds: ids.join(",") })),
       ),
     );
-    activeCards.forEach((card, index) => {
-      const result = cardTaskResults[index];
+    const cardTasksById = new Map();
+    cardTaskResults.forEach((result, chunkIndex) => {
+      const ids = cardIdChunks[chunkIndex];
       if (result.status === "fulfilled") {
-        snapshot.cardTasks[card.id] = tasksFromWorkPayload(result.value);
+        for (const task of tasksFromWorkPayload(result.value)) {
+          if (task?.cardId === undefined || task?.cardId === null) continue;
+          if (!cardTasksById.has(task.cardId)) cardTasksById.set(task.cardId, []);
+          cardTasksById.get(task.cardId).push(task);
+        }
       } else {
         snapshot.errors.push(
           result.reason?.message ||
-            `Could not load tasks for ${card.title || card.id}`,
+            `Could not load tasks for ${ids.length} card${ids.length === 1 ? "" : "s"}`,
         );
       }
     });
+    for (const card of activeCards) {
+      if (cardTasksById.has(card.id)) snapshot.cardTasks[card.id] = cardTasksById.get(card.id);
+      else if (!cardTaskResults.some((result) => result.status === "rejected")) {
+        snapshot.cardTasks[card.id] = [];
+      }
+    }
     snapshot.cardTasksComplete =
       !cardsRequestFailed &&
       cardPage.complete &&
