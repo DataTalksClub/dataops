@@ -9,10 +9,14 @@ export const help = `dataops crm - bounded CRM directories, record activity, not
 Usage
   dataops crm companies list [--search Q] [--relationship R] [--active true|false|all]
       [--last-touch-after YYYY-MM-DD] [--last-touch-before YYYY-MM-DD]
-      [--sort name|lastTouch] [--limit N] [--cursor C]
+      [--sort name|lastTouch] [--direction asc|desc] [--saved-view ID] [--limit N] [--cursor C]
   dataops crm people list [--search Q] [--company ID] [--primary true|false]
       [--unlinked true|false] [--active true|false|all] [--sort name|lastTouch]
-      [--limit N] [--cursor C]
+      [--direction asc|desc] [--saved-view ID] [--limit N] [--cursor C]
+  dataops crm pipeline list [--saved-view ID] [--view actionable|active|unscheduled|closed|all]
+      [--stage STAGE] [--owner ID] [--search Q] [--sort next-action|recent] [--limit N] [--cursor C]
+      Read-only pipeline rows through the canonical pipeline endpoint
+  dataops crm archive <deal-id>             Read-only post-send archive for a deal (drafts/attempts)
   dataops crm person show <id>
   dataops crm person create --data '{...}'      Through the canonical contact record
   dataops crm person update <id> --data '{...}'  Must include the current version
@@ -21,6 +25,7 @@ Usage
   dataops crm notes list <organization|contact|deal> <id> [--limit N] [--cursor C]
   dataops crm note add <organization|contact|deal> <id> --body TEXT [--source-key KEY]
   dataops crm views list [--entity companies|people|pipeline] [--all]
+  dataops crm views show <id>               A view with server-resolved filters
   dataops crm views create --data '{...}'
   dataops crm views update <id> --data '{...}'  Must include the current version
   dataops crm views archive <id>                Archive affects view metadata only
@@ -52,7 +57,8 @@ function queryArgs(args) {
   for (const [option, param] of [
     ["search", "search"], ["relationship", "relationship"], ["active", "active"],
     ["company", "company"], ["primary", "primary"], ["unlinked", "unlinked"],
-    ["sort", "sort"], ["types", "types"],
+    ["sort", "sort"], ["direction", "direction"], ["types", "types"],
+    ["view", "view"], ["stage", "stage"], ["owner", "owner"],
     ["lastTouchAfter", "lastTouchAfter"], ["lastTouchBefore", "lastTouchBefore"],
   ]) {
     const value = optionalString(args, option);
@@ -69,8 +75,29 @@ function pagedResult(payload, emptyLabel) {
   return { items: Array.isArray(payload?.items) ? payload.items : [], total: payload?.total ?? 0, nextCursor: payload?.nextCursor ?? null, emptyLabel };
 }
 
+/**
+ * Execute a saved view: fetch it (server-resolved filters), then run the
+ * directory with explicit flags winning. One resolver — the server's.
+ */
+async function directoryQuery(api, args, entity) {
+  const query = queryArgs(args);
+  const savedView = optionalString(args, "savedView");
+  if (savedView === undefined) return query;
+  const view = await api.get(`/api/sponsor-crm/views/${enc(savedView)}`);
+  if (view?.entity !== entity) throw new UsageError(`Saved view ${savedView} is for ${view?.entity || "unknown"}, not ${entity}.`);
+  const resolved = view?.resolvedFilters || {};
+  const viewSort = view?.sort || {};
+  return {
+    ...resolved,
+    ...(viewSort.field ? { sort: viewSort.field } : {}),
+    ...(viewSort.direction ? { direction: viewSort.direction } : {}),
+    ...query,
+  };
+}
+
 export async function companiesList(args, io) {
-  const result = await apiFor(args).get("/api/sponsor-crm/directory/companies", { query: queryArgs(args) });
+  const api = apiFor(args);
+  const result = await api.get("/api/sponsor-crm/directory/companies", { query: await directoryQuery(api, args, "companies") });
   if (args.json) return result;
   table(io, result.items || [], [
     ["NAME", (item) => item.displayName || ""],
@@ -84,7 +111,8 @@ export async function companiesList(args, io) {
 }
 
 export async function peopleList(args, io) {
-  const result = await apiFor(args).get("/api/sponsor-crm/directory/people", { query: queryArgs(args) });
+  const api = apiFor(args);
+  const result = await api.get("/api/sponsor-crm/directory/people", { query: await directoryQuery(api, args, "people") });
   if (args.json) return result;
   table(io, result.items || [], [
     ["NAME", (item) => item.name || ""],
@@ -114,6 +142,34 @@ export async function personUpdate(args, io) {
   const id = positional(args, 0, "dataops crm person update <id> --data '{...}'");
   const result = await apiFor(args).put(`/api/sponsor-crm/contacts/${enc(id)}`, jsonData(args));
   if (!args.json) io.print(`Updated person ${id}.`);
+  return result;
+}
+
+export async function pipelineList(args, io) {
+  const api = apiFor(args);
+  const savedView = optionalString(args, "savedView");
+  let query = queryArgs(args);
+  if (savedView !== undefined) {
+    const view = await api.get(`/api/sponsor-crm/views/${enc(savedView)}`);
+    if (view?.entity !== "pipeline") throw new UsageError(`Saved view ${savedView} is for ${view?.entity || "unknown"}, not pipeline.`);
+    const viewSort = view?.sort || {};
+    query = { ...(view?.resolvedFilters || {}), ...(viewSort.field ? { sort: viewSort.field } : {}), ...query };
+  }
+  const result = await api.get("/api/sponsor-crm/pipeline", { query });
+  if (args.json) return result;
+  table(io, result.items || result.rows || [], [
+    ["COMPANY", (item) => item.organizationName || ""],
+    ["STAGE", (item) => item.stage || ""],
+    ["NEXT", (item) => item.nextTask?.description || ""],
+    ["OWNER", (item) => item.nextTask?.assigneeId || ""],
+  ], "No pipeline rows.");
+  return result;
+}
+
+export async function archive(args, io) {
+  const id = positional(args, 0, "dataops crm archive <deal-id>");
+  const result = await apiFor(args).get(`/api/sponsor-crm/deals/${enc(id)}/communications`);
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
   return result;
 }
 
@@ -198,6 +254,13 @@ export async function viewsArchive(args, io) {
   return result;
 }
 
+export async function viewsShow(args, io) {
+  const id = positional(args, 0, "dataops crm views show <id>");
+  const result = await apiFor(args).get(`/api/sponsor-crm/views/${enc(id)}`);
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
 async function dispatch(args, io, verbs, usage) {
   const [verb, ...rest] = args._;
   const handler = verbs[verb];
@@ -211,10 +274,12 @@ export const commands = {
   person: (args, io) => dispatch(args, io,
     { show: personShow, create: personCreate, update: personUpdate },
     "dataops crm person <show|create|update> [...]"),
+  pipeline: (args, io) => dispatch(args, io, { list: pipelineList }, "dataops crm pipeline list [...]"),
+  archive,
   activity,
   notes: (args, io) => dispatch(args, io, { list: notesList }, "dataops crm notes list <target> <id> [...]"),
   note: (args, io) => dispatch(args, io, { add: noteAdd }, "dataops crm note add <target> <id> --body TEXT [...]"),
   views: (args, io) => dispatch(args, io,
-    { list: viewsList, create: viewsCreate, update: viewsUpdate, archive: viewsArchive },
-    "dataops crm views <list|create|update|archive> [...]"),
+    { list: viewsList, show: viewsShow, create: viewsCreate, update: viewsUpdate, archive: viewsArchive },
+    "dataops crm views <list|show|create|update|archive> [...]"),
 };

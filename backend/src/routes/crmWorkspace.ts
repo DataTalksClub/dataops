@@ -1,8 +1,8 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
-import { listCompanies, listPeople } from '../crmWorkspace/directory';
-import { archiveView, createView, listViews, updateView } from '../crmWorkspace/views';
+import { listCompanies, listPeople, getCompanySummary, resolveToday } from '../crmWorkspace/directory';
+import { archiveView, createView, getViewOne, listViews, resolveView, updateView } from '../crmWorkspace/views';
 import { createNote, listNotes, type NoteTarget } from '../crmWorkspace/notes';
 import { readActivity, type ActivityTarget } from '../crmWorkspace/activity';
 
@@ -13,6 +13,17 @@ const json = (statusCode: number, body: unknown): LambdaResponse => ({
 });
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+/** Path captures arrive percent-encoded (the CLI encodes ids); decode before ID checks. */
+function pathId(raw: string): { id: string } | { error: string } {
+  try {
+    const id = decodeURIComponent(raw);
+    if (!ID.test(id)) return { error: 'Invalid ID' };
+    return { id };
+  } catch {
+    return { error: 'Invalid ID' };
+  }
+}
 
 const parse = (event: LambdaEvent): Record<string, unknown> | null => {
   try {
@@ -43,14 +54,59 @@ export async function handleCrmWorkspaceRoutes(
   // Same actor rule as the existing sponsor CRM routes: explicit identity, else
   // the workspace default. Writer endpoints 401 when neither resolves.
 
-  if (path === '/api/sponsor-crm/directory/companies') {
+  // Execute a saved view: base filters = the view's server-resolved filters,
+  // explicit query params win (copied links stay meaningful via effective params).
+  async function withSavedView(
+    entity: 'companies' | 'people',
+    base: Record<string, string | undefined>,
+  ): Promise<{ query: Record<string, string | undefined> } | { status: number; body: unknown }> {
+    if (!base.view) return { query: base };
+    const today = resolveToday(base);
+    if ('error' in today) return { status: 400, body: { error: today.error } };
+    const user = actor(event) || (await resolveDefaultAssigneeId(client)) || '';
+    if (!user) return { status: 401, body: { error: 'Unauthorized' } };
+    const resolved = await resolveView(client, user, base.view, today.today);
+    if (!resolved) return { status: 404, body: { error: 'View not found' } };
+    if (resolved.entity !== entity) return { status: 400, body: { error: 'View entity mismatch' } };
+    const stored = (resolved.view.resolvedFilters || {}) as Record<string, unknown>;
+    const baseFilters = Object.fromEntries(
+      Object.entries(stored).map(([key, value]) => [key, String(value)]),
+    );
+    const { view, cursor, sort, direction, ...explicit } = base;
+    void view;
+    const viewSort = (resolved.view.sort || {}) as Record<string, string>;
+    return {
+      query: {
+        ...baseFilters,
+        ...(viewSort.field ? { sort: viewSort.field } : {}),
+        ...(viewSort.direction ? { direction: viewSort.direction } : {}),
+        ...explicit,
+        ...(sort ? { sort } : {}),
+        ...(direction ? { direction } : {}),
+        ...(cursor ? { cursor } : {}),
+      },
+    };
+  }
+
+  const companyDir = path.match(/^\/api\/sponsor-crm\/directory\/companies(?:\/([^/]+))?$/);
+  if (companyDir) {
     if (method !== 'GET') return json(405, { error: 'Method not allowed' });
-    const result = await listCompanies(client, query);
+    if (companyDir[1]) {
+      const decoded = pathId(companyDir[1]);
+      if ('error' in decoded) return json(400, { error: decoded.error });
+      const result = await getCompanySummary(client, decoded.id, query);
+      return json(result.status, result.body);
+    }
+    const applied = await withSavedView('companies', query);
+    if ('status' in applied) return json(applied.status, applied.body);
+    const result = await listCompanies(client, applied.query);
     return json(result.status, result.body);
   }
   if (path === '/api/sponsor-crm/directory/people') {
     if (method !== 'GET') return json(405, { error: 'Method not allowed' });
-    const result = await listPeople(client, query);
+    const applied = await withSavedView('people', query);
+    if ('status' in applied) return json(applied.status, applied.body);
+    const result = await listPeople(client, applied.query);
     return json(result.status, result.body);
   }
 
@@ -69,16 +125,25 @@ export async function handleCrmWorkspaceRoutes(
       const result = await createView(client, user, body);
       return json(result.status, result.body);
     }
-    if (id && !ID.test(id)) return json(400, { error: 'Invalid ID' });
-    if (id && method === 'PUT') {
-      const body = parse(event);
-      if (!body) return json(400, { error: 'Invalid JSON' });
-      const result = await updateView(client, user, id, body);
-      return json(result.status, result.body);
-    }
-    if (id && method === 'DELETE') {
-      const result = await archiveView(client, user, id);
-      return json(result.status, result.body);
+    if (id) {
+      const decoded = pathId(id);
+      if ('error' in decoded) return json(400, { error: decoded.error });
+      const viewId = decoded.id;
+      if (method === 'GET') {
+        const result = await getViewOne(client, user, viewId, query);
+        return json(result.status, result.body);
+      }
+      if (method === 'PUT') {
+        const body = parse(event);
+        if (!body) return json(400, { error: 'Invalid JSON' });
+        const result = await updateView(client, user, viewId, body);
+        return json(result.status, result.body);
+      }
+      if (method === 'DELETE') {
+        const result = await archiveView(client, user, viewId);
+        return json(result.status, result.body);
+      }
+      return json(405, { error: 'Method not allowed' });
     }
     return json(405, { error: 'Method not allowed' });
   }
@@ -86,17 +151,20 @@ export async function handleCrmWorkspaceRoutes(
   const activityMatch = path.match(/^\/api\/sponsor-crm\/activity\/(organization|contact|deal)\/([^/]+)$/);
   if (activityMatch) {
     if (method !== 'GET') return json(405, { error: 'Method not allowed' });
-    if (!ID.test(activityMatch[2])) return json(400, { error: 'Invalid ID' });
-    const result = await readActivity(client, activityMatch[1] as ActivityTarget, activityMatch[2], query);
+    const decoded = pathId(activityMatch[2]);
+    if ('error' in decoded) return json(400, { error: decoded.error });
+    const result = await readActivity(client, activityMatch[1] as ActivityTarget, decoded.id, query);
     return json(result.status, result.body);
   }
 
   const notesMatch = path.match(/^\/api\/sponsor-crm\/notes\/(organization|contact|deal)\/([^/]+)$/);
   if (notesMatch) {
-    if (!ID.test(notesMatch[2])) return json(400, { error: 'Invalid ID' });
+    const decoded = pathId(notesMatch[2]);
+    if ('error' in decoded) return json(400, { error: decoded.error });
     const target = notesMatch[1] as NoteTarget;
+    const targetId = decoded.id;
     if (method === 'GET') {
-      const result = await listNotes(client, target, notesMatch[2], query);
+      const result = await listNotes(client, target, targetId, query);
       return json(result.status, result.body);
     }
     if (method === 'POST') {
@@ -104,7 +172,7 @@ export async function handleCrmWorkspaceRoutes(
       if (!user) return json(401, { error: 'Unauthorized' });
       const body = parse(event);
       if (!body) return json(400, { error: 'Invalid JSON' });
-      const result = await createNote(client, user, target, notesMatch[2], body);
+      const result = await createNote(client, user, target, targetId, body);
       return json(result.status, result.body);
     }
     return json(405, { error: 'Method not allowed' });

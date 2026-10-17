@@ -101,7 +101,8 @@ describe('crm workspace activity', () => {
     // Open work is labeled related-work, never an event; unrelated tasks excluded.
     assert.ok(body.relatedWork.some((work: any) => work.taskId === task.id && work.scope === 'direct'));
     assert.ok(!body.relatedWork.some((work: any) => work.taskId === other.id));
-    assert.ok(body.relatedWork.every((work: any) => work.href.startsWith('/sponsors/')));
+    assert.ok(body.relatedWork.every((work: any) => work.subjectHref.startsWith('/sponsors/')));
+    assert.ok(body.relatedWork.every((work: any) => typeof work.taskId === 'string' && work.taskId));
     assert.equal(body.total, body.items.length);
     assert.ok(body.reads.queries.some((scan: any) => scan.kind === 'message'));
     assert.ok(body.reads.queries.some((scan: any) => scan.kind === 'note'));
@@ -125,6 +126,25 @@ describe('crm workspace activity', () => {
     assert.equal(messageQuery.matched, body.sources.touch + body.sources.mail);
     assert.ok(messageQuery.scanned > messageQuery.matched, 'unrelated org mail is evaluated but not kept');
     void second;
+  });
+
+  it('serves default activity for phone-only people with no emails', async () => {
+    const suffix = String(seedCount++);
+    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
+      displayName: `Quiet Org ${suffix}`, domain: `quiet-${suffix}.example`, sourceKey: `ws-quiet-org-${suffix}`,
+    }));
+    // Valid contact without emails (validateContact only checks emails when supplied).
+    const contact = data(await invoke('POST', '/api/sponsor-crm/contacts', {
+      organizationId: org.id, name: 'Pat Phone', phone: '+100000000', sourceKey: `ws-quiet-contact-${suffix}`,
+    }));
+    const res = await invoke('GET', `/api/sponsor-crm/activity/contact/${contact.id}`);
+    assert.equal(res.statusCode, 200);
+    const body = data(res);
+    assert.ok(body.sources.history >= 1);
+    assert.equal(body.sources.mail, 0);
+    assert.equal(body.sources.touch, 0);
+    const messageQuery = body.reads.queries.find((scan: any) => scan.kind === 'message');
+    assert.ok(messageQuery);
   });
 
   it('scopes person mail to provably linked messages and labels org work related-company', async () => {
@@ -170,6 +190,40 @@ describe('crm workspace activity', () => {
       thrown = error;
     }
     assert.equal((thrown as { code?: string } | null)?.code, 'workspace_source_too_large');
+  });
+
+  it('orders related work by eligibility, never manufacturing urgency', async () => {
+    const suffix = String(seedCount++);
+    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
+      displayName: `Eligible Org ${suffix}`, domain: `eligible-${suffix}.example`, sourceKey: `ws-elig-org-${suffix}`,
+    }));
+    // Past original date, still open: genuinely overdue and eligible first.
+    const overdue = data(await invoke('POST', '/api/tasks', {
+      description: 'Overdue eligible', date: '2026-01-05',
+      subject: { type: 'sponsor-company', id: org.id },
+    }));
+    // Future waiting follow-up: open but deferred, honestly labeled, never first.
+    const snoozed = data(await invoke('POST', '/api/tasks', {
+      description: 'Future follow-up', date: '2026-01-06', status: 'waiting',
+      waitingFor: 'partner reply', followUpAt: '2099-01-01T00:00:00Z', comment: 'Waiting on partner.',
+      subject: { type: 'sponsor-company', id: org.id },
+    }));
+    assert.ok(snoozed.id);
+    const body = data(await invoke('GET', `/api/sponsor-crm/activity/organization/${org.id}?today=2026-10-17`));
+    assert.equal(body.relatedWork[0].taskId, overdue.id);
+    assert.equal(body.relatedWork[0].eligible, true);
+    assert.equal(body.relatedWork[0].deferred, false);
+    assert.equal(body.relatedWork[0].effectiveDate, '2026-01-05');
+    const waiting = body.relatedWork.find((work: any) => work.taskId === snoozed.id);
+    assert.ok(waiting);
+    assert.equal(waiting.eligible, false);
+    assert.equal(waiting.deferred, true);
+    assert.equal(waiting.effectiveDate, '2099-01-01');
+    assert.equal(waiting.deferredUntil, '2099-01-01T00:00:00Z');
+    assert.equal(waiting.followUpAt, '2099-01-01T00:00:00Z');
+    assert.ok(waiting.subjectHref === `/sponsors/companies/${org.id}`);
+    assert.ok(!('href' in waiting), 'no looping record href under a task name');
+    assert.ok(body.relatedWork.every((work: any) => typeof work.taskId === 'string'));
   });
 
   it('filters types, binds cursors and stays available for archived records', async () => {

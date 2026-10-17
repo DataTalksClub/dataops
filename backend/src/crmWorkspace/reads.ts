@@ -95,8 +95,10 @@ const DEFAULT_SCAN_LIMITS: ScanLimits = {
 /**
  * Messages for one record, filtered server-side (never "scan the table, keep
  * one org"). Reports both scanned (rows evaluated) and matched (rows kept) so
- * responses count evidence truthfully. Bounds fail loudly; `limits` override
- * exists for tests to prove the bound against real storage.
+ * responses count evidence truthfully. Runs through repo `collectBoundedPages`
+ * (page/abort/timeout/repeated-cursor guards); exceeding the scanned/matched
+ * caps fails loudly; `limits` override exists for tests to prove the bound
+ * against real storage.
  */
 export async function scanTargetMessages(
   client: DynamoDBDocumentClient,
@@ -104,18 +106,26 @@ export async function scanTargetMessages(
   source: string,
   limits: ScanLimits = DEFAULT_SCAN_LIMITS,
 ): Promise<{ items: Record<string, unknown>[]; scanned: number; matched: number }> {
-  const values: Record<string, unknown> = { ':pfx': 'MESSAGE#' };
+  const values: Record<string, unknown> = { ':pfx': 'MESSAGE#', ':kept': 'rehomed' };
+  // Rehomed tuition rows stay archived evidence, never CRM views (A owns the
+  // shared-helper exclusion post-rebase; this owned Scan states its own).
+  const kept = '(attribute_not_exists(recordDisposition) OR recordDisposition <> :kept)';
   let targetFilter: string;
   if (target.targetType === 'contact') {
     // Provably linked person mail only: explicit contact link, or an address
     // the contact owns at the same organization. No company-wide inheritance.
+    // :org binds ONLY when an email predicate emits it (Dynamo rejects unused
+    // values; phone-only people have no emails and must not 500).
     const ors = ['contactId = :cid'];
     values[':cid'] = target.targetId;
-    target.emails.slice(0, 10).forEach((address, index) => {
-      ors.push(`(organizationId = :org AND personEmail = :em${index})`);
-      values[`:em${index}`] = address;
-    });
-    values[':org'] = target.organizationId;
+    const emails = target.emails.slice(0, 10);
+    if (emails.length > 0) {
+      values[':org'] = target.organizationId;
+      emails.forEach((address, index) => {
+        ors.push(`(organizationId = :org AND personEmail = :em${index})`);
+        values[`:em${index}`] = address;
+      });
+    }
     targetFilter = `(${ors.join(' OR ')})`;
   } else if (target.targetType === 'deal') {
     values[':id'] = target.targetId;
@@ -124,29 +134,32 @@ export async function scanTargetMessages(
     values[':id'] = target.targetId;
     targetFilter = 'organizationId = :id';
   }
-  const items: Record<string, unknown>[] = [];
   let scanned = 0;
-  let ExclusiveStartKey: Record<string, unknown> | undefined;
-  const startedAt = Date.now();
-  for (;;) {
-    if (Date.now() - startedAt > limits.deadlineMs) throw sourceTooLarge(source);
-    const result = await client.send(
-      new ScanCommand({
-        TableName: TABLE_SPONSOR_CRM,
-        ConsistentRead: true,
-        FilterExpression: `begins_with(PK, :pfx) AND ${targetFilter}`,
-        ExpressionAttributeValues: values,
-        Limit: limits.pageSize,
-        ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
-      }),
-    );
-    scanned += typeof result.ScannedCount === 'number' ? result.ScannedCount : (result.Items || []).length;
-    if (scanned > limits.maxScanned) throw sourceTooLarge(source);
-    for (const item of result.Items || []) {
-      items.push(clean(item as Record<string, unknown>));
-      if (items.length > limits.maxMatched) throw sourceTooLarge(source);
-    }
-    if (!result.LastEvaluatedKey) return { items, scanned, matched: items.length };
-    ExclusiveStartKey = result.LastEvaluatedKey as Record<string, unknown>;
+  let items: Record<string, unknown>[];
+  try {
+    items = await collectBoundedPages<Record<string, unknown>>({
+      limits: { maxPages: 50, maxItems: limits.maxMatched, maxBytes: 8 * 1024 * 1024, deadlineMs: limits.deadlineMs },
+      loadPage: async (ExclusiveStartKey, abortSignal) => {
+        const result = await client.send(
+          new ScanCommand({
+            TableName: TABLE_SPONSOR_CRM,
+            ConsistentRead: true,
+            FilterExpression: `begins_with(PK, :pfx) AND ${kept} AND ${targetFilter}`,
+            ExpressionAttributeValues: values,
+            Limit: limits.pageSize,
+            ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+          }),
+          { abortSignal },
+        );
+        scanned += typeof result.ScannedCount === 'number' ? result.ScannedCount : (result.Items || []).length;
+        if (scanned > limits.maxScanned) throw sourceTooLarge(source);
+        return result;
+      },
+    });
+  } catch (error) {
+    // sourceTooLarge already carries its code; storage guard failures map to it.
+    if ((error as { code?: string }).code === 'workspace_source_too_large') throw error;
+    throw workspaceErrorOf(error, source);
   }
+  return { items: items.map(clean), scanned, matched: items.length };
 }

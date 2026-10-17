@@ -2,8 +2,11 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getCrmRecord, listCrmRecords } from '../db/sponsorCrm';
 import { listTasksByStatus } from '../db/tasks';
 import type { Task } from '../types';
+import { berlinToday } from './berlin';
+import { realDate } from '../sponsorCrm/model';
 import { cursorBinding, decodeCursor, encodeCursor, pageLimit } from './cursor';
 import { queryTargetNotes } from './notes';
+import { isKept } from './directory';
 import {
   queryHistoryEvents,
   scanTargetMessages,
@@ -33,9 +36,47 @@ type RelatedWork = {
   date: string;
   description: string;
   assigneeId?: string;
-  href: string;
+  /** Effective action date reusing A's queue semantics (waiting/followUp → followUpAt else date). */
+  effectiveDate: string;
+  eligible: boolean;
+  deferred: boolean;
+  deferredUntil?: string;
+  followUpAt?: string;
+  snoozedUntil?: string;
+  notBeforeAt?: string;
+  waitingFor?: string;
+  /** CRM record link (the subject this work is about). Open the task itself via
+      openTaskPanel(taskId), the pipeline pattern — no task URL exists. */
+  subjectHref: string;
   scope: 'direct' | 'related-company';
 };
+
+// Mirror of sponsorCrm/pipeline.ts pipelineTaskDate/pipelineTaskDeferred on
+// origin/main — this worktree predates them. Same formulas; replaced by import
+// on rebase, never forked.
+function taskEffectiveDate(task: Task): string {
+  return String(
+    task.status === 'waiting' || task.waitingFor || task.followUpAt ? task.followUpAt || '' : task.date || '',
+  ).slice(0, 10);
+}
+
+function taskDeferred(task: Task, today: string, now: number): boolean {
+  return (
+    String(task.snoozedUntil || '').slice(0, 10) > today ||
+    Boolean(task.notBeforeAt && Date.parse(task.notBeforeAt) > now) ||
+    Boolean(
+      (task.status === 'waiting' || task.waitingFor || task.followUpAt) && taskEffectiveDate(task) > today,
+    )
+  );
+}
+
+/** Latest honest wakeup signal present, if any. */
+function deferredWakeup(task: Task): string | undefined {
+  const signals = [task.followUpAt, task.snoozedUntil, task.notBeforeAt]
+    .filter((value): value is string => typeof value === 'string' && !!value)
+    .sort();
+  return signals.at(-1);
+}
 
 /** Same rule as taskSubjects.subjectHref (replicated, not imported: that module is A's neighbor, not ours). */
 function subjectHref(type: 'sponsor-company' | 'sponsor-deal', id: string): string {
@@ -70,7 +111,8 @@ export async function readActivity(
 ): Promise<{ status: number; body: unknown }> {
   const kind = target === 'organization' ? 'organization' : target;
   const record = await getCrmRecord(client, kind, id);
-  if (!record) return { status: 404, body: { error: 'Not found' } };
+  // Rehomed tuition rows stay archived evidence, never CRM views.
+  if (!record || record.recordDisposition === 'rehomed') return { status: 404, body: { error: 'Not found' } };
 
   const types = query.types === undefined
     ? [...ACTIVITY_TYPES]
@@ -178,7 +220,9 @@ export async function readActivity(
     }
 
     if (wanted.has('deal-history') && target === 'organization') {
-      const deals = (await listCrmRecords(client, 'deal')).filter((deal) => String(deal.organizationId) === id);
+      const deals = (await listCrmRecords(client, 'deal')).filter(
+        (deal) => isKept(deal) && String(deal.organizationId) === id,
+      );
       let read = 0;
       for (const deal of deals) {
         const { items: events, itemsRead } = await queryHistoryEvents(client, deal.id, 'deal history');
@@ -208,6 +252,11 @@ export async function readActivity(
 
     // Open work is related-work, never a historical event: mutable tasks cannot
     // be completion evidence. Closed work stays in the canonical Tasks API.
+    // Eligibility reuses A's queue semantics so relatedWork[0] is the actual next
+    // eligible action — never a snoozed/future row masquerading as overdue.
+    const todayParam = query.today === undefined ? berlinToday() : query.today;
+    if (!realDate(todayParam)) return { status: 400, body: { error: 'Invalid today date' } };
+    const now = Date.now();
     const open: Task[] = [
       ...await listTasksByStatus(client, 'todo'),
       ...await listTasksByStatus(client, 'waiting'),
@@ -223,17 +272,33 @@ export async function readActivity(
         scope = 'related-company';
       }
       if (!scope) continue;
+      const effectiveDate = taskEffectiveDate(task);
+      const deferred = taskDeferred(task, todayParam, now);
+      const wakeup = deferredWakeup(task);
       relatedWork.push({
         taskId: task.id,
         status: task.status,
         date: String(task.date || ''),
         description: String(task.description || ''),
         ...(task.assigneeId ? { assigneeId: task.assigneeId } : {}),
-        href: subjectHref(subject.type, subject.id),
+        effectiveDate,
+        eligible: !deferred,
+        deferred,
+        ...(wakeup ? { deferredUntil: wakeup } : {}),
+        ...(typeof task.followUpAt === 'string' && task.followUpAt ? { followUpAt: task.followUpAt } : {}),
+        ...(typeof task.snoozedUntil === 'string' && task.snoozedUntil ? { snoozedUntil: task.snoozedUntil } : {}),
+        ...(typeof task.notBeforeAt === 'string' && task.notBeforeAt ? { notBeforeAt: task.notBeforeAt } : {}),
+        ...(typeof task.waitingFor === 'string' && task.waitingFor ? { waitingFor: task.waitingFor } : {}),
+        subjectHref: subjectHref(subject.type, subject.id),
         scope,
       });
     }
-    relatedWork.sort((a, b) => a.date.localeCompare(b.date) || a.taskId.localeCompare(b.taskId));
+    relatedWork.sort(
+      (a, b) =>
+        Number(!a.eligible) - Number(!b.eligible) ||
+        (a.effectiveDate || '9999').localeCompare(b.effectiveDate || '9999') ||
+        a.taskId.localeCompare(b.taskId),
+    );
   } catch (error) {
     const statusCode = (error as { statusCode?: number }).statusCode;
     if (statusCode) {

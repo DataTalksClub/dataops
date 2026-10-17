@@ -3,6 +3,7 @@ import { GetCommand, PutCommand, QueryCommand, type DynamoDBDocumentClient } fro
 import { deterministicCrmId } from '../db/sponsorCrm';
 import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { collectBoundedPages } from '../db/boundedPagination';
+import { berlinDaysBefore, berlinToday } from './berlin';
 import { realDate } from '../sponsorCrm/model';
 import { DIRECTORY_RELATIONSHIPS } from './directory';
 import { clean, workspaceErrorOf } from './reads';
@@ -204,10 +205,62 @@ async function queryPersonalViews(client: DynamoDBDocumentClient, ownerId: strin
 }
 
 async function getView(client: DynamoDBDocumentClient, ownerId: string, id: string): Promise<StoredView | null> {
+  // Strongly consistent: a conditional Put proving existence must never be
+  // followed by a lagging replica read (no false 409 on AWS).
   const result = await client.send(
-    new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: viewPk(ownerId), SK: id } }),
+    new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: viewPk(ownerId), SK: id }, ConsistentRead: true }),
   );
   return (result.Item ? clean(result.Item as Record<string, unknown>) : null) as StoredView | null;
+}
+
+/**
+ * Server-resolved effective filters: relative `{daysAgo}` evaluated against
+ * the effective Berlin today, so UI, CLI and API resolve identically. One
+ * resolver — clients must not duplicate it.
+ */
+export function resolveFilters(filters: Filters, today: string): Filters {
+  const resolved: Filters = {};
+  for (const [key, value] of Object.entries(filters)) {
+    const relative = relativeDay(value);
+    if ((key === 'lastTouchAfter' || key === 'lastTouchBefore') && relative) {
+      resolved[key] = berlinDaysBefore(today, relative.daysAgo);
+    } else {
+      resolved[key] = value;
+    }
+  }
+  return resolved;
+}
+
+export function resolveTodayForViews(query: Record<string, string | undefined>): { today: string } | { error: string } {
+  if (query.today === undefined) return { today: berlinToday() };
+  if (!realDate(query.today)) return { error: 'Invalid today date' };
+  return { today: query.today };
+}
+
+const withResolved = (view: Builtin | StoredView, today: string, builtin: boolean) => ({
+  ...(builtin ? publicBuiltin(view as Builtin) : publicView(view as StoredView)),
+  resolvedFilters: resolveFilters((view as { filters: Filters }).filters, today),
+  resolvedToday: today,
+});
+
+/** A builtin or caller-owned personal view with server-resolved filters, or null. */
+export async function resolveView(
+  client: DynamoDBDocumentClient,
+  ownerId: string,
+  id: string,
+  today: string,
+): Promise<{ view: Record<string, unknown>; entity: ViewEntity } | null> {
+  const builtin = BUILTINS.find((view) => view.id === id);
+  if (builtin) return { view: withResolved(builtin, today, true), entity: builtin.entity };
+  let personal: StoredView[];
+  try {
+    personal = await queryPersonalViews(client, ownerId);
+  } catch {
+    return null;
+  }
+  const stored = personal.find((view) => view.id === id && !view.archivedAt);
+  if (!stored) return null;
+  return { view: withResolved(stored, today, false), entity: stored.entity as ViewEntity };
 }
 
 export async function listViews(
@@ -222,6 +275,9 @@ export async function listViews(
     return { status: 400, body: { error: 'includeArchived must be true or false' } };
   }
   const entity = query.entity as ViewEntity | undefined;
+  const resolvedToday = resolveTodayForViews(query);
+  if ('error' in resolvedToday) return { status: 400, body: { error: resolvedToday.error } };
+  const today = resolvedToday.today;
   let personal: StoredView[];
   try {
     personal = await queryPersonalViews(client, ownerId);
@@ -231,13 +287,26 @@ export async function listViews(
   }
   const includeArchived = query.includeArchived === 'true';
   const items = [
-    ...BUILTINS.filter((view) => !entity || view.entity === entity).map(publicBuiltin),
+    ...BUILTINS.filter((view) => !entity || view.entity === entity).map((view) => withResolved(view, today, true)),
     ...personal
       .filter((view) => (!entity || view.entity === entity) && (includeArchived || !view.archivedAt))
       .sort((a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)) || a.id.localeCompare(b.id))
-      .map(publicView),
+      .map((view) => withResolved(view, today, false)),
   ];
   return { status: 200, body: { items, total: items.length } };
+}
+
+export async function getViewOne(
+  client: DynamoDBDocumentClient,
+  ownerId: string,
+  id: string,
+  query: Record<string, string | undefined>,
+): Promise<{ status: number; body: unknown }> {
+  const resolvedToday = resolveTodayForViews(query);
+  if ('error' in resolvedToday) return { status: 400, body: { error: resolvedToday.error } };
+  const resolved = await resolveView(client, ownerId, id, resolvedToday.today);
+  if (!resolved) return { status: 404, body: { error: 'Not found' } };
+  return { status: 200, body: resolved.view };
 }
 
 export async function createView(

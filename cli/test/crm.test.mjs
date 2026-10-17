@@ -96,6 +96,75 @@ describe("CLI crm workspace", () => {
     }
   });
 
+  test("companies list executes a saved view with explicit flags winning", async () => {
+    const io = captureIo();
+    const { calls, restore } = fake({
+      "GET /api/sponsor-crm/views/builtin%3Acompanies%3Arecent": {
+        status: 200,
+        body: { id: "builtin:companies:recent", entity: "companies", builtin: true, filters: { active: "true" }, resolvedFilters: { active: "true", lastTouchAfter: "2026-09-17" }, resolvedToday: "2026-10-17" },
+      },
+      "GET /api/sponsor-crm/directory/companies": (call) => ({ status: 200, body: { items: [], total: 0, nextCursor: null, query: call.query } }),
+    });
+    try {
+      const code = await run(["crm", "companies", "list", "--saved-view", "builtin:companies:recent", "--active", "all", "--json"], io);
+      assert.equal(code, EXIT.ok);
+      assert.equal(calls[1].query.lastTouchAfter, "2026-09-17");
+      assert.equal(calls[1].query.active, "all");
+    } finally {
+      restore();
+    }
+  });
+
+  test("pipeline list passes saved-view filters to the canonical endpoint", async () => {
+    const io = captureIo();
+    const { calls, restore } = fake({
+      "GET /api/sponsor-crm/views/v9": {
+        status: 200,
+        body: { id: "v9", entity: "pipeline", filters: { view: "actionable" }, resolvedFilters: { view: "actionable" }, sort: { field: "next-action" } },
+      },
+      "GET /api/sponsor-crm/pipeline": (call) => ({ status: 200, body: { items: [], query: call.query } }),
+    });
+    try {
+      const code = await run(["crm", "pipeline", "list", "--saved-view", "v9", "--stage", "open", "--json"], io);
+      assert.equal(code, EXIT.ok);
+      assert.equal(calls[1].query.view, "actionable");
+      assert.equal(calls[1].query.sort, "next-action");
+      assert.equal(calls[1].query.stage, "open");
+    } finally {
+      restore();
+    }
+  });
+
+  test("archive wraps the existing communications endpoint read-only", async () => {
+    const io = captureIo();
+    const { calls, restore } = fake({
+      "GET /api/sponsor-crm/deals/d9/communications": { status: 200, body: { items: [] } },
+    });
+    try {
+      const code = await run(["crm", "archive", "d9", "--json"], io);
+      assert.equal(code, EXIT.ok);
+      assert.equal(calls[0].method, "GET");
+      assert.equal(calls[0].route, "/api/sponsor-crm/deals/d9/communications");
+    } finally {
+      restore();
+    }
+  });
+
+  test("views show returns one resolved view", async () => {
+    const io = captureIo();
+    const { calls, restore } = fake({
+      "GET /api/sponsor-crm/views/v9": { status: 200, body: { id: "v9", resolvedFilters: {} } },
+    });
+    try {
+      const code = await run(["crm", "views", "show", "v9", "--json"], io);
+      assert.equal(code, EXIT.ok);
+      assert.equal(io.json().id, "v9");
+      assert.equal(calls.length, 1);
+    } finally {
+      restore();
+    }
+  });
+
   test("unknown crm verbs are usage errors", async () => {
     const io = captureIo();
     const code = await run(["crm", "companies", "frobnicate"], io);

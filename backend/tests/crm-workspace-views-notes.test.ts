@@ -104,6 +104,32 @@ describe('crm workspace views and notes', () => {
     await check('builtin:people:all', 'people', '/api/sponsor-crm/directory/people', [contact.id]);
   });
 
+  it('serves builtins through percent-encoded ids (CLI enc() compatibility)', async () => {
+    const res = await invoke('GET', '/api/sponsor-crm/views/builtin%3Acompanies%3Arecent?today=2026-10-17', undefined, as(ALICE));
+    assert.equal(res.statusCode, 200);
+    assert.equal(data(res).id, 'builtin:companies:recent');
+    assert.equal((await invoke('GET', '/api/sponsor-crm/views/builtin%3A%3A%3Abad', undefined, as(ALICE))).statusCode, 404);
+  });
+
+  it('resolves relative date filters against Berlin today, deterministically', async () => {
+    const body = data(await invoke('GET', '/api/sponsor-crm/views?entity=companies&today=2026-10-17', undefined, as(ALICE)));
+    const recent = body.items.find((item: any) => item.id === 'builtin:companies:recent');
+    assert.deepEqual(recent.filters, { active: 'true', lastTouchAfter: { daysAgo: 30 } });
+    assert.deepEqual(recent.resolvedFilters, { active: 'true', lastTouchAfter: '2026-09-17' });
+    assert.equal(recent.resolvedToday, '2026-10-17');
+    const stale = body.items.find((item: any) => item.id === 'builtin:companies:stale');
+    assert.deepEqual(stale.resolvedFilters, { active: 'true', lastTouchBefore: '2026-09-17' });
+    assert.equal((await invoke('GET', '/api/sponsor-crm/views?entity=companies&today=17-10-2026', undefined, as(ALICE))).statusCode, 400);
+    // Personal views resolve too.
+    const created = data(await invoke('POST', '/api/sponsor-crm/views', {
+      entity: 'companies', name: 'My stale', filters: { active: 'true', lastTouchBefore: { daysAgo: 7 } },
+      sort: { field: 'lastTouch', direction: 'desc' },
+    }, as(ALICE)));
+    const one = data(await invoke('GET', `/api/sponsor-crm/views/${created.id}?today=2026-10-17`, undefined, as(ALICE)));
+    assert.deepEqual(one.resolvedFilters, { active: 'true', lastTouchBefore: '2026-10-10' });
+    assert.equal((await invoke('GET', `/api/sponsor-crm/views/${created.id}`, undefined, as(BOB))).statusCode, 404);
+  });
+
   it('validates view input, including A-owned pipeline enums', async () => {
     const badEntity = await invoke('POST', '/api/sponsor-crm/views', { entity: 'deals', name: 'X', filters: {} }, as(ALICE));
     assert.equal(badEntity.statusCode, 400);

@@ -80,6 +80,78 @@ describe('crm workspace directory', () => {
     assert.equal(body.nextCursor, body.total > body.items.length ? body.nextCursor : null);
   });
 
+  it('serves a cheap company summary with notes and no nested finance', async () => {
+    const { orgA, personA, deal } = await seed(String(seedCount++));
+    const stored = data(await invoke('GET', `/api/sponsor-crm/organizations/${orgA.id}`));
+    await invoke('PUT', `/api/sponsor-crm/organizations/${orgA.id}`, { notes: 'Operator summary paragraph.', version: stored.version });
+    const res = await invoke('GET', `/api/sponsor-crm/directory/companies/${orgA.id}?today=2026-10-17`);
+    assert.equal(res.statusCode, 200);
+    const row = data(res);
+    assert.equal(row.id, orgA.id);
+    assert.equal(row.displayName, 'Acme Synthetic');
+    assert.equal(row.notes, 'Operator summary paragraph.');
+    assert.deepEqual(row.primaryPerson, { id: personA.id, name: 'Ada Synthetic', email: 'ada@acme.example' });
+    assert.equal(row.openDealCount, 1);
+    for (const forbidden of ['money', 'finance', 'fulfillment', 'deliverables', 'deals', 'snippet']) {
+      assert.equal(row[forbidden], undefined, `summary must not carry ${forbidden}`);
+    }
+    void deal;
+    assert.equal((await invoke('GET', '/api/sponsor-crm/directory/companies/does-not-exist-9')).statusCode, 404);
+    assert.equal((await invoke('GET', '/api/sponsor-crm/directory/companies/!!!')).statusCode, 400);
+    assert.equal((await invoke('POST', `/api/sponsor-crm/directory/companies/${orgA.id}`, {})).statusCode, 405);
+  });
+
+  it('executes sort direction and binds cursors to the effective today', async () => {
+    await seed(String(seedCount++));
+    const asc = data(await invoke('GET', '/api/sponsor-crm/directory/companies?sort=name'));
+    const desc = data(await invoke('GET', '/api/sponsor-crm/directory/companies?sort=name&direction=desc'));
+    assert.ok(asc.items.length >= 2 && desc.items.length >= 2);
+    assert.deepEqual(desc.items.map((item: any) => item.id), asc.items.map((item: any) => item.id).reverse());
+    const touchDesc = data(await invoke('GET', '/api/sponsor-crm/directory/companies?sort=lastTouch'));
+    const touchAsc = data(await invoke('GET', '/api/sponsor-crm/directory/companies?sort=lastTouch&direction=asc'));
+    assert.deepEqual(touchAsc.items.map((item: any) => item.id), touchDesc.items.map((item: any) => item.id).reverse());
+    assert.equal((await invoke('GET', '/api/sponsor-crm/directory/companies?direction=sideways')).statusCode, 400);
+    // A cursor issued for one today is rejected for another: membership depends on it.
+    const paged = data(await invoke('GET', '/api/sponsor-crm/directory/companies?limit=1&today=2026-10-17'));
+    assert.ok(paged.nextCursor);
+    const reused = await invoke('GET', `/api/sponsor-crm/directory/companies?limit=1&today=2027-10-17&cursor=${encodeURIComponent(paged.nextCursor)}`);
+    assert.equal(reused.statusCode, 400);
+  });
+
+  it('executes saved views with explicit overrides winning', async () => {
+    const { orgA } = await seed(String(seedCount++));
+    const recent = data(await invoke('GET', '/api/sponsor-crm/directory/companies?view=builtin:companies:recent&today=2026-10-17'));
+    assert.ok(recent.items.some((item: any) => item.id === orgA.id));
+    // Explicit params override the view: active=all widens the builtin's active=true.
+    const widened = data(await invoke('GET', '/api/sponsor-crm/directory/companies?view=builtin:companies:recent&active=all&today=2026-10-17'));
+    assert.ok(widened.total >= recent.total);
+    assert.equal((await invoke('GET', '/api/sponsor-crm/directory/companies?view=builtin:people:active')).statusCode, 400);
+    assert.equal((await invoke('GET', '/api/sponsor-crm/directory/companies?view=does-not-exist')).statusCode, 404);
+    // Cursors issued under a view stay valid for the same effective filters.
+    if (recent.nextCursor) {
+      const next = data(await invoke('GET', `/api/sponsor-crm/directory/companies?view=builtin:companies:recent&today=2026-10-17&cursor=${encodeURIComponent(recent.nextCursor)}`));
+      assert.ok(next.items.length >= 0);
+    }
+  });
+
+  it('hides rehomed tuition rows from every directory', async () => {
+    const suffix = String(seedCount++);
+    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
+      displayName: `Tuition Org ${suffix}`, domain: `tuition-${suffix}.example`,
+      recordDisposition: 'rehomed', sourceKey: `ws-tuition-org-${suffix}`,
+    }));
+    const contact = data(await invoke('POST', '/api/sponsor-crm/contacts', {
+      organizationId: org.id, name: 'Tuition Person', emails: [`tuition-${suffix}@example.invalid`],
+      recordDisposition: 'rehomed', sourceKey: `ws-tuition-contact-${suffix}`,
+    }));
+    const companies = data(await invoke('GET', '/api/sponsor-crm/directory/companies?active=all'));
+    assert.ok(!companies.items.some((item: any) => item.id === org.id));
+    const people = data(await invoke('GET', '/api/sponsor-crm/directory/people?active=all'));
+    assert.ok(!people.items.some((item: any) => item.id === contact.id));
+    assert.equal((await invoke('GET', `/api/sponsor-crm/directory/companies/${org.id}`)).statusCode, 404);
+    assert.equal((await invoke('GET', `/api/sponsor-crm/activity/organization/${org.id}`)).statusCode, 404);
+  });
+
   it('filters companies by search, relationship, active and touch windows', async () => {
     const { orgA, orgB } = await seed(String(seedCount++));
     const search = data(await invoke('GET', '/api/sponsor-crm/directory/companies?search=acme&today=2026-10-17'));

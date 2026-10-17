@@ -1,5 +1,5 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { listCrmRecords, type CrmRecord } from '../db/sponsorCrm';
+import { getCrmRecord, listCrmRecords, type CrmRecord } from '../db/sponsorCrm';
 import { dealMoneyFacts } from '../sponsorFinance/ledger';
 import { deriveMoney, realDate, relationshipTag } from '../sponsorCrm/model';
 import { lastTouchOf } from '../sponsorCrm/coldContacts';
@@ -8,22 +8,24 @@ import { cursorBinding, decodeCursor, encodeCursor, pageLimit } from './cursor';
 
 export const DIRECTORY_RELATIONSHIPS = ['customer', 'talking', 'dormant', 'prospect'] as const;
 
-type CompanyFilters = {
+export type CompanyFilters = {
   search?: string;
   relationship?: string;
   active: 'true' | 'false' | 'all';
   lastTouchAfter?: string;
   lastTouchBefore?: string;
   sort: 'name' | 'lastTouch';
+  direction: 'asc' | 'desc';
 };
 
-type PersonFilters = {
+export type PersonFilters = {
   search?: string;
   company?: string;
   primary?: 'true' | 'false';
   unlinked?: 'true' | 'false';
   active: 'true' | 'false' | 'all';
   sort: 'name' | 'lastTouch';
+  direction: 'asc' | 'desc';
 };
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -31,6 +33,11 @@ const bad = (error: string) => ({ error });
 
 function activeOf(record: CrmRecord): boolean {
   return !record.archivedAt;
+}
+
+/** Rehomed tuition rows stay archived evidence, never CRM views (no deletes). */
+export function isKept(record: CrmRecord): boolean {
+  return record.recordDisposition !== 'rehomed';
 }
 
 function emailOf(contact: CrmRecord): string | undefined {
@@ -60,6 +67,16 @@ function parseDay(raw: string | undefined, name: string): { day?: string } | { e
   return { day: raw };
 }
 
+function parseDirection(query: Record<string, string | undefined>, sort: 'name' | 'lastTouch'):
+  { direction: 'asc' | 'desc' } | { error: string } {
+  // Direction executes: a saved view's {field, direction} applies exactly as stored.
+  // Defaults preserve history: name/asc, lastTouch/desc.
+  const fallback = sort === 'name' ? 'asc' : 'desc';
+  const direction = query.direction === undefined ? fallback : query.direction;
+  if (direction !== 'asc' && direction !== 'desc') return bad('direction must be asc or desc');
+  return { direction };
+}
+
 export function parseCompanyFilters(
   query: Record<string, string | undefined>,
 ): { filters: CompanyFilters } | { error: string } {
@@ -74,6 +91,8 @@ export function parseCompanyFilters(
   if ('error' in before) return before;
   const sort = query.sort === undefined ? 'name' : query.sort;
   if (sort !== 'name' && sort !== 'lastTouch') return bad('sort must be name or lastTouch');
+  const direction = parseDirection(query, sort);
+  if ('error' in direction) return direction;
   return {
     filters: {
       ...(query.search ? { search: query.search } : {}),
@@ -82,6 +101,7 @@ export function parseCompanyFilters(
       ...(after.day ? { lastTouchAfter: after.day } : {}),
       ...(before.day ? { lastTouchBefore: before.day } : {}),
       sort,
+      direction: direction.direction,
     },
   };
 }
@@ -99,6 +119,8 @@ export function parsePersonFilters(
   }
   const sort = query.sort === undefined ? 'name' : query.sort;
   if (sort !== 'name' && sort !== 'lastTouch') return bad('sort must be name or lastTouch');
+  const direction = parseDirection(query, sort);
+  if ('error' in direction) return direction;
   return {
     filters: {
       ...(query.search ? { search: query.search } : {}),
@@ -107,6 +129,7 @@ export function parsePersonFilters(
       ...(query.unlinked ? { unlinked: query.unlinked as 'true' | 'false' } : {}),
       active,
       sort,
+      direction: direction.direction,
     },
   };
 }
@@ -136,6 +159,7 @@ export type PersonItem = {
   role?: string;
   linkedin?: string;
   telegram?: string;
+  phone?: string;
   lastTouch: string | null;
   lastInboundAt?: string;
   lastOutboundAt?: string;
@@ -157,6 +181,80 @@ function passesTouchWindow(day: string | null, filters: { lastTouchAfter?: strin
   return true;
 }
 
+type CompanyContext = {
+  dealsByOrg: Map<string, CrmRecord[]>;
+  primaryByOrg: Map<string, CrmRecord>;
+  today: string;
+};
+
+function companyRow(org: CrmRecord, ctx: CompanyContext): CompanyItem {
+  const orgDeals = ctx.dealsByOrg.get(org.id) || [];
+  const primary = ctx.primaryByOrg.get(org.id);
+  return {
+    id: org.id,
+    displayName: String(org.displayName || ''),
+    ...(org.domain ? { domain: String(org.domain) } : {}),
+    relationship: relationshipTag(org, orgDeals, ctx.today),
+    active: activeOf(org),
+    primaryPerson: primary
+      ? { id: primary.id, name: String(primary.name || ''), ...(emailOf(primary) ? { email: emailOf(primary)! } : {}) }
+      : null,
+    lastTouch: lastTouchOf(org),
+    ...(typeof org.lastInboundAt === 'string' ? { lastInboundAt: org.lastInboundAt } : {}),
+    ...(typeof org.lastOutboundAt === 'string' ? { lastOutboundAt: org.lastOutboundAt } : {}),
+    openDealCount: orgDeals.filter((deal) => deal.status === 'open' && !deal.archivedAt).length,
+    version: org.version,
+    updatedAt: String(org.updatedAt),
+  };
+}
+
+async function companyContext(
+  client: DynamoDBDocumentClient,
+  today: string,
+): Promise<CompanyContext & { organizations: CrmRecord[] }> {
+  const [organizations, contacts, deals, deliverables] = await Promise.all([
+    listCrmRecords(client, 'organization'),
+    listCrmRecords(client, 'contact'),
+    listCrmRecords(client, 'deal'),
+    listCrmRecords(client, 'deliverable'),
+  ]);
+  const facts = await dealMoneyFacts(client, today, { organizations, deals, deliverables });
+  const dealsByOrg = new Map<string, CrmRecord[]>();
+  for (const deal of deals) {
+    if (!isKept(deal)) continue;
+    const orgId = String(deal.organizationId || '');
+    dealsByOrg.set(orgId, [...(dealsByOrg.get(orgId) || []), { ...deal, money: deriveMoney(facts.get(deal.id)) }]);
+  }
+  const primaryByOrg = new Map<string, CrmRecord>();
+  for (const contact of contacts) {
+    // Defensive: ordinary archive clears primary, but never surface an archived person as primary.
+    if (contact.archivedAt || !isKept(contact)) continue;
+    if (contact.primary && contact.organizationId && !primaryByOrg.has(String(contact.organizationId))) {
+      primaryByOrg.set(String(contact.organizationId), contact);
+    }
+  }
+  return { dealsByOrg, primaryByOrg, today, organizations };
+}
+
+function applyCompanyDirection(items: CompanyItem[], filters: CompanyFilters): void {
+  items.sort((a, b) => {
+    const ascending =
+      filters.sort === 'name'
+        ? a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id)
+        : String(a.lastTouch || '').localeCompare(String(b.lastTouch || '')) || a.id.localeCompare(b.id);
+    return filters.direction === 'desc' ? -ascending : ascending;
+  });
+}
+
+function pageItems<T>(items: T[], offset: number, limit: number, binding: string) {
+  const total = items.length;
+  return {
+    items: items.slice(offset, offset + limit),
+    total,
+    nextCursor: offset + limit < total ? encodeCursor(binding, offset + limit) : null,
+  };
+}
+
 export async function listCompanies(
   client: DynamoDBDocumentClient,
   query: Record<string, string | undefined>,
@@ -168,7 +266,8 @@ export async function listCompanies(
   if ('error' in today) return { status: 400, body: { error: today.error } };
   const limit = pageLimit(query.limit);
   if ('error' in limit) return { status: 400, body: { error: limit.error } };
-  const binding = cursorBinding(['companies', filters]);
+  // The cursor binds the effective today: relationship membership depends on it.
+  const binding = cursorBinding(['companies', filters, today.today]);
   let offset = 0;
   if (query.cursor !== undefined) {
     const cursor = decodeCursor(binding, query.cursor);
@@ -176,65 +275,42 @@ export async function listCompanies(
     offset = cursor.offset;
   }
 
-  const [organizations, contacts, deals, deliverables] = await Promise.all([
-    listCrmRecords(client, 'organization'),
-    listCrmRecords(client, 'contact'),
-    listCrmRecords(client, 'deal'),
-    listCrmRecords(client, 'deliverable'),
-  ]);
-  const facts = await dealMoneyFacts(client, today.today, { organizations, deals, deliverables });
-  const dealsByOrg = new Map<string, CrmRecord[]>();
-  for (const deal of deals) {
-    const orgId = String(deal.organizationId || '');
-    dealsByOrg.set(orgId, [...(dealsByOrg.get(orgId) || []), { ...deal, money: deriveMoney(facts.get(deal.id)) }]);
-  }
-  const primaryByOrg = new Map<string, CrmRecord>();
-  for (const contact of contacts) {
-    if (contact.primary && contact.organizationId && !primaryByOrg.has(String(contact.organizationId))) {
-      primaryByOrg.set(String(contact.organizationId), contact);
-    }
-  }
-
+  const ctx = await companyContext(client, today.today);
   const q = (filters.search || '').toLowerCase();
-  let items: CompanyItem[] = [];
-  for (const org of organizations) {
+  const items: CompanyItem[] = [];
+  for (const org of ctx.organizations) {
+    if (!isKept(org)) continue;
     if (filters.active !== 'all' && activeOf(org) !== (filters.active === 'true')) continue;
     if (q && ![org.displayName, org.domain].some((value) => String(value || '').toLowerCase().includes(q))) continue;
-    const orgDeals = dealsByOrg.get(org.id) || [];
-    const relationship = relationshipTag(org, orgDeals, today.today);
-    if (filters.relationship && relationship !== filters.relationship) continue;
+    const row = companyRow(org, ctx);
+    if (filters.relationship && row.relationship !== filters.relationship) continue;
     if (!passesTouchWindow(touchDay(org), filters)) continue;
-    const primary = primaryByOrg.get(org.id);
-    items.push({
-      id: org.id,
-      displayName: String(org.displayName || ''),
-      ...(org.domain ? { domain: String(org.domain) } : {}),
-      relationship,
-      active: activeOf(org),
-      primaryPerson: primary
-        ? { id: primary.id, name: String(primary.name || ''), ...(emailOf(primary) ? { email: emailOf(primary)! } : {}) }
-        : null,
-      lastTouch: lastTouchOf(org),
-      ...(typeof org.lastInboundAt === 'string' ? { lastInboundAt: org.lastInboundAt } : {}),
-      ...(typeof org.lastOutboundAt === 'string' ? { lastOutboundAt: org.lastOutboundAt } : {}),
-      openDealCount: orgDeals.filter((deal) => deal.status === 'open' && !deal.archivedAt).length,
-      version: org.version,
-      updatedAt: String(org.updatedAt),
-    });
+    items.push(row);
   }
-  items.sort((a, b) =>
-    filters.sort === 'name'
-      ? a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id)
-      : String(b.lastTouch || '').localeCompare(String(a.lastTouch || '')) || a.id.localeCompare(b.id),
-  );
-  const total = items.length;
-  const slice = items.slice(offset, offset + limit.limit);
+  applyCompanyDirection(items, filters);
+  return { status: 200, body: pageItems(items, offset, limit.limit, binding) };
+}
+
+/**
+ * Cheap lazy-record summary: direct Get plus the same snapshot-derived row as
+ * the list (no added scans beyond the request's shared snapshot), plus the
+ * existing operator notes summary. Never nested deals/finance/mail/contacts.
+ */
+export async function getCompanySummary(
+  client: DynamoDBDocumentClient,
+  id: string,
+  query: Record<string, string | undefined>,
+): Promise<{ status: number; body: unknown }> {
+  const org = await getCrmRecord(client, 'organization', id);
+  if (!org || !isKept(org)) return { status: 404, body: { error: 'Not found' } };
+  const today = resolveToday(query);
+  if ('error' in today) return { status: 400, body: { error: today.error } };
+  const ctx = await companyContext(client, today.today);
   return {
     status: 200,
     body: {
-      items: slice,
-      total,
-      nextCursor: offset + limit.limit < total ? encodeCursor(binding, offset + limit.limit) : null,
+      ...companyRow(org, ctx),
+      ...(typeof org.notes === 'string' && org.notes ? { notes: org.notes } : {}),
     },
   };
 }
@@ -262,8 +338,9 @@ export async function listPeople(
   ]);
   const orgById = new Map(organizations.map((org) => [org.id, org]));
   const q = (filters.search || '').toLowerCase();
-  let items: PersonItem[] = [];
+  const items: PersonItem[] = [];
   for (const contact of contacts) {
+    if (!isKept(contact)) continue;
     if (filters.active !== 'all' && activeOf(contact) !== (filters.active === 'true')) continue;
     if (filters.company && String(contact.organizationId || '') !== filters.company) continue;
     if (filters.primary && String(!!contact.primary) !== filters.primary) continue;
@@ -290,6 +367,8 @@ export async function listPeople(
       ...(optionalText(contact.role) ? { role: optionalText(contact.role)! } : {}),
       ...(optionalText(contact.linkedin) ? { linkedin: optionalText(contact.linkedin)! } : {}),
       ...(optionalText(contact.telegram) ? { telegram: optionalText(contact.telegram)! } : {}),
+      // Echoed only when stored, never modified here (A owns contact writes).
+      ...(optionalText(contact.phone) ? { phone: optionalText(contact.phone)! } : {}),
       lastTouch: lastTouchOf(contact),
       ...(typeof contact.lastInboundAt === 'string' ? { lastInboundAt: contact.lastInboundAt } : {}),
       ...(typeof contact.lastOutboundAt === 'string' ? { lastOutboundAt: contact.lastOutboundAt } : {}),
@@ -299,19 +378,12 @@ export async function listPeople(
       updatedAt: String(contact.updatedAt),
     });
   }
-  items.sort((a, b) =>
-    filters.sort === 'name'
-      ? a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id)
-      : String(b.lastTouch || '').localeCompare(String(a.lastTouch || '')) || a.id.localeCompare(b.id),
-  );
-  const total = items.length;
-  const slice = items.slice(offset, offset + limit.limit);
-  return {
-    status: 200,
-    body: {
-      items: slice,
-      total,
-      nextCursor: offset + limit.limit < total ? encodeCursor(binding, offset + limit.limit) : null,
-    },
-  };
+  items.sort((a, b) => {
+    const ascending =
+      filters.sort === 'name'
+        ? a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id)
+        : String(a.lastTouch || '').localeCompare(String(b.lastTouch || '')) || a.id.localeCompare(b.id);
+    return filters.direction === 'desc' ? -ascending : ascending;
+  });
+  return { status: 200, body: pageItems(items, offset, limit.limit, binding) };
 }
