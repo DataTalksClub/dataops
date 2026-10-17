@@ -1091,10 +1091,10 @@ a.calendar-day-timeline-title:hover {
 }
 .newsletter-issue-stats {
   display: grid;
-  gap: 2px;
+  gap: var(--dk-space-1);
   margin-top: var(--dk-space-1);
   color: var(--dk-text-muted);
-  font-size: var(--dk-text-xs, 12px);
+  font-size: var(--dk-text-xs);
   line-height: 1.4;
 }
 .newsletter-stats-line strong {
