@@ -214,14 +214,76 @@ describe("podcast schedule", () => {
           episode({ id: "ep-2", status: "cancelled" }),
         ],
       },
+      "GET /api/podcast-episodes/next-slot": {
+        code: "S26E1",
+        season: 26,
+        episode: 1,
+        episodesPerSeason: 9,
+        cadence: { weekday: 5, time: "19:00", timezone: "Europe/Berlin" },
+        slots: [{ date: "2026-10-30", localTime: "19:00", timezone: "Europe/Berlin", utcInstant: "2026-10-30T18:00:00.000Z" }],
+        takenDates: ["2026-10-23"],
+      },
     });
     const io = captureIo();
     assert.equal(await run(["podcast", "schedule"], io), 0);
-    assert.ok(calls.length === 1);
+    assert.ok(calls.length === 2);
     const out = io.text();
     assert.match(out, /awaiting-public-check/);
     assert.match(out, /not-recorded/);
     assert.doesNotMatch(out, /ep-2/);
+    assert.match(out, /Next free slot: 2026-10-30 19:00 Europe\/Berlin .* as S26E1/);
+    const json = captureIo();
+    assert.equal(await run(["podcast", "schedule", "--json"], json), 0);
+    assert.equal(json.json().nextSlot.code, "S26E1");
+  });
+});
+
+describe("podcast next-slot and cadence", () => {
+  const nextSlotResponse = {
+    code: "S26E1",
+    season: 26,
+    episode: 1,
+    episodesPerSeason: 9,
+    cadence: { weekday: 5, time: "19:00", timezone: "Europe/Berlin" },
+    slots: [{ date: "2026-10-30", localTime: "19:00", timezone: "Europe/Berlin", utcInstant: "2026-10-30T18:00:00.000Z" }],
+    takenDates: ["2026-10-23"],
+  };
+
+  test("next-slot passes count through and prints the episode and slots", async () => {
+    const calls = fakePortal({ "GET /api/podcast-episodes/next-slot": nextSlotResponse });
+    const io = captureIo();
+    assert.equal(await run(["podcast", "next-slot", "--count", "1"], io), 0);
+    assert.deepEqual(calls[0].query, { count: "1" });
+    assert.match(io.text(), /Next episode: S26E1/);
+    assert.match(io.text(), /Friday 19:00 Europe\/Berlin/);
+    assert.match(io.text(), /2026-10-30/);
+    assert.match(io.text(), /Taken: 2026-10-23/);
+    assert.equal(await run(["podcast", "next-slot", "--count", "0"], captureIo()), 2);
+    assert.equal(await run(["podcast", "next-slot", "--count", "99"], captureIo()), 2);
+  });
+
+  test("cadence shows the stored setting and sets it with the version", async () => {
+    const calls = fakePortal({
+      "GET /api/workspace-settings": {
+        version: 3,
+        podcastReleaseCadence: { weekday: 5, time: "19:00", timezone: "Europe/Berlin" },
+        podcastEpisodesPerSeason: 9,
+      },
+      "PUT /api/workspace-settings": ({ body }) => ({ version: 4, podcastReleaseCadence: body.podcastReleaseCadence, podcastEpisodesPerSeason: body.podcastEpisodesPerSeason ?? 9 }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["podcast", "cadence"], io), 0);
+    assert.match(io.text(), /Friday 19:00 Europe\/Berlin.*9 episodes per season/);
+    assert.equal(await run(["podcast", "cadence", "--weekday", "fri", "--time", "19:00", "--timezone", "Europe/Berlin", "--episodes-per-season", "9"], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, {
+      expectedVersion: 3,
+      podcastReleaseCadence: { weekday: 5, time: "19:00", timezone: "Europe/Berlin" },
+      podcastEpisodesPerSeason: 9,
+    });
+    assert.equal(await run(["podcast", "cadence", "--weekday", "8"], captureIo()), 2);
+    assert.equal(await run(["podcast", "cadence", "--time", "7pm"], captureIo()), 2);
+    assert.equal(await run(["podcast", "cadence", "--timezone", "Mars/Olympus"], captureIo()), 2);
+    assert.equal(await run(["podcast", "cadence", "--episodes-per-season", "0"], captureIo()), 2);
   });
 });
 

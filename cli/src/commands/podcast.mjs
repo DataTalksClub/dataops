@@ -33,8 +33,15 @@ Usage
                                   JSON files hold the website front-matter arrays;
                                   "none" clears one
   dataops podcast create-card <episode-id>
-                                  Create the episode Card from the podcast Template and link it
-                                  (the episode needs a recording date)
+                                   Create the episode Card from the podcast Template and link it
+                                   (the episode needs a recording date)
+  dataops podcast next-slot [--count N]
+                                   Next free release slots and the next season/episode
+                                   number (stacking rule: next free Friday 19:00
+                                   Europe/Berlin, 9 episodes per season)
+  dataops podcast cadence [--weekday N] [--time HH:MM] [--timezone TZ]
+                          [--episodes-per-season N]
+                                   Show the release cadence, or set it (admin)
 
 Statuses: ${STATUSES.join(", ")}.
 Publication evidence is recorded with update flags; each observation is stamped now:
@@ -216,9 +223,11 @@ export async function schedule(args, io) {
     from: isoDate(args.from, "from"),
     to: isoDate(args.to, "to"),
   };
-  const result = await apiFor(args).get("/api/podcast-episodes", { query });
+  const api = apiFor(args);
+  const result = await api.get("/api/podcast-episodes", { query });
   const items = (result.items || []).filter((episode) => episode.status !== "cancelled");
-  if (args.json) return { items };
+  const free = await api.get("/api/podcast-episodes/next-slot", { query: { count: "4" } }).catch(() => null);
+  if (args.json) return free ? { items, nextSlot: free } : { items };
   table(io, items, [
     ["ID", (episode) => episode.id],
     ["EPISODE", (episode) => episodeCode(episode)],
@@ -228,7 +237,10 @@ export async function schedule(args, io) {
     ["WEBSITE", (episode) => episode.readiness?.website || ""],
     ["CARD", (episode) => episode.cardId || ""],
   ], "No podcast episodes match.");
-  return { items };
+  if (free) {
+    io.print(`Next free slot: ${free.slots?.[0] ? `${free.slots[0].date} ${free.slots[0].localTime} ${free.slots[0].timezone} (${free.slots[0].utcInstant})` : "none in range"} as ${free.code}.`);
+  }
+  return free ? { items, nextSlot: free } : { items };
 }
 
 export async function show(args, io) {
@@ -317,6 +329,77 @@ export async function createCard(args, io) {
   return result;
 }
 
+const WEEKDAY_NAMES = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+function describeCadence(cadence) {
+  const day = WEEKDAY_NAMES[cadence.weekday] || `day ${cadence.weekday}`;
+  return `${day} ${cadence.time} ${cadence.timezone}`;
+}
+
+/** Next free release slots with the next season/episode number (the SOP stacking rule). */
+export async function nextSlot(args, io) {
+  const count = args.count === undefined ? 4 : integer(args.count, "count");
+  if (count < 1 || count > 52) throw new UsageError("--count must be 1 to 52.");
+  const result = await apiFor(args).get("/api/podcast-episodes/next-slot", { query: { count: String(count) } });
+  if (args.json) return result;
+  io.print(`Next episode: ${result.code} (season ${result.season}, episode ${result.episode}; ${result.episodesPerSeason} per season)`);
+  io.print(`Cadence: ${describeCadence(result.cadence)}`);
+  table(io, result.slots || [], [
+    ["DATE", (slot) => slot.date],
+    ["LOCAL", (slot) => `${slot.localTime} ${slot.timezone}`],
+    ["UTC", (slot) => slot.utcInstant],
+  ], "No free slots in range.");
+  if ((result.takenDates || []).length) io.print(`Taken: ${result.takenDates.join(", ")}`);
+  const first = (result.slots || [])[0];
+  if (first) io.print(`To book one: dataops podcast update <episode-id> --season ${result.season} --episode ${result.episode} --release-date ${first.date}`);
+  return result;
+}
+
+function parseWeekday(raw) {
+  const names = { mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6, sun: 7 };
+  const key = String(raw).trim().toLowerCase().slice(0, 3);
+  if (names[key] !== undefined && !/^\d+$/.test(String(raw).trim())) return names[key];
+  return integer(raw, "weekday");
+}
+
+/** Show the release cadence, or set it (admin). */
+export async function cadence(args, io) {
+  const api = apiFor(args);
+  const current = await api.get("/api/workspace-settings");
+  const hasChange = args.weekday !== undefined || args.time !== undefined || args.timezone !== undefined || args.episodesPerSeason !== undefined;
+  if (!hasChange) {
+    if (args.json) return { podcastReleaseCadence: current.podcastReleaseCadence, podcastEpisodesPerSeason: current.podcastEpisodesPerSeason, version: current.version };
+    io.print(`Release cadence: ${describeCadence(current.podcastReleaseCadence)} (${current.podcastEpisodesPerSeason} episodes per season).`);
+    return current;
+  }
+  const cadenceValue = { ...(current.podcastReleaseCadence || {}) };
+  if (args.weekday !== undefined) cadenceValue.weekday = parseWeekday(args.weekday);
+  if (args.time !== undefined) cadenceValue.time = String(args.time);
+  if (args.timezone !== undefined) cadenceValue.timezone = String(args.timezone);
+  const body = { expectedVersion: current.version };
+  if (args.weekday !== undefined || args.time !== undefined || args.timezone !== undefined) {
+    if (!Number.isInteger(cadenceValue.weekday) || cadenceValue.weekday < 1 || cadenceValue.weekday > 7) {
+      throw new UsageError("--weekday must be 1 (Monday) to 7 (Sunday), or Mon..Sun.");
+    }
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(cadenceValue.time || "")) throw new UsageError("--time must be HH:MM (24h).");
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: cadenceValue.timezone });
+    } catch {
+      throw new UsageError("--timezone must be an IANA timezone (for example Europe/Berlin).");
+    }
+    body.podcastReleaseCadence = cadenceValue;
+  }
+  if (args.episodesPerSeason !== undefined) {
+    const perSeason = integer(args.episodesPerSeason, "episodes-per-season");
+    if (perSeason < 1 || perSeason > 99) throw new UsageError("--episodes-per-season must be 1 to 99.");
+    body.podcastEpisodesPerSeason = perSeason;
+  }
+  const result = await api.put("/api/workspace-settings", body);
+  if (args.json) return result;
+  io.print(`Release cadence is now ${describeCadence(result.podcastReleaseCadence)} (${result.podcastEpisodesPerSeason} episodes per season).`);
+  return result;
+}
+
 export const commands = {
   list,
   show,
@@ -324,4 +407,6 @@ export const commands = {
   create,
   update,
   "create-card": createCard,
+  "next-slot": nextSlot,
+  cadence,
 };

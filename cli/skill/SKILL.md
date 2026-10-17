@@ -168,6 +168,14 @@ its Card: ticking the recording, audio edit, Spotify scheduling and Spotify
 verification Tasks makes it recorded, edited, scheduled and published. Use
 `dataops podcast update <episode-id> --status S` only to correct it or cancel it;
 `dataops podcast list --card <card-id>` finds the episode a Card belongs to.
+To place an unnumbered/undated episode, use the stacking rule instead of working
+it out by hand: `dataops podcast next-slot` shows the next free Friday 19:00
+Europe/Berlin slots plus the next season/episode number (9 per season, so S25E9
+is followed by S26E1), and `dataops podcast schedule` ends with the next free
+slot. `dataops podcast cadence` shows the stored cadence; an admin changes it
+with `dataops podcast cadence --weekday 5 --time 19:00 --timezone Europe/Berlin
+--episodes-per-season 9`. Then record it before scheduling:
+`dataops podcast update <episode-id> --season S --episode E --release-date YYYY-MM-DD`.
 
 For website content: `dataops speakers list` (speaker/author profiles for
 `_people` pages; `--name/--slug/--bio/--photo-url/--github/--twitter/--linkedin/--website`)
