@@ -72,6 +72,17 @@ export function createSponsorDirectoryPages({
   reloadPipeline,
   showView,
   getCurrentView,
+  showTab,
+  getDeals,
+  setDeals,
+  getOrganizations,
+  setOrganizations,
+  ensureOwnerDirectory,
+  reopenDealDetail,
+  reopenCompanyDetail,
+  personDetail,
+  renderEntityLoadState,
+  isStale,
 }) {
   const activeView = () => (typeof getCurrentView === "function" ? getCurrentView() : null);
   // Navigation generation: record opens bump it so a delayed list response
@@ -791,11 +802,145 @@ export function createSponsorDirectoryPages({
     if (preset) safe(() => openContactEditor({ organizationId: preset }), "Could not open contact editor");
   });
 
+  // Record opening reads the cheap D record summary only (single Get, no
+  // child collections): F People/Deals tabs fetch on click. Editing forms
+  // load their full option sets on demand instead.
+  async function loadCompanySummary(organizationId) {
+    const summary = await api(`/directory/companies/${encodeURIComponent(organizationId)}`);
+    setOrganizations([
+      ...getOrganizations().filter((item) => item.id !== organizationId),
+      {
+        id: summary.id,
+        displayName: summary.displayName,
+        domain: summary.domain,
+        active: summary.active,
+        version: summary.version,
+        updatedAt: summary.updatedAt,
+      },
+    ]);
+    return summary;
+  }
+
+  // Record mode: the record renders in the split detail pane, so the split
+  // layout is revealed while the record's primary tab stays highlighted
+  // (company→Companies, person→People, deal→Pipeline). Pipeline-only chrome
+  // (funnel scope/controls/filters) hides on every record. Origin context for
+  // Back lives in returnContext; closeRecord restores the origin tab.
+  function setRecordTab(tab) {
+    showView(tab, false);
+    surface.querySelector(".crm-layout").hidden = false;
+    surface.querySelector('[data-dir-root="companies"]').hidden = true;
+    surface.querySelector('[data-dir-root="people"]').hidden = true;
+    surface.querySelector(".crm-leads").hidden = true;
+    surface.querySelector(".crm-newsletters").hidden = true;
+    surface.querySelector(".crm-money").hidden = true;
+    surface.querySelector("[data-crm-pipeline]").hidden = true;
+    surface.querySelector(".crm-funnel-scope").hidden = true;
+    surface.querySelector(".crm-funnel-controls").hidden = true;
+    surface.querySelector(".crm-filter-disclosure").hidden = true;
+    surface.classList.toggle("dk-fill", true);
+  }
+
+  let currentPersonId = null;
+  const getOpenPersonId = () => (surface.querySelector("[data-crm-person]") ? currentPersonId : null);
+
+  function showRecord({ dealId, companyId, personId } = {}) {
+    const deal = dealId ? getDeals().find((item) => item.id === dealId) : null;
+    const organization = companyId
+      ? getOrganizations().find((item) => item.id === companyId)
+      : null;
+    if (deal) {
+      currentPersonId = null;
+      setRecordTab("pipeline");
+      safe(() => reopenDealDetail(deal), "Could not open deal");
+      return true;
+    }
+    if (organization) {
+      currentPersonId = null;
+      setRecordTab("companies");
+      safe(() => reopenCompanyDetail(organization), "Could not open company");
+      return true;
+    }
+    if (personId) {
+      currentPersonId = personId;
+      setRecordTab("people");
+      safe(async () => {
+        const detail = surface.querySelector("[data-crm-detail]");
+        surface.classList.add("has-booking-detail");
+        const split = surface.querySelector("[data-crm-split]");
+        if (split) {
+          split.dataset.view = "detail";
+          globalThis.dakitSplit?.show(split, "detail");
+        }
+        detail.innerHTML = `<div data-crm-person></div>`;
+        const host = detail.querySelector("[data-crm-person]");
+        personDetail.wire(host);
+        await personDetail.openPerson(personId);
+      }, "Could not open person");
+      return true;
+    }
+    return false;
+  }
+
+  // An in-place open records the record path; a record that cannot load
+  // renders an honest error in the detail pane (retryable, with a way back)
+  // instead of a bare status message. keepContext preserves the existing
+  // Back origin for nested opens (person → company) instead of chaining.
+  // Per-open generation: a late prior open never reopens or navigates over
+  // a newer record (or Tasks).
+  let openGeneration = 0;
+  function openRecord(kind, id, focusSelector, { keepContext = false } = {}) {
+    const openToken = ++openGeneration;
+    const current = () => openToken !== openGeneration || isStale();
+    safe(async () => {
+      try {
+        if (!keepContext) captureReturnContext(kind, id, getCurrentView());
+          if (kind === "deal") {
+            const item = await api(`/deals/${encodeURIComponent(id)}`);
+            if (current()) return;
+            await Promise.all([loadCompanySummary(item.organizationId), ensureOwnerDirectory()]);
+            if (current()) return;
+            setDeals([...getDeals().filter((value) => value.id !== id), item]);
+            showRecord({ dealId: id });
+          } else if (kind === "person") {
+            showRecord({ personId: id });
+          } else {
+            await Promise.all([loadCompanySummary(id), ensureOwnerDirectory()]);
+            if (current()) return;
+            showRecord({ companyId: id });
+          }
+        if (current()) return;
+        navigateCanonicalWorkspace(sponsorRecordPath(kind, id), {}, { render: false });
+      } catch (error) {
+        // A stale opener's rejection must never paint over a newer record.
+        if (current()) return;
+        surface.classList.add("has-booking-detail");
+        const split = surface.querySelector("[data-crm-split]");
+        if (split) {
+          split.dataset.view = "detail";
+          globalThis.dakitSplit?.show(split, "detail");
+        }
+        renderEntityLoadState(surface.querySelector("[data-crm-detail]"), {
+          kind,
+          id,
+          status: error.status === 404 ? "not-found" : "error",
+          error: error.message,
+          retry: () => openRecord(kind, id, focusSelector),
+          returnToList: () => navigateCanonicalWorkspace(sponsorsPath(getCurrentView())),
+        });
+      }
+    }, "Could not open record");
+  }
+
   return {
     directories,
     pipeline,
     seedListParams,
     fetchCompanyOptions,
+    loadCompanySummary,
+    showRecord,
+    openRecord,
+    getOpenPersonId,
     closeRecord,
     listPath,
     captureReturnContext,
