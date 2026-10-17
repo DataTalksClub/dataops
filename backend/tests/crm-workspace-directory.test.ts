@@ -3,6 +3,8 @@ import { setDefaultAssignee } from '../src/db/workspaceSettings';
 import { before, after, describe, it } from 'node:test';
 import assert from 'node:assert';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { handler } from '../src/handler';
 import { createTables } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
@@ -80,8 +82,8 @@ describe('crm workspace directory', () => {
     assert.equal(body.nextCursor, body.total > body.items.length ? body.nextCursor : null);
   });
 
-  it('serves a cheap company summary with notes and no nested finance', async () => {
-    const { orgA, personA, deal } = await seed(String(seedCount++));
+  it('serves a pure single-record summary with no cross-record metadata', async () => {
+    const { orgA } = await seed(String(seedCount++));
     const stored = data(await invoke('GET', `/api/sponsor-crm/organizations/${orgA.id}`));
     await invoke('PUT', `/api/sponsor-crm/organizations/${orgA.id}`, { notes: 'Operator summary paragraph.', version: stored.version });
     const res = await invoke('GET', `/api/sponsor-crm/directory/companies/${orgA.id}?today=2026-10-17`);
@@ -90,15 +92,56 @@ describe('crm workspace directory', () => {
     assert.equal(row.id, orgA.id);
     assert.equal(row.displayName, 'Acme Synthetic');
     assert.equal(row.notes, 'Operator summary paragraph.');
-    assert.deepEqual(row.primaryPerson, { id: personA.id, name: 'Ada Synthetic', email: 'ada@acme.example' });
-    assert.equal(row.openDealCount, 1);
-    for (const forbidden of ['money', 'finance', 'fulfillment', 'deliverables', 'deals', 'snippet', 'relationship']) {
-      assert.equal(row[forbidden], undefined, `summary must not carry ${forbidden}`);
+    assert.equal(row.lastTouch, '2026-10-01T09:00:00Z');
+    for (const forbidden of ['money', 'finance', 'fulfillment', 'deliverables', 'deals', 'snippet', 'relationship', 'primaryPerson', 'openDealCount']) {
+      assert.equal(row[forbidden], undefined, `summary must omit ${forbidden}`);
     }
-    void deal;
     assert.equal((await invoke('GET', '/api/sponsor-crm/directory/companies/does-not-exist-9')).statusCode, 404);
     assert.equal((await invoke('GET', '/api/sponsor-crm/directory/companies/!!!')).statusCode, 400);
     assert.equal((await invoke('POST', `/api/sponsor-crm/directory/companies/${orgA.id}`, {})).statusCode, 405);
+  });
+
+  it('proves one direct Get only inside the real snapshot scope', async () => {
+    const { getCompanySummary } = await import('../src/crmWorkspace/directory.js');
+    const { withCrmReadSnapshot } = await import('../src/db/sponsorCrm.js');
+    const suffix = String(seedCount++);
+    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
+      displayName: `Single Org ${suffix}`, domain: `single-${suffix}.example`, sourceKey: `ws-single-org-${suffix}`,
+    }));
+    // Finance-state rows that a global ledger would BatchGet: the summary must
+    // never even start the snapshot scan, let alone read them.
+    await client.send(new PutCommand({
+      TableName: TABLE_SPONSOR_CRM,
+      Item: {
+        PK: `SPONSOR_FINANCE#${org.id}`, SK: `SPONSOR_FINANCE#${org.id}`, id: `state-${org.id}`,
+        recordType: 'sponsor-finance', dealId: `deal-${suffix}`, currency: 'EUR',
+        paymentLinkIds: [`tx#receipt-${suffix}`], recordedPaymentIds: [], version: 1,
+        createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
+      },
+    }));
+    const previous = process.env.SPONSOR_FINANCE_ENABLED;
+    process.env.SPONSOR_FINANCE_ENABLED = 'true';
+    const sends: Array<{ name: string; key?: unknown }> = [];
+    const counting = {
+      send: (command: any, options?: any) => {
+        sends.push({ name: command?.constructor?.name || '?', key: command?.input?.Key });
+        return (client as any).send(command, options);
+      },
+    } as any;
+    try {
+      const result = await withCrmReadSnapshot(() => getCompanySummary(counting, org.id));
+      assert.equal(result.status, 200);
+      assert.equal((result.body as any).id, org.id);
+      assert.deepEqual(
+        sends.map((send) => send.name),
+        ['GetCommand'],
+        'exactly one storage send inside the real snapshot scope',
+      );
+      assert.deepEqual(sends[0].key, { PK: `ORGANIZATION#${org.id}`, SK: `ORGANIZATION#${org.id}` });
+    } finally {
+      if (previous === undefined) delete process.env.SPONSOR_FINANCE_ENABLED;
+      else process.env.SPONSOR_FINANCE_ENABLED = previous;
+    }
   });
 
   it('executes sort direction and binds cursors to the effective today', async () => {
@@ -156,72 +199,6 @@ describe('crm workspace directory', () => {
     assert.ok(!def.items.some((item: any) => item.id === org.id), 'archived hidden by default');
     const hist = data(await invoke('GET', '/api/sponsor-crm/directory/companies?active=all'));
     assert.ok(hist.items.some((item: any) => item.id === org.id), 'archived stays honest historical access');
-  });
-
-  it('reads zero finance/bookkeeping rows on summaries with finance enabled', async () => {
-    const { getCompanySummary } = await import('../src/crmWorkspace/directory.js');
-    const { TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM } = await import('../src/db/tableNames.js');
-    const { PutCommand } = await import('@aws-sdk/lib-dynamodb');
-    const suffix = String(seedCount++);
-    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
-      displayName: `Ledger Org ${suffix}`, domain: `ledger-${suffix}.example`, sourceKey: `ws-ledger-org-${suffix}`,
-    }));
-    const contact = data(await invoke('POST', '/api/sponsor-crm/contacts', {
-      organizationId: org.id, name: 'Led Ledger', emails: [`led-${suffix}@example.invalid`],
-      primary: true, sourceKey: `ws-ledger-contact-${suffix}`,
-    }));
-    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', {
-      organizationId: org.id, primaryContactId: contact.id, status: 'open', sourceKey: `ws-ledger-deal-${suffix}`,
-    }));
-    // Real finance-state rows: the target deal's own state plus an unrelated
-    // portfolio org's state with linked bookkeeping claims a global ledger
-    // would BatchGet. The summary must read none of them.
-    const other = data(await invoke('POST', '/api/sponsor-crm/organizations', {
-      displayName: `Other Org ${suffix}`, domain: `other-${suffix}.example`, sourceKey: `ws-ledger-other-${suffix}`,
-    }));
-    const putState = (pk: string, dealId: string, linkId: string) => client.send(new PutCommand({
-      TableName: TABLE_SPONSOR_CRM,
-      Item: {
-        PK: pk, SK: pk, id: `state-${dealId}`, recordType: 'sponsor-finance', dealId,
-        currency: 'EUR', amountDue: '100', invoiceRequirement: 'required', issuedOn: '2026-09-01',
-        paymentLinkIds: [linkId], recordedPaymentIds: [], version: 1,
-        createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
-      },
-    }));
-    await putState(`SPONSOR_FINANCE#${deal.id}`, deal.id, `tx#unrelated-receipt-${suffix}`);
-    await putState(`SPONSOR_FINANCE#other-${suffix}`, `other-deal-${suffix}`, `tx#other-receipt-${suffix}`);
-    const previous = process.env.SPONSOR_FINANCE_ENABLED;
-    process.env.SPONSOR_FINANCE_ENABLED = 'true';
-    let financeSends = 0;
-    const counting = {
-      send: (command: any, options?: any) => {
-        const input = command?.input || {};
-        const tables = [
-          ...(input.TableName ? [input.TableName] : []),
-          ...Object.keys(input.RequestItems || {}),
-          ...((input.TransactItems || []).map((item: any) => item?.Get?.TableName).filter(Boolean)),
-        ];
-        if (tables.includes(TABLE_BOOKKEEPING)) financeSends += 1;
-        return (client as any).send(command, options);
-      },
-    } as any;
-    try {
-      const result = await getCompanySummary(counting, org.id, {});
-      assert.equal(result.status, 200);
-      const row = result.body as any;
-      assert.equal(row.id, org.id);
-      assert.equal(row.openDealCount, 1);
-      assert.deepEqual(row.primaryPerson, { id: contact.id, name: 'Led Ledger', email: `led-${suffix}@example.invalid` });
-      assert.ok(!('relationship' in row), 'finance-derived facts are omitted, not synthesized');
-      assert.equal(financeSends, 0, 'summary must not fetch bookkeeping even with finance-state deals present');
-      const otherSummary = await getCompanySummary(counting, other.id, {});
-      assert.equal(otherSummary.status, 200);
-      assert.equal(financeSends, 0);
-    } finally {
-      if (previous === undefined) delete process.env.SPONSOR_FINANCE_ENABLED;
-      else process.env.SPONSOR_FINANCE_ENABLED = previous;
-    }
-    void contact;
   });
 
   it('filters companies by search, relationship, active and touch windows', async () => {

@@ -295,22 +295,20 @@ export async function listCompanies(
  * existing operator notes summary. Never nested deals/finance/mail/contacts.
  */
 /**
- * Cheap lazy-record summary: a direct Get plus snapshot-derived contact/deal
- * metadata (primary person, open deal count). It never invokes the finance
- * subsystem, the global ledger, or bookkeeping reads for any caller — monetary
- * and finance-derived facts (notably `relationship`) belong to the lazy Finance
- * tab and the directory context, and are omitted here rather than synthesized.
+ * Pure single-record summary for lazy record shells: exactly one direct Get,
+ * no snapshot/list/scan reads of any kind (the request snapshot is cold-scan
+ * backed, not a free cache). Optional cross-record metadata (primary person,
+ * open deal count, relationship) is omitted rather than synthesized — take it
+ * from the directory list rows, which already pay for the shared read.
  */
 export type CompanySummary = {
   id: string;
   displayName: string;
   domain?: string;
   active: boolean;
-  primaryPerson: { id: string; name: string; email?: string } | null;
   lastTouch: string | null;
   lastInboundAt?: string;
   lastOutboundAt?: string;
-  openDealCount: number;
   version: number;
   updatedAt: string;
   notes?: string;
@@ -319,30 +317,17 @@ export type CompanySummary = {
 export async function getCompanySummary(
   client: DynamoDBDocumentClient,
   id: string,
-  query: Record<string, string | undefined>,
 ): Promise<{ status: number; body: unknown }> {
   const org = await getCrmRecord(client, 'organization', id);
   if (!org) return { status: 404, body: { error: 'Not found' } };
-  const [contacts, deals] = await Promise.all([
-    listCrmRecords(client, 'contact'),
-    listCrmRecords(client, 'deal'),
-  ]);
-  const primary = primaryIndex(contacts).get(org.id);
-  const openDealCount = deals.filter(
-    (deal) => String(deal.organizationId) === id && deal.status === 'open' && !deal.archivedAt,
-  ).length;
   const summary: CompanySummary = {
     id: org.id,
     displayName: String(org.displayName || ''),
     ...(org.domain ? { domain: String(org.domain) } : {}),
     active: activeOf(org),
-    primaryPerson: primary
-      ? { id: primary.id, name: String(primary.name || ''), ...(emailOf(primary) ? { email: emailOf(primary)! } : {}) }
-      : null,
     lastTouch: lastTouchOf(org),
     ...(typeof org.lastInboundAt === 'string' ? { lastInboundAt: org.lastInboundAt } : {}),
     ...(typeof org.lastOutboundAt === 'string' ? { lastOutboundAt: org.lastOutboundAt } : {}),
-    openDealCount,
     version: org.version,
     updatedAt: String(org.updatedAt),
     ...(typeof org.notes === 'string' && org.notes ? { notes: org.notes } : {}),

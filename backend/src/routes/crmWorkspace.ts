@@ -103,7 +103,7 @@ export async function handleCrmWorkspaceRoutes(
       const decoded = pathId(companyDir[1]);
       if ('error' in decoded) return json(400, { error: decoded.error });
       try {
-        const result = await getCompanySummary(client, decoded.id, query);
+        const result = await getCompanySummary(client, decoded.id);
         return json(result.status, result.body);
       } catch (error) {
         const statusCode = (error as { statusCode?: number }).statusCode;
