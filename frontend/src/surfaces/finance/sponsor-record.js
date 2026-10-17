@@ -132,7 +132,7 @@ export function archiveDisclosureMarkup(archive, context = {}) {
           <button type="button" data-archive-retry>Retry</button>
         </div>`
       : ""}
-    ${archive.status !== "error" && !items.length
+    ${archive.status !== "error" && !items.length && !archive.nextCursor
       ? html`<div class="honest-state">
           <strong>No archived messages</strong>
           <p>Drafts and delivery history for this deal will appear here.</p>
@@ -161,6 +161,8 @@ export function createArchiveLoader({ loadArchive, dealId, limit = 50 }) {
     if (state.status === "loading" || state.status === "ready") return state;
     state.status = "loading";
     state.error = "";
+    state.items = [];
+    state.nextCursor = null;
     try {
       const result = await loadArchive(dealId, { limit });
       state.items = result.items || [];
@@ -191,7 +193,11 @@ export function createArchiveLoader({ loadArchive, dealId, limit = 50 }) {
     return state;
   }
   async function retry() {
-    if (state.items.length && state.nextCursor) return loadMore();
+    // Resume the failed page: a set cursor always continues the
+    // continuation, even when the visible row count is zero (an empty first
+    // page with a cursor is valid after recordType projection). Only a
+    // cursorless state restarts from the first page.
+    if (state.nextCursor) return loadMore();
     state.status = "idle";
     return open();
   }
@@ -647,9 +653,12 @@ export function createSponsorRecord(context) {
       if (!loader || loader.state.status !== "idle") return;
       const mine = token;
       const dealId = record.selectedDeal.id;
+      // Paint the loading state immediately; the guarded paint after the
+      // await renders the result only for the current deal+generation.
+      const pending = loader.open();
       paintArchive(target, loader);
       await fail(async () => {
-        await loader.open();
+        await pending;
         if (!guard(mine, dealId, loader)) return;
         paintArchive(target, loader);
       }, "Could not load the archive");
@@ -659,27 +668,31 @@ export function createSponsorRecord(context) {
       if (more) {
         const loader = archiveLoaderFor();
         if (!loader) return;
-        const mine = token;
-        const dealId = record.selectedDeal.id;
-        await fail(async () => {
-          await loader.loadMore();
-          if (!guard(mine, dealId, loader)) return;
-          paintArchive(target, loader);
-        }, "Could not load older messages");
-        return;
+      const mine = token;
+      const dealId = record.selectedDeal.id;
+      await fail(async () => {
+        const pending = loader.loadMore();
+        paintArchive(target, loader);
+        await pending;
+        if (!guard(mine, dealId, loader)) return;
+        paintArchive(target, loader);
+      }, "Could not load older messages");
+      return;
       }
       const retry = event.target.closest("[data-archive-retry]");
       if (retry) {
         const loader = archiveLoaderFor();
         if (!loader) return;
-        const mine = token;
-        const dealId = record.selectedDeal.id;
-        await fail(async () => {
-          await loader.retry();
-          if (!guard(mine, dealId, loader)) return;
-          paintArchive(target, loader);
-        }, "Could not load the archive");
-        return;
+      const mine = token;
+      const dealId = record.selectedDeal.id;
+      await fail(async () => {
+        const pending = loader.retry();
+        paintArchive(target, loader);
+        await pending;
+        if (!guard(mine, dealId, loader)) return;
+        paintArchive(target, loader);
+      }, "Could not load the archive");
+      return;
       }
       const review = event.target.closest("[data-archive-review]");
       if (!review || typeof context.onReviewDraft !== "function") return;

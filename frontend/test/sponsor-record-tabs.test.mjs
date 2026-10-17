@@ -446,6 +446,44 @@ test("archive loader pages explicitly without dedupe or fake totals", async () =
   void calls;
 });
 
+test("empty first archive page with cursor offers continuation, not emptiness", () => {
+  const markup = archiveDisclosureMarkup(
+    { status: "ready", items: [], nextCursor: "page-2", total: null, error: "" },
+    context,
+  );
+  assert.match(markup, /Load older/, "continuation offered for the empty projected page");
+  assert.doesNotMatch(markup, /No archived messages/, "no false empty claim while a cursor remains");
+  const done = archiveDisclosureMarkup(
+    { status: "ready", items: [], nextCursor: null, total: null, error: "" },
+    context,
+  );
+  assert.match(done, /No archived messages/, "honest empty only at the true end");
+});
+
+test("archive retry after a failed continuation resumes its own cursor", async () => {
+  const seen = [];
+  let attempts = 0;
+  const loader = createArchiveLoader({
+    loadArchive: async (dealId, { cursor = "" } = {}) => {
+      seen.push(cursor);
+      attempts += 1;
+      if (!cursor) return { items: [], nextCursor: "page-2", total: null };
+      if (attempts === 2) throw new Error("page lost");
+      return { items: [{ id: "m9", label: "Archived draft v9" }], nextCursor: null, total: null };
+    },
+    dealId: "d1",
+  });
+  await loader.open();
+  assert.equal(loader.state.items.length, 0);
+  assert.equal(loader.state.nextCursor, "page-2");
+  await loader.loadMore();
+  assert.equal(loader.state.status, "error");
+  await loader.retry();
+  assert.equal(loader.state.status, "ready");
+  assert.equal(loader.state.items.length, 1);
+  assert.deepEqual(seen, ["", "page-2", "page-2"], "retry resumes the failed cursor, never restarts page one");
+});
+
 test("archive retry resumes the failed page and keeps visible rows", async () => {
   let attempts = 0;
   const loader = createArchiveLoader({
@@ -627,6 +665,39 @@ test("late archive responses never paint under a newly selected deal", async () 
   await pendingA;
   assert.ok(!archiveHost.innerHTML.includes("deal one"), "stale A history never paints under B");
   assert.deepEqual(archiveCalls, ["d1"], "no duplicate A fetch, no eager B fetch");
+});
+
+test("archive toggle paints pending state immediately, result after resolve", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": { items: [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off" }], nextCursor: null },
+      "GET /activity/organization/c1?limit=30": preview,
+    },
+    context: {
+      loadArchive: async () => {
+        await gate;
+        return { items: [{ id: "m1", label: "Archived draft v1" }], nextCursor: null, total: null };
+      },
+    },
+  });
+  const panels = seedPanels(host);
+  await record.openCompany("c1");
+  await record.switchTab("deals");
+  await record.switchTab("activity");
+  const archiveHost = panels.activity.querySelector("[data-record-archive-host]");
+  const disclosure = archiveHost.querySelector("[data-record-archive]");
+  disclosure.open = true;
+  const pending = archiveHost.dispatch("toggle", { closestPatch: { "[data-record-archive]": disclosure } });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.match(archiveHost.innerHTML, /Loading archive/, "pending state paints before the fetch resolves");
+  release();
+  await pending;
+  assert.match(archiveHost.innerHTML, /Archived draft v1/, "guarded paint renders the result");
 });
 
 test("failed explicit selections never fall back to unrelated finance", async () => {
