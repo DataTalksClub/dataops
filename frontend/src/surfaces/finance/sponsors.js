@@ -333,13 +333,20 @@ export function createSponsorCrmSurface(context) {
     const contactEditor = createSponsorContactEditor({ api, surface, getContacts: () => contacts,
       getOrganizations: () => organizations, safe, openDialog,
       afterSave: async (organizationId) => {
+        // Guarded like deal-save: a navigation that happened mid-save owns
+        // the surface; never refresh or reopen over it.
+        if (stale()) return;
+        const personOpen = currentPersonId && surface.querySelector("[data-crm-person]");
         await refresh();
-        if (currentPersonId && surface.querySelector("[data-crm-person]")) {
+        if (stale()) return;
+        if (personOpen) {
           await personDetail.openPerson(currentPersonId);
           return;
         }
-        await loadCompanySummary(organizationId);
-        await reopenCompanyDetail({ id: organizationId });
+        if (surface.classList.contains("has-booking-detail")) {
+          await loadCompanySummary(organizationId);
+          await reopenCompanyDetail({ id: organizationId });
+        }
       } });
     const personDetail = createSponsorPersonDetail({
       api,
@@ -454,7 +461,6 @@ export function createSponsorCrmSurface(context) {
       }
       if (currentView === "pipeline") {
         await ownerDirectory.load();
-        ownerDirectory.fillFilter(surface.querySelector("[data-pipeline-owner]"));
         ownerDirectory.fillFilter(surface.querySelector("[data-pipeline-owner]"));
         if (!pipelineUrlApplied) {
           pipelineUrlApplied = true;
@@ -848,6 +854,11 @@ export function createSponsorCrmSurface(context) {
       event.preventDefault();
       const dialog = surface.querySelector("[data-deal-dialog]"),
         form = dialog.querySelector("form");
+      // Origin capture: a save from A must never refresh/reopen over a newer
+      // record B or a navigation that happened while the save was in flight.
+      const submitOpenGeneration = openGeneration;
+      const submitView = currentView;
+      const submitHadDetail = surface.classList.contains("has-booking-detail");
       safe(async () => {
         const raw = Object.fromEntries(
           [...new FormData(form)].filter(([, value]) => value !== ""),
@@ -889,11 +900,14 @@ export function createSponsorCrmSurface(context) {
           });
         }
         dialog.close();
+        // A newer record open or any navigation/re-render during the save
+        // owns the surface now: never refresh or reopen over it.
+        if (submitOpenGeneration !== openGeneration || submitView !== currentView || stale()) return;
         await refresh();
         // A save from inside an open record reopens that org+deal with the
         // saved object (fresh version, no stale data); a save from a list
         // only needed the refresh above.
-        if (surface.classList.contains("has-booking-detail")) {
+        if (submitHadDetail) {
           await loadCompanySummary(saved.organizationId);
           deals = [...deals.filter((value) => value.id !== saved.id), saved];
           await reopenDealDetail(saved);

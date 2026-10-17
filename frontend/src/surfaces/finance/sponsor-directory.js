@@ -51,7 +51,9 @@ function invalid(message) {
 export function validateDirectoryState(entity, state) {
   if (!DIRECTORY_ENTITIES.includes(entity)) return invalid(`Unknown directory: ${entity}`);
   const value = state || {};
-  if (value.search !== undefined && (typeof value.search !== "string" || !value.search || value.search.length > 200)) {
+  // An explicitly cleared control reads as "": deletion, not a search term.
+  if (value.search !== undefined && value.search !== "" &&
+      (typeof value.search !== "string" || value.search.length > 200)) {
     return invalid("Search must be 1..200 characters");
   }
   if (value.active !== undefined && !ACTIVE_VALUES.includes(value.active)) {
@@ -131,7 +133,7 @@ export function directoryStateFromUrl(url, entity) {
 export function directoryQueryFromState(entity, state) {
   const query = {};
   for (const key of DIRECTORY_FILTER_KEYS[entity] || []) {
-    if (state?.[key] !== undefined) query[key] = String(state[key]);
+    if (state?.[key] !== undefined && state[key] !== "") query[key] = String(state[key]);
   }
   const sort = typeof state?.sort === "string" ? { field: state.sort } : state?.sort || {};
   query.sort = sort.field || "name";
@@ -161,7 +163,7 @@ export function directoryUrl(entity, { viewId, filters, sort, limit } = {}) {
   const params = new URLSearchParams();
   if (viewId) params.set("view", viewId);
   for (const key of DIRECTORY_FILTER_KEYS[entity] || []) {
-    if (filters?.[key] !== undefined) params.set(key, String(filters[key]));
+    if (filters?.[key] !== undefined && filters[key] !== "") params.set(key, String(filters[key]));
   }
   const sortField = typeof sort === "string" ? sort : sort?.field;
   const sortDir = typeof sort === "string" ? undefined : sort?.direction;

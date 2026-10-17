@@ -273,6 +273,22 @@ test("a bare dir without sort applies to the base field", () => {
   assert.equal(withView.modified, false);
 });
 
+test("clearing a control deletes the filter and unpins the view", () => {
+  const cleared = resolveEffectiveFilters({
+    entity: "companies", views,
+    selectedViewId: "view-1",
+    urlState: { active: "true", relationship: "", search: "" },
+  });
+  assert.ok(!("relationship" in cleared.filters), "cleared key disappears");
+  assert.ok(!("search" in cleared.filters), "empty search never queries");
+  assert.equal(cleared.viewId, null);
+  assert.equal(cleared.modified, true);
+  assert.deepEqual(
+    directoryQueryFromState("companies", { ...cleared.filters, sort: cleared.sort }),
+    { active: "true", sort: "name", direction: "asc", limit: "30" },
+  );
+});
+
 test("a view without server resolvedFilters fails honestly instead of guessing", () => {
   const unresolved = resolveEffectiveFilters({
     entity: "companies",

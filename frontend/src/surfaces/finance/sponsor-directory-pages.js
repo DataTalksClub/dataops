@@ -200,10 +200,12 @@ export function createSponsorDirectoryPages({
     });
     function readControls() {
       const { search, sort, filters } = controls();
-      const collected = {};
-      if (search?.value) collected.search = search.value;
+      // Every present control is represented, including cleared ones: an
+      // explicitly emptied input unpins the view and deletes that filter
+      // instead of silently restoring the saved base value.
+      const collected = { search: search?.value || "" };
       for (const input of filters) {
-        if (input.value !== "") collected[input.dataset.dirFilter] = input.value;
+        collected[input.dataset.dirFilter] = input.value || "";
       }
       // Always represent the selected sort field (including Name): omitting
       // it would let a stale base sort survive a deliberate manual change.

@@ -1611,4 +1611,64 @@ describe("CRM directory controllers", () => {
     assert.ok(!pipelineCalls.join("").includes("bogus"), "invented enum never reaches the API");
     assert.ok(!pipelineCalls.join("").includes("nope"), "invented sort never reaches the API");
   });
+
+  test("clearing a saved search deletes the filter instead of restoring base", async () => {
+    const { document, finance, requests } = createHarness({
+      route: dirRoute("companies", {}),
+      request: directoryRequest,
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    const root = document.surface.querySelector('[data-dir-root="companies"]');
+    const search = root.querySelector("[data-dir-search]");
+    search.value = "acme";
+    await search.dispatch("input", {});
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    let queries = requests
+      .filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/directory/companies")
+      .map((entry) => new URL(entry.url, "http://dataops.test").search);
+    assert.ok(queries.at(-1).includes("search=acme"), "search applies");
+    search.value = "";
+    await search.dispatch("input", {});
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    queries = requests
+      .filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/directory/companies")
+      .map((entry) => new URL(entry.url, "http://dataops.test").search);
+    assert.ok(!queries.at(-1).includes("search="), `cleared search disappears from query: ${queries.at(-1)}`);
+    assert.match(dirRows(document).innerHTML, /Acme Cloud/, "all rows return after clearing");
+  });
+
+  test("in-flight error after a newer success never paints over it", async () => {
+    const gates = {};
+    const { document, finance, requests } = createHarness({
+      route: dirRoute("companies", {}),
+      request: (url, options = {}) => {
+        const path = requestPath(url);
+        const query = new URL(url, "http://dataops.test").searchParams;
+        if (path === "/api/sponsor-crm/directory/companies" && query.get("search") === "acme") {
+          return new Promise((_, reject) => { gates.acme = () => reject(Object.assign(new Error("slow acme failed"), { status: 500 })); });
+        }
+        return directoryRequest(url, options);
+      },
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    const root = document.surface.querySelector('[data-dir-root="companies"]');
+    const search = root.querySelector("[data-dir-search]");
+    search.value = "acme";
+    await search.dispatch("input", {});
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    search.value = "";
+    await search.dispatch("input", {});
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    assert.match(dirRows(document).innerHTML, /Acme Cloud/, "settled rows render");
+    gates.acme();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.match(
+      dirRows(document).innerHTML,
+      /Acme Cloud/,
+      "late rejection never replaces newer rows with an error",
+    );
+    assert.doesNotMatch(dirRows(document).innerHTML, /Could not load this directory/);
+  });
 });

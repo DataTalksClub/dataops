@@ -234,10 +234,16 @@ export function resolveEffectiveFilters({ entity, views, viewsError, selectedVie
   // A URL key matching the resolved value is the same window, not a
   // modification, so builtins stay selected across refresh while copied links
   // without the view id still replay the frozen window.
-  const overlaid = Object.keys(urlFilters).filter(
-    (key) => String(urlFilters[key]) !== String(baseFilters[key]),
-  );
+  const overlaid = Object.keys(urlFilters).filter((key) => {
+    // An explicitly cleared control deletes an applied filter (unpins);
+    // an empty control over no base value changes nothing.
+    if (urlFilters[key] === "") return key in baseFilters;
+    return String(urlFilters[key]) !== String(baseFilters[key]);
+  });
   const filters = { ...baseFilters, ...urlFilters };
+  for (const [key, value] of Object.entries(urlFilters)) {
+    if (value === "") delete filters[key];
+  }
   const baseField = typeof baseSort === "string" ? baseSort : baseSort.field;
   const baseDir = typeof baseSort === "string" ? undefined : baseSort.direction;
   const sort = urlSort || (urlDir !== undefined && entity !== "pipeline"
