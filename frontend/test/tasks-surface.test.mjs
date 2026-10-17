@@ -2876,6 +2876,7 @@ describe("Tasks surface boundary", () => {
     assert.ok(section);
     assert.match(section.textContent, /2 automations/);
     assert.match(section.textContent, /Automatically created cards/);
+    assert.match(section.textContent, /Automations \(2\)/);
     assert.match(section.textContent, /Tax Report card/);
     assert.match(section.textContent, /Monthly on the 1st \(Europe\/Berlin\)/);
     assert.match(section.textContent, /Created on the scheduled date/);

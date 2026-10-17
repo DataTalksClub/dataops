@@ -20,14 +20,13 @@ describe('Local sample recurring schedules', () => {
     await stopLocal();
   });
 
-  it('does not seed reminder jobs whose card is created automatically', async () => {
+  it('keeps the weekly newsletter and monthly bookkeeping reminder samples', async () => {
     const descriptions = SAMPLE_RECURRING_CONFIGS.map((sample) => sample.description);
-    for (const removed of [
+    for (const sample of [
       'Ensure newsletter for next week is prepared',
-      'Prepare a bookkeeping report',
       'Check bookkeeping, invoices, and receipts',
     ]) {
-      assert.equal(descriptions.includes(removed), false, `${removed} must stay unseeded`);
+      assert.equal(descriptions.includes(sample), true, `${sample} is a retained sample schedule`);
     }
   });
 

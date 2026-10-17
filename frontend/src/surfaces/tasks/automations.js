@@ -155,19 +155,36 @@ export function createAutomations(context) {
       return;
     }
     section.append(renderCards(cards));
-    const list = document.createElement("ul");
-    list.className = "automation-list";
-    for (const group of groupByRun(visible)) {
-      if (group.length === 1) list.append(renderItem(group[0], { shared: false }));
-      else list.append(renderGroup(group));
-    }
-    section.append(list);
-    if (system.length) section.append(renderSystemJobs(system));
+    section.append(renderAutomationsDetails(visible, system));
     section.append(text(
       "footer",
       "recurring-section-footer",
       "Times are Europe/Berlin. Settings are the values the jobs read; only admins can change them.",
     ));
+  }
+
+  // Everything below the card rules stays collapsed by default: the card
+  // list is the primary view, the job lists open on demand.
+  function renderAutomationsDetails(visible, system) {
+    const wrap = document.createElement("div");
+    wrap.className = "automation-details";
+    if (visible.length) {
+      const details = document.createElement("details");
+      details.className = "automation-jobs-details";
+      const summary = document.createElement("summary");
+      summary.textContent = `Automations (${visible.length})`;
+      details.append(summary);
+      const list = document.createElement("ul");
+      list.className = "automation-list";
+      for (const group of groupByRun(visible)) {
+        if (group.length === 1) list.append(renderItem(group[0], { shared: false }));
+        else list.append(renderGroup(group));
+      }
+      details.append(list);
+      wrap.append(details);
+    }
+    if (system.length) wrap.append(renderSystemJobs(system));
+    return wrap;
   }
 
   // One row per Card that gets created automatically and when, from the live
