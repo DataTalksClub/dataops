@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  archiveDisclosureMarkup,
+  createArchiveLoader,
   createSponsorRecord,
   dealsListMarkup,
   emptyMarkup,
@@ -233,8 +235,7 @@ test("Back closes through E integration and tabs are keyboard reachable", async 
   assert.match(host.querySelector('[data-record-panel="people"]').innerHTML, /No people yet/, "keyboard activation loads the tab");
 });
 
-test("record shell is accessible and honest states escape content", () => {
-  const shell = recordShellMarkup({ displayName: "<Acme>" }, { returnLabel: "Companies" }, context);
+test("record shell is accessible and honest states escape content", () => {  const shell = recordShellMarkup({ displayName: "<Acme>" }, { returnLabel: "Companies" }, context);
   assert.match(shell, /&lt;Acme&gt;/);
   assert.match(shell, /role="tablist"/);
   assert.match(shell, /role="tabpanel"/);
@@ -251,4 +252,91 @@ test("record shell is accessible and honest states escape content", () => {
   const overview = overviewMarkup({ company: { notes: "<hi>" }, primaryPerson: null, nextTask: null, recent: [] }, context);
   assert.match(overview, /No open task/);
   assert.match(overview, /&lt;hi&gt;/);
+});
+
+test("archive disclosure is collapsed, lazy, read-only and honest", async () => {
+  const collapsed = archiveDisclosureMarkup({ status: "idle" }, context);
+  assert.match(collapsed, /data-record-archive/);
+  assert.doesNotMatch(collapsed, /open>/);
+  assert.match(archiveDisclosureMarkup({ status: "loading" }, context), /Loading archive/);
+  const ready = archiveDisclosureMarkup({
+    status: "ready",
+    total: 2,
+    items: [{ id: "a1", label: "Archived draft", preview: "<hello>", detail: "Full <body>", createdAt: "2026-09-01T10:00:00Z" }],
+  }, context);
+  assert.match(ready, /Archived drafts and delivery history \(2\)/);
+  assert.match(ready, /Archived draft/);
+  assert.match(ready, /&lt;hello&gt;/);
+  assert.match(ready, /Full text/);
+  assert.match(ready, /&lt;body&gt;/);
+  assert.doesNotMatch(ready, /<button/);
+  assert.doesNotMatch(ready, /data-(draft|approve|cancel|suppress|create-review|reconcile)/);
+  assert.match(archiveDisclosureMarkup({ status: "ready", items: [], total: 0 }, context), /No archived messages/);
+  assert.match(archiveDisclosureMarkup({ status: "error", error: "<bad>" }, context), /&lt;bad&gt;/);
+
+  let opens = 0;
+  const loader = createArchiveLoader({ loadArchive: async () => { opens += 1; return { items: [], total: 0 }; }, dealId: "d1" });
+  assert.equal(loader.state.status, "idle");
+  await loader.open();
+  await loader.open();
+  assert.equal(opens, 1, "archive loads once per deal");
+  const failing = createArchiveLoader({ loadArchive: async () => { throw httpError(500, "gone"); }, dealId: "d1" });
+  await failing.open();
+  assert.equal(failing.state.status, "error");
+  assert.throws(() => createArchiveLoader({ dealId: "d1" }), /requires loadArchive/);
+});
+
+test("people rows keep full last-contacted precision", () => {
+  const markup = peopleListMarkup({
+    items: [{ id: "p1", name: "Ada", lastTouch: "2026-10-09T12:00:00.000Z", lastContactedAt: "2026-10-09T12:35:00.000Z" }],
+    total: 1,
+    canEdit: false,
+  }, context);
+  assert.match(markup, /Last touch 9 Oct/);
+  assert.match(markup, /Last contacted 9 Oct.*14:35/);
+});
+
+test("activity tab exposes the archive lazily per selected deal", async () => {
+  const archives = [];
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": {
+        items: [
+          { id: "d1", organizationId: "c1", status: "agreed", productKind: "package" },
+          { id: "d2", organizationId: "c1", status: "open", productKind: "one-off" },
+        ],
+        nextCursor: null,
+      },
+      "GET /activity/organization/c1?limit=30": preview,
+    },
+    context: { loadArchive: async (dealId) => { archives.push(dealId); return { items: [], total: 0 }; } },
+  });
+  const panels = seedPanels(host);
+  await record.openCompany("c1");
+  await record.switchTab("activity");
+  assert.equal(archives.length, 0, "archive never loads before its disclosure opens");
+  const archiveHost = panels.activity.querySelector("[data-record-archive-host]");
+  assert.match(archiveHost.innerHTML, /No deal selected/);
+  await record.switchTab("deals");
+  await record.switchTab("activity");
+  assert.match(archiveHost.innerHTML, /data-record-archive/);
+  assert.doesNotMatch(archiveHost.innerHTML, /No deal selected/, "deal selection re-resolves the archive");
+  const disclosure = archiveHost.querySelector("[data-record-archive]");
+  disclosure.open = true;
+  await disclosure.dispatch("toggle", {});
+  assert.deepEqual(archives, ["d1"]);
+  assert.match(archiveHost.innerHTML, /No archived messages/);
+  disclosure.open = false;
+  await disclosure.dispatch("toggle", {});
+  disclosure.open = true;
+  await disclosure.dispatch("toggle", {});
+  assert.deepEqual(archives, ["d1"], "reopening never refetches a loaded archive");
+  await host.dispatch("click", { closestPatch: { "[data-select-deal]": { dataset: { selectDeal: "d2" } } } });
+  assert.equal(record.getSelectedDealId(), "d2");
+  assert.deepEqual(archives, ["d1"], "selecting another deal does not eager-load its archive");
+  disclosure.open = true;
+  await disclosure.dispatch("toggle", {});
+  assert.deepEqual(archives, ["d1", "d2"], "the new deal archives lazily on open");
 });

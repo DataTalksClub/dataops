@@ -3,6 +3,7 @@ import {
   activityPanelMarkup,
   createActivityLoader,
   formatBerlinDate,
+  formatBerlinDateTime,
   wireActivityPanel,
 } from "./sponsor-activity.js";
 import { emptyMarkup, errorMarkup, loadingMarkup } from "./sponsor-record.js";
@@ -49,6 +50,7 @@ export function personHeaderMarkup(person, options = {}, context = {}) {
       <p class="crm-record-sub">
         ${companyLink}
         ${person?.lastTouch ? html` · Last touch ${escape(formatBerlinDate(person.lastTouch))}` : ""}
+        ${person?.lastContactedAt ? html` · Last contacted ${escape(formatBerlinDateTime(person.lastContactedAt))}` : ""}
       </p>
     </div>
     ${canEdit ? html`<button type="button" data-edit-person> Edit </button>` : ""}

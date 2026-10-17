@@ -4,6 +4,7 @@ import {
   activityPanelMarkup,
   createActivityLoader,
   formatBerlinDate,
+  formatBerlinDateTime,
   wireActivityPanel,
 } from "./sponsor-activity.js";
 
@@ -76,6 +77,77 @@ export function emptyMarkup(title, hint, context = {}) {
     <strong>${escape(title)}</strong>
     ${hint ? html`<p>${escape(hint)}</p>` : ""}
   </div>`;
+}
+
+/**
+ * Lazy read-only communication archive for the selected deal
+ * (CRM-PRESERVE-ARCHIVE). B's removal brief keeps existing sponsor records,
+ * drafts and delivery history readable; D's unified activity does not include
+ * the old SPONSOR_SEND_ATTEMPT/draft records, so the record exposes them in
+ * a collapsed disclosure that loads once, on first open, through the
+ * injected `loadArchive(dealId)` reader (E wires it to B's preserved read
+ * paths/projection after the rebase). No draft/approve/cancel/reconcile
+ * actions and no composer exist anywhere in this module.
+ */
+export function archiveDisclosureMarkup(archive, context = {}) {
+  const escape = esc(context);
+  const count = typeof archive?.total === "number" ? archive.total : archive?.items?.length || 0;
+  if (archive?.status === "loading") {
+    return html`<details data-record-archive open>
+      <summary>Archived drafts and delivery history${count ? html` (${escape(String(count))})` : ""}</summary>
+      ${loadingMarkup("Loading archive", context)}
+    </details>`;
+  }
+  if (archive?.status === "error") {
+    return html`<details data-record-archive open>
+      <summary>Archived drafts and delivery history</summary>
+      ${errorMarkup(archive.error, context)}
+    </details>`;
+  }
+  if (archive?.status === "ready") {
+    const items = archive.items || [];
+    return html`<details data-record-archive open>
+      <summary>Archived drafts and delivery history${count ? html` (${escape(String(count))})` : ""}</summary>
+      ${items.length
+        ? html`<ul class="crm-activity-list">
+            ${items.map((item) => html`<li class="crm-activity-item">
+              <div class="crm-activity-head">
+                <strong>${escape(item.label || item.kind || "Record")}</strong>
+                <span>${escape(formatBerlinDate(item.createdAt))}</span>
+              </div>
+              ${item.preview ? html`<p>${escape(item.preview)}</p>` : ""}
+              ${item.detail ? html`<details><summary>Full text</summary><p>${escape(item.detail)}</p></details>` : ""}
+            </li>`).join("")}
+          </ul>`
+        : html`<div class="honest-state">
+            <strong>No archived messages</strong>
+            <p>Drafts and delivery history for this deal will appear here.</p>
+          </div>`}
+    </details>`;
+  }
+  return html`<details data-record-archive>
+    <summary>Archived drafts and delivery history${count ? html` (${escape(String(count))})` : ""}</summary>
+  </details>`;
+}
+
+export function createArchiveLoader({ loadArchive, dealId }) {
+  if (typeof loadArchive !== "function") throw new Error("createArchiveLoader requires loadArchive (E-wired B read path)");
+  const state = { status: "idle", items: [], total: 0, error: "" };
+  async function open() {
+    if (state.status === "ready" || state.status === "loading") return state;
+    state.status = "loading";
+    try {
+      const result = await loadArchive(dealId);
+      state.items = result.items || [];
+      state.total = typeof result.total === "number" ? result.total : state.items.length;
+      state.status = "ready";
+    } catch (error) {
+      state.status = "error";
+      state.error = error?.message || "Could not load the archive";
+    }
+    return state;
+  }
+  return { state, open };
 }
 
 export function recordHeaderMarkup(company, options = {}, context = {}) {
@@ -171,6 +243,10 @@ export function peopleListMarkup({ items, total, canEdit }, context = {}) {
               person.role || "",
               person.emails?.[0] || "",
               person.lastTouch ? `Last touch ${formatBerlinDate(person.lastTouch)}` : "",
+              // lastContactedAt keeps full stored precision (date + time);
+              // it is display-only here — edits preserve it unless the user
+              // changes that date (A editor contract, post-release).
+              person.lastContactedAt ? `Last contacted ${formatBerlinDateTime(person.lastContactedAt)}` : "",
             ].filter(Boolean).map((value) => escape(value)).join(" · ")}</p>
           </div>
           <div class="row-actions">
@@ -347,16 +423,68 @@ export function createSponsorRecord(context) {
     if (!target || !record) return;
     const loader = createActivityLoader({ api, targetType: "organization", targetId: record.companyId });
     record.activityLoader = loader;
-    target.innerHTML = activityPanelMarkup({ targetType: "organization" });
+    const withArchive = typeof context.loadArchive === "function";
+    target.innerHTML = activityPanelMarkup({ targetType: "organization" })
+      + (withArchive ? html`<div data-record-archive-host></div>` : "");
     const wired = wireActivityPanel(target, loader, {
       ...context,
       openTaskPanel: typeof context.openTaskPanel === "function" ? context.openTaskPanel : undefined,
     });
     wired.paint();
+    if (withArchive) {
+      paintArchive(target, null);
+      wireArchive(target);
+    }
     await loader.load();
     if (mine !== undefined && mine !== token) return;
     wired.paint();
     record.loaded.add("activity");
+  }
+
+  function archiveLoaderFor() {
+    if (typeof context.loadArchive !== "function" || !record?.selectedDeal) return null;
+    const key = `archive:${record.selectedDeal.id}`;
+    if (!record.archiveLoaders) record.archiveLoaders = new Map();
+    if (!record.archiveLoaders.has(key)) {
+      record.archiveLoaders.set(key, createArchiveLoader({ loadArchive: context.loadArchive, dealId: record.selectedDeal.id }));
+    }
+    return record.archiveLoaders.get(key);
+  }
+
+  function paintArchive(target, loader) {
+    const host = target.querySelector("[data-record-archive-host]");
+    if (!host) return;
+    const active = loader || archiveLoaderFor();
+    if (!record?.selectedDeal) {
+      host.innerHTML = html`<details data-record-archive>
+        <summary>Archived drafts and delivery history</summary>
+        <div class="honest-state">
+          <strong>No deal selected</strong>
+          <p>Select a deal to see its archived drafts and delivery history.</p>
+        </div>
+      </details>`;
+      return;
+    }
+    record.archiveLoader = active;
+    host.innerHTML = archiveDisclosureMarkup(active?.state || { status: "idle" }, context);
+  }
+
+  function wireArchive(target) {
+    const host = target.querySelector("[data-record-archive-host]");
+    const disclosure = host?.querySelector("[data-record-archive]");
+    if (!disclosure || disclosure.dataset.wiredArchive) return;
+    disclosure.dataset.wiredArchive = "true";
+    disclosure?.addEventListener("toggle", async () => {
+      if (!disclosure.open) return;
+      const loader = archiveLoaderFor();
+      if (!loader || loader.state.status !== "idle") return;
+      paintArchive(target, loader);
+      const fail = typeof context.safe === "function" ? context.safe : async (action) => action();
+      await fail(async () => {
+        await loader.open();
+        paintArchive(target, loader);
+      }, "Could not load the archive");
+    });
   }
 
   async function loadDeals(mine) {
@@ -376,6 +504,13 @@ export function createSponsorRecord(context) {
       target.innerHTML = dealsListMarkup({ deals: record.deals, selectedDealId: record.selectedDealId }, context);
       record.loaded.add("deals");
       paintHeader();
+      if (record.loaded.has("activity") && typeof context.loadArchive === "function") {
+        const activityPanel = panel("activity");
+        if (activityPanel) {
+          paintArchive(activityPanel, null);
+          wireArchive(activityPanel);
+        }
+      }
     } catch (error) {
       if (mine !== undefined && mine !== token) return;
       target.innerHTML = errorMarkup(error?.message, context);
@@ -438,6 +573,13 @@ export function createSponsorRecord(context) {
     if (record.activeTab === "finance") {
       const mine = token;
       loadFinanceTab(mine);
+    }
+    if (record.loaded.has("activity") && typeof context.loadArchive === "function") {
+      const activityPanel = panel("activity");
+      if (activityPanel) {
+        paintArchive(activityPanel, null);
+        wireArchive(activityPanel);
+      }
     }
   }
 

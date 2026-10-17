@@ -132,6 +132,13 @@ test("person markup escapes content and hides edit without an editor", () => {
   const plain = personHeaderMarkup({ name: "Bo" }, {}, context);
   assert.match(plain, /No company link/);
   assert.doesNotMatch(plain, /data-edit-person/);
+  const timed = personHeaderMarkup(
+    { name: "Bo", lastTouch: "2026-10-09T12:00:00.000Z", lastContactedAt: "2026-10-09T12:35:00.000Z" },
+    {},
+    context,
+  );
+  assert.match(timed, /Last touch 9 Oct/);
+  assert.match(timed, /Last contacted 9 Oct.*14:35/, "full stored contact precision is shown, never truncated to day");
   const channels = personChannelsMarkup({ emails: ["<a@b>"], linkedin: "https://example.com/<x>", telegram: "@t" }, context);
   assert.match(channels, /&lt;a@b&gt;/);
   assert.match(channels, /mailto:&lt;a@b&gt;/);
