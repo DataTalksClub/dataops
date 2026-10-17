@@ -537,12 +537,15 @@ export function createSponsorRecord(context) {
   async function loadFinanceTab(mine) {
     const target = panel("finance");
     if (!target || !record) return;
+    // Stale first: return immediately on a dead generation, before
+    // inspecting or painting the current record.
+    if (!current(mine)) return;
     if (!record.selectedDeal) {
       // Selection is deal-driven; without the Deals tab there may be no
       // selection yet — resolve it cheaply here without a full load.
       await loadDeals(mine);
-      if (!current(mine) || !record?.selectedDeal) {
-        if (!record) return;
+      if (!current(mine)) return;
+      if (!record?.selectedDeal) {
         // A failed explicit selection is an error, never a fallback deal's
         // finance: errorMarkup carries the record-retry hook which
         // re-attempts the independent fetch.

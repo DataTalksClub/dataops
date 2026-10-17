@@ -189,7 +189,10 @@ export function createSponsorPersonDetail(context) {
 
   async function openPerson(personId, { returnLabel = "Back", isCurrent = null } = {}) {
     const mine = ++token;
-    currentGuard = typeof isCurrent === "function" ? isCurrent : currentGuard;
+    // The guard is per-invocation: an omitted isCurrent resets to null so a
+    // fresh unguarded open is never poisoned by an older invocation's false
+    // guard. Retries pass the captured options explicitly.
+    currentGuard = typeof isCurrent === "function" ? isCurrent : null;
     currentOpts = { returnLabel, isCurrent: currentGuard };
     const host = root();
     if (!host) throw new Error("createSponsorPersonDetail: missing [data-crm-person] mount (E integration)");
