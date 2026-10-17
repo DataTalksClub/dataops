@@ -209,9 +209,12 @@ export function recordShellMarkup(company, options = {}, context = {}) {
  * distinct optional context, so a waiting/follow-up/snoozed task never
  * presents its old original date as the next action due.
  */
-export function nextTaskMarkup(nextTask, context = {}) {
+export function nextTaskMarkup(nextTask, emptyMessage, context = {}) {
   const escape = esc(context);
-  if (!nextTask) return html`<p>No open task. Nothing is due for this company.</p>`;
+  if (typeof emptyMessage !== "string") {
+    emptyMessage = "No open task. Nothing is due for this company.";
+  }
+  if (!nextTask) return html`<p>${escape(emptyMessage)}</p>`;
   const due = nextTask.effectiveDate || nextTask.date;
   const wakeup = nextTask.deferredUntil || (nextTask.deferred ? nextTask.effectiveDate : "");
   const original = nextTask.date && nextTask.date !== due ? nextTask.date : "";
@@ -229,15 +232,33 @@ export function nextTaskMarkup(nextTask, context = {}) {
     ${taskButton}`;
 }
 
-export function overviewMarkup({ company, primaryPerson, nextTask, recent }, context = {}) {
+export function overviewMarkup({ company, primaryPerson, nextTask, recent, relatedWork = [], activityError = "" }, context = {}) {
   const escape = esc(context);
   // An absent primaryPerson (cheap D summary) renders a View People action,
   // never a no-contact claim.
   const person = primaryPerson !== undefined ? primaryPerson : company?.primaryPerson;
+  if (activityError) {
+    // Unknown, not empty: identity and the verified company summary stay,
+    // but nothing claims what the unloaded activity would have shown.
+    return html`<div class="crm-record-overview">
+    ${company?.notes
+      ? html`<section aria-label="Company summary">
+          <h3>Company summary</h3>
+          <p>${escape(company.notes)}</p>
+        </section>`
+      : ""}
+    ${errorMarkup(activityError, context)}
+  </div>`;
+  }
+  // Deferred-only related work is verified non-due: say so instead of
+  // claiming nothing is open.
+  const emptyNote = relatedWork.length
+    ? "No task due now. Related work is listed under Activity."
+    : "No open task. Nothing is due for this company.";
   return html`<div class="crm-record-overview">
     <section aria-label="Next action">
       <h3>Next action</h3>
-      ${nextTaskMarkup(nextTask, context)}
+      ${nextTaskMarkup(nextTask, emptyNote, context)}
     </section>
     <section aria-label="Primary person">
       <h3>Primary person</h3>
@@ -436,23 +457,21 @@ export function createSponsorRecord(context) {
     await loader.load();
     if ((mine !== undefined && mine !== token) || !record) return;
     if (loader.state.status === "error") {
-      // Overview degrades honestly: identity + summary stay, activity errors inline.
+      // Unknown, not empty: render no content claims, only the error.
       target.innerHTML = overviewMarkup({
-        company: record.company, nextTask: null, recent: [],
-      }, context) + errorMarkup(loader.state.error, context);
+        company: record.company, activityError: loader.state.error,
+      }, context);
       return;
     }
     record.preview = { items: loader.state.items, relatedWork: loader.state.relatedWork };
     target.innerHTML = overviewMarkup({
       company: record.company,
       primaryPerson: record.company.primaryPerson,
-      // Canonical next task (D rev 4): relatedWork is ordered eligible by
-      // effectiveDate, so [0] is the next eligible action. Rows without an
-      // eligibility flag (older shapes) count as eligible; explicit
-      // deferred rows stay visible as labeled related work instead of
-      // masquerading as the due task.
-      nextTask: loader.state.relatedWork.find((task) => task.eligible !== false) || null,
+      // D rev 4 orders relatedWork eligible-first with an exact boolean;
+      // consume it strictly (no older-shape fallback — no compat shims).
+      nextTask: loader.state.relatedWork.find((task) => task.eligible === true) || null,
       recent: loader.state.items.slice(0, 3),
+      relatedWork: loader.state.relatedWork,
     }, context);
     record.loaded.add("overview");
   }

@@ -40,7 +40,7 @@ const preview = {
   nextCursor: null,
   sources: { note: 1 },
   relatedWork: [
-    { taskId: "t1", status: "todo", date: "2026-10-20", description: "Send deck", href: "/sponsors/deals/d1", scope: "direct" },
+    { taskId: "t1", status: "todo", date: "2026-10-20", effectiveDate: "2026-10-20", eligible: true, deferred: false, description: "Send deck", href: "/sponsors/deals/d1", scope: "direct" },
   ],
   tasksScope: "open",
   reads: {},
@@ -265,6 +265,20 @@ test("overview shows effective dates and links to People without faking contacts
   void viewPeople;
 });
 
+test("overview error states unknown instead of claiming empty", async () => {
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": { ...company, notes: "Warm intro." },
+      "GET /activity/organization/c1?limit=3": httpError(503, "workspace unavailable"),
+    },
+  });
+  const panels = seedPanels(host);
+  await record.openCompany("c1");
+  assert.match(panels.overview.innerHTML, /unavailable/i);
+  assert.doesNotMatch(panels.overview.innerHTML, /No open task|No recent activity|No task due now/);
+  assert.match(panels.overview.innerHTML, /Warm intro/, "verified company summary stays");
+});
+
 test("record shell is accessible and honest states escape content", () => {  const shell = recordShellMarkup({ displayName: "<Acme>" }, { returnLabel: "Companies" }, context);
   assert.match(shell, /&lt;Acme&gt;/);
   assert.match(shell, /role="tablist"/);
@@ -483,7 +497,7 @@ test("the next task follows D eligibility ordering, never a deferred row", async
     await record.openCompany("c1");
     const next = panels.overview.innerHTML;
     if (expected) assert.match(next, /Call back/, `${name}: the eligible todo wins`);
-    else assert.match(next, /No open task/, `${name}: deferred work never masquerades as due`);
+    else assert.match(next, /No task due now/, `${name}: deferred work never masquerades as due`);
     void record;
   }
 });
