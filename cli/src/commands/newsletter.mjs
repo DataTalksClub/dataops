@@ -44,15 +44,27 @@ Usage
                                   organization without a live deal gets a new open deal
   dataops newsletter release <issue-id> <primary|secondary> [--confirm]
                                   Frees the slot; its deliverable is marked withdrawn
+  dataops newsletter stats <issue-id> [primary|secondary]
+      [--deliveries N] [--opens N] [--clicks N] [--unique-clicks N]
+      [--open-rate PCT] [--click-rate PCT]
+      [--linkedin-impressions N] [--linkedin-clicks N] [--linkedin-ctr PCT] [--linkedin-post URL|none]
+      [--x-impressions N] [--x-clicks N] [--x-ctr PCT] [--x-post URL|none]
+      [--clear]
+                                  Show or set Mailchimp issue stats and per-slot
+                                  (primary / secondary) link + LinkedIn + X stats
+  dataops newsletter report <issue-id> [primary|secondary] [--contact NAME]
+  dataops newsletter report --sponsor <name> [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--contact NAME]
+                                  Sponsor performance report (template.newsletter.newsletter-performance)
   dataops newsletter sync --sheet <spreadsheet-id> [--apply]
   dataops newsletter sync <newsletter.csv> [--apply]
                                   Bring issues in line with the schedule sheet's Newsletter
                                   tab, every row back to the start. Creates missing issues
                                   (past ones get no Card); past issues take the sheet's date,
-                                  number and sponsors; upcoming ones only get what they lack,
-                                  differences are listed. Links a sponsor to its company in
-                                  the Sponsors tab when exactly one has that name. Never
-                                  deletes, never creates deals. Dry run unless --apply.
+                                  number, sponsors, and Mailchimp/LinkedIn/X stats; upcoming
+                                  ones only get what they lack, differences are listed. Links
+                                  a sponsor to its company in the Sponsors tab when exactly
+                                  one has that name. Never deletes, never creates deals.
+                                  Dry run unless --apply.
                                   --sheet needs a Google token in DAPIER_ACCESS_TOKEN:
                                     uv run dapier token exec drive <account> --agent admin-os -- \\
                                       node <dataops>/cli/bin/dataops.mjs newsletter sync --sheet <id>
@@ -69,10 +81,55 @@ the issue's current version.
 
 Examples
   dataops newsletter list --from 2026-11-01 --to 2026-11-30 --booked false
-  dataops newsletter update 34a14ba3-... --secondary-sponsor "Example Sponsor"
+  dataops newsletter stats <issue-id> primary --deliveries 99714 --opens 34886 --clicks 831 --unique-clicks 651
+  dataops newsletter report <issue-id> primary --contact "Alex"
 `;
 
 const POSITIONS = ["primary", "secondary"];
+const fmtNum = (n) => new Intl.NumberFormat("en-US").format(n);
+
+function formatIssueStatsLine(stats) {
+  if (!stats) return "";
+  const parts = [];
+  if (stats.deliveries !== undefined) parts.push(`${fmtNum(stats.deliveries)} deliveries`);
+  if (stats.opens !== undefined) {
+    parts.push(`${fmtNum(stats.opens)} opens${stats.openRate !== undefined ? ` (${stats.openRate}%)` : ""}`);
+  }
+  if (stats.clicks !== undefined) {
+    const uniq = stats.uniqueClicks !== undefined ? `, ${fmtNum(stats.uniqueClicks)} unique` : "";
+    const rate = stats.clickRate !== undefined ? `, ${stats.clickRate}% CTR` : "";
+    parts.push(`${fmtNum(stats.clicks)} clicks${uniq || rate ? ` (${[uniq.replace(/^, /, ""), rate.replace(/^, /, "")].filter(Boolean).join(", ")})` : ""}`);
+  }
+  return parts.join(" · ");
+}
+
+function formatSlotStatsLine(stats) {
+  if (!stats) return "";
+  const parts = [];
+  if (stats.clicks !== undefined) {
+    const uniq = stats.uniqueClicks !== undefined ? `${fmtNum(stats.uniqueClicks)} unique` : "";
+    const rate = stats.clickRate !== undefined ? `${stats.clickRate}% CTR` : "";
+    const detail = [uniq, rate].filter(Boolean).join(", ");
+    parts.push(`newsletter ${fmtNum(stats.clicks)} clicks${detail ? ` (${detail})` : ""}`);
+  }
+  if (stats.linkedinImpressions !== undefined || stats.linkedinClicks !== undefined || stats.linkedinPostUrl) {
+    const li = [];
+    if (stats.linkedinImpressions !== undefined) li.push(`${fmtNum(stats.linkedinImpressions)} imp`);
+    if (stats.linkedinClicks !== undefined) li.push(`${fmtNum(stats.linkedinClicks)} clicks`);
+    if (stats.linkedinCtr !== undefined) li.push(`${stats.linkedinCtr}% CTR`);
+    if (stats.linkedinPostUrl) li.push(stats.linkedinPostUrl);
+    parts.push(`LinkedIn ${li.join(" / ")}`);
+  }
+  if (stats.xImpressions !== undefined || stats.xClicks !== undefined || stats.xPostUrl) {
+    const x = [];
+    if (stats.xImpressions !== undefined) x.push(`${fmtNum(stats.xImpressions)} imp`);
+    if (stats.xClicks !== undefined) x.push(`${fmtNum(stats.xClicks)} clicks`);
+    if (stats.xCtr !== undefined) x.push(`${stats.xCtr}% CTR`);
+    if (stats.xPostUrl) x.push(stats.xPostUrl);
+    parts.push(`X ${x.join(" / ")}`);
+  }
+  return parts.join(" · ");
+}
 
 /** Placement-document changes from flags, applied over `current` slots. */
 function slotChanges(args, current = {}) {
@@ -161,6 +218,11 @@ export async function show(args, io) {
   if (args.json) return issue;
   fields(io, Object.entries(issue).filter(([, value]) => typeof value !== "object" || value === null));
   io.print(`slots: ${slotText(issue)}`);
+  if (issue.stats) io.print(`stats: ${formatIssueStatsLine(issue.stats)}`);
+  for (const position of POSITIONS) {
+    const slotStats = issue.slots?.[position]?.stats;
+    if (slotStats) io.print(`${position} stats: ${formatSlotStatsLine(slotStats)}`);
+  }
   if (issue.card) io.print(`card: ${issue.card.id} ${issue.card.title} (${issue.card.openTaskCount}/${issue.card.taskCount} open)`);
   else if (issue.cardDueDate) io.print(`card: none yet; the daily run creates it on ${issue.cardDueDate}`);
   for (const link of issue.links || []) io.print(`link: ${link.name} ${link.url}`);
@@ -196,6 +258,267 @@ export async function update(args, io) {
   if (args.json) return issue;
   io.print(`Updated ${issue.label} on ${issue.publicationDate} [${issue.status}]${issue.cardId ? `, Card ${issue.cardId}` : ", no Card"}.`);
   return issue;
+}
+
+function nonNegativeIntArg(args, names, label) {
+  for (const name of names) {
+    if (args[name] === undefined) continue;
+    const cleaned = String(args[name]).replace(/,/g, "").trim();
+    const num = Number(cleaned);
+    if (!Number.isSafeInteger(num) || num < 0) throw new UsageError(`--${label} must be a non-negative integer.`);
+    return num;
+  }
+  return undefined;
+}
+
+function rateArg(args, names, label) {
+  for (const name of names) {
+    if (args[name] === undefined) continue;
+    const cleaned = String(args[name]).replace(/%$/, "").trim();
+    const num = Number(cleaned);
+    if (!Number.isFinite(num) || num < 0 || num > 100) throw new UsageError(`--${label} must be a percentage between 0 and 100.`);
+    return Math.round(num * 100) / 100;
+  }
+  return undefined;
+}
+
+function urlArg(args, names) {
+  for (const name of names) {
+    const val = optionalString(args, name);
+    if (val !== undefined) return val;
+  }
+  return undefined;
+}
+
+function deriveRate(numerator, denominator) {
+  if (numerator === undefined || denominator === undefined || denominator <= 0) return undefined;
+  const rate = Math.round((numerator / denominator) * 10000) / 100;
+  return rate >= 0 && rate <= 100 ? rate : undefined;
+}
+
+function applySlotStatFlags(currentSlotStats, spec, issueOpens) {
+  const next = { ...(currentSlotStats || {}) };
+  let touched = false;
+  for (const [key, value] of Object.entries(spec.metrics)) {
+    if (value === undefined) continue;
+    next[key] = value;
+    touched = true;
+  }
+  for (const [key, value] of Object.entries(spec.urls)) {
+    if (value === undefined) continue;
+    if (value === "none") delete next[key];
+    else next[key] = value;
+    touched = true;
+  }
+  if (!touched) return null;
+  if (spec.metrics.clickRate === undefined && (spec.metrics.clicks !== undefined || spec.opensChanged)) {
+    const rate = deriveRate(next.clicks, issueOpens);
+    if (rate !== undefined) next.clickRate = rate;
+  }
+  if (spec.metrics.linkedinCtr === undefined && (spec.metrics.linkedinClicks !== undefined || spec.metrics.linkedinImpressions !== undefined)) {
+    const rate = deriveRate(next.linkedinClicks, next.linkedinImpressions);
+    if (rate !== undefined) next.linkedinCtr = rate;
+  }
+  if (spec.metrics.xCtr === undefined && (spec.metrics.xClicks !== undefined || spec.metrics.xImpressions !== undefined)) {
+    const rate = deriveRate(next.xClicks, next.xImpressions);
+    if (rate !== undefined) next.xCtr = rate;
+  }
+  delete next.recordedAt;
+  return next;
+}
+
+export async function stats(args, io) {
+  const usage = "dataops newsletter stats <issue-id> [primary|secondary] [--deliveries N] [--opens N] [--clicks N] ...";
+  const id = positional(args, 0, usage);
+  const posArg = args._[1] !== undefined ? String(args._[1]) : optionalString(args, "slot");
+  if (posArg !== undefined && !POSITIONS.includes(posArg)) {
+    throw new UsageError("The slot is primary or secondary.");
+  }
+  const api = apiFor(args);
+  const current = await api.get(`/api/newsletter-issues/${enc(id)}`);
+  if (posArg === "secondary" && current.kind === "standalone") {
+    throw new UsageError("A stand-alone issue has no secondary slot.");
+  }
+
+  const deliveries = nonNegativeIntArg(args, ["deliveries"], "deliveries");
+  const opens = nonNegativeIntArg(args, ["opens", "views"], "opens");
+  const openRate = rateArg(args, ["openRate"], "open-rate");
+  const directClicks = nonNegativeIntArg(args, ["clicks"], "clicks");
+  const directUniqueClicks = nonNegativeIntArg(args, ["uniqueClicks"], "unique-clicks");
+  const directClickRate = rateArg(args, ["clickRate", "ctr"], "click-rate");
+  const directLiImp = nonNegativeIntArg(args, ["linkedinImpressions"], "linkedin-impressions");
+  const directLiClicks = nonNegativeIntArg(args, ["linkedinClicks"], "linkedin-clicks");
+  const directLiCtr = rateArg(args, ["linkedinCtr"], "linkedin-ctr");
+  const directLiPost = urlArg(args, ["linkedinPost", "linkedinUrl"]);
+  const directXImp = nonNegativeIntArg(args, ["xImpressions", "twitterImpressions"], "x-impressions");
+  const directXClicks = nonNegativeIntArg(args, ["xClicks", "twitterClicks"], "x-clicks");
+  const directXCtr = rateArg(args, ["xCtr", "twitterCtr"], "x-ctr");
+  const directXPost = urlArg(args, ["xPost", "xUrl", "twitterPost", "twitterUrl"]);
+
+  const perSlotSpecs = {};
+  for (const position of POSITIONS) {
+    const isTarget = (posArg || "primary") === position;
+    const hasSocialDirect = directLiImp !== undefined || directLiClicks !== undefined || directLiCtr !== undefined || directLiPost !== undefined
+      || directXImp !== undefined || directXClicks !== undefined || directXCtr !== undefined || directXPost !== undefined;
+    const useDirectSlot = posArg === position || (!posArg && position === "primary" && (hasSocialDirect || directClicks !== undefined || directUniqueClicks !== undefined || directClickRate !== undefined));
+    perSlotSpecs[position] = {
+      opensChanged: opens !== undefined,
+      metrics: {
+        clicks: nonNegativeIntArg(args, [`${position}Clicks`], `${position}-clicks`) ?? (useDirectSlot ? directClicks : undefined),
+        uniqueClicks: nonNegativeIntArg(args, [`${position}UniqueClicks`], `${position}-unique-clicks`) ?? (useDirectSlot ? directUniqueClicks : undefined),
+        clickRate: rateArg(args, [`${position}ClickRate`, `${position}Ctr`], `${position}-click-rate`) ?? (useDirectSlot ? directClickRate : undefined),
+        linkedinImpressions: nonNegativeIntArg(args, [`${position}LinkedinImpressions`], `${position}-linkedin-impressions`) ?? (isTarget ? directLiImp : undefined),
+        linkedinClicks: nonNegativeIntArg(args, [`${position}LinkedinClicks`], `${position}-linkedin-clicks`) ?? (isTarget ? directLiClicks : undefined),
+        linkedinCtr: rateArg(args, [`${position}LinkedinCtr`], `${position}-linkedin-ctr`) ?? (isTarget ? directLiCtr : undefined),
+        xImpressions: nonNegativeIntArg(args, [`${position}XImpressions`, `${position}TwitterImpressions`], `${position}-x-impressions`) ?? (isTarget ? directXImp : undefined),
+        xClicks: nonNegativeIntArg(args, [`${position}XClicks`, `${position}TwitterClicks`], `${position}-x-clicks`) ?? (isTarget ? directXClicks : undefined),
+        xCtr: rateArg(args, [`${position}XCtr`, `${position}TwitterCtr`], `${position}-x-ctr`) ?? (isTarget ? directXCtr : undefined),
+      },
+      urls: {
+        linkedinPostUrl: urlArg(args, [`${position}LinkedinPost`, `${position}LinkedinUrl`]) ?? (isTarget ? directLiPost : undefined),
+        xPostUrl: urlArg(args, [`${position}XPost`, `${position}XUrl`, `${position}TwitterPost`, `${position}TwitterUrl`]) ?? (isTarget ? directXPost : undefined),
+      },
+    };
+  }
+
+  const effectiveOpens = opens ?? current.stats?.opens;
+  const body = {};
+  const nextSlots = {};
+
+  if (args.clear) {
+    if (posArg) {
+      nextSlots[posArg] = { ...(current.slots?.[posArg] || {}), stats: null };
+    } else {
+      body.stats = null;
+      for (const position of POSITIONS) {
+        if (current.slots?.[position]?.stats) {
+          nextSlots[position] = { ...current.slots[position], stats: null };
+        }
+      }
+    }
+  } else {
+    for (const position of POSITIONS) {
+      if (position === "secondary" && current.kind === "standalone") continue;
+      const updatedSlotStats = applySlotStatFlags(current.slots?.[position]?.stats, perSlotSpecs[position], effectiveOpens);
+      if (updatedSlotStats) {
+        nextSlots[position] = { ...(current.slots?.[position] || {}), stats: updatedSlotStats };
+      }
+    }
+
+    const issueClicks = posArg !== "secondary" ? directClicks : undefined;
+    const issueUniqueClicks = posArg !== "secondary" ? directUniqueClicks : undefined;
+    const issueClickRate = posArg !== "secondary" ? directClickRate : undefined;
+    if (
+      deliveries !== undefined || opens !== undefined || openRate !== undefined
+      || issueClicks !== undefined || issueUniqueClicks !== undefined || issueClickRate !== undefined
+    ) {
+      const nextIssueStats = { ...(current.stats || {}) };
+      if (deliveries !== undefined) nextIssueStats.deliveries = deliveries;
+      if (opens !== undefined) nextIssueStats.opens = opens;
+      if (openRate !== undefined) nextIssueStats.openRate = openRate;
+      else if (deliveries !== undefined || opens !== undefined) {
+        const derivedOpenRate = deriveRate(nextIssueStats.opens, nextIssueStats.deliveries);
+        if (derivedOpenRate !== undefined) nextIssueStats.openRate = derivedOpenRate;
+      }
+      if (issueClicks !== undefined) nextIssueStats.clicks = issueClicks;
+      if (issueUniqueClicks !== undefined) nextIssueStats.uniqueClicks = issueUniqueClicks;
+      if (issueClickRate !== undefined) nextIssueStats.clickRate = issueClickRate;
+      else if (issueClicks !== undefined || opens !== undefined) {
+        const derivedClickRate = deriveRate(nextIssueStats.clicks, nextIssueStats.opens);
+        if (derivedClickRate !== undefined) nextIssueStats.clickRate = derivedClickRate;
+      }
+      delete nextIssueStats.recordedAt;
+      body.stats = nextIssueStats;
+    }
+  }
+
+  if (Object.keys(nextSlots).length) body.slots = nextSlots;
+
+  // When called with no mutation flags, print the current stats.
+  if (!Object.keys(body).length) {
+    if (args.json) {
+      return {
+        id: current.id,
+        label: current.label,
+        publicationDate: current.publicationDate,
+        stats: current.stats || null,
+        slots: Object.fromEntries(
+          POSITIONS.filter((pos) => current.slots?.[pos]).map((pos) => [
+            pos,
+            { sponsor: current.slots[pos].sponsor || null, stats: current.slots[pos].stats || null },
+          ]),
+        ),
+      };
+    }
+    io.print(`${current.label} (${current.publicationDate})`);
+    io.print(`issue stats: ${formatIssueStatsLine(current.stats) || "none recorded"}`);
+    for (const position of POSITIONS) {
+      if (posArg && posArg !== position) continue;
+      const slot = current.slots?.[position];
+      if (!slot) continue;
+      io.print(`${position} (${slot.sponsor || "open"}): ${formatSlotStatsLine(slot.stats) || "none recorded"}`);
+    }
+    return current;
+  }
+
+  const updated = await api.put(`/api/newsletter-issues/${enc(id)}`, { ...body, version: current.version });
+  if (args.json) return updated;
+  io.print(`Updated stats on ${updated.label} (${updated.publicationDate}).`);
+  if (updated.stats) io.print(`issue stats: ${formatIssueStatsLine(updated.stats)}`);
+  for (const position of POSITIONS) {
+    const slot = updated.slots?.[position];
+    if (slot?.stats) io.print(`${position} (${slot.sponsor || "open"}): ${formatSlotStatsLine(slot.stats)}`);
+  }
+  return updated;
+}
+
+export async function report(args, io) {
+  const usage = "dataops newsletter report (<issue-id> [primary|secondary] | --sponsor <name>) [--contact <name>]";
+  const sponsor = optionalString(args, "sponsor");
+  const organizationId = optionalString(args, "organization");
+  const contactName = optionalString(args, "contact");
+  const api = apiFor(args);
+
+  if (sponsor || organizationId) {
+    const slot = optionalString(args, "slot");
+    if (slot !== undefined && !POSITIONS.includes(slot)) throw new UsageError("The slot is primary or secondary.");
+    const query = {
+      ...(sponsor ? { sponsor } : {}),
+      ...(organizationId ? { organizationId } : {}),
+      ...(slot ? { slot } : {}),
+      ...(args.from ? { from: isoDate(args.from, "from") } : {}),
+      ...(args.to ? { to: isoDate(args.to, "to") } : {}),
+      ...(contactName ? { contactName } : {}),
+    };
+    const result = await api.get("/api/newsletter-issues/report", { query });
+    if (args.json) return result;
+    if (!result.items?.length) {
+      io.print("No matching sponsor newsletter placements found.");
+      return result;
+    }
+    for (const [index, item] of result.items.entries()) {
+      if (index > 0) io.print("\n---\n");
+      io.print(`${item.label} · ${item.publicationDate} · ${item.slot} (${item.sponsor || "open"})`);
+      io.print(item.message);
+    }
+    return result;
+  }
+
+  const id = positional(args, 0, usage);
+  const slot = args._[1] !== undefined ? String(args._[1]) : optionalString(args, "slot");
+  if (slot !== undefined && !POSITIONS.includes(slot)) throw new UsageError("The slot is primary or secondary.");
+  const query = {
+    ...(slot ? { slot } : {}),
+    ...(contactName ? { contactName } : {}),
+  };
+  const result = await api.get(`/api/newsletter-issues/${enc(id)}/report`, { query });
+  if (args.json) return result;
+  for (const [index, item] of (result.reports || []).entries()) {
+    if (index > 0) io.print("\n---\n");
+    io.print(`${item.label} · ${item.publicationDate} · ${item.slot} (${item.sponsor || "open"})`);
+    io.print(item.message);
+  }
+  return result;
 }
 
 export async function sponsors(args, io) {
@@ -307,6 +630,7 @@ export async function sync(args, io) {
     sheetIssues: sheet.length,
     create: plan.creates.length,
     update: plan.updates.length,
+    statsUpdated: plan.statsUpdated || 0,
     unchanged: plan.unchanged,
     differences: plan.conflicts.length,
     skippedRows: skipped.length,
@@ -386,6 +710,8 @@ export const commands = {
   show,
   create,
   update,
+  stats,
+  report,
   delete: remove,
   sponsors,
   book,

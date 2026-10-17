@@ -53,6 +53,76 @@ export const issueSourceKey = (issueId) =>
 
 const httpsLink = (link, text) => [link, text].find((value) => /^https:\/\//.test(String(value || "").trim()))?.trim() || "";
 
+/** Parse an integer count cell ("99,714", "15,188 views", "33.193"); undefined when blank or non-numeric ("???"). */
+export function sheetCount(raw) {
+  const text = String(raw ?? "").trim();
+  if (!text) return undefined;
+  const match = text.match(/^(\d+(?:[.,]\d{3})*)(?:\s*(?:views|opens|clicks|impressions|deliveries))?$/i);
+  if (!match) return undefined;
+  const value = Number(match[1].replace(/[.,]/g, ""));
+  return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+/** Parse a percentage cell ("2.38%", "2.38") or derive it from numerator/denominator when blank or out of range. */
+export function sheetRate(raw, numerator, denominator) {
+  const text = String(raw ?? "").trim();
+  if (text) {
+    const match = text.match(/^(\d+(?:\.\d+)?)%?$/);
+    if (match) {
+      const parsed = Math.round(Number(match[1]) * 100) / 100;
+      if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) return parsed;
+    }
+  }
+  if (numerator !== undefined && denominator !== undefined && denominator > 0) {
+    const computed = Math.round((numerator / denominator) * 10000) / 100;
+    if (Number.isFinite(computed) && computed >= 0 && computed <= 100) return computed;
+  }
+  return undefined;
+}
+
+function compactObject(record) {
+  const out = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (value !== undefined && value !== null && value !== "") out[key] = value;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function extractPlacementStats(values, links, issueOpens) {
+  const deliveries = sheetCount(values["newsletter deliveries"]);
+  const opens = sheetCount(values["newsletter views opens"]);
+  const effectiveOpens = opens ?? issueOpens;
+  const clicks = sheetCount(values.clicks);
+  const uniqueClicks = sheetCount(values["unique clicks"]);
+  const clickRate = sheetRate(values.ctr, clicks, effectiveOpens);
+  const linkedinImpressions = sheetCount(values["linkedin impressions"]);
+  const linkedinClicks = sheetCount(values["linkedin clicks"]);
+  const linkedinCtr = sheetRate(values["linkedin ctr"], linkedinClicks, linkedinImpressions);
+  const linkedinPostUrl = httpsLink(links["linkedin post"], values["linkedin post"]);
+  const xImpressions = sheetCount(values["twitter impressions"]);
+  const xClicks = sheetCount(values["twitter clicks"]);
+  const xCtr = sheetRate(values["twitter ctr"], xClicks, xImpressions);
+  const xPostUrl = httpsLink(links["twitter post"], values["twitter post"]);
+  return {
+    deliveries,
+    opens,
+    rawCtr: values.ctr,
+    slotStats: compactObject({
+      clicks,
+      uniqueClicks,
+      clickRate,
+      linkedinImpressions,
+      linkedinClicks,
+      linkedinCtr,
+      linkedinPostUrl,
+      xImpressions,
+      xClicks,
+      xCtr,
+      xPostUrl,
+    }),
+  };
+}
+
 /**
  * Sheet rows as `{ row, values, links }` keyed by header: `values` are the
  * displayed texts, `links` the cells' hyperlinks.
@@ -113,6 +183,8 @@ export function sheetIssues(rows, today) {
       sponsor: /^n\/?a$|^-$/i.test(sponsor) ? "" : sponsor,
       documentUrl: httpsLink(links.doc, values.doc),
       note: values.note.slice(0, 1000),
+      values,
+      links,
     });
   }
   const groups = new Map();
@@ -129,12 +201,28 @@ export function sheetIssues(rows, today) {
       skipped.push({ row: secondary.row, reason: `secondary slot without a matching primary (${secondary.id})` });
       if (!primary) continue;
     }
-    const slot = (placement) => {
+    const validSecondary = secondary && primary?.date === secondary.date ? secondary : undefined;
+    const issueDeliveries = sheetCount(primary?.values?.["newsletter deliveries"]) ?? sheetCount(validSecondary?.values?.["newsletter deliveries"]);
+    const issueOpens = sheetCount(primary?.values?.["newsletter views opens"]) ?? sheetCount(validSecondary?.values?.["newsletter views opens"]);
+    const primaryExtracted = primary ? extractPlacementStats(primary.values, primary.links, issueOpens) : null;
+    const secondaryExtracted = validSecondary ? extractPlacementStats(validSecondary.values, validSecondary.links, issueOpens) : null;
+    const issueClicks = primaryExtracted?.slotStats?.clicks ?? secondaryExtracted?.slotStats?.clicks;
+    const issueUniqueClicks = primaryExtracted?.slotStats?.uniqueClicks ?? secondaryExtracted?.slotStats?.uniqueClicks;
+    const issueStats = head.type === "vacation" ? undefined : compactObject({
+      deliveries: issueDeliveries,
+      opens: issueOpens,
+      clicks: issueClicks,
+      uniqueClicks: issueUniqueClicks,
+      openRate: sheetRate("", issueOpens, issueDeliveries),
+      clickRate: sheetRate(primaryExtracted?.rawCtr || secondaryExtracted?.rawCtr || "", issueClicks, issueOpens),
+    });
+    const slot = (placement, extracted) => {
       if (!placement) return {};
       return {
         sheetId: placement.id,
         ...(placement.sponsor ? { sponsor: placement.sponsor } : {}),
         ...(placement.documentUrl ? { documentUrl: placement.documentUrl } : {}),
+        ...(extracted?.slotStats ? { stats: extracted.slotStats } : {}),
       };
     };
     const kind = head.type === "standalone" ? "standalone" : "weekly";
@@ -146,10 +234,11 @@ export function sheetIssues(rows, today) {
       ...(kind === "weekly" && head.issueNumber !== undefined && head.type !== "vacation" ? { issueNumber: head.issueNumber } : {}),
       status: head.type === "vacation" ? "cancelled" : head.date < today ? "sent" : "planned",
       slots: kind === "standalone"
-        ? { primary: slot(primary) }
+        ? { primary: slot(primary, primaryExtracted) }
         : head.type === "vacation"
           ? { primary: { sheetId: head.id }, secondary: {} }
-          : { primary: slot(primary), secondary: slot(secondary && primary?.date === secondary.date ? secondary : undefined) },
+          : { primary: slot(primary, primaryExtracted), secondary: slot(validSecondary, secondaryExtracted) },
+      ...(issueStats ? { stats: issueStats } : {}),
       ...(note ? { planningNote: note } : {}),
       sourceKey: issueSourceKey(sheetId),
     });
@@ -176,6 +265,28 @@ const SLOT_FIELDS = ["sponsor", "sheetId", "documentUrl", "organizationId"];
 const same = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 
 /**
+ * Merge sheet stats into existing stats without overwriting existing non-empty
+ * metrics. Any disagreement with an already-recorded metric is reported in
+ * `differences` instead of clobbering DataOps.
+ */
+function mergeStats(haveStats, wantStats, prefix, differences) {
+  if (!wantStats || typeof wantStats !== "object") return { next: haveStats, changed: false };
+  const next = haveStats ? { ...haveStats } : {};
+  let changed = false;
+  for (const [field, wantVal] of Object.entries(wantStats)) {
+    if (field === "recordedAt" || wantVal === undefined || wantVal === null || wantVal === "") continue;
+    const haveVal = haveStats?.[field];
+    if (haveVal === undefined || haveVal === null || haveVal === "") {
+      next[field] = wantVal;
+      changed = true;
+    } else if (haveVal !== wantVal) {
+      differences.push(`${prefix} ${field} ${haveVal} vs sheet ${wantVal}`);
+    }
+  }
+  return { next: Object.keys(next).length ? next : undefined, changed };
+}
+
+/**
  * What to write: issues the sheet has and DataOps lacks, and changes to
  * matched issues. A past issue takes the sheet's date, number, sponsors and
  * links; one still to come only gets what it lacks.
@@ -189,7 +300,7 @@ export function planNewsletterSync(sheet, issues, organizations, today) {
     const key = `${issue.publicationDate}|${issue.kind}`;
     byDate.set(key, [...(byDate.get(key) || []), issue]);
   }
-  const plan = { creates: [], updates: [], conflicts: [], unchanged: 0, linked: 0 };
+  const plan = { creates: [], updates: [], conflicts: [], unchanged: 0, linked: 0, statsUpdated: 0 };
   for (const wanted of sheet) {
     for (const slot of Object.values(wanted.slots)) {
       const organizationId = slot.sponsor ? companyOf(slot.sponsor) : null;
@@ -202,12 +313,15 @@ export function planNewsletterSync(sheet, issues, organizations, today) {
     const existing = bySourceKey.get(wanted.sourceKey) || (candidates.length === 1 ? candidates[0] : null);
     const { sheetId, ...body } = wanted;
     if (!existing) {
+      const hasStats = Boolean(body.stats || Object.values(body.slots || {}).some((slot) => slot?.stats));
+      if (hasStats) plan.statsUpdated += 1;
       plan.creates.push({ sheetId, body: { ...body, sourceType: SOURCE_TYPE } });
       continue;
     }
     const past = existing.publicationDate < today && wanted.publicationDate < today;
     const changes = {};
     const differences = [];
+    let issueStatsChanged = false;
     if (past) {
       if (existing.publicationDate !== wanted.publicationDate) changes.publicationDate = wanted.publicationDate;
       if (wanted.issueNumber !== undefined && existing.issueNumber !== wanted.issueNumber) changes.issueNumber = wanted.issueNumber;
@@ -232,10 +346,25 @@ export function planNewsletterSync(sheet, issues, organizations, today) {
       }
       // A past slot names the sheet's sponsor; its company link follows the name.
       if (past && want.sponsor !== undefined && !want.organizationId) delete next.organizationId;
+      if (want.stats) {
+        const mergedSlotStats = mergeStats(have.stats, want.stats, `${position} stats`, differences);
+        if (mergedSlotStats.changed) {
+          next.stats = mergedSlotStats.next;
+          issueStatsChanged = true;
+        }
+      }
       if (!same(next, have)) slots[position] = next;
     }
     if (Object.keys(slots).length) changes.slots = slots;
+    if (wanted.stats) {
+      const mergedIssueStats = mergeStats(existing.stats, wanted.stats, "issue stats", differences);
+      if (mergedIssueStats.changed) {
+        changes.stats = mergedIssueStats.next;
+        issueStatsChanged = true;
+      }
+    }
     if (past && wanted.planningNote && !existing.planningNote) changes.planningNote = wanted.planningNote;
+    if (issueStatsChanged) plan.statsUpdated += 1;
     if (differences.length) plan.conflicts.push({ id: existing.id, label: existing.label, publicationDate: existing.publicationDate, differences });
     if (Object.keys(changes).length) plan.updates.push({ id: existing.id, label: existing.label, version: existing.version, publicationDate: existing.publicationDate, changes });
     else plan.unchanged += 1;

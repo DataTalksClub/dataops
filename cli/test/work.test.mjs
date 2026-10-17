@@ -793,3 +793,135 @@ describe("newsletter cards", () => {
     assert.deepEqual(calls.at(-1).body.links, [{ name: "Notes", url: "https://docs.example.com/n" }]);
   });
 });
+
+describe("newsletter stats and sponsor report", () => {
+  const issue = {
+    id: "i-297",
+    version: 4,
+    kind: "weekly",
+    label: "Weekly #297",
+    publicationDate: "2026-04-06",
+    status: "sent",
+    slots: {
+      primary: { sponsor: "VectorAI DB" },
+      secondary: { sponsor: "Astronomer" },
+    },
+  };
+
+  test("stats sets and shows issue Mailchimp metrics and per-slot social metrics, and report formats sponsor results", async () => {
+    const calls = fakePortal({
+      "GET /api/newsletter-issues/i-297": issue,
+      "PUT /api/newsletter-issues/i-297": ({ body }) => ({
+        status: 200,
+        body: {
+          ...issue,
+          version: 5,
+          stats: body.stats ?? issue.stats,
+          slots: { ...issue.slots, ...(body.slots || {}) },
+        },
+      }),
+      "GET /api/newsletter-issues/i-297/report": {
+        issueId: "i-297",
+        label: "Weekly #297",
+        publicationDate: "2026-04-06",
+        reports: [
+          {
+            issueId: "i-297",
+            label: "Weekly #297",
+            publicationDate: "2026-04-06",
+            slot: "primary",
+            sponsor: "VectorAI DB",
+            message: "Hi Alex\n\nWe just wanted to share how the newsletter performed last week\n\n- 34,886 views / 831 clicks in the newsletter\n\n- 8,080 views / 109 clicks in LinkedIn\n\n- 2,916 views in Twitter\n\nSo 45,882 views and 940 clicks in total\n\nWe hope you're satisfied with the results. Thanks for supporting us!",
+          },
+        ],
+      },
+      "GET /api/newsletter-issues/report": {
+        sponsor: "VectorAI DB",
+        items: [
+          {
+            issueId: "i-297",
+            label: "Weekly #297",
+            publicationDate: "2026-04-06",
+            slot: "primary",
+            sponsor: "VectorAI DB",
+            message: "Hi <NAME>\n\nSo 45,882 views and 940 clicks in total",
+          },
+        ],
+      },
+    });
+
+    const setPrimary = captureIo();
+    assert.equal(
+      await run(
+        [
+          "newsletter",
+          "stats",
+          "i-297",
+          "primary",
+          "--deliveries",
+          "99,714",
+          "--opens",
+          "34,886",
+          "--clicks",
+          "831",
+          "--unique-clicks",
+          "651",
+          "--linkedin-impressions",
+          "8080",
+          "--linkedin-clicks",
+          "109",
+          "--linkedin-post",
+          "https://www.linkedin.com/feed/update/urn:li:activity:7446932215609192448/",
+          "--x-impressions",
+          "2916",
+          "--x-clicks",
+          "0",
+          "--x-post",
+          "https://x.com/DataTalksClub/status/2041170969592254836",
+        ],
+        setPrimary,
+      ),
+      0,
+    );
+    assert.deepEqual(calls.at(-1).body, {
+      version: 4,
+      stats: {
+        deliveries: 99714,
+        opens: 34886,
+        openRate: 34.99,
+        clicks: 831,
+        uniqueClicks: 651,
+        clickRate: 2.38,
+      },
+      slots: {
+        primary: {
+          sponsor: "VectorAI DB",
+          stats: {
+            clicks: 831,
+            uniqueClicks: 651,
+            clickRate: 2.38,
+            linkedinImpressions: 8080,
+            linkedinClicks: 109,
+            linkedinCtr: 1.35,
+            linkedinPostUrl: "https://www.linkedin.com/feed/update/urn:li:activity:7446932215609192448/",
+            xImpressions: 2916,
+            xClicks: 0,
+            xCtr: 0,
+            xPostUrl: "https://x.com/DataTalksClub/status/2041170969592254836",
+          },
+        },
+      },
+    });
+    assert.match(setPrimary.text(), /Updated stats on Weekly #297/);
+
+    const reportOut = captureIo();
+    assert.equal(await run(["newsletter", "report", "i-297", "primary", "--contact", "Alex"], reportOut), 0);
+    assert.deepEqual(calls.at(-1).query, { slot: "primary", contactName: "Alex" });
+    assert.match(reportOut.text(), /Hi Alex[\s\S]*- 2,916 views in Twitter[\s\S]*So 45,882 views and 940 clicks in total/);
+
+    const bySponsor = captureIo();
+    assert.equal(await run(["newsletter", "report", "--sponsor", "VectorAI DB"], bySponsor), 0);
+    assert.deepEqual(calls.at(-1).query, { sponsor: "VectorAI DB" });
+    assert.match(bySponsor.text(), /Weekly #297 · 2026-04-06 · primary \(VectorAI DB\)/);
+  });
+});
