@@ -4,10 +4,7 @@ import { test } from "node:test";
 import {
   CRM_MORE_LINKS,
   CRM_PRIMARY_TABS,
-  crmDirectoryPath,
   crmNavModel,
-  crmPersonPath,
-  crmTabForPath,
   renderCrmNav,
 } from "../src/surfaces/finance/sponsor-navigation.js";
 import {
@@ -56,26 +53,22 @@ const rows = { escapeHtml, humanDate: (value) => String(value).slice(0, 10) };
 
 // --- Navigation: Pipeline · Companies · People primary, More secondary ---
 
-test("primary navigation is Pipeline, Companies, People with canonical list paths", () => {
+test("primary navigation is Pipeline, Companies, People with canonical list paths", async () => {
   assert.deepEqual(CRM_PRIMARY_TABS.map(({ id }) => id), ["pipeline", "companies", "people"]);
   assert.deepEqual(CRM_MORE_LINKS.map(({ label }) => label),
     ["Lead discovery", "Newsletter sources", "Money"]);
-  assert.equal(crmDirectoryPath("companies"), "/sponsors/companies");
-  assert.equal(crmDirectoryPath("people"), "/sponsors/people");
-  assert.equal(crmPersonPath("person-1"), "/sponsors/people/person-1");
-  assert.throws(() => crmDirectoryPath("unknown"), /Unknown CRM tab/);
-});
-
-test("registered tabs reuse the canonical sponsor-routes helpers", async () => {
   const routes = await import("../src/core/sponsor-routes.js");
-  for (const tab of ["pipeline", "companies", "leads", "newsletters", "money"]) {
-    assert.equal(crmDirectoryPath(tab), routes.sponsorsPath(tab), tab);
-  }
+  const model = crmNavModel("people");
+  assert.deepEqual(model.primary.map(({ href }) => href),
+    ["pipeline", "companies", "people"].map((tab) => routes.sponsorsPath(tab)));
+  assert.equal(routes.sponsorsPath("people"), "/sponsors/people");
+  assert.equal(routes.sponsorRecordPath("person", "person-1"), "/sponsors/people/person-1");
 });
 
-test("every existing canonical URL stays reachable and maps to a tab", () => {
-  const cases = {
-    "/sponsors": "pipeline",
+test("every existing canonical URL stays reachable and maps to a tab", async () => {
+  const { parseWorkspaceLocation } = await import("../src/core/workspace.js");
+  const at = (url) => parseWorkspaceLocation(url, new URL(url, "https://example.invalid"));
+  for (const [path, tab] of Object.entries({
     "/sponsors/pipeline": "pipeline",
     "/sponsors/companies": "companies",
     "/sponsors/people": "people",
@@ -83,16 +76,17 @@ test("every existing canonical URL stays reachable and maps to a tab", () => {
     "/sponsors/newsletters": "newsletters",
     "/sponsors/money": "money",
     "/sponsors/deals/deal-1": "pipeline",
-    "/sponsors/companies/company-1": "companies",
+    "/sponsors/companies/company-1": "pipeline",
     "/sponsors/people/person-1": "people",
     "/sponsors/leads/lead-1": "leads",
     "/sponsors/newsletters/news-1": "newsletters",
-  };
-  for (const [path, tab] of Object.entries(cases)) {
-    assert.equal(crmTabForPath(path), tab, path);
+  })) {
+    const route = at(path);
+    assert.equal(route.sponsorsTab, tab, path);
+    assert.equal(route.canonicalUrl, path, path);
   }
-  assert.equal(crmTabForPath("/sponsors/companies?active=true"), "companies");
-  assert.equal(crmTabForPath("/nowhere"), null);
+  assert.equal(at("/sponsors").canonicalUrl, "/sponsors/pipeline");
+  assert.equal(at("/sponsors").sponsorsTab, "pipeline");
 });
 
 test("nav marks the current tab and keeps More reachable with an open state", () => {

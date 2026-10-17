@@ -1,12 +1,10 @@
-import { sponsorRecordPath, sponsorsPath, SPONSORS_TABS } from "../../core/sponsor-routes.js";
+import { sponsorsPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
 
 // Package E directory navigation: three primary relationship tabs plus a
-// secondary overflow for discovery/source/finance views. Pure model + markup;
-// route registration (workspace.js, sponsor-routes.js) and surface wiring
-// (sponsor-layout.js, sponsors.js) are future integration hunks, applied only
-// after the coordinator releases the shared files. Every existing canonical
-// URL stays reachable: this module only maps paths to tabs, never redirects.
+// secondary overflow for discovery/source/finance views. Pure model + markup
+// over the canonical sponsor-routes helpers; every existing canonical URL
+// stays reachable.
 
 export const CRM_PRIMARY_TABS = Object.freeze([
   Object.freeze({ id: "pipeline", label: "Pipeline" }),
@@ -20,51 +18,11 @@ export const CRM_MORE_LINKS = Object.freeze([
   Object.freeze({ id: "money", label: "Money" }),
 ]);
 
-// Canonical CRM list paths. Registered tabs go through the canonical
-// sponsorsPath; "people" uses the same shape until the integration hunk
-// registers it in SPONSORS_TABS.
-// INTEGRATION-TODO(release): delete crmDirectoryPath/crmPersonPath and use
-// sponsorsPath/sponsorRecordPath (with a "person" kind) everywhere once the
-// routes hunk lands; the duplicate mapping below goes away with it.
-const REGISTERED_TABS = new Set(SPONSORS_TABS.map(([id]) => id));
-
-export function crmDirectoryPath(tab) {
-  if (![...CRM_PRIMARY_TABS, ...CRM_MORE_LINKS].some((entry) => entry.id === tab)) {
-    throw new Error(`Unknown CRM tab: ${tab}`);
-  }
-  if (REGISTERED_TABS.has(tab)) return sponsorsPath(tab);
-  return `/sponsors/${tab}`;
-}
-
-export function crmPersonPath(id) {
-  if (!id) throw new Error("A person id is required");
-  return `/sponsors/people/${encodeURIComponent(id)}`;
-}
-
-// Maps a canonical path (no query) to its navigation tab. Record routes keep
-// the tab of the list they belong to, so Back returns to a highlighted origin.
-// Unknown paths return null: the nav renders with nothing marked current
-// rather than guessing.
-// INTEGRATION-TODO(release): workspace route definitions own tab mapping
-// after the routes hunk; this helper then only serves the nav model.
-export function crmTabForPath(path) {
-  const clean = String(path || "").split("?")[0].split("#")[0];
-  if (clean === "/sponsors" || clean === "/sponsors/pipeline") return "pipeline";
-  for (const { id } of [...CRM_PRIMARY_TABS, ...CRM_MORE_LINKS]) {
-    if (clean === `/sponsors/${id}`) return id;
-  }
-  const record = clean.match(/^\/sponsors\/(deals|companies|people|leads|newsletters)\/[^/]+$/);
-  if (!record) return null;
-  const family = record[1];
-  if (family === "deals") return "pipeline";
-  return family;
-}
-
 export function crmNavModel(currentTab) {
   const link = ({ id, label }) => ({
     id,
     label,
-    href: crmDirectoryPath(id),
+    href: sponsorsPath(id),
     current: id === currentTab,
   });
   const primary = CRM_PRIMARY_TABS.map(link);

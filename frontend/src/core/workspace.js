@@ -42,14 +42,18 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
     params: ["month", "q", "account", "dir", "category", "needs", "tx", "view", "agreement"],
   },
   // Bare /sponsors opens the default tab; every tab and record is a path.
+  // Directory tabs declare their filter/sort/page params so filter state
+  // survives navigation, refresh and back/forward through canonical URLs.
   "/sponsors": { view: "sponsors", tasksSection: "queue", params: [], canonicalPath: "/sponsors/pipeline" },
-  "/sponsors/pipeline": { view: "sponsors", tasksSection: "queue", sponsorsTab: "pipeline", params: [] },
-  "/sponsors/companies": { view: "sponsors", tasksSection: "queue", sponsorsTab: "companies", params: [] },
+  "/sponsors/pipeline": { view: "sponsors", tasksSection: "queue", sponsorsTab: "pipeline", params: ["view", "stage", "search", "owner", "sort", "cursor", "savedView"] },
+  "/sponsors/companies": { view: "sponsors", tasksSection: "queue", sponsorsTab: "companies", params: ["view", "search", "relationship", "active", "lastTouchAfter", "lastTouchBefore", "sort", "limit", "cursor"] },
+  "/sponsors/people": { view: "sponsors", tasksSection: "queue", sponsorsTab: "people", params: ["view", "search", "company", "primary", "unlinked", "active", "sort", "limit", "cursor"] },
   "/sponsors/leads": { view: "sponsors", tasksSection: "queue", sponsorsTab: "leads", params: [] },
   "/sponsors/newsletters": { view: "sponsors", tasksSection: "queue", sponsorsTab: "newsletters", params: [] },
   "/sponsors/money": { view: "sponsors", tasksSection: "queue", sponsorsTab: "money", params: [] },
   "/sponsors/deals/:dealId": { view: "sponsors", tasksSection: "queue", sponsorsTab: "pipeline", params: [] },
   "/sponsors/companies/:companyId": { view: "sponsors", tasksSection: "queue", sponsorsTab: "pipeline", params: [] },
+  "/sponsors/people/:personId": { view: "sponsors", tasksSection: "queue", sponsorsTab: "people", params: [] },
   "/sponsors/leads/:leadId": { view: "sponsors", tasksSection: "queue", sponsorsTab: "leads", params: [] },
   "/sponsors/newsletters/:newsletterId": { view: "sponsors", tasksSection: "queue", sponsorsTab: "newsletters", params: [] },
   "/newsletter": { view: "newsletter", tasksSection: "queue", params: [] },

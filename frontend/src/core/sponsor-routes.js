@@ -2,6 +2,7 @@
 export const SPONSORS_TABS = Object.freeze([
   Object.freeze(["pipeline", "Pipeline"]),
   Object.freeze(["companies", "Companies"]),
+  Object.freeze(["people", "People"]),
   Object.freeze(["leads", "Leads"]),
   Object.freeze(["newsletters", "Newsletters"]),
   Object.freeze(["money", "Money"]),
@@ -12,6 +13,6 @@ export function sponsorsPath(tab = "pipeline") {
 }
 
 export function sponsorRecordPath(kind, id) {
-  const family = { deal: "deals", company: "companies", lead: "leads", newsletter: "newsletters" }[kind];
+  const family = { deal: "deals", company: "companies", person: "people", lead: "leads", newsletter: "newsletters" }[kind];
   return `/sponsors/${family}/${encodeURIComponent(id)}`;
 }

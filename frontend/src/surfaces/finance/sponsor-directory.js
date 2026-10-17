@@ -1,5 +1,5 @@
+import { sponsorsPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
-import { crmDirectoryPath } from "./sponsor-navigation.js";
 
 // Package E bounded directories: separate Companies / People lists backed by
 // the D workspace API (GET <directoryBase>/companies|people). This module is
@@ -157,7 +157,7 @@ export function directoryUrl(entity, { viewId, filters, sort, limit } = {}) {
   if (sort && sort !== "name") params.set("sort", sort);
   if (limit && Number(limit) !== DIRECTORY_PAGE_SIZE_DEFAULT) params.set("limit", String(limit));
   const query = params.toString();
-  return `${crmDirectoryPath(entity)}${query ? `?${query}` : ""}`;
+  return `${sponsorsPath(entity)}${query ? `?${query}` : ""}`;
 }
 
 // Absolute dates pass through; {daysAgo} windows resolve against Berlin

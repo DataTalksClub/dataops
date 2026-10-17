@@ -57,11 +57,13 @@ describe("canonical workspace routing", () => {
       "/sponsors",
       "/sponsors/pipeline",
       "/sponsors/companies",
+      "/sponsors/people",
       "/sponsors/leads",
       "/sponsors/newsletters",
       "/sponsors/money",
       "/sponsors/deals/:dealId",
       "/sponsors/companies/:companyId",
+      "/sponsors/people/:personId",
       "/sponsors/leads/:leadId",
       "/sponsors/newsletters/:newsletterId",
       "/newsletter",
@@ -89,6 +91,7 @@ describe("canonical workspace routing", () => {
     for (const [kind, param, tab] of [
       ["deal", "dealId", "pipeline"],
       ["company", "companyId", "pipeline"],
+      ["person", "personId", "people"],
       ["lead", "leadId", "leads"],
       ["newsletter", "newsletterId", "newsletters"],
     ]) {
