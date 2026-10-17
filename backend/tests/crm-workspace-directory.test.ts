@@ -134,13 +134,18 @@ describe('crm workspace directory', () => {
     }
   });
 
-  it('applies no special migration guards: provenance rows filter normally', async () => {
-    // A removed all permanent rehomed-read guards: rows with rehomedTo provenance
-    // are ordinary rows; archivedAt/active:false are the only visibility filters.
+  it('applies no special migration guards: archived rows filter normally', async () => {
+    // A removed all permanent rehomed-read guards: provenance is read-only
+    // (rehomedTo writes are rejected) and visibility is archivedAt/active only.
     const suffix = String(seedCount++);
-    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
+    const rejected = await invoke('POST', '/api/sponsor-crm/organizations', {
       displayName: `Provenance Org ${suffix}`, domain: `prov-${suffix}.example`,
       rehomedTo: { type: 'tuition-agreement', id: 'tuition-1' }, sourceKey: `ws-prov-org-${suffix}`,
+    });
+    assert.equal(rejected.statusCode, 400);
+    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
+      displayName: `Provenance Org ${suffix}`, domain: `prov-${suffix}.example`,
+      sourceKey: `ws-prov-org-${suffix}`,
     }));
     const companies = data(await invoke('GET', '/api/sponsor-crm/directory/companies?active=all'));
     assert.ok(companies.items.some((item: any) => item.id === org.id), 'no special-case exclusion');
