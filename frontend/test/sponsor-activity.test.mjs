@@ -286,6 +286,32 @@ test("note status is owned locally even when the wrapper swallows errors", async
   assert.equal(form.elements.body.value, "", "saved draft clears");
 });
 
+test("a stale More click during a filter load issues no mismatched request", async () => {
+  const calls = [];
+  let releaseFilter;
+  const filterGate = new Promise((resolve) => { releaseFilter = resolve; });
+  const api = async (path) => {
+    calls.push(path);
+    if (path.includes("types=note")) {
+      await filterGate;
+      return activityPayload([{ ts: "2026-10-09T00:00:00Z", source: "note", id: "fresh", actor: null, text: "Fresh", provenance: {} }], { total: 1 });
+    }
+    return activityPayload([{ ts: "2026-10-01T00:00:00Z", source: "mail", id: "old", actor: null, text: "Old", provenance: {} }], { nextCursor: "stale-cursor", total: 5 });
+  };
+  const loader = createActivityLoader({ api, targetType: "organization", targetId: "c1", limit: 30 });
+  await loader.load();
+  assert.equal(loader.state.nextCursor, "stale-cursor");
+  const pending = loader.load({ types: ["note"] });
+  // The filter change invalidates the old cursor immediately, before paint.
+  assert.equal(loader.state.nextCursor, null);
+  await loader.loadMore();
+  assert.ok(!calls.some((path) => path.includes("stale-cursor")), "no stale-cursor API call");
+  releaseFilter();
+  await pending;
+  assert.deepEqual(loader.state.items.map((item) => item.id), ["fresh"], "new feed intact, never overwritten by the old page");
+  assert.equal(loader.state.nextCursor, null);
+});
+
 test("concurrent same-cursor paging is single-flight", async () => {
   let fetches = 0;
   let release;

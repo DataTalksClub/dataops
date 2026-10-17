@@ -198,6 +198,10 @@ export function createActivityLoader({ api, targetType, targetId, limit = DEFAUL
     state.types = [...types];
     state.status = "loading";
     state.error = "";
+    // Invalidate the page cursor up front (review finding): the previous
+    // filter's cursor is bound to the old filter set. Until the new first
+    // page resolves, loadMore must not fire with the stale cursor.
+    state.nextCursor = null;
     try {
       const result = await api(query());
       if (mine !== generation) return state;
@@ -217,9 +221,10 @@ export function createActivityLoader({ api, targetType, targetId, limit = DEFAUL
 
   async function loadMore() {
     if (!state.nextCursor) return state;
-    // Single-flight (review finding 3): a repeat click while the page is in
-    // flight must not fetch the same cursor twice and append duplicates.
-    if (state.status === "loading-more") return state;
+    // Pager fires only from a settled ready page: a filter change resets the
+    // cursor above, and an in-flight page keeps status off ready, so a stale
+    // More click can never issue a mismatched cursor+filter request.
+    if (state.status !== "ready") return state;
     const mine = generation;
     const cursor = state.nextCursor;
     state.status = "loading-more";
@@ -301,9 +306,13 @@ export function wireActivityPanel(root, loader, context = {}) {
       related.innerHTML = relatedWorkMarkup(state.relatedWork, { escapeHtml });
     }
     if (pager) {
-      pager.innerHTML = loader.state.nextCursor && loader.state.status === "ready"
-        ? html`<button type="button" data-activity-more>Show more (${loader.state.total - loader.state.items.length} remaining)</button>`
-        : "";
+      if (loader.state.status === "loading-more") {
+        pager.innerHTML = html`<button type="button" data-activity-more disabled>Loading more…</button>`;
+      } else {
+        pager.innerHTML = loader.state.nextCursor && loader.state.status === "ready"
+          ? html`<button type="button" data-activity-more>Show more (${loader.state.total - loader.state.items.length} remaining)</button>`
+          : "";
+      }
     }
   }
 
