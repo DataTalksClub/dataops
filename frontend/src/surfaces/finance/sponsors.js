@@ -90,10 +90,15 @@ export function createSponsorCrmSurface(context) {
   async function renderSponsorCrmSurface() {
     // Surface-local render generation: in-render canonical URL writes
     // (filter/sort/page sync with history:replace) legitimately move the
-    // route token, so staleness here means a NEWER render started or the
-    // surface detached — never our own URL bookkeeping.
+    // route token, so staleness here means a NEWER render started, the
+    // surface detached, or the workspace genuinely left CRM (e.g. Tasks) —
+    // never our own filter synchronization.
     const renderToken = ++surfaceRenderCount;
-    const stale = () => renderToken !== surfaceRenderCount || !surface.isConnected;
+    const stale = () => {
+      if (renderToken !== surfaceRenderCount || !surface.isConnected) return true;
+      const now = getPendingLegacyRoute();
+      return !!now && !!now.view && now.view !== "sponsors";
+    };
     const routeAtStart = getPendingLegacyRoute();
     const sponsorsRoute = routeAtStart?.view === "sponsors" ? routeAtStart : null;
     const initialTab = sponsorsRoute?.sponsorsTab || "pipeline";
@@ -289,7 +294,12 @@ export function createSponsorCrmSurface(context) {
         else link.removeAttribute("aria-current");
       });
       const more = surface.querySelector("[data-crm-nav-more]");
-      if (more && ["leads", "newsletters", "money"].includes(view)) more.setAttribute("open", "");
+      const moreCurrent = ["leads", "newsletters", "money"].includes(view);
+      if (more) {
+        // The secondary menu never hangs open over another tab's content.
+        if (moreCurrent) more.setAttribute("open", "");
+        else more.removeAttribute("open");
+      }
       const pipeline = surface.querySelector("[data-crm-bookings]");
       const companies = surface.querySelector('[data-dir-root="companies"]');
       const people = surface.querySelector('[data-dir-root="people"]');
@@ -327,7 +337,8 @@ export function createSponsorCrmSurface(context) {
           await personDetail.openPerson(currentPersonId);
           return;
         }
-        await reopenCompanyDetail(await loadCompany(organizationId));
+        await loadCompanySummary(organizationId);
+        await reopenCompanyDetail({ id: organizationId });
       } });
     const personDetail = createSponsorPersonDetail({
       api,
@@ -360,6 +371,11 @@ export function createSponsorCrmSurface(context) {
       openTaskPanel,
       openCompanyRecord: (organizationId) => openRecord("company", organizationId),
       openContactEditor: (target, options) => contactEditor.open(target, options),
+      // Next-task owner beside due/description (same lookup pipeline uses;
+      // Unassigned/Unavailable honest, raw IDs never rendered, no new reads).
+      ownerName: (id) => ownerDirectory.name(id),
+      // F adopts this in its close path (E bridge removed: F delegates Back).
+      closeRecord: () => directoryPages.closeRecord(),
       // List refresh after record Archive/Restore/edits stays E-owned: F calls
       // this after mutating the company; Back also refreshes via closeRecord.
       onRecordChanged: () => {
@@ -395,26 +411,46 @@ export function createSponsorCrmSurface(context) {
       const [orgs, people] = await Promise.all([readSponsorDirectory(api, "organizations"), readSponsorDirectory(api, "contacts")]);
       organizations = orgs.items; contacts = people.items; directoryLoaded = true; orgOptions();
     }
-    async function loadCompany(organizationId) {
-      const [organization, people, bookings] = await Promise.all([
-        api(`/organizations/${organizationId}`),
-        readSponsorDirectory((path) => api(
-          `${path}&organizationId=${encodeURIComponent(organizationId)}`,
-        ), "contacts"),
-        readSponsorDirectory((path) => api(
-          `${path}&organizationId=${encodeURIComponent(organizationId)}`,
-        ), "deals"),
-      ]);
-      organizations = [...organizations.filter((item) => item.id !== organizationId), organization];
-      contacts = [...contacts.filter((item) => item.organizationId !== organizationId), ...people.items];
-      deals = [...deals.filter((item) => item.organizationId !== organizationId), ...bookings.items];
-      return organization;
+    // Record opening reads the cheap D record summary only (single Get, no
+    // child collections): F People/Deals tabs fetch on click. Editing forms
+    // load their full option sets on demand via ensureDirectory instead.
+    async function loadCompanySummary(organizationId) {
+      const summary = await api(`/directory/companies/${encodeURIComponent(organizationId)}`);
+      organizations = [...organizations.filter((item) => item.id !== organizationId),
+        {
+          id: summary.id,
+          displayName: summary.displayName,
+          domain: summary.domain,
+          active: summary.active,
+          version: summary.version,
+          updatedAt: summary.updatedAt,
+        }];
+      return summary;
+    }
+    let ownerDirectoryLoaded = false;
+    async function ensureOwnerDirectory() {
+      if (ownerDirectoryLoaded) return;
+      try {
+        await ownerDirectory.load();
+      } catch {
+        // Owner names degrade honestly (Unavailable assignee); the record
+        // itself must never fail because the team directory did.
+      }
+      ownerDirectoryLoaded = true;
     }
 
-    async function refresh() {
+    async function refresh({ coldRecord = false } = {}) {
       directoryLoaded = false;
       message.textContent = "Loading sponsor CRM…";
       message.hidden = false;
+      // Cold deep links open the record directly: the tab list behind it
+      // stays unloaded until Back or tab navigation asks for it. In-place
+      // opens reuse the already-loaded list.
+      if (coldRecord && (currentView === "pipeline" || currentView === "companies" || currentView === "people")) {
+        message.textContent = "";
+        message.hidden = true;
+        return;
+      }
       if (currentView === "pipeline") {
         await ownerDirectory.load();
         ownerDirectory.fillFilter(surface.querySelector("[data-pipeline-owner]"));
@@ -483,6 +519,25 @@ export function createSponsorCrmSurface(context) {
       pipelineControlsChanged(() => safe(() => runPipelineLoad(), "Could not load pipeline"));
       recordRoute(sponsorsPath("pipeline"));
     });
+    // Record mode: the record renders in the split detail pane, so the split
+    // layout is revealed while the record's primary tab stays highlighted
+    // (company→Companies, person→People, deal→Pipeline). Pipeline-only chrome
+    // (funnel scope/controls/filters) hides on every record. Origin context
+    // for Back lives in returnContext; closeRecord restores the origin tab.
+    function setRecordTab(tab) {
+      setView(tab, false);
+      surface.querySelector(".crm-layout").hidden = false;
+      surface.querySelector('[data-dir-root="companies"]').hidden = true;
+      surface.querySelector('[data-dir-root="people"]').hidden = true;
+      surface.querySelector(".crm-leads").hidden = true;
+      surface.querySelector(".crm-newsletters").hidden = true;
+      surface.querySelector(".crm-money").hidden = true;
+      surface.querySelector("[data-crm-pipeline]").hidden = true;
+      surface.querySelector(".crm-funnel-scope").hidden = true;
+      surface.querySelector(".crm-funnel-controls").hidden = true;
+      surface.querySelector(".crm-filter-disclosure").hidden = true;
+      surface.classList.toggle("dk-fill", true);
+    }
     function showRecord({ dealId, companyId, personId } = {}) {
       const deal = dealId ? deals.find((item) => item.id === dealId) : null;
       const organization = companyId
@@ -490,25 +545,19 @@ export function createSponsorCrmSurface(context) {
         : null;
       if (deal) {
         currentPersonId = null;
-        if (PAGE_VIEWS.has(currentView)) {
-          setView("pipeline");
-        }
+        setRecordTab("pipeline");
         safe(() => reopenDealDetail(deal), "Could not open deal");
         return true;
       }
       if (organization) {
         currentPersonId = null;
-        if (PAGE_VIEWS.has(currentView)) {
-          setView("pipeline");
-        }
+        setRecordTab("companies");
         safe(() => reopenCompanyDetail(organization), "Could not open company");
         return true;
       }
       if (personId) {
         currentPersonId = personId;
-        if (PAGE_VIEWS.has(currentView)) {
-          setView("pipeline");
-        }
+        setRecordTab("people");
         safe(async () => {
           const detail = surface.querySelector("[data-crm-detail]");
           surface.classList.add("has-booking-detail");
@@ -530,21 +579,30 @@ export function createSponsorCrmSurface(context) {
     // renders an honest error in the detail pane (retryable, with a way back)
     // instead of a bare status message. keepContext preserves the existing
     // Back origin for nested opens (person → company) instead of chaining.
+    // Per-open generation: a late prior open never reopens or navigates over
+    // a newer record (or Tasks).
+    let openGeneration = 0;
     function openRecord(kind, id, focusSelector, { keepContext = false } = {}) {
+      const openToken = ++openGeneration;
+      const current = () => openToken !== openGeneration || stale();
       safe(async () => {
         try {
           if (!keepContext) directoryPages.captureReturnContext(kind, id, currentView);
           if (kind === "deal") {
             const item = await api(`/deals/${encodeURIComponent(id)}`);
-            await loadCompany(item.organizationId);
+            if (current()) return;
+            await Promise.all([loadCompanySummary(item.organizationId), ensureOwnerDirectory()]);
+            if (current()) return;
             deals = [...deals.filter((value) => value.id !== id), item];
             showRecord({ dealId: id });
           } else if (kind === "person") {
             showRecord({ personId: id });
           } else {
-            await loadCompany(id);
+            await Promise.all([loadCompanySummary(id), ensureOwnerDirectory()]);
+            if (current()) return;
             showRecord({ companyId: id });
           }
+          if (current()) return;
           navigateCanonicalWorkspace(sponsorRecordPath(kind, id), {}, { render: false });
         } catch (error) {
           surface.classList.add("has-booking-detail");
@@ -576,9 +634,12 @@ export function createSponsorCrmSurface(context) {
       openDialog(surface.querySelector("[data-org-dialog]"));
     surface.querySelector("[data-add-deal]").onclick = () => openDeal(null);
     // Record links are real anchors: plain clicks open in place, modified
-    // clicks open the canonical URL in a new tab.
+    // clicks open the canonical URL in a new tab. Already-handled clicks
+    // (F record links intercept with keepContext first) and Alt/modified
+    // clicks are never reopened here.
     surface.addEventListener("click", (event) => {
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button > 0) return;
+      if (event.defaultPrevented) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button > 0) return;
       const company = event.target.closest("[data-open-company]");
       const person = event.target.closest("[data-open-person]");
       if (!company && !person) return;
@@ -874,25 +935,14 @@ export function createSponsorCrmSurface(context) {
     };
     setView(initialTab, false);
     try {
-      await refresh();
+      const coldRecord = Boolean(requestedDealId || requestedCompanyId || requestedPersonId);
+      await refresh({ coldRecord });
       if (stale()) return;
       if (requestedNewsletterId) await sponsorNewsletters.showNewsletter(requestedNewsletterId);
       // [id, kind, where its load state renders, tab to return to, open it]
       const record = [
-        [requestedDealId, "deal", "[data-crm-detail]", "pipeline", async (id) => {
-          let deal = deals.find((item) => item.id === id);
-          if (!deal) {
-            deal = await api(`/deals/${encodeURIComponent(id)}`);
-            if (stale()) return;
-            deals = [deal, ...deals];
-            draw();
-          }
-          await loadCompany(deal.organizationId);
-          await reopenDealDetail(deal);
-        }],
-        [requestedCompanyId, "company", "[data-crm-detail]", "pipeline", async (id) => reopenCompanyDetail(
-          await loadCompany(id),
-        )],
+        [requestedDealId, "deal", "[data-crm-detail]", "pipeline", async (id) => openRecord("deal", id)],
+        [requestedCompanyId, "company", "[data-crm-detail]", "companies", async (id) => openRecord("company", id)],
         [requestedPersonId, "person", "[data-crm-detail]", "people", async (id) => {
           directoryPages.captureReturnContext("person", id, currentView);
           showRecord({ personId: id });

@@ -83,8 +83,14 @@ export function validateDirectoryState(entity, state) {
       if (value[key] !== undefined) return invalid(`Unknown people filter: ${key}`);
     }
   }
-  if (value.sort !== undefined && !DIRECTORY_SORTS.some((entry) => entry.id === value.sort)) {
-    return invalid("sort must be name or lastTouch");
+  if (value.sort !== undefined) {
+    const field = typeof value.sort === "string" ? value.sort : value.sort?.field;
+    if (!DIRECTORY_SORTS.some((entry) => entry.id === field)) {
+      return invalid("sort must be name or lastTouch");
+    }
+  }
+  if (value.dir !== undefined && value.dir !== "asc" && value.dir !== "desc") {
+    return invalid("dir must be asc or desc");
   }
   if (value.limit !== undefined) {
     const limit = Number(value.limit);
@@ -102,6 +108,7 @@ export function directoryDefaults(entity) {
 
 // Reads effective filter state from URL search params. Every key stays in the
 // API's vocabulary so a copied link replays the same query after refresh.
+// Sort direction travels as `dir` so reverse-direction saved views round-trip.
 export function directoryStateFromUrl(url, entity) {
   const query = new URL(String(url), "https://example.invalid").searchParams;
   const state = {};
@@ -109,7 +116,7 @@ export function directoryStateFromUrl(url, entity) {
     const value = query.get(key);
     if (value !== null && value !== "") state[key] = value;
   };
-  for (const key of [...DIRECTORY_FILTER_KEYS[entity] || [], "sort", "limit"]) take(key);
+  for (const key of [...DIRECTORY_FILTER_KEYS[entity] || [], "sort", "dir", "limit"]) take(key);
   const view = query.get("view");
   if (view) state.view = view;
   const error = validateDirectoryState(entity, state);
@@ -118,15 +125,17 @@ export function directoryStateFromUrl(url, entity) {
 }
 
 // Builds the API query from validated state. Only contract keys are emitted;
-// view ids and UI-only keys never leave the browser. Direction is explicit
-// (name/asc, lastTouch/desc — the contract's execution defaults).
+// view ids and UI-only keys never leave the browser. Direction executes
+// exactly as stored (name/asc and lastTouch/desc are the defaults, reverse
+// combos from saved views round-trip untouched).
 export function directoryQueryFromState(entity, state) {
   const query = {};
   for (const key of DIRECTORY_FILTER_KEYS[entity] || []) {
     if (state?.[key] !== undefined) query[key] = String(state[key]);
   }
-  query.sort = state?.sort || "name";
-  query.direction = query.sort === "lastTouch" ? "desc" : "asc";
+  const sort = typeof state?.sort === "string" ? { field: state.sort } : state?.sort || {};
+  query.sort = sort.field || "name";
+  query.direction = sort.direction || (query.sort === "lastTouch" ? "desc" : "asc");
   query.limit = String(state?.limit || DIRECTORY_PAGE_SIZE_DEFAULT);
   if (state?.cursor) query.cursor = String(state.cursor);
   return query;
@@ -154,7 +163,11 @@ export function directoryUrl(entity, { viewId, filters, sort, limit } = {}) {
   for (const key of DIRECTORY_FILTER_KEYS[entity] || []) {
     if (filters?.[key] !== undefined) params.set(key, String(filters[key]));
   }
-  if (sort && sort !== "name") params.set("sort", sort);
+  const sortField = typeof sort === "string" ? sort : sort?.field;
+  const sortDir = typeof sort === "string" ? undefined : sort?.direction;
+  const defaultDir = sortField === "lastTouch" ? "desc" : "asc";
+  if (sortField && sortField !== "name") params.set("sort", sortField);
+  if (sortDir && sortDir !== defaultDir) params.set("dir", sortDir);
   if (limit && Number(limit) !== DIRECTORY_PAGE_SIZE_DEFAULT) params.set("limit", String(limit));
   const query = params.toString();
   return `${sponsorsPath(entity)}${query ? `?${query}` : ""}`;

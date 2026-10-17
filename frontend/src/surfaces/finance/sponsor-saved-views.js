@@ -139,14 +139,17 @@ export function validatePipelineViewFilters(filters) {
   return "";
 }
 
-export function validateViewSort(entity, sort) {
-  if (entity === "pipeline") {
-    if (!sort || typeof sort !== "object" || Array.isArray(sort) || typeof sort.field !== "string") {
-      return "sort must be {field}";
-    }
-    if (!PIPELINE_SORTS.includes(sort.field)) return "pipeline sort must be next-action or recent";
-    return "";
+export function validatePipelineViewSort(sort) {
+  if (!sort || typeof sort !== "object" || Array.isArray(sort) || typeof sort.field !== "string") {
+    return "sort must be {field}";
   }
+  if (!PIPELINE_SORTS.includes(sort.field)) return "pipeline sort must be next-action or recent";
+  return "";
+}
+
+export function validateViewSort(entity, sort) {
+  if (entity === "pipeline") return validatePipelineViewSort(sort);
+  if (!sort || typeof sort !== "object" || Array.isArray(sort)) return "sort must be {field, direction}";
   if (!["name", "lastTouch"].includes(sort.field)) return "sort field must be name or lastTouch";
   if (sort.direction !== "asc" && sort.direction !== "desc") return "sort direction must be asc or desc";
   return "";
@@ -156,8 +159,21 @@ function defaultFiltersFor(entity) {
   return entity === "pipeline" ? {} : { active: "true" };
 }
 
+// Sort state preserves direction end-to-end (saved view → controls/state →
+// query → URL/reload → update): reverse combos (name/desc, lastTouch/asc)
+// execute and round-trip instead of collapsing to field defaults. Pipeline
+// sorts carry no direction key (rev4: {field: next-action|recent}).
 function defaultSortFor(entity) {
-  return entity === "pipeline" ? "next-action" : "name";
+  return entity === "pipeline" ? { field: "next-action" } : { field: "name", direction: "asc" };
+}
+
+function defaultDirectionFor(field) {
+  return field === "lastTouch" ? "desc" : "asc";
+}
+
+function sameSort(left, right) {
+  if (typeof left === "string" || typeof right === "string") return left === right;
+  return left?.field === right?.field && (left?.direction || "asc") === (right?.direction || "asc");
 }
 
 // Combines the selected view (builtin or personal, server-provided) with
@@ -175,22 +191,36 @@ export function resolveEffectiveFilters({ entity, views, viewsError, selectedVie
   for (const key of allowedKeys) {
     if (url[key] !== undefined) urlFilters[key] = url[key];
   }
-  const urlSort = url.sort;
+  const urlSortField = url.sort;
+  const urlDir = url.dir;
   const view = (views || []).find((item) => item.id === selectedViewId);
+  // Sort state preserves direction: an explicit sort field takes the explicit
+  // dir or its field default; a bare dir applies to the base field so shared
+  // links never silently drop a reverse direction.
+  const urlSort = urlSortField !== undefined
+    ? (entity === "pipeline"
+      ? { field: urlSortField }
+      : { field: urlSortField, direction: urlDir || defaultDirectionFor(urlSortField) })
+    : undefined;
   if (selectedViewId && !view) {
-    if (!Object.keys(urlFilters).length && !urlSort) {
+    if (!Object.keys(urlFilters).length && !urlSort && urlDir === undefined) {
       return { error: viewsError || "That saved view is not available. Pick another view or adjust the filters." };
     }
-    return { filters: urlFilters, sort: urlSort || defaultSortFor(entity), viewId: null, modified: true };
+    return {
+      filters: urlFilters,
+      sort: urlSort || { field: defaultSortFor(entity).field, direction: urlDir },
+      viewId: null,
+      modified: true,
+    };
   }
-  if (!view && viewsError && !Object.keys(urlFilters).length && !urlSort) {
+  if (!view && viewsError && !Object.keys(urlFilters).length && !urlSort && urlDir === undefined) {
     return { error: viewsError };
   }
   if (view && !view.resolvedFilters) {
     return { error: "That saved view could not be resolved. Reload the directory and retry." };
   }
   const baseFilters = view ? { ...view.resolvedFilters } : { ...defaultFiltersFor(entity) };
-  const baseSort = view?.sort?.field || defaultSortFor(entity);
+  const baseSort = view?.sort || defaultSortFor(entity);
   // A URL key matching the resolved value is the same window, not a
   // modification, so builtins stay selected across refresh while copied links
   // without the view id still replay the frozen window.
@@ -198,11 +228,16 @@ export function resolveEffectiveFilters({ entity, views, viewsError, selectedVie
     (key) => String(urlFilters[key]) !== String(baseFilters[key]),
   );
   const filters = { ...baseFilters, ...urlFilters };
-  const sort = urlSort || baseSort;
-  const modified = !!view && (overlaid.length > 0 || (!!urlSort && urlSort !== baseSort));
+  const baseField = typeof baseSort === "string" ? baseSort : baseSort.field;
+  const baseDir = typeof baseSort === "string" ? undefined : baseSort.direction;
+  const sort = urlSort || (urlDir !== undefined && entity !== "pipeline"
+    ? { field: baseField, direction: urlDir }
+    : baseSort);
+  const modified = (!!view && (overlaid.length > 0 || (!!urlSort && !sameSort(urlSort, baseSort)))) ||
+    (!!view && urlDir !== undefined && urlDir !== baseDir);
   const sortError = entity === "pipeline"
-    ? (PIPELINE_SORTS.includes(sort) ? "" : "sort must be next-action or recent")
-    : (sort !== baseSort || !view ? validateDirectoryState(entity, { sort }) : "");
+    ? validatePipelineViewSort(sort)
+    : validateViewSort(entity, sort);
   const error = validateViewFilters(entity, filters) || sortError;
   if (error) return { error };
   return { filters, sort, viewId: modified ? null : view?.id || null, modified };

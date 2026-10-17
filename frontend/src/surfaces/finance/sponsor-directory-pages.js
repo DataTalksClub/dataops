@@ -39,8 +39,15 @@ const WORKSPACE_API = {
   people: "/directory/people",
 };
 
-function viewSortFor(sort) {
-  return { field: sort === "lastTouch" ? "lastTouch" : "name", direction: sort === "lastTouch" ? "desc" : "asc" };
+// Sort for saving: the resolved sort already carries its direction
+// (preserved end-to-end from the view); control strings fall back to field
+// defaults so a manual sort pick never invents a direction.
+function sortForSave(sort) {
+  if (sort && typeof sort === "object" && sort.field) {
+    return { field: sort.field, direction: sort.direction === "desc" ? "desc" : "asc" };
+  }
+  const field = typeof sort === "string" && sort ? sort : "name";
+  return { field, direction: field === "lastTouch" ? "desc" : "asc" };
 }
 
 function newViewSourceKey() {
@@ -93,9 +100,15 @@ export function createSponsorDirectoryPages({
   }
 
   // Last-written list params per tab, seeded by the host from the route.
+  // Record-id path params never belong to list context and are stripped so
+  // Back lands on the clean list URL with its filters.
+  const RECORD_ID_PARAMS = ["dealId", "companyId", "personId", "leadId", "newsletterId"];
   const listParamsByView = { pipeline: {}, companies: {}, people: {} };
   function seedListParams(view, params) {
-    if (listParamsByView[view]) listParamsByView[view] = { ...(params || {}) };
+    if (!listParamsByView[view]) return;
+    const clean = { ...(params || {}) };
+    for (const key of RECORD_ID_PARAMS) delete clean[key];
+    listParamsByView[view] = clean;
   }
   function rememberListParams(view, params) {
     listParamsByView[view] = { ...(params || {}) };
@@ -118,16 +131,22 @@ export function createSponsorDirectoryPages({
         : `[data-open-person="${id}"]`,
     };
   }
-  function closeRecord() {
+  // Back restores the origin tab, then reloads the directory (records may
+  // have archived/restored/edited behind it), and only then restores scroll
+  // position and focus — refreshing first would replace the nodes out from
+  // under the restored focus. Returns false when no origin was captured.
+  async function closeRecord() {
     if (!returnContext) return false;
     const { view, path, params, scrollTop, focusSelector } = returnContext;
     returnContext = null;
     navigateCanonicalWorkspace(path, params, { render: false, history: "replace" });
     showView(view, false);
-    // The record may have archived/restored/edited its company: the list
-    // behind it reloads so flags stay honest. (F also re-opens via D.)
     if (view === "companies" || view === "people") {
-      safe(() => directories[view].refresh(), "Could not load directory");
+      await safe(() => directories[view].refresh(), "Could not load directory");
+      if (!surface.isConnected) return true;
+    } else if (view === "pipeline") {
+      await safe(() => pipeline.load(true), "Could not load pipeline");
+      if (!surface.isConnected) return true;
     }
     surface.classList.remove("has-booking-detail");
     const split = surface.querySelector("[data-crm-split]");
@@ -187,7 +206,8 @@ export function createSponsorDirectoryPages({
       for (const input of filterEls) {
         input.value = filters[input.dataset.dirFilter] ?? "";
       }
-      if (sortEl) sortEl.value = sort || "name";
+      const field = sort && typeof sort === "object" ? sort.field : sort;
+      if (sortEl) sortEl.value = field || "name";
     }
     function showMessage(text) {
       inlineMessageEl.textContent = text || "";
@@ -412,7 +432,7 @@ export function createSponsorDirectoryPages({
       await updateSavedView(api, current.id, {
         name: current.name,
         filters: absolute,
-        sort: viewSortFor(resolved.sort),
+        sort: sortForSave(resolved.sort),
         ...(current.columns ? { columns: current.columns } : {}),
         version: current.version,
       }, { paths: WORKSPACE_API });
@@ -516,11 +536,11 @@ export function createSponsorDirectoryPages({
       const resolved = controller.state.lastResolved || { filters: {}, sort: "name" };
       const saved = mode === "rename"
         ? await updateSavedView(api, viewId, {
-          name, filters: { ...resolved.filters }, sort: viewSortFor(resolved.sort), version,
+          name, filters: { ...resolved.filters }, sort: sortForSave(resolved.sort), version,
         }, { paths: WORKSPACE_API })
         : await saveView(api, {
           entity, name, filters: { ...resolved.filters },
-          sort: viewSortFor(resolved.sort), sourceKey: newViewSourceKey(),
+          sort: sortForSave(resolved.sort), sourceKey: newViewSourceKey(),
         }, { paths: WORKSPACE_API });
       dialog.close();
       await controller.reloadViews();

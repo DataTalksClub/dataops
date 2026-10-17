@@ -1311,10 +1311,13 @@ body[data-workspace-view="sponsors"] .document-list {
 .crm-views-modified { color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
 .crm-views-manage { list-style: none; margin: 0; padding: 0; }
 .crm-views-manage li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-2); padding: var(--dk-space-2) 0; border-bottom: 1px solid var(--dk-border-default); }
-/* Secondary CRM navigation: native disclosure inside the tab row. */
+/* Secondary CRM navigation: native disclosure inside the tab row. The menu
+closes on every tab switch (see setView), so it never covers list content. */
 .crm-more { display: inline-flex; }
 .crm-more > summary { cursor: pointer; padding: var(--dk-space-2) var(--dk-space-3); color: var(--dk-text-muted); }
+.crm-more__menu { min-width: 12rem; }
 .crm-more__menu a { display: block; padding: var(--dk-space-1) var(--dk-space-3); overflow-wrap: anywhere; }
+.crm-pipeline { overflow-x: auto; }
 /* Interim person record until F's person module lands on the same mount. */
 .crm-person-pane { padding: var(--dk-space-4); overflow-wrap: anywhere; }
 .crm-person-pane p { color: var(--dk-text-muted); }
