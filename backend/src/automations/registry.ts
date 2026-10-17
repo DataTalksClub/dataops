@@ -194,34 +194,6 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
     link: `${KNOWLEDGE_REPO_WORKFLOWS}/backup-to-s3.yml`,
     settings: [],
   },
-  {
-    id: 'sponsor-email-send',
-    name: 'Sponsor email sending',
-    description: 'Sends a sponsor email through SES as soon as it is queued.',
-    runsIn: 'Sponsor send worker Lambda',
-    schedule: { kind: 'event', trigger: 'Sponsor email queued' },
-    runSource: 'none',
-    settings: [],
-  },
-  {
-    id: 'sponsor-send-recovery',
-    name: 'Sponsor send recovery',
-    description: 'Picks up queued sponsor emails that were never dispatched and sends them.',
-    runsIn: 'Sponsor send worker Lambda',
-    infraSchedule: 'SponsorSendWorkerFunction.SponsorSendRecovery',
-    schedule: { kind: 'interval', minutes: 2 },
-    runSource: 'none',
-    settings: [],
-  },
-  {
-    id: 'sponsor-email-events',
-    name: 'Sponsor email delivery events',
-    description: 'Records SES delivery, bounce and complaint events on the sponsor email they belong to.',
-    runsIn: 'Sponsor SES event Lambda',
-    schedule: { kind: 'event', trigger: 'SES delivery event' },
-    runSource: 'none',
-    settings: [],
-  },
 ] satisfies AutomationDefinition[]);
 
 export function automationById(id: string): AutomationDefinition | undefined {

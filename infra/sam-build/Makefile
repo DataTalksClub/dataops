@@ -1,4 +1,4 @@
-SAM_FUNCTION_BUILD_TARGETS := build-BackendFunction build-KnowledgeWorkerFunction build-SponsorSendWorkerFunction build-SponsorSesEventFunction build-SponsorPrivateArchiveFunction
+SAM_FUNCTION_BUILD_TARGETS := build-BackendFunction build-KnowledgeWorkerFunction build-SponsorPrivateArchiveFunction
 
 .PHONY: $(SAM_FUNCTION_BUILD_TARGETS)
 

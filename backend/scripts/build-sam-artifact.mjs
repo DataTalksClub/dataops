@@ -51,8 +51,6 @@ export function assertRequiredNodeVersion(actual = process.versions.node, root =
 export const handlerEntries = Object.freeze({
   handler: 'backend/src/handler.ts',
   'knowledge-worker-handler': 'backend/src/knowledge/worker.ts',
-  'sponsor-send-worker-handler': 'backend/src/sponsor-send-worker-handler.ts',
-  'sponsor-ses-event-handler': 'backend/src/sponsor-ses-event-handler.ts',
   'sponsor-private-archive-handler': 'backend/src/sponsor-private-archive-handler.ts',
 });
 

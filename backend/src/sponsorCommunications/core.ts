@@ -7,17 +7,6 @@ export const COMMUNICATION_TYPES = [
   'performance-follow-up',
 ] as const;
 export type CommunicationType = typeof COMMUNICATION_TYPES[number];
-export const SES_EVENT_TYPES = [
-  'SEND',
-  'DELIVERY',
-  'DELIVERY_DELAY',
-  'REJECT',
-  'RENDERING_FAILURE',
-  'BOUNCE',
-  'COMPLAINT',
-] as const;
-export type SponsorSesEventType = typeof SES_EVENT_TYPES[number];
-
 export type HmacKeyring = {
   secretVersionId: string;
   activeVersion: string;
@@ -224,44 +213,9 @@ export function canonicalPayload(input: Omit<CanonicalPayload, 'subjectBytes' | 
 }
 
 export const newReviewToken = () => randomBytes(32).toString('base64url');
-export const newCorrelationToken = () => randomBytes(32).toString('base64url');
-export const attemptIdFor = (communicationId: string, version: number, payloadHash: string) =>
-  sha256(`sponsor-send-attempt:v1\0${communicationId}\0${version}\0${payloadHash}`);
 
 export function payloadDeleteAt(anchor: string): number {
   const parsed = Date.parse(anchor);
   if (!Number.isFinite(parsed)) throw new Error('Invalid retention anchor');
   return Math.floor(parsed / 1000) + (30 * 24 * 60 * 60);
-}
-
-export type ProviderFacts = Partial<Record<SponsorSesEventType, { firstAt: string; lastAt: string; count: number; eventIds: string[] }>>;
-export function derivedStatus(facts: ProviderFacts, executionStatus: string): string {
-  if (facts.COMPLAINT) return 'complained';
-  if (facts.BOUNCE) return 'bounced';
-  if (facts.REJECT || facts.RENDERING_FAILURE) return 'rejected';
-  if (facts.DELIVERY) return 'delivered';
-  if (facts.DELIVERY_DELAY) return 'delayed';
-  if (facts.SEND) return 'provider_observed';
-  return executionStatus;
-}
-
-export function mergeProviderFact(
-  existing: ProviderFacts,
-  type: SponsorSesEventType,
-  eventId: string,
-  eventTime: string,
-): ProviderFacts {
-  if (!SES_EVENT_TYPES.includes(type) || !eventId || !Number.isFinite(Date.parse(eventTime))) throw new Error('Invalid provider fact');
-  const current = existing[type];
-  if (current?.eventIds.includes(eventId)) return existing;
-  const ids = [...(current?.eventIds || []), eventId].sort().slice(-20);
-  return {
-    ...existing,
-    [type]: {
-      firstAt: current && current.firstAt < eventTime ? current.firstAt : eventTime,
-      lastAt: current && current.lastAt > eventTime ? current.lastAt : eventTime,
-      count: Math.min(10_000, (current?.count || 0) + 1),
-      eventIds: ids,
-    },
-  };
 }

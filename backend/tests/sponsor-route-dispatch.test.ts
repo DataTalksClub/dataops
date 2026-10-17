@@ -14,12 +14,8 @@ const communicationRoutes = [
   '/api/sponsor-crm/deals/%63ommunications/communications',
   '/api/sponsor-crm/communication-suggestions/suggestion-1/drafts',
   '/api/sponsor-crm/communications/communication-1/presentations',
-  '/api/sponsor-crm/communications/communication-1/approve',
   '/api/sponsor-crm/communications/suppressions/presentations',
-  '/api/sponsor-crm/communications/attempts/approve',
   '/api/sponsor-crm/communications/communication-1/presentations/presentation-1/reject',
-  '/api/sponsor-crm/communications/attempts/attempt-1/cancel',
-  '/api/sponsor-crm/communications/attempts/attempt-1/reconcile',
   '/api/sponsor-crm/contacts/contact-1/suppressions',
 ];
 

@@ -26,11 +26,6 @@ import {
   storePresentation,
 } from '../sponsorCommunications/repository';
 import {
-  approveDraft,
-  cancelQueuedAttempt,
-  reconcileAttempt,
-} from '../sponsorCommunications/repositoryApprovals';
-import {
   addSuppression,
   assertSuppressionCoverage,
   getCurrentConfig,
@@ -256,8 +251,6 @@ export async function handleSponsorCommunicationRoutes(
         permissions: {
           role: auth.user!.role,
           canApprove: auth.user!.role === 'admin',
-          canCancel: auth.user!.role === 'admin',
-          canReconcile: auth.user!.role === 'admin',
         },
       });
     } catch {
@@ -406,36 +399,6 @@ export async function handleSponsorCommunicationRoutes(
     });
   }
 
-  const approvalRoute = path.match(/^\/api\/sponsor-crm\/communications\/([^/]+)\/approve$/);
-  if (approvalRoute && method === 'POST') {
-    const auth = await currentActor(event, client, ['admin']);
-    if (auth.response) return auth.response;
-    const presentationId = String(body.presentationId || '');
-    const token = String(body.token || '');
-    if (!presentationId || !token || token.length < 32) return json(400, { error: 'Review token and presentation are required' });
-    const presentation = await getSponsorItem<CommunicationPresentation>(client, 'COMMUNICATION_PRESENTATION', presentationId);
-    if (
-      !presentation
-      || presentation.communicationId !== approvalRoute[1]
-      || presentation.createdBy !== auth.user!.id
-    ) return json(403, { error: 'Forbidden' });
-    const draft = await getDraft(client, approvalRoute[1], Number(body.version));
-    if (!draft || draft.version !== presentation.draftVersion) return json(409, { error: 'Draft changed; review again' });
-    const payload = await getPrivatePayload(client, draft.payloadRef);
-    if (!payload) return json(410, { error: 'Private payload expired; draft again' });
-    const config = await getCurrentConfig(client);
-    if (!config) return json(409, { error: 'Sending is disabled' });
-    try {
-      const { keyring } = await loadHmacKeyring();
-      validateSendConfig(config, keyring);
-      await assertSuppressionCoverage(client, config.hmacAcceptedVersions);
-      const attempt = await approveDraft(client, { actorId: auth.user!.id, presentation, draft, payload, config, keyring, token });
-      return json(202, { attemptId: attempt.id, status: attempt.status, derivedStatus: attempt.derivedStatus });
-    } catch {
-      return json(409, { error: 'Approval conflict, suppression, or configuration change; review again' });
-    }
-  }
-
   const rejectRoute = path.match(/^\/api\/sponsor-crm\/communications\/([^/]+)\/presentations\/([^/]+)\/reject$/);
   if (rejectRoute && method === 'POST') {
     const auth = await currentActor(event, client, ['operator', 'admin']);
@@ -459,37 +422,6 @@ export async function handleSponsorCommunicationRoutes(
       return json(200, { state: 'revoked' });
     } catch {
       return json(409, { error: 'Review already changed' });
-    }
-  }
-
-  const cancelRoute = path.match(/^\/api\/sponsor-crm\/communications\/attempts\/([^/]+)\/cancel$/);
-  if (cancelRoute && method === 'POST') {
-    const auth = await currentActor(event, client, ['admin']);
-    if (auth.response) return auth.response;
-    const attempt = await getSponsorItem<any>(client, 'SPONSOR_SEND_ATTEMPT', cancelRoute[1]);
-    if (!attempt) return json(404, { error: 'Attempt not found' });
-    try {
-      await cancelQueuedAttempt(client, attempt, auth.user!.id);
-      return json(200, { status: 'cancelled' });
-    } catch {
-      return json(409, { error: 'The dispatch point of no return may already have passed' });
-    }
-  }
-
-  const reconcileRoute = path.match(/^\/api\/sponsor-crm\/communications\/attempts\/([^/]+)\/reconcile$/);
-  if (reconcileRoute && method === 'POST') {
-    const auth = await currentActor(event, client, ['admin']);
-    if (auth.response) return auth.response;
-    const attempt = await getSponsorItem<any>(client, 'SPONSOR_SEND_ATTEMPT', reconcileRoute[1]);
-    const resolution = body.resolution;
-    if (!attempt || !['effect_applied', 'no_effect'].includes(String(resolution)) || typeof body.reason !== 'string' || !body.reason.trim()) {
-      return json(400, { error: 'Current unknown attempt, resolution, and reason are required' });
-    }
-    try {
-      await reconcileAttempt(client, attempt, auth.user!.id, resolution as 'effect_applied' | 'no_effect', body.reason);
-      return json(200, { status: 'resolved', resolution });
-    } catch {
-      return json(409, { error: 'Attempt changed; reload before reconciling' });
     }
   }
 

@@ -28,8 +28,6 @@ const importProbe = [
 const requiredOverlapPhases = new Set(['install', 'compile', 'bundle']);
 const functionArtifacts = [
   'BackendFunction',
-  'SponsorSendWorkerFunction',
-  'SponsorSesEventFunction',
   'SponsorPrivateArchiveFunction',
 ];
 const childTailLimit = 32_768;

@@ -23,15 +23,8 @@ import {
   listBookingCommunications,
   storeDraft,
 } from '../src/sponsorCommunications/repository';
-import {
-  approveDraft,
-  cancelQueuedAttempt,
-  type ApprovalInput,
-} from '../src/sponsorCommunications/repositoryApprovals';
 import { addSuppression } from '../src/sponsorCommunications/repositoryConfig';
 import { reconcileAbandonedSponsorPayloads } from '../src/sponsorCommunications/repositoryMaintenance';
-import { executeAttempt, leaseAttempt, processDueSponsorSends } from '../src/sponsorCommunications/worker';
-import { ingestSanitizedSesEvent } from '../src/sponsorCommunications/sesEvents';
 import { handleSponsorCommunicationRoutes } from '../src/routes/sponsorCommunications';
 import {
   exportSponsorCommunications,
@@ -43,7 +36,6 @@ import type {
   CommunicationDraftVersion,
   CommunicationPresentation,
   CommunicationPrivatePayload,
-  SponsorSendAttempt,
 } from '../src/sponsorCommunications/types';
 
 const enabled = !!process.env.DYNAMODB_ENDPOINT;
@@ -135,7 +127,17 @@ async function assertArchiveRejectedAtEveryRestoreBoundary(
   );
 }
 
-async function seedApproval(sequence: number): Promise<ApprovalInput> {
+type SeededApproval = {
+  actorId: string;
+  presentation: CommunicationPresentation;
+  draft: CommunicationDraftVersion;
+  payload: CommunicationPrivatePayload;
+  config: typeof config;
+  keyring: HmacKeyring;
+  token: string;
+};
+
+async function seedApproval(sequence: number): Promise<SeededApproval> {
   const communicationId = `communication-${sequence}`;
   const payloadId = `${communicationId}#1`;
   const canonical = canonicalPayload({
@@ -281,6 +283,92 @@ async function seedRouteSource(sequence: number) {
   return { bookingId, organizationId, contactId, suggestionId, recipient };
 }
 
+/**
+ * A historical send attempt as it exists after DataOps stopped sending:
+ * written directly, the way the removed approval worker used to write it.
+ * `observed` attaches the provider delivery graph (event fact, pending set,
+ * correlation); otherwise the attempt stays providerless.
+ */
+async function seedHistoricalAttempt(sequence: number, observed: boolean): Promise<{ attemptId: string; messageId: string }> {
+  const seeded = await seedApproval(sequence);
+  const createdAt = new Date(Date.now() + sequence).toISOString();
+  const attemptId = `historical-attempt-${sequence}`;
+  const messageId = `synthetic-message-${sequence}`;
+  const correlationHash = sha256(`synthetic-correlation-${sequence}`);
+  await put('SPONSOR_SEND_ATTEMPT', attemptId, {
+    id: attemptId,
+    recordType: 'sponsor-send-attempt',
+    communicationId: seeded.draft.communicationId,
+    dealId: seeded.draft.dealId,
+    draftVersion: seeded.draft.version,
+    payloadRef: seeded.draft.payloadRef,
+    payloadHash: seeded.draft.payloadHash,
+    previewHash: seeded.draft.previewHash,
+    approverId: 'admin-1',
+    roleSnapshot: 'admin',
+    status: observed ? 'provider_observed' : 'outcome_unknown',
+    derivedStatus: observed ? 'delivered' : 'outcome_unknown',
+    configDigest: config.digest,
+    configGeneration: config.generation,
+    sesAccount: config.sesAccount,
+    sesRegion: config.sesRegion,
+    sesIdentityArn: config.sesIdentityArn,
+    from: config.from,
+    configurationSet: config.configurationSet,
+    configurationSetGeneration: config.configurationSetGeneration,
+    correlationHash,
+    revision: 1,
+    recoveryBlocked: true,
+    ...(observed ? { providerMessageId: messageId } : {}),
+    createdAt,
+    updatedAt: createdAt,
+    ttl: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60,
+    GSI1PK: `COMMUNICATION#${seeded.draft.communicationId}`,
+    GSI1SK: `ATTEMPT#${createdAt}#${attemptId}`,
+    GSI4PK: `DEAL_COMMUNICATION#${seeded.draft.dealId}`,
+    GSI4SK: `ATTEMPT#${createdAt}#${attemptId}`,
+  });
+  if (observed) {
+    await put('SPONSOR_SEND_EVENT', `event-${sequence}-delivery`, {
+      id: `event-${sequence}-delivery`,
+      recordType: 'sponsor-send-event-fact',
+      attemptId,
+      communicationId: seeded.draft.communicationId,
+      dealId: seeded.draft.dealId,
+      eventType: 'DELIVERY',
+      eventTime: createdAt,
+      messageId,
+      configurationSetGeneration: config.configurationSetGeneration,
+      createdAt,
+      ttl: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60,
+      GSI1PK: `COMMUNICATION#${seeded.draft.communicationId}`,
+      GSI1SK: `EVENT#${createdAt}#event-${sequence}-delivery`,
+      GSI4PK: `DEAL_COMMUNICATION#${seeded.draft.dealId}`,
+      GSI4SK: `EVENT#${createdAt}#event-${sequence}-delivery`,
+    });
+    await put('PENDING_SPONSOR_SEND_EVENTS', attemptId, {
+      id: attemptId,
+      recordType: 'pending-sponsor-send-event-set',
+      attemptId,
+      candidateMessageId: messageId,
+      revision: 2,
+      updatedAt: createdAt,
+      ttl: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60,
+    });
+    await put('SPONSOR_SEND_CORRELATION', correlationHash, {
+      id: correlationHash,
+      recordType: 'sponsor-send-correlation',
+      attemptId,
+      communicationId: seeded.draft.communicationId,
+      configGeneration: config.generation,
+      correlationHash,
+      createdAt,
+      ttl: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60,
+    });
+  }
+  return { attemptId, messageId };
+}
+
 describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled }, () => {
   before(async () => {
     process.env.SPONSOR_COMMUNICATION_SEND_ENABLED = 'true';
@@ -327,48 +415,6 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
     await raw.send(new DeleteTableCommand({ TableName: RESTORE })).catch(() => undefined);
   });
 
-  it('atomically resolves 25 approvals to one attempt and revokes siblings', async () => {
-    const input = await seedApproval(1);
-    for (let sibling = 1; sibling <= 2; sibling++) {
-      const id = `presentation-1-sibling-${sibling}`;
-      await put('COMMUNICATION_PRESENTATION', id, {
-        ...input.presentation,
-        id,
-        tokenHash: sha256(`sibling-${sibling}`),
-        GSI1PK: 'COMMUNICATION#communication-1',
-        GSI1SK: `PRESENTATION#${input.presentation.createdAt}#${id}`,
-      });
-    }
-    const results = await Promise.all(Array.from({ length: 25 }, () => approveDraft(client, input)));
-    assert.equal(new Set(results.map((item) => item.id)).size, 1);
-    const all = (await client.send(new ScanCommand({ TableName: TABLE }))).Items || [];
-    assert.equal(all.filter((item) => item.recordType === 'sponsor-send-attempt' && item.communicationId === 'communication-1').length, 1);
-    assert.equal(all.filter((item) => item.recordType === 'sponsor-communication-audit' && item.communicationId === 'communication-1').length, 1);
-    assert.equal(all.filter((item) => item.recordType === 'sponsor-send-correlation' && item.communicationId === 'communication-1').length, 1);
-    const presentations = all.filter((item) => item.recordType === 'communication-presentation' && item.communicationId === 'communication-1');
-    assert.equal(presentations.filter((item) => item.state === 'consumed').length, 1);
-    assert.equal(presentations.filter((item) => item.state === 'revoked').length, 2);
-  });
-
-  it('condition-checks the current Users role in the approval transaction', async () => {
-    const input = await seedApproval(2);
-    await client.send(new UpdateCommand({
-      TableName: USERS,
-      Key: { PK: 'USER#admin-1', SK: 'USER#admin-1' },
-      UpdateExpression: 'SET #role = :operator',
-      ExpressionAttributeNames: { '#role': 'role' },
-      ExpressionAttributeValues: { ':operator': 'operator' },
-    }));
-    await assert.rejects(() => approveDraft(client, input));
-    await client.send(new UpdateCommand({
-      TableName: USERS,
-      Key: { PK: 'USER#admin-1', SK: 'USER#admin-1' },
-      UpdateExpression: 'SET #role = :admin',
-      ExpressionAttributeNames: { '#role': 'role' },
-      ExpressionAttributeValues: { ':admin': 'admin' },
-    }));
-  });
-
   it('uses only verified identity headers and no-store private responses', async () => {
     const event = (headers: Record<string, string>, body = '{}') => ({
       httpMethod: 'GET',
@@ -386,30 +432,26 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
     assert.equal(allowed.statusCode, 200);
     assert.equal(allowed.headers?.['X-Content-Type-Options'], 'nosniff');
     await client.send(new PutCommand({ TableName: USERS, Item: { PK: 'USER#operator-1', SK: 'USER#operator-1', id: 'operator-1', role: 'operator', disabled: false } }));
-    const forbidden = await handleSponsorCommunicationRoutes('/api/sponsor-crm/communications/hidden/approve', 'POST', event({ 'x-user-id': 'operator-1' }, JSON.stringify({ presentationId: 'hidden', token: 'x'.repeat(40), version: 1 })), client);
+    const forbidden = await handleSponsorCommunicationRoutes('/api/sponsor-crm/communications/config', 'PUT', event({ 'x-user-id': 'operator-1' }, JSON.stringify({ enabled: false })), client);
     assert.equal(forbidden.statusCode, 403);
     assert.deepEqual(JSON.parse(forbidden.body), { error: 'Forbidden' });
   });
 
-  it('linearizes suppression against the dispatch marker with at most one SES call', async () => {
-    const input = await seedApproval(3);
-    const attempt = await approveDraft(client, input);
-    let sends = 0;
-    const [suppression, execution] = await Promise.allSettled([
-      addSuppression(client, {
-        canonicalAddress: input.payload.payload.to,
-        contactId: input.payload.payload.contactId,
-        organizationId: input.payload.payload.organizationId,
-        category: 'manual',
-        actorId: 'operator-1',
-        safeReason: 'synthetic suppression race',
-      }, config, hmac),
-      executeAttempt(client, attempt.id, async () => { sends++; return { MessageId: 'synthetic-message-3' }; }),
-    ]);
-    assert.equal(suppression.status, 'fulfilled');
-    assert.ok(sends === 0 || sends === 1);
-    if (sends === 0) assert.equal(execution.status === 'fulfilled' && execution.value, 'failed_safe');
-    else assert.equal(execution.status === 'fulfilled' && execution.value, 'accepted');
+  it('no longer exposes the removed send endpoints', async () => {
+    const event = (headers: Record<string, string>, body = '{}') => ({
+      httpMethod: 'POST',
+      path: '/api/sponsor-crm/communications/communication-1/approve',
+      headers,
+      body,
+    });
+    for (const path of [
+      '/api/sponsor-crm/communications/communication-1/approve',
+      '/api/sponsor-crm/communications/attempts/attempt-1/cancel',
+      '/api/sponsor-crm/communications/attempts/attempt-1/reconcile',
+    ]) {
+      const response = await handleSponsorCommunicationRoutes(path, 'POST', event({ 'x-user-id': 'admin-1' }, '{}'), client);
+      assert.equal(response.statusCode, 404, path);
+    }
   });
 
   it('revalidates presentation state and makes an edited draft invalidate the old review control', async () => {
@@ -469,7 +511,7 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
       }),
       client,
     );
-    assert.equal(staleApproval.statusCode, 409, staleApproval.body);
+    assert.equal(staleApproval.statusCode, 404, staleApproval.body);
     const storedPresentation = (await client.send(new GetCommand({
       TableName: TABLE,
       Key: keys('COMMUNICATION_PRESENTATION', review.presentationId),
@@ -485,7 +527,7 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
     assert.ok(draftResult.payloadHash);
   });
 
-  it('approves a canonical one-recipient draft backed by a mixed-case CRM address', async () => {
+  it('presents a canonical one-recipient preview backed by a mixed-case CRM address', async () => {
     const source = await seedRouteSource(28);
     await client.send(new UpdateCommand({
       TableName: TABLE,
@@ -503,11 +545,6 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
     );
     assert.equal(presented.statusCode, 201, presented.body);
     const review = JSON.parse(presented.body);
-    const approved = await handleSponsorCommunicationRoutes(
-      `/api/sponsor-crm/communications/${source.suggestionId}/approve`, 'POST',
-      apiEvent('POST', '', 'admin-1', { version: 1, presentationId: review.presentationId, token: review.token }), client,
-    );
-    assert.equal(approved.statusCode, 202, approved.body);
     assert.equal(review.preview.to, 'route-28@example.invalid');
   });
 
@@ -533,17 +570,6 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
     );
     assert.equal(operatorPresentation.statusCode, 201, operatorPresentation.body);
     const operatorReview = JSON.parse(operatorPresentation.body);
-    const transferred = await handleSponsorCommunicationRoutes(
-      `/api/sponsor-crm/communications/${source.suggestionId}/approve`,
-      'POST',
-      apiEvent('POST', '', 'admin-1', {
-        version: 1,
-        presentationId: operatorReview.presentationId,
-        token: operatorReview.token,
-      }),
-      client,
-    );
-    assert.equal(transferred.statusCode, 403, transferred.body);
 
     let cursor: string | undefined;
     const operatorHistory: Record<string, unknown>[] = [];
@@ -568,8 +594,6 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
     assert.deepEqual(operatorPermissions, {
       role: 'operator',
       canApprove: false,
-      canCancel: false,
-      canReconcile: false,
     });
     assert.equal(draftDto?.version, 1);
     assert.equal(draftDto?.reviewState, 'awaiting_review');
@@ -617,20 +641,6 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
       client,
     );
     assert.equal(retrySafeRevoke.statusCode, 200, retrySafeRevoke.body);
-    const approved = await handleSponsorCommunicationRoutes(
-      `/api/sponsor-crm/communications/${source.suggestionId}/approve`,
-      'POST',
-      apiEvent('POST', '', 'admin-1', {
-        version: 1,
-        presentationId: adminReview.presentationId,
-        token: adminReview.token,
-      }),
-      client,
-    );
-    assert.equal(approved.statusCode, 202, approved.body);
-    const attempts = ((await client.send(new ScanCommand({ TableName: TABLE }))).Items || [])
-      .filter((item) => item.recordType === 'sponsor-send-attempt' && item.communicationId === source.suggestionId);
-    assert.equal(attempts.length, 1);
   });
 
   it('blocks presentation when suppression or a source version changes after drafting', async () => {
@@ -680,186 +690,6 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
       client,
     );
     assert.equal(blockedDrift.statusCode, 409, blockedDrift.body);
-  });
-
-  it('linearizes queued cancel and makes deployment kill-switch-off fail safe', async () => {
-    const cancelInput = await seedApproval(4);
-    const cancelAttempt = await approveDraft(client, cancelInput);
-    let cancelSends = 0;
-    const [cancel, execute] = await Promise.allSettled([
-      cancelQueuedAttempt(client, cancelAttempt, 'admin-1'),
-      executeAttempt(client, cancelAttempt.id, async () => { cancelSends++; return { MessageId: 'synthetic-message-4' }; }),
-    ]);
-    assert.ok(cancel.status === 'fulfilled' || execute.status === 'fulfilled');
-    assert.ok(cancelSends === 0 || cancelSends === 1);
-
-    const disabledInput = await seedApproval(5);
-    const disabledAttempt = await approveDraft(client, disabledInput);
-    process.env.SPONSOR_COMMUNICATION_SEND_ENABLED = 'false';
-    let disabledSends = 0;
-    assert.equal(await executeAttempt(client, disabledAttempt.id, async () => { disabledSends++; return { MessageId: 'never' }; }), 'failed_safe');
-    assert.equal(disabledSends, 0);
-    process.env.SPONSOR_COMMUNICATION_SEND_ENABLED = 'true';
-  });
-
-  it('uses one provider attempt and never retries an ambiguous post-marker result', async () => {
-    const input = await seedApproval(6);
-    const attempt = await approveDraft(client, input);
-    let sends = 0;
-    const ambiguous = Object.assign(new Error('synthetic transport loss'), { name: 'TimeoutError' });
-    const outcome = await executeAttempt(client, attempt.id, async () => { sends++; throw ambiguous; });
-    const afterOutcome = (await client.send(new GetCommand({ TableName: TABLE, Key: keys('SPONSOR_SEND_ATTEMPT', attempt.id) }))).Item!;
-    assert.equal(outcome, 'outcome_unknown', JSON.stringify({ reason: afterOutcome.safeReasonCode, status: afterOutcome.status }));
-    assert.equal(await executeAttempt(client, attempt.id, async () => { sends++; return { MessageId: 'must-not-send' }; }), 'skipped');
-    assert.equal(sends, 1);
-    const stored = (await client.send(new GetCommand({ TableName: TABLE, Key: keys('SPONSOR_SEND_ATTEMPT', attempt.id) }))).Item!;
-    assert.equal(stored.status, 'outcome_unknown');
-    assert.equal(stored.recoveryBlocked, false);
-    assert.ok(stored.payloadDeleteAt);
-    assert.equal(stored.correlationToken, undefined);
-  });
-
-  it('classifies only documented definitive authenticated 4xx as failed safe', async () => {
-    const input = await seedApproval(7);
-    const attempt = await approveDraft(client, input);
-    let sends = 0;
-    const rejection = Object.assign(new Error('synthetic rejection'), {
-      name: 'MessageRejected',
-      $metadata: { httpStatusCode: 400 },
-    });
-    const outcome = await executeAttempt(client, attempt.id, async () => { sends++; throw rejection; });
-    const afterOutcome = (await client.send(new GetCommand({ TableName: TABLE, Key: keys('SPONSOR_SEND_ATTEMPT', attempt.id) }))).Item!;
-    assert.equal(outcome, 'failed_safe', JSON.stringify({ reason: afterOutcome.safeReasonCode, status: afterOutcome.status }));
-    assert.equal(sends, 1);
-  });
-
-  it('records event-before-receipt, duplicates and out-of-order facts without a resend', async () => {
-    const input = await seedApproval(8);
-    const attempt = await approveDraft(client, input);
-    const rawAttempt = (await client.send(new GetCommand({ TableName: TABLE, Key: keys('SPONSOR_SEND_ATTEMPT', attempt.id) }))).Item!;
-    const correlation = String(rawAttempt.correlationToken);
-    let sends = 0;
-    const event = (eventType: string, eventId: string, eventTime: string) => ({
-      schemaVersion: '1',
-      eventId,
-      eventTime,
-      eventType,
-      messageId: 'synthetic-message-8',
-      awsAccount: config.sesAccount,
-      awsRegion: config.sesRegion,
-      configurationSet: config.configurationSet,
-      configurationSetGeneration: config.configurationSetGeneration,
-      attemptCorrelation: correlation,
-      communicationId: attempt.communicationId,
-      configGeneration: String(config.generation),
-    });
-    let earlyEvent: unknown;
-    let earlyEventError: unknown;
-    const executionOutcome = await executeAttempt(client, attempt.id, async () => {
-      sends++;
-      try {
-        earlyEvent = await ingestSanitizedSesEvent(client, event('DELIVERY', 'event-8-delivery', '2026-07-30T12:02:00.000Z'));
-      } catch (error) {
-        earlyEventError = error;
-        throw error;
-      }
-      return { MessageId: 'synthetic-message-8' };
-    });
-    const afterExecution = (await client.send(new GetCommand({ TableName: TABLE, Key: keys('SPONSOR_SEND_ATTEMPT', attempt.id) }))).Item!;
-    assert.equal(executionOutcome, 'accepted', JSON.stringify({ reason: afterExecution.safeReasonCode, status: afterExecution.status, earlyEvent, earlyEventError: String(earlyEventError) }));
-    assert.equal(sends, 1);
-    assert.deepEqual(await ingestSanitizedSesEvent(client, event('DELIVERY', 'event-8-delivery', '2026-07-30T12:02:00.000Z')), { accepted: true, reasonCode: 'duplicate' });
-    assert.equal((await ingestSanitizedSesEvent(client, event('SEND', 'event-8-send', '2026-07-30T12:00:00.000Z'))).accepted, true);
-    assert.equal((await ingestSanitizedSesEvent(client, event('BOUNCE', 'event-8-bounce', '2026-07-30T12:03:00.000Z'))).accepted, true);
-    assert.equal((await ingestSanitizedSesEvent(client, event('COMPLAINT', 'event-8-complaint', '2026-07-30T12:04:00.000Z'))).accepted, true);
-    const stored = (await client.send(new GetCommand({ TableName: TABLE, Key: keys('SPONSOR_SEND_ATTEMPT', attempt.id) }))).Item!;
-    assert.equal(stored.status, 'provider_observed');
-    assert.equal(stored.derivedStatus, 'complained');
-    assert.equal(stored.providerFacts.DELIVERY.count, 1);
-    assert.equal(stored.providerFacts.SEND.count, 1);
-    assert.ok((await client.send(new GetCommand({ TableName: TABLE, Key: keys('PENDING_SPONSOR_SEND_EVENTS', attempt.id) }))).Item);
-    await processDueSponsorSends(client);
-    assert.equal((await client.send(new GetCommand({ TableName: TABLE, Key: keys('PENDING_SPONSOR_SEND_EVENTS', attempt.id) }))).Item, undefined);
-    const mismatch = await ingestSanitizedSesEvent(client, { ...event('DELIVERY', 'event-8-wrong', '2026-07-30T12:05:00.000Z'), messageId: 'wrong-message' });
-    assert.deepEqual(mismatch, { accepted: false, reasonCode: 'message-mismatch' });
-  });
-
-  it('preserves all simultaneous distinct SES facts and exposes redacted paginated booking history', async () => {
-    const input = await seedApproval(23);
-    const attempt = await approveDraft(client, input);
-    const rawAttempt = (await client.send(new GetCommand({
-      TableName: TABLE,
-      Key: keys('SPONSOR_SEND_ATTEMPT', attempt.id),
-    }))).Item!;
-    const { digest: _oldDigest, ...rotatedBase } = config;
-    const rotated = validateSendConfig({
-      ...rotatedBase,
-      generation: config.generation + 1,
-      configurationSet: 'rotated-reviewed-send',
-      configurationSetGeneration: 'rotated-generation',
-    }, hmac);
-    await put('SPONSOR_SEND_CONFIG', 'CURRENT', { ...rotated, recordType: 'sponsor-send-config' });
-    const eventTypes = ['SEND', 'DELIVERY', 'DELIVERY_DELAY', 'REJECT', 'RENDERING_FAILURE', 'BOUNCE', 'COMPLAINT'];
-    const outcomes = await Promise.all(eventTypes.map((eventType, index) => ingestSanitizedSesEvent(client, {
-      schemaVersion: '1',
-      eventId: `simultaneous-23-${eventType}`,
-      eventTime: `2026-07-30T12:${String(index).padStart(2, '0')}:00.000Z`,
-      eventType,
-      messageId: 'simultaneous-message-23',
-      awsAccount: config.sesAccount,
-      awsRegion: config.sesRegion,
-      configurationSet: config.configurationSet,
-      configurationSetGeneration: config.configurationSetGeneration,
-      attemptCorrelation: String(rawAttempt.correlationToken),
-      communicationId: attempt.communicationId,
-      configGeneration: String(config.generation),
-    })));
-    assert.ok(outcomes.every((outcome) => outcome.accepted));
-    const stored = (await client.send(new GetCommand({
-      TableName: TABLE,
-      Key: keys('SPONSOR_SEND_ATTEMPT', attempt.id),
-    }))).Item!;
-    assert.equal(stored.derivedStatus, 'complained');
-    for (const eventType of eventTypes) assert.equal(stored.providerFacts[eventType].count, 1);
-    const facts = ((await client.send(new ScanCommand({ TableName: TABLE }))).Items || [])
-      .filter((item) => item.recordType === 'sponsor-send-event-fact' && item.attemptId === attempt.id);
-    assert.equal(facts.length, eventTypes.length);
-    await put('SPONSOR_SEND_CONFIG', 'CURRENT', { ...config, recordType: 'sponsor-send-config' });
-
-    let historyItems: Record<string, unknown>[] = [];
-    for (let retry = 0; retry < 20; retry++) {
-      let history = await listBookingCommunications(client, input.draft.dealId, { limit: 2 });
-      historyItems = [...history.items];
-      while (history.nextCursor) {
-        history = await listBookingCommunications(client, input.draft.dealId, { limit: 2, cursor: history.nextCursor });
-        historyItems.push(...history.items);
-      }
-      if (historyItems.some((item) => item.recordType === 'sponsor-send-attempt')) break;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    assert.ok(
-      historyItems.some((item) => item.recordType === 'sponsor-send-attempt'),
-      JSON.stringify({ attemptIndex: [rawAttempt.GSI4PK, rawAttempt.GSI4SK], historyItems }),
-    );
-    assert.equal(JSON.stringify(historyItems).includes('correlationToken'), false);
-    assert.equal(JSON.stringify(historyItems).includes('correlationHash'), false);
-    assert.equal(JSON.stringify(historyItems).includes(String(rawAttempt.correlationToken)), false);
-    await client.send(new UpdateCommand({
-      TableName: TABLE,
-      Key: keys('SPONSOR_SEND_ATTEMPT', attempt.id),
-      UpdateExpression: 'SET leaseOwner = :owner, leaseExpiresAt = :expiry, resolutionReason = :reason',
-      ExpressionAttributeValues: { ':owner': 'private-worker', ':expiry': '2099-01-01T00:00:00Z', ':reason': 'private operator reason' },
-    }));
-    const redacted = await listBookingCommunications(client, input.draft.dealId, { limit: 50 });
-    const encodedHistory = JSON.stringify(redacted);
-    for (const forbidden of [
-      'leaseOwner', 'leaseExpiresAt', 'resolutionReason', 'private-worker', 'private operator reason',
-      'payloadHash', 'previewHash', 'providerMessageId', 'messageId',
-      String(stored.payloadHash), String(stored.previewHash), String(stored.providerMessageId),
-      String(facts[0].id), String(facts[0].messageId),
-    ]) {
-      assert.equal(encodedHistory.includes(forbidden), false);
-    }
   });
 
   it('anchors abandoned and expired-review payload TTL once without later extension', async () => {
@@ -917,108 +747,38 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
     assert.ok(expiredPayload.ttl);
   });
 
-  it('constructs one exact SES Simple plain-text request and never exposes unsupported fields', async () => {
-    const input = await seedApproval(9);
-    const attempt = await approveDraft(client, input);
-    let request: any;
-    assert.equal(await executeAttempt(client, attempt.id, async (candidate) => {
-      request = candidate;
-      return { MessageId: 'synthetic-message-9' };
-    }), 'accepted');
-    assert.deepEqual(request.Destination, { ToAddresses: ['recipient-9@example.invalid'] });
-    assert.equal(request.FromEmailAddress, 'sender@example.invalid');
-    assert.equal(request.FromEmailAddressIdentityArn, config.sesIdentityArn);
-    assert.deepEqual(request.Content.Simple.Subject, { Charset: 'UTF-8', Data: 'Synthetic confirmation 9' });
-    assert.deepEqual(request.Content.Simple.Body.Text, { Charset: 'UTF-8', Data: 'Synthetic message body.\n' });
-    assert.equal(request.Content.Simple.Body.Html, undefined);
-    assert.equal(request.Content.Raw, undefined);
-    assert.equal(request.Content.Template, undefined);
-    assert.equal(request.Destination.CcAddresses, undefined);
-    assert.equal(request.Destination.BccAddresses, undefined);
-    assert.equal(request.ConfigurationSetName, config.configurationSet);
-    assert.deepEqual(request.EmailTags.map((tag: any) => tag.Name).sort(), [
-      'attempt', 'communication', 'config-generation', 'configuration-set-generation',
-    ]);
-  });
-
-  it('keeps the approved provider binding when CURRENT rotates after the dispatch marker', async () => {
-    const input = await seedApproval(29);
-    const attempt = await approveDraft(client, input);
+  it('exposes redacted historical attempts in paginated booking history', async () => {
+    const { attemptId } = await seedHistoricalAttempt(23, true);
     const rawAttempt = (await client.send(new GetCommand({
       TableName: TABLE,
-      Key: keys('SPONSOR_SEND_ATTEMPT', attempt.id),
+      Key: keys('SPONSOR_SEND_ATTEMPT', attemptId),
     }))).Item!;
-    const approvedConfig = config;
-    const { digest: _digest, ...rotatedBase } = approvedConfig;
-    const rotated = validateSendConfig({
-      ...rotatedBase,
-      generation: approvedConfig.generation + 1,
-      sesRegion: 'us-east-1',
-      sesIdentityArn: 'arn:aws:ses:us-east-1:123456789012:identity/rotated.example.invalid',
-      from: 'rotated@example.invalid',
-      configurationSet: 'rotated-after-marker',
-      configurationSetGeneration: 'rotated-after-marker-1',
-    }, hmac);
-    let sends = 0;
-    try {
-      assert.equal(await executeAttempt(client, attempt.id, async (request, _signal, binding) => {
-        sends++;
-        await put('SPONSOR_SEND_CONFIG', 'CURRENT', { ...rotated, recordType: 'sponsor-send-config' });
-        assert.equal(binding.region, approvedConfig.sesRegion);
-        assert.equal(binding.identityArn, approvedConfig.sesIdentityArn);
-        assert.equal(binding.configurationSet, approvedConfig.configurationSet);
-        assert.equal(request.FromEmailAddress, approvedConfig.from);
-        assert.equal(request.FromEmailAddressIdentityArn, approvedConfig.sesIdentityArn);
-        assert.equal(request.ConfigurationSetName, approvedConfig.configurationSet);
-        return { MessageId: 'marker-rotation-message-29' };
-      }), 'accepted');
-      assert.equal(sends, 1);
-      const late = await ingestSanitizedSesEvent(client, {
-        schemaVersion: '1',
-        eventId: 'marker-rotation-delivery-29',
-        eventTime: new Date().toISOString(),
-        eventType: 'DELIVERY',
-        messageId: 'marker-rotation-message-29',
-        awsAccount: approvedConfig.sesAccount,
-        awsRegion: approvedConfig.sesRegion,
-        configurationSet: approvedConfig.configurationSet,
-        configurationSetGeneration: approvedConfig.configurationSetGeneration,
-        attemptCorrelation: String(rawAttempt.correlationToken),
-        communicationId: attempt.communicationId,
-        configGeneration: String(approvedConfig.generation),
-      });
-      assert.equal(late.accepted, true);
-    } finally {
-      await put('SPONSOR_SEND_CONFIG', 'CURRENT', { ...approvedConfig, recordType: 'sponsor-send-config' });
+    let historyItems: Record<string, unknown>[] = [];
+    let history = await listBookingCommunications(client, 'booking-23', { limit: 2 });
+    historyItems = [...history.items];
+    while (history.nextCursor) {
+      history = await listBookingCommunications(client, 'booking-23', { limit: 2, cursor: history.nextCursor });
+      historyItems.push(...history.items);
     }
-  });
-
-  it('recovers a crash after the dispatch marker as unknown without calling SES', async () => {
-    const input = await seedApproval(10);
-    const attempt = await approveDraft(client, input);
-    const leased = await leaseAttempt(client, attempt.id, 'synthetic-crashed-worker');
-    assert.ok(leased);
-    await client.send(new UpdateCommand({
-      TableName: TABLE,
-      Key: keys('SPONSOR_SEND_ATTEMPT', attempt.id),
-      UpdateExpression: 'SET dispatchStartedAt = :now, dispatchGeneration = :generation',
-      ConditionExpression: '#status = :executing AND leaseOwner = :owner',
-      ExpressionAttributeNames: { '#status': 'status' },
-      ExpressionAttributeValues: {
-        ':now': new Date().toISOString(),
-        ':generation': 1,
-        ':executing': 'executing',
-        ':owner': 'synthetic-crashed-worker',
-      },
-    }));
-    let sends = 0;
-    assert.equal(await executeAttempt(client, attempt.id, async () => { sends++; return { MessageId: 'must-not-send' }; }), 'outcome_unknown');
-    assert.equal(sends, 0);
+    assert.ok(
+      historyItems.some((item) => item.recordType === 'sponsor-send-attempt'),
+      JSON.stringify({ historyItems }),
+    );
+    const redacted = await listBookingCommunications(client, 'booking-23', { limit: 50 });
+    const encodedHistory = JSON.stringify(redacted);
+    for (const forbidden of [
+      'payloadHash', 'previewHash', 'providerMessageId', 'messageId',
+      String(rawAttempt.payloadHash), String(rawAttempt.previewHash), 'synthetic-message-23',
+    ]) {
+      assert.equal(encodedHistory.includes(forbidden), false);
+    }
   });
 
   it('exports an expired-payload evidence graph, rejects semantic tampering, and restores it non-dispatchable', async () => {
     const expiredInput = await seedApproval(30);
-    const expiredAttempt = await approveDraft(client, expiredInput);
+    await seedHistoricalAttempt(30, true);
+    await seedHistoricalAttempt(31, false);
+    const expiredAttemptId = 'historical-attempt-30';
     await client.send(new UpdateCommand({
       TableName: TABLE,
       Key: keys('COMMUNICATION_PAYLOAD', expiredInput.payload.id),
@@ -1056,7 +816,7 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
       false,
     );
     for (const record of archive.records.filter((item) => (
-      item.communicationId === expiredAttempt.communicationId
+      item.communicationId === 'communication-30'
       && ['communication-draft-version', 'communication-presentation', 'sponsor-send-attempt'].includes(String(item.recordType))
     ))) {
       assert.equal(record.payloadExpired, true);
@@ -1143,7 +903,7 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
 
     const incoherentExpiry = structuredClone(archive);
     const expiredArchivedAttempt = incoherentExpiry.records.find((item) => (
-      item.recordType === 'sponsor-send-attempt' && item.id === expiredAttempt.id
+      item.recordType === 'sponsor-send-attempt' && item.id === expiredAttemptId
     ))!;
     expiredArchivedAttempt.payloadRef = expiredInput.payload.id;
     assert.throws(() => validateSponsorPrivateArchive(resealArchive(incoherentExpiry)));

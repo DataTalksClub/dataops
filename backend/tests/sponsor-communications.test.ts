@@ -4,9 +4,7 @@ import { createHash } from 'node:crypto';
 import {
   canonicalJson,
   canonicalPayload,
-  derivedStatus,
   keyringDigest,
-  mergeProviderFact,
   normalizeContent,
   normalizeEmail,
   payloadDeleteAt,
@@ -17,7 +15,6 @@ import {
 } from '../src/sponsorCommunications/core';
 import { communicationCandidates } from '../src/sponsorCommunications/suggestions';
 import { renderTemplate, validateTemplateSet } from '../src/sponsorCommunications/secrets';
-import { validateSanitizedSesEvent } from '../src/sponsorCommunications/sesEvents';
 import { validateSponsorPrivateArchive, type SponsorPrivateArchive } from '../src/sponsorCommunications/privateArchive';
 
 const keyring: HmacKeyring = {
@@ -173,37 +170,6 @@ describe('sponsor reviewed communication core', () => {
       organizationName: 'Synthetic Sponsor',
       publicLink: 'https://example.invalid/live',
     }), { subject: 'Synthetic publication-live', body: 'Live: https://example.invalid/live' });
-  });
-
-  it('derives monotonic provider precedence from immutable facts', () => {
-    let facts = {};
-    facts = mergeProviderFact(facts, 'DELIVERY', 'event-delivery', '2026-07-30T12:02:00.000Z');
-    facts = mergeProviderFact(facts, 'SEND', 'event-send', '2026-07-30T12:00:00.000Z');
-    assert.equal(derivedStatus(facts, 'accepted'), 'delivered');
-    facts = mergeProviderFact(facts, 'COMPLAINT', 'event-complaint', '2026-07-30T12:03:00.000Z');
-    facts = mergeProviderFact(facts, 'DELIVERY', 'event-delivery', '2026-07-30T12:02:00.000Z');
-    assert.equal(derivedStatus(facts, 'accepted'), 'complained');
-    assert.equal((facts as any).DELIVERY.count, 1);
-  });
-
-  it('accepts only the strict sanitized SES envelope', () => {
-    const envelope = {
-      schemaVersion: '1',
-      eventId: 'event-1',
-      eventTime: '2026-07-30T12:00:00.000Z',
-      eventType: 'DELIVERY',
-      messageId: 'message-1',
-      awsAccount: '123456789012',
-      awsRegion: 'eu-west-1',
-      configurationSet: 'reviewed-send',
-      configurationSetGeneration: 'config-1',
-      attemptCorrelation: 'a'.repeat(43),
-      communicationId: 'communication-1',
-      configGeneration: '1',
-    };
-    assert.equal(validateSanitizedSesEvent(envelope).eventType, 'DELIVERY');
-    assert.throws(() => validateSanitizedSesEvent({ ...envelope, recipient: 'private@example.invalid' }));
-    assert.throws(() => validateSanitizedSesEvent({ ...envelope, eventType: 'OPEN' }));
   });
 
   it('validates private archive checksum/order and rejects action material', () => {

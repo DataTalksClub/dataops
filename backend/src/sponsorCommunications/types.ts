@@ -1,4 +1,4 @@
-import type { CanonicalPayload, CommunicationType, ProviderFacts } from './core';
+import type { CanonicalPayload, CommunicationType } from './core';
 
 export type CommunicationSuggestion = {
   id: string;
@@ -96,25 +96,11 @@ export type SponsorSendAttempt = {
   dispatchStartedAt?: string;
   dispatchGeneration?: number;
   providerMessageId?: string;
-  providerFacts?: ProviderFacts;
+  /** Immutable provider delivery facts recorded while DataOps sent sponsor email; read-only history. */
+  providerFacts?: Partial<Record<string, { firstAt: string; lastAt: string; count: number; eventIds: string[] }>>;
   recoveryBlocked: boolean;
   payloadDeleteAt?: number;
   createdAt: string;
   updatedAt: string;
   ttl: number;
-};
-
-export type SanitizedSesEvent = {
-  schemaVersion: '1';
-  eventId: string;
-  eventTime: string;
-  eventType: 'SEND' | 'DELIVERY' | 'DELIVERY_DELAY' | 'REJECT' | 'RENDERING_FAILURE' | 'BOUNCE' | 'COMPLAINT';
-  messageId: string;
-  awsAccount: string;
-  awsRegion: string;
-  configurationSet: string;
-  configurationSetGeneration: string;
-  attemptCorrelation: string;
-  communicationId: string;
-  configGeneration: string;
 };

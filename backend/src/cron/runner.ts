@@ -11,6 +11,7 @@ import { evaluateSponsorBookingAlerts } from '../sponsorCrm/alerts';
 import { evaluateSponsorFinanceAlerts } from '../sponsorFinance/alerts';
 import { berlinDate } from '../sponsorFinance/core';
 import { evaluateCommunicationSuggestions } from '../sponsorCommunications/suggestions';
+import { reconcileAbandonedSponsorPayloads } from '../sponsorCommunications/repositoryMaintenance';
 import { templateCardProjection } from '../templates/cardTemplateProjection';
 import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { recordAutomationRun } from '../automations/runs';
@@ -323,6 +324,20 @@ async function runCron(
       ...(templateFailures ? [plural(templateFailures, 'failure')] : []),
     ].join(', '),
   }, today);
+
+  // Sponsor draft and review hygiene used to ride the send worker's recovery
+  // tick. Nothing sends anymore, but abandoned drafts and expired one-time
+  // reviews still need to be marked so the history reads honestly.
+  try {
+    await reconcileAbandonedSponsorPayloads(client, today.toISOString());
+  } catch (err: unknown) {
+    failures++;
+    await createNotification(client, {
+      type: 'automation-failure',
+      message: `Sponsor draft hygiene failed for ${todayDate}: ${(err as Error).message}`,
+      dueAt: todayDate,
+    });
+  }
 
   return {
     created,
