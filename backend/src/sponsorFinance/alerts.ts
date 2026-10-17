@@ -59,7 +59,6 @@ export async function evaluateSponsorFinanceAlerts(
   const dealMap = new Map<string, Record<string, unknown>>(
     deals.map((deal) => [String(deal.id), deal]),
   );
-  const cutoff60d = new Date(Date.parse(today) - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const conditions: Condition[] = [];
   for (const deal of deals) {
     if (deal.archivedAt || deal.active !== true || deal.status === 'lost') {
@@ -71,9 +70,7 @@ export async function evaluateSponsorFinanceAlerts(
       today, dealStatus: String(deal.status), ...(delivered ? { deliveredOn: delivered } : {}),
     });
     const pushCondition = (rule: string, basisDate: string, version: number) => {
-      if (basisDate >= cutoff60d) {
-        conditions.push({ dealId: String(deal.id), rule, basisDate, version });
-      }
+      conditions.push({ dealId: String(deal.id), rule, basisDate, version });
     };
     if (!projection.classified && (deal.status === 'agreed' || delivered)) {
       pushCondition('finance-unclassified', today, Number(deal.version));
