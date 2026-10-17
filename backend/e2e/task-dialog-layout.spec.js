@@ -24,7 +24,8 @@ for (const variant of [{ name: 'dark-desktop', width: 1280, height: 1000, theme:
     await page.setViewportSize({width: variant.width, height: variant.height});
     await loginAndSetupPage(page, { get: route => page.request.get(`${server.baseURL}${route}`) });
     await page.goto(`${server.baseURL}/tasks?assignee=all`);
-    const queueTask = page.locator('.ops-queue-row', { hasText: 'Prepare the sponsor invoice' });
+    await page.locator('.ops-queue-waiting > summary').click();
+    const queueTask = page.locator('.ops-queue-waiting .ops-queue-row', { hasText: 'Prepare the sponsor invoice' });
     await expect(queueTask).toBeVisible();
     await queueTask.locator('.ops-queue-title-row').click();
     await page.evaluate(theme => document.documentElement.setAttribute('data-theme', theme), variant.theme);

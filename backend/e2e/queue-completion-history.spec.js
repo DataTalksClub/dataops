@@ -1,7 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
-const { setupPageWithAuth } = require('./helpers/auth');
+const { loginAndSetupPage } = require('./helpers/auth');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
 let server;
@@ -19,22 +19,22 @@ test.beforeAll(async () => {
 test.afterAll(async () => stopOwnedTestServer(server));
 
 test('completion stays struck through, supports reopening, and survives reload in history', async ({ page }) => {
-  page.on("pageerror", (error) => console.error("PAGE ERROR", error.message));
-  test.setTimeout(120000);
-  await setupPageWithAuth(page);
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await loginAndSetupPage(page, { get: route => page.request.get(`${server.baseURL}${route}`) });
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`${server.baseURL}/tasks`);
+  await page.goto(`${server.baseURL}/tasks?assignee=all`);
   const row = page.locator(`.ops-queue-row[data-task-id="${task.id}"]`);
-  await expect(row).toBeVisible({ timeout: 60000 });
+  await expect(row).toBeVisible({ timeout: 15000 });
   const firstIndex = await row.evaluate((node) => [...node.parentNode.children].indexOf(node));
-  await row.getByRole('checkbox').check();
+  await row.locator('.ops-queue-check').click();
   await expect(row).toHaveAttribute('data-completed', 'true');
   await expect(row.getByRole('checkbox')).toBeChecked();
   expect(await row.evaluate((node) => [...node.parentNode.children].indexOf(node))).toBe(firstIndex);
-  expect(await row.locator('.ops-queue-title-row > strong').evaluate((node) => getComputedStyle(node).textDecorationLine)).toContain('line-through');
-  await row.getByRole('checkbox').uncheck();
+  await expect(row.locator('.ops-queue-title-row > strong')).toHaveCSS('text-decoration-line', /line-through/);
+  await row.locator('.ops-queue-check').click();
   await expect(row).toHaveAttribute('data-completed', 'false');
-  await row.getByRole('checkbox').check();
+  await row.locator('.ops-queue-check').click();
   await expect(row).toHaveAttribute('data-completed', 'true');
   const shots = process.env.QUEUE_COMPLETION_SHOT_DIR;
   if (shots) {
@@ -52,4 +52,5 @@ test('completion stays struck through, supports reopening, and survives reload i
   await expect(page).toHaveURL(new RegExp(`taskId=${task.id}`));
   await expect(page.getByRole('dialog')).toBeVisible();
   if (shots) await page.screenshot({ path: path.join(shots, 'queue-completed-history-detail.png') });
+  expect(errors).toEqual([]);
 });
