@@ -46,7 +46,29 @@ export function renderSponsorPipelineList({ items, ...context }) {
     || '<div class="honest-state"><strong>No matching deals</strong><p>Choose Active or All to explore the rest of the funnel.</p></div>';
 }
 
-export function createSponsorPipelineView({ api, surface, escapeHtml, humanSponsorDate, ownerName, openTaskPanel, safe }) {
+// URL/filter/saved-view lifecycle (E): the view reads its filters from the
+// pipeline controls, but the effective state lives in the URL. Pure mapping
+// between saved-view vocabulary (sort next|recent) and control values
+// (next-action|recent); the list endpoint keeps receiving control values, and
+// sponsors.js owns URL read/write around load().
+export function pipelineUiSort(viewSort) {
+  return viewSort === 'recent' ? 'recent' : 'next-action';
+}
+
+// Effective saved-view filters onto control values. organizationId has no
+// control: it rides as an extra API param through load() instead.
+export function pipelineControlsFromFilters(filters = {}, sort = 'next') {
+  return {
+    view: filters.view || 'actionable',
+    stage: filters.stage || '',
+    search: filters.search || '',
+    owner: filters.owner || '',
+    sort: pipelineUiSort(sort),
+    ...(filters.organizationId ? { organizationId: filters.organizationId } : {}),
+  };
+}
+
+export function createSponsorPipelineView({ api, surface, escapeHtml, humanSponsorDate, ownerName, openTaskPanel, safe, onChange }) {
   let result = { items: [], counts: {}, total: 0 }, cursor = '', generation = 0;
   const previous = [];
   const root = surface.querySelector('[data-crm-bookings]');
@@ -61,21 +83,32 @@ export function createSponsorPipelineView({ api, surface, escapeHtml, humanSpons
       <span>${result.total ? Number(cursor || 0) + 1 : 0}–${Number(cursor || 0) + result.items.length} of ${result.total}</span>
       <button data-pipeline-next ${result.nextCursor ? '' : 'disabled'}>Next</button></nav>`;
   }
-  async function load(reset = true) {
+  async function load(reset = true, options = {}) {
     if (reset) { cursor = ''; previous.length = 0; surface.querySelector('[data-crm-list-scroll]').scrollTop = 0; }
+    // A deep-linked cursor (refresh/back) starts a fresh page stack: Next
+    // works from there, Previous needs in-session paging.
+    if (options.cursor !== undefined) { cursor = options.cursor || ''; previous.length = 0; }
     const token = ++generation;
     root.setAttribute('aria-busy', 'true');
     const query = new URLSearchParams({ limit: '30', view: surface.querySelector('[data-pipeline-view]').value, sort: surface.querySelector('[data-pipeline-sort]').value });
     for (const [key, selector] of [['search', '[data-crm-search]'], ['stage', '[data-crm-status]'], ['owner', '[data-pipeline-owner]']]) {
       const value = surface.querySelector(selector).value; if (value) query.set(key, value);
     }
+    if (options.organizationId) query.set('organizationId', options.organizationId);
     if (cursor) query.set('cursor', cursor);
     try {
       const page = await api(`/pipeline?${query}`);
       if (token !== generation || !surface.isConnected) return;
       result = page;
-      surface.querySelector('[data-crm-view="money"]').hidden = !page.financeEnabled;
+      surface.querySelector('[data-crm-nav-tab="money"]').hidden = !page.financeEnabled;
       draw();
+      onChange?.({
+        filters: Object.fromEntries(query.entries()),
+        cursor,
+        hasPrev: previous.length > 0,
+        hasNext: !!result.nextCursor,
+        total: result.total,
+      });
     } finally { if (token === generation) root.removeAttribute('aria-busy'); }
   }
   root.addEventListener('click', (event) => {

@@ -325,16 +325,10 @@ export function renderDirectoryFilters(entity, state, { escapeHtml, companyOptio
     </div>`;
   }
   const selectedId = value.company || "";
-  const knownIds = new Set(companyOptions.map((entry) => entry.id));
-  const offPage = selectedId && !knownIds.has(selectedId)
-    ? option(selectedId, selectedCompanyName || `Company ${selectedId}`, true)
-    : "";
   const companyPicker = html`<div class="crm-dir-company-picker">
     <label>Company <input data-dir-company-search type="search" placeholder="Search companies" autocomplete="off" /></label>
     <select data-dir-filter="company" aria-label="Company">
-      ${option("", "Any company", !selectedId)}
-      ${companyOptions.map((entry) => option(entry.id, entry.name, selectedId === entry.id)).join("")}
-      ${offPage}
+      ${companyPickerOptions({ options: companyOptions, selectedId, selectedName: selectedCompanyName, includeAny: true, escapeHtml })}
     </select>
   </div>`;
   return html`<div class="crm-dir-filters">
@@ -353,6 +347,22 @@ export function renderDirectoryFilters(entity, state, { escapeHtml, companyOptio
         ${option("true", "Unlinked only", value.unlinked === "true")}
       </select></label>`)}
   </div>`;
+}
+
+// Company picker options: bounded company names for the People filter and the
+// contact dialog association chooser. The selected id keeps a visible option
+// even off-page via selectedName (honest "Company <id>" when unknown); the
+// id itself always stays in the URL, never a guessed name.
+export function companyPickerOptions({ options = [], selectedId = "", selectedName = "", includeAny = false, anyLabel = "Any company", escapeHtml }) {
+  const option = (id, label, selected) =>
+    html`<option value="${escapeHtml(id)}"${selected ? " selected" : ""}>${escapeHtml(label)}</option>`;
+  const known = new Set((options || []).map((entry) => entry.id));
+  const offPage = selectedId && !known.has(selectedId)
+    ? option(selectedId, selectedName || `Company ${selectedId}`, true)
+    : "";
+  return `${includeAny ? option("", anyLabel, !selectedId) : ""}${(options || [])
+    .map((entry) => option(entry.id, entry.name, selectedId === entry.id))
+    .join("")}${offPage}`;
 }
 
 // Static section skeleton. Rows, status and views fill the data-dir-* slots;

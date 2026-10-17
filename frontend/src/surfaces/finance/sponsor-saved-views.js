@@ -26,6 +26,14 @@ export { berlinTodayString, resolveRelativeDay };
 
 export const VIEW_ENTITIES = Object.freeze(["companies", "people", "pipeline"]);
 
+// Pipeline saved views (D contract: stored + validated here, interpreted by
+// the pipeline projection). On the pipeline tab `view` is the API filter, so
+// the selected saved-view id travels as `savedView` in URLs.
+export const PIPELINE_VIEW_FILTER_KEYS = Object.freeze(["view", "stage", "search", "organizationId", "owner"]);
+const PIPELINE_VIEWS = Object.freeze(["actionable", "active", "all", "closed", "unscheduled"]);
+const PIPELINE_STAGES = Object.freeze(["open", "agreed", "invoiced", "running", "closed", "lost"]);
+const PIPELINE_SORTS = Object.freeze(["next", "recent"]);
+
 export const DEFAULT_WORKSPACE_PATHS = Object.freeze({
   views: "/api/sponsor-crm/views",
   companies: "/api/sponsor-crm/directory/companies",
@@ -72,8 +80,11 @@ function absoluteOrRelative(value) {
 // Client mirror of the D view-filter validation: unknown keys are rejected so
 // a view can never be saved that the API would refuse to run.
 export function validateViewFilters(entity, filters) {
-  if (entity !== "companies" && entity !== "people") return "entity must be companies or people";
+  if (entity !== "companies" && entity !== "people" && entity !== "pipeline") {
+    return "entity must be companies, people or pipeline";
+  }
   if (!filters || typeof filters !== "object" || Array.isArray(filters)) return "filters must be an object";
+  if (entity === "pipeline") return validatePipelineViewFilters(filters);
   for (const key of Object.keys(filters)) {
     if (!(DIRECTORY_FILTER_KEYS[entity] || []).includes(key)) return `Unknown ${entity} filter: ${key}`;
   }
@@ -110,9 +121,39 @@ export function validateViewFilters(entity, filters) {
   return "";
 }
 
+export function validatePipelineViewFilters(filters) {
+  const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+  for (const key of Object.keys(filters)) {
+    if (!PIPELINE_VIEW_FILTER_KEYS.includes(key)) return `Unknown pipeline filter: ${key}`;
+  }
+  if (filters.view !== undefined && !PIPELINE_VIEWS.includes(String(filters.view))) {
+    return "view must be actionable, active, all, closed or unscheduled";
+  }
+  if (filters.stage !== undefined && !PIPELINE_STAGES.includes(String(filters.stage))) {
+    return "stage must be open, agreed, invoiced, running, closed or lost";
+  }
+  if (filters.search !== undefined &&
+      (typeof filters.search !== "string" || !filters.search || filters.search.length > 200)) {
+    return "Invalid search filter";
+  }
+  if (filters.organizationId !== undefined &&
+      (typeof filters.organizationId !== "string" || !ID.test(filters.organizationId))) {
+    return "Invalid organizationId filter";
+  }
+  if (filters.owner !== undefined &&
+      (typeof filters.owner !== "string" || !filters.owner || filters.owner.length > 200)) {
+    return "Invalid owner filter";
+  }
+  return "";
+}
+
 export function validateViewSort(entity, sort) {
-  if (!sort || typeof sort !== "object" || Array.isArray(sort) || typeof sort.field !== "string") {
-    return "sort must be {field, direction}";
+  if (entity === "pipeline") {
+    if (!sort || typeof sort !== "object" || Array.isArray(sort) || typeof sort.field !== "string") {
+      return "sort must be {field}";
+    }
+    if (!PIPELINE_SORTS.includes(sort.field)) return "pipeline sort must be next or recent";
+    return "";
   }
   if (!["name", "lastTouch"].includes(sort.field)) return "sort field must be name or lastTouch";
   if (sort.direction !== "asc" && sort.direction !== "desc") return "sort direction must be asc or desc";
@@ -126,6 +167,14 @@ export function resolveViewFiltersForQuery(filters, today = berlinTodayString())
   return resolveRelativeFilters(filters, today);
 }
 
+function defaultFiltersFor(entity) {
+  return entity === "pipeline" ? {} : { active: "true" };
+}
+
+function defaultSortFor(entity) {
+  return entity === "pipeline" ? "next" : "name";
+}
+
 // Combines the selected view (builtin or personal, server-provided) with
 // explicit URL filters. Explicit URL keys win; any genuine deviation unpins
 // the view id so the URL keeps the effective filters and stays shareable.
@@ -136,8 +185,9 @@ export function resolveViewFiltersForQuery(filters, today = berlinTodayString())
 // windows resolve Europe/Berlin consistently with the API.
 export function resolveEffectiveFilters({ entity, views, viewsError, selectedViewId, urlState }) {
   const url = urlState || {};
+  const allowedKeys = entity === "pipeline" ? PIPELINE_VIEW_FILTER_KEYS : DIRECTORY_FILTER_KEYS[entity] || [];
   const urlFilters = {};
-  for (const key of DIRECTORY_FILTER_KEYS[entity] || []) {
+  for (const key of allowedKeys) {
     if (url[key] !== undefined) urlFilters[key] = url[key];
   }
   const urlSort = url.sort;
@@ -146,14 +196,14 @@ export function resolveEffectiveFilters({ entity, views, viewsError, selectedVie
     if (!Object.keys(urlFilters).length && !urlSort) {
       return { error: viewsError || "That saved view is not available. Pick another view or adjust the filters." };
     }
-    return { filters: urlFilters, sort: urlSort || "name", viewId: null, modified: true };
+    return { filters: urlFilters, sort: urlSort || defaultSortFor(entity), viewId: null, modified: true };
   }
   if (!view && viewsError && !Object.keys(urlFilters).length && !urlSort) {
     return { error: viewsError };
   }
-  const storedFilters = view ? (view.resolvedFilters || view.filters || {}) : { active: "true" };
+  const storedFilters = view ? (view.resolvedFilters || view.filters || {}) : defaultFiltersFor(entity);
   const baseFilters = { ...storedFilters };
-  const baseSort = view?.sort?.field || "name";
+  const baseSort = view?.sort?.field || defaultSortFor(entity);
   // URL dates are absolute while stored views may float ({daysAgo}): a URL
   // key that matches the view's resolved value is the same window, not a
   // modification, so builtins stay selected across refresh while copied links
@@ -165,8 +215,10 @@ export function resolveEffectiveFilters({ entity, views, viewsError, selectedVie
   const filters = { ...baseFilters, ...urlFilters };
   const sort = urlSort || baseSort;
   const modified = !!view && (overlaid.length > 0 || (!!urlSort && urlSort !== baseSort));
-  const error = validateViewFilters(entity, filters) ||
-    (sort !== baseSort || !view ? validateDirectoryState(entity, { sort }) : "");
+  const sortError = entity === "pipeline"
+    ? (PIPELINE_SORTS.includes(sort) ? "" : "sort must be next or recent")
+    : (sort !== baseSort || !view ? validateDirectoryState(entity, { sort }) : "");
+  const error = validateViewFilters(entity, filters) || sortError;
   if (error) return { error };
   // filters keep their stored form ({daysAgo} stays relative): call
   // resolveViewFiltersForQuery before directoryQueryFromState, and pass them
