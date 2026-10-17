@@ -38,7 +38,7 @@ test("Sponsors creates ride on their collections, never the page header", async 
   // Add deal follows the Pipeline list title; Refresh suggestions trails.
   assert.match(markup, /crm-list-head">[\s\S]*?data-crm-list-heading>Pipeline<\/h2>\s*<button[^>]*data-dk-create[^>]*data-add-deal/);
   assert.match(markup, /dk-collection-header__trail">[\s\S]*?data-booking-count[\s\S]*?data-evaluate-communications\s+aria-label="Refresh suggestions"/);
-  // Add sponsor follows the Companies title.
+  // Add company follows the Companies title.
   assert.match(markup, /Companies<\/h3>\s*<button[^>]*data-dk-create[^>]*data-add-org/);
 });
 

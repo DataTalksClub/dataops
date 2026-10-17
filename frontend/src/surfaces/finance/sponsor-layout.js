@@ -100,7 +100,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = (value)
     ${directorySectionMarkup("companies", {
       state: directoryDefaults("companies"),
       escapeHtml,
-      createHtml: globalThis.dakitCollection.createButtonMarkup({ label: "Add sponsor", attributes: "data-add-org" }),
+      createHtml: globalThis.dakitCollection.createButtonMarkup({ label: "Add company", attributes: "data-add-org" }),
     })}
     ${directorySectionMarkup("people", {
       state: directoryDefaults("people"),

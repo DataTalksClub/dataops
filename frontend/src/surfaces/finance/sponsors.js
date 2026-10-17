@@ -345,6 +345,13 @@ export function createSponsorCrmSurface(context) {
       openTaskPanel,
       openCompanyRecord: (organizationId) => openRecord("company", organizationId),
       openContactEditor: (target, options) => contactEditor.open(target, options),
+      // List refresh after record Archive/Restore/edits stays E-owned: F calls
+      // this after mutating the company; Back also refreshes via closeRecord.
+      onRecordChanged: () => {
+        if (currentView === "companies" || currentView === "people") {
+          safe(() => directoryPages.directories[currentView].refresh(), "Could not refresh directory");
+        }
+      },
     });
     sponsorFinance.setReopenBookingDetail(async (booking) => {
       if (
