@@ -389,6 +389,8 @@ const {
   getActiveWorkspaceView: () => workspaceState.activeWorkspaceView,
   getActiveWorkspaceRouteToken,
   isWorkspaceRouteFresh,
+  readLocalPreviewContext,
+  refreshAccountIdentity,
   refreshDocuments,
   renderHonestState,
   renderInBackground,

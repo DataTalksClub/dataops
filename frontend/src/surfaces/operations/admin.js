@@ -18,6 +18,8 @@ export function createAdminSurface(context) {
     getActiveWorkspaceView,
     getActiveWorkspaceRouteToken,
     isWorkspaceRouteFresh,
+    readLocalPreviewContext,
+    refreshAccountIdentity,
     refreshDocuments,
     renderHonestState,
     renderInBackground,
@@ -107,6 +109,17 @@ export function createAdminSurface(context) {
           ? [usersResult.reason?.message || "Failed to load users"]
           : [],
     };
+    if (typeof refreshAccountIdentity === "function") {
+      const localContext =
+        typeof readLocalPreviewContext === "function"
+          ? await readLocalPreviewContext()
+          : null;
+      await refreshAccountIdentity(
+        settledPayload(meResult),
+        users,
+        localContext,
+      );
+    }
     const usersVisible = () => getActiveWorkspaceView() === "users";
     if (options.background) {
       renderInBackground({
