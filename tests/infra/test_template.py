@@ -811,10 +811,10 @@ def test_sponsor_communication_table_indexes_ttl_and_default_off_contract():
     for index in (
         "GSI-Communication",
         "GSI-SponsorSendDue",
-        "GSI-SponsorSendLookup",
         "GSI-SponsorBookingCommunication",
     ):
         assert f"IndexName: {index}" in table
+    assert "GSI-SponsorSendLookup" not in template
     assert 'Default: "false"' in parameter
     assert "SponsorSendRequiresPrivateConfiguration" in template
 
