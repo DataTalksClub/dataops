@@ -39,12 +39,20 @@ function sampleDoc(overrides = {}) {
       key: "newsletter-main",
       label: "Sponsored Newsletter — Main Slot",
       intro: "Please fill in your main newsletter copy below.",
+      guidelinesUrl: "https://drive.google.com/example",
       guidelines: ["Title max 80 characters", "Include UTM tags"],
-      fields: [
-        { key: "headline", label: "Title / Headline", required: true, maxChars: 80, multiline: false },
-        { key: "body", label: "Main Copy", required: true, maxChars: 900, multiline: true },
-        { key: "ctaText", label: "CTA Label", required: true, maxChars: 50, multiline: false },
-        { key: "ctaUrl", label: "CTA Link", required: true, multiline: false },
+      sections: [
+        {
+          id: "newsletter-placement",
+          title: "1) Newsletter Placement",
+          description: "Main sponsored block at the top of the weekly newsletter.",
+          fields: [
+            { key: "headline", label: "Title / Headline", type: "text", required: true, maxWordsHint: 12 },
+            { key: "body", label: "Main Copy", type: "textarea", required: true, maxCharsHint: 900, rows: 5 },
+            { key: "ctaText", label: "CTA Label", type: "text", required: true, maxCharsHint: 50 },
+            { key: "ctaUrl", label: "CTA Link", type: "text", required: true },
+          ],
+        },
       ],
     },
     markdownExport: "# 2026-11-15 - Acme AI\n\n## Title\n\nInitial Headline\n",

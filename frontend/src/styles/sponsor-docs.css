@@ -60,7 +60,24 @@
 
 .sponsor-doc-form {
   display: grid;
-  gap: var(--dk-space-5);
+  gap: var(--dk-space-6);
+}
+
+.sponsor-doc-section {
+  display: grid;
+  gap: var(--dk-space-4);
+}
+
+.sponsor-doc-section + .sponsor-doc-section {
+  padding-top: var(--dk-space-5);
+  border-top: 1px solid var(--dk-border-default);
+}
+
+.sponsor-doc-section__title {
+  margin: 0;
+  color: var(--dk-text-heading);
+  font-size: var(--dk-text-lg);
+  font-weight: var(--dk-weight-semibold);
 }
 
 .sponsor-doc-field {

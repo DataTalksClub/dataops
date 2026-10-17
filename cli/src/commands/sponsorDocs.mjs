@@ -199,7 +199,10 @@ export async function show(args, io) {
     ["version", doc.version],
   ]);
   io.print("");
-  for (const field of doc.templateDefinition?.fields || []) {
+  const showFields = (doc.templateDefinition?.sections || [])
+    .flatMap((s) => s.fields || [])
+    .concat(doc.templateDefinition?.fields || []);
+  for (const field of showFields) {
     const val = doc.content?.[field.key] || "";
     io.print(`${field.label} (${field.key}): ${val ? val : "(empty)"}`);
   }
@@ -304,7 +307,15 @@ export async function templates(args, io) {
     [
       ["TEMPLATE", (t) => t.key],
       ["LINK SLOT", (t) => t.defaultLinkType],
-      ["FIELDS", (t) => (t.fields || []).map((f) => f.key).join(", ")],
+      [
+        "FIELDS",
+        (t) =>
+          (t.sections || [])
+            .flatMap((s) => s.fields || [])
+            .concat(t.fields || [])
+            .map((f) => f.key)
+            .join(", "),
+      ],
       ["LABEL", (t) => t.label],
     ],
     "No templates.",

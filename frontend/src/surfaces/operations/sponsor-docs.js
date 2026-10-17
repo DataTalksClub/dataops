@@ -411,11 +411,24 @@ export function createSponsorDocPage({
       headerCard.append(staffBar);
     }
 
-    if (tDef.intro || (Array.isArray(tDef.guidelines) && tDef.guidelines.length > 0)) {
+    if (
+      tDef.intro
+      || tDef.guidelinesUrl
+      || (Array.isArray(tDef.guidelines) && tDef.guidelines.length > 0)
+    ) {
       const callout = el("div", "dk-callout");
       const body = el("div", "dk-callout__body");
       if (tDef.intro) {
         body.append(el("p", "", tDef.intro));
+      }
+      if (tDef.guidelinesUrl) {
+        const guideP = el("p", "");
+        const guideLink = el("a", "", "View visual placement guide →");
+        guideLink.href = tDef.guidelinesUrl;
+        guideLink.target = "_blank";
+        guideLink.rel = "noopener noreferrer";
+        guideP.append(guideLink);
+        body.append(guideP);
       }
       if (Array.isArray(tDef.guidelines) && tDef.guidelines.length > 0) {
         const ul = el("ul", "sponsor-doc-guidelines");
@@ -435,55 +448,78 @@ export function createSponsorDocPage({
     const form = el("form", "sponsor-doc-form");
     form.noValidate = true;
 
-    for (const fieldDef of tDef.fields || []) {
-      const fieldWrap = el("div", "sponsor-doc-field");
-      const top = el("div", "sponsor-doc-field__top");
-      const label = el(
-        "label",
-        "sponsor-doc-field__label",
-        `${fieldDef.label}${fieldDef.required ? " *" : ""}`,
-      );
-      const inputId = `sponsor-field-${fieldDef.key}`;
-      label.setAttribute("for", inputId);
+    const sections = Array.isArray(tDef.sections) && tDef.sections.length > 0
+      ? tDef.sections
+      : [{ id: "main", title: "", fields: tDef.fields || [] }];
 
-      const countEl = el("span", "sponsor-doc-field__count");
-      const updateCount = (val) => {
-        const len = String(val || "").length;
-        if (fieldDef.maxChars) {
-          countEl.textContent = `${len} / ${fieldDef.maxChars} chars`;
-          countEl.classList.toggle("is-over", len > fieldDef.maxChars);
+    for (const sectionDef of sections) {
+      const sectionWrap = el("div", "sponsor-doc-section");
+      if (sectionDef.title) {
+        sectionWrap.append(el("h2", "sponsor-doc-section__title", sectionDef.title));
+      }
+      if (sectionDef.description) {
+        sectionWrap.append(el("p", "dk-hint", sectionDef.description));
+      }
+
+      for (const fieldDef of sectionDef.fields || []) {
+        const fieldWrap = el("div", "sponsor-doc-field");
+        const top = el("div", "sponsor-doc-field__top");
+        const label = el(
+          "label",
+          "sponsor-doc-field__label",
+          `${fieldDef.label}${fieldDef.required ? " *" : ""}`,
+        );
+        const inputId = `sponsor-field-${fieldDef.key}`;
+        label.setAttribute("for", inputId);
+
+        const maxChars = fieldDef.maxCharsHint || fieldDef.maxChars || 0;
+        const maxWords = fieldDef.maxWordsHint || 0;
+        const countEl = el("span", "sponsor-doc-field__count");
+        const updateCount = (val) => {
+          const text = String(val || "");
+          const len = text.length;
+          if (maxChars > 0) {
+            countEl.textContent = `${len} / ${maxChars} chars`;
+            countEl.classList.toggle("is-over", len > maxChars);
+          } else if (maxWords > 0) {
+            const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+            countEl.textContent = `${words} / ${maxWords} words`;
+            countEl.classList.toggle("is-over", words > maxWords);
+          } else {
+            countEl.textContent = `${len} chars`;
+          }
+        };
+
+        const currentVal = String(draftContent[fieldDef.key] ?? "");
+        updateCount(currentVal);
+        top.append(label, countEl);
+
+        const isMultiline = fieldDef.type === "textarea" || Boolean(fieldDef.multiline);
+        let control;
+        if (isMultiline) {
+          control = el("textarea", "sponsor-doc-textarea");
+          control.rows = fieldDef.rows || 5;
         } else {
-          countEl.textContent = `${len} chars`;
+          control = el("input", "dk-input");
+          control.type = "text";
         }
-      };
+        control.id = inputId;
+        control.dataset.sponsorField = fieldDef.key;
+        control.placeholder = fieldDef.placeholder || "";
+        control.value = currentVal;
+        control.disabled = busy;
+        control.addEventListener("input", () => {
+          draftContent[fieldDef.key] = control.value;
+          updateCount(control.value);
+        });
 
-      const currentVal = String(draftContent[fieldDef.key] ?? "");
-      updateCount(currentVal);
-      top.append(label, countEl);
-
-      let control;
-      if (fieldDef.multiline) {
-        control = el("textarea", "sponsor-doc-textarea");
-        control.rows = 6;
-      } else {
-        control = el("input", "dk-input");
-        control.type = "text";
+        fieldWrap.append(top, control);
+        if (fieldDef.helpText) {
+          fieldWrap.append(el("p", "dk-hint", fieldDef.helpText));
+        }
+        sectionWrap.append(fieldWrap);
       }
-      control.id = inputId;
-      control.dataset.sponsorField = fieldDef.key;
-      control.placeholder = fieldDef.placeholder || "";
-      control.value = currentVal;
-      control.disabled = busy;
-      control.addEventListener("input", () => {
-        draftContent[fieldDef.key] = control.value;
-        updateCount(control.value);
-      });
-
-      fieldWrap.append(top, control);
-      if (fieldDef.helpText) {
-        fieldWrap.append(el("p", "dk-hint", fieldDef.helpText));
-      }
-      form.append(fieldWrap);
+      form.append(sectionWrap);
     }
 
     if (feedbackMsg) {
