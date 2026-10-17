@@ -23,17 +23,17 @@ describe('Seed users script', () => {
     await stopLocal();
   });
 
-  it('creates 3 users with expected names, emails, and stable IDs', async () => {
+  it('creates 4 users with expected names, emails, and stable IDs', async () => {
     const before = await listUsers(client);
     assert.strictEqual(before.length, 0);
 
     await seed();
 
     const after = await listUsers(client);
-    assert.strictEqual(after.length, 3);
+    assert.strictEqual(after.length, 4);
 
     const names = after.map((u) => u.name).sort();
-    assert.deepStrictEqual(names, ['Alexey', 'Grace', 'Valeriia']);
+    assert.deepStrictEqual(names, ['Alexey', 'Grace', 'Orin', 'Valeriia']);
 
     // Verify stable IDs
     const grace = after.find((u) => u.name === 'Grace');
@@ -47,6 +47,11 @@ describe('Seed users script', () => {
     const alexey = after.find((u) => u.name === 'Alexey');
     assert.strictEqual(alexey!.id, '00000000-0000-0000-0000-000000000003');
     assert.strictEqual(alexey!.email, 'alexey@datatalks.club');
+
+    const orin = after.find((u) => u.name === 'Orin');
+    assert.strictEqual(orin!.id, '00000000-0000-0000-0000-000000000004');
+    assert.strictEqual(orin!.email, 'orin@datatalks.club');
+    assert.strictEqual(orin!.role, 'operator');
   });
 
   it('is idempotent — running seed twice does not duplicate users', async () => {
@@ -66,7 +71,7 @@ describe('Seed users script', () => {
   });
 
   it('USERS constant has the expected stable UUIDs', () => {
-    assert.strictEqual(USERS.length, 3);
+    assert.strictEqual(USERS.length, 4);
 
     assert.strictEqual(USERS[0].id, '00000000-0000-0000-0000-000000000001');
     assert.strictEqual(USERS[0].name, 'Grace');
@@ -79,5 +84,10 @@ describe('Seed users script', () => {
     assert.strictEqual(USERS[2].id, '00000000-0000-0000-0000-000000000003');
     assert.strictEqual(USERS[2].name, 'Alexey');
     assert.strictEqual(USERS[2].email, 'alexey@datatalks.club');
+
+    assert.strictEqual(USERS[3].id, '00000000-0000-0000-0000-000000000004');
+    assert.strictEqual(USERS[3].name, 'Orin');
+    assert.strictEqual(USERS[3].email, 'orin@datatalks.club');
+    assert.strictEqual(USERS[3].role, 'operator');
   });
 });

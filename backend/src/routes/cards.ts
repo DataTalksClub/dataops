@@ -43,7 +43,7 @@ import { normalizeCardLinks } from '../artifactLinks';
 import {
   matchesOwnerFilter,
   ownerFilterUserId,
-  parseOwnerFilter,
+  resolveOwnerFilter,
 } from '../identity/ownerFilter';
 import {
   buildCardTemplateUpdatePlan,
@@ -403,7 +403,7 @@ async function handleCollection(
     const listActor = await resolveInteractiveActor(client, event, 'work-read');
     if (!listActor.ok) return listActor.response;
 
-    const ownerParse = parseOwnerFilter((event.queryStringParameters || {}).owner, listActor.actor);
+    const ownerParse = await resolveOwnerFilter(client, (event.queryStringParameters || {}).owner, listActor.actor);
     if (!ownerParse.ok) return json(400, { error: ownerParse.error });
     const ownerFilter = ownerParse.filter;
 

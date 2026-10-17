@@ -12,6 +12,8 @@ export const USERS = [
   { id: '00000000-0000-0000-0000-000000000001', name: 'Grace', email: 'grace@datatalks.club', role: 'admin' as const },
   { id: '00000000-0000-0000-0000-000000000002', name: 'Valeriia', email: 'valeriia@datatalks.club', role: 'admin' as const },
   { id: '00000000-0000-0000-0000-000000000003', name: 'Alexey', email: 'alexey@datatalks.club', role: 'admin' as const },
+  // Orin is the operator agent: full execution rights, no administration.
+  { id: '00000000-0000-0000-0000-000000000004', name: 'Orin', email: 'orin@datatalks.club', role: 'operator' as const },
 ] as const;
 
 export const ALEXEY_USER_ID = USERS[2].id;

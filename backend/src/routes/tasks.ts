@@ -8,7 +8,7 @@ import { attachSubjects, parseTaskSubject } from '../db/taskSubjects';
 import {
   matchesOwnerFilter,
   ownerFilterUserId,
-  parseOwnerFilter,
+  resolveOwnerFilter,
 } from '../identity/ownerFilter';
 import {
   createTask,
@@ -317,7 +317,7 @@ export async function handleTaskRoutes(
 
     // `owner` composes with one existing filter instead of competing with
     // it, so the existing priority can never silently discard it.
-    const ownerParse = parseOwnerFilter(params.owner, listActor.actor);
+    const ownerParse = await resolveOwnerFilter(client, params.owner, listActor.actor);
     if (!ownerParse.ok) return jsonResponse(400, { error: ownerParse.error });
     const ownerFilter = ownerParse.filter;
 
