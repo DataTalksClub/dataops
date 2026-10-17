@@ -68,6 +68,10 @@ export class TeamDirectory {
 
   constructor(private readonly client: DynamoDBDocumentClient) {}
 
+  get dbClient(): DynamoDBDocumentClient {
+    return this.client;
+  }
+
   /** Load every user once; later `project` calls are then synchronous. */
   async loadAll(): Promise<void> {
     if (this.loadedAll) return;

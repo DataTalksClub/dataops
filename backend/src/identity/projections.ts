@@ -10,6 +10,7 @@
 import type { Card, Task, User } from '../types';
 import type { SafeUserProjection, TeamDirectory } from './directory';
 import { hydrateStructuredCardFields } from '../cards/cardTitleStructure';
+import { listSponsorDocSummariesByCardId, type SponsorDocSummary } from '../db/sponsorDocs';
 
 export interface ProjectedTask extends Task {
   /** Safe projection of `assigneeId`; omitted when the Task is unassigned. */
@@ -27,6 +28,8 @@ export interface ProjectedCard extends Card {
   owner?: SafeUserProjection;
   /** Deduplicated safe projections of the assignees of this Card's Tasks. */
   taskAssignees?: SafeUserProjection[];
+  /** Summaries of sponsor content documents linked to this Card. */
+  sponsorDocs?: SponsorDocSummary[];
 }
 
 /** The authenticated identity shape returned by `/api/me`. */
@@ -94,6 +97,12 @@ export async function projectCard(
     projected.taskAssignees = await directory.projectMany(
       tasks.map((task) => nonEmpty(task.assigneeId)).filter((id): id is string => id !== null),
     );
+  }
+  if (directory.dbClient && card.id) {
+    const sponsorDocs = await listSponsorDocSummariesByCardId(directory.dbClient, card.id);
+    if (sponsorDocs.length > 0) {
+      projected.sponsorDocs = sponsorDocs;
+    }
   }
   return projected;
 }

@@ -281,6 +281,28 @@ async function loadDeletionPlan(
     writes.push(linkClearWrite(TABLE_ARTIFACTS, row, card.id, taskIds));
   }
 
+  const sponsorDocs = await scanAll(client, TABLE_ARTIFACTS, `CARD_SPONSOR_DOCS#${card.id}`);
+  for (const indexRow of sponsorDocs) {
+    const docId = str(indexRow.id);
+    if (docId) {
+      const primaryKey = { PK: `SPONSOR_DOC#${docId}`, SK: `SPONSOR_DOC#${docId}` };
+      writes.push({
+        tableName: TABLE_ARTIFACTS,
+        key: primaryKey,
+        item: { Delete: { TableName: TABLE_ARTIFACTS, Key: primaryKey } },
+        holds: () => true,
+        after: () => null,
+      });
+    }
+    writes.push({
+      tableName: TABLE_ARTIFACTS,
+      key: rowKey(indexRow),
+      item: { Delete: { TableName: TABLE_ARTIFACTS, Key: rowKey(indexRow) } },
+      holds: () => true,
+      after: () => null,
+    });
+  }
+
   for (const row of intake) {
     const cardIds = Array.isArray(row.cardIds) ? row.cardIds as string[] : [];
     const intakeTaskIds = Array.isArray(row.taskIds) ? row.taskIds as string[] : [];

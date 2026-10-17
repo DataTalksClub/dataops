@@ -49,6 +49,7 @@ import { withCrmReadSnapshot } from './db/sponsorCrm';
 import { handleInvoiceReader } from './auth/invoiceReader';
 import { handleKnowledgePublisher } from './auth/knowledgePublisher';
 import { handleCliAuthRoutes, isAnonymousDeviceRequest } from './routes/cliAuth';
+import { handleSponsorDocRoutes, isAnonymousSponsorDocRequest } from './routes/sponsorDocs';
 import type { LambdaEvent, LambdaResponse } from './types';
 import { recordRequestError } from './requestErrorLog';
 
@@ -64,6 +65,7 @@ const AUTH_EXEMPT_PATHS = new Set([
 
 function isAuthExempt(method: string, path: string): boolean {
   if (isAnonymousDeviceRequest(method, path)) return true;
+  if (isAnonymousSponsorDocRequest(method, path)) return true;
   if (AUTH_EXEMPT_PATHS.has(path)) return true;
   if (method === 'POST' && path === '/api/v1/intake/email-documents') return true;
   if (method === 'POST' && path === '/api/v1/intake/leads') return true;
@@ -263,22 +265,29 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // A portal pass without an identity (local development with browser auth
     // unconfigured) must not skip bearer validation: without it no x-user-id
     // is ever established and every interactive route fails closed.
-    if (!skipAuth && !verifiedInteractiveUserId && (reqPath.startsWith('/api/') || isDocsRoute(reqPath)) && !isAuthExempt(method, reqPath)) {
+    if (!skipAuth && !verifiedInteractiveUserId && (reqPath.startsWith('/api/') || isDocsRoute(reqPath))) {
       const token = extractToken(event);
+      const exempt = isAuthExempt(method, reqPath);
       if (!token) {
-        return jsonResponse(401, { error: 'Unauthorized' });
+        if (!exempt) {
+          return jsonResponse(401, { error: 'Unauthorized' });
+        }
+      } else {
+        const session = await getSession(client, token);
+        // CLI and script clients present an API token instead of a session. It
+        // resolves to the same user, so every downstream role check is unchanged.
+        const apiToken = session ? null : await getApiToken(client, token);
+        if (!session && !apiToken) {
+          if (!exempt) {
+            return jsonResponse(401, { error: 'Unauthorized' });
+          }
+        } else {
+          if (apiToken) await touchApiToken(client, apiToken);
+          // Attach userId to event headers for downstream use
+          if (!event.headers) event.headers = {};
+          event.headers['x-user-id'] = session ? session.userId : apiToken!.userId;
+        }
       }
-      const session = await getSession(client, token);
-      // CLI and script clients present an API token instead of a session. It
-      // resolves to the same user, so every downstream role check is unchanged.
-      const apiToken = session ? null : await getApiToken(client, token);
-      if (!session && !apiToken) {
-        return jsonResponse(401, { error: 'Unauthorized' });
-      }
-      if (apiToken) await touchApiToken(client, apiToken);
-      // Attach userId to event headers for downstream use
-      if (!event.headers) event.headers = {};
-      event.headers['x-user-id'] = session ? session.userId : apiToken!.userId;
     }
 
     // GET /api/health — health check
@@ -343,6 +352,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/files')) {
       const result = await handleFileRoutes(event);
+      if (result) return result;
+    }
+
+    // ── Sponsor content document routes ────────────────────────────
+
+    if (reqPath.startsWith('/api/sponsor-docs')) {
+      const result = await handleSponsorDocRoutes(reqPath, method, event, client);
       if (result) return result;
     }
 
