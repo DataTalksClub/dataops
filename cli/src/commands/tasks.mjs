@@ -70,6 +70,10 @@ Dependencies
                            list marks blocked Tasks. The API rejects self, missing,
                            cross-Card and cyclic prerequisites, completing a blocked Task,
                            and reopening or deleting a prerequisite of a completed Task.
+  --after ID               The single-parent form of --depends-on for chains: when the
+                           parent's date or moment moves, dependents shift by the same
+                           offset, transitively. \`none\` clears it. Card Templates say
+                           the same with depends_on.
 
 Required resources (ids from \`dataops resources list\`)
   --requires a,b           Only Tasks that need at least one of these
@@ -404,6 +408,11 @@ function writableFields(args) {
   if (args.dependsOn !== undefined) {
     const dependsOn = required(args, "dependsOn", "depends-on");
     body.dependsOn = dependsOn === "none" ? [] : csv(dependsOn);
+  }
+  if (args.after !== undefined) {
+    if (args.dependsOn !== undefined) throw new UsageError("Use --after or --depends-on, not both.");
+    const after = required(args, "after", "after");
+    body.dependsOn = after === "none" ? [] : [after];
   }
   return body;
 }

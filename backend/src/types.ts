@@ -196,6 +196,7 @@ export type TaskHistoryAction =
   | 'snoozed'
   | 'unsnoozed'
   | 'noted'
+  | 'scheduled'
   | 'completed'
   | 'reopened'
   | 'skipped'

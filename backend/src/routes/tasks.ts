@@ -19,6 +19,7 @@ import {
   listTasksByDate,
   listTasksByDateRange,
   listTasksByCard,
+  listTasksByCardConsistent,
   listTasksByStatus,
   listTasksByOwner,
   TaskVersionConflictError,
@@ -33,7 +34,7 @@ import { matchesBrowserRequirementFilter, parseBrowserRequirementFilter } from '
 import type { BrowserRequirementFilter } from '../browserRequirement';
 import type { LambdaEvent, LambdaResponse, Task, TaskHistoryEvent } from '../types';
 import { mergeMaterials } from '../taskMaterials';
-import { resolveTaskDate, resolveTaskDateTime, isValidTimezone } from '../relativeDates';
+import { resolveTaskDate, resolveTaskDateTime, addDays, isValidTimezone } from '../relativeDates';
 import {
   ALLOWED_UPDATE_FIELDS,
   INVALID_STATUS_ERROR,
@@ -112,6 +113,70 @@ function resolveDateTimeInput(value: unknown, fieldName: string, tz: string): { 
   const resolved = resolveTaskDateTime(value, tz);
   if (resolved) return { date: resolved };
   return { error: `${fieldName} must be an ISO instant, "YYYY-MM-DD HH:mm" with --tz ${tz}, a date, or a relative word like +7d` };
+}
+
+interface RescheduleDeltas {
+  dateDeltaDays: number;
+  momentDeltaMs: number | null;
+}
+
+/**
+ * Shift every open Task that depends on `root` (transitively, same Card) by
+ * the same offset the root just moved: dates by whole days, set moments by
+ * milliseconds. Done and skipped Tasks keep their history. Returns the ids
+ * that moved; a dependent that changed concurrently is left for a retry.
+ */
+async function rescheduleDependents(
+  client: DynamoDBDocumentClient,
+  root: Task,
+  deltas: RescheduleDeltas,
+  actorId: string | undefined,
+): Promise<string[]> {
+  if (!root.cardId || (deltas.dateDeltaDays === 0 && deltas.momentDeltaMs === null)) return [];
+  const moved: string[] = [];
+  const seen = new Set([root.id]);
+  const queue = [root.id];
+  const now = new Date().toISOString();
+  let guard = 0;
+  while (queue.length > 0 && guard++ < 100) {
+    const parentId = queue.shift() as string;
+    const siblings = await listTasksByCardConsistent(client, root.cardId);
+    for (const dependent of siblings) {
+      if (seen.has(dependent.id)) continue;
+      if (!(dependent.dependsOn || []).includes(parentId)) continue;
+      // Traverse through resolved Tasks without rewriting their history;
+      // only open work shifts.
+      seen.add(dependent.id);
+      queue.push(dependent.id);
+      if (dependent.status !== 'todo' && dependent.status !== 'waiting') continue;
+      const patch: Record<string, unknown> = {};
+      if (deltas.dateDeltaDays !== 0) patch.date = addDays(dependent.date, deltas.dateDeltaDays);
+      if (deltas.momentDeltaMs !== null && typeof dependent.notBeforeAt === 'string') {
+        patch.notBeforeAt = new Date(Date.parse(dependent.notBeforeAt) + deltas.momentDeltaMs).toISOString();
+      }
+      if (Object.keys(patch).length === 0) continue;
+      const historyEvent = makeTaskHistoryEvent('scheduled', dependent, {
+        actorId,
+        note: `Parent ${parentId} moved; shifted by the same offset`,
+        createdAt: now,
+      });
+      try {
+        await updateTask(client, dependent.id, {
+          currentTask: dependent,
+          expectedVersion: dependent.version,
+          patch,
+          historyEvents: [historyEvent],
+          actorId,
+          triggerKind: 'task-rescheduled',
+        });
+      } catch (error) {
+        if (!(error instanceof TaskVersionConflictError)) throw error;
+        continue;
+      }
+      moved.push(dependent.id);
+    }
+  }
+  return moved;
 }
 
 function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
@@ -1096,7 +1161,28 @@ export async function handleTaskRoutes(
           : 'task-updated',
     });
 
-    return jsonResponse(200, await projectWithPrerequisites(client, updated));
+    // Dependents follow the same offset when this Task's date or moment
+    // moves: dates shift by whole days, set moments by milliseconds.
+    let rescheduled: string[] = [];
+    const dateMoved = typeof updates.date === 'string' && updates.date !== existing.date;
+    const momentMoved = typeof updates.notBeforeAt === 'string' && updates.notBeforeAt !== existing.notBeforeAt;
+    if ((dateMoved || momentMoved) && typeof updated.cardId === 'string' && updated.cardId) {
+      const dayShift = dateMoved
+        ? Math.round((Date.parse(String(updates.date)) - Date.parse(existing.date)) / 86400000)
+        : 0;
+      const momentShift = momentMoved && typeof existing.notBeforeAt === 'string'
+        ? Date.parse(String(updates.notBeforeAt)) - Date.parse(existing.notBeforeAt)
+        : null;
+      if ((Number.isFinite(dayShift) && dayShift !== 0) || (momentShift !== null && Number.isFinite(momentShift) && momentShift !== 0)) {
+        rescheduled = await rescheduleDependents(client, updated, {
+          dateDeltaDays: Number.isFinite(dayShift) ? dayShift : 0,
+          momentDeltaMs: momentShift,
+        }, actor.id || undefined);
+      }
+    }
+
+    const projected = await projectWithPrerequisites(client, updated);
+    return jsonResponse(200, rescheduled.length > 0 ? { ...projected, rescheduled } : projected);
   }
 
   // DELETE /api/tasks/:id — Delete a task
