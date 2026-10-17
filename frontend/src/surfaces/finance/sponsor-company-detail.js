@@ -43,6 +43,7 @@ export function createSponsorCompanyDetail({
   openCompanyRecord,
   openContactEditor,
   ownerName,
+  onEditDeal,
   loadArchive,
   onReviewDraft,
   onEditCompany,
@@ -74,6 +75,10 @@ export function createSponsorCompanyDetail({
     onReviewDraft: onReviewDraft || onReviewDraftDefault,
     onArchiveCompany,
     onRestoreCompany,
+    // Edit uses E's existing deal dialog via openDeal with the actual loaded
+    // deal (object + optimistic version); error/conflict surfacing and the
+    // post-save refresh stay in E's dialog wiring.
+    onEditDeal: onEditDeal || ((deal) => openDeal(deal)),
     onAddDeal: onAddDeal || ((organizationId) => openDeal({ organizationId, status: "open" })),
     onEditCompany,
   });

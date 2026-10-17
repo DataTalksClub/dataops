@@ -723,6 +723,38 @@ test("archive toggle paints pending state immediately, result after resolve", as
   assert.match(archiveHost.innerHTML, /Archived draft v1/, "guarded paint renders the result");
 });
 
+test("deals list edits through the loaded object with its version", async () => {
+  const edited = [];
+  const deals = [
+    { id: "d1", organizationId: "c1", status: "open", productKind: "one-off", version: 4 },
+  ];
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": { items: deals, nextCursor: null },
+    },
+    context: { onEditDeal: (deal) => edited.push(deal) },
+  });
+  const panels = seedPanels(host);
+  await record.openCompany("c1");
+  await record.switchTab("deals");
+  assert.match(panels.deals.innerHTML, /data-edit-deal="d1"/);
+  await host.dispatch("click", { closestPatch: { "[data-edit-deal]": { dataset: { editDeal: "d1" } } } });
+  assert.deepEqual(edited, [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off", version: 4 }], "editor receives the actual loaded deal, no refetch");
+  const plain = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": { items: deals, nextCursor: null },
+    },
+  });
+  const plainPanels = seedPanels(plain.host);
+  await plain.record.openCompany("c1");
+  await plain.record.switchTab("deals");
+  assert.doesNotMatch(plainPanels.deals.innerHTML, /data-edit-deal/, "no edit affordance without an editor callback");
+});
+
 test("failed explicit selections never fall back to unrelated finance", async () => {
   const page = [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off" }];
   for (const [name, dealId, byId, message] of [

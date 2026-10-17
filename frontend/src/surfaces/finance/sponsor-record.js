@@ -382,6 +382,7 @@ export function peopleListMarkup({ items, total, canEdit }, context = {}) {
 
 export function dealsListMarkup({ deals, selectedDealId, canAdd = false }, context = {}) {
   const escape = esc(context);
+  const canEditDeal = typeof context?.onEditDeal === "function";
   if (!deals?.length) {
     return emptyMarkup("No deals", "Add a deal for this company.", context)
       + (canAdd ? html`<button type="button" data-add-deal>Add deal</button>` : "");
@@ -400,8 +401,9 @@ export function dealsListMarkup({ deals, selectedDealId, canAdd = false }, conte
             <span class="status-label" data-status="${escape(deal.status)}">${escape(humanize(deal.status, context))}</span>
           </div>
           <p class="crm-deal-meta">${[next].filter(Boolean).map((value) => escape(value)).join(" · ")}</p>
-    <div class="row-actions">
+          <div class="row-actions">
             <button type="button" data-select-deal="${escape(deal.id)}"${current ? " disabled" : ""}>${current ? "Selected" : "Select deal"}</button>
+            ${canEditDeal ? html`<button type="button" data-edit-deal="${escape(deal.id)}">Edit deal</button>` : ""}
           </div>
         </article></li>`;
       })
@@ -923,6 +925,14 @@ export function createSponsorRecord(context) {
       const pick = event.target.closest("[data-select-deal]");
       if (pick) {
         selectDeal(pick.dataset.selectDeal);
+        return;
+      }
+      const editDeal = event.target.closest("[data-edit-deal]");
+      if (editDeal && typeof context.onEditDeal === "function") {
+        // The actual loaded deal object (with its optimistic version) goes
+        // to the editor — never a re-fetched or global-list fallback.
+        const deal = (record?.deals || []).find((item) => item.id === editDeal.dataset.editDeal);
+        if (deal) context.onEditDeal(deal);
         return;
       }
       if (event.target.closest("[data-add-deal]") && typeof context.onAddDeal === "function") {
