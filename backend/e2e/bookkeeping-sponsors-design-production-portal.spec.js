@@ -134,6 +134,87 @@ async function routeSponsors(page) {
     if (pathname.endsWith("/leads")) return route.fulfill({ json: { items: [] } });
     if (pathname.endsWith("/messages")) return route.fulfill({ json: { items: [] } });
     if (pathname.endsWith("/deals")) return route.fulfill({ json: { items: [booking] } });
+    // Bounded directories, saved views and lazy record reads serve the new
+    // CRM lists/record tabs from the same fixtures (D API shapes).
+    if (pathname === "/api/sponsor-crm/pipeline") return route.fulfill({ json: {
+      items: [{
+        id: booking.id,
+        organizationId: organization.id,
+        organizationName: organization.displayName,
+        stage: "agreed",
+        title: null,
+        primaryContact: { name: contact.name, email: contact.emails[0] },
+        nextTask: null,
+        lastContacted: null,
+        amountEur: null,
+      }],
+      counts: { agreed: 1 },
+      total: 1,
+      nextCursor: null,
+      financeEnabled: true,
+    } });
+    if (pathname === "/api/sponsor-crm/views") return route.fulfill({ json: {
+      items: [{
+        id: "builtin:companies:active",
+        entity: "companies",
+        name: "Active",
+        builtin: true,
+        filters: { active: "true" },
+        resolvedFilters: { active: "true" },
+        sort: { field: "name", direction: "asc" },
+      }],
+      total: 1,
+    } });
+    if (pathname === "/api/sponsor-crm/directory/companies") return route.fulfill({ json: {
+      items: [{
+        id: organization.id,
+        displayName: organization.displayName,
+        relationship: "talking",
+        active: true,
+        primaryPerson: { id: contact.id, name: contact.name, email: contact.emails[0] },
+        lastTouch: null,
+        openDealCount: 1,
+        version: organization.version,
+        updatedAt: "2026-09-03T00:00:00Z",
+      }],
+      total: 1,
+      nextCursor: null,
+    } });
+    if (pathname === `/api/sponsor-crm/directory/companies/${organization.id}`) return route.fulfill({ json: {
+      id: organization.id,
+      displayName: organization.displayName,
+      active: true,
+      lastTouch: null,
+      version: organization.version,
+      updatedAt: "2026-09-03T00:00:00Z",
+    } });
+    if (pathname === "/api/sponsor-crm/directory/people") return route.fulfill({ json: {
+      items: [{
+        id: contact.id,
+        organizationId: contact.organizationId,
+        companyName: organization.displayName,
+        name: contact.name,
+        emails: contact.emails,
+        primary: contact.primary,
+        lastTouch: null,
+        active: true,
+        version: contact.version,
+        updatedAt: "2026-09-03T00:00:00Z",
+      }],
+      total: 1,
+      nextCursor: null,
+    } });
+    if (pathname.startsWith("/api/sponsor-crm/activity/")) return route.fulfill({ json: {
+      targetType: "organization",
+      targetId: organization.id,
+      items: [],
+      total: 0,
+      nextCursor: null,
+      sources: {},
+      relatedWork: [],
+      tasksScope: "open",
+      reads: {},
+    } });
     if (pathname.endsWith(`/deals/${booking.id}/history`)) return route.fulfill({ json: { items: [{ oldStatus: "open", newStatus: "agreed", createdAt: "2026-08-28T09:00:00Z", note: "Waiting for reviewed copy." }] } });
     if (pathname.endsWith(`/deals/${booking.id}/finance/invoice/invoice-example`) && request.method() === "DELETE") {
       unlinkInvoiceRequests += 1;
@@ -252,18 +333,20 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     const sponsorRouteState = await routeSponsors(page);
     const root = await page.goto("/sponsors");
     assertOwnedServerResponse(server, root, "sponsor design root");
-    await expect(page.getByRole("heading", { name: "Sponsors" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "CRM" })).toBeVisible();
     // Sponsors opens on Pipeline; sponsor work lives in the Tasks queue.
     await expect(page.getByRole("heading", { name: "Pipeline" })).toBeVisible();
     await expect(page).toHaveURL(/\/sponsors\/pipeline$/);
-    await expect(page.locator('[data-crm-view="queue"]')).toHaveCount(0);
+    await expect(page.locator('[data-crm-nav-tab="queue"]')).toHaveCount(0);
     await expect(page.locator("[data-crm-pipeline]")).toContainText("Agreed");
     await expect(page.locator("[data-crm-pipeline]")).not.toContainText("Inquiry");
     await expect(page.locator("[data-crm-alerts]")).toContainText("Due 3 Sept");
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-pipeline-light.png") });
-    await page.getByRole("button", { name: "Open deal" }).click();
+    await page.locator('[data-crm-bookings] [data-open-deal]').first().click();
     await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
-    await expect(page.getByRole("navigation", { name: "Company detail sections" })).toContainText("Finance");
+    await expect(page.locator('[data-record-tabs][role="tablist"]')).toContainText("Finance");
+    // Finance evidence loads on its tab.
+    await page.locator('[data-record-tab="finance"]').click();
     const financePanel = page.locator('[data-finance-panel]');
     await expect(financePanel.locator(".finance-status")).toHaveText("Evidence consistent");
     await expect(financePanel).toContainText("€1,200.00");
@@ -274,8 +357,13 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await expect(ledgerPayment.locator(".dk-mono")).toHaveText([/^1 Sept(?: 2026)?$/, "€500.00"]);
     await expect(financePanel.getByRole("button", { name: /^Unlink 1 Sept(?: 2026)? payment$/ })).toBeVisible();
     await expect(financePanel).not.toContainText("2026-09-30");
-    await expect(page.locator('[data-booking-panel="history"]')).toContainText("Recorded 28 Aug 2026, 11:00 CEST");
-    await expect(page.locator('[data-booking-panel="communications"]')).toContainText("Draft version 2");
+    // History and drafts live behind Activity: the timeline plus the lazy
+    // read-only archive disclosure (no eager mail/communications dump).
+    await page.locator('[data-record-tab="activity"]').click();
+    const archiveHost = page.locator("[data-record-archive-host]");
+    await archiveHost.locator("[data-record-archive] > summary").click();
+    await expect(archiveHost).toContainText("Archived draft v2");
+    await expect(page.locator(".crm-master")).toBeHidden();
     await expect(page.locator(".crm-card[aria-current=true]")).toHaveCSS("border-left-width", "1px");
     await expectPalette(page, false);
     await expectNoPageOverflow(page, 1440);
@@ -291,6 +379,10 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await expect(page.locator("[data-crm-alerts]")).toContainText("Due 3 Sept");
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-desktop-dark.png") });
 
+    // The read-only exact preview opens from the archive disclosure.
+    await page.locator('[data-record-tab="activity"]').click();
+    const reviewArchive = page.locator("[data-record-archive-host]");
+    await reviewArchive.locator("[data-record-archive] > summary").click();
     await page.getByRole("button", { name: "Review exact draft" }).click();
     const review = page.locator("[data-communication-review-dialog]");
     await expect(review).toContainText("Approval queues exactly this one-recipient plain-text message");

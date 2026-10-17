@@ -42,9 +42,10 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => stopOwnedTestServer(server));
 
-// Sponsors has no list pane of its own: the Pipeline board is the list, and
-// opening a deal replaces the board with the deal's detail. Hundreds of
-// alerts fold into one line, so they never push the deal down the page.
+// Sponsors has no list pane of its own: the Pipeline funnel table is the
+// list, and opening a deal replaces the board with the deal's detail.
+// Hundreds of alerts fold into one line, so they never push the deal down
+// the page.
 test('/sponsors: opening a pipeline deal replaces the board with its detail', async ({ page }) => {
   await page.setViewportSize(DESKTOP);
   await setupPageWithAuth(page);
@@ -56,10 +57,10 @@ test('/sponsors: opening a pipeline deal replaces the board with its detail', as
   await page.goto(`${server.baseURL}/sponsors`);
   await expect(page.locator('[data-crm-alert-summary]')).toHaveText('300 sponsor alerts');
   await expect(page.locator('.crm-alerts')).not.toHaveAttribute('open', '');
-  await expect(page.locator('[data-crm-bookings] .crm-pipeline-card').first()).toBeInViewport();
+  await expect(page.locator('[data-crm-bookings] tbody tr').first()).toBeInViewport();
   await expect(page).toHaveURL(/\/sponsors\/pipeline$/);
   await expect(page.locator('[data-crm-message]')).toBeHidden();
-  await page.locator('[data-crm-bookings] .crm-pipeline-card').first().getByRole('button', { name: 'Open deal' }).click();
+  await page.locator('[data-crm-bookings] [data-open-deal]').first().click();
   await expect(page).toHaveURL(/\/sponsors\/deals\//);
   await expect(page.locator('.crm-master')).toBeHidden();
   const title = page.locator('.dk-split__detail .dk-split__title');
@@ -90,27 +91,24 @@ test('/templates: list and preview share the split and the page stays put', asyn
 });
 
 for (const theme of ['light', 'dark']) for (const viewport of [DESKTOP, MOBILE]) {
-  test(`Sponsors section jumps clear the sticky nav in ${theme} at ${viewport.width}`, async ({ page }) => {
+  test(`Sponsors record tabs switch panels without moving the page in ${theme} at ${viewport.width}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await setupPageWithAuth(page);
     await page.addInitScript(t => localStorage.setItem('dakit-theme', t), theme);
     await page.goto(`${server.baseURL}/sponsors`);
-    await page.locator('[data-crm-bookings] .crm-pipeline-card').first().getByRole('button', { name: 'Open deal' }).click();
-    const nav = page.locator('.booking-section-nav');
-    await expect(nav).toBeVisible();
-    const appearance = await nav.locator('[aria-pressed="true"]').evaluate(node => {
-      const style = getComputedStyle(node);
-      const probe = document.createElement('i'); probe.style.color = 'var(--dk-border-default)';
-      document.body.append(probe); const neutral = getComputedStyle(probe).color; probe.remove();
-      return { border: style.borderTopColor, neutral, outline: style.outlineStyle, focusVisible: node.matches(':focus-visible') };
-    });
-    expect(appearance.border).toBe(appearance.neutral);
-    expect(appearance.focusVisible).toBe(false);
-    expect(appearance.outline).toBe('none');
-    for (const section of ['history', 'overview']) {
-      await nav.locator(`[data-booking-section-link="${section}"]`).click();
-      await expect.poll(() => page.locator(`#booking-${section}`).evaluate(node =>
-        Math.round(node.getBoundingClientRect().top - document.querySelector('.booking-section-nav').getBoundingClientRect().bottom))).toBeGreaterThanOrEqual(0);
+    await page.locator('[data-crm-bookings] [data-open-deal]').first().click();
+    const tabs = page.locator('[data-record-tabs][role="tablist"]');
+    await expect(tabs).toBeVisible();
+    const before = await page.evaluate(() => document.scrollingElement.scrollTop);
+    for (const tab of ['people', 'activity', 'deals', 'finance']) {
+      await tabs.locator(`[data-record-tab="${tab}"]`).click();
+      await expect(tabs.locator(`[data-record-tab="${tab}"]`)).toHaveAttribute('aria-selected', 'true');
+      await expect(page.locator(`[data-record-panel="${tab}"]`)).toBeVisible();
     }
+    expect(await page.evaluate(() => document.scrollingElement.scrollTop)).toBe(before);
+    // Keyboard moves through tabs without leaving the tablist.
+    await tabs.locator('[data-record-tab="overview"]').click();
+    await tabs.locator('[data-record-tab="overview"]').press('ArrowRight');
+    await expect(tabs.locator('[data-record-tab="people"]')).toBeFocused();
   });
 }

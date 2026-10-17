@@ -327,16 +327,106 @@ test.describe("production sponsor CRM portal", () => {
         }
         return route.fulfill({ json: financeProjection() });
       }
-      if (pathname.endsWith("/organizations"))
-        return route.fulfill({ json: { items: [organization] } });
-      if (pathname.endsWith("/contacts"))
-        return route.fulfill({ json: { items: [contact] } });
-      if (pathname.endsWith("/leads"))
-        return route.fulfill({ json: { items: [] } });
-      if (pathname.endsWith("/messages"))
-        return route.fulfill({ json: { items: [] } });
-      if (pathname.endsWith("/deals"))
-        return route.fulfill({ json: { items: [booking] } });
+    if (pathname.endsWith("/organizations"))
+      return route.fulfill({ json: { items: [organization] } });
+    if (pathname.endsWith("/contacts"))
+      return route.fulfill({ json: { items: [contact] } });
+    if (pathname.endsWith("/leads"))
+      return route.fulfill({ json: { items: [] } });
+    if (pathname.endsWith("/messages"))
+      return route.fulfill({ json: { items: [] } });
+    if (pathname.endsWith("/deals"))
+      return route.fulfill({ json: { items: [booking] } });
+    // Bounded directories, saved views and lazy record reads serve the new
+    // CRM lists/record tabs from the same fixtures (D API shapes).
+    if (pathname === "/api/sponsor-crm/pipeline")
+      return route.fulfill({ json: {
+        items: [{
+          id: booking.id,
+          organizationId: organization.id,
+          organizationName: organization.displayName,
+          stage: "agreed",
+          title: null,
+          primaryContact: { name: contact.name, email: contact.emails[0] },
+          nextTask: null,
+          lastContacted: null,
+          amountEur: null,
+        }],
+        counts: { agreed: 1 },
+        total: 1,
+        nextCursor: null,
+        financeEnabled: true,
+      } });
+    if (pathname === "/api/sponsor-crm/views")
+      return route.fulfill({ json: {
+        items: [{
+          id: "builtin:companies:active",
+          entity: "companies",
+          name: "Active",
+          builtin: true,
+          filters: { active: "true" },
+          resolvedFilters: { active: "true" },
+          sort: { field: "name", direction: "asc" },
+        }],
+        total: 1,
+      } });
+    if (pathname === "/api/sponsor-crm/directory/companies")
+      return route.fulfill({ json: {
+        items: [{
+          id: organization.id,
+          displayName: organization.displayName,
+          relationship: "talking",
+          active: true,
+          primaryPerson: { id: contact.id, name: contact.name, email: contact.emails[0] },
+          lastTouch: null,
+          openDealCount: 1,
+          version: organization.version,
+          updatedAt: "2026-08-20T00:00:00Z",
+        }],
+        total: 1,
+        nextCursor: null,
+      } });
+    if (pathname === `/api/sponsor-crm/directory/companies/${organization.id}`)
+      return route.fulfill({ json: {
+        id: organization.id,
+        displayName: organization.displayName,
+        active: true,
+        lastTouch: null,
+        version: organization.version,
+        updatedAt: "2026-08-20T00:00:00Z",
+        notes: "Synthetic operator summary.",
+      } });
+    if (pathname === "/api/sponsor-crm/directory/people")
+      return route.fulfill({ json: {
+        items: [{
+          id: contact.id,
+          organizationId: contact.organizationId,
+          companyName: organization.displayName,
+          name: contact.name,
+          emails: contact.emails,
+          primary: contact.primary,
+          lastTouch: null,
+          active: true,
+          version: contact.version,
+          updatedAt: "2026-08-20T00:00:00Z",
+        }],
+        total: 1,
+        nextCursor: null,
+      } });
+    if (pathname.startsWith("/api/sponsor-crm/activity/"))
+      return route.fulfill({ json: {
+        targetType: "organization",
+        targetId: organization.id,
+        items: [],
+        total: 0,
+        nextCursor: null,
+        sources: {},
+        relatedWork: [],
+        tasksScope: "open",
+        reads: {},
+      } });
+    if (pathname.endsWith("/notes/organization/org-1"))
+      return route.fulfill({ json: { items: [], total: 0, nextCursor: null } });
       if (pathname.endsWith("/deals/booking-1/communications")) {
         const cursor = url.searchParams.get("cursor");
         communicationRequests.push({
@@ -448,30 +538,39 @@ test.describe("production sponsor CRM portal", () => {
       });
     });
     await gotoOwnedSponsorPage(page);
-    await page.getByRole("link", { name: "Sponsors" }).click();
+    await page.getByRole("link", { name: "CRM" }).click();
     await expect(page.getByText("Loading sponsor CRM…")).toBeVisible();
     await page.screenshot({
       path: ".tmp/sponsor-crm-production-loading.png",
     });
     release();
-    await expect(page.locator("[data-crm-orgs]")).toContainText(
+    // The Companies directory is server-paged: identity, relationship,
+    // primary person, last touch and open deals per row.
+    await page.locator('[data-crm-nav-tab="companies"]').click();
+    await expect(page.locator('[data-dir-root="companies"] [data-dir-company]')).toContainText(
       "Synthetic Sponsor",
     );
+    await expect(page.locator('[data-dir-root="companies"] [data-dir-company]')).toContainText(
+      "Synthetic Contact",
+    );
+    await page.locator('[data-crm-nav-tab="pipeline"]').click();
     await page.locator("[data-crm-alert-summary]").click();
     await expect(page.getByText(/materials are missing/)).toBeVisible();
     await page
       .locator(".crm-layout")
       .screenshot({ path: ".tmp/sponsor-crm-production-populated.png" });
-    await page.locator("[data-crm-bookings]").getByRole("button", { name: "Open deal" }).first().click();
+    await page.locator('[data-crm-bookings] [data-open-deal]').first().click();
     // An open deal replaces the board; Back returns to it to open the deal afresh.
+    // Finance evidence loads on its tab, so the helper leaves the record there.
     const reopenDeal = async () => {
-      await page.getByRole("button", { name: "Back to Sponsors" }).click();
-      await page.locator("[data-crm-bookings]").getByRole("button", { name: "Open deal" }).first().click();
+      await page.locator("[data-record-back]").click();
+      await page.locator('[data-crm-bookings] [data-open-deal]').first().click();
+      await page.locator('[data-record-tab="finance"]').click();
     };
-    await expect(page.getByText("Inquiry → Confirmed")).toBeVisible();
-    await expect(
-      page.getByText("This deal has not been classified."),
-    ).toBeVisible();
+    await expect(page.locator("[data-record-title]")).toContainText("Synthetic Sponsor");
+    await expect(page.locator('[data-record-tabs][role="tablist"]')).toBeVisible();
+    // Finance evidence loads only when its tab opens.
+    await page.locator('[data-record-tab="finance"]').click();
     const statusMessage = page.locator("[data-crm-message]");
     await expect.poll(() => communicationRequests.length).toBe(2);
     expect(communicationRequests).toEqual([
@@ -479,12 +578,13 @@ test.describe("production sponsor CRM portal", () => {
       { limit: "50", cursor: "finance-history-page-2" },
     ]);
     expect(communicationResponses).toBe(2);
-    await expect(page.locator("[data-crm-communications]")).toContainText(
-      "booking-confirmation",
-    );
-    await expect(page.locator("[data-crm-communications]")).toContainText(
-      "delivered",
-    );
+    // The Activity tab keeps the timeline filterable; the archive disclosure
+    // loads the preserved drafts/attempts lazily and read-only.
+    await page.locator('[data-record-tab="activity"]').click();
+    const archiveHost = page.locator("[data-record-archive-host]");
+    await archiveHost.locator("[data-record-archive] > summary").click();
+    await expect(archiveHost).toContainText("Archived draft v2");
+    await expect(archiveHost).toContainText("Delivery delivered");
     // A clean, loaded CRM states nothing: the ready status stays hidden.
     await expect(statusMessage).toBeHidden();
     await page
@@ -723,9 +823,10 @@ test.describe("production sponsor CRM portal", () => {
     await expect(statusMessage).not.toContainText(
       /Could not|Synthetic route missing/,
     );
-    await expect(page.locator("[data-crm-communications]")).toContainText(
-      "delivered",
-    );
+    await page.locator('[data-record-tab="activity"]').click();
+    const operatorArchive = page.locator("[data-record-archive-host]");
+    await operatorArchive.locator("[data-record-archive] > summary").click();
+    await expect(operatorArchive).toContainText("Delivery delivered");
     await page.screenshot({
       path: ".tmp/sponsor-finance-operator-read-only.png",
       fullPage: true,
@@ -771,7 +872,7 @@ test.describe("production sponsor CRM portal", () => {
       route.fulfill({ json: { notifications: { items: [] } } }),
     );
     await gotoOwnedSponsorPage(errorPage);
-    await errorPage.getByRole("link", { name: "Sponsors" }).click();
+    await errorPage.getByRole("link", { name: "CRM" }).click();
     await expect(errorPage.locator("[data-crm-message]")).toContainText(
       "Permission or API error",
     );
