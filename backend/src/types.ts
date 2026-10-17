@@ -193,6 +193,8 @@ export type TaskHistoryAction =
   | 'response-received'
   | 'unblocked'
   | 'wait-resolved'
+  | 'snoozed'
+  | 'unsnoozed'
   | 'completed'
   | 'reopened'
   | 'skipped'
@@ -239,6 +241,10 @@ export interface Task {
   waitingFor?: string;
   followUpAt?: string;
   followUpChannel?: string;
+  /** Civil date the Task stays out of the today/overdue queue until (then it returns). */
+  snoozedUntil?: string;
+  /** Why the Task was snoozed; present exactly when snoozedUntil is set. */
+  snoozeReason?: string;
   completedBy?: string;
   completedAt?: string;
   /** Why the Task does not apply; present exactly when status is `skipped`. */

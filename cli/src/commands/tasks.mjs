@@ -27,6 +27,8 @@ Usage
   dataops tasks unskip <task-id>                 Back to todo
   dataops tasks wait <task-id> --for WHO --follow-up YYYY-MM-DD --channel CHANNEL --note NOTE
   dataops tasks followed-up <task-id> --channel CHANNEL --note NOTE [--next YYYY-MM-DD]
+  dataops tasks snooze <task-id> --until +7d --reason R   Hide from today/overdue until then
+  dataops tasks unsnooze <task-id>                       Back in the queue now
   dataops tasks unblock <task-id> --note NOTE [--unblocked]   (default: response received)
   dataops tasks assign <task-id> <user-id|me>
   dataops tasks delete <task-id>                                (admin)
@@ -155,11 +157,18 @@ function isWaitingOrFollowUp(task) {
   return OPEN.has(task.status) && (task.status === "waiting" || Boolean(task.waitingFor) || Boolean(task.followUpAt));
 }
 
+/** A snoozed Task stays out of the queue while its date is in the future. */
+export function isSnoozed(task, day) {
+  const until = String(task.snoozedUntil || "").slice(0, 10);
+  return Boolean(until) && until > day;
+}
+
 /** The web queue's urgency segment for one open Task. */
 export function queueSegment(task, day) {
   const due = String(task.date || "").slice(0, 10);
   const followUp = String(task.followUpAt || "").slice(0, 10);
   if (!OPEN.has(task.status)) return "";
+  if (isSnoozed(task, day)) return "snoozed";
   if (due && due < day) return "overdue";
   if (isWaitingOrFollowUp(task) && followUp && followUp <= day) return "follow-up";
   if (due === day) return "today";
@@ -167,11 +176,11 @@ export function queueSegment(task, day) {
   return "open";
 }
 
-const SEGMENT_ORDER = ["overdue", "follow-up", "today", "waiting", "open"];
+const SEGMENT_ORDER = ["overdue", "follow-up", "today", "waiting", "open", "snoozed"];
 
 export function orderQueue(tasks, day) {
   const seen = new Set();
-  const unique = tasks.filter((task) => task && OPEN.has(task.status) && !seen.has(task.id) && seen.add(task.id));
+  const unique = tasks.filter((task) => task && OPEN.has(task.status) && !isSnoozed(task, day) && !seen.has(task.id) && seen.add(task.id));
   return unique
     .map((task) => ({ ...task, queueSegment: queueSegment(task, day) }))
     .sort(
@@ -275,6 +284,8 @@ export async function show(args, io) {
     ["comment", task.comment],
     ["waiting for", task.waitingFor],
     ["follow up", task.followUpAt],
+    ["snoozed until", task.snoozedUntil],
+    ["snooze reason", task.snoozeReason],
     ["external status", task.externalStatus],
     ["instruction doc", task.instructionDocId],
     ["source docs", task.sourceDocIds],
@@ -459,6 +470,19 @@ export async function followedUp(args, io) {
   }, "Recorded follow-up on");
 }
 
+export async function snooze(args, io) {
+  positional(args, 0, "dataops tasks snooze <task-id> --until +7d --reason R");
+  return action(args, io, "snooze", {
+    snoozedUntil: isoDate(required(args, "until", "until"), "until"),
+    reason: required(args, "reason", "reason"),
+  }, "Snoozed");
+}
+
+export async function unsnooze(args, io) {
+  positional(args, 0, "dataops tasks unsnooze <task-id>");
+  return action(args, io, "unsnooze", {}, "Unsnoozed");
+}
+
 export async function unblock(args, io) {
   positional(args, 0, "dataops tasks unblock <task-id> --note N [--unblocked]");
   return action(args, io, args.unblocked ? "unblocked" : "response-received", {
@@ -505,6 +529,8 @@ export const commands = {
   reopen,
   wait,
   "followed-up": followedUp,
+  snooze,
+  unsnooze,
   unblock,
   skip,
   unskip,

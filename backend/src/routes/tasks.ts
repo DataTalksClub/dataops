@@ -598,6 +598,66 @@ export async function handleTaskRoutes(
       return jsonResponse(200, await projectWithPrerequisites(client, updated));
     }
 
+    // Snooze hides an open Task from the today/overdue queue until the given
+    // date, then it returns. The due date, status, and ownership are
+    // untouched; only the queue hides it.
+    if (taskAction.action === 'snooze') {
+      if (existing.status === 'done') {
+        return jsonResponse(400, { error: 'Completed tasks cannot be snoozed' });
+      }
+      const rawUntil = trimmedString(body.snoozedUntil);
+      const resolvedUntil = rawUntil ? resolveDateInput(rawUntil, 'snoozedUntil') : null;
+      if (!resolvedUntil || 'error' in resolvedUntil) {
+        return jsonResponse(400, { error: resolvedUntil && 'error' in resolvedUntil ? resolvedUntil.error : 'snoozedUntil is required' });
+      }
+      const reason = trimmedString(body.reason);
+      const reasonError = validateSkipReason(reason);
+      if (reasonError) return jsonResponse(400, { error: reasonError });
+
+      const historyEvent = makeTaskHistoryEvent('snoozed', existing, {
+        actorId,
+        followUpAt: resolvedUntil.date,
+        note: reason,
+        createdAt: now,
+      });
+      const updated = await updateTask(client, existing.id, {
+        currentTask: existing,
+        expectedVersion,
+        patch: {
+          snoozedUntil: resolvedUntil.date,
+          snoozeReason: reason,
+        },
+        historyEvents: [historyEvent],
+        actorId,
+        triggerKind: 'task-snoozed',
+      });
+      return jsonResponse(200, await projectWithPrerequisites(client, updated));
+    }
+
+    if (taskAction.action === 'unsnooze') {
+      if (!existing.snoozedUntil) {
+        return jsonResponse(400, { error: 'Task is not snoozed' });
+      }
+      const historyEvent = makeTaskHistoryEvent('unsnoozed', existing, {
+        actorId,
+        previousFollowUpAt: existing.snoozedUntil,
+        note: existing.snoozeReason,
+        createdAt: now,
+      });
+      const updated = await updateTask(client, existing.id, {
+        currentTask: existing,
+        expectedVersion,
+        patch: {
+          snoozedUntil: null,
+          snoozeReason: null,
+        },
+        historyEvents: [historyEvent],
+        actorId,
+        triggerKind: 'task-unsnoozed',
+      });
+      return jsonResponse(200, await projectWithPrerequisites(client, updated));
+    }
+
     if (taskAction.action === 'response-received' || taskAction.action === 'unblocked') {
       if (existing.status !== 'waiting') {
         return jsonResponse(400, { error: 'Task must be waiting before it can be unblocked' });
@@ -748,7 +808,7 @@ export async function handleTaskRoutes(
     if (Object.keys(updates).length === 0) {
       return jsonResponse(400, { error: 'No valid fields to update' });
     }
-    for (const field of ['date', 'followUpAt'] as const) {
+    for (const field of ['date', 'followUpAt', 'snoozedUntil'] as const) {
       if (updates[field] !== undefined && updates[field] !== null) {
         const resolved = resolveDateInput(updates[field], field);
         if ('error' in resolved) return jsonResponse(400, { error: resolved.error });

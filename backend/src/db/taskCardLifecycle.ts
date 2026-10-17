@@ -124,7 +124,7 @@ function isOpenStatus(status: TaskStatus): boolean {
 /** Optional Task attributes a `null` patch value removes instead of storing. */
 const REMOVABLE_TASK_FIELDS = new Set([
   'cardId', 'subject', 'completedAt', 'completedBy', 'skipReason', 'skippedAt', 'skippedBy', 'dependsOn',
-  'browserRequirement',
+  'browserRequirement', 'snoozedUntil', 'snoozeReason',
 ]);
 
 function taskKey(id: string) {
