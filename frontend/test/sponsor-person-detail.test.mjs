@@ -125,6 +125,49 @@ test("activity errors render retry without faking content", async () => {
   assert.match(host.querySelector('[data-person-panel="activity"]').querySelector("[data-activity-list]").innerHTML, /Activity unavailable/);
 });
 
+test("stale activity never clears the new person's single-flight flag", async () => {
+  const fetches = { p1: 0, p2: 0 };
+  let releaseA, releaseB;
+  const gateA = new Promise((resolve) => { releaseA = resolve; });
+  const gateB = new Promise((resolve) => { releaseB = resolve; });
+  const api = async (path) => {
+    if (path === "/contacts/p1") return person;
+    if (path === "/contacts/p2") return { ...person, id: "p2", name: "Bo", organizationId: "" };
+    if (path === "/activity/contact/p1?limit=30") {
+      fetches.p1 += 1;
+      await gateA;
+      return { targetType: "contact", targetId: "p1", items: [], total: 0, nextCursor: null, sources: {}, relatedWork: [], tasksScope: "open", reads: {} };
+    }
+    if (path === "/activity/contact/p2?limit=30") {
+      fetches.p2 += 1;
+      await gateB;
+      return { targetType: "contact", targetId: "p2", items: [{ ts: "2026-10-09T00:00:00Z", source: "note", id: "b-note", actor: null, text: "Bee", provenance: {} }], total: 1, nextCursor: null, sources: {}, relatedWork: [], tasksScope: "open", reads: {} };
+    }
+    throw new Error(`Unexpected: ${path}`);
+  };
+  const surface = new FakeNode("section");
+  const host = surface.setQuery("[data-crm-person]", new FakeNode("article"));
+  host.setQuery('[data-person-panel="overview"]', new FakeNode("section"));
+  const activityPanel = host.setQuery('[data-person-panel="activity"]', new FakeNode("section"));
+  const detail = createSponsorPersonDetail({ api, surface, escapeHtml, closeRecord: () => {} });
+  detail.wire(host);
+  await detail.openPerson("p1");
+  const pendingA = detail.switchTab("activity");
+  await detail.openPerson("p2");
+  const pendingB = detail.switchTab("activity");
+  // Stale A resolves while B is still in flight: it must return before
+  // touching the shared single-flight flag.
+  releaseA();
+  await pendingA;
+  // Repeat B click while B is in flight: still exactly one B request.
+  await detail.switchTab("activity");
+  assert.equal(fetches.p2, 1, "stale A never cleared B's single-flight flag");
+  releaseB();
+  await pendingB;
+  assert.match(activityPanel.querySelector("[data-activity-list]").innerHTML, /Bee/, "B content paints after its own load");
+  assert.equal(fetches.p1, 1);
+});
+
 test("stale activity responses never render into a switched person", async () => {
   let releaseFirst;
   const gate = new Promise((resolve) => { releaseFirst = resolve; });

@@ -242,8 +242,11 @@ export function createSponsorPersonDetail(context) {
     activityLoading = true;
     activityPanelCtl.paint();
     await activityLoader.load();
-    activityLoading = false;
+    // Stale-generation check BEFORE mutating shared flags: a deferred load
+    // from the previously opened person must never clear the current
+    // person's single-flight flag (or paint into its panel).
     if (mine !== undefined && mine !== token) return;
+    activityLoading = false;
     activityPanelCtl.paint();
     if (activityLoader.state.status === "ready") activityLoaded = true;
   }

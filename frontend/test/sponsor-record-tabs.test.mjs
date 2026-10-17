@@ -498,6 +498,39 @@ test("tab switching updates buttons in place without nesting tablists", async ()
   assert.doesNotMatch(tabs.innerHTML, /data-record-tabs/, "no nested tablist markup");
 });
 
+test("rapid activity clicks share one loader and one fetch", async () => {
+  let fetches = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const api = async (path) => {
+    if (path === "/directory/companies/c1") return company;
+    if (path === "/activity/organization/c1?limit=3") return preview;
+    if (path === "/activity/organization/c1?limit=30") {
+      fetches += 1;
+      await gate;
+      return preview;
+    }
+    throw new Error(`Unexpected: ${path}`);
+  };
+  const surface = new FakeNode("section");
+  const host = surface.setQuery("[data-crm-record]", new FakeNode("article"));
+  host.setQuery('[data-record-panel="overview"]', new FakeNode("section"));
+  host.setQuery('[data-record-panel="people"]', new FakeNode("section"));
+  host.setQuery('[data-record-panel="activity"]', new FakeNode("section"));
+  host.setQuery('[data-record-panel="deals"]', new FakeNode("section"));
+  host.setQuery('[data-record-panel="finance"]', new FakeNode("section"));
+  const record = createSponsorRecord({
+    api, surface, escapeHtml, closeRecord: () => {}, loadFinance: async () => {},
+  });
+  record.wire(host);
+  await record.openCompany("c1");
+  const first = record.switchTab("activity");
+  const second = record.switchTab("activity");
+  release();
+  await Promise.all([first, second]);
+  assert.equal(fetches, 1, "one bounded fetch for two rapid tab clicks");
+});
+
 test("failed explicit selections never fall back to unrelated finance", async () => {
   const page = [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off" }];
   for (const [name, dealId, byId, message] of [

@@ -524,24 +524,33 @@ export function createSponsorRecord(context) {
   async function loadActivity(mine) {
     const target = panel("activity");
     if (!target || !record) return;
-    const loader = createActivityLoader({ api, targetType: "organization", targetId: record.companyId });
-    record.activityLoader = loader;
-    const withArchive = typeof context.loadArchive === "function";
-    target.innerHTML = activityPanelMarkup({ targetType: "organization" })
-      + (withArchive ? html`<div data-record-archive-host></div>` : "");
-    const wired = wireActivityPanel(target, loader, {
-      ...context,
-      openTaskPanel: typeof context.openTaskPanel === "function" ? context.openTaskPanel : undefined,
-    });
-    wired.paint();
-    if (withArchive) {
-      paintArchive(target, null);
-      wireArchive(target);
+    // One loader + one wiring per record: rapid Activity clicks reuse them
+    // instead of duplicating fetches and listeners.
+    if (!record.activityLoader) {
+      record.activityLoader = createActivityLoader({ api, targetType: "organization", targetId: record.companyId });
+      const withArchive = typeof context.loadArchive === "function";
+      target.innerHTML = activityPanelMarkup({ targetType: "organization" })
+        + (withArchive ? html`<div data-record-archive-host></div>` : "");
+      record.activityWired = wireActivityPanel(target, record.activityLoader, {
+        ...context,
+        openTaskPanel: typeof context.openTaskPanel === "function" ? context.openTaskPanel : undefined,
+      });
+      if (withArchive) {
+        paintArchive(target, null);
+        wireArchive(target);
+      }
     }
-    await loader.load();
+    // Single-flight: a second click while the first page is in flight is a
+    // no-op; the stale-generation check below runs before any shared flag
+    // mutation so a deferred load can never clear a newer request's flag.
+    if (record.loaded.has("activity") || record.activityLoading) return;
+    record.activityLoading = true;
+    record.activityWired.paint();
+    await record.activityLoader.load();
     if (mine !== undefined && mine !== token) return;
-    wired.paint();
-    record.loaded.add("activity");
+    record.activityLoading = false;
+    record.activityWired.paint();
+    if (record.activityLoader.state.status === "ready") record.loaded.add("activity");
   }
 
   function archiveLoaderFor() {
