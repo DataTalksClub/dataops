@@ -500,6 +500,55 @@ describe('API — CRUD for tasks', () => {
       }
     });
 
+    it('returns tasks for several cards in one cardIds request', async () => {
+      const first = (await createCard(await getClient(port), {
+        ...templateLink(),
+        title: 'Batch Card One', anchorDate: '2092-02-01',
+      })).id;
+      const second = (await createCard(await getClient(port), {
+        ...templateLink(),
+        title: 'Batch Card Two', anchorDate: '2092-02-01',
+      })).id;
+      const third = (await createCard(await getClient(port), {
+        ...templateLink(),
+        title: 'Batch Card Three', anchorDate: '2092-02-01',
+      })).id;
+      for (const [cardId, description] of [[first, 'B1'], [second, 'B2'], [third, 'B3']]) {
+        await handler({
+          httpMethod: 'POST', path: '/api/tasks',
+          body: JSON.stringify({ description, date: '2092-02-01', cardId }),
+        }, {});
+      }
+
+      const batched = await handler({
+        httpMethod: 'GET',
+        path: '/api/tasks',
+        queryStringParameters: { cardIds: `${first},${second}` },
+      }, {});
+
+      assert.strictEqual(batched.statusCode, 200);
+      const batchedBody = JSON.parse(batched.body);
+      assert.strictEqual(batchedBody.tasks.length, 2);
+      assert.deepStrictEqual(
+        batchedBody.tasks.map((task) => task.cardId).sort(),
+        [first, second].sort(),
+      );
+
+      const rejected = await handler({
+        httpMethod: 'GET',
+        path: '/api/tasks',
+        queryStringParameters: { cardIds: `${first},${second}`, cardId: first },
+      }, {});
+      assert.strictEqual(rejected.statusCode, 400);
+
+      const empty = await handler({
+        httpMethod: 'GET',
+        path: '/api/tasks',
+        queryStringParameters: { cardIds: '  ' },
+      }, {});
+      assert.strictEqual(empty.statusCode, 400);
+    });
+
     it('returns tasks filtered by status', async () => {
       const uniqueDate = '2093-09-09';
       await handler({

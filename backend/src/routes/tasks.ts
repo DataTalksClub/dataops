@@ -401,6 +401,24 @@ export async function handleTaskRoutes(
 
     const params = event.queryStringParameters || {};
     const { cardId, status } = params;
+    // Batched card checklist reads: one request carries every active Card id
+    // instead of one request per Card, so a mobile snapshot costs one round
+    // trip rather than 8 + N. Comma-separated, capped like a collection page.
+    const cardIds = (() => {
+      const raw = params.cardIds;
+      if (raw === undefined) return null;
+      const ids = [...new Set(String(raw).split(',').map((id) => id.trim()).filter(Boolean))];
+      return ids;
+    })();
+    if (cardIds !== null && cardIds.length === 0) {
+      return jsonResponse(400, { error: 'cardIds must list at least one card id' });
+    }
+    if (cardIds !== null && cardIds.length > 200) {
+      return jsonResponse(400, { error: 'cardIds must list at most 200 card ids' });
+    }
+    if (cardIds !== null && cardId) {
+      return jsonResponse(400, { error: 'Use either cardId or cardIds, not both' });
+    }
     let { date, startDate, endDate } = params;
     for (const [field, value] of [['date', date], ['startDate', startDate], ['endDate', endDate]] as const) {
       if (value === undefined) continue;
@@ -456,9 +474,9 @@ export async function handleTaskRoutes(
       browserFilter = parsed.filter;
     }
 
-    if (!date && !startDate && !endDate && !cardId && !status && !ownerFilter) {
+    if (!date && !startDate && !endDate && !cardId && !cardIds && !status && !ownerFilter) {
       return jsonResponse(400, {
-        error: 'At least one filter is required: owner, date, startDate+endDate, cardId, or status',
+        error: 'At least one filter is required: owner, date, startDate+endDate, cardId, cardIds, or status',
       });
     }
 
@@ -467,11 +485,13 @@ export async function handleTaskRoutes(
     const activeMemberIds = await directory.activeMemberIds();
 
     async function ownerListResponse(tasks: Task[]): Promise<LambdaResponse> {
+      const cardIdSet = cardIds ? new Set(cardIds) : null;
       const visible = tasks.filter((task) => (
         (!date || task.date === date)
         && (!startDate || task.date >= startDate)
         && (!endDate || task.date <= endDate)
         && (!cardId || task.cardId === cardId)
+        && (!cardIdSet || (task.cardId !== undefined && cardIdSet.has(task.cardId)))
         && (!status || task.status === status)
         && (!ownerFilter || matchesOwnerFilter(task.assigneeId, ownerFilter, activeMemberIds))
         && matchesRequiresFilter(task.requires, requiresFilter)
@@ -505,6 +525,11 @@ export async function handleTaskRoutes(
 
     if (cardId) {
       return await ownerListResponse(await listTasksByCard(client, cardId));
+    }
+
+    if (cardIds) {
+      const perCard = await Promise.all(cardIds.map((id) => listTasksByCard(client, id)));
+      return await ownerListResponse(perCard.flat());
     }
 
     if (status) {
