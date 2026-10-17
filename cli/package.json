@@ -7,6 +7,9 @@
   "engines": {
     "node": ">=18"
   },
+  "dependencies": {
+    "js-yaml": "^4.3.1"
+  },
   "bin": {
     "dataops": "./bin/dataops.mjs"
   },

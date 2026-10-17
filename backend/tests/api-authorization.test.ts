@@ -215,15 +215,34 @@ describe('/api/* authorization with authentication enabled', () => {
 
   for (const route of [
     { method: 'POST', path: '/api/templates', body: { name: 'Must not persist' } },
-    { method: 'PUT', path: '/api/templates/some-template', body: { name: 'Must not persist' } },
     { method: 'DELETE', path: '/api/templates/some-template' },
   ]) {
-    it(`keeps retired ${route.method} ${route.path} unavailable to an authenticated operator`, async () => {
+    it(`refuses an operator on ${route.method} ${route.path} with 403`, async () => {
       const response = await invoke(route, { Authorization: `Bearer ${operatorToken}` });
-      assert.strictEqual(response.statusCode, 405);
-      assert.strictEqual(JSON.parse(response.body).authority, 'git-authored-workflow-templates');
+      assert.strictEqual(response.statusCode, 403, `${route.method} ${route.path} -> ${response.statusCode} ${response.body}`);
+      assert.equal(JSON.parse(response.body).code, 'work_admin_forbidden');
     });
   }
+
+  it('lets an operator pin a template but never create or delete one', async () => {
+    const put = await invoke(
+      {
+        method: 'PUT',
+        path: '/api/templates/some-template',
+        body: {
+          expectedVersion: 1,
+          revision: 'rev-1',
+          definition: {
+            name: 'Synthetic', type: 'synthetic',
+            tasks: [{ id: 'a', name: 'A', schedule: { offset_days: 0 } }],
+          },
+        },
+      },
+      { Authorization: `Bearer ${operatorToken}` },
+    );
+    // Work-write passes the role gate; the unknown id fails after it.
+    assert.strictEqual(put.statusCode, 404, `PUT /api/templates/some-template -> ${put.statusCode} ${put.body}`);
+  });
 
   it('refuses an operator who also sends admin role and portal headers', async () => {
     for (const route of ADMIN_ONLY_MUTATIONS) {

@@ -61,6 +61,15 @@ export function validateCardRefs(body: Record<string, unknown>): string | null {
 
 let cachedTemplateTypeMap: { timestamp: number; map: Map<string, string> } | null = null;
 
+/**
+ * Drop the process-local type map. Template create/delete/adopt call this
+ * synchronously so the same Lambda never resolves a new type to a stale id
+ * (or a deleted id to a card) within the 60s cross-instance TTL window.
+ */
+export function invalidateTemplateTypeMap(): void {
+  cachedTemplateTypeMap = null;
+}
+
 export async function getTemplateIdByType(client: DynamoDBDocumentClient): Promise<Map<string, string>> {
   const now = Date.now();
   if (cachedTemplateTypeMap && now - cachedTemplateTypeMap.timestamp < 60_000) {

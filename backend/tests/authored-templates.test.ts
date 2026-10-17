@@ -1,5 +1,5 @@
 import {checksum} from '../src/docs/knowledgeStore';
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, beforeEach, after } from 'node:test';
 import assert from 'node:assert';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -12,6 +12,7 @@ import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createTemplate, listTemplates } from '../src/db/templates';
+import { truncateTestTables } from './helpers/db';
 import {
   loadAuthoredTemplatesFromDirectory,
   loadAuthoredTemplatesFromKnowledge,
@@ -47,6 +48,10 @@ describe('Git-authored template projection', () => {
 
   after(async () => {
     await stopLocal();
+  });
+
+  beforeEach(async () => {
+    await truncateTestTables(client);
   });
 
   it('loads a directory with content-addressed source metadata', () => {
@@ -134,7 +139,7 @@ describe('Git-authored template projection', () => {
     }
   });
 
-  it('creates, replaces in place, removes stale fields, and is idempotent', async () => {
+  it('creates, replaces the unpinned base, removes stale fields, and is idempotent', async () => {
     const document = syntheticAuthoredTemplate('alpha');
     const definitions = parseAuthoredTemplateFiles([{
       path: 'workflow-templates/alpha.yaml',
@@ -150,6 +155,9 @@ describe('Git-authored template projection', () => {
     assert.strictEqual(original.version, 1);
     assert.strictEqual(original.schemaVersion, 2);
     assert.strictEqual(original.sourcePath, 'workflow-templates/alpha.yaml');
+    assert.strictEqual(original.origin, 'git');
+    assert.strictEqual(original.pinned, false);
+    assert.ok(typeof original.revision === 'string');
 
     const changedDocument = {
       ...document, name: 'Alpha changed in Git', owner_role: 'synthetic-new-owner',
@@ -170,6 +178,7 @@ describe('Git-authored template projection', () => {
     const replacement = (await listTemplates(client))[0];
     assert.deepStrictEqual(templateToYaml({ ...replacement }), changedDocument);
     assert.strictEqual(replacement.id, original.id);
+    assert.strictEqual(replacement.revision, original.revision);
     assert.strictEqual(replacement.createdAt, original.createdAt);
     assert.strictEqual(replacement.name, 'Alpha changed in Git');
     assert.strictEqual(replacement.sourceRevision, 'blob-b');
@@ -197,24 +206,106 @@ describe('Git-authored template projection', () => {
     assert.deepStrictEqual((await listTemplates(client))[0], withoutMetadata);
   });
 
-  it('rejects runtime-only and duplicate runtime types before writing', async () => {
+  it('preserves custom rows whose type is absent from Git', async () => {
     await createTemplate(client, {
       type: 'runtime-only',
       name: 'Runtime only',
       taskDefinitions: [{ refId: 'one', description: 'One', offsetDays: 0 }],
     });
-    const definition = parseAuthoredTemplateFiles([{
+    const alpha = parseAuthoredTemplateFiles([{
       path: 'workflow-templates/alpha.yaml',
       revision: 'blob-c',
       content: authored('alpha'),
     }]);
-    await assert.rejects(() => reconcileAuthoredTemplates(client, definition), /absent from Git: runtime-only/);
+    const seeded = await reconcileAuthoredTemplates(client, alpha);
+    assert.deepStrictEqual(seeded, { total: 1, created: 1, updated: 0, unchanged: 0 });
+    const kept = (await listTemplates(client)).find((item) => item.type === 'runtime-only');
+    assert.ok(kept);
+    assert.strictEqual(kept.origin, 'custom');
+  });
 
+  it('fails closed loudly on explicit custom collisions', async () => {
+    await createTemplate(client, {
+      type: 'alpha',
+      name: 'Operator alpha',
+      taskDefinitions: [{ refId: 'mine', description: 'Mine', offsetDays: 4 }],
+    });
+    const alpha = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/alpha.yaml',
+      revision: 'blob-c',
+      content: authored('alpha'),
+    }]);
+    await assert.rejects(
+      reconcileAuthoredTemplates(client, alpha),
+      /collides with custom template: alpha/,
+    );
+    // Nothing was written: the custom row keeps its identity and version.
+    const kept = (await listTemplates(client)).find((item) => item.type === 'alpha');
+    assert.strictEqual(kept?.origin, 'custom');
+    assert.strictEqual(kept?.version, 1);
+  });
+
+  it('fails closed loudly on stale Git rows', async () => {
+    await createTemplate(client, {
+      type: 'stale-git',
+      name: 'Stale Git',
+      sourcePath: 'workflow-templates/stale-git.yaml',
+      sourceRevision: 'rev-1',
+      taskDefinitions: [{ refId: 'one', description: 'One', offsetDays: 0 }],
+    });
+    const alpha = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/alpha.yaml',
+      revision: 'blob-c',
+      content: authored('alpha'),
+    }]);
+    await assert.rejects(
+      reconcileAuthoredTemplates(client, alpha),
+      /absent from Git: stale-git/,
+    );
+  });
+
+  it('fails closed loudly on unclassified rows', async () => {
+    const { PutCommand } = await import('@aws-sdk/lib-dynamodb');
+    const { TABLE_TEMPLATES } = await import('../src/db/tableNames');
+    const id = 'unclassified-row';
+    await client.send(new PutCommand({
+      TableName: TABLE_TEMPLATES,
+      Item: {
+        PK: `TEMPLATE#${id}`, SK: `TEMPLATE#${id}`, id,
+        name: 'Mystery', type: 'mystery-type', version: 1,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      },
+    }));
+    const alpha = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/alpha.yaml',
+      revision: 'blob-c',
+      content: authored('alpha'),
+    }]);
+    await assert.rejects(
+      reconcileAuthoredTemplates(client, alpha),
+      /Unclassified runtime workflow template/,
+    );
+  });
+
+  it('still rejects duplicate runtime types before writing', async () => {
+    await createTemplate(client, {
+      type: 'alpha',
+      name: 'First alpha',
+      taskDefinitions: [{ refId: 'one', description: 'One', offsetDays: 0 }],
+    });
     await createTemplate(client, {
       type: 'alpha',
       name: 'Duplicate alpha',
       taskDefinitions: [{ refId: 'one', description: 'One', offsetDays: 0 }],
     });
-    await assert.rejects(() => reconcileAuthoredTemplates(client, definition), /Duplicate runtime workflow template types: alpha/);
+    const alpha = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/alpha.yaml',
+      revision: 'blob-c',
+      content: authored('alpha'),
+    }]);
+    await assert.rejects(
+      reconcileAuthoredTemplates(client, alpha),
+      /Duplicate runtime workflow template types: alpha/,
+    );
   });
 });

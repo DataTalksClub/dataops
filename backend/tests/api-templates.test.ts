@@ -22,7 +22,7 @@ function body(response: LambdaResponse): any {
   return JSON.parse(response.body);
 }
 
-describe('read-only workflow template API', () => {
+describe('workflow template API', () => {
   let client: DynamoDBDocumentClient;
   let template: Template;
 
@@ -61,16 +61,22 @@ describe('read-only workflow template API', () => {
   });
 
   for (const [method, path] of [
-    ['POST', '/api/templates'],
-    ['PUT', '/api/templates/synthetic'],
-    ['DELETE', '/api/templates/synthetic'],
     ['PATCH', '/api/templates/synthetic'],
   ]) {
     it(`${method} ${path} is method-not-allowed without a side effect`, async () => {
       const response = await invoke(method, path, { name: 'Must not persist' });
       assert.strictEqual(response.statusCode, 405);
-      assert.strictEqual(body(response).authority, 'git-authored-workflow-templates');
       assert.strictEqual((await getTemplate(client, template.id))?.name, 'Synthetic Git projection');
     });
   }
+
+  it('routes template mutations through validation instead of a blanket 405', async () => {
+    // Invalid bodies are rejected without touching the stored projection.
+    // (Unauthenticated and role-gate refusals live in api-authorization.test.ts.)
+    const invalid = await invoke('PUT', `/api/templates/${template.id}`, { expectedVersion: 1 });
+    assert.strictEqual(invalid.statusCode, 400);
+    const unvalidated = await invoke('POST', '/api/templates', { name: 'Must not persist' });
+    assert.strictEqual(unvalidated.statusCode, 422);
+    assert.strictEqual((await getTemplate(client, template.id))?.name, 'Synthetic Git projection');
+  });
 });

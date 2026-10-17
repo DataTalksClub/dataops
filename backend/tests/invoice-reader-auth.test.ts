@@ -35,6 +35,7 @@ describe('deployment-managed invoice reader through the configured portal', () =
   });
   it('refuses every mutation, unrelated API and path lookalike', async () => {
     for (const prefix of ['', '/work']) for (const path of ['/api/me', '/api/tasks', '/api/users', '/api/tokens',
+      '/api/templates',
       '/api/auth/device/approve', '/api/bookkeeping', '/api/bookkeeping/invoices/',
       '/api/bookkeeping/invoices/process', `/api/bookkeeping/invoices/${'b'.repeat(64)}/verify`]) {
       for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) assert.equal((await request(method, prefix + path)).statusCode, 403);

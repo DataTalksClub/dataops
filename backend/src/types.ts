@@ -545,6 +545,25 @@ export interface Template {
   /** Private-repository path and Git blob SHA for this runtime projection. */
   sourcePath?: string;
   sourceRevision?: string;
+  /**
+   * How the effective definition arrived: Git-seeded (`git`) or created
+   * through the Templates API (`custom`). Pre-feature rows lack it until
+   * the seed or a template write backfills it.
+   */
+  origin?: 'git' | 'custom';
+  /**
+   * True when an operator pinned a whole effective definition over the Git
+   * base. The top-level fields always hold the effective definition, so
+   * every reader sees a validated whole; `base` preserves the Git
+   * projection underneath for reset and drift comparison.
+   */
+  pinned?: boolean;
+  /** Per-lifetime identity token: a stale pair can never authorize a new row. */
+  revision?: string;
+  /** The Git projection underneath an operator pin (`origin === 'git'`). */
+  base?: Record<string, unknown>;
+  /** `base.sourceRevision` convenience for pin-drift comparison. */
+  baseSourceRevision?: string | null;
   /** Required monotonic optimistic-concurrency token. */
   version: number;
   createdAt: string;

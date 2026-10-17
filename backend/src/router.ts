@@ -356,7 +356,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // ── Template routes ────────────────────────────────────────────
 
     if (reqPath.startsWith('/api/templates')) {
-      const result = await handleTemplateRoutes(reqPath, method, event.body || null, event);
+      const result = await handleTemplateRoutes(reqPath, method, event.body || null, event, client);
       if (result) return result;
     }
 
