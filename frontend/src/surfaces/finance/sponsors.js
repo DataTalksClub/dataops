@@ -67,7 +67,6 @@ export function createSponsorCrmSurface(context) {
     escapeHtml,
     getPendingLegacyRoute,
     humanizeOptionLabel,
-    isWorkspaceRouteFresh,
     navigateCanonicalWorkspace,
     openTaskPanel,
     request,
@@ -79,6 +78,7 @@ export function createSponsorCrmSurface(context) {
   let sponsorCommunications = null;
   // Whether the operator unfolded the alerts; a repaint of the surface keeps it.
   let alertsOpen = false;
+  let surfaceRenderCount = 0;
 
   async function canLeaveFinanceSurface(reason = "navigation") {
     return (
@@ -88,8 +88,13 @@ export function createSponsorCrmSurface(context) {
   }
 
   async function renderSponsorCrmSurface() {
+    // Surface-local render generation: in-render canonical URL writes
+    // (filter/sort/page sync with history:replace) legitimately move the
+    // route token, so staleness here means a NEWER render started or the
+    // surface detached — never our own URL bookkeeping.
+    const renderToken = ++surfaceRenderCount;
+    const stale = () => renderToken !== surfaceRenderCount || !surface.isConnected;
     const routeAtStart = getPendingLegacyRoute();
-    const routeToken = routeAtStart?.token;
     const sponsorsRoute = routeAtStart?.view === "sponsors" ? routeAtStart : null;
     const initialTab = sponsorsRoute?.sponsorsTab || "pipeline";
     const requested = (name) => sponsorsRoute?.params.get(name) || null;
@@ -311,9 +316,19 @@ export function createSponsorCrmSurface(context) {
         : "Money";
       if (redraw) draw();
     }
+    // The person record open at save time: afterSave refreshes contextually
+    // instead of always jumping to the company record.
+    let currentPersonId = null;
     const contactEditor = createSponsorContactEditor({ api, surface, getContacts: () => contacts,
       getOrganizations: () => organizations, safe, openDialog,
-      afterSave: async (organizationId) => { await refresh(); await reopenCompanyDetail(await loadCompany(organizationId)); } });
+      afterSave: async (organizationId) => {
+        await refresh();
+        if (currentPersonId && surface.querySelector("[data-crm-person]")) {
+          await personDetail.openPerson(currentPersonId);
+          return;
+        }
+        await reopenCompanyDetail(await loadCompany(organizationId));
+      } });
     const personDetail = createSponsorPersonDetail({
       api,
       surface,
@@ -474,6 +489,7 @@ export function createSponsorCrmSurface(context) {
         ? organizations.find((item) => item.id === companyId)
         : null;
       if (deal) {
+        currentPersonId = null;
         if (PAGE_VIEWS.has(currentView)) {
           setView("pipeline");
         }
@@ -481,6 +497,7 @@ export function createSponsorCrmSurface(context) {
         return true;
       }
       if (organization) {
+        currentPersonId = null;
         if (PAGE_VIEWS.has(currentView)) {
           setView("pipeline");
         }
@@ -488,6 +505,7 @@ export function createSponsorCrmSurface(context) {
         return true;
       }
       if (personId) {
+        currentPersonId = personId;
         if (PAGE_VIEWS.has(currentView)) {
           setView("pipeline");
         }
@@ -508,24 +526,42 @@ export function createSponsorCrmSurface(context) {
       }
       return false;
     }
-    // An in-place open records the record path; an unknown record renders it.
-    // keepContext preserves the existing Back origin for nested opens
-    // (person → company) instead of chaining a new one.
+    // An in-place open records the record path; a record that cannot load
+    // renders an honest error in the detail pane (retryable, with a way back)
+    // instead of a bare status message. keepContext preserves the existing
+    // Back origin for nested opens (person → company) instead of chaining.
     function openRecord(kind, id, focusSelector, { keepContext = false } = {}) {
       safe(async () => {
-        if (!keepContext) directoryPages.captureReturnContext(kind, id, currentView);
-        if (kind === "deal") {
-          const item = await api(`/deals/${encodeURIComponent(id)}`);
-          await loadCompany(item.organizationId);
-          deals = [...deals.filter((value) => value.id !== id), item];
-          showRecord({ dealId: id });
-        } else if (kind === "person") {
-          showRecord({ personId: id });
-        } else {
-          await loadCompany(id);
-          showRecord({ companyId: id });
+        try {
+          if (!keepContext) directoryPages.captureReturnContext(kind, id, currentView);
+          if (kind === "deal") {
+            const item = await api(`/deals/${encodeURIComponent(id)}`);
+            await loadCompany(item.organizationId);
+            deals = [...deals.filter((value) => value.id !== id), item];
+            showRecord({ dealId: id });
+          } else if (kind === "person") {
+            showRecord({ personId: id });
+          } else {
+            await loadCompany(id);
+            showRecord({ companyId: id });
+          }
+          navigateCanonicalWorkspace(sponsorRecordPath(kind, id), {}, { render: false });
+        } catch (error) {
+          surface.classList.add("has-booking-detail");
+          const split = surface.querySelector("[data-crm-split]");
+          if (split) {
+            split.dataset.view = "detail";
+            globalThis.dakitSplit?.show(split, "detail");
+          }
+          renderEntityLoadState(surface.querySelector("[data-crm-detail]"), {
+            kind,
+            id,
+            status: error.status === 404 ? "not-found" : "error",
+            error: error.message,
+            retry: () => openRecord(kind, id, focusSelector),
+            returnToList: () => navigateCanonicalWorkspace(sponsorsPath(currentView)),
+          });
         }
-        navigateCanonicalWorkspace(sponsorRecordPath(kind, id), {}, { render: false });
       }, "Could not open record");
     }
 
@@ -839,8 +875,7 @@ export function createSponsorCrmSurface(context) {
     setView(initialTab, false);
     try {
       await refresh();
-      if (routeToken && (!isWorkspaceRouteFresh(routeToken) || !surface.isConnected)) return;
-      const stale = () => routeToken && (!isWorkspaceRouteFresh(routeToken) || !surface.isConnected);
+      if (stale()) return;
       if (requestedNewsletterId) await sponsorNewsletters.showNewsletter(requestedNewsletterId);
       // [id, kind, where its load state renders, tab to return to, open it]
       const record = [
