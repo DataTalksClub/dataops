@@ -1,10 +1,11 @@
 import "../../dakit/collection.js";
 import { setControlPending } from "../operations-overview.js";
 
-// What runs on its own, next to the recurring schedules: the daily job's
-// parts, exports and backups, knowledge jobs and GitHub workflows. The server
-// owns the list, the schedules and the run history; this only renders them
-// and lets an admin change the settings an automation reads.
+// What runs on its own, next to the recurring schedules: the Cards that get
+// created automatically and when, then the daily job's parts, exports and
+// backups, knowledge jobs and GitHub workflows. The server owns the lists,
+// the schedules and the run history; this only renders them and lets an
+// admin change the settings an automation reads.
 
 const ICONS = Object.freeze({
   ok: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9.5 12 1.8 1.8 3.4-3.6"/></svg>',
@@ -134,12 +135,15 @@ export function createAutomations(context) {
 
   function paint() {
     const automations = Array.isArray(state.data?.automations) ? state.data.automations : [];
+    const cards = Array.isArray(state.data?.cards) ? state.data.cards : [];
+    const visible = automations.filter((automation) => !automation.system);
+    const system = automations.filter((automation) => automation.system);
     section.replaceChildren(globalThis.dakitCollection.header({
       title: "Automations",
       level: "h3",
       className: "recurring-section-header",
       meta: state.loaded && !state.error
-        ? `${automations.length} ${automations.length === 1 ? "automation" : "automations"}`
+        ? `${visible.length} ${visible.length === 1 ? "automation" : "automations"}`
         : state.error ? "Not loaded" : "Loading…",
     }));
     if (state.error) {
@@ -150,18 +154,86 @@ export function createAutomations(context) {
       section.append(text("p", "ops-empty", "Loading automations…"));
       return;
     }
+    section.append(renderCards(cards));
     const list = document.createElement("ul");
     list.className = "automation-list";
-    for (const group of groupByRun(automations)) {
+    for (const group of groupByRun(visible)) {
       if (group.length === 1) list.append(renderItem(group[0], { shared: false }));
       else list.append(renderGroup(group));
     }
     section.append(list);
+    if (system.length) section.append(renderSystemJobs(system));
     section.append(text(
       "footer",
       "recurring-section-footer",
       "Times are Europe/Berlin. Settings are the values the jobs read; only admins can change them.",
     ));
+  }
+
+  // One row per Card that gets created automatically and when, from the live
+  // rules the server reports. Internal plumbing lives below under system jobs.
+  function renderCards(cards) {
+    const wrap = document.createElement("div");
+    wrap.className = "automation-cards";
+    wrap.append(text("h4", "automation-cards-title", "Automatically created cards"));
+    if (!cards.length) {
+      wrap.append(text("p", "ops-empty", "No automatic card rule is currently configured."));
+      return wrap;
+    }
+    const list = document.createElement("ul");
+    list.className = "automation-list automation-cards-list";
+    for (const card of cards) list.append(renderCard(card));
+    wrap.append(list);
+    return wrap;
+  }
+
+  function renderCard(card) {
+    const item = document.createElement("li");
+    item.className = "automation-item automation-card-item";
+    item.dataset.cardId = card.id;
+    const outcome = !card.lastRun ? "idle" : card.lastRun.ok ? "ok" : "failed";
+    item.classList.add(`is-${outcome}`);
+
+    const status = document.createElement("span");
+    status.className = "recurring-status automation-status";
+    const statusLabel = { ok: "Last run succeeded", failed: "Last run failed", idle: "No run recorded" }[outcome];
+    status.title = statusLabel;
+    status.append(icon(outcome), text("span", "visually-hidden", statusLabel));
+
+    const body = document.createElement("div");
+    body.className = "recurring-item-text";
+    body.append(text("strong", "", card.name));
+    const facts = renderFacts([
+      ["cadence", card.scheduleLabel],
+      ["next", card.nextRunAt ? `Next ${berlinMoment(card.nextRunAt)}` : ""],
+      ["last", automationLastRun(card)],
+    ]);
+    if (card.templateLink) {
+      const link = text("a", "recurring-fact automation-link", "Open template");
+      link.href = card.templateLink;
+      facts.append(link);
+    }
+    body.append(facts);
+    body.append(text("p", "automation-description", `Lead time: ${card.leadTime}.`));
+    body.append(text("p", "automation-description", `${card.skipRule}.`));
+    item.append(status, body);
+    return item;
+  }
+
+  function renderSystemJobs(system) {
+    const details = document.createElement("details");
+    details.className = "automation-system-jobs";
+    const summary = document.createElement("summary");
+    summary.textContent = `System jobs (${system.length})`;
+    details.append(summary);
+    const list = document.createElement("ul");
+    list.className = "automation-list";
+    for (const group of groupByRun(system)) {
+      if (group.length === 1) list.append(renderItem(group[0], { shared: false }));
+      else list.append(renderGroup(group));
+    }
+    details.append(list);
+    return details;
   }
 
   // Parts of one job (same runner, same schedule) share one header, so the

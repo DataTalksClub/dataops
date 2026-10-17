@@ -40,6 +40,8 @@ export interface AutomationDefinition {
   description: string;
   /** The runner: a Lambda in the application stack, or a GitHub workflow. */
   runsIn: string;
+  /** Internal plumbing (exports, backups, knowledge sync): shown collapsed as system jobs. */
+  system?: boolean;
   /** Logical id of the schedule in `infra/template.full.yaml`, for scheduled Lambdas. */
   infraSchedule?: string;
   schedule: AutomationSchedule;
@@ -50,7 +52,7 @@ export interface AutomationDefinition {
 }
 
 const DAILY_JOB = 'Daily job (backend Lambda)';
-const DAILY_JOB_SCHEDULE: AutomationSchedule = { kind: 'cron', expression: 'cron(0 8 * * ? *)' };
+export const DAILY_JOB_SCHEDULE: AutomationSchedule = { kind: 'cron', expression: 'cron(0 8 * * ? *)' };
 /** Shared by the sponsor alerts and the email suggestions, which chase on the same days. */
 const SPONSOR_REMINDER_SETTINGS: AutomationSettingSpec[] = [
   {
@@ -139,6 +141,7 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
     name: 'Execution data export',
     description: 'Exports Cards, Tasks, Templates and the rest of the execution data as a portable archive to the retained archive bucket.',
     runsIn: 'Backend Lambda',
+    system: true,
     infraSchedule: 'BackendFunctionDailyBackendExport',
     schedule: { kind: 'cron', expression: 'cron(30 8 * * ? *)' },
     runSource: 'recorded',
@@ -149,6 +152,7 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
     name: 'DynamoDB backup',
     description: 'Dumps every DataOps DynamoDB table to the retained archive bucket.',
     runsIn: 'Backend Lambda',
+    system: true,
     infraSchedule: 'BackendFunctionDailyDynamoBackup',
     schedule: { kind: 'cron', expression: 'cron(0 9 * * ? *)' },
     runSource: 'recorded',
@@ -159,6 +163,7 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
     name: 'Knowledge backup',
     description: 'Copies every published knowledge file version to the knowledge backup bucket.',
     runsIn: 'Knowledge worker Lambda',
+    system: true,
     infraSchedule: 'KnowledgeWorkerFunction.DailyKnowledgeBackup',
     schedule: { kind: 'cron', expression: 'cron(0 3 * * ? *)' },
     runSource: 'knowledge-checkpoint',
@@ -169,6 +174,7 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
     name: 'Knowledge mirror to GitHub',
     description: 'Commits the current published knowledge snapshot to the dataops-knowledge repository.',
     runsIn: 'Knowledge worker Lambda',
+    system: true,
     infraSchedule: 'KnowledgeWorkerFunction.DailyKnowledgeMirror',
     schedule: { kind: 'cron', expression: 'cron(0 4 * * ? *)' },
     runSource: 'knowledge-checkpoint',
@@ -179,6 +185,7 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
     name: 'Knowledge publish',
     description: 'Validates the knowledge repository and publishes the files that differ from DataOps.',
     runsIn: 'GitHub Actions, dataops-knowledge',
+    system: true,
     schedule: { kind: 'event', trigger: 'Push to main' },
     runSource: 'none',
     link: `${KNOWLEDGE_REPO_WORKFLOWS}/validate.yml`,
@@ -189,6 +196,7 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
     name: 'Knowledge repository backup',
     description: 'Zips the knowledge repository and uploads it to S3 when the commit changed since the last backup.',
     runsIn: 'GitHub Actions, dataops-knowledge',
+    system: true,
     schedule: { kind: 'cron', expression: '17 3 * * *' },
     runSource: 'none',
     link: `${KNOWLEDGE_REPO_WORKFLOWS}/backup-to-s3.yml`,

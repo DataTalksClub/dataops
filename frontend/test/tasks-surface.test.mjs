@@ -2834,11 +2834,24 @@ describe("Tasks surface boundary", () => {
           name: "Knowledge publish",
           description: "Publishes the knowledge repository.",
           runsIn: "GitHub Actions, dataops-knowledge",
+          system: true,
           scheduleLabel: "Push to main",
           nextRunAt: null,
           lastRun: null,
           link: "https://github.com/example/actions",
           settings: [],
+        },
+      ],
+      cards: [
+        {
+          id: "template-tax",
+          name: "Tax Report card",
+          scheduleLabel: "Monthly on the 1st (Europe/Berlin)",
+          leadTime: "Created on the scheduled date",
+          skipRule: "One Card per anchor date; missing Tasks are recovered instead of duplicating the Card",
+          nextRunAt: "2026-08-01T08:00:00.000Z",
+          lastRun: { at: "2026-07-01T08:00:02.000Z", ok: true, summary: "1 card created", source: "recorded" },
+          templateLink: "/templates?templateId=tax",
         },
       ],
     });
@@ -2861,7 +2874,16 @@ describe("Tasks surface boundary", () => {
     await nextTicks();
     const section = harness.documentList.querySelector(".ops-automations-section");
     assert.ok(section);
-    assert.match(section.textContent, /3 automations/);
+    assert.match(section.textContent, /2 automations/);
+    assert.match(section.textContent, /Automatically created cards/);
+    assert.match(section.textContent, /Tax Report card/);
+    assert.match(section.textContent, /Monthly on the 1st \(Europe\/Berlin\)/);
+    assert.match(section.textContent, /Created on the scheduled date/);
+    assert.match(section.textContent, /One Card per anchor date/);
+    assert.match(section.textContent, /Next Sat 1 Aug, 10:00 CEST/);
+    assert.match(section.textContent, /Last run Wed 1 Jul, 10:00 CEST: 1 card created/);
+    assert.equal(findByText(section, "Open template", "a").href, "/templates?templateId=tax");
+    assert.match(section.textContent, /System jobs \(1\)/);
     assert.match(section.textContent, /Daily at 10:00 CEST/);
     assert.match(section.textContent, /Next Tue 14 Jul, 10:00 CEST/);
     assert.match(section.textContent, /Last run Mon 13 Jul, 10:00 CEST: 2 tasks created/);

@@ -12,11 +12,13 @@ import { resolve } from 'node:path';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { AUTOMATIONS } from '../src/automations/registry';
+import { templateScheduleWords } from '../src/automations/cards';
 import { recordAutomationRun } from '../src/automations/runs';
 import { automationsOverview, dailyCronTime, nextRunAt, scheduleLabel } from '../src/automations/view';
 import { runCron } from '../src/cron/runner';
 import { getClient } from '../src/db/client';
 import { createSession } from '../src/db/sessions';
+import { createTemplate } from '../src/db/templates';
 import { createUserWithId } from '../src/db/users';
 import { route } from '../src/router';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
@@ -55,6 +57,20 @@ describe('automation registry', () => {
 
   it('has unique ids', () => {
     assert.strictEqual(new Set(AUTOMATIONS.map((automation) => automation.id)).size, AUTOMATIONS.length);
+  });
+});
+
+describe('automation card schedules', () => {
+  it('reads common template trigger schedules in plain words', () => {
+    assert.strictEqual(templateScheduleWords('0 9 * * *'), 'Every morning (Europe/Berlin)');
+    assert.strictEqual(templateScheduleWords('0 9 * * 2'), 'Weekly on Tuesdays (Europe/Berlin)');
+    assert.strictEqual(templateScheduleWords('30 10 * * 0'), 'Weekly on Sundays (Europe/Berlin)');
+    assert.strictEqual(templateScheduleWords('0 9 1 * *'), 'Monthly on the 1st (Europe/Berlin)');
+    assert.strictEqual(templateScheduleWords('0 9 22 * *'), 'Monthly on the 22nd (Europe/Berlin)');
+    assert.strictEqual(templateScheduleWords('0 9 3 * *'), 'Monthly on the 3rd (Europe/Berlin)');
+    assert.strictEqual(templateScheduleWords('0 9 29 2 *'), 'Yearly on February 29th (Europe/Berlin)');
+    assert.strictEqual(templateScheduleWords('0 9 1,15 * *'), null);
+    assert.strictEqual(templateScheduleWords('not a cron'), null);
   });
 });
 
@@ -186,5 +202,50 @@ describe('GET /api/automations', () => {
     const suggestions = after.automations.find((automation: { id: string }) => automation.id === 'sponsor-communication-suggestions');
     assert.deepStrictEqual(suggestions.settings.map(({ value }: { value: unknown }) => value), [[21, 7], 10]);
     assert.strictEqual(after.settingsVersion, before.settingsVersion + 1);
+  });
+
+  it('lists the automatically created cards from the live rules, and flags system jobs', async () => {
+    const newsletter = await createTemplate(client, {
+      name: 'Newsletter',
+      type: 'newsletter',
+      taskDefinitions: [],
+    });
+    const tax = await createTemplate(client, {
+      name: 'Tax Report',
+      type: 'tax-report',
+      triggerType: 'automatic',
+      triggerSchedule: '0 9 1 * *',
+      triggerLeadDays: 0,
+      taskDefinitions: [],
+    });
+    await recordAutomationRun(client, 'newsletter-cards', { ok: true, summary: '0 cards created' }, new Date('2026-10-16T08:00:00Z'));
+    await recordAutomationRun(client, 'automatic-template-cards', { ok: true, summary: '0 cards created' }, new Date('2026-10-16T08:00:00Z'));
+    const overview = await automationsOverview(client, {
+      now: new Date('2026-10-16T09:00:00Z'),
+      readCheckpoint: async () => null,
+    });
+    assert.deepStrictEqual(overview.cards.map((card) => card.id), ['newsletter-weekly', `template-${tax.id}`]);
+    const [weekly, taxCard] = overview.cards;
+    assert.strictEqual(weekly.name, 'Weekly newsletter issue card');
+    assert.strictEqual(weekly.scheduleLabel, 'Every morning (Europe/Berlin)');
+    assert.match(weekly.leadTime, /21 days before the send date/);
+    assert.strictEqual(weekly.skipRule, 'One Card per issue; skipped when the issue already has one');
+    assert.strictEqual(weekly.nextRunAt, '2026-10-17T08:00:00.000Z');
+    assert.strictEqual(weekly.lastRun?.summary, '0 cards created');
+    assert.strictEqual(weekly.templateLink, `/templates?templateId=${newsletter.id}`);
+    assert.strictEqual(taxCard.name, 'Tax Report card');
+    assert.strictEqual(taxCard.scheduleLabel, 'Monthly on the 1st (Europe/Berlin)');
+    assert.strictEqual(taxCard.leadTime, 'Created on the scheduled date');
+    assert.match(taxCard.skipRule, /One Card per anchor date/);
+    // 2026-11-01 is a Sunday, so the anchor (and its creation pass) moves to Monday.
+    assert.strictEqual(taxCard.nextRunAt, '2026-11-02T08:00:00.000Z');
+    assert.strictEqual(taxCard.lastRun?.summary, '0 cards created');
+    assert.strictEqual(taxCard.templateLink, `/templates?templateId=${tax.id}`);
+    const byId = new Map(overview.automations.map((automation) => [automation.id, automation]));
+    assert.strictEqual(byId.get('recurring-tasks')!.system, false);
+    for (const id of ['execution-export', 'dynamo-backup', 'knowledge-backup', 'knowledge-mirror', 'knowledge-publish', 'knowledge-repo-backup']) {
+      assert.strictEqual(byId.get(id)!.system, true, id);
+    }
+    assert.ok(!byId.has('sponsor-email-send') && !byId.has('sponsor-send-recovery') && !byId.has('sponsor-email-events'));
   });
 });

@@ -10,12 +10,15 @@ import { getWorkspaceSettings } from '../db/workspaceSettings';
 import { createKnowledgeStore, knowledgeStoreConfigFromEnv } from '../docs/knowledgeStore';
 import { AUTOMATIONS, type AutomationDefinition, type AutomationSchedule, type AutomationSettingSpec } from './registry';
 import { getAutomationRuns, type AutomationRun } from './runs';
+import { automationCardRules, type AutomationCardRule } from './cards';
 
 export interface AutomationView {
   id: string;
   name: string;
   description: string;
   runsIn: string;
+  /** Internal plumbing: the portal shows these collapsed as system jobs. */
+  system: boolean;
   scheduleLabel: string;
   /** ISO instant of the next scheduled run; null for event-driven or sub-hourly automations. */
   nextRunAt: string | null;
@@ -27,6 +30,8 @@ export interface AutomationView {
 
 export interface AutomationsOverview {
   automations: AutomationView[];
+  /** The Cards that get created automatically and when, from the live rules. */
+  cards: AutomationCardRule[];
   /** Workspace settings version, for a settings change to send back. */
   settingsVersion: number;
 }
@@ -108,6 +113,7 @@ export async function automationsOverview(
     name: automation.name,
     description: automation.description,
     runsIn: automation.runsIn,
+    system: automation.system === true,
     scheduleLabel: scheduleLabel(automation.schedule),
     nextRunAt: nextRunAt(automation.schedule, now),
     lastRun: await lastRunOf(automation, recorded, readCheckpoint),
@@ -117,5 +123,6 @@ export async function automationsOverview(
       value: (settings as unknown as Record<string, unknown>)[setting.key],
     })),
   })));
-  return { automations, settingsVersion: settings.version };
+  const cards = await automationCardRules(client, { now, recorded });
+  return { automations, cards, settingsVersion: settings.version };
 }

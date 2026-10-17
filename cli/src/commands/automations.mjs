@@ -6,10 +6,12 @@ export const summary = "Scheduled and triggered automations, and the settings th
 
 export const help = `dataops automations - what runs on its own (the web Recurring > Automations view)
 
-Every automation the portal knows about: the daily job's parts (recurring
+First the Cards that get created automatically and when, then every
+automation the portal knows about: the daily job's parts (recurring
 tasks, template and newsletter Cards, sponsor alerts), the nightly exports and
 backups, the knowledge jobs and the GitHub workflows. Each shows when it runs,
 where, its next run, and its last run where the portal can see one.
+Internal plumbing is marked [system].
 
 Usage
   dataops automations list
@@ -36,8 +38,21 @@ function settingValue(setting) {
 export async function list(args, io) {
   const result = await apiFor(args).get("/api/automations");
   if (args.json) return result;
+  for (const card of result.cards || []) {
+    io.print(`${card.id}  ${card.name}`);
+    const when = [card.scheduleLabel];
+    if (card.nextRunAt) when.push(`next ${utc(card.nextRunAt)}`);
+    if (card.lastRun) {
+      const outcome = card.lastRun.ok ? "ok" : "FAILED";
+      when.push(`last ${utc(card.lastRun.at)} ${outcome}: ${card.lastRun.summary}`);
+    }
+    io.print(`  ${when.join(" | ")}`);
+    io.print(`  Lead time: ${card.leadTime}`);
+    io.print(`  ${card.skipRule}`);
+    if (card.templateLink) io.print(`  Template: ${card.templateLink}`);
+  }
   for (const automation of result.automations || []) {
-    io.print(`${automation.id}  ${automation.name}`);
+    io.print(`${automation.id}  ${automation.name}${automation.system ? " [system]" : ""}`);
     const when = [automation.scheduleLabel];
     if (automation.nextRunAt) when.push(`next ${utc(automation.nextRunAt)}`);
     if (automation.lastRun) {

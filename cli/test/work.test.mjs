@@ -693,8 +693,19 @@ describe("automations", () => {
       },
       {
         id: "knowledge-publish", name: "Knowledge publish", runsIn: "GitHub Actions, dataops-knowledge",
+        system: true,
         scheduleLabel: "Push to main", nextRunAt: null, lastRun: null,
         link: "https://github.com/example/actions", settings: [],
+      },
+    ],
+    cards: [
+      {
+        id: "template-tax", name: "Tax Report card",
+        scheduleLabel: "Monthly on the 1st (Europe/Berlin)", nextRunAt: "2026-11-02T08:00:00.000Z",
+        lastRun: { at: "2026-10-01T08:00:01.000Z", ok: true, summary: "1 card created", source: "recorded" },
+        leadTime: "Created on the scheduled date",
+        skipRule: "One Card per anchor date",
+        templateLink: "/templates?templateId=tax",
       },
     ],
   };
@@ -703,6 +714,10 @@ describe("automations", () => {
     fakePortal({ "GET /api/automations": overview });
     const io = captureIo();
     assert.equal(await run(["automations", "list"], io), 0);
+    assert.match(io.text(), /Tax Report card/);
+    assert.match(io.text(), /Monthly on the 1st \(Europe\/Berlin\) \| next 2026-11-02 08:00 UTC \| last 2026-10-01 08:00 UTC ok: 1 card created/);
+    assert.match(io.text(), /Lead time: Created on the scheduled date/);
+    assert.match(io.text(), /Knowledge publish \[system\]/);
     assert.match(io.text(), /Daily at 08:00 UTC \| next 2026-10-17 08:00 UTC \| last 2026-10-16 08:00 UTC ok: 2 tasks created/);
     assert.match(io.text(), /Materials reminders \(sponsorMaterialsReminderDays\): 14, 10, 3 days/);
     assert.match(io.text(), /Push to main \| runs: https:\/\/github\.com\/example\/actions/);
