@@ -1496,3 +1496,119 @@ test("existing sponsor work must be reviewed before adding a separate payment fo
   assert.deepEqual(posts[0], { dealVersion: 3, expectedVersion: 4,
     reviewedOpenTasks: [{ id: "existing-1", version: 3 }] });
 });
+
+describe("CRM directory controllers", () => {
+  const directoryOrgs = [
+    { id: "org-acme", displayName: "Acme Cloud", domain: "acme.example", relationship: "talking",
+      active: true, primaryPerson: null, lastTouch: "2026-10-12T10:00:00Z", openDealCount: 1, version: 1, updatedAt: "2026-10-12T00:00:00Z" },
+    { id: "org-north", displayName: "Northwind Data", domain: "northwind.example", relationship: "prospect",
+      active: true, primaryPerson: null, lastTouch: "2026-09-01T10:00:00Z", openDealCount: 0, version: 1, updatedAt: "2026-09-01T00:00:00Z" },
+  ];
+  const directoryViews = [
+    { id: "builtin:companies:active", entity: "companies", name: "Active", builtin: true,
+      filters: { active: "true" }, resolvedFilters: { active: "true" }, sort: { field: "name", direction: "asc" } },
+    { id: "builtin:companies:stale", entity: "companies", name: "No recent contact", builtin: true,
+      filters: { active: "true", lastTouchBefore: { daysAgo: 30 } },
+      resolvedFilters: { active: "true", lastTouchBefore: "2026-09-17" }, sort: { field: "lastTouch", direction: "desc" } },
+  ];
+  function directoryRequest(url, options = {}) {
+    const path = requestPath(url);
+    const query = new URL(url, "http://dataops.test").searchParams;
+    if (path === "/api/sponsor-crm/views") return { items: directoryViews, total: directoryViews.length };
+    if (path === "/api/sponsor-crm/directory/companies") {
+      let items = [...directoryOrgs];
+      const search = query.get("search");
+      if (search) items = items.filter((item) => item.displayName.toLowerCase().includes(search.toLowerCase()));
+      const field = query.get("sort") || "name";
+      const dir = query.get("direction") || (field === "lastTouch" ? "desc" : "asc");
+      items.sort((left, right) => {
+        const base = field === "lastTouch"
+          ? String(left.lastTouch || "").localeCompare(String(right.lastTouch || ""))
+          : left.displayName.localeCompare(right.displayName);
+        return dir === "desc" ? -base : base;
+      });
+      return { items, total: items.length, nextCursor: null };
+    }
+    if (path === "/api/notifications") return { notifications: { items: [] } };
+    throw new Error(`Unexpected request: ${url}`);
+  }
+  const dirRoute = (tab, params) => ({
+    view: "sponsors",
+    sponsorsTab: tab,
+    path: `/sponsors/${tab}`,
+    token: 1,
+    params: new URLSearchParams(params),
+  });
+  const dirRows = (document) =>
+    document.surface.querySelector('[data-dir-root="companies"]').querySelector("[data-dir-rows]");
+
+  test("reverse-direction URL executes with direction and survives reload", async () => {
+    const { document, finance, requests } = createHarness({
+      route: dirRoute("companies", { sort: "lastTouch", dir: "asc" }),
+      request: directoryRequest,
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    const calls = requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/directory/companies");
+    assert.equal(calls.length, 1);
+    assert.equal(new URL(calls[0].url, "http://dataops.test").searchParams.get("direction"), "asc");
+    assert.match(dirRows(document).innerHTML, /Northwind Data.*Acme Cloud/s, "lastTouch asc orders oldest first");
+  });
+
+  test("invalid sort URL surfaces an honest error and issues no silent default load", async () => {
+    const { document, finance, requests } = createHarness({
+      route: dirRoute("companies", { sort: "bogus" }),
+      request: directoryRequest,
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    assert.match(dirRows(document).innerHTML, /Could not load this directory/);
+    assert.equal(
+      requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/directory/companies").length,
+      0,
+      "no default query fires behind an invalid URL",
+    );
+  });
+
+  test("deferred search issues only the settled query", async () => {
+    const { document, finance, requests } = createHarness({
+      route: dirRoute("companies", {}),
+      request: directoryRequest,
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    const root = document.surface.querySelector('[data-dir-root="companies"]');
+    const search = root.querySelector("[data-dir-search]");
+    search.value = "acme";
+    await search.dispatch("input", {});
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    search.value = "globex";
+    await search.dispatch("input", {});
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const searches = requests
+      .filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/directory/companies")
+      .map((entry) => new URL(entry.url, "http://dataops.test").searchParams.get("search"));
+    assert.ok(!searches.includes("acme"), `stale search fired: ${searches.join(",")}`);
+    assert.equal(searches.at(-1), "globex");
+  });
+
+  test("pipeline invalid enums surface honestly and load defaults", async () => {
+    const { document, finance, requests } = createHarness({
+      route: dirRoute("pipeline", { view: "bogus", sort: "nope" }),
+      request: directoryRequest,
+    });
+    await finance.renderSponsorCrmSurface();
+    await settle();
+    assert.match(
+      document.surface.querySelector("[data-crm-message]").textContent,
+      /Ignored invalid pipeline URL/,
+      "invented enums are reported, not silently replaced",
+    );
+    const pipelineCalls = requests
+      .filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/pipeline")
+      .map((entry) => new URL(entry.url, "http://dataops.test").search);
+    assert.ok(pipelineCalls.length >= 1, "pipeline loads");
+    assert.ok(!pipelineCalls.join("").includes("bogus"), "invented enum never reaches the API");
+    assert.ok(!pipelineCalls.join("").includes("nope"), "invented sort never reaches the API");
+  });
+});

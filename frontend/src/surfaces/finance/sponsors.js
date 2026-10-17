@@ -455,6 +455,7 @@ export function createSponsorCrmSurface(context) {
       if (currentView === "pipeline") {
         await ownerDirectory.load();
         ownerDirectory.fillFilter(surface.querySelector("[data-pipeline-owner]"));
+        ownerDirectory.fillFilter(surface.querySelector("[data-pipeline-owner]"));
         if (!pipelineUrlApplied) {
           pipelineUrlApplied = true;
           await directoryPages.pipeline.initFromParams();
@@ -467,8 +468,12 @@ export function createSponsorCrmSurface(context) {
       else if (currentView === "people") await directoryPages.directories.people.refresh();
       else if (currentView === "leads") await sponsorLeads.loadLeads();
       else if (currentView === "newsletters") await sponsorNewsletters.loadNewsletters();
-      message.textContent = "";
-      message.hidden = true;
+      // A notice raised mid-refresh (invalid URL enums, saved-view errors)
+      // survives completion; only the loading text itself is cleared.
+      if (message.textContent === "Loading sponsor CRM…") {
+        message.textContent = "";
+        message.hidden = true;
+      }
     }
 
     function drawAlerts() {
@@ -885,6 +890,14 @@ export function createSponsorCrmSurface(context) {
         }
         dialog.close();
         await refresh();
+        // A save from inside an open record reopens that org+deal with the
+        // saved object (fresh version, no stale data); a save from a list
+        // only needed the refresh above.
+        if (surface.classList.contains("has-booking-detail")) {
+          await loadCompanySummary(saved.organizationId);
+          deals = [...deals.filter((value) => value.id !== saved.id), saved];
+          await reopenDealDetail(saved);
+        }
       }, "Could not save deal");
     };
     surface.querySelector("[data-save-suppression]").onclick = (event) => {

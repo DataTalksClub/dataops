@@ -205,7 +205,9 @@ export function createSponsorDirectoryPages({
       for (const input of filters) {
         if (input.value !== "") collected[input.dataset.dirFilter] = input.value;
       }
-      if (sort?.value && sort.value !== "name") collected.sort = sort.value;
+      // Always represent the selected sort field (including Name): omitting
+      // it would let a stale base sort survive a deliberate manual change.
+      collected.sort = sort?.value || "name";
       return collected;
     }
     function applyToControls(filters, sort) {
@@ -283,11 +285,17 @@ export function createSponsorDirectoryPages({
         state.cursor = null;
         state.prev = [];
       }
-      // Request generation: an older success/error never overwrites newer
-      // rows, status or URL (deferred search/filter/page races).
+      // Request + navigation ownership: an older success/error never
+      // overwrites newer rows, status or URL (deferred search/filter/page
+      // races), and a response that lands after the operator moved on
+      // (another tab, an open record) never mutates hidden rows, shared
+      // notices or the record URL. Applies to the 400 retry path too.
       const requestToken = ++state.requestToken;
       const navToken = navGeneration;
-      const settled = () => requestToken === state.requestToken && surface.isConnected;
+      const settled = () => requestToken === state.requestToken &&
+        navToken === navGeneration &&
+        activeView() === entity &&
+        surface.isConnected;
       const resolved = effectiveFromControls();
       if (resolved.error) {
         if (!settled()) return;
@@ -363,11 +371,13 @@ export function createSponsorDirectoryPages({
     }
     async function refresh() {
       if (!state.initialized) {
-        state.initialized = true;
         await loadViews();
         const initial = directoryStateFromUrl(
           `${sponsorsPath(entity)}?${new URLSearchParams(listParamsByView[entity] || {}).toString()}`, entity);
         if (initial.error) {
+          // Persist the invalid state: initialized stays false so a later
+          // restorePage retries init instead of silently loading defaults.
+          // Only an explicit corrected query (reload/navigation) clears it.
           renderViews();
           rowsEl.innerHTML = renderDirectoryError({ message: initial.error, escapeHtml });
           statusEl.textContent = "";
@@ -375,6 +385,7 @@ export function createSponsorDirectoryPages({
           showMessage("");
           return;
         }
+        state.initialized = true;
         const resolved = resolveEffectiveFilters({
           entity,
           views: state.views,
@@ -385,6 +396,7 @@ export function createSponsorDirectoryPages({
         if (!resolved.error) {
           state.selectedViewId = resolved.viewId;
           state.modified = resolved.modified;
+          state.sort = resolved.sort;
           applyToControls({ ...resolved.filters }, resolved.sort);
         }
         if (entity === "people") await refillCompanyFilter();
@@ -420,6 +432,7 @@ export function createSponsorDirectoryPages({
         urlState: {},
       });
       if (!resolved.error) {
+        state.sort = resolved.sort;
         applyToControls({ ...resolved.filters }, resolved.sort);
       }
       await loadDirectory();
@@ -698,20 +711,24 @@ export function createSponsorDirectoryPages({
     },
     // First paint from the URL: controls, saved views, then the first page
     // (deep-linked cursors included). Later control edits go through
-    // controlsChanged + load so the URL stays canonical.
+    // controlsChanged + load so the URL stays canonical. Invented view/sort
+    // enums are surfaced honestly instead of silently replaced: the operator
+    // sees what was rejected and which default is showing.
     async initFromParams() {
       const p = listParamsByView.pipeline;
-      // Invalid view/sort values fall back to control defaults instead of
-      // jamming the selects: the API would 400 an invented enum honestly.
-      const view = PIPELINE_VIEW_IDS.includes(p.view) ? p.view : undefined;
-      const sort = p.sort === "recent" ? "recent" : "next-action";
+      const invalid = [];
+      if (p.view !== undefined && !PIPELINE_VIEW_IDS.includes(p.view)) invalid.push(`view=${p.view}`);
+      if (p.sort !== undefined && p.sort !== "recent" && p.sort !== "next-action") invalid.push(`sort=${p.sort}`);
       pipeline.applyControls({
-        view,
+        view: PIPELINE_VIEW_IDS.includes(p.view) ? p.view : undefined,
         stage: p.stage || "",
         search: p.search || "",
         owner: p.owner || "",
-        sort,
+        sort: p.sort === "recent" ? "recent" : "next-action",
       });
+      if (invalid.length) {
+        showNotice(`Ignored invalid pipeline URL: ${invalid.join(", ")}. Showing defaults.`);
+      }
       await pipeline.ensureViews();
       if (p.savedView) await pipeline.applySavedView(p.savedView);
       else await pipeline.load(true, p.cursor ? { cursor: p.cursor } : {});
