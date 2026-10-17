@@ -26,6 +26,7 @@ import {
   derivePublicationReadiness,
   normalizePublication,
 } from "../podcast/publication";
+import { syncVerifyTaskTime } from "../podcast/scheduleHook";
 import {
   MAX_NEXT_SLOT_COUNT,
   nextReleaseSlots,
@@ -453,6 +454,12 @@ export async function handlePodcastEpisodeRoutes(
     } catch {
       return json(409, { error: "Conflicting update" });
     }
+    // A recorded Spotify schedule times the Card's verify Task (and, through
+    // dependencies, everything chained after it); a removed one unschedules it.
+    const scheduleSync = Object.hasOwn(changes, "publication")
+      ? await syncVerifyTaskTime(client, next, existing.publication?.audioSchedule?.scheduledAt ?? null)
+      : null;
+    const sync = scheduleSync ? { scheduleSync } : {};
     if (
       next.cardId &&
       (linking ||
@@ -462,8 +469,8 @@ export async function handlePodcastEpisodeRoutes(
         next.episode !== existing.episode ||
         JSON.stringify(next.guests) !== JSON.stringify(existing.guests))
     )
-      return json(200, { ...(await presented(client, next)), cardSync: await pushEpisodeToCard(client, next) });
-    return json(200, await presented(client, next));
+      return json(200, { ...(await presented(client, next)), cardSync: await pushEpisodeToCard(client, next), ...sync });
+    return json(200, { ...(await presented(client, next)), ...sync });
   }
 
   if (method === "DELETE") {

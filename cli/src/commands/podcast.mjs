@@ -51,6 +51,9 @@ Publication evidence is recorded with update flags; each observation is stamped 
   --website-released PAGE_URL      the released page
   --website-observed PAGE_URL      a page already seen live
   "none" clears one of them. --release-date is the intended release, not Spotify evidence.
+Recording --spotify-schedule also times the Card's Spotify verification Task to
+that instant (downstream Tasks chained after it with template depends_on follow
+through task rescheduling); clearing the schedule puts the Task back in the queue.
 Unrecorded evidence shows as not-recorded, never as a definite no.
 --from/--to filter on the episode's release date, else its recording date.
 Writes send the episode's current version; a changed episode exits 5.
@@ -312,6 +315,11 @@ export async function update(args, io) {
   if (args.json) return episode;
   io.print(`Updated episode ${episode.id}: ${describe(episode)} [${episode.status}]${episode.cardId ? `, Card ${episode.cardId}` : ""}.`);
   if (episode.cardSync === "failed") io.print("The linked Card did not take the new date or guests; update it with `dataops cards update`.");
+  if (episode.scheduleSync?.notBeforeAt) {
+    io.print(`Verify Task ${episode.scheduleSync.taskId} now surfaces at ${episode.scheduleSync.notBeforeAt}.`);
+  } else if (episode.scheduleSync && episode.scheduleSync.notBeforeAt === null) {
+    io.print(`Verify Task ${episode.scheduleSync.taskId} is back in the queue (schedule removed).`);
+  }
   return episode;
 }
 

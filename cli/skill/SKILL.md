@@ -204,6 +204,38 @@ notes log (timestamp + you); `tasks show` prints the whole log, and
 Schedule a check-in: `dataops tasks followup --about <task|card|sponsor-deal id> --on +7d --description "check X" --note "context"`.
 It links to its subject, is assigned to you, and shows in that day's queue.
 
+## Timed tasks and chains
+
+A Task can surface at an exact moment instead of a whole day:
+
+```bash
+dataops tasks update <task-id> --at "2026-10-23 19:00" --tz Europe/Berlin
+dataops tasks update <task-id> --at +7d        # midnight that day, Berlin time
+dataops tasks update <task-id> --at none       # clear the moment
+```
+
+Until the moment passes the Task stays out of the queue, `--today`,
+`--overdue`, and `--waiting` — then it is due like any other Task. `--tz`
+defaults to Europe/Berlin; an ISO instant with an offset needs no `--tz`.
+
+Chain work with `dataops tasks update <task-id> --after <parent-id>`
+(`none` clears; `--depends-on` is the multi-parent form, `depends_on` in Card
+Templates). A dependent cannot be completed until its parent is done or
+skipped, and when the parent's date or moment moves the dependents shift by
+the same offset, transitively — done work keeps its history. The queue still
+lists blocked Tasks marked as blocked; the gate is on completion.
+
+Podcast releases ride the same machinery: recording `--spotify-schedule`
+times the episode Card's Spotify verification Task to that instant (and
+everything chained after it with template `depends_on` follows); clearing the
+schedule puts the Task back. Verifying a concrete case from the shell (episode instant `2026-10-23T19:00+02:00`):
+
+```bash
+dataops tasks show <verify-task-id>   # notBeforeAt should equal 2026-10-23T17:00:00.000Z
+dataops tasks list --mine --queue --as-of 2026-10-22   # absent: the moment is in the future
+dataops tasks list --mine --queue                      # due, once the moment has passed
+```
+
 ## How to resume someone else's queue
 
 Follow-ups live in DataOps, not in any agent's memory, so any agent can pick
